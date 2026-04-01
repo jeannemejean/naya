@@ -1,0 +1,39 @@
+VERDICT: REJECTED
+The diff implements 4/5 core objectives well, but the strategy-reasoning banner requirement is only partially implemented and misses a stated acceptance criterion.
+
+Critical findings / analysis:
+- ✅ **Planning grid readability (VERDICT: REJECTED
+`time-grid.tsx`)**: Implemented as specified — `PX_PER_HOUR`=80, min task height=44, The diff implements 4/5 core objectives well, but the strategy-reasoning banner requirement is only partially implemented and misses a stated acceptance criterion.
+title always shown, updated duration/full threshol
+ds, and completed-task styling updated (`opacity-Critical findings / analysis:
+35 saturate-0`, title `line-through opacity-60`).
+- ✅ **Slot-collision guard (`routes.ts`)**: Added pre-write guard in `generate-daily` that seeds used slots from existing tasks and pushes colliding AI times forward by task duration before placement. This also de-duplicates within the AI batch.
+- ✅ **Dashboard tile redesign (`dashboard.tsx`)**: Old “Today/This Week” AI briefing tiles are replaced with data-driven tiles:
+  - `BentoTileNextAction` uses `/api/tasks/range` for today, shows next pending task + energy emoji + mini progress bar.
+  - `BentoTileWeekPulse` uses week tasks and renders Mon–Fri completion bars with today/past color treatment.
+  - JSX usage updated and `Activity` import present.
+- ❌ **Strategy reasoning above grid (`planning.tsx`)**: A compact focus banner was added above `TimeGrid`, but it does **not** include the required “Why these tasks?” expand toggle/reasoning content in that location. The detailed reasoning/toggle remains in the day-view side panel instead of being surfaced above the grid as requested. This misses a “Done looks like” criterion.
+- ✅ **Full Brand DNA prompt (`openai.ts` + `routes.ts`)**: Prompt/system voice were substantially upgraded to strategic Naya framing and include expanded business intelligence fields (offers, pricing, voice keywords, audience psychology, pillars, etc.), and route-side `brandDnaInput` now passes the requested additional fields.
+
+Security:
+- None observed that are serious/relevant to this task.
+
+Next actions:
+1. In `planning.tsx`, extend the above-grid banner to include “Why these tasks?” toggle + reasoning text (using existing `strategyExpanded`), for both day and week grid contexts.
+2. Keep the side panel optional, but ensure the primary rationale is visible directly above `TimeGrid` per spec.
+3. Re-verify against the explicit “Done looks like” checklist before merge.- ✅ **Planning grid readability (`time-grid.tsx`)**: Implemented as specified — `PX_PER_HOUR`=80, min task height=44, title always shown, updated duration/full thresholds, and completed-task styling updated (`opacity-35 saturate-0`, title `line-through opacity-60`).
+- ✅ **Slot-collision guard (`routes.ts`)**: Added pre-write guard in `generate-daily` that seeds used slots from existing tasks and pushes colliding AI times forward by task duration before placement. This also de-duplicates within the AI batch.
+- ✅ **Dashboard tile redesign (`dashboard.tsx`)**: Old “Today/This Week” AI briefing tiles are replaced with data-driven tiles:
+  - `BentoTileNextAction` uses `/api/tasks/range` for today, shows next pending task + energy emoji + mini progress bar.
+  - `BentoTileWeekPulse` uses week tasks and renders Mon–Fri completion bars with today/past color treatment.
+  - JSX usage updated and `Activity` import present.
+- ❌ **Strategy reasoning above grid (`planning.tsx`)**: A compact focus banner was added above `TimeGrid`, but it does **not** include the required “Why these tasks?” expand toggle/reasoning content in that location. The detailed reasoning/toggle remains in the day-view side panel instead of being surfaced above the grid as requested. This misses a “Done looks like” criterion.
+- ✅ **Full Brand DNA prompt (`openai.ts` + `routes.ts`)**: Prompt/system voice were substantially upgraded to strategic Naya framing and include expanded business intelligence fields (offers, pricing, voice keywords, audience psychology, pillars, etc.), and route-side `brandDnaInput` now passes the requested additional fields.
+
+Security:
+- None observed that are serious/relevant to this task.
+
+Next actions:
+1. In `planning.tsx`, extend the above-grid banner to include “Why these tasks?” toggle + reasoning text (using existing `strategyExpanded`), for both day and week grid contexts.
+2. Keep the side panel optional, but ensure the primary rationale is visible directly above `TimeGrid` per spec.
+3. Re-verify against the explicit “Done looks like” checklist before merge.

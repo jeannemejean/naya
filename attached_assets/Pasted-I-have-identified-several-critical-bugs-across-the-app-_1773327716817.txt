@@ -1,0 +1,93 @@
+I have identified several critical bugs across the app after reviewing the codebase and testing the live version. Please fix all of them in order.
+
+BUG 1 — Day view is empty even when tasks exist
+Symptom: In Day view (Planning page), the time grid shows no tasks even though the dashboard shows 14 tasks for today and the Week view shows them on the correct date.
+Root cause: Tasks are being correctly saved with a scheduledDate but the Day view's time grid only renders tasks that have a scheduledTime. Tasks without a scheduledTime fall into the "Unscheduled" side panel — but that panel only appears in Day view and is currently hidden behind the right panel column, or the tasks are not being passed correctly to the day's grid slot.
+Fix needed in client/src/components/time-grid.tsx:
+Tasks that have no scheduledTime should still appear on the grid, placed at the start of the work day (e.g. 9 AM) in a stacked list, clearly marked as "unscheduled" with a dashed border or lighter style. They should NOT be invisible. Right now a task with scheduledDate = "2026-03-12" but scheduledTime = null is simply not rendered anywhere in Day view.
+Also verify in client/src/pages/planning.tsx that in day view, the rangeTasks array is correctly filtered to only tasks where scheduledDate === startDate before being passed to the grid. If startDate is computed using formatDate(selectedDate) with local timezone logic, confirm it matches the format stored in the database (YYYY-MM-DD).
+
+BUG 2 — Dashboard task count does not match Planning task count
+Symptom: Dashboard shows "Today's Tasks — 0/14 done" but Day view in Planning shows 0 tasks. Week view shows tasks only on Friday 13 and Saturday/Sunday, not on Thursday 12 (today).
+Root cause: The dashboard fetches tasks using /api/tasks?date=today (server UTC date), while the Planning page fetches using /api/tasks/range?start=YYYY-MM-DD&end=YYYY-MM-DD (client local date). These two date computations are diverging because the server uses UTC and the client uses local time.
+Fix needed:
+
+In client/src/components/todays-tasks.tsx, the today variable used to fetch tasks must use the same local-date formatting function as the Planning page: formatDate(new Date()) using getFullYear() / getMonth() / getDate() — NOT new Date().toISOString().split('T')[0].
+Confirm the /api/tasks endpoint accepts a date query param and uses it directly as a string filter (not re-converting it to UTC). If the server is doing new Date(date) anywhere inside this route, it will shift the date by timezone offset.
+
+
+BUG 3 — All tasks in week view are piled onto Friday 13 and weekend instead of being distributed from today (Thursday 12)
+Symptom: Week of Mar 9 — Mon/Tue/Wed/Thu all show as ✅ completed with 0 tasks, then Friday 13 has 17 tasks, Saturday 14 has 2, Sunday 15 has 3.
+Root causes (two separate issues):
+3a — Past date bug still active: Even though clampToFloor and parseClientToday exist in server/routes.ts, the generate-weekly route computes weekStart using referenceDate.toISOString().split('T')[0] (UTC) instead of using floor (the clientToday value from the request body). So when clientToday = "2026-03-12", the weekly generation still anchors to an UTC-computed Monday which may be off.
+Fix in server/routes.ts — generate-weekly route (~line 1749):
+ts// BEFORE:
+const weekStart = referenceDate.toISOString().split('T')[0];
+const weekEndDate = new Date(referenceDate);
+weekEndDate.setDate(weekEndDate.getDate() + 6);
+const weekEnd = weekEndDate.toISOString().split('T')[0];
+
+// AFTER: use local-safe date string from the referenceDate parts, not toISOString()
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const weekStart = localDateStr(referenceDate);
+const weekEndDate = new Date(referenceDate);
+weekEndDate.setDate(weekEndDate.getDate() + 6);
+const weekEnd = localDateStr(weekEndDate);
+3b — rebalanceTasksForward is not being called for generate-daily: The generate-daily route creates and saves tasks with scheduledDate = todayStr directly without running rebalanceTasksForward. But when 4 projects × 5 tasks = 20 tasks are all assigned to today, the realism engine defers some to deferTarget = todayStr + 1 day — which is computed using deferDate.toISOString().split('T')[0], a UTC date.
+Fix in server/routes.ts — generate-daily deferTarget (~line 2077):
+ts// BEFORE:
+const deferDate = new Date(today);
+deferDate.setDate(deferDate.getDate() + 1);
+const deferTarget = deferDate.toISOString().split('T')[0];
+
+// AFTER: compute deferTarget from todayStr (local), not from today (Date object)
+const deferDate = new Date(todayStr + 'T00:00:00');
+deferDate.setDate(deferDate.getDate() + 1);
+const deferTarget = `${deferDate.getFullYear()}-${String(deferDate.getMonth() + 1).padStart(2, '0')}-${String(deferDate.getDate()).padStart(2, '0')}`;
+
+BUG 4 — Tasks are all blocked (circular or cascading dependency chains)
+Symptom: In the dashboard, nearly every task shows 🔒 "Blocked by: [another task]" — even tasks that should be independently actionable. This makes the day effectively paralyzed.
+Root cause: The AI in generateDailyTasks is creating dependency chains between tasks from the same generation batch. When task A depends on task B which depends on task C, if none are done yet, nothing is actionable. This is a prompt-level issue compounded by the fact that the dependency creation loop in generate-daily does not check whether circular chains are being created.
+Fix needed:
+
+In server/services/openai.ts — generateDailyTasks system prompt: Add an explicit constraint:
+
+
+"IMPORTANT: For daily tasks, dependencies should be used sparingly and only when one task is truly a hard prerequisite for another (e.g., 'Film video' must come before 'Edit video'). Do NOT chain all tasks into a single sequential dependency chain. At least 50% of daily tasks must have zero dependencies — they must be immediately actionable."
+
+
+In server/routes.ts — generate-daily dependency creation loop: Before saving a dependency link, check that it does not create a situation where ALL tasks for a project are blocked. If every task in the batch would be blocked, skip creating dependencies for that batch entirely.
+
+
+BUG 5 — "Generate my plan" in Month view does not also generate today's tasks
+Symptom: Clicking "Generate my plan" in Month view generates the monthly structure but leaves today's Day view empty. The user has to switch to Day view and generate again.
+Root cause: In client/src/pages/planning.tsx, the handleGeneratePlan function calls generateMonthlyMutation.mutateAsync() when in month view, then calls generateDailyMutation.mutate() unconditionally. However, the monthly generation may not include a task for today (it plans the full month structure) and the daily generation for today runs correctly. The issue is that after generating the month, the rangeQueryKey for month view is invalidated but the user sees no tasks on today because the daily tasks are saved with today's date and the month view renders them as dots — but today (Mar 12) shows "—" because the monthly plan correctly skipped past dates.
+Fix: After handleGeneratePlan completes in any view mode, always run generateDailyMutation as a final step to ensure today always has concrete tasks. The current code does this but mutateAsync on the monthly generation may be failing silently. Add proper error handling:
+tsasync function handleGeneratePlan() {
+  try {
+    if (viewScope === 'month') {
+      await generateMonthlyMutation.mutateAsync();
+    }
+    // Always generate today's daily plan regardless of view mode
+    await generateDailyMutation.mutateAsync();
+  } catch (e) {
+    // toast already handled in onError callbacks
+  }
+}
+
+BUG 6 — "Good afternoon, there 👋" — username not showing
+Symptom: Dashboard greeting says "Good afternoon, there" instead of the user's first name. The user is logged in (shown in sidebar as "mejean.jeann...").
+Fix: In client/src/pages/dashboard.tsx, find where the greeting is built and use user?.firstName || user?.name?.split(' ')[0] || user?.claims?.name?.split(' ')[0] to extract the first name from whatever the Replit Auth user object provides.
+
+SUMMARY — Priority order
+
+BUG 2 (date mismatch dashboard vs planning) — most disorienting
+BUG 1 (day view empty) — core feature broken
+BUG 4 (all tasks blocked) — makes app feel unintelligent
+BUG 3 (tasks piled on wrong days) — scheduling credibility
+BUG 5 (generate plan incomplete) — workflow friction
+BUG 6 (missing username) — polish
+
+Please fix all 6 bugs and confirm each fix with the specific file and line range modified.

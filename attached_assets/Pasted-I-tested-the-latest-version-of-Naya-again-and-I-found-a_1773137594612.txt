@@ -1,0 +1,181 @@
+I tested the latest version of Naya again and I found a structural issue with the onboarding reset and rebuild flow.
+
+This is not just a UI bug. It affects the integrity of the whole board state.
+
+Problem 1 — “Reset Onboarding” is still not acting like a true reset
+
+I used the onboarding reset because I wanted to start over from scratch and rebuild a clean board entirely from fresh onboarding answers.
+
+But that is not what happens in practice.
+
+What I am seeing is:
+	•	old data is still being kept
+	•	old projects are still present
+	•	then the new onboarding adds new data on top
+	•	the result is a polluted board instead of a fresh one
+
+So I end up with too many projects, even though I only want the projects I explicitly entered in the new onboarding flow.
+
+What I need
+
+When I go to Settings and click Reset Onboarding, I need a real full reset.
+
+That means:
+	•	keep the user account
+	•	keep authentication
+	•	wipe the onboarding-generated workspace state
+	•	restart onboarding from the very beginning
+	•	rebuild the board only from the new onboarding answers
+
+After a reset, the system should behave as if this user is setting up Naya for the first time.
+
+⸻
+
+Important structural point
+
+From the current implementation, I can see that there is already a dedicated endpoint:
+
+DELETE /api/me/onboarding-reset
+
+and a storage method:
+
+resetUserOnboardingState(userId)
+
+So the issue is no longer “missing reset functionality”.
+The issue is that the reset is not behaving as a complete and reliable rebuild of the workspace.
+
+Please audit this carefully.
+
+I want you to verify whether the reset truly clears all records that can affect the new onboarding-generated board.
+
+That includes at minimum:
+	•	brand DNA
+	•	user operating profile
+	•	projects
+	•	project goals
+	•	project strategy profiles
+	•	target personas
+	•	persona analysis results
+	•	tasks
+	•	task schedule events
+	•	active project preference
+	•	any onboarding-seeded board data
+
+Also please verify whether any project-linked tables are still preserving state that can block or corrupt project deletion, such as project-linked content / leads / outreach / other records with foreign keys to projects.
+
+If some project-linked records remain, then reset is not truly clean.
+
+⸻
+
+Problem 2 — The onboarding flow should not reuse old primary project state
+
+I also noticed that after redoing onboarding, the board state does not feel like a fresh rebuild.
+
+Please review the onboarding creation logic carefully.
+
+A fresh onboarding should not “reuse” an old primary project.
+
+It should create the new board from zero.
+
+Right now, the system must guarantee this rule:
+
+after a reset, the only projects that should exist are the projects entered in the new onboarding flow
+
+No reuse. No append. No hidden carryover.
+
+So please remove or bypass any “create or reuse primary project” logic when onboarding is being run after a reset.
+
+For a true fresh onboarding, the system should:
+	1.	start from a clean state
+	2.	create the primary project from the new payload
+	3.	create the additional projects from the new payload
+	4.	set the new primary project as the active project
+	5.	render only those projects in the board
+
+⸻
+
+Problem 3 — My main business project is missing from the sidebar
+
+After redoing onboarding, I can see the other projects on the board, but my main business project is not appearing in the left sidebar as a normal project board entry.
+
+This is a serious issue because the primary project should be the most visible and stable project in the whole workspace.
+
+What I need
+
+The main business / primary project defined during onboarding must always:
+	•	be created correctly
+	•	be marked as isPrimary = true
+	•	be included in /api/projects
+	•	appear in the sidebar project list
+	•	be selectable like any other project
+	•	be the default active project after onboarding completes
+
+If it is missing from the sidebar, then one of these things is happening:
+	1.	it is not being created correctly
+	2.	it is being reused incorrectly
+	3.	it exists in DB but is not returned correctly
+	4.	the active project / sidebar state is stale after reset
+	5.	the sidebar is not reflecting the rebuilt project list properly
+
+Please audit that specific path.
+
+⸻
+
+What I want fixed
+
+A. Make onboarding reset a true full rebuild
+
+After reset, the system should be equivalent to a brand-new workspace setup.
+
+B. Ensure reset is robust and complete
+
+Please verify that all project-linked state is cleared or safely reset, and that no stale records survive and contaminate the next onboarding run.
+
+C. Do not reuse the old primary project after reset
+
+A reset should force creation of a new primary project from the onboarding payload.
+
+D. Guarantee that the primary project appears in the sidebar
+
+The main business project entered in onboarding must always appear as a visible project in the sidebar after setup.
+
+E. Ensure the new board reflects only the new onboarding answers
+
+No old projects should remain after reset.
+
+⸻
+
+Expected final behavior
+
+After I click Reset Onboarding:
+	•	onboarding restarts from the beginning
+	•	the old board state is gone
+	•	the old projects are gone
+	•	the old goals are gone
+	•	the old seeded state is gone
+
+After I complete the new onboarding:
+	•	only the projects entered in the new onboarding exist
+	•	the primary business project exists and appears in the sidebar
+	•	the additional projects also appear normally
+	•	the board is fresh, coherent, and clean
+
+⸻
+
+Implementation suggestion
+
+Please treat this as a structural flow issue, not a small patch.
+
+I recommend:
+	1.	audit resetUserOnboardingState(userId) and confirm it fully clears all workspace-creating onboarding state
+	2.	make the reset flow transactional / reliable
+	3.	ensure POST /api/onboarding creates a fresh workspace state and does not reuse old primary project records after reset
+	4.	verify /api/projects always returns the newly created primary project
+	5.	verify sidebar state is refreshed correctly after onboarding completion
+
+⸻
+
+The key principle is simple:
+
+Reset Onboarding must mean: start over completely.
+And once onboarding is complete, the primary business project must appear normally in the sidebar like the rest of the board structure.

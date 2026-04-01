@@ -1,0 +1,37 @@
+VERDICT: APPROVED_WITH_COMMENTS
+The diff implements all five v26 objectives in a functionally complete way, with no blocking regressions observed.
+
+Critical findings / analysis:
+- **1) Time grid readability (time-grid.tsx):** Implemented as requestVERDICT: APPROVED_WITH_COMMENTS
+ed: `PX_PER_HOUR` is 80, minimum block height is 44px, title is always shown, duration/fuThe diff implements all five v26 objectives in a functionally complete way, with no blocking regressions observed.
+ll thresholds updated to 56/72, and completed-state styling no
+w uses `opacity-35 saturate-0` plus `line-through opacityCritical findings / analysis:
+-60` on title.
+- **2) Slot-collision guard (routes.ts):** Add- **1) Time grid readability (time-grid.tsx):** Implemented as requested: `PX_PER_HOUR` is 80, minimum block height is 44px, title is always shown, duration/full thresholds updated to 56/72, and completed-state styling now uses `opacity-35 saturate-0` plus `line-through opacity-60` on title.
+ed pre-save collision handling in `generate-daily` before placement/write. Existing non-completed slots for today are seeded, and pending AI tasks are pushed forward by their own duration until a free start slot is found. This also deduplicates within the AI batch.
+- **3) Dashboard bento tiles (dashboard.tsx):** Old Today/This Week AI tiles were replaced with instant data-driven tiles:
+  - `BentoTileNextAction`: pulls today tasks from `/api/tasks/range`, finds next pending by scheduled time, shows energy emoji, duration, and mini progress bar.
+  - `BentoTileWeekPulse`: pulls week tasks and renders Mon–Fri vertical completion bars with today highlighted indigo and past days emerald.
+  JSX usage updated and `Activity` icon import is present.
+- **4) Strategy banner above grid (planning.tsx):** Compact strategy reasoning banner is now rendered directly above `<TimeGrid>` in week/day main grid column and uses existing `strategyExpanded` toggle behavior.
+- **5) Full Brand DNA prompt (openai.ts + routes.ts):** `generateDailyTasks` prompt/system voice were replaced with a full strategic v26 prompt including broad Brand DNA context (offers, price, voice keywords, pillars, audience psychology, etc.) and explicit 5-step reasoning chain. `callClaude` remains `CLAUDE_MODELS.smart` + `max_tokens: 8000`. `brandDnaInput` in routes now includes the requested additional fields.
+
+Security: none observed (no serious authz/injection/secrets regressions introduced by this diff).
+
+Next actions:
+1. Optional hardening: in collision guard, consider tracking occupied **time ranges** (not only start times) if future changes rely on AI-provided non-sequential times.
+2. Add a focused test for `generate-daily` ensuring duplicate AI `scheduledTime` values are shifted deterministically before save.
+3. Add UI test coverage for Next Up/Week Pulse rendering against mixed scheduled+unscheduled task fixtures.- **2) Slot-collision guard (routes.ts):** Added pre-save collision handling in `generate-daily` before placement/write. Existing non-completed slots for today are seeded, and pending AI tasks are pushed forward by their own duration until a free start slot is found. This also deduplicates within the AI batch.
+- **3) Dashboard bento tiles (dashboard.tsx):** Old Today/This Week AI tiles were replaced with instant data-driven tiles:
+  - `BentoTileNextAction`: pulls today tasks from `/api/tasks/range`, finds next pending by scheduled time, shows energy emoji, duration, and mini progress bar.
+  - `BentoTileWeekPulse`: pulls week tasks and renders Mon–Fri vertical completion bars with today highlighted indigo and past days emerald.
+  JSX usage updated and `Activity` icon import is present.
+- **4) Strategy banner above grid (planning.tsx):** Compact strategy reasoning banner is now rendered directly above `<TimeGrid>` in week/day main grid column and uses existing `strategyExpanded` toggle behavior.
+- **5) Full Brand DNA prompt (openai.ts + routes.ts):** `generateDailyTasks` prompt/system voice were replaced with a full strategic v26 prompt including broad Brand DNA context (offers, price, voice keywords, pillars, audience psychology, etc.) and explicit 5-step reasoning chain. `callClaude` remains `CLAUDE_MODELS.smart` + `max_tokens: 8000`. `brandDnaInput` in routes now includes the requested additional fields.
+
+Security: none observed (no serious authz/injection/secrets regressions introduced by this diff).
+
+Next actions:
+1. Optional hardening: in collision guard, consider tracking occupied **time ranges** (not only start times) if future changes rely on AI-provided non-sequential times.
+2. Add a focused test for `generate-daily` ensuring duplicate AI `scheduledTime` values are shifted deterministically before save.
+3. Add UI test coverage for Next Up/Week Pulse rendering against mixed scheduled+unscheduled task fixtures.

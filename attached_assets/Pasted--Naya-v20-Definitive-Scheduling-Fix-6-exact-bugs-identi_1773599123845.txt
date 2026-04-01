@@ -1,0 +1,239 @@
+# Naya v20 — Definitive Scheduling Fix
+*6 exact bugs identified with line numbers. Fix them in order.*
+
+---
+
+## CONTEXT
+
+Tasks keep overlapping in the planning week view despite multiple fix attempts.
+After line-by-line analysis of v20, there are **6 distinct bugs** all contributing to the same symptom.
+Previous fixes addressed some but not all. This document is complete and final.
+
+---
+
+## BUG 1 — `genDayNextSlot` is never seeded for overflow target dates
+
+**File:** `server/routes.ts`
+**Lines:** ~3114–3116 (seeding loop) and ~3169–3170 (overflow placement)
+
+**What happens:**
+The seeding loop only seeds dates that appear in `byDate` (dates that have NEW tasks assigned to them). When a day is full and tasks overflow to the NEXT work day, `genTryPlaceOnDate()` is called for that overflow date — but that date was never seeded. `genGetSlotForDate()` then calls `genSeedSlotForDate()` for the first time on that date, which reads `existingWeekTasks`. But at this point, tasks previously placed ON THAT DATE in the same generation loop have already been inserted into the DB but are NOT in `existingWeekTasks` (that snapshot was taken before generation started). So the seed returns the wrong start slot → collision.
+
+**Fix:**
+Seed ALL 7 days of the week in the seeding loop, not just the dates in `byDate.keys()`:
+
+```typescript
+// Replace this:
+for (const date of Array.from(byDate.keys())) {
+  genSeedSlotForDate(date);
+}
+
+// With this:
+// Seed all days of the week so overflow dates are never unseeded
+function getWeekDates(start: string): string[] {
+  const dates: string[] = [];
+  const d = new Date(start + 'T00:00:00');
+  for (let i = 0; i < 7; i++) {
+    dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+}
+for (const date of getWeekDates(weekStart)) {
+  genSeedSlotForDate(date);
+}
+// Also seed dates in byDate in case any fall outside the week
+for (const date of Array.from(byDate.keys())) {
+  if (!genDayNextSlot.has(date)) genSeedSlotForDate(date);
+}
+```
+
+Additionally: when `genTryPlaceOnDate()` successfully places a task on an overflow date, it MUST immediately update `genDayNextSlot` for that date with the new end time. Verify that `genDayNextSlot.set(targetDate, slot + duration)` is called after every successful placement inside `genTryPlaceOnDate`.
+
+---
+
+## BUG 2 — `genDayNextSlot` state leaks between projects
+
+**File:** `server/routes.ts`
+**Lines:** ~2816 (project loop start) and ~3092 (genDayNextSlot declaration)
+
+**What happens:**
+`genDayNextSlot` is declared once for the entire `generate-daily` execution. ALL projects share the same slot tracking map. When Project A finishes and slots on Monday are at 11:00, Project B starts processing and correctly picks up from 11:00 — BUT the issue is that the seeding in BUG 1 ran at the start of the loop and seeded slots from `existingWeekTasks`. If Project A placed tasks after that seeding, those are now in `genDayNextSlot`. Project B's tasks then start after Project A's. This is actually CORRECT behavior for sequential scheduling.
+
+**However**, the problem is when `genDayNextSlot` is seeded BEFORE the project loop but the map needs to reflect tasks created DURING the loop. The seeding happens once with pre-existing tasks. As new tasks get created (via `storage.createTask`), they ARE tracked in `genDayNextSlot.set(date, endSlot)`. So cross-project tracking SHOULD work IF Bug 1 is fixed.
+
+**Verify:** Confirm that EVERY call to `storage.createTask(...)` inside the `byDate` loop is immediately followed by updating `genDayNextSlot` for the task's final date. Check both the normal case AND the overflow case:
+
+```typescript
+// After every storage.createTask(), ensure this happens:
+genDayNextSlot.set(finalDate, hhmmToMinutes(scheduledTimeVal) + duration);
+```
+
+If this line is missing for ANY code path (normal slot OR overflow), add it.
+
+---
+
+## BUG 3 — Tasks without `scheduledTime` all render at the same position (7 AM)
+
+**File:** `client/src/components/time-grid.tsx`
+**Lines:** 108–109, 117, 225
+
+**What happens:**
+In `assignLanes()`, tasks with no `scheduledTime` default to `0` minutes (line 108-109) or `GRID_START_HOUR * 60` (line 117). When multiple tasks have no scheduled time, they all get the same start position. `assignLanes` places them in separate lanes (side-by-side columns), but visually they appear to overlap at the top of the day.
+
+Looking at the screenshot: Monday and Tuesday show multiple side-by-side columns from 9 AM. Many of these tasks may simply have no `scheduledTime` set, all rendered at `GRID_START_HOUR`.
+
+**Fix:**
+Tasks without `scheduledTime` should NOT appear in the time grid. They should appear ONLY in the "Unscheduled" sidebar panel that already exists. Update the TimeGrid component to filter them out:
+
+```typescript
+// In the TimeGrid component, when rendering tasks on the grid:
+// Replace:
+const tasksForGrid = dayTasks;
+
+// With:
+const tasksForGrid = dayTasks.filter(t => t.scheduledTime != null && t.scheduledTime !== '');
+const unscheduledTasks = dayTasks.filter(t => !t.scheduledTime);
+// unscheduledTasks go to the sidebar, not the grid
+```
+
+In `assignLanes()`, also guard against null scheduledTime to prevent them being sorted into lanes:
+```typescript
+// Only pass tasks with scheduledTime to assignLanes
+const laneMap = assignLanes(tasksForGrid); // never pass unscheduled tasks
+```
+
+---
+
+## BUG 4 — `replaceExisting` clears tasks but `existingDayCounts` uses stale data
+
+**File:** `server/routes.ts`
+**Lines:** ~2669–2683 (`replaceExisting` block) and ~3013–3018 (`existingDayCounts` calculation)
+
+**What happens:**
+When `replaceExisting: true`, the code:
+1. Clears stale generated tasks (sets scheduledDate/Time to null)
+2. Refetches `existingWeekTasks` (line ~2682)
+3. BUT `existingDayCounts` (used in `rebalanceTasksForward`) is calculated from `existingWeekTasks` much later in the code
+
+The order matters: `existingDayCounts` must be computed AFTER the refetch, not before. Verify the order is:
+1. Clear stale tasks
+2. Refetch `existingWeekTasks = await storage.getTasksInRange(...)`  ← this already exists
+3. Compute `existingDayCounts` from the refreshed `existingWeekTasks`  ← verify this happens AFTER step 2
+
+If `existingDayCounts` is computed before the refetch, move it to after line 2682.
+
+---
+
+## BUG 5 — `generate-daily` inserts duplicates when called multiple times without `replaceExisting`
+
+**File:** `server/routes.ts`
+**Lines:** ~3166 (`storage.createTask()` call)
+
+**What happens:**
+Without `replaceExisting: true`, each call to generate-daily creates NEW tasks. Previous generated tasks remain in the DB. The second call's slot calculation starts after existing tasks (correct), but now there are DOUBLE the tasks. On Monday: 7 from run 1 + 7 from run 2 = 14 tasks.
+
+**Fix — Frontend side** (in `planning.tsx`, "Generate my plan" button handler):
+
+Before calling `generate-daily`, check if the week already has generated non-completed tasks:
+
+```typescript
+const existingGenerated = tasks.filter(t =>
+  !t.completed &&
+  (t.source === 'generated' || t.source === 'ai') &&
+  t.scheduledDate >= weekStart &&
+  t.scheduledDate <= weekEnd
+);
+
+if (existingGenerated.length > 0) {
+  // Show confirmation dialog
+  const confirmed = window.confirm(
+    `You already have ${existingGenerated.length} generated tasks this week. Replace them with a fresh plan?`
+  );
+  if (confirmed) {
+    // Send replaceExisting: true
+    mutate({ ...payload, replaceExisting: true });
+  } else {
+    // User cancelled or wants to keep existing — do nothing
+    return;
+  }
+} else {
+  // No existing generated tasks, generate fresh
+  mutate(payload);
+}
+```
+
+Or better: use the existing dialog UI pattern in Naya instead of `window.confirm`.
+
+---
+
+## BUG 6 — `rebalance-week` does not account for tasks already scheduled today (before current time)
+
+**File:** `server/routes.ts`
+**Lines:** ~3556–3563 (`getNextSlotForDate` in rebalance-week)
+
+**What happens:**
+For today's date, `getNextSlotForDate` returns `Math.max(window.start, clientNowMin + 15)`. This is correct for new placements. BUT it doesn't account for tasks that are ALREADY scheduled today after the current time (e.g., user has a task at 15:00, current time is 10:00). The rebalancer may try to place a new task at 10:15, overlapping with the 15:00 task... wait, no — if the 15:00 task is in `pending` (not completed), it's being rebalanced too. So it gets reassigned. That's fine.
+
+But if there are COMPLETED tasks today that occupy specific time slots, and the rebalancer doesn't account for them, new tasks could be placed at those slots. The `getNextSlotForDate` only considers `clientNowMin`, not completed tasks.
+
+**Fix:** Seed `dayNextSlot` for today by also checking completed tasks' end times:
+
+```typescript
+const getNextSlotForDate = (date: string): number => {
+  const existing = dayNextSlot.get(date);
+  if (existing !== undefined) return existing;
+  const window = getEffectiveWindow(date);
+
+  // Account for completed tasks on this date that occupy specific slots
+  const completedOnDate = allTasks.filter((t: any) =>
+    t.completed &&
+    t.scheduledDate === date &&
+    t.scheduledTime &&
+    /^\d{2}:\d{2}$/.test(t.scheduledTime)
+  );
+  const latestCompletedEnd = completedOnDate.reduce((max: number, t: any) => {
+    const endMin = t.scheduledEndTime
+      ? hhmmToMinutes(t.scheduledEndTime)
+      : hhmmToMinutes(t.scheduledTime) + (t.estimatedDuration || 30);
+    return Math.max(max, endMin);
+  }, window.start);
+
+  return (date === todayStr && clientNowMin !== null)
+    ? Math.max(latestCompletedEnd, clientNowMin + 15)
+    : latestCompletedEnd;
+};
+```
+
+---
+
+## IMPLEMENTATION ORDER
+
+Fix in this exact order (each fix depends on the previous):
+
+1. **BUG 3 first** (time-grid.tsx) — Filter unscheduled tasks OUT of the grid. This alone will fix most of the visual overlap since many tasks have no scheduledTime.
+
+2. **BUG 1** (routes.ts) — Seed all 7 days before the byDate loop. This prevents overflow collisions.
+
+3. **BUG 2 verification** (routes.ts) — Verify `genDayNextSlot.set(finalDate, endSlot)` is called after every `storage.createTask()`. Add where missing.
+
+4. **BUG 5** (planning.tsx + routes.ts) — Add "Replace or keep?" dialog in frontend. This prevents accumulation.
+
+5. **BUG 4** (routes.ts) — Verify `existingDayCounts` is computed after the `replaceExisting` refetch.
+
+6. **BUG 6** (routes.ts) — Seed rebalance-week's `dayNextSlot` with completed task end times.
+
+---
+
+## VERIFICATION TEST
+
+After ALL fixes, run this test:
+
+1. Delete ALL tasks for the current week manually (or use a clean state)
+2. Click "Generate my plan" → all tasks should appear sequentially, NONE overlapping, ALL with a scheduledTime
+3. Click "Generate my plan" again → dialog appears asking Replace/Keep
+4. Click Replace → fresh sequential plan, no overlaps
+5. Click "Rebalance week" once → tasks redistribute, no overlaps
+6. In the time grid, verify there are ZERO tasks in the unscheduled sidebar that are appearing on the grid
+
+**Success criterion:** In the week view, at no point should two task blocks appear side-by-side in the same day column. Every task should be stacked vertically (sequential). The `assignLanes` function should always return `totalLanes = 1` for all tasks after a fresh generation.

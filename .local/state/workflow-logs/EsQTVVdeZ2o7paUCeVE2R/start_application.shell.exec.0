@@ -1,0 +1,150 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[1G[0K4:49:22 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 17 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+4:49:29 PM [express] GET /api/auth/user 401 in 2ms :: {"message":"Unauthorized"}
+4:49:29 PM [express] GET /api/preferences 401 in 0ms :: {"message":"Unauthorized"}
+4:49:35 PM [express] GET /api/preferences 200 in 212ms :: {"id":13,"userId":"44761544","activeProjec…
+4:49:35 PM [express] GET /api/auth/user 200 in 214ms :: {"id":"44761544","email":"mejean.jeanne@gmai…
+4:49:36 PM [express] GET /api/projects 200 in 20ms :: [{"id":15,"userId":"44761544","name":"Agence J…
+4:49:36 PM [express] GET /api/brand-dna 304 in 20ms :: {"id":13,"userId":"44761544","projectId":null…
+4:49:36 PM [express] GET /api/user/energy 200 in 7ms :: {"energyLevel":"high","emotionalContext":nul…
+4:49:36 PM [express] GET /api/projects/17 200 in 25ms :: {"id":17,"userId":"44761544","name":"Naya",…
+4:49:36 PM [express] GET /api/projects/16 200 in 26ms :: {"id":16,"userId":"44761544","name":"Encore…
+4:49:36 PM [express] GET /api/projects/15 200 in 35ms :: {"id":15,"userId":"44761544","name":"Agence…
+4:49:36 PM [express] GET /api/persona/my-persona 304 in 36ms :: {"id":6,"userId":"44761544","project…
+4:49:36 PM [express] GET /api/dashboard/schedule-preview 200 in 49ms :: {"tasksByDate":{"2026-03-19"…
+4:49:36 PM [express] GET /api/milestone-triggers 200 in 8ms :: []
+4:49:36 PM [express] GET /api/tasks/range 200 in 9ms :: [{"id":407,"userId":"44761544","projectId":1…
+4:49:36 PM [express] GET /api/me/operating-profile 304 in 15ms :: {"id":3,"userId":"44761544","plann…
+4:49:36 PM [express] POST /api/projects/15/recommendations 200 in 20ms :: {"projectId":15,"projectNa…
+4:49:36 PM [express] POST /api/projects/16/recommendations 200 in 19ms :: {"projectId":16,"projectNa…
+4:49:36 PM [express] GET /api/tasks/range 304 in 7ms :: [{"id":401,"userId":"44761544","projectId":1…
+4:49:36 PM [express] GET /api/projects/18 304 in 10ms :: {"id":18,"userId":"44761544","name":"Jeanne…
+4:49:36 PM [express] GET /api/tasks/dependencies 304 in 11ms :: [{"id":28,"taskId":382,"dependsOnTas…
+4:49:36 PM [express] GET /api/tasks/range 200 in 7ms :: [{"id":407,"userId":"44761544","projectId":1…
+4:49:36 PM [express] POST /api/projects/17/recommendations 200 in 11ms :: {"projectId":17,"projectNa…
+4:49:36 PM [express] GET /api/persona/target-personas 200 in 9ms :: [{"id":6,"userId":"44761544","pr…
+4:49:36 PM [express] GET /api/capture 304 in 8ms :: []
+4:49:40 PM [express] GET /api/capture 304 in 6ms :: []
+4:49:41 PM [express] GET /api/milestone-triggers 304 in 7ms :: []
+4:49:44 PM [express] GET /api/capture 304 in 7ms :: []
+4:49:46 PM [express] GET /api/milestone-triggers 304 in 7ms :: []
+4:49:49 PM [express] GET /api/capture 304 in 8ms :: []
+4:49:51 PM [express] GET /api/milestone-triggers 304 in 7ms :: []
+4:49:53 PM [express] GET /api/capture 304 in 7ms :: []
+4:49:56 PM [express] GET /api/milestone-triggers 304 in 6ms :: []
+4:49:57 PM [express] GET /api/capture 304 in 6ms :: []
+4:50:01 PM [express] GET /api/capture 304 in 7ms :: []
+4:50:02 PM [express] GET /api/milestone-triggers 304 in 6ms :: []
+4:50:02 PM [express] GET /api/availability 200 in 11ms :: [{"id":4,"userId":"44761544","date":"2026-…
+4:50:02 PM [express] GET /api/tasks/range 304 in 24ms :: [{"id":401,"userId":"44761544","projectId":…
+4:50:02 PM [express] GET /api/tasks/range 304 in 27ms :: [{"id":401,"userId":"44761544","projectId":…
+8:39:44 PM [express] GET /api/preferences 200 in 272ms :: {"id":13,"userId":"44761544","activeProjec…
+8:39:44 PM [express] GET /api/auth/user 401 in 273ms :: {"message":"Unauthorized"}
+8:43:04 PM [express] GET /api/auth/user 401 in 1ms :: {"message":"Unauthorized"}
+8:43:04 PM [express] GET /api/preferences 401 in 1ms :: {"message":"Unauthorized"}
+8:43:50 PM [express] GET /api/preferences 304 in 24ms :: {"id":13,"userId":"44761544","activeProject…
+8:43:50 PM [express] GET /api/auth/user 200 in 26ms :: {"id":"44761544","email":"mejean.jeanne@gmail…
+8:43:50 PM [express] GET /api/brand-dna 304 in 8ms :: {"id":13,"userId":"44761544","projectId":null,…
+8:43:50 PM [express] GET /api/projects 304 in 8ms :: [{"id":15,"userId":"44761544","name":"Agence JM…
+8:43:51 PM [express] GET /api/persona/my-persona 304 in 11ms :: {"id":6,"userId":"44761544","project…
+8:43:51 PM [express] GET /api/user/energy 304 in 10ms :: {"energyLevel":"high","emotionalContext":nu…
+8:43:51 PM [express] GET /api/tasks/dependencies 200 in 16ms :: [{"id":28,"taskId":382,"dependsOnTas…
+8:43:51 PM [express] GET /api/projects/15 304 in 18ms :: {"id":15,"userId":"44761544","name":"Agence…
+8:43:51 PM [express] GET /api/me/operating-profile 304 in 15ms :: {"id":3,"userId":"44761544","plann…
+8:43:51 PM [express] GET /api/tasks/range 304 in 29ms :: [{"id":407,"userId":"44761544","projectId":…
+8:43:51 PM [express] GET /api/tasks/range 304 in 9ms :: [{"id":401,"userId":"44761544","projectId":1…
+8:43:51 PM [express] GET /api/projects/17 304 in 13ms :: {"id":17,"userId":"44761544","name":"Naya",…
+8:43:51 PM [express] GET /api/projects/16 304 in 11ms :: {"id":16,"userId":"44761544","name":"Encore…
+8:43:51 PM [express] POST /api/projects/15/recommendations 200 in 16ms :: {"projectId":15,"projectNa…
+8:43:51 PM [express] POST /api/projects/16/recommendations 200 in 17ms :: {"projectId":16,"projectNa…
+8:43:51 PM [express] POST /api/projects/17/recommendations 200 in 14ms :: {"projectId":17,"projectNa…
+8:43:51 PM [express] GET /api/tasks/range 304 in 8ms :: [{"id":407,"userId":"44761544","projectId":1…
+8:43:51 PM [express] GET /api/projects/18 304 in 11ms :: {"id":18,"userId":"44761544","name":"Jeanne…
+8:43:51 PM [express] GET /api/persona/target-personas 200 in 7ms :: [{"id":6,"userId":"44761544","pr…
+8:43:51 PM [express] GET /api/milestone-triggers 304 in 8ms :: []
+8:43:51 PM [express] GET /api/capture 304 in 7ms :: []
+8:43:51 PM [express] GET /api/dashboard/schedule-preview 304 in 29ms :: {"tasksByDate":{"2026-03-19"…
+8:43:55 PM [express] GET /api/capture 304 in 7ms :: []
+8:43:56 PM [express] GET /api/milestone-triggers 304 in 7ms :: []
+8:53:39 PM [express] GET /api/preferences 401 in 1ms :: {"message":"Unauthorized"}
+8:53:39 PM [express] GET /api/auth/user 401 in 3ms :: {"message":"Unauthorized"}
+8:58:32 PM [express] GET /api/auth/user 401 in 1ms :: {"message":"Unauthorized"}
+8:58:32 PM [express] GET /api/preferences 401 in 1ms :: {"message":"Unauthorized"}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m9:02:15 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/dashboard.tsx, /src/index.css?v=QFpuPXDop8JPD14haw4Pb[22m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m9:02:18 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/onboarding.tsx, /src/index.css?v=QFpuPXDop8JPD14haw4Pb[22m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m9:02:21 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/onboarding.tsx, /src/index.css?v=QFpuPXDop8JPD14haw4Pb[22m [33m(x2)[39m

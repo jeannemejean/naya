@@ -1,0 +1,212 @@
+# NAYA V22 — THREE BUGS, THREE SURGICAL FIXES
+
+---
+
+## STATUS: WHAT V22 DID
+
+V22 added `useAutoRebalance` — a hook that triggers `rebalance-week` automatically when a task is marked complete.
+That is a good improvement. But it did NOT fix the root cause bugs. Here are the 3 active bugs remaining.
+
+---
+
+## BUG 1 — `generate-daily` still places new tasks on top of completed ones
+### Status: NEVER BEEN FIXED (same as v21)
+
+**File:** `server/routes.ts`
+**Function:** `genSeedSlotForDate` (around line 3094)
+
+**Current broken code:**
+```typescript
+const existingOnDate = (existingWeekTasks as any[]).filter(
+  (t: any) => t.scheduledDate === d && !t.completed &&   // <-- BUG
+    t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)
+);
+```
+
+**Why it breaks:** `!t.completed` tells the function to ignore time slots occupied by completed tasks.
+So if you completed a task at 09:00–09:30, the algorithm acts as if 09:00 is free.
+It places a new task at 09:00. Both tasks (completed + new) now appear at 09:00 in the planning view → visual overlap.
+
+**Fix — remove `&& !t.completed`:**
+```typescript
+const existingOnDate = (existingWeekTasks as any[]).filter(
+  (t: any) => t.scheduledDate === d &&
+    t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)
+);
+```
+
+**Also fix `effectiveDailyCap` just below (around line 3022):**
+
+Current:
+```typescript
+const effectiveDailyCap = Math.max(4, maxExistingOnAnyDay + 2);
+```
+
+Fix:
+```typescript
+const effectiveDailyCap = Math.min(6, Math.max(4, maxExistingOnAnyDay + 1));
+```
+
+This prevents the daily task cap from growing beyond 6 (which is what causes weeks like Apr 13 with 10 tasks/day).
+
+---
+
+## BUG 2 — Campaign sub-tasks scheduled in wrong order (Edit before Film)
+
+**File:** `server/routes.ts`
+**Function:** `decomposeContentTask` scheduling loop inside `/api/campaigns/:id/launch` (around line 5856)
+
+**What `decomposeContentTask` does for a video task:**
+It splits one video task into 4 steps with negative offsets from the publication date:
+1. `Script` → publication - 5 days
+2. `Shoot/record` → publication - 3 days
+3. `Edit & caption` → publication - 1 day
+4. `Schedule & publish` → publication - 0 days
+
+**The bug:** When step 1 (Script) can't find a free slot on its target date, it moves FORWARD day by day.
+It might end up scheduled AFTER step 2 (Shoot) or even AFTER step 3 (Edit).
+Result: you see "Edit video" on the calendar BEFORE "Film video". Exactly what you reported.
+
+**The fix:** Track the last placed date for each sub-task sequence. Each next sub-task must be placed AFTER the previous one.
+
+**Current broken loop (around line 5856–5884):**
+```typescript
+for (let taskIdx = 0; taskIdx < phaseTasks.length; taskIdx++) {
+  const originalTask = phaseTasks[taskIdx];
+  const publicationDate = publicationDates[taskIdx];
+  const subTasks = decomposeContentTask(originalTask);
+
+  for (const sub of subTasks) {
+    const offset = typeof sub.daysBeforePublication === 'number' ? sub.daysBeforePublication : 0;
+    let scheduledDate = campaignAddDays(publicationDate, offset);
+
+    if (scheduledDate < phaseRange.start) scheduledDate = new Date(phaseRange.start);
+    if (scheduledDate < startDate) scheduledDate = new Date(startDate);
+
+    let safety = 0;
+    let foundSlot = false;
+    while (safety < 30) {
+      const ds = campaignDateToStr(scheduledDate);
+      if (isWorkDay(ds) && campaignDayAvailable(ds, sub.estimatedDuration)) { foundSlot = true; break; }
+      scheduledDate = campaignAddDays(scheduledDate, 1);
+      safety++;
+    }
+    // ... create task
+  }
+}
+```
+
+**Fixed loop — add `lastSubtaskDate` tracking:**
+```typescript
+for (let taskIdx = 0; taskIdx < phaseTasks.length; taskIdx++) {
+  const originalTask = phaseTasks[taskIdx];
+  const publicationDate = publicationDates[taskIdx];
+  const subTasks = decomposeContentTask(originalTask);
+
+  let lastSubtaskDate: Date | null = null; // ADD THIS
+
+  for (const sub of subTasks) {
+    const offset = typeof sub.daysBeforePublication === 'number' ? sub.daysBeforePublication : 0;
+    let scheduledDate = campaignAddDays(publicationDate, offset);
+
+    if (scheduledDate < phaseRange.start) scheduledDate = new Date(phaseRange.start);
+    if (scheduledDate < startDate) scheduledDate = new Date(startDate);
+
+    // ADD THIS: never schedule before the previous sub-task
+    if (lastSubtaskDate) {
+      const dayAfterLast = campaignAddDays(lastSubtaskDate, 1);
+      if (scheduledDate <= lastSubtaskDate) scheduledDate = dayAfterLast;
+    }
+
+    let safety = 0;
+    let foundSlot = false;
+    while (safety < 30) {
+      const ds = campaignDateToStr(scheduledDate);
+      if (isWorkDay(ds) && campaignDayAvailable(ds, sub.estimatedDuration)) { foundSlot = true; break; }
+      scheduledDate = campaignAddDays(scheduledDate, 1);
+      safety++;
+    }
+
+    if (!foundSlot) {
+      console.warn(`Campaign ${campaign.id}: could not find valid slot for sub-task "${sub.title}" within 30-day search`);
+      continue;
+    }
+
+    lastSubtaskDate = new Date(scheduledDate); // ADD THIS: track last placed date
+
+    // ... rest of create task code unchanged
+  }
+}
+```
+
+**Apply this SAME fix in the `/api/campaigns/:id/redeploy` endpoint** (around line 6290) — same loop structure, same fix needed.
+
+---
+
+## BUG 3 — Old data in future weeks (Apr 13 = 10 tasks/day)
+
+**This is NOT a code bug. This is stale database data** from previous broken generate-daily runs.
+
+Bug 1 (above) prevented the `effectiveDailyCap` from working correctly, which allowed 10+ tasks per day to accumulate in the DB for future weeks.
+
+**Fix for old data:**
+Add a "Clear & Regenerate" button for any week in the planning view, not just the current week.
+
+**In `client/src/pages/planning.tsx`**, the existing "Rebalance week" link only rebalances — it doesn't delete bad tasks.
+
+Add this new API endpoint in `server/routes.ts`:
+```typescript
+app.post('/api/tasks/clear-week', isAuthenticated, async (req: any, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const { weekStart } = req.body;
+    if (!weekStart) return res.status(400).json({ message: "weekStart required" });
+
+    const weekEnd = (() => {
+      const d = new Date(weekStart + 'T00:00:00');
+      d.setDate(d.getDate() + 6);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+
+    const tasks = await storage.getTasksInRange(userId, weekStart, weekEnd);
+    const toUnschedule = tasks.filter((t: any) =>
+      !t.completed && (t.source === 'generated' || t.source === 'ai')
+    );
+
+    for (const t of toUnschedule) {
+      await storage.updateTask(t.id, { scheduledDate: null, scheduledTime: null, scheduledEndTime: null });
+    }
+
+    res.json({ cleared: toUnschedule.length });
+  } catch (error) {
+    console.error("Error clearing week:", error);
+    res.status(500).json({ message: "Failed to clear week" });
+  }
+});
+```
+
+**In `client/src/pages/planning.tsx`**, add a "Clear week" button next to "Rebalance week" that calls this endpoint for `currentWeekStart`, then prompts to regenerate.
+
+---
+
+## SUMMARY: 3 CHANGES, 2 FILES
+
+| # | File | What to change |
+|---|------|----------------|
+| 1 | `server/routes.ts` | Remove `&& !t.completed` from `genSeedSlotForDate` in `generate-daily` |
+| 1b | `server/routes.ts` | Change `effectiveDailyCap` to `Math.min(6, Math.max(4, maxExistingOnAnyDay + 1))` |
+| 2 | `server/routes.ts` | Add `lastSubtaskDate` tracking in the campaign `launch` subtask loop |
+| 2b | `server/routes.ts` | Same fix in the campaign `redeploy` subtask loop |
+| 3 | `server/routes.ts` + `planning.tsx` | Add `POST /api/tasks/clear-week` endpoint + "Clear week" button in UI |
+
+**Do not touch any other file.**
+
+---
+
+## VERIFICATION AFTER DEPLOYING
+
+**Bug 1 test:** Complete 2 tasks today. Click "Generate my plan" → Replace. New tasks should start AFTER the completed tasks' time slots.
+
+**Bug 2 test:** Go to the "Brand Resonance Evolution" campaign → Redeploy. In the planning view, check that Script appears before Shoot, which appears before Edit, which appears before Publish — in calendar order.
+
+**Bug 3 test:** Navigate to the week of Apr 13. Click "Clear week". Then "Generate my plan" → the week should show clean, evenly distributed tasks (4 per day, no overlap).

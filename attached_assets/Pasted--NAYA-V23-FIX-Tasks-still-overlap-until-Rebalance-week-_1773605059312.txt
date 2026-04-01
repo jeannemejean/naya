@@ -1,0 +1,90 @@
+# NAYA V23 — FIX: Tasks still overlap until "Rebalance week" is clicked
+
+## The symptom
+After clicking "Generate my plan", some tasks still appear at the same time in the planning view.
+Only after clicking "Rebalance week" does the schedule become clean.
+
+## The root cause
+When the user clicks "Generate my plan" and already has generated tasks for the week, a dialog appears:
+- "Replace existing" → sends `replaceExisting: true` → old tasks cleared, fresh generation ✓
+- "Add to existing" → sends `replaceExisting: false` → new tasks added ON TOP of old ones → overlap
+
+The problem: "Add to existing" creates new tasks, but the old tasks still exist with their (possibly duplicate) scheduledTimes. The new tasks get correct sequential times, but the old ones remain as-is — causing visual overlap.
+
+After "Rebalance week", ALL tasks (old + new) are rescheduled sequentially → overlap gone.
+
+## The real fix: make Replace the default behavior
+
+The "Add to existing" option is almost never what the user wants. They should always regenerate cleanly.
+
+**Change 1: In `client/src/pages/planning.tsx` — modify the dialog**
+
+Find the existing replace dialog (around line 855–870) and change its behavior:
+- Remove the "Add to existing" button entirely
+- Make it a single confirmation dialog: "You have X generated tasks this week. Regenerate your plan?"
+- One button: "Regenerate" (which always calls `doGenerate(true)` with replaceExisting: true)
+- One cancel button: "Keep current plan"
+
+Current code to find:
+```tsx
+onClick={() => { setReplaceDialogOpen(false); doGenerate(false); }}  // "Add"
+onClick={() => { setReplaceDialogOpen(false); doGenerate(true); }}   // "Replace"
+```
+
+Replace with:
+```tsx
+// Remove the doGenerate(false) button entirely
+// Keep only:
+onClick={() => { setReplaceDialogOpen(false); doGenerate(true); }}
+```
+
+And change the dialog text from "Replace or add?" to:
+```tsx
+<p className="text-sm text-slate-600 dark:text-gray-400">
+  You have {existingGeneratedCount} generated task{existingGeneratedCount !== 1 ? 's' : ''} scheduled this week.
+  Regenerating will replace them with a fresh plan.
+</p>
+```
+
+With two buttons:
+- "Keep current plan" → `setReplaceDialogOpen(false)` (do nothing)
+- "Regenerate plan" → `setReplaceDialogOpen(false); doGenerate(true);`
+
+**Change 2: In `client/src/pages/planning.tsx` — auto-trigger replace when generating with no existing tasks**
+
+The current `handleGeneratePlan` function already calls `doGenerate()` without any argument when there are no existing tasks. That's correct — no clearing needed if nothing exists.
+
+No change needed here.
+
+**Change 3 (optional but ideal): Auto-run rebalance after generation**
+
+In `planning.tsx`, in the `generateDailyMutation.onSuccess` callback (around line 314), add a call to `triggerAutoRebalance()` after the query invalidations:
+
+```tsx
+onSuccess: (data: any) => {
+  queryClient.invalidateQueries({ queryKey: rangeQueryKey });
+  queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+  queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'], exact: false });
+
+  // ADD THIS: auto-rebalance after generation to ensure clean time slots
+  setTimeout(() => triggerAutoRebalance(), 1500);
+
+  // ... rest of onSuccess unchanged
+}
+```
+
+The 1500ms delay gives the query invalidation time to settle before triggering the rebalance.
+
+## Why this works
+- "Replace" → old tasks cleared → only new tasks exist → no overlap possible
+- After generation, auto-rebalance runs → any edge-case timing issues get cleaned up automatically
+- User never has to manually click "Rebalance week" again
+
+## Summary of changes
+
+| File | What to change |
+|------|----------------|
+| `client/src/pages/planning.tsx` | Replace the "Replace or Add" dialog with a single "Regenerate" confirmation |
+| `client/src/pages/planning.tsx` | Add `setTimeout(() => triggerAutoRebalance(), 1500)` in `generateDailyMutation.onSuccess` |
+
+**Do not touch server/routes.ts for this fix.**

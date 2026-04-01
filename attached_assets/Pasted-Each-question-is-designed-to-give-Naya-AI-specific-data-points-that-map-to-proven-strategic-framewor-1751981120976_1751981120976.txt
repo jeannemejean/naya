@@ -1,0 +1,186 @@
+Each question is designed to give Naya AI specific data points that map to proven strategic frameworks, audience psychology patterns, and conversion architectures.
+
+🎯 SECTION 1: BUSINESS INTELLIGENCE
+Maps to: Strategic Framework Database + Success Pattern Matching
+Q1: Business Context
+"What type of business do you run?"
+
+ B2B Consulting (strategy, marketing, operations)
+ B2B Creative Services (design, copywriting, development)
+ B2C Coaching (business, life, health, relationships)
+ B2C Products (physical products, e-commerce)
+ Digital Products (courses, templates, software)
+ Creative/Content (photography, videography, art)
+ Professional Services (legal, accounting, real estate)
+ Other: ________________
+
+AI Uses This For: Industry-specific content patterns, messaging frameworks, platform preferences
+Q2: Business Model Depth
+"How do clients typically buy from you?"
+
+ High-ticket 1:1 services ($2,000+ per client)
+ Mid-tier group programs ($500-$2,000)
+ Low-ticket digital products ($50-$500)
+ Recurring subscriptions/memberships
+ Mix of price points
+ Still figuring this out
+
+AI Uses This For: Sales funnel architecture, content-to-conversion ratios, pricing psychology
+Q3: Revenue Urgency
+"What's your revenue situation right now?"
+
+ Need clients ASAP (under $5k/month)
+ Growing but inconsistent ($5k-$15k/month)
+ Stable, want to scale ($15k-$30k/month)
+ Scaling, want systems ($30k+/month)
+ Haven't started monetizing yet
+
+AI Uses This For: Urgency vs. authority balance, conversion frequency, offer positioning
+
+👤 SECTION 2: AUDIENCE PSYCHOLOGY
+Maps to: Buyer Psychology Database + Messaging Triggers
+Q4: Target Audience Identity
+"Who is your ideal client?"
+
+ Solopreneurs/Freelancers (0-2 employees)
+ Small business owners (3-25 employees)
+ Corporate professionals (side hustle/career transition)
+ Established entrepreneurs (scaling/optimizing)
+ Creatives/Artists (monetizing skills)
+ Consumers (B2C individual buyers)
+ Other: ________________
+
+AI Uses This For: Content sophistication level, platform behavior, decision-making patterns
+Q5: Core Audience Pain Point
+"What's the #1 problem your audience loses sleep over?"
+
+ "I don't have time to market my business consistently"
+ "I don't know how to find quality clients/customers"
+ "I'm undercharging and feeling overwhelmed"
+ "My content gets no engagement or leads"
+ "I hate selling but need more revenue"
+ "I don't know what content actually converts"
+ "I can't scale beyond trading time for money"
+ Other: ________________
+
+AI Uses This For: Hook development, content angles, emotional triggers, solution positioning
+Q6: Audience Aspiration
+"When your audience succeeds, what does their life look like?"
+
+ Steady stream of dream clients without cold outreach
+ 6-figure business with work-life balance
+ Recognition as a go-to expert in their field
+ Scalable business that doesn't depend on their time
+ Consistent, predictable monthly revenue
+ Creative freedom with financial security
+ Other: ________________
+
+AI Uses This For: Aspirational content themes, success story angles, transformation messaging
+
+🗣️ SECTION 3: BRAND POSITIONING
+Maps to: Voice + Tone Algorithms + Authority Positioning
+Q7: Authority Level
+"How do you want your audience to see you?"
+
+ The Approachable Expert (friendly teacher who simplifies complex topics)
+ The Thought Leader (industry authority with cutting-edge insights)
+ The Relatable Peer (someone on the journey with them)
+ The Straight Shooter (direct, no-BS advisor who tells hard truths)
+ The Inspiring Guide (motivational leader who helps them dream bigger)
+
+AI Uses This For: Content tone, positioning strategy, credibility building approach
+Q8: Communication Style
+"How do you naturally communicate?"
+
+ Direct & No-Nonsense (efficient, results-focused)
+ Warm & Encouraging (supportive, empathetic)
+ Analytical & Data-Driven (logical, evidence-based)
+ Creative & Storytelling (narrative, metaphor-rich)
+ Humorous & Relatable (light, personality-driven)
+
+AI Uses This For: Caption tone, content format selection, engagement style
+Q9: Unique Positioning
+"What makes your approach different?" (Open text)
+Example prompts shown:
+
+"I help busy founders by..."
+"Unlike other coaches, I..."
+"My secret is..."
+"What most people get wrong about [your topic] is..."
+
+AI Uses This For: Differentiation angles, content themes, competitive positioning
+
+📱 SECTION 4: PLATFORM STRATEGY
+Maps to: Platform-Specific Success Patterns + Audience Behavior
+Q10: Platform Priority
+"Where does your audience spend the most time?"
+
+ Instagram (visual content, stories, behind-the-scenes)
+ LinkedIn (professional content, networking, thought leadership)
+ TikTok (educational entertainment, younger audience)
+ Email (owned audience, direct communication)
+ YouTube (long-form education, tutorials)
+ Twitter/X (real-time thoughts, industry conversations)
+ I'm not sure
+
+AI Uses This For: Platform-specific content strategies, posting frequencies, engagement tactics
+Q11: Current Presence
+"What's your current social media situation?"
+
+ Just starting (under 500 followers)
+ Small but engaged (500-2,000 followers)
+ Growing audience (2,000-10,000 followers)
+ Established presence (10,000+ followers)
+ Have followers but low engagement
+ Inconsistent posting, need structure
+
+AI Uses This For: Growth strategies, content complexity, authority building timeline
+
+🎯 SECTION 5: GOALS & TIMELINE
+Maps to: Strategic Framework Selection + Success Metrics
+Q12: Primary Goal
+"What's your #1 business goal for the next 90 days?"
+
+ Book more discovery calls/consultations
+ Increase audience size and engagement
+ Launch a new offer/product
+ Build authority and credibility
+ Generate consistent leads
+ Create predictable revenue
+
+AI Uses This For: Content strategy focus, conversion funnel design, success metrics
+Q13: Content Bandwidth
+"How much time can you realistically spend on content?"
+
+ 30 minutes per day max
+ 1 hour per day
+ 2-3 hours per day
+ 4+ hours per day (content is my main marketing)
+ Batch content on weekends only
+ Very inconsistent, need simple system
+
+AI Uses This For: Content volume, posting frequency, complexity level, automation needs
+Q14: Success Definition
+"In 6 months, what would make you think 'Naya completely changed my business'?"
+
+ I have more clients than I can handle
+ I'm known as the go-to expert in my niche
+ My content consistently gets engagement and leads
+ I have a predictable system for getting clients
+ I've doubled my revenue
+ I feel confident and clear about my marketing
+
+AI Uses This For: Long-term strategy alignment, milestone tracking, expectation setting
+
+🧬 BONUS QUESTIONS (Optional)
+For Advanced Strategic Customization
+Q15: Current Challenges
+"What's your biggest marketing challenge right now?" (Open text)
+Q16: Past Success
+"Describe your best client/customer win:" (Open text)
+Q17: Inspiration
+"Name 1-2 brands/creators you admire and why:" (Open text)
+
+🤖 AI PROCESSING LOGIC
+After Each Question:
+User Input → Strategic Database Query → Pattern Matching → Framework Selection

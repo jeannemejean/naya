@@ -1,0 +1,104 @@
+The screenshot makes the current planning bug very clear.
+
+Today is March 12, yet Naya is still assigning tasks to March 9, 10, and 11, which are already in the past.
+
+At the same time, March 12 is overloaded with 12 tasks, while later days such as Saturday and Sunday are nearly empty.
+
+So this confirms two things:
+
+1. The past-date bug is still not fixed at the core scheduling layer
+
+This is not just a display issue or a planning-page issue.
+
+The system is still allowing task placement before today during plan generation.
+
+I need a hard scheduling invariant implemented at the core planning engine level:
+
+Required rule
+
+No task may ever be assigned to a date earlier than the user’s current local date, unless it is explicitly marked as overdue carryover.
+
+This rule must be enforced in:
+	•	monthly generation
+	•	weekly refinement
+	•	daily generation
+	•	replanning
+	•	any redistribution / realism logic
+
+This should happen before tasks are saved, not just after rendering.
+
+In other words:
+the planning engine must treat today as the hard lower bound for all scheduling.
+
+⸻
+
+2. The weekly load-balancing logic is still weak
+
+Even after excluding past dates, the plan should not overload one day with 12 tasks while leaving the rest of the week almost empty.
+
+So the engine must do a second step after applying the “today floor”:
+
+Required balancing behavior
+
+After removing past dates from the candidate planning window, Naya should redistribute tasks across the remaining available days based on:
+	•	daily capacity
+	•	estimated duration
+	•	workflow bundles
+	•	dependency chains
+	•	realistic deep work limits
+	•	context switching constraints
+
+The result should be a balanced forward-looking schedule, not:
+	•	tasks in the past
+	•	one overloaded current day
+	•	empty later days
+
+⸻
+
+Requested implementation change
+
+Please update the planning engine so it works like this:
+
+Step 1 — Define planning window
+
+Determine the current local date of the user and set it as the minimum allowed scheduling date.
+
+Step 2 — Filter invalid dates
+
+Any generated candidate task assigned before today must be automatically reassigned into the valid future window.
+
+Step 3 — Rebalance across valid days
+
+Once past dates are excluded, redistribute tasks across the remaining days of the week/month according to:
+	•	capacity
+	•	estimated duration
+	•	workflow bundles
+	•	dependencies
+	•	focus/load balancing rules
+
+Step 4 — Save only valid future-facing schedule
+
+The final saved schedule should never include past dates unless explicitly marked as overdue carryover.
+
+⸻
+
+Additional note
+
+This screenshot also suggests that “Generate my plan” is still too reactive and not balancing the week well enough.
+
+So I want the fix to address both:
+	1.	hard no-past-date scheduling
+	2.	smarter forward distribution of workload
+
+⸻
+
+Expected behavior
+
+If today is March 12:
+	•	no newly generated task should appear on March 9, 10, or 11
+	•	tasks should be distributed from March 12 onward only
+	•	the week should be balanced realistically across the remaining valid days
+
+⸻
+
+Please treat this as a core planning-engine bug, not a small UI issue.

@@ -1,0 +1,156 @@
+After testing the latest version of Naya, I would like to request a structural change to the onboarding flow. This is not just a UI adjustment — it is a change in how the system understands the user from the beginning.
+
+Right now, onboarding mostly collects information about one business context and then the user has to create projects, goals, and additional structure later once they arrive on the dashboard.
+
+However, the goal of Naya is that when the user finishes onboarding, their board should already feel complete and structured, not empty.
+
+So I would like the onboarding to be redesigned as a three-layer setup process.
+
+⸻
+
+1. Layer 1 — The Person (User Operating Profile)
+
+The first part of onboarding should focus entirely on the user as a person, not their business.
+
+This section should capture:
+
+• how the user works
+• what motivates them
+• when they have the most energy
+• what types of tasks they avoid
+• how they prefer to organize their work
+• their friction patterns or common blockers
+
+This information feeds the User Operating Profile that we already added to the system.
+
+Example section title:
+
+“How You Work”
+
+The purpose is to let Naya understand the human using the system before understanding their projects.
+
+⸻
+
+2. Layer 2 — Primary Work / Main Business
+
+Once we understand the user, the onboarding should move to the primary professional activity.
+
+For most users this will be their main business.
+
+Example in my case:
+
+• Agence JMD
+
+Here the onboarding should collect:
+
+• project name
+• type of work
+• goals
+• target audience
+• positioning
+• monetization intent
+• main constraints
+• communication style
+
+At the end of this section, the system should automatically create:
+
+• the first project
+• its project strategy profile
+• initial goals if provided
+
+⸻
+
+3. Layer 3 — Other Projects or Life Goals
+
+After the main project is defined, the onboarding should ask:
+
+“Do you have other projects or personal goals you want to organize in Naya?”
+
+This is important because many users will have multiple things they are building or pursuing.
+
+Examples could include:
+
+• a creative project
+• a personal brand
+• learning something (like learning Japanese)
+• a side business
+• a passion project
+• a long-term life goal
+
+The onboarding should allow the user to add multiple additional projects at this stage.
+
+For each additional project we would capture a lighter set of information:
+
+• project name
+• project type (business / creative / learning / personal / lifestyle)
+• intent (revenue / exploration / personal growth / etc.)
+• optional goal or milestone
+
+These projects would automatically be created in the database during onboarding.
+
+⸻
+
+4. Result — A Fully Structured Board
+
+When onboarding is finished, the user should arrive on the dashboard with:
+
+• their operating profile already stored
+• their main project created
+• any additional projects created
+• initial goals already attached
+
+This way the board does not feel empty.
+
+Instead, it already reflects the user’s real life structure.
+
+For example in my case, onboarding could create something like:
+
+Primary project
+• Agence JMD
+
+Additional projects
+• Encore Merci
+• Naya development
+• Learning Japanese
+
+Then the dashboard immediately becomes meaningful.
+
+⸻
+
+5. Why This Matters
+
+Naya is designed to be a life and project operating system, not just a task manager.
+
+So onboarding should capture the full landscape of what the user is building or pursuing from the beginning.
+
+This approach has several advantages:
+
+• the dashboard feels complete from day one
+• the AI has more context immediately
+• the system understands the user’s life structure
+• fewer manual setup steps after onboarding
+
+⸻
+
+6. Implementation Direction
+
+To implement this, onboarding should:
+	1.	Start with the User Operating Profile section
+	2.	Move to Primary Project setup
+	3.	Allow adding Additional Projects (repeatable step)
+	4.	Save all data and generate the board state before redirecting to the dashboard
+
+The final onboarding step should still end with the “Generate My Board” loading state.
+
+⸻
+
+Goal
+
+The goal is that when a user finishes onboarding, Naya already knows:
+
+• who the user is
+• how they function
+• what their main work is
+• what other projects or goals exist in their life
+
+And the dashboard should reflect this immediately.

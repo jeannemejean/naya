@@ -1,0 +1,90 @@
+I need you to deeply understand the architecture before making changes. Please read this entire brief carefully — it describes the real root causes, not just surface symptoms.
+
+THE CORE PROBLEM — Two separate systems are broken independently
+Problem A — The scheduling engine ignores the current time of day
+When a user clicks "Generate my plan" at 4PM, the server starts placing tasks at workDayStart (09:00 AM). This is wrong. 09:00, 09:30, 10:00 are all in the past. All generated tasks end up with scheduledTime values that have already passed.
+Additionally, the realism engine computes daily capacity as a fixed number of minutes (e.g. 300 min for a full day) with no awareness of how much of the day has already elapsed. At 4PM with a 9AM–6PM workday, only ~120 minutes remain — but the engine thinks 300 minutes are available, so it keeps tasks on today instead of deferring them appropriately to tomorrow.
+The fix required in server/routes.ts — generate-daily:
+The client must send the current local time alongside the local date. Add clientTime to the request:
+In client/src/pages/planning.tsx and client/src/components/todays-tasks.tsx, in every mutationFn that calls /api/tasks/generate-daily, add:
+tsconst now = new Date();
+const clientTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+// send in request body: { clientToday, clientTime, projectId }
+In server/routes.ts — generate-daily, after parseClientToday:
+tsconst rawClientTime = typeof req.body.clientTime === 'string' && /^\d{2}:\d{2}$/.test(req.body.clientTime)
+  ? req.body.clientTime
+  : null;
+Then change the slot cursor initialization (currently let currentSlotMin = dayStartMin) to:
+tsconst nowFloorMin = rawClientTime ? hhmmToMinutes(rawClientTime) : dayStartMin;
+// For today: start from max(workDayStart, currentTime + 15min buffer)
+// For future days: start from workDayStart normally
+const isToday = todayStr === rawClientToday; // always true for generate-daily, but good to be explicit
+let currentSlotMin = isToday ? Math.max(dayStartMin, nowFloorMin + 15) : dayStartMin;
+Also update the realism engine call to pass the remaining available minutes, not the full day capacity. Add a remainingMinutesToday parameter:
+tsconst remainingMinutesToday = rawClientTime
+  ? Math.max(0, hhmmToMinutes(workDayEndStr) - hhmmToMinutes(rawClientTime) - 15)
+  : null;
+Pass it into runRealismValidation as an override for available capacity. In server/services/realism.ts, modify runRealismValidation to accept an optional remainingMinutesOverride?: number in the input, and use it instead of deriveCapacity() when provided:
+tsconst capacityMinutes = input.remainingMinutesOverride !== undefined
+  ? input.remainingMinutesOverride
+  : deriveCapacity(operatingProfile);
+This way, at 4PM with 120 minutes left, the realism engine correctly limits today to 2–3 tasks and defers the rest to tomorrow.
+
+Problem B — The time grid renders all tasks at the same position, causing visual chaos
+The assignLanes function in client/src/components/time-grid.tsx processes ALL tasks for a day — including those with scheduledTime = null. Tasks without a time are assigned startMin = GRID_START_HOUR * 60 (7AM), so multiple unscheduled tasks all start at 7AM and get placed in parallel lanes, creating a pile of overlapping cards.
+This is why the day view looks broken: tasks visually stack on top of each other at 9AM even though they have different content.
+The fix required in client/src/components/time-grid.tsx:
+Separate tasks into two groups before any rendering:
+tsconst scheduledTasks = dayTasks.filter(t => t.scheduledTime != null);
+const unscheduledTasks = dayTasks.filter(t => t.scheduledTime == null);
+Only scheduledTasks go through assignLanes() and get rendered as positioned TaskBlock elements on the grid.
+unscheduledTasks must be rendered as a simple vertical list OUTSIDE the absolute-positioned grid area. Place them in a dedicated section at the top of the column, above the 7AM grid line, with a subtle "Unscheduled" label. Each unscheduled task should be a simple compact row (checkbox + title + duration badge), not an absolutely-positioned block. They should not overlap anything.
+This is the exact same pattern used in the Day view's right panel (the "Unscheduled" list), but applied directly inside the time grid column so it works in both Day and Week views.
+
+Problem C — Dashboard task count and Planning task count are different
+The Dashboard shows 18 tasks for today. The Planning page shows 3. They should always show the same number.
+Root cause: The Dashboard (client/src/components/todays-tasks.tsx) fetches tasks with /api/tasks?date=TODAY where TODAY is computed differently than the Planning page. The Planning page computes today using a local-safe formatDate() function. The Dashboard may be using new Date().toISOString().split('T')[0] which gives UTC date.
+Fix in client/src/components/todays-tasks.tsx: Find where today is defined for the API call and replace any .toISOString() usage with the same local-safe helper:
+tsfunction localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const today = localDateStr(new Date());
+Also verify that the /api/tasks route in server/routes.ts treats the date query parameter as a plain string filter (matching task.scheduledDate === date), not converting it with new Date(date). If there is any new Date(req.query.date) conversion happening server-side, it will shift the date by the server's UTC offset.
+
+Problem D — Too many tasks generated, poor distribution across the week
+When "Generate my plan" is clicked for "All Projects" (4 projects), up to 20 tasks are created — all for a single day. This is unrealistic and creates the 22-tasks-on-Friday problem seen in the screenshots.
+The design principle that should govern generation:
+Naya should think like a good assistant, not a task dumper. A good assistant asked "plan my week" does not give you 20 tasks today. It asks itself: "What is the total realistic capacity for the remaining days of this week? How should I distribute work across those days based on energy type, project priority, and load?"
+Required changes:
+1. In server/routes.ts — generate-daily, reduce task caps:
+tsconst TASKS_PER_PROJECT_MAX = 2; // max 2 tasks per project per day
+const DAILY_TASK_CAP = 8;        // hard cap: max 8 tasks across all projects for one day
+const totalBudget = Math.min(DAILY_TASK_CAP, projectCount * 2);
+const perProjectCap = Math.min(TASKS_PER_PROJECT_MAX, Math.ceil(totalBudget / projectCount));
+2. In server/routes.ts — after all projects are processed, before saving:
+Call rebalanceTasksForward on the full set of generated tasks. Currently this function exists and is called for monthly generation but NOT for daily generation. The daily route saves tasks immediately inside the per-project loop. This must be refactored:
+
+Collect all tasks across all projects into allPendingTasks (in memory, do NOT save yet)
+Compute weekEndStr = the Sunday of the current week (from todayStr)
+Call rebalanceTasksForward(allPendingTasks, todayStr, weekEndStr, 4) — max 4 tasks per day
+Then save the rebalanced tasks
+
+This ensures that when 8 tasks are generated and today only has 2 hours remaining, 2 tasks are saved for today and 6 are spread across the next 3 days — not all piled on tomorrow.
+3. The rebalanceTasksForward function must also reassign scheduledTime per day. Currently time assignment happens inside the per-project loop before rebalancing. After refactoring, time assignment should happen after rebalancing, per day, using the slot cursor starting from nowFloorMin for today and dayStartMin for future days.
+
+IMPLEMENTATION ORDER
+Please implement in this exact order — each step must be verified before moving to the next:
+Step 1: Fix todays-tasks.tsx — use local date string for today (fixes Dashboard vs Planning count mismatch)
+Step 2: Fix time-grid.tsx — separate scheduled vs unscheduled tasks, only scheduled tasks go on the positioned grid (fixes visual chaos)
+Step 3: Fix routes.ts generate-daily — accept clientTime, compute nowFloorMin, set slot cursor to start after current time (fixes tasks being placed in the past)
+Step 4: Fix realism.ts — accept remainingMinutesOverride to cap today's capacity to actual remaining time (fixes over-scheduling of today)
+Step 5: Fix routes.ts generate-daily — reduce TASKS_PER_PROJECT_MAX to 2, DAILY_TASK_CAP to 8, and refactor the save loop to collect tasks first then call rebalanceTasksForward across the week before saving (fixes pile-up on one day)
+Step 6: Fix routes.ts generate-daily — move scheduledTime assignment to after rebalancing, with correct per-day slot cursor
+After all 6 steps, the expected behavior is:
+
+Dashboard and Planning always show the same task count for today
+Tasks on the time grid never overlap (only tasks with a real scheduledTime are on the grid)
+Newly generated tasks start from the current time + 15 min buffer, never from 9AM if it's already 4PM
+If less than 90 minutes remain today, today gets 1–2 tasks maximum, the rest go to tomorrow and later this week
+Total tasks per generation never exceed 8, spread realistically across the week
+The week view shows a balanced distribution, not 22 tasks on one day

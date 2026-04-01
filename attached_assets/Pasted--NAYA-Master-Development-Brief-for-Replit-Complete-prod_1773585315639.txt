@@ -1,0 +1,388 @@
+# NAYA — Master Development Brief for Replit
+*Complete product vision + critical bug fixes + next feature priorities*
+
+---
+
+## PART 0 — WHAT NAYA IS (READ THIS FIRST)
+
+Before writing a single line of code, understand what Naya is at its core.
+
+**Naya is not a task manager. It is not a project management tool. It is not a dashboard.**
+
+Naya is an **AI-powered Business & Life Operating System** — a central intelligence layer that pilots:
+- Business growth and strategy
+- Communication and campaign execution
+- Daily planning and task orchestration
+- Decision-making support
+- Personal energy and emotional performance
+- Long-term life trajectory
+
+**The fundamental problem Naya solves:**
+
+Most entrepreneurs don't fail because they lack ideas. They fail because they lack orchestration. Naya solves: cognitive overload, strategic paralysis, execution fragmentation, emotional inconsistency, time chaos, invisible priorities, and the disconnect between ambition and daily action.
+
+**The target user:**
+A solo founder / entrepreneur with high ambition, multiple projects, high mental fluctuation, who uses many tools but feels fragmented and wants clarity, structure, and growth. Someone oscillating between visionary thinking and paralysis. Someone who needs an intelligent partner, not just another app.
+
+**The ultimate vision:**
+When complete, Naya should be the place where founders think. A cognitive infrastructure. A second brain that is structured, calm, ambitious, and forward-moving. Sitting in the category of Notion + Linear + ClickUp, but with emotional intelligence + strategic intelligence + execution automation — which no current product truly combines.
+
+---
+
+## UX PRINCIPLES (NON-NEGOTIABLE)
+
+Every UI decision must reflect these principles:
+
+- **Calm over cluttered** — the user should never feel overwhelmed
+- **Intelligent over busy** — show fewer things, but the right things
+- **Premium minimalism** — closer to Linear / Apple / Quiet Luxury than "startup dashboard"
+- **Structure creates freedom** — the more organized the system, the more creative the user can be
+- **No gamification** — no streaks, no confetti, no childish UI patterns
+- **Everything has purpose** — if a UI element doesn't help the user decide or act, remove it
+
+---
+
+## PART 1 — CRITICAL BUG FIXES (implement in this exact order)
+
+These bugs are breaking core functionality today and must be fixed before any new features.
+
+---
+
+### BUG #1 — Rebalance Week requires 4+ clicks to produce a clean schedule
+
+**Files:** `server/routes.ts` — `POST /api/tasks/rebalance-week` (~line 3116), `rebalanceTasksForward` function (~line 230)
+
+**Root cause identified:**
+
+The `rebalanceTasksForward` function is called with `existingDayCounts = undefined` (line 3159). This means it treats every day as completely empty, even if tasks already exist there. Additionally, tasks marked `_unschedulable` are filtered out but their old `scheduledDate` values are never cleared in the database — so on the next rebalance call, they reappear in `pending` and the same problem repeats.
+
+The time-slot assignment loop (`byDate` map, lines 3258–3332) assigns sequential times starting from `dayStartMin` without checking what's already scheduled on that day from other sources (tasks not included in `pending`, or tasks from different projects).
+
+**Fix required:**
+
+1. Before calling `rebalanceTasksForward`, build a `Map<date, number>` of how many non-completed tasks already exist per day in the DB for that week (not just the pending ones being rebalanced). Pass this as `existingDayCounts`.
+
+2. In the time-slot assignment loop, before assigning a time to a task, query or cross-reference the FULL list of tasks already scheduled on that date (including tasks from other projects) to find the next truly available slot.
+
+3. For tasks flagged `_unschedulable` after `rebalanceTasksForward`, explicitly update them in the DB: set `scheduledDate = null` and `scheduledTime = null`. Do not leave them with stale values.
+
+4. Make the entire endpoint **idempotent**: calling it once, twice, or ten times must always produce the same conflict-free result. Never create overlapping time slots.
+
+5. The `dailyCap` of 4 (line 3159) is too rigid. Calculate the available capacity per day dynamically: `floor((workDayEnd - workDayStart - lunchBreakDuration) / averageTaskDuration)`. Use this as the cap.
+
+---
+
+### BUG #2 — Campaign tasks remain visible in the calendar after the campaign is paused
+
+**Files:** `server/routes.ts` (~line 5416), `server/storage.ts` (`deleteCampaignFutureTasks` ~line 1293)
+
+**Root cause identified:**
+
+`deleteCampaignFutureTasks` only deletes tasks where `scheduledDate >= today`. Tasks from the campaign that were scheduled in the past but not yet completed remain in the database and appear on the calendar. There are also likely old tasks from previous campaign generations that were never cleaned up.
+
+**Fix required:**
+
+1. Add a `status` column to the `tasks` table in `shared/schema.ts`:
+   ```typescript
+   status: text("status").notNull().default("active")
+   // Values: "active" | "paused" | "cancelled" | "completed"
+   ```
+   Create the corresponding Drizzle migration.
+
+2. Replace `deleteCampaignFutureTasks` with a new method `pauseCampaignTasks(campaignId)` that sets `status = 'paused'` on ALL non-completed tasks for that campaign (past AND future, any date). Do not delete them — mark them.
+
+3. When a campaign is resumed (`POST /api/campaigns/:id/resume`), set all paused tasks of that campaign back to `status = 'active'` before regenerating the schedule.
+
+4. In ALL queries that retrieve tasks for display in planning/calendar (`getTasksInRange`, `getTasks`, and any other task-fetching method), add a filter: `status NOT IN ('paused', 'cancelled')` by default. Add an optional `includeInactive: boolean` parameter for cases where you need to see all tasks (e.g., admin/debug views).
+
+5. Apply this same filter in the frontend planning views.
+
+---
+
+### BUG #3 — Task duplication when regenerating plans
+
+**Files:** `server/routes.ts` — `generate-monthly`, `generate-weekly`, `generate-daily`, `generate-tasks` for campaigns
+
+**Root cause identified:**
+
+Every call to these endpoints INSERTs new tasks without checking if equivalent tasks already exist for the same project and date range. If the user generates a weekly plan, modifies a project setting, then generates again, they get duplicate tasks for the same week.
+
+**Fix required:**
+
+1. For `generate-weekly` and `generate-daily`: Before inserting AI-generated tasks, query existing non-completed tasks for the same `(userId, projectId)` in the same date range. For each new task, check if a task with the same title already exists in that week for that project. If yes: UPDATE the existing task (scheduledDate, scheduledTime, estimatedDuration). If no: INSERT as new.
+
+2. For campaign `generate-tasks`: Always call `deleteAllIncompleteCampaignTasks(campaignId)` before inserting new campaign tasks. This method exists in `storage.ts` (~line 1304) but is not consistently used.
+
+3. In the frontend, before any "Generate plan" action, check if tasks already exist for that period. If they do, show a dialog:
+   > "You already have X tasks scheduled this week for [Project Name]. What would you like to do?"
+   > - **Replace** (clear existing non-completed tasks, generate fresh)
+   > - **Add to existing** (upsert mode — update conflicts, add new)
+   > - **Cancel**
+
+---
+
+### BUG #4 — Deleting a project leaves orphaned data everywhere
+
+**Files:** `server/routes.ts` (`DELETE /api/projects/:id`), `server/storage.ts`
+
+**Fix required:**
+
+When a project is deleted, run the following cleanup IN A SINGLE DATABASE TRANSACTION in this order:
+
+1. Set `status = 'cancelled'` on all non-completed tasks where `projectId = id`
+2. Delete all campaigns where `projectId = id`
+3. Delete all content where `projectId = id`
+4. Delete all projectGoals where `projectId = id`
+5. Delete projectStrategyProfiles where `projectId = id`
+6. Delete brandDna entries where `projectId = id`
+7. Delete quickCaptureEntries where `projectId = id`
+8. Delete targetPersonas where `projectId = id`
+9. Then delete the project itself
+
+If any step fails, roll back the entire transaction.
+
+---
+
+### BUG #5 — Week number calculation is wrong in Strategy page
+
+**File:** `client/src/pages/strategy.tsx` (~line 107)
+
+`Math.ceil(now.getDate() / 7)` is incorrect (produces values 1–5 based on day of month, breaks at month boundaries). Replace with proper ISO week number calculation using date-fns `getISOWeek` (already available in the project).
+
+---
+
+### BUG #6 — Quick Capture classification has a fragile 4500ms hardcoded timeout
+
+**File:** `client/src/pages/dashboard.tsx` (~line 250)
+
+The `setTimeout(() => { ... }, 4500)` approach is unreliable. Replace with a polling approach: after submitting a capture entry, poll `GET /api/capture` every 500ms for up to 10 seconds, stop as soon as the entry's `classifiedType` is populated. Then clear the loading state.
+
+---
+
+### BUG #7 — Duplicate task completion endpoints
+
+**File:** `server/routes.ts`
+
+Both `/api/tasks/:id/toggle` and `/api/tasks/:id/complete` exist and do the same thing. Keep only one (recommend keeping `PATCH /api/tasks/:id` with `{ completed: true }` as the canonical way, OR keep `toggle` as the semantic endpoint). Remove the duplicate. Update all frontend usages to use the single endpoint.
+
+---
+
+## PART 2 — INTELLIGENT TASK MANAGEMENT REDESIGN
+
+This is the most important architectural change. The current task management system is reactive-on-demand (user presses a button, something happens). Naya needs to become proactive and self-managing.
+
+### The Core Principle
+
+**Tasks in Naya are not a to-do list. They are the materialization of the user's strategy in time.**
+
+This means:
+- When strategy changes → tasks change automatically
+- When a campaign is paused → its tasks disappear automatically
+- When a goal is completed → its tasks are resolved automatically
+- When the user is overloaded → the system redistributes automatically
+- The calendar is always a truthful reflection of current reality
+
+### Change #1 — Automatic reactivity after meaningful state changes
+
+Create a server-side utility function `triggerSmartReplan(userId, projectId?, context)` that is called automatically (as a background operation, non-blocking) whenever:
+- A project's `priorityLevel` or `projectStatus` changes
+- A projectGoal is added, modified, or completed
+- A campaign is paused or resumed
+- A milestoneTrigger is activated
+- A task is completed (check if any blocked tasks should now be unblocked)
+
+This function should:
+1. Check if the current week has a generated plan
+2. If yes: run the rebalance algorithm to redistribute remaining tasks
+3. Return without blocking the original API response (fire-and-forget, use `setImmediate` or async background job)
+
+On the frontend: every mutation that changes project/campaign/goal state should call `queryClient.invalidateQueries(['/api/tasks'])` and `queryClient.invalidateQueries(['/api/tasks/range', ...])` after success, so the planning view refreshes automatically.
+
+### Change #2 — Task status model (foundation for everything)
+
+The new `status` field (introduced in Bug #2) must be used consistently throughout the entire system:
+
+| Status | Meaning |
+|--------|---------|
+| `active` | Task is visible and scheduled |
+| `paused` | Task belongs to a paused campaign or project on hold |
+| `cancelled` | Task was cancelled (project deleted, plan replaced) |
+| `completed` | Task done (controlled by `completed = true` boolean OR this status field — unify these) |
+| `overflow` | Task couldn't be scheduled in its intended week, pushed forward |
+
+**Important:** Unify `completed: boolean` and `status` into a single source of truth. Either:
+- Keep `completed: boolean` and add `status` for the other states, OR
+- Migrate entirely to `status` and deprecate `completed: boolean`
+
+Recommend: keep `completed: boolean` for backward compatibility but add the new `status` field for the other states. A `completed` task always has `status = 'completed'`.
+
+### Change #3 — Orphan task cleanup
+
+Create `POST /api/tasks/cleanup` endpoint that:
+1. Marks `status = 'paused'` for any task whose `campaignId` points to a campaign with `status = 'paused'`
+2. Marks `status = 'cancelled'` for tasks whose `projectId` points to a non-existent or deleted project
+3. Marks `status = 'cancelled'` for tasks with `scheduledDate` more than 60 days in the past that are still `completed = false` (they will never be done)
+
+Call this endpoint automatically:
+- When the Planning page loads (fire-and-forget, don't block the page)
+- When the user logs in (after auth succeeds)
+
+### Change #4 — Visual differentiation of task origins in Planning
+
+In the Planning view (day and week grid), visually distinguish tasks by their origin:
+- 🎯 Tasks from project goals (organic planning)
+- 📢 Tasks from campaigns (show campaign name badge)
+- ✋ Manually created tasks
+- ⚠️ Overdue tasks (scheduledDate < today, not completed) — show in amber/red
+- 🔒 Blocked tasks (waiting on dependency) — show as locked
+
+---
+
+## PART 3 — NEXT FEATURE PRIORITIES (after bugs are fixed)
+
+These are ordered by importance to the core Naya vision.
+
+### Priority 1 — Strategic Mirror: The Weekly Intelligence Briefing
+
+The Strategy page today shows AI recommendations on demand. This is not enough.
+
+**What's needed:**
+Every Monday morning (or on first app open of the week), Naya should automatically generate and display a "Weekly Intelligence Briefing" that includes:
+
+- **This week's strategic focus** — one clear sentence: "This week, your primary leverage is [X]."
+- **What you're doing well** — 2-3 observations based on recent task completion patterns
+- **What's at risk** — 1-2 flags: "You haven't prospected in 12 days." / "Campaign [X] is behind target."
+- **Recommended moves** — 3 specific, actionable items with "Add to planner" buttons
+- **Energy note** — a brief adaptive note based on the user's operating profile
+
+This briefing should NOT require user action to generate. It runs automatically as a background job. Store it in `strategyReports` table. Display it as a prominent, collapsible banner on the Dashboard.
+
+Implementation: Create a `POST /api/strategy/generate-weekly-briefing` endpoint. Schedule it to run every Monday at 8am in user's timezone (or on first login of the week). Call it once if no report exists for current week.
+
+### Priority 2 — The Memory System: Continuity of Ambition
+
+Currently, every week starts fresh. The user has to manually re-explain their context. Naya needs memory.
+
+**What's needed:**
+1. A `businessMemory` table that stores key decisions, strategic pivots, lessons learned, and important events chronologically.
+2. An "Add to Naya's memory" action available from the Quick Capture inbox (when type = "decision" or "lesson").
+3. This memory is fed as context to ALL AI generation calls (task generation, strategy, campaigns) so AI responses are always grounded in what the user has been building.
+4. A simple "Memory" view (accessible from Settings or Strategy) showing a timeline of saved memories.
+
+### Priority 3 — Founder State Regulation
+
+This is what makes Naya unique — no other business OS does this.
+
+**What's needed:**
+Expand the `userOperatingProfiles` table to include:
+```
+cycleAwareness: boolean (opt-in, private)
+currentEnergyLevel: text ("high" | "medium" | "low" | "depleted")
+currentEmotionalContext: text (optional, user-set: "grief" | "transition" | "peak" | "recovery" | null)
+lastEnergyUpdate: timestamp
+```
+
+Add to the Dashboard a subtle "How are you today?" prompt (NOT intrusive — a small, optional interaction). Let the user select their energy level for the day. This takes 2 seconds.
+
+When energy is "low" or "depleted":
+- Task generation caps at 3 tasks/day instead of 6
+- Task types prioritize `taskEnergyType: admin` or `creative` over `deep_work`
+- Dashboard shows a gentle note: "Light execution day. Your 3 priorities are: [X, Y, Z]."
+
+When emotional context is "grief" or "recovery":
+- Naya reduces urgency tone in all generated text
+- Suggests 1–2 "anchor tasks" (things that give a sense of progress without high cognitive cost)
+
+This does NOT require medical-grade tracking. It requires simple, user-controlled inputs that Naya listens to.
+
+### Priority 4 — Smart Daily Brief (replace manual "Generate Daily Plan")
+
+The current "Generate Daily Plan" button is too manual. Replace it with an automatic morning briefing.
+
+**What's needed:**
+Every day at 7am (user's timezone), or on first app open:
+1. Naya looks at today's scheduled tasks
+2. Checks what's overdue from previous days
+3. Considers the user's energy level (if set)
+4. Generates a "Today's Brief" that includes:
+   - The 3 most important tasks for today (respecting energy and time)
+   - 1 carry-over from yesterday (if any)
+   - 1 strategic reminder: "Don't forget: [upcoming milestone/deadline]"
+
+Display this as a gentle, dismissible card on the Dashboard. Store it so it doesn't regenerate every page refresh.
+
+### Priority 5 — Campaign Performance Loop
+
+Campaigns currently have no feedback loop. They're fire-and-forget.
+
+**What's needed:**
+After a campaign's planned end date:
+1. Automatically generate a "Campaign Review" prompt: "Your [Campaign Name] campaign ended. How did it go?"
+2. Let the user rate 3 things on a 1–5 scale: Content quality / Audience response / Task execution
+3. Store this rating in the campaign record
+4. Feed it back to the AI when generating future campaigns for the same project
+
+This closes the loop between planning and learning. Over time, Naya gets better at generating campaigns that work for this specific user and brand.
+
+---
+
+## PART 4 — TECHNICAL DEBT AND CODE QUALITY
+
+### TD #1 — Remove all `(project as any)` and `(task as any)` casts
+
+In `dashboard.tsx` and `planning.tsx`, replace all TypeScript `as any` casts with proper typed imports from `@shared/schema`.
+
+### TD #2 — Add React Error Boundaries
+
+Wrap the following components in `ErrorBoundary` components that show a "This section encountered an error — [Retry]" fallback instead of crashing the whole page:
+- Dashboard widgets (AIRecommendations, SchedulePreview, TodaysTasks)
+- Planning grid (TimeGrid)
+- Campaigns page
+
+### TD #3 — Reduce aggressive refetch intervals
+
+- Quick Capture: change `refetchInterval: 4000` → `15000`
+- Milestone Triggers: change `refetchInterval: 5000` → `20000`
+- Add manual invalidation on user action instead of relying on polling
+
+### TD #4 — Add pagination to `/api/projects`
+
+Support `?limit=20&offset=0` query params. Default limit = 50. Frontend handles pagination gracefully if result count >= limit.
+
+### TD #5 — Consolidate date utilities
+
+Multiple parts of the code reimplement date formatting, timezone handling, and work-day calculation. Extract these into a shared utility file `server/utils/dateUtils.ts` and `client/src/lib/dateUtils.ts`. Use `date-fns` consistently throughout.
+
+---
+
+## SUMMARY TABLE
+
+| # | Type | Title | Priority |
+|---|------|-------|----------|
+| B1 | Bug | Rebalance idempotency fix | 🔴 P0 |
+| B2 | Bug | Campaign pause → task cascade | 🔴 P0 |
+| B3 | Bug | Task duplication on plan regeneration | 🔴 P0 |
+| B4 | Bug | Project delete cascade | 🟠 P1 |
+| B5 | Bug | Week number calculation | 🟡 P2 |
+| B6 | Bug | Quick Capture race condition | 🟡 P2 |
+| B7 | Bug | Duplicate task completion endpoints | 🟡 P2 |
+| I1 | Intelligence | Auto-reactivity after state changes | 🟠 P1 |
+| I2 | Intelligence | Task status model | 🟠 P1 |
+| I3 | Intelligence | Orphan task cleanup | 🟠 P1 |
+| I4 | Intelligence | Visual task origin differentiation | 🟡 P2 |
+| F1 | Feature | Weekly Intelligence Briefing | 🟠 P1 |
+| F2 | Feature | Memory System | 🟠 P1 |
+| F3 | Feature | Founder State Regulation | 🟡 P2 |
+| F4 | Feature | Smart Daily Brief | 🟡 P2 |
+| F5 | Feature | Campaign Performance Loop | 🟢 P3 |
+| T1–T5 | Tech Debt | Code quality improvements | 🟢 P3 |
+
+---
+
+## A NOTE ON TONE
+
+When writing code for Naya, remember what this product is. Every endpoint name, every UI label, every error message should feel like it comes from an intelligent, calm partner — not a productivity tool. "Your plan for this week" not "Task batch generated." "Naya noticed 3 overdue items" not "3 tasks past due date." The product has a voice. Preserve it.
+
+---
+
+*This document was produced after deep analysis of the full Naya codebase (routes.ts 5808 lines, storage.ts 1315 lines, schema.ts 1029 lines, all client pages) and the complete product vision provided by the founder.*

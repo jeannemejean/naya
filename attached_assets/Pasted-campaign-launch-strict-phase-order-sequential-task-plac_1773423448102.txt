@@ -1,0 +1,112 @@
+campaign launch — strict phase order + sequential task placement
+The fundamental rule
+A campaign has phases in order: Phase 1 → Phase 2 → Phase 3. Tasks belonging to Phase 3 must never appear before tasks from Phase 1 or Phase 2 in the planning. The current code tries to compute date ranges from phase duration strings like "Weeks 1–2" but these strings come from the AI and are unreliable. The fix is to ignore the AI phase duration strings entirely and instead compute phase date ranges mathematically from the campaign start date and campaign duration, divided equally across phases.
+Rewrite parsePhaseDateRange — replace it with computePhaseRanges
+Remove the existing parsePhaseDateRange function entirely. Replace it with this function that takes the full phases array and computes guaranteed non-overlapping sequential ranges:
+tsfunction computePhaseRanges(
+  phases: Array<{ number: number }>,
+  startDate: Date,
+  campaignDurationDays: number
+): Record<number, { start: Date; end: Date }> {
+  const sorted = [...phases].sort((a, b) => a.number - b.number);
+  const totalPhases = sorted.length;
+  const result: Record<number, { start: Date; end: Date }> = {};
+
+  sorted.forEach((phase, idx) => {
+    const phaseStartDay = Math.floor((idx / totalPhases) * campaignDurationDays);
+    const phaseEndDay = Math.floor(((idx + 1) / totalPhases) * campaignDurationDays) - 1;
+
+    const start = campaignAddDays(startDate, phaseStartDay);
+    const end = campaignAddDays(startDate, Math.max(phaseStartDay, phaseEndDay));
+
+    result[phase.number] = { start, end };
+  });
+
+  return result;
+}
+Then in the launch route, replace the phase range computation:
+ts// Remove this:
+// for (const phase of phases) {
+//   phaseRanges[phase.number] = parsePhaseDateRange(...)
+// }
+
+// Replace with:
+const durationDaysMap: Record<string, number> = {
+  '1_week': 7, '2_weeks': 14, '3_weeks': 21, '1_month': 30,
+  '2_months': 60, '3_months': 90, '6_months': 180, '12_months': 365,
+};
+const campaignDurationDays = durationDaysMap[campaign.duration || '3_months'] || 90;
+const phaseRanges = computePhaseRanges(phases, startDate, campaignDurationDays);
+Rewrite the task scheduling loop — cursor per phase, strictly sequential
+Replace the entire task scheduling loop (the for (const [phaseNumStr, phaseTasks]...) block) with this clean version:
+tslet tasksCreated = 0;
+
+// Process phases in strict order: 1, 2, 3...
+const sortedPhaseNums = Object.keys(tasksByPhase).map(Number).sort((a, b) => a - b);
+
+for (const phaseNum of sortedPhaseNums) {
+  const phaseTasks = tasksByPhase[phaseNum];
+  const phaseRange = phaseRanges[phaseNum] || { start: startDate, end: campaignAddDays(startDate, 7) };
+
+  // Running cursor starts at phase start, moves forward as tasks are placed
+  let cursor = new Date(phaseRange.start);
+
+  for (const originalTask of phaseTasks) {
+    const subTasks = decomposeContentTask(originalTask);
+
+    for (const sub of subTasks) {
+      // Find next available workday from cursor, within this phase
+      let scheduledDate = new Date(cursor);
+      let safety = 0;
+      while (safety < 60) {
+        const ds = campaignDateToStr(scheduledDate);
+        const dow = scheduledDate.getDay();
+        const isWorkday = dow >= 1 && dow <= 5;
+        const count = dayCounts.get(ds) || 0;
+        if (isWorkday && count < 3) break; // max 3 campaign tasks per day
+        scheduledDate = campaignAddDays(scheduledDate, 1);
+        safety++;
+      }
+
+      // Don't go past phase end (if phase is full, clamp to last available day)
+      if (scheduledDate > phaseRange.end) {
+        scheduledDate = phaseRange.end;
+      }
+
+      const scheduledDateStr = campaignDateToStr(scheduledDate);
+      dayCounts.set(scheduledDateStr, (dayCounts.get(scheduledDateStr) || 0) + 1);
+
+      await storage.createTask({
+        userId,
+        projectId: campaign.projectId ?? undefined,
+        campaignId: campaign.id,
+        title: sub.title,
+        description: sub.description,
+        type: sub.type || 'content',
+        category: originalTask.category || 'planning',
+        priority: originalTask.priority || 2,
+        estimatedDuration: sub.estimatedDuration,
+        taskEnergyType: sub.taskEnergyType,
+        source: 'campaign',
+        scheduledDate: scheduledDateStr,
+        completed: false,
+      });
+      tasksCreated++;
+
+      // Advance cursor: next sub-task starts the day after this one
+      cursor = campaignAddDays(scheduledDate, 1);
+    }
+
+    // Gap between original tasks: 1 extra day
+    cursor = campaignAddDays(cursor, 1);
+  }
+}
+Verification expected
+
+Launch a 3-month campaign starting March 23
+Open Planning → Week view for week of March 23 → only Phase 1 tasks appear
+Scroll forward 4-6 weeks → Phase 2 tasks appear
+Scroll to month 3 → Phase 3 tasks (including "Launch LinkedIn ad") appear
+No day has more than 3 campaign tasks
+Tasks are strictly sequential — never two on the same day from the same campaign
+Phase order is always respected: Phase 1 complete before Phase 2 starts

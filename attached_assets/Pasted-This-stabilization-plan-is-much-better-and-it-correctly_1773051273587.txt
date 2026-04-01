@@ -1,0 +1,123 @@
+This stabilization plan is much better and it correctly identifies the main current issues in the codebase. I reviewed the current implementation and I agree with the overall direction.
+
+Please proceed with this stabilization-first approach, but I want a few refinements before implementation begins.
+
+Requested refinements
+
+1. Tomorrow Preview should be treated as a dashboard planning block, not just a task query
+
+The current T006 proposal is a good first step, but I do not want Tomorrow Preview to become only “tasks due tomorrow”.
+
+Please implement it as a real planning preview based on:
+	•	incomplete tasks from today
+	•	tasks scheduled for tomorrow
+	•	active project or All Projects mode
+	•	project goals with near deadlines
+	•	carryover logic
+	•	priority / urgency logic
+
+If helpful, rename the endpoint to something like:
+	•	GET /api/dashboard/tomorrow-preview
+
+so the implementation reflects its real purpose.
+
+2. Quick Capture should become an intelligent inbox / routing layer
+
+T007 is going in the right direction, but I want it framed more broadly than simple classification.
+
+Quick Capture should:
+	•	classify the item
+	•	attach it to the active project if relevant
+	•	route it into the system
+	•	feed the board
+	•	remain visible in a meaningful capture/inbox area
+
+Please do not build it as just “capture entries with badges”.
+It should be the start of an intelligent inbox.
+
+In addition to classifiedType and linkedTaskId, consider fields such as:
+	•	routingStatus
+	•	routedTo
+	•	future-friendly support for AI interpretation / summary
+
+3. Dashboard filtering should be implemented as true mode switching
+
+T008 is necessary, but I want the product logic to reflect two real dashboard modes:
+
+All Projects mode
+	•	aggregated tasks
+	•	cross-project priorities
+	•	broader recommendations
+	•	multiple objectives if relevant
+
+Single Project mode
+	•	project-only tasks
+	•	project-only goals
+	•	project-only recommendations
+	•	project-only context
+
+Please design this as dashboard behavior, not only query filtering.
+
+4. Task interactions should be explicitly separated
+
+For T003, please make the interaction model explicit:
+	•	click task block = open task details
+	•	checkbox or completion control = toggle completion
+	•	drag = schedule / reschedule
+
+These actions should not overlap.
+
+5. Onboarding completion should be a true success state
+
+For T004, I want more than a loading screen.
+Please ensure:
+	•	onboarding is marked complete only after successful save
+	•	redirect happens only on success
+	•	failed save does not silently dump the user onto the dashboard
+	•	the final step feels intentional and reliable
+
+6. Broaden onboarding microcopy everywhere, not only field options
+
+T005 is much better, but please revise the overall wording and framing across the onboarding flow so it feels right for:
+	•	photographers
+	•	designers
+	•	artists
+	•	makers
+	•	creators
+	•	coaches
+	•	freelancers
+	•	passion-led projects
+	•	hybrid independent careers
+
+It should not just be option-level broadening; the whole tone should reflect modern independent builders.
+
+7. Fix goal creation on both backend and frontend
+
+T001 is correct, but please also normalize the frontend payload so optional fields are not sent as empty strings unnecessarily.
+
+I want:
+	•	backend sanitization
+	•	frontend payload cleanup
+
+8. Add a dedicated stabilization task for API mutation response handling
+
+The audit correctly identifies that the current API client pattern is fragile.
+Please add an explicit task to standardize mutation handling so responses are dealt with consistently and UI state updates are reliable.
+
+Implementation priority
+
+With these refinements, I want implementation to proceed in this order:
+	1.	goal creation fix
+	2.	onboarding completion fix
+	3.	task completion / planner interaction fix
+	4.	logo navigation fix
+	5.	API mutation handling stabilization
+	6.	Tomorrow Preview real logic
+	7.	Quick Capture intelligent routing
+	8.	All Projects vs single project dashboard behavior
+	9.	onboarding language broadening
+
+The key principle remains:
+
+Naya should not feel like a collection of partially working widgets.
+It should feel like a real operating board whose elements are connected to the user, the project, the goals, and the board’s intelligence.

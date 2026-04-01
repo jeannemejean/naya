@@ -1,0 +1,321 @@
+# NAYA V23 — BECOME MORE NAYA
+## Product vision improvements to align with the real Naya identity
+
+---
+
+## WHAT NAYA IS (the north star for every change below)
+
+Naya is not a task manager with AI features.
+Naya is **an AI Operating System that knows how you think, work, and build** — and organizes your entire business life around that knowledge.
+
+The key promise: you open Naya every morning and instantly know what to do, why, and in what order — because Naya already knows your energy, your psychology, your bottlenecks, and your goals.
+
+The differentiator: **Naya doesn't just generate tasks. Naya knows YOU.**
+
+Every word, screen, and feature should reinforce this. Right now, several screens feel like generic SaaS. Here's what needs to change.
+
+---
+
+## CHANGE 1 — LANDING PAGE: Rewrite entirely
+
+**File:** `client/src/pages/landing.tsx`
+
+**Problem:** The current copy reads like every other productivity SaaS:
+- "Your AI Business Co-Pilot for Daily Growth" → generic
+- "replaces chaos with clarity" → cliché
+- "Start Building Your Empire" → out of tone
+
+**The landing page should speak to an entrepreneur who feels overwhelmed, not just unproductive.**
+
+**New copy to implement:**
+
+**Hero headline:**
+```
+Your AI Operating System
+for building without burning out.
+```
+
+**Hero subheadline:**
+```
+Naya learns how you think, work, and decide — then turns that into a personalized daily plan that actually fits your life.
+No more wondering what to do. No more energy wasted on the wrong things.
+```
+
+**CTA button:** "Meet Naya" (not "Start Your Free Trial" or "Get Started")
+**Secondary CTA:** "See how it works" (not "Watch Demo")
+
+**Features section headline:**
+```
+Not just smart. Personal.
+```
+
+**Feature cards — rewrite the 6 cards:**
+
+1. **Pilot Board** — "Every morning, Naya tells you the 3–5 things that actually matter today. Based on your energy, your goals, and what you've been avoiding."
+
+2. **Weekly Intelligence Briefing** — "Each Monday, Naya analyzes your week ahead and gives you a strategic focus — not a to-do list, a direction."
+
+3. **Campaign Engine** — "Turn a 3-month marketing goal into a week-by-week execution plan. Naya builds the roadmap, deploys the tasks, and keeps you on track."
+
+4. **Content Calendar** — "Your content pipeline, your voice, your schedule. Naya handles the sequencing so you just create."
+
+5. **Outreach & CRM** — "Smart follow-ups, lead tracking, and AI-drafted messages that sound like you, not like a template."
+
+6. **Operating Profile** — "Naya learns your behavioral patterns — your energy rhythm, your avoidance triggers, your decision style — and uses that to give you a smarter plan every day."
+
+**Bottom CTA section:**
+```
+Heading: "Ready to stop managing your business and start building it?"
+Subtext: "Naya adapts to you. Not the other way around."
+Button: "Start with Naya"
+```
+
+**Footer:** Change "© 2024 Naya. Your AI Business Co-Pilot for strategic growth." to "© 2025 Naya. AI Operating System for independent builders."
+
+---
+
+## CHANGE 2 — DAILY BRIEF: Make Naya's voice stronger
+
+**File:** `server/routes.ts` — the `POST /api/tasks/daily-brief` endpoint (around line 1341)
+
+**Problem:** The brief prompt asks for a "warm, personalized greeting" but the system prompt says "AI co-pilot for independent builders" — that's fine but incomplete. The brief lacks behavioral intelligence: it doesn't reference the user's persona, their avoidance patterns, or their operating profile.
+
+**Improve the brief prompt** to include:
+1. The user's operating profile (energy rhythm, planning style, avoidance triggers)
+2. A specific reference to the persona (Builder, Strategist, Creative, Analytical)
+
+Replace the briefPrompt variable with this enhanced version:
+
+```typescript
+const operatingProfile = await storage.getUserOperatingProfile(userId).catch(() => null);
+
+const personaContext = operatingProfile?.persona
+  ? `- User persona: ${operatingProfile.persona}`
+  : '';
+const avoidanceContext = operatingProfile?.avoidanceTriggers?.length
+  ? `- Known avoidance triggers: ${(operatingProfile.avoidanceTriggers as string[]).join(', ')}`
+  : '';
+const rhythmContext = operatingProfile?.energyRhythm
+  ? `- Energy rhythm: ${operatingProfile.energyRhythm}`
+  : '';
+
+const briefPrompt = `You are Naya. You speak directly, warmly, and with quiet authority. You know this person.
+
+WHAT YOU KNOW ABOUT THEM:
+- Energy today: ${energyLevel}
+${emotionalContext ? `- How they're feeling: ${emotionalContext}` : ''}
+${personaContext}
+${rhythmContext}
+${avoidanceContext}
+- Business type: ${brandDna.businessType || 'Independent builder'}
+- Tasks today: ${incompleteTasks.length} pending, ${completedTasks.length} done
+${topTasks.length > 0 ? `\nTODAY'S TOP TASKS:\n${topTasks.join('\n')}` : '\nNo tasks scheduled yet.'}
+${carryoverLines.length > 0 ? `\nLEFT FROM YESTERDAY:\n${carryoverLines.join('\n')}` : ''}
+${upcomingMilestone ? `\nINCOMING:\n- ${upcomingMilestone}` : ''}
+${memoryBlock}
+
+ENERGY RULES:
+- high: ambitious, clear, direct. Reference the big picture.
+- medium: practical, grounded. Focus on momentum over perfection.
+- low: gentle, permission-giving. 1–2 tasks max. Admin/creative over deep work.
+- depleted: compassionate. Rest is productive. Even showing up is enough.
+
+YOUR VOICE:
+- Never say "It looks like..." or "Here's a summary..."
+- Speak in the second person. Address them directly.
+- Be direct but human. Not corporate. Not cheerful-robot.
+- If they have an avoidance trigger that's relevant today, name it gently.
+- If they're a Builder: validate action-taking, warn against rabbit holes.
+- If they're a Strategist: connect the day to the long-term vision.
+- If they're Creative: give permission to follow energy, but anchor to one deliverable.
+- If they're Analytical: give a clear rationale for the priority order.
+
+Return JSON:
+{
+  "greeting": "1–2 sentence opener. Personal, direct, human. Reference their energy and situation.",
+  "topTasks": ["task title 1", "task title 2", "task title 3"],
+  "carryovers": ["most important incomplete task from yesterday — or empty array"],
+  "strategicReminder": "One sentence connecting today to the bigger picture. If a milestone is near, mention it.",
+  "energyAdvice": "One practical sentence about how to move through today given their energy state."
+}`;
+```
+
+---
+
+## CHANGE 3 — DASHBOARD: Show the Operating Profile visibly
+
+**File:** `client/src/pages/dashboard.tsx`
+
+**Problem:** The user's behavioral profile (persona, energy rhythm, avoidance triggers) is collected in onboarding but is almost invisible in the dashboard. The persona chip is tucked away. Users don't feel "known" by Naya.
+
+**Add a compact "Your Profile" card** to the dashboard, visible only when the user has a persona detected. It should appear below the DailyBrief, above the task list.
+
+The card should show:
+- Persona name + icon (Builder ⚡, Strategist 🧭, Creative 🎨, Analytical 📊)
+- Energy rhythm (e.g., "Morning performer")
+- One active avoidance trigger if present (e.g., "Watch for: perfectionism")
+- A link to Settings to update
+
+Example design (add this as a new component `OperatingProfileChip` in dashboard.tsx):
+
+```tsx
+function OperatingProfileChip() {
+  const { data: personaResult } = useQuery<PersonaAnalysisResult | null>({
+    queryKey: ['/api/persona/my-persona'],
+  });
+  const { data: opProfile } = useQuery<UserOperatingProfile | null>({
+    queryKey: ['/api/user/operating-profile'],
+  });
+
+  const personaName = (personaResult?.analysisResult as any)?.personaName as string | undefined;
+  if (!personaName) return null;
+
+  const PERSONA_ICONS: Record<string, string> = {
+    Strategist: "🧭", Builder: "⚡", Creative: "🎨", Analytical: "📊",
+  };
+
+  const avoidance = (opProfile?.avoidanceTriggers as string[] | undefined)?.[0];
+  const rhythm = opProfile?.energyRhythm;
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2 bg-slate-50 dark:bg-gray-800/50 rounded-lg border border-slate-200 dark:border-gray-700 mb-3">
+      <span className="text-base">{PERSONA_ICONS[personaName] || "🧠"}</span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-slate-800 dark:text-white">{personaName}</p>
+        {rhythm && <p className="text-[10px] text-slate-400 dark:text-gray-500 truncate">{rhythm}</p>}
+      </div>
+      {avoidance && (
+        <span className="text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/40 whitespace-nowrap">
+          Watch: {avoidance}
+        </span>
+      )}
+    </div>
+  );
+}
+```
+
+Place `<OperatingProfileChip />` inside the main dashboard layout, just after `<DailyBrief />`.
+
+---
+
+## CHANGE 4 — WEEKLY BRIEFING PROMPT: Make it sound like Naya
+
+**File:** `server/routes.ts` — `POST /api/strategy/generate-weekly-briefing` (around line 4717)
+
+**Problem:** The weekly briefing generates generic strategy text. It doesn't reference the user's behavioral profile or speak in Naya's voice.
+
+Find the system prompt for the weekly briefing generation and add this to the system message:
+
+```
+You are Naya. You speak like a brilliant strategic advisor who knows the person deeply — their strengths, their tendencies, and their blind spots. You are direct but never cold. You are supportive but never hollow. You do not use corporate language. You do not list things for the sake of listing them. Every sentence has a reason to exist.
+```
+
+And add the user's persona and avoidance triggers to the context passed to OpenAI, the same way it's done for the daily brief.
+
+---
+
+## CHANGE 5 — SIDEBAR: Rename "Pilot Board" section label
+
+**File:** `client/src/components/sidebar.tsx`
+
+**Problem:** The section label is "Command" which is fine, but "Pilot Board" as a page name is good. The section label "Library" for the Reading Hub feels disconnected from the intelligence theme.
+
+**Changes:**
+- Rename section "Library" → "Knowledge"
+- The Reading Hub page title (inside reading-hub.tsx) should also update to "Knowledge Hub" for consistency
+- In the sidebar bottom, the user's persona badge (currently small and subtle) should be slightly more visible — not huge, but enough to feel like Naya acknowledges you
+
+---
+
+## CHANGE 6 — ONBOARDING: Add Naya's voice to the intro screen
+
+**File:** `client/src/pages/onboarding.tsx`
+
+**Problem:** The onboarding starts abruptly with form fields. There's no introduction from Naya — the user doesn't feel like they're meeting an intelligence that's learning about them.
+
+**Add a step 0 (before step 1)** — a welcome screen that introduces Naya before any data collection. It should appear before the current Step 1.
+
+The TOTAL_STEPS should update to 12, and all step references should shift by 1.
+
+Welcome screen content:
+```
+[Naya logo/icon — large, centered]
+
+"Hi. I'm Naya."
+
+"I'm an AI Operating System built for independent builders like you."
+
+"In the next few minutes, I'm going to ask you some questions — not to fill a database, but because the more I know about how you work, what you're building, and what gets in your way, the more useful I can be."
+
+"I don't work with generic advice. I work with you."
+
+[Button: "Let's begin →"]
+```
+
+Style: clean white card, large N logo in primary color, centered text, soft gradient background.
+
+---
+
+## CHANGE 7 — STRATEGY PAGE: Add Naya's voice label
+
+**File:** `client/src/pages/strategy.tsx`
+
+**Problem:** When the strategy page shows "Naya hasn't analyzed this project yet" it's dry and purely functional.
+
+Replace these generic messages with Naya's voice:
+- `"Naya hasn't analyzed ${selectedProject?.name || 'this project'} yet."` → `"Give Naya a moment to think about ${selectedProject?.name || 'your project'}. Hit Generate Strategy below."`
+- The "Generate Strategy" button copy → Keep as is, it's clear
+- Weekly strategy section header "Weekly Focus" → Keep as is, it works
+- When briefing is loading: `"Preparing your weekly intelligence briefing..."` → `"Naya is thinking about your week..."`
+
+---
+
+## CHANGE 8 — AI VOICE GUIDE: Add a shared tone constant
+
+**File:** Create a new file `server/naya-voice.ts`
+
+This file should export a constant that ALL AI-generated content in Naya uses as the base system prompt. Right now each endpoint has its own version of "you are Naya..." which leads to inconsistency.
+
+```typescript
+export const NAYA_SYSTEM_VOICE = `You are Naya — an AI Operating System for independent builders and entrepreneurs.
+
+YOUR VOICE:
+- Direct. Human. Never corporate.
+- You speak in second person ("you", not "one" or "the user").
+- You are warm but not cheerful-robot warm. You are the kind of advisor who tells you the truth with care.
+- You never pad your answers. Every sentence earns its place.
+- You don't use phrases like: "It looks like...", "Here's a summary...", "Great question!", "Certainly!", "Of course!"
+- You reference what you know about the person when relevant. You don't pretend to be a blank slate.
+- When something matters, you say it clearly. When something is hard, you acknowledge it.
+
+YOUR GOAL:
+Help the person make better decisions, take smarter actions, and build their business without burning out.
+You are not a to-do list. You are a thinking partner.`;
+```
+
+Then import and use `NAYA_SYSTEM_VOICE` in:
+- `POST /api/tasks/daily-brief` (line ~1379)
+- `POST /api/strategy/generate-weekly-briefing` (line ~4717)
+- `POST /api/tasks/generate-daily` (the system prompt in the OpenAI call)
+- Any other AI generation endpoint
+
+---
+
+## PRIORITY ORDER
+
+1. **Change 8** (NAYA_SYSTEM_VOICE) — foundation for everything else, do this first
+2. **Change 2** (Daily Brief prompt) — highest daily visibility
+3. **Change 1** (Landing page) — public facing, important for investors/beta users
+4. **Change 3** (Operating Profile chip in dashboard)
+5. **Change 6** (Onboarding welcome screen)
+6. **Changes 4, 5, 7** — polish and consistency
+
+---
+
+## WHAT NOT TO CHANGE
+
+- The planning view — it works, the task scheduling is now solid
+- The campaign structure — the phases/launch/redeploy flow is correct
+- The energy system — it's well implemented
+- The brand DNA and operating profile data model — the data collected is right, it just needs to be used more visibly
+- The sidebar structure — the navigation groups make sense

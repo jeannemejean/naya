@@ -1,0 +1,328 @@
+After testing the current version of Naya and reviewing the latest implementation, I want to clarify something important about the direction of the product.
+
+This is not only about fixing bugs.
+What is emerging is a deeper layer of intelligence that Naya must incorporate.
+
+Naya is not meant to be just another productivity or marketing platform.
+
+The goal is for Naya to become:
+
+A life and project operating system for modern independent builders.
+
+This means the platform must understand not only the user’s projects, but also how the user functions as a person.
+
+Below is a structured overview of:
+	1.	Immediate bugs and technical issues
+	2.	Structural UX improvements
+	3.	Product evolution — behavioral intelligence layer
+
+⸻
+
+1. Immediate Issues That Need Fixing
+
+These are blocking issues discovered during testing.
+
+Account Management for Testing
+
+During development I need the ability to:
+	•	delete test accounts
+	•	reset onboarding
+	•	restart onboarding flows
+
+Currently, once an account has completed or partially completed onboarding, I cannot re-run the process properly.
+
+Please add:
+	•	an admin endpoint or dev tool to delete users
+	•	an endpoint to reset onboarding state
+	•	ability to restart onboarding for a user
+
+This is necessary to properly iterate on the onboarding experience.
+
+⸻
+
+Settings Button Logs Out User
+
+When I click on the user profile and then the settings button, it logs me out instead of opening settings.
+
+This must be fixed so that:
+	•	settings opens a proper settings page or modal
+	•	logout remains a separate action
+
+⸻
+
+Quick Capture Routing Issue
+
+Example:
+
+I entered:
+
+“buy deodorant today”
+
+Naya correctly classified this as a task.
+
+However the task did not appear in Today’s tasks.
+
+If Quick Capture classifies an entry as a task, it must:
+	•	create the task
+	•	assign it to the correct project (or personal context)
+	•	place it in the board (today / tomorrow depending on context)
+
+Quick Capture should feed the board, not remain a detached capture list.
+
+⸻
+
+2. Onboarding Needs to Be Rethought
+
+The onboarding currently asks questions mostly about:
+	•	business structure
+	•	communication
+	•	revenue
+
+But Naya is intended to serve a much broader audience:
+	•	photographers
+	•	designers
+	•	artists
+	•	makers
+	•	creators
+	•	freelancers
+	•	independent consultants
+	•	people building passion projects
+	•	people managing multiple life directions
+
+So the onboarding should not feel like a marketing agency tool.
+
+It should feel like a system that understands modern independent builders.
+
+⸻
+
+3. Naya Must Understand the User, Not Only the Projects
+
+This is the most important evolution.
+
+Right now onboarding gathers information about:
+	•	projects
+	•	positioning
+	•	business model
+
+But it does not gather enough information about how the user functions.
+
+Naya should learn things like:
+	•	how the user prefers to work
+	•	what motivates them
+	•	what kinds of tasks they avoid
+	•	what kind of support helps them start tasks
+	•	what psychological friction they experience
+
+For example:
+
+A user might struggle with posting on social media because they feel illegitimate or uncomfortable.
+
+Another user might struggle with starting tasks even when they enjoy the project.
+
+Another user might constantly delay tasks that require visibility.
+
+Naya should be able to recognize these patterns and adapt.
+
+⸻
+
+4. Naya Should Become a Whole-Life Operating System
+
+The user will not only manage business projects.
+
+They may also manage things like:
+	•	creative projects
+	•	learning goals (e.g. learning Japanese)
+	•	personal routines
+	•	daily life tasks
+	•	side experiments
+	•	long-term ambitions
+
+Example projects might include:
+	•	an agency
+	•	a creative brand
+	•	learning a language
+	•	writing a newsletter
+	•	building a product
+	•	personal wellbeing goals
+
+Naya must support this diversity.
+
+That means projects can have different intents:
+	•	revenue
+	•	authority building
+	•	learning
+	•	exploration
+	•	personal development
+	•	lifestyle
+
+The system must respect these differences when generating tasks and recommendations.
+
+⸻
+
+5. Add a “User Operating Profile”
+
+In addition to Brand DNA and project data, Naya should build a deeper user operating profile.
+
+This could include information such as:
+	•	preferred planning style
+	•	motivation style
+	•	friction patterns
+	•	avoidance triggers
+	•	energy rhythm
+	•	preferred encouragement style
+	•	activation style
+
+For example:
+
+Some users respond well to structured frameworks.
+
+Others respond better to small activation steps.
+
+Others need encouragement or reframing to start tasks they avoid.
+
+This data should feed the AI layer so the system adapts how it communicates and structures tasks.
+
+⸻
+
+6. Tasks Should Include Activation Support
+
+Right now tasks are mostly treated as execution units.
+
+But tasks can also have emotional or psychological friction.
+
+Example:
+
+Task:
+“Post on Instagram”
+
+The difficulty may not be the action itself, but the user’s discomfort with visibility.
+
+Naya should be able to help activate the task with things like:
+	•	a reframed first step
+	•	a smaller micro-action
+	•	a motivational prompt
+	•	advice adapted to the user’s profile
+
+For example:
+
+Instead of simply showing the task, Naya could add an activation prompt such as:
+
+“Start by writing one sentence about something you learned this week. You do not need to sound like an expert.”
+
+This would make the system much more helpful.
+
+⸻
+
+7. Quick Capture Should Become an Intelligent Inbox
+
+Quick Capture is currently a capture tool.
+
+But it should become a cognitive entry point for Naya.
+
+When a user writes something, Naya should interpret it as one of several types:
+	•	task
+	•	idea
+	•	note
+	•	reminder
+	•	emotional signal
+	•	project insight
+
+Examples:
+
+“Buy deodorant”
+→ task today
+
+“Idea: seasonal mini photo sessions”
+→ idea linked to photography project
+
+“I feel uncomfortable posting on LinkedIn”
+→ note + behavioral signal
+
+“Learn 15 Japanese words this week”
+→ learning goal for language project
+
+Quick Capture should not only store the entry.
+
+It should:
+	•	classify it
+	•	route it
+	•	attach it to context
+	•	feed Naya’s intelligence.
+
+⸻
+
+8. Behavioral Signals Should Be Stored
+
+When the user expresses things like:
+	•	lack of motivation
+	•	discomfort
+	•	avoidance
+	•	fear of visibility
+	•	feeling illegitimate
+
+Naya should be able to remember these signals.
+
+This allows the system to:
+	•	adapt encouragement
+	•	adjust task framing
+	•	avoid pushing the user in counterproductive ways
+
+This could become a behavioral memory layer.
+
+⸻
+
+9. What Naya Is Becoming
+
+Naya should not be positioned as:
+	•	a task manager
+	•	a CRM
+	•	a content planning tool
+
+It should become:
+
+A calm, intelligent operating desk for modern independent builders.
+
+Its role is to help users:
+	•	organize multiple projects
+	•	translate ideas into actions
+	•	prioritize meaningfully
+	•	work with their psychology rather than against it
+	•	maintain momentum across different areas of life
+
+⸻
+
+10. Next Product Evolution
+
+Going forward, Naya should evolve across three intelligence layers:
+
+Layer 1 — Project Intelligence
+
+Understanding projects, goals, priorities and timelines.
+
+Layer 2 — Persona Intelligence
+
+Understanding the types of people users want to influence.
+
+Layer 3 — Behavioral Intelligence
+
+Understanding how the user themselves functions.
+
+The third layer is what will make Naya truly different.
+
+⸻
+
+Summary
+
+Immediate priorities:
+	1.	Fix account deletion and onboarding reset capability
+	2.	Fix settings button logging out users
+	3.	Fix Quick Capture routing into the task board
+
+Product evolution priorities:
+	1.	Broaden onboarding beyond business questions
+	2.	Add user operating profile data
+	3.	Improve Quick Capture interpretation
+	4.	Introduce activation support for difficult tasks
+	5.	Begin storing behavioral signals
+
+The goal is for Naya to evolve into a system that understands not only what the user is building, but also how the user works as a human being.

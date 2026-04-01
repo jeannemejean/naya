@@ -1,0 +1,189 @@
+I tested the latest version again and there are now several critical issues that need to be fixed before we keep layering more intelligence on top.
+
+These are not minor cosmetic problems. They affect the trustworthiness of the board, the planning system, and the overall product coherence.
+
+1. Tasks are being scheduled in the past
+
+Today is March 11, but Naya is assigning tasks to March 10.
+
+That should never happen unless the system is explicitly dealing with overdue carryover and clearly labeling it as such.
+
+Please audit the date logic in the planning and task generation flows, especially:
+	•	how “today” is calculated
+	•	timezone handling
+	•	whether scheduledDate is being derived from stale client state or stale server state
+	•	whether date navigation in planning is mutating the target generation date incorrectly
+	•	whether generate/replan is using the selected planning date versus real current date
+
+Expected behavior
+	•	newly generated tasks should never default into the past
+	•	if a task is overdue, it should be explicitly marked as overdue, not silently scheduled yesterday
+	•	planning navigation should be stable and predictable
+
+⸻
+
+2. Planning view is shifting inconsistently
+
+The planning interface feels unstable. Dates and views seem to move inconsistently, which makes it hard to trust the calendar.
+
+Please audit:
+	•	day/week/month navigation state
+	•	whether selectedDate and “today” are being conflated
+	•	whether the planning page is reusing stale state when switching projects or views
+	•	whether queries are keyed correctly by date + project context
+	•	whether the app is mixing scheduledDate and dueDate in different views
+
+Expected behavior
+	•	the planning view should remain anchored to the selected date range
+	•	changing views should not unexpectedly shift the visible period
+	•	project switching should preserve a coherent date context
+
+⸻
+
+3. I only have tasks for 2 out of 4 projects
+
+I currently have 4 projects, but only 2 are receiving tasks.
+
+That means either:
+	•	task generation is not iterating through all eligible projects correctly
+	•	some projects are being filtered out silently
+	•	some project contexts are incomplete and causing generation to fail
+	•	the All Projects generation flow is only partially working
+
+Please audit:
+	•	which projects are considered eligible during generation
+	•	whether projects without enough profile data are skipped
+	•	whether only primary / active / certain types of projects are included
+	•	whether generation fails for some projects without surfacing errors
+	•	whether project task insertion is succeeding for all generated tasks
+
+Expected behavior
+
+In All Projects mode, every valid project should be considered and either:
+	•	receive tasks
+	•	or explicitly show why no tasks were generated for it
+
+The system should never silently ignore projects.
+
+⸻
+
+4. Project colors are not matching the correct projects
+
+The color indicators are currently inconsistent with the actual project identities.
+
+This is a major readability issue because project-color association is one of the main orientation tools in a multi-project system.
+
+Please audit:
+	•	how project colors are stored and resolved
+	•	whether the task card is using the correct projectId
+	•	whether the planning UI and task list are resolving project metadata from stale caches
+	•	whether grouped tasks / workflow rows are inheriting the wrong color source
+
+Expected behavior
+
+Every task, planning item, and project indicator should consistently use the color of the project it belongs to.
+
+⸻
+
+5. Planning UI references elements that are not actually visible
+
+The system references things like energy badges, but in the interface they are either missing or not actually visible in a meaningful way.
+
+If the product logic depends on:
+	•	energy type
+	•	workflow grouping
+	•	realism hints
+	•	time-of-day suggestions
+
+then those need to appear clearly in the UI.
+
+Otherwise the user cannot understand or trust the intelligence layer.
+
+Expected behavior
+
+If energy types are part of the task model, they should be visibly rendered on task cards and planning items.
+
+Same principle for:
+	•	workflow groups
+	•	timing hints
+	•	blocked / dependency indicators
+	•	realism deferrals
+
+⸻
+
+6. Agency project has no client layer yet
+
+When I click on Agence JMD, Naya recognizes it as an Agency, but there is nowhere to add clients.
+
+This is now a major missing feature.
+
+If a project is typed as Agency, the project page should support:
+	•	client creation
+	•	client list
+	•	client-specific goals
+	•	client-related tasks
+	•	eventually client workload balancing
+
+Right now the product recognizes the agency concept, but the structure is incomplete.
+
+Expected behavior
+
+Agency projects should have a dedicated client layer in the UI and backend model.
+
+At minimum:
+	•	an “Add client” button
+	•	a client list section
+	•	a client entity attached to the agency project
+
+⸻
+
+7. Strategy Intelligence panel is empty
+
+The strategy intelligence area on the side currently contains nothing.
+
+This creates a mismatch between:
+	•	what the product implies exists
+	•	what the user actually gets
+
+If the panel is not ready, it should not appear as an empty promise.
+
+If it is meant to work, then it needs to show real strategic output such as:
+	•	current project focus
+	•	active goal interpretation
+	•	suggested next strategic move
+	•	bottlenecks
+	•	opportunities
+	•	recent reasoning from AI
+
+Expected behavior
+
+Either:
+	•	remove / hide empty strategy intelligence placeholders
+or
+	•	populate them with real data
+
+No empty intelligence panels.
+
+⸻
+
+Requested next step
+
+Please do a focused audit and return with:
+	1.	the exact cause of the past-date scheduling bug
+	2.	the exact cause of inconsistent planning date shifting
+	3.	why only 2 out of 4 projects are receiving tasks
+	4.	why project colors are mismatched
+	5.	which energy / intelligence UI elements exist in the model but are not actually rendered
+	6.	a proposal for adding the Agency → Client layer
+	7.	a plan for either populating or temporarily removing the empty Strategy Intelligence panel
+
+⸻
+
+Priority order for fixes
+	1.	Fix past-date scheduling
+	2.	Fix unstable planning date/view logic
+	3.	Fix missing project task generation
+	4.	Fix project color mismatches
+	5.	Render the missing energy/intelligence UI signals
+	6.	Add Agency → Client structure
+	7.	Fix or remove empty Strategy Intelligence panel

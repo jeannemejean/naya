@@ -1,0 +1,505 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naya - AI Business Co-Pilot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/heroicons@1.0.6/outline.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'inter': ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#6366F1',
+                        secondary: '#10B981',
+                        accent: '#F59E0B',
+                        danger: '#EF4444',
+                        info: '#06B6D4',
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+    <!-- @COMPONENT: MainLayout -->
+    <div class="flex h-screen bg-slate-50">
+        <!-- @COMPONENT: Sidebar -->
+        <div class="w-64 bg-white border-r border-slate-200 flex flex-col">
+            <!-- Logo -->
+            <div class="p-6 border-b border-slate-200">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                        <span class="text-white font-bold text-sm">N</span>
+                    </div>
+                    <span class="text-xl font-bold text-slate-900">Naya</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">Your AI Business Co-Pilot</p>
+            </div>
+
+            <!-- Navigation -->
+            <nav class="flex-1 p-4 space-y-2">
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 bg-primary/10 text-primary rounded-lg font-medium">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    <span>Pilot Board</span>
+                </a>
+                
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                    </svg>
+                    <span>Content Calendar</span>
+                </a>
+                
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"></path>
+                    </svg>
+                    <span>Outreach</span>
+                </a>
+                
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    <span>Analytics</span>
+                </a>
+                
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                    </svg>
+                    <span>Strategy Assistant</span>
+                </a>
+            </nav>
+
+            <!-- User Profile -->
+            <div class="p-4 border-t border-slate-200">
+                <div class="flex items-center space-x-3">
+                    <!-- Profile image placeholder -->
+                    <div class="w-8 h-8 bg-gradient-to-r from-primary to-secondary rounded-full flex items-center justify-center">
+                        <span class="text-white text-sm font-medium">J</span>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-slate-900" data-bind="user.name">Jeanne</p>
+                        <p class="text-xs text-slate-500">Personal Brand</p>
+                    </div>
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <!-- @END_COMPONENT: Sidebar -->
+
+        <!-- @COMPONENT: MainContent -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header -->
+            <header class="bg-white border-b border-slate-200 px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-900">Good morning, Jeanne 👋</h1>
+                        <p class="text-slate-600 mt-1">Today's focus: <span class="text-primary font-medium">Visibility & Trust Building</span></p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <!-- Notifications -->
+                        <button class="relative p-2 text-slate-400 hover:text-slate-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-5 5v-5zM11 19H6a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2v5"></path>
+                            </svg>
+                            <span class="absolute -top-1 -right-1 w-3 h-3 bg-danger rounded-full text-xs text-white flex items-center justify-center">2</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Content Area -->
+            <main class="flex-1 overflow-y-auto p-6">
+                <div class="max-w-7xl mx-auto">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Left Column - Daily Tasks & Weekly Progress -->
+                        <div class="lg:col-span-2 space-y-6">
+                            <!-- Daily Focus Banner -->
+                            <!-- @COMPONENT: DailyFocusBanner -->
+                            <div class="bg-gradient-to-r from-primary to-primary/80 rounded-xl p-6 text-white">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h2 class="text-lg font-semibold mb-2">🎯 Today's Strategic Focus</h2>
+                                        <p class="text-primary-100 mb-3">Build trust with your audience through personal storytelling</p>
+                                        <div class="flex items-center space-x-4 text-sm">
+                                            <span class="bg-white/20 px-3 py-1 rounded-full">Content Focus</span>
+                                            <span class="bg-white/20 px-3 py-1 rounded-full">Tuesday Momentum</span>
+                                        </div>
+                                    </div>
+                                    <div class="hidden sm:block">
+                                        <svg class="w-16 h-16 text-white/30" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- @END_COMPONENT: DailyFocusBanner -->
+
+                            <!-- Today's Tasks -->
+                            <!-- @COMPONENT: TodaysTasks -->
+                            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                                <div class="p-6 border-b border-slate-200">
+                                    <div class="flex items-center justify-between">
+                                        <h2 class="text-lg font-semibold text-slate-900">Today's Tasks</h2>
+                                        <span class="text-sm text-slate-500">3 of 5 completed</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="p-6 space-y-4">
+                                    <!-- Task 1 - Completed -->
+                                    <div class="flex items-start space-x-3 p-4 bg-secondary/5 rounded-lg border border-secondary/20">
+                                        <input type="checkbox" checked class="mt-1 w-4 h-4 text-secondary border-secondary rounded focus:ring-secondary" data-event="change:markTaskComplete">
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900 line-through">Post Instagram story about workspace setup</h3>
+                                            <p class="text-sm text-slate-600 mt-1">Behind-the-scenes content builds connection and relatability</p>
+                                            <div class="flex items-center space-x-2 mt-2">
+                                                <span class="bg-secondary/10 text-secondary text-xs px-2 py-1 rounded-full">Trust Building</span>
+                                                <span class="text-xs text-slate-500">✅ Completed 2h ago</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Task 2 - Completed -->
+                                    <div class="flex items-start space-x-3 p-4 bg-secondary/5 rounded-lg border border-secondary/20">
+                                        <input type="checkbox" checked class="mt-1 w-4 h-4 text-secondary border-secondary rounded focus:ring-secondary" data-event="change:markTaskComplete">
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900 line-through">Send follow-up email to 3 warm leads</h3>
+                                            <p class="text-sm text-slate-600 mt-1">Nurture relationship with potential clients from last week</p>
+                                            <div class="flex items-center space-x-2 mt-2">
+                                                <span class="bg-accent/10 text-accent text-xs px-2 py-1 rounded-full">Conversion</span>
+                                                <span class="text-xs text-slate-500">✅ Completed 1h ago</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Task 3 - Completed -->
+                                    <div class="flex items-start space-x-3 p-4 bg-secondary/5 rounded-lg border border-secondary/20">
+                                        <input type="checkbox" checked class="mt-1 w-4 h-4 text-secondary border-secondary rounded focus:ring-secondary" data-event="change:markTaskComplete">
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900 line-through">Write LinkedIn post about client transformation</h3>
+                                            <p class="text-sm text-slate-600 mt-1">Share success story to build credibility and social proof</p>
+                                            <div class="flex items-center space-x-2 mt-2">
+                                                <span class="bg-secondary/10 text-secondary text-xs px-2 py-1 rounded-full">Trust Building</span>
+                                                <span class="text-xs text-slate-500">✅ Completed 30m ago</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Task 4 - Pending -->
+                                    <div class="flex items-start space-x-3 p-4 border-2 border-dashed border-slate-200 rounded-lg hover:border-primary/50 transition-colors">
+                                        <input type="checkbox" class="mt-1 w-4 h-4 text-primary border-slate-300 rounded focus:ring-primary" data-event="change:markTaskComplete">
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900">Review and respond to Instagram comments</h3>
+                                            <p class="text-sm text-slate-600 mt-1">Engage with your community to build stronger relationships</p>
+                                            <div class="flex items-center space-x-2 mt-2">
+                                                <span class="bg-info/10 text-info text-xs px-2 py-1 rounded-full">Engagement</span>
+                                                <button class="text-xs text-primary hover:underline" data-event="click:openContent">View Draft</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Task 5 - Pending -->
+                                    <div class="flex items-start space-x-3 p-4 border-2 border-dashed border-slate-200 rounded-lg hover:border-primary/50 transition-colors">
+                                        <input type="checkbox" class="mt-1 w-4 h-4 text-primary border-slate-300 rounded focus:ring-primary" data-event="change:markTaskComplete">
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900">Plan tomorrow's content calendar</h3>
+                                            <p class="text-sm text-slate-600 mt-1">Stay ahead with strategic content planning for Wednesday</p>
+                                            <div class="flex items-center space-x-2 mt-2">
+                                                <span class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded-full">Planning</span>
+                                                <button class="text-xs text-primary hover:underline" data-event="click:generateContent">Generate Ideas</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- @END_COMPONENT: TodaysTasks -->
+
+                            <!-- AI Suggestions -->
+                            <!-- @COMPONENT: AISuggestions -->
+                            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                                <div class="p-6 border-b border-slate-200">
+                                    <h2 class="text-lg font-semibold text-slate-900 flex items-center">
+                                        <svg class="w-5 h-5 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                        </svg>
+                                        AI Strategic Insights
+                                    </h2>
+                                </div>
+                                
+                                <div class="p-6 space-y-4">
+                                    <div class="flex items-start space-x-3 p-4 bg-accent/5 rounded-lg border border-accent/20">
+                                        <div class="w-2 h-2 bg-accent rounded-full mt-2"></div>
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900">Great momentum on trust-building content!</h3>
+                                            <p class="text-sm text-slate-600 mt-1">Your personal story posts are getting 40% more saves than usual. Consider sharing another vulnerable moment this week.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start space-x-3 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                                        <div class="w-2 h-2 bg-primary rounded-full mt-2"></div>
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900">Optimize your LinkedIn strategy</h3>
+                                            <p class="text-sm text-slate-600 mt-1">You haven't posted native LinkedIn content in 5 days. Your audience there craves business insights.</p>
+                                            <button class="mt-2 text-sm text-primary hover:underline font-medium" data-event="click:generateLinkedInIdeas">Generate LinkedIn post ideas →</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-start space-x-3 p-4 bg-secondary/5 rounded-lg border border-secondary/20">
+                                        <div class="w-2 h-2 bg-secondary rounded-full mt-2"></div>
+                                        <div class="flex-1">
+                                            <h3 class="font-medium text-slate-900">Email engagement is strong</h3>
+                                            <p class="text-sm text-slate-600 mt-1">Last week's newsletter had a 48% open rate. Your authentic tone is working—keep it consistent.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- @END_COMPONENT: AISuggestions -->
+                        </div>
+
+                        <!-- Right Column - Stats & Quick Actions -->
+                        <div class="space-y-6">
+                            <!-- Weekly Progress -->
+                            <!-- @COMPONENT: WeeklyProgress -->
+                            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                                <div class="p-6 border-b border-slate-200">
+                                    <h2 class="text-lg font-semibold text-slate-900">Weekly Progress</h2>
+                                    <p class="text-sm text-slate-500">Dec 4 - Dec 10, 2023</p>
+                                </div>
+                                
+                                <div class="p-6 space-y-4">
+                                    <div class="space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-sm font-medium text-slate-700">Instagram Posts</span>
+                                            <span class="text-sm text-slate-600">2/4</span>
+                                        </div>
+                                        <div class="w-full bg-slate-200 rounded-full h-2">
+                                            <div class="bg-primary h-2 rounded-full" style="width: 50%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-sm font-medium text-slate-700">Leads Contacted</span>
+                                            <span class="text-sm text-secondary font-medium">7/5 ✓</span>
+                                        </div>
+                                        <div class="w-full bg-slate-200 rounded-full h-2">
+                                            <div class="bg-secondary h-2 rounded-full" style="width: 100%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-sm font-medium text-slate-700">Emails Sent</span>
+                                            <span class="text-sm text-secondary font-medium">2/2 ✓</span>
+                                        </div>
+                                        <div class="w-full bg-slate-200 rounded-full h-2">
+                                            <div class="bg-secondary h-2 rounded-full" style="width: 100%"></div>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-3">
+                                        <div class="flex items-center justify-between">
+                                            <span class="text-sm font-medium text-slate-700">Content Calendar</span>
+                                            <span class="text-sm text-accent">3/5</span>
+                                        </div>
+                                        <div class="w-full bg-slate-200 rounded-full h-2">
+                                            <div class="bg-accent h-2 rounded-full" style="width: 60%"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- @END_COMPONENT: WeeklyProgress -->
+
+                            <!-- Quick Stats -->
+                            <!-- @COMPONENT: QuickStats -->
+                            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                                <div class="p-6 border-b border-slate-200">
+                                    <h2 class="text-lg font-semibold text-slate-900">Quick Stats</h2>
+                                </div>
+                                
+                                <div class="p-6 space-y-4">
+                                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                                        <div>
+                                            <p class="text-sm text-slate-600">IG Reach</p>
+                                            <p class="text-lg font-semibold text-slate-900">2.1k</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-xs text-secondary bg-secondary/10 px-2 py-1 rounded-full">+12%</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                                        <div>
+                                            <p class="text-sm text-slate-600">Email Open Rate</p>
+                                            <p class="text-lg font-semibold text-slate-900">48%</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-xs text-secondary bg-secondary/10 px-2 py-1 rounded-full">+8%</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                                        <div>
+                                            <p class="text-sm text-slate-600">Response Rate</p>
+                                            <p class="text-lg font-semibold text-slate-900">28%</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-xs text-danger bg-danger/10 px-2 py-1 rounded-full">-5%</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                                        <div>
+                                            <p class="text-sm text-slate-600">Leads This Week</p>
+                                            <p class="text-lg font-semibold text-slate-900">7</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <span class="text-xs text-secondary bg-secondary/10 px-2 py-1 rounded-full">+2</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- @END_COMPONENT: QuickStats -->
+
+                            <!-- Quick Actions -->
+                            <!-- @COMPONENT: QuickActions -->
+                            <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+                                <div class="p-6 border-b border-slate-200">
+                                    <h2 class="text-lg font-semibold text-slate-900">Quick Actions</h2>
+                                </div>
+                                
+                                <div class="p-6 space-y-3">
+                                    <button class="w-full flex items-center justify-center space-x-2 bg-primary text-white px-4 py-3 rounded-lg hover:bg-primary/90 transition-colors" data-event="click:generateContent">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                        </svg>
+                                        <span class="font-medium">Generate Content</span>
+                                    </button>
+
+                                    <button class="w-full flex items-center justify-center space-x-2 bg-secondary text-white px-4 py-3 rounded-lg hover:bg-secondary/90 transition-colors" data-event="click:viewLeads">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"></path>
+                                        </svg>
+                                        <span class="font-medium">Check Leads</span>
+                                    </button>
+
+                                    <button class="w-full flex items-center justify-center space-x-2 bg-white border border-slate-300 text-slate-700 px-4 py-3 rounded-lg hover:bg-slate-50 transition-colors" data-event="click:weeklyReview">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                        </svg>
+                                        <span class="font-medium">Weekly Review</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- @END_COMPONENT: QuickActions -->
+
+                            <!-- Tomorrow Preview -->
+                            <!-- @COMPONENT: TomorrowPreview -->
+                            <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border border-slate-200">
+                                <h3 class="text-lg font-semibold text-slate-900 mb-4">Tomorrow Preview</h3>
+                                <div class="space-y-3">
+                                    <div class="flex items-center space-x-3 text-sm">
+                                        <div class="w-2 h-2 bg-primary rounded-full"></div>
+                                        <span class="text-slate-600">Follow up with @sarahdesigns (warm lead)</span>
+                                    </div>
+                                    <div class="flex items-center space-x-3 text-sm">
+                                        <div class="w-2 h-2 bg-accent rounded-full"></div>
+                                        <span class="text-slate-600">Draft newsletter for Thursday send</span>
+                                    </div>
+                                    <div class="flex items-center space-x-3 text-sm">
+                                        <div class="w-2 h-2 bg-secondary rounded-full"></div>
+                                        <span class="text-slate-600">Post LinkedIn carousel (Tips pillar)</span>
+                                    </div>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-4 italic">"Focus: Build momentum with consistent visibility"</p>
+                            </div>
+                            <!-- @END_COMPONENT: TomorrowPreview -->
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+        <!-- @END_COMPONENT: MainContent -->
+    </div>
+    <!-- @END_COMPONENT: MainLayout -->
+
+    <script>
+        // TODO: Implement task completion tracking
+        // TODO: Integrate with OpenAI API for content generation  
+        // TODO: Connect to lead management system
+        // TODO: Add real-time notifications
+        // TODO: Implement data persistence layer
+
+        (function() {
+            // Task completion simulation
+            document.addEventListener('change', function(e) {
+                if (e.target.type === 'checkbox' && e.target.hasAttribute('data-event')) {
+                    const task = e.target.closest('.flex');
+                    if (e.target.checked) {
+                        task.classList.add('bg-secondary/5', 'border-secondary/20');
+                        task.querySelector('h3').classList.add('line-through');
+                        // TODO: Update backend task status
+                        console.log('Task marked complete');
+                    } else {
+                        task.classList.remove('bg-secondary/5', 'border-secondary/20');
+                        task.querySelector('h3').classList.remove('line-through');
+                        // TODO: Update backend task status
+                        console.log('Task marked incomplete');
+                    }
+                }
+            });
+
+            // Quick action button handlers
+            document.addEventListener('click', function(e) {
+                if (e.target.hasAttribute('data-event')) {
+                    const action = e.target.getAttribute('data-event').split(':')[1];
+                    switch(action) {
+                        case 'generateContent':
+                            // TODO: Navigate to content generation module
+                            console.log('Opening content generator');
+                            break;
+                        case 'viewLeads':
+                            // TODO: Navigate to leads module
+                            console.log('Opening leads dashboard');
+                            break;
+                        case 'weeklyReview':
+                            // TODO: Open strategy assistant
+                            console.log('Opening weekly review');
+                            break;
+                        case 'generateLinkedInIdeas':
+                            // TODO: Generate LinkedIn content suggestions
+                            console.log('Generating LinkedIn ideas');
+                            break;
+                    }
+                }
+            });
+
+            // Simulate real-time updates
+            function updateProgress() {
+                // TODO: Fetch real progress data from backend
+                console.log('Updating progress metrics');
+            }
+
+            // Update every 30 seconds
+            setInterval(updateProgress, 30000);
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Naya",
+    "slug": "naya",
+    "version": "1.0.0",
+    "scheme": "naya",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4f46e5"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.naya.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Naya utilise le micro pour t'écouter.",
+        "NSSpeechRecognitionUsageDescription": "Naya convertit ta voix en texte."
+      }
+    },
+    "android": {
+      "package": "com.naya.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4f46e5"
+      },
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-av",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#4f46e5"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

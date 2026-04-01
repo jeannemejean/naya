@@ -1,0 +1,217 @@
+I tested the new version of Naya again and I found a structural issue in how onboarding reset currently works.
+
+This is not just a small bug. It affects the reliability of the whole setup flow.
+
+Problem 1 — “Reset onboarding” is not a true reset
+
+I went into Settings and used the Reset Onboarding action because I wanted to start again from scratch and rebuild a clean board from fresh onboarding data.
+
+But that is not what happened.
+
+What happens right now is:
+	•	the onboarding flow restarts
+	•	but the old data is still kept in the system
+	•	old projects remain
+	•	old goals remain
+	•	old board state remains
+	•	then the new onboarding adds more data on top of the old data
+
+So I end up with a polluted board containing both old and new setup data.
+
+That defeats the purpose of resetting onboarding.
+
+What I need instead
+
+When I click Reset Onboarding, I want a true clean reset of the onboarding-generated workspace.
+
+That means the user account should remain, but the board setup should go back to zero.
+
+In practice, reset onboarding should wipe all onboarding-generated setup data, not only Brand DNA.
+
+At minimum it should reset:
+	•	brand DNA
+	•	user operating profile
+	•	projects
+	•	project goals
+	•	project strategy profiles
+	•	target personas
+	•	persona analysis results
+	•	active project preference
+	•	any onboarding-generated welcome tasks
+	•	optionally other onboarding-seeded board data that depends on the initial setup
+
+The goal is:
+
+after reset, the next onboarding should rebuild the board from scratch
+
+not append new onboarding results on top of the previous board.
+
+⸻
+
+Likely root cause
+
+From the current structure, the issue seems to be:
+	•	DELETE /api/me/brand-dna only deletes the Brand DNA record
+	•	it does not clear the rest of the onboarding-created data
+	•	then POST /api/onboarding runs again
+	•	and instead of starting from a clean state, it reuses or appends on top of existing records
+
+This matches what I am seeing in the product:
+I reset onboarding, redo setup, and still see old projects and old board content.
+
+So the reset logic needs to become a full onboarding reset, not a Brand DNA delete only.
+
+⸻
+
+Requested change
+
+Please replace the current onboarding reset behavior with one of these two options:
+
+Preferred option
+
+Create a new dedicated backend endpoint such as:
+
+DELETE /api/me/onboarding-reset
+
+This endpoint should wipe all onboarding-generated user setup data while preserving the user account.
+
+If you want to keep the existing endpoint
+
+Then DELETE /api/me/brand-dna must be expanded so it behaves like a full onboarding reset, not only a brand DNA deletion.
+
+Either way, I need the result to be:
+	•	account remains
+	•	authentication remains
+	•	onboarding restarts
+	•	board is clean
+	•	only the new onboarding answers populate the board
+
+⸻
+
+Problem 2 — Top goal band says “no goal” even though goals exist
+
+There is another issue on the board:
+
+At the top of the dashboard, it says that I currently have no goal, but that is not true.
+
+I currently have several projects, and each of these projects has goals.
+
+So the goal band is not reading the board state correctly.
+
+What I need
+
+The top board objective area must reflect the real state of the board.
+
+That means:
+
+In All Projects mode
+
+It should show:
+	•	all relevant active goals across projects
+	•	or at least the most important active goals across projects
+
+In Single Project mode
+
+It should show:
+	•	the active goals for that selected project only
+
+What it should not do is display “No active goals” when there are clearly active goals in the system.
+
+⸻
+
+Likely root cause here
+
+This may be happening because of one of these issues:
+	1.	the dashboard is only reading goals for the current active project
+	2.	the active project is stale or incorrect after onboarding reset
+	3.	the newly created primary project does not have the expected active goal attached
+	4.	the top band is not correctly reflecting All Projects mode
+	5.	old and new data are mixed, so the board state is inconsistent
+
+Please audit this specifically.
+
+⸻
+
+Requested audit and fix
+
+Please investigate both issues together, because I think they are related.
+
+I want you to verify:
+
+Reset flow
+	•	what exactly is deleted today when resetting onboarding
+	•	what remains in the database after reset
+	•	whether projects/goals/preferences/personas survive reset
+	•	whether onboarding appends to existing data instead of rebuilding from zero
+
+Goal band logic
+	•	how the dashboard decides whether there are active goals
+	•	whether it is using active project only or all projects
+	•	whether active project state becomes inconsistent after reset
+	•	whether the primary project created during onboarding is missing goal data
+	•	whether the band is using the correct query and mode logic
+
+⸻
+
+Expected final behavior
+
+After “Reset Onboarding”
+
+I should get:
+	•	a clean onboarding flow
+	•	no old projects
+	•	no old goals
+	•	no old seeded board content
+	•	a fresh board generated only from the new onboarding answers
+
+After onboarding completes
+
+I should land on a board where:
+	•	the projects shown are only the ones I entered in onboarding
+	•	the goals shown are the ones attached to those new projects
+	•	the top objective band reflects real active goals immediately
+
+⸻
+
+Implementation suggestion
+
+I would recommend this approach:
+
+1. Add a true full reset method in storage
+
+Something like:
+
+resetUserOnboardingState(userId)
+
+This should delete all onboarding-generated board state in the correct order.
+
+2. Update settings reset action
+
+The Settings page reset button should call that full reset endpoint instead of only deleting Brand DNA.
+
+3. Make onboarding rebuild from zero
+
+POST /api/onboarding should assume a clean state after reset, not append onto old data.
+
+4. Fix dashboard goal band logic
+
+The goal band should be explicitly aware of:
+	•	All Projects mode
+	•	single project mode
+	•	active goals per selected context
+
+⸻
+
+Final note
+
+Reset onboarding must mean:
+
+start over completely
+
+not
+
+restart the questionnaire while keeping old board data underneath
+
+Right now that distinction is breaking the user experience and making it impossible to trust the board state after reset.
+
+Please fix this before continuing with more onboarding improvements.

@@ -1,0 +1,88 @@
+The plan is very good and aligns well with what Naya needs to become a real multi-project operating system.
+
+I want to proceed with this implementation, but I want a few small adjustments before you start building.
+
+These adjustments will make the system more scalable and better aligned with the “slowpreneur OS” philosophy.
+
+⸻
+
+1 — Task generation should depend on project evolution toward its goal
+
+Instead of generating a fixed number of tasks per project (for example 2–3 tasks), task generation should depend on the current evolution of the project relative to its goal.
+
+The purpose of Naya is not to generate arbitrary to-do lists, but to suggest the next meaningful actions that help move the project toward its objective.
+
+So the AI should reason like this:
+
+Project
+→ Project goal
+→ Current progress or signals
+→ What is the next logical step?
+→ Suggested tasks
+
+For example:
+
+If a project goal is to grow Instagram for Encore Merci and there has been little activity, Naya might generate tasks such as:
+
+• Define 5 content themes
+• Draft 3 content ideas
+• Research similar creator accounts
+
+If the project is already active and content planning exists, Naya might generate:
+
+• Write the caption for the next post
+• Film a short behind-the-scenes video
+• Schedule the next 3 posts
+
+So tasks should be contextual suggestions based on the project’s current state, not a fixed quota.
+
+⸻
+
+2 — Add task intent to workspace entries
+
+In the task_workspace_entries schema, please add an additional column:
+
+intent text
+
+Examples:
+
+strategy
+content_idea
+writing
+planning
+reflection
+research
+
+This will allow the AI system later to better understand the context of the user’s thinking and reuse it more intelligently.
+
+⸻
+
+3 — Prevent checkbox clicks from opening the workspace
+
+When wiring the workspace sheet in todays-tasks.tsx, make sure that clicking the checkbox does not open the workspace.
+
+Clicking the checkbox should only toggle task completion.
+
+Please use event.stopPropagation() on the checkbox so that the workspace only opens when clicking the task title.
+
+⸻
+
+4 — Group workspace notes by project in AI context
+
+In the intelligence loop (T007), please group recentWorkspaceEntries by project before passing them into the AI prompt.
+
+This avoids mixing thinking notes from different projects and ensures the AI uses the correct context when generating tasks.
+
+⸻
+
+5 — (Optional but recommended) allow upcoming tasks on project pages
+
+On the project page task panel, consider showing:
+
+Today
+Tomorrow
+Upcoming
+
+instead of only today tasks.
+
+This would make project pages more useful as operational dashboards for each project.

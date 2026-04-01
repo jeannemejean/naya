@@ -1,0 +1,56 @@
+The new plan is very strong and I want to proceed with it.
+
+It now captures the right architecture for Naya:
+	•	task feedback
+	•	AI-generated dependencies
+	•	clear distinction between planning date and deadline
+	•	dependency-aware replanning
+	•	stronger task intelligence over time
+
+This is much closer to the product direction I want.
+
+Before implementation, I want to add a few small refinements.
+
+1. Keep task feedback broader than deletion
+
+The new task_feedback structure is good, especially with feedbackType.
+
+Please make sure the backend design remains compatible with future feedback actions that do not necessarily delete the task, such as:
+	•	not now
+	•	reframe this
+	•	keep but later
+
+Even if the first UI only uses deletion, I want the model to stay flexible.
+
+2. Make task source explicit and consistent
+
+Please make sure tasks consistently store their source, such as:
+	•	generated
+	•	manual
+	•	capture
+	•	replan
+
+This will matter a lot later when Naya needs to understand which kinds of tasks are being accepted, moved, completed, or rejected.
+
+3. Keep blocked tasks visually distinct in the UI
+
+The dependency badges are good for the first iteration.
+
+Please also make sure blocked tasks are visually distinguishable enough that they do not feel like normal actionable tasks.
+This can remain lightweight for now, but I want this principle respected.
+
+4. Replan should also use scheduling-change signals
+
+In addition to completed, pending, rejected, and workspace signals, I want the replan logic to also consider task movement / rescheduling behavior where possible.
+
+If users keep pushing certain tasks forward, that is a meaningful signal and should eventually influence replanning.
+
+Other than these refinements, the plan is solid and I want you to proceed.
+
+The direction is correct:
+Naya should become a task intelligence system that understands:
+	•	what is useful
+	•	what is not useful
+	•	what depends on what
+	•	what should happen now, this week, or later
+	•	and how to reorganize work intelligently over time

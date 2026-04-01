@@ -1,0 +1,169 @@
+The new implementation is moving in the right direction and the realism engine improvements are very valuable.
+
+However, after testing the new version deeply, I see three major structural improvements that are now necessary for Naya to evolve into a truly intelligent operating system.
+
+These are not small UI tweaks — they concern the planning logic, navigation architecture, and project hierarchy model.
+
+⸻
+
+1 — Planning must become monthly → weekly → daily (not daily-only)
+
+Currently, task generation is still fundamentally daily-centric.
+
+Even though there is a weekly and monthly view, the AI only generates a plan for the current day.
+
+This creates several issues:
+	•	tasks are not clearly aligned with long-term goals
+	•	there is no sense of progression across time
+	•	the system cannot reason about sequencing over multiple days
+	•	the plan does not adapt based on what was or wasn’t completed during the week
+
+Desired planning architecture
+
+Planning should work as a multi-horizon intelligence loop:
+
+Step 1 — Monthly strategic plan (macro planning)
+
+At the beginning of the month (or when the user triggers planning), the AI should:
+	•	analyse project goals and milestones
+	•	generate a structured monthly roadmap
+	•	distribute tasks across the month
+	•	define logical sequences and dependencies
+	•	create bundles of work that unfold across multiple weeks
+
+Tasks generated here should already include:
+	•	scheduledDate
+	•	dependency chains
+	•	workflowGroup
+	•	priority relative to the goal
+
+This is not detailed hour-level scheduling — it is strategic distribution of effort across time.
+
+⸻
+
+Step 2 — Weekly refinement (tactical planning)
+
+Each week, the system should:
+	•	analyse completed vs incomplete tasks
+	•	detect blocked dependency chains
+	•	reschedule intelligently
+	•	rebalance workload
+	•	adjust priorities
+
+This is where the realism engine should run again.
+
+The weekly plan becomes the “active operational layer”.
+
+⸻
+
+Step 3 — Daily execution planning (micro planning)
+
+Only at the final step should the AI generate:
+	•	daily execution tasks
+	•	time-aware sequencing
+	•	activation prompts
+	•	deep-work protection
+
+Daily generation should be a refinement of a pre-existing weekly/monthly structure, not an isolated decision.
+
+Right now the system behaves as if each day starts from scratch.
+
+That is not intelligent enough for long-term goal progression.
+
+⸻
+
+2 — Tasks still do not feel sufficiently interconnected
+
+Even with dependency logic implemented, the experience still feels like:
+	•	a list of tasks
+	•	rather than a workflow unfolding over time
+
+The intelligence should:
+	•	ensure that prerequisite tasks are scheduled earlier in the week/month
+	•	avoid suggesting downstream tasks too early
+	•	recognise when a workflow is partially complete
+	•	prioritise finishing chains rather than starting new ones
+
+Example:
+
+If the workflow is:
+	•	brainstorm content
+	•	script video
+	•	record video
+	•	edit video
+	•	publish video
+
+The system should:
+	•	schedule the full workflow block within a realistic timeframe
+	•	avoid placing “publish” tasks before production is complete
+	•	prioritise continuity once a workflow has been started
+
+The goal is to move from task suggestions → workflow orchestration.
+
+⸻
+
+3 — Sidebar must remain persistent in Planning view
+
+Currently, when entering the Planning page:
+	•	the sidebar disappears
+	•	navigation becomes browser-dependent
+	•	this breaks the mental model of Naya as a unified OS
+
+The sidebar should:
+	•	remain visible at all times
+	•	allow immediate navigation back to Dashboard / Projects / Board
+	•	preserve spatial continuity
+
+This is essential for user orientation and flow.
+
+The Planning page should behave like any other major page in the application layout.
+
+⸻
+
+4 — New structural feature: Agency → Clients → Tasks hierarchy
+
+This is a major product evolution.
+
+When a project is defined as an Agency, the user must be able to:
+	•	add multiple clients
+	•	manage client-specific tasks
+	•	see workload distribution across clients
+
+Proposed model
+
+Project (Agency)
+→ Client entities
+→ Client goals
+→ Client tasks
+→ Client workflows
+
+Tasks should then include:
+	•	clientId (nullable)
+	•	client priority / urgency
+	•	client lifecycle stage (onboarding / active / retention / campaign)
+
+This would allow the AI to:
+	•	generate tasks per client
+	•	balance agency workload
+	•	detect over-focus on one client
+	•	plan campaign sequences
+	•	reason about revenue urgency
+
+This would make Naya significantly more relevant for:
+	•	agencies
+	•	freelancers
+	•	consultants
+	•	studios
+	•	service businesses
+
+⸻
+
+Conclusion
+
+The system is evolving well technically, but now the next step is to move from:
+	•	“smart daily task generator”
+
+to
+	•	multi-horizon planning intelligence with workflow continuity and real-world project structures
+
+These changes would significantly increase Naya’s perceived intelligence and usefulness.

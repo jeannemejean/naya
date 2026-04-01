@@ -1,0 +1,164 @@
+Analytics: Per-Project Operations Dashboard
+What this step does
+The Analytics page currently shows generic simulated data with no project filter. This step replaces it with a real operations dashboard that reads live data already present in the Naya database — task completion rates, content pipeline status, campaign performance, and the current week's strategy — all filtered per project. No new schema migrations are needed. No fake data. Everything is computed from existing tables.
+
+Task 1 — Server: add per-project analytics computation route
+Add this route in server/routes.ts:
+GET /api/analytics/project-summary?projectId=X
+This route computes everything the dashboard needs in a single call. Logic:
+tsapp.get('/api/analytics/project-summary', isAuthenticated, async (req: any, res) => {
+  const userId = req.user.claims.sub;
+  const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : null;
+
+  // 1. Tasks: all tasks for this user+project
+  const allTasks = await storage.getTasks(userId, projectId ?? undefined);
+  const totalTasks = allTasks.length;
+  const completedTasks = allTasks.filter(t => t.completed).length;
+  const pendingTasks = totalTasks - completedTasks;
+  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  // Tasks by energy type
+  const tasksByEnergy = allTasks.reduce((acc: Record<string, number>, t) => {
+    const key = t.taskEnergyType || 'other';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Tasks by type
+  const tasksByType = allTasks.reduce((acc: Record<string, number>, t) => {
+    acc[t.type] = (acc[t.type] || 0) + 1;
+    return acc;
+  }, {});
+
+  // 2. Content pipeline — counts by contentStatus
+  const allContent = await storage.getContent(userId, 500, projectId ?? undefined);
+  const contentByStatus = { idea: 0, draft: 0, ready: 0, published: 0 };
+  for (const c of allContent) {
+    const s = (c.contentStatus || 'idea') as keyof typeof contentByStatus;
+    if (s in contentByStatus) contentByStatus[s]++;
+  }
+  const contentByPlatform = allContent.reduce((acc: Record<string, number>, c) => {
+    acc[c.platform] = (acc[c.platform] || 0) + 1;
+    return acc;
+  }, {});
+
+  // 3. Campaigns
+  const allCampaigns = await storage.getCampaigns(userId, projectId ?? undefined);
+  const activeCampaigns = allCampaigns.filter(c => c.status === 'active').length;
+  const completedCampaigns = allCampaigns.filter(c => c.status === 'completed').length;
+  const draftCampaigns = allCampaigns.filter(c => c.status === 'draft').length;
+  const totalCampaignTasks = allCampaigns.reduce((sum, c) => {
+    return sum + ((c.generatedTasks as any[])?.length || 0);
+  }, 0);
+
+  // 4. Current week strategy report
+  const now = new Date();
+  const currentWeek = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-W' + Math.ceil(now.getDate() / 7);
+  const strategyReport = projectId
+    ? await storage.getStrategyReport(userId, currentWeek, projectId)
+    : await storage.getStrategyReport(userId, currentWeek);
+
+  // 5. Weekly task completion trend (last 4 weeks, by scheduledDate prefix)
+  // Group completed tasks by week label — approximate from scheduledDate
+  const weeklyCompletion: Array<{ week: string; completed: number; total: number }> = [];
+  for (let i = 3; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i * 7);
+    const weekLabel = `W-${i === 0 ? 'now' : i}`;
+    const weekStart = new Date(d);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const weekStartStr = weekStart.toISOString().slice(0, 10);
+    const weekEndStr = weekEnd.toISOString().slice(0, 10);
+    const weekTasks = allTasks.filter(t => t.scheduledDate && t.scheduledDate >= weekStartStr && t.scheduledDate <= weekEndStr);
+    weeklyCompletion.push({
+      week: weekLabel,
+      completed: weekTasks.filter(t => t.completed).length,
+      total: weekTasks.length,
+    });
+  }
+
+  res.json({
+    tasks: { total: totalTasks, completed: completedTasks, pending: pendingTasks, completionRate, byEnergy: tasksByEnergy, byType: tasksByType },
+    content: { total: allContent.length, byStatus: contentByStatus, byPlatform: contentByPlatform },
+    campaigns: { active: activeCampaigns, completed: completedCampaigns, draft: draftCampaigns, totalTasksGenerated: totalCampaignTasks },
+    strategy: strategyReport ? { focus: strategyReport.focus, recommendations: strategyReport.recommendations, weeklyPlan: strategyReport.weeklyPlan } : null,
+    weeklyCompletion,
+  });
+});
+
+Task 2 — Frontend: full rewrite of analytics.tsx
+Replace the entire file. Keep the imports for Recharts (AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer). Remove all fake data logic and the timeframe select.
+Page structure:
+Header:
+
+Title: Analytics — [Project Name]
+Project selector pills (same pattern as Strategy, Campaigns, Content Calendar)
+No timeframe selector — data is always all-time for this project
+
+Query:
+Single query: GET /api/analytics/project-summary?projectId=X
+Query key: ['/api/analytics/project-summary', selectedProjectId]
+Enabled when selectedProjectId is set. Reset data display when selectedProjectId changes.
+Section 1 — Four KPI stat cards (top row):
+CardValueLabelTask completion${data.tasks.completionRate}%"Tasks completed"Content publisheddata.content.byStatus.published"Pieces published"Active campaignsdata.campaigns.active"Active campaigns"Pipeline totaldata.content.total"Content in pipeline"
+Each card: large number, muted label below, colored icon top-right (use CheckCircle2 indigo, FileText violet, Rocket amber, Layers cyan).
+Section 2 — Two-column row:
+Left — Weekly Execution chart (60% width):
+
+AreaChart from Recharts, height 200px
+Data: data.weeklyCompletion array
+Two areas: completed (indigo fill, solid stroke) and total (slate fill, dashed stroke)
+XAxis dataKey week, no grid lines, minimal styling
+Title: "Execution rhythm" in small caps above the chart
+
+Right — Content pipeline breakdown (40% width):
+
+Four horizontal bars, one per contentStatus (idea / draft / ready / published)
+Each bar: status label left, count right, colored fill bar in between
+
+idea = yellow, draft = blue, ready = green, published = purple
+
+
+Use simple div-based progress bars (not Recharts) — cleaner at this size
+Title: "Content pipeline"
+
+Section 3 — Task breakdown + Campaigns row:
+Left — Tasks by type (50%):
+
+Simple BarChart from Recharts, height 160px
+Data built from data.tasks.byType object converted to array [{ name, value }]
+Single bar, indigo fill
+Title: "Tasks by type"
+
+Right — Campaigns summary (50%):
+
+Three stat rows: Active / Completed / Draft with counts and colored dots
+Below: "Total tasks generated by campaigns: X" in muted text
+If data.campaigns.active === 0 and data.campaigns.completed === 0: show empty state "No campaigns yet for this project"
+
+Section 4 — Strategy this week (full width):
+
+Only shown if data.strategy is not null
+Card with indigo left border
+data.strategy.focus in large bold
+data.strategy.recommendations as colored-dot list (same style as Strategy page)
+data.strategy.weeklyPlan as three compact rows (Content / Outreach / Watch) with icons
+If data.strategy is null: dashed border empty state "No strategy generated for this project this week — go to Strategy to generate one" with a link that navigates to /strategy
+
+Loading state: skeleton cards (animate-pulse divs) while query is loading.
+Empty state (when data exists but everything is zero): a centered message "Nothing tracked yet for [project name]. Complete tasks, create content, and launch campaigns to see your dashboard come alive." — no charts rendered.
+Dark mode: all cards use dark:bg-gray-900 dark:border-gray-700, text uses dark:text-white / dark:text-gray-400.
+
+Task 3 — Keep existing routes intact
+Do NOT remove or modify: GET /api/metrics, GET /api/metrics/history, GET /api/analytics/insights, GET /api/analytics/content-performance. They may be used elsewhere. Only add the new GET /api/analytics/project-summary route.
+
+Verification expected
+
+Select Agence JMD → dashboard shows Agence JMD's real task completion rate, content pipeline counts, campaign counts, and this week's strategy focus
+Switch to Naya → all sections reset and show Naya's data only
+Complete a task in Planning → task completion rate updates on next load
+Move content from Draft → Ready in Content Calendar → pipeline bar updates
+Launch a campaign → active campaigns count increments
+If no strategy generated yet for the project → section 4 shows the empty state with link to Strategy

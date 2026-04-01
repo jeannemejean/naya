@@ -1,0 +1,468 @@
+I reviewed the current Naya build in depth, including the platform structure and the recent implementation work. The direction is much better than before, but after testing the product and reviewing the codebase, I want to correct several things before we continue building on top of unstable foundations.
+
+General assessment
+
+The current version is promising, but right now Naya still feels like a partially adapted business/marketing tool rather than a truly intelligent multi-project operating system.
+
+There are two categories of work needed now:
+
+1. Fix current product and logic issues
+
+Several core flows are either broken, too static, or not intelligent enough.
+
+2. Refine the architecture so the next iterations build the right version of Naya
+
+The current roadmap is good, but some modules still need to be adjusted to better match the actual product vision.
+
+⸻
+
+Part 1 — Immediate issues that must be fixed now
+
+A. Onboarding is too narrow in tone and positioning
+
+The onboarding is well structured, but it still feels too centered on people like me: agency owners, communication consultants, content/marketing people.
+
+Naya is supposed to serve a wider slowpreneur / independent builder ecosystem, including:
+	•	photographers
+	•	designers
+	•	artists
+	•	makers
+	•	creators
+	•	coaches
+	•	lifestyle founders
+	•	freelancers with non-traditional business models
+
+So the onboarding language and answer options should be broadened.
+
+What I want changed
+
+Please revise onboarding copy and answer choices so they work for:
+	•	communication-heavy businesses
+	•	creative businesses
+	•	service businesses
+	•	creator-led projects
+	•	passion-led projects
+	•	slower, non-hypergrowth entrepreneurial models
+
+The onboarding should feel like:
+“Naya understands modern independent builders”
+not just
+“Naya understands marketing agencies.”
+
+⸻
+
+B. Onboarding completion flow is not working correctly
+
+When I tested onboarding in a private window, the final step did not feel properly completed. It seemed to skip the last action and send me directly to the dashboard.
+
+That creates two problems:
+	1.	it feels broken
+	2.	it removes the sense of progression and completion
+
+What I want changed
+
+At the last onboarding step, I want an explicit final CTA such as:
+
+“Generate my board”
+or
+“Create my Naya board”
+
+with a short loading / transition state so it feels like something is actually being built.
+
+This is important psychologically. The user should feel:
+	•	they completed the setup
+	•	Naya is processing their inputs
+	•	their personalized board is being generated
+
+Likely underlying issue
+
+Please check whether the app is redirecting to the dashboard without a proper onboarding completion state and whether onboarding completion is too tightly coupled to auth state alone.
+
+I also want you to verify that authenticated new users are properly routed through onboarding before landing on a functional dashboard.
+
+⸻
+
+C. Goal creation is broken
+
+When I tried to add a goal to a selected project, I got:
+
+“Failed to add goal”
+
+This needs immediate fixing.
+
+Please debug this directly
+
+I want you to verify:
+	•	the frontend payload sent when creating a goal
+	•	the server validation schema
+	•	the date handling
+	•	whether empty dueDate values are causing schema failures
+	•	whether the mutation is properly parsing the server response
+
+Expected behavior
+
+A user should be able to:
+	•	select a project
+	•	create a goal
+	•	save it successfully
+	•	immediately see it reflected in the project dashboard and main dashboard
+
+This flow must work reliably before more AI logic is added on top.
+
+⸻
+
+D. Clicking the Naya logo should return to the main dashboard
+
+Right now, when I click the Naya logo at the top, it does not behave like a proper home anchor.
+
+What I want
+
+Clicking the Naya logo should always return to the main dashboard:
+	•	if a project is selected, it should return to the current dashboard context
+	•	if All Projects is active, it should return to the general dashboard
+
+This is a basic navigation expectation.
+
+⸻
+
+E. Planner task interaction is wrong
+
+In planner view, I clicked on a task because I wanted to inspect it, but it acted as if I had completed it.
+
+That is not acceptable.
+
+What I want changed
+
+Clicking a task block in planner mode should not automatically mark it complete.
+
+These should be separate interactions:
+	•	click task = open / inspect / edit
+	•	check task = complete
+	•	click again if completed = uncomplete if needed
+
+Also important
+
+I want users to be able to uncheck a task if they clicked by mistake.
+
+Right now the completion logic feels one-way.
+
+Required fix
+
+Please separate:
+	•	task selection / opening
+	•	task completion toggling
+
+And implement a true toggle state for completion, not just a one-direction “complete” action.
+
+⸻
+
+F. Tomorrow Preview is not intelligent
+
+The current Tomorrow Preview is showing content that has nothing to do with my actual board.
+
+It feels static or mocked.
+
+That defeats the point of Naya.
+
+What I want
+
+Tomorrow Preview must be generated from real board intelligence:
+	•	active project or all-project view
+	•	project goals
+	•	incomplete tasks
+	•	due dates
+	•	planning logic
+	•	AI prioritization
+
+It should not contain generic or placeholder content.
+
+Action
+
+Please replace the static Tomorrow Preview implementation with real data-driven logic.
+
+⸻
+
+G. Quick Capture is not intelligent enough
+
+Quick Capture currently lets me enter things, but they just appear underneath as entries. That is not enough.
+
+Quick Capture should be a real input layer for the intelligence of the board.
+
+What I want Quick Capture to do
+
+When I type something in Quick Capture, Naya should be able to determine whether it is:
+	•	a task
+	•	a note
+	•	an idea
+	•	a reminder
+	•	maybe something to associate with a specific project
+
+And then route it intelligently into the system.
+
+For example:
+	•	if it is clearly an actionable item, it should become a task
+	•	if it is a loose thought, it should remain a note or idea
+	•	if it relates to a project, it should be attached to that project
+	•	if relevant, it should influence planning and recommendations
+
+Important
+
+Quick Capture should feed the board
+not just create a passive list below.
+
+It should become part of the operating logic of Naya.
+
+⸻
+
+H. All Projects behavior must be improved
+
+On the sidebar, I want to be able to click All Projects and get a real general management dashboard for all my projects.
+
+Then, below that, I want each individual project to open its own filtered dashboard.
+
+Expected behavior
+
+All Projects dashboard
+Should show:
+	•	aggregated priorities
+	•	tasks across projects
+	•	cross-project visibility
+	•	general strategic overview
+	•	broad recommendations
+
+Single project dashboard
+Should show:
+	•	only that project’s tasks
+	•	only that project’s goals
+	•	only that project’s recommendations
+	•	only that project’s strategic context
+
+This distinction is essential.
+
+⸻
+
+Part 2 — Technical and product corrections I want added to the plan
+
+1. Make onboarding state explicit
+
+I want a true onboarding completion flow.
+
+Please add:
+	•	onboarding completion state
+	•	explicit final CTA
+	•	processing step before redirect
+	•	proper routing logic for first-time users
+
+No more implicit “auth = ready dashboard”.
+
+⸻
+
+2. Fix the API client pattern
+
+Please audit the current client API request handling.
+
+Some current flows strongly suggest response handling is inconsistent and may be causing silent failures or incomplete UI updates.
+
+I want API calls standardized so mutations reliably:
+	•	send valid payloads
+	•	parse JSON responses correctly
+	•	update the UI consistently
+	•	expose meaningful errors when something fails
+
+Before adding more features, stabilize this layer.
+
+⸻
+
+3. Task completion logic must be redesigned
+
+The current task interaction model is too brittle.
+
+I want:
+	•	complete / uncomplete support
+	•	task click = open details
+	•	dedicated completion control
+	•	planner drag-and-drop separated from completion
+	•	no accidental state change when simply inspecting a task
+
+⸻
+
+4. Quick Capture should become an AI triage system
+
+Please upgrade Quick Capture from “capture list” to a lightweight AI triage layer.
+
+Desired flow
+
+User enters text → system classifies intent → routes it appropriately:
+	•	task
+	•	note
+	•	idea
+	•	reminder
+	•	project-specific thought
+
+Then Naya should:
+	•	connect it to the active project if relevant
+	•	make it visible in the right place
+	•	optionally suggest a next action
+
+This is a core part of the Naya feeling.
+
+⸻
+
+5. Tomorrow Preview should be connected to actual planning intelligence
+
+Tomorrow Preview must be generated from real logic, not hardcoded content.
+
+It should use:
+	•	today’s unfinished tasks
+	•	upcoming goals
+	•	deadlines
+	•	active project
+	•	all-project aggregation when relevant
+	•	planning rules
+
+Eventually AI can enrich it, but first it must be real.
+
+⸻
+
+6. Dashboard architecture should support two clear modes
+
+Please make sure the dashboard logic is explicitly designed for:
+
+Mode A — All Projects
+
+Aggregated dashboard across everything
+
+Mode B — Project-specific
+
+Filtered dashboard per project
+
+This must affect:
+	•	tasks
+	•	goals
+	•	recommendations
+	•	monthly objective
+	•	tomorrow preview
+	•	quick capture routing
+	•	AI suggestions
+
+⸻
+
+7. Make the dashboard feel more “operating desk” and less “widget stack”
+
+The product should feel like a command center.
+
+The dashboard should prioritize:
+	•	what matters today
+	•	what matters tomorrow
+	•	what matters soon
+	•	what belongs to which project
+	•	what the user should focus on next
+
+So please continue refining the cockpit logic in that direction rather than adding decorative cards.
+
+⸻
+
+Part 3 — Revised implementation priorities from this point
+
+I do not want the team to keep stacking new features on top of partially broken flows.
+
+Please work in this order now:
+
+Priority 1 — Stabilization / bug fixing
+
+Fix:
+	1.	onboarding completion flow
+	2.	goal creation
+	3.	Naya logo navigation
+	4.	task completion / uncompletion behavior
+	5.	planner click behavior
+	6.	Tomorrow Preview real logic
+	7.	Quick Capture intelligence and routing
+	8.	All Projects vs single project dashboard filtering
+
+Priority 2 — Board intelligence coherence
+
+Once the core flows work, refine:
+	•	project-aware dashboard behavior
+	•	project goal integration
+	•	recommendation logic
+	•	planning intelligence
+	•	active project vs all-project data handling
+
+Priority 3 — Persona Intelligence on top of stable foundation
+
+Persona Intelligence should remain in the plan, but the board must first behave correctly as a multi-project operating system.
+
+Persona logic will be much more valuable once:
+	•	projects work
+	•	goals work
+	•	planning works
+	•	dashboard context works
+
+⸻
+
+Final product direction reminder
+
+Naya should not feel like a set of disconnected features.
+
+It should feel like:
+	•	a strategic dashboard
+	•	a planning tool
+	•	a project-aware assistant
+	•	a calm command center
+	•	an intelligent daily operating system
+
+That means every visible element should be connected to real context:
+	•	the user
+	•	the project
+	•	the goal
+	•	the urgency
+	•	the planning logic
+	•	the intelligence layer
+
+⸻
+
+Concrete next step I want from you
+
+Please do the following next:
+
+Step 1
+
+Audit the current implementation against the issues listed above and identify:
+	•	what is already implemented but behaving incorrectly
+	•	what is mocked or static
+	•	what is structurally missing
+
+Step 2
+
+Return with a revised task list split into:
+	•	immediate fixes
+	•	architectural fixes
+	•	intelligence improvements
+
+Step 3
+
+Start implementation with the immediate fixes first, especially:
+	•	onboarding completion
+	•	goal creation
+	•	task interaction logic
+	•	quick capture routing
+	•	tomorrow preview intelligence
+	•	all-project / single-project dashboard behavior
+
+This is the version of Naya I want us to stabilize before going further.
+
+⸻
+
+And here are the key product notes from my own testing:
+	•	onboarding is good but too communication/agency-focused
+	•	the final onboarding step feels broken and should end with an explicit “generate my board” action
+	•	adding a goal currently fails
+	•	clicking the Naya logo should return to the main dashboard
+	•	clicking a task in planner mode should not auto-complete it
+	•	I must be able to uncheck a task if clicked by mistake
+	•	Tomorrow Preview must be connected to my actual board logic
+	•	Quick Capture must intelligently feed the rest of the board
+	•	All Projects should open a real global dashboard, while each project should open its own filtered dashboard
+
+Please use all of this as the basis for the next revision.

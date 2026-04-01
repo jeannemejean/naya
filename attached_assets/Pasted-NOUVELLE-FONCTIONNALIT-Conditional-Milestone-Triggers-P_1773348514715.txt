@@ -1,0 +1,171 @@
+NOUVELLE FONCTIONNALITÉ — Conditional Milestone Triggers (Planification conditionnelle)
+Concept
+L'utilisateur peut définir des règles du type : "Quand j'ai signé mon premier client, débloquer automatiquement une séquence d'onboarding dans le planner." Ces règles sont saisies en langage libre dans l'interface existante de Naya (Quick Capture / zone de texte libre). Naya interprète ces règles, les stocke de manière structurée, surveille leur condition à chaque génération de plan, et injecte les tâches conditionnelles dès que la condition est remplie.
+
+Architecture — 3 couches
+Couche 1 — Stockage (shared/schema.ts)
+Créer une nouvelle table milestone_triggers :
+tsexport const milestoneTriggers = pgTable("milestone_triggers", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").references(() => projects.id),
+
+  // Ce que l'utilisateur a écrit librement
+  rawCondition: text("raw_condition").notNull(),
+  // Ex: "quand j'ai signé mon premier client"
+
+  // Ce que Naya a compris (parsé par AI)
+  conditionType: text("condition_type").notNull().default("manual"),
+  // manual | task_completed | goal_reached | external_event | date_reached
+
+  conditionSummary: text("condition_summary").notNull(),
+  // Version courte lisible: "1er client signé"
+
+  // Les tâches à injecter quand la condition est remplie (JSON array)
+  tasksToUnlock: json("tasks_to_unlock").notNull(),
+  // [{ title, description, type, category, priority, estimatedDuration, taskEnergyType, workflowGroup }]
+
+  schedulingMode: text("scheduling_mode").notNull().default("immediate"),
+  // immediate = dès la prochaine génération | deferred = D+1 | spread_week = répartir sur la semaine
+
+  status: text("status").notNull().default("watching"),
+  // watching | triggered | dismissed | completed
+
+  triggeredAt: timestamp("triggered_at"),
+  triggeredByTaskId: integer("triggered_by_task_id").references(() => tasks.id),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+Ajouter les types et insert schema correspondants. Ajouter la relation dans users : milestoneTriggers: many(milestoneTriggers).
+Run npm run db:push pour appliquer.
+
+Couche 2 — Intelligence (server/services/milestone-intelligence.ts)
+Créer un nouveau service avec deux fonctions :
+parseMilestoneTrigger(rawText: string, projectContext: any): Promise<ParsedTrigger>
+Appelle OpenAI pour interpréter le texte libre de l'utilisateur et extraire :
+ts{
+  conditionType: "task_completed" | "goal_reached" | "external_event" | "manual",
+  conditionSummary: string,         // "1er client signé"
+  conditionKeywords: string[],      // ["client", "signé", "contrat"]
+  tasksToUnlock: Array<{
+    title: string,
+    description: string,
+    type: string,
+    category: string,
+    priority: number,
+    estimatedDuration: number,
+    taskEnergyType: string,
+    workflowGroup?: string,
+    activationPrompt?: string,
+  }>,
+  schedulingMode: "immediate" | "deferred" | "spread_week",
+  reasoning: string,                // pourquoi ces tâches
+}
+```
+
+Prompt système pour cette fonction :
+> You are Naya, an intelligent planning assistant. The user has described a milestone condition and the tasks they want unlocked when it happens. Extract the condition type, a short human-readable summary, relevant keywords that would appear in completed task titles or notes when this milestone is reached, and a list of 2–5 concrete actionable tasks to schedule when triggered. Tasks must have all required fields: title, description, type, category, priority (1–3), estimatedDuration (minutes), taskEnergyType (deep_work/creative/admin/social/logistics/execution). Return only valid JSON.
+
+**`checkMilestoneTriggers(userId: string, projectId?: number, context: { recentlyCompletedTasks: Task[], recentCaptures: QuickCaptureEntry[], recentWorkspaceNotes: string }): Promise<MilestoneTrigger[]>`**
+
+Cette fonction est appelée à chaque génération de plan (generate-daily). Elle :
+1. Charge tous les triggers `status = "watching"` pour cet utilisateur
+2. Pour chaque trigger, vérifie si la condition est remplie en comparant :
+   - `conditionKeywords` contre les titres des tâches récemment complétées
+   - `conditionKeywords` contre les captures récentes et notes workspace
+   - Pour `conditionType = "manual"` : vérifie si une capture récente contient des mots-clés du genre "j'ai fait", "c'est fait", "signé", "terminé" + les conditionKeywords
+3. Retourne la liste des triggers dont la condition vient d'être remplie
+
+---
+
+**Couche 3 — Intégration dans le flow de génération (`server/routes.ts`)**
+
+**A — Route pour créer un trigger (via Quick Capture)**
+
+Modifier la route POST `/api/capture` pour détecter quand une entrée ressemble à une règle conditionnelle. Critères de détection (côté AI classification) : présence de mots comme "quand", "when", "si", "if", "dès que", "once", "après que", "après avoir" dans le contenu.
+
+Si détecté : après avoir sauvegardé la capture normalement, appeler `parseMilestoneTrigger()` en background et créer l'entrée dans `milestone_triggers`. Mettre `classifiedType = "milestone_trigger"` sur la capture et `routingStatus = "routed"`.
+
+Ajouter aussi une route dédiée :
+```
+GET  /api/milestone-triggers          → liste tous les triggers actifs de l'utilisateur
+POST /api/milestone-triggers          → créer manuellement (body: { rawCondition, projectId? })
+PATCH /api/milestone-triggers/:id     → modifier status (watching/dismissed) ou rawCondition
+DELETE /api/milestone-triggers/:id    → supprimer
+B — Injection dans generate-daily
+Au début de la route generate-daily, après avoir chargé le contexte utilisateur, appeler :
+tsconst triggeredMilestones = await checkMilestoneTriggers(userId, resolvedProjectId, {
+  recentlyCompletedTasks: completedTasksToday,
+  recentCaptures: recentCaptureEntries,  // charger les 20 dernières
+  recentWorkspaceNotes: recentWorkspaceNotes,
+});
+```
+
+Pour chaque milestone déclenché :
+1. Marquer le trigger comme `status = "triggered"`, `triggeredAt = now()`
+2. Ajouter ses `tasksToUnlock` à `allPendingTasks` avec `source = "milestone_trigger"` et `milestoneTriggerId` (champ à ajouter sur la table `tasks`)
+3. Inclure dans le signal `lastFocus` ou `lastReasoning` une note du type : "🎯 Milestone atteint : [conditionSummary] — [n] nouvelles tâches débloquées"
+
+Les tâches issues de milestone passent par `rebalanceTasksForward` comme toutes les autres — elles sont schedulées intelligemment dans la semaine, pas forcément aujourd'hui.
+
+---
+
+**Couche 4 — UI**
+
+**A — Dans Quick Capture (dashboard)**
+
+Quand une capture a `classifiedType = "milestone_trigger"`, afficher un badge spécial dans le Capture Inbox :
+```
+🎯 Règle conditionnelle détectée
+"Quand j'ai signé mon premier client"
+→ 3 tâches seront débloquées automatiquement
+[Voir les tâches] [Modifier] [×]
+Cliquer "Voir les tâches" ouvre un mini-panneau qui liste les tasksToUnlock avec leurs titres et durées.
+B — Dans la page Strategy (actuellement vide — client/src/pages/strategy.tsx)
+C'est l'endroit idéal pour afficher et gérer tous les triggers actifs. Implémenter la page Strategy avec :
+Section "Conditional Planning Rules" :
+
+Liste de toutes les règles status = "watching" avec leur conditionSummary, le nombre de tâches qu'elles vont débloquer, et un badge "En attente"
+Les règles déjà déclenchées (status = "triggered") avec la date et les tâches créées
+Bouton "Add a rule" qui ouvre une textarea libre : l'utilisateur écrit sa condition en langage naturel, Naya la parse et la confirme avant de sauvegarder
+Chaque règle peut être éditée, désactivée (dismissed) ou supprimée
+
+Section "Milestones reached" : historique des triggers déclenchés avec les tâches qu'ils ont générées.
+
+Exemple de flux complet
+
+L'utilisateur tape dans Quick Capture : "Quand j'ai signé mon premier client pour Agence JMD, je veux lancer le processus d'onboarding"
+Naya détecte la structure conditionnelle → appelle parseMilestoneTrigger()
+Naya crée un trigger avec conditionKeywords: ["client", "signé", "contrat", "premier client"] et tasksToUnlock: [{ title: "Préparer le welcome pack client", ... }, { title: "Créer le canal de communication dédié", ... }, { title: "Planifier le kick-off call", ... }]
+Quick Capture affiche : "🎯 Règle créée — 3 tâches débloquées quand : 1er client signé pour Agence JMD"
+Deux semaines plus tard, l'utilisateur complète une tâche intitulée "Négocier et signer le contrat avec [Client]"
+Au prochain "Generate my plan", checkMilestoneTriggers() détecte le match → les 3 tâches sont injectées dans le plan et réparties intelligemment dans la semaine
+La Strategy page montre le trigger comme "Déclenché le 25 mars — 3 tâches créées"
+
+
+Fichiers à créer / modifier
+Créer :
+
+server/services/milestone-intelligence.ts (nouveau service)
+
+Modifier :
+
+shared/schema.ts — table milestone_triggers, champ milestoneTriggerId sur tasks, relation users
+server/routes.ts — routes CRUD + injection dans generate-daily + détection dans POST /api/capture
+client/src/pages/strategy.tsx — implémenter la page Strategy complète avec gestion des règles
+client/src/pages/dashboard.tsx — affichage badge spécial dans Quick Capture pour les milestone triggers
+
+Ne pas modifier :
+
+server/services/realism.ts
+client/src/components/time-grid.tsx
+Aucun autre fichier de génération (les tâches milestone passent par le même pipeline que les tâches normales)
+
+
+Contraintes
+
+Les triggers ne se déclenchent qu'une seule fois (status passe de watching à triggered de manière irréversible, sauf reset manuel)
+La détection de condition est intentionnellement permissive : mieux vaut un faux positif qu'un trigger manqué. Si le moteur détecte un match à ≥60% de probabilité, il déclenche et informe l'utilisateur : "Naya a détecté que '[conditionSummary]' a peut-être été atteint — 3 tâches ont été ajoutées à ton plan. Si ce n'est pas le cas, tu peux les supprimer."
+La création d'un trigger via Quick Capture se fait silencieusement en background — l'entrée apparaît d'abord normalement dans l'inbox, puis le badge se met à jour
+En aucun cas un trigger ne crée des tâches directement en base sans passer par generate-daily — les tâches milestone sont toujours intégrées dans le prochain cycle de génération

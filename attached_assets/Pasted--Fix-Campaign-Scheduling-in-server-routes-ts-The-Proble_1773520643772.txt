@@ -1,0 +1,196 @@
+# Fix Campaign Scheduling in `server/routes.ts`
+
+## The Problem
+
+The campaign launch (`/api/campaigns/:id/launch`) schedules tasks in a broken way:
+- Multiple tasks land at the same time (3 tasks simultaneously at 9:00–11:30)
+- Tasks are scheduled on weekends despite user work day settings
+- Phase ordering is not respected (a phase 3 task can appear before phase 1 tasks)
+- The `daysBeforePublication` offsets defined in `decomposeContentTask()` are never actually used
+
+The daily generation also has a bug: when placing new tasks on future dates, `curSlot` starts at `genWindow.start` (9:00) without loading existing tasks already scheduled that day, causing overlaps.
+
+## The Core Fix — Backward Scheduling from Publication Dates
+
+The campaign scheduler should work like a real project manager:
+1. Assign a **target publication date** to each task, anchored within its phase date range
+2. Schedule sub-tasks **backward from that publication date** using the existing `daysBeforePublication` offsets (e.g. script at -5 days, shoot at -3, edit at -1, publish at 0)
+
+This way, if a video is due Friday, the script lands Monday, shoot Tuesday, edit Thursday — automatically.
+
+---
+
+## Changes Needed
+
+### 1. Add `assignPublicationDates` helper function (new function, add near `computePhaseRanges`)
+
+```ts
+function assignPublicationDates(
+  phaseTasks: Array<any>,
+  phaseStart: Date,
+  phaseEnd: Date,
+  isWorkDayFn: (d: string) => boolean
+): Date[] {
+  const n = phaseTasks.length;
+  const phaseDays = Math.max(1, Math.round((phaseEnd.getTime() - phaseStart.getTime()) / 86400000));
+  return phaseTasks.map((_, idx) => {
+    const targetDayOffset = Math.round((idx + 1) * phaseDays / (n + 1));
+    let pubDate = campaignAddDays(phaseStart, targetDayOffset);
+    if (pubDate > phaseEnd) pubDate = new Date(phaseEnd);
+    if (pubDate < phaseStart) pubDate = new Date(phaseStart);
+    for (let tries = 0; tries < 14; tries++) {
+      if (isWorkDayFn(campaignDateToStr(pubDate))) break;
+      pubDate = campaignAddDays(pubDate, 1);
+    }
+    return pubDate;
+  });
+}
+```
+
+### 2. Fix `isWorkDay` — use user preferences instead of hardcoded Mon–Fri
+
+At the top of the launch route handler, after loading the campaign, add:
+
+```ts
+const prefs = await storage.getUserPreferences(userId);
+const campaignWorkDaySet = parseWorkDays(prefs?.workDays);
+const campaignAvailability = await storage.getDayAvailability(userId, campaignDateToStr(startDate), endDateStr);
+const campaignOffDates = new Set<string>(
+  campaignAvailability.filter((a: any) => a.dayType === 'off').map((a: any) => a.date as string)
+);
+```
+
+Replace the existing `isWorkDay` function with:
+
+```ts
+function isWorkDay(dateStr: string): boolean {
+  if (campaignOffDates.has(dateStr)) return false;
+  const dow = new Date(dateStr + 'T00:00:00').getDay();
+  return campaignWorkDaySet.has(DAY_ABBRS[dow]);
+}
+```
+
+### 3. Fix `campaignDayCounts` — initialize from existing tasks
+
+Replace the current empty initialization:
+```ts
+// BEFORE (broken):
+const campaignDayCounts = new Map<string, number>();
+
+// AFTER (fixed) — add right after the dayNextSlot initialization loop:
+const campaignDayCounts = new Map<string, number>();
+for (const t of existingTasks) {
+  if (!t.scheduledDate) continue;
+  campaignDayCounts.set(t.scheduledDate, (campaignDayCounts.get(t.scheduledDate) || 0) + 1);
+}
+```
+
+### 4. Replace the phase scheduling loop — use backward scheduling from publication dates
+
+Replace the entire `for (const phaseNum of sortedPhaseNums)` loop with:
+
+```ts
+const sortedPhaseNums = Object.keys(tasksByPhase).map(Number).sort((a, b) => a - b);
+
+for (const phaseNum of sortedPhaseNums) {
+  const phaseTasks = tasksByPhase[phaseNum];
+  const phaseRange = phaseRanges[phaseNum] || { start: startDate, end: campaignAddDays(startDate, 7) };
+
+  // Assign a publication date to each task, spaced within the phase
+  const publicationDates = assignPublicationDates(phaseTasks, phaseRange.start, phaseRange.end, isWorkDay);
+
+  for (let taskIdx = 0; taskIdx < phaseTasks.length; taskIdx++) {
+    const originalTask = phaseTasks[taskIdx];
+    const publicationDate = publicationDates[taskIdx];
+    const subTasks = decomposeContentTask(originalTask);
+
+    for (const sub of subTasks) {
+      // Place sub-task relative to publication date using daysBeforePublication
+      const offset = typeof sub.daysBeforePublication === 'number' ? sub.daysBeforePublication : 0;
+      let scheduledDate = campaignAddDays(publicationDate, offset);
+
+      // Never before phase start or before campaign start
+      if (scheduledDate < phaseRange.start) scheduledDate = new Date(phaseRange.start);
+      if (scheduledDate < startDate) scheduledDate = new Date(startDate);
+
+      // Find nearest available work day (search forward)
+      let safety = 0;
+      while (safety < 30) {
+        const ds = campaignDateToStr(scheduledDate);
+        if (isWorkDay(ds) && campaignDayAvailable(ds, sub.estimatedDuration)) break;
+        scheduledDate = campaignAddDays(scheduledDate, 1);
+        safety++;
+      }
+
+      const scheduledDateStr = campaignDateToStr(scheduledDate);
+      campaignDayCounts.set(scheduledDateStr, (campaignDayCounts.get(scheduledDateStr) || 0) + 1);
+      const scheduledTime = assignSlot(scheduledDateStr, sub.estimatedDuration);
+      const scheduledEndTime = minToHHMM(hhmmToMin(scheduledTime) + sub.estimatedDuration);
+
+      await storage.createTask({
+        userId,
+        projectId: campaign.projectId ?? undefined,
+        campaignId: campaign.id,
+        title: sub.title,
+        description: sub.description,
+        type: sub.type || 'content',
+        category: originalTask.category || 'planning',
+        priority: originalTask.priority || 2,
+        estimatedDuration: sub.estimatedDuration,
+        taskEnergyType: sub.taskEnergyType,
+        source: 'campaign',
+        scheduledDate: scheduledDateStr,
+        scheduledTime,
+        scheduledEndTime,
+        completed: false,
+      });
+      tasksCreated++;
+    }
+  }
+}
+```
+
+### 5. Fix daily task generation — initialize `curSlot` from existing tasks on each date
+
+Inside the `for (const [date, dateTasks] of Array.from(byDate.entries()))` loop, replace the `curSlot` initialization:
+
+```ts
+// BEFORE (broken):
+let curSlot = isToday ? Math.max(genWindow.start, nowFloorMin + 15) : genWindow.start;
+
+// AFTER (fixed):
+const existingOnDate = (existingWeekTasks as any[]).filter(
+  (t: any) => t.scheduledDate === date && !t.completed &&
+    t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)
+);
+const latestExistingEndMin = existingOnDate.reduce((max: number, t: any) => {
+  const endMin = hhmmToMinutes(t.scheduledTime) + (t.estimatedDuration || 30);
+  return Math.max(max, endMin);
+}, genWindow.start);
+
+let curSlot = isToday
+  ? Math.max(latestExistingEndMin, nowFloorMin + 15)
+  : latestExistingEndMin;
+```
+
+### 6. Fix phase number parsing — normalize to integer
+
+When grouping `generatedTasks` into `tasksByPhase`, force integer parsing to avoid string/number key mismatches:
+
+```ts
+// BEFORE:
+const p = t.phase || 1;
+
+// AFTER:
+const p = parseInt(String(t.phase), 10) || 1;
+```
+
+---
+
+## Expected Result After Fix
+
+- **No more time overlaps** — campaign tasks and daily tasks never land at the same time
+- **No weekend tasks** — respects user's configured work days and off days
+- **Phases are strictly ordered** — phase 2 tasks always after phase 1, phase 3 after phase 2
+- **Backward scheduling** — for a video due on day X: script at X-5, shoot at X-3, edit at X-1, publish at X
+- **Respects existing workload** — won't overload days that already have tasks

@@ -1,0 +1,231 @@
+# Naya – Prompt de refonte : Gestion intelligente des tâches & corrections critiques
+
+> **Instructions pour Replit :** Ce document contient une liste priorisée de corrections et d'améliorations à apporter à l'application Naya. Chaque section indique les fichiers concernés et ce qui doit être corrigé. Traite chaque point dans l'ordre indiqué (critique d'abord, puis améliorations).
+
+---
+
+## PHILOSOPHIE : Ce que signifie "gestion intelligente des tâches" pour Naya
+
+Naya n'est pas un simple gestionnaire de tâches. C'est un OS pour entrepreneur. La gestion des tâches doit respecter ces principes fondamentaux :
+
+1. **Source unique de vérité** : une tâche existe une seule fois. Regénérer un plan ne crée pas de doublons — cela met à jour ce qui existe.
+2. **Pas de conflit d'horaire garanti** : deux tâches ne peuvent jamais être au même créneau. Un seul appel à "rebalancer" doit produire un résultat parfait.
+3. **Réactivité en cascade** : quand l'état d'une campagne, d'un projet ou d'un objectif change, les tâches associées reflètent ce changement immédiatement, sans action manuelle supplémentaire.
+4. **État cohérent** : une tâche appartenant à une campagne en pause n'est jamais visible dans le planning. Ni les anciennes, ni les nouvelles.
+5. **Génération idempotente** : appeler "générer le plan de la semaine" deux fois de suite produit exactement le même résultat — pas deux fois plus de tâches.
+
+---
+
+## PARTIE 1 — CORRECTIONS CRITIQUES (à traiter en priorité)
+
+### BUG #1 — Rebalancer la semaine nécessite 4+ clics (conflit d'horaire persistant)
+
+**Fichier :** `server/routes.ts` — endpoint `POST /api/tasks/rebalance-week` (ligne ~3116)
+
+**Cause identifiée :** L'algorithme `rebalanceTasksForward` reçoit `existingDayCounts = undefined` (ligne 3159), ce qui signifie qu'il considère chaque jour comme vide. Or, certaines tâches ont déjà un `scheduledTime`. Lors de l'assignation séquentielle des créneaux (boucle `byDate`), la liste `pending` contient les tâches de TOUTE la semaine, mais la boucle de réassignation ne tient pas compte des tâches qui ont débordé (`_unschedulable`) lors du premier passage. Ces tâches restent en base avec leur ancienne date, et au prochain appel elles sont à nouveau incluses dans `pending`, créant une accumulation.
+
+**Ce qui doit être corrigé :**
+
+1. Avant l'assignation des créneaux horaires dans la boucle `byDate`, construire une `Map<date, usedSlots[]>` des tâches DÉJÀ schedulées ce jour-là (celles qui ne bougent pas) afin d'éviter les collisions avec des tâches fixes ou complétées.
+
+2. Le `dailyCap` de 4 dans `rebalanceTasksForward` (ligne 3159) est trop bas et force trop de débordement. Calculer dynamiquement le nombre de créneaux disponibles par jour en fonction de la durée de la journée de travail et des tâches déjà présentes.
+
+3. Si une tâche est marquée `_unschedulable`, la mettre à jour en base avec `scheduledDate = null` et `scheduledTime = null` plutôt que de la laisser avec ses anciennes valeurs. Cela évite qu'elle réapparaisse infiniment dans les passages suivants.
+
+4. Dans la boucle d'assignation horaire, après avoir assigné un créneau à une tâche, vérifier qu'aucune autre tâche de la même journée (y compris celles non incluses dans `pending`) n'est déjà positionnée sur ce créneau en DB. Si collision, décaler au prochain créneau libre.
+
+5. L'appel doit être **idempotent** : appeler `rebalance-week` une, deux ou dix fois doit toujours produire le même résultat final sans créer de nouveaux problèmes.
+
+---
+
+### BUG #2 — Tâches de campagne en pause visibles dans le calendrier
+
+**Fichiers :** `server/routes.ts` (endpoint `POST /api/campaigns/:id/pause`, ligne ~5416), `server/storage.ts` (`deleteCampaignFutureTasks`, ligne ~1293)
+
+**Cause identifiée :** Lors de la pause d'une campagne, `deleteCampaignFutureTasks` supprime uniquement les tâches dont `scheduledDate >= today AND completed = false`. Les tâches non complétées avec une `scheduledDate` DANS LE PASSÉ (avant aujourd'hui) restent en base et continuent d'apparaître dans le calendrier.
+
+**Ce qui doit être corrigé :**
+
+1. Ajouter un champ `status` à la table `tasks` dans `shared/schema.ts` :
+   ```
+   status: text("status").notNull().default("active")
+   // Valeurs : "active" | "paused" | "cancelled" | "completed"
+   ```
+   Créer la migration Drizzle correspondante.
+
+2. Modifier `deleteCampaignFutureTasks` pour qu'elle ne supprime plus les tâches mais les marque `status = 'paused'`. Renommer la méthode en `pauseCampaignTasks`. Toutes les tâches de la campagne (passées ET futures) non complétées passent en `status = 'paused'`.
+
+3. Modifier `POST /api/campaigns/:id/resume` pour remettre toutes les tâches de la campagne en `status = 'active'` avant de regénérer le planning.
+
+4. Dans toutes les requêtes qui récupèrent des tâches pour le planning et le calendrier (`getTasksInRange`, `getTasks`), ajouter un filtre systématique : `status != 'paused' AND status != 'cancelled'`.
+
+5. Dans `getTasksInRange` (storage.ts ligne ~1180), ne jamais retourner de tâches avec `status = 'paused'` ou `status = 'cancelled'` sauf si explicitement demandé (nouveau paramètre optionnel `includeInactive: boolean`).
+
+---
+
+### BUG #3 — Doublons de tâches lors de la génération de plans
+
+**Fichiers :** `server/routes.ts` — endpoints `generate-monthly`, `generate-weekly`, `generate-daily`
+
+**Cause identifiée :** Chaque appel à ces endpoints INSÈRE de nouvelles tâches en base. Si l'utilisateur génère le plan de la semaine, puis modifie quelque chose et regénère, il se retrouve avec le double des tâches sur les mêmes jours.
+
+**Ce qui doit être corrigé :**
+
+1. Avant d'insérer des tâches générées par l'IA, vérifier en base si des tâches non complétées existent déjà pour la même `(userId, projectId, scheduledDate)` avec un titre similaire. Si oui, UPDATE plutôt qu'INSERT.
+
+2. Implémenter une logique UPSERT : pour chaque tâche à insérer, chercher une tâche existante dans la même semaine avec le même `projectId` et un titre identique à 80%+ (ou exact). Si trouvée, mettre à jour `scheduledDate`, `scheduledTime`, `estimatedDuration`. Si non trouvée, créer.
+
+3. Alternative plus propre : Avant la génération, si `clearExisting: true` est passé dans le body, supprimer (ou marquer `cancelled`) toutes les tâches non complétées de ce projet dans la plage de dates concernée. Ajouter ce paramètre au frontend avec une confirmation claire.
+
+4. Pour les tâches de campagne : `generate-tasks` d'une campagne doit d'abord appeler `deleteAllIncompleteCampaignTasks` avant de créer les nouvelles tâches. Cette fonction existe déjà (storage.ts ligne ~1304) mais n'est pas utilisée systématiquement.
+
+---
+
+### BUG #4 — Suppression de projet sans cascade
+
+**Fichiers :** `server/routes.ts` (endpoint `DELETE /api/projects/:id`), `server/storage.ts`
+
+**Ce qui doit être corrigé :**
+
+Lors de la suppression d'un projet, supprimer ou annuler en cascade dans cet ordre :
+1. Tâches du projet (`tasks.projectId = id`) → marquer `status = 'cancelled'` ou supprimer
+2. Campagnes du projet (`campaigns.projectId = id`) → supprimer
+3. Contenu du projet (`content.projectId = id`) → supprimer
+4. Objectifs du projet (`projectGoals.projectId = id`) → supprimer
+5. Profil stratégique (`projectStrategyProfiles.projectId = id`) → supprimer
+6. Brand DNA du projet (`brandDna.projectId = id`) → supprimer
+7. Entrées quick capture liées (`quickCaptureEntries.projectId = id`) → supprimer
+8. Personas cibles (`targetPersonas.projectId = id`) → supprimer
+
+Tout cela dans une transaction DB unique pour garantir l'atomicité.
+
+---
+
+### BUG #5 — Ancien endpoint `/api/tasks/:id/complete` dupliqué
+
+**Fichier :** `server/routes.ts`
+
+Il existe deux endpoints pour compléter une tâche : `/toggle` et `/complete`. Garder uniquement `/toggle` (ou le renommer `/complete`), supprimer le doublon. Mettre à jour tous les appels frontend.
+
+---
+
+### BUG #6 — Calcul de numéro de semaine incorrect dans Strategy
+
+**Fichier :** `client/src/pages/strategy.tsx` (ligne ~107)
+
+Le calcul `Math.ceil(now.getDate() / 7)` est incorrect (donne 5 semaines possibles par mois au lieu d'un vrai numéro de semaine ISO). Remplacer par un calcul ISO correct, ou utiliser une library date (date-fns) déjà présente dans le projet.
+
+---
+
+### BUG #7 — Race condition dans Quick Capture (timeout hardcodé 4500ms)
+
+**Fichier :** `client/src/pages/dashboard.tsx` (ligne ~250)
+
+Le `setTimeout` de 4500ms pour invalider le cache après classification est fragile. Si le serveur est lent, l'UI reste dans un état bloqué. Remplacer par un polling avec retry (ex : vérifier toutes les 500ms pendant max 10s si `classifiedType` a changé dans la réponse, puis stopper).
+
+---
+
+## PARTIE 2 — REFONTE DE LA GÉNÉRATION INTELLIGENTE DES TÂCHES
+
+### OBJECTIF
+
+La génération de plan ne doit plus être un bouton que l'utilisateur presse manuellement. Elle doit être **automatique et réactive** : quand quelque chose change dans Naya qui impacte les tâches, le planning se met à jour.
+
+---
+
+### AMÉLIORATION #1 — Réactivité automatique post-modification
+
+**Principe :** Quand l'utilisateur modifie l'un des éléments suivants, une mise à jour légère du planning doit se déclencher automatiquement côté serveur (sans appel supplémentaire côté frontend) :
+
+- Changement de `priorityLevel` ou `projectStatus` d'un projet
+- Ajout/modification d'un objectif de projet (`projectGoals`)
+- Pause ou reprise d'une campagne
+- Complétion d'une tâche (cela libère un créneau → redistribuer les tâches en retard)
+- Déclenchement d'un `milestoneTrigger`
+
+**Implémentation suggérée :**
+
+Créer une fonction côté serveur `triggerSmartReplan(userId, projectId, context)` qui :
+1. Vérifie si la semaine en cours a un plan généré
+2. Si oui, appelle `rebalance-week` automatiquement en arrière-plan
+3. Invalide le cache de la query `tasks` côté client via le websocket ou en ajoutant un header `X-Tasks-Updated: true` dans la réponse des endpoints concernés
+
+Côté frontend, chaque mutation qui modifie un état impactant les tâches doit invalider `queryClient.invalidateQueries(['/api/tasks'])` après succès.
+
+---
+
+### AMÉLIORATION #2 — Génération de plan "propre" avec gestion des doublons
+
+**Principe :** Quand l'utilisateur clique sur "Générer le plan de la semaine", le système doit d'abord :
+1. Compter les tâches non complétées déjà présentes pour la semaine
+2. Si des tâches existent déjà : afficher une confirmation "Il y a X tâches existantes pour cette semaine. Les remplacer ?" avec deux options : "Remplacer" et "Ajouter aux existantes"
+3. Si "Remplacer" : annuler les tâches non complétées existantes de ce projet pour la semaine, puis générer les nouvelles
+4. Si "Ajouter" : générer en mode UPSERT (voir BUG #3)
+
+---
+
+### AMÉLIORATION #3 — Visibilité de l'état des tâches dans le planning
+
+Ajouter dans la vue Planning (jour et semaine) un indicateur visuel différenciant :
+- Tâches générées par IA (depuis un projet)
+- Tâches générées par campagne (badge campagne)
+- Tâches créées manuellement
+- Tâches en retard (scheduledDate < today et non complétées) → afficher en rouge/orange
+- Tâches débordées (overflow de la semaine passée)
+
+---
+
+### AMÉLIORATION #4 — Nettoyage automatique des tâches orphelines
+
+Créer un endpoint `POST /api/tasks/cleanup` qui :
+1. Supprime les tâches avec un `projectId` pointant vers un projet supprimé
+2. Marque `status = 'paused'` les tâches d'une campagne dont le `status = 'paused'`
+3. Marque `status = 'cancelled'` les tâches avec une `scheduledDate` > 90 jours dans le passé et non complétées (elles ne seront jamais faites)
+
+Appeler cet endpoint automatiquement :
+- Au chargement de la page Planning
+- Lors du chargement initial de l'app (`/api/auth/user` répond avec succès)
+
+---
+
+## PARTIE 3 — CORRECTIONS MINEURES
+
+### Minor #1 — Error Boundaries React manquants
+
+Ajouter un `ErrorBoundary` React autour des composants complexes du Dashboard et du Planning pour éviter qu'un crash d'un widget fasse tomber toute la page. Utiliser un composant `ErrorBoundary` qui affiche un message "Ce bloc a rencontré une erreur" avec un bouton "Réessayer".
+
+### Minor #2 — Pagination sur les listes
+
+`GET /api/projects` doit supporter `?limit=20&offset=0`. Par défaut limit=50. Le frontend doit gérer la pagination si `projects.length >= 50`.
+
+### Minor #3 — Refetch intervals trop fréquents
+
+Dans `dashboard.tsx`, `refetchInterval: 4000` pour la Quick Capture et `5000` pour les Milestone Triggers sont trop agressifs. Passer à `refetchInterval: 15000` (15 secondes). Sur une action utilisateur, invalider manuellement avec `queryClient.invalidateQueries`.
+
+### Minor #4 — `(project as any)` et `(task as any)` dans le frontend
+
+Remplacer toutes les utilisations de `as any` dans `dashboard.tsx` et `planning.tsx` par les types corrects issus du schema Drizzle. Utiliser `import type { Task, Project } from '@shared/schema'`.
+
+### Minor #5 — Tâches de campagnes pausées dans le filtre de tâches
+
+Dans `client/src/pages/planning.tsx`, lors de l'affichage des tâches sur le calendrier ou la grille horaire, filtrer les tâches dont le `status === 'paused'` ou `status === 'cancelled'` (une fois que le champ status est ajouté selon BUG #2).
+
+---
+
+## RÉSUMÉ DES PRIORITÉS
+
+| Priorité | Correction | Impact |
+|----------|-----------|--------|
+| 🔴 P0 | BUG #1 — Rebalance idempotent | Planning inutilisable |
+| 🔴 P0 | BUG #2 — Campagne pause cascade | Données incorrectes |
+| 🔴 P0 | BUG #3 — Doublons de tâches | Confusion totale |
+| 🟠 P1 | BUG #4 — Cascade suppression projet | Données orphelines |
+| 🟠 P1 | AMÉLIORATION #1 — Réactivité auto | UX fondamentale |
+| 🟠 P1 | AMÉLIORATION #4 — Nettoyage orphelins | Propreté données |
+| 🟡 P2 | BUG #5, #6, #7 | Stabilité |
+| 🟡 P2 | AMÉLIORATION #2, #3 | Expérience utilisateur |
+| 🟢 P3 | Minor #1 à #5 | Qualité code |
+
+---
+
+*Ce document a été généré après analyse complète du codebase Naya (routes.ts, storage.ts, schema.ts, pages client). Chaque correction est basée sur des bugs réels identifiés dans le code existant.*

@@ -1,0 +1,185 @@
+J'ai tout ce qu'il faut. Pas de table campaigns existante, pas de route campaign — c'est une page entièrement nouvelle à créer. Le brief est prêt :
+Message for Replit Agent:
+Step 9 — Campaign Engine
+What this step does
+The Campaign Engine is a new page at /campaigns that lets the user define a campaign objective, have Naya generate a strategic message, key assets, and a set of ready-to-execute tasks — all linked to a selected project. It replaces the need to manually think "what do I actually do this week to move this goal forward?" The output is: a campaign record with a name, objective, core message, and a task list injected directly into the Planning page.
+Task 1 — Schema: add campaigns table
+In shared/schema.ts, add the following table after milestoneTriggers:
+ts
+export const campaigns = pgTable("campaigns", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").references(() => projects.id),
+  name: text("name").notNull(),
+  objective: text("objective").notNull(),         // user's raw goal input
+  coreMessage: text("core_message"),              // AI-generated key message
+  targetAudience: text("target_audience"),        // AI-derived or user-refined
+  duration: text("duration").default("1_week"),   // 1_week | 2_weeks | 1_month
+  status: text("status").default("draft"),        // draft | active | completed | paused
+  tasksGenerated: boolean("tasks_generated").default(false),
+  insights: jsonb("insights"),                    // AI reasoning array
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const campaignRelations = relations(campaigns, ({ one }) => ({
+  project: one(projects, { fields: [campaigns.projectId], references: [projects.id] }),
+}));
+
+export const insertCampaignSchema = createInsertSchema(campaigns).omit({ id: true, createdAt: true, updatedAt: true });
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = z.infer<typeof insertCampaignSchema>;
+Also add campaignId integer("campaign_id").references(() => campaigns.id) as a nullable column to the tasks table so tasks can be linked to the campaign that generated them.
+Run npm run db:push.
+Task 2 — Storage: CRUD for campaigns
+In server/storage.ts, add to the interface and implementation:
+ts
+getCampaigns(userId: string, projectId?: number): Promise<Campaign[]>;
+getCampaign(id: number, userId: string): Promise<Campaign | undefined>;
+createCampaign(campaign: InsertCampaign): Promise<Campaign>;
+updateCampaign(id: number, userId: string, data: Partial<Campaign>): Promise<Campaign>;
+deleteCampaign(id: number, userId: string): Promise<void>;
+getCampaigns filters by userId and optionally by projectId, ordered by createdAt desc.
+Task 3 — OpenAI: add generateCampaign function
+In server/services/openai.ts, add:
+ts
+export interface CampaignGenerationRequest {
+  objective: string;
+  duration: string;
+  brandDna: BrandDnaInput;
+  weekContext?: string;
+}
+
+export interface GeneratedCampaign {
+  name: string;
+  coreMessage: string;
+  targetAudience: string;
+  insights: string[];
+  tasks: Array<{
+    title: string;
+    description: string;
+    type: string;           // content | outreach | admin | planning
+    category: string;       // trust | conversion | engagement | planning
+    priority: number;       // 1-3
+    estimatedDuration: number; // minutes
+    taskEnergyType: string; // deep_work | creative | admin | social | execution
+  }>;
+}
+```
+
+The prompt must instruct the model to return **only valid JSON** matching `GeneratedCampaign`, no preamble, no markdown fences.
+
+Prompt structure:
+```
+You are Naya, a strategic AI for independent founders and creative agencies.
+
+Generate a focused campaign plan based on this objective.
+
+CAMPAIGN OBJECTIVE: ${request.objective}
+DURATION: ${request.duration}
+${request.weekContext ? `CONTEXT: ${request.weekContext}` : ''}
+
+BRAND PROFILE:
+- Business: ${brandDna.businessType}
+- Model: ${brandDna.businessModel}
+- Audience: ${brandDna.targetAudience}
+- Core pain point: ${brandDna.corePainPoint}
+- Unique positioning: ${brandDna.uniquePositioning}
+- Primary goal: ${brandDna.primaryGoal}
+- Communication style: ${brandDna.communicationStyle}
+
+Return ONLY a JSON object with this exact structure:
+{
+  "name": "Short campaign name (5 words max)",
+  "coreMessage": "The single most important message this campaign communicates (1-2 sentences)",
+  "targetAudience": "Who specifically this campaign targets",
+  "insights": ["2-3 strategic observations about why this approach fits the brand"],
+  "tasks": [
+    {
+      "title": "Specific actionable task title",
+      "description": "1-sentence clarification of what to do",
+      "type": "content|outreach|admin|planning",
+      "category": "trust|conversion|engagement|planning",
+      "priority": 1,
+      "estimatedDuration": 45,
+      "taskEnergyType": "deep_work|creative|admin|social|execution"
+    }
+  ]
+}
+
+Generate between 5 and 8 tasks. Tasks must be concrete and executable, not vague directives.
+```
+
+Parse the response with `JSON.parse`, wrap in try/catch with a fallback error.
+
+---
+
+### Task 4 — Server routes
+
+Add these routes in `server/routes.ts`:
+```
+GET    /api/campaigns              → getCampaigns(userId, projectId?)
+POST   /api/campaigns              → createCampaign
+PATCH  /api/campaigns/:id          → updateCampaign
+DELETE /api/campaigns/:id          → deleteCampaign
+
+POST   /api/campaigns/generate     → generate campaign plan from objective (does NOT save yet)
+POST   /api/campaigns/:id/launch   → save tasks to tasks table, set tasksGenerated=true, status='active'
+POST /api/campaigns/generate body: { objective, duration, projectId?, weekContext? }
+Load Brand DNA via getBrandDnaForProject when projectId present, else getBrandDna
+Call generateCampaign()
+Return the GeneratedCampaign object — do NOT save to DB yet
+Also save a draft campaign record and return its id so the frontend can reference it
+POST /api/campaigns/:id/launch body: none required
+Load the campaign record
+For each task in campaign.insights — wait, the tasks were returned from generate but not stored on the campaign. Store the generated tasks as jsonb on the campaign at generate time. Add a generatedTasks: jsonb("generated_tasks") column to the schema.
+On launch: iterate over campaign.generatedTasks, insert each into the tasks table with userId, projectId, campaignId: campaign.id, source: 'campaign', scheduledDate: today
+Set campaign.tasksGenerated = true, campaign.status = 'active'
+Return { campaign, tasksCreated: number }
+Task 5 — Frontend: new campaigns.tsx page
+Create client/src/pages/campaigns.tsx. Add route /campaigns in App.tsx. Add "Campaigns" nav item in sidebar.tsx between "Strategy" and "Analytics" with the Rocket icon from lucide-react.
+Page structure:
+Header:
+Title: Campaigns — [Project Name]
+Project selector pills (same pattern as Strategy and Content Calendar pages)
+"New campaign" button
+Two-panel layout (left panel 40%, right panel 60%):
+Left panel — Campaign list:
+Filtered by selectedProjectId
+Query key: ['/api/campaigns', selectedProjectId]
+Each CampaignCard shows: name, status badge (draft=outline / active=primary / completed=secondary / paused=muted), objective (1-line clamp), task count from generatedTasks?.length || 0, createdAt date
+Click → selects and loads campaign detail in right panel
+Active campaign has a highlighted left border
+Right panel — Campaign detail:
+Three states:
+State A — Empty (no campaign selected):
+Centered illustration area with Rocket icon
+"Define a campaign objective and Naya will build the full plan." subtitle
+"Start a new campaign →" button that opens the creation flow inline (not a modal)
+State B — Creation flow (new campaign): A vertical form directly in the right panel:
+Objective textarea — "What do you want to achieve with this campaign?" placeholder, min 2 lines
+Duration selector — 4 options: 1 week / 2 weeks / 1 month / Custom
+Optional context — "Anything Naya should know about this moment?" (small textarea, collapsible)
+"Generate campaign plan →" button — triggers POST /api/campaigns/generate, shows loading state with text "Naya is building your campaign plan..."
+State C — Generated campaign (after generate returns): Display the result without saving yet:
+Campaign name (large, editable inline — click to edit)
+Core message card — indigo background, prose text, label "Core message"
+Target audience — small muted row
+Strategic insights — 2-3 bullet points with colored dots (same style as Strategy page)
+Generated tasks — list of task cards, each showing: title, type badge, energy type badge, estimated duration, priority dot. Each task has a small edit icon (click → inline title edit only).
+Two buttons at bottom:
+"Launch campaign" (primary, filled) → calls POST /api/campaigns/:id/launch → on success: toast "Campaign launched — X tasks added to your plan", update campaign list, switch to detail view of the now-active campaign
+"Discard" (ghost) → deletes the draft campaign, resets to State A
+State D — Active/completed campaign detail: Same layout as State C but read-only, with:
+Status badge (Active / Completed / Paused)
+"Mark complete" button if status is active → PATCH status to completed
+"Pause" button if status is active → PATCH status to paused
+Task list shows which tasks are completed (strikethrough title, green check) vs pending — query GET /api/tasks?campaignId=X (add this filter to the tasks route)
+Task 6 — Minor: add ?campaignId= filter to GET /api/tasks
+In the existing GET /api/tasks route, accept an optional ?campaignId= query param and filter tasks by campaignId when present. Update getTasks in storage accordingly.
+Verification expected
+Select Agence JMD → Campaign list shows only Agence JMD campaigns
+Create new campaign with objective "Launch our new brand identity offer to luxury SMEs" → Naya generates name, core message, 5-8 tasks
+"Launch campaign" → tasks appear in Planning page linked to Agence JMD
+Switch to Naya project → campaign list resets, shows Naya campaigns only
+Active campaign detail shows task completion status live

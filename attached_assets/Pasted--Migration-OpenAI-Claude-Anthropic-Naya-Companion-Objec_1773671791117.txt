@@ -1,0 +1,384 @@
+# Migration OpenAI → Claude (Anthropic) — Naya + Companion
+
+## Objectif
+
+Remplacer tous les appels à l'API OpenAI par l'API Anthropic (Claude). Conserver exactement la même logique métier — seuls le client HTTP, les noms de modèles, et le format des réponses changent.
+
+---
+
+## Étape 1 — Installer le SDK Anthropic
+
+Dans le projet Naya principal, exécuter :
+```bash
+npm install @anthropic-ai/sdk
+```
+
+Dans le projet Companion :
+```bash
+pnpm add @anthropic-ai/sdk --filter @workspace/api-server
+```
+
+Ajouter le secret `ANTHROPIC_API_KEY` dans les Secrets Replit (valeur = ta clé API Anthropic depuis console.anthropic.com).
+
+---
+
+## Étape 2 — Créer le fichier client Claude
+
+**Créer le fichier `server/services/claude.ts`** (dans le projet Naya principal) :
+
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+import type { Response } from "express";
+
+export const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Modèles à utiliser selon le type de tâche
+export const CLAUDE_MODELS = {
+  // Tâches structurées : génération JSON, classification, analyse → rapide et économique
+  fast: "claude-haiku-4-5-20251001",
+  // Conversations, raisonnement, stratégie → meilleure qualité
+  smart: "claude-sonnet-4-6",
+};
+
+// Voix de Naya — system prompt partagé par tous les appels
+export const NAYA_VOICE = `You are Naya, an AI operating system for independent builders and solopreneurs.
+Your role: help users manage projects, think strategically, stay focused on what matters.
+Your voice: direct, warm, and human — never corporate or robotic. You think in systems.
+You keep responses concise unless depth is needed. You never use bullet points in conversation.
+You never start with "Great!" or hollow affirmations. You get straight to the point.`;
+
+/**
+ * Appel non-streaming — remplace openai.chat.completions.create pour tous les appels standards
+ * Extrait automatiquement le system message des messages OpenAI s'il est présent
+ */
+export async function callClaude(options: {
+  model?: string;
+  system?: string;
+  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  max_tokens?: number;
+  temperature?: number;
+}): Promise<string> {
+  const { model = CLAUDE_MODELS.fast, messages, max_tokens = 1024, system } = options;
+
+  // Séparer le system message des autres messages (Claude l'attend en paramètre top-level)
+  const systemMsg = system ?? messages.find((m) => m.role === "system")?.content;
+  const chatMessages = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  const response = await anthropic.messages.create({
+    model,
+    max_tokens,
+    ...(systemMsg ? { system: systemMsg } : {}),
+    messages: chatMessages,
+  });
+
+  const block = response.content[0];
+  return block.type === "text" ? block.text : "";
+}
+
+/**
+ * Appel streaming — remplace openai.chat.completions.create({ stream: true })
+ * Écrit directement dans la Response Express en SSE, même format que l'ancien code
+ */
+export async function streamClaude(options: {
+  model?: string;
+  system?: string;
+  messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
+  max_tokens?: number;
+  res: Response;
+}): Promise<void> {
+  const { model = CLAUDE_MODELS.smart, messages, max_tokens = 8192, system, res } = options;
+
+  const systemMsg = system ?? messages.find((m) => m.role === "system")?.content;
+  const chatMessages = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  return new Promise((resolve, reject) => {
+    anthropic.messages
+      .stream({
+        model,
+        max_tokens,
+        ...(systemMsg ? { system: systemMsg } : {}),
+        messages: chatMessages,
+      })
+      .on("text", (text) => {
+        res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+      })
+      .on("finalMessage", () => {
+        res.write("data: [DONE]\n\n");
+        res.end();
+        resolve();
+      })
+      .on("error", (err) => {
+        console.error("Claude stream error:", err);
+        if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+        else res.end();
+        reject(err);
+      });
+  });
+}
+```
+
+---
+
+## Étape 3 — Migrer `server/services/openai.ts`
+
+**En haut du fichier**, remplacer :
+```typescript
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "default_key"
+});
+```
+
+Par :
+```typescript
+import { callClaude, CLAUDE_MODELS, NAYA_VOICE } from "./claude";
+```
+
+**Pour chaque appel** de ce format :
+```typescript
+// AVANT
+const response = await openai.chat.completions.create({
+  model: "gpt-4o",
+  messages: [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userContent }
+  ],
+  max_tokens: 500,
+});
+const text = response.choices[0].message.content ?? "";
+```
+
+Remplacer par :
+```typescript
+// APRÈS
+const text = await callClaude({
+  model: CLAUDE_MODELS.fast,
+  messages: [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userContent }
+  ],
+  max_tokens: 500,
+});
+```
+
+**Pour les appels qui parsent du JSON** (`JSON.parse(response.choices[0]?.message?.content || "{}")`), remplacer par :
+```typescript
+const raw = await callClaude({ model: CLAUDE_MODELS.fast, messages: [...], max_tokens: 1024 });
+// puis JSON.parse(raw || "{}") ou JSON.parse(raw || "[]") selon le cas
+```
+
+Appliquer ce remplacement à **tous les appels** dans openai.ts (il y en a ~13, tous du même pattern).
+
+---
+
+## Étape 4 — Migrer les 3 appels inline dans `server/routes.ts`
+
+**Appel 1 (vers ligne 566) :**
+```typescript
+// AVANT
+const OpenAI = (await import('openai')).default;
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const response = await openai.chat.completions.create({
+  model: 'gpt-4o',
+  messages: [...],
+  ...
+});
+const text = response.choices[0]?.message?.content ?? "";
+
+// APRÈS
+const { callClaude, CLAUDE_MODELS } = await import('./services/claude.js');
+const text = await callClaude({
+  model: CLAUDE_MODELS.fast,
+  messages: [...],
+  max_tokens: [garder la même valeur],
+});
+```
+
+**Appel 2 (vers ligne 1375 — daily brief) :**
+```typescript
+// AVANT
+const briefOpenai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const response = await briefOpenai.chat.completions.create({
+  model: "gpt-4o",
+  messages: [...],
+});
+const summary = response.choices[0]?.message?.content ?? fallback;
+
+// APRÈS
+import { callClaude, CLAUDE_MODELS } from "./services/claude.js"; // ajouter en haut du fichier
+const summary = await callClaude({
+  model: CLAUDE_MODELS.fast,
+  messages: [...], // garder exactement les mêmes messages
+  max_tokens: 200,
+}) || fallback;
+```
+
+**Appel 3 (vers ligne 6026) :**
+Même pattern que l'appel 1. Utiliser `callClaude` avec `CLAUDE_MODELS.fast`.
+
+Aussi, **en haut de `routes.ts`**, remplacer :
+```typescript
+import OpenAI from "openai";
+```
+Par :
+```typescript
+import { callClaude, streamClaude, CLAUDE_MODELS, NAYA_VOICE } from "./services/claude.js";
+```
+
+---
+
+## Étape 5 — Migrer `server/services/article-analysis.ts`
+
+```typescript
+// AVANT
+import OpenAI from "openai";
+const openai = new OpenAI({ apiKey: ... });
+const response = await openai.chat.completions.create({ model: "gpt-4o", ... });
+const text = response.choices[0]?.message?.content ?? "";
+
+// APRÈS
+import { callClaude, CLAUDE_MODELS } from "./claude.js";
+const text = await callClaude({ model: CLAUDE_MODELS.fast, messages: [...], max_tokens: [...] });
+```
+
+---
+
+## Étape 6 — Migrer `server/services/milestone-intelligence.ts`
+
+Même pattern qu'article-analysis.ts.
+
+---
+
+## Étape 7 — Migrer le Companion (`artifacts/api-server/src/routes/ai.ts`)
+
+Le fichier utilise `@workspace/integrations-openai-ai-server`. Remplacer l'import et tous les appels.
+
+**En haut du fichier**, remplacer :
+```typescript
+import { openai } from "@workspace/integrations-openai-ai-server";
+```
+
+Par :
+```typescript
+import Anthropic from "@anthropic-ai/sdk";
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const HAIKU = "claude-haiku-4-5-20251001";
+const SONNET = "claude-sonnet-4-6";
+
+const NAYA_SYSTEM = `You are Naya, an AI operating system for independent builders and solopreneurs.
+Your voice is direct, warm, and human — never corporate or robotic. You think in systems.
+You ask good questions. You keep responses concise unless depth is needed.
+Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
+```
+
+**Route `/daily-brief` :**
+```typescript
+// AVANT
+const completion = await openai.chat.completions.create({
+  model: "gpt-5.2",
+  max_completion_tokens: 150,
+  messages: [{ role: "system", content: "..." }, { role: "user", content: "..." }],
+});
+summary = completion.choices[0]?.message?.content ?? fallback;
+
+// APRÈS
+const response = await anthropic.messages.create({
+  model: HAIKU,
+  max_tokens: 150,
+  system: "You are Naya, a calm and direct AI OS for independent builders. Write a 1-2 sentence daily brief summary. Be warm, direct, and human. Never use corporate language or clichés. No bullet points. No greetings.",
+  messages: [{ role: "user", content: `Energy: ${energyLevel}. Tasks today (${taskCount} total):\n${taskTitles}\nWrite a brief, motivating 1-2 sentence summary.` }],
+});
+summary = response.content[0].type === "text" ? response.content[0].text : fallback;
+```
+
+**Route `/generate-tasks` :**
+```typescript
+// AVANT
+const completion = await openai.chat.completions.create({
+  model: "gpt-5.2",
+  max_completion_tokens: 1024,
+  messages: [{ role: "system", content: "..." }, { role: "user", content: "..." }],
+});
+const content = completion.choices[0]?.message?.content ?? "[]";
+
+// APRÈS
+const response = await anthropic.messages.create({
+  model: HAIKU,
+  max_tokens: 1024,
+  system: "You are Naya, an AI OS for independent builders. Generate actionable, specific tasks for a project. Return ONLY a JSON array of task objects. Each task: { title: string, description: string, priority: 'high'|'medium'|'low' }. No explanation, just JSON.",
+  messages: [{ role: "user", content: `Project: "${project.name}"${project.description ? `\nDescription: ${project.description}` : ""}${context ? `\nContext: ${context}` : ""}\n\nGenerate ${count} specific, actionable tasks.` }],
+});
+const content = response.content[0].type === "text" ? response.content[0].text : "[]";
+```
+
+**Route `/chat` (streaming) :**
+```typescript
+// AVANT
+const stream = await openai.chat.completions.create({
+  model: "gpt-5.2",
+  max_completion_tokens: 8192,
+  messages: [{ role: "system", content: systemPrompt }, ...messages],
+  stream: true,
+});
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta?.content || "";
+  if (content) res.write(`data: ${JSON.stringify({ content })}\n\n`);
+}
+res.write("data: [DONE]\n\n");
+res.end();
+
+// APRÈS
+// Séparer le system message des messages user/assistant
+const userMessages = messages.filter((m: any) => m.role !== "system");
+
+anthropic.messages
+  .stream({
+    model: SONNET,
+    max_tokens: 8192,
+    system: NAYA_SYSTEM,
+    messages: userMessages,
+  })
+  .on("text", (text) => {
+    res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+  })
+  .on("finalMessage", () => {
+    res.write("data: [DONE]\n\n");
+    res.end();
+  })
+  .on("error", (err) => {
+    console.error("Claude stream error:", err);
+    if (!res.headersSent) res.status(500).json({ error: "Failed to get AI response" });
+    else res.end();
+  });
+// Ne PAS mettre de return ici — la réponse est gérée par les callbacks
+```
+
+---
+
+## Résumé des modèles utilisés
+
+| Tâche | Ancien modèle | Nouveau modèle |
+|-------|--------------|----------------|
+| Génération de tâches, JSON structuré | gpt-4o | claude-haiku-4-5-20251001 |
+| Daily brief, classifications | gpt-4o | claude-haiku-4-5-20251001 |
+| Brand DNA, analyse stratégique | gpt-4o | claude-sonnet-4-6 |
+| Chat Naya (streaming) | gpt-5.2 | claude-sonnet-4-6 |
+| Article analysis, milestones | gpt-4o | claude-haiku-4-5-20251001 |
+
+---
+
+## Variable d'environnement à configurer
+
+Ajouter dans les Secrets Replit des deux projets :
+- Nom : `ANTHROPIC_API_KEY`
+- Valeur : clé API depuis https://console.anthropic.com
+
+Le secret `OPENAI_API_KEY` peut être conservé pendant la transition mais n'est plus utilisé après cette migration.

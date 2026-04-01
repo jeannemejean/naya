@@ -1,0 +1,72 @@
+There are 3 remaining issues in the campaign + daily planning system. Please fix all of them.
+
+Problem 1 — Old bad campaign tasks are still in the DB (wrong dates, overlaps, weekends)
+The campaign scheduler was recently fixed, but tasks created before the fix are still in the database with bad scheduled dates (weekends, overlaps, etc.). Users need a way to clean and redeploy.
+Add a POST /api/campaigns/:id/redeploy route that:
+
+Deletes ALL incomplete tasks linked to this campaign (past and future)
+Calls the existing launch logic to reschedule everything from scratch using today as startDate
+
+tsapp.post('/api/campaigns/:id/redeploy', isAuthenticated, async (req: any, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const id = parseInt(req.params.id);
+    const campaign = await storage.getCampaign(id, userId);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+    // Delete ALL incomplete campaign tasks regardless of date
+    await db.delete(tasks).where(
+      and(eq(tasks.campaignId, id), eq(tasks.completed, false))
+    );
+
+    // Reset tasksGenerated so launch re-runs cleanly
+    await storage.updateCampaign(id, userId, { tasksGenerated: false, status: 'active' });
+
+    // Forward to launch with today as start
+    req.body = { startDate: new Date().toISOString().slice(0, 10) };
+    // Re-use the launch handler by triggering it internally (or inline the launch logic here)
+    res.json({ message: "redeploy_ready", startDate: req.body.startDate });
+  } catch (error) {
+    console.error("Error redeploying campaign:", error);
+    res.status(500).json({ message: "Failed to redeploy campaign" });
+  }
+});
+Then in campaigns.tsx, add a "Redeploy" button next to "Pause" when status is active and tasksGenerated is true. When clicked:
+
+Call POST /api/campaigns/:id/redeploy
+Then immediately call POST /api/campaigns/:id/launch with the returned startDate
+Invalidate ["/api/tasks"] and ["/api/campaigns"] queries
+Show toast: "Campaign redeployed — tasks rescheduled from today"
+
+
+Problem 2 — Daily generation assigns tasks to weekend dates
+In the POST /api/generate-daily-plan route, after rebalanceTasksForward, add a hard safety filter before the byDate map is built:
+ts// AFTER this line:
+const rebalanced = rebalanceTasksForward(...)
+  .filter((t: any) => !t._unschedulable);
+
+// ADD this safety filter:
+const safeRebalanced = rebalanced.filter((t: any) => {
+  const ds: string = t.scheduledDate || todayStr;
+  const dow = new Date(ds + 'T00:00:00').getDay();
+  return userWorkDaysGen.has(DAY_ABBRS[dow]) && !genOffDates.has(ds);
+});
+
+// Then replace `rebalanced` with `safeRebalanced` when building byDate:
+for (const pending of safeRebalanced as PendingTask[]) { ... }
+
+Problem 3 — Too many tasks piling up on a single day (e.g. Tuesday with 12 tasks)
+In rebalanceTasksForward, the dailyCap is passed as 4 but the slotUsage map is initialized from existingDayCounts which includes existing tasks. This means if a day already has 5 existing tasks, the cap is 5 >= 4 so no new tasks land there — but existing overloaded days are never split.
+Fix: in the rebalanceTasksForward call inside generate-daily-plan, change dailyCap from 4 to a value that accounts for existing tasks. Specifically, replace:
+ts// BEFORE:
+const rebalanced = rebalanceTasksForward(allPendingTasks, todayStr, weekEndStr, 4, existingDayCounts, 0, userWorkDaysGen, genOffDates)
+
+// AFTER:
+const maxExistingOnAnyDay = existingDayCounts.size > 0
+  ? Math.max(...Array.from(existingDayCounts.values()))
+  : 0;
+const effectiveDailyCap = Math.max(4, maxExistingOnAnyDay + 2);
+const rebalanced = rebalanceTasksForward(allPendingTasks, todayStr, weekEndStr, effectiveDailyCap, existingDayCounts, 0, userWorkDaysGen, genOffDates)
+This ensures the cap is always at least "the busiest existing day + 2" so new tasks can still be distributed.
+
+Note: after implementing Problem 1, users with broken existing campaigns should click Redeploy to clean up their bad tasks and get a fresh correct schedule.

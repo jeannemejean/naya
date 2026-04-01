@@ -1,0 +1,56 @@
+The new plan is very strong and I want to proceed with it.
+
+It now reflects the right direction for Naya:
+	•	adaptive capacity instead of fixed workload assumptions
+	•	existing scheduled tasks counted before generation
+	•	workflow bundles preserved as coherent blocks
+	•	auto-correction of fragmented days
+	•	operating profile deeply integrated into task generation
+	•	effectiveness signal architecture ready for future learning
+
+This is much closer to the task intelligence system I want.
+
+Before implementation, I want to add a few refinements.
+
+1. Daily capacity should not rely only on contentBandwidth
+
+The adaptive capacity logic is good, but I do not want capacity estimation to depend only on contentBandwidth.
+
+Please frame it as an estimate derived from multiple user profile signals, such as:
+	•	contentBandwidth when relevant
+	•	energyRhythm
+	•	and eventually real usage behavior
+
+This keeps the model more robust and future-proof.
+
+2. Keep the realism engine generic, not too “today-only”
+
+The current deferral logic toward tomorrow is correct for daily generation.
+
+However, please structure the realism engine so it can later support week/month planning flows without being tightly coupled to “today vs tomorrow” only.
+
+In other words, keep the scheduling logic general enough that it can shift tasks to the next appropriate slot, not only tomorrow.
+
+3. Use completion signals as positive context, not only as exclusion from rejection context
+
+It is good that completed tasks are excluded from rejected task context.
+
+I also want the system to be able to build a lightweight positive effectiveness context, for example:
+	•	user consistently completes short writing tasks
+	•	user completes planning tasks more reliably in the morning
+	•	user finishes creative bundles when grouped
+
+This does not need to be sophisticated yet, but the architecture should support it.
+
+4. Keep in mind that workflowGroup may later need a more stable identity
+
+Using workflowGroup as a string label is a very good pragmatic solution for now.
+
+Please keep in mind that if we later want to move, compare, or analyze bundles over time, we may eventually need a more stable bundle identity than just a label.
+
+No change is required now — I just want this considered in the design.
+
+Other than these refinements, the plan is solid and I want you to proceed.
+
+The direction is correct:
+Naya should become a system that not only generates tasks, but understands time, effort, continuity, user behavior, and realistic execution.

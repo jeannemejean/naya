@@ -1,0 +1,263 @@
+NAYA — TASK INTELLIGENCE EVOLUTION BRIEF
+
+Objective
+
+Evolve Naya from a task generator into a task decision and planning intelligence system.
+
+Tasks must become:
+	•	time-aware
+	•	energy-aware
+	•	dependency-aware
+	•	personality-aware
+	•	goal-aware
+	•	evidence-informed
+
+The system must stop generating generic task lists and start proposing realistic, high-leverage, sequenced actions that can actually fit into a human schedule.
+
+⸻
+
+1 — Duration Intelligence Layer
+
+Problem
+
+Currently tasks are treated as flat units.
+
+Example of bad scheduling:
+	•	Brainstorm video
+	•	Record video
+	•	Edit video
+	•	Publish video
+
+These are suggested as independent blocks and can be placed anywhere in a day.
+In reality, these tasks:
+	•	require significant uninterrupted time
+	•	belong to the same workflow
+	•	cannot realistically be fragmented between unrelated micro-tasks
+
+Naya must understand how long tasks take and how they behave in time.
+
+Required Schema Additions
+
+Add the following fields to the tasks table:
+
+estimatedDurationMinutes integer
+actualDurationMinutes integer
+taskEnergyType text      // deep_work | creative | admin | social | logistics | execution
+setupCost text           // low | medium | high
+canBeFragmented boolean  // default true
+recommendedTimeOfDay text // morning | afternoon | evening | flexible
+workflowGroup text       // optional identifier for task bundles
+
+Logic Requirement
+
+Before scheduling tasks into a day:
+	•	compute total estimated workload
+	•	detect unrealistic sequences (e.g. multiple deep creative tasks in fragmented slots)
+	•	prefer grouping related workflow tasks into focused blocks
+
+Example intelligent output:
+
+Instead of:
+	•	brainstorm
+	•	record
+	•	edit
+
+Suggest:
+
+“Block 3 hours tomorrow afternoon for short-form video production (idea → recording → first edit).”
+
+⸻
+
+2 — Workflow / Task Chain Intelligence
+
+Problem
+
+Many activities are not isolated tasks but multi-step workflows.
+
+Examples:
+	•	content production
+	•	client acquisition
+	•	product launch
+	•	learning process
+
+Required Change
+
+Allow task generation to return task bundles or chains, not just isolated tasks.
+
+Extend AI generation response format:
+
+tasks: [...]
+dependencies: [...]
+workflowSuggestions: [
+  {
+    label: "Short-form content production",
+    taskIndexes: [0,1,2],
+    recommendedBlockMinutes: 180
+  }
+]
+
+Naya may then:
+	•	schedule the bundle as a single focus block
+	•	or distribute it across multiple days if time realism requires it
+
+⸻
+
+3 — Realism Engine Before Scheduling
+
+New Step in Generation Flow
+
+After AI generates candidate tasks, but before saving them:
+
+Run a realism validation layer.
+
+Check:
+	•	total estimated time vs available day capacity
+	•	number of context switches
+	•	dependency feasibility
+	•	blocked tasks
+	•	deep work density
+	•	known user friction patterns
+	•	energy rhythm compatibility
+
+If unrealistic:
+	•	automatically defer lower priority tasks
+	•	propose a more balanced distribution across days
+
+The system must be able to output:
+
+“This day is overloaded. Two tasks have been moved to tomorrow to preserve focus time.”
+
+⸻
+
+4 — Task Effectiveness Feedback Intelligence
+
+Problem
+
+Naya already stores deleted task feedback, but it should become a task effectiveness memory system.
+
+Required Additions
+
+When a task is:
+	•	completed
+	•	deferred
+	•	deleted
+	•	rescheduled
+	•	repeatedly postponed
+
+Store structured signals:
+
+completionDelayDays integer
+timesRescheduled integer
+actualDurationVariance integer
+
+This enables future logic such as:
+	•	tasks consistently underestimated → adjust duration model
+	•	certain task types often rejected by this user → reduce suggestion frequency
+	•	specific workflow sequences lead to higher completion → increase priority
+
+⸻
+
+5 — Personality-Aware Task Framing
+
+Task generation must use:
+	•	planning style
+	•	activation style
+	•	avoidance triggers
+	•	energy rhythm
+	•	encouragement style
+
+Example reasoning instruction to AI:
+
+“Generate tasks that this user is realistically likely to start and complete, not only strategically relevant ones.”
+
+Examples:
+
+For visibility-avoidant creative user:
+	•	suggest low-pressure publishing tasks first
+	•	suggest ideation clustering before public execution
+
+For execution-oriented builder:
+	•	suggest clear measurable deliverables
+	•	reduce abstract reflection tasks
+
+⸻
+
+6 — Evidence-Informed Task Suggestion (Future Layer)
+
+We should prepare the system to learn from aggregated behavioral patterns across users.
+
+This is not immediate ML training — but structured data collection.
+
+Data to Capture
+	•	task acceptance vs rejection
+	•	completion rates by task type
+	•	project stage progression signals
+	•	duration realism gaps
+	•	workflow sequences correlated with milestone completion
+	•	user profile ↔ effective task patterns
+
+Eventually Naya should be able to reason:
+
+“For users with similar projects, goals, and work styles, these types of actions led to measurable progress.”
+
+This can later power:
+	•	retrieval-augmented prompting
+	•	ranking of candidate tasks by likelihood of usefulness
+	•	adaptive strategy recommendations
+
+⸻
+
+7 — Planning Horizons Integration
+
+Scheduling must operate across:
+	•	day
+	•	week
+	•	month
+
+Using scheduledDate, not only “today.”
+
+Task generation should be able to output:
+	•	immediate actions
+	•	near-term preparation steps
+	•	medium-term milestone tasks
+
+This enables Naya to avoid overloading the present while still advancing long-term goals.
+
+⸻
+
+8 — Prompting Strategy Upgrade
+
+The task generation prompt must follow a reasoning chain:
+	1.	Understand project type and stage
+	2.	Understand current goal and success definition
+	3.	Understand user behavioral profile
+	4.	Analyze existing tasks, dependencies, feedback, workspace notes
+	5.	Evaluate realism constraints
+	6.	Suggest highest-leverage next actions
+	7.	Estimate duration and sequencing
+	8.	Optionally group into workflow bundles
+
+The output must prioritize:
+	•	realism
+	•	leverage
+	•	continuity
+	•	psychological feasibility
+
+⸻
+
+Final Vision
+
+Naya should evolve from:
+
+AI task generator
+
+into:
+
+Adaptive task decision system that understands time, effort, personality, workflow structure, and real-world effectiveness.
+
+This will significantly improve:
+	•	task relevance
+	•	user trust
+	•	completion rates
+	•	long-term behavioral learning
+	•	strategic progress visibility

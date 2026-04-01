@@ -1,0 +1,33 @@
+[Error] Warning: validateDOMNesting(...): <a> cannot appear as a descendant of <a>.
+a
+a
+@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js:205:27
+div
+div
+div
+div
+Sidebar@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/src/components/sidebar.tsx:83:5
+div
+Dashboard@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/src/pages/dashboard.tsx:1111:6
+Route@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js:191:14
+Switch@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js:248:27
+Router@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/src/App.tsx:41:49
+TooltipProviderProvider@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-3RXG37ZK.js:38:13
+TooltipProvider@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js:65:43
+ProjectProvider@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/src/lib/project-context.tsx:28:5
+ThemeProvider@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/src/contexts/ThemeContext.tsx:21:5
+QueryClientProvider@https://19e376fd-bbf5-4824-b740-b36ee9c3c838-00-una51vntqslq.picard.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js:2805:9
+App
+	printWarning (chunk-276SZO74.js:521)
+	error (chunk-276SZO74.js:505)
+	validateDOMNesting (chunk-276SZO74.js:8256)
+	createInstance (chunk-276SZO74.js:8328)
+	completeWork (chunk-276SZO74.js:16290)
+	completeUnitOfWork (chunk-276SZO74.js:19224)
+	performUnitOfWork (chunk-276SZO74.js:19206)
+	workLoopSync (chunk-276SZO74.js:19137)
+	renderRootSync (chunk-276SZO74.js:19116)
+	performSyncWorkOnRoot (chunk-276SZO74.js:18874)
+	flushSyncCallbacks (chunk-276SZO74.js:9119)
+	(fonction anonyme) (chunk-276SZO74.js:18627)
+[Error] Failed to load resource: the server responded with a status of 500 (Internal Server Error) (onboarding-reset, line 0)

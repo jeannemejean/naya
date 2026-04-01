@@ -1,0 +1,39 @@
+VERDICT: APPROVED_WITH_COMMENTS
+The diff implements the v26 task objectives end-to-end, with one non-blocking caveat.
+
+Critical findings / analysis:
+- **Planning grid readability** is correctly updated in `time-grid.tsx`: `PX_PER_HOUR` is 80, minimum block height is 44px, title is always shown, duration/full thresholds are 56/72, and completed-task styling now uses desaturation + lower opacity + clearer strikethrough treatment.
+- **Dashboard tile redesign** is implemented in `dashboard.tsx`: old AVERDICT: APPROVED_WITH_COMMENTS
+The diff implements the v26 task objectives end-to-end, with one non-blocking caveat.
+
+Critical findings / analysis:
+- **Planning grid readability** is correctly updated in `time-grid.tsx`: `PX_PER_HOUR` is 80, minimum block height is 44px, title is always shown, duration/full thresholds are 56/72, and completed-task styling now uses desaturation + lower opacity + clearer strikethrough treatment.
+I-brief style tiles are replaced by data-driven `BentoTileNextAction` and `BentoTileWeekPulse`, both sourced from `/api/tasks/range` with no AI calls. “Next Up” shows next pending task + energy emoji + mini progress bar; week tile renders Mon–Fri vertical completion bars with today/past coloring.
+- **Strategy reasoning banner** is now rendered directly above `<TimeGrid>` (both week and day views) in `planning.tsx`, using existing `strategyExpanded` toggle.
+- **Full Brand DNA prompt** in `openai.ts` is substantially upgraded: richer business context (offers, voice keywords, content pillars detailed, pricing, audience psychology, etc.), explicit 5-step reasoning chain, and new strategic system voice; call retains `CLAUDE_MODELS.smart` and `max_tokens: 8000`.
+- **Routes payload enrichment + collision guard** in `routes.ts` is present: expanded `brandDnaInput` fields are passed to generation, and pre-save collision handling shifts colliding `scheduledTime` values forward by task duration before placement.
+
+Comment (non-blocking):
+- In `openai.ts`, `BrandDnaInput` interface was not expanded to include the newly consumed fields (`businessName`, `offers`, `contentPillarsDetailed`, `brandVoiceKeywords`, etc.). Runtime behavior is fine in this codebase, but type contract is now stale and should be aligned to prevent drift/regressions.
+
+Security:
+- None observed (no serious authz/injection/secrets/SSRF issues introduced in this diff).
+
+Next actions:
+1. Update `BrandDnaInput` interface to include all newly referenced v26 Brand DNA properties.
+2. (Optional hardening) If desired, evolve collision guard from exact start-time dedupe to true interval overlap checks for additional safety.
+3. Run a quick manual smoke test: generate-daily + dashboard load + planning banner toggle in day/week views.- **Dashboard tile redesign** is implemented in `dashboard.tsx`: old AI-brief style tiles are replaced by data-driven `BentoTileNextAction` and `BentoTileWeekPulse`, both sourced from `/api/tasks/range` with no AI calls. “Next Up” shows next pending task + energy emoji + mini progress bar; week tile renders Mon–Fri vertical completion bars with today/past coloring.
+- **Strategy reasoning banner** is now rendered directly above `<TimeGrid>` (both week and day views) in `planning.tsx`, using existing `strategyExpanded` toggle.
+- **Full Brand DNA prompt** in `openai.ts` is substantially upgraded: richer business context (offers, voice keywords, content pillars detailed, pricing, audience psychology, etc.), explicit 5-step reasoning chain, and new strategic system voice; call retains `CLAUDE_MODELS.smart` and `max_tokens: 8000`.
+- **Routes payload enrichment + collision guard** in `routes.ts` is present: expanded `brandDnaInput` fields are passed to generation, and pre-save collision handling shifts colliding `scheduledTime` values forward by task duration before placement.
+
+Comment (non-blocking):
+- In `openai.ts`, `BrandDnaInput` interface was not expanded to include the newly consumed fields (`businessName`, `offers`, `contentPillarsDetailed`, `brandVoiceKeywords`, etc.). Runtime behavior is fine in this codebase, but type contract is now stale and should be aligned to prevent drift/regressions.
+
+Security:
+- None observed (no serious authz/injection/secrets/SSRF issues introduced in this diff).
+
+Next actions:
+1. Update `BrandDnaInput` interface to include all newly referenced v26 Brand DNA properties.
+2. (Optional hardening) If desired, evolve collision guard from exact start-time dedupe to true interval overlap checks for additional safety.
+3. Run a quick manual smoke test: generate-daily + dashboard load + planning banner toggle in day/week views.

@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   NAYA — Editorial Design System inspired by Magazine Aesthetics
+   Palette: Sage green, Warm beige, Deep noir, Soft ivory
+   Typography: Helvetica (UI), Libre Baskerville (serif)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+:root {
+  /* Base colors — Ivory & Warm Noir */
+  --background: hsl(30, 45%, 98%);        /* Warm ivory, not stark white */
+  --foreground: hsl(0, 0%, 12%);          /* Deep noir, softer than black */
+
+  /* Muted — Beige tones */
+  --muted: hsl(30, 25%, 94%);             /* Warm beige gray */
+  --muted-foreground: hsl(25, 8%, 45%);   /* Muted taupe */
+
+  /* Card & Popover — Subtle elevation */
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(0, 0%, 12%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(0, 0%, 12%);
+
+  /* Borders — Delicate & barely there */
+  --border: hsl(30, 20%, 88%);            /* Soft beige border */
+  --input: hsl(30, 20%, 90%);
+
+  /* Primary — Sage green sophistiqué */
+  --primary: hsl(150, 20%, 55%);          /* Soft sage green, elegant & natural */
+  --primary-foreground: hsl(0, 0%, 100%);
+
+  /* Secondary — Warm Sand */
+  --secondary: hsl(35, 35%, 75%);         /* Warm sand/beige */
+  --secondary-foreground: hsl(0, 0%, 12%);
+
+  /* Accent — Light sage */
+  --accent: hsl(155, 22%, 68%);           /* Light sage green */
+  --accent-foreground: hsl(0, 0%, 12%);
+
+  /* Destructive — Muted coral red */
+  --destructive: hsl(0, 55%, 62%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+
+  /* Info — Sage green */
+  --info: hsl(150, 25%, 55%);
+  --info-foreground: hsl(0, 0%, 100%);
+
+  /* Ring — Sage subtle */
+  --ring: hsl(150, 25%, 65%);
+
+  /* Border radius — More generous, softer */
+  --radius: 0.75rem;
+}
+
+.dark {
+  /* Dark mode — Midnight editorial */
+  --background: hsl(0, 0%, 8%);           /* Rich midnight */
+  --foreground: hsl(30, 15%, 92%);        /* Warm off-white */
+
+  --muted: hsl(0, 0%, 15%);
+  --muted-foreground: hsl(30, 10%, 60%);
+
+  --popover: hsl(0, 0%, 10%);
+  --popover-foreground: hsl(30, 15%, 92%);
+  --card: hsl(0, 0%, 10%);
+  --card-foreground: hsl(30, 15%, 92%);
+
+  --border: hsl(0, 0%, 18%);
+  --input: hsl(0, 0%, 18%);
+
+  --primary: hsl(150, 22%, 60%);          /* Sage maintains elegance in dark */
+  --primary-foreground: hsl(0, 0%, 100%);
+
+  --secondary: hsl(35, 30%, 40%);
+  --secondary-foreground: hsl(30, 15%, 92%);
+
+  --accent: hsl(155, 25%, 65%);
+  --accent-foreground: hsl(0, 0%, 10%);
+
+  --destructive: hsl(0, 50%, 50%);
+  --destructive-foreground: hsl(0, 0%, 100%);
+
+  --info: hsl(150, 25%, 50%);
+  --info-foreground: hsl(0, 0%, 100%);
+
+  --ring: hsl(150, 25%, 60%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply antialiased bg-background text-foreground;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    line-height: 1.6;
+  }
+
+  /* Editorial typography hierarchy */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Libre Baskerville', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  /* Subtle, elegant transitions */
+  * {
+    @apply transition-colors duration-200;
+  }
+
+  /* Remove default focus outline, replace with elegant ring */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-offset-2;
+    ring-color: hsl(150 20% 55% / 0.3);
+  }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Editorial utility classes
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@layer utilities {
+  /* Serif text for editorial touch */
+  .text-editorial {
+    font-family: 'Libre Baskerville', Georgia, serif;
+    letter-spacing: 0;
+  }
+
+  /* Display headlines */
+  .text-display {
+    font-family: 'Libre Baskerville', Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.03em;
+  }
+
+  /* Generous spacing (breathing room) */
+  .space-editorial {
+    @apply py-8 px-6;
+  }
+
+  /* Subtle shadow for elevation */
+  .shadow-editorial {
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.03);
+  }
+
+  /* Hover lift effect */
+  .hover-lift {
+    @apply transition-transform duration-300 hover:-translate-y-0.5;
+  }
+}
