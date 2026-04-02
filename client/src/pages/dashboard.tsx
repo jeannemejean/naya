@@ -899,13 +899,22 @@ function BentoTileNextAction() {
             )}
             <div className="flex-1" />
             {started ? (
-              <button
-                onClick={() => completeMutation.mutate(next.id)}
-                disabled={completeMutation.isPending}
-                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-bold transition-colors flex items-center gap-1"
-              >
-                <CheckCircle2 className="h-3 w-3" /> Terminé
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => { setStarted(false); }}
+                  className="text-xs px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-violet-200 font-semibold transition-colors border border-white/10"
+                  title="Mettre en pause"
+                >
+                  ⏸
+                </button>
+                <button
+                  onClick={() => completeMutation.mutate(next.id)}
+                  disabled={completeMutation.isPending}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-bold transition-colors flex items-center gap-1"
+                >
+                  <CheckCircle2 className="h-3 w-3" /> Terminé
+                </button>
+              </div>
             ) : (
               <button
                 onClick={() => setStarted(true)}
