@@ -361,7 +361,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await pool.query('SELECT 1');
       res.json({ status: 'ok', db: 'connected', timestamp: new Date().toISOString() });
     } catch (err: any) {
-      res.status(503).json({ status: 'error', db: 'disconnected', error: err.message, timestamp: new Date().toISOString() });
+      console.error('[health] DB connection error:', err.message);
+      res.status(503).json({ status: 'error', db: 'disconnected', timestamp: new Date().toISOString() });
     }
   });
 
