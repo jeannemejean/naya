@@ -788,7 +788,8 @@ function BentoTileNextAction() {
       let url = `/api/tasks/range?start=${today}&end=${today}`;
       if (activeProjectId) url += `&projectId=${activeProjectId}`;
       const res = await fetch(url, { credentials: 'include' });
-      return res.json();
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
   });
 
@@ -807,8 +808,8 @@ function BentoTileNextAction() {
     },
   });
 
-  const pending = (todayTasks as any[])
-    .filter(t => !t.completed && !(t as any).isBlockedByMilestone)
+  const pending = (Array.isArray(todayTasks) ? todayTasks : [])
+    .filter((t: any) => !t.completed && !t.isBlockedByMilestone)
     .sort((a, b) => {
       const aMin = a.scheduledTime ? parseInt(a.scheduledTime.replace(':', '')) : 9999;
       const bMin = b.scheduledTime ? parseInt(b.scheduledTime.replace(':', '')) : 9999;
