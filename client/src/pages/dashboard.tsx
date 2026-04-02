@@ -818,8 +818,9 @@ function BentoTileNextAction() {
 
   const next = pending[0] || null;
   const remaining = pending.length;
-  const done = (todayTasks as any[]).filter(t => t.completed).length;
-  const total = (todayTasks as any[]).length;
+  const safeTasks = Array.isArray(todayTasks) ? todayTasks : [];
+  const done = safeTasks.filter((t: any) => t.completed).length;
+  const total = safeTasks.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   const ENERGY_EMOJI: Record<string, string> = {
