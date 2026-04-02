@@ -886,6 +886,16 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/projects', selectedProject?.id] }),
   });
 
+  const generateTasksMutation = useMutation({
+    mutationFn: (goalId: number) =>
+      apiRequest('POST', `/api/goals/${goalId}/generate-tasks`).then(r => r.json()),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      toast({ title: `${data.count} tâches générées`, description: "Retrouve-les dans le planning." });
+    },
+    onError: () => toast({ title: "Erreur lors de la génération", variant: "destructive" }),
+  });
+
   const createForm = useForm<z.infer<typeof createProjectSchema>>({
     resolver: zodResolver(createProjectSchema),
     defaultValues: {
@@ -1204,36 +1214,55 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
                     ) : (
                       <div className="space-y-3">
                         {activeGoals.map((goal) => (
-                          <div key={goal.id} className="flex items-start gap-3 p-3 bg-slate-50 dark:bg-gray-800 rounded-lg">
-                            <button
-                              onClick={() => updateGoalMutation.mutate({ id: goal.id, projectId: selectedProject.id, status: 'completed' })}
-                              className="mt-0.5 text-slate-400 hover:text-green-500 transition-colors"
-                            >
-                              <Circle className="h-4 w-4" />
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm text-slate-900 dark:text-white">{goal.title}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs text-slate-500 dark:text-gray-400">
-                                  {SUCCESS_MODE_LABELS[goal.successMode] || goal.successMode}
-                                </span>
-                                {goal.dueDate && (
-                                  <span className="text-xs text-slate-400 dark:text-gray-500">
-                                    · Due {new Date(goal.dueDate).toLocaleDateString()}
+                          <div key={goal.id} className="p-3 bg-slate-50 dark:bg-gray-800 rounded-lg space-y-2">
+                            <div className="flex items-start gap-3">
+                              <button
+                                onClick={() => updateGoalMutation.mutate({ id: goal.id, projectId: selectedProject.id, status: 'completed' })}
+                                className="mt-0.5 text-slate-400 hover:text-green-500 transition-colors flex-shrink-0"
+                              >
+                                <Circle className="h-4 w-4" />
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-900 dark:text-white">{goal.title}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-slate-500 dark:text-gray-400">
+                                    {SUCCESS_MODE_LABELS[goal.successMode] || goal.successMode}
                                   </span>
+                                  {goal.dueDate && (
+                                    <span className="text-xs text-slate-400 dark:text-gray-500">
+                                      · {new Date(goal.dueDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}
+                                    </span>
+                                  )}
+                                </div>
+                                {goal.targetValue && goal.currentValue && (
+                                  <div className="mt-2">
+                                    <Progress
+                                      value={Math.min(100, (parseFloat(goal.currentValue) / parseFloat(goal.targetValue)) * 100)}
+                                      className="h-1.5"
+                                    />
+                                    <p className="text-xs text-slate-400 dark:text-gray-500 mt-0.5">
+                                      {goal.currentValue} / {goal.targetValue}
+                                    </p>
+                                  </div>
                                 )}
                               </div>
-                              {goal.targetValue && goal.currentValue && (
-                                <div className="mt-2">
-                                  <Progress
-                                    value={Math.min(100, (parseFloat(goal.currentValue) / parseFloat(goal.targetValue)) * 100)}
-                                    className="h-1.5"
-                                  />
-                                  <p className="text-xs text-slate-400 dark:text-gray-500 mt-0.5">
-                                    {goal.currentValue} / {goal.targetValue}
-                                  </p>
-                                </div>
-                              )}
+                            </div>
+                            {/* Bouton Générer le plan */}
+                            <div className="flex justify-end">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5 h-7 text-xs border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
+                                onClick={() => generateTasksMutation.mutate(goal.id)}
+                                disabled={generateTasksMutation.isPending}
+                              >
+                                {generateTasksMutation.isPending ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Sparkles className="h-3 w-3" />
+                                )}
+                                Générer le plan
+                              </Button>
                             </div>
                           </div>
                         ))}

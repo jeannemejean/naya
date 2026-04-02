@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  RefreshControl, ActivityIndicator, Alert,
+  RefreshControl, ActivityIndicator, Alert, Clipboard, Linking,
+  Modal, TextInput,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,10 +20,21 @@ const ENERGY_CONFIG: Record<string, { label: string; color: string; icon: string
   depleted: { label: "Mode repos",       color: "#6366f1", icon: "moon" },
 };
 
+const TASK_TYPE_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
+  linkedin_message: { icon: "chatbubble-outline",    color: "#0077b5", label: "LinkedIn" },
+  post_publish:     { icon: "megaphone-outline",     color: "#6366f1", label: "Post" },
+  canva_task:       { icon: "color-palette-outline", color: "#8b5cf6", label: "Canva" },
+  email:            { icon: "mail-outline",          color: "#06b6d4", label: "Email" },
+  call:             { icon: "call-outline",          color: "#10b981", label: "Appel" },
+  outreach_action:  { icon: "people-outline",        color: "#f59e0b", label: "Prospection" },
+  generic:          { icon: "checkmark-circle-outline", color: "#64748b", label: "" },
+};
+
 export default function TodayScreen() {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [expandedTask, setExpandedTask] = useState<number | null>(null);
 
   useFocusEffect(useCallback(() => {
     getUser().then(setUser);
@@ -70,8 +82,11 @@ export default function TodayScreen() {
 
   const energyLevel = prefs?.currentEnergyLevel || "high";
   const energyCfg = ENERGY_CONFIG[energyLevel] || ENERGY_CONFIG.high;
-
   const greeting = user?.firstName ? `Bonjour, ${user.firstName}` : "Bonjour";
+
+  // Grouper : actions en attente d'abord, complétées après
+  const pending = todayTasks.filter((t: any) => !t.completed);
+  const completed = todayTasks.filter((t: any) => t.completed);
 
   return (
     <ScrollView
@@ -86,7 +101,6 @@ export default function TodayScreen() {
             {new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
           </Text>
         </View>
-        {/* Sélecteur d'énergie */}
         <TouchableOpacity
           style={[styles.energyBadge, { borderColor: energyCfg.color }]}
           onPress={() => {
@@ -128,111 +142,266 @@ export default function TodayScreen() {
         </View>
       )}
 
-      {/* Liste de tâches */}
+      {/* Tâches en attente */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Aujourd'hui</Text>
-
+        <Text style={styles.sectionTitle}>À faire</Text>
         {tasksLoading ? (
           <ActivityIndicator color="#4f46e5" style={{ marginTop: 20 }} />
-        ) : todayTasks.length === 0 ? (
+        ) : pending.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="checkmark-circle-outline" size={40} color="#334155" />
-            <Text style={styles.emptyText}>Aucune tâche pour aujourd'hui</Text>
+            <Text style={styles.emptyText}>Tout est fait !</Text>
             <Text style={styles.emptySubText}>Dis à Naya ce que tu veux faire</Text>
           </View>
         ) : (
-          todayTasks.map((task: any) => (
-            <TaskCard
+          pending.map((task: any) => (
+            <ActionTaskCard
               key={task.id}
               task={task}
+              expanded={expandedTask === task.id}
+              onToggleExpand={() => setExpandedTask(expandedTask === task.id ? null : task.id)}
               onComplete={() => {
-                if (!task.completed) {
-                  Alert.alert("Compléter ?", `"${task.title}"`, [
-                    { text: "Annuler", style: "cancel" },
-                    { text: "Oui ✅", onPress: () => completeMutation.mutate(task.id) },
-                  ]);
-                }
+                Alert.alert("Marquer comme fait ?", `"${task.title}"`, [
+                  { text: "Annuler", style: "cancel" },
+                  { text: "Oui ✅", onPress: () => completeMutation.mutate(task.id) },
+                ]);
               }}
             />
           ))
         )}
       </View>
+
+      {/* Tâches complétées */}
+      {completed.length > 0 && (
+        <View style={[styles.section, { opacity: 0.5 }]}>
+          <Text style={styles.sectionTitle}>Complétées</Text>
+          {completed.map((task: any) => (
+            <View key={task.id} style={[styles.taskCard, styles.taskCardDone]}>
+              <View style={[styles.taskCheck, styles.taskCheckDone]}>
+                <Ionicons name="checkmark" size={14} color="#fff" />
+              </View>
+              <Text style={[styles.taskTitle, styles.taskTitleDone]} numberOfLines={1}>
+                {task.title}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
 
-function TaskCard({ task, onComplete }: { task: any; onComplete: () => void }) {
-  const ENERGY_COLORS: Record<string, string> = {
-    deep_work: "#6366f1",
-    creative: "#ec4899",
-    admin: "#64748b",
-    social: "#10b981",
-    execution: "#f59e0b",
-    logistics: "#06b6d4",
+// ─── Carte de tâche actionnable ───────────────────────────────────────────────
+
+function ActionTaskCard({
+  task,
+  expanded,
+  onToggleExpand,
+  onComplete,
+}: {
+  task: any;
+  expanded: boolean;
+  onToggleExpand: () => void;
+  onComplete: () => void;
+}) {
+  const type = task.taskType || "generic";
+  const cfg = TASK_TYPE_CONFIG[type] || TASK_TYPE_CONFIG.generic;
+  const actionData = task.actionData || {};
+
+  const copyToClipboard = (text: string, label: string) => {
+    Clipboard.setString(text);
+    Alert.alert("Copié !", `${label} copié dans le presse-papier.`);
   };
 
+  const handleAction = () => {
+    switch (type) {
+      case "linkedin_message":
+        if (actionData.message) copyToClipboard(actionData.message, "Message LinkedIn");
+        onComplete();
+        break;
+      case "post_publish":
+        if (actionData.postContent) copyToClipboard(actionData.postContent, "Post");
+        onComplete();
+        break;
+      case "canva_task":
+        Linking.openURL(actionData.externalUrl || "https://www.canva.com/design/new");
+        break;
+      case "email":
+        if (actionData.message) copyToClipboard(actionData.message, "Email");
+        onComplete();
+        break;
+      default:
+        onComplete();
+    }
+  };
+
+  const actionLabel: Record<string, string> = {
+    linkedin_message: "Copier & marquer envoyé",
+    post_publish:     "Copier le post",
+    canva_task:       "Ouvrir Canva",
+    email:            "Copier l'email",
+    call:             "Marquer comme fait",
+    outreach_action:  "Marquer comme fait",
+    generic:          "Marquer comme fait",
+  };
+
+  const hasExpandableContent =
+    type === "linkedin_message" ||
+    type === "post_publish" ||
+    type === "canva_task" ||
+    type === "email";
+
   return (
-    <TouchableOpacity
-      style={[styles.taskCard, task.completed && styles.taskCardDone]}
-      onPress={onComplete}
-      activeOpacity={0.7}
-    >
-      <View style={[styles.taskCheck, task.completed && styles.taskCheckDone]}>
-        {task.completed && <Ionicons name="checkmark" size={14} color="#fff" />}
-      </View>
-      <View style={styles.taskBody}>
-        <Text style={[styles.taskTitle, task.completed && styles.taskTitleDone]} numberOfLines={2}>
-          {task.title}
-        </Text>
-        <View style={styles.taskMeta}>
-          {task.scheduledTime && (
-            <Text style={styles.taskMetaText}>
-              <Ionicons name="time-outline" size={11} color="#64748b" /> {task.scheduledTime}
-            </Text>
-          )}
-          {task.estimatedDuration && (
-            <Text style={styles.taskMetaText}>{task.estimatedDuration}min</Text>
-          )}
-          {task.taskEnergyType && (
-            <View style={[styles.taskEnergyDot, { backgroundColor: ENERGY_COLORS[task.taskEnergyType] || "#64748b" }]} />
+    <View style={styles.actionCard}>
+      {/* Header de la carte */}
+      <TouchableOpacity
+        style={styles.actionCardHeader}
+        onPress={hasExpandableContent ? onToggleExpand : onComplete}
+        activeOpacity={0.7}
+      >
+        {/* Icône type */}
+        <View style={[styles.typeIcon, { backgroundColor: cfg.color + "22", borderColor: cfg.color + "44" }]}>
+          <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
+        </View>
+
+        {/* Titre + meta */}
+        <View style={styles.actionCardBody}>
+          <Text style={styles.taskTitle} numberOfLines={expanded ? 10 : 2}>{task.title}</Text>
+          <View style={styles.taskMeta}>
+            {cfg.label ? <Text style={[styles.typeBadge, { color: cfg.color }]}>{cfg.label}</Text> : null}
+            {actionData.platform && <Text style={styles.taskMetaText}>{actionData.platform}</Text>}
+            {actionData.leadName && <Text style={styles.taskMetaText}>→ {actionData.leadName}</Text>}
+            {task.estimatedDuration && <Text style={styles.taskMetaText}>{task.estimatedDuration}min</Text>}
+          </View>
+        </View>
+
+        {/* Chevron si contenu expandable */}
+        {hasExpandableContent && (
+          <Ionicons
+            name={expanded ? "chevron-up" : "chevron-down"}
+            size={16}
+            color="#64748b"
+          />
+        )}
+      </TouchableOpacity>
+
+      {/* Contenu expandé */}
+      {expanded && (
+        <View style={styles.expandedContent}>
+          {/* Message LinkedIn ou Email */}
+          {(type === "linkedin_message" || type === "email") && actionData.message ? (
+            <View style={styles.contentBox}>
+              {type === "email" && actionData.subject ? (
+                <Text style={styles.contentLabel}>Objet : {actionData.subject}</Text>
+              ) : null}
+              <Text style={styles.contentText}>{actionData.message}</Text>
+            </View>
+          ) : null}
+
+          {/* Post */}
+          {type === "post_publish" && actionData.postContent ? (
+            <View style={styles.contentBox}>
+              <Text style={styles.contentText}>{actionData.postContent}</Text>
+            </View>
+          ) : null}
+
+          {/* Brief Canva */}
+          {type === "canva_task" && actionData.canvaBrief ? (
+            <View style={styles.contentBox}>
+              <Text style={styles.contentLabel}>Brief :</Text>
+              <Text style={styles.contentText}>{actionData.canvaBrief}</Text>
+            </View>
+          ) : null}
+
+          {/* Description si pas d'actionData */}
+          {!actionData.message && !actionData.postContent && !actionData.canvaBrief && task.description ? (
+            <View style={styles.contentBox}>
+              <Text style={styles.contentText}>{task.description}</Text>
+            </View>
+          ) : null}
+
+          {/* Bouton d'action */}
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: cfg.color }]} onPress={handleAction}>
+            <Ionicons
+              name={type === "canva_task" ? "open-outline" : "copy-outline"}
+              size={15}
+              color="#fff"
+            />
+            <Text style={styles.actionBtnText}>{actionLabel[type] || "Marquer comme fait"}</Text>
+          </TouchableOpacity>
+
+          {/* Bouton compléter séparé pour canva */}
+          {type === "canva_task" && (
+            <TouchableOpacity style={styles.completeBtn} onPress={onComplete}>
+              <Text style={styles.completeBtnText}>Marquer comme fait</Text>
+            </TouchableOpacity>
           )}
         </View>
-      </View>
-    </TouchableOpacity>
+      )}
+
+      {/* Pour les tâches non-expandable : bouton d'action directement */}
+      {!hasExpandableContent && (
+        <TouchableOpacity style={styles.simpleComplete} onPress={onComplete}>
+          <View style={styles.taskCheck}>
+            <Ionicons name="checkmark" size={14} color="#4f46e5" />
+          </View>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", padding: 20, paddingTop: 56 },
-  greeting: { fontSize: 22, fontWeight: "700", color: "#fff" },
-  date: { fontSize: 13, color: "#64748b", marginTop: 2, textTransform: "capitalize" },
-  energyBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, backgroundColor: "#1e1e2e" },
-  energyText: { fontSize: 11, fontWeight: "600" },
-  briefLoading: { alignItems: "center", gap: 8, paddingVertical: 20 },
-  briefLoadingText: { color: "#64748b", fontSize: 13 },
-  brief: { marginHorizontal: 20, marginBottom: 16, padding: 16, backgroundColor: "#1e1e2e", borderRadius: 16, borderLeftWidth: 3, borderLeftColor: "#4f46e5" },
-  briefGreeting: { color: "#e2e8f0", fontSize: 14, lineHeight: 20 },
-  briefReminder: { color: "#94a3b8", fontSize: 12, marginTop: 8, lineHeight: 18, fontStyle: "italic" },
-  progressWrap: { marginHorizontal: 20, marginBottom: 20 },
-  progressHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
-  progressLabel: { fontSize: 12, color: "#64748b" },
-  progressPct: { fontSize: 12, color: "#4f46e5", fontWeight: "600" },
-  progressBar: { height: 4, backgroundColor: "#1e1e2e", borderRadius: 2 },
-  progressFill: { height: 4, backgroundColor: "#4f46e5", borderRadius: 2 },
-  section: { paddingHorizontal: 20, paddingBottom: 40 },
-  sectionTitle: { fontSize: 16, fontWeight: "600", color: "#fff", marginBottom: 12 },
-  empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyText: { color: "#475569", fontSize: 15, fontWeight: "500" },
-  emptySubText: { color: "#334155", fontSize: 13 },
-  taskCard: { flexDirection: "row", alignItems: "flex-start", gap: 12, backgroundColor: "#1e1e2e", borderRadius: 12, padding: 14, marginBottom: 8 },
-  taskCardDone: { opacity: 0.5 },
-  taskCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: "#4f46e5", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 },
-  taskCheckDone: { backgroundColor: "#4f46e5", borderColor: "#4f46e5" },
-  taskBody: { flex: 1 },
-  taskTitle: { color: "#e2e8f0", fontSize: 14, lineHeight: 20 },
-  taskTitleDone: { textDecorationLine: "line-through", color: "#475569" },
-  taskMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
-  taskMetaText: { fontSize: 11, color: "#64748b" },
-  taskEnergyDot: { width: 6, height: 6, borderRadius: 3 },
+  container:          { flex: 1, backgroundColor: "#0f0f1a" },
+  header:             { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", padding: 20, paddingTop: 56 },
+  greeting:           { fontSize: 22, fontWeight: "700", color: "#fff" },
+  date:               { fontSize: 13, color: "#64748b", marginTop: 2, textTransform: "capitalize" },
+  energyBadge:        { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, backgroundColor: "#1e1e2e" },
+  energyText:         { fontSize: 11, fontWeight: "600" },
+  briefLoading:       { alignItems: "center", gap: 8, paddingVertical: 20 },
+  briefLoadingText:   { color: "#64748b", fontSize: 13 },
+  brief:              { marginHorizontal: 20, marginBottom: 16, padding: 16, backgroundColor: "#1e1e2e", borderRadius: 16, borderLeftWidth: 3, borderLeftColor: "#4f46e5" },
+  briefGreeting:      { color: "#e2e8f0", fontSize: 14, lineHeight: 20 },
+  briefReminder:      { color: "#94a3b8", fontSize: 12, marginTop: 8, lineHeight: 18, fontStyle: "italic" },
+  progressWrap:       { marginHorizontal: 20, marginBottom: 20 },
+  progressHeader:     { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  progressLabel:      { fontSize: 12, color: "#64748b" },
+  progressPct:        { fontSize: 12, color: "#4f46e5", fontWeight: "600" },
+  progressBar:        { height: 4, backgroundColor: "#1e1e2e", borderRadius: 2 },
+  progressFill:       { height: 4, backgroundColor: "#4f46e5", borderRadius: 2 },
+  section:            { paddingHorizontal: 20, paddingBottom: 40 },
+  sectionTitle:       { fontSize: 16, fontWeight: "600", color: "#fff", marginBottom: 12 },
+  empty:              { alignItems: "center", paddingVertical: 40, gap: 8 },
+  emptyText:          { color: "#475569", fontSize: 15, fontWeight: "500" },
+  emptySubText:       { color: "#334155", fontSize: 13 },
+
+  // Tâches complétées (version simple)
+  taskCard:           { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#1e1e2e", borderRadius: 12, padding: 14, marginBottom: 6 },
+  taskCardDone:       { opacity: 0.6 },
+  taskCheck:          { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: "#4f46e5", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  taskCheckDone:      { backgroundColor: "#4f46e5", borderColor: "#4f46e5" },
+
+  // Carte actionnable
+  actionCard:         { backgroundColor: "#1e1e2e", borderRadius: 16, marginBottom: 10, overflow: "hidden" },
+  actionCardHeader:   { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 14 },
+  typeIcon:           { width: 36, height: 36, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  actionCardBody:     { flex: 1 },
+  taskTitle:          { color: "#e2e8f0", fontSize: 14, lineHeight: 20, fontWeight: "500" },
+  taskTitleDone:      { textDecorationLine: "line-through", color: "#475569" },
+  taskMeta:           { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" },
+  taskMetaText:       { fontSize: 11, color: "#64748b" },
+  typeBadge:          { fontSize: 11, fontWeight: "600" },
+
+  // Contenu expandé
+  expandedContent:    { paddingHorizontal: 14, paddingBottom: 14, gap: 10 },
+  contentBox:         { backgroundColor: "#0f0f1a", borderRadius: 10, padding: 12 },
+  contentLabel:       { fontSize: 11, color: "#64748b", marginBottom: 4, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+  contentText:        { color: "#94a3b8", fontSize: 13, lineHeight: 20 },
+  actionBtn:          { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 12 },
+  actionBtnText:      { color: "#fff", fontSize: 14, fontWeight: "600" },
+  completeBtn:        { alignItems: "center", paddingVertical: 10 },
+  completeBtnText:    { color: "#475569", fontSize: 13 },
+
+  // Bouton compléter pour tâches non-expandable
+  simpleComplete:     { position: "absolute", right: 14, top: 14 },
 });

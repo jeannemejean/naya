@@ -69,7 +69,7 @@ export async function enrichProspect(
 
   // 1. Récupérer le Brand DNA
   const brandDna = await storage.getBrandDna(userId);
-  const founderName = (brandDna as any)?.founderName || brandDna?.contactName || "Fondateur";
+  const founderName = (brandDna as any)?.founderName || (brandDna as any)?.contactName || "Fondateur";
   const businessName = brandDna?.businessName || "L'agence";
   const voiceTone = brandDna?.communicationStyle || "naturel, direct, humain";
   const offers = (brandDna as any)?.offers || brandDna?.uniquePositioning || "";

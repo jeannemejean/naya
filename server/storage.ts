@@ -133,6 +133,7 @@ export interface IStorage {
   setPrimaryProject(id: number, userId: string): Promise<Project | null>;
 
   // Project goal operations
+  getProjectGoal(id: number): Promise<ProjectGoal | null>;
   getProjectGoals(projectId: number): Promise<ProjectGoal[]>;
   getActiveGoalsForProject(projectId: number): Promise<ProjectGoal[]>;
   createProjectGoal(data: InsertProjectGoal): Promise<ProjectGoal>;
@@ -444,6 +445,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Project goal operations
+  async getProjectGoal(id: number): Promise<ProjectGoal | null> {
+    const [goal] = await db.select().from(projectGoals).where(eq(projectGoals.id, id));
+    return goal || null;
+  }
+
   async getProjectGoals(projectId: number): Promise<ProjectGoal[]> {
     return await db.select().from(projectGoals)
       .where(eq(projectGoals.projectId, projectId))

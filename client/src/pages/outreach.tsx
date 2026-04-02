@@ -749,40 +749,43 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
             </div>
 
             {/* Search brief result */}
-            {searchBrief?.id === campaign.id && (
-              <div className="mt-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 space-y-3">
-                <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Brief de recherche généré</p>
-                {searchBrief.brief.criteria && (
-                  <p className="text-xs text-foreground/80">{searchBrief.brief.criteria}</p>
-                )}
-                {searchBrief.brief.linkedinQueries?.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Requêtes LinkedIn</p>
-                    {searchBrief.brief.linkedinQueries.map((q: string, i: number) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <code className="text-xs bg-background/80 px-2 py-0.5 rounded border border-border flex-1">{q}</code>
-                        <button onClick={() => { navigator.clipboard.writeText(q); }} className="text-muted-foreground hover:text-foreground">
-                          <Copy className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {searchBrief.brief.webQueries?.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Requêtes Web</p>
-                    {searchBrief.brief.webQueries.map((q: string, i: number) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <code className="text-xs bg-background/80 px-2 py-0.5 rounded border border-border flex-1">{q}</code>
-                        <button onClick={() => { navigator.clipboard.writeText(q); }} className="text-muted-foreground hover:text-foreground">
-                          <Copy className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            {(() => {
+              const activeBrief = searchBrief;
+              if (!activeBrief || activeBrief.id !== campaign.id) return null;
+              const b = activeBrief.brief;
+              return (
+                <div className="mt-3 bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 space-y-3">
+                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Brief de recherche généré</p>
+                  {b.criteria && <p className="text-xs text-foreground/80">{b.criteria}</p>}
+                  {b.linkedinQueries?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Requêtes LinkedIn</p>
+                      {b.linkedinQueries.map((q: string, i: number) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <code className="text-xs bg-background/80 px-2 py-0.5 rounded border border-border flex-1">{q}</code>
+                          <button onClick={() => navigator.clipboard.writeText(q)} className="text-muted-foreground hover:text-foreground">
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {b.webQueries?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase mb-1">Requêtes Web</p>
+                      {b.webQueries.map((q: string, i: number) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <code className="text-xs bg-background/80 px-2 py-0.5 rounded border border-border flex-1">{q}</code>
+                          <button onClick={() => navigator.clipboard.writeText(q)} className="text-muted-foreground hover:text-foreground">
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         );
       })}

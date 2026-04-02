@@ -390,6 +390,11 @@ export const tasks = pgTable("tasks", {
   milestoneId: integer("milestone_id").references(() => projectMilestones.id),
   isBlockedByMilestone: boolean("is_blocked_by_milestone").default(false),
   campaignId: integer("campaign_id").references(() => campaigns.id),
+  // Goal-driven tasks
+  goalId: integer("goal_id").references(() => projectGoals.id),
+  // Actionable task type + data (pour exécution depuis web/mobile)
+  taskType: text("task_type").default("generic"), // generic | linkedin_message | post_publish | canva_task | call | email | outreach_action
+  actionData: jsonb("action_data"), // { message?, postContent?, canvaBrief?, externalUrl?, leadName?, platform?, leadId? }
   createdAt: timestamp("created_at").defaultNow(),
   completedAt: timestamp("completed_at"),
   clientId: integer("client_id").references(() => clients.id),

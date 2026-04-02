@@ -27,6 +27,8 @@ import { leadScrapingService } from "./services/lead-scraping";
 import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
+import { generateGoalTasks } from "./services/goal-tasks";
+import { enrichProspect, generateSearchBrief } from "./services/prospection";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -1157,6 +1159,43 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     } catch (error) {
       console.error("Error deleting goal:", error);
       res.status(500).json({ message: "Failed to delete goal" });
+    }
+  });
+
+  // Génère un plan de tâches actionnables depuis un objectif
+  app.post('/api/goals/:goalId/generate-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const goalId = parseInt(req.params.goalId);
+      const goal = await storage.getProjectGoal(goalId);
+      if (!goal) return res.status(404).json({ message: "Goal not found" });
+
+      const generatedTasks = await generateGoalTasks(userId, goalId);
+      const saved: any[] = [];
+      for (const t of generatedTasks) {
+        const task = await storage.createTask({
+          userId,
+          projectId: goal.projectId,
+          goalId: goalId,
+          title: t.title,
+          description: t.description || null,
+          taskType: t.taskType || "generic",
+          actionData: t.actionData || null,
+          type: t.type || "planning",
+          category: t.category || "planning",
+          priority: t.priority || 2,
+          estimatedDuration: t.estimatedDuration || 30,
+          taskEnergyType: t.taskEnergyType || null,
+          scheduledDate: t.scheduledDate || null,
+          source: "goal",
+          completed: false,
+        } as any);
+        saved.push(task);
+      }
+      res.json({ tasks: saved, count: saved.length });
+    } catch (e: any) {
+      console.error('[goals/generate-tasks]', e.message);
+      res.status(500).json({ message: e.message });
     }
   });
 
@@ -5252,7 +5291,6 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   app.post('/api/prospection/campaigns/:id/search-brief', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId;
-      const { generateSearchBrief } = await import('./services/prospection');
       const brief = await generateSearchBrief(userId, Number(req.params.id));
       res.json(brief);
     } catch (e: any) {
@@ -5269,7 +5307,6 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const lead = leads.find(l => l.id === leadId);
       if (!lead) return res.status(404).json({ message: "Lead not found" });
 
-      const { enrichProspect } = await import('./services/prospection');
       const enrichment = await enrichProspect(
         userId,
         {
