@@ -980,13 +980,34 @@ function BentoTileNextAction() {
 
 // ─── Espace de travail d'une tâche ────────────────────────────────────────────
 
-const WORKSPACE_LABELS: Record<string, { icon: string; title: string }> = {
-  post_publish:     { icon: "📣", title: "Rédiger le post" },
+// Détecte si le titre/description suggère une tâche de rédaction
+function detectWritingTask(task: any): boolean {
+  const keywords = ["write", "draft", "rédige", "rédiger", "post", "article", "contenu", "texte", "message", "email"];
+  const text = `${task.title} ${task.description || ""}`.toLowerCase();
+  return keywords.some(k => text.includes(k));
+}
+
+// Déduit le label de la zone de production depuis le titre/type
+function inferProductionLabel(task: any): { label: string; placeholder: string } {
+  const title = task.title.toLowerCase();
+  if (title.includes("post") || title.includes("linkedin") || title.includes("article"))
+    return { label: "Ton post", placeholder: "Rédige ton post ici…" };
+  if (title.includes("email") || title.includes("mail"))
+    return { label: "Ton email", placeholder: "Rédige ton email ici…" };
+  if (title.includes("message"))
+    return { label: "Ton message", placeholder: "Rédige ton message ici…" };
+  if (title.includes("script") || title.includes("texte") || title.includes("contenu"))
+    return { label: "Ton contenu", placeholder: "Rédige ton contenu ici…" };
+  return { label: "Ta production", placeholder: "Ce que tu produis, rédiges ou décides ici…" };
+}
+
+const WORKSPACE_CONFIG: Record<string, { icon: string; title: string }> = {
+  post_publish:     { icon: "📣", title: "Post à publier" },
   linkedin_message: { icon: "💬", title: "Message LinkedIn" },
-  email:            { icon: "✉️", title: "Rédiger l'email" },
-  canva_task:       { icon: "🎨", title: "Créer le visuel" },
+  email:            { icon: "✉️", title: "Email" },
+  canva_task:       { icon: "🎨", title: "Visuel Canva" },
   outreach_action:  { icon: "🎯", title: "Action de prospection" },
-  generic:          { icon: "✏️", title: "Notes de travail" },
+  generic:          { icon: "✏️", title: "Tâche" },
 };
 
 function TaskWorkspaceSheet({
@@ -1009,32 +1030,30 @@ function TaskWorkspaceSheet({
   const { toast } = useToast();
   const actionData = task.actionData || {};
   const type = task.taskType || "generic";
-  const cfg = WORKSPACE_LABELS[type] || WORKSPACE_LABELS.generic;
+  const cfg = WORKSPACE_CONFIG[type] || WORKSPACE_CONFIG.generic;
+  const isWritingTask = detectWritingTask(task);
+  const { label: productionLabel, placeholder: productionPlaceholder } = inferProductionLabel(task);
 
-  // Champs éditables
+  // Contenu produit : uniquement depuis actionData (jamais depuis description)
   const [content, setContent] = useState<string>(
-    actionData.postContent || actionData.message || ""
+    actionData.postContent || actionData.message || actionData.content || ""
   );
   const [subject, setSubject] = useState<string>(actionData.subject || "");
-  const [notes, setNotes] = useState<string>(task.description || "");
 
-  // Reset si la tâche change
+  // Reset uniquement si la tâche change
   useEffect(() => {
-    setContent(actionData.postContent || actionData.message || "");
+    setContent(actionData.postContent || actionData.message || actionData.content || "");
     setSubject(actionData.subject || "");
-    setNotes(task.description || "");
   }, [task.id]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
       const updatedActionData: any = { ...actionData };
       if (type === "post_publish") updatedActionData.postContent = content;
-      if (type === "linkedin_message" || type === "email") updatedActionData.message = content;
-      if (type === "email") updatedActionData.subject = subject;
-      return apiRequest('PATCH', `/api/tasks/${task.id}`, {
-        actionData: updatedActionData,
-        description: notes || task.description,
-      });
+      else if (type === "linkedin_message") updatedActionData.message = content;
+      else if (type === "email") { updatedActionData.message = content; updatedActionData.subject = subject; }
+      else updatedActionData.content = content; // generic, outreach, canva notes
+      return apiRequest('PATCH', `/api/tasks/${task.id}`, { actionData: updatedActionData });
     },
     onSuccess: () => {
       toast({ title: "Sauvegardé ✓", description: "Le contenu est enregistré dans ta tâche." });
@@ -1044,12 +1063,8 @@ function TaskWorkspaceSheet({
   });
 
   const handleComplete = () => {
-    // Sauvegarde avant de compléter
     saveMutation.mutate(undefined, {
-      onSettled: () => {
-        onComplete();
-        onClose();
-      }
+      onSettled: () => { onComplete(); onClose(); }
     });
   };
 
@@ -1058,206 +1073,151 @@ function TaskWorkspaceSheet({
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col p-0 gap-0">
+
         {/* Header */}
         <SheetHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-base">{cfg.icon}</span>
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{cfg.title}</span>
-              </div>
-              <SheetTitle className="text-lg font-bold leading-snug text-foreground">
-                {task.title}
-              </SheetTitle>
-            </div>
+          <div className="flex items-center gap-2 mb-1">
+            <span>{cfg.icon}</span>
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{cfg.title}</span>
           </div>
+          <SheetTitle className="text-base font-bold leading-snug text-foreground">
+            {task.title}
+          </SheetTitle>
 
-          {/* Timer dans le header */}
+          {/* Timer */}
           <div className="flex items-center gap-2 mt-3">
             {started ? (
               <>
                 <span className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400 tabular-nums bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-1 rounded-lg">
                   {formatElapsed(elapsed)}
                 </span>
-                <button
-                  onClick={onPause}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold transition-colors"
-                >
+                <button onClick={onPause} className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold transition-colors">
                   ⏸ Pause
                 </button>
               </>
             ) : (
-              <button
-                onClick={onStart}
-                className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors flex items-center gap-1.5"
-              >
+              <button onClick={onStart} className="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition-colors flex items-center gap-1.5">
                 <Zap className="h-3 w-3" /> Commencer le chrono
               </button>
             )}
             {task.estimatedDuration && !started && (
               <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <Clock className="h-3 w-3" />{task.estimatedDuration}min estimées
+                <Clock className="h-3 w-3" />{task.estimatedDuration}min
               </span>
             )}
           </div>
         </SheetHeader>
 
-        {/* Corps — espace de travail */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+        {/* Corps */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
-          {/* POST */}
+          {/* Brief Naya — toujours en lecture seule, jamais dans l'éditeur */}
+          {task.description && (
+            <details className="group" open={!content}>
+              <summary className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none list-none">
+                <Sparkles className="h-3 w-3 text-indigo-400" />
+                Brief Naya
+                <span className="ml-auto text-[10px] font-normal normal-case group-open:hidden">Afficher</span>
+                <span className="ml-auto text-[10px] font-normal normal-case hidden group-open:block">Réduire</span>
+              </summary>
+              <div className="mt-2 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 rounded-xl p-3.5 text-sm text-foreground/70 leading-relaxed whitespace-pre-wrap">
+                {task.description}
+              </div>
+            </details>
+          )}
+
+          {/* ── ZONE DE PRODUCTION ── */}
+
+          {/* Post */}
           {type === "post_publish" && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">Contenu du post</Label>
-                <div className="flex items-center gap-2">
-                  {actionData.platform && (
-                    <span className="text-xs text-muted-foreground">{actionData.platform}</span>
-                  )}
-                  <span className="text-xs text-muted-foreground">{charCount} caractères</span>
-                </div>
+                <Label className="text-sm font-semibold">Ton post {actionData.platform && <span className="font-normal text-muted-foreground">({actionData.platform})</span>}</Label>
+                <span className="text-xs text-muted-foreground tabular-nums">{charCount} car.</span>
               </div>
-              <Textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="min-h-[260px] text-sm font-mono leading-relaxed resize-none"
-                placeholder="Rédige ton post ici…"
-              />
-              <button
-                onClick={() => { navigator.clipboard.writeText(content); toast({ title: "Copié !" }); }}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
-              >
-                <Copy className="h-3 w-3" /> Copier
-              </button>
+              <Textarea value={content} onChange={e => setContent(e.target.value)}
+                className="min-h-[280px] text-sm leading-relaxed resize-none" placeholder="Rédige ton post ici…" />
+              {content && <button onClick={() => { navigator.clipboard.writeText(content); toast({ title: "Copié !" }); }} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"><Copy className="h-3 w-3" /> Copier</button>}
             </div>
           )}
 
-          {/* MESSAGE LINKEDIN */}
+          {/* LinkedIn message */}
           {type === "linkedin_message" && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-sm font-semibold">
-                  Message LinkedIn
-                  {actionData.leadName && <span className="font-normal text-muted-foreground"> → {actionData.leadName}</span>}
-                </Label>
-                <span className={`text-xs font-mono ${charCount > 200 ? "text-red-500" : "text-muted-foreground"}`}>
-                  {charCount}/300
-                </span>
+                <Label className="text-sm font-semibold">Ton message {actionData.leadName && <span className="font-normal text-muted-foreground">→ {actionData.leadName}</span>}</Label>
+                <span className={`text-xs font-mono tabular-nums ${charCount > 200 ? "text-red-500" : "text-muted-foreground"}`}>{charCount}/300</span>
               </div>
-              <Textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="min-h-[160px] text-sm leading-relaxed resize-none"
-                placeholder="Rédige ou modifie ton message…"
-              />
-              <button
-                onClick={() => { navigator.clipboard.writeText(content); toast({ title: "Copié !" }); }}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
-              >
-                <Copy className="h-3 w-3" /> Copier le message
-              </button>
+              <Textarea value={content} onChange={e => setContent(e.target.value)}
+                className="min-h-[180px] text-sm leading-relaxed resize-none" placeholder="Rédige ou modifie ton message…" />
+              {content && <button onClick={() => { navigator.clipboard.writeText(content); toast({ title: "Copié !" }); }} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"><Copy className="h-3 w-3" /> Copier</button>}
             </div>
           )}
 
-          {/* EMAIL */}
+          {/* Email */}
           {type === "email" && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label className="text-sm font-semibold">Objet</Label>
-                <Input
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Objet de l'email…"
-                  className="text-sm"
-                />
+                <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Objet de l'email…" className="text-sm" />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm font-semibold">Corps</Label>
-                <Textarea
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  className="min-h-[220px] text-sm leading-relaxed resize-none"
-                  placeholder="Rédige ton email…"
-                />
+                <Textarea value={content} onChange={e => setContent(e.target.value)}
+                  className="min-h-[220px] text-sm leading-relaxed resize-none" placeholder="Rédige ton email…" />
               </div>
-              <button
-                onClick={() => { navigator.clipboard.writeText(`Objet: ${subject}\n\n${content}`); toast({ title: "Copié !" }); }}
-                className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
-              >
-                <Copy className="h-3 w-3" /> Copier l'email
-              </button>
+              {content && <button onClick={() => { navigator.clipboard.writeText(`Objet : ${subject}\n\n${content}`); toast({ title: "Copié !" }); }} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"><Copy className="h-3 w-3" /> Copier</button>}
             </div>
           )}
 
-          {/* CANVA */}
+          {/* Canva */}
           {type === "canva_task" && (
             <div className="space-y-4">
               {actionData.canvaBrief && (
-                <div className="space-y-1.5">
-                  <Label className="text-sm font-semibold">Brief du visuel</Label>
-                  <div className="bg-muted/50 rounded-xl p-4 text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                    {actionData.canvaBrief}
-                  </div>
+                <div className="bg-purple-50/50 dark:bg-purple-950/20 border border-purple-100 dark:border-purple-900/40 rounded-xl p-3.5 text-sm text-foreground/70 leading-relaxed whitespace-pre-wrap">
+                  {actionData.canvaBrief}
                 </div>
               )}
-              <a
-                href={actionData.externalUrl || "https://www.canva.com/design/new"}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 text-sm px-4 py-2.5 rounded-xl bg-[#8B5CF6] hover:bg-[#7c3aed] text-white font-semibold transition-colors"
-              >
+              <a href={actionData.externalUrl || "https://www.canva.com/design/new"} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-sm px-4 py-2.5 rounded-xl bg-[#8B5CF6] hover:bg-[#7c3aed] text-white font-semibold transition-colors">
                 <ExternalLink className="h-4 w-4" /> Ouvrir Canva
               </a>
               <div className="space-y-1.5">
-                <Label className="text-sm font-semibold">Notes</Label>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="min-h-[120px] text-sm resize-none"
-                  placeholder="Notes sur la réalisation…"
-                />
+                <Label className="text-sm font-semibold">Notes sur le visuel réalisé</Label>
+                <Textarea value={content} onChange={e => setContent(e.target.value)}
+                  className="min-h-[120px] text-sm resize-none" placeholder="Lien Canva, ajustements, décisions de design…" />
               </div>
             </div>
           )}
 
-          {/* OUTREACH / GENERIC */}
+          {/* Generic / outreach — avec détection rédaction */}
           {(type === "outreach_action" || type === "generic") && (
             <div className="space-y-2">
-              {task.description && (
-                <div className="bg-muted/40 rounded-xl p-3 text-sm text-foreground/70 leading-relaxed mb-3">
-                  {task.description}
-                </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">{isWritingTask ? productionLabel : "Notes de réalisation"}</Label>
+                {isWritingTask && <span className="text-xs text-muted-foreground tabular-nums">{charCount} car.</span>}
+              </div>
+              <Textarea value={content} onChange={e => setContent(e.target.value)}
+                className={`text-sm leading-relaxed resize-none ${isWritingTask ? "min-h-[300px]" : "min-h-[180px]"}`}
+                placeholder={isWritingTask ? productionPlaceholder : "Ce que tu as fait, les résultats, les blocages…"} />
+              {isWritingTask && content && (
+                <button onClick={() => { navigator.clipboard.writeText(content); toast({ title: "Copié !" }); }} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors">
+                  <Copy className="h-3 w-3" /> Copier
+                </button>
               )}
-              <Label className="text-sm font-semibold">Notes de réalisation</Label>
-              <Textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="min-h-[200px] text-sm leading-relaxed resize-none"
-                placeholder="Note ici ce que tu as fait, les résultats, les blocages…"
-              />
             </div>
           )}
 
         </div>
 
-        {/* Footer — actions */}
+        {/* Footer */}
         <div className="flex items-center gap-3 px-6 py-4 border-t border-border flex-shrink-0 bg-background">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
-            className="gap-1.5"
-          >
+          <Button variant="outline" size="sm" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} className="gap-1.5">
             {saveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             Sauvegarder
           </Button>
-          <Button
-            size="sm"
-            onClick={handleComplete}
-            disabled={isCompleting || saveMutation.isPending}
-            className="gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white ml-auto"
-          >
+          <Button size="sm" onClick={handleComplete} disabled={isCompleting || saveMutation.isPending}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white ml-auto">
             {isCompleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
             Marquer terminé
           </Button>
