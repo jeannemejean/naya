@@ -791,7 +791,7 @@ function BentoTileNextAction() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: (taskId: number) => apiRequest('PATCH', `/api/tasks/${taskId}`, { completed: true, completedAt: new Date().toISOString() }),
+    mutationFn: (taskId: number) => apiRequest('PATCH', `/api/tasks/${taskId}`, { completed: true }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks/today', activeProjectId] });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
@@ -799,6 +799,9 @@ function BentoTileNextAction() {
       setElapsed(0);
       if (timerRef.current) clearInterval(timerRef.current);
       toast({ title: "✅ Tâche terminée !" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Erreur", description: err?.message || "Impossible de compléter la tâche", variant: "destructive" });
     },
   });
 

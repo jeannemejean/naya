@@ -2776,7 +2776,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
 
-      const task = await storage.updateTask(taskId, updates);
+      // Normalise completedAt : si completed=true, on force un vrai Date (pas une string ISO)
+      const safeUpdates: any = { ...updates };
+      if (safeUpdates.completed === true) {
+        safeUpdates.completedAt = new Date();
+      }
+      // Retire completedAt si c'est une string (envoyée par vieux clients)
+      if (typeof safeUpdates.completedAt === 'string') {
+        safeUpdates.completedAt = new Date(safeUpdates.completedAt);
+      }
+
+      const task = await storage.updateTask(taskId, safeUpdates);
       res.json(task);
     } catch (error) {
       console.error("Error updating task:", error);
