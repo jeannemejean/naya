@@ -6,6 +6,8 @@ import { useProject } from "@/lib/project-context";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/sidebar";
+import { NayaCompanionBar } from "@/components/NayaCompanion";
+import MilestoneChain from "@/components/milestone-chain";
 import TodaysTasks from "@/components/todays-tasks";
 import SchedulePreview from "@/components/schedule-preview";
 import { Badge } from "@/components/ui/badge";
@@ -98,7 +100,7 @@ function ActiveProjectBand({ projectId, compact = false }: { projectId: number; 
     : null;
 
   return (
-    <div className={`bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 rounded-xl p-4 ${compact ? '' : 'mb-6'}`}>
+    <div className={`bg-white dark:bg-card border border-border rounded-2xl p-4 shadow-card ${compact ? '' : 'mb-6'}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: project.color || '#6366f1' }} />
@@ -216,9 +218,9 @@ function AIRecommendations({ projectId }: { projectId: number | null }) {
   };
 
   return (
-    <Card className="dark:bg-gray-900 dark:border-gray-700">
+    <Card className="shadow-card border-border bg-white dark:bg-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-slate-900 dark:text-white flex items-center gap-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
           {t('dashboard.aiRecommendations')}
         </CardTitle>
@@ -375,11 +377,11 @@ function QuickCapture() {
   const routedCount = inboxEntries.filter((e: any) => e.routingStatus === 'routed').length;
 
   return (
-    <Card className="dark:bg-gray-900 dark:border-gray-700">
+    <Card className="shadow-card border-border bg-white dark:bg-card">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm text-slate-900 dark:text-white flex items-center gap-2">
-            <Zap className="h-4 w-4 text-yellow-500" />
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-500" />
             {t('dashboard.captureInbox')}
             {inboxEntries.length > 0 && (
               <span className="text-[10px] font-normal bg-slate-100 dark:bg-gray-700 text-slate-500 dark:text-gray-400 px-1.5 py-0.5 rounded-full">
@@ -635,10 +637,10 @@ function PersonaCard() {
 
   return (
     <>
-      <Card className="dark:bg-gray-900 dark:border-gray-700">
+      <Card className="shadow-card border-border bg-white dark:bg-card">
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm text-slate-900 dark:text-white flex items-center gap-2">
-            <Brain className="h-4 w-4 text-purple-500" />
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Brain className="h-4 w-4 text-primary" />
             Persona Intelligence
           </CardTitle>
         </CardHeader>
@@ -771,6 +773,12 @@ function LiveClock() {
 
 function BentoTileNextAction() {
   const { activeProjectId } = useProject();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [started, setStarted] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const { data: todayTasks = [] } = useQuery<any[]>({
     queryKey: ['/api/tasks/today', activeProjectId],
     queryFn: async () => {
@@ -782,8 +790,20 @@ function BentoTileNextAction() {
     },
   });
 
+  const completeMutation = useMutation({
+    mutationFn: (taskId: number) => apiRequest('PATCH', `/api/tasks/${taskId}`, { completed: true, completedAt: new Date().toISOString() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks/today', activeProjectId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      setStarted(false);
+      setElapsed(0);
+      if (timerRef.current) clearInterval(timerRef.current);
+      toast({ title: "✅ Tâche terminée !" });
+    },
+  });
+
   const pending = (todayTasks as any[])
-    .filter(t => !t.completed)
+    .filter(t => !t.completed && !(t as any).isBlockedByMilestone)
     .sort((a, b) => {
       const aMin = a.scheduledTime ? parseInt(a.scheduledTime.replace(':', '')) : 9999;
       const bMin = b.scheduledTime ? parseInt(b.scheduledTime.replace(':', '')) : 9999;
@@ -795,54 +815,125 @@ function BentoTileNextAction() {
   const done = (todayTasks as any[]).filter(t => t.completed).length;
   const total = (todayTasks as any[]).length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
   const ENERGY_EMOJI: Record<string, string> = {
     deep_work: '🎯', creative: '✨', admin: '📋', social: '💬', logistics: '📦', execution: '⚡',
   };
 
+  // Timer
+  useEffect(() => {
+    if (started) {
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [started]);
+
+  // Reset timer when task changes
+  useEffect(() => {
+    setStarted(false);
+    setElapsed(0);
+  }, [next?.id]);
+
+  const formatElapsed = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
+
   return (
-    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 rounded-xl p-4 flex flex-col h-full min-h-[120px] max-h-[140px]">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
-          <Zap className="h-3.5 w-3.5 text-indigo-500" />
-          Next Up
+    <div
+      className="rounded-2xl p-5 flex flex-col h-full min-h-[140px] relative overflow-hidden"
+      style={{
+        background: 'linear-gradient(135deg, #1a1035 0%, #2d1b69 60%, #1e1042 100%)',
+        boxShadow: '0 8px 32px rgba(108, 92, 231, 0.25), 0 2px 8px rgba(0,0,0,0.2)',
+      }}
+    >
+      {/* Subtle glow orb */}
+      <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-20 pointer-events-none"
+        style={{ background: 'radial-gradient(circle, #a78bfa 0%, transparent 70%)', transform: 'translate(30%, -30%)' }} />
+
+      <div className="flex items-center justify-between mb-3 relative z-10">
+        <span className="text-[11px] font-semibold tracking-widest uppercase text-violet-300/70 flex items-center gap-1.5">
+          <Zap className="h-3 w-3 text-violet-400" />
+          Maintenant
         </span>
         {total > 0 && (
-          <span className="text-[10px] text-slate-400 dark:text-gray-500">{done}/{total} done</span>
+          <span className="text-xs font-semibold text-violet-300/60 bg-white/10 px-2 py-0.5 rounded-full">
+            {done}/{total}
+          </span>
         )}
       </div>
+
       {next ? (
-        <div className="flex-1 flex flex-col justify-between min-h-0">
-          <div className="flex items-start gap-2">
-            {next.taskEnergyType && (
-              <span className="text-sm flex-shrink-0 mt-0.5">{ENERGY_EMOJI[next.taskEnergyType] || '•'}</span>
-            )}
-            <p className="text-sm text-slate-900 dark:text-white line-clamp-2 leading-snug flex-1">
-              {next.title}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 mt-2">
-            {next.estimatedDuration && (
-              <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
-                <Clock className="h-2.5 w-2.5" />{next.estimatedDuration}m
-              </span>
-            )}
-            {remaining > 1 && <span className="text-[10px] text-slate-400">+{remaining - 1} more</span>}
-            <div className="flex-1 h-1 bg-slate-100 dark:bg-gray-800 rounded-full overflow-hidden ml-auto" style={{ maxWidth: '60px' }}>
-              <div className="h-full bg-indigo-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+        <div className="flex-1 flex flex-col justify-between min-h-0 relative z-10">
+          <div>
+            <div className="flex items-start gap-2 mb-1">
+              {next.taskEnergyType && (
+                <span className="text-lg flex-shrink-0 leading-tight">{ENERGY_EMOJI[next.taskEnergyType] || '•'}</span>
+              )}
+              <p className="text-base font-bold text-white leading-snug line-clamp-2">
+                {next.title}
+              </p>
             </div>
+            {next.activationPrompt && (
+              <p className="text-xs text-violet-200/60 italic mt-1 line-clamp-2 leading-relaxed pl-7">
+                {next.activationPrompt}
+              </p>
+            )}
           </div>
+
+          <div className="flex items-center gap-2 mt-3">
+            {started ? (
+              <span className="text-sm font-mono font-bold text-violet-200 tabular-nums">
+                {formatElapsed(elapsed)}
+              </span>
+            ) : next.estimatedDuration ? (
+              <span className="text-xs text-violet-300/60 flex items-center gap-0.5">
+                <Clock className="h-3 w-3" />{next.estimatedDuration}m
+              </span>
+            ) : null}
+            {remaining > 1 && !started && (
+              <span className="text-xs text-violet-300/50">+{remaining - 1} après</span>
+            )}
+            <div className="flex-1" />
+            {started ? (
+              <button
+                onClick={() => completeMutation.mutate(next.id)}
+                disabled={completeMutation.isPending}
+                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-bold transition-colors flex items-center gap-1"
+              >
+                <CheckCircle2 className="h-3 w-3" /> Terminé
+              </button>
+            ) : (
+              <button
+                onClick={() => setStarted(true)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white font-semibold transition-colors border border-white/20"
+              >
+                Commencer →
+              </button>
+            )}
+          </div>
+
+          {!started && (
+            <div className="h-0.5 bg-white/10 rounded-full overflow-hidden mt-2.5">
+              <div className="h-full bg-violet-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          )}
         </div>
       ) : total === 0 ? (
-        <div className="flex-1 flex flex-col justify-center">
-          <p className="text-xs text-slate-500 dark:text-gray-400">No tasks yet today.</p>
-          <Link href="/planning">
-            <a className="text-xs text-primary hover:underline mt-1">Generate my plan →</a>
-          </Link>
+        <div className="flex-1 flex flex-col justify-center gap-1.5 relative z-10">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            <p className="text-sm font-medium text-violet-200">Naya prépare ton plan…</p>
+          </div>
+          <p className="text-xs text-violet-300/50">Tes tâches apparaîtront ici.</p>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col justify-center items-start gap-1">
-          <p className="text-sm text-emerald-600 dark:text-emerald-400">All done for today 🎉</p>
-          <p className="text-[10px] text-slate-400">{done} tasks completed</p>
+        <div className="flex-1 flex flex-col justify-center gap-1 relative z-10">
+          <p className="text-base font-bold text-emerald-300">Tout est fait 🎉</p>
+          <p className="text-xs text-violet-300/60">{done} tâches complétées</p>
         </div>
       )}
     </div>
@@ -876,15 +967,17 @@ function BentoTileWeekPulse() {
   const todayIdx = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
 
   return (
-    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 rounded-xl p-4 flex flex-col h-full min-h-[120px] max-h-[140px]">
+    <div className="bg-white dark:bg-card rounded-2xl border border-border shadow-card p-5 flex flex-col h-full min-h-[140px]">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+        <span className="text-label text-muted-foreground flex items-center gap-1.5">
           <Activity className="h-3.5 w-3.5 text-emerald-500" />
-          This Week
+          Cette semaine
         </span>
-        <span className={`text-sm ${pct >= 75 ? 'text-emerald-500' : pct >= 40 ? 'text-amber-500' : 'text-slate-400'}`}>{pct}%</span>
+        <span className={`text-2xl font-black tracking-tight ${pct >= 75 ? 'text-emerald-500' : pct >= 40 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+          {pct}<span className="text-base font-medium opacity-60">%</span>
+        </span>
       </div>
-      <div className="flex gap-1 flex-1 items-end mb-1">
+      <div className="flex gap-1.5 flex-1 items-end mb-2">
         {days.map((day, i) => {
           const d = new Date(mon); d.setDate(d.getDate() + i);
           const key = d.toISOString().split('T')[0];
@@ -895,18 +988,20 @@ function BentoTileWeekPulse() {
           const isPast = i < todayIdx;
           return (
             <div key={day} className="flex-1 flex flex-col items-center gap-1">
-              <div className="w-full bg-slate-100 dark:bg-gray-800 rounded-sm overflow-hidden flex flex-col justify-end" style={{ height: '36px' }}>
+              <div className="w-full bg-muted rounded-md overflow-hidden flex flex-col justify-end" style={{ height: '40px' }}>
                 <div
-                  className={`w-full transition-all ${isToday ? 'bg-indigo-400' : isPast ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-gray-700'}`}
-                  style={{ height: `${Math.max(barPct * 100, dayTasks.length > 0 ? 8 : 0)}%` }}
+                  className={`w-full transition-all rounded-md ${
+                    isToday ? 'bg-primary' : isPast ? 'bg-emerald-400' : 'bg-muted-foreground/20'
+                  }`}
+                  style={{ height: `${Math.max(barPct * 100, dayTasks.length > 0 ? 12 : 0)}%` }}
                 />
               </div>
-              <span className={`text-[9px] ${isToday ? 'text-indigo-500' : 'text-slate-400 dark:text-gray-500'}`}>{day}</span>
+              <span className={`text-[10px] font-medium ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{day}</span>
             </div>
           );
         })}
       </div>
-      <p className="text-[10px] text-slate-400 dark:text-gray-500">{done} of {total} tasks done this week</p>
+      <p className="text-xs text-muted-foreground">{done}/{total} tâches complétées</p>
     </div>
   );
 }
@@ -948,22 +1043,21 @@ function BentoTileMyState() {
   const showContextPrompt = pendingLevel === 'low' || pendingLevel === 'depleted';
 
   return (
-    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 rounded-xl p-4 flex flex-col h-full min-h-[120px]">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Brain className="h-4 w-4 text-purple-500 flex-shrink-0" />
-          <span className="text-xs text-slate-900 dark:text-white uppercase tracking-wider">My State</span>
+    <div className="bg-white dark:bg-card rounded-2xl border border-border shadow-card p-5 flex flex-col h-full min-h-[130px]">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1.5">
+          <Brain className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+          <span className="text-label text-muted-foreground">Mon état</span>
         </div>
         {personaName && (
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm">{PERSONA_ICONS[personaName] || "🧠"}</span>
-            <span className="text-xs text-slate-700 dark:text-gray-300">{personaName}</span>
-          </div>
+          <span className="text-xs font-medium text-muted-foreground">
+            {PERSONA_ICONS[personaName] || "🧠"} {personaName}
+          </span>
         )}
       </div>
 
       <div className="flex-1 flex flex-col justify-between min-h-0">
-        <div className="grid grid-cols-4 gap-1">
+        <div className="grid grid-cols-2 gap-1.5">
           {ENERGY_LEVELS.map((level) => {
             const isActive = (pendingLevel || currentLevel) === level.value;
             return (
@@ -979,10 +1073,10 @@ function BentoTileMyState() {
                   }
                 }}
                 disabled={updateMutation.isPending}
-                className={`flex items-center justify-center gap-1 py-1.5 px-1 rounded-lg border text-[10px] transition-all ${
+                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl border text-xs font-medium transition-all ${
                   isActive
                     ? `${level.color} ring-1 ${level.activeRing}`
-                    : 'border-slate-200 dark:border-gray-700 text-slate-400 dark:text-gray-500 hover:border-slate-300 dark:hover:border-gray-600'
+                    : 'border-border text-muted-foreground hover:border-muted-foreground/50 bg-background'
                 }`}
               >
                 <span>{level.symbol}</span>
@@ -1253,8 +1347,6 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading, user } = useAuth();
   const { activeProjectId, isAllProjects } = useProject();
-  const [isGeneratingAll, setIsGeneratingAll] = useState(false);
-
   const { data: brandDna, isLoading: brandDnaLoading } = useQuery({
     queryKey: ["/api/brand-dna"],
     retry: false,
@@ -1262,28 +1354,21 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
 
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
   const activeProject = activeProjectId ? projects.find(p => p.id === activeProjectId) : null;
+  // Pour les jalons : projet actif en priorité, sinon le premier projet disponible
+  const milestoneProjectId = activeProjectId ?? (projects[0]?.id ?? null);
+  const milestoneProjectName = activeProject?.name ?? projects[0]?.name;
 
-  const generateAllProjectsPlan = async () => {
-    setIsGeneratingAll(true);
-    try {
-      const res = await apiRequest('POST', '/api/tasks/generate-daily', { replaceExisting: true });
-      const data = await res.json();
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
-      toast({
-        title: "Plan régénéré pour tous les projets!",
-        description: `${data.createdCount || 0} tâches dans le nouveau plan`
-      });
-    } catch (error: any) {
-      toast({
-        title: "Erreur",
-        description: error.message || "Impossible de générer le plan",
-        variant: "destructive"
-      });
-    } finally {
-      setIsGeneratingAll(false);
-    }
-  };
+  // Rollover silencieux au chargement du dashboard : ramène les tâches des jours passés
+  useEffect(() => {
+    if (!isAuthenticated || isLoading) return;
+    apiRequest('POST', '/api/tasks/rollover')
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/tasks/today'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
+      })
+      .catch(() => { /* silencieux */ });
+  }, [isAuthenticated, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -1308,12 +1393,12 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
 
   if (isLoading || brandDnaLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-gray-950 flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4">
-            <span className="text-white text-sm">N</span>
+          <div className="w-10 h-10 bg-gradient-to-br from-[#6C5CE7] to-[#a78bfa] rounded-xl flex items-center justify-center mx-auto mb-4 shadow-float">
+            <span className="text-white font-black">N</span>
           </div>
-          <p className="text-slate-600 dark:text-gray-400">Chargement…</p>
+          <p className="text-sm text-muted-foreground">Chargement…</p>
         </div>
       </div>
     );
@@ -1324,46 +1409,43 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-gray-950">
+    <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white dark:bg-gray-900 border-b border-slate-200 dark:border-gray-700 px-6 py-4 flex-shrink-0">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-xl text-slate-900 dark:text-white">
-                {greeting()}, {(() => {
-                  const n = (user as any);
-                  return n?.firstName || n?.name?.split(' ')[0] || n?.claims?.name?.split(' ')[0] || n?.email?.split('@')[0] || 'there';
-                })()} 👋
-              </h1>
-              <div className="flex items-center gap-2 mt-1">
-                {isAllProjects ? (
-                  <Badge variant="outline" className="text-xs text-slate-500 dark:text-gray-400">{t('sidebar.allProjects')}</Badge>
-                ) : activeProject ? (
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: activeProject.color || '#6366f1' }} />
-                    <span className="text-sm text-slate-600 dark:text-gray-300">{activeProject.icon || '📁'} {activeProject.name}</span>
-                  </div>
-                ) : (
-                  <span className="text-sm text-slate-500 dark:text-gray-400">Loading...</span>
-                )}
+        <header className="bg-white dark:bg-card border-b border-border flex-shrink-0 relative overflow-hidden">
+          {/* Thin gradient bar at top */}
+          <div className="absolute top-0 left-0 right-0 h-[3px]"
+            style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
+          <div className="px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-baseline gap-3">
+                  <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                    {greeting()}, {(() => {
+                      const n = (user as any);
+                      return n?.firstName || n?.name?.split(' ')[0] || n?.claims?.name?.split(' ')[0] || n?.email?.split('@')[0] || 'there';
+                    })()}
+                  </h1>
+                  <span className="text-sm font-medium text-muted-foreground hidden sm:inline">
+                    {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  {isAllProjects ? (
+                    <span className="text-xs text-muted-foreground">{t('sidebar.allProjects')}</span>
+                  ) : activeProject ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: activeProject.color || '#6C5CE7' }} />
+                      <span className="text-xs text-muted-foreground">{activeProject.icon || '📁'} {activeProject.name}</span>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={generateAllProjectsPlan}
-                disabled={isGeneratingAll}
-                size="sm"
-                className="gap-2 bg-[hsl(150,20%,45%)] hover:bg-[hsl(150,20%,40%)] text-white"
-              >
-                {isGeneratingAll ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" />Génération...</>
-                ) : (
-                  <><Sparkles className="h-4 w-4" />Générer plan pour tous les projets</>
-                )}
-              </Button>
-              <LiveClock />
+              <div className="flex items-center gap-3">
+                <NayaCompanionBar />
+                <LiveClock />
+              </div>
             </div>
           </div>
         </header>
@@ -1390,6 +1472,12 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
 
               <div className="space-y-4">
                 <QuickCapture />
+                {milestoneProjectId && (
+                  <MilestoneChain
+                    projectId={milestoneProjectId}
+                    projectName={milestoneProjectName}
+                  />
+                )}
                 <AIRecommendations projectId={activeProjectId} />
                 <PersonaCard />
                 <SelfCareBlock />

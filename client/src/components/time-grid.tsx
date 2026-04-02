@@ -18,11 +18,14 @@ interface Task {
   scheduledEndTime?: string | null;
   estimatedDuration?: number | null;
   projectId?: number | null;
+  milestoneId?: number | null;
+  milestoneStatus?: string | null;
   source?: string | null;
   taskEnergyType?: string | null;
   workflowGroup?: string | null;
   recommendedTimeOfDay?: string | null;
   canBeFragmented?: boolean | null;
+  _virtual?: boolean;
 }
 
 interface DayAvailability {
@@ -34,38 +37,55 @@ interface DayAvailability {
 }
 
 interface TimeGridProps {
-  dates: string[];                          // YYYY-MM-DD for each column (1 for day, 7 for week)
+  dates: string[];
   tasks: Task[];
   projects: Project[];
-  dependencies?: Record<number, number>;    // taskId → blockedByTaskId
+  dependencies?: Record<number, number>;
   availability?: DayAvailability[];
   defaultWorkStart?: string;
   defaultWorkEnd?: string;
   today: string;
   onTaskClick: (task: Task) => void;
   onToggle: (taskId: number) => void;
+  onMilestoneConfirm?: (milestoneId: number) => void;
   rangeQueryKey: any[];
 }
 
-const ENERGY_COLORS: Record<string, { bg: string; border: string; text: string; darkBg: string; darkBorder: string; darkText: string }> = {
-  deep_work: { bg: '#eef2ff', border: '#6366f1', text: '#4338ca', darkBg: '#1e1b4b', darkBorder: '#818cf8', darkText: '#a5b4fc' },
-  creative:  { bg: '#faf5ff', border: '#a855f7', text: '#7c3aed', darkBg: '#2e1065', darkBorder: '#c084fc', darkText: '#d8b4fe' },
-  admin:     { bg: '#f8fafc', border: '#94a3b8', text: '#475569', darkBg: '#1e293b', darkBorder: '#64748b', darkText: '#94a3b8' },
-  social:    { bg: '#f0fdf4', border: '#22c55e', text: '#16a34a', darkBg: '#052e16', darkBorder: '#4ade80', darkText: '#86efac' },
-  logistics: { bg: '#fff7ed', border: '#f97316', text: '#ea580c', darkBg: '#431407', darkBorder: '#fb923c', darkText: '#fdba74' },
-  execution: { bg: '#fefce8', border: '#eab308', text: '#ca8a04', darkBg: '#1a1000', darkBorder: '#facc15', darkText: '#fde047' },
-};
+// Project-based card palette (matches todays-tasks + planning)
+const TASK_PALETTES = [
+  { bg: '#EDE9FE', text: '#5B21B6', border: '#DDD6FE' }, // lavender
+  { bg: '#FFF9C4', text: '#92400E', border: '#FDE68A' }, // yellow
+  { bg: '#DCFCE7', text: '#14532D', border: '#BBF7D0' }, // green
+  { bg: '#DBEAFE', text: '#1E3A5F', border: '#BFDBFE' }, // blue
+  { bg: '#FFE4E6', text: '#9F1239', border: '#FECDD3' }, // pink
+  { bg: '#FEF3C7', text: '#78350F', border: '#FDE68A' }, // orange
+  { bg: '#CFFAFE', text: '#164E63', border: '#A5F3FC' }, // cyan
+];
 
-const DEFAULT_ENERGY = { bg: '#f8fafc', border: '#6366f1', text: '#4338ca', darkBg: '#1e1b4b', darkBorder: '#818cf8', darkText: '#a5b4fc' };
+// Dark-mode variants
+const TASK_PALETTES_DARK = [
+  { bg: '#2D1B6B', text: '#C4B5FD', border: '#4C3999' },
+  { bg: '#3D2E00', text: '#FDE68A', border: '#6B4E00' },
+  { bg: '#0A2E1A', text: '#86EFAC', border: '#14532D' },
+  { bg: '#0C1E3D', text: '#93C5FD', border: '#1E3A5F' },
+  { bg: '#3D0A0F', text: '#FCA5A5', border: '#7F1D1D' },
+  { bg: '#3D2200', text: '#FCD34D', border: '#713F12' },
+  { bg: '#062030', text: '#67E8F9', border: '#0C4A6E' },
+];
 
 const PROJECT_COLORS = [
-  '#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
+  '#6C5CE7', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
   '#ef4444', '#ec4899', '#84cc16', '#f97316', '#14b8a6',
 ];
 
 function getProjectColor(projectId: number | null | undefined) {
-  if (!projectId) return '#6366f1';
+  if (!projectId) return '#6C5CE7';
   return PROJECT_COLORS[projectId % PROJECT_COLORS.length];
+}
+
+function getTaskPalette(task: Task, isDark: boolean) {
+  const idx = task.projectId ? task.projectId % TASK_PALETTES.length : 0;
+  return isDark ? TASK_PALETTES_DARK[idx] : TASK_PALETTES[idx];
 }
 
 const GRID_START_HOUR = 7;   // 7 AM
@@ -217,19 +237,20 @@ interface TaskBlockProps {
   onToggle: (id: number) => void;
   onDragStart: (e: React.DragEvent, task: Task) => void;
   onResize: (taskId: number, newDurationMin: number) => void;
+  onMilestoneConfirm?: (milestoneId: number) => void;
 }
 
 function TaskBlock({
-  task, lane, totalLanes, columnWidth, isBlocked, projColor, isDark, onTaskClick, onToggle, onDragStart, onResize,
+  task, lane, totalLanes, columnWidth, isBlocked, projColor, isDark, onTaskClick, onToggle, onDragStart, onResize, onMilestoneConfirm,
 }: TaskBlockProps) {
-  const energy = task.taskEnergyType ? (ENERGY_COLORS[task.taskEnergyType] || DEFAULT_ENERGY) : DEFAULT_ENERGY;
+  const palette = getTaskPalette(task, isDark);
   const startMin = task.scheduledTime ? timeToMinutes(task.scheduledTime) : GRID_START_HOUR * 60;
   const duration = Math.max(task.estimatedDuration || 30, 15);
   const top = minutesToGridPx(startMin);
-  const height = Math.max(duration * PX_PER_MINUTE, 44);
+  const height = Math.max(duration * PX_PER_MINUTE, 36);
 
-  const laneWidth = totalLanes > 0 ? (columnWidth - 4) / totalLanes : columnWidth - 4;
-  const left = 2 + lane * laneWidth;
+  const laneWidth = totalLanes > 0 ? (columnWidth - 6) / totalLanes : columnWidth - 6;
+  const left = 3 + lane * laneWidth;
 
   const resizing = useRef(false);
   const resizeStartY = useRef(0);
@@ -258,85 +279,117 @@ function TaskBlock({
     document.addEventListener('mouseup', onUp);
   }, [duration, task.id, onResize]);
 
-  const bgColor = isDark ? energy.darkBg : energy.bg;
-  const borderColor = isBlocked ? '#94a3b8' : projColor;
-  const textColor = isDark ? energy.darkText : energy.text;
-
-  const showTitle = true;
-  const showDuration = height >= 56;
-  const showFull = height >= 72;
+  const showDuration = height >= 54;
+  const showGroup = height >= 70;
 
   const ENERGY_EMOJI: Record<string, string> = {
     deep_work: '🎯', creative: '✨', admin: '📋', social: '💬', logistics: '📦', execution: '⚡',
   };
   const emoji = task.taskEnergyType ? ENERGY_EMOJI[task.taskEnergyType] : '';
 
+  const isMilestone = task.type === 'milestone' || task._virtual || task.id < 0;
+  const mStatus = (task as any).milestoneStatus || 'active';
+
+  // Palette par statut de jalon
+  const MILESTONE_STYLES: Record<string, { bg: string; border: string; text: string }> = {
+    active:    { bg: isDark ? '#3d2e00' : '#fffbeb', border: '#f59e0b', text: isDark ? '#fcd34d' : '#92400e' },
+    unlocked:  { bg: isDark ? '#0c1e3d' : '#eff6ff', border: '#3b82f6', text: isDark ? '#93c5fd' : '#1d4ed8' },
+    locked:    { bg: isDark ? '#1e1e1e' : '#f8fafc', border: '#94a3b8', text: isDark ? '#64748b' : '#94a3b8' },
+    completed: { bg: isDark ? '#0a2e1a' : '#f0fdf4', border: '#22c55e', text: isDark ? '#86efac' : '#15803d' },
+  };
+  const milestoneStyle = isMilestone ? (MILESTONE_STYLES[mStatus] || MILESTONE_STYLES.locked) : null;
+
+  const bgColor = isMilestone ? milestoneStyle!.bg : isBlocked ? (isDark ? '#1e293b' : '#f1f5f9') : palette.bg;
+  const borderColor = isMilestone ? milestoneStyle!.border : isBlocked ? '#64748b' : palette.border;
+  const textColor = isMilestone ? milestoneStyle!.text : isBlocked ? (isDark ? '#64748b' : '#94a3b8') : palette.text;
+  const isLockedMilestone = isMilestone && mStatus === 'locked';
+  const isActiveMilestone = isMilestone && (mStatus === 'active' || mStatus === 'unlocked');
+
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStart(e, task)}
-      className={`absolute rounded-md overflow-hidden cursor-grab active:cursor-grabbing select-none transition-shadow hover:shadow-md ${
-        task.completed ? 'opacity-35 saturate-0' : isBlocked ? 'opacity-60' : ''
-      }`}
+      draggable={!isMilestone}
+      onDragStart={isMilestone ? undefined : (e) => onDragStart(e, task)}
+      className={`absolute overflow-hidden select-none transition-all hover:shadow-float hover:-translate-y-px ${
+        isMilestone ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+      } ${task.completed ? 'opacity-35 saturate-0' : isLockedMilestone ? 'opacity-50' : isBlocked ? 'opacity-55' : ''}`}
       style={{
         top,
         height,
         left,
-        width: laneWidth - 1,
+        width: laneWidth - 2,
         backgroundColor: bgColor,
-        borderLeft: `3px solid ${borderColor}`,
-        zIndex: 10,
+        border: `1.5px solid ${borderColor}`,
+        borderLeft: isMilestone ? `3px solid ${borderColor}` : `1.5px solid ${borderColor}`,
+        borderRadius: 10,
+        zIndex: isMilestone ? 15 : 10,
       }}
       onClick={() => onTaskClick(task)}
     >
-      <div className="px-1.5 pt-1 pb-4 h-full flex flex-col gap-0.5 relative">
-        {showTitle && (
-          <div className="flex items-start gap-1">
+      <div className="px-2 pt-1.5 pb-1 h-full flex flex-col gap-0.5 relative">
+        <div className="flex items-start gap-1">
+          {isMilestone ? (
+            <span className="flex-shrink-0 text-[11px] mt-px">
+              {mStatus === 'completed' ? '✅' : mStatus === 'locked' ? '🔒' : '🏁'}
+            </span>
+          ) : (
             <div
               onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
-              className={`flex-shrink-0 w-3 h-3 rounded-sm border mt-0.5 cursor-pointer transition-colors ${
-                task.completed
-                  ? 'bg-green-500 border-green-500'
-                  : 'border-slate-300 dark:border-gray-600 hover:border-primary'
-              }`}
+              className="flex-shrink-0 w-3 h-3 rounded-sm border-2 mt-0.5 cursor-pointer transition-colors"
+              style={{
+                borderColor: task.completed ? '#22c55e' : textColor,
+                backgroundColor: task.completed ? '#22c55e' : 'transparent',
+                opacity: 0.7,
+              }}
             >
               {task.completed && (
-                <svg viewBox="0 0 10 10" className="w-full h-full text-white" fill="none">
+                <svg viewBox="0 0 10 10" className="w-full h-full" fill="none">
                   <path d="M1.5 5L4 7.5L8.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               )}
             </div>
-            <p
-              className={`text-[10px] leading-tight flex-1 ${task.completed ? 'line-through opacity-60' : ''}`}
-              style={{ color: textColor }}
-            >
-              {emoji && <span className="mr-0.5">{emoji}</span>}
-              {task.title}
-            </p>
-          </div>
-        )}
-        {showDuration && task.estimatedDuration && (
-          <p className="text-[9px] opacity-70 pl-4" style={{ color: textColor }}>
+          )}
+          <p
+            className={`text-[10px] leading-tight flex-1 ${isMilestone ? 'font-bold' : 'font-semibold'} ${task.completed ? 'line-through opacity-60' : ''}`}
+            style={{ color: textColor }}
+          >
+            {!isMilestone && emoji && <span className="mr-0.5">{emoji}</span>}
+            {task.title}
+          </p>
+        </div>
+        {showDuration && task.estimatedDuration && !isMilestone && (
+          <p className="text-[9px] pl-4 font-medium opacity-60" style={{ color: textColor }}>
             {task.estimatedDuration}m
           </p>
         )}
-        {showFull && task.workflowGroup && (
-          <p className="text-[9px] opacity-60 truncate pl-4" style={{ color: textColor }}>
+        {showGroup && task.workflowGroup && (
+          <p className="text-[9px] pl-4 opacity-50 truncate" style={{ color: textColor }}>
             {task.workflowGroup}
           </p>
         )}
-        {isBlocked && (
+        {isBlocked && !isMilestone && (
           <span className="absolute right-1 top-1 text-[9px]">🔒</span>
         )}
+        {/* Indication de clic — jalons actifs */}
+        {isActiveMilestone && height >= 38 && (
+          <p className="text-[8px] opacity-70 mt-0.5 font-medium" style={{ color: textColor }}>
+            Cliquer pour confirmer →
+          </p>
+        )}
+        {isLockedMilestone && height >= 38 && (
+          <p className="text-[8px] opacity-50 mt-0.5" style={{ color: textColor }}>
+            En attente du précédent
+          </p>
+        )}
       </div>
-      {/* Resize handle */}
-      <div
-        className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity"
-        onMouseDown={handleResizeMouseDown}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="w-6 h-1 rounded-full bg-current opacity-30" style={{ color: borderColor }} />
-      </div>
+      {!isMilestone && (
+        <div
+          className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-b-[10px]"
+          onMouseDown={handleResizeMouseDown}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-5 h-1 rounded-full" style={{ backgroundColor: textColor, opacity: 0.35 }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -352,6 +405,7 @@ export default function TimeGrid({
   today,
   onTaskClick,
   onToggle,
+  onMilestoneConfirm,
   rangeQueryKey,
 }: TimeGridProps) {
   const { toast } = useToast();
@@ -378,6 +432,7 @@ export default function TimeGrid({
   const updateTaskMutation = useMutation({
     mutationFn: async (payload: { taskId: number; scheduledDate?: string; scheduledTime?: string; scheduledEndTime?: string; estimatedDuration?: number }) => {
       const { taskId, ...body } = payload;
+      if (taskId < 0) return null; // tâche virtuelle (jalon) — pas de PATCH
       const res = await apiRequest("PATCH", `/api/tasks/${taskId}`, body);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ message: "Failed to update task" }));
@@ -469,77 +524,108 @@ export default function TimeGrid({
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Column headers */}
-      <div className="flex flex-shrink-0" style={{ paddingLeft: 48 }}>
+      <div className="flex flex-shrink-0 border-b border-border" style={{ paddingLeft: 48 }}>
         {dates.map(date => {
           const d = new Date(date + 'T00:00:00');
           const isToday = date === today;
           const avail = availByDate[date];
           const isPast = date < today;
+          const dayNum = d.getDate();
+          const weekdayShort = d.toLocaleDateString('en-US', { weekday: 'short' });
+          const count = (tasksByDate[date] || []).length;
           return (
             <div
               key={date}
-              className="flex-1 flex flex-col items-center pb-2 pt-1 border-b border-slate-200 dark:border-gray-700"
+              className="flex-1 flex flex-col items-center pb-2.5 pt-2 gap-0.5"
               style={{ minWidth: 0 }}
             >
+              {/* Weekday label */}
+              <span className={`text-[10px] font-semibold uppercase tracking-widest ${
+                isToday ? 'text-primary' : isPast ? 'text-muted-foreground/30' : 'text-muted-foreground'
+              }`}>
+                {weekdayShort}
+              </span>
+              {/* Day number */}
               <div className="flex items-center gap-1.5">
-                <span className={`text-[10px] uppercase tracking-wide ${isToday ? 'text-primary' : isPast ? 'text-slate-300 dark:text-gray-600' : 'text-slate-500 dark:text-gray-400'}`}>
-                  {d.toLocaleDateString('en-US', { weekday: 'short' })}
-                </span>
-                <span className={`text-lg leading-none ${isToday ? 'text-primary' : isPast ? 'text-slate-300 dark:text-gray-600' : 'text-slate-800 dark:text-white'}`}>
-                  {d.getDate()}
-                </span>
+                {isToday ? (
+                  <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center shadow-float">
+                    <span className="text-lg font-black text-primary-foreground leading-none">
+                      {dayNum}
+                    </span>
+                  </div>
+                ) : (
+                  <span className={`text-2xl font-black leading-none tracking-tight ${
+                    isPast ? 'text-muted-foreground/25' : 'text-foreground'
+                  }`}>
+                    {dayNum}
+                  </span>
+                )}
                 <DayAvailabilityBadge
                   date={date}
                   availability={avail || null}
                   onSelect={(d, t) => availMutation.mutate({ date: d, dayType: t })}
                 />
               </div>
-              {/* Task count chip */}
-              {(() => {
-                const count = (tasksByDate[date] || []).length;
-                return count > 0 ? (
-                  <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">{count} task{count > 1 ? 's' : ''}</span>
-                ) : null;
-              })()}
+              {/* Task count */}
+              {count > 0 && (
+                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
+                  isToday
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-muted text-muted-foreground'
+                }`}>
+                  {count}
+                </span>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Unscheduled tasks strip — sits above the scrollable grid, one column per date */}
+      {/* Unscheduled tasks strip */}
       {dates.some(d => (tasksByDate[d] || []).some(t => !t.scheduledTime)) && (
-        <div className="flex flex-shrink-0 border-b border-slate-100 dark:border-gray-800" style={{ paddingLeft: 48 }}>
+        <div className="flex flex-shrink-0 border-b border-border bg-muted/30" style={{ paddingLeft: 48 }}>
           {dates.map(date => {
             const unscheduled = (tasksByDate[date] || []).filter(t => !t.scheduledTime);
             return (
-              <div key={date} className="flex-1 border-l border-slate-100 dark:border-gray-800 min-w-0 px-1 py-1">
+              <div key={date} className="flex-1 border-l border-border min-w-0 px-1.5 py-1.5">
                 {unscheduled.length > 0 && (
-                  <>
-                    <p className="text-[8px] uppercase tracking-wide text-slate-400 dark:text-gray-600 mb-0.5">Unscheduled</p>
+                  <div className="flex flex-col gap-0.5">
                     {unscheduled.map(task => {
-                      const projColor = getProjectColor(task.projectId);
+                      const isMTask = task.type === 'milestone' || task._virtual || task.id < 0;
+                      const mStatus = (task as any).milestoneStatus || 'active';
+                      const MSTYLES: Record<string, { bg: string; border: string; text: string }> = {
+                        active:    { bg: isDark ? '#292000' : '#fffbeb', border: '#f59e0b', text: isDark ? '#fbbf24' : '#b45309' },
+                        unlocked:  { bg: isDark ? '#001a2e' : '#eff6ff', border: '#3b82f6', text: isDark ? '#60a5fa' : '#1d4ed8' },
+                        locked:    { bg: isDark ? '#1e1e1e' : '#f8fafc', border: '#94a3b8', text: isDark ? '#64748b' : '#94a3b8' },
+                        completed: { bg: isDark ? '#0a2e1a' : '#f0fdf4', border: '#22c55e', text: isDark ? '#86efac' : '#15803d' },
+                      };
+                      const palette = isMTask ? MSTYLES[mStatus] || MSTYLES.locked : getTaskPalette(task, isDark);
+                      const milestoneIcon = mStatus === 'locked' ? '🔒' : mStatus === 'completed' ? '✅' : '🏁';
                       return (
                         <div
                           key={task.id}
-                          draggable
-                          onDragStart={(e) => handleDragStart(e, task)}
-                          className={`flex items-center gap-1 py-0.5 px-0.5 rounded cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-800/40 ${task.completed ? 'opacity-40' : ''}`}
+                          draggable={!isMTask}
+                          onDragStart={isMTask ? undefined : (e) => handleDragStart(e, task)}
+                          className={`flex items-center gap-1 py-1 px-1.5 rounded-lg transition-opacity ${isMTask ? 'cursor-default opacity-70' : 'cursor-grab active:cursor-grabbing'} ${task.completed ? 'opacity-40' : 'hover:opacity-90'}`}
+                          style={{ backgroundColor: palette.bg, border: `1px solid ${palette.border}`, borderLeft: isMTask ? `3px solid ${palette.border}` : `1px solid ${palette.border}` }}
                           onClick={() => onTaskClick(task)}
                         >
-                          <div
-                            onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
-                            className={`flex-shrink-0 w-2.5 h-2.5 rounded-sm border cursor-pointer ${task.completed ? 'bg-green-500 border-green-500' : 'border-slate-300 dark:border-gray-500'}`}
-                          />
-                          <p className="text-[9px] truncate flex-1 text-slate-700 dark:text-gray-300" style={{ color: projColor }}>
+                          {isMTask ? (
+                            <span className="flex-shrink-0 text-[10px]">{milestoneIcon}</span>
+                          ) : (
+                            <div
+                              onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
+                              className="flex-shrink-0 w-2.5 h-2.5 rounded-sm border-2 cursor-pointer"
+                              style={{ borderColor: palette.text, backgroundColor: task.completed ? '#22c55e' : 'transparent' }}
+                            />
+                          )}
+                          <p className="text-[9px] font-semibold truncate flex-1" style={{ color: palette.text }}>
                             {task.title}
                           </p>
-                          <span className="text-[8px] text-slate-400 dark:text-gray-600 flex-shrink-0">
-                            {task.estimatedDuration || 30}m
-                          </span>
                         </div>
                       );
                     })}
-                  </>
+                  </div>
                 )}
               </div>
             );
@@ -555,7 +641,7 @@ export default function TimeGrid({
             {HOUR_LABELS.map((label, i) => (
               <div
                 key={i}
-                className="absolute right-2 text-[9px] text-slate-300 dark:text-gray-600 whitespace-nowrap"
+                className="absolute right-2 text-[9px] text-muted-foreground/40 whitespace-nowrap font-medium"
                 style={{ top: i * PX_PER_HOUR - 6, userSelect: 'none' }}
               >
                 {label}
@@ -579,6 +665,7 @@ export default function TimeGrid({
             const isHalfAm = dayType === 'half-am';
             const isHalfPm = dayType === 'half-pm';
             const isPast = date < today;
+            const isToday = date === today;
 
             const effectiveStart = isHalfPm ? Math.max(workStart, 12 * 60) : workStart;
             const effectiveEnd = isHalfAm ? Math.min(workEnd, 13 * 60) : workEnd;
@@ -586,7 +673,7 @@ export default function TimeGrid({
             return (
               <div
                 key={date}
-                className={`flex-1 relative border-l border-slate-100 dark:border-gray-800 ${isPast ? 'opacity-60' : ''}`}
+                className={`flex-1 relative border-l border-border ${isPast ? 'opacity-60' : ''} ${isToday ? 'bg-primary/[0.03]' : ''}`}
                 style={{ height: totalGridHeight }}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, date, gridRefs.current[date])}
@@ -596,7 +683,7 @@ export default function TimeGrid({
                 {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => (
                   <div
                     key={i}
-                    className="absolute left-0 right-0 border-t border-slate-100 dark:border-gray-800/60"
+                    className="absolute left-0 right-0 border-t border-border/60"
                     style={{ top: i * PX_PER_HOUR }}
                   />
                 ))}
@@ -604,7 +691,7 @@ export default function TimeGrid({
                 {Array.from({ length: TOTAL_HOURS }, (_, i) => (
                   <div
                     key={`h${i}`}
-                    className="absolute left-0 right-0 border-t border-slate-50 dark:border-gray-900"
+                    className="absolute left-0 right-0 border-t border-border/25"
                     style={{ top: i * PX_PER_HOUR + PX_PER_HOUR / 2 }}
                   />
                 ))}
@@ -612,7 +699,7 @@ export default function TimeGrid({
                 {/* Working hours highlight */}
                 {!isOff && (
                   <div
-                    className="absolute left-0 right-0 bg-white dark:bg-gray-900/60"
+                    className="absolute left-0 right-0 bg-card"
                     style={{
                       top: minutesToGridPx(effectiveStart),
                       height: Math.max(0, (effectiveEnd - effectiveStart)) * PX_PER_MINUTE,
@@ -648,7 +735,7 @@ export default function TimeGrid({
                     className="absolute inset-0 flex items-center justify-center"
                     style={{ backgroundImage: 'repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(148,163,184,0.12) 6px, rgba(148,163,184,0.12) 12px)' }}
                   >
-                    <span className="text-slate-300 dark:text-gray-600 text-xs rotate-[-30deg] select-none">Day off</span>
+                    <span className="text-muted-foreground/30 text-xs font-medium rotate-[-30deg] select-none">Day off</span>
                   </div>
                 )}
 
@@ -706,6 +793,7 @@ export default function TimeGrid({
                       onToggle={onToggle}
                       onDragStart={handleDragStart}
                       onResize={handleResize}
+                      onMilestoneConfirm={onMilestoneConfirm}
                     />
                   );
                 })}

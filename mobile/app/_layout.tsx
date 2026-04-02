@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { StatusBar } from "expo-status-bar";
-import { getToken } from "../lib/auth";
 import { queryClient } from "../lib/queryClient";
 
 export default function RootLayout() {

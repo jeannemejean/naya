@@ -3,89 +3,132 @@
 @tailwind utilities;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   NAYA — Editorial Design System inspired by Magazine Aesthetics
-   Palette: Sage green, Warm beige, Deep noir, Soft ivory
-   Typography: Helvetica (UI), Libre Baskerville (serif)
+   NAYA — Modern SaaS Design System
+   Palette: Clean white, dark panels, colorful task cards
+   Typography: Inter (all weights)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 :root {
-  /* Base colors — Ivory & Warm Noir */
-  --background: hsl(30, 45%, 98%);        /* Warm ivory, not stark white */
-  --foreground: hsl(0, 0%, 12%);          /* Deep noir, softer than black */
+  /* Base — Clean white foundation */
+  --background: hsl(220, 14%, 96%);       /* #F4F5F7 — very light gray */
+  --foreground: hsl(220, 20%, 10%);       /* Near black */
 
-  /* Muted — Beige tones */
-  --muted: hsl(30, 25%, 94%);             /* Warm beige gray */
-  --muted-foreground: hsl(25, 8%, 45%);   /* Muted taupe */
+  /* Muted */
+  --muted: hsl(220, 14%, 91%);
+  --muted-foreground: hsl(220, 10%, 50%);
 
-  /* Card & Popover — Subtle elevation */
+  /* Card & Popover — Pure white */
   --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(0, 0%, 12%);
+  --popover-foreground: hsl(220, 20%, 10%);
   --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(0, 0%, 12%);
+  --card-foreground: hsl(220, 20%, 10%);
 
-  /* Borders — Delicate & barely there */
-  --border: hsl(30, 20%, 88%);            /* Soft beige border */
-  --input: hsl(30, 20%, 90%);
+  /* Borders — subtle */
+  --border: hsl(220, 13%, 89%);
+  --input: hsl(220, 13%, 91%);
 
-  /* Primary — Sage green sophistiqué */
-  --primary: hsl(150, 20%, 55%);          /* Soft sage green, elegant & natural */
+  /* Primary — Modern purple-indigo */
+  --primary: hsl(252, 82%, 62%);          /* #6C5CE7 vibrant purple */
   --primary-foreground: hsl(0, 0%, 100%);
 
-  /* Secondary — Warm Sand */
-  --secondary: hsl(35, 35%, 75%);         /* Warm sand/beige */
-  --secondary-foreground: hsl(0, 0%, 12%);
+  /* Secondary */
+  --secondary: hsl(220, 14%, 91%);
+  --secondary-foreground: hsl(220, 20%, 10%);
 
-  /* Accent — Light sage */
-  --accent: hsl(155, 22%, 68%);           /* Light sage green */
-  --accent-foreground: hsl(0, 0%, 12%);
+  /* Accent */
+  --accent: hsl(252, 82%, 95%);
+  --accent-foreground: hsl(252, 82%, 45%);
 
-  /* Destructive — Muted coral red */
-  --destructive: hsl(0, 55%, 62%);
+  /* Destructive */
+  --destructive: hsl(0, 72%, 58%);
   --destructive-foreground: hsl(0, 0%, 100%);
 
-  /* Info — Sage green */
-  --info: hsl(150, 25%, 55%);
-  --info-foreground: hsl(0, 0%, 100%);
+  /* Ring */
+  --ring: hsl(252, 82%, 62%);
 
-  /* Ring — Sage subtle */
-  --ring: hsl(150, 25%, 65%);
+  /* Border radius — generous, modern */
+  --radius: 1rem;                         /* 16px base */
 
-  /* Border radius — More generous, softer */
-  --radius: 0.75rem;
+  /* ── Task card colors (project palette) ── */
+  --task-yellow:  #FFF9C4;
+  --task-yellow-text: #92400E;
+  --task-lavender: #EDE9FE;
+  --task-lavender-text: #5B21B6;
+  --task-pink:    #FFE4E6;
+  --task-pink-text: #9F1239;
+  --task-green:   #DCFCE7;
+  --task-green-text: #14532D;
+  --task-blue:    #DBEAFE;
+  --task-blue-text: #1E3A5F;
+  --task-orange:  #FEF3C7;
+  --task-orange-text: #78350F;
+  --task-cyan:    #CFFAFE;
+  --task-cyan-text: #164E63;
+
+  /* ── Dark panel (analytics) ── */
+  --dark-panel: hsl(222, 25%, 10%);
+  --dark-panel-card: hsl(222, 20%, 14%);
+  --dark-panel-border: hsl(222, 15%, 20%);
+
+  /* Chart colors */
+  --chart-1: hsl(252, 82%, 62%);
+  --chart-2: hsl(158, 64%, 52%);
+  --chart-3: hsl(43, 96%, 58%);
+  --chart-4: hsl(340, 82%, 62%);
+  --chart-5: hsl(197, 71%, 52%);
+
+  /* Sidebar */
+  --sidebar-background: hsl(0, 0%, 100%);
+  --sidebar-foreground: hsl(220, 20%, 30%);
+  --sidebar-primary: hsl(252, 82%, 62%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent: hsl(252, 82%, 95%);
+  --sidebar-accent-foreground: hsl(252, 82%, 45%);
+  --sidebar-border: hsl(220, 13%, 89%);
+  --sidebar-ring: hsl(252, 82%, 62%);
 }
 
 .dark {
-  /* Dark mode — Midnight editorial */
-  --background: hsl(0, 0%, 8%);           /* Rich midnight */
-  --foreground: hsl(30, 15%, 92%);        /* Warm off-white */
+  --background: hsl(222, 25%, 8%);
+  --foreground: hsl(220, 14%, 92%);
 
-  --muted: hsl(0, 0%, 15%);
-  --muted-foreground: hsl(30, 10%, 60%);
+  --muted: hsl(222, 20%, 14%);
+  --muted-foreground: hsl(220, 10%, 55%);
 
-  --popover: hsl(0, 0%, 10%);
-  --popover-foreground: hsl(30, 15%, 92%);
-  --card: hsl(0, 0%, 10%);
-  --card-foreground: hsl(30, 15%, 92%);
+  --popover: hsl(222, 20%, 11%);
+  --popover-foreground: hsl(220, 14%, 92%);
+  --card: hsl(222, 20%, 11%);
+  --card-foreground: hsl(220, 14%, 92%);
 
-  --border: hsl(0, 0%, 18%);
-  --input: hsl(0, 0%, 18%);
+  --border: hsl(222, 15%, 18%);
+  --input: hsl(222, 15%, 18%);
 
-  --primary: hsl(150, 22%, 60%);          /* Sage maintains elegance in dark */
+  --primary: hsl(252, 82%, 65%);
   --primary-foreground: hsl(0, 0%, 100%);
 
-  --secondary: hsl(35, 30%, 40%);
-  --secondary-foreground: hsl(30, 15%, 92%);
+  --secondary: hsl(222, 20%, 16%);
+  --secondary-foreground: hsl(220, 14%, 85%);
 
-  --accent: hsl(155, 25%, 65%);
-  --accent-foreground: hsl(0, 0%, 10%);
+  --accent: hsl(252, 50%, 20%);
+  --accent-foreground: hsl(252, 82%, 75%);
 
-  --destructive: hsl(0, 50%, 50%);
+  --destructive: hsl(0, 62%, 50%);
   --destructive-foreground: hsl(0, 0%, 100%);
 
-  --info: hsl(150, 25%, 50%);
-  --info-foreground: hsl(0, 0%, 100%);
+  --ring: hsl(252, 82%, 65%);
 
-  --ring: hsl(150, 25%, 60%);
+  --dark-panel: hsl(222, 25%, 7%);
+  --dark-panel-card: hsl(222, 20%, 11%);
+  --dark-panel-border: hsl(222, 15%, 17%);
+
+  --sidebar-background: hsl(222, 20%, 9%);
+  --sidebar-foreground: hsl(220, 14%, 70%);
+  --sidebar-primary: hsl(252, 82%, 65%);
+  --sidebar-primary-foreground: hsl(0, 0%, 100%);
+  --sidebar-accent: hsl(252, 50%, 18%);
+  --sidebar-accent-foreground: hsl(252, 82%, 75%);
+  --sidebar-border: hsl(222, 15%, 16%);
+  --sidebar-ring: hsl(252, 82%, 65%);
 }
 
 @layer base {
@@ -95,62 +138,209 @@
 
   body {
     @apply antialiased bg-background text-foreground;
-    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-weight: 400;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.011em;
     line-height: 1.6;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
-  /* Editorial typography hierarchy */
   h1, h2, h3, h4, h5, h6 {
-    font-family: 'Libre Baskerville', Georgia, serif;
-    font-weight: 400;
-    letter-spacing: -0.02em;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.025em;
     line-height: 1.2;
   }
 
-  /* Subtle, elegant transitions */
   * {
-    @apply transition-colors duration-200;
+    @apply transition-colors duration-150;
   }
 
-  /* Remove default focus outline, replace with elegant ring */
   *:focus-visible {
-    @apply outline-none ring-2 ring-offset-2;
-    ring-color: hsl(150 20% 55% / 0.3);
+    @apply outline-none ring-2 ring-ring ring-offset-2;
   }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Editorial utility classes
+   Utility classes
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @layer utilities {
-  /* Serif text for editorial touch */
-  .text-editorial {
-    font-family: 'Libre Baskerville', Georgia, serif;
-    letter-spacing: 0;
-  }
-
-  /* Display headlines */
+  /* ── Typography helpers ── */
   .text-display {
-    font-family: 'Libre Baskerville', Georgia, serif;
-    font-weight: 400;
-    letter-spacing: -0.03em;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.0;
   }
 
-  /* Generous spacing (breathing room) */
-  .space-editorial {
-    @apply py-8 px-6;
+  .text-stat {
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    font-feature-settings: "tnum";
   }
 
-  /* Subtle shadow for elevation */
-  .shadow-editorial {
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.03);
+  .text-label {
+    font-size: 0.6875rem;   /* 11px */
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
-  /* Hover lift effect */
+  /* ── Card styles ── */
+  .card-base {
+    @apply bg-white rounded-2xl border border-border shadow-sm;
+  }
+
+  .card-dark {
+    background: var(--dark-panel-card);
+    border: 1px solid var(--dark-panel-border);
+    @apply rounded-2xl;
+  }
+
+  /* ── Task card color variants ── */
+  .task-card-yellow   { background: var(--task-yellow);   color: var(--task-yellow-text); }
+  .task-card-lavender { background: var(--task-lavender); color: var(--task-lavender-text); }
+  .task-card-pink     { background: var(--task-pink);     color: var(--task-pink-text); }
+  .task-card-green    { background: var(--task-green);    color: var(--task-green-text); }
+  .task-card-blue     { background: var(--task-blue);     color: var(--task-blue-text); }
+  .task-card-orange   { background: var(--task-orange);   color: var(--task-orange-text); }
+  .task-card-cyan     { background: var(--task-cyan);     color: var(--task-cyan-text); }
+
+  /* ── Shadow scale ── */
+  .shadow-card {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.05);
+  }
+
+  .shadow-card-hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.08);
+  }
+
+  .shadow-float {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+  }
+
+  /* ── Hover lift ── */
   .hover-lift {
-    @apply transition-transform duration-300 hover:-translate-y-0.5;
+    @apply transition-all duration-200;
   }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    @apply shadow-card-hover;
+  }
+
+  /* ── Dark panel section ── */
+  .panel-dark {
+    background: var(--dark-panel);
+    color: hsl(220, 14%, 92%);
+    @apply rounded-3xl;
+  }
+
+  /* ── Number display ── */
+  .num-xl {
+    font-size: clamp(2.5rem, 5vw, 3.5rem);
+    font-weight: 800;
+    letter-spacing: -0.05em;
+    line-height: 1;
+  }
+
+  .num-lg {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Animations
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.animate-fade-up    { animation: fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade-in    { animation: fade-in 0.25s ease both; }
+.animate-slide-left { animation: slide-in-left 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-scale-in   { animation: scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Staggered children */
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 60ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 180ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 240ms; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Scrollbar — thin and elegant
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(220, 13%, 82%) transparent;
+}
+
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: hsl(220, 13%, 82%);
+  border-radius: 100px;
+}
+*::-webkit-scrollbar-thumb:hover { background: hsl(220, 13%, 68%); }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   View toggle pill (Card / Block / Table)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.view-toggle {
+  @apply inline-flex items-center bg-muted rounded-xl p-1 gap-0.5;
+}
+
+.view-toggle-btn {
+  @apply px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 text-muted-foreground;
+}
+
+.view-toggle-btn.active {
+  @apply bg-white text-foreground shadow-sm;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Arc gauge (analytics)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.arc-gauge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Accordion (shadcn)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to   { height: var(--radix-accordion-content-height); }
+}
+
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to   { height: 0; }
 }

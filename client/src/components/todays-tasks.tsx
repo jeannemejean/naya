@@ -54,6 +54,32 @@ const TIME_OF_DAY_HINTS: Record<string, { emoji: string; label: string }> = {
   evening:   { emoji: '🌙', label: 'Evening' },
 };
 
+// Card colors cycling by project id
+const TASK_CARD_PALETTES = [
+  { bg: '#EDE9FE', text: '#5B21B6', border: '#DDD6FE' }, // lavender
+  { bg: '#FFF9C4', text: '#92400E', border: '#FDE68A' }, // yellow
+  { bg: '#DCFCE7', text: '#14532D', border: '#BBF7D0' }, // green
+  { bg: '#DBEAFE', text: '#1E3A5F', border: '#BFDBFE' }, // blue
+  { bg: '#FFE4E6', text: '#9F1239', border: '#FECDD3' }, // pink
+  { bg: '#FEF3C7', text: '#78350F', border: '#FDE68A' }, // orange
+  { bg: '#CFFAFE', text: '#164E63', border: '#A5F3FC' }, // cyan
+];
+
+function getTaskCardPalette(task: Task, projects: Project[]) {
+  if (task.completed) return null; // completed tasks get muted style
+  const projectId = task.projectId;
+  if (projectId) {
+    const idx = projectId % TASK_CARD_PALETTES.length;
+    return TASK_CARD_PALETTES[idx];
+  }
+  // fallback by energy type
+  const energyMap: Record<string, number> = {
+    deep_work: 3, creative: 0, admin: 3, social: 2, logistics: 5, execution: 1,
+  };
+  const eIdx = task.taskEnergyType ? (energyMap[task.taskEnergyType] ?? 0) : 0;
+  return TASK_CARD_PALETTES[eIdx];
+}
+
 const CATEGORY_COLORS: Record<string, string> = {
   trust: 'bg-secondary/10 text-secondary',
   conversion: 'bg-accent/10 text-accent',
@@ -191,6 +217,7 @@ export default function TodaysTasks() {
       return res.json();
     },
     retry: false,
+    refetchInterval: 2 * 60 * 1000, // rafraîchit toutes les 2 min pour capter les updates auto-planner
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -356,39 +383,43 @@ export default function TodaysTasks() {
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-slate-200 dark:border-gray-700">
-        <div className="p-6 border-b border-slate-200 dark:border-gray-700">
-          <h2 className="text-lg text-slate-900 dark:text-white">{t('todaysTasks.title')}</h2>
+      <div className="bg-white dark:bg-card rounded-2xl shadow-card border border-border">
+        <div className="p-5 border-b border-border">
+          <h2 className="text-base font-semibold">{t('todaysTasks.title')}</h2>
         </div>
-        <div className="p-6 flex items-center justify-center">
-          <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+        <div className="p-6 space-y-3">
+          {[1,2,3].map(i => (
+            <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />
+          ))}
         </div>
       </div>
     );
   }
 
+  const completionPct = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
+
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-slate-200 dark:border-gray-700">
-      <div className="p-5 border-b border-slate-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-base text-slate-900 dark:text-white">{t('todaysTasks.title')}</h2>
-            <span className="text-xs text-slate-500 dark:text-gray-400">
-              {completedTasks.length}/{tasks.length} {t('todaysTasks.done')}
+    <div className="bg-white dark:bg-card rounded-2xl shadow-card border border-border overflow-hidden">
+      <div className="p-5 border-b border-border">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2.5">
+            <h2 className="text-base font-semibold text-foreground">{t('todaysTasks.title')}</h2>
+            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+              {completedTasks.length}/{tasks.length}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-100 dark:bg-gray-800 rounded-lg p-0.5">
+          <div className="flex items-center gap-1.5">
+            <div className="view-toggle">
               <button
                 onClick={() => setViewMode('list')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'text-slate-400'}`}
+                className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
                 title={t('todaysTasks.listView')}
               >
                 <List className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setViewMode('planner')}
-                className={`p-1.5 rounded-md transition-colors ${viewMode === 'planner' ? 'bg-white dark:bg-gray-700 shadow-sm' : 'text-slate-400'}`}
+                className={`view-toggle-btn ${viewMode === 'planner' ? 'active' : ''}`}
                 title={t('todaysTasks.timelineView')}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
@@ -396,6 +427,23 @@ export default function TodaysTasks() {
             </div>
           </div>
         </div>
+        {/* Progress bar */}
+        {tasks.length > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${completionPct}%`,
+                  background: completionPct === 100
+                    ? 'hsl(158 64% 52%)'
+                    : 'hsl(252 82% 62%)',
+                }}
+              />
+            </div>
+            <span className="text-[11px] font-semibold text-muted-foreground w-8 text-right">{completionPct}%</span>
+          </div>
+        )}
       </div>
 
       <div className="p-5">
@@ -405,37 +453,26 @@ export default function TodaysTasks() {
           </div>
         ) : viewMode === 'list' ? (
           <div className="space-y-3">
-            {completedTasks.map((task: Task) => {
-              const projColor = getProjectColor(task.projectId, projects);
-              return (
-                <div
-                  key={task.id}
-                  data-task-title={task.title}
-                  className="flex items-start space-x-3 p-3.5 bg-secondary/5 dark:bg-green-900/10 rounded-lg border border-secondary/20 dark:border-green-800/20"
-                  style={{ borderLeftWidth: 3, borderLeftColor: projColor }}
-                >
-                  <Checkbox
-                    checked={true}
-                    onCheckedChange={() => toggleTaskMutation.mutate(task.id)}
-                    disabled={toggleTaskMutation.isPending}
-                    className="mt-0.5 cursor-pointer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-slate-900 dark:text-white line-through text-sm">{task.title}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      {task.category && (
-                        <Badge className={`${CATEGORY_COLORS[task.category] || 'bg-slate-100 text-slate-600'} text-xs h-4 border-0`}>
-                          {task.category}
-                        </Badge>
-                      )}
-                      <span className="text-xs text-slate-500 dark:text-gray-400">
-                        ✅ {task.completedAt ? new Date(task.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t('todaysTasks.done')}
-                      </span>
-                    </div>
-                  </div>
+            {completedTasks.map((task: Task) => (
+              <div
+                key={task.id}
+                data-task-title={task.title}
+                className="flex items-start gap-3 p-3.5 rounded-xl bg-muted/50 border border-border opacity-60"
+              >
+                <Checkbox
+                  checked={true}
+                  onCheckedChange={() => toggleTaskMutation.mutate(task.id)}
+                  disabled={toggleTaskMutation.isPending}
+                  className="mt-0.5 cursor-pointer"
+                />
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium text-sm text-muted-foreground line-through">{task.title}</h3>
+                  <span className="text-[11px] text-muted-foreground">
+                    ✓ {task.completedAt ? new Date(task.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t('todaysTasks.done')}
+                  </span>
                 </div>
-              );
-            })}
+              </div>
+            ))}
 
             {(() => {
               const grouped: { group: string | null; tasks: Task[] }[] = [];
@@ -473,102 +510,123 @@ export default function TodaysTasks() {
                     )}
                     {groupTasks.map((task: Task) => {
                       const isBlocked = blockedByMap[task.id] !== undefined;
+                      const isMilestoneBlocked = !!(task as any).isBlockedByMilestone;
                       const blockerTask = isBlocked ? tasks.find((t: Task) => t.id === blockedByMap[task.id]) : null;
                       const followsTaskId = followsMap[task.id];
                       const followsTask = followsTaskId ? tasks.find((t: Task) => t.id === followsTaskId) : null;
-                      const projColor = isBlocked ? '#94a3b8' : getProjectColor(task.projectId, projects);
                       const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
                       const energyBadge = task.taskEnergyType ? ENERGY_BADGES[task.taskEnergyType] : null;
                       const todHint = task.recommendedTimeOfDay && task.recommendedTimeOfDay !== 'flexible'
                         ? TIME_OF_DAY_HINTS[task.recommendedTimeOfDay] : null;
+                      const palette = (isBlocked || isMilestoneBlocked) ? null : getTaskCardPalette(task, projects);
                       return (
                         <div
                           key={task.id}
                           data-task-title={task.title}
-                          className={`flex items-start space-x-3 p-3.5 border rounded-lg transition-colors ${group ? 'ml-2' : ''} ${
-                            isBlocked
-                              ? 'opacity-60 bg-slate-50 dark:bg-gray-800/50 border-slate-200 dark:border-gray-700'
-                              : 'border-slate-200 dark:border-gray-700 hover:border-primary/40 dark:hover:border-primary/30'
+                          className={`flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 hover-lift ${group ? 'ml-2' : ''} ${
+                            isMilestoneBlocked ? 'opacity-40 bg-muted/50 border-dashed border-border cursor-not-allowed' :
+                            isBlocked ? 'opacity-50 bg-muted border-border' : 'border-transparent'
                           }`}
-                          style={{ borderLeftWidth: 3, borderLeftColor: group ? projColor : projColor }}
+                          style={palette && !isBlocked ? {
+                            backgroundColor: palette.bg,
+                            borderColor: palette.border,
+                          } : undefined}
                         >
-                          <div onClick={(e) => e.stopPropagation()}>
+                          <div onClick={(e) => e.stopPropagation()} className="mt-0.5">
                             <Checkbox
                               checked={false}
                               onCheckedChange={() => toggleTaskMutation.mutate(task.id)}
                               disabled={toggleTaskMutation.isPending}
-                              className="mt-0.5 cursor-pointer"
+                              className="cursor-pointer"
+                              style={palette ? { '--checkbox-color': palette.text } as any : undefined}
                             />
                           </div>
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setWorkspaceTask(task)}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                {isBlocked && <span className="text-base flex-shrink-0">🔒</span>}
-                                <h3 className={`font-medium text-sm hover:text-primary transition-colors ${isBlocked ? 'text-slate-500 dark:text-gray-400' : 'text-slate-900 dark:text-white'}`}>
+                                {isMilestoneBlocked && <span className="text-sm flex-shrink-0" title="Bloqué par un jalon">🗺</span>}
+                                {isBlocked && !isMilestoneBlocked && <span className="text-sm flex-shrink-0">🔒</span>}
+                                <h3
+                                  className="font-semibold text-sm leading-snug"
+                                  style={palette ? { color: palette.text } : undefined}
+                                >
                                   {task.title}
                                 </h3>
                               </div>
                               <div className="flex items-center gap-1 flex-shrink-0">
-                                {task.type && (
-                                  <span className="text-xs" title={task.type}>{TYPE_ICONS[task.type] || '📋'}</span>
-                                )}
                                 {task.priority && task.priority <= 2 && (
                                   <span className="text-xs">🔴</span>
                                 )}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setFeedbackTask(task); }}
-                                  className="p-0.5 text-slate-300 hover:text-slate-500 dark:text-gray-600 dark:hover:text-gray-400 transition-colors ml-0.5"
+                                  className="p-0.5 opacity-40 hover:opacity-80 transition-opacity ml-0.5"
+                                  style={palette ? { color: palette.text } : undefined}
                                   title={t('todaysTasks.removeTask')}
                                 >
                                   <X className="h-3 w-3" />
                                 </button>
                               </div>
                             </div>
-                            {isBlocked && blockerTask && (
-                              <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                            {isMilestoneBlocked && (
+                              <p className="text-xs text-muted-foreground/70 mt-0.5">
+                                🗺 Bloquée — jalon non encore débloqué
+                              </p>
+                            )}
+                            {isBlocked && !isMilestoneBlocked && blockerTask && (
+                              <p className="text-xs text-amber-600 mt-0.5">
                                 🔒 {t('todaysTasks.blockedBy', { title: blockerTask.title })}
                               </p>
                             )}
                             {!isBlocked && followsTask && (
-                              <p className="text-xs text-slate-400 dark:text-gray-500 mt-0.5">
+                              <p className="text-xs opacity-60 mt-0.5" style={palette ? { color: palette.text } : undefined}>
                                 ↑ {t('todaysTasks.after', { title: followsTask.title })}
                               </p>
                             )}
-                            <p className="text-xs text-slate-600 dark:text-gray-400 mt-0.5 line-clamp-2">{task.description}</p>
-                            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                              {task.category && (
-                                <Badge className={`${CATEGORY_COLORS[task.category] || 'bg-slate-100 text-slate-600'} text-xs h-4 border-0`}>
-                                  {task.category}
-                                </Badge>
-                              )}
+                            {task.description && (
+                              <p
+                                className="text-xs mt-0.5 line-clamp-2 opacity-70"
+                                style={palette ? { color: palette.text } : undefined}
+                              >
+                                {task.description}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 mt-2 flex-wrap">
                               {energyBadge && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${energyBadge.cls}`}>
+                                <span
+                                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                  style={palette ? { backgroundColor: `${palette.border}`, color: palette.text } : undefined}
+                                >
                                   {energyBadge.emoji} {energyBadge.label}
                                 </span>
                               )}
                               {todHint && (
-                                <span className="text-[10px] text-slate-400 dark:text-gray-500">
+                                <span className="text-[10px] opacity-60" style={palette ? { color: palette.text } : undefined}>
                                   {todHint.emoji} {todHint.label}
                                 </span>
                               )}
                               {task.estimatedDuration && (
-                                <span className="text-xs text-slate-400 dark:text-gray-500 flex items-center gap-0.5">
+                                <span
+                                  className="text-[10px] flex items-center gap-0.5 opacity-60"
+                                  style={palette ? { color: palette.text } : undefined}
+                                >
                                   <Clock className="h-2.5 w-2.5" />
-                                  ~{task.estimatedDuration}m
+                                  {task.estimatedDuration}m
                                 </span>
                               )}
                               {!activeProjectId && project && (
                                 <span
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]"
-                                  style={{ backgroundColor: `${projColor}20`, color: projColor }}
+                                  className="text-[10px] font-medium opacity-70"
+                                  style={palette ? { color: palette.text } : undefined}
                                 >
-                                  <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: projColor }} />
                                   {project.icon} {project.name}
                                 </span>
                               )}
                             </div>
                             {task.activationPrompt && (
-                              <p className="text-[11px] text-indigo-500 dark:text-indigo-400 mt-1.5 italic">
+                              <p
+                                className="text-[11px] mt-1.5 italic opacity-70"
+                                style={palette ? { color: palette.text } : undefined}
+                              >
                                 ↳ {task.activationPrompt}
                               </p>
                             )}

@@ -930,16 +930,16 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
   const completedGoals = goals?.filter(g => g.status === 'completed') || [];
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-gray-950">
+    <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="p-8">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-8">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
+          <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl text-slate-900 dark:text-white">{t('projects.title')}</h1>
-              <p className="text-slate-500 dark:text-gray-400 mt-1">{t('projects.subtitle')}</p>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('projects.title')}</h1>
+              <p className="text-sm text-muted-foreground mt-1">{t('projects.subtitle')}</p>
             </div>
             <Dialog open={createOpen} onOpenChange={setCreateOpen}>
               <DialogTrigger asChild>
@@ -1062,6 +1062,9 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
               </DialogContent>
             </Dialog>
           </div>
+        </header>
+        <main className="flex-1 overflow-y-auto">
+          <div className="p-8">
 
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1095,8 +1098,9 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
               </Button>
             </div>
           )}
-        </div>
-      </main>
+          </div>
+        </main>
+      </div>
 
       {/* Project Detail Sheet */}
       <Sheet open={!!selectedProject} onOpenChange={(open) => !open && setSelectedProject(null)}>

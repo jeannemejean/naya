@@ -1,6 +1,42 @@
 import { storage } from "../storage";
 import type { ProjectMilestone, MilestoneCondition } from "@shared/schema";
 
+/** Crée une tâche-jalon dans le planning pour rendre le jalon visible et actionnable. */
+async function createMilestoneTask(milestone: ProjectMilestone): Promise<void> {
+  try {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    // Vérifier qu'il n'y a pas déjà une tâche active pour ce jalon (via requête SQL directe)
+    const { db } = await import('../db');
+    const { tasks } = await import('../../shared/schema');
+    const { and, eq } = await import('drizzle-orm');
+    const existingTasks = await db.select({ id: tasks.id, completed: tasks.completed })
+      .from(tasks)
+      .where(and(eq(tasks.milestoneId, milestone.id), eq(tasks.completed, false)));
+    if (existingTasks.length > 0) return;
+
+    await storage.createTask({
+      userId: milestone.userId,
+      projectId: milestone.projectId,
+      milestoneId: milestone.id,
+      title: `🏁 ${milestone.title}`,
+      description: milestone.description || '',
+      type: 'milestone',
+      category: 'planning',
+      priority: 1,
+      estimatedDuration: 30,
+      scheduledDate: dateStr,
+      scheduledTime: '08:30',
+      taskEnergyType: 'execution',
+      source: 'milestone',
+      completed: false,
+    } as any);
+  } catch (e: any) {
+    console.error(`[MilestoneEngine] Failed to create task for milestone ${milestone.id}:`, e.message);
+  }
+}
+
 /**
  * Vérifie les jalons locked d'un projet et débloque ceux dont toutes les conditions sont remplies.
  * Règle absolue : un jalon locked ne génère JAMAIS de tâches.
@@ -13,14 +49,13 @@ export async function checkAndUnlockMilestones(projectId: number, userId: string
   for (const milestone of milestones.filter(m => m.status === 'locked')) {
     const conditions = await storage.getMilestoneConditions(milestone.id);
 
-    // Résoudre automatiquement les conditions milestone_completed
-    for (const condition of conditions.filter(c => !c.isFulfilled && c.conditionType === 'milestone_completed')) {
-      if (condition.blockedByMilestoneId) {
-        const dep = milestoneMap.get(condition.blockedByMilestoneId);
-        if (dep && dep.status === 'completed') {
-          await storage.fulfillCondition(condition.id);
-          condition.isFulfilled = true; // Mise à jour locale pour la vérification suivante
-        }
+    // Résoudre automatiquement toute condition liée à un jalon complété
+    // (quel que soit le conditionType : milestone_completed, manual, previous_completed, etc.)
+    for (const condition of conditions.filter(c => !c.isFulfilled && c.blockedByMilestoneId)) {
+      const dep = milestoneMap.get(condition.blockedByMilestoneId!);
+      if (dep && dep.status === 'completed') {
+        await storage.fulfillCondition(condition.id);
+        condition.isFulfilled = true; // Mise à jour locale pour la vérification suivante
       }
     }
 
@@ -33,8 +68,9 @@ export async function checkAndUnlockMilestones(projectId: number, userId: string
       });
       if (updated) {
         unlocked.push(updated);
-        milestoneMap.set(milestone.id, updated); // Mettre à jour la map pour les jalons suivants
+        milestoneMap.set(milestone.id, updated);
         await storage.unblockTasksForMilestone(milestone.id);
+        await createMilestoneTask(updated); // rendre le jalon visible dans le planning
       }
     }
   }
@@ -106,6 +142,9 @@ export async function createMilestoneChain(
     });
 
     created.push(milestone);
+
+    // Le premier jalon est immédiatement actif → créer sa tâche dans le planning
+    if (isFirst) await createMilestoneTask(milestone);
 
     // Créer la condition de dépendance au jalon précédent (sauf pour le premier)
     if (!isFirst) {

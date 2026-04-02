@@ -57,6 +57,7 @@ import {
   insertMilestoneTriggerSchema,
 } from "@shared/schema";
 import { articleAnalysisService } from "./services/article-analysis";
+import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner";
 import { 
   detectUserPersona, 
   analyzeTargetPersona, 
@@ -354,6 +355,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Health check (Railway, monitoring)
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Admin: trigger auto-planner manually (for testing / debug)
+  app.post('/api/admin/auto-plan', isAuthenticated, async (req: any, res) => {
+    try {
+      const { date } = req.body;
+      const result = await runDailyAutoPlanner(date);
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // Auth middleware
@@ -695,8 +707,8 @@ Write in clear, direct language. Be specific — reference actual offers, audien
           ...brandDnaFields,
           nayaIntelligenceSummary: summary,
           lastStrategyRefreshAt: new Date(),
-          userId,
-        });
+          userId: userId as string,
+        } as any);
       }
 
       res.json({ summary, updatedAt: updated.lastStrategyRefreshAt, projectId });
@@ -1868,15 +1880,25 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     try {
       const userId = req.session.userId;
       const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ message: "projectId invalide" });
       const { milestones } = req.body;
       if (!Array.isArray(milestones) || milestones.length === 0) {
         return res.status(400).json({ message: "milestones[] requis" });
       }
+      // Vérifier que chaque jalon a un title
+      const valid = milestones.every((m: any) => typeof m?.title === 'string' && m.title.trim());
+      if (!valid) return res.status(400).json({ message: "Chaque jalon doit avoir un title" });
+      // Vérifier que le projet appartient à l'utilisateur
+      const project = await storage.getProject(projectId, userId);
+      if (!project) return res.status(404).json({ message: "Projet introuvable" });
       const chain = await createMilestoneChain(projectId, userId, milestones);
       res.json(chain);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating milestone chain:", error);
-      res.status(500).json({ message: "Échec de la création de la chaîne de jalons" });
+      res.status(500).json({
+        message: "Échec de la création de la chaîne de jalons",
+        detail: error?.message || String(error),
+      });
     }
   });
 
@@ -1976,13 +1998,19 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         return res.status(400).json({ message: "message requis" });
       }
 
+      // Enrichir le contexte avec les projets réels chargés depuis la DB
+      const userProjects = await storage.getProjects(userId);
+      const enrichedContext = {
+        currentDate: new Date().toISOString().slice(0, 10),
+        currentTime: new Date().toTimeString().slice(0, 5),
+        platform: "web",
+        ...(context || {}),
+        availableProjects: userProjects.slice(0, 15).map((p: any) => ({ id: p.id, name: p.name, type: p.type })),
+      };
+
       const response = await processCompanionMessage(userId, {
         message,
-        context: context || {
-          currentDate: new Date().toISOString().slice(0, 10),
-          currentTime: new Date().toTimeString().slice(0, 5),
-          platform: "web",
-        },
+        context: enrichedContext,
         conversationHistory: conversationHistory || [],
       });
 
@@ -4010,14 +4038,196 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       if (!start || !end) return res.status(400).json({ message: "start and end are required" });
       const pid = projectId ? parseInt(projectId as string) : undefined;
       const tasks = await storage.getTasksInRange(userId, start as string, end as string, pid);
-      res.json(tasks);
+
+      // Injecter les jalons actifs/débloqués comme tâches virtuelles dans la plage
+      // Ils apparaissent le lundi de la semaine demandée (ou le start si pas lundi)
+      try {
+        const projects = pid
+          ? [await storage.getProject(pid, userId)].filter(Boolean)
+          : await storage.getProjects(userId);
+
+        const milestoneTasks: any[] = [];
+        // Jalons déjà couverts par une vraie tâche dans la plage (évite les doublons)
+        const coveredMilestoneIds = new Set(
+          (tasks as any[]).filter(t => t.milestoneId && t.scheduledDate >= start && t.scheduledDate <= end)
+            .map(t => t.milestoneId)
+        );
+
+        for (const project of projects) {
+          if (!project?.id) continue;
+          const milestones = await storage.getMilestones(project.id, userId).catch(() => []);
+          // Tous les jalons non-complétés (actifs, débloqués, ET bloqués — pour montrer la chaîne)
+          const visibleMilestones = (milestones as any[]).filter(
+            m => m.status !== 'completed' && m.status !== 'skipped'
+          );
+
+          // Distribuer les jalons sur les jours de la semaine : actif/unlocked en premier, puis bloqués
+          const startDate = start as string;
+          const sortedMilestones = [...visibleMilestones].sort((a, b) => {
+            const order = { active: 0, unlocked: 1, locked: 2 };
+            return (order[a.status as keyof typeof order] ?? 3) - (order[b.status as keyof typeof order] ?? 3);
+          });
+
+          for (let idx = 0; idx < sortedMilestones.length; idx++) {
+            const m = sortedMilestones[idx];
+            if (coveredMilestoneIds.has(m.id)) continue;
+
+            // Décaler chaque jalon d'un jour pour lisibilité (max 6 jours dans la semaine)
+            const dayOffset = Math.min(idx, 6);
+            const d = new Date(startDate + 'T00:00:00');
+            d.setDate(d.getDate() + dayOffset);
+            const milestoneDate = m.targetDate && m.targetDate >= start && m.targetDate <= end
+              ? m.targetDate
+              : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+            // Jalons actifs/débloqués : ancrés à 09:00 (début des heures de travail)
+            // Jalons verrouillés : sans heure (bande "non planifiées" en haut)
+            const isActiveOrUnlocked = m.status === 'active' || m.status === 'unlocked';
+            milestoneTasks.push({
+              id: -(m.id),        // ID négatif = virtuel
+              userId,
+              projectId: project.id,
+              milestoneId: m.id,
+              milestoneStatus: m.status, // pour le style côté client
+              title: m.title,
+              description: m.description || '',
+              type: 'milestone',
+              category: 'planning',
+              priority: 1,
+              estimatedDuration: 45,
+              scheduledDate: milestoneDate,
+              scheduledTime: isActiveOrUnlocked ? '09:00' : null,
+              source: 'milestone',
+              completed: m.status === 'completed',
+              _virtual: true,
+            });
+          }
+        }
+
+        console.log(`[tasks/range] Injecting ${milestoneTasks.length} virtual milestone tasks`);
+        res.json([...tasks, ...milestoneTasks]);
+      } catch (milestoneErr: any) {
+        console.error('[tasks/range] Milestone injection error:', milestoneErr?.message || milestoneErr);
+        res.json(tasks); // fallback silencieux
+      }
     } catch (error) {
       console.error("Error fetching tasks in range:", error);
       res.status(500).json({ message: "Failed to fetch tasks in range" });
     }
   });
 
+  // POST /api/tasks/rollover — déplace les tâches incomplètes + génère les 14 prochains jours
+  app.post('/api/tasks/rollover', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const today = new Date().toISOString().slice(0, 10);
+      const result = await rolloverStaleTasks(userId, today);
+      // Lancer la génération des 14 prochains jours de travail en arrière-plan
+      runDailyAutoPlanner(today).catch(e =>
+        console.error('[Rollover] Auto-planner error:', e.message)
+      );
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("Rollover error:", err);
+      res.status(500).json({ message: "Erreur lors du rollover", detail: err?.message });
+    }
+  });
+
+  // POST /api/tasks/generate — génère silencieusement les prochains jours de travail
+  app.post('/api/tasks/generate', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      // Utiliser startDate si fourni (semaine visible), sinon aujourd'hui
+      const startDate = req.body?.startDate || new Date().toISOString().slice(0, 10);
+      // Lancer en arrière-plan — retourner immédiatement sans bloquer l'UI
+      runDailyAutoPlanner(startDate).catch(e =>
+        console.error('[Generate] Auto-planner error:', e.message)
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err?.message });
+    }
+  });
+
   // ─── Rebalance Week ──────────────────────────────────────────────────────────
+  // POST /api/tasks/rebalance — réorganise les tâches incomplètes d'un jour donné selon l'énergie
+  app.post('/api/tasks/rebalance', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const { date, energyLevel } = req.body;
+      const targetDate = date || new Date().toISOString().slice(0, 10);
+
+      const prefs = await storage.getUserPreferences(userId);
+      const workDayStart = (prefs as any)?.workDayStart || '09:00';
+      const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
+
+      const hhmmToMin = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + (m || 0); };
+      const minToHHMM = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+
+      const tasks = await storage.getTasksInRange(userId, targetDate, targetDate);
+      const pending = (tasks as any[]).filter(t => !t.completed);
+
+      if (!pending.length) return res.json({ rebalanced: 0 });
+
+      // Trier selon l'énergie : low/depleted → tâches légères d'abord
+      const energyPriority: Record<string, number> = {
+        admin: 0, logistics: 1, social: 2, creative: 3, execution: 4, deep_work: 5,
+      };
+      const level = energyLevel || prefs?.currentEnergyLevel || 'high';
+      const isLowEnergy = level === 'low' || level === 'depleted';
+
+      pending.sort((a: any, b: any) => {
+        if (isLowEnergy) {
+          const ea = energyPriority[a.taskEnergyType] ?? 3;
+          const eb = energyPriority[b.taskEnergyType] ?? 3;
+          if (ea !== eb) return ea - eb;
+        }
+        return (a.priority || 5) - (b.priority || 5);
+      });
+
+      // Plages bloquées : pause déjeuner
+      const blocked: Array<{ start: number; end: number }> = [];
+      if (prefs?.lunchBreakEnabled !== false) {
+        const ls = hhmmToMin((prefs as any)?.lunchBreakStart || '12:00');
+        const le = hhmmToMin((prefs as any)?.lunchBreakEnd   || '13:00');
+        if (le > ls) blocked.push({ start: ls, end: le });
+      }
+
+      const findSlot = (from: number, dur: number): number => {
+        let s = from;
+        for (let i = 0; i < 48; i++) {
+          const overlap = blocked.find(b => s < b.end && s + dur > b.start);
+          if (!overlap) return s;
+          s = overlap.end;
+        }
+        return s; // fallback
+      };
+
+      // Réassigner les créneaux horaires en séquence, en sautant la pause
+      let slot = hhmmToMin(workDayStart);
+      const dayEnd = hhmmToMin(workDayEnd);
+      let count = 0;
+
+      for (const task of pending) {
+        const duration = task.estimatedDuration || 30;
+        slot = findSlot(slot, duration);
+        if (slot + duration > dayEnd) break;
+        await storage.updateTask(task.id, {
+          scheduledTime: minToHHMM(slot),
+          scheduledDate: targetDate,
+        });
+        blocked.push({ start: slot, end: slot + duration });
+        slot += duration + 5;
+        count++;
+      }
+
+      res.json({ rebalanced: count });
+    } catch (error: any) {
+      console.error("Rebalance error:", error);
+      res.status(500).json({ message: "Erreur lors du rebalance", detail: error?.message });
+    }
+  });
+
   app.post('/api/tasks/rebalance-week', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId;
@@ -5177,23 +5387,25 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const variation = 0.8 + Math.random() * 0.4; // 80% to 120% of base values
         
         if (currentMetrics) {
+          const cm = currentMetrics.contentMetrics as any;
+          const om = currentMetrics.outreachMetrics as any;
           historicalMetrics.push({
             week,
             contentMetrics: {
-              engagement_rate: Math.round((currentMetrics.contentMetrics?.engagement_rate || 25) * variation),
-              total_reach: Math.round((currentMetrics.contentMetrics?.total_reach || 1000) * variation),
-              instagram_reach: Math.round((currentMetrics.contentMetrics?.instagram_reach || 500) * variation),
-              linkedin_reach: Math.round((currentMetrics.contentMetrics?.linkedin_reach || 300) * variation),
+              engagement_rate: Math.round((cm?.engagement_rate || 25) * variation),
+              total_reach: Math.round((cm?.total_reach || 1000) * variation),
+              instagram_reach: Math.round((cm?.instagram_reach || 500) * variation),
+              linkedin_reach: Math.round((cm?.linkedin_reach || 300) * variation),
             },
             outreachMetrics: {
-              leads_generated: Math.round((currentMetrics.outreachMetrics?.leads_generated || 5) * variation),
-              conversion_rate: Math.round((currentMetrics.outreachMetrics?.conversion_rate || 15) * variation),
-              response_rate: Math.round((currentMetrics.outreachMetrics?.response_rate || 30) * variation),
-              direct_outreach: Math.round((currentMetrics.outreachMetrics?.direct_outreach || 10) * variation),
+              leads_generated: Math.round((om?.leads_generated || 5) * variation),
+              conversion_rate: Math.round((om?.conversion_rate || 15) * variation),
+              response_rate: Math.round((om?.response_rate || 30) * variation),
+              direct_outreach: Math.round((om?.direct_outreach || 10) * variation),
             },
             emailMetrics: {
-              open_rate: Math.round((currentMetrics.emailMetrics?.open_rate || 45) * variation),
-              total_sent: Math.round((currentMetrics.emailMetrics?.total_sent || 50) * variation),
+              open_rate: Math.round(((currentMetrics.emailMetrics as any)?.open_rate || 45) * variation),
+              total_sent: Math.round(((currentMetrics.emailMetrics as any)?.total_sent || 50) * variation),
             },
             goals: currentMetrics.goals || {
               monthly_leads: 20,
@@ -5759,7 +5971,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // Get user's stored credentials for platform
       let socialAccount;
       if (socialAccountId) {
-        socialAccount = await storage.getSocialAccount(socialAccountId);
+        const accounts = await storage.getSocialAccounts(userId);
+        socialAccount = accounts.find(acc => acc.id === socialAccountId);
       } else {
         // Find active account for this platform
         const accounts = await storage.getSocialAccounts(userId);
@@ -5781,7 +5994,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         refreshToken: socialAccount.refreshToken,
         accountId: socialAccount.accountId,
         accountName: socialAccount.accountName
-      };
+      } as any;
       
       let postId;
       const postData = { platform, content, imageUrl };
@@ -5801,7 +6014,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       res.json({ success: true, postId, platform });
     } catch (error) {
       console.error("Social posting error:", error);
-      res.status(500).json({ message: `Failed to post to ${req.body.platform}: ${error.message}` });
+      res.status(500).json({ message: `Failed to post to ${req.body.platform}: ${(error as any).message}` });
     }
   });
 
@@ -5840,7 +6053,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         refreshToken: socialAccount.refreshToken,
         accountId: socialAccount.accountId,
         accountName: socialAccount.accountName
-      };
+      } as any;
       
       // Get media URLs if any
       let imageUrl;
@@ -5888,7 +6101,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       
     } catch (error) {
       console.error("Content publishing error:", error);
-      res.status(500).json({ message: `Failed to publish content: ${error.message}` });
+      res.status(500).json({ message: `Failed to publish content: ${(error as any).message}` });
     }
   });
 
@@ -6030,7 +6243,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         url: normalizedPath, // Use normalized path, not raw signed URL
       });
       
-      const media = await storage.createMediaLibrary(mediaData);
+      const media = await storage.createMediaItem(mediaData);
       res.json(media);
     } catch (error) {
       console.error("Error saving media file:", error);
@@ -6193,7 +6406,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         userId,
         objective,
         duration: duration || '3_months',
-        brandDna: brandDnaInput,
+        brandDna: brandDnaInput as any,
         weekContext: (weekContext || '') + pastReviewContext,
       });
 
@@ -6421,13 +6634,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
 
-      function dayHasCapacity(dateStr: string, durationMin: number): boolean {
+      const dayHasCapacity = (dateStr: string, durationMin: number): boolean => {
         const slot = dayNextSlot.get(dateStr) ?? DAY_START;
         const adjusted = (slot < LUNCH_END && slot + durationMin > LUNCH_START) ? LUNCH_END : slot;
         return adjusted + durationMin <= DAY_END;
       }
 
-      function assignSlot(dateStr: string, durationMin: number): string {
+      const assignSlot = (dateStr: string, durationMin: number): string => {
         let slot = dayNextSlot.get(dateStr) ?? DAY_START;
         if (slot < LUNCH_END && slot + durationMin > LUNCH_START) {
           slot = LUNCH_END;
@@ -6436,7 +6649,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         return minToHHMM(slot);
       }
 
-      function isWorkDay(dateStr: string): boolean {
+      const isWorkDay = (dateStr: string): boolean => {
         if (campaignOffDates.has(dateStr)) return false;
         const dow = new Date(dateStr + 'T00:00:00').getDay();
         return campaignWorkDaySet.has(DAY_ABBRS[dow]);
@@ -6465,7 +6678,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         campaignDayCounts.set(t.scheduledDate, (campaignDayCounts.get(t.scheduledDate) || 0) + 1);
       }
 
-      function campaignDayAvailable(dateStr: string, durationMin: number): boolean {
+      const campaignDayAvailable = (dateStr: string, durationMin: number): boolean => {
         return (campaignDayCounts.get(dateStr) || 0) < CAMPAIGN_DAY_CAP
           && dayHasCapacity(dateStr, durationMin);
       }
@@ -6743,13 +6956,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
 
-      function rDayHasCapacity(dateStr: string, durationMin: number): boolean {
+      const rDayHasCapacity = (dateStr: string, durationMin: number): boolean => {
         const slot = rDayNextSlot.get(dateStr) ?? R_DAY_START;
         const adjusted = (slot < R_LUNCH_END && slot + durationMin > R_LUNCH_START) ? R_LUNCH_END : slot;
         return adjusted + durationMin <= R_DAY_END;
       }
 
-      function rAssignSlot(dateStr: string, durationMin: number): string {
+      const rAssignSlot = (dateStr: string, durationMin: number): string => {
         let slot = rDayNextSlot.get(dateStr) ?? R_DAY_START;
         if (slot < R_LUNCH_END && slot + durationMin > R_LUNCH_START) {
           slot = R_LUNCH_END;
@@ -6758,7 +6971,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         return minToHHMM(slot);
       }
 
-      function rIsWorkDay(dateStr: string): boolean {
+      const rIsWorkDay = (dateStr: string): boolean => {
         if (rOffDates.has(dateStr)) return false;
         const dow = new Date(dateStr + 'T00:00:00').getDay();
         return rWorkDaySet.has(DAY_ABBRS[dow]);
@@ -6787,7 +7000,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         rCampaignDayCounts.set(t.scheduledDate, (rCampaignDayCounts.get(t.scheduledDate) || 0) + 1);
       }
 
-      function rCampaignDayAvailable(dateStr: string, durationMin: number): boolean {
+      const rCampaignDayAvailable = (dateStr: string, durationMin: number): boolean => {
         return (rCampaignDayCounts.get(dateStr) || 0) < R_CAMPAIGN_DAY_CAP
           && rDayHasCapacity(dateStr, durationMin);
       }
@@ -6958,13 +7171,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
 
-      function rdDayHasCapacity(dateStr: string, durationMin: number): boolean {
+      const rdDayHasCapacity = (dateStr: string, durationMin: number): boolean => {
         const slot = rdDayNextSlot.get(dateStr) ?? RD_DAY_START;
         const adjusted = (slot < RD_LUNCH_END && slot + durationMin > RD_LUNCH_START) ? RD_LUNCH_END : slot;
         return adjusted + durationMin <= RD_DAY_END;
       }
 
-      function rdAssignSlot(dateStr: string, durationMin: number): string {
+      const rdAssignSlot = (dateStr: string, durationMin: number): string => {
         let slot = rdDayNextSlot.get(dateStr) ?? RD_DAY_START;
         if (slot < RD_LUNCH_END && slot + durationMin > RD_LUNCH_START) {
           slot = RD_LUNCH_END;
@@ -6973,7 +7186,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         return minToHHMM(slot);
       }
 
-      function rdIsWorkDay(dateStr: string): boolean {
+      const rdIsWorkDay = (dateStr: string): boolean => {
         if (rdOffDates.has(dateStr)) return false;
         const dow = new Date(dateStr + 'T00:00:00').getDay();
         return rdWorkDaySet.has(DAY_ABBRS[dow]);
@@ -7002,7 +7215,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         rdCampaignDayCounts.set(t.scheduledDate, (rdCampaignDayCounts.get(t.scheduledDate) || 0) + 1);
       }
 
-      function rdCampaignDayAvailable(dateStr: string, durationMin: number): boolean {
+      const rdCampaignDayAvailable = (dateStr: string, durationMin: number): boolean => {
         return (rdCampaignDayCounts.get(dateStr) || 0) < RD_CAMPAIGN_DAY_CAP
           && rdDayHasCapacity(dateStr, durationMin);
       }

@@ -426,14 +426,14 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
     }
   };
 
-  const handleUploadComplete = (result: { successful?: Array<{ uploadURL: string; name: string; type: string; size: number }> }) => {
+  const handleUploadComplete = (result: any) => {
     if (result.successful && result.successful.length > 0) {
       const file = result.successful[0];
       uploadMediaMutation.mutate({ fileUrl: file.uploadURL, fileName: file.name || 'Uploaded file', fileType: file.type || 'unknown', fileSize: file.size || 0 });
     }
   };
 
-  const handlePostMediaUpload = (result: { successful?: Array<{ uploadURL: string; name: string }> }) => {
+  const handlePostMediaUpload = (result: any) => {
     if (result.successful && result.successful.length > 0) {
       const file = result.successful[0];
       setFormData(prev => ({ ...prev, mediaUrl: file.uploadURL, mediaFileName: file.name || 'Uploaded media' }));
@@ -976,16 +976,17 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
   );
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white border-b border-slate-200 px-6 py-4">
+        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl text-slate-900">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">
                 {t('contentCalendar.title')}{selectedProject ? ` — ${selectedProject.name}` : ''}
               </h1>
-              <p className="text-slate-600 mt-1">{t('contentCalendar.subtitle')}</p>
+              <p className="text-sm text-muted-foreground mt-1">{t('contentCalendar.subtitle')}</p>
             </div>
             <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) resetForm(); }}>
               <DialogTrigger asChild>
@@ -1089,37 +1090,41 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
                   <DragAndDropCalendar
                     localizer={localizer}
                     events={events}
-                    startAccessor={(event: ContentEvent) => event.start}
-                    endAccessor={(event: ContentEvent) => event.end}
+                    startAccessor={(event: object) => (event as ContentEvent).start}
+                    endAccessor={(event: object) => (event as ContentEvent).end}
                     style={{ height: '100%' }}
-                    onSelectEvent={(event: ContentEvent) => handleSelectEvent(event)}
-                    onEventDrop={handleEventDrop as (args: Record<string, unknown>) => void}
-                    onEventResize={handleEventResize as (args: Record<string, unknown>) => void}
-                    onSelectSlot={handleSelectSlot as (slotInfo: Record<string, unknown>) => void}
+                    onSelectEvent={(event: object) => handleSelectEvent(event as ContentEvent)}
+                    onEventDrop={handleEventDrop as any}
+                    onEventResize={handleEventResize as any}
+                    onSelectSlot={handleSelectSlot as any}
                     selectable
                     resizable
                     draggableAccessor={() => true}
                     resizableAccessor={() => true}
-                    eventPropGetter={(event: ContentEvent) => {
-                      const platform = getPlatformInfo(event.resource.platform);
+                    eventPropGetter={(event: object) => {
+                      const ce = event as ContentEvent;
+                      const platform = getPlatformInfo(ce.resource.platform);
                       return {
                         style: {
                           backgroundColor: platform.dotColor,
                           border: 'none',
                           borderRadius: '4px',
                           fontSize: '12px',
-                          color: 'white',
-                          cursor: 'move',
+                          color: 'white' as const,
+                          cursor: 'move' as const,
                         },
                       };
                     }}
                     components={{
-                      event: ({ event }: { event: ContentEvent }) => (
-                        <div className="text-xs p-1">
-                          <div className="font-medium truncate">{event.title}</div>
-                          <div className="text-xs opacity-75">{event.resource.platform}</div>
-                        </div>
-                      ),
+                      event: ({ event }: { event: object }) => {
+                        const ce = event as ContentEvent;
+                        return (
+                          <div className="text-xs p-1">
+                            <div className="font-medium truncate">{ce.title}</div>
+                            <div className="text-xs opacity-75">{ce.resource.platform}</div>
+                          </div>
+                        );
+                      },
                     }}
                   />
                 </div>

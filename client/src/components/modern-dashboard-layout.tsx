@@ -79,7 +79,7 @@ export function ModernDashboardLayout({
 
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" className="gap-2 rounded-xl">
-              <Share className="h-4 w-4" />
+              <Share2 className="h-4 w-4" />
               Share
             </Button>
             <Button variant="outline" size="sm" className="gap-2 rounded-xl">

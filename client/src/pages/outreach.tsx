@@ -43,14 +43,14 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
   const queryClient = useQueryClient();
 
   // Fetch leads
-  const { data: leads = [], isLoading, error } = useQuery({
+  const { data: leads = [], isLoading, error } = useQuery<Lead[]>({
     queryKey: ['/api/leads'],
   });
 
   // Show error state if authentication or other issues
   if (error) {
     return (
-      <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
+      <div className="flex h-screen bg-background">
         <Sidebar onSearchClick={onSearchClick} />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -78,10 +78,7 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
   // Move lead to different stage
   const updateLeadStatus = useMutation({
     mutationFn: async ({ leadId, status }: { leadId: number; status: string }) => {
-      return apiRequest(`/api/leads/${leadId}`, {
-        method: 'PATCH',
-        body: { status },
-      });
+      return apiRequest('PATCH', `/api/leads/${leadId}`, { status });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
@@ -147,7 +144,7 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen bg-slate-50">
+      <div className="flex h-screen bg-background">
         <Sidebar onSearchClick={onSearchClick} />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
@@ -162,16 +159,17 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
       
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl text-slate-900 dark:text-white">{t('outreach.title')}</h1>
-              <p className="text-slate-600 dark:text-slate-400 mt-1">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('outreach.title')}</h1>
+              <p className="text-sm text-muted-foreground mt-1">
                 {t('outreach.subtitle')}
               </p>
             </div>
@@ -371,10 +369,7 @@ function AddLeadForm({ onClose }: { onClose: () => void }) {
 
   const addLead = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('/api/leads', {
-        method: 'POST',
-        body: data,
-      });
+      return apiRequest('POST', '/api/leads', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/leads'] });

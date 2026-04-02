@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 
 export default function AISuggestions() {
   const { t } = useTranslation();
-  const { data: brandDna } = useQuery({
+  const { data: brandDna } = useQuery<Record<string, any>>({
     queryKey: ["/api/brand-dna"],
     retry: false,
   });

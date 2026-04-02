@@ -18,7 +18,9 @@ TYPES D'ACTIONS DISPONIBLES :
 - create_reminder: { type, title, datetime }
 - complete_task: { type, taskId }
 - reschedule_task: { type, taskId, newDate, newTime? }
+- reschedule_day: { type, energyLevel?, reason? } — réorganise TOUTES les tâches incomplètes d'aujourd'hui selon l'énergie (utilise quand l'utilisateur dit "je suis épuisé", "allège ma journée", "j'ai peu d'énergie", etc.)
 - set_energy: { type, level } — level: "high" | "medium" | "low" | "depleted"
+- create_project: { type, name, projectType?, description?, milestones?: [{title, description?}] } — crée un nouveau projet, et optionnellement sa chaîne de jalons en une seule action
 - create_milestone_chain: { type, projectId, milestones: [{title, description?, milestoneType?, conditionType?}] }
 - confirm_milestone: { type, milestoneId }
 - show_project_roadmap: { type, projectId }
@@ -30,6 +32,9 @@ RÈGLES :
 4. Pour les dates relatives ("demain", "lundi prochain"), utilise la date actuelle fournie dans le contexte.
 5. Si tu crées plusieurs tâches, utilise create_task_list plutôt que plusieurs create_task.
 6. Tu peux combiner réponse textuelle ET actions dans le même message.
+7. CRITIQUE : pour create_milestone_chain, tu DOIS utiliser le projectId exact fourni dans le contexte (ex: "id: 3"). N'invente JAMAIS un projectId. Si aucun projet ne correspond, utilise create_project à la place (qui crée le projet ET ses jalons en une action).
+8. DÉTECTION DE PROJET : quand l'utilisateur mentionne un projet existant (ex: "pour Agence JMD"), utilise son id exact depuis la liste des projets disponibles.
+9. CRÉATION AUTOMATIQUE : si l'utilisateur décrit quelque chose qui ressemble à un nouveau projet/initiative (voyage, lancement, événement, client...) et qu'aucun projet existant ne correspond, propose create_project avec une chaîne de jalons pertinente. Pas besoin de demander confirmation pour les projets simples.
 `;
 
 export type CompanionAction =
@@ -40,6 +45,7 @@ export type CompanionAction =
   | { type: "complete_task"; taskId: number }
   | { type: "reschedule_task"; taskId: number; newDate: string; newTime?: string }
   | { type: "set_energy"; level: "high" | "medium" | "low" | "depleted" }
+  | { type: "create_project"; name: string; projectType?: string; description?: string; milestones?: { title: string; description?: string }[] }
   | { type: "create_milestone_chain"; projectId: number; milestones: any[] }
   | { type: "confirm_milestone"; milestoneId: number }
   | { type: "show_project_roadmap"; projectId: number };
@@ -52,6 +58,7 @@ export interface CompanionRequest {
     platform: "web" | "mobile";
     upcomingEvents?: Array<{ title: string; date: string; time?: string; taskId: number }>;
     activeProject?: { id: number; name: string } | null;
+    availableProjects?: Array<{ id: number; name: string }>;
     todayTasks?: any[];
     recentCaptures?: any[];
   };
@@ -78,6 +85,13 @@ export async function processCompanionMessage(
 
   if (context.activeProject) {
     contextLines.push(`Projet actif : ${context.activeProject.name} (id: ${context.activeProject.id})`);
+  }
+
+  if (context.availableProjects && context.availableProjects.length > 0) {
+    const projectList = context.availableProjects
+      .map(p => `  - ${p.name} (id: ${p.id})`)
+      .join('\n');
+    contextLines.push(`Projets disponibles (utilise ces IDs exacts pour create_milestone_chain) :\n${projectList}`);
   }
 
   if (context.todayTasks && context.todayTasks.length > 0) {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -34,12 +34,14 @@ interface Task {
   dueDate?: string | null;
   estimatedDuration?: number | null;
   projectId?: number | null;
+  milestoneId?: number | null;
   source?: string | null;
   taskEnergyType?: string | null;
   workflowGroup?: string | null;
   setupCost?: string | null;
   canBeFragmented?: boolean | null;
   recommendedTimeOfDay?: string | null;
+  _virtual?: boolean;
 }
 
 type ViewScope = 'day' | 'week' | 'month';
@@ -133,6 +135,7 @@ export default function Planning({ onSearchClick }: Props) {
   const [viewScope, setViewScope] = useState<ViewScope>('week');
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [workspaceTask, setWorkspaceTask] = useState<Task | null>(null);
+  const [milestoneConfirmTarget, setMilestoneConfirmTarget] = useState<Task | null>(null);
   const [strategyExpanded, setStrategyExpanded] = useState(false);
   const [lastStrategySignal, setLastStrategySignal] = useState<{
     focus: string;
@@ -179,7 +182,28 @@ export default function Planning({ onSearchClick }: Props) {
       const res = await fetch(url, { credentials: 'include' });
       return res.json();
     },
+    staleTime: 0, // Toujours re-fetch au focus
   });
+
+  // ─── Génération silencieuse au mount ─────────────────────────────────────────
+  // Déclenche le planner une fois au chargement — aucun bouton, aucune friction
+  useEffect(() => {
+    apiRequest('POST', '/api/tasks/generate', { startDate: new Date().toISOString().slice(0, 10) }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── Auto-refetch quand la semaine visible est vide ───────────────────────────
+  // Navigation vers une semaine future sans tâches → génération silencieuse + refetch
+  const realTasksInView = rangeTasks.filter(t => !t._virtual && t.id > 0);
+  useEffect(() => {
+    if (rangeLoading) return;
+    if (realTasksInView.length === 0) {
+      apiRequest('POST', '/api/tasks/generate', { startDate }).catch(() => {});
+      const timer = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: rangeQueryKey });
+      }, 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [startDate, rangeLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
 
@@ -211,6 +235,7 @@ export default function Planning({ onSearchClick }: Props) {
 
   const toggleMutation = useMutation({
     mutationFn: async (taskId: number) => {
+      if (taskId < 0) return null; // tâche virtuelle (jalon) — pas de mutation
       const res = await apiRequest("POST", `/api/tasks/${taskId}/toggle`);
       return res.json();
     },
@@ -302,6 +327,20 @@ export default function Planning({ onSearchClick }: Props) {
         variant: 'destructive',
       });
     },
+  });
+
+  const confirmMilestoneMutation = useMutation({
+    mutationFn: async (milestoneId: number) => {
+      const res = await apiRequest("POST", `/api/milestones/${milestoneId}/confirm`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      toast({ title: "✅ Jalon confirmé !", description: "Le jalon suivant est maintenant débloqué." });
+    },
+    onError: () => toast({ title: "Erreur", description: "Impossible de confirmer le jalon.", variant: "destructive" }),
   });
 
   const clearWeekMutation = useMutation({
@@ -512,16 +551,28 @@ export default function Planning({ onSearchClick }: Props) {
       );
     }
 
+    // Task card color palette based on project id
+    const TASK_PALETTES = [
+      { bg: '#EDE9FE', text: '#5B21B6', border: '#DDD6FE' },
+      { bg: '#FFF9C4', text: '#92400E', border: '#FDE68A' },
+      { bg: '#DCFCE7', text: '#14532D', border: '#BBF7D0' },
+      { bg: '#DBEAFE', text: '#1E3A5F', border: '#BFDBFE' },
+      { bg: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
+      { bg: '#FEF3C7', text: '#78350F', border: '#FDE68A' },
+      { bg: '#CFFAFE', text: '#164E63', border: '#A5F3FC' },
+    ];
+    const palette = task.projectId && !isBlocked && !task.completed
+      ? TASK_PALETTES[task.projectId % TASK_PALETTES.length]
+      : null;
+
     return (
       <div
-        className={`flex items-start space-x-3 p-3 border rounded-lg transition-colors cursor-pointer ${
-          isBlocked
-            ? 'opacity-60 bg-slate-50 dark:bg-gray-800/50 border-slate-200 dark:border-gray-700'
-            : task.completed
-            ? 'opacity-50 border-slate-100 dark:border-gray-800'
-            : 'border-slate-200 dark:border-gray-700 hover:border-primary/40 dark:hover:border-primary/30'
+        className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer hover-lift ${
+          isBlocked ? 'opacity-50 bg-muted border-border'
+          : task.completed ? 'opacity-50 bg-muted/50 border-border'
+          : 'border-transparent'
         }`}
-        style={{ borderLeftWidth: 3, borderLeftColor: projColor }}
+        style={palette ? { backgroundColor: palette.bg, borderColor: palette.border } : undefined}
         onClick={() => setWorkspaceTask(task)}
       >
         <div onClick={e => e.stopPropagation()} className="flex-shrink-0 pt-0.5">
@@ -535,34 +586,37 @@ export default function Planning({ onSearchClick }: Props) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             {isBlocked && <span className="text-sm">🔒</span>}
-            <p className={`text-sm ${task.completed ? 'line-through text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+            <p
+              className={`text-sm font-semibold leading-snug ${task.completed ? 'line-through opacity-50' : ''}`}
+              style={palette ? { color: palette.text } : undefined}
+            >
               {task.title}
             </p>
           </div>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {task.category && (
-              <Badge className={`${CATEGORY_COLORS[task.category] || 'bg-slate-100 text-slate-600'} text-xs h-4 border-0`}>
-                {task.category}
-              </Badge>
-            )}
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
             {energyBadge && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${energyBadge.cls}`}>
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                style={palette ? { backgroundColor: palette.border, color: palette.text } : undefined}
+              >
                 {energyBadge.emoji} {energyBadge.label}
               </span>
             )}
-            {timeHint && (
-              <span className="text-[10px] text-slate-400 dark:text-gray-500">
-                {timeHint.emoji} {timeHint.label}
-              </span>
-            )}
             {task.estimatedDuration && (
-              <span className="text-xs text-slate-400 flex items-center gap-0.5">
-                <Clock className="h-2.5 w-2.5" />
-                ~{task.estimatedDuration}m
+              <span
+                className="text-[10px] flex items-center gap-0.5 opacity-60"
+                style={palette ? { color: palette.text } : undefined}
+              >
+                <Clock className="h-2.5 w-2.5" />{task.estimatedDuration}m
               </span>
             )}
             {project && (
-              <span className="text-[10px] text-slate-400 dark:text-gray-500">{project.icon} {project.name}</span>
+              <span
+                className="text-[10px] opacity-60"
+                style={palette ? { color: palette.text } : undefined}
+              >
+                {project.icon} {project.name}
+              </span>
             )}
           </div>
         </div>
@@ -571,47 +625,43 @@ export default function Planning({ onSearchClick }: Props) {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-gray-950">
+    <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-gray-900">
+        <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-card">
 
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-gray-800 flex-shrink-0">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-border flex-shrink-0">
+            <div className="flex items-center gap-4">
               <div>
-                <h1 className="text-base text-slate-900 dark:text-white">{t('planning.title')}</h1>
-                <p className="text-xs text-slate-500 dark:text-gray-400">{headerLabel}</p>
+                <h1 className="text-lg font-bold tracking-tight text-foreground">{t('planning.title')}</h1>
+                <p className="text-xs text-muted-foreground">{headerLabel}</p>
               </div>
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-gray-800 rounded-lg p-1">
+              <div className="view-toggle">
                 {(['day', 'week', 'month'] as ViewScope[]).map(v => (
                   <button
                     key={v}
                     onClick={() => setViewScope(v)}
-                    className={`px-3 py-1 rounded-md text-xs transition-all ${
-                      viewScope === v
-                        ? 'bg-white dark:bg-gray-700 shadow-sm text-slate-900 dark:text-white'
-                        : 'text-slate-500 dark:text-gray-400 hover:text-slate-700'
-                    }`}
+                    className={`view-toggle-btn ${viewScope === v ? 'active' : ''}`}
                   >
                     {t(`planning.${v}`)}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-gray-800 rounded-lg p-1">
-                <button onClick={() => navigate(-1)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-gray-700 transition-colors">
-                  <ChevronLeft className="h-4 w-4 text-slate-600 dark:text-gray-400" />
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-muted rounded-xl p-1 gap-0.5">
+                <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-muted-foreground/10 transition-colors text-muted-foreground hover:text-foreground">
+                  <ChevronLeft className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => setSelectedDate(new Date())}
-                  className="px-2 py-1 rounded-md text-xs text-slate-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 transition-colors"
+                  className="px-3 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-white dark:hover:bg-muted-foreground/10 hover:text-foreground transition-colors"
                 >
                   {t('common.today')}
                 </button>
-                <button onClick={() => navigate(1)} className="p-1.5 rounded-md hover:bg-white dark:hover:bg-gray-700 transition-colors">
-                  <ChevronRight className="h-4 w-4 text-slate-600 dark:text-gray-400" />
+                <button onClick={() => navigate(1)} className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-muted-foreground/10 transition-colors text-muted-foreground hover:text-foreground">
+                  <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -632,10 +682,10 @@ export default function Planning({ onSearchClick }: Props) {
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-1">
+              <div className="grid grid-cols-7 gap-1.5">
                 {calendarDays.map((day, i) => {
                   if (!day) {
-                    return <div key={`empty-${i}`} className="h-28 rounded-lg bg-slate-50 dark:bg-gray-800/30 opacity-40" />;
+                    return <div key={`empty-${i}`} className="h-28 rounded-xl bg-muted/40" />;
                   }
                   const dateKey = formatDate(day);
                   const isToday = dateKey === today;
@@ -648,15 +698,15 @@ export default function Planning({ onSearchClick }: Props) {
                   return (
                     <div
                       key={dateKey}
-                      className={`h-28 rounded-lg border p-1.5 flex flex-col cursor-pointer hover:border-primary/40 transition-colors ${
-                        isToday ? 'border-primary/40 bg-primary/5 dark:bg-primary/10'
-                        : isPast ? 'border-slate-100 dark:border-gray-800 opacity-60'
-                        : 'border-slate-200 dark:border-gray-700'
+                      className={`h-28 rounded-xl border p-2 flex flex-col cursor-pointer transition-all hover:shadow-card ${
+                        isToday ? 'border-primary/50 bg-accent'
+                        : isPast ? 'border-border opacity-55'
+                        : 'border-border hover:border-primary/30 bg-white dark:bg-card'
                       }`}
                       onClick={() => { setSelectedDate(day); setViewScope('day'); }}
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className={`text-xs ${isToday ? 'text-primary' : 'text-slate-600 dark:text-gray-400'}`}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>
                           {day.getDate()}
                         </span>
                         {dayType && dayType !== 'full' && (
@@ -671,8 +721,8 @@ export default function Planning({ onSearchClick }: Props) {
                           return (
                             <div
                               key={task.id}
-                              className="flex items-center gap-1 px-1 py-0.5 rounded text-[9px] truncate"
-                              style={{ backgroundColor: `${projColor}18`, color: projColor }}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] truncate font-medium"
+                              style={{ backgroundColor: `${projColor}20`, color: projColor }}
                               onClick={e => { e.stopPropagation(); setWorkspaceTask(task); }}
                             >
                               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: projColor }} />
@@ -681,10 +731,7 @@ export default function Planning({ onSearchClick }: Props) {
                           );
                         })}
                         {overflow > 0 && (
-                          <p className="text-[9px] text-slate-400 dark:text-gray-500 pl-1">+{overflow} {t('planning.more').toLowerCase()}</p>
-                        )}
-                        {dayTasks.length === 0 && (
-                          <p className="text-[9px] text-slate-300 dark:text-gray-700 pl-1 mt-1">—</p>
+                          <p className="text-[9px] text-muted-foreground pl-1">+{overflow}</p>
                         )}
                       </div>
                     </div>
@@ -731,8 +778,12 @@ export default function Planning({ onSearchClick }: Props) {
                 defaultWorkStart={preferences?.workDayStart || '09:00'}
                 defaultWorkEnd={preferences?.workDayEnd || '18:00'}
                 today={today}
-                onTaskClick={setWorkspaceTask}
-                onToggle={(id) => toggleMutation.mutate(id)}
+                onTaskClick={(task) => {
+                  if (task._virtual || task.id < 0 || task.type === 'milestone') { setMilestoneConfirmTarget(task); return; }
+                  setWorkspaceTask(task);
+                }}
+                onToggle={(taskId) => toggleMutation.mutate(taskId)}
+                onMilestoneConfirm={(mid) => confirmMilestoneMutation.mutate(mid)}
                 rangeQueryKey={rangeQueryKey}
               />
             </div>
@@ -776,8 +827,12 @@ export default function Planning({ onSearchClick }: Props) {
                   defaultWorkStart={preferences?.workDayStart || '09:00'}
                   defaultWorkEnd={preferences?.workDayEnd || '18:00'}
                   today={today}
-                  onTaskClick={setWorkspaceTask}
-                  onToggle={(id) => toggleMutation.mutate(id)}
+                  onTaskClick={(task) => {
+                    if (task._virtual || task.id < 0 || task.type === 'milestone') { setMilestoneConfirmTarget(task); return; }
+                    setWorkspaceTask(task);
+                  }}
+                  onToggle={(taskId) => toggleMutation.mutate(taskId)}
+                  onMilestoneConfirm={(mid) => confirmMilestoneMutation.mutate(mid)}
                   rangeQueryKey={rangeQueryKey}
                 />
               </div>
@@ -892,6 +947,42 @@ export default function Planning({ onSearchClick }: Props) {
             open={!!workspaceTask}
             onClose={() => setWorkspaceTask(null)}
           />
+
+          {/* Dialog de confirmation de jalon */}
+          <AlertDialog open={!!milestoneConfirmTarget} onOpenChange={(o) => { if (!o) setMilestoneConfirmTarget(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {(milestoneConfirmTarget as any)?.milestoneStatus === 'locked'
+                    ? '🔒 Jalon bloqué'
+                    : '🏁 Confirmer ce jalon'}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {(milestoneConfirmTarget as any)?.milestoneStatus === 'locked' ? (
+                    <>Ce jalon est <strong>bloqué</strong> — il sera débloqué automatiquement une fois le jalon précédent complété.</>
+                  ) : (
+                    <>Confirmer que <strong>«&nbsp;{milestoneConfirmTarget?.title}&nbsp;»</strong> est accompli ?
+                    Cela débloquera le jalon suivant et créera ses tâches dans ton planning.</>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setMilestoneConfirmTarget(null)}>Annuler</AlertDialogCancel>
+                {(milestoneConfirmTarget as any)?.milestoneStatus !== 'locked' && (
+                  <AlertDialogAction
+                    onClick={() => {
+                      const mid = milestoneConfirmTarget?.milestoneId;
+                      if (mid) confirmMilestoneMutation.mutate(mid);
+                      setMilestoneConfirmTarget(null);
+                    }}
+                    className="bg-amber-500 hover:bg-amber-600 text-white"
+                  >
+                    ✓ Confirmer le jalon
+                  </AlertDialogAction>
+                )}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>

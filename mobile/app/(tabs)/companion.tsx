@@ -44,6 +44,19 @@ export default function CompanionScreen() {
     queryFn: () => defaultFetcher("/api/companion/history"),
   });
 
+  // Contexte enrichi
+  const { data: todayTasks } = useQuery<any[]>({
+    queryKey: ["/api/tasks", TODAY],
+    queryFn: () => defaultFetcher(`/api/tasks?date=${TODAY}`),
+  });
+
+  const { data: projects } = useQuery<any[]>({
+    queryKey: ["/api/projects"],
+    queryFn: () => defaultFetcher("/api/projects"),
+  });
+
+  const activeProject = projects?.find((p: any) => p.projectStatus === "active") || projects?.[0] || null;
+
   useEffect(() => {
     if (history && messages.length === 0) {
       setMessages(history.map((m, i) => ({
@@ -69,6 +82,10 @@ export default function CompanionScreen() {
           currentDate: TODAY,
           currentTime: NOW_TIME,
           platform: "mobile",
+          todayTasks: (todayTasks || []).slice(0, 10),
+          activeProject: activeProject
+            ? { id: activeProject.id, name: activeProject.name }
+            : null,
         },
         conversationHistory: messages
           .filter(m => !m.isLoading)

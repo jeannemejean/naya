@@ -1,4 +1,5 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
+import { lazy, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -11,24 +12,30 @@ import GlobalSearch from "@/components/global-search";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
-import ContentCalendar from "@/pages/content-calendar";
-import ReadingHub from "@/pages/reading-hub";
-import Outreach from "@/pages/outreach";
-import Analytics from "@/pages/analytics";
-import Strategy from "@/pages/strategy";
-import Onboarding from "@/pages/onboarding";
-import Projects from "@/pages/projects";
-import Settings from "@/pages/settings";
-import Planning from "@/pages/planning";
-import Campaigns from "@/pages/campaigns";
 import NayaCompanion from "@/components/NayaCompanion";
+
+// Lazy-loaded pages (chargées à la demande)
+const ContentCalendar = lazy(() => import("@/pages/content-calendar"));
+const ReadingHub = lazy(() => import("@/pages/reading-hub"));
+const Outreach = lazy(() => import("@/pages/outreach"));
+const Analytics = lazy(() => import("@/pages/analytics"));
+const Strategy = lazy(() => import("@/pages/strategy"));
+const Onboarding = lazy(() => import("@/pages/onboarding"));
+const Projects = lazy(() => import("@/pages/projects"));
+const Settings = lazy(() => import("@/pages/settings"));
+const Planning = lazy(() => import("@/pages/planning"));
+const Campaigns = lazy(() => import("@/pages/campaigns"));
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
   const { isOpen, setIsOpen, openSearch } = useGlobalSearch();
+  const [location] = useLocation();
+  // Le dashboard a sa propre barre Companion dans le header — pas de bouton flottant
+  const showFloatingCompanion = isAuthenticated && location !== "/";
 
   return (
     <>
+      <Suspense fallback={<div className="flex h-screen items-center justify-center bg-background"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
       <Switch>
         {isLoading || !isAuthenticated ? (
           <Route path="/" component={Landing} />
@@ -69,14 +76,15 @@ function Router() {
         )}
         <Route component={NotFound} />
       </Switch>
+      </Suspense>
       
       {/* Global Search - only when authenticated */}
       {isAuthenticated && (
         <GlobalSearch open={isOpen} onOpenChange={setIsOpen} />
       )}
 
-      {/* Companion IA — bouton flottant */}
-      {isAuthenticated && <NayaCompanion />}
+      {/* Companion IA — bouton flottant (absent du dashboard qui a sa propre barre) */}
+      {showFloatingCompanion && <NayaCompanion />}
     </>
   );
 }
