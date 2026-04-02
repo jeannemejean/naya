@@ -96,22 +96,58 @@ npm run check      # vérification TypeScript
 
 ## Déploiement Railway
 
-1. Créer un projet Railway
-2. Connecter le dépôt GitHub
-3. Ajouter un service PostgreSQL Railway (ou connecter Neon)
-4. Renseigner les variables d'environnement (voir `.env.example`)
-5. Railway détecte `railway.toml` et déploie automatiquement
+### Prérequis
+- Compte [Railway](https://railway.app)
+- DB PostgreSQL provisionnée (Railway PostgreSQL ou [Neon](https://neon.tech))
+- Clés API Anthropic et OpenAI
 
-Variables à renseigner dans Railway :
+### Étapes
+
+**1. Créer le projet Railway**
+
+Depuis [railway.app](https://railway.app) : `New Project → Deploy from GitHub repo`
+
+**2. Ajouter une DB PostgreSQL**
+
+Dans Railway : `New Service → Database → PostgreSQL`
+Le `DATABASE_URL` est automatiquement injecté dans les variables d'environnement.
+
+**3. Configurer les variables d'environnement**
+
+Dans Railway → ton service → Variables :
+
+| Variable | Valeur |
+|----------|--------|
+| `ANTHROPIC_API_KEY` | `sk-ant-...` |
+| `OPENAI_API_KEY` | `sk-...` |
+| `SESSION_SECRET` | résultat de `openssl rand -base64 32` |
+| `JWT_SECRET` | résultat de `openssl rand -base64 64` |
+| `NODE_ENV` | `production` |
+| `EXPO_PUBLIC_API_URL` | `https://ton-app.up.railway.app` |
+
+`PORT` et `DATABASE_URL` sont injectés automatiquement par Railway.
+
+**4. Appliquer le schéma DB**
+
+```bash
+# En local, avec le DATABASE_URL de production
+DATABASE_URL=postgresql://... npm run db:push
 ```
-DATABASE_URL
-ANTHROPIC_API_KEY
-OPENAI_API_KEY
-SESSION_SECRET
-JWT_SECRET
-NODE_ENV=production
-PORT=5000
-```
+
+**5. Déployer**
+
+Railway déploie automatiquement à chaque push sur la branche principale.
+Build : `npm run build` → Start : `npm run start`
+
+### Health check
+
+Railway surveille `GET /api/health` toutes les 100s.
+- `200 { status: 'ok', db: 'connected' }` → service healthy
+- `503 { status: 'error', db: 'disconnected' }` → Railway redémarre le service
+
+### Rollback
+
+Railway → Deployments → sélectionner un déploiement précédent → `Redeploy`.
 
 ---
 
