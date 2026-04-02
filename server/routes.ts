@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { pool } from "./db";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { 
   generateContent, 
@@ -355,8 +356,13 @@ function rebalanceTasksForward(
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Health check (Railway, monitoring)
-  app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  app.get('/api/health', async (_req, res) => {
+    try {
+      await pool.query('SELECT 1');
+      res.json({ status: 'ok', db: 'connected', timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(503).json({ status: 'error', db: 'disconnected', error: err.message, timestamp: new Date().toISOString() });
+    }
   });
 
   // Admin: trigger auto-planner manually (for testing / debug)
