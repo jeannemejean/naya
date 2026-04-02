@@ -446,22 +446,60 @@ export const content = pgTable("content", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// ─── Prospection Campaigns ────────────────────────────────────────────────────
+// Campagnes de prospection (distinctes des campagnes marketing)
+export const prospectionCampaigns = pgTable("prospection_campaigns", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").references(() => projects.id),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("active"), // active | paused | completed
+  targetSector: text("target_sector"),               // ex: "Viticulture, Oenotourisme"
+  digitalLevel: text("digital_level").default("tous"), // fort | faible | tous
+  channel: text("channel").default("linkedin"),       // linkedin | email | both
+  offer: text("offer"),                               // l'offre proposée à ce segment
+  prospectsPerDay: integer("prospects_per_day").default(3),
+  buyingSignals: text("buying_signals"),              // critères de qualification
+  campaignBrief: text("campaign_brief"),              // proposition en une phrase
+  messageAngle: text("message_angle"),                // angle d'approche unique
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertProspectionCampaignSchema = createInsertSchema(prospectionCampaigns).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProspectionCampaign = z.infer<typeof insertProspectionCampaignSchema>;
+export type ProspectionCampaign = typeof prospectionCampaigns.$inferSelect;
+
 // Lead management and outreach — now project-aware
 export const leads = pgTable("leads", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
   projectId: integer("project_id").references(() => projects.id),
+  prospectionCampaignId: integer("prospection_campaign_id").references(() => prospectionCampaigns.id),
   name: text("name").notNull(),
   email: text("email"),
   company: text("company"),
+  role: text("role"),                   // titre exact du prospect
+  sector: text("sector"),              // secteur détecté
   platform: text("platform"),
-  profileUrl: text("profile_url"),
+  profileUrl: text("profile_url"),     // URL générique
+  linkedinUrl: text("linkedin_url"),   // URL profil LinkedIn
+  instagramUrl: text("instagram_url"), // URL compte Instagram
   status: text("status").notNull().default("discovered"),
+  // Pipeline prospection complet
+  stage: text("stage").default("identified"),
+  // identified | messages_ready | connection_sent | connected |
+  // followup1_sent | followup2_sent | in_discussion | proposal_sent | signed | no_follow
   score: text("score").notNull().default("cold"),
   tags: text("tags").array(),
   notes: text("notes"),
+  strategicNotes: text("strategic_notes"), // audit 6 sections (JSON stringifié)
+  message1: text("message1"),              // message de connexion LinkedIn (≤200 cars)
+  message2: text("message2"),              // message de suivi après connexion
+  message3: text("message3"),              // message de clôture
+  firstContactDate: timestamp("first_contact_date"),
   lastContactDate: timestamp("last_contact_date"),
   nextFollowUp: timestamp("next_follow_up"),
+  enrichedAt: timestamp("enriched_at"),   // date de dernière génération IA
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

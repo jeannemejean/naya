@@ -5206,6 +5206,96 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // ─── Prospection Campaign routes ─────────────────────────────────────────────
+  app.get('/api/prospection/campaigns', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const campaigns = await storage.getProspectionCampaigns(userId);
+      res.json(campaigns);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post('/api/prospection/campaigns', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const campaign = await storage.createProspectionCampaign({ ...req.body, userId });
+      res.json(campaign);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.patch('/api/prospection/campaigns/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const updated = await storage.updateProspectionCampaign(Number(req.params.id), userId, req.body);
+      if (!updated) return res.status(404).json({ message: "Campaign not found" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete('/api/prospection/campaigns/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      await storage.deleteProspectionCampaign(Number(req.params.id), userId);
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Génère un brief de recherche pour une campagne de prospection
+  app.post('/api/prospection/campaigns/:id/search-brief', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const { generateSearchBrief } = await import('./services/prospection');
+      const brief = await generateSearchBrief(userId, Number(req.params.id));
+      res.json(brief);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Enrichit un lead avec audit 6 sections + 3 messages
+  app.post('/api/leads/:id/enrich', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const leadId = Number(req.params.id);
+      const leads = await storage.getLeads(userId);
+      const lead = leads.find(l => l.id === leadId);
+      if (!lead) return res.status(404).json({ message: "Lead not found" });
+
+      const { enrichProspect } = await import('./services/prospection');
+      const enrichment = await enrichProspect(
+        userId,
+        {
+          name: lead.name,
+          company: lead.company || '',
+          role: lead.role || undefined,
+          sector: lead.sector || undefined,
+          linkedinUrl: lead.linkedinUrl || undefined,
+          instagramUrl: lead.instagramUrl || undefined,
+          notes: lead.notes || undefined,
+        },
+        lead.prospectionCampaignId ?? null
+      );
+
+      const updated = await storage.updateLead(leadId, userId, {
+        ...enrichment,
+        stage: 'messages_ready',
+        enrichedAt: new Date(),
+      });
+      res.json(updated);
+    } catch (e: any) {
+      console.error('[prospection/enrich]', e.message);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // Outreach routes
   app.get('/api/outreach', isAuthenticated, async (req: any, res) => {
     try {

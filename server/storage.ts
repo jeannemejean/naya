@@ -33,6 +33,9 @@ import {
   taskListItems,
   companionConversations,
   campaigns,
+  prospectionCampaigns,
+  type ProspectionCampaign,
+  type InsertProspectionCampaign,
   dayAvailability,
   type DayAvailability,
   type InsertDayAvailability,
@@ -220,6 +223,13 @@ export interface IStorage {
   deleteContent(id: number): Promise<void>;
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
   
+  // Prospection Campaign operations
+  getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
+  getProspectionCampaign(id: number): Promise<ProspectionCampaign | null>;
+  createProspectionCampaign(campaign: InsertProspectionCampaign): Promise<ProspectionCampaign>;
+  updateProspectionCampaign(id: number, userId: string, updates: Partial<ProspectionCampaign>): Promise<ProspectionCampaign | null>;
+  deleteProspectionCampaign(id: number, userId: string): Promise<void>;
+
   // Lead operations
   getLeads(userId: string): Promise<Lead[]>;
   createLead(lead: InsertLead): Promise<Lead>;
@@ -745,6 +755,36 @@ export class DatabaseStorage implements IStorage {
 
   async deleteContent(id: number): Promise<void> {
     await db.delete(content).where(eq(content.id, id));
+  }
+
+  // ─── Prospection Campaign operations ─────────────────────────────────────────
+  async getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]> {
+    return await db.select().from(prospectionCampaigns)
+      .where(eq(prospectionCampaigns.userId, userId))
+      .orderBy(desc(prospectionCampaigns.createdAt));
+  }
+
+  async getProspectionCampaign(id: number): Promise<ProspectionCampaign | null> {
+    const [c] = await db.select().from(prospectionCampaigns).where(eq(prospectionCampaigns.id, id));
+    return c || null;
+  }
+
+  async createProspectionCampaign(campaign: InsertProspectionCampaign): Promise<ProspectionCampaign> {
+    const [c] = await db.insert(prospectionCampaigns).values(campaign).returning();
+    return c;
+  }
+
+  async updateProspectionCampaign(id: number, userId: string, updates: Partial<ProspectionCampaign>): Promise<ProspectionCampaign | null> {
+    const [c] = await db.update(prospectionCampaigns)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(prospectionCampaigns.id, id), eq(prospectionCampaigns.userId, userId)))
+      .returning();
+    return c || null;
+  }
+
+  async deleteProspectionCampaign(id: number, userId: string): Promise<void> {
+    await db.delete(prospectionCampaigns)
+      .where(and(eq(prospectionCampaigns.id, id), eq(prospectionCampaigns.userId, userId)));
   }
 
   // Lead operations
