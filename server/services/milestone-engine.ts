@@ -100,6 +100,8 @@ export async function confirmMilestone(milestoneId: number): Promise<ProjectMile
   });
 
   if (updated) {
+    // Compléter la tâche-jalon (🏁) dans le planning
+    await storage.completeMilestoneTask(milestoneId);
     await storage.unblockTasksForMilestone(milestoneId);
     // Déclencher le déverrouillage des jalons suivants
     await checkAndUnlockMilestones(milestone.projectId, milestone.userId);

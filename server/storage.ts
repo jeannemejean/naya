@@ -1549,6 +1549,13 @@ export class DatabaseStorage implements IStorage {
       .set({ isBlockedByMilestone: false })
       .where(and(eq(tasks.milestoneId, milestoneId), eq(tasks.isBlockedByMilestone, true)));
   }
+
+  /** Complète la tâche-jalon (🏁) associée à un jalon confirmé/complété. */
+  async completeMilestoneTask(milestoneId: number): Promise<void> {
+    await db.update(tasks)
+      .set({ completed: true, completedAt: new Date() })
+      .where(and(eq(tasks.milestoneId, milestoneId), eq(tasks.completed, false)));
+  }
 }
 
 export const storage = new DatabaseStorage();
