@@ -128,6 +128,9 @@ const en = {
       journal: "Journal",
       journalPrompt: "Write freely for 5 minutes. What are you feeling? What do you want to let go of today?",
     },
+    preparingPlan: "Naya is preparing your plan…",
+    tasksCompletedCount: "{{count}} tasks completed",
+    tasksCompletedFraction: "{{done}}/{{total}} tasks completed",
   },
 
   onboarding: {
@@ -1066,6 +1069,22 @@ const en = {
     confirmReset: "Are you sure you want to reset all data?",
     dataReset: "Data has been reset",
     logOut: "Log Out",
+    tabs: {
+      identity: "Identity",
+      offersMarket: "Offers & Market",
+      contentPlatforms: "Content & Platforms",
+      activePriorities: "Active Priorities",
+      nayaIntelligence: "Naya Intelligence",
+    },
+    saveIdentity: "Save Identity",
+    saveOffersMarket: "Save Offers & Market",
+    saveContentPlatforms: "Save Content & Platforms",
+    saveActivePriorities: "Save Priorities",
+    strategicSummary: "Strategic Summary",
+    noStrategicSummary: "No strategic summary yet. Click \"Refresh analysis\" to generate one.",
+    analysingBrand: "Analysing your brand…",
+    refreshAnalysis: "Refresh analysis",
+    saving: "Saving…",
   },
 
   notFound: {
