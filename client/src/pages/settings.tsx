@@ -846,11 +846,11 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                 ) : (
                   <Tabs defaultValue="identity">
                     <TabsList className="grid w-full grid-cols-5 text-[11px]">
-                      <TabsTrigger value="identity">Identity</TabsTrigger>
-                      <TabsTrigger value="offers">Offers & Market</TabsTrigger>
-                      <TabsTrigger value="content">Content & Platforms</TabsTrigger>
-                      <TabsTrigger value="priorities">Active Priorities</TabsTrigger>
-                      <TabsTrigger value="intelligence">Naya Intelligence</TabsTrigger>
+                      <TabsTrigger value="identity">{t('settings.tabs.identity')}</TabsTrigger>
+                      <TabsTrigger value="offers">{t('settings.tabs.offersMarket')}</TabsTrigger>
+                      <TabsTrigger value="content">{t('settings.tabs.contentPlatforms')}</TabsTrigger>
+                      <TabsTrigger value="priorities">{t('settings.tabs.activePriorities')}</TabsTrigger>
+                      <TabsTrigger value="intelligence">{t('settings.tabs.nayaIntelligence')}</TabsTrigger>
                     </TabsList>
 
                     {/* ── Identity ── */}
@@ -898,7 +898,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                         </Select>
                       </div>
                       <Button size="sm" onClick={() => patchBrandDna.mutate({ businessName: dnaBusinessName, website: dnaWebsite, linkedinProfile: dnaLinkedin, instagramHandle: dnaInstagram, businessType: dnaBusinessType, businessModel: dnaBusinessModel, uniquePositioning: dnaUniquePositioning, authorityLevel: dnaAuthorityLevel })} disabled={patchBrandDna.isPending}>
-                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Saving…</> : "Save Identity"}
+                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settings.saving')}</> : t('settings.saveIdentity')}
                       </Button>
                     </TabsContent>
 
@@ -945,7 +945,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                         <Textarea value={dnaAudienceAspiration} onChange={e => setDnaAudienceAspiration(e.target.value)} rows={2} placeholder="What your audience most wants to achieve…" className="dark:bg-gray-800 dark:border-gray-600" />
                       </div>
                       <Button size="sm" onClick={() => patchBrandDna.mutate({ offers: dnaOffers, priceRange: dnaPriceRange, clientJourney: dnaClientJourney, competitorLandscape: dnaCompetitorLandscape, targetAudience: dnaTargetAudience, corePainPoint: dnaCorePainPoint, audienceAspiration: dnaAudienceAspiration })} disabled={patchBrandDna.isPending}>
-                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Saving…</> : "Save Offers & Market"}
+                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settings.saving')}</> : t('settings.saveOffersMarket')}
                       </Button>
                     </TabsContent>
 
@@ -1034,7 +1034,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                         <KeywordChipInput values={dnaReferenceBrands} onChange={setDnaReferenceBrands} max={5} placeholder="e.g. Notion, Basecamp, Figma…" />
                       </div>
                       <Button size="sm" onClick={() => patchBrandDna.mutate({ brandVoiceKeywords: dnaVoiceKw, brandVoiceAntiKeywords: dnaAntiKw, editorialTerritory: dnaEditorialTerritory, contentPillarsDetailed: dnaContentPillarsDetailed, platformPriority: dnaPlatformPriority, communicationStyle: dnaCommunicationStyle, currentPresence: dnaCurrentPresence, contentBandwidth: dnaContentBandwidth, visualIdentityNotes: dnaVisualIdentityNotes, referenceBrands: dnaReferenceBrands })} disabled={patchBrandDna.isPending}>
-                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Saving…</> : "Save Content & Platforms"}
+                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settings.saving')}</> : t('settings.saveContentPlatforms')}
                       </Button>
                     </TabsContent>
 
@@ -1127,7 +1127,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                         <Input value={dnaLanguageStrategy} onChange={e => setDnaLanguageStrategy(e.target.value)} placeholder="e.g. English only, bilingual EN/FR…" className="dark:bg-gray-800 dark:border-gray-600" />
                       </div>
                       <Button size="sm" onClick={() => patchBrandDna.mutate({ activeBusinessPriority: dnaActiveBusinessPriority, currentBusinessStage: dnaCurrentBusinessStage, revenueUrgency: dnaRevenueUrgency, revenueTarget: dnaRevenueTarget, keyMilestones: dnaKeyMilestones, primaryGoal: dnaPrimaryGoal, successDefinition: dnaSuccessDefinition, currentChallenges: dnaCurrentChallenges, teamStructure: dnaTeamStructure, operationalConstraints: dnaOperationalConstraints, geographicFocus: dnaGeographicFocus, languageStrategy: dnaLanguageStrategy })} disabled={patchBrandDna.isPending}>
-                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />Saving…</> : "Save Active Priorities"}
+                        {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settings.saving')}</> : t('settings.saveActivePriorities')}
                       </Button>
                     </TabsContent>
 
@@ -1136,7 +1136,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                       <div className="rounded-xl bg-gradient-to-br from-primary/5 to-secondary/5 border border-primary/10 p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <p className="text-xs text-primary uppercase tracking-wider flex items-center gap-1.5">
-                            <Sparkles className="h-3.5 w-3.5" /> Strategic Summary
+                            <Sparkles className="h-3.5 w-3.5" /> {t('settings.strategicSummary')}
                           </p>
                           {brandDna.lastStrategyRefreshAt && (
                             <span className="text-[10px] text-slate-400 dark:text-gray-500">
@@ -1150,7 +1150,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                           </p>
                         ) : (
                           <p className="text-sm text-slate-400 dark:text-gray-500 italic">
-                            No strategic summary yet. Click "Refresh analysis" to generate one.
+                            {t('settings.noStrategicSummary')}
                           </p>
                         )}
                       </div>
@@ -1160,9 +1160,9 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                         className="w-full"
                       >
                         {refreshIntelligence.isPending ? (
-                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Analysing your brand…</>
+                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('settings.analysingBrand')}</>
                         ) : (
-                          <><Sparkles className="h-4 w-4 mr-2" />Refresh analysis</>
+                          <><Sparkles className="h-4 w-4 mr-2" />{t('settings.refreshAnalysis')}</>
                         )}
                       </Button>
                     </TabsContent>

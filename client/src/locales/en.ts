@@ -1300,6 +1300,26 @@ const en = {
     errorSend: "Unable to send the message.",
     send: "Send",
   },
+
+  settings: {
+    dangerZone: "Danger Zone",
+    tabs: {
+      identity: "Identity",
+      offersMarket: "Offers & Market",
+      contentPlatforms: "Content & Platforms",
+      activePriorities: "Active Priorities",
+      nayaIntelligence: "Naya Intelligence",
+    },
+    saveIdentity: "Save Identity",
+    saveOffersMarket: "Save Offers & Market",
+    saveContentPlatforms: "Save Content & Platforms",
+    saveActivePriorities: "Save Active Priorities",
+    saving: "Saving…",
+    strategicSummary: "Strategic Summary",
+    noStrategicSummary: "No strategic summary yet. Click \"Refresh analysis\" to generate one.",
+    analysingBrand: "Analysing your brand…",
+    refreshAnalysis: "Refresh analysis",
+  },
 };
 
 export default en;
