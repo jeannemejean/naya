@@ -1,0 +1,4 @@
+node_modules
+dist
+.git
+mobile/node_modules
