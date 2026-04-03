@@ -131,6 +131,8 @@ const en = {
     preparingPlan: "Naya is preparing your plan…",
     tasksCompletedCount: "{{count}} tasks completed",
     tasksCompletedFraction: "{{done}}/{{total}} tasks completed",
+    tasksAppearHere: "Your tasks will appear here.",
+    allDone: "All done 🎉",
   },
 
   onboarding: {
@@ -1012,6 +1014,7 @@ const en = {
     tasksGenerated: "Tasks generated",
     tasksGeneratedDesc: "Find them in your planning.",
     generateError: "Error generating tasks",
+    generatePlan: "Generate plan",
   },
 
   readingHub: {

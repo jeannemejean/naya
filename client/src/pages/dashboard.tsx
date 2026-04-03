@@ -949,11 +949,11 @@ function BentoTileNextAction() {
             <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
             <p className="text-sm font-medium text-violet-200">{t('dashboard.preparingPlan')}</p>
           </div>
-          <p className="text-xs text-violet-300/50">Tes tâches apparaîtront ici.</p>
+          <p className="text-xs text-violet-300/50">{t('dashboard.tasksAppearHere')}</p>
         </div>
       ) : (
         <div className="flex-1 flex flex-col justify-center gap-1 relative z-10">
-          <p className="text-base font-bold text-emerald-300">Tout est fait 🎉</p>
+          <p className="text-base font-bold text-emerald-300">{t('dashboard.allDone')}</p>
           <p className="text-xs text-violet-300/60">{t('dashboard.tasksCompletedCount', { count: done })}</p>
         </div>
       )}

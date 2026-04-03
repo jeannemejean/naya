@@ -1261,7 +1261,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
                                 ) : (
                                   <Sparkles className="h-3 w-3" />
                                 )}
-                                Générer le plan
+                                {t('projects.generatePlan')}
                               </Button>
                             </div>
                           </div>
