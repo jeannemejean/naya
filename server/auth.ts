@@ -75,10 +75,16 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   // Web : session cookie
   if (req.session?.userId) {
     (req as any).userId = req.session.userId;
+    // Use cached user from session to avoid a DB round-trip on every request
+    if ((req.session as any).cachedUser) {
+      (req as any).user = (req.session as any).cachedUser;
+      return next();
+    }
     try {
       const user = await storage.getUser(req.session.userId);
       if (!user) return res.status(401).json({ message: "Unauthorized" });
       (req as any).user = user;
+      (req.session as any).cachedUser = user;
       return next();
     } catch {
       return res.status(401).json({ message: "Unauthorized" });
