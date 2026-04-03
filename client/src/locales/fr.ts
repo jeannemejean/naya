@@ -1009,6 +1009,9 @@ const fr = {
     projectUpdated: "Projet mis à jour avec succès !",
     goalCreated: "Objectif créé avec succès !",
     goalUpdated: "Objectif mis à jour avec succès !",
+    tasksGenerated: "Tâches générées",
+    tasksGeneratedDesc: "Retrouve-les dans le planning.",
+    generateError: "Erreur lors de la génération",
   },
 
   readingHub: {

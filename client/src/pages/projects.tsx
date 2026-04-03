@@ -891,9 +891,9 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
       apiRequest('POST', `/api/goals/${goalId}/generate-tasks`).then(r => r.json()),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      toast({ title: `${data.count} tâches générées`, description: "Retrouve-les dans le planning." });
+      toast({ title: t('projects.tasksGenerated'), description: t('projects.tasksGeneratedDesc') });
     },
-    onError: () => toast({ title: "Erreur lors de la génération", variant: "destructive" }),
+    onError: () => toast({ title: t('projects.generateError'), variant: "destructive" }),
   });
 
   const createForm = useForm<z.infer<typeof createProjectSchema>>({
