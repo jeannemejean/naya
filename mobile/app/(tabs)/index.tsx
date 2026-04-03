@@ -64,7 +64,7 @@ export default function TodayScreen() {
   const energyMutation = useMutation({
     mutationFn: (level: string) =>
       api.patch("/api/preferences", { currentEnergyLevel: level, energyUpdatedDate: TODAY }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/preferences"] }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/preferences"] }); queryClient.invalidateQueries({ queryKey: ["/api/tasks/daily-brief"] }); },
   });
 
   const onRefresh = async () => {

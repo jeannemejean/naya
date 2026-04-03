@@ -28,6 +28,7 @@ export default function ProfileScreen() {
 
   useFocusEffect(useCallback(() => {
     getUser().then(setUser);
+    Notifications.getPermissionsAsync().then(({ status }) => setPushEnabled(status === 'granted'));
   }, []));
 
   const registerPushNotifications = async () => {
