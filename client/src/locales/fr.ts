@@ -800,7 +800,7 @@ const fr = {
     nextMove: "Prochain mouvement",
     projectsWithoutTasks: "Projets sans tâches",
     nayasStrategicRead: "Analyse stratégique de Naya",
-    generateToSee: "Génère ton plan pour voir le focus et les prochains mouvements",
+    generateToSee: "Naya prépare ton planning chaque matin automatiquement. Demande au Companion de le préparer maintenant si besoin.",
     dragToSchedule: "Glisse-les sur la grille pour les planifier",
     regenerateTitle: "Régénérer ton plan ?",
     regenerateDescription: "Tu as {{count}} tâche(s) générée(s) planifiée(s) cette semaine. La régénération les remplacera par un nouveau plan.",
