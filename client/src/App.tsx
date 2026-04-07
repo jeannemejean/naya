@@ -1,7 +1,7 @@
 import { Switch, Route, useLocation } from "wouter";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -28,8 +28,17 @@ const Campaigns = lazy(() => import("@/pages/campaigns"));
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
+  const qc = useQueryClient();
   const { isOpen, setIsOpen, openSearch } = useGlobalSearch();
   const [location] = useLocation();
+
+  // Prefetch brand-dna as soon as auth confirms — avoids spinner on first dashboard visit
+  useEffect(() => {
+    if (isAuthenticated) {
+      qc.prefetchQuery({ queryKey: ["/api/brand-dna"] });
+      qc.prefetchQuery({ queryKey: ["/api/projects?limit=200"] });
+    }
+  }, [isAuthenticated, qc]);
   // Le dashboard a sa propre barre Companion dans le header — pas de bouton flottant
   const showFloatingCompanion = isAuthenticated && location !== "/";
 
