@@ -16,6 +16,10 @@ import { storage } from '../storage';
 import { generateDailyTasks } from './openai';
 import { buildNayaContext } from './naya-context';
 import { CLAUDE_MODELS } from './claude';
+import { getCalendarBlockedRanges } from './google-calendar';
+
+// Guard: prevents concurrent auto-planner runs from exhausting the DB pool
+let isAutoplannerRunning = false;
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -159,9 +163,11 @@ export async function rolloverStaleTasks(
 
   if (incomplete.length === 0) return { moved: 0 };
 
-  // Créneaux déjà occupés sur scheduleDate + pause déjeuner
+  // Créneaux déjà occupés sur scheduleDate + pause déjeuner + calendrier Google
   const scheduledDayTasks = await storage.getTasksInRange(userId, scheduleDate, scheduleDate).catch(() => []);
   const blockedRanges = buildBlockedRanges(scheduledDayTasks as any[], prefs);
+  const calBlocked = await getCalendarBlockedRanges(userId, scheduleDate).catch(() => []);
+  blockedRanges.push(...calBlocked);
 
   // Point de départ : après le dernier créneau existant, jamais dans le passé
   const latestExisting = blockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
@@ -219,15 +225,18 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   // 6. Load active milestones to enforce conditional blocking
   const projects = await storage.getProjects(userId);
   const activeMilestoneProjectIds = new Set<number>();
-  for (const project of projects) {
-    const milestones = await storage.getMilestones(project.id, userId).catch(() => []);
+  const allMilestones = await Promise.all(
+    projects.map(p => storage.getMilestones(p.id, userId).catch(() => [] as any[]))
+  );
+  projects.forEach((project, i) => {
+    const milestones = allMilestones[i];
     const hasActiveMilestone = milestones.some((m: any) =>
       ['unlocked', 'active'].includes(m.status)
     );
     if (hasActiveMilestone || milestones.length === 0) {
       activeMilestoneProjectIds.add(project.id);
     }
-  }
+  });
 
   // 7. Determine which projects to generate for
   const activeProjectId = prefs?.activeProjectId ?? null;
@@ -250,8 +259,10 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
   const maxTasksPerProject = Math.max(2, Math.floor(5 / Math.max(projectsToProcess.length, 1)));
 
-  // 9. Slot-collision guard: tâches existantes + pause déjeuner
+  // 9. Slot-collision guard: tâches existantes + pause déjeuner + calendrier Google
   const blockedRanges = buildBlockedRanges(scheduledForToday, prefs);
+  const calBlocked = await getCalendarBlockedRanges(userId, dateStr).catch(() => []);
+  blockedRanges.push(...calBlocked);
   const latestEnd = blockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
   let curSlot = latestEnd;
 
@@ -372,41 +383,52 @@ function nextWorkingDates(startDate: string, count: number, workDays: Set<string
 }
 
 export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed: number; skipped: number; errors: number }> {
-  const startDate = dateStr || todayString();
-  const userIds = await storage.getActiveUserIds();
+  if (isAutoplannerRunning) {
+    console.log('[AutoPlanner] Already running, skipping concurrent invocation');
+    return { processed: 0, skipped: 0, errors: 0 };
+  }
+  isAutoplannerRunning = true;
 
+  const startDate = dateStr || todayString();
   let processed = 0;
   let skipped = 0;
   let errors = 0;
 
-  console.log(`[AutoPlanner] Starting run from ${startDate} — ${userIds.length} users`);
+  try {
+    const userIds = await storage.getActiveUserIds();
+    console.log(`[AutoPlanner] Starting run from ${startDate} — ${userIds.length} users`);
 
-  for (const userId of userIds) {
-    try {
-      // 1. Rollover des tâches incomplètes des jours passés
-      await rolloverStaleTasks(userId, startDate).catch(e =>
-        console.error(`[AutoPlanner] Rollover failed for ${userId}:`, e.message)
-      );
-
-      // 2. Générer les 7 prochains jours de travail (les suivants seront générés demain)
-      const prefs = await storage.getUserPreferences(userId);
-      const workDays = parseWorkDays(prefs?.workDays);
-      const dates = nextWorkingDates(startDate, 7, workDays);
-
-      for (const date of dates) {
-        await generateForUser(userId, date).catch(e =>
-          console.error(`[AutoPlanner] Generate failed for ${userId} on ${date}:`, e.message)
+    for (const userId of userIds) {
+      try {
+        // 1. Rollover des tâches incomplètes des jours passés
+        await rolloverStaleTasks(userId, startDate).catch(e =>
+          console.error(`[AutoPlanner] Rollover failed for ${userId}:`, e.message)
         );
-      }
 
-      processed++;
-    } catch (err: any) {
-      console.error(`[AutoPlanner] Failed for user ${userId}:`, err.message);
-      errors++;
+        // 2. Générer les 7 prochains jours de travail
+        const prefs = await storage.getUserPreferences(userId);
+        const workDays = parseWorkDays(prefs?.workDays);
+        const dates = nextWorkingDates(startDate, 7, workDays);
+
+        for (const date of dates) {
+          await generateForUser(userId, date).catch(e =>
+            console.error(`[AutoPlanner] Generate failed for ${userId} on ${date}:`, e.message)
+          );
+        }
+
+        processed++;
+      } catch (err: any) {
+        console.error(`[AutoPlanner] Failed for user ${userId}:`, err.message);
+        errors++;
+      }
     }
+
+    console.log(`[AutoPlanner] Done — processed: ${processed}, skipped: ${skipped}, errors: ${errors}`);
+  } finally {
+    // Always release the guard, even if an unexpected error occurs
+    isAutoplannerRunning = false;
   }
 
-  console.log(`[AutoPlanner] Done — processed: ${processed}, skipped: ${skipped}, errors: ${errors}`);
   return { processed, skipped, errors };
 }
 
