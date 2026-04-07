@@ -354,6 +354,80 @@ function MilestoneListEditor({
   );
 }
 
+function GoogleCalendarCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: status } = useQuery<{ connected: boolean }>({
+    queryKey: ['/api/calendar/status'],
+    retry: false,
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('GET', '/api/calendar/oauth/url');
+      const { url } = await res.json();
+      window.location.href = url;
+    },
+    onError: () => toast({ title: 'Erreur', description: 'Impossible de contacter Google.', variant: 'destructive' }),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => apiRequest('DELETE', '/api/calendar/disconnect'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/status'] });
+      toast({ title: 'Calendrier déconnecté', description: 'Les événements Google ne seront plus affichés.' });
+    },
+    onError: () => toast({ title: 'Erreur', description: 'Déconnexion échouée.', variant: 'destructive' }),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Calendar className="h-4 w-4 text-blue-500" />
+          Google Calendar
+        </CardTitle>
+        <CardDescription>
+          Affiche tes rendez-vous dans le planning et bloque les créneaux pendant les réunions.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {status?.connected ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              Connecté — événements synchronisés
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => disconnectMutation.mutate()}
+              disabled={disconnectMutation.isPending}
+              className="text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800"
+            >
+              {disconnectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Déconnecter'}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            onClick={() => connectMutation.mutate()}
+            disabled={connectMutation.isPending}
+            className="w-full gap-2"
+          >
+            {connectMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Calendar className="h-4 w-4" />
+            )}
+            Connecter Google Calendar
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings({ onSearchClick }: SettingsProps) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -569,6 +643,19 @@ export default function Settings({ onSearchClick }: SettingsProps) {
       setDnaKeyMilestones([]);
     }
   }, [brandDna]);
+
+  // Show toast if redirected back from Google OAuth
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const cal = params.get('calendar');
+    if (cal === 'connected') {
+      toast({ title: 'Google Calendar connecté', description: 'Tes événements apparaîtront maintenant dans le planning.' });
+      window.history.replaceState({}, '', '/settings');
+    } else if (cal === 'error') {
+      toast({ title: 'Connexion échouée', description: 'Réessaie depuis les paramètres.', variant: 'destructive' });
+      window.history.replaceState({}, '', '/settings');
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patchBrandDna = useMutation({
     mutationFn: (data: Partial<BrandDna>) => apiRequest('PATCH', '/api/brand-dna', data),
@@ -1170,6 +1257,9 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                 )}
               </CardContent>
             </Card>
+
+            {/* Google Calendar */}
+            <GoogleCalendarCard />
 
             {/* Data & Reset */}
             <Card className="dark:bg-gray-900 dark:border-gray-700">
