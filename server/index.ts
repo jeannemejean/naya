@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
-import { scheduleAutoPlanner, scheduleEndOfDayRollover } from "./services/auto-planner";
+import { scheduleAutoPlanner, scheduleEndOfDayRollover, scheduleIntraDayReschedule } from "./services/auto-planner";
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('unhandledRejection', (reason, promise) => {
@@ -56,6 +56,8 @@ app.use((req, res, next) => {
   scheduleAutoPlanner();
   // End-of-day rollover: moves incomplete tasks to next work day at 17:00 UTC (19:00 Paris)
   scheduleEndOfDayRollover();
+  // Intra-day reschedule: adjusts pending tasks throughout the day
+  scheduleIntraDayReschedule();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
