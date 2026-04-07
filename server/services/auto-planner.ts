@@ -551,29 +551,57 @@ async function runEndOfDayRollover(): Promise<void> {
       let curSlot = blockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
 
       let moved = 0;
+      // Pre-load the next-next work day as overflow target if scheduleDate fills up
+      const overflowDate = nextWorkDay(scheduleDate, workDays);
+      const overflowDayTasks = await storage.getTasksInRange(userId, overflowDate, overflowDate).catch(() => []);
+      const overflowBlockedRanges = buildBlockedRanges(overflowDayTasks as any[], prefs);
+      const overflowCalBlocked = await getCalendarBlockedRanges(userId, overflowDate).catch(() => []);
+      overflowBlockedRanges.push(...overflowCalBlocked);
+      let overflowSlot = overflowBlockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
+
       for (const task of incomplete.sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5))) {
         const dur = task.estimatedDuration || 30;
-        // Sauter les plages bloquées
+        // Sauter les plages bloquées sur scheduleDate
         let attempts = 0;
         while (attempts++ < 20) {
           const overlap = blockedRanges.find(r => curSlot < r.end && curSlot + dur > r.start);
           if (!overlap) break;
           curSlot = overlap.end;
         }
-        if (curSlot + dur > dayEndMin) break; // plus de place
 
-        const newTime = minToHHMM(curSlot);
+        let targetDate = scheduleDate;
+        let targetSlot = curSlot;
+
+        if (curSlot + dur > dayEndMin) {
+          // scheduleDate est plein — essayer overflowDate
+          let ovAttempts = 0;
+          while (ovAttempts++ < 20) {
+            const overlap = overflowBlockedRanges.find(r => overflowSlot < r.end && overflowSlot + dur > r.start);
+            if (!overlap) break;
+            overflowSlot = overlap.end;
+          }
+          if (overflowSlot + dur > dayEndMin) continue; // plus de place nulle part, sauter
+          targetDate = overflowDate;
+          targetSlot = overflowSlot;
+        }
+
+        const newTime = minToHHMM(targetSlot);
         await storage.updateTask(task.id, {
-          scheduledDate: scheduleDate,
+          scheduledDate: targetDate,
           scheduledTime: newTime,
         }).catch(e => console.error(`[Rollover] updateTask ${task.id} failed:`, e.message));
 
-        blockedRanges.push({ start: curSlot, end: curSlot + dur });
-        curSlot += dur;
+        if (targetDate === scheduleDate) {
+          blockedRanges.push({ start: targetSlot, end: targetSlot + dur });
+          curSlot = targetSlot + dur;
+        } else {
+          overflowBlockedRanges.push({ start: targetSlot, end: targetSlot + dur });
+          overflowSlot = targetSlot + dur;
+        }
         moved++;
       }
 
-      if (moved > 0) console.log(`[Rollover] Moved ${moved} tasks → ${scheduleDate} for user ${userId}`);
+      if (moved > 0) console.log(`[Rollover] Moved ${moved} tasks → ${scheduleDate}/${overflowDate} for user ${userId}`);
     } catch (err: any) {
       console.error(`[Rollover] Error for user ${userId}:`, err.message);
     }
@@ -581,11 +609,12 @@ async function runEndOfDayRollover(): Promise<void> {
 }
 
 export function scheduleEndOfDayRollover(): void {
+  const ROLLOVER_HOUR_UTC = 17;
+
   const scheduleNextRun = () => {
     const now = new Date();
-    // 17:00 UTC = ~19:00 Paris (CEST, UTC+2)
     const next17utc = new Date(now);
-    next17utc.setUTCHours(17, 0, 0, 0);
+    next17utc.setUTCHours(ROLLOVER_HOUR_UTC, 0, 0, 0);
 
     if (next17utc <= now) {
       next17utc.setDate(next17utc.getDate() + 1);
@@ -603,6 +632,22 @@ export function scheduleEndOfDayRollover(): void {
       scheduleNextRun();
     }, msUntil);
   };
+
+  // Catch-up: if server (re)started after 17:00 UTC today, run immediately
+  // This handles Railway restarts / deployments that happen after the scheduled time
+  const now = new Date();
+  const todayRolloverTime = new Date(now);
+  todayRolloverTime.setUTCHours(ROLLOVER_HOUR_UTC, 0, 0, 0);
+
+  const alreadyRanKey = todayString(); // YYYY-MM-DD of today (UTC)
+  const isAfterRolloverTime = now >= todayRolloverTime;
+
+  if (isAfterRolloverTime) {
+    console.log(`[Rollover] Server started after 17:00 UTC — running catch-up rollover now`);
+    runEndOfDayRollover().catch(err =>
+      console.error('[Rollover] Catch-up error:', err)
+    );
+  }
 
   scheduleNextRun();
 }
