@@ -364,6 +364,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         operatingProfileSummary: operatingProfileSummary || undefined,
         energyLevel: prefs?.currentEnergyLevel || 'high',
         emotionalContext: (prefs as any)?.currentEmotionalContext || undefined,
+        operatingMode: stratProfile?.operatingMode || undefined,
       });
 
       if (!result || !Array.isArray((result as any).tasks)) continue;

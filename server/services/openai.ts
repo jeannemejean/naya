@@ -133,6 +133,7 @@ export interface DailyTasksRequest {
     goalType: string;
     dueDate?: Date | null;
   }>;
+  operatingMode?: string; // create | build | grow | explore | maintain
 }
 
 export interface StrategyAnalysisRequest {
@@ -436,6 +437,21 @@ ${emotionalNote}${griefBlock}`,
         ).join('\n')}\n`
       : '';
 
+    const operatingModeBlock = (() => {
+      const mode = request.operatingMode?.toLowerCase();
+      if (!mode) return '';
+      const mixes: Record<string, string> = {
+        create:   'Task mix for CREATE mode: 40% deep creation (writing, building, designing), 30% strategy & planning, 30% research. Minimize outreach and admin this week.',
+        build:    'Task mix for BUILD mode: 50% execution (implementing, producing, delivering), 30% planning & coordination, 20% selective outreach to early adopters. Ship things.',
+        grow:     'Task mix for GROW mode: 50% direct outreach & relationship building, 30% visibility content, 20% offer refinement. Zero exploration or major new features.',
+        explore:  'Task mix for EXPLORE mode: 40% research & discovery, 40% small experiments & prototypes, 20% documentation. No premature execution of unvalidated ideas.',
+        maintain: 'Task mix for MAINTAIN mode: 50% client & customer relationships, 30% operational & admin, 20% selective visibility content. No major new initiatives.',
+      };
+      return mixes[mode]
+        ? `\n═══ PROJECT OPERATING MODE: ${mode.toUpperCase()} ═══\n${mixes[mode]}\nThis directive overrides generic task variety — optimize the task mix for the current mode.\n`
+        : '';
+    })();
+
     const prompt = `Your job is NOT to generate a generic to-do list. Your job is to identify the highest-leverage moves for this specific business for THE WEEK AHEAD — expressed as concrete, executable actions that reference the founder's actual offers, audience, voice, and positioning.
 
 IMPORTANT: Generate DIVERSE tasks that will be distributed across the week (Monday-Friday). Each task should be unique and different. DO NOT repeat similar tasks. Ensure variety in types of actions (content creation, outreach, admin, planning, etc.) and platforms.
@@ -459,7 +475,7 @@ Before generating tasks, work through each step:
 
 STEP 1 — GOAL ANCHOR: Review the active goals indexed below.${goalsBlock}For each task, decide which goal index [0–N] it primarily advances. Tasks that don't advance any listed goal are NOT acceptable. What does a winning week look like for each goal?
 
-STEP 2 — HIGHEST LEVERAGE: Given this business's offers, audience pain point, and platform, what action categories move the needle most THIS WEEK? Ensure variety across: authority content | direct outreach | offer refinement | platform presence | relationship nurturing | operational | strategy.
+STEP 2 — HIGHEST LEVERAGE: Given this business's offers, audience pain point, and platform, what action categories move the needle most THIS WEEK? Ensure variety across: authority content | direct outreach | offer refinement | platform presence | relationship nurturing | operational | strategy.${operatingModeBlock}
 
 STEP 3 — TASK SELECTION: Pick exactly ${maxTasks} DIVERSE tasks that will be spread across the week. Each task must: (a) directly advance the goal, (b) reference the actual offer or positioning, (c) target the actual audience, (d) be on the right platform, (e) be DIFFERENT from other tasks. Ensure variety in task types and approaches. If any answer is no — rewrite.
 
