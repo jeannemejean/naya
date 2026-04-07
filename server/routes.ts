@@ -1277,6 +1277,23 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     }
   });
 
+  // GET /api/goals/:id/progress — task completion stats for a goal
+  app.get('/api/goals/:id/progress', isAuthenticated, async (req: any, res) => {
+    try {
+      const goalId = parseInt(req.params.id);
+      if (isNaN(goalId)) return res.status(400).json({ message: 'Invalid goalId' });
+      const goal = await storage.getProjectGoal(goalId);
+      if (!goal) return res.status(404).json({ message: 'Goal not found' });
+      const progress = await storage.getGoalProgress(goalId);
+      const percent = progress.total > 0
+        ? Math.round((progress.completed / progress.total) * 100)
+        : 0;
+      res.json({ goalId, title: goal.title, ...progress, percent });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Project strategy profile
   app.get('/api/projects/:id/strategy', isAuthenticated, async (req: any, res) => {
     try {
