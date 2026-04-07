@@ -1183,3 +1183,19 @@ export const businessMemory = pgTable("business_memory", {
 export const insertBusinessMemorySchema = createInsertSchema(businessMemory).omit({ id: true, createdAt: true });
 export type InsertBusinessMemory = z.infer<typeof insertBusinessMemorySchema>;
 export type BusinessMemory = typeof businessMemory.$inferSelect;
+
+// ─── Google Calendar Integration ─────────────────────────────────────────────
+export const googleCalendarTokens = pgTable("google_calendar_tokens", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id).unique(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  calendarId: text("calendar_id").default("primary"),
+  syncEnabled: boolean("sync_enabled").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type GoogleCalendarToken = typeof googleCalendarTokens.$inferSelect;
+export type InsertGoogleCalendarToken = typeof googleCalendarTokens.$inferInsert;
