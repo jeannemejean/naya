@@ -316,6 +316,13 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         },
         recentContent: recentContent as any[],
         recentOutreach: recentOutreach as any[],
+        activeGoals: activeGoals.map(g => ({
+          id: g.id,
+          title: g.title,
+          successMode: g.successMode,
+          goalType: g.goalType,
+          dueDate: g.dueDate ?? null,
+        })),
         weeklyGoals: {},
         completedTasksToday: [],
         workDayStart,
@@ -340,6 +347,10 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         await storage.createTask({
           userId,
           projectId: project.id ?? undefined,
+          goalId: (() => {
+            const idx = typeof (taskData as any).goalIndex === 'number' ? (taskData as any).goalIndex : 0;
+            return activeGoals[idx]?.id ?? activeGoals[0]?.id ?? undefined;
+          })(),
           title: taskData.title,
           description: taskData.description || '',
           type: taskData.type || 'planning',
