@@ -371,6 +371,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: trigger auto-planner manually (for testing / debug)
+  app.post('/api/admin/auto-plan', isAuthenticated, async (req: any, res) => {
+    try {
+      const { date } = req.body;
+      const result = await runDailyAutoPlanner(date);
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Auth middleware
+  await setupAuth(app);
+
   // ─── Google Calendar OAuth ────────────────────────────────────────────────
 
   // GET /api/calendar/status — check if user has connected Google Calendar
@@ -436,20 +450,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: err.message });
     }
   });
-
-  // Admin: trigger auto-planner manually (for testing / debug)
-  app.post('/api/admin/auto-plan', isAuthenticated, async (req: any, res) => {
-    try {
-      const { date } = req.body;
-      const result = await runDailyAutoPlanner(date);
-      res.json({ ok: true, ...result });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  // Auth middleware
-  await setupAuth(app);
 
   // Auth routes
   app.post('/api/auth/register', async (req, res) => {
