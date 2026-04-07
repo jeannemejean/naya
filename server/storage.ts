@@ -142,6 +142,7 @@ export interface IStorage {
   createProjectGoal(data: InsertProjectGoal): Promise<ProjectGoal>;
   updateProjectGoal(id: number, data: Partial<ProjectGoal>): Promise<ProjectGoal | null>;
   deleteProjectGoal(id: number): Promise<boolean>;
+  getGoalProgress(goalId: number): Promise<{ completed: number; total: number }>;
 
   // Project strategy profile operations
   getProjectStrategyProfile(projectId: number): Promise<ProjectStrategyProfile | undefined>;
@@ -487,6 +488,17 @@ export class DatabaseStorage implements IStorage {
   async deleteProjectGoal(id: number): Promise<boolean> {
     const result = await db.delete(projectGoals).where(eq(projectGoals.id, id));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async getGoalProgress(goalId: number): Promise<{ completed: number; total: number }> {
+    const rows = await db
+      .select({ completed: tasks.completed })
+      .from(tasks)
+      .where(eq(tasks.goalId, goalId));
+    return {
+      total: rows.length,
+      completed: rows.filter(r => r.completed).length,
+    };
   }
 
   // Project strategy profile operations
