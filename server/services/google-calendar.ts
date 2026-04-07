@@ -123,11 +123,13 @@ export async function getCalendarEvents(
       if (allDay) {
         date = item.start.date!;
       } else {
-        const start = new Date(item.start.dateTime!);
-        const end = new Date(item.end?.dateTime || item.start.dateTime!);
-        date = start.toISOString().slice(0, 10);
-        startTime = `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`;
-        endTime = `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`;
+        // Extract date and time directly from the ISO string to preserve local timezone.
+        // Google returns e.g. "2026-04-08T10:00:00+02:00" — slicing gives the correct local time.
+        const startDt = item.start.dateTime!;
+        const endDt = item.end?.dateTime || startDt;
+        date = startDt.slice(0, 10);
+        startTime = startDt.slice(11, 16);
+        endTime = endDt.slice(11, 16);
       }
 
       events.push({
