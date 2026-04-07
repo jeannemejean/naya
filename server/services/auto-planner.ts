@@ -440,15 +440,15 @@ export function scheduleAutoPlanner(): void {
   const scheduleNextRun = () => {
     const now = new Date();
     const next6am = new Date(now);
-    next6am.setHours(6, 0, 0, 0);
+    next6am.setUTCHours(6, 0, 0, 0);
 
-    // If 6am already passed today, schedule for tomorrow
+    // If 6am UTC already passed today, schedule for tomorrow
     if (next6am <= now) {
       next6am.setDate(next6am.getDate() + 1);
     }
 
     const msUntil6am = next6am.getTime() - now.getTime();
-    console.log(`[AutoPlanner] Next run scheduled at ${next6am.toISOString()} (in ${Math.round(msUntil6am / 60000)}min)`);
+    console.log(`[AutoPlanner] Next morning run at ${next6am.toISOString()} (in ${Math.round(msUntil6am / 60000)}min)`);
 
     setTimeout(async () => {
       try {
@@ -456,8 +456,104 @@ export function scheduleAutoPlanner(): void {
       } catch (err) {
         console.error('[AutoPlanner] Error during daily run:', err);
       }
-      scheduleNextRun(); // Schedule the next day's run
+      scheduleNextRun();
     }, msUntil6am);
+  };
+
+  scheduleNextRun();
+}
+
+/**
+ * End-of-day rollover: moves all incomplete tasks from today → next work day.
+ * Runs at 17:00 UTC (= ~19:00 Paris / CEST).
+ */
+async function runEndOfDayRollover(): Promise<void> {
+  const today = todayString();
+  const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
+  console.log(`[Rollover] End-of-day run for ${userIds.length} users`);
+
+  for (const userId of userIds) {
+    try {
+      const prefs = await storage.getUserPreferences(userId);
+      const workDays = parseWorkDays(prefs?.workDays);
+
+      // Tâches incomplètes de today et avant (lookback 30j)
+      const lookback = (() => {
+        const d = new Date(today + 'T00:00:00');
+        d.setDate(d.getDate() - 30);
+        return d.toISOString().slice(0, 10);
+      })();
+
+      const staleTasks = await storage.getTasksInRange(userId, lookback, today).catch(() => []);
+      const incomplete = (staleTasks as any[]).filter(t => !t.completed && t.scheduledDate && t.scheduledDate <= today);
+
+      if (incomplete.length === 0) continue;
+
+      // Toujours planifier sur le prochain jour de travail (la journée est terminée)
+      const scheduleDate = nextWorkDay(today, workDays);
+      const scheduledDayTasks = await storage.getTasksInRange(userId, scheduleDate, scheduleDate).catch(() => []);
+      const blockedRanges = buildBlockedRanges(scheduledDayTasks as any[], prefs);
+      const calBlocked = await getCalendarBlockedRanges(userId, scheduleDate).catch(() => []);
+      blockedRanges.push(...calBlocked);
+
+      const workDayStart = (prefs as any)?.workDayStart || '09:00';
+      const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
+      const dayEndMin = hhmmToMin(workDayEnd);
+
+      let curSlot = blockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
+
+      let moved = 0;
+      for (const task of incomplete.sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5))) {
+        const dur = task.estimatedDuration || 30;
+        // Sauter les plages bloquées
+        let attempts = 0;
+        while (attempts++ < 20) {
+          const overlap = blockedRanges.find(r => curSlot < r.end && curSlot + dur > r.start);
+          if (!overlap) break;
+          curSlot = overlap.end;
+        }
+        if (curSlot + dur > dayEndMin) break; // plus de place
+
+        const newTime = minToHHMM(curSlot);
+        await storage.updateTask(task.id, {
+          scheduledDate: scheduleDate,
+          scheduledTime: newTime,
+        }).catch(e => console.error(`[Rollover] updateTask ${task.id} failed:`, e.message));
+
+        blockedRanges.push({ start: curSlot, end: curSlot + dur });
+        curSlot += dur;
+        moved++;
+      }
+
+      if (moved > 0) console.log(`[Rollover] Moved ${moved} tasks → ${scheduleDate} for user ${userId}`);
+    } catch (err: any) {
+      console.error(`[Rollover] Error for user ${userId}:`, err.message);
+    }
+  }
+}
+
+export function scheduleEndOfDayRollover(): void {
+  const scheduleNextRun = () => {
+    const now = new Date();
+    // 17:00 UTC = ~19:00 Paris (CEST, UTC+2)
+    const next17utc = new Date(now);
+    next17utc.setUTCHours(17, 0, 0, 0);
+
+    if (next17utc <= now) {
+      next17utc.setDate(next17utc.getDate() + 1);
+    }
+
+    const msUntil = next17utc.getTime() - now.getTime();
+    console.log(`[Rollover] Next end-of-day run at ${next17utc.toISOString()} (in ${Math.round(msUntil / 60000)}min)`);
+
+    setTimeout(async () => {
+      try {
+        await runEndOfDayRollover();
+      } catch (err) {
+        console.error('[Rollover] Error during end-of-day run:', err);
+      }
+      scheduleNextRun();
+    }, msUntil);
   };
 
   scheduleNextRun();

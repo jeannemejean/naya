@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
-import { scheduleAutoPlanner } from "./services/auto-planner";
+import { scheduleAutoPlanner, scheduleEndOfDayRollover } from "./services/auto-planner";
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('unhandledRejection', (reason, promise) => {
@@ -52,8 +52,10 @@ app.use((req, res, next) => {
   // Seed persona archetypes on startup
   seedUserPersonaArchetypes().catch(err => console.error('Persona seed error:', err));
 
-  // Start the daily auto-planner (generates tasks at 06:00 for all users)
+  // Start the daily auto-planner (generates tasks at 06:00 UTC for all users)
   scheduleAutoPlanner();
+  // End-of-day rollover: moves incomplete tasks to next work day at 17:00 UTC (19:00 Paris)
+  scheduleEndOfDayRollover();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
