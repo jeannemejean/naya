@@ -257,7 +257,28 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
 
   const workDayStart = (prefs as any)?.workDayStart || '09:00';
   const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
-  const maxTasksPerProject = Math.max(2, Math.floor(5 / Math.max(projectsToProcess.length, 1)));
+
+  // Dynamic capacity: actual available work time × energy factor ÷ avg task duration
+  const workStartMin = hhmmToMin(workDayStart);
+  const workEndMin   = hhmmToMin(workDayEnd);
+  const totalWorkMin = workEndMin - workStartMin;
+
+  const lunchEnabled  = (prefs as any)?.lunchBreakEnabled !== false;
+  const lunchStartMin = hhmmToMin((prefs as any)?.lunchBreakStart || '12:00');
+  const lunchEndMin   = hhmmToMin((prefs as any)?.lunchBreakEnd   || '13:00');
+  const lunchMin = lunchEnabled ? Math.max(0, lunchEndMin - lunchStartMin) : 0;
+
+  const availableMin = Math.max(60, totalWorkMin - lunchMin);
+
+  const energyFactor =
+    prefs?.currentEnergyLevel === 'depleted' ? 0.4 :
+    prefs?.currentEnergyLevel === 'low'      ? 0.6 :
+    prefs?.currentEnergyLevel === 'medium'   ? 0.8 :
+    1.0;
+
+  const AVG_TASK_MIN = 45;
+  const dynamicMaxTotal = Math.max(1, Math.min(8, Math.floor((availableMin * energyFactor) / AVG_TASK_MIN)));
+  const maxTasksPerProject = Math.max(1, Math.floor(dynamicMaxTotal / Math.max(projectsToProcess.length, 1)));
 
   // 9. Slot-collision guard: tâches existantes + pause déjeuner + calendrier Google
   const blockedRanges = buildBlockedRanges(scheduledForToday, prefs);
