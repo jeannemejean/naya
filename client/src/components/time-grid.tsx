@@ -287,7 +287,8 @@ function TaskBlock({
   };
   const emoji = task.taskEnergyType ? ENERGY_EMOJI[task.taskEnergyType] : '';
 
-  const isMilestone = task.type === 'milestone' || task._virtual || task.id < 0;
+  const isGcalEvent = (task as any).source === 'gcal';
+  const isMilestone = !isGcalEvent && (task.type === 'milestone' || task._virtual || task.id < 0);
   const mStatus = (task as any).milestoneStatus || 'active';
 
   // Palette par statut de jalon
@@ -299,18 +300,18 @@ function TaskBlock({
   };
   const milestoneStyle = isMilestone ? (MILESTONE_STYLES[mStatus] || MILESTONE_STYLES.locked) : null;
 
-  const bgColor = isMilestone ? milestoneStyle!.bg : isBlocked ? (isDark ? '#1e293b' : '#f1f5f9') : palette.bg;
-  const borderColor = isMilestone ? milestoneStyle!.border : isBlocked ? '#64748b' : palette.border;
-  const textColor = isMilestone ? milestoneStyle!.text : isBlocked ? (isDark ? '#64748b' : '#94a3b8') : palette.text;
+  const bgColor = isGcalEvent ? (isDark ? '#0c1e3d' : '#eff6ff') : isMilestone ? milestoneStyle!.bg : isBlocked ? (isDark ? '#1e293b' : '#f1f5f9') : palette.bg;
+  const borderColor = isGcalEvent ? '#3b82f6' : isMilestone ? milestoneStyle!.border : isBlocked ? '#64748b' : palette.border;
+  const textColor = isGcalEvent ? (isDark ? '#93c5fd' : '#1d4ed8') : isMilestone ? milestoneStyle!.text : isBlocked ? (isDark ? '#64748b' : '#94a3b8') : palette.text;
   const isLockedMilestone = isMilestone && mStatus === 'locked';
   const isActiveMilestone = isMilestone && (mStatus === 'active' || mStatus === 'unlocked');
 
   return (
     <div
-      draggable={!isMilestone}
-      onDragStart={isMilestone ? undefined : (e) => onDragStart(e, task)}
+      draggable={!isMilestone && !isGcalEvent}
+      onDragStart={(isMilestone || isGcalEvent) ? undefined : (e) => onDragStart(e, task)}
       className={`absolute overflow-hidden select-none transition-all hover:shadow-float hover:-translate-y-px ${
-        isMilestone ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+        isMilestone || isGcalEvent ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
       } ${task.completed ? 'opacity-35 saturate-0' : isLockedMilestone ? 'opacity-50' : isBlocked ? 'opacity-55' : ''}`}
       style={{
         top,
@@ -319,11 +320,14 @@ function TaskBlock({
         width: laneWidth - 2,
         backgroundColor: bgColor,
         border: `1.5px solid ${borderColor}`,
-        borderLeft: isMilestone ? `3px solid ${borderColor}` : `1.5px solid ${borderColor}`,
+        borderLeft: (isMilestone || isGcalEvent) ? `3px solid ${borderColor}` : `1.5px solid ${borderColor}`,
         borderRadius: 10,
         zIndex: isMilestone ? 15 : 10,
       }}
-      onClick={() => onTaskClick(task)}
+      onClick={() => {
+        if (isGcalEvent) return;
+        onTaskClick(task);
+      }}
     >
       <div className="px-2 pt-1.5 pb-1 h-full flex flex-col gap-0.5 relative">
         <div className="flex items-start gap-1">
@@ -331,7 +335,7 @@ function TaskBlock({
             <span className="flex-shrink-0 text-[11px] mt-px">
               {mStatus === 'completed' ? '✅' : mStatus === 'locked' ? '🔒' : '🏁'}
             </span>
-          ) : (
+          ) : isGcalEvent ? null : (
             <div
               onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
               className="flex-shrink-0 w-3 h-3 rounded-sm border-2 mt-0.5 cursor-pointer transition-colors"
@@ -352,7 +356,8 @@ function TaskBlock({
             className={`text-[10px] leading-tight flex-1 ${isMilestone ? 'font-bold' : 'font-semibold'} ${task.completed ? 'line-through opacity-60' : ''}`}
             style={{ color: textColor }}
           >
-            {!isMilestone && emoji && <span className="mr-0.5">{emoji}</span>}
+            {isGcalEvent && <span className="mr-1 opacity-60">📅</span>}
+            {!isMilestone && !isGcalEvent && emoji && <span className="mr-0.5">{emoji}</span>}
             {task.title}
           </p>
         </div>
@@ -381,7 +386,7 @@ function TaskBlock({
           </p>
         )}
       </div>
-      {!isMilestone && (
+      {!isMilestone && !isGcalEvent && (
         <div
           className="absolute bottom-0 left-0 right-0 h-3 cursor-ns-resize flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-b-[10px]"
           onMouseDown={handleResizeMouseDown}
@@ -591,7 +596,8 @@ export default function TimeGrid({
                 {unscheduled.length > 0 && (
                   <div className="flex flex-col gap-0.5">
                     {unscheduled.map(task => {
-                      const isMTask = task.type === 'milestone' || task._virtual || task.id < 0;
+                      const isGcalTask = (task as any).source === 'gcal';
+                      const isMTask = !isGcalTask && (task.type === 'milestone' || task._virtual || task.id < 0);
                       const mStatus = (task as any).milestoneStatus || 'active';
                       const MSTYLES: Record<string, { bg: string; border: string; text: string }> = {
                         active:    { bg: isDark ? '#292000' : '#fffbeb', border: '#f59e0b', text: isDark ? '#fbbf24' : '#b45309' },

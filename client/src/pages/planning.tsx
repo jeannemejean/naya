@@ -180,30 +180,16 @@ export default function Planning({ onSearchClick }: Props) {
       let url = `/api/tasks/range?start=${startDate}&end=${endDate}`;
       if (activeProjectId) url += `&projectId=${activeProjectId}`;
       const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
     staleTime: 0, // Toujours re-fetch au focus
   });
 
-  // ─── Génération silencieuse au mount ─────────────────────────────────────────
-  // Déclenche le planner une fois au chargement — aucun bouton, aucune friction
-  useEffect(() => {
-    apiRequest('POST', '/api/tasks/generate', { startDate: new Date().toISOString().slice(0, 10) }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ─── Auto-refetch quand la semaine visible est vide ───────────────────────────
-  // Navigation vers une semaine future sans tâches → génération silencieuse + refetch
+  // Le planner tourne automatiquement à 06:00 via le cron serveur.
+  // On ne déclenche plus le planner complet depuis l'UI pour éviter les runs
+  // concurrents qui épuisaient le pool Neon et bloquaient le serveur.
   const realTasksInView = rangeTasks.filter(t => !t._virtual && t.id > 0);
-  useEffect(() => {
-    if (rangeLoading) return;
-    if (realTasksInView.length === 0) {
-      apiRequest('POST', '/api/tasks/generate', { startDate }).catch(() => {});
-      const timer = setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      }, 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [startDate, rangeLoading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
 
@@ -921,7 +907,7 @@ export default function Planning({ onSearchClick }: Props) {
 
                 {/* Unscheduled tasks list */}
                 {(() => {
-                  const unscheduled = (tasksByDate[startDate] || []).filter((t: Task) => !t.scheduledTime);
+                  const unscheduled = (tasksByDate[startDate] || []).filter((t: Task) => !t.scheduledTime && (t as any).source !== 'gcal');
                   if (!unscheduled.length) return null;
                   return (
                     <div>
