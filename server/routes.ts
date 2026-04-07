@@ -2134,12 +2134,26 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       // Enrichir le contexte avec les projets réels chargés depuis la DB
       const userProjects = await storage.getProjects(userId);
+
+      // Injecter les tâches abandonnées (deferred 3x+) — concept 100% server-side
+      const today = new Date().toISOString().slice(0, 10);
+      const lookback = (() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 14);
+        return d.toISOString().slice(0, 10);
+      })();
+      const recentTasks = await storage.getTasksInRange(userId, lookback, today).catch(() => []);
+      const staleTasks = (recentTasks as any[])
+        .filter(t => !t.completed && (t.learnedAdjustmentCount || 0) >= 3)
+        .map(t => ({ id: t.id, title: t.title, learnedAdjustmentCount: t.learnedAdjustmentCount as number }));
+
       const enrichedContext = {
         currentDate: new Date().toISOString().slice(0, 10),
         currentTime: new Date().toTimeString().slice(0, 5),
         platform: "web",
         ...(context || {}),
         availableProjects: userProjects.slice(0, 15).map((p: any) => ({ id: p.id, name: p.name, type: p.type })),
+        ...(staleTasks.length > 0 ? { staleTasks } : {}),
       };
 
       const response = await processCompanionMessage(userId, {

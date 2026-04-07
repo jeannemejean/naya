@@ -60,6 +60,7 @@ export interface CompanionRequest {
     activeProject?: { id: number; name: string } | null;
     availableProjects?: Array<{ id: number; name: string }>;
     todayTasks?: any[];
+    staleTasks?: Array<{ id: number; title: string; learnedAdjustmentCount: number }>;
     recentCaptures?: any[];
   };
   conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>;
@@ -100,6 +101,13 @@ export async function processCompanionMessage(
       .map((t: any) => `- [${t.completed ? '✅' : '⬜'}] ${t.title}${t.scheduledTime ? ` à ${t.scheduledTime}` : ''}`)
       .join('\n');
     contextLines.push(`Tâches aujourd'hui :\n${taskSummary}`);
+  }
+
+  if (context.staleTasks && context.staleTasks.length > 0) {
+    const staleList = context.staleTasks
+      .map(t => `- [id:${t.id}] "${t.title}" (reportée ${t.learnedAdjustmentCount}x automatiquement)`)
+      .join('\n');
+    contextLines.push(`Tâches abandonnées (reportées 3x ou plus, jamais complétées) :\n${staleList}\nSi l'occasion se présente naturellement dans la conversation, propose-lui de les garder, reporter à une date précise, ou supprimer.`);
   }
 
   if (context.upcomingEvents && context.upcomingEvents.length > 0) {
@@ -154,7 +162,11 @@ export async function processCompanionMessage(
 }
 
 function buildSuggestions(context: CompanionRequest['context']): string[] {
-  const base = ["Quelles sont mes priorités aujourd'hui ?", "Montre-moi la roadmap du projet"];
+  const base: string[] = [];
+  if (context.staleTasks && context.staleTasks.length > 0) {
+    base.push(`J'ai ${context.staleTasks.length} tâche${context.staleTasks.length > 1 ? 's' : ''} abandonnée${context.staleTasks.length > 1 ? 's' : ''} à trier`);
+  }
+  base.push("Quelles sont mes priorités aujourd'hui ?", "Montre-moi la roadmap du projet");
 
   if (context.todayTasks && context.todayTasks.filter((t: any) => !t.completed).length > 3) {
     base.unshift("Aide-moi à réduire ma liste de tâches");
