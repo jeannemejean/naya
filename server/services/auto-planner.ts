@@ -429,7 +429,11 @@ export function scheduleAutoPlanner(): void {
     console.log(`[AutoPlanner] Next run scheduled at ${next6am.toISOString()} (in ${Math.round(msUntil6am / 60000)}min)`);
 
     setTimeout(async () => {
-      await runDailyAutoPlanner();
+      try {
+        await runDailyAutoPlanner();
+      } catch (err) {
+        console.error('[AutoPlanner] Error during daily run:', err);
+      }
       scheduleNextRun(); // Schedule the next day's run
     }, msUntil6am);
   };
