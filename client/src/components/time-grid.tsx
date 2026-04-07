@@ -609,7 +609,7 @@ export default function TimeGrid({
                       const milestoneIcon = mStatus === 'locked' ? '🔒' : mStatus === 'completed' ? '✅' : '🏁';
                       return (
                         <div
-                          key={task.id}
+                          key={(task as any).source === 'gcal' ? `gcal-${task.scheduledDate}-${task.scheduledTime}-${task.title}` : task.id}
                           draggable={!isMTask}
                           onDragStart={isMTask ? undefined : (e) => handleDragStart(e, task)}
                           className={`flex items-center gap-1 py-1 px-1.5 rounded-lg transition-opacity ${isMTask ? 'cursor-default opacity-70' : 'cursor-grab active:cursor-grabbing'} ${task.completed ? 'opacity-40' : 'hover:opacity-90'}`}
@@ -787,7 +787,7 @@ export default function TimeGrid({
                   const projColor = getProjectColor(task.projectId);
                   return (
                     <TaskBlock
-                      key={task.id}
+                      key={(task as any).source === 'gcal' ? `gcal-${task.scheduledDate}-${task.scheduledTime}-${task.title}` : task.id}
                       task={task}
                       lane={lane}
                       totalLanes={tl || 1}
