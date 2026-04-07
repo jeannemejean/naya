@@ -35,6 +35,16 @@ export async function buildNayaContext(
       projectId ? storage.getMilestones(projectId, userId).catch(() => []) : [],
     ]);
 
+    // Load goal progress for all active goals
+    const goalProgressMap: Record<number, { completed: number; total: number }> = {};
+    if (activeGoals.length > 0) {
+      await Promise.all(
+        activeGoals.map(async (g) => {
+          goalProgressMap[g.id] = await storage.getGoalProgress(g.id).catch(() => ({ completed: 0, total: 0 }));
+        })
+      );
+    }
+
     // Project-specific Brand DNA takes priority over global
     let brandDna = globalBrandDna;
     if (projectId) {
@@ -74,6 +84,20 @@ Mode de succès : ${topGoal?.successMode || 'Non renseigné'}
 Audience (projet) : ${stratProfile?.targetAudience || 'Non renseigné'}
 Positionnement (projet) : ${stratProfile?.uniquePositioning || 'Non renseigné'}
 Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}`);
+    }
+
+    // Section 2b : Progression des objectifs
+    if (activeGoals.length > 0) {
+      const progressLines = activeGoals.map(g => {
+        const prog = goalProgressMap[g.id] || { completed: 0, total: 0 };
+        const pct = prog.total > 0 ? Math.round((prog.completed / prog.total) * 100) : 0;
+        const bar = prog.total > 0
+          ? `${prog.completed}/${prog.total} tâches complétées (${pct}%)`
+          : 'Aucune tâche encore générée';
+        const lag = prog.total > 0 && pct < 30 ? ' ⚠️ EN RETARD' : '';
+        return `- "${g.title}" [${g.goalType}] : ${bar}${lag}`;
+      });
+      sections.push(`## Progression des objectifs\n${progressLines.join('\n')}\n\nPrioritise les objectifs marqués ⚠️ EN RETARD dans tes recommandations de tâches.`);
     }
 
     // Section 3 : Jalons du projet (règle absolue : jamais de tâches pour un jalon locked)
