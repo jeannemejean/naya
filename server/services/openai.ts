@@ -32,6 +32,7 @@ export async function getMemoryContext(userId: string): Promise<string> {
 }
 
 export interface ProjectContext {
+  projectId?: number;
   projectType?: string;
   projectName?: string;
   monetizationIntent?: string;
@@ -125,6 +126,13 @@ export interface DailyTasksRequest {
   maxTasks?: number;
   energyLevel?: string;
   emotionalContext?: string;
+  activeGoals?: Array<{
+    id: number;
+    title: string;
+    successMode: string;
+    goalType: string;
+    dueDate?: Date | null;
+  }>;
 }
 
 export interface StrategyAnalysisRequest {
@@ -306,6 +314,7 @@ export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
     scheduledTime?: string;
     workflowGroup?: string;
     activationPrompt?: string;
+    goalIndex?: number;
   }>;
   dependencies?: Array<{
     taskIndex: number;
@@ -421,6 +430,12 @@ ${emotionalNote}${griefBlock}`,
       ? `Scheduled breaks:\n${request.breaks.map(b => `- ${b.start}–${b.end}${b.label ? ` (${b.label})` : ''}`).join('\n')}`
       : 'No scheduled breaks.';
 
+    const goalsBlock = request.activeGoals && request.activeGoals.length > 0
+      ? `\n═══ ACTIVE GOALS FOR THIS PROJECT ═══\n${request.activeGoals.map((g, i) =>
+          `[${i}] "${g.title}" — type: ${g.goalType}, success mode: ${g.successMode}${g.dueDate ? `, due: ${new Date(g.dueDate).toISOString().slice(0, 10)}` : ''}`
+        ).join('\n')}\n`
+      : '';
+
     const prompt = `Your job is NOT to generate a generic to-do list. Your job is to identify the highest-leverage moves for this specific business for THE WEEK AHEAD — expressed as concrete, executable actions that reference the founder's actual offers, audience, voice, and positioning.
 
 IMPORTANT: Generate DIVERSE tasks that will be distributed across the week (Monday-Friday). Each task should be unique and different. DO NOT repeat similar tasks. Ensure variety in types of actions (content creation, outreach, admin, planning, etc.) and platforms.
@@ -442,7 +457,7 @@ ${energyBlock}
 
 Before generating tasks, work through each step:
 
-STEP 1 — GOAL ANCHOR: What is the ONE active goal? What does a winning week look like toward that goal, given the current stage?
+STEP 1 — GOAL ANCHOR: Review the active goals indexed below.${goalsBlock}For each task, decide which goal index [0–N] it primarily advances. Tasks that don't advance any listed goal are NOT acceptable. What does a winning week look like for each goal?
 
 STEP 2 — HIGHEST LEVERAGE: Given this business's offers, audience pain point, and platform, what action categories move the needle most THIS WEEK? Ensure variety across: authority content | direct outreach | offer refinement | platform presence | relationship nurturing | operational | strategy.
 
@@ -471,6 +486,7 @@ STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${work
   "reasoning": "2-3 sentences: why these specific DIVERSE tasks are the right moves for the week ahead, ensuring variety and progression",
   "tasks": [
     {
+      "goalIndex": 0,
       "title": "Specific first-physical-action (not the outcome)",
       "description": "Step-by-step. Must reference the actual business: offer, audience pain point, platform, brand voice. Specific enough to execute without thinking.",
       "type": "content|outreach|admin|planning",
@@ -490,7 +506,7 @@ STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${work
   "workflowSuggestions": []
 }
 
-RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. No markdown fences in output.`;
+RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. No markdown fences in output. goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.`;
 
     const raw = await callClaudeWithContext({
       userId: request.userId,
@@ -1181,6 +1197,7 @@ export interface WeeklyBriefingInput {
   userId: string;
   brandDna: BrandDnaInput;
   projectSummaries: Array<{
+    id?: number;
     name: string;
     type: string;
     priorityLevel: string;
