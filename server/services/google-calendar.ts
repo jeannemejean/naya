@@ -90,6 +90,7 @@ export async function getCalendarEvents(
   endDate: string     // YYYY-MM-DD
 ): Promise<CalendarEvent[]> {
   const hasToken = await storage.hasGoogleCalendarToken(userId);
+  console.log(`[GCal] getCalendarEvents userId=${userId} hasToken=${hasToken} range=${startDate}→${endDate}`);
   if (!hasToken) return [];
 
   try {
@@ -142,7 +143,7 @@ export async function getCalendarEvents(
 
     return events;
   } catch (err: any) {
-    console.error('[GCal] Error fetching events:', err.message);
+    console.error('[GCal] Error fetching events:', err.message, err.code, err.status);
     return [];
   }
 }

@@ -4235,6 +4235,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         // Inject Google Calendar events as virtual (read-only) tasks
         try {
           const calEvents = await getCalendarEvents(userId, start as string, end as string);
+          console.log(`[tasks/range] GCal: userId=${userId} start=${start} end=${end} events=${calEvents.length}`);
           let gcalIdCounter = -1000;
           for (const ev of calEvents) {
             if (ev.allDay) continue;
