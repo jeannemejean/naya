@@ -15,7 +15,7 @@
 import { storage } from '../storage';
 import { generateDailyTasks } from './openai';
 import { buildNayaContext } from './naya-context';
-import { CLAUDE_MODELS } from './claude';
+import { CLAUDE_MODELS, callClaude } from './claude';
 import { getCalendarBlockedRanges } from './google-calendar';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
@@ -26,6 +26,21 @@ let isAutoplannerRunning = false;
 function todayString(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function currentParisTimeMin(): number {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Europe/Paris',
+    hour: 'numeric', minute: 'numeric', hour12: false,
+  }).formatToParts(new Date());
+  const h = parseInt(parts.find(p => p.type === 'hour')!.value, 10);
+  const m = parseInt(parts.find(p => p.type === 'minute')!.value, 10);
+  return h * 60 + m;
+}
+
+function todayStringParis(): string {
+  // en-CA locale always formats as YYYY-MM-DD
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 }
 
 function parseWorkDays(csv: string | null | undefined): Set<string> {
@@ -512,6 +527,43 @@ export function scheduleAutoPlanner(): void {
 }
 
 /**
+ * Asks Haiku whether a multiply-deferred task is still worth scheduling.
+ * Returns 'reschedule' (keep scheduling it) or 'dismiss' (flag for user review).
+ * Defaults to 'reschedule' on any error so we never silently drop tasks.
+ */
+async function evaluateTaskRelevance(task: any): Promise<'reschedule' | 'dismiss'> {
+  const timesDeferred = task.learnedAdjustmentCount || 0;
+
+  const prompt = `Tu gères le planning d'un entrepreneur. Cette tâche a été automatiquement reportée ${timesDeferred} fois sans être accomplie.
+
+Tâche : "${task.title}"
+${task.description ? `Description : ${task.description}` : ''}
+Priorité : ${task.priority || 1}/5 (1 = haute)
+Durée estimée : ${task.estimatedDuration || 30} min
+
+Décide une seule chose :
+- "reschedule" : la tâche est toujours pertinente, on doit la replanifier
+- "dismiss" : la tâche semble abandonnée ou dépassée, il faut la signaler à l'utilisateur sans la déplacer
+
+Réponds UNIQUEMENT avec ce JSON, sans texte autour :
+{"decision": "reschedule", "reason": "une phrase max"}
+ou
+{"decision": "dismiss", "reason": "une phrase max"}`;
+
+  try {
+    const raw = await callClaude({
+      model: CLAUDE_MODELS.fast,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 64,
+    });
+    const parsed = JSON.parse(raw.trim());
+    return parsed.decision === 'dismiss' ? 'dismiss' : 'reschedule';
+  } catch {
+    return 'reschedule'; // Safe fallback: never drop tasks on AI failure
+  }
+}
+
+/**
  * End-of-day rollover: moves all incomplete tasks from today → next work day.
  * Runs at 17:00 UTC (= ~19:00 Paris / CEST).
  */
@@ -650,4 +702,144 @@ export function scheduleEndOfDayRollover(): void {
   }
 
   scheduleNextRun();
+}
+
+// Guard: prevents concurrent intra-day runs
+let isIntraDayRunning = false;
+
+/**
+ * Intra-day continuous rescheduler.
+ * Runs every 15 minutes during work hours.
+ * Moves overdue incomplete tasks to the next available slot today,
+ * falling back to the next work day if today is full.
+ * Tasks deferred 3+ times are evaluated by AI before being moved again.
+ */
+async function runIntraDayReschedule(): Promise<void> {
+  if (isIntraDayRunning) return;
+  isIntraDayRunning = true;
+
+  try {
+    const today = todayStringParis();
+    const nowMin = currentParisTimeMin();
+
+    // Only run during broad work hours (07:00–22:00 Paris) to avoid noise
+    if (nowMin < 7 * 60 || nowMin > 22 * 60) return;
+
+    const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
+
+    for (const userId of userIds) {
+      try {
+        const prefs = await storage.getUserPreferences(userId);
+        const workDays = parseWorkDays(prefs?.workDays);
+        const workDayStart = (prefs as any)?.workDayStart || '09:00';
+        const workDayEnd   = (prefs as any)?.workDayEnd   || '18:00';
+        const dayEndMin    = hhmmToMin(workDayEnd);
+
+        // All tasks scheduled for today
+        const todayTasks = await storage.getTasksInRange(userId, today, today).catch(() => []);
+
+        // Overdue = scheduled today, time has passed by 10+ min, not completed
+        const overdue = (todayTasks as any[]).filter(t =>
+          !t.completed &&
+          t.scheduledTime &&
+          hhmmToMin(t.scheduledTime) + (t.estimatedDuration || 30) <= nowMin - 10
+        );
+
+        if (overdue.length === 0) continue;
+
+        // Build blocked ranges for today
+        const blockedToday = buildBlockedRanges(todayTasks as any[], prefs);
+        const calToday = await getCalendarBlockedRanges(userId, today).catch(() => []);
+        blockedToday.push(...calToday);
+
+        // Build blocked ranges for next work day (overflow target)
+        const tomorrowDate = nextWorkDay(today, workDays);
+        const tomorrowTasks = await storage.getTasksInRange(userId, tomorrowDate, tomorrowDate).catch(() => []);
+        const blockedTomorrow = buildBlockedRanges(tomorrowTasks as any[], prefs);
+        const calTomorrow = await getCalendarBlockedRanges(userId, tomorrowDate).catch(() => []);
+        blockedTomorrow.push(...calTomorrow);
+
+        // Start from "now + 5 min" so we don't schedule in the past
+        let curSlot = Math.max(
+          nowMin + 5,
+          blockedToday.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart))
+        );
+        let tomorrowSlot = blockedTomorrow.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
+
+        // Process highest-priority tasks first (lower priority number = higher priority)
+        for (const task of overdue.sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5))) {
+          const dur           = task.estimatedDuration || 30;
+          const timesDeferred = task.learnedAdjustmentCount || 0;
+
+          // AI gate for tasks that have been deferred multiple times
+          if (timesDeferred >= 3) {
+            const decision = await evaluateTaskRelevance(task);
+            if (decision === 'dismiss') {
+              console.log(`[IntraDay] Task ${task.id} "${task.title}" flagged for review (deferred ${timesDeferred}x)`);
+              continue; // Leave in place — Companion will surface it to the user
+            }
+          }
+
+          // Find next available slot today, skipping blocked ranges
+          let attempts = 0;
+          while (attempts++ < 20) {
+            const overlap = blockedToday.find(r => curSlot < r.end && curSlot + dur > r.start);
+            if (!overlap) break;
+            curSlot = overlap.end;
+          }
+
+          let targetDate: string;
+          let targetSlot: number;
+
+          if (curSlot + dur <= dayEndMin) {
+            // Slot available today
+            targetDate = today;
+            targetSlot = curSlot;
+          } else {
+            // Today is full — try next work day
+            let ovAttempts = 0;
+            while (ovAttempts++ < 20) {
+              const overlap = blockedTomorrow.find(r => tomorrowSlot < r.end && tomorrowSlot + dur > r.start);
+              if (!overlap) break;
+              tomorrowSlot = overlap.end;
+            }
+            if (tomorrowSlot + dur > dayEndMin) continue; // No room anywhere — skip
+            targetDate = tomorrowDate;
+            targetSlot = tomorrowSlot;
+          }
+
+          await storage.updateTask(task.id, {
+            scheduledDate: targetDate,
+            scheduledTime: minToHHMM(targetSlot),
+            learnedAdjustmentCount: timesDeferred + 1,
+          }).catch(e => console.error(`[IntraDay] updateTask ${task.id}:`, e.message));
+
+          // Update local blocked ranges to prevent double-booking
+          if (targetDate === today) {
+            blockedToday.push({ start: targetSlot, end: targetSlot + dur });
+            curSlot = targetSlot + dur;
+          } else {
+            blockedTomorrow.push({ start: targetSlot, end: targetSlot + dur });
+            tomorrowSlot = targetSlot + dur;
+          }
+        }
+      } catch (err: any) {
+        console.error(`[IntraDay] Error for user ${userId}:`, err.message);
+      }
+    }
+  } finally {
+    isIntraDayRunning = false;
+  }
+}
+
+export function scheduleIntraDayReschedule(): void {
+  const INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
+  console.log('[IntraDay] Continuous rescheduler started (every 15 min)');
+  setInterval(async () => {
+    try {
+      await runIntraDayReschedule();
+    } catch (err) {
+      console.error('[IntraDay] Unhandled error:', err);
+    }
+  }, INTERVAL_MS);
 }
