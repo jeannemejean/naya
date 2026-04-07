@@ -250,10 +250,22 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   }
 
   // 8. Load context data
-  const [recentContent, recentOutreach] = await Promise.all([
+  const [recentContent, recentOutreach, operatingProfile] = await Promise.all([
     storage.getContent(userId, 10).catch(() => []),
     storage.getOutreachMessages(userId).catch(() => []),
+    storage.getUserOperatingProfile(userId).catch(() => null),
   ]);
+
+  // Build operating profile summary
+  const operatingProfileSummary = operatingProfile ? [
+    operatingProfile.planningStyle         && `Planning style: ${operatingProfile.planningStyle}`,
+    operatingProfile.activationStyle       && `Activation style: ${operatingProfile.activationStyle}`,
+    operatingProfile.energyRhythm          && `Energy rhythm: ${operatingProfile.energyRhythm}`,
+    operatingProfile.workBlockPreference   && `Work block preference: ${operatingProfile.workBlockPreference}`,
+    (operatingProfile.avoidanceTriggers?.length ?? 0) > 0
+      && `Avoidance triggers: ${operatingProfile.avoidanceTriggers!.join(', ')}`,
+    operatingProfile.selfDescribedFriction && `Self-described friction: ${operatingProfile.selfDescribedFriction}`,
+  ].filter(Boolean).join('\n') : '';
 
   const workDayStart = (prefs as any)?.workDayStart || '09:00';
   const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
@@ -349,6 +361,9 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         workDayStart,
         workDayEnd,
         maxTasks: maxTasksPerProject,
+        operatingProfileSummary: operatingProfileSummary || undefined,
+        energyLevel: prefs?.currentEnergyLevel || 'high',
+        emotionalContext: (prefs as any)?.currentEmotionalContext || undefined,
       });
 
       if (!result || !Array.isArray((result as any).tasks)) continue;
