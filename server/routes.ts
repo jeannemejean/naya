@@ -4109,16 +4109,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             .map(t => t.milestoneId)
         );
 
-        for (const project of projects) {
-          if (!project?.id) continue;
-          const milestones = await storage.getMilestones(project.id, userId).catch(() => []);
-          // Tous les jalons non-complétés (actifs, débloqués, ET bloqués — pour montrer la chaîne)
-          const visibleMilestones = (milestones as any[]).filter(
+        // Paralléliser les queries milestones pour tous les projets
+        const allMilestones = await Promise.all(
+          projects.filter(p => p?.id).map(p => storage.getMilestones(p.id, userId).catch(() => []))
+        );
+
+        const startDate = start as string;
+        projects.filter(p => p?.id).forEach((project, i) => {
+          const milestones = allMilestones[i] as any[];
+          const visibleMilestones = milestones.filter(
             m => m.status !== 'completed' && m.status !== 'skipped'
           );
-
-          // Distribuer les jalons sur les jours de la semaine : actif/unlocked en premier, puis bloqués
-          const startDate = start as string;
           const sortedMilestones = [...visibleMilestones].sort((a, b) => {
             const order = { active: 0, unlocked: 1, locked: 2 };
             return (order[a.status as keyof typeof order] ?? 3) - (order[b.status as keyof typeof order] ?? 3);
@@ -4127,24 +4128,19 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           for (let idx = 0; idx < sortedMilestones.length; idx++) {
             const m = sortedMilestones[idx];
             if (coveredMilestoneIds.has(m.id)) continue;
-
-            // Décaler chaque jalon d'un jour pour lisibilité (max 6 jours dans la semaine)
             const dayOffset = Math.min(idx, 6);
             const d = new Date(startDate + 'T00:00:00');
             d.setDate(d.getDate() + dayOffset);
             const milestoneDate = m.targetDate && m.targetDate >= start && m.targetDate <= end
               ? m.targetDate
               : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-
-            // Jalons actifs/débloqués : ancrés à 09:00 (début des heures de travail)
-            // Jalons verrouillés : sans heure (bande "non planifiées" en haut)
             const isActiveOrUnlocked = m.status === 'active' || m.status === 'unlocked';
             milestoneTasks.push({
-              id: -(m.id),        // ID négatif = virtuel
+              id: -(m.id),
               userId,
               projectId: project.id,
               milestoneId: m.id,
-              milestoneStatus: m.status, // pour le style côté client
+              milestoneStatus: m.status,
               title: m.title,
               description: m.description || '',
               type: 'milestone',
@@ -4158,7 +4154,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               _virtual: true,
             });
           }
-        }
+        });
 
         console.log(`[tasks/range] Injecting ${milestoneTasks.length} virtual milestone tasks`);
         res.json([...tasks, ...milestoneTasks]);
