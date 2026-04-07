@@ -61,6 +61,11 @@ import {
 } from "@shared/schema";
 import { articleAnalysisService } from "./services/article-analysis";
 import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner";
+import {
+  getAuthUrl,
+  exchangeCodeForTokens,
+  getCalendarEvents,
+} from './services/google-calendar';
 import { 
   detectUserPersona, 
   analyzeTargetPersona, 
@@ -363,6 +368,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error('[health] DB connection error:', err.message);
       res.status(503).json({ status: 'error', db: 'disconnected', timestamp: new Date().toISOString() });
+    }
+  });
+
+  // ─── Google Calendar OAuth ────────────────────────────────────────────────
+
+  // GET /api/calendar/status — check if user has connected Google Calendar
+  app.get('/api/calendar/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const connected = await storage.hasGoogleCalendarToken(req.session.userId);
+      res.json({ connected });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/calendar/oauth/url — get Google consent URL
+  app.get('/api/calendar/oauth/url', isAuthenticated, async (req: any, res) => {
+    try {
+      if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        return res.status(503).json({ message: 'Google Calendar not configured on this server' });
+      }
+      (req.session as any).calendarOAuthUserId = req.session.userId;
+      const url = getAuthUrl();
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/calendar/oauth/callback — Google redirects here after consent
+  app.get('/api/calendar/oauth/callback', async (req: any, res) => {
+    const code = req.query.code as string;
+    const userId = (req.session as any)?.calendarOAuthUserId || req.session?.userId;
+    if (!code || !userId) {
+      return res.redirect('/?calendar=error');
+    }
+    try {
+      await exchangeCodeForTokens(userId, code);
+      delete (req.session as any).calendarOAuthUserId;
+      res.redirect('/settings?calendar=connected');
+    } catch (err: any) {
+      console.error('[GCal] OAuth callback error:', err.message);
+      res.redirect('/settings?calendar=error');
+    }
+  });
+
+  // GET /api/calendar/events?start=YYYY-MM-DD&end=YYYY-MM-DD — fetch events
+  app.get('/api/calendar/events', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const start = req.query.start as string || new Date().toISOString().slice(0, 10);
+      const end = req.query.end as string || start;
+      const events = await getCalendarEvents(userId, start, end);
+      res.json(events);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // DELETE /api/calendar/disconnect — remove stored tokens
+  app.delete('/api/calendar/disconnect', isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.deleteGoogleCalendarToken(req.session.userId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
@@ -2525,9 +2596,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       const approachingDeadlines: Array<{ id: number; title: string; dueDate: Date | null; projectName: string; projectColor: string | null }> = [];
       const targetProjects = projectId ? allProjects.filter(p => p.id === projectId) : allProjects;
-      for (const p of targetProjects) {
-        const goals = await storage.getActiveGoalsForProject(p.id);
-        for (const g of goals) {
+      const allGoals = await Promise.all(
+        targetProjects.map(p => storage.getActiveGoalsForProject(p.id).catch(() => []))
+      );
+      targetProjects.forEach((p, i) => {
+        for (const g of allGoals[i]) {
           if (g.dueDate) {
             const dueDate = new Date(g.dueDate);
             if (dueDate >= now && dueDate <= in7Days) {
@@ -2535,7 +2608,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             }
           }
         }
-      }
+      });
 
       interface ScheduleTaskDTO {
         id: number;
@@ -4157,7 +4230,41 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         });
 
         console.log(`[tasks/range] Injecting ${milestoneTasks.length} virtual milestone tasks`);
-        res.json([...tasks, ...milestoneTasks]);
+        const finalTasks = [...tasks, ...milestoneTasks];
+
+        // Inject Google Calendar events as virtual (read-only) tasks
+        try {
+          const calEvents = await getCalendarEvents(userId, start as string, end as string);
+          for (const ev of calEvents) {
+            if (ev.allDay) continue;
+            const durationMin = (() => {
+              const [sh, sm] = ev.startTime.split(':').map(Number);
+              const [eh, em] = ev.endTime.split(':').map(Number);
+              return (eh * 60 + em) - (sh * 60 + sm);
+            })();
+            finalTasks.push({
+              id: -1,
+              userId,
+              title: ev.title,
+              type: 'gcal_event',
+              category: 'gcal_event',
+              source: 'gcal',
+              scheduledDate: ev.date,
+              scheduledTime: ev.startTime,
+              scheduledEndTime: ev.endTime,
+              estimatedDuration: Math.max(durationMin, 15),
+              completed: false,
+              _virtual: true,
+              priority: 0,
+              description: ev.location ? `📍 ${ev.location}` : null,
+            } as any);
+          }
+        } catch (calErr: any) {
+          // Non-fatal — calendar errors must never break the planning page
+          console.error('[tasks/range] Calendar injection error:', calErr.message);
+        }
+
+        res.json(finalTasks);
       } catch (milestoneErr: any) {
         console.error('[tasks/range] Milestone injection error:', milestoneErr?.message || milestoneErr);
         res.json(tasks); // fallback silencieux
@@ -4168,16 +4275,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
-  // POST /api/tasks/rollover — déplace les tâches incomplètes + génère les 14 prochains jours
+  // POST /api/tasks/rollover — déplace les tâches incomplètes vers le prochain jour ouvré
+  // Note: runDailyAutoPlanner n'est PAS déclenché ici — il tourne uniquement à 06:00 via le cron.
+  // Lancer le planner à chaque chargement de dashboard provoquait des runs concurrents
+  // qui épuisaient le pool de connexions Neon et bloquaient le serveur entier.
   app.post('/api/tasks/rollover', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId;
       const today = new Date().toISOString().slice(0, 10);
       const result = await rolloverStaleTasks(userId, today);
-      // Lancer la génération des 14 prochains jours de travail en arrière-plan
-      runDailyAutoPlanner(today).catch(e =>
-        console.error('[Rollover] Auto-planner error:', e.message)
-      );
       res.json({ ok: true, ...result });
     } catch (err: any) {
       console.error("Rollover error:", err);
@@ -4185,15 +4291,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
-  // POST /api/tasks/generate — génère silencieusement les prochains jours de travail
+  // POST /api/tasks/generate — rollover léger pour la semaine visible
+  // Note: runDailyAutoPlanner n'est PAS appelé ici — lancer le planner complet (7 appels Claude)
+  // depuis l'UI causait des runs concurrents qui épuisaient le pool Neon et bloquaient le serveur.
+  // Le planner complet tourne uniquement à 06:00 via le cron schedulé au démarrage.
   app.post('/api/tasks/generate', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId;
-      // Utiliser startDate si fourni (semaine visible), sinon aujourd'hui
       const startDate = req.body?.startDate || new Date().toISOString().slice(0, 10);
-      // Lancer en arrière-plan — retourner immédiatement sans bloquer l'UI
-      runDailyAutoPlanner(startDate).catch(e =>
-        console.error('[Generate] Auto-planner error:', e.message)
+      // Rollover léger uniquement — déplace les tâches incomplètes, sans génération IA
+      rolloverStaleTasks(userId, startDate).catch(e =>
+        console.error('[Generate] Rollover error:', e.message)
       );
       res.json({ ok: true });
     } catch (err: any) {
