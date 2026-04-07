@@ -2136,20 +2136,20 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const userProjects = await storage.getProjects(userId);
 
       // Injecter les tâches abandonnées (deferred 3x+) — concept 100% server-side
-      const today = new Date().toISOString().slice(0, 10);
-      const lookback = (() => {
-        const d = new Date();
-        d.setDate(d.getDate() - 14);
-        return d.toISOString().slice(0, 10);
-      })();
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const lookbackDate = new Date(now);
+      lookbackDate.setDate(lookbackDate.getDate() - 14);
+      const lookback = lookbackDate.toISOString().slice(0, 10);
       const recentTasks = await storage.getTasksInRange(userId, lookback, today).catch(() => []);
       const staleTasks = (recentTasks as any[])
         .filter(t => !t.completed && (t.learnedAdjustmentCount || 0) >= 3)
-        .map(t => ({ id: t.id, title: t.title, learnedAdjustmentCount: t.learnedAdjustmentCount as number }));
+        .map(t => ({ id: t.id, title: t.title, learnedAdjustmentCount: t.learnedAdjustmentCount as number }))
+        .slice(0, 8); // cap at 8 to avoid LLM context bloat
 
       const enrichedContext = {
-        currentDate: new Date().toISOString().slice(0, 10),
-        currentTime: new Date().toTimeString().slice(0, 5),
+        currentDate: today,
+        currentTime: now.toTimeString().slice(0, 5),
         platform: "web",
         ...(context || {}),
         availableProjects: userProjects.slice(0, 15).map((p: any) => ({ id: p.id, name: p.name, type: p.type })),
