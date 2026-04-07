@@ -1,7 +1,6 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -189,7 +188,6 @@ export default function Planning({ onSearchClick }: Props) {
   // Le planner tourne automatiquement à 06:00 via le cron serveur.
   // On ne déclenche plus le planner complet depuis l'UI pour éviter les runs
   // concurrents qui épuisaient le pool Neon et bloquaient le serveur.
-  const realTasksInView = rangeTasks.filter(t => !t._virtual && t.id > 0);
 
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
 
@@ -235,86 +233,6 @@ export default function Planning({ onSearchClick }: Props) {
     },
   });
 
-  const clientToday = formatDate(new Date());
-
-  const generateMonthlyMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/tasks/generate-monthly", {
-        projectId: activeProjectId || undefined,
-        month: selectedDate.getMonth() + 1,
-        year: selectedDate.getFullYear(),
-        clientToday,
-      });
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      const msg = data?.monthlyRationale
-        ? `${data.tasks?.length || 0} tasks planned · ${data.monthlyRationale.slice(0, 80)}${data.monthlyRationale.length > 80 ? '...' : ''}`
-        : t('planning.tasksDistributed', { count: data?.tasks?.length || 0 });
-      toast({ title: t('planning.monthlyPlanGenerated'), description: msg });
-    },
-    onError: () => {
-      toast({ title: t('common.error'), description: t('planning.failedToGenerate'), variant: "destructive" });
-    },
-  });
-
-  const generateWeeklyMutation = useMutation({
-    mutationFn: async () => {
-      const mon = startOfWeek(selectedDate);
-      const res = await apiRequest("POST", "/api/tasks/generate-weekly", {
-        projectId: activeProjectId || undefined,
-        weekStart: formatDate(mon),
-        clientToday,
-      });
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      const parts: string[] = [];
-      if (data?.reschedules?.length) parts.push(t('planning.tasksRescheduled', { count: data.reschedules.length }));
-      if (data?.newTasks?.length) parts.push(t('planning.fillInTasksAdded', { count: data.newTasks.length }));
-      if (data?.weeklyRationale) parts.push(data.weeklyRationale.slice(0, 60));
-      toast({ title: t('planning.weekRefined'), description: parts.join(' · ') || t('planning.weekRebalanced') });
-    },
-    onError: () => {
-      toast({ title: t('common.error'), description: t('planning.failedToRefine'), variant: "destructive" });
-    },
-  });
-
-  const rebalanceWeekMutation = useMutation({
-    mutationFn: async () => {
-      const mon = startOfWeek(selectedDate);
-      const now = new Date();
-      const clientTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const res = await apiRequest("POST", "/api/tasks/rebalance-week", {
-        weekStart: formatDate(mon),
-        clientToday,
-        clientTime,
-      });
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
-      const dayEntries = Object.entries(data?.days || {});
-      const summary = dayEntries.map(([d, c]) => `${d}: ${c}`).join(', ');
-      toast({ title: t('planning.weekRebalanced'), description: t('planning.weekRebalancedDescription', { moved: data?.moved || 0, summary }) });
-    },
-    onError: (err: any) => {
-      const msg = err?.message || t('planning.failedToRebalance');
-      const isAuth = msg.includes('401') || msg.includes('Unauthorized');
-      toast({
-        title: isAuth ? t('planning.sessionExpired') : t('common.error'),
-        description: isAuth ? t('planning.sessionExpiredDescription') : msg,
-        variant: 'destructive',
-      });
-    },
-  });
-
   const confirmMilestoneMutation = useMutation({
     mutationFn: async (milestoneId: number) => {
       const res = await apiRequest("POST", `/api/milestones/${milestoneId}/confirm`);
@@ -328,138 +246,6 @@ export default function Planning({ onSearchClick }: Props) {
     },
     onError: () => toast({ title: "Erreur", description: "Impossible de confirmer le jalon.", variant: "destructive" }),
   });
-
-  const clearWeekMutation = useMutation({
-    mutationFn: async () => {
-      const mon = startOfWeek(selectedDate);
-      const res = await apiRequest("POST", "/api/tasks/clear-week", {
-        weekStart: formatDate(mon),
-      });
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
-      toast({ title: t('planning.weekCleared'), description: t('planning.tasksUnscheduledDescription', { count: data?.cleared || 0 }) });
-    },
-    onError: (err: any) => {
-      const msg = err?.message || t('planning.failedToClear');
-      toast({ title: t('common.error'), description: msg, variant: "destructive" });
-    },
-  });
-
-  const generateDailyMutation = useMutation({
-    mutationFn: async (opts?: { replaceExisting?: boolean }) => {
-      const now = new Date();
-      const clientTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const res = await apiRequest("POST", "/api/tasks/generate-daily", {
-        projectId: activeProjectId || undefined,
-        clientToday,
-        clientTime,
-        ...(opts?.replaceExisting !== undefined ? { replaceExisting: opts.replaceExisting } : {}),
-      });
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'], exact: false });
-
-      setTimeout(() => triggerAutoRebalance(), 1500);
-
-      if (data?.focus || data?.reasoning) {
-        const reasoning = data.reasoning || '';
-        let bottleneck = data.bottleneck || '';
-        if (!bottleneck) {
-          const m = reasoning.match(/bottleneck[:\s]+([^.]+\.)/i);
-          if (m) bottleneck = m[1].trim();
-        }
-        let suggestedNextMove = data.suggestedNextMove || '';
-        if (!suggestedNextMove) {
-          const m = reasoning.match(/(?:next step|next move|priority|focus on)[:\s]+([^.]+\.)/i);
-          if (m) suggestedNextMove = m[1].trim();
-        }
-        setLastStrategySignal({
-          focus: data.focus || 'Daily execution',
-          reasoning,
-          bottleneck: bottleneck || undefined,
-          suggestedNextMove: suggestedNextMove || undefined,
-          generatedAt: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-          skippedProjects: data.skippedProjects || undefined,
-        });
-        setStrategyExpanded(false);
-      }
-
-      const rr = data?.realismReport;
-      if (rr && (rr.deferredCount > 0 || rr.contextSwitchCorrected)) {
-        const parts = [t('planning.planGenerated')];
-        if (rr.deferredCount > 0) parts.push(t('planning.movedToTomorrow', { count: rr.deferredCount }));
-        if (rr.contextSwitchCorrected) parts.push(t('planning.contextSwitchesBalanced'));
-        toast({ title: parts[0], description: parts.slice(1).join(' · ') });
-      } else {
-        toast({ title: t('planning.planGenerated'), description: t('planning.tasksReadyForToday', { count: data?.tasks?.length || 0 }) });
-      }
-    },
-    onError: () => {
-      toast({ title: t('common.error'), description: t('planning.failedToGenerate'), variant: "destructive" });
-    },
-  });
-
-  const anyGenerating = generateMonthlyMutation.isPending || generateWeeklyMutation.isPending || generateDailyMutation.isPending;
-
-  const [replaceDialogOpen, setReplaceDialogOpen] = useState(false);
-  const [existingGeneratedCount, setExistingGeneratedCount] = useState(0);
-
-  const doGenerate = useCallback(async (replaceExisting?: boolean) => {
-    try {
-      if (viewScope === 'month') {
-        await generateMonthlyMutation.mutateAsync();
-      }
-      await generateDailyMutation.mutateAsync(replaceExisting !== undefined ? { replaceExisting } : undefined);
-    } catch {
-    }
-  }, [viewScope, generateMonthlyMutation, generateDailyMutation]);
-
-  const currentWeekStart = useMemo(() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = (day === 0 ? -6 : 1 - day);
-    const ws = new Date(d);
-    ws.setDate(ws.getDate() + diff);
-    return formatLocalDate(ws);
-  }, []);
-
-  const currentWeekEnd = useMemo(() => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = (day === 0 ? 0 : 7 - day);
-    const we = new Date(d);
-    we.setDate(we.getDate() + diff);
-    return formatLocalDate(we);
-  }, []);
-
-  const { data: weekTasksForDupCheck = [] } = useQuery<Task[]>({
-    queryKey: ['/api/tasks/range', currentWeekStart, currentWeekEnd, activeProjectId, 'dup-check'],
-    queryFn: async () => {
-      let url = `/api/tasks/range?start=${currentWeekStart}&end=${currentWeekEnd}`;
-      if (activeProjectId) url += `&projectId=${activeProjectId}`;
-      const res = await fetch(url, { credentials: 'include' });
-      return res.json();
-    },
-  });
-
-  async function handleGeneratePlan() {
-    const existingGenerated = weekTasksForDupCheck.filter(
-      (t) => !t.completed && (t.source === 'generated' || t.source === 'ai')
-    );
-    if (existingGenerated.length > 0) {
-      setExistingGeneratedCount(existingGenerated.length);
-      setReplaceDialogOpen(true);
-    } else {
-      doGenerate();
-    }
-  }
 
   function handleDailyFeedback(key: string) {
     localStorage.setItem(`naya_daily_feedback_${today}`, key);
