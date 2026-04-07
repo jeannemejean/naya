@@ -2680,15 +2680,6 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // ===== SCHEDULING VALIDATION HELPERS =====
 
   /**
-   * Check if a date falls on a weekend (Saturday or Sunday)
-   */
-  function isWeekend(dateStr: string): boolean {
-    const date = new Date(dateStr + 'T00:00:00');
-    const dayOfWeek = date.getDay();
-    return dayOfWeek === 0 || dayOfWeek === 6; // 0 = Sunday, 6 = Saturday
-  }
-
-  /**
    * Check if a task overlaps with existing tasks on the same day
    * Returns the conflicting task if there's an overlap, null otherwise
    */
@@ -2746,17 +2737,18 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
     // Get user's work preferences
     const prefs = await storage.getUserPreferences(userId).catch(() => null);
-    const workDays = prefs?.workDays || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    const workDaySet = parseWorkDays(prefs?.workDays);
 
-    // Check if task is scheduled on a weekend when weekends are not work days
-    if (isWeekend(taskData.scheduledDate)) {
-      const weekendAllowed = workDays.includes('saturday') || workDays.includes('sunday');
-      if (!weekendAllowed) {
-        return {
-          valid: false,
-          error: 'Cannot schedule tasks on weekends. Your work days are Monday-Friday.'
-        };
-      }
+    const scheduledDow = new Date(taskData.scheduledDate + 'T00:00:00').getDay();
+    const scheduledDayAbbr = DAY_ABBRS[scheduledDow];
+    const DAY_FULL_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const scheduledDayFull = DAY_FULL_NAMES[scheduledDow];
+
+    if (!workDaySet.has(scheduledDayAbbr)) {
+      return {
+        valid: false,
+        error: `${scheduledDayFull} is not one of your work days.`,
+      };
     }
 
     // Check for task overlap
