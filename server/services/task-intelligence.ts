@@ -96,7 +96,8 @@ export async function handleTaskDeferral(
   task: { id: number; title: string; projectId?: number | null; learnedAdjustmentCount?: number | null },
   newCount: number
 ): Promise<void> {
-  if (newCount < 2) return;
+  // Déclencher uniquement aux seuils exacts (2 et 3) — pas à chaque report suivant
+  if (newCount !== 2 && newCount !== 3) return;
 
   const triggerType = newCount === 2 ? 'task_deferred_2x' : 'task_deferred_3x';
 
@@ -110,7 +111,7 @@ export async function handleTaskDeferral(
   let message: string;
   let displayTitle = task.title;
 
-  if (newCount >= 3) {
+  if (newCount === 3) {
     // Tentative de reformulation
     const { rewrite } = await reformulateIfVague(userId, task);
     if (rewrite) {
