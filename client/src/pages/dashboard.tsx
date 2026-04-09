@@ -9,6 +9,7 @@ import Sidebar from "@/components/sidebar";
 import { NayaCompanionBar } from "@/components/NayaCompanion";
 import MilestoneChain from "@/components/milestone-chain";
 import TodaysTasks from "@/components/todays-tasks";
+import { StuckTasksCard } from "@/components/StuckTasksCard";
 import SchedulePreview from "@/components/schedule-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1757,6 +1758,9 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 space-y-6" id="todays-tasks-section">
+                <StuckTasksCard onOpenCompanion={() => {
+                  window.dispatchEvent(new CustomEvent('naya:open-companion'));
+                }} />
                 <TodaysTasks />
                 <SchedulePreview />
               </div>

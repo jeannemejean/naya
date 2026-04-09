@@ -271,6 +271,12 @@ function useCompanionChat() {
     }
   }, [open, history, pendingData, pendingLoaded]);
 
+  useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener('naya:open-companion', handler);
+    return () => window.removeEventListener('naya:open-companion', handler);
+  }, [setOpen]);
+
   const chatMutation = useMutation({
     mutationFn: async (message: string): Promise<{ message: string; actions?: CompanionAction[]; suggestions?: string[] }> => {
       const now = new Date();
