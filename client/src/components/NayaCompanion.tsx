@@ -224,6 +224,7 @@ function useCompanionChat() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [pendingLoaded, setPendingLoaded] = useState(false);
   const { activeProjectId } = useProject();
   const { data: projects = [] } = useQuery<any[]>({ queryKey: ['/api/projects?limit=200'] });
   const activeProject = projects.find((p: any) => p.id === activeProjectId) ?? null;
@@ -236,11 +237,39 @@ function useCompanionChat() {
     enabled: open && messages.length === 0,
   });
 
+  const { data: pendingData } = useQuery<{ messages: Array<{ id: number; message: string }>; unreadCount: number }>({
+    queryKey: ['/api/companion/pending'],
+    queryFn: async () => {
+      const r = await fetch('/api/companion/pending', { credentials: 'include' });
+      return r.json();
+    },
+    refetchInterval: 60 * 1000,
+  });
+
   useEffect(() => {
-    if (history && messages.length === 0) {
-      setMessages(history.map(m => ({ role: m.role as "user" | "assistant", content: m.content, actions: m.actions })));
+    if (!open || pendingLoaded) return;
+    setPendingLoaded(true);
+
+    const pending = pendingData?.messages ?? [];
+    const historyMsgs = history
+      ? history.map((m: any) => ({ role: m.role as "user" | "assistant", content: m.content, actions: m.actions }))
+      : [];
+
+    if (pending.length > 0 || historyMsgs.length > 0) {
+      const pendingMsgs: Message[] = pending.map((pm) => ({
+        role: 'assistant' as const,
+        content: pm.message,
+      }));
+      setMessages([...pendingMsgs, ...historyMsgs]);
+
+      pending.forEach((pm) => {
+        fetch(`/api/companion/pending/${pm.id}/read`, {
+          method: 'POST',
+          credentials: 'include',
+        }).catch(() => {});
+      });
     }
-  }, [history]);
+  }, [open, history, pendingData, pendingLoaded]);
 
   const chatMutation = useMutation({
     mutationFn: async (message: string): Promise<{ message: string; actions?: CompanionAction[]; suggestions?: string[] }> => {
@@ -309,6 +338,7 @@ function useCompanionChat() {
     chatMutation,
     handleSend,
     handleKeyDown,
+    unreadCount: pendingData?.unreadCount ?? 0,
   };
 }
 
@@ -364,7 +394,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
 // ─── Mode "header" — barre inline dans le dashboard ──────────────────────────
 
 export function NayaCompanionBar() {
-  const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown } = useCompanionChat();
+  const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount } = useCompanionChat();
   const { t } = useTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -402,7 +432,14 @@ export function NayaCompanionBar() {
         }`}
         onClick={openAndFocus}
       >
-        <Sparkles className={`h-3.5 w-3.5 flex-shrink-0 transition-colors ${open ? "text-primary" : "text-muted-foreground/50"}`} />
+        <div className="relative flex-shrink-0">
+          <Sparkles className={`h-3.5 w-3.5 transition-colors ${open ? "text-primary" : "text-muted-foreground/50"}`} />
+          {!open && unreadCount > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center leading-none">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </div>
         <input
           ref={inputRef}
           value={input}
@@ -482,7 +519,7 @@ export function NayaCompanionBar() {
 // ─── Mode "floating" — bouton flottant (toutes les autres pages) ──────────────
 
 export default function NayaCompanion() {
-  const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown } = useCompanionChat();
+  const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount } = useCompanionChat();
   const { t } = useTranslation();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -495,13 +532,20 @@ export default function NayaCompanion() {
     <>
       {/* Bouton flottant */}
       {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 flex items-center justify-center transition-all duration-200 hover:scale-105"
-          aria-label="Ouvrir Naya"
-        >
-          <Sparkles className="h-6 w-6" />
-        </button>
+        <div className="fixed bottom-6 right-6 z-50 relative">
+          <button
+            onClick={() => setOpen(true)}
+            className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 flex items-center justify-center transition-all duration-200 hover:scale-105"
+            aria-label="Ouvrir Naya"
+          >
+            <Sparkles className="h-6 w-6" />
+          </button>
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </div>
       )}
 
       {/* Panneau de chat */}
