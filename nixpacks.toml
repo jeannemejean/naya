@@ -5,7 +5,8 @@ nixPkgs = ["nodejs_22", "npm-10_x"]
 cmds = ["npm ci --include=dev"]
 
 [phases.build]
-cmds = ["npm run build"]
+dependsOn = ["install"]
+cmds = ["node_modules/.bin/vite build && node_modules/.bin/esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist"]
 
 [start]
 cmd = "npm run start"
