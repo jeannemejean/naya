@@ -17,6 +17,7 @@ import { generateDailyTasks } from './openai';
 import { buildNayaContext } from './naya-context';
 import { CLAUDE_MODELS, callClaude } from './claude';
 import { getCalendarBlockedRanges } from './google-calendar';
+import { handleTaskDeferral } from './task-intelligence';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -197,10 +198,17 @@ export async function rolloverStaleTasks(
     const slot = findNextFreeSlot(curSlot, duration, blockedRanges, dayEndMin);
     if (slot === -1) continue; // plus de place ce jour-là
 
+    const newCount = (task.learnedAdjustmentCount || 0) + 1;
     await storage.updateTask(task.id, {
       scheduledDate: scheduleDate,
       scheduledTime: minToHHMM(slot),
+      learnedAdjustmentCount: newCount,
     });
+
+    // Intelligence layer — non-blocking
+    handleTaskDeferral(userId, task, newCount).catch(e =>
+      console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
+    );
 
     blockedRanges.push({ start: slot, end: slot + duration });
     curSlot = slot + duration + 5;
@@ -637,11 +645,18 @@ async function runEndOfDayRollover(): Promise<void> {
           targetSlot = overflowSlot;
         }
 
+        const newCount = (task.learnedAdjustmentCount || 0) + 1;
         const newTime = minToHHMM(targetSlot);
         await storage.updateTask(task.id, {
           scheduledDate: targetDate,
           scheduledTime: newTime,
+          learnedAdjustmentCount: newCount,
         }).catch(e => console.error(`[Rollover] updateTask ${task.id} failed:`, e.message));
+
+        // Intelligence layer — non-blocking
+        handleTaskDeferral(userId, task, newCount).catch(e =>
+          console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
+        );
 
         if (targetDate === scheduleDate) {
           blockedRanges.push({ start: targetSlot, end: targetSlot + dur });
@@ -813,6 +828,11 @@ async function runIntraDayReschedule(): Promise<void> {
             scheduledTime: minToHHMM(targetSlot),
             learnedAdjustmentCount: timesDeferred + 1,
           }).catch(e => console.error(`[IntraDay] updateTask ${task.id}:`, e.message));
+
+          // Intelligence layer — non-blocking
+          handleTaskDeferral(userId, task, timesDeferred + 1).catch(e =>
+            console.error(`[IntraDay] handleTaskDeferral ${task.id}:`, e.message)
+          );
 
           // Update local blocked ranges to prevent double-booking
           if (targetDate === today) {
