@@ -1223,32 +1223,31 @@ Return ONLY a JSON object matching this exact structure (no preamble, no markdow
   "prospection": null
 }
 
-PROSPECTION DECISION RULE:
-Set "prospection" to null if the objective is purely content/visibility/authority.
-Set "prospection" to an object if the campaign objective involves acquiring new clients, generating leads, finding partners, or any direct outreach to new contacts. In that case:
-{
-  "needed": true,
-  "rationale": "One sentence explaining why prospection is required for this objective",
-  "targetSector": "Specific sector or profile to target (derived from targetAudience)",
-  "channel": "linkedin|email|both (pick the most relevant given the brand's platform priority)",
-  "digitalLevel": "fort|faible|tous",
-  "campaignBrief": "One sentence: what you propose to this prospect segment",
-  "messageAngle": "The unique angle that aligns with the campaign's coreMessage",
-  "buyingSignals": "Criteria to identify a prospect who is ready (e.g. recent funding, job posting, etc.)",
-  "prospectsPerDay": 3,
-  "offer": "The concrete offer to propose in prospection (from the brand's offers)"
-}
+The "prospection" field rules:
+- Set to null if objective is purely content/visibility/authority.
+- Set to an object (nested inside the main JSON above) if objective involves acquiring clients, leads, or partners:
+  {"needed": true, "rationale": "why needed", "targetSector": "sector/profile", "channel": "linkedin|email|both", "digitalLevel": "fort|faible|tous", "campaignBrief": "one sentence proposition", "messageAngle": "unique angle", "buyingSignals": "readiness criteria", "prospectsPerDay": 3, "offer": "concrete offer"}
+The prospection value must be either null or an inline object — never a separate JSON block.
 
 Generate the right number of phases for the duration. For a 1-month campaign: 3 phases. For 3 months: 4 phases. For 6 months: 5-6 phases.
 Generate 2-4 content pieces per phase. Generate 8-15 tasks distributed across phases. Generate 3-5 KPIs.`;
 
-    const raw = await callClaudeWithContext({
-      userId: request.userId,
-      projectId,
-      userMessage: prompt,
+    // Build focused brand context from brandDna parameter (avoids double-context via buildNayaContext)
+    const bd = request.brandDna || {};
+    const brandContext = `\n\nBRAND CONTEXT:
+- Business type: ${bd.businessType || 'Independent'}
+- Unique positioning: ${bd.uniquePositioning || ''}
+- Target audience: ${bd.targetAudience || bd.audience || ''}
+- Core pain point: ${bd.corePainPoint || ''}
+- Communication style: ${bd.communicationStyle || 'Professional'}
+- Platform priority: ${bd.platformPriority || ''}
+- Offers: ${bd.offers || ''}${bd.revenueTarget ? `\n- Revenue target: ${bd.revenueTarget}` : ''}${bd.brandVoiceKeywords?.length ? `\n- Voice keywords: ${bd.brandVoiceKeywords.join(', ')}` : ''}${bd.editorialTerritory ? `\n- Editorial territory: ${bd.editorialTerritory}` : ''}${bd.activeBusinessPriority ? `\n- Active priority: ${bd.activeBusinessPriority}` : ''}`;
+
+    const raw = await callClaude({
       model: CLAUDE_MODELS.smart,
+      system: `You are Naya's campaign planning intelligence. You generate comprehensive, strategic campaign architectures for independent builders. Return ONLY valid JSON matching the exact structure requested. No preamble, no markdown fences, no text outside the JSON object.`,
+      messages: [{ role: 'user', content: prompt + brandContext }],
       max_tokens: 8000,
-      additionalSystemContext: `You are Naya's campaign planning intelligence. You generate comprehensive, strategic campaign architectures for independent builders. Return only valid JSON, no preamble, no markdown fences.`,
     });
     let parsed: GeneratedCampaign;
     try {
