@@ -32,6 +32,7 @@ import {
   taskLists,
   taskListItems,
   companionConversations,
+  companionPendingMessages,
   campaigns,
   prospectionCampaigns,
   type ProspectionCampaign,
@@ -319,6 +320,34 @@ export interface IStorage {
   upsertGoogleCalendarToken(data: InsertGoogleCalendarToken): Promise<GoogleCalendarToken>;
   deleteGoogleCalendarToken(userId: string): Promise<void>;
   hasGoogleCalendarToken(userId: string): Promise<boolean>;
+
+  // Companion pending messages
+  createPendingMessage(data: {
+    userId: string;
+    message: string;
+    triggerType: string;
+    relatedTaskId?: number | null;
+  }): Promise<{ id: number; userId: string; message: string; triggerType: string; relatedTaskId: number | null; isRead: boolean | null; createdAt: Date | null }>;
+
+  getPendingMessages(userId: string): Promise<Array<{
+    id: number;
+    message: string;
+    triggerType: string;
+    relatedTaskId: number | null;
+    isRead: boolean | null;
+    createdAt: Date | null;
+  }>>;
+
+  markPendingMessageRead(id: number): Promise<void>;
+
+  getPendingMessageByTaskAndType(taskId: number, triggerType: string): Promise<{ id: number } | undefined>;
+
+  getStuckTasks(userId: string): Promise<Array<{
+    id: number;
+    title: string;
+    learnedAdjustmentCount: number | null;
+    scheduledDate: string | null;
+  }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1504,6 +1533,81 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(companionConversations.createdAt))
       .limit(limit)
       .then(rows => rows.reverse()); // Retourner dans l'ordre chronologique
+  }
+
+  // ─── Companion Pending Messages ───────────────────────────────────────────
+
+  async createPendingMessage(data: {
+    userId: string;
+    message: string;
+    triggerType: string;
+    relatedTaskId?: number | null;
+  }) {
+    const [row] = await db
+      .insert(companionPendingMessages)
+      .values(data)
+      .returning();
+    return row;
+  }
+
+  async getPendingMessages(userId: string) {
+    return db
+      .select()
+      .from(companionPendingMessages)
+      .where(
+        and(
+          eq(companionPendingMessages.userId, userId),
+          eq(companionPendingMessages.isRead, false)
+        )
+      )
+      .orderBy(desc(companionPendingMessages.createdAt));
+  }
+
+  async markPendingMessageRead(id: number) {
+    await db
+      .update(companionPendingMessages)
+      .set({ isRead: true })
+      .where(eq(companionPendingMessages.id, id));
+  }
+
+  async getPendingMessageByTaskAndType(taskId: number, triggerType: string) {
+    const [row] = await db
+      .select({ id: companionPendingMessages.id })
+      .from(companionPendingMessages)
+      .where(
+        and(
+          eq(companionPendingMessages.relatedTaskId, taskId),
+          eq(companionPendingMessages.triggerType, triggerType),
+          eq(companionPendingMessages.isRead, false)
+        )
+      )
+      .limit(1);
+    return row;
+  }
+
+  async getStuckTasks(userId: string) {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString().slice(0, 10);
+
+    return db
+      .select({
+        id: tasks.id,
+        title: tasks.title,
+        learnedAdjustmentCount: tasks.learnedAdjustmentCount,
+        scheduledDate: tasks.scheduledDate,
+      })
+      .from(tasks)
+      .where(
+        and(
+          eq(tasks.userId, userId),
+          eq(tasks.completed, false),
+          gte(tasks.scheduledDate, sevenDaysAgoStr),
+          gte(tasks.learnedAdjustmentCount, 2)
+        )
+      )
+      .orderBy(desc(tasks.learnedAdjustmentCount))
+      .limit(10);
   }
 
   // ─── Project Milestones ───────────────────────────────────────────────────
