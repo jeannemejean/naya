@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Check, Loader2, ChevronDown, ChevronRight, Clock } from "lucide-react";
+import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { Task, Project, TaskWorkspaceEntry } from "@shared/schema";
 
@@ -16,6 +16,7 @@ interface TaskWorkspaceProps {
   project: Project | null;
   open: boolean;
   onClose: () => void;
+  onDeleted?: () => void;
 }
 
 function formatRelative(date: string | Date) {
@@ -32,10 +33,65 @@ function formatRelative(date: string | Date) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export default function TaskWorkspace({ task, project, open, onClose }: TaskWorkspaceProps) {
+export default function TaskWorkspace({ task, project, open, onClose, onDeleted }: TaskWorkspaceProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState("");
+  const [rescheduleTime, setRescheduleTime] = useState("");
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/tasks/${task!.id}`);
+      if (!res.ok) throw new Error("Failed to delete task");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
+      toast({ title: "Tâche supprimée" });
+      onDeleted?.();
+      onClose();
+    },
+    onError: () => {
+      toast({ title: "Erreur", description: "Impossible de supprimer la tâche.", variant: "destructive" });
+    },
+  });
+
+  const rescheduleMutation = useMutation({
+    mutationFn: async () => {
+      const body: Record<string, string> = { scheduledDate: rescheduleDate };
+      if (rescheduleTime) {
+        body.scheduledTime = rescheduleTime;
+        const [h, m] = rescheduleTime.split(":").map(Number);
+        const endMin = h * 60 + m + (task?.estimatedDuration || 30);
+        body.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
+      }
+      const res = await apiRequest("PATCH", `/api/tasks/${task!.id}`, body);
+      if (!res.ok) throw new Error("Failed to reschedule task");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
+      toast({ title: "Tâche reprogrammée" });
+      setShowReschedule(false);
+      onClose();
+    },
+    onError: () => {
+      toast({ title: "Erreur", description: "Impossible de reprogrammer la tâche.", variant: "destructive" });
+    },
+  });
+
+  // Reset action states when task changes
+  useEffect(() => {
+    setShowDeleteConfirm(false);
+    setShowReschedule(false);
+    setRescheduleDate(task?.scheduledDate || "");
+    setRescheduleTime(task?.scheduledTime || "");
+  }, [task?.id]);
 
   const WORKSPACE_TYPES = [
     { id: "strategy", label: t('taskWorkspace.strategy'), icon: "💡", placeholder: t('taskWorkspace.strategyPlaceholder') },
@@ -161,7 +217,72 @@ export default function TaskWorkspace({ task, project, open, onClose }: TaskWork
                 </div>
               )}
             </div>
+            {/* Actions rapides */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => { setShowReschedule(v => !v); setShowDeleteConfirm(false); }}
+                className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:text-indigo-400 dark:hover:bg-indigo-950/40 transition-colors"
+                title="Reprogrammer"
+              >
+                <CalendarClock className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => { setShowDeleteConfirm(v => !v); setShowReschedule(false); }}
+                className="p-1.5 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-400 dark:hover:bg-red-950/40 transition-colors"
+                title="Supprimer"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
+
+          {/* Reprogrammer */}
+          {showReschedule && (
+            <div className="mt-3 p-3 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800/50 space-y-2">
+              <p className="text-xs font-medium text-indigo-800 dark:text-indigo-300">Reprogrammer</p>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={rescheduleDate}
+                  onChange={e => setRescheduleDate(e.target.value)}
+                  className="flex-1 text-xs px-2 py-1.5 rounded-md border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 text-slate-800 dark:text-gray-200"
+                />
+                <input
+                  type="time"
+                  value={rescheduleTime}
+                  onChange={e => setRescheduleTime(e.target.value)}
+                  className="w-24 text-xs px-2 py-1.5 rounded-md border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-gray-900 text-slate-800 dark:text-gray-200"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowReschedule(false)} className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1">Annuler</button>
+                <button
+                  onClick={() => rescheduleMutation.mutate()}
+                  disabled={!rescheduleDate || rescheduleMutation.isPending}
+                  className="text-xs px-3 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {rescheduleMutation.isPending ? "..." : "Confirmer"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Confirmation suppression */}
+          {showDeleteConfirm && (
+            <div className="mt-3 p-3 bg-red-50 dark:bg-red-950/30 rounded-lg border border-red-200 dark:border-red-800/50">
+              <p className="text-xs text-red-700 dark:text-red-400 mb-2">Supprimer cette tâche définitivement ?</p>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowDeleteConfirm(false)} className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1">Annuler</button>
+                <button
+                  onClick={() => deleteMutation.mutate()}
+                  disabled={deleteMutation.isPending}
+                  className="text-xs px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  {deleteMutation.isPending ? "..." : "Supprimer"}
+                </button>
+              </div>
+            </div>
+          )}
         </SheetHeader>
 
         <div className="flex-1 flex flex-col overflow-hidden">
