@@ -444,6 +444,7 @@ export const content = pgTable("content", {
   mediaIds: jsonb("media_ids").default([]),
   mediaUrl: text("media_url"),
   mediaFileName: text("media_file_name"),
+  campaignId: integer("campaign_id").references(() => campaigns.id), // lien vers la campagne d'origine
   socialAccountId: integer("social_account_id").references(() => socialAccounts.id),
   autoPost: boolean("auto_post").default(true),
   postStatus: text("post_status").default("pending"),

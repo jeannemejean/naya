@@ -773,9 +773,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Content operations
-  async getContent(userId: string, limit = 50, projectId?: number): Promise<Content[]> {
+  async getContent(userId: string, limit = 50, projectId?: number, campaignId?: number): Promise<Content[]> {
     const conditions = [eq(content.userId, userId)];
     if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
+    if (campaignId !== undefined) conditions.push(eq((content as any).campaignId, campaignId));
     return await db.select().from(content)
       .where(and(...conditions))
       .orderBy(desc(content.createdAt))

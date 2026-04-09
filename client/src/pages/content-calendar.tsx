@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'wouter';
 import { useTranslation } from 'react-i18next';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
@@ -120,8 +121,17 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [location] = useLocation();
+
+  // Parse ?campaignId= deep link
+  const urlCampaignId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const v = params.get('campaignId');
+    return v ? Number(v) : null;
+  }, [location]);
 
   const [view, setView] = useState<'pipeline' | 'calendar' | 'accounts' | 'media'>('pipeline');
+  const [campaignFilter, setCampaignFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Content | null>(null);
@@ -146,18 +156,23 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
     }
   }, [projects, selectedProjectId]);
 
+  // Apply campaign filter from URL on mount
+  useEffect(() => {
+    if (urlCampaignId) setCampaignFilter(urlCampaignId);
+  }, [urlCampaignId]);
+
   const selectedProject = projects.find(p => p.id === selectedProjectId);
 
   const now = new Date();
   const currentWeek = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-W' + Math.ceil(now.getDate() / 7);
 
   const { data: content = [], isLoading } = useQuery<Content[]>({
-    queryKey: ['/api/content', selectedProjectId],
+    queryKey: ['/api/content', selectedProjectId, campaignFilter],
     queryFn: () => {
-      const url = selectedProjectId
-        ? `/api/content?projectId=${selectedProjectId}`
-        : '/api/content';
-      return fetch(url, { credentials: 'include' }).then(r => r.json());
+      const params = new URLSearchParams();
+      if (selectedProjectId) params.set('projectId', String(selectedProjectId));
+      if (campaignFilter) params.set('campaignId', String(campaignFilter));
+      return fetch(`/api/content?${params}`, { credentials: 'include' }).then(r => r.json());
     },
     enabled: !!selectedProjectId,
   });
@@ -1068,9 +1083,20 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
             </div>
           </div>
 
-          <main className="flex-1 overflow-hidden">
+          <main className="flex-1 overflow-hidden flex flex-col">
+            {campaignFilter && (
+              <div className="mx-6 mt-4 flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-700 rounded-lg text-sm text-indigo-700 dark:text-indigo-300">
+                <span className="text-xs">🎯 Filtre campagne actif — uniquement les posts de cette campagne</span>
+                <button
+                  onClick={() => setCampaignFilter(null)}
+                  className="ml-auto text-[10px] px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-800 hover:bg-indigo-200 dark:hover:bg-indigo-700 transition-colors"
+                >
+                  Voir tous les posts ×
+                </button>
+              </div>
+            )}
             {view === 'pipeline' ? (
-              <div className="h-full p-6">
+              <div className="flex-1 overflow-hidden p-6">
                 {isLoading ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900" />

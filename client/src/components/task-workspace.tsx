@@ -7,7 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock } from "lucide-react";
+import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink } from "lucide-react";
+import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import type { Task, Project, TaskWorkspaceEntry } from "@shared/schema";
 
@@ -287,10 +288,19 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
 
         <div className="flex-1 flex flex-col overflow-hidden">
           {task?.source === 'campaign' && (
-            <div className="flex items-center gap-1.5 px-5 pt-3">
+            <div className="flex items-center gap-2 px-5 pt-3 flex-wrap">
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 flex items-center gap-1">
                 🚀 {t('taskWorkspace.fromCampaign')}
               </span>
+              {(task as any).campaignId && (
+                <Link
+                  href={`/content-calendar?campaignId=${(task as any).campaignId}`}
+                  className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 flex items-center gap-1 hover:bg-indigo-200 dark:hover:bg-indigo-800/40 transition-colors cursor-pointer"
+                >
+                  <ExternalLink className="h-2.5 w-2.5" />
+                  Voir le post dans le content calendar
+                </Link>
+              )}
             </div>
           )}
           {task?.description?.trim() && (

@@ -4844,14 +4844,20 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         projectId = Number(req.query.projectId);
         if (!Number.isFinite(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid projectId" });
       }
-      
+
+      let campaignId: number | undefined;
+      if (req.query.campaignId !== undefined) {
+        campaignId = Number(req.query.campaignId);
+        if (!Number.isFinite(campaignId) || campaignId <= 0) return res.status(400).json({ message: "Invalid campaignId" });
+      }
+
       let content;
       if (status) {
         content = await storage.getContentByStatus(userId, status as string, projectId);
       } else {
-        content = await storage.getContent(userId, limit ? parseInt(limit as string) : 50, projectId);
+        content = await storage.getContent(userId, limit ? parseInt(limit as string) : 50, projectId, campaignId);
       }
-      
+
       res.json(content);
     } catch (error) {
       console.error("Error fetching content:", error);
@@ -7121,6 +7127,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         await storage.createContent({
           userId,
           projectId: campaign.projectId ?? undefined,
+          campaignId: campaign.id,
           title: piece.angle,
           body: piece.copyDirections,
           platform: piece.platform,
