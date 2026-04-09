@@ -6719,31 +6719,35 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // Si Claude estime qu'une prospection est nécessaire, créer la campagne liée
       let prospectionCampaign = null;
       if (generated.prospection?.needed) {
-        const p = generated.prospection;
-        prospectionCampaign = await storage.createProspectionCampaign({
-          userId,
-          projectId: pid,
-          name: `${generated.name} — Prospection`,
-          status: 'active',
-          targetSector: p.targetSector || generated.targetAudience,
-          channel: p.channel || 'linkedin',
-          digitalLevel: p.digitalLevel || 'tous',
-          campaignBrief: p.campaignBrief || generated.coreMessage,
-          messageAngle: p.messageAngle || generated.coreMessage,
-          buyingSignals: p.buyingSignals || null,
-          prospectsPerDay: p.prospectsPerDay || 3,
-          offer: p.offer || null,
-          linkedCampaignId: campaign.id,
-        } as any);
-        // Mettre à jour la campagne avec le lien retour
-        await storage.updateCampaign(campaign.id, userId, { linkedProspectionCampaignId: prospectionCampaign.id } as any);
-        campaign.linkedProspectionCampaignId = prospectionCampaign.id;
+        try {
+          const p = generated.prospection;
+          prospectionCampaign = await storage.createProspectionCampaign({
+            userId,
+            projectId: pid,
+            name: `${generated.name} — Prospection`,
+            status: 'active',
+            targetSector: p.targetSector || generated.targetAudience,
+            channel: p.channel || 'linkedin',
+            digitalLevel: p.digitalLevel || 'tous',
+            campaignBrief: p.campaignBrief || generated.coreMessage,
+            messageAngle: p.messageAngle || generated.coreMessage,
+            buyingSignals: p.buyingSignals || null,
+            prospectsPerDay: p.prospectsPerDay || 3,
+            offer: p.offer || null,
+            linkedCampaignId: campaign.id,
+          } as any);
+          // Mettre à jour la campagne avec le lien retour
+          await storage.updateCampaign(campaign.id, userId, { linkedProspectionCampaignId: prospectionCampaign.id } as any);
+          (campaign as any).linkedProspectionCampaignId = prospectionCampaign.id;
+        } catch (prospectionError) {
+          console.error("[campaign/generate] Prospection creation failed (campaign saved without link):", prospectionError);
+        }
       }
 
       res.json({ campaign, generated, prospectionCampaign });
-    } catch (error) {
-      console.error("Error generating campaign:", error);
-      res.status(500).json({ message: "Failed to generate campaign" });
+    } catch (error: any) {
+      console.error("[campaign/generate] Error:", error?.message || error);
+      res.status(500).json({ message: error?.message || "Failed to generate campaign" });
     }
   });
 

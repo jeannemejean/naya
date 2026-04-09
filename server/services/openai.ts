@@ -16,6 +16,31 @@ function stripMarkdownJSON(raw: string | null | undefined): string {
 
   // Remove any remaining leading/trailing backticks
   cleaned = cleaned.replace(/^`+|`+$/g, '');
+  cleaned = cleaned.trim();
+
+  // Extract just the JSON object/array — discard any trailing prose after closing brace
+  const startBrace = cleaned.indexOf('{');
+  const startBracket = cleaned.indexOf('[');
+  const startIdx = startBrace === -1 ? startBracket
+    : startBracket === -1 ? startBrace
+    : Math.min(startBrace, startBracket);
+
+  if (startIdx !== -1) {
+    const openChar = cleaned[startIdx];
+    const closeChar = openChar === '{' ? '}' : ']';
+    let depth = 0;
+    let endIdx = -1;
+    for (let i = startIdx; i < cleaned.length; i++) {
+      if (cleaned[i] === openChar) depth++;
+      else if (cleaned[i] === closeChar) {
+        depth--;
+        if (depth === 0) { endIdx = i; break; }
+      }
+    }
+    if (endIdx !== -1) {
+      cleaned = cleaned.substring(startIdx, endIdx + 1);
+    }
+  }
 
   return cleaned.trim();
 }
