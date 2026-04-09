@@ -716,9 +716,21 @@ export const companionConversations = pgTable("companion_conversations", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const companionPendingMessages = pgTable("companion_pending_messages", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  message: text("message").notNull(),
+  triggerType: text("trigger_type").notNull(),
+  // "task_deferred_2x" | "task_deferred_3x" | "weekly_insight"
+  relatedTaskId: integer("related_task_id").references(() => tasks.id),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export type TaskList = typeof taskLists.$inferSelect;
 export type TaskListItem = typeof taskListItems.$inferSelect;
 export type CompanionConversation = typeof companionConversations.$inferSelect;
+export type CompanionPendingMessage = typeof companionPendingMessages.$inferSelect;
 
 // ─── Campaigns ────────────────────────────────────────────────────────────────
 
