@@ -1302,6 +1302,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteTask(taskId: number): Promise<void> {
+    // Nullify FK references before deleting (no cascade on these)
+    await db.update(quickCaptureEntries)
+      .set({ convertedToTaskId: null })
+      .where(eq(quickCaptureEntries.convertedToTaskId, taskId));
+    await db.update(companionPendingMessages)
+      .set({ relatedTaskId: null })
+      .where(eq(companionPendingMessages.relatedTaskId, taskId));
+    // Delete child records
+    await db.delete(taskScheduleEvents).where(eq(taskScheduleEvents.taskId, taskId));
+    await db.delete(taskWorkspaceEntries).where(eq(taskWorkspaceEntries.taskId, taskId));
+    // Delete the task (taskDependencies cascade automatically)
     await db.delete(tasks).where(eq(tasks.id, taskId));
   }
 
