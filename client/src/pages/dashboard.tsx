@@ -10,6 +10,7 @@ import { NayaCompanionBar } from "@/components/NayaCompanion";
 import MilestoneChain from "@/components/milestone-chain";
 import TodaysTasks from "@/components/todays-tasks";
 import { StuckTasksCard } from "@/components/StuckTasksCard";
+import PlanningStartBanner from "@/components/PlanningStartBanner";
 import SchedulePreview from "@/components/schedule-preview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1752,6 +1753,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
               <BentoTileMyState />
             </div>
 
+            <PlanningStartBanner />
             <ProjectSetupBanner />
 
             {isAllProjects ? <AllProjectsBand /> : activeProjectId ? <ActiveProjectBand projectId={activeProjectId} /> : null}

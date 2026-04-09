@@ -471,13 +471,20 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
 
     for (const userId of userIds) {
       try {
+        const prefs = await storage.getUserPreferences(userId);
+
+        // Skip si la planification n'a pas encore démarré
+        if (prefs?.planningStartDate && prefs.planningStartDate > startDate) {
+          console.log(`[AutoPlanner] Skipping ${userId} — planning starts ${prefs.planningStartDate}`);
+          continue;
+        }
+
         // 1. Rollover des tâches incomplètes des jours passés
         await rolloverStaleTasks(userId, startDate).catch(e =>
           console.error(`[AutoPlanner] Rollover failed for ${userId}:`, e.message)
         );
 
         // 2. Générer les 7 prochains jours de travail
-        const prefs = await storage.getUserPreferences(userId);
         const workDays = parseWorkDays(prefs?.workDays);
         const dates = nextWorkingDates(startDate, 7, workDays);
 
@@ -583,6 +590,13 @@ async function runEndOfDayRollover(): Promise<void> {
   for (const userId of userIds) {
     try {
       const prefs = await storage.getUserPreferences(userId);
+
+      // Skip si la planification n'a pas encore démarré
+      if (prefs?.planningStartDate && prefs.planningStartDate > today) {
+        console.log(`[Rollover] Skipping ${userId} — planning starts ${prefs.planningStartDate}`);
+        continue;
+      }
+
       const workDays = parseWorkDays(prefs?.workDays);
 
       // Tâches incomplètes de today et avant (lookback 30j)
@@ -745,6 +759,10 @@ async function runIntraDayReschedule(): Promise<void> {
     for (const userId of userIds) {
       try {
         const prefs = await storage.getUserPreferences(userId);
+
+        // Skip si la planification n'a pas encore démarré
+        if (prefs?.planningStartDate && prefs.planningStartDate > today) continue;
+
         const workDays = parseWorkDays(prefs?.workDays);
         const workDayStart = (prefs as any)?.workDayStart || '09:00';
         const workDayEnd   = (prefs as any)?.workDayEnd   || '18:00';

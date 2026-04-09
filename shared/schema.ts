@@ -114,6 +114,7 @@ export const userPreferences = pgTable("user_preferences", {
   dailyBriefDate: text("daily_brief_date"),                         // YYYY-MM-DD — date of last generated brief
   dailyBriefContent: jsonb("daily_brief_content"),                  // stored brief JSON
   dailyBriefDismissed: boolean("daily_brief_dismissed").default(false),
+  planningStartDate: text("planning_start_date"), // YYYY-MM-DD — Naya ne planifie rien avant cette date
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

@@ -465,6 +465,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
   const [lunchEnd, setLunchEnd] = useState('13:00');
   const [workStart, setWorkStart] = useState('09:00');
   const [workEnd, setWorkEnd] = useState('18:00');
+  const [planningStartDate, setPlanningStartDate] = useState('');
   useEffect(() => {
     if (schedulePrefs) {
       setWorkDays((schedulePrefs.workDays || 'mon,tue,wed,thu,fri').split(',').filter(Boolean));
@@ -473,6 +474,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
       setLunchEnd(schedulePrefs.lunchBreakEnd || '13:00');
       setWorkStart(schedulePrefs.workDayStart || '09:00');
       setWorkEnd(schedulePrefs.workDayEnd || '18:00');
+      setPlanningStartDate((schedulePrefs as any).planningStartDate || '');
     }
   }, [schedulePrefs]);
 
@@ -498,6 +500,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
       lunchBreakEnd: lunchEnd,
       workDayStart: workStart,
       workDayEnd: workEnd,
+      planningStartDate: planningStartDate || null,
     });
   };
 
@@ -769,6 +772,32 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                 <CardDescription>{t('settings.subtitle')}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
+                {/* Date de démarrage de la planification */}
+                <div className="space-y-2">
+                  <Label className="text-sm">Date de démarrage de la planification</Label>
+                  <p className="text-xs text-slate-500 dark:text-gray-400">
+                    Naya ne génère aucune tâche et ne déplace rien avant cette date. Laisse vide pour démarrer immédiatement.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={planningStartDate}
+                      onChange={e => setPlanningStartDate(e.target.value)}
+                      className="text-sm px-3 py-1.5 rounded-md border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-slate-800 dark:text-gray-200"
+                    />
+                    {planningStartDate && (
+                      <button
+                        onClick={() => setPlanningStartDate('')}
+                        className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-gray-300 underline"
+                      >
+                        Effacer (démarrer maintenant)
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
                 <div className="space-y-2">
                   <Label className="text-sm">Working days</Label>
                   <div className="flex gap-1.5">
