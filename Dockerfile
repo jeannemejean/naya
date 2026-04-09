@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies (includes vite/esbuild now in dependencies)
 COPY package*.json ./
-RUN npm ci
+RUN NODE_ENV=development npm ci
 
 # Copy source and build
 COPY . .
