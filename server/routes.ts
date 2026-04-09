@@ -7601,6 +7601,65 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // ─── Companion Pending Messages & Stuck Tasks ──────────────────────────────
+  app.get('/api/companion/pending', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const messages = await storage.getPendingMessages(userId);
+      res.json({ messages, unreadCount: messages.length });
+    } catch (err: any) {
+      console.error('GET /api/companion/pending error:', err);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
+  app.post('/api/companion/pending/:id/read', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: 'ID invalide' });
+      await storage.markPendingMessageRead(id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /api/companion/pending/:id/read error:', err);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
+  app.get('/api/tasks/stuck', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const stuck = await storage.getStuckTasks(userId);
+      res.json(stuck);
+    } catch (err: any) {
+      console.error('GET /api/tasks/stuck error:', err);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
+  app.post('/api/companion/pending-insight', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const { tasks: stuckTasks } = req.body;
+      if (!Array.isArray(stuckTasks) || stuckTasks.length === 0) {
+        return res.status(400).json({ message: 'tasks requis' });
+      }
+      const taskList = stuckTasks
+        .map((t: { title: string; count: number }) => `'${t.title}' (${t.count}x)`)
+        .join(', ');
+      const message = `Voici les tâches qui reviennent depuis plusieurs jours : ${taskList}. On en parle ? Je peux les découper, les reporter, ou les supprimer si elles ne sont plus pertinentes.`;
+      await storage.createPendingMessage({
+        userId,
+        message,
+        triggerType: 'weekly_insight',
+        relatedTaskId: null,
+      });
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /api/companion/pending-insight error:', err);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
   // ─── Business Memory CRUD ──────────────────────────────────────────────────
   app.get('/api/memory', isAuthenticated, async (req: any, res) => {
     try {
