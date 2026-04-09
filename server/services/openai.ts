@@ -1043,6 +1043,19 @@ export interface CampaignGenerationRequest {
   weekContext?: string;
 }
 
+export interface GeneratedCampaignProspection {
+  needed: true;
+  rationale: string;         // pourquoi la prospection est nécessaire pour cet objectif
+  targetSector: string;      // secteur/segment à cibler
+  channel: string;           // linkedin | email | both
+  digitalLevel: string;      // fort | faible | tous
+  campaignBrief: string;     // proposition en une phrase
+  messageAngle: string;      // angle aligné avec le coreMessage de la campagne
+  buyingSignals: string;     // critères pour identifier un prospect prêt
+  prospectsPerDay: number;   // 1-5 recommandé
+  offer: string;             // offre concrète à proposer
+}
+
 export interface GeneratedCampaign {
   name: string;
   campaignType: string;
@@ -1065,6 +1078,7 @@ export interface GeneratedCampaign {
     taskEnergyType: string;
     phase: number;
   }>;
+  prospection: GeneratedCampaignProspection | null;
 }
 
 function getDurationGuidance(duration: string): string {
@@ -1180,7 +1194,24 @@ Return ONLY a JSON object matching this exact structure (no preamble, no markdow
       "taskEnergyType": "deep_work|creative|admin|social|execution",
       "phase": 1
     }
-  ]
+  ],
+  "prospection": null
+}
+
+PROSPECTION DECISION RULE:
+Set "prospection" to null if the objective is purely content/visibility/authority.
+Set "prospection" to an object if the campaign objective involves acquiring new clients, generating leads, finding partners, or any direct outreach to new contacts. In that case:
+{
+  "needed": true,
+  "rationale": "One sentence explaining why prospection is required for this objective",
+  "targetSector": "Specific sector or profile to target (derived from targetAudience)",
+  "channel": "linkedin|email|both (pick the most relevant given the brand's platform priority)",
+  "digitalLevel": "fort|faible|tous",
+  "campaignBrief": "One sentence: what you propose to this prospect segment",
+  "messageAngle": "The unique angle that aligns with the campaign's coreMessage",
+  "buyingSignals": "Criteria to identify a prospect who is ready (e.g. recent funding, job posting, etc.)",
+  "prospectsPerDay": 3,
+  "offer": "The concrete offer to propose in prospection (from the brand's offers)"
 }
 
 Generate the right number of phases for the duration. For a 1-month campaign: 3 phases. For 3 months: 4 phases. For 6 months: 5-6 phases.

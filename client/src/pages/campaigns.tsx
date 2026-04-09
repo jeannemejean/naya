@@ -890,6 +890,11 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-400 dark:text-gray-500">
                       {c.campaignType && <span className="capitalize">{c.campaignType.replace("_", " ")}</span>}
                       <span>{(c.generatedTasks as GeneratedTask[] | null)?.length || 0} tasks</span>
+                      {(c as any).linkedProspectionCampaignId && (
+                        <span className="flex items-center gap-1 text-indigo-500 dark:text-indigo-400">
+                          <span>🎯</span> Prospection liée
+                        </span>
+                      )}
                       {c.createdAt && (
                         <span>
                           {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
@@ -1053,6 +1058,20 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     </div>
                   )}
                 </div>
+
+                {/* Prospection liée */}
+                {(selectedCampaign as any).linkedProspectionCampaignId && (
+                  <div className="bg-violet-50 dark:bg-violet-950/30 rounded-lg p-3 border border-violet-200 dark:border-violet-800/50 flex items-center gap-3">
+                    <span className="text-lg">🎯</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-violet-800 dark:text-violet-300">Campagne de prospection associée</p>
+                      <p className="text-[11px] text-violet-600 dark:text-violet-400 mt-0.5">Naya a créé une campagne de prospection liée à cet objectif.</p>
+                    </div>
+                    <a href="/outreach" className="text-xs px-2.5 py-1 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors flex-shrink-0">
+                      Voir →
+                    </a>
+                  </div>
+                )}
 
                 {/* Core Message */}
                 {selectedCampaign.coreMessage && (

@@ -703,6 +703,15 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
               </div>
             </div>
 
+            {/* Campagne marketing liée */}
+            {(campaign as any).linkedCampaignId && (
+              <div className="flex items-center gap-2 mb-3 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/30 rounded-lg border border-indigo-200 dark:border-indigo-800/40">
+                <span className="text-xs">📣</span>
+                <p className="text-[11px] text-indigo-700 dark:text-indigo-400 flex-1">Campagne marketing liée</p>
+                <a href="/campaigns" className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline flex-shrink-0">Voir →</a>
+              </div>
+            )}
+
             {/* Brief */}
             {campaign.campaignBrief && (
               <p className="text-xs text-foreground/70 italic bg-muted/40 rounded-lg px-3 py-2 mb-3">

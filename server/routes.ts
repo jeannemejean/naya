@@ -6716,7 +6716,31 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         endDate,
       });
 
-      res.json({ campaign, generated });
+      // Si Claude estime qu'une prospection est nécessaire, créer la campagne liée
+      let prospectionCampaign = null;
+      if (generated.prospection?.needed) {
+        const p = generated.prospection;
+        prospectionCampaign = await storage.createProspectionCampaign({
+          userId,
+          projectId: pid,
+          name: `${generated.name} — Prospection`,
+          status: 'active',
+          targetSector: p.targetSector || generated.targetAudience,
+          channel: p.channel || 'linkedin',
+          digitalLevel: p.digitalLevel || 'tous',
+          campaignBrief: p.campaignBrief || generated.coreMessage,
+          messageAngle: p.messageAngle || generated.coreMessage,
+          buyingSignals: p.buyingSignals || null,
+          prospectsPerDay: p.prospectsPerDay || 3,
+          offer: p.offer || null,
+          linkedCampaignId: campaign.id,
+        } as any);
+        // Mettre à jour la campagne avec le lien retour
+        await storage.updateCampaign(campaign.id, userId, { linkedProspectionCampaignId: prospectionCampaign.id } as any);
+        campaign.linkedProspectionCampaignId = prospectionCampaign.id;
+      }
+
+      res.json({ campaign, generated, prospectionCampaign });
     } catch (error) {
       console.error("Error generating campaign:", error);
       res.status(500).json({ message: "Failed to generate campaign" });

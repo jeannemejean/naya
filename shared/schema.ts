@@ -468,6 +468,7 @@ export const prospectionCampaigns = pgTable("prospection_campaigns", {
   buyingSignals: text("buying_signals"),              // critères de qualification
   campaignBrief: text("campaign_brief"),              // proposition en une phrase
   messageAngle: text("message_angle"),                // angle d'approche unique
+  linkedCampaignId: integer("linked_campaign_id"),    // FK → campaigns.id (set après création)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -757,6 +758,7 @@ export const campaigns = pgTable("campaigns", {
   startDate: text("start_date"),
   endDate: text("end_date"),
   audienceSegment: text("audience_segment"),
+  linkedProspectionCampaignId: integer("linked_prospection_campaign_id"), // FK → prospection_campaigns.id
   pauseNote: text("pause_note"),
   reviewContentQuality: integer("review_content_quality"),
   reviewAudienceResponse: integer("review_audience_response"),
