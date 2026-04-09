@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "react-i18next";
+import { Link } from "wouter";
 import Sidebar from "@/components/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Rocket, Plus, Loader2, CheckCircle2, Pause, Trash2, Edit2, X,
   Clock, Zap, Brain, Users, Settings, Lightbulb, Target,
-  ChevronUp, ChevronDown, AlertTriangle, CalendarDays, RotateCcw
+  ChevronUp, ChevronDown, AlertTriangle, CalendarDays, RotateCcw, ArrowRight
 } from "lucide-react";
 import type { Project, Task } from "@shared/schema";
 import { formatLocalDate } from "@/lib/dateUtils";
@@ -488,41 +489,72 @@ function DetailTasksByPhase({ campaignTasks, generatedTasks }: { campaignTasks: 
             <p className="text-[10px] text-slate-500 dark:text-gray-400 mb-1.5 uppercase">{t('campaigns.other')}</p>
           )}
           <div className="space-y-2">
-            {items.map((t) => (
-              <div
-                key={t.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border ${
-                  t.completed
-                    ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"
-                    : "bg-white dark:bg-gray-900 border-slate-200 dark:border-gray-700"
-                }`}
-              >
-                {t.completed ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                ) : (
-                  <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-gray-600 flex-shrink-0" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className={`text-sm ${t.completed ? "line-through text-slate-400 dark:text-gray-500" : "text-slate-900 dark:text-white"}`}>
-                    {t.title}
-                  </p>
-                  {t.description && (
-                    <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5 line-clamp-1">{t.description}</p>
+            {items.map((t) => {
+              const taskLink = t.scheduledDate
+                ? `/planning?date=${t.scheduledDate}&taskId=${t.id}`
+                : null;
+
+              const cardContent = (
+                <>
+                  {t.completed ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-gray-600 flex-shrink-0" />
                   )}
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm ${t.completed ? "line-through text-slate-400 dark:text-gray-500" : "text-slate-900 dark:text-white"}`}>
+                      {t.title}
+                    </p>
+                    {t.description && (
+                      <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5 line-clamp-1">{t.description}</p>
+                    )}
+                    {t.scheduledDate && (
+                      <p className="text-[10px] text-slate-400 dark:text-gray-500 mt-0.5">
+                        {new Date(t.scheduledDate + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                        {t.scheduledTime && ` · ${t.scheduledTime}`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Badge variant="outline" className={`text-[10px] ${TYPE_COLORS[t.type] || ""}`}>
+                      {t.type}
+                    </Badge>
+                    {t.estimatedDuration && (
+                      <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
+                        <Clock className="h-3 w-3" />
+                        {t.estimatedDuration}m
+                      </span>
+                    )}
+                    {taskLink && !t.completed && (
+                      <ArrowRight className="h-3.5 w-3.5 text-slate-300 dark:text-gray-600 group-hover:text-indigo-500 transition-colors" />
+                    )}
+                  </div>
+                </>
+              );
+
+              return taskLink && !t.completed ? (
+                <Link
+                  key={t.id}
+                  href={taskLink}
+                  className={`flex items-center gap-3 p-3 rounded-lg border group cursor-pointer transition-colors
+                    bg-white dark:bg-gray-900 border-slate-200 dark:border-gray-700
+                    hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10`}
+                >
+                  {cardContent}
+                </Link>
+              ) : (
+                <div
+                  key={t.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    t.completed
+                      ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"
+                      : "bg-white dark:bg-gray-900 border-slate-200 dark:border-gray-700"
+                  }`}
+                >
+                  {cardContent}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Badge variant="outline" className={`text-[10px] ${TYPE_COLORS[t.type] || ""}`}>
-                    {t.type}
-                  </Badge>
-                  {t.estimatedDuration && (
-                    <span className="flex items-center gap-0.5 text-[10px] text-slate-400">
-                      <Clock className="h-3 w-3" />
-                      {t.estimatedDuration}m
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}

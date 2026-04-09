@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -130,9 +131,24 @@ export default function Planning({ onSearchClick }: Props) {
   const queryClient = useQueryClient();
   const { activeProjectId } = useProject();
   const { triggerAutoRebalance } = useAutoRebalance();
+  const [location, setLocation] = useLocation();
+
+  // Parse URL params ?date=YYYY-MM-DD&taskId=<id>
+  const urlParams = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return {
+      date: params.get('date'),
+      taskId: params.get('taskId') ? Number(params.get('taskId')) : null,
+    };
+  }, [location]);
 
   const [viewScope, setViewScope] = useState<ViewScope>('week');
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const d = params.get('date');
+    if (d) { const parsed = new Date(d + 'T12:00:00'); if (!isNaN(parsed.getTime())) return parsed; }
+    return new Date();
+  });
   const [workspaceTask, setWorkspaceTask] = useState<Task | null>(null);
   const [milestoneConfirmTarget, setMilestoneConfirmTarget] = useState<Task | null>(null);
   const [strategyExpanded, setStrategyExpanded] = useState(false);
@@ -182,8 +198,19 @@ export default function Planning({ onSearchClick }: Props) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     },
+    // Note: auto-open deep-linked task is handled in the effect below
     staleTime: 0, // Toujours re-fetch au focus
   });
+
+  // Auto-open workspace for deep link ?taskId=<id>
+  useEffect(() => {
+    if (!urlParams.taskId || rangeTasks.length === 0 || workspaceTask) return;
+    const target = rangeTasks.find(t => t.id === urlParams.taskId);
+    if (target) {
+      setWorkspaceTask(target);
+      setLocation('/planning', { replace: true });
+    }
+  }, [urlParams.taskId, rangeTasks]);
 
   // Le planner tourne automatiquement à 06:00 via le cron serveur.
   // On ne déclenche plus le planner complet depuis l'UI pour éviter les runs
