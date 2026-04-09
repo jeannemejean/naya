@@ -49,7 +49,12 @@ export async function reformulateIfVague(
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { rewrite: null };
     const parsed = JSON.parse(jsonMatch[0]);
-    return { rewrite: parsed.rewrite && parsed.rewrite !== 'null' ? parsed.rewrite : null };
+    const rewrite = parsed.rewrite;
+    return {
+      rewrite: (typeof rewrite === 'string' && rewrite.length > 0 && rewrite !== 'null' && rewrite.split(/\s+/).length <= 15)
+        ? rewrite
+        : null
+    };
   } catch (e) {
     console.error('[TaskIntelligence] reformulateIfVague error:', e);
     return { rewrite: null };
@@ -97,7 +102,10 @@ export async function handleTaskDeferral(
 
   // Déduplication : ne pas créer de doublon si un message non lu existe déjà
   const existing = await storage.getPendingMessageByTaskAndType(task.id, triggerType).catch(() => undefined);
-  if (existing) return;
+  if (existing) {
+    console.debug(`[TaskIntelligence] Skipping duplicate ${triggerType} for task ${task.id}`);
+    return;
+  }
 
   let message: string;
   let displayTitle = task.title;
@@ -110,7 +118,6 @@ export async function handleTaskDeferral(
         console.error('[TaskIntelligence] reformulate updateTask failed:', e)
       );
       message = `'${displayTitle}' revenait depuis 3 jours — je l'ai reformulée en '${rewrite}' pour que ce soit plus facile à démarrer. C'est quoi le vrai blocage ?`;
-      displayTitle = rewrite;
     } else {
       message = `'${displayTitle}' revient depuis 3 jours. Un obstacle ? Je peux la découper, la reporter à la semaine prochaine, ou la supprimer.`;
     }
