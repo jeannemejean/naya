@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert,
+  Alert, AppState,
 } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -92,6 +92,7 @@ export default function CompanionScreen() {
   const [input, setInput] = useState("");
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const listRef = useRef<FlatList>(null);
   const queryClient = useQueryClient();
 
@@ -119,6 +120,21 @@ export default function CompanionScreen() {
   });
 
   const activeProject = projects?.find((p: any) => p.projectStatus === "active") || projects?.[0] || null;
+
+  // Arrêter l'enregistrement si l'app passe en background (évite fuite de ressource audio)
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", async (nextState) => {
+      if (nextState !== "active" && recordingRef.current) {
+        try {
+          await recordingRef.current.stopAndUnloadAsync();
+        } catch {}
+        recordingRef.current = null;
+        setRecording(null);
+        setIsTranscribing(false);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (history && messages.length === 0) {
@@ -240,6 +256,7 @@ export default function CompanionScreen() {
       const { recording: rec } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
+      recordingRef.current = rec;
       setRecording(rec);
     } catch (e) {
       console.warn("startRecording error:", e);
@@ -252,6 +269,7 @@ export default function CompanionScreen() {
       await recording.stopAndUnloadAsync();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
       const uri = recording.getURI();
+      recordingRef.current = null;
       setRecording(null);
 
       if (!uri) return;
