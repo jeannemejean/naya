@@ -72,6 +72,8 @@ import {
   matchPersonaStrategy,
   TARGET_PERSONA_LIBRARY
 } from "./services/persona-intelligence";
+import multer from "multer";
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Helper: fetch project + persona context for AI generation
 async function fetchAIContext(userId: string, projectIdOverride?: number | null): Promise<{
@@ -2176,6 +2178,50 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       res.json(history);
     } catch (error) {
       res.status(500).json({ message: "Erreur de récupération" });
+    }
+  });
+
+  // GET /api/companion/context — contexte enrichi pour le companion mobile
+  app.get('/api/companion/context', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const today = new Date().toISOString().slice(0, 10);
+      const in7Days = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+      const [prefs, todayTasks, upcomingTasks, projects, brandDna] = await Promise.all([
+        storage.getUserPreferences(userId),
+        storage.getTasksInRange(userId, today, today),
+        storage.getTasksInRange(userId, today, in7Days),
+        storage.getProjects(userId),
+        storage.getBrandDna(userId),
+      ]);
+
+      const activeProject = (projects as any[]).find((p: any) => p.projectStatus === 'active') || projects[0] || null;
+
+      // Trouver le premier jalon active ou unlocked du projet actif
+      let activeMilestone = null;
+      if (activeProject) {
+        const milestones = await storage.getMilestones(activeProject.id, userId);
+        activeMilestone = (milestones as any[]).find(m => m.status === 'active' || m.status === 'unlocked') || null;
+        if (activeMilestone) {
+          activeMilestone = { id: activeMilestone.id, title: activeMilestone.title, status: activeMilestone.status };
+        }
+      }
+
+      res.json({
+        energyLevel: prefs?.currentEnergyLevel || 'high',
+        todayTasks: (todayTasks as any[]).slice(0, 10),
+        upcomingTasks: (upcomingTasks as any[])
+          .filter((t: any) => !t.completed && t.scheduledDate > today)
+          .slice(0, 20)
+          .map((t: any) => ({ title: t.title, date: t.scheduledDate, time: t.scheduledTime || undefined, taskId: t.id })),
+        activeMilestone,
+        activeProject: activeProject ? { id: activeProject.id, name: activeProject.name } : null,
+        brandDnaSummary: (brandDna as any)?.nayaIntelligenceSummary || null,
+      });
+    } catch (error) {
+      console.error('GET /api/companion/context error:', error);
+      res.status(500).json({ message: 'Erreur contexte companion' });
     }
   });
 
@@ -4925,6 +4971,78 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // Régénère un post de contenu en remplaçant son angle/corps en gardant platform/pillar/format
+  app.post('/api/content/:id/regenerate', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const id = parseInt(req.params.id);
+      const { feedback } = req.body as { feedback?: string };
+
+      const existing = await storage.getContentById(id, userId);
+      if (!existing) return res.status(404).json({ message: "Contenu introuvable" });
+
+      const brandDna = await storage.getBrandDna(userId);
+      const bd: any = brandDna || {};
+
+      const systemPrompt = `Tu es Naya, spécialiste en stratégie de contenu pour entrepreneurs indépendants.
+Tu génères un post de remplacement pour le content calendar. Le post DOIT:
+- Refléter la voix et le positionnement de la marque
+- Ne jamais critiquer ou analyser des marques qui ne sont pas clientes
+- Rester dans l'expertise propre de la marque (pas de commentaire sur les concurrents)
+- Être spécifique, actionnable et non générique
+Réponds UNIQUEMENT en JSON valide, aucun texte en dehors.`;
+
+      const userPrompt = `Génère un post de remplacement pour le content calendar.
+
+POST ACTUEL À REMPLACER:
+- Titre/angle: ${existing.title}
+- Corps: ${existing.body}
+- Plateforme: ${existing.platform}
+- Format: ${existing.contentType}
+- Pilier: ${existing.pillar}
+- Objectif: ${existing.goal}
+
+${feedback ? `FEEDBACK DE L'UTILISATEUR (ce qu'il ne veut pas / ce qu'il préfère):\n${feedback}\n` : ''}
+CONTEXTE MARQUE:
+- Positionnement: ${bd.uniquePositioning || ''}
+- Audience: ${bd.targetAudience || ''}
+- Style de communication: ${bd.communicationStyle || 'Professionnel'}
+- Territoire éditorial: ${bd.editorialTerritory || ''}
+- Keywords marque: ${(bd.brandVoiceKeywords || []).join(', ')}
+- Anti-keywords: ${(bd.brandVoiceAntiKeywords || []).join(', ')}
+
+Génère un post de remplacement en JSON:
+{"title": "Nouvel angle (accroche)", "body": "Contenu du post / directions créatives (2-3 phrases)"}
+
+Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout en restant sur la même plateforme (${existing.platform}) et le même pilier (${existing.pillar}).`;
+
+      const raw = await callClaude({
+        model: CLAUDE_MODELS.smart,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        max_tokens: 500,
+      });
+
+      let replacement: { title: string; body: string };
+      try {
+        replacement = JSON.parse(stripMarkdownJSON(raw));
+      } catch {
+        return res.status(500).json({ message: "Impossible de générer une alternative. Réessaie." });
+      }
+
+      const updated = await storage.updateContent(id, {
+        title: replacement.title,
+        body: replacement.body,
+        contentStatus: 'idea',
+      });
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("[content/regenerate] Error:", error?.message);
+      res.status(500).json({ message: "Erreur lors de la régénération" });
+    }
+  });
+
   // AI-powered content generation
   app.post('/api/content/generate', isAuthenticated, async (req: any, res) => {
     try {
@@ -7113,32 +7231,66 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         angle: string; pillar: string; goal: string; copyDirections: string;
       }>;
 
-      let contentCreated = 0;
+      // Group content plan items by week number
+      const contentByWeek = new Map<number, typeof contentPlan>();
       for (const piece of contentPlan) {
         let weekNum = 1;
         const wMatch = piece.week.match(/[Ww]eek\s*(\d+)/);
         const mMatch = piece.week.match(/[Mm]onth\s*(\d+)/);
         if (wMatch) weekNum = parseInt(wMatch[1]);
         else if (mMatch) weekNum = (parseInt(mMatch[1]) - 1) * 4 + 1;
+        if (!contentByWeek.has(weekNum)) contentByWeek.set(weekNum, []);
+        contentByWeek.get(weekNum)!.push(piece);
+      }
 
-        const pieceDate = campaignAddDays(startDate, (weekNum - 1) * 7 + 2);
-        pieceDate.setHours(10, 0, 0, 0);
+      let contentCreated = 0;
+      // Spread posts across work days within each week
+      for (const [weekNum, pieces] of contentByWeek) {
+        const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);
+        // Collect work days in this week
+        const workDaysInWeek: string[] = [];
+        for (let d = 0; d < 7; d++) {
+          const day = campaignAddDays(weekStart, d);
+          const dateStr = campaignDateToStr(day);
+          if (isWorkDay(dateStr)) workDaysInWeek.push(dateStr);
+        }
+        if (workDaysInWeek.length === 0) {
+          // Fallback: use Wed of the week
+          const fallback = campaignAddDays(weekStart, 2);
+          workDaysInWeek.push(campaignDateToStr(fallback));
+        }
 
-        await storage.createContent({
-          userId,
-          projectId: campaign.projectId ?? undefined,
-          campaignId: campaign.id,
-          title: piece.angle,
-          body: piece.copyDirections,
-          platform: piece.platform,
-          contentType: mapFormatToContentType(piece.format),
-          pillar: piece.pillar,
-          goal: piece.goal,
-          status: 'draft',
-          contentStatus: 'idea',
-          scheduledFor: pieceDate,
-        });
-        contentCreated++;
+        // Assign pieces to different days, cycling through work days
+        // Hours vary to avoid exact duplicates: 9h, 11h, 14h, 16h
+        const HOURS = [9, 11, 14, 16];
+        const dayUsageCounts = new Map<string, number>();
+
+        for (let i = 0; i < pieces.length; i++) {
+          const piece = pieces[i];
+          const dayStr = workDaysInWeek[i % workDaysInWeek.length];
+          const usageCount = dayUsageCounts.get(dayStr) || 0;
+          dayUsageCounts.set(dayStr, usageCount + 1);
+          const hour = HOURS[usageCount % HOURS.length];
+
+          const pieceDate = new Date(dayStr + 'T00:00:00');
+          pieceDate.setHours(hour, 0, 0, 0);
+
+          await storage.createContent({
+            userId,
+            projectId: campaign.projectId ?? undefined,
+            campaignId: campaign.id,
+            title: piece.angle,
+            body: piece.copyDirections,
+            platform: piece.platform,
+            contentType: mapFormatToContentType(piece.format),
+            pillar: piece.pillar,
+            goal: piece.goal,
+            status: 'draft',
+            contentStatus: 'idea',
+            scheduledFor: pieceDate,
+          });
+          contentCreated++;
+        }
       }
 
       const updated = await storage.updateCampaign(id, userId, {
@@ -7158,6 +7310,105 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // Regenerate content calendar for an existing campaign (keeps tasks intact)
+  app.post('/api/campaigns/:id/regenerate-content', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const id = parseInt(req.params.id);
+      const campaign = await storage.getCampaign(id, userId);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+      const contentPlan = (campaign.contentPlan || []) as Array<{
+        phase: number; week: string; platform: string; format: string;
+        angle: string; pillar: string; goal: string; copyDirections: string;
+      }>;
+
+      if (contentPlan.length === 0) {
+        return res.status(400).json({ message: "Aucun plan de contenu trouvé — relance la campagne d'abord." });
+      }
+
+      // Delete all existing content items for this campaign
+      const deleted = await storage.deleteAllCampaignContent(id);
+
+      const rawStart = campaign.startDate || new Date().toISOString().slice(0, 10);
+      const startDate = new Date(rawStart + 'T00:00:00');
+
+      const prefs = await storage.getUserPreferences(userId);
+      const campaignWorkDaySet = parseWorkDays(prefs?.workDays);
+      const campaignAvailability = await storage.getDayAvailabilityRange(userId, rawStart,
+        campaign.endDate || campaignDateToStr(campaignAddDays(startDate, 365)));
+      const campaignOffDates = new Set<string>(
+        campaignAvailability.filter((a: any) => a.dayType === 'off').map((a: any) => a.date as string)
+      );
+
+      const isWorkDayLocal = (dateStr: string): boolean => {
+        if (campaignOffDates.has(dateStr)) return false;
+        const dow = new Date(dateStr + 'T00:00:00').getDay();
+        return campaignWorkDaySet.has(DAY_ABBRS[dow]);
+      };
+
+      // Group by week
+      const contentByWeek = new Map<number, typeof contentPlan>();
+      for (const piece of contentPlan) {
+        let weekNum = 1;
+        const wMatch = piece.week.match(/[Ww]eek\s*(\d+)/);
+        const mMatch = piece.week.match(/[Mm]onth\s*(\d+)/);
+        if (wMatch) weekNum = parseInt(wMatch[1]);
+        else if (mMatch) weekNum = (parseInt(mMatch[1]) - 1) * 4 + 1;
+        if (!contentByWeek.has(weekNum)) contentByWeek.set(weekNum, []);
+        contentByWeek.get(weekNum)!.push(piece);
+      }
+
+      let contentCreated = 0;
+      const HOURS = [9, 11, 14, 16];
+
+      for (const [weekNum, pieces] of contentByWeek) {
+        const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);
+        const workDaysInWeek: string[] = [];
+        for (let d = 0; d < 7; d++) {
+          const day = campaignAddDays(weekStart, d);
+          const dateStr = campaignDateToStr(day);
+          if (isWorkDayLocal(dateStr)) workDaysInWeek.push(dateStr);
+        }
+        if (workDaysInWeek.length === 0) {
+          workDaysInWeek.push(campaignDateToStr(campaignAddDays(weekStart, 2)));
+        }
+
+        const dayUsageCounts = new Map<string, number>();
+        for (let i = 0; i < pieces.length; i++) {
+          const piece = pieces[i];
+          const dayStr = workDaysInWeek[i % workDaysInWeek.length];
+          const usageCount = dayUsageCounts.get(dayStr) || 0;
+          dayUsageCounts.set(dayStr, usageCount + 1);
+          const hour = HOURS[usageCount % HOURS.length];
+          const pieceDate = new Date(dayStr + 'T00:00:00');
+          pieceDate.setHours(hour, 0, 0, 0);
+
+          await storage.createContent({
+            userId,
+            projectId: campaign.projectId ?? undefined,
+            campaignId: campaign.id,
+            title: piece.angle,
+            body: piece.copyDirections,
+            platform: piece.platform,
+            contentType: mapFormatToContentType(piece.format),
+            pillar: piece.pillar,
+            goal: piece.goal,
+            status: 'draft',
+            contentStatus: 'idea',
+            scheduledFor: pieceDate,
+          });
+          contentCreated++;
+        }
+      }
+
+      res.json({ deleted, contentCreated });
+    } catch (error) {
+      console.error("Error regenerating campaign content:", error);
+      res.status(500).json({ message: "Failed to regenerate content" });
+    }
+  });
+
   app.post('/api/campaigns/:id/pause', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.session.userId;
@@ -7168,11 +7419,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       if (campaign.status !== 'active') return res.status(400).json({ message: "Campaign is not active" });
       const today = new Date().toISOString().slice(0, 10);
       const deleted = await storage.deleteCampaignFutureTasks(id, today);
+      const contentDeleted = await storage.deleteCampaignFutureContent(id, today);
       const updated = await storage.updateCampaign(id, userId, {
         status: 'paused',
         pauseNote: pauseNote?.trim() || null,
       });
-      res.json({ campaign: updated, tasksRemoved: deleted });
+      res.json({ campaign: updated, tasksRemoved: deleted, contentRemoved: contentDeleted });
     } catch (error) {
       console.error("Error pausing campaign:", error);
       res.status(500).json({ message: "Failed to pause campaign" });
