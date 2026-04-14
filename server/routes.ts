@@ -1247,6 +1247,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     try {
       const userId = req.session.userId;
       const projectId = parseInt(req.params.id);
+      if (isNaN(projectId)) return res.status(400).json({ message: 'ID projet invalide' });
       const { content } = req.body;
 
       if (!content?.trim()) {
