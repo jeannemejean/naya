@@ -24,6 +24,8 @@ TYPES D'ACTIONS DISPONIBLES :
 - create_milestone_chain: { type, projectId, milestones: [{title, description?, milestoneType?, conditionType?}] }
 - confirm_milestone: { type, milestoneId }
 - show_project_roadmap: { type, projectId }
+- add_project_note: { type, projectId, content } — note stratégique liée à un projet
+- reschedule_tasks: { type, fromDate, toDate } — déplace TOUTES les tâches incomplètes d'une date à une autre (ex: "décale toutes mes tâches de demain à jeudi"). Format YYYY-MM-DD.
 
 RÈGLES :
 1. Réponds en français naturellement. Les actions sont discrètes — l'utilisateur les voit exécutées, pas le JSON brut.
@@ -44,11 +46,14 @@ export type CompanionAction =
   | { type: "create_reminder"; title: string; datetime: string }
   | { type: "complete_task"; taskId: number }
   | { type: "reschedule_task"; taskId: number; newDate: string; newTime?: string }
+  | { type: "reschedule_day"; energyLevel?: string; reason?: string }
   | { type: "set_energy"; level: "high" | "medium" | "low" | "depleted" }
   | { type: "create_project"; name: string; projectType?: string; description?: string; milestones?: { title: string; description?: string }[] }
   | { type: "create_milestone_chain"; projectId: number; milestones: any[] }
   | { type: "confirm_milestone"; milestoneId: number }
-  | { type: "show_project_roadmap"; projectId: number };
+  | { type: "show_project_roadmap"; projectId: number }
+  | { type: "add_project_note"; projectId: number; content: string }
+  | { type: "reschedule_tasks"; fromDate: string; toDate: string };
 
 export interface CompanionRequest {
   message: string;
@@ -62,6 +67,11 @@ export interface CompanionRequest {
     todayTasks?: any[];
     staleTasks?: Array<{ id: number; title: string; learnedAdjustmentCount: number }>;
     recentCaptures?: any[];
+    // Enrichissement mobile :
+    energyLevel?: string;
+    upcomingTasks?: Array<{ title: string; date: string; time?: string; taskId: number }>;
+    activeMilestone?: { id: number; title: string; status: string } | null;
+    brandDnaSummary?: string | null;
   };
   conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>;
 }
@@ -116,6 +126,26 @@ export async function processCompanionMessage(
       .map(e => `- ${e.title} le ${e.date}${e.time ? ` à ${e.time}` : ''}`)
       .join('\n');
     contextLines.push(`Événements à venir :\n${events}`);
+  }
+
+  if (context.energyLevel) {
+    contextLines.push(`Énergie actuelle : ${context.energyLevel}`);
+  }
+
+  if (context.activeMilestone) {
+    contextLines.push(`Jalon actif : "${context.activeMilestone.title}" (id: ${context.activeMilestone.id}, statut: ${context.activeMilestone.status})`);
+  }
+
+  if (context.upcomingTasks && context.upcomingTasks.length > 0) {
+    const upcoming = context.upcomingTasks
+      .slice(0, 10)
+      .map(t => `- ${t.title} le ${t.date}${t.time ? ` à ${t.time}` : ''}`)
+      .join('\n');
+    contextLines.push(`Tâches à venir (7 jours) :\n${upcoming}`);
+  }
+
+  if (context.brandDnaSummary) {
+    contextLines.push(`Résumé business : ${context.brandDnaSummary}`);
   }
 
   const enrichedMessage = `[CONTEXTE SESSION]\n${contextLines.join('\n')}\n\n[MESSAGE]\n${message}`;
