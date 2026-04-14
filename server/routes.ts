@@ -2204,7 +2204,6 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const enrichedContext = {
         currentDate: today,
         currentTime: now.toTimeString().slice(0, 5),
-        platform: "web",
         ...(clientContext),
         availableProjects: userProjects.slice(0, 15).map((p: any) => ({ id: p.id, name: p.name, type: p.type })),
         ...(staleTasks.length > 0 ? { staleTasks } : {}),

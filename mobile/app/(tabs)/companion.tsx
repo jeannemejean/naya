@@ -280,17 +280,40 @@ export default function CompanionScreen() {
           return;
         }
 
+        case "reschedule_task":
+          await api.patch(`/api/tasks/${action.taskId}`, {
+            scheduledDate: action.newDate,
+            ...(action.newTime ? { scheduledTime: action.newTime } : {}),
+          });
+          break;
+
+        case "create_reminder":
+          await api.post("/api/tasks", {
+            title: action.title, type: "reminder", category: "planning",
+            priority: 2, scheduledDate: action.datetime?.slice(0, 10) || TODAY,
+            scheduledTime: action.datetime?.slice(11, 16) || undefined,
+            source: "companion",
+          });
+          break;
+
         case "reschedule_day":
           queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
           break;
 
-        case "create_project":
-          await api.post("/api/projects", {
+        case "create_project": {
+          const projResponse = await api.post("/api/projects", {
             name: action.name,
             type: action.projectType || "other",
             description: action.description || "",
           });
+          if (action.milestones?.length && projResponse.data?.id) {
+            await api.post(`/api/projects/${projResponse.data.id}/milestone-chain`, {
+              milestones: action.milestones,
+            });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+          }
           break;
+        }
       }
     } catch (e) {
       console.warn("Action failed:", action.type, e);
