@@ -6,6 +6,7 @@ import {
 } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
 import api from "../../lib/api";
 import { defaultFetcher } from "../../lib/queryClient";
 
@@ -89,6 +90,8 @@ const bannerStyles = StyleSheet.create({
 export default function CompanionScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const listRef = useRef<FlatList>(null);
   const queryClient = useQueryClient();
 
@@ -222,6 +225,56 @@ export default function CompanionScreen() {
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Micro requis",
+          "Naya a besoin d'accéder au micro pour t'écouter. Active-le dans les réglages.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(rec);
+    } catch (e) {
+      console.warn("startRecording error:", e);
+    }
+  };
+
+  const stopRecordingAndTranscribe = async () => {
+    if (!recording) return;
+    try {
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      const uri = recording.getURI();
+      setRecording(null);
+
+      if (!uri) return;
+
+      setIsTranscribing(true);
+      const formData = new FormData();
+      formData.append("audio", { uri, name: "recording.m4a", type: "audio/m4a" } as any);
+
+      const response = await api.post("/api/transcribe", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 30_000,
+      });
+
+      const text = response.data?.text?.trim();
+      if (text) setInput(text);
+    } catch (e) {
+      console.warn("transcription error:", e);
+      Alert.alert("Erreur", "La transcription a échoué. Réessaie.");
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
   const handleSend = () => {
     const msg = input.trim();
     if (!msg || chatMutation.isPending) return;
@@ -326,13 +379,31 @@ export default function CompanionScreen() {
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Dis-moi ce que tu veux faire..."
-          placeholderTextColor="#475569"
+          placeholder={recording ? "À l'écoute..." : isTranscribing ? "Transcription..." : "Dis-moi ce que tu veux faire..."}
+          placeholderTextColor={recording ? "#ef4444" : "#475569"}
           multiline
           maxLength={500}
           returnKeyType="send"
           onSubmitEditing={handleSend}
+          editable={!recording && !isTranscribing}
         />
+        {/* Bouton micro */}
+        <TouchableOpacity
+          style={[
+            styles.micBtn,
+            recording && styles.micBtnRecording,
+          ]}
+          onPressIn={startRecording}
+          onPressOut={stopRecordingAndTranscribe}
+          disabled={isTranscribing}
+        >
+          {isTranscribing ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="mic" size={18} color={recording ? "#fff" : "#94a3b8"} />
+          )}
+        </TouchableOpacity>
+        {/* Bouton envoyer */}
         <TouchableOpacity
           style={[styles.sendBtn, (!input.trim() || chatMutation.isPending) && styles.sendBtnDisabled]}
           onPress={handleSend}
@@ -381,4 +452,14 @@ const styles = StyleSheet.create({
   input: { flex: 1, backgroundColor: "#1e1e2e", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, color: "#fff", maxHeight: 120, borderWidth: 1, borderColor: "#2d2d44" },
   sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#4f46e5", alignItems: "center", justifyContent: "center" },
   sendBtnDisabled: { opacity: 0.4 },
+  micBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: "#1e1e2e",
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: "#2d2d44",
+  },
+  micBtnRecording: {
+    backgroundColor: "#ef4444",
+    borderColor: "#ef4444",
+  },
 });
