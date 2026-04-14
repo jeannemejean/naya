@@ -37,9 +37,14 @@ const ACTION_LABELS: Record<string, string> = {
   create_reminder: "⏰ Rappel créé",
   complete_task: "✅ Tâche complétée",
   reschedule_task: "📅 Tâche replanifiée",
+  reschedule_day: "📅 Journée réorganisée",
   set_energy: "⚡ Énergie mise à jour",
   create_milestone_chain: "🗺 Jalons créés",
   confirm_milestone: "✅ Jalon confirmé",
+  add_project_note: "📝 Note projet enregistrée",
+  reschedule_tasks: "📅 Tâches déplacées",
+  show_project_roadmap: "🗺 Roadmap affichée",
+  create_project: "🚀 Projet créé",
 };
 
 const ENERGY_COLORS: Record<string, string> = {
@@ -214,26 +219,77 @@ export default function CompanionScreen() {
         case "create_task":
           await api.post("/api/tasks", {
             title: action.title, type: "planning", category: "planning",
-            priority: 3, scheduledDate: action.scheduledDate, source: "companion",
+            priority: 3, scheduledDate: action.scheduledDate,
+            projectId: action.projectId || null, source: "companion",
           });
           break;
+
         case "create_task_list":
           await api.post("/api/task-lists", { title: action.title, items: action.items });
           break;
+
         case "create_note":
           await api.post("/api/capture", { content: action.content, captureType: "text" });
           break;
+
         case "complete_task":
           await api.patch(`/api/tasks/${action.taskId}`, { completed: true });
           break;
+
         case "set_energy":
           await api.patch("/api/preferences", { currentEnergyLevel: action.level, energyUpdatedDate: TODAY });
+          queryClient.invalidateQueries({ queryKey: ["/api/companion/context"] });
           break;
+
         case "create_milestone_chain":
           await api.post(`/api/projects/${action.projectId}/milestone-chain`, { milestones: action.milestones });
           break;
+
         case "confirm_milestone":
           await api.post(`/api/milestones/${action.milestoneId}/confirm`);
+          queryClient.invalidateQueries({ queryKey: ["/api/companion/context"] });
+          break;
+
+        case "add_project_note":
+          await api.post(`/api/projects/${action.projectId}/notes`, { content: action.content });
+          break;
+
+        case "reschedule_tasks":
+          await api.patch("/api/tasks/bulk-reschedule", { fromDate: action.fromDate, toDate: action.toDate });
+          queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/companion/context"] });
+          break;
+
+        case "show_project_roadmap": {
+          const response = await api.get(`/api/projects/${action.projectId}/milestones`);
+          const milestones: any[] = response.data || [];
+          const statusIcon: Record<string, string> = {
+            completed: "✅",
+            active: "🔓",
+            unlocked: "🔓",
+            locked: "🔒",
+          };
+          const roadmapText = milestones
+            .map(m => `${statusIcon[m.status] || "·"} ${m.title}`)
+            .join("\n");
+          setMessages(prev => [...prev, {
+            id: `roadmap-${Date.now()}`,
+            role: "assistant" as const,
+            content: `Roadmap du projet :\n\n${roadmapText}`,
+          }]);
+          return;
+        }
+
+        case "reschedule_day":
+          queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+          break;
+
+        case "create_project":
+          await api.post("/api/projects", {
+            name: action.name,
+            type: action.projectType || "other",
+            description: action.description || "",
+          });
           break;
       }
     } catch (e) {
