@@ -2225,6 +2225,32 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // POST /api/transcribe — transcription audio via Whisper
+  app.post('/api/transcribe', isAuthenticated, upload.single('audio'), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: 'Fichier audio requis (champ "audio")' });
+      }
+
+      const { OpenAI } = await import('openai');
+      const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      // Créer un File à partir du buffer (Node.js 20+ global File)
+      const audioFile = new File([req.file.buffer], 'recording.m4a', { type: req.file.mimetype || 'audio/m4a' });
+
+      const transcription = await openaiClient.audio.transcriptions.create({
+        file: audioFile,
+        model: 'whisper-1',
+        language: 'fr',
+      });
+
+      res.json({ text: transcription.text });
+    } catch (error: any) {
+      console.error('POST /api/transcribe error:', error);
+      res.status(500).json({ message: 'Erreur de transcription' });
+    }
+  });
+
   // Task lists (créées par le Companion)
   app.post('/api/task-lists', isAuthenticated, async (req: any, res) => {
     try {
