@@ -2210,9 +2210,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       res.json({
         energyLevel: prefs?.currentEnergyLevel || 'high',
-        todayTasks: (todayTasks as any[]).slice(0, 10),
+        todayTasks: (todayTasks as any[]).filter((t: any) => !t.completed).slice(0, 10),
         upcomingTasks: (upcomingTasks as any[])
-          .filter((t: any) => !t.completed && t.scheduledDate > today)
+          .filter((t: any) => !t.completed && String(t.scheduledDate).slice(0, 10) > today)
           .slice(0, 20)
           .map((t: any) => ({ title: t.title, date: t.scheduledDate, time: t.scheduledTime || undefined, taskId: t.id })),
         activeMilestone,
