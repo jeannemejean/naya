@@ -1242,6 +1242,34 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     }
   });
 
+  // POST /api/projects/:id/notes — crée une note liée à un projet
+  app.post('/api/projects/:id/notes', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const projectId = parseInt(req.params.id);
+      const { content } = req.body;
+
+      if (!content?.trim()) {
+        return res.status(400).json({ message: 'content requis' });
+      }
+
+      const note = await storage.createCaptureEntry({
+        userId,
+        projectId,
+        content: content.trim(),
+        captureType: 'note',
+        classifiedType: 'note',
+        isProcessed: false,
+        routingStatus: 'inbox',
+      } as any);
+
+      res.json(note);
+    } catch (error) {
+      console.error('POST /api/projects/:id/notes error:', error);
+      res.status(500).json({ message: 'Erreur création note' });
+    }
+  });
+
   // Génère un plan de tâches actionnables depuis un objectif
   app.post('/api/goals/:goalId/generate-tasks', isAuthenticated, async (req: any, res) => {
     try {
@@ -2921,6 +2949,32 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     } catch (error) {
       console.error("Error creating workspace entry:", error);
       res.status(500).json({ message: "Failed to create workspace entry" });
+    }
+  });
+
+  // PATCH /api/tasks/bulk-reschedule — déplace toutes les tâches incomplètes de fromDate vers toDate
+  app.patch('/api/tasks/bulk-reschedule', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const { fromDate, toDate } = req.body;
+
+      if (!fromDate || !toDate) {
+        return res.status(400).json({ message: 'fromDate et toDate requis (format YYYY-MM-DD)' });
+      }
+
+      const tasks = await storage.getTasksInRange(userId, fromDate, fromDate);
+      const toMove = (tasks as any[]).filter((t: any) => !t.completed);
+
+      let updated = 0;
+      for (const task of toMove) {
+        await storage.updateTask(task.id, { scheduledDate: toDate });
+        updated++;
+      }
+
+      res.json({ updated });
+    } catch (error) {
+      console.error('PATCH /api/tasks/bulk-reschedule error:', error);
+      res.status(500).json({ message: 'Erreur reprogrammation' });
     }
   });
 
