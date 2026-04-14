@@ -20,6 +20,15 @@ interface Message {
 const TODAY = new Date().toISOString().slice(0, 10);
 const NOW_TIME = new Date().toTimeString().slice(0, 5);
 
+interface CompanionContext {
+  energyLevel: string;
+  todayTasks: any[];
+  upcomingTasks: Array<{ title: string; date: string; time?: string; taskId: number }>;
+  activeMilestone: { id: number; title: string; status: string } | null;
+  activeProject: { id: number; name: string } | null;
+  brandDnaSummary: string | null;
+}
+
 const ACTION_LABELS: Record<string, string> = {
   create_task: "✅ Tâche créée",
   create_task_list: "📋 Liste créée",
@@ -31,6 +40,51 @@ const ACTION_LABELS: Record<string, string> = {
   create_milestone_chain: "🗺 Jalons créés",
   confirm_milestone: "✅ Jalon confirmé",
 };
+
+const ENERGY_COLORS: Record<string, string> = {
+  high: "#10b981",
+  medium: "#f59e0b",
+  low: "#f97316",
+  depleted: "#6366f1",
+};
+
+const ENERGY_LABELS: Record<string, string> = {
+  high: "Énergie haute",
+  medium: "Énergie moyenne",
+  low: "Énergie basse",
+  depleted: "Mode repos",
+};
+
+function ContextBanner({ ctx }: { ctx: CompanionContext | undefined }) {
+  if (!ctx) return null;
+
+  const energyColor = ENERGY_COLORS[ctx.energyLevel] || "#6366f1";
+  const energyLabel = ENERGY_LABELS[ctx.energyLevel] || ctx.energyLevel;
+  const taskCount = ctx.todayTasks.filter((t: any) => !t.completed).length;
+
+  const parts: string[] = [`⚡ ${energyLabel}`];
+  if (ctx.activeMilestone) parts.push(`🏁 ${ctx.activeMilestone.title}`);
+  if (taskCount > 0) parts.push(`${taskCount} tâche${taskCount > 1 ? "s" : ""} aujourd'hui`);
+
+  return (
+    <View style={bannerStyles.wrap}>
+      <Text style={[bannerStyles.text, { color: energyColor }]} numberOfLines={1}>
+        {parts.join("  ·  ")}
+      </Text>
+    </View>
+  );
+}
+
+const bannerStyles = StyleSheet.create({
+  wrap: {
+    backgroundColor: "#1e1e2e",
+    borderLeftWidth: 3,
+    borderLeftColor: "#4f46e5",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  text: { fontSize: 12, fontWeight: "500" },
+});
 
 export default function CompanionScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -53,6 +107,12 @@ export default function CompanionScreen() {
   const { data: projects } = useQuery<any[]>({
     queryKey: ["/api/projects"],
     queryFn: () => defaultFetcher("/api/projects"),
+  });
+
+  const { data: companionCtx } = useQuery<CompanionContext>({
+    queryKey: ["/api/companion/context"],
+    queryFn: () => defaultFetcher("/api/companion/context"),
+    staleTime: 60_000,
   });
 
   const activeProject = projects?.find((p: any) => p.projectStatus === "active") || projects?.[0] || null;
@@ -82,10 +142,14 @@ export default function CompanionScreen() {
           currentDate: TODAY,
           currentTime: NOW_TIME,
           platform: "mobile",
-          todayTasks: (todayTasks || []).slice(0, 10),
-          activeProject: activeProject
+          todayTasks: (companionCtx?.todayTasks || todayTasks || []).slice(0, 10),
+          activeProject: companionCtx?.activeProject || (activeProject
             ? { id: activeProject.id, name: activeProject.name }
-            : null,
+            : null),
+          energyLevel: companionCtx?.energyLevel,
+          upcomingTasks: companionCtx?.upcomingTasks || [],
+          activeMilestone: companionCtx?.activeMilestone || null,
+          brandDnaSummary: companionCtx?.brandDnaSummary || null,
         },
         conversationHistory: messages
           .filter(m => !m.isLoading)
@@ -219,6 +283,9 @@ export default function CompanionScreen() {
           <Text style={styles.headerSub}>Ton partenaire de réflexion</Text>
         </View>
       </View>
+
+      {/* Bandeau contexte */}
+      <ContextBanner ctx={companionCtx} />
 
       {/* Messages */}
       {messages.length === 0 ? (
