@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   RefreshControl, ActivityIndicator, Alert, Clipboard, Linking,
+  Modal, TextInput, KeyboardAvoidingView, Platform, SafeAreaView,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,6 +36,7 @@ export default function TodayScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [expandedTask, setExpandedTask] = useState<number | null>(null);
+  const [workspaceTask, setWorkspaceTask] = useState<any | null>(null);
 
   useFocusEffect(useCallback(() => {
     getUser().then(setUser);
@@ -89,6 +91,7 @@ export default function TodayScreen() {
   const completed = todayTasks.filter((t: any) => t.completed);
 
   return (
+    <>
     <ScrollView
       style={styles.container}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#4f46e5" />}
@@ -166,6 +169,7 @@ export default function TodayScreen() {
                   { text: "Oui ✅", onPress: () => completeMutation.mutate(task.id) },
                 ]);
               }}
+              onOpenWorkspace={() => setWorkspaceTask(task)}
             />
           ))
         )}
@@ -188,6 +192,153 @@ export default function TodayScreen() {
         </View>
       )}
     </ScrollView>
+
+    {/* Workspace modal */}
+    {workspaceTask && (
+      <TaskWorkspace
+        task={workspaceTask}
+        onClose={() => setWorkspaceTask(null)}
+        onComplete={() => {
+          completeMutation.mutate(workspaceTask.id);
+          setWorkspaceTask(null);
+        }}
+      />
+    )}
+  </>
+  );
+}
+
+// ─── Workspace d'exécution de tâche ──────────────────────────────────────────
+
+function isContentTask(task: any): boolean {
+  const contentKeywords = ["write", "copy", "post", "linkedin", "contenu", "rédige", "publie", "manifesto", "editorial", "identity", "campaign"];
+  const title = (task.title || "").toLowerCase();
+  const type = task.taskType || "";
+  return type === "post_publish" || type === "linkedin_message" ||
+    contentKeywords.some(k => title.includes(k));
+}
+
+function TaskWorkspace({ task, onClose, onComplete }: { task: any; onClose: () => void; onComplete: () => void }) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [text, setText] = useState(task.actionData?.message || task.actionData?.postContent || "");
+  const [saved, setSaved] = useState(false);
+
+  const saveContentMutation = useMutation({
+    mutationFn: () => api.post("/api/content", {
+      title: task.title,
+      body: text,
+      platform: "linkedin",
+      contentType: "post",
+      pillar: "brand",
+      goal: "awareness",
+      projectId: task.projectId || null,
+      contentStatus: "draft",
+      status: "draft",
+    }).then(r => r.data),
+    onSuccess: () => {
+      setSaved(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+      Alert.alert("Sauvegardé ✅", "Le contenu est maintenant visible dans l'onglet Contenu sur le site.");
+    },
+    onError: () => Alert.alert("Erreur", "Impossible de sauvegarder le contenu."),
+  });
+
+  const openWithNaya = async () => {
+    const ctx = `Aide-moi à réaliser cette tâche :\n\n**${task.title}**${task.description ? `\n\n${task.description}` : ""}${text ? `\n\nCe que j'ai écrit jusqu'ici :\n${text}` : ""}`;
+    await AsyncStorage.setItem("naya_prefill_message", ctx);
+    onClose();
+    router.push("/(tabs)/companion");
+  };
+
+  const isContent = isContentTask(task);
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <SafeAreaView style={ws.container}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          {/* Header */}
+          <View style={ws.header}>
+            <TouchableOpacity onPress={onClose} style={ws.closeBtn}>
+              <Ionicons name="chevron-down" size={22} color="#64748b" />
+            </TouchableOpacity>
+            <Text style={ws.headerTitle} numberOfLines={1}>{task.title}</Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          <ScrollView style={ws.scroll} keyboardShouldPersistTaps="handled">
+            {/* Description */}
+            {task.description ? (
+              <View style={ws.descBox}>
+                <Text style={ws.descLabel}>Brief</Text>
+                <Text style={ws.descText}>{task.description}</Text>
+              </View>
+            ) : null}
+
+            {/* Zone d'exécution */}
+            {isContent ? (
+              <View style={ws.editorWrap}>
+                <View style={ws.editorHeader}>
+                  <Ionicons name="logo-linkedin" size={14} color="#0077b5" />
+                  <Text style={ws.editorLabel}>Rédaction du post</Text>
+                  <Text style={ws.charCount}>{text.length} / 3000</Text>
+                </View>
+                <TextInput
+                  style={ws.editor}
+                  value={text}
+                  onChangeText={setText}
+                  placeholder="Commence à écrire ton post ici…"
+                  placeholderTextColor="#334155"
+                  multiline
+                  maxLength={3000}
+                  autoFocus
+                />
+                <TouchableOpacity
+                  style={[ws.saveBtn, (saveContentMutation.isPending || !text.trim()) && ws.saveBtnDisabled]}
+                  onPress={() => saveContentMutation.mutate()}
+                  disabled={saveContentMutation.isPending || !text.trim()}
+                >
+                  {saveContentMutation.isPending ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name={saved ? "checkmark-circle" : "cloud-upload-outline"} size={16} color="#fff" />
+                      <Text style={ws.saveBtnText}>{saved ? "Sauvegardé dans le contenu ✓" : "Enregistrer dans le contenu"}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={ws.editorWrap}>
+                <Text style={ws.editorLabel}>Notes d'exécution</Text>
+                <TextInput
+                  style={ws.editor}
+                  value={text}
+                  onChangeText={setText}
+                  placeholder="Prends des notes, ajoute des réflexions…"
+                  placeholderTextColor="#334155"
+                  multiline
+                  autoFocus
+                />
+              </View>
+            )}
+
+            {/* Actions */}
+            <View style={ws.actions}>
+              <TouchableOpacity style={ws.nayaBtn} onPress={openWithNaya}>
+                <Ionicons name="sparkles-outline" size={16} color="#a78bfa" />
+                <Text style={ws.nayaBtnText}>Travailler avec Naya</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={ws.completeBtn} onPress={onComplete}>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#10b981" />
+                <Text style={ws.completeBtnText}>Marquer comme fait</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -198,11 +349,13 @@ function ActionTaskCard({
   expanded,
   onToggleExpand,
   onComplete,
+  onOpenWorkspace,
 }: {
   task: any;
   expanded: boolean;
   onToggleExpand: () => void;
   onComplete: () => void;
+  onOpenWorkspace: () => void;
 }) {
   const router = useRouter();
   const type = task.taskType || "generic";
@@ -292,7 +445,13 @@ function ActionTaskCard({
             </TouchableOpacity>
           )}
 
-          {/* Bouton "Travailler avec Naya" — pour toutes les tâches */}
+          {/* Réaliser la tâche — ouvre le workspace */}
+          <TouchableOpacity style={styles.workspaceBtn} onPress={onOpenWorkspace}>
+            <Ionicons name="play-circle-outline" size={15} color="#fff" />
+            <Text style={styles.workspaceBtnText}>Réaliser la tâche</Text>
+          </TouchableOpacity>
+
+          {/* Travailler avec Naya */}
           <TouchableOpacity style={styles.nayaBtn} onPress={openWithNaya}>
             <Ionicons name="sparkles-outline" size={15} color="#a78bfa" />
             <Text style={styles.nayaBtnText}>Travailler avec Naya →</Text>
@@ -357,8 +516,36 @@ const styles = StyleSheet.create({
   contentText:        { color: "#94a3b8", fontSize: 13, lineHeight: 20 },
   actionBtn:          { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 12 },
   actionBtnText:      { color: "#fff", fontSize: 14, fontWeight: "600" },
-  nayaBtn:            { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 12, backgroundColor: "#4f46e522", borderWidth: 1, borderColor: "#a78bfa44" },
-  nayaBtnText:        { color: "#a78bfa", fontSize: 14, fontWeight: "600" },
+  workspaceBtn:       { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 12, backgroundColor: "#4f46e5" },
+  workspaceBtnText:   { color: "#fff", fontSize: 14, fontWeight: "600" },
+  nayaBtn:            { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 10, backgroundColor: "#4f46e515", borderWidth: 1, borderColor: "#a78bfa33" },
+  nayaBtnText:        { color: "#a78bfa", fontSize: 13, fontWeight: "500" },
   completeBtn:        { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10 },
-  completeBtnText:    { color: "#10b981", fontSize: 13, fontWeight: "500" },
+  completeBtnText:    { color: "#475569", fontSize: 13, fontWeight: "500" },
+});
+
+// ─── Styles du workspace ──────────────────────────────────────────────────────
+
+const ws = StyleSheet.create({
+  container:      { flex: 1, backgroundColor: "#0f0f1a" },
+  header:         { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#1e1e2e" },
+  closeBtn:       { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  headerTitle:    { flex: 1, fontSize: 15, fontWeight: "600", color: "#e2e8f0", textAlign: "center", paddingHorizontal: 8 },
+  scroll:         { flex: 1, padding: 16 },
+  descBox:        { backgroundColor: "#1e1e2e", borderRadius: 14, padding: 14, marginBottom: 16 },
+  descLabel:      { fontSize: 10, fontWeight: "700", color: "#64748b", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 },
+  descText:       { color: "#94a3b8", fontSize: 13, lineHeight: 20 },
+  editorWrap:     { backgroundColor: "#1e1e2e", borderRadius: 14, padding: 14, marginBottom: 16 },
+  editorHeader:   { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  editorLabel:    { flex: 1, fontSize: 12, fontWeight: "600", color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5 },
+  charCount:      { fontSize: 11, color: "#475569" },
+  editor:         { color: "#e2e8f0", fontSize: 15, lineHeight: 24, minHeight: 200, textAlignVertical: "top" },
+  saveBtn:        { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#6366f1", borderRadius: 12, paddingVertical: 12, marginTop: 12 },
+  saveBtnDisabled:{ opacity: 0.4 },
+  saveBtnText:    { color: "#fff", fontSize: 14, fontWeight: "600" },
+  actions:        { gap: 10, paddingBottom: 40 },
+  nayaBtn:        { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 14, backgroundColor: "#4f46e520", borderWidth: 1, borderColor: "#a78bfa44" },
+  nayaBtnText:    { color: "#a78bfa", fontSize: 14, fontWeight: "600" },
+  completeBtn:    { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12 },
+  completeBtnText:{ color: "#10b981", fontSize: 14, fontWeight: "500" },
 });
