@@ -2725,7 +2725,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const parsed = Number(campaignId);
         if (Number.isFinite(parsed) && parsed > 0) cid = parsed;
       }
-      const dueDate = cid ? undefined : (date ? new Date(date as string) : new Date());
+      // Si date fournie : cherche par scheduledDate (texte YYYY-MM-DD) en priorité
+      // C'est le champ utilisé par le Planning web et le mobile
+      if (date && !cid) {
+        const dateStr = (date as string).slice(0, 10); // garantit YYYY-MM-DD
+        const tasks = await storage.getTasksInRange(userId, dateStr, dateStr, pid);
+        return res.json(tasks);
+      }
+      const dueDate = cid ? undefined : new Date();
       const tasks = await storage.getTasks(userId, dueDate, pid, cid);
       res.json(tasks);
     } catch (error) {
