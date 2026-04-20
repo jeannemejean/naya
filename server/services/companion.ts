@@ -184,9 +184,13 @@ export async function processCompanionMessage(
   // Suggestions contextuelles
   const suggestions = buildSuggestions(context);
 
-  // Persister dans la DB
-  await storage.saveCompanionMessage({ userId, role: 'user', content: message, platform: context.platform });
-  await storage.saveCompanionMessage({ userId, role: 'assistant', content: cleanMessage, actions: actions.length > 0 ? actions : null, platform: context.platform });
+  // Persister dans la DB (non bloquant — si la table n'existe pas encore, on ignore)
+  try {
+    await storage.saveCompanionMessage({ userId, role: 'user', content: message, platform: context.platform });
+    await storage.saveCompanionMessage({ userId, role: 'assistant', content: cleanMessage, actions: actions.length > 0 ? actions : null, platform: context.platform });
+  } catch (dbErr) {
+    console.warn('saveCompanionMessage skipped (table may not exist yet):', dbErr);
+  }
 
   return { message: cleanMessage, actions: actions.length > 0 ? actions : undefined, suggestions };
 }

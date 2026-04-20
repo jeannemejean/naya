@@ -213,13 +213,15 @@ export default function CompanionScreen() {
       }
     },
 
-    onError: () => {
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail || err?.response?.data?.message || err?.message || "";
+      console.error("Companion error:", detail);
       setMessages(prev => {
         const withoutLoading = prev.filter(m => !m.isLoading);
         return [...withoutLoading, {
           id: Date.now().toString(),
           role: "assistant",
-          content: "Une erreur est survenue. Réessaie.",
+          content: `Une erreur est survenue. Réessaie.${detail ? `\n\n(${detail})` : ""}`,
         }];
       });
     },

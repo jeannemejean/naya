@@ -2239,9 +2239,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       });
 
       res.json(response);
-    } catch (error) {
-      console.error("Companion chat error:", error);
-      res.status(500).json({ message: "Erreur du Companion" });
+    } catch (error: any) {
+      console.error("Companion chat error:", error?.message || error);
+      res.status(500).json({ message: "Erreur du Companion", detail: error?.message });
     }
   });
 
