@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { defaultFetcher } from "../../lib/queryClient";
 import api from "../../lib/api";
+import { TaskWorkspace } from "../../components/TaskWorkspace";
 
 // ─── Utilitaires date ─────────────────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ export default function CalendarScreen() {
   const today = new Date();
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today));
   const [selectedDate, setSelectedDate] = useState(toYMD(today));
+  const [workspaceTask, setWorkspaceTask] = useState<any | null>(null);
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
@@ -184,29 +186,44 @@ export default function CalendarScreen() {
               onComplete={() => {
                 if (!task.completed) completeMutation.mutate(task.id);
               }}
+              onOpen={() => setWorkspaceTask(task)}
             />
           ))
         )}
       </ScrollView>
+
+      {workspaceTask && (
+        <TaskWorkspace
+          task={workspaceTask}
+          onClose={() => setWorkspaceTask(null)}
+          onComplete={() => {
+            completeMutation.mutate(workspaceTask.id);
+            setWorkspaceTask(null);
+          }}
+        />
+      )}
     </View>
   );
 }
 
 // ─── Carte de tâche calendrier ────────────────────────────────────────────────
 
-function CalendarTaskCard({ task, onComplete }: { task: any; onComplete: () => void }) {
+function CalendarTaskCard({ task, onComplete, onOpen }: { task: any; onComplete: () => void; onOpen: () => void }) {
   const color =
     TASK_TYPE_COLORS[task.taskType] ||
     ENERGY_COLORS[task.taskEnergyType] ||
     "#475569";
 
   return (
-    <View style={[styles.taskCard, task.completed && styles.taskCardDone]}>
+    <TouchableOpacity
+      style={[styles.taskCard, task.completed && styles.taskCardDone]}
+      onPress={task.completed ? undefined : onOpen}
+      activeOpacity={task.completed ? 1 : 0.7}
+    >
       {/* Barre colorée à gauche */}
       <View style={[styles.taskBar, { backgroundColor: color }]} />
 
       <View style={styles.taskContent}>
-        {/* Heure si dispo */}
         {task.scheduledTime && (
           <Text style={styles.taskTime}>{task.scheduledTime}</Text>
         )}
@@ -228,13 +245,16 @@ function CalendarTaskCard({ task, onComplete }: { task: any; onComplete: () => v
               </Text>
             </View>
           )}
+          {!task.completed && (
+            <Text style={styles.openHint}>Appuie pour réaliser →</Text>
+          )}
         </View>
       </View>
 
       {/* Bouton compléter */}
       <TouchableOpacity
         style={[styles.checkBtn, task.completed && styles.checkBtnDone]}
-        onPress={onComplete}
+        onPress={(e) => { e.stopPropagation(); onComplete(); }}
         disabled={task.completed}
       >
         {task.completed
@@ -242,7 +262,7 @@ function CalendarTaskCard({ task, onComplete }: { task: any; onComplete: () => v
           : <View style={styles.checkInner} />
         }
       </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -290,6 +310,7 @@ const styles = StyleSheet.create({
   taskMetaText:       { fontSize: 11, color: "#64748b" },
   typePill:           { borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
   typePillText:       { fontSize: 10, fontWeight: "600" },
+  openHint:           { fontSize: 11, color: "#4f46e5", fontStyle: "italic" },
   checkBtn:           { width: 44, height: "100%", alignItems: "center", justifyContent: "center" },
   checkBtnDone:       { backgroundColor: "#4f46e5" },
   checkInner:         { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: "#4f46e5" },
