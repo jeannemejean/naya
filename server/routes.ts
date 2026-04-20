@@ -2725,10 +2725,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const parsed = Number(campaignId);
         if (Number.isFinite(parsed) && parsed > 0) cid = parsed;
       }
-      // Si date fournie : cherche par scheduledDate (texte YYYY-MM-DD) en priorité
-      // C'est le champ utilisé par le Planning web et le mobile
+      const { start, end } = req.query;
+      // Plage de dates (calendrier mobile)
+      if (start && end && !cid) {
+        const startStr = (start as string).slice(0, 10);
+        const endStr = (end as string).slice(0, 10);
+        const tasks = await storage.getTasksInRange(userId, startStr, endStr, pid);
+        return res.json(tasks);
+      }
+      // Date unique (onglet Aujourd'hui)
       if (date && !cid) {
-        const dateStr = (date as string).slice(0, 10); // garantit YYYY-MM-DD
+        const dateStr = (date as string).slice(0, 10);
         const tasks = await storage.getTasksInRange(userId, dateStr, dateStr, pid);
         return res.json(tasks);
       }

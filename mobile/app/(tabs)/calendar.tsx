@@ -58,9 +58,13 @@ export default function CalendarScreen() {
 
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
+  // Fetch toutes les tâches de la semaine visible + 1 mois de buffer
+  const rangeStart = toYMD(addDays(weekStart, -7));
+  const rangeEnd = toYMD(addDays(weekStart, 35));
+
   const { data: tasks, isLoading } = useQuery<any[]>({
-    queryKey: ["/api/tasks"],
-    queryFn: () => defaultFetcher("/api/tasks"),
+    queryKey: ["/api/tasks", "range", rangeStart, rangeEnd],
+    queryFn: () => defaultFetcher(`/api/tasks?start=${rangeStart}&end=${rangeEnd}`),
   });
 
   const completeMutation = useMutation({
