@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -7,6 +7,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import { useFocusEffect } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../../lib/api";
 import { defaultFetcher } from "../../lib/queryClient";
 
@@ -125,6 +127,16 @@ export default function CompanionScreen() {
   });
 
   const activeProject = projects?.find((p: any) => p.projectStatus === "active") || projects?.[0] || null;
+
+  // Lire le message pré-rempli depuis "Travailler avec Naya" (onglet Aujourd'hui)
+  useFocusEffect(useCallback(() => {
+    AsyncStorage.getItem("naya_prefill_message").then((msg) => {
+      if (msg) {
+        setInput(msg);
+        AsyncStorage.removeItem("naya_prefill_message");
+      }
+    });
+  }, []));
 
   // Arrêter l'enregistrement si l'app passe en background (évite fuite de ressource audio)
   useEffect(() => {

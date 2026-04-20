@@ -2,11 +2,11 @@ import { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   RefreshControl, ActivityIndicator, Alert, Clipboard, Linking,
-  Modal, TextInput,
 } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../../lib/api";
 import { defaultFetcher } from "../../lib/queryClient";
 import { getUser } from "../../lib/auth";
@@ -204,6 +204,7 @@ function ActionTaskCard({
   onToggleExpand: () => void;
   onComplete: () => void;
 }) {
+  const router = useRouter();
   const type = task.taskType || "generic";
   const cfg = TASK_TYPE_CONFIG[type] || TASK_TYPE_CONFIG.generic;
   const actionData = task.actionData || {};
@@ -213,7 +214,16 @@ function ActionTaskCard({
     Alert.alert("Copié !", `${label} copié dans le presse-papier.`);
   };
 
-  const handleAction = () => {
+  // Ouvre le Companion avec le contexte de cette tâche pré-chargé
+  const openWithNaya = async () => {
+    const context = `Aide-moi à réaliser cette tâche :\n\n**${task.title}**${task.description ? `\n\n${task.description}` : ""}${task.estimatedDuration ? `\n\nDurée estimée : ${task.estimatedDuration} min` : ""}`;
+    await AsyncStorage.setItem("naya_prefill_message", context);
+    router.push("/(tabs)/companion");
+  };
+
+  const isActionable = type === "linkedin_message" || type === "post_publish" || type === "canva_task" || type === "email";
+
+  const handlePrimaryAction = () => {
     switch (type) {
       case "linkedin_message":
         if (actionData.message) copyToClipboard(actionData.message, "Message LinkedIn");
@@ -230,8 +240,6 @@ function ActionTaskCard({
         if (actionData.message) copyToClipboard(actionData.message, "Email");
         onComplete();
         break;
-      default:
-        onComplete();
     }
   };
 
@@ -240,33 +248,17 @@ function ActionTaskCard({
     post_publish:     "Copier le post",
     canva_task:       "Ouvrir Canva",
     email:            "Copier l'email",
-    call:             "Marquer comme fait",
-    outreach_action:  "Marquer comme fait",
-    generic:          "Marquer comme fait",
   };
-
-  const hasExpandableContent =
-    type === "linkedin_message" ||
-    type === "post_publish" ||
-    type === "canva_task" ||
-    type === "email";
 
   return (
     <View style={styles.actionCard}>
-      {/* Header de la carte */}
-      <TouchableOpacity
-        style={styles.actionCardHeader}
-        onPress={hasExpandableContent ? onToggleExpand : onComplete}
-        activeOpacity={0.7}
-      >
-        {/* Icône type */}
+      {/* Header — toujours cliquable pour expand */}
+      <TouchableOpacity style={styles.actionCardHeader} onPress={onToggleExpand} activeOpacity={0.7}>
         <View style={[styles.typeIcon, { backgroundColor: cfg.color + "22", borderColor: cfg.color + "44" }]}>
           <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
         </View>
-
-        {/* Titre + meta */}
         <View style={styles.actionCardBody}>
-          <Text style={styles.taskTitle} numberOfLines={expanded ? 10 : 2}>{task.title}</Text>
+          <Text style={styles.taskTitle} numberOfLines={expanded ? 0 : 2}>{task.title}</Text>
           <View style={styles.taskMeta}>
             {cfg.label ? <Text style={[styles.typeBadge, { color: cfg.color }]}>{cfg.label}</Text> : null}
             {actionData.platform && <Text style={styles.taskMetaText}>{actionData.platform}</Text>}
@@ -274,78 +266,44 @@ function ActionTaskCard({
             {task.estimatedDuration && <Text style={styles.taskMetaText}>{task.estimatedDuration}min</Text>}
           </View>
         </View>
-
-        {/* Chevron si contenu expandable */}
-        {hasExpandableContent && (
-          <Ionicons
-            name={expanded ? "chevron-up" : "chevron-down"}
-            size={16}
-            color="#64748b"
-          />
-        )}
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={16} color="#64748b" />
       </TouchableOpacity>
 
       {/* Contenu expandé */}
       {expanded && (
         <View style={styles.expandedContent}>
-          {/* Message LinkedIn ou Email */}
-          {(type === "linkedin_message" || type === "email") && actionData.message ? (
+          {/* Description toujours affichée si dispo */}
+          {(task.description || actionData.message || actionData.postContent || actionData.canvaBrief) ? (
             <View style={styles.contentBox}>
               {type === "email" && actionData.subject ? (
                 <Text style={styles.contentLabel}>Objet : {actionData.subject}</Text>
               ) : null}
-              <Text style={styles.contentText}>{actionData.message}</Text>
+              <Text style={styles.contentText}>
+                {actionData.message || actionData.postContent || actionData.canvaBrief || task.description}
+              </Text>
             </View>
           ) : null}
 
-          {/* Post */}
-          {type === "post_publish" && actionData.postContent ? (
-            <View style={styles.contentBox}>
-              <Text style={styles.contentText}>{actionData.postContent}</Text>
-            </View>
-          ) : null}
-
-          {/* Brief Canva */}
-          {type === "canva_task" && actionData.canvaBrief ? (
-            <View style={styles.contentBox}>
-              <Text style={styles.contentLabel}>Brief :</Text>
-              <Text style={styles.contentText}>{actionData.canvaBrief}</Text>
-            </View>
-          ) : null}
-
-          {/* Description si pas d'actionData */}
-          {!actionData.message && !actionData.postContent && !actionData.canvaBrief && task.description ? (
-            <View style={styles.contentBox}>
-              <Text style={styles.contentText}>{task.description}</Text>
-            </View>
-          ) : null}
-
-          {/* Bouton d'action */}
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: cfg.color }]} onPress={handleAction}>
-            <Ionicons
-              name={type === "canva_task" ? "open-outline" : "copy-outline"}
-              size={15}
-              color="#fff"
-            />
-            <Text style={styles.actionBtnText}>{actionLabel[type] || "Marquer comme fait"}</Text>
-          </TouchableOpacity>
-
-          {/* Bouton compléter séparé pour canva */}
-          {type === "canva_task" && (
-            <TouchableOpacity style={styles.completeBtn} onPress={onComplete}>
-              <Text style={styles.completeBtnText}>Marquer comme fait</Text>
+          {/* Bouton action spécifique (copy/open) */}
+          {isActionable && (
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: cfg.color }]} onPress={handlePrimaryAction}>
+              <Ionicons name={type === "canva_task" ? "open-outline" : "copy-outline"} size={15} color="#fff" />
+              <Text style={styles.actionBtnText}>{actionLabel[type]}</Text>
             </TouchableOpacity>
           )}
-        </View>
-      )}
 
-      {/* Pour les tâches non-expandable : bouton d'action directement */}
-      {!hasExpandableContent && (
-        <TouchableOpacity style={styles.simpleComplete} onPress={onComplete}>
-          <View style={styles.taskCheck}>
-            <Ionicons name="checkmark" size={14} color="#4f46e5" />
-          </View>
-        </TouchableOpacity>
+          {/* Bouton "Travailler avec Naya" — pour toutes les tâches */}
+          <TouchableOpacity style={styles.nayaBtn} onPress={openWithNaya}>
+            <Ionicons name="sparkles-outline" size={15} color="#a78bfa" />
+            <Text style={styles.nayaBtnText}>Travailler avec Naya →</Text>
+          </TouchableOpacity>
+
+          {/* Marquer comme fait */}
+          <TouchableOpacity style={styles.completeBtn} onPress={onComplete}>
+            <Ionicons name="checkmark-circle-outline" size={15} color="#10b981" />
+            <Text style={styles.completeBtnText}>Marquer comme fait</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
@@ -399,9 +357,8 @@ const styles = StyleSheet.create({
   contentText:        { color: "#94a3b8", fontSize: 13, lineHeight: 20 },
   actionBtn:          { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 12 },
   actionBtnText:      { color: "#fff", fontSize: 14, fontWeight: "600" },
-  completeBtn:        { alignItems: "center", paddingVertical: 10 },
-  completeBtnText:    { color: "#475569", fontSize: 13 },
-
-  // Bouton compléter pour tâches non-expandable
-  simpleComplete:     { position: "absolute", right: 14, top: 14 },
+  nayaBtn:            { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, paddingVertical: 12, backgroundColor: "#4f46e522", borderWidth: 1, borderColor: "#a78bfa44" },
+  nayaBtnText:        { color: "#a78bfa", fontSize: 14, fontWeight: "600" },
+  completeBtn:        { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10 },
+  completeBtnText:    { color: "#10b981", fontSize: 13, fontWeight: "500" },
 });
