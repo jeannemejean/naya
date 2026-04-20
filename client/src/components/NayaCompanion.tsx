@@ -470,9 +470,9 @@ export function NayaCompanionBar() {
         )}
       </div>
 
-      {/* Dropdown panel */}
+      {/* Dropdown panel — fixed pour ne pas être coupé par overflow:hidden du header */}
       {open && (
-        <div className="absolute top-full right-0 mt-2 z-50 w-[380px] flex flex-col rounded-2xl bg-card shadow-2xl border border-border overflow-hidden">
+        <div className="fixed top-14 right-4 z-50 w-[380px] max-h-[560px] flex flex-col rounded-2xl bg-card shadow-2xl border border-border overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
             <div className="flex items-center gap-2">
@@ -538,19 +538,21 @@ export default function NayaCompanion() {
     <>
       {/* Bouton flottant */}
       {!open && (
-        <div className="fixed bottom-6 right-6 z-50 relative">
-          <button
-            onClick={() => setOpen(true)}
-            className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 flex items-center justify-center transition-all duration-200 hover:scale-105"
-            aria-label="Ouvrir Naya"
-          >
-            <Sparkles className="h-6 w-6" />
-          </button>
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
+        <div className="fixed bottom-6 right-6 z-50">
+          <div className="relative">
+            <button
+              onClick={() => setOpen(true)}
+              className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 flex items-center justify-center transition-all duration-200 hover:scale-105"
+              aria-label="Ouvrir Naya"
+            >
+              <Sparkles className="h-6 w-6" />
+            </button>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
