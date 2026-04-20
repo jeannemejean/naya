@@ -408,7 +408,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GET /api/calendar/status — check if user has connected Google Calendar
   app.get('/api/calendar/status', isAuthenticated, async (req: any, res) => {
     try {
-      const connected = await storage.hasGoogleCalendarToken(req.session.userId);
+      const connected = await storage.hasGoogleCalendarToken(req.userId);
       res.json({ connected });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -421,7 +421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
         return res.status(503).json({ message: 'Google Calendar not configured on this server' });
       }
-      (req.session as any).calendarOAuthUserId = req.session.userId;
+      (req.session as any).calendarOAuthUserId = req.userId;
       const url = getAuthUrl();
       res.json({ url });
     } catch (err: any) {
@@ -449,7 +449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GET /api/calendar/events?start=YYYY-MM-DD&end=YYYY-MM-DD — fetch events
   app.get('/api/calendar/events', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const start = req.query.start as string || new Date().toISOString().slice(0, 10);
       const end = req.query.end as string || start;
       const events = await getCalendarEvents(userId, start, end);
@@ -462,7 +462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // DELETE /api/calendar/disconnect — remove stored tokens
   app.delete('/api/calendar/disconnect', isAuthenticated, async (req: any, res) => {
     try {
-      await storage.deleteGoogleCalendarToken(req.session.userId);
+      await storage.deleteGoogleCalendarToken(req.userId);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -582,7 +582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Brand DNA routes
   app.get('/api/brand-dna', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
       res.json(brandDna);
     } catch (error) {
@@ -593,7 +593,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/brand-dna', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDnaData = insertBrandDnaSchema.parse({ ...req.body, userId });
       const brandDna = await storage.upsertBrandDna(brandDnaData);
       
@@ -718,7 +718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PATCH /api/brand-dna — update any subset of brand DNA fields
   app.patch('/api/brand-dna', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const existing = await storage.getBrandDna(userId);
       if (!existing) return res.status(404).json({ message: "Brand DNA not found" });
       const updated = await storage.upsertBrandDna({ ...existing, ...req.body, userId });
@@ -732,7 +732,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GET /api/projects/:id/brand-dna — get project-specific Brand DNA
   app.get('/api/projects/:id/brand-dna', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ message: "Invalid project id" });
       const dna = await storage.getBrandDnaForProject(userId, projectId);
@@ -746,7 +746,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // PATCH /api/projects/:id/brand-dna — create or update project-specific Brand DNA
   app.patch('/api/projects/:id/brand-dna', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ message: "Invalid project id" });
       const updated = await storage.upsertBrandDnaForProject(userId, projectId, req.body);
@@ -760,7 +760,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // POST /api/brand-dna/refresh-intelligence — generate Naya intelligence summary
   app.post('/api/brand-dna/refresh-intelligence', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       let projectId: number | null = null;
       if (req.body.projectId !== undefined && req.body.projectId !== null) {
         projectId = parseInt(req.body.projectId);
@@ -820,7 +820,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/onboarding', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { operatingProfile, primaryProject, additionalProjects = [] } = req.body;
 
       if (!primaryProject?.name) {
@@ -1040,7 +1040,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.get('/api/clients', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = parseInt(req.query.projectId as string);
       if (isNaN(projectId)) {
         return res.status(400).json({ message: "Invalid projectId" });
@@ -1055,7 +1055,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/clients', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const data = insertClientSchema.parse({ ...req.body, userId });
       const client = await storage.createClient(data);
       res.json(client);
@@ -1069,7 +1069,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     try {
       const id = parseInt(req.params.id);
       const client = await storage.getClient(id);
-      if (!client || client.userId !== req.session.userId) {
+      if (!client || client.userId !== req.userId) {
         return res.status(404).json({ message: "Client not found" });
       }
       const updated = await storage.updateClient(id, req.body);
@@ -1084,7 +1084,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     try {
       const id = parseInt(req.params.id);
       const client = await storage.getClient(id);
-      if (!client || client.userId !== req.session.userId) {
+      if (!client || client.userId !== req.userId) {
         return res.status(404).json({ message: "Client not found" });
       }
       await storage.deleteClient(id);
@@ -1099,7 +1099,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     try {
       const id = parseInt(req.params.id);
       const client = await storage.getClient(id);
-      if (!client || client.userId !== req.session.userId) {
+      if (!client || client.userId !== req.userId) {
         return res.status(404).json({ message: "Client not found" });
       }
       const tasks = await storage.getClientTasks(id);
@@ -1114,7 +1114,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.get('/api/projects', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 50, 1), 200);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       const projectsList = await storage.getProjects(userId, limit, offset);
@@ -1127,7 +1127,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/projects', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectData = insertProjectSchema.parse({ ...req.body, userId });
       const existingProjects = await storage.getProjects(userId);
       if (existingProjects.length === 0) {
@@ -1147,7 +1147,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.get('/api/projects/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       const goals = await storage.getProjectGoals(project.id);
@@ -1161,7 +1161,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.patch('/api/projects/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.updateProject(parseInt(req.params.id), userId, req.body);
       if (!project) return res.status(404).json({ message: "Project not found" });
       res.json(project);
@@ -1173,7 +1173,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.delete('/api/projects/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const deleted = await storage.deleteProject(parseInt(req.params.id), userId);
       if (!deleted) return res.status(404).json({ message: "Project not found" });
       res.json({ success: true });
@@ -1185,7 +1185,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/projects/:id/set-primary', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.setPrimaryProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       await storage.upsertUserPreferences(userId, { activeProjectId: project.id });
@@ -1199,7 +1199,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   // Project goals
   app.get('/api/projects/:id/goals', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       const goals = await storage.getProjectGoals(project.id);
@@ -1212,7 +1212,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/projects/:id/goals', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       const cleaned = Object.fromEntries(
@@ -1229,7 +1229,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.patch('/api/projects/:id/goals/:goalId', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       const cleaned = Object.fromEntries(
@@ -1246,7 +1246,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.delete('/api/projects/:id/goals/:goalId', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       const deleted = await storage.deleteProjectGoal(parseInt(req.params.goalId));
@@ -1261,7 +1261,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   // POST /api/projects/:id/notes — crée une note liée à un projet
   app.post('/api/projects/:id/notes', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ message: 'ID projet invalide' });
       const { content } = req.body;
@@ -1290,7 +1290,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   // Génère un plan de tâches actionnables depuis un objectif
   app.post('/api/goals/:goalId/generate-tasks', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const goalId = parseInt(req.params.goalId);
       const goal = await storage.getProjectGoal(goalId);
       if (!goal) return res.status(404).json({ message: "Goal not found" });
@@ -1344,7 +1344,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   // Project strategy profile
   app.get('/api/projects/:id/strategy', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       const profile = await storage.getProjectStrategyProfile(project.id);
@@ -1357,7 +1357,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.put('/api/projects/:id/strategy', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
       const profileData = insertProjectStrategyProfileSchema.parse({ ...req.body, projectId: project.id });
@@ -1372,7 +1372,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   // Project AI recommendations (Enhanced with contextual intelligence)
   app.post('/api/projects/:id/recommendations', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const project = await storage.getProject(parseInt(req.params.id), userId);
       if (!project) return res.status(404).json({ message: "Project not found" });
 
@@ -1478,7 +1478,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.get('/api/preferences', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const prefs = await storage.getUserPreferences(userId);
       res.json(prefs || {
         userId,
@@ -1500,7 +1500,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.patch('/api/preferences', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const prefs = await storage.upsertUserPreferences(userId, req.body);
       res.json(prefs);
     } catch (error) {
@@ -1512,7 +1512,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   // ── Energy Level endpoints ──────────────────────────────────────────
   app.get('/api/user/energy', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const prefs = await storage.getUserPreferences(userId);
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -1529,7 +1529,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.patch('/api/user/energy', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { energyLevel, emotionalContext } = req.body;
       const validLevels = ['high', 'medium', 'low', 'depleted'];
       if (!energyLevel || !validLevels.includes(energyLevel)) {
@@ -1563,7 +1563,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   // ── Daily Brief endpoints ──────────────────────────────────────────
   app.get('/api/tasks/daily-brief', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const prefs = await storage.getUserPreferences(userId);
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -1582,7 +1582,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/tasks/daily-brief', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
       if (!brandDna) {
         return res.json({ needsOnboarding: true });
@@ -1678,42 +1678,44 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
       const briefSystemPrompt = `${NAYA_SYSTEM_VOICE}
 
-ENERGY RULES:
-- high: ambitious, clear, direct. Reference the big picture.
-- medium: practical, grounded. Focus on momentum over perfection.
-- low: gentle, permission-giving. 1-2 tasks max. Admin/creative over deep work.
-- depleted: compassionate. Rest is productive. Even showing up is enough.
+RÈGLES D'ÉNERGIE :
+- high : ambitieux, clair, direct. Référence la vision globale.
+- medium : pratique, ancré. Favorise la dynamique sur la perfection.
+- low : doux, permissif. 1-2 tâches max. Admin/créatif plutôt que deep work.
+- depleted : compassionnel. Se reposer, c'est productif. Se montrer, c'est déjà beaucoup.
 
-YOUR VOICE:
-- Never say "It looks like..." or "Here's a summary..."
-- Speak in the second person. Address them directly.
-- Be direct but human. Not corporate. Not cheerful-robot.
-- If they have an avoidance trigger that's relevant today, name it gently.
-- If they're a Builder: validate action-taking, warn against rabbit holes.
-- If they're a Strategist: connect the day to the long-term vision.
-- If they're Creative: give permission to follow energy, but anchor to one deliverable.
-- If they're Analytical: give a clear rationale for the priority order.`;
+TA VOIX :
+- Ne dis jamais "Il semble que...", "Voici un résumé...", "Super !"
+- Parle à la 2e personne ("tu"). TOUJOURS en français.
+- Sois directe mais humaine. Pas corporate. Pas robot-cheerful.
+- Si un déclencheur d'évitement est pertinent aujourd'hui, nomme-le doucement.
+- Si persona Builder : valide le passage à l'action, alerte contre les rabbit holes.
+- Si persona Stratège : relie la journée à la vision long terme.
+- Si persona Créatif : donne la permission de suivre l'énergie, mais ancre sur un livrable.
+- Si persona Analytique : donne une logique claire pour l'ordre des priorités.
 
-      const briefPrompt = `WHAT YOU KNOW ABOUT THEM:
-- Energy today: ${energyLevel}
-${emotionalContext ? `- How they're feeling: ${emotionalContext}` : ''}
+IMPÉRATIF : Réponds UNIQUEMENT en français, avec du JSON valide. Aucun texte anglais.`;
+
+      const briefPrompt = `CE QUE TU SAIS D'ELLE :
+- Énergie aujourd'hui : ${energyLevel}
+${emotionalContext ? `- Comment elle se sent : ${emotionalContext}` : ''}
 ${personaContext}
 ${rhythmContext}
 ${avoidanceContext}
-- Business type: ${brandDna.businessType || 'Independent builder'}
-- Tasks today: ${incompleteTasks.length} pending, ${completedTasks.length} done
-${topTasks.length > 0 ? `\nTODAY'S TOP TASKS:\n${topTasks.join('\n')}` : '\nNo tasks scheduled yet.'}
-${carryoverLines.length > 0 ? `\nLEFT FROM YESTERDAY:\n${carryoverLines.join('\n')}` : ''}
-${upcomingMilestone ? `\nINCOMING:\n- ${upcomingMilestone}` : ''}
+- Type de business : ${brandDna.businessType || 'Entrepreneur indépendante'}
+- Tâches aujourd'hui : ${incompleteTasks.length} en attente, ${completedTasks.length} faites
+${topTasks.length > 0 ? `\nTÂCHES DU JOUR :\n${topTasks.join('\n')}` : '\nAucune tâche planifiée pour aujourd\'hui.'}
+${carryoverLines.length > 0 ? `\nRESTANT D'HIER :\n${carryoverLines.join('\n')}` : ''}
+${upcomingMilestone ? `\nÀ VENIR :\n- ${upcomingMilestone}` : ''}
 ${memoryBlock}
 
-Return JSON:
+Retourne du JSON valide (uniquement du JSON, rien d'autre) :
 {
-  "greeting": "1-2 sentence opener. Personal, direct, human. Reference their energy and situation.",
-  "topTasks": ["task title 1", "task title 2", "task title 3"],
-  "carryovers": ["most important incomplete task from yesterday — or empty array"],
-  "strategicReminder": "One sentence connecting today to the bigger picture. If a milestone is near, mention it.",
-  "energyAdvice": "One practical sentence about how to move through today given their energy state."
+  "greeting": "1-2 phrases d'intro. Personnelle, directe, humaine. En français.",
+  "topTasks": ["titre tâche 1", "titre tâche 2", "titre tâche 3"],
+  "carryovers": ["tâche importante non faite hier — ou tableau vide"],
+  "strategicReminder": "Une phrase reliant aujourd'hui à la vision. Si jalon proche, le mentionner.",
+  "energyAdvice": "Une phrase pratique sur comment avancer aujourd'hui selon l'énergie."
 }`;
 
       try {
@@ -1781,7 +1783,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/tasks/daily-brief/dismiss', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       await storage.upsertUserPreferences(userId, { dailyBriefDismissed: true });
       res.json({ dismissed: true });
     } catch (error) {
@@ -1793,7 +1795,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/availability', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { startDate, endDate, date } = req.query as Record<string, string>;
       if (date) {
         const row = await storage.getDayAvailability(userId, date);
@@ -1812,7 +1814,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.put('/api/availability/:date', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { date } = req.params;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ message: 'Invalid date format' });
       const row = await storage.upsertDayAvailability(userId, date, req.body);
@@ -1827,7 +1829,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/me/operating-profile', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const profile = await storage.getUserOperatingProfile(userId);
       res.json(profile || null);
     } catch (error) {
@@ -1838,7 +1840,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/me/operating-profile', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const profile = await storage.upsertUserOperatingProfile(userId, req.body);
       res.json(profile);
     } catch (error) {
@@ -1849,7 +1851,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.delete('/api/me/brand-dna', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       await storage.deleteBrandDna(userId);
       res.json({ success: true });
     } catch (error) {
@@ -1860,7 +1862,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.delete('/api/me/onboarding-reset', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       await storage.resetUserOnboardingState(userId);
       res.json({ success: true });
     } catch (error: any) {
@@ -1874,7 +1876,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/me/behavioral-signals', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const signals = await storage.getBehavioralSignals(userId);
       res.json(signals);
     } catch (error) {
@@ -1914,7 +1916,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
     app.post('/api/dev/reset-onboarding', isAuthenticated, async (req: any, res) => {
       try {
-        const userId = req.session.userId;
+        const userId = req.userId;
         await storage.resetUserOnboardingState(userId);
         res.json({ success: true, message: "Full onboarding reset complete. Visit / to re-run onboarding." });
       } catch (error: any) {
@@ -1928,7 +1930,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/milestone-triggers', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { status } = req.query;
       const triggers = await storage.getMilestoneTriggers(userId, status as string | undefined);
       res.json(triggers);
@@ -1954,7 +1956,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/milestone-triggers', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { rawCondition, projectId, conditionType, conditionSummary, conditionKeywords, tasksToUnlock, schedulingMode } = req.body;
       if (!rawCondition || typeof rawCondition !== 'string') {
         return res.status(400).json({ message: "rawCondition is required" });
@@ -1981,7 +1983,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/milestone-triggers/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const existing = await storage.getMilestoneTrigger(id);
       if (!existing || existing.userId !== userId) {
@@ -2001,7 +2003,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.delete('/api/milestone-triggers/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteMilestoneTrigger(id, userId);
       if (!deleted) return res.status(404).json({ message: "Trigger not found" });
@@ -2017,7 +2019,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // GET /api/projects/:id/milestones
   app.get('/api/projects/:id/milestones', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = parseInt(req.params.id);
       const milestones = await storage.getMilestones(projectId, userId);
       // Enrichir avec conditions
@@ -2035,7 +2037,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/projects/:id/milestones
   app.post('/api/projects/:id/milestones', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = parseInt(req.params.id);
       const { title, description, milestoneType, order, targetDate } = req.body;
       if (!title) return res.status(400).json({ message: "title requis" });
@@ -2059,7 +2061,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/projects/:id/milestone-chain — création en bloc depuis le Companion
   app.post('/api/projects/:id/milestone-chain', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ message: "projectId invalide" });
       const { milestones } = req.body;
@@ -2086,7 +2088,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // PATCH /api/milestones/:id
   app.patch('/api/milestones/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const milestone = await storage.getMilestone(id);
       if (!milestone || milestone.userId !== userId) {
@@ -2107,7 +2109,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/milestones/:id/confirm — confirmation manuelle
   app.post('/api/milestones/:id/confirm', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const milestone = await storage.getMilestone(id);
       if (!milestone || milestone.userId !== userId) {
@@ -2124,7 +2126,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // DELETE /api/milestones/:id
   app.delete('/api/milestones/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const deleted = await storage.deleteMilestone(id, userId);
       if (!deleted) return res.status(404).json({ message: "Jalon introuvable" });
@@ -2138,7 +2140,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/milestone-conditions/:id/fulfill
   app.post('/api/milestone-conditions/:id/fulfill', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const condition = await storage.fulfillCondition(id);
       if (!condition) return res.status(404).json({ message: "Condition introuvable" });
@@ -2158,7 +2160,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/notifications/register', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { expoPushToken } = req.body;
       if (!expoPushToken) return res.status(400).json({ message: "expoPushToken requis" });
       await storage.upsertUser({ id: userId, expoPushToken } as any);
@@ -2172,7 +2174,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/companion/chat', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { message, context, conversationHistory } = req.body;
 
       if (!message?.trim()) {
@@ -2244,7 +2246,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/companion/history', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const history = await storage.getCompanionHistory(userId, 30);
       res.json(history);
     } catch (error) {
@@ -2255,7 +2257,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // GET /api/companion/context — contexte enrichi pour le companion mobile
   app.get('/api/companion/context', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const today = new Date().toISOString().slice(0, 10);
       const in7Days = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
 
@@ -2325,7 +2327,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // Task lists (créées par le Companion)
   app.post('/api/task-lists', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { title, projectId, linkedTaskId, linkedDate, listType, items = [] } = req.body;
       const list = await storage.createTaskList({ userId, title, projectId, linkedTaskId, linkedDate, listType, createdByCompanion: true });
       for (let i = 0; i < items.length; i++) {
@@ -2352,7 +2354,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/capture', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { processed } = req.query;
       const processedBool = processed === 'true' ? true : processed === 'false' ? false : undefined;
       const entries = await storage.getCaptureEntries(userId, processedBool);
@@ -2365,7 +2367,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/capture', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const captureData = insertQuickCaptureSchema.parse({ ...req.body, userId });
       const entry = await storage.createCaptureEntry(captureData);
 
@@ -2497,7 +2499,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/capture/clear-routed', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const entries = await storage.getCaptureEntries(userId, false);
       const routed = entries.filter((e: any) => e.routingStatus === 'routed');
       await Promise.all(routed.map((e: any) => storage.updateCaptureEntry(e.id, userId, { routingStatus: 'dismissed', isProcessed: true })));
@@ -2509,7 +2511,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/capture/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const entry = await storage.updateCaptureEntry(parseInt(req.params.id), userId, req.body);
       if (!entry) return res.status(404).json({ message: "Entry not found" });
       res.json(entry);
@@ -2521,7 +2523,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.delete('/api/capture/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const deleted = await storage.deleteCaptureEntry(parseInt(req.params.id), userId);
       if (!deleted) return res.status(404).json({ message: "Entry not found" });
       res.json({ success: true });
@@ -2535,7 +2537,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/task-schedule-events', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const eventData = insertTaskScheduleEventSchema.parse({ ...req.body, userId });
       const event = await storage.createScheduleEvent(eventData);
       res.json(event);
@@ -2559,7 +2561,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/persona/detect-user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
       if (!brandDna) return res.status(400).json({ message: "Complete onboarding first" });
       
@@ -2588,7 +2590,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/persona/my-persona', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const result = await storage.getLatestPersonaAnalysis(userId, 'user');
       res.json(result || null);
     } catch (error) {
@@ -2609,7 +2611,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/persona/analyze-target', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { targetAudience, corePainPoint, audienceAspiration, projectId, description } = req.body;
       
       // Allow plain text description as a quick entry
@@ -2651,7 +2653,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/persona/target-personas', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId } = req.query;
       const personas = await storage.getTargetPersonas(userId, projectId ? parseInt(projectId as string) : undefined);
       res.json(personas);
@@ -2663,7 +2665,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.delete('/api/persona/target-personas/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const deleted = await storage.deleteTargetPersona(parseInt(req.params.id), userId);
       if (!deleted) return res.status(404).json({ message: "Target persona not found" });
       res.json({ success: true });
@@ -2675,7 +2677,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/persona/match-strategy', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { userPersonaName, targetPersonaName, projectId, goalId } = req.body;
       
       let projectType = "Business";
@@ -2714,7 +2716,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // Tasks routes
   app.get('/api/tasks', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { date, projectId, campaignId } = req.query;
       const pid = projectId ? parseInt(projectId as string) : undefined;
       let cid: number | undefined;
@@ -2733,7 +2735,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/dashboard/tomorrow-preview', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const prefs = await storage.getUserPreferences(userId);
       const projectId = prefs?.activeProjectId ?? undefined;
       const data = await storage.getTomorrowPreviewData(userId, projectId ?? undefined);
@@ -2747,7 +2749,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.get('/api/dashboard/schedule-preview', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const prefs = await storage.getUserPreferences(userId);
       const projectId = prefs?.activeProjectId ?? undefined;
 
@@ -2933,7 +2935,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const taskData = insertTaskSchema.parse({ ...req.body, userId });
 
       // Validate scheduling constraints
@@ -2975,7 +2977,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks/:id/workspace', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const taskId = parseInt(req.params.id);
       const { projectId, type, intent, title, source, content } = req.body;
       const entry = await storage.createWorkspaceEntry({
@@ -2998,7 +3000,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // PATCH /api/tasks/bulk-reschedule — déplace toutes les tâches incomplètes de fromDate vers toDate
   app.patch('/api/tasks/bulk-reschedule', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { fromDate, toDate } = req.body;
 
       if (!fromDate || !toDate) {
@@ -3023,7 +3025,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/tasks/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { id } = req.params;
       const updates = req.body;
       const taskId = parseInt(id);
@@ -3079,7 +3081,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks/:id/toggle', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { id } = req.params;
       const taskBefore = await storage.getTask(parseInt(id));
       const task = await storage.toggleTaskCompletion(parseInt(id));
@@ -3126,7 +3128,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // ─── Monthly Plan Generation ─────────────────────────────────────────────────
   app.post('/api/tasks/generate-monthly', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId: projectIdFromBody, month, year } = req.body;
       const floor = parseClientToday(req.body);
 
@@ -3248,7 +3250,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // ─── Weekly Refinement ────────────────────────────────────────────────────────
   app.post('/api/tasks/generate-weekly', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId: projectIdFromBody, weekStart: weekStartParam } = req.body;
       const floor = parseClientToday(req.body);
 
@@ -3463,7 +3465,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
 
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId: projectIdFromBody, replaceExisting } = req.body;
       const todayStr = parseClientToday(req.body);
 
@@ -4217,7 +4219,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // ─── Task Feedback routes (register before :id routes) ───────────────────────
   app.get('/api/tasks/feedback', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : undefined;
       const feedback = await storage.getRecentTaskFeedback(userId, projectId, 30);
       res.json(feedback);
@@ -4248,7 +4250,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks/:id/feedback', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const taskId = parseInt(req.params.id);
       const { feedbackType = 'dismissed', reason, freeText } = req.body;
       const task = await storage.getTask(taskId);
@@ -4274,7 +4276,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.delete('/api/tasks/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const taskId = parseInt(req.params.id);
       const { reason, freeText, feedbackType = 'deleted' } = req.body;
       const task = await storage.getTask(taskId);
@@ -4307,7 +4309,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // ─── Task Dependency routes (register before :id routes) ─────────────────────
   app.get('/api/tasks/dependencies', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : undefined;
       const deps = await storage.getTaskDependenciesForUser(userId, projectId);
       res.json(deps);
@@ -4354,7 +4356,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // ─── Task Range query (for planning page) ────────────────────────────────────
   app.get('/api/tasks/range', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { start, end, projectId } = req.query;
       if (!start || !end) return res.status(400).json({ message: "start and end are required" });
       const pid = projectId ? parseInt(projectId as string) : undefined;
@@ -4476,7 +4478,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // qui épuisaient le pool de connexions Neon et bloquaient le serveur entier.
   app.post('/api/tasks/rollover', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const today = new Date().toISOString().slice(0, 10);
       const result = await rolloverStaleTasks(userId, today);
       res.json({ ok: true, ...result });
@@ -4492,7 +4494,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // Le planner complet tourne uniquement à 06:00 via le cron schedulé au démarrage.
   app.post('/api/tasks/generate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const startDate = req.body?.startDate || new Date().toISOString().slice(0, 10);
       // Rollover léger uniquement — déplace les tâches incomplètes, sans génération IA
       rolloverStaleTasks(userId, startDate).catch(e =>
@@ -4508,7 +4510,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/tasks/rebalance — réorganise les tâches incomplètes d'un jour donné selon l'énergie
   app.post('/api/tasks/rebalance', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { date, energyLevel } = req.body;
       const targetDate = date || new Date().toISOString().slice(0, 10);
 
@@ -4585,7 +4587,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks/rebalance-week', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { weekStart, clientToday, clientTime } = req.body;
       if (!weekStart) return res.status(400).json({ message: "weekStart is required" });
       const todayStr = parseClientToday({ clientToday });
@@ -4841,7 +4843,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks/clear-week', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { weekStart } = req.body;
       if (!weekStart) return res.status(400).json({ message: "weekStart is required" });
 
@@ -4875,7 +4877,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // ─── Intelligent Replan ───────────────────────────────────────────────────────
   app.post('/api/tasks/replan', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId, scope = 'today' } = req.body;
       const floor = parseClientToday(req.body);
 
@@ -4975,7 +4977,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks/replan/apply', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { tasks: suggestedTasks, projectId, scheduledDate } = req.body;
       const floor = parseClientToday(req.body);
       const targetDate = clampToFloor(scheduledDate ?? floor, floor);
@@ -5006,7 +5008,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // Content routes
   app.get('/api/content', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { status, limit } = req.query;
 
       let projectId: number | undefined;
@@ -5037,7 +5039,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/content', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const requestBody = { ...req.body, userId };
       
       // Convert string dates to Date objects for database
@@ -5059,7 +5061,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/content/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { id } = req.params;
       const existing = await storage.getContentById(parseInt(id), userId);
       if (!existing) return res.status(404).json({ message: "Content not found" });
@@ -5082,7 +5084,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.delete('/api/content/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { id } = req.params;
       const existing = await storage.getContentById(parseInt(id), userId);
       if (!existing) return res.status(404).json({ message: "Content not found" });
@@ -5098,7 +5100,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // Régénère un post de contenu en remplaçant son angle/corps en gardant platform/pillar/format
   app.post('/api/content/:id/regenerate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const { feedback } = req.body as { feedback?: string };
 
@@ -5170,7 +5172,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // AI-powered content generation
   app.post('/api/content/generate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { platform, goal, pillar, topic } = req.body;
 
       let projectId: number | undefined;
@@ -5239,7 +5241,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Saved articles routes (Reading Hub)
   app.get('/api/saved-articles', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { category } = req.query;
       
       const articles = await storage.getSavedArticles(userId, category as string);
@@ -5252,7 +5254,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/saved-articles', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       // Auto-generate AI analysis for the article
       let aiAnalysis = null;
@@ -5294,7 +5296,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.put('/api/saved-articles/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       const updates = updateSavedArticleSchema.parse(req.body);
       
       const article = await storage.updateSavedArticle(parseInt(id), userId, updates);
@@ -5311,7 +5313,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.delete('/api/saved-articles/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       const deleted = await storage.deleteSavedArticle(parseInt(id), userId);
       if (!deleted) {
@@ -5327,7 +5329,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.patch('/api/saved-articles/:id/read', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { isRead } = toggleReadSchema.parse(req.body);
       
       const article = await storage.markArticleAsRead(parseInt(id), userId, isRead);
@@ -5344,7 +5346,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.patch('/api/saved-articles/:id/favorite', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { isFavorite } = toggleFavoriteSchema.parse(req.body);
       
       const article = await storage.toggleArticleFavorite(parseInt(id), userId, isFavorite);
@@ -5362,7 +5364,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/saved-articles/:id/analyze', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       // Get the article
       const article = await storage.getSavedArticleById(parseInt(id), userId);
@@ -5400,7 +5402,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Social accounts routes
   app.get('/api/social-accounts', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const accounts = await storage.getSafeSocialAccounts(userId);
       res.json(accounts);
     } catch (error) {
@@ -5411,7 +5413,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/social-accounts', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const accountData = insertSocialAccountSchema.parse({ ...req.body, userId });
       const account = await storage.createSafeSocialAccount(accountData);
       res.json(account);
@@ -5427,7 +5429,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.patch('/api/social-accounts/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       const updates = updateSocialAccountSchema.parse(req.body);
       
       const account = await storage.updateSafeSocialAccount(parseInt(id), userId, updates);
@@ -5447,7 +5449,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.delete('/api/social-accounts/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       const deleted = await storage.deleteSocialAccount(parseInt(id), userId);
       if (!deleted) {
@@ -5463,7 +5465,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.get('/api/social-accounts/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       const account = await storage.getSafeSocialAccountById(parseInt(id), userId);
       if (!account) {
@@ -5479,7 +5481,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.get('/api/social-accounts/platform/:platform', isAuthenticated, async (req: any, res) => {
     try {
       const { platform } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       // Note: This route needs the full account for internal use, but we still return safe version
       const account = await storage.getSocialAccountByPlatform(userId, platform);
@@ -5499,7 +5501,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Media library routes
   app.get('/api/media-library', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const media = await storage.getMediaLibrary(userId);
       res.json(media);
     } catch (error) {
@@ -5510,7 +5512,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/media-library', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const mediaData = insertMediaLibrarySchema.parse({ ...req.body, userId });
       const media = await storage.createMediaItem(mediaData);
       res.json(media);
@@ -5523,7 +5525,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.patch('/api/media-library/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       const updates = updateMediaLibrarySchema.parse(req.body);
       
       const media = await storage.updateMediaItem(parseInt(id), userId, updates);
@@ -5540,7 +5542,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.delete('/api/media-library/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       // First get the media item to get the file URL for storage deletion
       const mediaItem = await storage.getMediaItemById(parseInt(id), userId);
@@ -5576,7 +5578,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.get('/api/media-library/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       
       const media = await storage.getMediaItemById(parseInt(id), userId);
       if (!media) {
@@ -5592,7 +5594,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Leads routes
   app.get('/api/leads', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { status } = req.query;
       
       let leads;
@@ -5611,7 +5613,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/leads', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const leadData = insertLeadSchema.parse({ ...req.body, userId });
       const lead = await storage.createLead(leadData);
       res.json(lead);
@@ -5624,7 +5626,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.patch('/api/leads/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.session.userId;
+      const userId = req.userId;
       const updates = updateLeadSchema.parse(req.body);
       const lead = await storage.updateLead(parseInt(id), userId, updates);
       
@@ -5642,7 +5644,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // ─── Prospection Campaign routes ─────────────────────────────────────────────
   app.get('/api/prospection/campaigns', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const campaigns = await storage.getProspectionCampaigns(userId);
       res.json(campaigns);
     } catch (e: any) {
@@ -5652,7 +5654,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/prospection/campaigns', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const campaign = await storage.createProspectionCampaign({ ...req.body, userId });
       res.json(campaign);
     } catch (e: any) {
@@ -5662,7 +5664,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/prospection/campaigns/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const updated = await storage.updateProspectionCampaign(Number(req.params.id), userId, req.body);
       if (!updated) return res.status(404).json({ message: "Campaign not found" });
       res.json(updated);
@@ -5673,7 +5675,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.delete('/api/prospection/campaigns/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       await storage.deleteProspectionCampaign(Number(req.params.id), userId);
       res.json({ ok: true });
     } catch (e: any) {
@@ -5684,7 +5686,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Génère un brief de recherche pour une campagne de prospection
   app.post('/api/prospection/campaigns/:id/search-brief', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brief = await generateSearchBrief(userId, Number(req.params.id));
       res.json(brief);
     } catch (e: any) {
@@ -5695,7 +5697,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Enrichit un lead avec audit 6 sections + 3 messages
   app.post('/api/leads/:id/enrich', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const leadId = Number(req.params.id);
       const leads = await storage.getLeads(userId);
       const lead = leads.find(l => l.id === leadId);
@@ -5730,7 +5732,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Outreach routes
   app.get('/api/outreach', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { leadId } = req.query;
       const messages = await storage.getOutreachMessages(userId, leadId ? parseInt(leadId as string) : undefined);
       res.json(messages);
@@ -5742,7 +5744,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/outreach', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const messageData = insertOutreachMessageSchema.parse({ ...req.body, userId });
       const message = await storage.createOutreachMessage(messageData);
       res.json(message);
@@ -5767,7 +5769,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // AI-powered outreach message generation
   app.post('/api/outreach/generate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { leadInfo, messageType, goal } = req.body;
       
       const brandDna = await storage.getBrandDna(userId);
@@ -5841,7 +5843,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Analytics routes
   app.get('/api/metrics', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { week } = req.query;
       let metrics = await storage.getMetrics(userId, week as string);
       
@@ -5889,7 +5891,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/metrics/history', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { weeks = '4' } = req.query;
       const numWeeks = parseInt(weeks as string) || 4;
       
@@ -5972,7 +5974,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/analytics/insights', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
       
       if (!brandDna) {
@@ -5992,7 +5994,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/strategy-report', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { week } = req.query;
       const report = await storage.getStrategyReport(userId, week as string);
       res.json(report);
@@ -6022,7 +6024,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/strategy/weekly-briefing', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const weekStr = computeWeekStart(req.query.tzOffset as string);
 
       const briefing = await storage.getWeeklyBriefing(userId, weekStr);
@@ -6035,7 +6037,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/strategy/generate-weekly-briefing', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const weekStr = computeWeekStart(req.body?.tzOffset || req.query?.tzOffset);
 
       const existing = await storage.getWeeklyBriefing(userId, weekStr);
@@ -6170,7 +6172,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/strategy/weekly-briefing/dismiss', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const weekStr = computeWeekStart(req.body?.tzOffset || req.query?.tzOffset);
 
       await storage.dismissWeeklyBriefing(userId, weekStr);
@@ -6183,7 +6185,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/analytics/metrics', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { week } = req.query;
       const metrics = await storage.getMetrics(userId, week as string);
       res.json(metrics);
@@ -6195,7 +6197,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/analytics/content-performance', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
       const content = await storage.getContent(userId, 30);
       
@@ -6242,7 +6244,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/analytics/project-summary', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId } = req.query;
       let pid: number | undefined;
       if (projectId) {
@@ -6327,7 +6329,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Strategy routes
   app.get('/api/strategy/report', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { week } = req.query;
       let projectId: number | null | undefined = undefined;
       if (req.query.projectId !== undefined) {
@@ -6344,7 +6346,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/strategy/generate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       let projectId: number | null = null;
       if (req.body.projectId !== undefined && req.body.projectId !== null) {
         projectId = parseInt(req.body.projectId);
@@ -6444,7 +6446,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Social media integration routes
   app.post('/api/social/connect/:platform', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { platform } = req.params;
       const { accessToken, accessSecret } = req.body;
       
@@ -6486,7 +6488,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/social/post', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { platform, content, imageUrl, scheduledFor, socialAccountId } = req.body;
       
       // Get user's stored credentials for platform
@@ -6542,7 +6544,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Publish scheduled content
   app.post('/api/content/:id/publish', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const contentId = parseInt(req.params.id);
       
       // Get the content to publish
@@ -6629,7 +6631,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Lead scraping routes
   app.post('/api/leads/search', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { criteria } = req.body;
       const brandDna = await storage.getBrandDna(userId);
       
@@ -6648,7 +6650,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Email marketing routes
   app.post('/api/email/newsletter/generate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
       const recentContent = await storage.getContent(userId, 10);
       
@@ -6666,7 +6668,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/email/nurture/create', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
       
       if (!brandDna) {
@@ -6743,7 +6745,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         return res.status(400).json({ error: "fileUrl and fileName are required" });
       }
 
-      const userId = req.session.userId;
+      const userId = req.userId;
       const objectStorageService = new ObjectStorageService();
       
       // CRITICAL: Normalize the uploaded URL and set ACL policy for secure access
@@ -6779,7 +6781,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/campaigns', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId } = req.query;
       let pid: number | undefined;
       if (projectId) {
@@ -6797,7 +6799,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/campaigns', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { projectId } = req.body;
       if (projectId) {
         const pid = Number(projectId);
@@ -6815,7 +6817,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/campaigns/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const existing = await storage.getCampaign(id, userId);
       if (!existing) return res.status(404).json({ message: "Campaign not found" });
@@ -6829,7 +6831,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/campaigns/:id/review', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const { contentQuality, audienceResponse, taskExecution } = req.body;
       const validate = (v: any) => typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 5;
@@ -6854,7 +6856,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.delete('/api/campaigns/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const existing = await storage.getCampaign(id, userId);
       if (!existing) return res.status(404).json({ message: "Campaign not found" });
@@ -6868,7 +6870,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/campaigns/generate', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { objective, duration, projectId, weekContext, startDate: bodyStartDate } = req.body;
       if (!objective) return res.status(400).json({ message: "Objective is required" });
 
@@ -7133,7 +7135,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/campaigns/:id/launch', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
@@ -7437,7 +7439,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Regenerate content calendar for an existing campaign (keeps tasks intact)
   app.post('/api/campaigns/:id/regenerate-content', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
@@ -7535,7 +7537,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/campaigns/:id/pause', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const { pauseNote } = req.body as { pauseNote?: string };
       const campaign = await storage.getCampaign(id, userId);
@@ -7557,7 +7559,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/campaigns/:id/resume', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
@@ -7799,7 +7801,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/campaigns/:id/redeploy', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
@@ -8015,7 +8017,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // ─── Companion Pending Messages & Stuck Tasks ──────────────────────────────
   app.get('/api/companion/pending', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const messages = await storage.getPendingMessages(userId);
       res.json({ messages, unreadCount: messages.length });
     } catch (err: any) {
@@ -8038,7 +8040,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.get('/api/tasks/stuck', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const stuck = await storage.getStuckTasks(userId);
       res.json(stuck);
     } catch (err: any) {
@@ -8049,7 +8051,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/companion/pending-insight', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { tasks: stuckTasks } = req.body;
       if (!Array.isArray(stuckTasks) || stuckTasks.length === 0) {
         return res.status(400).json({ message: 'tasks requis' });
@@ -8074,7 +8076,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // ─── Business Memory CRUD ──────────────────────────────────────────────────
   app.get('/api/memory', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const archived = req.query.archived === 'true' ? true : req.query.archived === 'all' ? undefined : false;
       const rawLimit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const limit = rawLimit && !isNaN(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : undefined;
@@ -8088,7 +8090,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/memory', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const { type, content, sourceEntryId } = req.body;
       if (!type || !content) {
         return res.status(400).json({ message: "type and content are required" });
@@ -8113,7 +8115,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/memory/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid memory id" });
       const { type, content, archived } = req.body;
@@ -8136,7 +8138,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.delete('/api/memory/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.session.userId;
+      const userId = req.userId;
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid memory id" });
       const memory = await storage.archiveBusinessMemory(id, userId);
