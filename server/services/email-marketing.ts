@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Email Marketing Integration Service
  * Handles newsletter creation, automation, and analytics

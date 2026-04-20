@@ -9,7 +9,7 @@ import { startOfWeek } from 'date-fns/startOfWeek';
 import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -224,6 +224,35 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
       toast({ title: t('contentCalendar.contentDeleted') });
+    },
+  });
+
+  const [regeneratingId, setRegeneratingId] = useState<number | null>(null);
+  const [regenerateFeedback, setRegenerateFeedback] = useState('');
+  const [showRegenerateFor, setShowRegenerateFor] = useState<number | null>(null);
+
+  const regenerateMutation = useMutation({
+    mutationFn: ({ id, feedback }: { id: number; feedback: string }) =>
+      fetch(`/api/content/${id}/regenerate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ feedback }),
+      }).then(async res => {
+        if (!res.ok) throw new Error('Erreur lors de la régénération');
+        return res.json();
+      }),
+    onMutate: ({ id }) => setRegeneratingId(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId, campaignFilter] });
+      setShowRegenerateFor(null);
+      setRegenerateFeedback('');
+      setRegeneratingId(null);
+      toast({ title: '✨ Post régénéré avec un nouvel angle' });
+    },
+    onError: () => {
+      setRegeneratingId(null);
+      toast({ title: 'Impossible de régénérer le post', variant: 'destructive' });
     },
   });
 
@@ -539,11 +568,14 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
     const statusIdx = CONTENT_STATUS_STEPS.indexOf(status);
     const canMoveLeft = statusIdx > 0;
     const canMoveRight = statusIdx < CONTENT_STATUS_STEPS.length - 1;
+    const isRegenerating = regeneratingId === item.id;
+    const showRegenForm = showRegenerateFor === item.id;
 
     return (
       <div
-        className="group bg-white border border-slate-200 rounded-lg p-3 hover:shadow-md transition-all cursor-pointer relative"
-        onClick={() => openEditModal(item)}
+        className="group bg-white border border-slate-200 rounded-lg p-3 hover:shadow-md transition-all relative"
+        onClick={() => !showRegenForm && openEditModal(item)}
+        style={{ cursor: showRegenForm ? 'default' : 'pointer' }}
       >
         <div className="flex items-center gap-2 mb-2">
           <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: platform.dotColor }} />
@@ -558,6 +590,41 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
             <span className="text-xs text-slate-400">{format(new Date(item.scheduledFor), 'MMM d')}</span>
           )}
         </div>
+
+        {/* Inline regenerate form */}
+        {showRegenForm && (
+          <div className="mt-3 pt-3 border-t border-amber-200 bg-amber-50 rounded-b-lg -mx-3 -mb-3 px-3 pb-3" onClick={e => e.stopPropagation()}>
+            <p className="text-xs text-amber-800 mb-2">Ce qui ne te convient pas (optionnel)</p>
+            <textarea
+              className="w-full text-xs border border-amber-200 rounded p-2 bg-white resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+              rows={2}
+              placeholder="Ex: je ne veux pas critiquer d'autres marques, préfère rester sur mon expertise..."
+              value={regenerateFeedback}
+              onChange={e => setRegenerateFeedback(e.target.value)}
+            />
+            <div className="flex gap-2 mt-2">
+              <button
+                className="flex-1 text-xs py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded flex items-center justify-center gap-1 disabled:opacity-50"
+                disabled={isRegenerating}
+                onClick={() => regenerateMutation.mutate({ id: item.id, feedback: regenerateFeedback })}
+              >
+                {isRegenerating ? (
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Régénérer
+              </button>
+              <button
+                className="text-xs px-3 py-1.5 border border-slate-200 rounded hover:bg-slate-50 text-slate-600"
+                onClick={() => { setShowRegenerateFor(null); setRegenerateFeedback(''); }}
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1" onClick={e => e.stopPropagation()}>
           {canMoveLeft && (
             <button
@@ -577,6 +644,13 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
               <ChevronRight className="w-3.5 h-3.5 text-slate-600" />
             </button>
           )}
+          <button
+            className="w-6 h-6 rounded bg-amber-50 hover:bg-amber-100 flex items-center justify-center"
+            onClick={() => { setShowRegenerateFor(item.id); setRegenerateFeedback(''); }}
+            title="Régénérer ce post"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-amber-500" />
+          </button>
           <button
             className="w-6 h-6 rounded bg-red-50 hover:bg-red-100 flex items-center justify-center"
             onClick={() => deleteContentMutation.mutate(item.id)}

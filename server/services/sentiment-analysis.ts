@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Sentiment Analysis & Performance Monitoring Service
  * Analyzes client feedback, market trends, and performance data

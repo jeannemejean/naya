@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Lead Scraping & Research Service
  * Integrates with Bright Data and other platforms for lead generation

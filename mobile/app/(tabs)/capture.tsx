@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator,
 } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
 import api from "../../lib/api";
 import { defaultFetcher } from "../../lib/queryClient";
 
@@ -19,6 +20,9 @@ const CAPTURE_TYPES = [
 export default function CaptureScreen() {
   const [text, setText] = useState("");
   const [selectedType, setSelectedType] = useState("idea");
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const queryClient = useQueryClient();
 
   const { data: recent, isLoading } = useQuery<any[]>({
@@ -47,6 +51,54 @@ export default function CaptureScreen() {
     captureMutation.mutate(trimmed);
   };
 
+  const startRecording = async () => {
+    try {
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Micro requis", "Autorise l'accès au micro dans les réglages.");
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: rec } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = rec;
+      setRecording(rec);
+    } catch {
+      Alert.alert("Erreur", "Impossible de démarrer l'enregistrement.");
+    }
+  };
+
+  const stopRecording = async () => {
+    const rec = recordingRef.current;
+    if (!rec) return;
+    setRecording(null);
+    recordingRef.current = null;
+    setIsTranscribing(true);
+    try {
+      await rec.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      const uri = rec.getURI();
+      if (!uri) throw new Error("No URI");
+
+      const formData = new FormData();
+      formData.append("audio", { uri, type: "audio/m4a", name: "capture.m4a" } as any);
+      const { data } = await api.post("/api/transcribe", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      if (data.text) setText(prev => (prev ? `${prev} ${data.text}` : data.text));
+    } catch {
+      Alert.alert("Erreur", "Transcription impossible. Réessaie.");
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const handleVoiceBtn = () => {
+    if (recording) stopRecording();
+    else startRecording();
+  };
+
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       {/* Header */}
@@ -61,26 +113,43 @@ export default function CaptureScreen() {
           style={styles.input}
           value={text}
           onChangeText={setText}
-          placeholder="Qu'est-ce qui te traverse l'esprit ?"
-          placeholderTextColor="#475569"
+          placeholder={
+            recording ? "À l'écoute…" : isTranscribing ? "Transcription…" : "Qu'est-ce qui te traverse l'esprit ?"
+          }
+          placeholderTextColor={recording ? "#ef4444" : "#475569"}
           multiline
           numberOfLines={4}
           maxLength={1000}
-          autoFocus
+          autoFocus={!recording}
+          editable={!recording && !isTranscribing}
         />
 
-        {/* Type selector */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeRow}>
-          {CAPTURE_TYPES.map(t => (
-            <TouchableOpacity
-              key={t.value}
-              style={[styles.typeBtn, selectedType === t.value && { borderColor: t.color, backgroundColor: `${t.color}20` }]}
-              onPress={() => setSelectedType(t.value)}
-            >
-              <Text style={[styles.typeBtnText, selectedType === t.value && { color: t.color }]}>{t.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* Barre actions : micro + type selector */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.voiceBtn, recording && styles.voiceBtnActive]}
+            onPress={handleVoiceBtn}
+            disabled={isTranscribing}
+          >
+            {isTranscribing ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Ionicons name={recording ? "stop" : "mic"} size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeRow}>
+            {CAPTURE_TYPES.map(t => (
+              <TouchableOpacity
+                key={t.value}
+                style={[styles.typeBtn, selectedType === t.value && { borderColor: t.color, backgroundColor: `${t.color}20` }]}
+                onPress={() => setSelectedType(t.value)}
+              >
+                <Text style={[styles.typeBtnText, selectedType === t.value && { color: t.color }]}>{t.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
         {/* Bouton envoyer */}
         <TouchableOpacity
@@ -137,7 +206,14 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, color: "#64748b", marginTop: 4 },
   inputCard: { margin: 16, backgroundColor: "#1e1e2e", borderRadius: 20, padding: 16, gap: 12 },
   input: { fontSize: 16, color: "#e2e8f0", minHeight: 100, textAlignVertical: "top", lineHeight: 24 },
-  typeRow: { flexDirection: "row" },
+  actionsRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  voiceBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: "#334155",
+    alignItems: "center", justifyContent: "center", flexShrink: 0,
+  },
+  voiceBtnActive: { backgroundColor: "#ef4444" },
+  typeRow: { flexDirection: "row", flex: 1 },
   typeBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: "#2d2d44", marginRight: 8, backgroundColor: "#0f0f1a" },
   typeBtnText: { fontSize: 13, color: "#64748b", fontWeight: "500" },
   sendBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#4f46e5", borderRadius: 14, paddingVertical: 14 },

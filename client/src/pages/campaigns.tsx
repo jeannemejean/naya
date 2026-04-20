@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Rocket, Plus, Loader2, CheckCircle2, Pause, Trash2, Edit2, X,
   Clock, Zap, Brain, Users, Settings, Lightbulb, Target,
-  ChevronUp, ChevronDown, AlertTriangle, CalendarDays, RotateCcw, ArrowRight
+  ChevronUp, ChevronDown, AlertTriangle, CalendarDays, RotateCcw, ArrowRight, RefreshCw
 } from "lucide-react";
 import type { Project, Task } from "@shared/schema";
 import { formatLocalDate } from "@/lib/dateUtils";
@@ -771,6 +771,19 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
     onError: () => toast({ title: t('campaigns.failedToRedeploy'), variant: "destructive" }),
   });
 
+  const regenerateContentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("POST", `/api/campaigns/${id}/regenerate-content`, {});
+      return res.json();
+    },
+    onSuccess: (data: { deleted: number; contentCreated: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedProjectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+      toast({ title: "Calendrier régénéré", description: `${data.deleted} anciens posts supprimés, ${data.contentCreated} nouveaux posts créés.` });
+    },
+    onError: () => toast({ title: "Impossible de régénérer le calendrier", variant: "destructive" }),
+  });
+
   const handleSelectCampaign = (c: Campaign) => {
     setSelectedCampaignId(c.id);
     if (c.status === "draft" && c.generatedTasks) {
@@ -1241,6 +1254,13 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                             {t('campaigns.redeploy')}
                           </Button>
                         )}
+                        <Button size="sm" variant="outline" className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                          onClick={() => regenerateContentMutation.mutate(selectedCampaign.id)}
+                          disabled={regenerateContentMutation.isPending}
+                          title="Supprime les posts du calendrier et les recrée depuis le plan de contenu, répartis sur toute la semaine">
+                          {regenerateContentMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
+                          Régénérer le calendrier
+                        </Button>
                         <Button size="sm" onClick={() => { updateMutation.mutate({ id: selectedCampaign.id, data: { status: "completed" } }); toast({ title: t('campaigns.campaignMarkedComplete') }); }}>
                           <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
                           {t('campaigns.markComplete')}

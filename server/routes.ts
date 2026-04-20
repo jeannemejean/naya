@@ -22,6 +22,22 @@ import { contextualRecommendationsEngine } from "./services/contextual-recommend
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
+
+function stripMarkdownJSON(raw: string | null | undefined): string {
+  if (!raw) return '{}';
+  let cleaned = raw.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+  }
+  cleaned = cleaned.trim();
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+  let start = -1;
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) start = firstBrace;
+  else if (firstBracket !== -1) start = firstBracket;
+  if (start > 0) cleaned = cleaned.slice(start);
+  return cleaned;
+}
 import { companyResearchService } from "./services/company-research";
 import { socialMediaService } from "./services/social-integrations";
 import { leadScrapingService } from "./services/lead-scraping";
@@ -4359,12 +4375,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         );
 
         // Paralléliser les queries milestones pour tous les projets
+        const validProjects = projects.filter((p): p is typeof p & { id: number } => !!p?.id);
         const allMilestones = await Promise.all(
-          projects.filter(p => p?.id).map(p => storage.getMilestones(p.id, userId).catch(() => []))
+          validProjects.map(p => storage.getMilestones(p.id, userId).catch(() => []))
         );
 
         const startDate = start as string;
-        projects.filter(p => p?.id).forEach((project, i) => {
+        validProjects.forEach((project, i) => {
           const milestones = allMilestones[i] as any[];
           const visibleMilestones = milestones.filter(
             m => m.status !== 'completed' && m.status !== 'skipped'
@@ -7352,7 +7369,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
       let contentCreated = 0;
       // Spread posts across work days within each week
-      for (const [weekNum, pieces] of contentByWeek) {
+      for (const [weekNum, pieces] of Array.from(contentByWeek.entries())) {
         const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);
         // Collect work days in this week
         const workDaysInWeek: string[] = [];
@@ -7469,7 +7486,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       let contentCreated = 0;
       const HOURS = [9, 11, 14, 16];
 
-      for (const [weekNum, pieces] of contentByWeek) {
+      for (const [weekNum, pieces] of Array.from(contentByWeek.entries())) {
         const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);
         const workDaysInWeek: string[] = [];
         for (let d = 0; d < 7; d++) {

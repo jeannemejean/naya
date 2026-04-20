@@ -227,6 +227,8 @@ export interface IStorage {
   createContent(content: InsertContent): Promise<Content>;
   updateContent(id: number, updates: Partial<Content>): Promise<Content>;
   deleteContent(id: number): Promise<void>;
+  deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
+  deleteAllCampaignContent(campaignId: number): Promise<number>;
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
   
   // Prospection Campaign operations
@@ -812,6 +814,23 @@ export class DatabaseStorage implements IStorage {
 
   async deleteContent(id: number): Promise<void> {
     await db.delete(content).where(eq(content.id, id));
+  }
+
+  async deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number> {
+    const deleted = await db.delete(content).where(
+      and(
+        eq((content as any).campaignId, campaignId),
+        gte(content.scheduledFor, new Date(fromDate + 'T00:00:00'))
+      )
+    ).returning({ id: content.id });
+    return deleted.length;
+  }
+
+  async deleteAllCampaignContent(campaignId: number): Promise<number> {
+    const deleted = await db.delete(content).where(
+      eq((content as any).campaignId, campaignId)
+    ).returning({ id: content.id });
+    return deleted.length;
   }
 
   // ─── Prospection Campaign operations ─────────────────────────────────────────

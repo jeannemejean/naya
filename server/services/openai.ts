@@ -1230,7 +1230,17 @@ The "prospection" field rules:
 The prospection value must be either null or an inline object — never a separate JSON block.
 
 Generate the right number of phases for the duration. For a 1-month campaign: 3 phases. For 3 months: 4 phases. For 6 months: 5-6 phases.
-Generate 2-4 content pieces per phase. Generate 8-15 tasks distributed across phases. Generate 3-5 KPIs.`;
+
+CONTENT PLAN RULES — this is critical:
+- The contentPlan array must reflect the ACTUAL weekly frequency declared in channels.
+- Example: if channels say LinkedIn 3x/week + Instagram 2x/week + email 1x/week, generate that many pieces per week.
+- Distribute pieces week by week (week 1, 2, 3...). Each piece has a specific angle — not generic.
+- Minimum: match the declared frequency for at least 3 weeks per phase. For a 3-month campaign, generate 25-40 pieces.
+- Each piece must have a distinct angle. No two pieces on the same platform can have the same angle.
+- DO NOT generate "brand critique" or "competitive analysis" content unless the brief explicitly requests it.
+- Pieces should demonstrate the brand's OWN expertise and positioning, not commentary on others.
+
+Generate 8-15 tasks distributed across phases. Generate 3-5 KPIs.`;
 
     // Build focused brand context from brandDna parameter (avoids double-context via buildNayaContext)
     const bd = request.brandDna || {};
