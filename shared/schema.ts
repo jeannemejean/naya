@@ -115,6 +115,8 @@ export const userPreferences = pgTable("user_preferences", {
   dailyBriefContent: jsonb("daily_brief_content"),                  // stored brief JSON
   dailyBriefDismissed: boolean("daily_brief_dismissed").default(false),
   planningStartDate: text("planning_start_date"), // YYYY-MM-DD — Naya ne planifie rien avant cette date
+  durationCalibration: jsonb("duration_calibration"), // { "content": 0.7, "admin": 1.2, ... } ratio réel/estimé par catégorie
+  behaviorPatterns: jsonb("behavior_patterns"),       // { bestTaskTypeByHour, worstCompletionByDayOfWeek, averageCompletionRateByCategory }
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

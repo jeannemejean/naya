@@ -3,6 +3,9 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
 import { scheduleAutoPlanner, scheduleEndOfDayRollover, scheduleIntraDayReschedule } from "./services/auto-planner";
+import { computeDurationCalibration } from "./services/duration-calibration";
+import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
+import { storage } from "./storage";
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('unhandledRejection', (reason, promise) => {
@@ -46,6 +49,34 @@ app.use((req, res, next) => {
   next();
 });
 
+/**
+ * Cron hebdomadaire dimanche 23h UTC :
+ * - Calibrage des durées réelles (Priorité 1)
+ * - Analyse des patterns comportementaux (Priorité 6)
+ */
+function scheduleWeeklyIntelligence() {
+  const SUNDAY = 0;
+  const TARGET_HOUR = 23;
+
+  setInterval(async () => {
+    const now = new Date();
+    if (now.getUTCDay() !== SUNDAY || now.getUTCHours() !== TARGET_HOUR) return;
+
+    console.log('[WeeklyIntelligence] Starting weekly analytics run');
+    const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
+    for (const userId of userIds) {
+      try {
+        await computeDurationCalibration(userId);
+        await analyzeBehaviorPatterns(userId);
+        console.log(`[WeeklyIntelligence] Updated analytics for user ${userId}`);
+      } catch (err: any) {
+        console.error(`[WeeklyIntelligence] Error for user ${userId}:`, err.message);
+      }
+    }
+    console.log('[WeeklyIntelligence] Done');
+  }, 60 * 60 * 1000); // vérification chaque heure
+}
+
 (async () => {
   const server = await registerRoutes(app);
 
@@ -58,6 +89,9 @@ app.use((req, res, next) => {
   scheduleEndOfDayRollover();
   // Intra-day reschedule: adjusts pending tasks throughout the day
   scheduleIntraDayReschedule();
+
+  // ─── Cron hebdomadaire : intelligence analytics (dimanche ~23h UTC) ───────────
+  scheduleWeeklyIntelligence();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

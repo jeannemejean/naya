@@ -1748,6 +1748,46 @@ export class DatabaseStorage implements IStorage {
       .where(eq(googleCalendarTokens.userId, userId));
     return !!row;
   }
+
+  // ─── Intelligence analytics ───────────────────────────────────────────────────
+
+  /** Alias pour upsertUserPreferences — utilisé par les services d'intelligence */
+  async updateUserPreferences(userId: string, data: Record<string, any>): Promise<void> {
+    await this.upsertUserPreferences(userId, data as any);
+  }
+
+  /** Tâches complétées avec actualDuration renseigné (pour calibrage durées) */
+  async getCompletedTasksWithDuration(userId: string, limit = 60): Promise<Task[]> {
+    return await db.select().from(tasks)
+      .where(and(
+        eq(tasks.userId, userId),
+        eq(tasks.completed, true),
+        isNotNull(tasks.actualDuration),
+        isNotNull(tasks.estimatedDuration),
+      ))
+      .orderBy(desc(tasks.completedAt))
+      .limit(limit);
+  }
+
+  /** Historique des tâches sur N jours (complètes et incomplètes, pour analyse comportementale) */
+  async getTaskHistory(userId: string, days = 90): Promise<Task[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const sinceStr = since.toISOString().slice(0, 10);
+    return await db.select().from(tasks)
+      .where(and(
+        eq(tasks.userId, userId),
+        gte(tasks.scheduledDate, sinceStr),
+      ))
+      .orderBy(desc(tasks.scheduledDate));
+  }
+
+  /** Dépendances pour un ensemble de tâches (version multi-IDs pour dependency-sort) */
+  async getTaskDependenciesForIds(taskIds: number[]): Promise<TaskDependency[]> {
+    if (taskIds.length === 0) return [];
+    return await db.select().from(taskDependencies)
+      .where(inArray(taskDependencies.taskId, taskIds));
+  }
 }
 
 export const storage = new DatabaseStorage();

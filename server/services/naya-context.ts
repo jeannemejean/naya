@@ -1,4 +1,6 @@
 import { storage } from "../storage";
+import { computeGoalUrgencyScore, formatGoalsWithUrgency } from "./goal-urgency";
+import { formatBehaviorPatternsForContext } from "./behavior-patterns";
 
 /**
  * Build complete Naya context for AI calls.
@@ -86,18 +88,20 @@ Positionnement (projet) : ${stratProfile?.uniquePositioning || 'Non renseigné'}
 Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}`);
     }
 
-    // Section 2b : Progression des objectifs
+    // Section 2b : Objectifs actifs avec score d'urgence dynamique
     if (activeGoals.length > 0) {
-      const progressLines = activeGoals.map(g => {
-        const prog = goalProgressMap[g.id] || { completed: 0, total: 0 };
-        const pct = prog.total > 0 ? Math.round((prog.completed / prog.total) * 100) : 0;
-        const bar = prog.total > 0
-          ? `${prog.completed}/${prog.total} tâches complétées (${pct}%)`
-          : 'Aucune tâche encore générée';
-        const lag = prog.total > 0 && pct < 30 ? ' ⚠️ EN RETARD' : '';
-        return `- "${g.title}" [${g.goalType}] : ${bar}${lag}`;
-      });
-      sections.push(`## Progression des objectifs\n${progressLines.join('\n')}\n\nPrioritise les objectifs marqués ⚠️ EN RETARD dans tes recommandations de tâches.`);
+      const goalsWithProgress = activeGoals.map(g => ({
+        ...g,
+        completedTasks: goalProgressMap[g.id]?.completed ?? 0,
+        totalTasks: goalProgressMap[g.id]?.total ?? 0,
+      }));
+
+      // Trier par urgence décroissante
+      const sortedGoals = [...goalsWithProgress].sort(
+        (a, b) => computeGoalUrgencyScore(b) - computeGoalUrgencyScore(a),
+      );
+
+      sections.push(`## Objectifs actifs (triés par urgence)\n${formatGoalsWithUrgency(sortedGoals)}\n\nInstruction absolue : génère des tâches proportionnellement aux scores d'urgence. Un objectif 🚨 CRITIQUE doit représenter au moins 50% des tâches générées aujourd'hui.`);
     }
 
     // Section 3 : Jalons du projet (règle absolue : jamais de tâches pour un jalon locked)
@@ -144,6 +148,13 @@ Leviers de persuasion : ${(tp.persuasionDrivers || []).join(', ')}`);
 Niveau d'énergie : ${energyPrefs.currentEnergyLevel || 'high'}
 Contexte émotionnel : ${energyPrefs.currentEmotionalContext || 'Aucun'}
 Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
+    }
+
+    // Section 6b : Patterns comportementaux (si disponibles)
+    const bp = (energyPrefs as any)?.behaviorPatterns;
+    if (bp) {
+      const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      sections.push(formatBehaviorPatternsForContext(bp, todayName));
     }
 
     // Section 7 : Mémoire business récente

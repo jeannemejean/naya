@@ -18,6 +18,8 @@ import { buildNayaContext } from './naya-context';
 import { CLAUDE_MODELS, callClaude } from './claude';
 import { getCalendarBlockedRanges } from './google-calendar';
 import { handleTaskDeferral } from './task-intelligence';
+import { computeDurationCalibration, applyCalibration, formatCalibrationForPrompt } from './duration-calibration';
+import { sortTasksByDependencies, groupTasksByWorkflow } from './dependency-sort';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -272,12 +274,14 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
     projectsToProcess.push(projects[0]);
   }
 
-  // 8. Load context data
+  // 8. Load context data + calibrage durées
   const [recentContent, recentOutreach, operatingProfile] = await Promise.all([
     storage.getContent(userId, 10).catch(() => []),
     storage.getOutreachMessages(userId).catch(() => []),
     storage.getUserOperatingProfile(userId).catch(() => null),
   ]);
+
+  const durationCalibration = (prefs as any)?.durationCalibration ?? {};
 
   // Build operating profile summary
   const operatingProfileSummary = operatingProfile ? [
@@ -384,7 +388,10 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         workDayStart,
         workDayEnd,
         maxTasks: maxTasksPerProject,
-        operatingProfileSummary: operatingProfileSummary || undefined,
+        operatingProfileSummary: [
+          operatingProfileSummary,
+          Object.keys(durationCalibration).length > 0 ? formatCalibrationForPrompt(durationCalibration) : '',
+        ].filter(Boolean).join('\n\n') || undefined,
         energyLevel: prefs?.currentEnergyLevel || 'high',
         emotionalContext: (prefs as any)?.currentEmotionalContext || undefined,
         operatingMode: stratProfile?.operatingMode || undefined,
@@ -392,9 +399,18 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
 
       if (!result || !Array.isArray((result as any).tasks)) continue;
 
+      // Trier par dépendances puis regrouper par workflowGroup
+      const rawTasks = (result as any).tasks as any[];
+      const sortedByDeps = await sortTasksByDependencies(rawTasks, userId).catch(() => rawTasks);
+      const orderedTasks = groupTasksByWorkflow(sortedByDeps);
+
       // Persist tasks with collision-safe slot assignment (respects lunch break)
-      for (const taskData of (result as any).tasks) {
-        const duration = taskData.estimatedDuration || 30;
+      const createdTaskIds: number[] = [];
+      for (const taskData of orderedTasks) {
+        const category = taskData.category || 'general';
+        const rawDuration = taskData.estimatedDuration || 30;
+        // Appliquer le calibrage durée réel de l'utilisateur
+        const duration = applyCalibration(rawDuration, category, durationCalibration);
         const workEndMin = hhmmToMin(workDayEnd);
 
         const slotMin = findNextFreeSlot(curSlot, duration, blockedRanges, workEndMin);
@@ -404,7 +420,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         blockedRanges.push({ start: slotMin, end: slotMin + duration });
         curSlot = slotMin + duration + 5; // 5-min buffer
 
-        await storage.createTask({
+        const created = await storage.createTask({
           userId,
           projectId: project.id ?? undefined,
           goalId: (() => {
@@ -414,7 +430,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
           title: taskData.title,
           description: taskData.description || '',
           type: taskData.type || 'planning',
-          category: taskData.category || 'planning',
+          category,
           priority: taskData.priority || 3,
           estimatedDuration: duration,
           scheduledDate: dateStr,
@@ -424,9 +440,27 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
           canBeFragmented: taskData.canBeFragmented ?? false,
           recommendedTimeOfDay: taskData.recommendedTimeOfDay || 'morning',
           activationPrompt: taskData.activationPrompt || null,
+          workflowGroup: taskData.workflowGroup || null,
           source: 'auto',
           completed: false,
         } as any);
+        createdTaskIds.push((created as any).id);
+      }
+
+      // Créer les dépendances entre tâches nouvellement créées
+      const deps = (result as any).dependencies as Array<{ taskIndex: number; dependsOnIndex: number; relationType: string }> | undefined;
+      if (deps && deps.length > 0) {
+        for (const dep of deps) {
+          const taskId = createdTaskIds[dep.taskIndex];
+          const dependsOnTaskId = createdTaskIds[dep.dependsOnIndex];
+          if (taskId && dependsOnTaskId) {
+            await storage.createTaskDependency({
+              taskId,
+              dependsOnTaskId,
+              relationType: dep.relationType as any,
+            } as any).catch(() => {}); // non-bloquant
+          }
+        }
       }
     } catch (projectError: any) {
       console.error(`[AutoPlanner] Error generating for project ${project.id}:`, projectError.message);
@@ -547,6 +581,15 @@ export function scheduleAutoPlanner(): void {
  * Defaults to 'reschedule' on any error so we never silently drop tasks.
  */
 async function evaluateTaskRelevance(task: any): Promise<'reschedule' | 'dismiss'> {
+  const result = await evaluateTaskRelevanceFull(task);
+  return result.stillRelevant ? 'reschedule' : 'dismiss';
+}
+
+async function evaluateTaskRelevanceFull(task: any): Promise<{
+  stillRelevant: boolean;
+  reasoning: string;
+  suggestedReformulation?: string;
+}> {
   const timesDeferred = task.learnedAdjustmentCount || 0;
 
   const prompt = `Tu gères le planning d'un entrepreneur. Cette tâche a été automatiquement reportée ${timesDeferred} fois sans être accomplie.
@@ -556,25 +599,25 @@ ${task.description ? `Description : ${task.description}` : ''}
 Priorité : ${task.priority || 1}/5 (1 = haute)
 Durée estimée : ${task.estimatedDuration || 30} min
 
-Décide une seule chose :
-- "reschedule" : la tâche est toujours pertinente, on doit la replanifier
-- "dismiss" : la tâche semble abandonnée ou dépassée, il faut la signaler à l'utilisateur sans la déplacer
+Évalue si cette tâche est encore pertinente ou si elle semble abandonnée/dépassée.
 
-Réponds UNIQUEMENT avec ce JSON, sans texte autour :
-{"decision": "reschedule", "reason": "une phrase max"}
-ou
-{"decision": "dismiss", "reason": "une phrase max"}`;
+Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
+{"stillRelevant": true|false, "reasoning": "une phrase max expliquant pourquoi", "suggestedReformulation": "version reformulée si pertinente mais mal formulée, sinon null"}`;
 
   try {
     const raw = await callClaude({
       model: CLAUDE_MODELS.fast,
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 64,
+      max_tokens: 150,
     });
     const parsed = JSON.parse(raw.trim());
-    return parsed.decision === 'dismiss' ? 'dismiss' : 'reschedule';
+    return {
+      stillRelevant: parsed.stillRelevant !== false,
+      reasoning: parsed.reasoning || '',
+      suggestedReformulation: parsed.suggestedReformulation || undefined,
+    };
   } catch {
-    return 'reschedule'; // Safe fallback: never drop tasks on AI failure
+    return { stillRelevant: true, reasoning: '' }; // Safe fallback: jamais supprimer sur erreur IA
   }
 }
 
@@ -804,12 +847,19 @@ async function runIntraDayReschedule(): Promise<void> {
           const dur           = task.estimatedDuration || 30;
           const timesDeferred = task.learnedAdjustmentCount || 0;
 
-          // AI gate for tasks that have been deferred multiple times
-          if (timesDeferred >= 3) {
-            const decision = await evaluateTaskRelevance(task);
-            if (decision === 'dismiss') {
+          // AI gate for tasks deferred 2+ times (Priorité 5 — rollover intelligent)
+          if (timesDeferred >= 2) {
+            const evaluation = await evaluateTaskRelevanceFull(task);
+            if (!evaluation.stillRelevant) {
               console.log(`[IntraDay] Task ${task.id} "${task.title}" flagged for review (deferred ${timesDeferred}x)`);
-              continue; // Leave in place — Companion will surface it to the user
+              // Créer un message Companion pour proposer reformulation ou suppression
+              storage.saveCompanionMessage({
+                userId,
+                role: 'assistant',
+                content: `La tâche "${task.title}" a été repoussée ${timesDeferred} fois. ${evaluation.reasoning}\n\nJe te propose deux options : je la reformule pour la rendre plus actionnable, ou on la supprime. Qu'est-ce que tu préfères ?`,
+                platform: 'web',
+              }).catch(() => {});
+              continue; // Ne pas rollover — laisser le Companion gérer
             }
           }
 
