@@ -47,7 +47,7 @@ export default function TodayScreen() {
 
   const { data: brief, isLoading: briefLoading } = useQuery({
     queryKey: ["/api/tasks/daily-brief"],
-    queryFn: () => api.post("/api/tasks/daily-brief", { today: TODAY }).then(r => r.data),
+    queryFn: () => api.post("/api/tasks/daily-brief", { today: TODAY, refresh: true }).then(r => r.data),
   });
 
   const { data: tasks, isLoading: tasksLoading } = useQuery<any[]>({

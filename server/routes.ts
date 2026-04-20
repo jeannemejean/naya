@@ -1591,7 +1591,8 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-      if (prefs?.dailyBriefDate === todayStr && prefs.dailyBriefContent) {
+      const forceRefresh = req.body?.refresh === true || req.query?.refresh === 'true';
+      if (!forceRefresh && prefs?.dailyBriefDate === todayStr && prefs.dailyBriefContent) {
         return res.json({ date: todayStr, content: prefs.dailyBriefContent, dismissed: prefs.dailyBriefDismissed || false });
       }
 
