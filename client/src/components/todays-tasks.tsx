@@ -408,7 +408,16 @@ export default function TodaysTasks() {
               {completedTasks.length}/{tasks.length}
             </span>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => generateTasksMutation.mutate()}
+              disabled={isGenerating}
+              title="Générer des tâches avec Naya"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all disabled:opacity-50"
+            >
+              {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              Générer
+            </button>
             <div className="view-toggle">
               <button
                 onClick={() => setViewMode('list')}
@@ -448,8 +457,20 @@ export default function TodaysTasks() {
 
       <div className="p-5">
         {tasks.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-slate-500 dark:text-gray-400 text-sm">{t('todaysTasks.noTasks')}</p>
+          <div className="flex flex-col items-center py-10 gap-4">
+            <p className="text-slate-400 dark:text-gray-500 text-sm">Aucune tâche planifiée pour aujourd'hui</p>
+            <button
+              onClick={() => generateTasksMutation.mutate()}
+              disabled={isGenerating}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow hover:bg-primary/90 transition-all disabled:opacity-60"
+            >
+              {isGenerating ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Génération en cours…</>
+              ) : (
+                <><Plus className="h-4 w-4" /> Générer mes tâches avec Naya</>
+              )}
+            </button>
+            <p className="text-xs text-slate-400 dark:text-gray-600">Naya analyse tes projets et objectifs actifs</p>
           </div>
         ) : viewMode === 'list' ? (
           <div className="space-y-3">
