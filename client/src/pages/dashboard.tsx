@@ -774,6 +774,63 @@ function LiveClock() {
   );
 }
 
+// ─── État vide : aucune tâche planifiée ──────────────────────────────────────
+
+function EmptyTasksState({ onGenerated }: { onGenerated: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/auto-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ date: new Date().toISOString().slice(0, 10) }),
+      });
+      if (res.ok) {
+        setDone(true);
+        setTimeout(() => { onGenerated(); }, 1200);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col justify-center gap-3 relative z-10">
+      {done ? (
+        <div className="flex items-center gap-2">
+          <span className="text-emerald-300 text-sm font-semibold">✓ Tâches générées !</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+            <p className="text-sm font-medium text-violet-200">Aucune tâche planifiée aujourd'hui</p>
+          </div>
+          <button
+            onClick={generate}
+            disabled={loading}
+            className="self-start flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-violet-500/30 hover:bg-violet-500/50 text-violet-200 font-semibold border border-violet-400/30 transition-all disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <span className="w-3 h-3 border-2 border-violet-300/40 border-t-violet-300 rounded-full animate-spin" />
+                Génération en cours…
+              </>
+            ) : (
+              <>✦ Générer mes tâches</>
+            )}
+          </button>
+          <p className="text-xs text-violet-300/40">Naya va analyser tes projets et objectifs</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function BentoTileNextAction() {
   const { activeProjectId } = useProject();
   const queryClient = useQueryClient();
@@ -946,13 +1003,7 @@ function BentoTileNextAction() {
           )}
         </div>
       ) : total === 0 ? (
-        <div className="flex-1 flex flex-col justify-center gap-1.5 relative z-10">
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-            <p className="text-sm font-medium text-violet-200">{t('dashboard.preparingPlan')}</p>
-          </div>
-          <p className="text-xs text-violet-300/50">{t('dashboard.tasksAppearHere')}</p>
-        </div>
+        <EmptyTasksState onGenerated={() => queryClient.invalidateQueries({ queryKey: ['/api/tasks/today', activeProjectId] })} />
       ) : (
         <div className="flex-1 flex flex-col justify-center gap-1 relative z-10">
           <p className="text-base font-bold text-emerald-300">{t('dashboard.allDone')}</p>
