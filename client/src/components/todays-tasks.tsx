@@ -201,6 +201,13 @@ export default function TodaysTasks() {
     return `${y}-${m}-${day}`;
   })();
 
+  // Fenêtre de 7 jours : si aujourd'hui est vide, on peut afficher le prochain jour planifié
+  const weekEnd = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 6);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+
   const tasksQueryKey = activeProjectId
     ? ['/api/tasks/range', { start: today, end: today, projectId: activeProjectId }]
     : ['/api/tasks/range', { start: today, end: today }];
@@ -217,7 +224,27 @@ export default function TodaysTasks() {
       return res.json();
     },
     retry: false,
-    refetchInterval: 2 * 60 * 1000, // rafraîchit toutes les 2 min pour capter les updates auto-planner
+    refetchInterval: 2 * 60 * 1000,
+  });
+
+  // Tâches des 7 prochains jours — requête conditionnelle si aujourd'hui est vide
+  const upcomingQueryKey = activeProjectId
+    ? ['/api/tasks/range', { start: today, end: weekEnd, projectId: activeProjectId, scope: 'week' }]
+    : ['/api/tasks/range', { start: today, end: weekEnd, scope: 'week' }];
+
+  const upcomingUrl = activeProjectId
+    ? `/api/tasks/range?start=${today}&end=${weekEnd}&projectId=${activeProjectId}`
+    : `/api/tasks/range?start=${today}&end=${weekEnd}`;
+
+  const { data: upcomingRaw = [] } = useQuery<Task[]>({
+    queryKey: upcomingQueryKey,
+    queryFn: async () => {
+      const res = await fetch(upcomingUrl, { credentials: 'include' });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !isLoading, // ne charge qu'après la query principale
+    retry: false,
   });
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -371,8 +398,22 @@ export default function TodaysTasks() {
   });
 
   // Exclure les jalons virtuels (injectés par /api/tasks/range pour la vue planning)
-  // Les jalons ne sont pas des tâches actionnables pour la journée
   const realTasks = tasks.filter((t: Task) => (t as any).type !== 'milestone' && (t as any).source !== 'milestone');
+
+  // Si aujourd'hui est vide, calculer le prochain jour planifié cette semaine
+  const upcomingReal = upcomingRaw.filter((t: Task) =>
+    (t as any).type !== 'milestone' && (t as any).source !== 'milestone' && !t.completed
+  );
+  const nextScheduledDate = realTasks.length === 0
+    ? upcomingReal.reduce((min: string | null, t: Task) => {
+        const d = (t as any).scheduledDate as string | undefined;
+        if (!d || d === today) return min;
+        return min === null || d < min ? d : min;
+      }, null)
+    : null;
+  const nextDayTasks = nextScheduledDate
+    ? upcomingReal.filter((t: Task) => (t as any).scheduledDate === nextScheduledDate)
+    : [];
 
   const completedTasks = realTasks.filter((t: Task) => t.completed);
   const pendingTasks = realTasks.filter((t: Task) => !t.completed);
@@ -466,21 +507,55 @@ export default function TodaysTasks() {
 
       <div className="p-5">
         {realTasks.length === 0 ? (
-          <div className="flex flex-col items-center py-10 gap-4">
-            <p className="text-slate-400 dark:text-gray-500 text-sm">Aucune tâche planifiée pour aujourd'hui</p>
-            <button
-              onClick={() => generateTasksMutation.mutate()}
-              disabled={isGenerating}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow hover:bg-primary/90 transition-all disabled:opacity-60"
-            >
-              {isGenerating ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Génération en cours…</>
-              ) : (
-                <><Plus className="h-4 w-4" /> Générer mes tâches avec Naya</>
-              )}
-            </button>
-            <p className="text-xs text-slate-400 dark:text-gray-600">Naya analyse tes projets et objectifs actifs</p>
-          </div>
+          nextDayTasks.length > 0 ? (
+            /* Tâches générées mais planifiées sur le prochain jour ouvré */
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Prochaine session — {new Date(nextScheduledDate! + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}
+                </span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              {nextDayTasks.map((task: Task) => (
+                <div key={task.id} className="flex items-start gap-3 p-4 rounded-xl border border-border/60 bg-muted/30">
+                  <div className="mt-0.5 w-4 h-4 rounded border-2 border-muted-foreground/30 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">{task.title}</p>
+                    {task.estimatedDuration && (
+                      <span className="text-[11px] text-muted-foreground">{task.estimatedDuration} min</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <div className="pt-2 border-t border-border/50">
+                <button
+                  onClick={() => generateTasksMutation.mutate()}
+                  disabled={isGenerating}
+                  className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  {isGenerating ? 'Génération en cours…' : 'Générer pour aujourd\'hui aussi'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Aucune tâche nulle part — état vraiment vide */
+            <div className="flex flex-col items-center py-10 gap-4">
+              <p className="text-slate-400 dark:text-gray-500 text-sm">Aucune tâche planifiée pour aujourd'hui</p>
+              <button
+                onClick={() => generateTasksMutation.mutate()}
+                disabled={isGenerating}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow hover:bg-primary/90 transition-all disabled:opacity-60"
+              >
+                {isGenerating ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Génération en cours…</>
+                ) : (
+                  <><Plus className="h-4 w-4" /> Générer mes tâches avec Naya</>
+                )}
+              </button>
+              <p className="text-xs text-slate-400 dark:text-gray-600">Naya analyse tes projets et objectifs actifs</p>
+            </div>
+          )
         ) : viewMode === 'list' ? (
           <div className="space-y-3">
             {completedTasks.map((task: Task) => (
