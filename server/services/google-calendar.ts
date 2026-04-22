@@ -93,6 +93,11 @@ export async function getCalendarEvents(
   console.log(`[GCal] getCalendarEvents userId=${userId} hasToken=${hasToken} range=${startDate}→${endDate}`);
   if (!hasToken) return [];
 
+  // Timeout de 8 secondes pour éviter un blocage infini de la requête parente
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('GCal timeout')), 8000)
+  );
+
   try {
     const auth = await getAuthedClient(userId);
     const calendar = google.calendar({ version: 'v3', auth });
@@ -100,14 +105,17 @@ export async function getCalendarEvents(
     const timeMin = new Date(startDate + 'T00:00:00').toISOString();
     const timeMax = new Date(endDate + 'T23:59:59').toISOString();
 
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin,
-      timeMax,
-      singleEvents: true,  // expand recurring events
-      orderBy: 'startTime',
-      maxResults: 250,
-    });
+    const response = await Promise.race([
+      calendar.events.list({
+        calendarId: 'primary',
+        timeMin,
+        timeMax,
+        singleEvents: true,  // expand recurring events
+        orderBy: 'startTime',
+        maxResults: 250,
+      }),
+      timeout,
+    ]);
 
     const items = response.data.items || [];
     const events: CalendarEvent[] = [];
