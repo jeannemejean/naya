@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Naya — Your Strategic Intelligence</title>
+    <!-- Anti-flash : applique le thème avant le premier paint -->
+    <script>
+      (function() {
+        var saved = localStorage.getItem('naya-theme');
+        var theme = (saved === 'light' || saved === 'dark') ? saved : 'dark';
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+      })();
+    </script>
 
     <!-- Naya Typography: Inter (body) + IBM Plex Mono (labels) + Cormorant Garamond (display) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

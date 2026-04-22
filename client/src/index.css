@@ -8,7 +8,84 @@
    Typo : Inter (body) · IBM Plex Mono (labels) · Cormorant (display)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
+/* ── LIGHT MODE (défaut) ── */
 :root {
+  /* ── Fond : blanc cassé lavandé ── */
+  --background:    #F8F7FF;
+  --foreground:    #1A1523;
+
+  /* ── Surfaces ── */
+  --card:           #FFFFFF;
+  --card-foreground: #1A1523;
+  --popover:        #FFFFFF;
+  --popover-foreground: #1A1523;
+
+  /* ── Muted ── */
+  --muted:          #F0EEF8;
+  --muted-foreground: #6B6480;
+
+  /* ── Borders & inputs ── */
+  --border: #E5E4F0;
+  --input:  #F0EEF8;
+
+  /* ── Primary : mauve poussiéreux ── */
+  --primary:          #7A6D9A;
+  --primary-foreground: #FFFFFF;
+
+  /* ── Secondary ── */
+  --secondary:          #EDE9F8;
+  --secondary-foreground: #1A1523;
+
+  /* ── Accent : vert sauge ── */
+  --accent:           #4E6B5D;
+  --accent-foreground: #FFFFFF;
+
+  /* ── Destructive ── */
+  --destructive:          #C05050;
+  --destructive-foreground: #FFFFFF;
+
+  /* ── Ring (focus) ── */
+  --ring: rgba(122, 109, 154, 0.4);
+
+  /* ── Border radius — moderne, arrondi naturel ── */
+  --radius: 0.625rem;   /* 10px */
+
+  /* ── Charts ── */
+  --chart-1: #7A6D9A;   /* mauve */
+  --chart-2: #4E6B5D;   /* sauge */
+  --chart-3: #5A7898;   /* bleu ardoise */
+  --chart-4: #9A7868;   /* terracotta doux */
+  --chart-5: #6A7898;   /* gris bleuté */
+
+  /* ── Sidebar : fond légèrement plus profond ── */
+  --sidebar-background:        #EFECFA;
+  --sidebar-foreground:        #6B6480;
+  --sidebar-primary:           #7A6D9A;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent:            #E5E2F5;
+  --sidebar-accent-foreground: #1A1523;
+  --sidebar-border:            rgba(122, 109, 154, 0.15);
+  --sidebar-ring:              #7A6D9A;
+
+  /* ── Tâches — tons légèrement tintés sur fond clair ── */
+  --task-purple:      rgba(122, 109, 154, 0.12);
+  --task-purple-text: #5A4D7A;
+  --task-teal:        rgba(78, 107, 93, 0.12);
+  --task-teal-text:   #2E5040;
+  --task-rose:        rgba(168, 80, 100, 0.12);
+  --task-rose-text:   #8A3048;
+  --task-amber:       rgba(148, 120, 50, 0.12);
+  --task-amber-text:  #7A5A10;
+  --task-indigo:      rgba(80, 90, 180, 0.12);
+  --task-indigo-text: #3040A0;
+  --task-slate:       rgba(80, 90, 130, 0.12);
+  --task-slate-text:  #404870;
+  --task-mauve:       rgba(100, 80, 130, 0.12);
+  --task-mauve-text:  #503870;
+}
+
+/* ── DARK MODE ── */
+.dark {
   /* ── Fond : bleu nuit ardoise ── */
   --background:    #1E2030;
   --foreground:    #E8E6F0;
@@ -45,9 +122,6 @@
 
   /* ── Ring (focus) ── */
   --ring: rgba(139, 127, 168, 0.6);
-
-  /* ── Border radius — moderne, arrondi naturel ── */
-  --radius: 0.625rem;   /* 10px */
 
   /* ── Charts ── */
   --chart-1: #8B7FA8;   /* mauve */
@@ -86,6 +160,12 @@
 @layer base {
   * {
     @apply border-border;
+  }
+
+  /* Transition smooth pour le changement de thème */
+  html {
+    transition: background-color 250ms cubic-bezier(0.4, 0, 0.2, 1),
+                color 250ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   body {
@@ -308,14 +388,14 @@
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      OVERRIDES GLOBAUX — remapper les classes Tailwind hardcodées
-     vers la palette sombre. Nécessaire car les composants utilisent
-     des classes statiques qui ne connaissent pas notre design system.
+     vers notre design system. Les couleurs utilisent var() pour
+     s'adapter automatiquement au mode light/dark.
      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-  /* bg-white → surface sombre */
+  /* bg-white → surface principale (card) */
   .bg-white { background-color: var(--card) !important; }
 
-  /* bg-gray-* / bg-slate-* → surfaces sombres appropriées */
+  /* bg-gray-* / bg-slate-* → surfaces appropriées */
   .bg-gray-50,
   .bg-gray-100,
   .bg-slate-50,
@@ -332,19 +412,19 @@
   .bg-slate-800,
   .bg-slate-900 { background-color: var(--background) !important; }
 
-  /* Hover states → surfaces sombres */
+  /* Hover states */
   .hover\:bg-slate-50:hover,
   .hover\:bg-gray-50:hover   { background-color: var(--muted) !important; }
 
   .hover\:bg-slate-100:hover,
   .hover\:bg-gray-100:hover  { background-color: var(--secondary) !important; }
 
-  .hover\:bg-muted\/60:hover { background-color: rgba(42,45,69,0.6) !important; }
+  .hover\:bg-muted\/60:hover { background-color: color-mix(in srgb, var(--muted) 60%, transparent) !important; }
 
   .hover\:bg-slate-800:hover,
   .hover\:bg-gray-800:hover  { background-color: var(--muted) !important; }
 
-  /* Textes clairs → palette sombre */
+  /* Textes neutres → variable foreground/muted */
   .text-gray-400,
   .text-gray-500,
   .text-slate-400,
@@ -364,9 +444,9 @@
   .text-gray-300,
   .text-slate-300,
   .text-gray-200,
-  .text-slate-200 { color: rgba(232,230,240,0.8) !important; }
+  .text-slate-200 { color: var(--foreground) !important; opacity: 0.75; }
 
-  /* dark: prefixes — on force le mode sombre */
+  /* dark: prefixes — mappés vers les variables */
   .dark\:bg-gray-800,
   .dark\:bg-gray-900,
   .dark\:bg-card { background-color: var(--card) !important; }
@@ -377,95 +457,95 @@
   .dark\:text-white { color: var(--foreground) !important; }
   .dark\:border-gray-800 { border-color: var(--border) !important; }
 
-  /* Badges colorés → versions tintées sombres */
+  /* Badges colorés — les opacités permettent le thème automatique */
   .bg-purple-100,
   .bg-violet-50,
   .bg-indigo-100 {
-    background-color: rgba(139, 127, 168, 0.15) !important;
-    color: #C4B8D8 !important;
+    background-color: var(--task-purple) !important;
+    color: var(--task-purple-text) !important;
   }
 
   .bg-blue-100,
   .bg-cyan-100   {
-    background-color: rgba(100, 130, 200, 0.15) !important;
-    color: #A8B8E0 !important;
+    background-color: var(--task-indigo) !important;
+    color: var(--task-indigo-text) !important;
   }
 
   .bg-green-100,
   .bg-emerald-100,
   .bg-teal-100   {
-    background-color: rgba(92, 122, 107, 0.15) !important;
-    color: #8BB8A4 !important;
+    background-color: var(--task-teal) !important;
+    color: var(--task-teal-text) !important;
   }
 
   .bg-pink-100,
   .bg-rose-100   {
-    background-color: rgba(168, 100, 120, 0.15) !important;
-    color: #D4A8B8 !important;
+    background-color: var(--task-rose) !important;
+    color: var(--task-rose-text) !important;
   }
 
   .bg-yellow-50,
   .bg-amber-100,
   .bg-yellow-100 {
-    background-color: rgba(168, 140, 80, 0.15) !important;
-    color: #D4C488 !important;
+    background-color: var(--task-amber) !important;
+    color: var(--task-amber-text) !important;
   }
 
   .bg-orange-50  {
-    background-color: rgba(168, 120, 80, 0.15) !important;
-    color: #D4B488 !important;
+    background-color: var(--task-amber) !important;
+    color: var(--task-amber-text) !important;
   }
 
   .bg-red-100,
   .bg-red-50     {
-    background-color: rgba(192, 96, 96, 0.15) !important;
-    color: #E0A0A0 !important;
+    background-color: var(--task-rose) !important;
+    color: var(--task-rose-text) !important;
   }
 
-  /* Textes colorés → variantes claires adaptées au fond sombre */
+  /* Textes colorés — mappés vers les variables de tâches */
   .text-purple-700,
   .text-violet-700,
-  .text-indigo-700 { color: #C4B8D8 !important; }
+  .text-indigo-700 { color: var(--task-purple-text) !important; }
 
   .text-blue-700,
-  .text-cyan-700   { color: #A8B8E0 !important; }
+  .text-cyan-700   { color: var(--task-indigo-text) !important; }
 
   .text-green-700,
   .text-emerald-700,
-  .text-teal-700   { color: #8BB8A4 !important; }
+  .text-teal-700   { color: var(--task-teal-text) !important; }
 
   .text-pink-700,
-  .text-rose-700   { color: #D4A8B8 !important; }
+  .text-rose-700   { color: var(--task-rose-text) !important; }
 
   .text-amber-600,
   .text-yellow-500,
-  .text-yellow-700 { color: #D4C488 !important; }
+  .text-yellow-700 { color: var(--task-amber-text) !important; }
 
-  .text-orange-700 { color: #D4B488 !important; }
+  .text-orange-700 { color: var(--task-amber-text) !important; }
 
   .text-red-500,
   .text-red-400,
-  .text-red-700    { color: #E0A0A0 !important; }
+  .text-red-700    { color: var(--task-rose-text) !important; }
 
   /* dark: variants de texte coloré */
-  .dark\:text-red-400    { color: #E0A0A0 !important; }
-  .dark\:text-blue-400   { color: #A8B8E0 !important; }
-  .dark\:text-green-400  { color: #8BB8A4 !important; }
-  .dark\:text-yellow-300 { color: #D4C488 !important; }
-  .dark\:text-purple-400 { color: #C4B8D8 !important; }
-  .dark\:text-indigo-300 { color: #C4B8D8 !important; }
-  .dark\:text-orange-300 { color: #D4B488 !important; }
-  .dark\:text-emerald-300 { color: #8BB8A4 !important; }
+  .dark\:text-red-400    { color: var(--task-rose-text) !important; }
+  .dark\:text-blue-400   { color: var(--task-indigo-text) !important; }
+  .dark\:text-green-400  { color: var(--task-teal-text) !important; }
+  .dark\:text-yellow-300 { color: var(--task-amber-text) !important; }
+  .dark\:text-purple-400 { color: var(--task-purple-text) !important; }
+  .dark\:text-indigo-300 { color: var(--task-purple-text) !important; }
+  .dark\:text-orange-300 { color: var(--task-amber-text) !important; }
+  .dark\:text-emerald-300 { color: var(--task-teal-text) !important; }
 
   /* dark: bg colorés */
-  .dark\:bg-red-900\/30    { background-color: rgba(192, 96, 96, 0.15) !important; }
-  .dark\:bg-blue-900\/30   { background-color: rgba(100, 130, 200, 0.15) !important; }
-  .dark\:bg-green-900\/30  { background-color: rgba(92, 122, 107, 0.15) !important; }
-  .dark\:bg-yellow-900\/20 { background-color: rgba(168, 140, 80, 0.15) !important; }
-  .dark\:bg-purple-900\/20 { background-color: rgba(139, 127, 168, 0.15) !important; }
-  .dark\:bg-indigo-900\/20 { background-color: rgba(100, 110, 200, 0.15) !important; }
-  .dark\:bg-orange-900\/20 { background-color: rgba(168, 120, 80, 0.15) !important; }
-  .dark\:bg-emerald-900\/20 { background-color: rgba(92, 122, 107, 0.15) !important; }
+  .dark\:bg-red-900\/30    { background-color: var(--task-rose) !important; }
+  .dark\:bg-blue-900\/30   { background-color: var(--task-indigo) !important; }
+  .dark\:bg-green-900\/30  { background-color: var(--task-teal) !important; }
+  .dark\:bg-yellow-900\/20 { background-color: var(--task-amber) !important; }
+  .dark\:bg-purple-900\/20 { background-color: var(--task-purple) !important; }
+  .dark\:bg-indigo-900\/20 { background-color: var(--task-indigo) !important; }
+  .dark\:bg-orange-900\/20 { background-color: var(--task-amber) !important; }
+  .dark\:bg-emerald-900\/20 { background-color: var(--task-teal) !important; }
   .dark\:bg-gray-800 { background-color: var(--muted) !important; }
 }
 

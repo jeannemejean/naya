@@ -11,38 +11,24 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    // Check for saved theme in localStorage
-    const savedTheme = localStorage.getItem('naya-theme') as Theme;
-    if (savedTheme) {
-      return savedTheme;
-    }
-    
-    // Check system preference
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
-    }
-    
-    return 'light';
+  const [theme, setThemeState] = useState<Theme>(() => {
+    // Lire le thème sauvegardé, sinon dark par défaut
+    const saved = localStorage.getItem('naya-theme') as Theme | null;
+    return saved === 'light' || saved === 'dark' ? saved : 'dark';
   });
 
   useEffect(() => {
-    // Apply theme to document
     const root = window.document.documentElement;
-    
     if (theme === 'dark') {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
     }
-    
-    // Save to localStorage
     localStorage.setItem('naya-theme', theme);
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme(theme === 'light' ? 'dark' : 'light');
-  };
+  const setTheme = (t: Theme) => setThemeState(t);
+  const toggleTheme = () => setThemeState(prev => prev === 'light' ? 'dark' : 'light');
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>

@@ -1,12 +1,14 @@
 import { Link, useLocation } from "wouter";
 import {
   LayoutGrid, Calendar, MessageSquare, BarChart3, Lightbulb,
-  Settings, BookOpen, CalendarDays, Rocket, FolderKanban, Layers, Search
+  Settings, BookOpen, CalendarDays, Rocket, FolderKanban, Layers, Search,
+  Sun, Moon
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { useTranslation } from "react-i18next";
+import { useTheme } from "@/contexts/ThemeContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +40,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
   const [location, navigate] = useLocation();
   const { user } = useAuth();
   const { activeProjectId, setActiveProjectId, isAllProjects } = useProject();
+  const { theme, toggleTheme } = useTheme();
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ['/api/projects?limit=200'],
@@ -276,11 +279,40 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
         </Tooltip>
       </nav>
 
-      {/* Bottom — langue + avatar */}
+      {/* Bottom — thème + langue + avatar */}
       <div
         className="py-3 px-2.5 flex flex-col gap-0.5"
         style={{ borderTop: '1px solid var(--sidebar-border)' }}
       >
+        {/* Toggle dark / light */}
+        <Tooltip delayDuration={200}>
+          <TooltipTrigger asChild>
+            <button
+              onClick={toggleTheme}
+              className="w-full h-9 flex items-center justify-center transition-all duration-200"
+              style={{ color: 'var(--sidebar-foreground)', borderRadius: 8 }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLElement).style.background = 'var(--sidebar-accent)';
+                (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-primary)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLElement).style.background = 'transparent';
+                (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-foreground)';
+              }}
+              aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
+            >
+              {theme === 'dark' ? (
+                <Sun style={{ width: 15, height: 15 }} />
+              ) : (
+                <Moon style={{ width: 15, height: 15 }} />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+          </TooltipContent>
+        </Tooltip>
+
         {/* Langue */}
         <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
