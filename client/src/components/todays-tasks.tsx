@@ -365,8 +365,12 @@ export default function TodaysTasks() {
     onSettled: () => setIsGenerating(false),
   });
 
-  const completedTasks = tasks.filter((t: Task) => t.completed);
-  const pendingTasks = tasks.filter((t: Task) => !t.completed);
+  // Exclure les jalons virtuels (injectés par /api/tasks/range pour la vue planning)
+  // Les jalons ne sont pas des tâches actionnables pour la journée
+  const realTasks = tasks.filter((t: Task) => (t as any).type !== 'milestone' && (t as any).source !== 'milestone');
+
+  const completedTasks = realTasks.filter((t: Task) => t.completed);
+  const pendingTasks = realTasks.filter((t: Task) => !t.completed);
   const scheduledTasks = pendingTasks.filter((t: Task) => t.suggestedStartTime);
   const unscheduledTasks = pendingTasks.filter((t: Task) => !t.suggestedStartTime);
 
@@ -396,7 +400,7 @@ export default function TodaysTasks() {
     );
   }
 
-  const completionPct = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
+  const completionPct = realTasks.length > 0 ? Math.round((completedTasks.length / realTasks.length) * 100) : 0;
 
   return (
     <div className="bg-white dark:bg-card rounded-2xl shadow-card border border-border overflow-hidden">
@@ -405,7 +409,7 @@ export default function TodaysTasks() {
           <div className="flex items-center gap-2.5">
             <h2 className="text-base font-semibold text-foreground">{t('todaysTasks.title')}</h2>
             <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-              {completedTasks.length}/{tasks.length}
+              {completedTasks.length}/{realTasks.length}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -437,7 +441,7 @@ export default function TodaysTasks() {
           </div>
         </div>
         {/* Progress bar */}
-        {tasks.length > 0 && (
+        {realTasks.length > 0 && (
           <div className="flex items-center gap-2">
             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
               <div
@@ -456,7 +460,7 @@ export default function TodaysTasks() {
       </div>
 
       <div className="p-5">
-        {tasks.length === 0 ? (
+        {realTasks.length === 0 ? (
           <div className="flex flex-col items-center py-10 gap-4">
             <p className="text-slate-400 dark:text-gray-500 text-sm">Aucune tâche planifiée pour aujourd'hui</p>
             <button

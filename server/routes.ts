@@ -3711,7 +3711,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const projectBatchKey = proj.id?.toString() || 'general';
 
         const existingProjectTasks = (existingTasksByProject.get(projectBatchKey) || [])
-          .filter((t: any) => !t.completed);
+          .filter((t: any) => !t.completed && t.type !== 'milestone' && t.source !== 'milestone');
         if (existingProjectTasks.length >= WEEKLY_PROJECT_CAP) {
           skippedProjects.push({ projectId: proj.id, projectName: proj.name, reason: 'Already has tasks this week' });
           allCreatedTasks.push(...existingProjectTasks);

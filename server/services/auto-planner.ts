@@ -240,10 +240,10 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   const avail = await storage.getDayAvailability(userId, dateStr).catch(() => null);
   if (avail?.dayType === 'off') return;
 
-  // 5. Check how many tasks already exist for this date
-  const existingTasks = await storage.getTasks(userId, new Date(dateStr + 'T00:00:00'));
-  const scheduledForToday = (existingTasks as any[]).filter(
-    (t: any) => t.scheduledDate === dateStr && !t.completed
+  // 5. Check how many tasks already exist for this date (par scheduledDate, pas dueDate)
+  const existingForDate = await storage.getTasksInRange(userId, dateStr, dateStr);
+  const scheduledForToday = (existingForDate as any[]).filter(
+    (t: any) => !t.completed && (t as any).type !== 'milestone'
   );
   if (scheduledForToday.length > 0) return; // Journée déjà planifiée — ne pas régénérer
 
