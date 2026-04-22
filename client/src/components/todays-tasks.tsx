@@ -252,6 +252,7 @@ export default function TodaysTasks() {
     },
     onSuccess: (_, vars) => {
       if (vars.feedbackType === 'deleted') {
+        queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
         queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
         toast({ title: t('todaysTasks.taskRemoved') });
         triggerAutoRebalance();
@@ -291,6 +292,7 @@ export default function TodaysTasks() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       setReplanOpen(false);
       setReplanPreview(null);
@@ -307,6 +309,7 @@ export default function TodaysTasks() {
       return res.json();
     },
     onSuccess: (updatedTask: Task) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard/schedule-preview'] });
       setOpenPopover(null);
@@ -338,6 +341,8 @@ export default function TodaysTasks() {
       return res.json();
     },
     onSuccess: (data: any) => {
+      // Invalider les deux clés — la query utilise /api/tasks/range, pas /api/tasks
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       const rr = data?.realismReport;
       if (rr && (rr.deferredCount > 0 || rr.workflowBundlesDeferredCount > 0 || rr.contextSwitchCorrected)) {
