@@ -1,14 +1,6 @@
 import { useState } from "react";
-import { Plus, Sparkles, Filter, Search, MoreHorizontal, Share2 } from "lucide-react";
+import { Plus, Sparkles, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { ModernTaskCard } from "./modern-task-card";
 import { TaskDetailPanel } from "./task-detail-panel";
 import { useTranslation } from "react-i18next";
@@ -38,23 +30,25 @@ interface ModernDashboardLayoutProps {
   headerSubtitle?: string;
 }
 
+const COLUMNS = [
+  { key: "todo",        label: "À faire",    filter: (t: Task) => !t.completed && t.status !== "in_progress" },
+  { key: "in_progress", label: "En cours",   filter: (t: Task) => !t.completed && t.status === "in_progress" },
+  { key: "completed",   label: "Terminé",    filter: (t: Task) => !!t.completed },
+] as const;
+
 export function ModernDashboardLayout({
   tasks,
   onTaskToggle,
   onGeneratePlan,
   isGenerating,
-  headerTitle = "My Events",
+  headerTitle,
   headerSubtitle,
 }: ModernDashboardLayoutProps) {
   const { t } = useTranslation();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const todoTasks = tasks.filter((t) => !t.completed && t.status !== "in_progress");
-  const inProgressTasks = tasks.filter((t) => !t.completed && t.status === "in_progress");
-  const completedTasks = tasks.filter((t) => t.completed);
-
-  const filteredTasks = (taskList: Task[]) => {
+  const filter = (taskList: Task[]) => {
     if (!searchQuery) return taskList;
     return taskList.filter((t) =>
       t.title.toLowerCase().includes(searchQuery.toLowerCase())
@@ -62,180 +56,205 @@ export function ModernDashboardLayout({
   };
 
   return (
-    <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
+    <div className="h-full flex flex-col" style={{ background: 'var(--background)' }}>
+
       {/* Header */}
-      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-8 py-6 flex-shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-1">
+      <div
+        className="px-8 py-5 flex-shrink-0 flex items-center justify-between"
+        style={{ borderBottom: '1px solid var(--border)', background: 'var(--card)' }}
+      >
+        <div>
+          {headerTitle && (
+            <h1
+              style={{
+                fontFamily: '"Cormorant Garamond", Georgia, serif',
+                fontStyle: 'italic',
+                fontWeight: 500,
+                fontSize: '1.75rem',
+                letterSpacing: '-0.01em',
+                lineHeight: 1.2,
+                color: 'var(--foreground)',
+                margin: 0,
+              }}
+            >
               {headerTitle}
             </h1>
-            {headerSubtitle && (
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                {headerSubtitle}
-              </p>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl">
-              <Share2 className="h-4 w-4" />
-              Share
-            </Button>
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </div>
+          )}
+          {headerSubtitle && (
+            <p
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.6875rem',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                fontWeight: 300,
+                color: 'var(--muted-foreground)',
+                marginTop: 4,
+              }}
+            >
+              {headerSubtitle}
+            </p>
+          )}
         </div>
 
-        {/* Search & Actions */}
         <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Search tasks..."
+          {/* Recherche */}
+          <div className="relative">
+            <Search
+              style={{
+                position: 'absolute', left: 10, top: '50%',
+                transform: 'translateY(-50%)', width: 13, height: 13,
+                color: 'var(--muted-foreground)'
+              }}
+            />
+            <input
+              placeholder="Rechercher..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 rounded-xl border-gray-200 dark:border-gray-800"
+              style={{
+                paddingLeft: 30,
+                paddingRight: 12,
+                paddingTop: 6,
+                paddingBottom: 6,
+                background: 'var(--background)',
+                border: '1px solid var(--border)',
+                borderRadius: 0,
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.75rem',
+                fontWeight: 300,
+                color: 'var(--foreground)',
+                width: 220,
+                outline: 'none',
+              }}
             />
           </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2 rounded-xl">
-                <Filter className="h-4 w-4" />
-                Filter
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem>All Tasks</DropdownMenuItem>
-              <DropdownMenuItem>High Priority</DropdownMenuItem>
-              <DropdownMenuItem>Due Today</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
+          {/* Générer le plan */}
           {onGeneratePlan && (
-            <Button
+            <button
               onClick={onGeneratePlan}
               disabled={isGenerating}
-              size="sm"
-              className="gap-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 rounded-xl px-6"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 16px',
+                background: isGenerating ? 'var(--muted)' : 'var(--primary)',
+                color: 'var(--primary-foreground)',
+                border: 'none',
+                borderRadius: 0,
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.6875rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                fontWeight: 400,
+                cursor: isGenerating ? 'wait' : 'pointer',
+                opacity: isGenerating ? 0.7 : 1,
+              }}
             >
-              {isGenerating ? (
-                <>
-                  <Sparkles className="h-4 w-4 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  Generate Plan
-                </>
-              )}
-            </Button>
+              <Sparkles style={{ width: 12, height: 12 }} />
+              {isGenerating ? 'Génération...' : 'Générer le plan'}
+            </button>
           )}
         </div>
       </div>
 
-      {/* Kanban Columns */}
+      {/* Colonnes kanban */}
       <div className="flex-1 overflow-hidden">
-        <div className="h-full flex gap-6 p-8 overflow-x-auto">
-          {/* TODO Column */}
-          <div className="flex-shrink-0 w-[380px] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
-                  TODO
-                </h2>
-                <Badge variant="secondary" className="h-6 rounded-full px-2 text-xs">
-                  {filteredTasks(todoTasks).length}
-                </Badge>
-              </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl">
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {filteredTasks(todoTasks).map((task) => (
-                <ModernTaskCard
-                  key={task.id}
-                  task={task}
-                  onClick={() => setSelectedTask(task)}
-                  onToggle={onTaskToggle}
-                />
-              ))}
-              {filteredTasks(todoTasks).length === 0 && (
-                <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
-                  No tasks
+        <div className="h-full flex overflow-x-auto" style={{ padding: '0' }}>
+          {COLUMNS.map((col, colIdx) => {
+            const colTasks = filter(tasks.filter(col.filter));
+            return (
+              <div
+                key={col.key}
+                className="flex-shrink-0 flex flex-col"
+                style={{
+                  width: '33.333%',
+                  minWidth: 320,
+                  borderRight: colIdx < COLUMNS.length - 1 ? '1px solid var(--border)' : 'none',
+                }}
+              >
+                {/* En-tête colonne */}
+                <div
+                  className="flex items-center justify-between px-6 py-4"
+                  style={{ borderBottom: '1px solid var(--border)' }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      style={{
+                        fontFamily: '"IBM Plex Mono", monospace',
+                        fontSize: '0.625rem',
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase',
+                        fontWeight: 400,
+                        color: 'var(--muted-foreground)',
+                      }}
+                    >
+                      {col.label}
+                    </span>
+                    <span
+                      style={{
+                        fontFamily: '"Cormorant Garamond", Georgia, serif',
+                        fontSize: '0.875rem',
+                        fontStyle: 'italic',
+                        fontWeight: 500,
+                        color: 'var(--muted-foreground)',
+                      }}
+                    >
+                      {colTasks.length}
+                    </span>
+                  </div>
+                  {col.key === 'todo' && (
+                    <button
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        width: 24, height: 24,
+                        border: '1px solid var(--border)',
+                        background: 'transparent',
+                        color: 'var(--muted-foreground)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Plus style={{ width: 12, height: 12 }} />
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* IN PROGRESS Column */}
-          <div className="flex-shrink-0 w-[380px] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
-                  IN PROGRESS
-                </h2>
-                <Badge variant="secondary" className="h-6 rounded-full px-2 text-xs">
-                  {filteredTasks(inProgressTasks).length}
-                </Badge>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {filteredTasks(inProgressTasks).map((task) => (
-                <ModernTaskCard
-                  key={task.id}
-                  task={task}
-                  onClick={() => setSelectedTask(task)}
-                  onToggle={onTaskToggle}
-                />
-              ))}
-              {filteredTasks(inProgressTasks).length === 0 && (
-                <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
-                  No tasks in progress
+                {/* Liste de tâches */}
+                <div className="flex-1 overflow-y-auto" style={{ padding: '16px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {colTasks.map((task) => (
+                      <ModernTaskCard
+                        key={task.id}
+                        task={task}
+                        onClick={() => setSelectedTask(task)}
+                        onToggle={onTaskToggle}
+                      />
+                    ))}
+                    {colTasks.length === 0 && (
+                      <div
+                        className="flex items-center justify-center"
+                        style={{
+                          height: 80,
+                          fontFamily: '"IBM Plex Mono", monospace',
+                          fontSize: '0.6875rem',
+                          letterSpacing: '0.06em',
+                          color: 'var(--muted-foreground)',
+                          opacity: 0.5,
+                        }}
+                      >
+                        —
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          </div>
-
-          {/* COMPLETED Column */}
-          <div className="flex-shrink-0 w-[380px] flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
-                  COMPLETED
-                </h2>
-                <Badge variant="secondary" className="h-6 rounded-full px-2 text-xs">
-                  {filteredTasks(completedTasks).length}
-                </Badge>
               </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {filteredTasks(completedTasks).map((task) => (
-                <ModernTaskCard
-                  key={task.id}
-                  task={task}
-                  onClick={() => setSelectedTask(task)}
-                  onToggle={onTaskToggle}
-                />
-              ))}
-              {filteredTasks(completedTasks).length === 0 && (
-                <div className="flex items-center justify-center h-32 text-sm text-gray-400 dark:text-gray-500">
-                  No completed tasks
-                </div>
-              )}
-            </div>
-          </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Task Detail Panel */}
+      {/* Panel détail tâche */}
       <TaskDetailPanel
         task={selectedTask}
         open={!!selectedTask}

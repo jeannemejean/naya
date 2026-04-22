@@ -1,14 +1,12 @@
 import { Link, useLocation } from "wouter";
 import {
-  LayoutGrid, Calendar, MessageSquare, BarChart3, Lightbulb, Settings,
-  BookOpen, CalendarDays, Rocket, Moon, Sun, FolderKanban, Layers, Search
+  LayoutGrid, Calendar, MessageSquare, BarChart3, Lightbulb,
+  Settings, BookOpen, CalendarDays, Rocket, FolderKanban, Layers, Search
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/contexts/ThemeContext";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { useTranslation } from "react-i18next";
-import { useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,21 +23,20 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS = [
-  { key: 'pilotBoard',      href: "/",                icon: LayoutGrid,  accent: "text-violet-600",  bg: "bg-violet-50 dark:bg-violet-950/50" },
-  { key: 'planning',        href: "/planning",         icon: CalendarDays,accent: "text-blue-600",    bg: "bg-blue-50 dark:bg-blue-950/50" },
-  { key: 'analytics',       href: "/analytics",        icon: BarChart3,   accent: "text-emerald-600", bg: "bg-emerald-50 dark:bg-emerald-950/50" },
-  { key: 'strategy',        href: "/strategy",         icon: Lightbulb,   accent: "text-amber-600",   bg: "bg-amber-50 dark:bg-amber-950/50" },
-  { key: 'campaigns',       href: "/campaigns",        icon: Rocket,      accent: "text-rose-600",    bg: "bg-rose-50 dark:bg-rose-950/50" },
-  { key: 'contentCalendar', href: "/content-calendar", icon: Calendar,    accent: "text-indigo-600",  bg: "bg-indigo-50 dark:bg-indigo-950/50" },
-  { key: 'outreachCrm',     href: "/outreach",         icon: MessageSquare,accent:"text-cyan-600",   bg: "bg-cyan-50 dark:bg-cyan-950/50" },
-  { key: 'knowledgeHub',    href: "/reading-hub",      icon: BookOpen,    accent: "text-teal-600",    bg: "bg-teal-50 dark:bg-teal-950/50" },
+  { key: 'pilotBoard',      href: "/",                icon: LayoutGrid   },
+  { key: 'planning',        href: "/planning",         icon: CalendarDays },
+  { key: 'analytics',       href: "/analytics",        icon: BarChart3    },
+  { key: 'strategy',        href: "/strategy",         icon: Lightbulb    },
+  { key: 'campaigns',       href: "/campaigns",        icon: Rocket       },
+  { key: 'contentCalendar', href: "/content-calendar", icon: Calendar     },
+  { key: 'outreachCrm',     href: "/outreach",         icon: MessageSquare},
+  { key: 'knowledgeHub',    href: "/reading-hub",      icon: BookOpen     },
 ] as const;
 
 export default function Sidebar({ onSearchClick }: SidebarProps) {
   const { t, i18n } = useTranslation();
   const [location, navigate] = useLocation();
   const { user } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const { activeProjectId, setActiveProjectId, isAllProjects } = useProject();
 
   const { data: projects = [] } = useQuery<Project[]>({
@@ -48,191 +45,290 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
 
   const currentLang = i18n.language;
   const toggleLanguage = () => i18n.changeLanguage(currentLang === 'fr' ? 'en' : 'fr');
-
-  const userInitial = user?.firstName?.charAt(0) || user?.email?.charAt(0) || "U";
+  const userInitial = user?.firstName?.charAt(0) || user?.email?.charAt(0) || "N";
 
   return (
-    <div className="w-[72px] bg-white dark:bg-[#0D0E12] border-r border-border flex flex-col h-full">
+    <div
+      className="w-[64px] flex flex-col h-full"
+      style={{
+        background: 'var(--sidebar-background)',
+        borderRight: '1px solid var(--sidebar-border)',
+      }}
+    >
 
-      {/* Logo */}
-      <div className="h-[72px] flex items-center justify-center shrink-0">
+      {/* Logo — N en Cormorant italic, fond or mat */}
+      <div className="h-[64px] flex items-center justify-center shrink-0" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
         <Link href="/">
-          <div className="w-10 h-10 bg-gradient-to-br from-[#6C5CE7] to-[#a78bfa] rounded-xl flex items-center justify-center shadow-float cursor-pointer hover:scale-105 transition-transform duration-200">
-            <span className="text-white text-base font-black tracking-tight">N</span>
+          <div
+            className="w-9 h-9 flex items-center justify-center cursor-pointer"
+            style={{ background: 'var(--sidebar-primary)', color: 'var(--sidebar-primary-foreground)' }}
+          >
+            <span
+              style={{
+                fontFamily: '"Cormorant Garamond", Georgia, serif',
+                fontStyle: 'italic',
+                fontWeight: '600',
+                fontSize: '1.375rem',
+                lineHeight: 1,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              N
+            </span>
           </div>
         </Link>
       </div>
 
       {/* Search */}
       {onSearchClick && (
-        <div className="px-3 pb-2">
+        <div className="px-2.5 pt-3 pb-1">
           <Tooltip delayDuration={100}>
             <TooltipTrigger asChild>
               <button
                 onClick={onSearchClick}
-                className="w-full h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
+                className="w-full h-9 flex items-center justify-center transition-colors duration-150"
+                style={{ color: 'var(--sidebar-foreground)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--sidebar-accent)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
-                <Search className="w-4.5 h-4.5" />
+                <Search style={{ width: 15, height: 15 }} />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right" className="font-medium">Rechercher</TooltipContent>
+            <TooltipContent side="right">Rechercher</TooltipContent>
           </Tooltip>
         </div>
       )}
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-2 px-2.5 space-y-0.5">
+      <nav className="flex-1 overflow-y-auto py-2 px-2.5 flex flex-col gap-0.5">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
 
           return (
-            <Tooltip key={item.key} delayDuration={150}>
+            <Tooltip key={item.key} delayDuration={200}>
               <TooltipTrigger asChild>
                 <Link href={item.href}>
                   <button
-                    className={`relative w-full h-11 rounded-xl flex items-center justify-center transition-all duration-150 ${
-                      isActive
-                        ? `${item.bg} ${item.accent}`
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
+                    className="relative w-full h-10 flex items-center justify-center transition-colors duration-120"
+                    style={{
+                      color: isActive
+                        ? 'var(--sidebar-primary)'
+                        : 'var(--sidebar-foreground)',
+                      background: isActive
+                        ? 'var(--sidebar-accent)'
+                        : 'transparent',
+                      borderLeft: isActive
+                        ? '2px solid var(--sidebar-primary)'
+                        : '2px solid transparent',
+                    }}
+                    onMouseEnter={e => {
+                      if (!isActive) {
+                        (e.currentTarget as HTMLElement).style.background = 'var(--sidebar-accent)';
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (!isActive) {
+                        (e.currentTarget as HTMLElement).style.background = 'transparent';
+                      }
+                    }}
                   >
-                    {isActive && (
-                      <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full ${item.accent.replace('text-', 'bg-')}`} />
-                    )}
-                    <Icon className="w-[18px] h-[18px]" />
+                    <Icon style={{ width: 16, height: 16 }} />
                   </button>
                 </Link>
               </TooltipTrigger>
-              <TooltipContent side="right" className="font-medium text-xs">
+              <TooltipContent side="right">
                 {t(`sidebar.${item.key}`)}
               </TooltipContent>
             </Tooltip>
           );
         })}
 
-        {/* Divider */}
-        <div className="h-px bg-border my-2 mx-1" />
+        {/* Séparateur */}
+        <div style={{ height: 1, background: 'var(--sidebar-border)', margin: '8px 0' }} />
 
         {/* Projects dropdown */}
         <DropdownMenu>
-          <Tooltip delayDuration={150}>
+          <Tooltip delayDuration={200}>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <button className="relative w-full h-11 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150">
-                  <FolderKanban className="w-[18px] h-[18px]" />
+                <button
+                  className="relative w-full h-10 flex items-center justify-center transition-colors duration-120"
+                  style={{ color: 'var(--sidebar-foreground)', borderLeft: '2px solid transparent' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--sidebar-accent)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <FolderKanban style={{ width: 16, height: 16 }} />
                   {activeProjectId && (
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
+                    <span
+                      className="absolute top-2 right-2 w-1.5 h-1.5"
+                      style={{ background: 'var(--sidebar-primary)' }}
+                    />
                   )}
                 </button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
-            <TooltipContent side="right" className="font-medium text-xs">
-              {t('sidebar.projects')}
-            </TooltipContent>
+            <TooltipContent side="right">{t('sidebar.projects')}</TooltipContent>
           </Tooltip>
 
-          <DropdownMenuContent side="right" align="start" className="w-60 ml-2 shadow-float">
-            <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          <DropdownMenuContent
+            side="right"
+            align="start"
+            className="w-56 ml-2"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <DropdownMenuLabel
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.625rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                fontWeight: 300,
+                color: 'var(--muted-foreground)',
+                padding: '8px 12px 4px',
+              }}
+            >
               {t('sidebar.projects')}
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
+            <DropdownMenuSeparator style={{ background: 'var(--border)' }} />
 
             <DropdownMenuItem
               onClick={() => setActiveProjectId(null)}
-              className={isAllProjects ? "bg-accent text-accent-foreground" : ""}
+              style={{
+                background: isAllProjects ? 'var(--muted)' : 'transparent',
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.75rem',
+                fontWeight: 300,
+              }}
             >
-              <Layers className="w-4 h-4 mr-2 shrink-0" />
-              <span className="font-medium">{t('sidebar.allProjects')}</span>
+              <Layers style={{ width: 14, height: 14, marginRight: 8, flexShrink: 0 }} />
+              {t('sidebar.allProjects')}
             </DropdownMenuItem>
 
             {projects.map((project) => (
               <DropdownMenuItem
                 key={project.id}
                 onClick={() => setActiveProjectId(project.id)}
-                className={activeProjectId === project.id ? "bg-accent text-accent-foreground" : ""}
+                style={{
+                  background: activeProjectId === project.id ? 'var(--muted)' : 'transparent',
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.75rem',
+                  fontWeight: 300,
+                }}
               >
                 <span
-                  className="w-2.5 h-2.5 rounded-full mr-2.5 shrink-0"
-                  style={{ backgroundColor: project.color || '#6C5CE7' }}
+                  className="w-2 h-2 shrink-0 mr-2.5"
+                  style={{ background: project.color || 'var(--accent)' }}
                 />
-                <span className="text-sm mr-1.5">{project.icon || '📁'}</span>
                 <span className="flex-1 truncate">{project.name}</span>
-                {project.isPrimary && <span className="text-[10px] text-primary font-semibold">★</span>}
+                {project.isPrimary && (
+                  <span style={{ color: 'var(--accent)', fontSize: '0.625rem' }}>◆</span>
+                )}
               </DropdownMenuItem>
             ))}
 
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/projects')}>
-              <Settings className="w-4 h-4 mr-2" />
-              <span>{t('sidebar.manageProjects')}</span>
+            <DropdownMenuSeparator style={{ background: 'var(--border)' }} />
+            <DropdownMenuItem
+              onClick={() => navigate('/projects')}
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.75rem',
+                fontWeight: 300,
+              }}
+            >
+              <Settings style={{ width: 14, height: 14, marginRight: 8 }} />
+              {t('sidebar.manageProjects')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
         {/* Settings */}
-        <Tooltip delayDuration={150}>
+        <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
             <Link href="/settings">
               <button
-                className={`w-full h-11 rounded-xl flex items-center justify-center transition-all duration-150 ${
-                  location === "/settings"
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
+                className="w-full h-10 flex items-center justify-center transition-colors duration-120"
+                style={{
+                  color: location === "/settings" ? 'var(--sidebar-primary)' : 'var(--sidebar-foreground)',
+                  background: location === "/settings" ? 'var(--sidebar-accent)' : 'transparent',
+                  borderLeft: location === "/settings" ? '2px solid var(--sidebar-primary)' : '2px solid transparent',
+                }}
+                onMouseEnter={e => {
+                  if (location !== "/settings") {
+                    (e.currentTarget as HTMLElement).style.background = 'var(--sidebar-accent)';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (location !== "/settings") {
+                    (e.currentTarget as HTMLElement).style.background = 'transparent';
+                  }
+                }}
               >
-                <Settings className="w-[18px] h-[18px]" />
+                <Settings style={{ width: 16, height: 16 }} />
               </button>
             </Link>
           </TooltipTrigger>
-          <TooltipContent side="right" className="font-medium text-xs">{t('common.settings')}</TooltipContent>
+          <TooltipContent side="right">{t('common.settings')}</TooltipContent>
         </Tooltip>
       </nav>
 
-      {/* Bottom */}
-      <div className="border-t border-border py-3 px-2.5 space-y-0.5">
-
-        {/* Theme */}
-        <Tooltip delayDuration={150}>
-          <TooltipTrigger asChild>
-            <button
-              onClick={toggleTheme}
-              className="w-full h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150"
-            >
-              {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="font-medium text-xs">
-            {theme === 'light' ? t('sidebar.darkMode') : t('sidebar.lightMode')}
-          </TooltipContent>
-        </Tooltip>
-
-        {/* Language */}
-        <Tooltip delayDuration={150}>
+      {/* Bottom — langue + avatar */}
+      <div
+        className="py-3 px-2.5 flex flex-col gap-0.5"
+        style={{ borderTop: '1px solid var(--sidebar-border)' }}
+      >
+        {/* Langue */}
+        <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
             <button
               onClick={toggleLanguage}
-              className="w-full h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150 text-[11px] font-bold tracking-wider"
+              className="w-full h-9 flex items-center justify-center transition-colors duration-120"
+              style={{
+                color: 'var(--sidebar-foreground)',
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.6rem',
+                letterSpacing: '0.12em',
+                fontWeight: 300,
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--sidebar-accent)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               {currentLang === 'en' ? 'FR' : 'EN'}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right" className="font-medium text-xs">
+          <TooltipContent side="right">
             {currentLang === 'en' ? 'Passer en français' : 'Switch to English'}
           </TooltipContent>
         </Tooltip>
 
-        {/* User avatar */}
-        <Tooltip delayDuration={150}>
+        {/* Avatar utilisateur */}
+        <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
-            <button className="w-full h-10 flex items-center justify-center">
-              <div className="w-8 h-8 bg-gradient-to-br from-[#6C5CE7] to-[#fd79a8] rounded-full flex items-center justify-center text-white text-xs font-bold shadow-card">
-                {userInitial}
+            <button className="w-full h-9 flex items-center justify-center">
+              <div
+                className="w-8 h-8 flex items-center justify-center"
+                style={{ border: '1px solid var(--sidebar-border)' }}
+              >
+                <span
+                  style={{
+                    fontFamily: '"Cormorant Garamond", Georgia, serif',
+                    fontStyle: 'italic',
+                    fontWeight: '500',
+                    fontSize: '1rem',
+                    color: 'var(--sidebar-foreground)',
+                    lineHeight: 1,
+                  }}
+                >
+                  {userInitial}
+                </span>
               </div>
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right" className="font-medium text-xs">
-            {user?.firstName || user?.email || "User"}
+          <TooltipContent side="right">
+            {user?.firstName || user?.email || "Profil"}
           </TooltipContent>
         </Tooltip>
       </div>

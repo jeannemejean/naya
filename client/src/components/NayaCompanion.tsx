@@ -352,38 +352,123 @@ function useCompanionChat() {
 
 function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; messagesEndRef: React.RefObject<HTMLDivElement> }) {
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0 max-h-[400px]">
+    <div
+      className="flex-1 overflow-y-auto min-h-0"
+      style={{
+        maxHeight: 400,
+        padding: '16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        background: 'var(--background)',
+      }}
+    >
       {messages.length === 0 && (
-        <div className="text-center py-8">
-          <Sparkles className="h-7 w-7 text-primary/30 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground font-medium">Comment puis-je t'aider ?</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">Crée des tâches, planifie, réfléchis ensemble.</p>
+        <div style={{ textAlign: 'center', paddingTop: 32, paddingBottom: 32 }}>
+          <p
+            style={{
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontStyle: 'italic',
+              fontSize: '1rem',
+              color: 'var(--muted-foreground)',
+              marginBottom: 6,
+            }}
+          >
+            Comment puis-je t'aider ?
+          </p>
+          <p
+            style={{
+              fontFamily: '"IBM Plex Mono", monospace',
+              fontSize: '0.625rem',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              fontWeight: 300,
+              color: 'var(--muted-foreground)',
+              opacity: 0.6,
+            }}
+          >
+            Crée des tâches · Planifie · Réfléchis
+          </p>
         </div>
       )}
 
       {messages.map((msg, i) => (
-        <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+        <div
+          key={i}
+          style={{
+            display: 'flex',
+            justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+          }}
+        >
           <div
-            className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-              msg.role === "user"
-                ? "bg-primary text-primary-foreground rounded-br-sm"
-                : "bg-muted text-foreground rounded-bl-sm"
-            }`}
+            style={{
+              maxWidth: '82%',
+              padding: '10px 13px',
+              background: msg.role === "user"
+                ? 'var(--primary)'
+                : 'var(--card)',
+              color: msg.role === "user"
+                ? 'var(--primary-foreground)'
+                : 'var(--foreground)',
+              border: msg.role === "user"
+                ? 'none'
+                : '1px solid var(--border)',
+              borderRadius: 0,
+            }}
           >
             {msg.isLoading ? (
-              <div className="flex items-center gap-1.5 py-0.5">
-                <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0ms]" />
-                <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:150ms]" />
-                <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:300ms]" />
-              </div>
+              <span
+                style={{
+                  fontFamily: '"Cormorant Garamond", Georgia, serif',
+                  fontStyle: 'italic',
+                  fontSize: '0.9rem',
+                  color: 'var(--muted-foreground)',
+                  letterSpacing: '0.1em',
+                }}
+              >
+                · · ·
+              </span>
             ) : (
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+              <p
+                style={{
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.75rem',
+                  fontWeight: 300,
+                  lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap',
+                  margin: 0,
+                }}
+              >
+                {msg.content}
+              </p>
             )}
             {msg.actions && msg.actions.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-border/50 space-y-1">
+              <div
+                style={{
+                  marginTop: 8,
+                  paddingTop: 8,
+                  borderTop: '1px solid var(--border)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 3,
+                }}
+              >
                 {msg.actions.map((a, j) => (
-                  <div key={j} className="text-xs text-primary/70 flex items-center gap-1">
-                    <Sparkles className="h-2.5 w-2.5" />
+                  <div
+                    key={j}
+                    style={{
+                      fontFamily: '"IBM Plex Mono", monospace',
+                      fontSize: '0.5625rem',
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      fontWeight: 300,
+                      color: 'var(--accent)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                    }}
+                  >
+                    <span style={{ opacity: 0.6 }}>◆</span>
                     <ActionLabel action={a} />
                   </div>
                 ))}
@@ -431,19 +516,45 @@ export function NayaCompanionBar() {
     <div ref={containerRef} className="relative">
       {/* Barre de saisie permanente */}
       <div
-        className={`flex items-center gap-2 h-9 px-3 rounded-xl border transition-all duration-200 cursor-text ${
-          open
-            ? "border-primary/40 bg-background ring-2 ring-primary/10 w-72"
-            : "border-border/60 bg-muted/40 hover:border-border hover:bg-muted/60 w-64"
-        }`}
         onClick={openAndFocus}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          height: 36,
+          paddingLeft: 12,
+          paddingRight: 8,
+          border: `1px solid ${open ? 'var(--accent)' : 'var(--border)'}`,
+          background: 'var(--card)',
+          cursor: 'text',
+          width: open ? 288 : 240,
+          transition: 'width 200ms ease, border-color 150ms ease',
+        }}
       >
-        <div className="relative flex-shrink-0">
-          <Sparkles className={`h-3.5 w-3.5 transition-colors ${open ? "text-primary" : "text-muted-foreground/50"}`} />
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <span
+            style={{
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontStyle: 'italic',
+              fontSize: '0.875rem',
+              fontWeight: 500,
+              color: open ? 'var(--accent)' : 'var(--muted-foreground)',
+              lineHeight: 1,
+            }}
+          >
+            N
+          </span>
           {!open && unreadCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 h-3.5 w-3.5 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center leading-none">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
+            <span
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                width: 8,
+                height: 8,
+                background: 'var(--accent)',
+              }}
+            />
           )}
         </div>
         <input
@@ -452,57 +563,118 @@ export function NayaCompanionBar() {
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => setOpen(true)}
-          placeholder="Dis quelque chose à Naya…"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50 min-w-0"
+          placeholder="Parle à Naya…"
+          style={{
+            flex: 1,
+            background: 'transparent',
+            border: 'none',
+            outline: 'none',
+            fontFamily: '"IBM Plex Mono", monospace',
+            fontSize: '0.75rem',
+            fontWeight: 300,
+            color: 'var(--foreground)',
+            minWidth: 0,
+          }}
           disabled={chatMutation.isPending}
         />
         {input.trim() && (
           <button
             onClick={e => { e.stopPropagation(); handleSend(); }}
             disabled={chatMutation.isPending}
-            className="flex-shrink-0 w-5 h-5 rounded-md bg-primary flex items-center justify-center"
+            style={{
+              flexShrink: 0,
+              width: 22,
+              height: 22,
+              background: 'var(--primary)',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
             {chatMutation.isPending
-              ? <Loader2 className="h-2.5 w-2.5 animate-spin text-primary-foreground" />
-              : <Send className="h-2.5 w-2.5 text-primary-foreground" />
+              ? <Loader2 style={{ width: 10, height: 10, color: 'var(--primary-foreground)' }} className="animate-spin" />
+              : <Send style={{ width: 10, height: 10, color: 'var(--primary-foreground)' }} />
             }
           </button>
         )}
       </div>
 
-      {/* Dropdown panel — fixed pour ne pas être coupé par overflow:hidden du header */}
+      {/* Dropdown panel */}
       {open && (
-        <div className="fixed top-14 right-4 z-50 w-[380px] max-h-[560px] flex flex-col rounded-2xl bg-card shadow-2xl border border-border overflow-hidden">
+        <div
+          className="fixed top-14 right-4 z-50 flex flex-col overflow-hidden"
+          style={{
+            width: 380,
+            maxHeight: 560,
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 0,
+          }}
+        >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
+          <div
+            className="flex items-center justify-between px-4 py-2.5"
+            style={{ borderBottom: '1px solid var(--border)', background: 'var(--primary)' }}
+          >
             <div className="flex items-center gap-2">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
-              <span className="text-sm font-semibold text-foreground">Naya</span>
+              <span
+                style={{
+                  fontFamily: '"Cormorant Garamond", Georgia, serif',
+                  fontStyle: 'italic',
+                  fontWeight: 600,
+                  fontSize: '0.9375rem',
+                  color: 'var(--primary-foreground)',
+                }}
+              >
+                Naya
+              </span>
               {activeProject && (
-                <Badge variant="secondary" className="text-xs h-4 px-1.5">
+                <span
+                  style={{
+                    fontFamily: '"IBM Plex Mono", monospace',
+                    fontSize: '0.5625rem',
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    fontWeight: 300,
+                    color: 'var(--primary-foreground)',
+                    opacity: 0.6,
+                    border: '1px solid var(--primary-foreground)',
+                    padding: '1px 5px',
+                  }}
+                >
                   {activeProject.name}
-                </Badge>
+                </span>
               )}
             </div>
             <button
               onClick={() => setOpen(false)}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--primary-foreground)',
+                opacity: 0.7,
+                display: 'flex',
+                alignItems: 'center',
+              }}
             >
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown style={{ width: 14, height: 14 }} />
             </button>
           </div>
 
           <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} />
 
-          {/* Input dans le panel aussi */}
-          <div className="border-t border-border p-3">
+          {/* Input dans le panel */}
+          <div style={{ borderTop: '1px solid var(--border)', padding: 10 }}>
             <div className="flex items-end gap-2">
               <Textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={t('companion.placeholder')}
-                className="resize-none min-h-[38px] max-h-[100px] text-sm py-2 px-3 rounded-xl"
+                className="resize-none min-h-[38px] max-h-[100px] text-sm py-2 px-3"
                 rows={1}
                 disabled={chatMutation.isPending}
               />
@@ -510,7 +682,7 @@ export function NayaCompanionBar() {
                 size="icon"
                 onClick={handleSend}
                 disabled={!input.trim() || chatMutation.isPending}
-                className="h-9 w-9 rounded-xl flex-shrink-0"
+                className="h-9 w-9 flex-shrink-0"
               >
                 {chatMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
@@ -536,19 +708,59 @@ export default function NayaCompanion() {
 
   return (
     <>
-      {/* Bouton flottant */}
+      {/* Bouton flottant — carré brun profond avec N en Cormorant */}
       {!open && (
         <div className="fixed bottom-6 right-6 z-50">
           <div className="relative">
             <button
               onClick={() => setOpen(true)}
-              className="w-14 h-14 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20 flex items-center justify-center transition-all duration-200 hover:scale-105"
+              style={{
+                width: 48,
+                height: 48,
+                background: 'var(--primary)',
+                border: '1px solid var(--bark-deep, #2E160A)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'background-color 120ms ease',
+              }}
+              onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--accent)')}
+              onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'var(--primary)')}
               aria-label="Ouvrir Naya"
             >
-              <Sparkles className="h-6 w-6" />
+              <span
+                style={{
+                  fontFamily: '"Cormorant Garamond", Georgia, serif',
+                  fontStyle: 'italic',
+                  fontWeight: 600,
+                  fontSize: '1.375rem',
+                  color: 'var(--primary-foreground)',
+                  lineHeight: 1,
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                N
+              </span>
             </button>
             {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+              <span
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  width: 16,
+                  height: 16,
+                  background: 'var(--accent)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.5rem',
+                  fontWeight: 400,
+                  color: 'var(--primary-foreground)',
+                }}
+              >
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
@@ -558,30 +770,76 @@ export default function NayaCompanion() {
 
       {/* Panneau de chat */}
       {open && (
-        <div className="fixed bottom-6 right-6 z-50 w-[380px] max-h-[600px] flex flex-col rounded-2xl bg-card shadow-2xl border border-border overflow-hidden">
+        <div
+          className="fixed bottom-6 right-6 z-50 flex flex-col overflow-hidden"
+          style={{
+            width: 380,
+            maxHeight: 600,
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 0,
+          }}
+        >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span className="font-semibold text-sm text-foreground">{t('companion.title')}</span>
+          <div
+            className="flex items-center justify-between px-4 py-3"
+            style={{
+              borderBottom: '1px solid var(--border)',
+              background: 'var(--primary)',
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <span
+                style={{
+                  fontFamily: '"Cormorant Garamond", Georgia, serif',
+                  fontStyle: 'italic',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  color: 'var(--primary-foreground)',
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                {t('companion.title')}
+              </span>
               {activeProject && (
-                <Badge variant="secondary" className="text-xs border-0 h-4 px-1.5">
+                <span
+                  style={{
+                    fontFamily: '"IBM Plex Mono", monospace',
+                    fontSize: '0.5625rem',
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    fontWeight: 300,
+                    color: 'var(--primary-foreground)',
+                    opacity: 0.6,
+                    border: '1px solid var(--primary-foreground)',
+                    padding: '1px 6px',
+                  }}
+                >
                   {activeProject.name}
-                </Badge>
+                </span>
               )}
             </div>
             <button
               onClick={() => setOpen(false)}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              style={{
+                color: 'var(--primary-foreground)',
+                opacity: 0.7,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+              }}
             >
-              <ChevronDown className="h-5 w-5" />
+              <ChevronDown style={{ width: 16, height: 16 }} />
             </button>
           </div>
 
           <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} />
 
           {/* Input */}
-          <div className="border-t border-border p-3">
+          <div style={{ borderTop: '1px solid var(--border)', padding: 12 }}>
             <div className="flex items-end gap-2">
               <Textarea
                 ref={textareaRef}
@@ -589,7 +847,7 @@ export default function NayaCompanion() {
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={t('companion.placeholder')}
-                className="resize-none min-h-[40px] max-h-[120px] text-sm py-2 px-3 rounded-xl"
+                className="resize-none min-h-[40px] max-h-[120px] text-sm py-2 px-3"
                 rows={1}
                 disabled={chatMutation.isPending}
               />

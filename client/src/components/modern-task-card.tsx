@@ -1,6 +1,4 @@
-import { Clock, MessageSquare, Paperclip, Calendar } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Clock, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ModernTaskCardProps {
@@ -23,119 +21,198 @@ interface ModernTaskCardProps {
   onToggle?: (id: number) => void;
 }
 
-const priorityColors = {
-  high: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
-  medium: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  low: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-};
-
-const categoryColors = {
-  trust: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  conversion: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  engagement: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400",
-  planning: "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400",
-  visibility: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
+const priorityLabel: Record<string, string> = {
+  high:   "Priorité haute",
+  medium: "Priorité normale",
+  low:    "Priorité basse",
 };
 
 export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps) {
-  const priorityColor = task.priority ? priorityColors[task.priority as keyof typeof priorityColors] : priorityColors.medium;
-  const categoryColor = task.category ? categoryColors[task.category as keyof typeof categoryColors] : categoryColors.planning;
-
   return (
     <div
       onClick={onClick}
       className={cn(
-        "group relative bg-white dark:bg-gray-900 rounded-2xl p-5 border border-gray-200 dark:border-gray-800",
-        "hover:shadow-lg hover:border-purple-200 dark:hover:border-purple-800 transition-all duration-200 cursor-pointer",
-        task.completed && "opacity-60"
+        "group relative cursor-pointer transition-colors duration-120",
+        task.completed && "opacity-50"
       )}
       style={{
-        borderLeftWidth: "4px",
-        borderLeftColor: task.projectColor || "#8b5cf6",
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        padding: '14px 16px',
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)';
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)';
       }}
     >
-      {/* Header */}
-      <div className="flex items-start gap-3 mb-3">
-        <Checkbox
-          checked={task.completed}
-          onCheckedChange={() => onToggle?.(task.id)}
-          onClick={(e) => e.stopPropagation()}
-          className="mt-0.5 data-[state=checked]:bg-purple-500 data-[state=checked]:border-purple-500"
-        />
+      {/* Indicateur projet — trait gauche vertical */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 2,
+          background: task.projectColor || 'var(--accent)',
+          opacity: task.completed ? 0.4 : 0.7,
+        }}
+      />
 
-        <div className="flex-1 min-w-0">
-          <h3 className={cn(
-            "font-semibold text-gray-900 dark:text-white mb-1.5 text-base leading-snug",
-            task.completed && "line-through text-gray-500"
-          )}>
-            {task.title}
-          </h3>
+      <div style={{ paddingLeft: 8 }}>
+        {/* Titre */}
+        <div className="flex items-start gap-3">
+          {/* Checkbox minimal */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggle?.(task.id); }}
+            style={{
+              flexShrink: 0,
+              marginTop: 2,
+              width: 14,
+              height: 14,
+              border: task.completed
+                ? 'none'
+                : '1px solid var(--sand, #C8B59A)',
+              background: task.completed ? 'var(--accent)' : 'transparent',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {task.completed && (
+              <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                <path d="M1 3L3 5L7 1" stroke="var(--primary-foreground)" strokeWidth="1.2" strokeLinecap="square" />
+              </svg>
+            )}
+          </button>
 
-          {task.description && (
-            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-3">
-              {task.description}
+          <div className="flex-1 min-w-0">
+            <p
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.8125rem',
+                fontWeight: task.completed ? 300 : 400,
+                color: task.completed ? 'var(--muted-foreground)' : 'var(--foreground)',
+                lineHeight: 1.45,
+                textDecoration: task.completed ? 'line-through' : 'none',
+                margin: 0,
+              }}
+            >
+              {task.title}
             </p>
+
+            {task.description && (
+              <p
+                style={{
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.6875rem',
+                  fontWeight: 300,
+                  color: 'var(--muted-foreground)',
+                  marginTop: 4,
+                  lineHeight: 1.5,
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                }}
+              >
+                {task.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Méta — heure + durée + tags */}
+        <div
+          className="flex items-center flex-wrap"
+          style={{ marginTop: 10, gap: 12 }}
+        >
+          {task.scheduledTime && (
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.625rem',
+                fontWeight: 300,
+                letterSpacing: '0.04em',
+                color: 'var(--muted-foreground)',
+              }}
+            >
+              <Clock style={{ width: 10, height: 10 }} />
+              {task.scheduledTime}
+            </span>
           )}
 
-          {/* Tags */}
-          <div className="flex flex-wrap gap-2 mb-3">
-            {task.priority && (
-              <Badge className={cn("text-xs font-medium border-0", priorityColor)}>
-                {task.priority === 'high' ? 'High Priority' : task.priority === 'medium' ? 'Medium Priority' : 'Low Priority'}
-              </Badge>
-            )}
-            {task.category && (
-              <Badge className={cn("text-xs font-medium border-0", categoryColor)}>
-                {task.category}
-              </Badge>
-            )}
-          </div>
+          {task.estimatedDuration && (
+            <span
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.625rem',
+                fontWeight: 300,
+                letterSpacing: '0.04em',
+                color: 'var(--muted-foreground)',
+              }}
+            >
+              {task.estimatedDuration} min
+            </span>
+          )}
 
-          {/* Meta info */}
-          <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
-            {task.scheduledTime && (
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" />
-                <span>{task.scheduledTime}</span>
-              </div>
-            )}
-            {task.estimatedDuration && (
-              <div className="flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5" />
-                <span>{task.estimatedDuration}min</span>
-              </div>
-            )}
-            {task.commentsCount ? (
-              <div className="flex items-center gap-1.5">
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>{task.commentsCount}</span>
-              </div>
-            ) : null}
-            {task.attachmentsCount ? (
-              <div className="flex items-center gap-1.5">
-                <Paperclip className="w-3.5 h-3.5" />
-                <span>{task.attachmentsCount}</span>
-              </div>
-            ) : null}
-          </div>
+          {task.priority && task.priority === 'high' && (
+            <span
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.5625rem',
+                fontWeight: 400,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                padding: '1px 5px',
+                opacity: 0.85,
+              }}
+            >
+              urgent
+            </span>
+          )}
+
+          {task.category && (
+            <span
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.5625rem',
+                fontWeight: 300,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                color: 'var(--muted-foreground)',
+                border: '1px solid var(--border)',
+                padding: '1px 5px',
+              }}
+            >
+              {task.category}
+            </span>
+          )}
+
+          {/* Date si différente d'aujourd'hui */}
+          {task.scheduledDate && (
+            <span
+              style={{
+                marginLeft: 'auto',
+                fontFamily: '"Cormorant Garamond", Georgia, serif',
+                fontStyle: 'italic',
+                fontSize: '0.75rem',
+                fontWeight: 400,
+                color: 'var(--muted-foreground)',
+              }}
+            >
+              {new Date(task.scheduledDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+            </span>
+          )}
         </div>
-
-        {/* Project Icon */}
-        {task.projectIcon && (
-          <div className="text-2xl opacity-50 group-hover:opacity-100 transition-opacity">
-            {task.projectIcon}
-          </div>
-        )}
       </div>
-
-      {/* Scheduled Date Badge (if different from today) */}
-      {task.scheduledDate && (
-        <div className="absolute top-3 right-3">
-          <Badge variant="outline" className="text-xs bg-white dark:bg-gray-900">
-            {new Date(task.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </Badge>
-        </div>
-      )}
     </div>
   );
 }

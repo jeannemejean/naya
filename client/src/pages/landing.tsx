@@ -16,55 +16,151 @@ export default function Landing() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
-      {/* Editorial Header — Clean & elegant */}
-      <header className="px-8 py-6 border-b border-border bg-card/80 backdrop-blur-sm">
+    <div className="min-h-screen" style={{ background: 'var(--background)' }}>
+      {/* Header éditorial */}
+      <header
+        className="px-8 py-5"
+        style={{ borderBottom: '1px solid var(--border)', background: 'var(--card)' }}
+      >
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-sm">
-              <span className="text-white font-display text-lg">N</span>
+          <div className="flex items-center gap-3">
+            <div
+              style={{
+                width: 36, height: 36,
+                background: 'var(--primary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: '"Cormorant Garamond", Georgia, serif',
+                  fontStyle: 'italic',
+                  fontWeight: 600,
+                  fontSize: '1.25rem',
+                  color: 'var(--primary-foreground)',
+                  lineHeight: 1,
+                }}
+              >
+                N
+              </span>
             </div>
-            <span className="text-2xl font-display text-foreground tracking-tight">Naya</span>
+            <span
+              style={{
+                fontFamily: '"Cormorant Garamond", Georgia, serif',
+                fontStyle: 'italic',
+                fontWeight: 500,
+                fontSize: '1.25rem',
+                color: 'var(--foreground)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Naya
+            </span>
           </div>
-          <Button
+          <button
             onClick={() => handleOpenAuth("login")}
-            variant="ghost"
-            className="text-foreground/70 hover:text-foreground hover:bg-muted/50"
             data-testid="auth-login"
+            style={{
+              fontFamily: '"IBM Plex Mono", monospace',
+              fontSize: '0.6875rem',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              fontWeight: 300,
+              color: 'var(--muted-foreground)',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '6px 0',
+              borderBottom: '1px solid transparent',
+            }}
+            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--accent)')}
+            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent')}
           >
             {t('landing.meetNaya')}
-          </Button>
+          </button>
         </div>
       </header>
 
-      {/* Hero Section — Magazine editorial style */}
-      <section className="px-8 py-24 md:py-32">
-        <div className="max-w-5xl mx-auto text-center space-editorial">
-          <h1 className="text-6xl md:text-7xl font-display text-foreground mb-8 leading-[1.1] tracking-tight">
-            {t('landing.heroTitle')}
-            <span className="text-primary block mt-4 italic">{t('landing.heroSubtitle')}</span>
-          </h1>
-          <p className="text-xl md:text-2xl text-muted-foreground mb-12 max-w-3xl mx-auto font-serif leading-relaxed">
-            {t('landing.heroDescription')}
-          </p>
-          <div className="flex flex-col sm:flex-row gap-5 justify-center items-center">
-            <Button
-              size="lg"
-              className="bg-primary hover:bg-primary/90 text-white text-base px-10 py-7 rounded-xl shadow-editorial hover-lift"
-              onClick={() => handleOpenAuth("register")}
-              data-testid="auth-register-hero"
-            >
-              {t('landing.meetNaya')}
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="text-base px-10 py-7 rounded-xl border-2 hover:bg-muted/30"
-              onClick={() => handleOpenAuth("login")}
-            >
-              {t('landing.seeHowItWorks')}
-            </Button>
-          </div>
+      {/* Hero — pleine largeur, typographie éditoriale */}
+      <section style={{ padding: '96px 32px', maxWidth: 860, margin: '0 auto' }}>
+        <h1
+          style={{
+            fontFamily: '"Cormorant Garamond", Georgia, serif',
+            fontStyle: 'italic',
+            fontWeight: 400,
+            fontSize: 'clamp(3rem, 7vw, 5.5rem)',
+            lineHeight: 1.1,
+            letterSpacing: '-0.02em',
+            color: 'var(--foreground)',
+            marginBottom: 24,
+          }}
+        >
+          {t('landing.heroTitle')}
+          <span
+            style={{
+              display: 'block',
+              color: 'var(--accent)',
+              marginTop: 8,
+            }}
+          >
+            {t('landing.heroSubtitle')}
+          </span>
+        </h1>
+        <p
+          style={{
+            fontFamily: '"IBM Plex Mono", monospace',
+            fontSize: '0.9rem',
+            fontWeight: 300,
+            lineHeight: 1.7,
+            color: 'var(--muted-foreground)',
+            marginBottom: 48,
+            maxWidth: 540,
+          }}
+        >
+          {t('landing.heroDescription')}
+        </p>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => handleOpenAuth("register")}
+            data-testid="auth-register-hero"
+            style={{
+              padding: '12px 28px',
+              background: 'var(--primary)',
+              color: 'var(--primary-foreground)',
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: '"IBM Plex Mono", monospace',
+              fontSize: '0.6875rem',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              fontWeight: 400,
+              transition: 'background-color 120ms ease',
+            }}
+            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--accent)')}
+            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'var(--primary)')}
+          >
+            {t('landing.meetNaya')}
+          </button>
+          <button
+            onClick={() => handleOpenAuth("login")}
+            style={{
+              padding: '12px 28px',
+              background: 'transparent',
+              color: 'var(--foreground)',
+              border: '1px solid var(--border)',
+              cursor: 'pointer',
+              fontFamily: '"IBM Plex Mono", monospace',
+              fontSize: '0.6875rem',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              fontWeight: 300,
+              transition: 'border-color 120ms ease',
+            }}
+            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)')}
+            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--border)')}
+          >
+            {t('landing.seeHowItWorks')}
+          </button>
         </div>
       </section>
 

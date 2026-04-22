@@ -3,260 +3,428 @@
 @tailwind utilities;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   NAYA — Modern SaaS Design System
-   Palette: Clean white, dark panels, colorful task cards
-   Typography: Inter (all weights)
+   NAYA — Design Éditorial
+   Palette : Brun écorce · Crème chaude · Or mat · Encre noire
+   Typo : Cormorant Garamond (serif/italic) · IBM Plex Mono (labels/UI)
+   Principe : Aucun arrondi. Séparateurs 1px. Pas d'ombre portée.
+             L'outil doit ressembler à un objet qu'on possède depuis longtemps.
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 :root {
-  /* Base — Clean white foundation */
-  --background: hsl(220, 14%, 96%);       /* #F4F5F7 — very light gray */
-  --foreground: hsl(220, 20%, 10%);       /* Near black */
+  /* ── Fond : crème chaude, jamais blanc pur ── */
+  --background:    #F5EAD5;
+  --foreground:    #1A0C04;   /* encre noire */
 
-  /* Muted */
-  --muted: hsl(220, 14%, 91%);
-  --muted-foreground: hsl(220, 10%, 50%);
+  /* ── Surfaces ── */
+  --card:           #EDE0C4;
+  --card-foreground: #1A0C04;
+  --popover:        #E8D8B8;
+  --popover-foreground: #1A0C04;
 
-  /* Card & Popover — Pure white */
-  --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(220, 20%, 10%);
-  --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(220, 20%, 10%);
+  /* ── Muted ── */
+  --muted:          #E5D5B0;
+  --muted-foreground: #7A5240;   /* brun clair — texte secondaire */
 
-  /* Borders — subtle */
-  --border: hsl(220, 13%, 89%);
-  --input: hsl(220, 13%, 91%);
+  /* ── Borders & inputs ── */
+  --border: #C8B59A;   /* sable — séparateur 1px */
+  --input:  #DDD0B8;
 
-  /* Primary — Modern purple-indigo */
-  --primary: hsl(252, 82%, 62%);          /* #6C5CE7 vibrant purple */
-  --primary-foreground: hsl(0, 0%, 100%);
+  /* ── Primary : brun écorce ── */
+  --primary:          #4A2818;
+  --primary-foreground: #F5EAD5;
 
-  /* Secondary */
-  --secondary: hsl(220, 14%, 91%);
-  --secondary-foreground: hsl(220, 20%, 10%);
+  /* ── Secondary ── */
+  --secondary:          #E5D5B0;
+  --secondary-foreground: #4A2818;
 
-  /* Accent */
-  --accent: hsl(252, 82%, 95%);
-  --accent-foreground: hsl(252, 82%, 45%);
+  /* ── Accent : or mat ── */
+  --accent:           #B8901E;
+  --accent-foreground: #F5EAD5;
 
-  /* Destructive */
-  --destructive: hsl(0, 72%, 58%);
-  --destructive-foreground: hsl(0, 0%, 100%);
+  /* ── Destructive : ton rouille, pas rouge ── */
+  --destructive:          #8B3A2A;
+  --destructive-foreground: #F5EAD5;
 
-  /* Ring */
-  --ring: hsl(252, 82%, 62%);
+  /* ── Ring (focus) ── */
+  --ring: #B8901E;
 
-  /* Border radius — generous, modern */
-  --radius: 1rem;                         /* 16px base */
+  /* ── Border radius : zéro ── */
+  --radius: 0px;
 
-  /* ── Task card colors (project palette) ── */
-  --task-yellow:  #FFF9C4;
-  --task-yellow-text: #92400E;
-  --task-lavender: #EDE9FE;
-  --task-lavender-text: #5B21B6;
-  --task-pink:    #FFE4E6;
-  --task-pink-text: #9F1239;
-  --task-green:   #DCFCE7;
-  --task-green-text: #14532D;
-  --task-blue:    #DBEAFE;
-  --task-blue-text: #1E3A5F;
-  --task-orange:  #FEF3C7;
-  --task-orange-text: #78350F;
-  --task-cyan:    #CFFAFE;
-  --task-cyan-text: #164E63;
+  /* ── Charts : palette terre ── */
+  --chart-1: #B8901E;   /* or */
+  --chart-2: #4A2818;   /* écorce */
+  --chart-3: #7A8060;   /* mousse */
+  --chart-4: #8B6A50;   /* terre */
+  --chart-5: #6A5028;   /* châtaigne */
 
-  /* ── Dark panel (analytics) ── */
-  --dark-panel: hsl(222, 25%, 10%);
-  --dark-panel-card: hsl(222, 20%, 14%);
-  --dark-panel-border: hsl(222, 15%, 20%);
+  /* ── Sidebar : brun profond ── */
+  --sidebar-background:        #2E160A;
+  --sidebar-foreground:        #C8B59A;   /* sable clair sur fond sombre */
+  --sidebar-primary:           #B8901E;   /* or mat — élément actif */
+  --sidebar-primary-foreground: #F5EAD5;
+  --sidebar-accent:            #3D1E0E;   /* hover discret */
+  --sidebar-accent-foreground: #E5D0A8;
+  --sidebar-border:            #4A2818;   /* séparateur sombre */
+  --sidebar-ring:              #B8901E;
 
-  /* Chart colors */
-  --chart-1: hsl(252, 82%, 62%);
-  --chart-2: hsl(158, 64%, 52%);
-  --chart-3: hsl(43, 96%, 58%);
-  --chart-4: hsl(340, 82%, 62%);
-  --chart-5: hsl(197, 71%, 52%);
+  /* ── Tâches — tons naturels ── */
+  --task-ochre:       #F5E6C4;
+  --task-ochre-text:  #6B4820;
+  --task-umber:       #E8D4B8;
+  --task-umber-text:  #5A3820;
+  --task-sage:        #D8E4D0;
+  --task-sage-text:   #3A5030;
+  --task-dusk:        #DDD5E8;
+  --task-dusk-text:   #4A3860;
+  --task-rust:        #F0D8CC;
+  --task-rust-text:   #6A3020;
+  --task-flax:        #EDE8C8;
+  --task-flax-text:   #5A5020;
+  --task-clay:        #E4D4C8;
+  --task-clay-text:   #503828;
 
-  /* Sidebar */
-  --sidebar-background: hsl(0, 0%, 100%);
-  --sidebar-foreground: hsl(220, 20%, 30%);
-  --sidebar-primary: hsl(252, 82%, 62%);
-  --sidebar-primary-foreground: hsl(0, 0%, 100%);
-  --sidebar-accent: hsl(252, 82%, 95%);
-  --sidebar-accent-foreground: hsl(252, 82%, 45%);
-  --sidebar-border: hsl(220, 13%, 89%);
-  --sidebar-ring: hsl(252, 82%, 62%);
+  /* ── Panel sombre (analytics) ── */
+  --dark-panel:       #1A0C04;
+  --dark-panel-card:  #2E160A;
+  --dark-panel-border: #4A2818;
 }
 
-.dark {
-  --background: hsl(222, 25%, 8%);
-  --foreground: hsl(220, 14%, 92%);
-
-  --muted: hsl(222, 20%, 14%);
-  --muted-foreground: hsl(220, 10%, 55%);
-
-  --popover: hsl(222, 20%, 11%);
-  --popover-foreground: hsl(220, 14%, 92%);
-  --card: hsl(222, 20%, 11%);
-  --card-foreground: hsl(220, 14%, 92%);
-
-  --border: hsl(222, 15%, 18%);
-  --input: hsl(222, 15%, 18%);
-
-  --primary: hsl(252, 82%, 65%);
-  --primary-foreground: hsl(0, 0%, 100%);
-
-  --secondary: hsl(222, 20%, 16%);
-  --secondary-foreground: hsl(220, 14%, 85%);
-
-  --accent: hsl(252, 50%, 20%);
-  --accent-foreground: hsl(252, 82%, 75%);
-
-  --destructive: hsl(0, 62%, 50%);
-  --destructive-foreground: hsl(0, 0%, 100%);
-
-  --ring: hsl(252, 82%, 65%);
-
-  --dark-panel: hsl(222, 25%, 7%);
-  --dark-panel-card: hsl(222, 20%, 11%);
-  --dark-panel-border: hsl(222, 15%, 17%);
-
-  --sidebar-background: hsl(222, 20%, 9%);
-  --sidebar-foreground: hsl(220, 14%, 70%);
-  --sidebar-primary: hsl(252, 82%, 65%);
-  --sidebar-primary-foreground: hsl(0, 0%, 100%);
-  --sidebar-accent: hsl(252, 50%, 18%);
-  --sidebar-accent-foreground: hsl(252, 82%, 75%);
-  --sidebar-border: hsl(222, 15%, 16%);
-  --sidebar-ring: hsl(252, 82%, 65%);
-}
+/* ── Pas de dark mode automatique — Naya reste en mode crème ── */
 
 @layer base {
   * {
     @apply border-border;
+    border-radius: 0 !important;
   }
 
   body {
-    @apply antialiased bg-background text-foreground;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-weight: 400;
-    letter-spacing: -0.011em;
-    line-height: 1.6;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    background-color: var(--background);
+    color: var(--foreground);
+    /* IBM Plex Mono — la grille, le logbook */
+    font-family: 'IBM Plex Mono', 'Fira Code', monospace;
+    font-weight: 300;
+    font-size: 13px;
+    letter-spacing: 0.01em;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-weight: 700;
-    letter-spacing: -0.025em;
-    line-height: 1.2;
+  /* Titres en Cormorant Garamond italic — autorité éditoriale */
+  h1, h2, h3 {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-style: italic;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    color: var(--foreground);
   }
 
-  * {
-    @apply transition-colors duration-150;
+  h4, h5, h6 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
   }
 
+  /* Focus — trait d'or, pas de glow */
   *:focus-visible {
-    @apply outline-none ring-2 ring-ring ring-offset-2;
+    outline: 1px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Transitions discrètes */
+  *, *::before, *::after {
+    transition-property: background-color, border-color, color, opacity;
+    transition-duration: 120ms;
+    transition-timing-function: ease;
   }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Utility classes
+   Typographie — classes utilitaires
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @layer utilities {
-  /* ── Typography helpers ── */
-  .text-display {
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 1.0;
+  /* Cormorant italic — pour les titres, noms, dates importantes */
+  .font-editorial {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
   }
 
-  .text-stat {
-    font-weight: 800;
-    letter-spacing: -0.04em;
-    font-feature-settings: "tnum";
-  }
-
-  .text-label {
-    font-size: 0.6875rem;   /* 11px */
+  .font-editorial-bold {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-style: italic;
     font-weight: 600;
+  }
+
+  /* IBM Plex Mono — pour les labels, métadonnées, UI */
+  .font-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 300;
+    font-size: 0.6875rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
-  /* ── Card styles ── */
+  .font-mono-sm {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 300;
+    font-size: 0.75rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* Affichage de stats — chiffres en Cormorant */
+  .text-stat {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 600;
+    font-style: normal;
+    letter-spacing: -0.02em;
+    font-feature-settings: "tnum";
+  }
+
+  .text-display {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.0;
+  }
+
+  /* ── Cards ── */
+  /* Pas d'arrondi, séparateur 1px, fond crème */
   .card-base {
-    @apply bg-white rounded-2xl border border-border shadow-sm;
+    background: var(--card);
+    border: 1px solid var(--border);
   }
 
   .card-dark {
     background: var(--dark-panel-card);
     border: 1px solid var(--dark-panel-border);
-    @apply rounded-2xl;
   }
 
-  /* ── Task card color variants ── */
-  .task-card-yellow   { background: var(--task-yellow);   color: var(--task-yellow-text); }
-  .task-card-lavender { background: var(--task-lavender); color: var(--task-lavender-text); }
-  .task-card-pink     { background: var(--task-pink);     color: var(--task-pink-text); }
-  .task-card-green    { background: var(--task-green);    color: var(--task-green-text); }
-  .task-card-blue     { background: var(--task-blue);     color: var(--task-blue-text); }
-  .task-card-orange   { background: var(--task-orange);   color: var(--task-orange-text); }
-  .task-card-cyan     { background: var(--task-cyan);     color: var(--task-cyan-text); }
+  /* ── Tâches — couleurs naturelles ── */
+  .task-card-ochre  { background: var(--task-ochre);  color: var(--task-ochre-text); }
+  .task-card-umber  { background: var(--task-umber);  color: var(--task-umber-text); }
+  .task-card-sage   { background: var(--task-sage);   color: var(--task-sage-text); }
+  .task-card-dusk   { background: var(--task-dusk);   color: var(--task-dusk-text); }
+  .task-card-rust   { background: var(--task-rust);   color: var(--task-rust-text); }
+  .task-card-flax   { background: var(--task-flax);   color: var(--task-flax-text); }
+  .task-card-clay   { background: var(--task-clay);   color: var(--task-clay-text); }
 
-  /* ── Shadow scale ── */
-  .shadow-card {
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.05);
+  /* Legacy mapping (si des composants utilisent l'ancienne nomenclature) */
+  .task-card-yellow   { background: var(--task-ochre);  color: var(--task-ochre-text); }
+  .task-card-lavender { background: var(--task-dusk);   color: var(--task-dusk-text); }
+  .task-card-pink     { background: var(--task-rust);   color: var(--task-rust-text); }
+  .task-card-green    { background: var(--task-sage);   color: var(--task-sage-text); }
+  .task-card-blue     { background: var(--task-clay);   color: var(--task-clay-text); }
+  .task-card-orange   { background: var(--task-flax);   color: var(--task-flax-text); }
+  .task-card-cyan     { background: var(--task-umber);  color: var(--task-umber-text); }
+
+  /* ── Séparateurs ── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    width: 100%;
   }
 
-  .shadow-card-hover {
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 12px 32px rgba(0,0,0,0.08);
+  .divider-dark {
+    border: none;
+    border-top: 1px solid var(--dark-panel-border);
+    width: 100%;
   }
 
-  .shadow-float {
-    box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+  /* ── States ── */
+  /* Hover : fond légèrement plus profond, pas d'ombre */
+  .hover-warm:hover {
+    background-color: var(--cream-deep, #E5D5B0);
   }
 
-  /* ── Hover lift ── */
-  .hover-lift {
-    @apply transition-all duration-200;
-  }
-  .hover-lift:hover {
-    transform: translateY(-2px);
-    @apply shadow-card-hover;
+  /* Or mat — indicateur de sélection actif */
+  .active-gold {
+    border-left: 2px solid var(--accent);
   }
 
-  /* ── Dark panel section ── */
+  /* ── Panel sombre ── */
   .panel-dark {
     background: var(--dark-panel);
-    color: hsl(220, 14%, 92%);
-    @apply rounded-3xl;
+    color: #C8B59A;
   }
 
-  /* ── Number display ── */
+  /* ── Tag / Badge éditorial ── */
+  /* Pas de badge coloré. Encadrement 1px, texte mono. */
+  .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 300;
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border: 1px solid currentColor;
+    display: inline-block;
+    line-height: 1.6;
+  }
+
+  /* ── View toggle — flat, 1px border ── */
+  .view-toggle {
+    display: inline-flex;
+    align-items: center;
+    background: transparent;
+    border: 1px solid var(--border);
+    padding: 1px;
+    gap: 0;
+  }
+
+  .view-toggle-btn {
+    padding: 4px 16px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 300;
+    color: var(--muted-foreground);
+    transition: background-color 120ms ease, color 120ms ease;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+  }
+
+  .view-toggle-btn.active {
+    background: var(--foreground);
+    color: var(--background);
+  }
+
+  /* ── Numéros et statistiques ── */
   .num-xl {
-    font-size: clamp(2.5rem, 5vw, 3.5rem);
-    font-weight: 800;
-    letter-spacing: -0.05em;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    font-weight: 500;
+    font-style: italic;
+    letter-spacing: -0.03em;
     line-height: 1;
   }
 
   .num-lg {
-    font-size: 2rem;
-    font-weight: 800;
-    letter-spacing: -0.04em;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 2.25rem;
+    font-weight: 500;
+    font-style: italic;
+    letter-spacing: -0.03em;
     line-height: 1;
   }
+
+  /* ── Shadows : aucune ombre portée ── */
+  .shadow-card       { box-shadow: none; }
+  .shadow-card-hover { box-shadow: none; }
+  .shadow-float      { box-shadow: none; }
+
+  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     OVERRIDES GLOBAUX — forcer la palette éditoriale partout
+     Ces règles écrasent les classes Tailwind hardcodées dans les pages.
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+  /* bg-white → crème chaude */
+  .bg-white  { background-color: var(--card) !important; }
+
+  /* bg-gray-* → tons crème/sable */
+  .bg-gray-50,
+  .bg-gray-100,
+  .bg-slate-50,
+  .bg-slate-100 { background-color: var(--muted) !important; }
+
+  .bg-gray-200,
+  .bg-gray-300,
+  .bg-slate-200,
+  .bg-slate-300 { background-color: var(--sand, #C8B59A) !important; }
+
+  .bg-gray-800,
+  .bg-gray-900,
+  .bg-gray-950,
+  .bg-slate-800,
+  .bg-slate-900 { background-color: var(--bark-deep, #2E160A) !important; }
+
+  /* Hover states gris → tons crème */
+  .hover\:bg-slate-50:hover,
+  .hover\:bg-gray-50:hover,
+  .hover\:bg-muted\/60:hover { background-color: var(--cream-deep, #E5D5B0) !important; }
+
+  /* Textes gris → tons encre/sable */
+  .text-gray-400,
+  .text-gray-500,
+  .text-slate-400,
+  .text-slate-500 { color: var(--muted-foreground) !important; }
+
+  .text-gray-600,
+  .text-gray-700,
+  .text-slate-600,
+  .text-slate-700 { color: var(--bark-light, #7A5240) !important; }
+
+  .text-gray-900,
+  .text-slate-900,
+  .text-gray-800,
+  .text-slate-800 { color: var(--foreground) !important; }
+
+  /* dark: prefixes — on n'a pas de dark mode, on neutralise */
+  .dark\:bg-gray-800,
+  .dark\:bg-gray-900,
+  .dark\:bg-card { background-color: var(--card) !important; }
+
+  .dark\:text-gray-300,
+  .dark\:text-gray-400 { color: var(--muted-foreground) !important; }
+
+  /* Ombres — toutes supprimées */
+  .shadow,
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  .shadow-xl,
+  .shadow-2xl { box-shadow: none !important; }
+
+  /* Badges colorés → trait 1px discret */
+  .bg-purple-100,
+  .bg-blue-100,
+  .bg-cyan-100,
+  .bg-pink-100,
+  .bg-indigo-100,
+  .bg-teal-100,
+  .bg-emerald-100,
+  .bg-violet-50 {
+    background-color: var(--muted) !important;
+    color: var(--foreground) !important;
+  }
+
+  .text-purple-700,
+  .text-blue-700,
+  .text-cyan-700,
+  .text-pink-700,
+  .text-indigo-700,
+  .text-teal-700,
+  .text-emerald-700 { color: var(--bark-light, #7A5240) !important; }
+
+  /* Indicateurs d'erreur destructive → rouille (pas rouge) */
+  .text-red-500,
+  .text-red-400 { color: var(--destructive) !important; }
+
+  .bg-red-500,
+  .bg-red-400 { background-color: var(--destructive) !important; }
+
+  /* Indicateurs amber/jaune → or mat */
+  .text-amber-600,
+  .text-yellow-500 { color: var(--accent) !important; }
+
+  .bg-amber-100,
+  .bg-yellow-100 { background-color: rgba(184, 144, 30, 0.1) !important; }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Animations
+   Animations — sobres, sans fanfare
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -266,74 +434,14 @@
 }
 
 @keyframes slide-in-left {
-  from { opacity: 0; transform: translateX(-16px); }
+  from { opacity: 0; transform: translateX(-10px); }
   to   { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.96); }
+  from { opacity: 0; transform: scale(0.99); }
   to   { opacity: 1; transform: scale(1); }
 }
-
-.animate-fade-up    { animation: fade-up 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-fade-in    { animation: fade-in 0.25s ease both; }
-.animate-slide-left { animation: slide-in-left 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-scale-in   { animation: scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-/* Staggered children */
-.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-children > *:nth-child(2) { animation-delay: 60ms; }
-.stagger-children > *:nth-child(3) { animation-delay: 120ms; }
-.stagger-children > *:nth-child(4) { animation-delay: 180ms; }
-.stagger-children > *:nth-child(5) { animation-delay: 240ms; }
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Scrollbar — thin and elegant
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(220, 13%, 82%) transparent;
-}
-
-*::-webkit-scrollbar { width: 5px; height: 5px; }
-*::-webkit-scrollbar-track { background: transparent; }
-*::-webkit-scrollbar-thumb {
-  background: hsl(220, 13%, 82%);
-  border-radius: 100px;
-}
-*::-webkit-scrollbar-thumb:hover { background: hsl(220, 13%, 68%); }
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   View toggle pill (Card / Block / Table)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
-.view-toggle {
-  @apply inline-flex items-center bg-muted rounded-xl p-1 gap-0.5;
-}
-
-.view-toggle-btn {
-  @apply px-4 py-1.5 rounded-lg text-sm font-medium transition-all duration-150 text-muted-foreground;
-}
-
-.view-toggle-btn.active {
-  @apply bg-white text-foreground shadow-sm;
-}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Arc gauge (analytics)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-
-.arc-gauge {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Accordion (shadcn)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @keyframes accordion-down {
   from { height: 0; }
@@ -343,4 +451,77 @@
 @keyframes accordion-up {
   from { height: var(--radix-accordion-content-height); }
   to   { height: 0; }
+}
+
+.animate-fade-up    { animation: fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade-in    { animation: fade-in 0.2s ease both; }
+.animate-slide-left { animation: slide-in-left 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-scale-in   { animation: scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Enfants décalés */
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Scrollbar — presque invisible, naturelle
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #C8B59A transparent;
+}
+
+*::-webkit-scrollbar        { width: 3px; height: 3px; }
+*::-webkit-scrollbar-track  { background: transparent; }
+*::-webkit-scrollbar-thumb  { background: #C8B59A; }
+*::-webkit-scrollbar-thumb:hover { background: #A89070; }
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Override Radix UI / shadcn — forcer les arrondis à 0
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+[data-radix-popper-content-wrapper] > *,
+[role="dialog"],
+[role="menu"],
+[role="listbox"],
+[data-radix-select-viewport],
+.radix-themes {
+  border-radius: 0 !important;
+}
+
+/* Inputs — flat, trait de fond uniquement */
+input, textarea, select {
+  background: var(--input);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8125rem;
+  font-weight: 300;
+  color: var(--foreground);
+  padding: 6px 0;
+  width: 100%;
+}
+
+input:focus, textarea:focus {
+  border-bottom-color: var(--accent);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--muted-foreground);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* Boutons — géométrie nette */
+button {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
