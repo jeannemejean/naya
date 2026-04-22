@@ -6,54 +6,59 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        /* Cormorant Garamond — pour les titres, dates, noms de projets */
-        serif: ['"Cormorant Garamond"', 'Georgia', 'serif'],
-        /* IBM Plex Mono — pour les labels, tags, navigation, UI éléments */
-        mono:  ['"IBM Plex Mono"', '"Fira Code"', 'monospace'],
-        /* Alias pratiques */
+        /* Inter — corps de texte, UI générale */
+        sans:    ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        /* IBM Plex Mono — labels, tags, données, navigation */
+        mono:    ['"IBM Plex Mono"', '"Fira Code"', 'monospace'],
+        /* Cormorant Garamond — titres display, logo, éléments signature */
+        serif:   ['"Cormorant Garamond"', 'Georgia', 'serif'],
         display: ['"Cormorant Garamond"', 'Georgia', 'serif'],
-        sans: ['"IBM Plex Mono"', '"Fira Code"', 'monospace'],
       },
       borderRadius: {
-        /* Principe : zéro arrondi — géométrie nette, objet de précision */
-        none:  "0px",
-        sm:    "0px",
-        DEFAULT:"0px",
-        md:    "0px",
-        lg:    "0px",
-        xl:    "0px",
-        "2xl": "0px",
-        "3xl": "0px",
-        full:  "0px",
+        /* Modern SaaS — arrondis subtils et naturels */
+        none:    "0px",
+        sm:      "6px",
+        DEFAULT: "8px",
+        md:      "8px",
+        lg:      "12px",
+        xl:      "16px",
+        "2xl":   "20px",
+        "3xl":   "24px",
+        full:    "9999px",
       },
       colors: {
-        /* ── Palette Naya Editorial ── */
-        /* Crème chaude — fond principal */
-        cream: {
-          DEFAULT: "#F5EAD5",   /* crème de base */
-          warm:    "#EDE0C4",   /* cartes, surfaces */
-          deep:    "#E5D5B0",   /* profondeur, hover states */
-          dark:    "#D4C09A",   /* éléments discrets */
+        /* ── Palette Naya Dark ── */
+        /* Bleu nuit ardoise — fond principal */
+        night: {
+          DEFAULT: "#1E2030",
+          deep:    "#181A2A",
+          soft:    "#222540",
         },
-        /* Brun écorce — primary, navigation, autorité */
-        bark: {
-          light:   "#7A5240",   /* brun clair, texte secondaire */
-          DEFAULT: "#4A2818",   /* brun écorce — primary */
-          deep:    "#2E160A",   /* brun profond — sidebar */
-          ink:     "#1A0C04",   /* encre — texte principal */
+        /* Gris bleuté foncé — surfaces secondaires */
+        slate: {
+          surface: "#252840",
+          elevated:"#2D3050",
+          subtle:  "#2A2D45",
         },
-        /* Or mat — accent, interactions, prix, highlights */
-        gold: {
-          light:   "#D4AC48",   /* or lumineux */
-          DEFAULT: "#B8901E",   /* or mat — accent principal */
-          deep:    "#8B6A14",   /* or profond */
-          muted:   "#C9A86A",   /* or atténué, états discrets */
+        /* Blanc lavandé — texte principal */
+        lavender: {
+          DEFAULT: "#E8E6F0",
+          muted:   "#9896B0",
+          dim:     "#6E6C88",
         },
-        /* Sable — borders, muted, séparateurs */
-        sand: {
-          light:   "#E8D8BC",
-          DEFAULT: "#C8B59A",   /* borders */
-          deep:    "#A89070",   /* borders marqués */
+        /* Mauve poussiéreux — accent primaire */
+        mauve: {
+          DEFAULT: "#8B7FA8",
+          light:   "#A699C0",
+          dark:    "#6D628A",
+          subtle:  "rgba(139,127,168,0.12)",
+        },
+        /* Vert sauge profond — micro-accent */
+        sage: {
+          DEFAULT: "#5C7A6B",
+          light:   "#7A9A8A",
+          dark:    "#445A50",
+          subtle:  "rgba(92,122,107,0.12)",
         },
 
         /* ── Variables shadcn/ui mappées ── */
@@ -108,27 +113,33 @@ export default {
           ring:                 "var(--sidebar-ring)",
         },
 
-        /* ── Palette tâches — tons terre, chaleur, pas de couleurs vives ── */
+        /* ── Palette tâches — tons discrets sur fond sombre ── */
         task: {
-          ochre:   "#F5E6C4",   /* ocre clair */
-          umber:   "#E8D4B8",   /* ombre naturelle */
-          sage:    "#D8E4D0",   /* sauge désaturée */
-          dusk:    "#DDD5E8",   /* crépuscule */
-          rust:    "#F0D8CC",   /* rouille douce */
-          flax:    "#EDE8C8",   /* lin */
-          clay:    "#E4D4C8",   /* argile */
+          purple:  "rgba(139,127,168,0.18)",
+          teal:    "rgba(92,122,107,0.18)",
+          rose:    "rgba(168,100,120,0.18)",
+          amber:   "rgba(168,140,80,0.18)",
+          indigo:  "rgba(100,110,200,0.18)",
+          slate:   "rgba(100,110,150,0.18)",
+          mauve:   "rgba(120,100,150,0.18)",
         },
       },
       boxShadow: {
-        /* Principe : pas d'ombres portées. Seulement des séparateurs 1px. */
-        /* Garder pour des éléments de profondeur minimale si nécessaire */
-        "inset-sm": "inset 0 1px 0 rgba(0,0,0,0.06)",
-        "inset-md": "inset 0 2px 0 rgba(0,0,0,0.08)",
-        "none": "none",
-        card:        "none",
-        "card-hover":"none",
-        float:       "none",
-        inner:       "inset 0 1px 0 rgba(0,0,0,0.06)",
+        /* Ombres adaptées au dark mode — profondes, subtiles */
+        sm:          "0 1px 3px rgba(0,0,0,0.35)",
+        DEFAULT:     "0 2px 6px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.25)",
+        md:          "0 4px 10px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.25)",
+        lg:          "0 8px 24px rgba(0,0,0,0.45), 0 4px 8px rgba(0,0,0,0.3)",
+        xl:          "0 16px 40px rgba(0,0,0,0.5), 0 8px 16px rgba(0,0,0,0.3)",
+        "2xl":       "0 24px 60px rgba(0,0,0,0.55)",
+        card:        "0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)",
+        "card-hover":"0 4px 16px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3)",
+        float:       "0 8px 28px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.3)",
+        inner:       "inset 0 1px 0 rgba(255,255,255,0.05)",
+        glow:        "0 0 20px rgba(139,127,168,0.25)",
+        "glow-sm":   "0 0 10px rgba(139,127,168,0.2)",
+        none:        "none",
+        editorial:   "0 2px 8px rgba(0,0,0,0.4)",
       },
       keyframes: {
         "accordion-down": {
@@ -148,12 +159,20 @@ export default {
           to:   { opacity: "1" },
         },
         "scale-in": {
-          from: { opacity: "0", transform: "scale(0.98)" },
+          from: { opacity: "0", transform: "scale(0.97)" },
           to:   { opacity: "1", transform: "scale(1)" },
         },
         "slide-left": {
           from: { opacity: "0", transform: "translateX(-12px)" },
           to:   { opacity: "1", transform: "translateX(0)" },
+        },
+        "slide-up": {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to:   { opacity: "1", transform: "translateY(0)" },
+        },
+        "pulse-soft": {
+          "0%, 100%": { opacity: "1" },
+          "50%":      { opacity: "0.6" },
         },
       },
       animation: {
@@ -163,6 +182,8 @@ export default {
         "fade-in":        "fade-in 0.2s ease both",
         "scale-in":       "scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both",
         "slide-left":     "slide-left 0.25s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "slide-up":       "slide-up 0.3s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "pulse-soft":     "pulse-soft 2s ease-in-out infinite",
       },
     },
   },

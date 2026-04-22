@@ -61,7 +61,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
         <Link href="/">
           <div
             className="w-9 h-9 flex items-center justify-center cursor-pointer"
-            style={{ background: 'var(--sidebar-primary)', color: 'var(--sidebar-primary-foreground)' }}
+            style={{ background: 'var(--sidebar-primary)', color: 'var(--sidebar-primary-foreground)', borderRadius: 10 }}
           >
             <span
               style={{
@@ -118,6 +118,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
                       background: isActive
                         ? 'var(--sidebar-accent)'
                         : 'transparent',
+                      borderRadius: 8,
                       borderLeft: isActive
                         ? '2px solid var(--sidebar-primary)'
                         : '2px solid transparent',
@@ -310,7 +311,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
             <button className="w-full h-9 flex items-center justify-center">
               <div
                 className="w-8 h-8 flex items-center justify-center"
-                style={{ border: '1px solid var(--sidebar-border)' }}
+                style={{ border: '1px solid var(--sidebar-border)', borderRadius: 8, background: 'var(--sidebar-accent)' }}
               >
                 <span
                   style={{

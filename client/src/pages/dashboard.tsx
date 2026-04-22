@@ -68,10 +68,10 @@ function useSelfCareOptions() {
 }
 
 const ENERGY_LEVELS = [
-  { value: 'high', label: 'High', symbol: '⚡', color: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800', activeRing: 'ring-emerald-300' },
-  { value: 'medium', label: 'Medium', symbol: '○', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800', activeRing: 'ring-amber-300' },
-  { value: 'low', label: 'Low', symbol: '↓', color: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-400 dark:border-orange-800', activeRing: 'ring-orange-300' },
-  { value: 'depleted', label: 'Depleted', symbol: '✕', color: 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800', activeRing: 'ring-red-300' },
+  { value: 'high',     label: 'High',     symbol: '⚡', color: '', activeRing: '' },
+  { value: 'medium',   label: 'Medium',   symbol: '○',  color: '', activeRing: '' },
+  { value: 'low',      label: 'Low',      symbol: '↓',  color: '', activeRing: '' },
+  { value: 'depleted', label: 'Depleted', symbol: '✕',  color: '', activeRing: '' },
 ] as const;
 
 function ActiveProjectBand({ projectId, compact = false }: { projectId: number; compact?: boolean }) {
@@ -806,25 +806,52 @@ function EmptyTasksState({ onGenerated }: { onGenerated: () => void }) {
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-            <p className="text-sm font-medium text-violet-200">Aucune tâche planifiée aujourd'hui</p>
-          </div>
+          <p
+            style={{
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontStyle: 'italic',
+              fontSize: '0.9375rem',
+              color: 'var(--primary-foreground)',
+              opacity: 0.7,
+              margin: 0,
+            }}
+          >
+            Aucune tâche planifiée aujourd'hui
+          </p>
           <button
             onClick={generate}
             disabled={loading}
-            className="self-start flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-violet-500/30 hover:bg-violet-500/50 text-violet-200 font-semibold border border-violet-400/30 transition-all disabled:opacity-50"
+            style={{
+              alignSelf: 'flex-start',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontFamily: '"IBM Plex Mono", monospace',
+              fontSize: '0.5625rem',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              fontWeight: 400,
+              color: 'var(--primary)',
+              background: 'var(--primary-foreground)',
+              border: 'none',
+              padding: '5px 12px',
+              cursor: loading ? 'wait' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+            }}
           >
-            {loading ? (
-              <>
-                <span className="w-3 h-3 border-2 border-violet-300/40 border-t-violet-300 rounded-full animate-spin" />
-                Génération en cours…
-              </>
-            ) : (
-              <>✦ Générer mes tâches</>
-            )}
+            {loading ? 'Génération…' : '◆ Générer mes tâches'}
           </button>
-          <p className="text-xs text-violet-300/40">Naya va analyser tes projets et objectifs</p>
+          <p
+            style={{
+              fontFamily: '"IBM Plex Mono", monospace',
+              fontSize: '0.5625rem',
+              fontWeight: 300,
+              color: 'var(--primary-foreground)',
+              opacity: 0.35,
+            }}
+          >
+            Naya va analyser tes projets et objectifs
+          </p>
         </>
       )}
     </div>
@@ -911,45 +938,88 @@ function BentoTileNextAction() {
 
   return (
     <div
-      className="rounded-2xl p-5 flex flex-col h-full min-h-[140px] relative overflow-hidden"
+      className="p-5 flex flex-col h-full min-h-[140px] relative overflow-hidden"
       style={{
-        background: 'linear-gradient(135deg, #1a1035 0%, #2d1b69 60%, #1e1042 100%)',
-        boxShadow: '0 8px 32px rgba(108, 92, 231, 0.25), 0 2px 8px rgba(0,0,0,0.2)',
+        background: 'var(--primary)',
+        border: '1px solid rgba(139,127,168,0.3)',
+        borderRadius: 12,
+        boxShadow: '0 4px 16px rgba(139,127,168,0.2)',
       }}
     >
-      {/* Subtle glow orb */}
-      <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-20 pointer-events-none"
-        style={{ background: 'radial-gradient(circle, #a78bfa 0%, transparent 70%)', transform: 'translate(30%, -30%)' }} />
-
-      <div className="flex items-center justify-between mb-3 relative z-10">
-        <span className="text-[11px] font-semibold tracking-widest uppercase text-violet-300/70 flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-violet-400" />
+      <div className="flex items-center justify-between mb-3">
+        <span
+          style={{
+            fontFamily: '"IBM Plex Mono", monospace',
+            fontSize: '0.5625rem',
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            fontWeight: 400,
+            color: 'var(--primary-foreground)',
+            opacity: 0.6,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          <Zap style={{ width: 10, height: 10 }} />
           Maintenant
         </span>
         {total > 0 && (
-          <span className="text-xs font-semibold text-violet-300/60 bg-white/10 px-2 py-0.5 rounded-full">
+          <span
+            style={{
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontStyle: 'italic',
+              fontSize: '0.875rem',
+              fontWeight: 400,
+              color: 'var(--primary-foreground)',
+              opacity: 0.5,
+            }}
+          >
             {done}/{total}
           </span>
         )}
       </div>
 
       {next ? (
-        <div className="flex-1 flex flex-col justify-between min-h-0 relative z-10">
+        <div className="flex-1 flex flex-col justify-between min-h-0">
           <button
             onClick={() => setWorkspaceOpen(true)}
-            className="text-left group w-full"
+            className="text-left w-full"
           >
             <div className="flex items-start gap-2 mb-1">
-              {next.taskEnergyType && (
-                <span className="text-lg flex-shrink-0 leading-tight">{ENERGY_EMOJI[next.taskEnergyType] || '•'}</span>
-              )}
-              <p className="text-base font-bold text-white leading-snug line-clamp-2 group-hover:text-violet-200 transition-colors">
+              <p
+                style={{
+                  fontFamily: '"Cormorant Garamond", Georgia, serif',
+                  fontStyle: 'italic',
+                  fontWeight: 500,
+                  fontSize: '1.1rem',
+                  lineHeight: 1.2,
+                  color: 'var(--primary-foreground)',
+                  margin: 0,
+                  flex: 1,
+                  letterSpacing: '-0.01em',
+                  textTransform: 'uppercase',
+                }}
+              >
                 {next.title}
               </p>
-              <ChevronRight className="h-4 w-4 text-violet-300/40 group-hover:text-violet-300/80 transition-colors flex-shrink-0 mt-0.5 ml-auto" />
+              <ChevronRight
+                style={{ width: 14, height: 14, color: 'var(--primary-foreground)', opacity: 0.4, flexShrink: 0, marginTop: 3 }}
+              />
             </div>
             {next.activationPrompt && (
-              <p className="text-xs text-violet-200/60 italic mt-1 line-clamp-2 leading-relaxed pl-7">
+              <p
+                style={{
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.6875rem',
+                  fontWeight: 300,
+                  color: 'var(--primary-foreground)',
+                  opacity: 0.5,
+                  lineHeight: 1.5,
+                  marginTop: 6,
+                  fontStyle: 'normal',
+                }}
+              >
                 {next.activationPrompt}
               </p>
             )}
@@ -957,57 +1027,150 @@ function BentoTileNextAction() {
 
           <div className="flex items-center gap-2 mt-3">
             {started ? (
-              <span className="text-sm font-mono font-bold text-violet-200 tabular-nums">
+              <span
+                style={{
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.8125rem',
+                  fontWeight: 400,
+                  color: 'var(--primary-foreground)',
+                }}
+              >
                 {formatElapsed(elapsed)}
               </span>
             ) : next.estimatedDuration ? (
-              <span className="text-xs text-violet-300/60 flex items-center gap-0.5">
-                <Clock className="h-3 w-3" />{next.estimatedDuration}m
+              <span
+                style={{
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.6125rem',
+                  fontWeight: 300,
+                  color: 'var(--primary-foreground)',
+                  opacity: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 3,
+                }}
+              >
+                <Clock style={{ width: 10, height: 10 }} />{next.estimatedDuration}m
               </span>
             ) : null}
             {remaining > 1 && !started && (
-              <span className="text-xs text-violet-300/50">+{remaining - 1} après</span>
+              <span
+                style={{
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.5625rem',
+                  fontWeight: 300,
+                  color: 'var(--primary-foreground)',
+                  opacity: 0.4,
+                }}
+              >
+                +{remaining - 1} après
+              </span>
             )}
             <div className="flex-1" />
             {started ? (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => { setStarted(false); }}
-                  className="text-xs px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-violet-200 font-semibold transition-colors border border-white/10"
-                  title="Mettre en pause"
+                  style={{
+                    fontFamily: '"IBM Plex Mono", monospace',
+                    fontSize: '0.5625rem',
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    fontWeight: 400,
+                    color: 'var(--primary-foreground)',
+                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    padding: '4px 10px',
+                    cursor: 'pointer',
+                  }}
                 >
                   ⏸
                 </button>
                 <button
                   onClick={() => completeMutation.mutate(next.id)}
                   disabled={completeMutation.isPending}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-bold transition-colors flex items-center gap-1"
+                  style={{
+                    fontFamily: '"IBM Plex Mono", monospace',
+                    fontSize: '0.5625rem',
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    fontWeight: 400,
+                    color: 'var(--primary)',
+                    background: 'var(--primary-foreground)',
+                    border: 'none',
+                    padding: '4px 10px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
                 >
-                  <CheckCircle2 className="h-3 w-3" /> Terminé
+                  <CheckCircle2 style={{ width: 10, height: 10 }} /> Terminé
                 </button>
               </div>
             ) : (
               <button
                 onClick={() => setStarted(true)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white font-semibold transition-colors border border-white/20"
+                style={{
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.5625rem',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  fontWeight: 400,
+                  color: 'var(--primary)',
+                  background: 'var(--primary-foreground)',
+                  border: 'none',
+                  padding: '5px 14px',
+                  cursor: 'pointer',
+                  transition: 'opacity 120ms ease',
+                }}
+                onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '0.85')}
+                onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
               >
                 Commencer →
               </button>
             )}
           </div>
 
-          {!started && (
-            <div className="h-0.5 bg-white/10 rounded-full overflow-hidden mt-2.5">
-              <div className="h-full bg-violet-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+          {!started && pct > 0 && (
+            <div
+              style={{
+                height: 1,
+                background: 'rgba(255,255,255,0.15)',
+                marginTop: 10,
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ height: '100%', background: 'var(--accent)', width: `${pct}%`, transition: 'width 300ms ease' }} />
             </div>
           )}
         </div>
       ) : total === 0 ? (
         <EmptyTasksState onGenerated={() => queryClient.invalidateQueries({ queryKey: ['/api/tasks/today', activeProjectId] })} />
       ) : (
-        <div className="flex-1 flex flex-col justify-center gap-1 relative z-10">
-          <p className="text-base font-bold text-emerald-300">{t('dashboard.allDone')}</p>
-          <p className="text-xs text-violet-300/60">{t('dashboard.tasksCompletedCount', { count: done })}</p>
+        <div className="flex-1 flex flex-col justify-center gap-1">
+          <p
+            style={{
+              fontFamily: '"Cormorant Garamond", Georgia, serif',
+              fontStyle: 'italic',
+              fontSize: '1rem',
+              color: 'var(--primary-foreground)',
+              margin: 0,
+            }}
+          >
+            {t('dashboard.allDone')}
+          </p>
+          <p
+            style={{
+              fontFamily: '"IBM Plex Mono", monospace',
+              fontSize: '0.625rem',
+              fontWeight: 300,
+              color: 'var(--primary-foreground)',
+              opacity: 0.5,
+            }}
+          >
+            {t('dashboard.tasksCompletedCount', { count: done })}
+          </p>
         </div>
       )}
 
@@ -1317,7 +1480,7 @@ function BentoTileWeekPulse() {
           <Activity className="h-3.5 w-3.5 text-emerald-500" />
           Cette semaine
         </span>
-        <span className={`text-2xl font-black tracking-tight ${pct >= 75 ? 'text-emerald-500' : pct >= 40 ? 'text-amber-500' : 'text-muted-foreground'}`}>
+        <span className="text-stat" style={{ fontSize: '1.5rem', color: pct >= 75 ? 'var(--accent)' : 'var(--muted-foreground)' }}>
           {pct}<span className="text-base font-medium opacity-60">%</span>
         </span>
       </div>
@@ -1334,10 +1497,17 @@ function BentoTileWeekPulse() {
             <div key={day} className="flex-1 flex flex-col items-center gap-1">
               <div className="w-full bg-muted rounded-md overflow-hidden flex flex-col justify-end" style={{ height: '40px' }}>
                 <div
-                  className={`w-full transition-all rounded-md ${
-                    isToday ? 'bg-primary' : isPast ? 'bg-emerald-400' : 'bg-muted-foreground/20'
-                  }`}
-                  style={{ height: `${Math.max(barPct * 100, dayTasks.length > 0 ? 12 : 0)}%` }}
+                  style={{
+                    width: '100%',
+                    transition: 'all 300ms ease',
+                    height: `${Math.max(barPct * 100, dayTasks.length > 0 ? 12 : 0)}%`,
+                    background: isToday
+                      ? 'var(--primary)'
+                      : isPast
+                        ? 'var(--accent)'
+                        : 'var(--muted-foreground)',
+                    opacity: isPast && barPct === 0 ? 0.3 : 1,
+                  }}
                 />
               </div>
               <span className={`text-[10px] font-medium ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>{day}</span>
@@ -1417,13 +1587,25 @@ function BentoTileMyState() {
                   }
                 }}
                 disabled={updateMutation.isPending}
-                className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl border text-xs font-medium transition-all ${
-                  isActive
-                    ? `${level.color} ring-1 ${level.activeRing}`
-                    : 'border-border text-muted-foreground hover:border-muted-foreground/50 bg-background'
-                }`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 5,
+                  padding: '6px 8px',
+                  fontFamily: '"IBM Plex Mono", monospace',
+                  fontSize: '0.5625rem',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  fontWeight: isActive ? 400 : 300,
+                  background: isActive ? 'var(--foreground)' : 'transparent',
+                  color: isActive ? 'var(--background)' : 'var(--muted-foreground)',
+                  border: `1px solid ${isActive ? 'var(--foreground)' : 'var(--border)'}`,
+                  cursor: 'pointer',
+                  transition: 'all 120ms ease',
+                }}
               >
-                <span>{level.symbol}</span>
+                <span style={{ fontStyle: 'normal' }}>{level.symbol}</span>
                 <span>{level.label}</span>
               </button>
             );
@@ -1460,8 +1642,18 @@ function BentoTileMyState() {
 
         {!showContextPrompt && avoidance && (
           <div className="mt-1.5 flex-shrink-0">
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
-              Watch: {avoidance}
+            <span
+              style={{
+                fontFamily: '"IBM Plex Mono", monospace',
+                fontSize: '0.5625rem',
+                letterSpacing: '0.08em',
+                fontWeight: 300,
+                color: 'var(--muted-foreground)',
+                border: '1px solid var(--border)',
+                padding: '2px 6px',
+              }}
+            >
+              {avoidance}
             </span>
           </div>
         )}
@@ -1739,8 +1931,8 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <div className="w-10 h-10 bg-gradient-to-br from-[#6C5CE7] to-[#a78bfa] rounded-xl flex items-center justify-center mx-auto mb-4 shadow-float">
-            <span className="text-white font-black">N</span>
+          <div style={{ width: 40, height: 40, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+            <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic', fontWeight: 600, fontSize: '1.25rem', color: 'var(--primary-foreground)' }}>N</span>
           </div>
           <p className="text-sm text-muted-foreground">Chargement…</p>
         </div>
@@ -1760,7 +1952,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
         <header className="bg-white dark:bg-card border-b border-border flex-shrink-0 relative overflow-hidden">
           {/* Thin gradient bar at top */}
           <div className="absolute top-0 left-0 right-0 h-[3px]"
-            style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
+            style={{ background: 'var(--primary)', height: 2 }} />
           <div className="px-6 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -1780,7 +1972,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
                     <span className="text-xs text-muted-foreground">{t('sidebar.allProjects')}</span>
                   ) : activeProject ? (
                     <div className="flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: activeProject.color || '#6C5CE7' }} />
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: activeProject.color || 'var(--accent)' }} />
                       <span className="text-xs text-muted-foreground">{activeProject.icon || '📁'} {activeProject.name}</span>
                     </div>
                   ) : null}

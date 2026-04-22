@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { CalendarClock, X } from "lucide-react";
+import { X, Calendar } from "lucide-react";
 import { Link } from "wouter";
 
 export default function PlanningStartBanner() {
@@ -20,44 +20,111 @@ export default function PlanningStartBanner() {
 
   if (!planningStartDate || planningStartDate <= today) return null;
 
-  // Format date nicely
   const dateLabel = new Date(planningStartDate + 'T00:00:00').toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long',
   });
 
   return (
-    <div className="mx-0 mb-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 rounded-xl px-4 py-3 flex items-center gap-3">
-      <CalendarClock className="h-5 w-5 text-indigo-500 flex-shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-indigo-800 dark:text-indigo-200">
+    <div
+      style={{
+        marginBottom: 16,
+        padding: '12px 16px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          background: 'rgba(92,122,107,0.12)',
+          borderRadius: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <Calendar style={{ width: 15, height: 15, color: 'var(--accent)' }} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <p
+          style={{
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: '0.875rem',
+            fontWeight: 500,
+            color: 'var(--foreground)',
+            margin: 0,
+          }}
+        >
           Planification en pause
         </p>
-        <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
-          Naya démarrera automatiquement le <span className="font-semibold">{dateLabel}</span>.
-          D'ici là, aucune tâche ne sera générée ni déplacée.
+        <p
+          style={{
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: '0.75rem',
+            fontWeight: 400,
+            color: 'var(--muted-foreground)',
+            marginTop: 2,
+          }}
+        >
+          Naya démarrera le <strong style={{ color: 'var(--foreground)', fontWeight: 500 }}>{dateLabel}</strong>
         </p>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Link
           href="/settings"
-          className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 underline"
+          style={{
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: '0.75rem',
+            fontWeight: 400,
+            color: 'var(--muted-foreground)',
+            textDecoration: 'none',
+          }}
+          onMouseEnter={(e: any) => (e.currentTarget.style.color = 'var(--foreground)')}
+          onMouseLeave={(e: any) => (e.currentTarget.style.color = 'var(--muted-foreground)')}
         >
           Modifier
         </Link>
         <button
           onClick={() => clearMutation.mutate()}
           disabled={clearMutation.isPending}
-          className="text-xs px-2.5 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          style={{
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: '0.75rem',
+            fontWeight: 500,
+            color: 'var(--primary-foreground)',
+            background: 'var(--primary)',
+            border: 'none',
+            borderRadius: 6,
+            padding: '4px 12px',
+            cursor: 'pointer',
+          }}
         >
-          Démarrer maintenant
+          Démarrer
         </button>
         <button
           onClick={() => clearMutation.mutate()}
           disabled={clearMutation.isPending}
-          className="p-1 text-indigo-400 hover:text-indigo-600 transition-colors"
-          title="Fermer"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--muted-foreground)',
+            padding: 4,
+            display: 'flex',
+            alignItems: 'center',
+            borderRadius: 4,
+          }}
+          onMouseEnter={(e: any) => (e.currentTarget.style.color = 'var(--foreground)')}
+          onMouseLeave={(e: any) => (e.currentTarget.style.color = 'var(--muted-foreground)')}
         >
-          <X className="h-3.5 w-3.5" />
+          <X style={{ width: 14, height: 14 }} />
         </button>
       </div>
     </div>

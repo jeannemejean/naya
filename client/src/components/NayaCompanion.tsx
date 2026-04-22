@@ -413,7 +413,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
               border: msg.role === "user"
                 ? 'none'
                 : '1px solid var(--border)',
-              borderRadius: 0,
+              borderRadius: msg.role === "user" ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
             }}
           >
             {msg.isLoading ? (
@@ -524,11 +524,13 @@ export function NayaCompanionBar() {
           height: 36,
           paddingLeft: 12,
           paddingRight: 8,
-          border: `1px solid ${open ? 'var(--accent)' : 'var(--border)'}`,
-          background: 'var(--card)',
+          border: `1px solid ${open ? 'var(--primary)' : 'var(--border)'}`,
+          background: 'var(--muted)',
+          borderRadius: 20,
           cursor: 'text',
-          width: open ? 288 : 240,
+          width: open ? 300 : 240,
           transition: 'width 200ms ease, border-color 150ms ease',
+          boxShadow: open ? '0 0 0 3px rgba(139,127,168,0.12)' : 'none',
         }}
       >
         <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -587,6 +589,7 @@ export function NayaCompanionBar() {
               height: 22,
               background: 'var(--primary)',
               border: 'none',
+              borderRadius: '50%',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -610,7 +613,8 @@ export function NayaCompanionBar() {
             maxHeight: 560,
             background: 'var(--card)',
             border: '1px solid var(--border)',
-            borderRadius: 0,
+            borderRadius: 16,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
           }}
         >
           {/* Header */}
@@ -715,15 +719,17 @@ export default function NayaCompanion() {
             <button
               onClick={() => setOpen(true)}
               style={{
-                width: 48,
-                height: 48,
+                width: 52,
+                height: 52,
                 background: 'var(--primary)',
-                border: '1px solid var(--bark-deep, #2E160A)',
+                border: '1px solid rgba(139,127,168,0.4)',
+                borderRadius: 14,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 cursor: 'pointer',
-                transition: 'background-color 120ms ease',
+                transition: 'all 150ms ease',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
               }}
               onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--accent)')}
               onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'var(--primary)')}
@@ -777,7 +783,8 @@ export default function NayaCompanion() {
             maxHeight: 600,
             background: 'var(--card)',
             border: '1px solid var(--border)',
-            borderRadius: 0,
+            borderRadius: 16,
+            boxShadow: '0 16px 48px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.3)',
           }}
         >
           {/* Header */}

@@ -3,143 +3,142 @@
 @tailwind utilities;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   NAYA — Design Éditorial
-   Palette : Brun écorce · Crème chaude · Or mat · Encre noire
-   Typo : Cormorant Garamond (serif/italic) · IBM Plex Mono (labels/UI)
-   Principe : Aucun arrondi. Séparateurs 1px. Pas d'ombre portée.
-             L'outil doit ressembler à un objet qu'on possède depuis longtemps.
+   NAYA — Dark Modern SaaS Design System
+   Palette : Bleu nuit · Gris bleuté · Mauve poussiéreux · Vert sauge
+   Typo : Inter (body) · IBM Plex Mono (labels) · Cormorant (display)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 :root {
-  /* ── Fond : crème chaude, jamais blanc pur ── */
-  --background:    #F5EAD5;
-  --foreground:    #1A0C04;   /* encre noire */
+  /* ── Fond : bleu nuit ardoise ── */
+  --background:    #1E2030;
+  --foreground:    #E8E6F0;
 
   /* ── Surfaces ── */
-  --card:           #EDE0C4;
-  --card-foreground: #1A0C04;
-  --popover:        #E8D8B8;
-  --popover-foreground: #1A0C04;
+  --card:           #252840;
+  --card-foreground: #E8E6F0;
+  --popover:        #2D3050;
+  --popover-foreground: #E8E6F0;
 
   /* ── Muted ── */
-  --muted:          #E5D5B0;
-  --muted-foreground: #7A5240;   /* brun clair — texte secondaire */
+  --muted:          #2A2D45;
+  --muted-foreground: #9896B0;
 
   /* ── Borders & inputs ── */
-  --border: #C8B59A;   /* sable — séparateur 1px */
-  --input:  #DDD0B8;
+  --border: rgba(152, 150, 176, 0.18);
+  --input:  #2D3050;
 
-  /* ── Primary : brun écorce ── */
-  --primary:          #4A2818;
-  --primary-foreground: #F5EAD5;
+  /* ── Primary : mauve poussiéreux ── */
+  --primary:          #8B7FA8;
+  --primary-foreground: #E8E6F0;
 
   /* ── Secondary ── */
-  --secondary:          #E5D5B0;
-  --secondary-foreground: #4A2818;
+  --secondary:          #2D3050;
+  --secondary-foreground: #E8E6F0;
 
-  /* ── Accent : or mat ── */
-  --accent:           #B8901E;
-  --accent-foreground: #F5EAD5;
+  /* ── Accent : vert sauge profond ── */
+  --accent:           #5C7A6B;
+  --accent-foreground: #E8E6F0;
 
-  /* ── Destructive : ton rouille, pas rouge ── */
-  --destructive:          #8B3A2A;
-  --destructive-foreground: #F5EAD5;
+  /* ── Destructive ── */
+  --destructive:          #C06060;
+  --destructive-foreground: #E8E6F0;
 
   /* ── Ring (focus) ── */
-  --ring: #B8901E;
+  --ring: rgba(139, 127, 168, 0.6);
 
-  /* ── Border radius : zéro ── */
-  --radius: 0px;
+  /* ── Border radius — moderne, arrondi naturel ── */
+  --radius: 0.625rem;   /* 10px */
 
-  /* ── Charts : palette terre ── */
-  --chart-1: #B8901E;   /* or */
-  --chart-2: #4A2818;   /* écorce */
-  --chart-3: #7A8060;   /* mousse */
-  --chart-4: #8B6A50;   /* terre */
-  --chart-5: #6A5028;   /* châtaigne */
+  /* ── Charts ── */
+  --chart-1: #8B7FA8;   /* mauve */
+  --chart-2: #5C7A6B;   /* sauge */
+  --chart-3: #6B8AAA;   /* bleu ardoise */
+  --chart-4: #AA8B7A;   /* terracotta doux */
+  --chart-5: #7A8BAA;   /* gris bleuté */
 
-  /* ── Sidebar : brun profond ── */
-  --sidebar-background:        #2E160A;
-  --sidebar-foreground:        #C8B59A;   /* sable clair sur fond sombre */
-  --sidebar-primary:           #B8901E;   /* or mat — élément actif */
-  --sidebar-primary-foreground: #F5EAD5;
-  --sidebar-accent:            #3D1E0E;   /* hover discret */
-  --sidebar-accent-foreground: #E5D0A8;
-  --sidebar-border:            #4A2818;   /* séparateur sombre */
-  --sidebar-ring:              #B8901E;
+  /* ── Sidebar : légèrement plus sombre que le fond ── */
+  --sidebar-background:        #191B2E;
+  --sidebar-foreground:        #9896B0;
+  --sidebar-primary:           #8B7FA8;
+  --sidebar-primary-foreground: #E8E6F0;
+  --sidebar-accent:            #252840;
+  --sidebar-accent-foreground: #E8E6F0;
+  --sidebar-border:            rgba(152, 150, 176, 0.1);
+  --sidebar-ring:              #8B7FA8;
 
-  /* ── Tâches — tons naturels ── */
-  --task-ochre:       #F5E6C4;
-  --task-ochre-text:  #6B4820;
-  --task-umber:       #E8D4B8;
-  --task-umber-text:  #5A3820;
-  --task-sage:        #D8E4D0;
-  --task-sage-text:   #3A5030;
-  --task-dusk:        #DDD5E8;
-  --task-dusk-text:   #4A3860;
-  --task-rust:        #F0D8CC;
-  --task-rust-text:   #6A3020;
-  --task-flax:        #EDE8C8;
-  --task-flax-text:   #5A5020;
-  --task-clay:        #E4D4C8;
-  --task-clay-text:   #503828;
-
-  /* ── Panel sombre (analytics) ── */
-  --dark-panel:       #1A0C04;
-  --dark-panel-card:  #2E160A;
-  --dark-panel-border: #4A2818;
+  /* ── Tâches — tons légèrement tintés sur fond sombre ── */
+  --task-purple:      rgba(139, 127, 168, 0.18);
+  --task-purple-text: #C4B8D8;
+  --task-teal:        rgba(92, 122, 107, 0.18);
+  --task-teal-text:   #8BB8A4;
+  --task-rose:        rgba(168, 100, 120, 0.18);
+  --task-rose-text:   #D4A8B8;
+  --task-amber:       rgba(168, 140, 80, 0.18);
+  --task-amber-text:  #D4C488;
+  --task-indigo:      rgba(100, 110, 200, 0.18);
+  --task-indigo-text: #A8B0E0;
+  --task-slate:       rgba(100, 110, 150, 0.18);
+  --task-slate-text:  #B0B8D8;
+  --task-mauve:       rgba(120, 100, 150, 0.18);
+  --task-mauve-text:  #C0A8D8;
 }
-
-/* ── Pas de dark mode automatique — Naya reste en mode crème ── */
 
 @layer base {
   * {
     @apply border-border;
-    border-radius: 0 !important;
   }
 
   body {
     background-color: var(--background);
     color: var(--foreground);
-    /* IBM Plex Mono — la grille, le logbook */
-    font-family: 'IBM Plex Mono', 'Fira Code', monospace;
-    font-weight: 300;
-    font-size: 13px;
-    letter-spacing: 0.01em;
-    line-height: 1.65;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-weight: 400;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Titres en Cormorant Garamond italic — autorité éditoriale */
-  h1, h2, h3 {
+  /* Titres — Inter semi-bold pour les niveaux opérationnels,
+     Cormorant italic pour les éléments signature/display */
+  h1 {
     font-family: 'Cormorant Garamond', Georgia, serif;
     font-style: italic;
     font-weight: 500;
-    letter-spacing: -0.01em;
-    line-height: 1.15;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: var(--foreground);
+  }
+
+  h2, h3 {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
     color: var(--foreground);
   }
 
   h4, h5, h6 {
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: 'Inter', system-ui, sans-serif;
     font-weight: 500;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: 0.8125rem;
+    letter-spacing: -0.01em;
     color: var(--muted-foreground);
   }
 
-  /* Focus — trait d'or, pas de glow */
+  /* Focus — glow mauve subtil */
   *:focus-visible {
-    outline: 1px solid var(--ring);
+    outline: 2px solid var(--ring);
     outline-offset: 2px;
+    border-radius: var(--radius);
   }
 
-  /* Transitions discrètes */
+  /* Transitions fluides */
   *, *::before, *::after {
-    transition-property: background-color, border-color, color, opacity;
-    transition-duration: 120ms;
-    transition-timing-function: ease;
+    transition-property: background-color, border-color, color, opacity, box-shadow, transform;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
 
@@ -148,7 +147,7 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @layer utilities {
-  /* Cormorant italic — pour les titres, noms, dates importantes */
+  /* Cormorant italic — pour les titres signature, logo, display */
   .font-editorial {
     font-family: 'Cormorant Garamond', Georgia, serif;
     font-style: italic;
@@ -161,7 +160,7 @@
     font-weight: 600;
   }
 
-  /* IBM Plex Mono — pour les labels, métadonnées, UI */
+  /* IBM Plex Mono — pour les labels, tags, données techniques */
   .font-label {
     font-family: 'IBM Plex Mono', monospace;
     font-weight: 300;
@@ -177,159 +176,146 @@
     letter-spacing: 0.02em;
   }
 
-  /* Affichage de stats — chiffres en Cormorant */
+  /* Chiffres / stats */
   .text-stat {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-weight: 600;
-    font-style: normal;
-    letter-spacing: -0.02em;
-    font-feature-settings: "tnum";
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
   }
 
   .text-display {
     font-family: 'Cormorant Garamond', Georgia, serif;
     font-style: italic;
-    font-weight: 400;
+    font-weight: 500;
     letter-spacing: -0.02em;
-    line-height: 1.0;
+    line-height: 1.1;
   }
 
   /* ── Cards ── */
-  /* Pas d'arrondi, séparateur 1px, fond crème */
   .card-base {
     background: var(--card);
     border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
 
-  .card-dark {
-    background: var(--dark-panel-card);
-    border: 1px solid var(--dark-panel-border);
+  .card-elevated {
+    background: var(--popover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   }
 
-  /* ── Tâches — couleurs naturelles ── */
-  .task-card-ochre  { background: var(--task-ochre);  color: var(--task-ochre-text); }
-  .task-card-umber  { background: var(--task-umber);  color: var(--task-umber-text); }
-  .task-card-sage   { background: var(--task-sage);   color: var(--task-sage-text); }
-  .task-card-dusk   { background: var(--task-dusk);   color: var(--task-dusk-text); }
-  .task-card-rust   { background: var(--task-rust);   color: var(--task-rust-text); }
-  .task-card-flax   { background: var(--task-flax);   color: var(--task-flax-text); }
-  .task-card-clay   { background: var(--task-clay);   color: var(--task-clay-text); }
+  /* ── Tâches ── */
+  .task-card-purple  { background: var(--task-purple);  color: var(--task-purple-text); }
+  .task-card-teal    { background: var(--task-teal);    color: var(--task-teal-text); }
+  .task-card-rose    { background: var(--task-rose);    color: var(--task-rose-text); }
+  .task-card-amber   { background: var(--task-amber);   color: var(--task-amber-text); }
+  .task-card-indigo  { background: var(--task-indigo);  color: var(--task-indigo-text); }
+  .task-card-slate   { background: var(--task-slate);   color: var(--task-slate-text); }
+  .task-card-mauve   { background: var(--task-mauve);   color: var(--task-mauve-text); }
 
-  /* Legacy mapping (si des composants utilisent l'ancienne nomenclature) */
-  .task-card-yellow   { background: var(--task-ochre);  color: var(--task-ochre-text); }
-  .task-card-lavender { background: var(--task-dusk);   color: var(--task-dusk-text); }
-  .task-card-pink     { background: var(--task-rust);   color: var(--task-rust-text); }
-  .task-card-green    { background: var(--task-sage);   color: var(--task-sage-text); }
-  .task-card-blue     { background: var(--task-clay);   color: var(--task-clay-text); }
-  .task-card-orange   { background: var(--task-flax);   color: var(--task-flax-text); }
-  .task-card-cyan     { background: var(--task-umber);  color: var(--task-umber-text); }
+  /* Legacy mapping */
+  .task-card-yellow   { background: var(--task-amber);  color: var(--task-amber-text); }
+  .task-card-lavender { background: var(--task-purple); color: var(--task-purple-text); }
+  .task-card-pink     { background: var(--task-rose);   color: var(--task-rose-text); }
+  .task-card-green    { background: var(--task-teal);   color: var(--task-teal-text); }
+  .task-card-blue     { background: var(--task-indigo); color: var(--task-indigo-text); }
+  .task-card-orange   { background: var(--task-amber);  color: var(--task-amber-text); }
+  .task-card-cyan     { background: var(--task-teal);   color: var(--task-teal-text); }
+  .task-card-ochre    { background: var(--task-amber);  color: var(--task-amber-text); }
+  .task-card-umber    { background: var(--task-slate);  color: var(--task-slate-text); }
+  .task-card-sage     { background: var(--task-teal);   color: var(--task-teal-text); }
+  .task-card-dusk     { background: var(--task-purple); color: var(--task-purple-text); }
+  .task-card-rust     { background: var(--task-rose);   color: var(--task-rose-text); }
+  .task-card-flax     { background: var(--task-amber);  color: var(--task-amber-text); }
+  .task-card-clay     { background: var(--task-mauve);  color: var(--task-mauve-text); }
 
-  /* ── Séparateurs ── */
-  .divider {
-    border: none;
-    border-top: 1px solid var(--border);
-    width: 100%;
+  /* ── Active indicator ── */
+  .active-accent {
+    border-left: 2px solid var(--primary);
   }
 
-  .divider-dark {
-    border: none;
-    border-top: 1px solid var(--dark-panel-border);
-    width: 100%;
-  }
-
-  /* ── States ── */
-  /* Hover : fond légèrement plus profond, pas d'ombre */
-  .hover-warm:hover {
-    background-color: var(--cream-deep, #E5D5B0);
-  }
-
-  /* Or mat — indicateur de sélection actif */
-  .active-gold {
-    border-left: 2px solid var(--accent);
-  }
-
-  /* ── Panel sombre ── */
-  .panel-dark {
-    background: var(--dark-panel);
-    color: #C8B59A;
-  }
-
-  /* ── Tag / Badge éditorial ── */
-  /* Pas de badge coloré. Encadrement 1px, texte mono. */
+  /* ── Tag / Badge ── */
   .tag {
     font-family: 'IBM Plex Mono', monospace;
     font-weight: 300;
     font-size: 0.625rem;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    padding: 2px 6px;
-    border: 1px solid currentColor;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(139, 127, 168, 0.12);
+    color: var(--muted-foreground);
     display: inline-block;
     line-height: 1.6;
   }
 
-  /* ── View toggle — flat, 1px border ── */
+  /* ── View toggle ── */
   .view-toggle {
     display: inline-flex;
     align-items: center;
-    background: transparent;
-    border: 1px solid var(--border);
-    padding: 1px;
-    gap: 0;
+    background: var(--muted);
+    border-radius: var(--radius);
+    padding: 3px;
+    gap: 2px;
   }
 
   .view-toggle-btn {
-    padding: 4px 16px;
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 0.6875rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    font-weight: 300;
+    padding: 4px 14px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 500;
     color: var(--muted-foreground);
-    transition: background-color 120ms ease, color 120ms ease;
+    transition: all 150ms ease;
     cursor: pointer;
     border: none;
     background: transparent;
+    border-radius: 6px;
   }
 
   .view-toggle-btn.active {
-    background: var(--foreground);
-    color: var(--background);
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   }
 
-  /* ── Numéros et statistiques ── */
+  /* ── Numbers / stats ── */
   .num-xl {
-    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-family: 'Inter', system-ui, sans-serif;
     font-size: clamp(2.5rem, 5vw, 4rem);
-    font-weight: 500;
-    font-style: italic;
-    letter-spacing: -0.03em;
+    font-weight: 700;
+    letter-spacing: -0.04em;
     line-height: 1;
   }
 
   .num-lg {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-size: 2.25rem;
-    font-weight: 500;
-    font-style: italic;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 2rem;
+    font-weight: 700;
     letter-spacing: -0.03em;
     line-height: 1;
   }
 
-  /* ── Shadows : aucune ombre portée ── */
-  .shadow-card       { box-shadow: none; }
-  .shadow-card-hover { box-shadow: none; }
-  .shadow-float      { box-shadow: none; }
+  /* ── Shadows utilitaires ── */
+  .shadow-card       { box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2); }
+  .shadow-card-hover { box-shadow: 0 4px 16px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3); }
+  .shadow-float      { box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.3); }
+  .shadow-editorial  { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .hover-lift        { transition: transform 150ms ease, box-shadow 150ms ease; }
+  .hover-lift:hover  { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.45); }
 
   /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     OVERRIDES GLOBAUX — forcer la palette éditoriale partout
-     Ces règles écrasent les classes Tailwind hardcodées dans les pages.
+     OVERRIDES GLOBAUX — remapper les classes Tailwind hardcodées
+     vers la palette sombre. Nécessaire car les composants utilisent
+     des classes statiques qui ne connaissent pas notre design system.
      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-  /* bg-white → crème chaude */
-  .bg-white  { background-color: var(--card) !important; }
+  /* bg-white → surface sombre */
+  .bg-white { background-color: var(--card) !important; }
 
-  /* bg-gray-* → tons crème/sable */
+  /* bg-gray-* / bg-slate-* → surfaces sombres appropriées */
   .bg-gray-50,
   .bg-gray-100,
   .bg-slate-50,
@@ -338,20 +324,27 @@
   .bg-gray-200,
   .bg-gray-300,
   .bg-slate-200,
-  .bg-slate-300 { background-color: var(--sand, #C8B59A) !important; }
+  .bg-slate-300 { background-color: var(--secondary) !important; }
 
   .bg-gray-800,
   .bg-gray-900,
   .bg-gray-950,
   .bg-slate-800,
-  .bg-slate-900 { background-color: var(--bark-deep, #2E160A) !important; }
+  .bg-slate-900 { background-color: var(--background) !important; }
 
-  /* Hover states gris → tons crème */
+  /* Hover states → surfaces sombres */
   .hover\:bg-slate-50:hover,
-  .hover\:bg-gray-50:hover,
-  .hover\:bg-muted\/60:hover { background-color: var(--cream-deep, #E5D5B0) !important; }
+  .hover\:bg-gray-50:hover   { background-color: var(--muted) !important; }
 
-  /* Textes gris → tons encre/sable */
+  .hover\:bg-slate-100:hover,
+  .hover\:bg-gray-100:hover  { background-color: var(--secondary) !important; }
+
+  .hover\:bg-muted\/60:hover { background-color: rgba(42,45,69,0.6) !important; }
+
+  .hover\:bg-slate-800:hover,
+  .hover\:bg-gray-800:hover  { background-color: var(--muted) !important; }
+
+  /* Textes clairs → palette sombre */
   .text-gray-400,
   .text-gray-500,
   .text-slate-400,
@@ -360,14 +353,20 @@
   .text-gray-600,
   .text-gray-700,
   .text-slate-600,
-  .text-slate-700 { color: var(--bark-light, #7A5240) !important; }
+  .text-slate-700 { color: var(--muted-foreground) !important; }
 
   .text-gray-900,
   .text-slate-900,
   .text-gray-800,
-  .text-slate-800 { color: var(--foreground) !important; }
+  .text-slate-800,
+  .text-white     { color: var(--foreground) !important; }
 
-  /* dark: prefixes — on n'a pas de dark mode, on neutralise */
+  .text-gray-300,
+  .text-slate-300,
+  .text-gray-200,
+  .text-slate-200 { color: rgba(232,230,240,0.8) !important; }
+
+  /* dark: prefixes — on force le mode sombre */
   .dark\:bg-gray-800,
   .dark\:bg-gray-900,
   .dark\:bg-card { background-color: var(--card) !important; }
@@ -375,56 +374,147 @@
   .dark\:text-gray-300,
   .dark\:text-gray-400 { color: var(--muted-foreground) !important; }
 
-  /* Ombres — toutes supprimées */
-  .shadow,
-  .shadow-sm,
-  .shadow-md,
-  .shadow-lg,
-  .shadow-xl,
-  .shadow-2xl { box-shadow: none !important; }
+  .dark\:text-white { color: var(--foreground) !important; }
+  .dark\:border-gray-800 { border-color: var(--border) !important; }
 
-  /* Badges colorés → trait 1px discret */
+  /* Badges colorés → versions tintées sombres */
   .bg-purple-100,
-  .bg-blue-100,
-  .bg-cyan-100,
-  .bg-pink-100,
-  .bg-indigo-100,
-  .bg-teal-100,
-  .bg-emerald-100,
-  .bg-violet-50 {
-    background-color: var(--muted) !important;
-    color: var(--foreground) !important;
+  .bg-violet-50,
+  .bg-indigo-100 {
+    background-color: rgba(139, 127, 168, 0.15) !important;
+    color: #C4B8D8 !important;
   }
 
-  .text-purple-700,
-  .text-blue-700,
-  .text-cyan-700,
-  .text-pink-700,
-  .text-indigo-700,
-  .text-teal-700,
-  .text-emerald-700 { color: var(--bark-light, #7A5240) !important; }
+  .bg-blue-100,
+  .bg-cyan-100   {
+    background-color: rgba(100, 130, 200, 0.15) !important;
+    color: #A8B8E0 !important;
+  }
 
-  /* Indicateurs d'erreur destructive → rouille (pas rouge) */
-  .text-red-500,
-  .text-red-400 { color: var(--destructive) !important; }
+  .bg-green-100,
+  .bg-emerald-100,
+  .bg-teal-100   {
+    background-color: rgba(92, 122, 107, 0.15) !important;
+    color: #8BB8A4 !important;
+  }
 
-  .bg-red-500,
-  .bg-red-400 { background-color: var(--destructive) !important; }
+  .bg-pink-100,
+  .bg-rose-100   {
+    background-color: rgba(168, 100, 120, 0.15) !important;
+    color: #D4A8B8 !important;
+  }
 
-  /* Indicateurs amber/jaune → or mat */
-  .text-amber-600,
-  .text-yellow-500 { color: var(--accent) !important; }
-
+  .bg-yellow-50,
   .bg-amber-100,
-  .bg-yellow-100 { background-color: rgba(184, 144, 30, 0.1) !important; }
+  .bg-yellow-100 {
+    background-color: rgba(168, 140, 80, 0.15) !important;
+    color: #D4C488 !important;
+  }
+
+  .bg-orange-50  {
+    background-color: rgba(168, 120, 80, 0.15) !important;
+    color: #D4B488 !important;
+  }
+
+  .bg-red-100,
+  .bg-red-50     {
+    background-color: rgba(192, 96, 96, 0.15) !important;
+    color: #E0A0A0 !important;
+  }
+
+  /* Textes colorés → variantes claires adaptées au fond sombre */
+  .text-purple-700,
+  .text-violet-700,
+  .text-indigo-700 { color: #C4B8D8 !important; }
+
+  .text-blue-700,
+  .text-cyan-700   { color: #A8B8E0 !important; }
+
+  .text-green-700,
+  .text-emerald-700,
+  .text-teal-700   { color: #8BB8A4 !important; }
+
+  .text-pink-700,
+  .text-rose-700   { color: #D4A8B8 !important; }
+
+  .text-amber-600,
+  .text-yellow-500,
+  .text-yellow-700 { color: #D4C488 !important; }
+
+  .text-orange-700 { color: #D4B488 !important; }
+
+  .text-red-500,
+  .text-red-400,
+  .text-red-700    { color: #E0A0A0 !important; }
+
+  /* dark: variants de texte coloré */
+  .dark\:text-red-400    { color: #E0A0A0 !important; }
+  .dark\:text-blue-400   { color: #A8B8E0 !important; }
+  .dark\:text-green-400  { color: #8BB8A4 !important; }
+  .dark\:text-yellow-300 { color: #D4C488 !important; }
+  .dark\:text-purple-400 { color: #C4B8D8 !important; }
+  .dark\:text-indigo-300 { color: #C4B8D8 !important; }
+  .dark\:text-orange-300 { color: #D4B488 !important; }
+  .dark\:text-emerald-300 { color: #8BB8A4 !important; }
+
+  /* dark: bg colorés */
+  .dark\:bg-red-900\/30    { background-color: rgba(192, 96, 96, 0.15) !important; }
+  .dark\:bg-blue-900\/30   { background-color: rgba(100, 130, 200, 0.15) !important; }
+  .dark\:bg-green-900\/30  { background-color: rgba(92, 122, 107, 0.15) !important; }
+  .dark\:bg-yellow-900\/20 { background-color: rgba(168, 140, 80, 0.15) !important; }
+  .dark\:bg-purple-900\/20 { background-color: rgba(139, 127, 168, 0.15) !important; }
+  .dark\:bg-indigo-900\/20 { background-color: rgba(100, 110, 200, 0.15) !important; }
+  .dark\:bg-orange-900\/20 { background-color: rgba(168, 120, 80, 0.15) !important; }
+  .dark\:bg-emerald-900\/20 { background-color: rgba(92, 122, 107, 0.15) !important; }
+  .dark\:bg-gray-800 { background-color: var(--muted) !important; }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Animations — sobres, sans fanfare
+   Inputs & Forms — modern, cohérents
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+textarea,
+select {
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--foreground);
+  padding: 8px 12px;
+  width: 100%;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(139, 127, 168, 0.15);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
+/* Boutons — Inter, propre */
+button {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Animations
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
@@ -434,12 +524,12 @@
 }
 
 @keyframes slide-in-left {
-  from { opacity: 0; transform: translateX(-10px); }
+  from { opacity: 0; transform: translateX(-12px); }
   to   { opacity: 1; transform: translateX(0); }
 }
 
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.99); }
+  from { opacity: 0; transform: scale(0.97); }
   to   { opacity: 1; transform: scale(1); }
 }
 
@@ -453,75 +543,62 @@
   to   { height: 0; }
 }
 
-.animate-fade-up    { animation: fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade-up    { animation: fade-up 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-fade-in    { animation: fade-in 0.2s ease both; }
 .animate-slide-left { animation: slide-in-left 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.animate-scale-in   { animation: scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-scale-in   { animation: scale-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 /* Enfants décalés */
 .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-children > *:nth-child(2) { animation-delay: 50ms; }
-.stagger-children > *:nth-child(3) { animation-delay: 100ms; }
-.stagger-children > *:nth-child(4) { animation-delay: 150ms; }
-.stagger-children > *:nth-child(5) { animation-delay: 200ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 40ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 160ms; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Scrollbar — presque invisible, naturelle
+   Scrollbar — fine, presque invisible
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #C8B59A transparent;
+  scrollbar-color: rgba(152, 150, 176, 0.25) transparent;
 }
 
-*::-webkit-scrollbar        { width: 3px; height: 3px; }
+*::-webkit-scrollbar        { width: 4px; height: 4px; }
 *::-webkit-scrollbar-track  { background: transparent; }
-*::-webkit-scrollbar-thumb  { background: #C8B59A; }
-*::-webkit-scrollbar-thumb:hover { background: #A89070; }
+*::-webkit-scrollbar-thumb  { background: rgba(152, 150, 176, 0.25); border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(152, 150, 176, 0.45); }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Override Radix UI / shadcn — forcer les arrondis à 0
+   Radix UI / shadcn — surfaces sombres
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-[data-radix-popper-content-wrapper] > *,
-[role="dialog"],
+[data-radix-popper-content-wrapper] > * {
+  background: var(--popover) !important;
+  border-color: var(--border) !important;
+}
+
 [role="menu"],
 [role="listbox"],
-[data-radix-select-viewport],
-.radix-themes {
-  border-radius: 0 !important;
+[data-radix-select-viewport] {
+  background: var(--popover) !important;
 }
 
-/* Inputs — flat, trait de fond uniquement */
-input, textarea, select {
-  background: var(--input);
-  border: none;
-  border-bottom: 1px solid var(--border);
-  outline: none;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 0.8125rem;
-  font-weight: 300;
-  color: var(--foreground);
-  padding: 6px 0;
-  width: 100%;
+/* Tooltips */
+[data-radix-tooltip-content] {
+  background: var(--popover) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--foreground) !important;
+  font-size: 0.75rem;
+  border-radius: 6px;
 }
 
-input:focus, textarea:focus {
-  border-bottom-color: var(--accent);
+/* Animate-pulse pour les skeletons */
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-input::placeholder, textarea::placeholder {
-  color: var(--muted-foreground);
-  font-style: italic;
-  opacity: 0.7;
-}
-
-/* Boutons — géométrie nette */
-button {
-  font-family: 'IBM Plex Mono', monospace;
-  font-weight: 400;
-  font-size: 0.6875rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
 }

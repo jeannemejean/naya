@@ -38,7 +38,9 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
       style={{
         background: 'var(--card)',
         border: '1px solid var(--border)',
-        padding: '14px 16px',
+        borderRadius: 'calc(var(--radius) - 2px)',
+        padding: '12px 14px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
       }}
       onMouseEnter={e => {
         (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)';
@@ -73,7 +75,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
               height: 14,
               border: task.completed
                 ? 'none'
-                : '1px solid var(--sand, #C8B59A)',
+                : '1px solid var(--border)',
               background: task.completed ? 'var(--accent)' : 'transparent',
               cursor: 'pointer',
               display: 'flex',
