@@ -162,6 +162,28 @@
     @apply border-border;
   }
 
+  /* Cursor pointer sur tous les éléments interactifs */
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"],
+  label[for],
+  select,
+  summary {
+    cursor: pointer;
+  }
+
+  /* Respect du paramètre système de réduction des animations */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   /* Transition smooth pour le changement de thème */
   html {
     transition: background-color 250ms cubic-bezier(0.4, 0, 0.2, 1),

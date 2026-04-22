@@ -8,8 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Loader2, Plus, List, LayoutGrid, Clock, CheckCircle2, Circle, X, RotateCcw } from "lucide-react";
+import {
+  Loader2, Plus, List, LayoutGrid, Clock, CheckCircle2, Circle, X, RotateCcw,
+  Target, Sparkles, ClipboardList, MessageCircle, Package, Zap,
+  Sunrise, Sun, Moon, Lock, Flag, AlertCircle, Check,
+} from "lucide-react";
 import { useProject } from "@/lib/project-context";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
 import { useTranslation } from "react-i18next";
 import TaskWorkspace from "@/components/task-workspace";
@@ -39,45 +44,56 @@ interface Task {
   activationPrompt?: string;
 }
 
-const ENERGY_BADGES: Record<string, { emoji: string; label: string; cls: string }> = {
-  deep_work:  { emoji: '🎯', label: 'Focus',     cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  creative:   { emoji: '✨', label: 'Creative',  cls: 'bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' },
-  admin:      { emoji: '📋', label: 'Admin',     cls: 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400' },
-  social:     { emoji: '💬', label: 'Social',    cls: 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400' },
-  logistics:  { emoji: '📦', label: 'Logistics', cls: 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
-  execution:  { emoji: '⚡', label: 'Execute',   cls: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500' },
+const ENERGY_BADGES: Record<string, { icon: React.ElementType; label: string; cls: string }> = {
+  deep_work:  { icon: Target,        label: 'Focus',      cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  creative:   { icon: Sparkles,      label: 'Créatif',    cls: 'bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' },
+  admin:      { icon: ClipboardList, label: 'Admin',      cls: 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400' },
+  social:     { icon: MessageCircle, label: 'Social',     cls: 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400' },
+  logistics:  { icon: Package,       label: 'Logistique', cls: 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
+  execution:  { icon: Zap,           label: 'Action',     cls: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500' },
 };
 
-const TIME_OF_DAY_HINTS: Record<string, { emoji: string; label: string }> = {
-  morning:   { emoji: '🌅', label: 'Morning' },
-  afternoon: { emoji: '☀️', label: 'Afternoon' },
-  evening:   { emoji: '🌙', label: 'Evening' },
+const TIME_OF_DAY_HINTS: Record<string, { icon: React.ElementType; label: string }> = {
+  morning:   { icon: Sunrise, label: 'Matin' },
+  afternoon: { icon: Sun,     label: 'Après-midi' },
+  evening:   { icon: Moon,    label: 'Soir' },
 };
 
-// Card colors cycling by project id
-const TASK_CARD_PALETTES = [
-  { bg: '#EDE9FE', text: '#5B21B6', border: '#DDD6FE' }, // lavender
-  { bg: '#FFF9C4', text: '#92400E', border: '#FDE68A' }, // yellow
-  { bg: '#DCFCE7', text: '#14532D', border: '#BBF7D0' }, // green
-  { bg: '#DBEAFE', text: '#1E3A5F', border: '#BFDBFE' }, // blue
-  { bg: '#FFE4E6', text: '#9F1239', border: '#FECDD3' }, // pink
-  { bg: '#FEF3C7', text: '#78350F', border: '#FDE68A' }, // orange
-  { bg: '#CFFAFE', text: '#164E63', border: '#A5F3FC' }, // cyan
+// Card colors — deux palettes (light / dark) pour un résultat propre dans chaque thème
+const TASK_CARD_PALETTES_LIGHT = [
+  { bg: '#F5F2FF', text: '#4C3680', border: '#DDD6FE' }, // lavender
+  { bg: '#FFFBEB', text: '#78350F', border: '#FDE68A' }, // amber
+  { bg: '#F0FDF4', text: '#14532D', border: '#BBF7D0' }, // green
+  { bg: '#EFF6FF', text: '#1E3A5F', border: '#BFDBFE' }, // blue
+  { bg: '#FFF1F2', text: '#9F1239', border: '#FECDD3' }, // pink
+  { bg: '#FFFBEB', text: '#78350F', border: '#FDE68A' }, // orange
+  { bg: '#ECFEFF', text: '#164E63', border: '#A5F3FC' }, // cyan
 ];
 
-function getTaskCardPalette(task: Task, projects: Project[]) {
+const TASK_CARD_PALETTES_DARK = [
+  { bg: 'rgba(139, 127, 168, 0.14)', text: '#C4B8D8', border: 'rgba(139, 127, 168, 0.28)' }, // purple
+  { bg: 'rgba(168, 140, 80, 0.14)',  text: '#D4C488', border: 'rgba(168, 140, 80, 0.28)'  }, // amber
+  { bg: 'rgba(92, 122, 107, 0.14)',  text: '#8BB8A4', border: 'rgba(92, 122, 107, 0.28)'  }, // teal
+  { bg: 'rgba(100, 110, 200, 0.14)', text: '#A8B0E0', border: 'rgba(100, 110, 200, 0.28)' }, // indigo
+  { bg: 'rgba(168, 100, 120, 0.14)', text: '#D4A8B8', border: 'rgba(168, 100, 120, 0.28)' }, // rose
+  { bg: 'rgba(168, 140, 80, 0.14)',  text: '#D4C488', border: 'rgba(168, 140, 80, 0.28)'  }, // amber
+  { bg: 'rgba(92, 170, 180, 0.14)',  text: '#8BD0D8', border: 'rgba(92, 170, 180, 0.28)'  }, // cyan
+];
+
+function getTaskCardPalette(task: Task, projects: Project[], isDark: boolean) {
   if (task.completed) return null; // completed tasks get muted style
+  const palettes = isDark ? TASK_CARD_PALETTES_DARK : TASK_CARD_PALETTES_LIGHT;
   const projectId = task.projectId;
   if (projectId) {
-    const idx = projectId % TASK_CARD_PALETTES.length;
-    return TASK_CARD_PALETTES[idx];
+    const idx = projectId % palettes.length;
+    return palettes[idx];
   }
   // fallback by energy type
   const energyMap: Record<string, number> = {
     deep_work: 3, creative: 0, admin: 3, social: 2, logistics: 5, execution: 1,
   };
   const eIdx = task.taskEnergyType ? (energyMap[task.taskEnergyType] ?? 0) : 0;
-  return TASK_CARD_PALETTES[eIdx];
+  return palettes[eIdx];
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -88,12 +104,13 @@ const CATEGORY_COLORS: Record<string, string> = {
   planning: 'bg-purple-100 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400',
 };
 
-const TYPE_ICONS: Record<string, string> = {
-  content: '📝',
-  outreach: '📧',
-  admin: '⚙️',
-  planning: '🗺️',
-};
+// Icône par type de tâche (vue planner) — retourne un composant JSX
+function TypeIcon({ type, className = "h-3 w-3" }: { type: string; className?: string }) {
+  if (type === 'content') return <ClipboardList className={className} />;
+  if (type === 'outreach') return <MessageCircle className={className} />;
+  if (type === 'admin') return <Zap className={className} />;
+  return <ClipboardList className={className} />;
+}
 
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 7);
 
@@ -121,7 +138,7 @@ function PlannerTaskPopover({ task, projects, onToggle, isToggling }: {
     <PopoverContent className="w-72 p-4" side="right" align="start">
       <div className="space-y-3">
         <div className="flex items-start gap-2">
-          <span className="text-base mt-0.5">{TYPE_ICONS[task.type] || '📋'}</span>
+          <TypeIcon type={task.type} className="h-4 w-4 mt-0.5 flex-shrink-0 text-muted-foreground" />
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm text-slate-900 dark:text-white leading-tight">{task.title}</p>
             {task.description && (
@@ -183,6 +200,8 @@ export default function TodaysTasks() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { activeProjectId } = useProject();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'planner'>('list');
   const [openPopover, setOpenPopover] = useState<number | null>(null);
@@ -572,8 +591,9 @@ export default function TodaysTasks() {
                 />
                 <div className="flex-1 min-w-0">
                   <h3 className="font-medium text-sm text-muted-foreground line-through">{task.title}</h3>
-                  <span className="text-[11px] text-muted-foreground">
-                    ✓ {task.completedAt ? new Date(task.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t('todaysTasks.done')}
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-0.5">
+                    <Check className="h-3 w-3" />
+                    {task.completedAt ? new Date(task.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t('todaysTasks.done')}
                   </span>
                 </div>
               </div>
@@ -623,7 +643,7 @@ export default function TodaysTasks() {
                       const energyBadge = task.taskEnergyType ? ENERGY_BADGES[task.taskEnergyType] : null;
                       const todHint = task.recommendedTimeOfDay && task.recommendedTimeOfDay !== 'flexible'
                         ? TIME_OF_DAY_HINTS[task.recommendedTimeOfDay] : null;
-                      const palette = (isBlocked || isMilestoneBlocked) ? null : getTaskCardPalette(task, projects);
+                      const palette = (isBlocked || isMilestoneBlocked) ? null : getTaskCardPalette(task, projects, isDark);
                       return (
                         <div
                           key={task.id}
@@ -649,8 +669,8 @@ export default function TodaysTasks() {
                           <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setWorkspaceTask(task)}>
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                {isMilestoneBlocked && <span className="text-sm flex-shrink-0" title="Bloqué par un jalon">🗺</span>}
-                                {isBlocked && !isMilestoneBlocked && <span className="text-sm flex-shrink-0">🔒</span>}
+                                {isMilestoneBlocked && <Flag className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/60" aria-label="Bloqué par un jalon" />}
+                                {isBlocked && !isMilestoneBlocked && <Lock className="h-3 w-3 flex-shrink-0 text-amber-500" />}
                                 <h3
                                   className="font-semibold text-sm leading-snug"
                                   style={palette ? { color: palette.text } : undefined}
@@ -660,7 +680,7 @@ export default function TodaysTasks() {
                               </div>
                               <div className="flex items-center gap-1 flex-shrink-0">
                                 {task.priority && task.priority <= 2 && (
-                                  <span className="text-xs">🔴</span>
+                                  <AlertCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
                                 )}
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setFeedbackTask(task); }}
@@ -673,13 +693,15 @@ export default function TodaysTasks() {
                               </div>
                             </div>
                             {isMilestoneBlocked && (
-                              <p className="text-xs text-muted-foreground/70 mt-0.5">
-                                🗺 Bloquée — jalon non encore débloqué
+                              <p className="text-xs text-muted-foreground/70 mt-0.5 flex items-center gap-1">
+                                <Flag className="h-3 w-3 flex-shrink-0" />
+                                Bloquée — jalon non encore débloqué
                               </p>
                             )}
                             {isBlocked && !isMilestoneBlocked && blockerTask && (
-                              <p className="text-xs text-amber-600 mt-0.5">
-                                🔒 {t('todaysTasks.blockedBy', { title: blockerTask.title })}
+                              <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
+                                <Lock className="h-3 w-3 flex-shrink-0" />
+                                {t('todaysTasks.blockedBy', { title: blockerTask.title })}
                               </p>
                             )}
                             {!isBlocked && followsTask && (
@@ -696,19 +718,27 @@ export default function TodaysTasks() {
                               </p>
                             )}
                             <div className="flex items-center gap-2 mt-2 flex-wrap">
-                              {energyBadge && (
-                                <span
-                                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                                  style={palette ? { backgroundColor: `${palette.border}`, color: palette.text } : undefined}
-                                >
-                                  {energyBadge.emoji} {energyBadge.label}
-                                </span>
-                              )}
-                              {todHint && (
-                                <span className="text-[10px] opacity-60" style={palette ? { color: palette.text } : undefined}>
-                                  {todHint.emoji} {todHint.label}
-                                </span>
-                              )}
+                              {energyBadge && (() => {
+                                const EnergyIcon = energyBadge.icon;
+                                return (
+                                  <span
+                                    className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5"
+                                    style={palette ? { backgroundColor: `${palette.border}`, color: palette.text } : undefined}
+                                  >
+                                    <EnergyIcon className="h-2.5 w-2.5" />
+                                    {energyBadge.label}
+                                  </span>
+                                );
+                              })()}
+                              {todHint && (() => {
+                                const TodIcon = todHint.icon;
+                                return (
+                                  <span className="text-[10px] opacity-60 flex items-center gap-0.5" style={palette ? { color: palette.text } : undefined}>
+                                    <TodIcon className="h-2.5 w-2.5" />
+                                    {todHint.label}
+                                  </span>
+                                );
+                              })()}
                               {task.estimatedDuration && (
                                 <span
                                   className="text-[10px] flex items-center gap-0.5 opacity-60"
@@ -779,7 +809,7 @@ export default function TodaysTasks() {
                         >
                           <div className="p-2">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs">{TYPE_ICONS[task.type] || '📋'}</span>
+                              <TypeIcon type={task.type} className="h-3 w-3 opacity-70 flex-shrink-0" />
                               <p className="text-xs text-slate-900 dark:text-white truncate">{task.title}</p>
                             </div>
                             {task.estimatedDuration && height > 50 && (
@@ -824,7 +854,7 @@ export default function TodaysTasks() {
                           >
                             <p className="text-xs text-slate-900 dark:text-white line-clamp-2">{task.title}</p>
                             <div className="flex items-center gap-1 mt-1">
-                              <span className="text-xs">{TYPE_ICONS[task.type] || '📋'}</span>
+                              <TypeIcon type={task.type} className="h-3 w-3 opacity-60 flex-shrink-0" />
                               {task.estimatedDuration && (
                                 <span className="text-[10px] text-slate-400 dark:text-gray-500">~{task.estimatedDuration}m</span>
                               )}
@@ -894,7 +924,7 @@ export default function TodaysTasks() {
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {(replanPreview.suggestedTasks || []).map((t: any, i: number) => (
                   <div key={i} className="flex items-start gap-2 p-2.5 border border-slate-100 dark:border-gray-700 rounded-lg">
-                    <span className="text-sm flex-shrink-0">{TYPE_ICONS[t.type] || '📋'}</span>
+                    <TypeIcon type={t.type} className="h-4 w-4 flex-shrink-0 text-muted-foreground mt-0.5" />
                     <div className="min-w-0">
                       <p className="text-sm text-slate-900 dark:text-white">{t.title}</p>
                       {t.category && (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -28,6 +28,7 @@ import {
   Brain, User, Users, Plus, CheckCircle2, X,
   Sparkles, Activity, AlertTriangle,
   Loader2, Dna, ExternalLink, Copy, Save, ChevronRight,
+  Wrench, Rocket, TrendingUp, Lightbulb, Target, Settings2,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import type { Project, ProjectGoal, PersonaAnalysisResult, TargetPersona, QuickCaptureEntry, MilestoneTrigger, UserOperatingProfile } from "@shared/schema";
@@ -50,11 +51,11 @@ const SUCCESS_MODE_COLORS: Record<string, string> = {
   wellbeing: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400",
 };
 
-const PERSONA_ICONS: Record<string, string> = {
-  Strategist: "🧭",
-  Builder: "⚡",
-  "Creative Marketer": "🎨",
-  "Analytical Thinker": "📊",
+const PERSONA_ICONS: Record<string, React.ElementType> = {
+  Strategist: Target,
+  Builder: Zap,
+  "Creative Marketer": Sparkles,
+  "Analytical Thinker": TrendingUp,
 };
 
 function useSelfCareOptions() {
@@ -68,10 +69,10 @@ function useSelfCareOptions() {
 }
 
 const ENERGY_LEVELS = [
-  { value: 'high',     label: 'High',     symbol: '⚡', color: '', activeRing: '' },
-  { value: 'medium',   label: 'Medium',   symbol: '○',  color: '', activeRing: '' },
-  { value: 'low',      label: 'Low',      symbol: '↓',  color: '', activeRing: '' },
-  { value: 'depleted', label: 'Depleted', symbol: '✕',  color: '', activeRing: '' },
+  { value: 'high',     label: 'High',     symbol: '●●●', color: '', activeRing: '' },
+  { value: 'medium',   label: 'Medium',   symbol: '●●○', color: '', activeRing: '' },
+  { value: 'low',      label: 'Low',      symbol: '●○○', color: '', activeRing: '' },
+  { value: 'depleted', label: 'Depleted', symbol: '○○○', color: '', activeRing: '' },
 ] as const;
 
 function ActiveProjectBand({ projectId, compact = false }: { projectId: number; compact?: boolean }) {
@@ -209,15 +210,15 @@ function AIRecommendations({ projectId }: { projectId: number | null }) {
   const query = projectId ? singleProjectQuery : allProjectsRecs;
   const recs = query.data?.recommendations || [];
 
-  const TYPE_ICONS: Record<string, string> = {
-    deadline: "⏰",
-    action: "⚡",
-    setup: "🔧",
-    momentum: "🚀",
-    behavioral: "🧠",
-    blocker: "🚧",
-    energy: "⚡",
-    optimization: "📈"
+  const REC_TYPE_ICON: Record<string, React.ElementType> = {
+    deadline:     Clock,
+    action:       Zap,
+    setup:        Wrench,
+    momentum:     Rocket,
+    behavioral:   Brain,
+    blocker:      AlertTriangle,
+    energy:       Zap,
+    optimization: TrendingUp,
   };
 
   return (
@@ -246,9 +247,9 @@ function AIRecommendations({ projectId }: { projectId: number | null }) {
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
-                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-gray-800 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-slate-50 dark:hover:bg-gray-800 transition-colors text-left cursor-pointer"
                       >
-                        <span className="text-xs flex-shrink-0">{TYPE_ICONS[rec.type] || "💡"}</span>
+                        {(() => { const RecIcon = REC_TYPE_ICON[rec.type] || Lightbulb; return <RecIcon className="h-3.5 w-3.5 flex-shrink-0 text-primary" />; })()}
                         <span className="text-xs text-slate-900 dark:text-white truncate flex-1">{rec.title}</span>
                         {rec.projectName && !projectId && (
                           <span className="text-[10px] text-primary flex-shrink-0">{rec.projectName}</span>
@@ -265,14 +266,14 @@ function AIRecommendations({ projectId }: { projectId: number | null }) {
                       <p>{rec.description}</p>
                       {rec.insight && (
                         <p className="text-slate-500 dark:text-gray-500 italic text-[11px] flex items-start gap-1">
-                          <span className="flex-shrink-0">💡</span>
+                          <Lightbulb className="h-3 w-3 flex-shrink-0 mt-0.5" />
                           <span>{rec.insight}</span>
                         </p>
                       )}
                       {rec.basedOn && (
                         <p className="text-slate-400 dark:text-gray-600 text-[10px] flex items-start gap-1">
-                          <span className="flex-shrink-0">📊</span>
-                          <span>Based on: {rec.basedOn}</span>
+                          <TrendingUp className="h-3 w-3 flex-shrink-0 mt-0.5" />
+                          <span>Basé sur : {rec.basedOn}</span>
                         </p>
                       )}
                       {rec.action && (
@@ -654,8 +655,9 @@ function PersonaCard() {
                 <User className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
                 <span className="text-xs text-purple-700 dark:text-purple-300">Your Archetype</span>
               </div>
-              <p className="text-sm text-slate-900 dark:text-white">
-                {PERSONA_ICONS[personaName] || "🧠"} {personaName}
+              <p className="text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                {(() => { const PIcon = PERSONA_ICONS[personaName] || Brain; return <PIcon className="h-4 w-4 text-purple-500 flex-shrink-0" />; })()}
+                {personaName}
               </p>
               {outputStyle && (
                 <p className="text-xs text-slate-500 dark:text-gray-400 mt-1 line-clamp-2">{outputStyle}</p>
@@ -910,10 +912,6 @@ function BentoTileNextAction() {
   const total = safeTasks.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const ENERGY_EMOJI: Record<string, string> = {
-    deep_work: '🎯', creative: '✨', admin: '📋', social: '💬', logistics: '📦', execution: '⚡',
-  };
-
   // Timer
   useEffect(() => {
     if (started) {
@@ -1084,7 +1082,7 @@ function BentoTileNextAction() {
                     cursor: 'pointer',
                   }}
                 >
-                  ⏸
+                  Pause
                 </button>
                 <button
                   onClick={() => completeMutation.mutate(next.id)}
@@ -1564,8 +1562,9 @@ function BentoTileMyState() {
           <span className="text-label text-muted-foreground">Mon état</span>
         </div>
         {personaName && (
-          <span className="text-xs font-medium text-muted-foreground">
-            {PERSONA_ICONS[personaName] || "🧠"} {personaName}
+          <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+            {(() => { const PIcon = PERSONA_ICONS[personaName] || Brain; return <PIcon className="h-3.5 w-3.5" />; })()}
+            {personaName}
           </span>
         )}
       </div>
