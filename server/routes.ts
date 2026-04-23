@@ -40,6 +40,12 @@ function stripMarkdownJSON(raw: string | null | undefined): string {
 }
 import { companyResearchService } from "./services/company-research";
 import { socialMediaService } from "./services/social-integrations";
+import {
+  getInstagramAuthUrl, exchangeInstagramCode,
+  getLinkedInAuthUrl,  exchangeLinkedInCode,
+  getTwitterAuthUrl,   exchangeTwitterCode,
+  isPlatformConfigured,
+} from "./services/social-oauth";
 import { leadScrapingService } from "./services/lead-scraping";
 import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
@@ -463,6 +469,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/calendar/disconnect', isAuthenticated, async (req: any, res) => {
     try {
       await storage.deleteGoogleCalendarToken(req.userId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Social OAuth ────────────────────────────────────────────────────────────
+
+  // GET /api/social/oauth/:platform/url — génère l'URL de consentement
+  app.get('/api/social/oauth/:platform/url', isAuthenticated, async (req: any, res) => {
+    const { platform } = req.params;
+    const validPlatforms = ['instagram', 'linkedin', 'twitter'];
+    if (!validPlatforms.includes(platform)) {
+      return res.status(400).json({ message: `Plateforme non supportée: ${platform}` });
+    }
+    if (!isPlatformConfigured(platform as any)) {
+      return res.status(503).json({
+        message: `${platform} n'est pas encore configuré sur ce serveur. Ajoute les variables d'environnement.`,
+        notConfigured: true,
+      });
+    }
+    try {
+      const state = `${req.userId}:${Date.now()}`;
+      (req.session as any).socialOAuthState = state;
+      (req.session as any).socialOAuthUserId = req.userId;
+
+      let url: string;
+      if (platform === 'instagram') {
+        url = getInstagramAuthUrl(state);
+      } else if (platform === 'linkedin') {
+        url = getLinkedInAuthUrl(state);
+      } else {
+        // twitter — génère un code_verifier simple
+        const codeVerifier = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+        (req.session as any).twitterCodeVerifier = codeVerifier;
+        url = getTwitterAuthUrl(state, codeVerifier);
+      }
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/social/oauth/:platform/callback — reçoit le code, échange le token
+  app.get('/api/social/oauth/:platform/callback', async (req: any, res) => {
+    const { platform } = req.params;
+    const { code, state, error } = req.query as Record<string, string>;
+
+    if (error) {
+      console.error(`[Social OAuth] ${platform} error:`, error);
+      return res.redirect(`/settings?social=${platform}&status=error&reason=${encodeURIComponent(error)}`);
+    }
+
+    const userId = (req.session as any)?.socialOAuthUserId || (req.session as any)?.userId;
+    const savedState = (req.session as any)?.socialOAuthState;
+
+    if (!code || !userId) {
+      return res.redirect(`/settings?social=${platform}&status=error&reason=missing_code`);
+    }
+    // Vérification state basique (préfixe userId)
+    if (savedState && !state.startsWith(userId.split(':')[0])) {
+      return res.redirect(`/settings?social=${platform}&status=error&reason=invalid_state`);
+    }
+
+    try {
+      if (platform === 'instagram') {
+        await exchangeInstagramCode(userId, code);
+      } else if (platform === 'linkedin') {
+        await exchangeLinkedInCode(userId, code);
+      } else if (platform === 'twitter') {
+        const codeVerifier = (req.session as any)?.twitterCodeVerifier || '';
+        await exchangeTwitterCode(userId, code, codeVerifier);
+        delete (req.session as any).twitterCodeVerifier;
+      }
+      delete (req.session as any).socialOAuthState;
+      delete (req.session as any).socialOAuthUserId;
+      res.redirect(`/settings?social=${platform}&status=connected`);
+    } catch (err: any) {
+      console.error(`[Social OAuth] ${platform} callback error:`, err.message);
+      res.redirect(`/settings?social=${platform}&status=error&reason=${encodeURIComponent(err.message)}`);
+    }
+  });
+
+  // GET /api/social/status — état de connexion de tous les réseaux
+  app.get('/api/social/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const accounts = await storage.getSocialAccounts(userId);
+      const status: Record<string, { connected: boolean; accountName?: string; expiresAt?: Date; configured: boolean }> = {};
+
+      for (const platform of ['instagram', 'linkedin', 'twitter'] as const) {
+        const account = accounts.find(a => a.platform === platform && a.isActive);
+        status[platform] = {
+          configured: isPlatformConfigured(platform),
+          connected: !!account,
+          accountName: account?.accountName,
+          expiresAt: account?.expiresAt || undefined,
+        };
+      }
+      res.json(status);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // DELETE /api/social/disconnect/:platform — déconnecte un réseau
+  app.delete('/api/social/disconnect/:platform', isAuthenticated, async (req: any, res) => {
+    try {
+      const { platform } = req.params;
+      const userId = req.userId;
+      const account = await storage.getSocialAccountByPlatform(userId, platform);
+      if (!account) return res.status(404).json({ message: 'Compte non trouvé' });
+      await storage.deleteSocialAccount(account.id, userId);
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

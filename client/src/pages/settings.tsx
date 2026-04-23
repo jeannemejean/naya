@@ -17,7 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sun, Moon, LogOut, RefreshCw, AlertTriangle, User, Zap, Brain, Clock, Calendar, Sparkles, Loader2 } from "lucide-react";
+import { Sun, Moon, LogOut, RefreshCw, AlertTriangle, User, Zap, Brain, Clock, Calendar, Sparkles, Loader2, CheckCircle2, Link2Off, ExternalLink } from "lucide-react";
+import { useLocation } from "wouter";
 import type { UserOperatingProfile, UserPreferences, BrandDna } from "@shared/schema";
 
 // ─── Chip Keyword Input ──────────────────────────────────────────────────────
@@ -423,6 +424,188 @@ function GoogleCalendarCard() {
             Connecter Google Calendar
           </Button>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Social Connections Card ─────────────────────────────────────────────────
+
+const SOCIAL_PLATFORMS = [
+  {
+    id: 'instagram' as const,
+    name: 'Instagram',
+    description: 'Publie des posts et Reels directement depuis Naya.',
+    gradient: 'from-purple-500 via-pink-500 to-orange-400',
+    Icon: () => (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'linkedin' as const,
+    name: 'LinkedIn',
+    description: 'Partage tes posts et articles professionnels.',
+    gradient: 'from-blue-600 to-blue-700',
+    Icon: () => (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+      </svg>
+    ),
+  },
+  {
+    id: 'twitter' as const,
+    name: 'X / Twitter',
+    description: 'Publie des tweets et threads directement.',
+    gradient: 'from-slate-800 to-slate-900',
+    Icon: () => (
+      <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+      </svg>
+    ),
+  },
+];
+
+function SocialConnectionsCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [location] = useLocation();
+
+  const { data: status = {} } = useQuery<Record<string, {
+    connected: boolean;
+    accountName?: string;
+    expiresAt?: string;
+    configured: boolean;
+  }>>({
+    queryKey: ['/api/social/status'],
+    retry: false,
+  });
+
+  // Notifications after OAuth callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const social = params.get('social');
+    const st = params.get('status');
+    const reason = params.get('reason');
+    if (social && st) {
+      if (st === 'connected') {
+        toast({ title: `${social.charAt(0).toUpperCase() + social.slice(1)} connecté`, description: 'Naya peut maintenant publier sur ce réseau.' });
+        queryClient.invalidateQueries({ queryKey: ['/api/social/status'] });
+      } else if (st === 'error') {
+        toast({ title: 'Connexion échouée', description: reason || 'Réessaie.', variant: 'destructive' });
+      }
+      // Nettoyer les query params sans recharger
+      const url = new URL(window.location.href);
+      url.searchParams.delete('social');
+      url.searchParams.delete('status');
+      url.searchParams.delete('reason');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, []);
+
+  const connectMutation = useMutation({
+    mutationFn: async (platform: string) => {
+      const res = await fetch(`/api/social/oauth/${platform}/url`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Erreur');
+      if (data.notConfigured) throw new Error(data.message);
+      window.location.href = data.url;
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Connexion impossible', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async (platform: string) => {
+      const res = await fetch(`/api/social/disconnect/${platform}`, { method: 'DELETE', credentials: 'include' });
+      if (!res.ok) throw new Error('Déconnexion échouée');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/social/status'] });
+      toast({ title: 'Réseau déconnecté' });
+    },
+    onError: () => toast({ title: 'Erreur', description: 'Déconnexion échouée.', variant: 'destructive' }),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Link2Off className="h-4 w-4 text-primary" />
+          Réseaux sociaux
+        </CardTitle>
+        <CardDescription>
+          Connecte tes comptes pour que Naya puisse analyser tes performances et publier du contenu automatiquement.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {SOCIAL_PLATFORMS.map(({ id, name, description, gradient, Icon }) => {
+          const info = status[id];
+          const isConnected = !!info?.connected;
+          const isConfigured = info?.configured !== false;
+          const isPending = connectMutation.isPending || disconnectMutation.isPending;
+
+          return (
+            <div
+              key={id}
+              className="flex items-center gap-3 p-3 rounded-xl border border-border bg-card"
+            >
+              {/* Logo */}
+              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-white flex-shrink-0`}>
+                <Icon />
+              </div>
+
+              {/* Infos */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">{name}</p>
+                {isConnected ? (
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 mt-0.5">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {info?.accountName || 'Connecté'}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                )}
+                {!isConfigured && (
+                  <p className="text-xs text-amber-500 mt-0.5">Variables d'env manquantes</p>
+                )}
+              </div>
+
+              {/* Action */}
+              {isConnected ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800 flex-shrink-0"
+                  onClick={() => disconnectMutation.mutate(id)}
+                  disabled={isPending}
+                >
+                  {disconnectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Déconnecter'}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  className="flex-shrink-0 gap-1.5"
+                  onClick={() => connectMutation.mutate(id)}
+                  disabled={isPending}
+                >
+                  {connectMutation.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <ExternalLink className="h-3 w-3" />
+                  )}
+                  Connecter
+                </Button>
+              )}
+            </div>
+          );
+        })}
+
+        <p className="text-xs text-muted-foreground pt-1">
+          Naya utilise OAuth officiel — tes identifiants ne sont jamais stockés en clair.
+        </p>
       </CardContent>
     </Card>
   );
@@ -1289,6 +1472,9 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 
             {/* Google Calendar */}
             <GoogleCalendarCard />
+
+            {/* Réseaux sociaux */}
+            <SocialConnectionsCard />
 
             {/* Data & Reset */}
             <Card className="dark:bg-gray-900 dark:border-gray-700">

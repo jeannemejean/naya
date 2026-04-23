@@ -440,12 +440,22 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
     setShowCreateDialog(true);
   };
 
-  const handleConnectAccount = (platform: string) => {
-    const demoAccessToken = `demo_token_${Date.now()}`;
-    const demoAccountId = `demo_id_${Date.now()}`;
-    const demoAccountName = `Demo ${platform.charAt(0).toUpperCase() + platform.slice(1)} Account`;
-    connectAccountMutation.mutate({ platform, accessToken: demoAccessToken, accountId: demoAccountId, accountName: demoAccountName });
-    toast({ title: t('contentCalendar.demoAccountConnected', { platform: platform.charAt(0).toUpperCase() + platform.slice(1) }), description: t('contentCalendar.demoConnectionDescription') });
+  const handleConnectAccount = async (platform: string) => {
+    try {
+      const res = await fetch(`/api/social/oauth/${platform}/url`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok || data.notConfigured) {
+        toast({
+          title: `${platform.charAt(0).toUpperCase() + platform.slice(1)} non configuré`,
+          description: 'Va dans Paramètres → Réseaux sociaux pour connecter ton compte.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      toast({ title: 'Erreur', description: 'Impossible de lancer la connexion.', variant: 'destructive' });
+    }
   };
 
   const handleGenerateContent = () => {
