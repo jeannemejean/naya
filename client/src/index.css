@@ -3,166 +3,118 @@
 @tailwind utilities;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   NAYA — Dark Modern SaaS Design System
-   Palette : Bleu nuit · Gris bleuté · Mauve poussiéreux · Vert sauge
-   Typo : Inter (body) · IBM Plex Mono (labels) · Cormorant (display)
+   NAYA — Design System v2
+   Palette : Crème #F7F4EC · Dark Olive #2B2D1C
+   Accents Sanzo Wada 321 : Sulphur Yellow · Salvia Blue · Dusty Mauve
+   Typo : Anantason Ultra Expanded (display) · Helvetica Neue / Inter (body)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-/* ── LIGHT MODE (défaut) ── */
-:root {
-  /* ── Fond : blanc cassé lavandé ── */
-  --background:    #F8F7FF;
-  --foreground:    #1A1523;
+/* ── Anantason Ultra Expanded — à activer quand les fichiers woff2 sont disponibles ──
+   Acheter la licence webfont sur : https://www.myfonts.com/collections/anantason-reno-font-jipatype
+   Placer les fichiers dans : /client/public/fonts/
+   Puis décommenter :
 
-  /* ── Surfaces ── */
-  --card:           #FFFFFF;
-  --card-foreground: #1A1523;
-  --popover:        #FFFFFF;
-  --popover-foreground: #1A1523;
-
-  /* ── Muted ── */
-  --muted:          #F0EEF8;
-  --muted-foreground: #6B6480;
-
-  /* ── Borders & inputs ── */
-  --border: #E5E4F0;
-  --input:  #F0EEF8;
-
-  /* ── Primary : mauve poussiéreux ── */
-  --primary:          #7A6D9A;
-  --primary-foreground: #FFFFFF;
-
-  /* ── Secondary ── */
-  --secondary:          #EDE9F8;
-  --secondary-foreground: #1A1523;
-
-  /* ── Accent : vert sauge ── */
-  --accent:           #4E6B5D;
-  --accent-foreground: #FFFFFF;
-
-  /* ── Destructive ── */
-  --destructive:          #C05050;
-  --destructive-foreground: #FFFFFF;
-
-  /* ── Ring (focus) ── */
-  --ring: rgba(122, 109, 154, 0.4);
-
-  /* ── Border radius — moderne, arrondi naturel ── */
-  --radius: 0.625rem;   /* 10px */
-
-  /* ── Charts ── */
-  --chart-1: #7A6D9A;   /* mauve */
-  --chart-2: #4E6B5D;   /* sauge */
-  --chart-3: #5A7898;   /* bleu ardoise */
-  --chart-4: #9A7868;   /* terracotta doux */
-  --chart-5: #6A7898;   /* gris bleuté */
-
-  /* ── Sidebar : fond légèrement plus profond ── */
-  --sidebar-background:        #EFECFA;
-  --sidebar-foreground:        #6B6480;
-  --sidebar-primary:           #7A6D9A;
-  --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent:            #E5E2F5;
-  --sidebar-accent-foreground: #1A1523;
-  --sidebar-border:            rgba(122, 109, 154, 0.15);
-  --sidebar-ring:              #7A6D9A;
-
-  /* ── Tâches — tons légèrement tintés sur fond clair ── */
-  --task-purple:      rgba(122, 109, 154, 0.12);
-  --task-purple-text: #5A4D7A;
-  --task-teal:        rgba(78, 107, 93, 0.12);
-  --task-teal-text:   #2E5040;
-  --task-rose:        rgba(168, 80, 100, 0.12);
-  --task-rose-text:   #8A3048;
-  --task-amber:       rgba(148, 120, 50, 0.12);
-  --task-amber-text:  #7A5A10;
-  --task-indigo:      rgba(80, 90, 180, 0.12);
-  --task-indigo-text: #3040A0;
-  --task-slate:       rgba(80, 90, 130, 0.12);
-  --task-slate-text:  #404870;
-  --task-mauve:       rgba(100, 80, 130, 0.12);
-  --task-mauve-text:  #503870;
+@font-face {
+  font-family: 'Anantason Ultra Expanded';
+  src: url('/fonts/AnantasonReno-UltraExpanded.woff2') format('woff2'),
+       url('/fonts/AnantasonReno-UltraExpanded.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
-/* ── DARK MODE ── */
-.dark {
-  /* ── Fond : bleu nuit ardoise ── */
-  --background:    #1E2030;
-  --foreground:    #E8E6F0;
+@font-face {
+  font-family: 'Anantason Ultra Expanded';
+  src: url('/fonts/AnantasonReno-UltraExpandedMedium.woff2') format('woff2'),
+       url('/fonts/AnantasonReno-UltraExpandedMedium.woff') format('woff');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+── */
+
+/* ── MODE CLAIR (défaut — pas de dark mode) ── */
+:root {
+  /* ── Fond : crème Naya ── */
+  --background:    #F7F4EC;
+  --foreground:    #2B2D1C;
 
   /* ── Surfaces ── */
-  --card:           #252840;
-  --card-foreground: #E8E6F0;
-  --popover:        #2D3050;
-  --popover-foreground: #E8E6F0;
+  --card:           #FAFAF5;
+  --card-foreground: #2B2D1C;
+  --popover:        #FAFAF5;
+  --popover-foreground: #2B2D1C;
 
   /* ── Muted ── */
-  --muted:          #2A2D45;
-  --muted-foreground: #9896B0;
+  --muted:          #EDE9DC;
+  --muted-foreground: #5C6040;
 
   /* ── Borders & inputs ── */
-  --border: rgba(152, 150, 176, 0.18);
-  --input:  #2D3050;
+  --border: rgba(43, 45, 28, 0.12);
+  --input:  #EDE9DC;
 
-  /* ── Primary : mauve poussiéreux ── */
-  --primary:          #8B7FA8;
-  --primary-foreground: #E8E6F0;
+  /* ── Primary : dark olive ── */
+  --primary:          #2B2D1C;
+  --primary-foreground: #F7F4EC;
 
   /* ── Secondary ── */
-  --secondary:          #2D3050;
-  --secondary-foreground: #E8E6F0;
+  --secondary:          #EDE9DC;
+  --secondary-foreground: #2B2D1C;
 
-  /* ── Accent : vert sauge profond ── */
-  --accent:           #5C7A6B;
-  --accent-foreground: #E8E6F0;
+  /* ── Accent : Salvia Blue (Sanzo Wada 321) ── */
+  --accent:           #7D8FA8;
+  --accent-foreground: #F7F4EC;
 
   /* ── Destructive ── */
-  --destructive:          #C06060;
-  --destructive-foreground: #E8E6F0;
+  --destructive:          #9E7E87;
+  --destructive-foreground: #F7F4EC;
 
   /* ── Ring (focus) ── */
-  --ring: rgba(139, 127, 168, 0.6);
+  --ring: rgba(43, 45, 28, 0.3);
 
-  /* ── Charts ── */
-  --chart-1: #8B7FA8;   /* mauve */
-  --chart-2: #5C7A6B;   /* sauge */
-  --chart-3: #6B8AAA;   /* bleu ardoise */
-  --chart-4: #AA8B7A;   /* terracotta doux */
-  --chart-5: #7A8BAA;   /* gris bleuté */
+  /* ── Border radius ── */
+  --radius: 0.375rem;   /* 6px */
+
+  /* ── Charts — accents Sanzo Wada ── */
+  --chart-1: #D4C97A;   /* sulphur yellow */
+  --chart-2: #7D8FA8;   /* salvia blue */
+  --chart-3: #9E7E87;   /* dusty mauve */
+  --chart-4: #2B2D1C;   /* olive */
+  --chart-5: #5C6040;   /* olive muted */
 
   /* ── Sidebar : légèrement plus sombre que le fond ── */
-  --sidebar-background:        #191B2E;
-  --sidebar-foreground:        #9896B0;
-  --sidebar-primary:           #8B7FA8;
-  --sidebar-primary-foreground: #E8E6F0;
-  --sidebar-accent:            #252840;
-  --sidebar-accent-foreground: #E8E6F0;
-  --sidebar-border:            rgba(152, 150, 176, 0.1);
-  --sidebar-ring:              #8B7FA8;
+  --sidebar-background:        #EDE9DC;
+  --sidebar-foreground:        #5C6040;
+  --sidebar-primary:           #2B2D1C;
+  --sidebar-primary-foreground: #F7F4EC;
+  --sidebar-accent:            #E0DDD0;
+  --sidebar-accent-foreground: #2B2D1C;
+  --sidebar-border:            rgba(43, 45, 28, 0.10);
+  --sidebar-ring:              #2B2D1C;
 
-  /* ── Tâches — tons légèrement tintés sur fond sombre ── */
-  --task-purple:      rgba(139, 127, 168, 0.18);
-  --task-purple-text: #C4B8D8;
-  --task-teal:        rgba(92, 122, 107, 0.18);
-  --task-teal-text:   #8BB8A4;
-  --task-rose:        rgba(168, 100, 120, 0.18);
-  --task-rose-text:   #D4A8B8;
-  --task-amber:       rgba(168, 140, 80, 0.18);
-  --task-amber-text:  #D4C488;
-  --task-indigo:      rgba(100, 110, 200, 0.18);
-  --task-indigo-text: #A8B0E0;
-  --task-slate:       rgba(100, 110, 150, 0.18);
-  --task-slate-text:  #B0B8D8;
-  --task-mauve:       rgba(120, 100, 150, 0.18);
-  --task-mauve-text:  #C0A8D8;
+  /* ── Tâches — tons sur fond crème ── */
+  --task-sulphur:      rgba(212, 201, 122, 0.20);
+  --task-sulphur-text: #6A5C10;
+  --task-salvia:       rgba(125, 143, 168, 0.20);
+  --task-salvia-text:  #2A3F58;
+  --task-mauve:        rgba(158, 126, 135, 0.20);
+  --task-mauve-text:   #4E2030;
+  --task-olive:        rgba(43, 45, 28, 0.10);
+  --task-olive-text:   #2B2D1C;
+
+  /* ── Accents nommés ── */
+  --sulphur: #D4C97A;
+  --salvia:  #7D8FA8;
+  --mauve:   #9E7E87;
 }
+
+/* Pas de dark mode — Naya est une marque crème/olive */
 
 @layer base {
   * {
     @apply border-border;
   }
 
-  /* Cursor pointer sur tous les éléments interactifs */
   button,
   [role="button"],
   [role="tab"],
@@ -174,7 +126,6 @@
     cursor: pointer;
   }
 
-  /* Respect du paramètre système de réduction des animations */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration: 0.01ms !important;
@@ -184,16 +135,14 @@
     }
   }
 
-  /* Transition smooth pour le changement de thème */
   html {
-    transition: background-color 250ms cubic-bezier(0.4, 0, 0.2, 1),
-                color 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    transition: background-color 200ms ease, color 200ms ease;
   }
 
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, -apple-system, sans-serif;
     font-weight: 400;
     font-size: 14px;
     letter-spacing: -0.01em;
@@ -202,41 +151,39 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Titres — Inter semi-bold pour les niveaux opérationnels,
-     Cormorant italic pour les éléments signature/display */
-  h1 {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-style: italic;
-    font-weight: 500;
-    letter-spacing: -0.02em;
+  /* Titres — Anantason Ultra Expanded (fallback Inter bold) */
+  h1, h2 {
+    font-family: "Anantason Ultra Expanded", "Unbounded", system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.04em;
     line-height: 1.1;
     color: var(--foreground);
+    text-transform: uppercase;
   }
 
-  h2, h3 {
-    font-family: 'Inter', system-ui, sans-serif;
+  h3, h4 {
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
     font-weight: 600;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
     line-height: 1.25;
     color: var(--foreground);
   }
 
-  h4, h5, h6 {
-    font-family: 'Inter', system-ui, sans-serif;
+  h5, h6 {
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
     font-weight: 500;
     font-size: 0.8125rem;
-    letter-spacing: -0.01em;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     color: var(--muted-foreground);
   }
 
-  /* Focus — glow mauve subtil */
   *:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
     border-radius: var(--radius);
   }
 
-  /* Transitions fluides */
   *, *::before, *::after {
     transition-property: background-color, border-color, color, opacity, box-shadow, transform;
     transition-duration: 150ms;
@@ -249,49 +196,29 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @layer utilities {
-  /* Cormorant italic — pour les titres signature, logo, display */
-  .font-editorial {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-style: italic;
+  /* Anantason Ultra Expanded — titres, wordmark, display */
+  .font-display {
+    font-family: "Anantason Ultra Expanded", "Unbounded", system-ui, sans-serif;
     font-weight: 400;
-  }
-
-  .font-editorial-bold {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-style: italic;
-    font-weight: 600;
-  }
-
-  /* IBM Plex Mono — pour les labels, tags, données techniques */
-  .font-label {
-    font-family: 'IBM Plex Mono', monospace;
-    font-weight: 300;
-    font-size: 0.6875rem;
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
-  .font-mono-sm {
-    font-family: 'IBM Plex Mono', monospace;
-    font-weight: 300;
-    font-size: 0.75rem;
-    letter-spacing: 0.02em;
+  /* Labels / metadata — uppercase tracking */
+  .font-label {
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
   }
 
   /* Chiffres / stats */
   .text-stat {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
     font-weight: 700;
     letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
-  }
-
-  .text-display {
-    font-family: 'Cormorant Garamond', Georgia, serif;
-    font-style: italic;
-    font-weight: 500;
-    letter-spacing: -0.02em;
-    line-height: 1.1;
   }
 
   /* ── Cards ── */
@@ -299,40 +226,43 @@
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 3px rgba(43, 45, 28, 0.06);
   }
 
   .card-elevated {
-    background: var(--popover);
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    box-shadow: 0 4px 16px rgba(43, 45, 28, 0.10);
   }
 
   /* ── Tâches ── */
-  .task-card-purple  { background: var(--task-purple);  color: var(--task-purple-text); }
-  .task-card-teal    { background: var(--task-teal);    color: var(--task-teal-text); }
-  .task-card-rose    { background: var(--task-rose);    color: var(--task-rose-text); }
-  .task-card-amber   { background: var(--task-amber);   color: var(--task-amber-text); }
-  .task-card-indigo  { background: var(--task-indigo);  color: var(--task-indigo-text); }
-  .task-card-slate   { background: var(--task-slate);   color: var(--task-slate-text); }
+  .task-card-sulphur { background: var(--task-sulphur); color: var(--task-sulphur-text); }
+  .task-card-salvia  { background: var(--task-salvia);  color: var(--task-salvia-text); }
   .task-card-mauve   { background: var(--task-mauve);   color: var(--task-mauve-text); }
+  .task-card-olive   { background: var(--task-olive);   color: var(--task-olive-text); }
 
-  /* Legacy mapping */
-  .task-card-yellow   { background: var(--task-amber);  color: var(--task-amber-text); }
-  .task-card-lavender { background: var(--task-purple); color: var(--task-purple-text); }
-  .task-card-pink     { background: var(--task-rose);   color: var(--task-rose-text); }
-  .task-card-green    { background: var(--task-teal);   color: var(--task-teal-text); }
-  .task-card-blue     { background: var(--task-indigo); color: var(--task-indigo-text); }
-  .task-card-orange   { background: var(--task-amber);  color: var(--task-amber-text); }
-  .task-card-cyan     { background: var(--task-teal);   color: var(--task-teal-text); }
-  .task-card-ochre    { background: var(--task-amber);  color: var(--task-amber-text); }
-  .task-card-umber    { background: var(--task-slate);  color: var(--task-slate-text); }
-  .task-card-sage     { background: var(--task-teal);   color: var(--task-teal-text); }
-  .task-card-dusk     { background: var(--task-purple); color: var(--task-purple-text); }
-  .task-card-rust     { background: var(--task-rose);   color: var(--task-rose-text); }
-  .task-card-flax     { background: var(--task-amber);  color: var(--task-amber-text); }
-  .task-card-clay     { background: var(--task-mauve);  color: var(--task-mauve-text); }
+  /* Legacy mapping — pour les composants existants */
+  .task-card-purple   { background: var(--task-mauve);   color: var(--task-mauve-text); }
+  .task-card-teal     { background: var(--task-salvia);  color: var(--task-salvia-text); }
+  .task-card-rose     { background: var(--task-mauve);   color: var(--task-mauve-text); }
+  .task-card-amber    { background: var(--task-sulphur); color: var(--task-sulphur-text); }
+  .task-card-indigo   { background: var(--task-salvia);  color: var(--task-salvia-text); }
+  .task-card-slate    { background: var(--task-olive);   color: var(--task-olive-text); }
+  .task-card-yellow   { background: var(--task-sulphur); color: var(--task-sulphur-text); }
+  .task-card-lavender { background: var(--task-mauve);   color: var(--task-mauve-text); }
+  .task-card-pink     { background: var(--task-mauve);   color: var(--task-mauve-text); }
+  .task-card-green    { background: var(--task-salvia);  color: var(--task-salvia-text); }
+  .task-card-blue     { background: var(--task-salvia);  color: var(--task-salvia-text); }
+  .task-card-orange   { background: var(--task-sulphur); color: var(--task-sulphur-text); }
+  .task-card-cyan     { background: var(--task-salvia);  color: var(--task-salvia-text); }
+  .task-card-ochre    { background: var(--task-sulphur); color: var(--task-sulphur-text); }
+  .task-card-umber    { background: var(--task-olive);   color: var(--task-olive-text); }
+  .task-card-sage     { background: var(--task-salvia);  color: var(--task-salvia-text); }
+  .task-card-dusk     { background: var(--task-mauve);   color: var(--task-mauve-text); }
+  .task-card-rust     { background: var(--task-mauve);   color: var(--task-mauve-text); }
+  .task-card-flax     { background: var(--task-sulphur); color: var(--task-sulphur-text); }
+  .task-card-clay     { background: var(--task-mauve);   color: var(--task-mauve-text); }
 
   /* ── Active indicator ── */
   .active-accent {
@@ -341,14 +271,14 @@
 
   /* ── Tag / Badge ── */
   .tag {
-    font-family: 'IBM Plex Mono', monospace;
-    font-weight: 300;
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
+    font-weight: 500;
     font-size: 0.625rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     padding: 2px 8px;
     border-radius: 4px;
-    background: rgba(139, 127, 168, 0.12);
+    background: rgba(43, 45, 28, 0.08);
     color: var(--muted-foreground);
     display: inline-block;
     line-height: 1.6;
@@ -366,7 +296,7 @@
 
   .view-toggle-btn {
     padding: 4px 14px;
-    font-family: 'Inter', sans-serif;
+    font-family: "Helvetica Neue", "Helvetica", "Inter", sans-serif;
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--muted-foreground);
@@ -374,18 +304,18 @@
     cursor: pointer;
     border: none;
     background: transparent;
-    border-radius: 6px;
+    border-radius: 4px;
   }
 
   .view-toggle-btn.active {
     background: var(--card);
     color: var(--foreground);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 3px rgba(43, 45, 28, 0.08);
   }
 
   /* ── Numbers / stats ── */
   .num-xl {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
     font-size: clamp(2.5rem, 5vw, 4rem);
     font-weight: 700;
     letter-spacing: -0.04em;
@@ -393,7 +323,7 @@
   }
 
   .num-lg {
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
     font-size: 2rem;
     font-weight: 700;
     letter-spacing: -0.03em;
@@ -401,23 +331,18 @@
   }
 
   /* ── Shadows utilitaires ── */
-  .shadow-card       { box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2); }
-  .shadow-card-hover { box-shadow: 0 4px 16px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3); }
-  .shadow-float      { box-shadow: 0 8px 28px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.3); }
-  .shadow-editorial  { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .shadow-card       { box-shadow: 0 1px 3px rgba(43, 45, 28, 0.08); }
+  .shadow-card-hover { box-shadow: 0 4px 16px rgba(43, 45, 28, 0.12); }
+  .shadow-float      { box-shadow: 0 8px 28px rgba(43, 45, 28, 0.16); }
   .hover-lift        { transition: transform 150ms ease, box-shadow 150ms ease; }
-  .hover-lift:hover  { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.45); }
+  .hover-lift:hover  { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(43, 45, 28, 0.12); }
 
-  /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     OVERRIDES GLOBAUX — remapper les classes Tailwind hardcodées
-     vers notre design system. Les couleurs utilisent var() pour
-     s'adapter automatiquement au mode light/dark.
-     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+  /* ── Overrides globaux — remapper les classes Tailwind hardcodées ── */
 
-  /* bg-white → surface principale (card) */
+  /* bg-white → card crème */
   .bg-white { background-color: var(--card) !important; }
 
-  /* bg-gray-* / bg-slate-* → surfaces appropriées */
+  /* bg-gray-* / bg-slate-* → surfaces crème */
   .bg-gray-50,
   .bg-gray-100,
   .bg-slate-50,
@@ -432,21 +357,18 @@
   .bg-gray-900,
   .bg-gray-950,
   .bg-slate-800,
-  .bg-slate-900 { background-color: var(--background) !important; }
+  .bg-slate-900 { background-color: var(--primary) !important; }
 
   /* Hover states */
   .hover\:bg-slate-50:hover,
   .hover\:bg-gray-50:hover   { background-color: var(--muted) !important; }
-
   .hover\:bg-slate-100:hover,
   .hover\:bg-gray-100:hover  { background-color: var(--secondary) !important; }
-
   .hover\:bg-muted\/60:hover { background-color: color-mix(in srgb, var(--muted) 60%, transparent) !important; }
-
   .hover\:bg-slate-800:hover,
   .hover\:bg-gray-800:hover  { background-color: var(--muted) !important; }
 
-  /* Textes neutres → variable foreground/muted */
+  /* Textes neutres */
   .text-gray-400,
   .text-gray-500,
   .text-slate-400,
@@ -466,113 +388,94 @@
   .text-gray-300,
   .text-slate-300,
   .text-gray-200,
-  .text-slate-200 { color: var(--foreground) !important; opacity: 0.75; }
+  .text-slate-200 { color: var(--foreground) !important; opacity: 0.6; }
 
-  /* dark: prefixes — mappés vers les variables */
+  /* dark: prefixes — ignorés, mais remappés pour éviter les artefacts */
   .dark\:bg-gray-800,
   .dark\:bg-gray-900,
   .dark\:bg-card { background-color: var(--card) !important; }
-
   .dark\:text-gray-300,
   .dark\:text-gray-400 { color: var(--muted-foreground) !important; }
-
   .dark\:text-white { color: var(--foreground) !important; }
   .dark\:border-gray-800 { border-color: var(--border) !important; }
 
-  /* Badges colorés — les opacités permettent le thème automatique */
+  /* Badges colorés → accents Naya */
   .bg-purple-100,
   .bg-violet-50,
-  .bg-indigo-100 {
-    background-color: var(--task-purple) !important;
-    color: var(--task-purple-text) !important;
+  .bg-indigo-100,
+  .bg-pink-100,
+  .bg-rose-100 {
+    background-color: var(--task-mauve) !important;
+    color: var(--task-mauve-text) !important;
   }
 
   .bg-blue-100,
-  .bg-cyan-100   {
-    background-color: var(--task-indigo) !important;
-    color: var(--task-indigo-text) !important;
-  }
-
+  .bg-cyan-100,
   .bg-green-100,
   .bg-emerald-100,
-  .bg-teal-100   {
-    background-color: var(--task-teal) !important;
-    color: var(--task-teal-text) !important;
-  }
-
-  .bg-pink-100,
-  .bg-rose-100   {
-    background-color: var(--task-rose) !important;
-    color: var(--task-rose-text) !important;
+  .bg-teal-100 {
+    background-color: var(--task-salvia) !important;
+    color: var(--task-salvia-text) !important;
   }
 
   .bg-yellow-50,
   .bg-amber-100,
-  .bg-yellow-100 {
-    background-color: var(--task-amber) !important;
-    color: var(--task-amber-text) !important;
-  }
-
-  .bg-orange-50  {
-    background-color: var(--task-amber) !important;
-    color: var(--task-amber-text) !important;
+  .bg-yellow-100,
+  .bg-orange-50 {
+    background-color: var(--task-sulphur) !important;
+    color: var(--task-sulphur-text) !important;
   }
 
   .bg-red-100,
-  .bg-red-50     {
-    background-color: var(--task-rose) !important;
-    color: var(--task-rose-text) !important;
+  .bg-red-50 {
+    background-color: var(--task-mauve) !important;
+    color: var(--task-mauve-text) !important;
   }
 
-  /* Textes colorés — mappés vers les variables de tâches */
+  /* Textes colorés */
   .text-purple-700,
   .text-violet-700,
-  .text-indigo-700 { color: var(--task-purple-text) !important; }
+  .text-indigo-700,
+  .text-pink-700,
+  .text-rose-700,
+  .text-red-500,
+  .text-red-400,
+  .text-red-700  { color: var(--task-mauve-text) !important; }
 
   .text-blue-700,
-  .text-cyan-700   { color: var(--task-indigo-text) !important; }
-
+  .text-cyan-700,
   .text-green-700,
   .text-emerald-700,
-  .text-teal-700   { color: var(--task-teal-text) !important; }
-
-  .text-pink-700,
-  .text-rose-700   { color: var(--task-rose-text) !important; }
+  .text-teal-700 { color: var(--task-salvia-text) !important; }
 
   .text-amber-600,
   .text-yellow-500,
-  .text-yellow-700 { color: var(--task-amber-text) !important; }
+  .text-yellow-700,
+  .text-orange-700 { color: var(--task-sulphur-text) !important; }
 
-  .text-orange-700 { color: var(--task-amber-text) !important; }
+  /* dark: variants */
+  .dark\:text-red-400    { color: var(--task-mauve-text) !important; }
+  .dark\:text-blue-400   { color: var(--task-salvia-text) !important; }
+  .dark\:text-green-400  { color: var(--task-salvia-text) !important; }
+  .dark\:text-yellow-300 { color: var(--task-sulphur-text) !important; }
+  .dark\:text-purple-400 { color: var(--task-mauve-text) !important; }
+  .dark\:text-indigo-300 { color: var(--task-mauve-text) !important; }
+  .dark\:text-orange-300 { color: var(--task-sulphur-text) !important; }
+  .dark\:text-emerald-300 { color: var(--task-salvia-text) !important; }
 
-  .text-red-500,
-  .text-red-400,
-  .text-red-700    { color: var(--task-rose-text) !important; }
-
-  /* dark: variants de texte coloré */
-  .dark\:text-red-400    { color: var(--task-rose-text) !important; }
-  .dark\:text-blue-400   { color: var(--task-indigo-text) !important; }
-  .dark\:text-green-400  { color: var(--task-teal-text) !important; }
-  .dark\:text-yellow-300 { color: var(--task-amber-text) !important; }
-  .dark\:text-purple-400 { color: var(--task-purple-text) !important; }
-  .dark\:text-indigo-300 { color: var(--task-purple-text) !important; }
-  .dark\:text-orange-300 { color: var(--task-amber-text) !important; }
-  .dark\:text-emerald-300 { color: var(--task-teal-text) !important; }
-
-  /* dark: bg colorés */
-  .dark\:bg-red-900\/30    { background-color: var(--task-rose) !important; }
-  .dark\:bg-blue-900\/30   { background-color: var(--task-indigo) !important; }
-  .dark\:bg-green-900\/30  { background-color: var(--task-teal) !important; }
-  .dark\:bg-yellow-900\/20 { background-color: var(--task-amber) !important; }
-  .dark\:bg-purple-900\/20 { background-color: var(--task-purple) !important; }
-  .dark\:bg-indigo-900\/20 { background-color: var(--task-indigo) !important; }
-  .dark\:bg-orange-900\/20 { background-color: var(--task-amber) !important; }
-  .dark\:bg-emerald-900\/20 { background-color: var(--task-teal) !important; }
+  .dark\:bg-red-900\/30    { background-color: var(--task-mauve) !important; }
+  .dark\:bg-blue-900\/30   { background-color: var(--task-salvia) !important; }
+  .dark\:bg-green-900\/30  { background-color: var(--task-salvia) !important; }
+  .dark\:bg-yellow-900\/20 { background-color: var(--task-sulphur) !important; }
+  .dark\:bg-purple-900\/20 { background-color: var(--task-mauve) !important; }
+  .dark\:bg-indigo-900\/20 { background-color: var(--task-mauve) !important; }
+  .dark\:bg-orange-900\/20 { background-color: var(--task-sulphur) !important; }
+  .dark\:bg-emerald-900\/20 { background-color: var(--task-salvia) !important; }
   .dark\:bg-gray-800 { background-color: var(--muted) !important; }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Inputs & Forms — modern, cohérents
+   Inputs & Forms
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
@@ -582,7 +485,7 @@ select {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   outline: none;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
   font-size: 0.875rem;
   font-weight: 400;
   color: var(--foreground);
@@ -593,19 +496,18 @@ select {
 
 input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
 textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(139, 127, 168, 0.15);
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 3px rgba(43, 45, 28, 0.08);
 }
 
 input::placeholder,
 textarea::placeholder {
   color: var(--muted-foreground);
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
-/* Boutons — Inter, propre */
 button {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
   font-weight: 500;
   font-size: 0.875rem;
   cursor: pointer;
@@ -645,12 +547,17 @@ button {
   to   { height: 0; }
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
+}
+
 .animate-fade-up    { animation: fade-up 0.3s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-fade-in    { animation: fade-in 0.2s ease both; }
 .animate-slide-left { animation: slide-in-left 0.25s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-scale-in   { animation: scale-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-pulse      { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 
-/* Enfants décalés */
 .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
 .stagger-children > *:nth-child(2) { animation-delay: 40ms; }
 .stagger-children > *:nth-child(3) { animation-delay: 80ms; }
@@ -658,21 +565,21 @@ button {
 .stagger-children > *:nth-child(5) { animation-delay: 160ms; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Scrollbar — fine, presque invisible
+   Scrollbar — fine, olive très atténué
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(152, 150, 176, 0.25) transparent;
+  scrollbar-color: rgba(43, 45, 28, 0.15) transparent;
 }
 
 *::-webkit-scrollbar        { width: 4px; height: 4px; }
 *::-webkit-scrollbar-track  { background: transparent; }
-*::-webkit-scrollbar-thumb  { background: rgba(152, 150, 176, 0.25); border-radius: 4px; }
-*::-webkit-scrollbar-thumb:hover { background: rgba(152, 150, 176, 0.45); }
+*::-webkit-scrollbar-thumb  { background: rgba(43, 45, 28, 0.15); border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(43, 45, 28, 0.3); }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   Radix UI / shadcn — surfaces sombres
+   Radix UI / shadcn
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 [data-radix-popper-content-wrapper] > * {
@@ -686,21 +593,10 @@ button {
   background: var(--popover) !important;
 }
 
-/* Tooltips */
 [data-radix-tooltip-content] {
-  background: var(--popover) !important;
+  background: var(--foreground) !important;
   border: 1px solid var(--border) !important;
-  color: var(--foreground) !important;
+  color: var(--background) !important;
   font-size: 0.75rem;
-  border-radius: 6px;
-}
-
-/* Animate-pulse pour les skeletons */
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: .5; }
+  border-radius: 4px;
 }

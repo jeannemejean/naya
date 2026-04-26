@@ -6,62 +6,49 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        /* Inter — corps de texte, UI générale */
-        sans:    ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-        /* IBM Plex Mono — labels, tags, données, navigation */
-        mono:    ['"IBM Plex Mono"', '"Fira Code"', 'monospace'],
-        /* Cormorant Garamond — titres display, logo, éléments signature */
-        serif:   ['"Cormorant Garamond"', 'Georgia', 'serif'],
-        display: ['"Cormorant Garamond"', 'Georgia', 'serif'],
-      },
-      borderRadius: {
-        /* Modern SaaS — arrondis subtils et naturels */
-        none:    "0px",
-        sm:      "6px",
-        DEFAULT: "8px",
-        md:      "8px",
-        lg:      "12px",
-        xl:      "16px",
-        "2xl":   "20px",
-        "3xl":   "24px",
-        full:    "9999px",
+        /* Unbounded — titres, wordmark, headers (alternative gratuite à Anantason Ultra Expanded) */
+        /* Si Anantason est acheté plus tard : ajouter en premier dans ce tableau */
+        display: ['"Anantason Ultra Expanded"', '"Unbounded"', 'system-ui', 'sans-serif'],
+        /* Helvetica Neue — corps de texte (fallback Inter pour Windows/Android) */
+        sans: ['"Helvetica Neue"', '"Helvetica"', '"Inter"', 'system-ui', '-apple-system', 'sans-serif'],
+        /* Inter — garanti cross-platform */
+        inter: ['"Inter"', 'system-ui', 'sans-serif'],
       },
       colors: {
-        /* ── Palette Naya Dark ── */
-        /* Bleu nuit ardoise — fond principal */
-        night: {
-          DEFAULT: "#1E2030",
-          deep:    "#181A2A",
-          soft:    "#222540",
+        /* ── Palette principale Naya ── */
+        cream: {
+          DEFAULT: "#F7F4EC",
+          dark:    "#EDE9DC",
+          light:   "#FAFAF5",
         },
-        /* Gris bleuté foncé — surfaces secondaires */
-        slate: {
-          surface: "#252840",
-          elevated:"#2D3050",
-          subtle:  "#2A2D45",
-        },
-        /* Blanc lavandé — texte principal */
-        lavender: {
-          DEFAULT: "#E8E6F0",
-          muted:   "#9896B0",
-          dim:     "#6E6C88",
-        },
-        /* Mauve poussiéreux — accent primaire */
-        mauve: {
-          DEFAULT: "#8B7FA8",
-          light:   "#A699C0",
-          dark:    "#6D628A",
-          subtle:  "rgba(139,127,168,0.12)",
-        },
-        /* Vert sauge profond — micro-accent */
-        sage: {
-          DEFAULT: "#5C7A6B",
-          light:   "#7A9A8A",
-          dark:    "#445A50",
-          subtle:  "rgba(92,122,107,0.12)",
+        olive: {
+          DEFAULT: "#2B2D1C",
+          light:   "#3D4028",
+          muted:   "#5C6040",
+          faint:   "rgba(43, 45, 28, 0.08)",
         },
 
-        /* ── Variables shadcn/ui mappées ── */
+        /* ── Accents Sanzo Wada — palette 321 uniquement ── */
+        /* いおうこう — Sulphur Yellow */
+        sulphur: {
+          DEFAULT: "#D4C97A",
+          subtle:  "rgba(212, 201, 122, 0.15)",
+          text:    "#7A6C1A",
+        },
+        /* セージブルー — Salvia Blue */
+        salvia: {
+          DEFAULT: "#7D8FA8",
+          subtle:  "rgba(125, 143, 168, 0.15)",
+          text:    "#3A4F68",
+        },
+        /* くすみばら — Dusty Mauve */
+        mauve: {
+          DEFAULT: "#9E7E87",
+          subtle:  "rgba(158, 126, 135, 0.15)",
+          text:    "#5E3040",
+        },
+
+        /* ── Variables shadcn/ui ── */
         background:  "var(--background)",
         foreground:  "var(--foreground)",
         card: {
@@ -113,33 +100,37 @@ export default {
           ring:                 "var(--sidebar-ring)",
         },
 
-        /* ── Palette tâches — tons discrets sur fond sombre ── */
+        /* ── Tâches — tons sur fond crème ── */
         task: {
-          purple:  "rgba(139,127,168,0.18)",
-          teal:    "rgba(92,122,107,0.18)",
-          rose:    "rgba(168,100,120,0.18)",
-          amber:   "rgba(168,140,80,0.18)",
-          indigo:  "rgba(100,110,200,0.18)",
-          slate:   "rgba(100,110,150,0.18)",
-          mauve:   "rgba(120,100,150,0.18)",
+          sulphur: "rgba(212, 201, 122, 0.18)",
+          salvia:  "rgba(125, 143, 168, 0.18)",
+          mauve:   "rgba(158, 126, 135, 0.18)",
+          olive:   "rgba(43, 45, 28, 0.10)",
         },
       },
+      borderRadius: {
+        none:    "0px",
+        sm:      "4px",
+        DEFAULT: "6px",
+        md:      "6px",
+        lg:      "10px",
+        xl:      "14px",
+        "2xl":   "18px",
+        "3xl":   "24px",
+        full:    "9999px",
+      },
       boxShadow: {
-        /* Ombres adaptées au dark mode — profondes, subtiles */
-        sm:          "0 1px 3px rgba(0,0,0,0.35)",
-        DEFAULT:     "0 2px 6px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.25)",
-        md:          "0 4px 10px rgba(0,0,0,0.4), 0 2px 4px rgba(0,0,0,0.25)",
-        lg:          "0 8px 24px rgba(0,0,0,0.45), 0 4px 8px rgba(0,0,0,0.3)",
-        xl:          "0 16px 40px rgba(0,0,0,0.5), 0 8px 16px rgba(0,0,0,0.3)",
-        "2xl":       "0 24px 60px rgba(0,0,0,0.55)",
-        card:        "0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)",
-        "card-hover":"0 4px 16px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3)",
-        float:       "0 8px 28px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.3)",
-        inner:       "inset 0 1px 0 rgba(255,255,255,0.05)",
-        glow:        "0 0 20px rgba(139,127,168,0.25)",
-        "glow-sm":   "0 0 10px rgba(139,127,168,0.2)",
+        sm:          "0 1px 2px rgba(43, 45, 28, 0.08)",
+        DEFAULT:     "0 2px 6px rgba(43, 45, 28, 0.10)",
+        md:          "0 4px 12px rgba(43, 45, 28, 0.10)",
+        lg:          "0 8px 24px rgba(43, 45, 28, 0.12)",
+        xl:          "0 16px 40px rgba(43, 45, 28, 0.14)",
+        "2xl":       "0 24px 60px rgba(43, 45, 28, 0.16)",
+        card:        "0 1px 3px rgba(43, 45, 28, 0.08)",
+        "card-hover":"0 4px 16px rgba(43, 45, 28, 0.12)",
+        float:       "0 8px 28px rgba(43, 45, 28, 0.16)",
+        inner:       "inset 0 1px 0 rgba(255, 255, 255, 0.6)",
         none:        "none",
-        editorial:   "0 2px 8px rgba(0,0,0,0.4)",
       },
       keyframes: {
         "accordion-down": {
