@@ -204,7 +204,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
             <span
               style={{
                 marginLeft: 'auto',
-                fontFamily: '"Unbounded", system-ui, sans-serif',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
                 fontSize: '0.75rem',
                 fontWeight: 400,
                 color: 'var(--muted-foreground)',

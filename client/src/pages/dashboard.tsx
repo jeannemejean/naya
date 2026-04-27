@@ -810,7 +810,7 @@ function EmptyTasksState({ onGenerated }: { onGenerated: () => void }) {
         <>
           <p
             style={{
-              fontFamily: '"Unbounded", system-ui, sans-serif',
+              fontFamily: '"Montserrat", system-ui, sans-serif',
               fontSize: '0.9375rem',
               color: 'var(--primary-foreground)',
               opacity: 0.7,
@@ -964,7 +964,7 @@ function BentoTileNextAction() {
         {total > 0 && (
           <span
             style={{
-              fontFamily: '"Unbounded", system-ui, sans-serif',
+              fontFamily: '"Montserrat", system-ui, sans-serif',
               fontSize: '0.875rem',
               fontWeight: 400,
               color: 'var(--primary-foreground)',
@@ -985,7 +985,7 @@ function BentoTileNextAction() {
             <div className="flex items-start gap-2 mb-1">
               <p
                 style={{
-                  fontFamily: '"Unbounded", system-ui, sans-serif',
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
                   fontWeight: 500,
                   fontSize: '1.1rem',
                   lineHeight: 1.2,
@@ -1146,7 +1146,7 @@ function BentoTileNextAction() {
         <div className="flex-1 flex flex-col justify-center gap-1">
           <p
             style={{
-              fontFamily: '"Unbounded", system-ui, sans-serif',
+              fontFamily: '"Montserrat", system-ui, sans-serif',
               fontSize: '1rem',
               color: 'var(--primary-foreground)',
               margin: 0,
@@ -1925,7 +1925,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div style={{ width: 40, height: 40, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-            <span style={{ fontFamily: '"Unbounded", system-ui, sans-serif', fontWeight: 600, fontSize: '1.25rem', color: 'var(--primary-foreground)' }}>N</span>
+            <span style={{ fontFamily: '"Montserrat", system-ui, sans-serif', fontWeight: 600, fontSize: '1.25rem', color: 'var(--primary-foreground)' }}>N</span>
           </div>
           <p className="text-sm text-muted-foreground">Chargement…</p>
         </div>

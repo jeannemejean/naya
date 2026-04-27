@@ -33,7 +33,7 @@ export default function Landing() {
             >
               <span
                 style={{
-                  fontFamily: '"Unbounded", system-ui, sans-serif',
+                  fontFamily: '"Montserrat", system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: '1.25rem',
                   color: 'var(--primary-foreground)',
@@ -45,7 +45,7 @@ export default function Landing() {
             </div>
             <span
               style={{
-                fontFamily: '"Unbounded", system-ui, sans-serif',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
                 fontWeight: 500,
                 fontSize: '1.25rem',
                 color: 'var(--foreground)',
@@ -83,7 +83,7 @@ export default function Landing() {
       <section style={{ padding: '96px 32px', maxWidth: 860, margin: '0 auto' }}>
         <h1
           style={{
-            fontFamily: '"Unbounded", system-ui, sans-serif',
+            fontFamily: '"Montserrat", system-ui, sans-serif',
             fontWeight: 400,
             fontSize: 'clamp(3rem, 7vw, 5.5rem)',
             lineHeight: 1.1,

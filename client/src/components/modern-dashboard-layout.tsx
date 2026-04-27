@@ -67,7 +67,7 @@ export function ModernDashboardLayout({
           {headerTitle && (
             <h1
               style={{
-                fontFamily: '"Unbounded", system-ui, sans-serif',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
                 fontWeight: 500,
                 fontSize: '1.75rem',
                 letterSpacing: '-0.01em',
@@ -191,7 +191,7 @@ export function ModernDashboardLayout({
                     </span>
                     <span
                       style={{
-                        fontFamily: '"Unbounded", system-ui, sans-serif',
+                        fontFamily: '"Montserrat", system-ui, sans-serif',
                         fontSize: '0.875rem',
                         fontWeight: 500,
                         color: 'var(--muted-foreground)',

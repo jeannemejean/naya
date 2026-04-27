@@ -68,7 +68,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
           >
             <span
               style={{
-                fontFamily: '"Unbounded", system-ui, sans-serif',
+                fontFamily: '"Montserrat", system-ui, sans-serif',
                 fontWeight: '700',
                 fontSize: '10px',
                 lineHeight: 1,
@@ -348,7 +348,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
               >
                 <span
                   style={{
-                    fontFamily: '"Unbounded", system-ui, sans-serif',
+                    fontFamily: '"Montserrat", system-ui, sans-serif',
                     fontWeight: '500',
                     fontSize: '1rem',
                     color: 'var(--sidebar-foreground)',

@@ -8,7 +8,7 @@ export default {
       fontFamily: {
         /* Unbounded — titres, wordmark, headers (alternative gratuite à Anantason Ultra Expanded) */
         /* Si Anantason est acheté plus tard : ajouter en premier dans ce tableau */
-        display: ['"Anantason Ultra Expanded"', '"Unbounded"', 'system-ui', 'sans-serif'],
+        display: ['"Anantason Ultra Expanded"', '"Montserrat"', 'system-ui', 'sans-serif'],
         /* Helvetica Neue — corps de texte (fallback Inter pour Windows/Android) */
         sans: ['"Helvetica Neue"', '"Helvetica"', '"Inter"', 'system-ui', '-apple-system', 'sans-serif'],
         /* Inter — garanti cross-platform */
