@@ -69,10 +69,10 @@ function useSelfCareOptions() {
 }
 
 const ENERGY_LEVELS = [
-  { value: 'high',     label: 'High',     symbol: '●●●', color: '', activeRing: '' },
-  { value: 'medium',   label: 'Medium',   symbol: '●●○', color: '', activeRing: '' },
-  { value: 'low',      label: 'Low',      symbol: '●○○', color: '', activeRing: '' },
-  { value: 'depleted', label: 'Depleted', symbol: '○○○', color: '', activeRing: '' },
+  { value: 'high',     label: 'High' },
+  { value: 'medium',   label: 'Medium' },
+  { value: 'low',      label: 'Low' },
+  { value: 'depleted', label: 'Depleted' },
 ] as const;
 
 function ActiveProjectBand({ projectId, compact = false }: { projectId: number; compact?: boolean }) {
@@ -108,7 +108,7 @@ function ActiveProjectBand({ projectId, compact = false }: { projectId: number; 
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: project.color || '#6366f1' }} />
-          <span className="text-sm text-slate-900 dark:text-white">{project.icon || '📁'} {project.name}</span>
+          <span className="text-sm text-slate-900 dark:text-white">{project.name}</span>
           {topGoal?.successMode && (
             <Badge className={`text-xs border-0 ${SUCCESS_MODE_COLORS[topGoal.successMode] || 'bg-slate-100 text-slate-600'}`}>
               {topGoal.successMode}
@@ -146,7 +146,7 @@ function ActiveProjectBand({ projectId, compact = false }: { projectId: number; 
             onClick={() => setBrandDnaOpen(true)}
             className="w-full flex items-center gap-2 text-xs text-[hsl(150,20%,45%)] dark:text-[hsl(150,20%,60%)] hover:text-[hsl(150,20%,35%)] dark:hover:text-[hsl(150,20%,70%)] transition-colors"
           >
-            <Dna className="h-3.5 w-3.5" />
+            <Dna className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />
             <span>Configure Brand DNA for AI-powered planning aligned with {project.name}'s goals</span>
             <ArrowRight className="h-3 w-3 ml-auto" />
           </button>
@@ -225,7 +225,7 @@ function AIRecommendations({ projectId }: { projectId: number | null }) {
     <Card className="shadow-card border-border bg-white dark:bg-card">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
+          <Brain className="h-4 w-4 text-primary" style={{ strokeWidth: 1.5 }} />
           {t('dashboard.aiRecommendations')}
         </CardTitle>
       </CardHeader>
@@ -463,7 +463,7 @@ function QuickCapture() {
                   }`}
                 >
                   <span className="flex-shrink-0 mt-0.5">
-                    {isClassifying ? '⏳' : config?.icon || '📝'}
+                    {isClassifying ? '...' : ''}
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-slate-700 dark:text-gray-300 line-clamp-2">
@@ -474,7 +474,7 @@ function QuickCapture() {
                         <span className="text-[10px] text-slate-400 italic">{t('dashboard.classifying')}</span>
                       ) : config ? (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${config.color}`}>
-                          {config.icon} {config.label}
+                          {config.label}
                         </span>
                       ) : null}
                       {isMilestone && unlockCount > 0 && (
@@ -644,7 +644,7 @@ function PersonaCard() {
       <Card className="shadow-card border-border bg-white dark:bg-card">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <Brain className="h-4 w-4 text-primary" />
+            <Brain className="h-4 w-4 text-primary" style={{ strokeWidth: 1.5 }} />
             Persona Intelligence
           </CardTitle>
         </CardHeader>
@@ -656,7 +656,7 @@ function PersonaCard() {
                 <span className="text-xs text-purple-700 dark:text-purple-300">Your Archetype</span>
               </div>
               <p className="text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
-                {(() => { const PIcon = PERSONA_ICONS[personaName] || Brain; return <PIcon className="h-4 w-4 text-purple-500 flex-shrink-0" />; })()}
+                {(() => { const PIcon = PERSONA_ICONS[personaName] || Brain; return <PIcon className="h-4 w-4 text-purple-500 flex-shrink-0" style={{ strokeWidth: 1.5 }} />; })()}
                 {personaName}
               </p>
               {outputStyle && (
@@ -810,8 +810,7 @@ function EmptyTasksState({ onGenerated }: { onGenerated: () => void }) {
         <>
           <p
             style={{
-              fontFamily: '"Cormorant Garamond", Georgia, serif',
-              fontStyle: 'italic',
+              fontFamily: '"Unbounded", system-ui, sans-serif',
               fontSize: '0.9375rem',
               color: 'var(--primary-foreground)',
               opacity: 0.7,
@@ -965,8 +964,7 @@ function BentoTileNextAction() {
         {total > 0 && (
           <span
             style={{
-              fontFamily: '"Cormorant Garamond", Georgia, serif',
-              fontStyle: 'italic',
+              fontFamily: '"Unbounded", system-ui, sans-serif',
               fontSize: '0.875rem',
               fontWeight: 400,
               color: 'var(--primary-foreground)',
@@ -987,8 +985,7 @@ function BentoTileNextAction() {
             <div className="flex items-start gap-2 mb-1">
               <p
                 style={{
-                  fontFamily: '"Cormorant Garamond", Georgia, serif',
-                  fontStyle: 'italic',
+                  fontFamily: '"Unbounded", system-ui, sans-serif',
                   fontWeight: 500,
                   fontSize: '1.1rem',
                   lineHeight: 1.2,
@@ -1149,8 +1146,7 @@ function BentoTileNextAction() {
         <div className="flex-1 flex flex-col justify-center gap-1">
           <p
             style={{
-              fontFamily: '"Cormorant Garamond", Georgia, serif',
-              fontStyle: 'italic',
+              fontFamily: '"Unbounded", system-ui, sans-serif',
               fontSize: '1rem',
               color: 'var(--primary-foreground)',
               margin: 0,
@@ -1294,7 +1290,6 @@ function TaskWorkspaceSheet({
         {/* Header */}
         <SheetHeader className="px-6 pt-6 pb-4 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2 mb-1">
-            <span>{cfg.icon}</span>
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{cfg.title}</span>
           </div>
           <SheetTitle className="text-base font-bold leading-snug text-foreground">
@@ -1332,7 +1327,7 @@ function TaskWorkspaceSheet({
           {task.description && (
             <details className="group" open={!content}>
               <summary className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider cursor-pointer select-none list-none">
-                <Sparkles className="h-3 w-3 text-indigo-400" />
+                <Lightbulb className="h-3 w-3 text-indigo-400" style={{ strokeWidth: 1.5 }} />
                 Brief Naya
                 <span className="ml-auto text-[10px] font-normal normal-case group-open:hidden">Afficher</span>
                 <span className="ml-auto text-[10px] font-normal normal-case hidden group-open:block">Réduire</span>
@@ -1558,12 +1553,12 @@ function BentoTileMyState() {
     <div className="bg-white dark:bg-card rounded-2xl border border-border shadow-card p-5 flex flex-col h-full min-h-[130px]">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-1.5">
-          <Brain className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+          <Brain className="h-3.5 w-3.5 text-primary flex-shrink-0" style={{ strokeWidth: 1.5 }} />
           <span className="text-label text-muted-foreground">Mon état</span>
         </div>
         {personaName && (
           <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-            {(() => { const PIcon = PERSONA_ICONS[personaName] || Brain; return <PIcon className="h-3.5 w-3.5" />; })()}
+            {(() => { const PIcon = PERSONA_ICONS[personaName] || Brain; return <PIcon className="h-3.5 w-3.5" style={{ strokeWidth: 1.5 }} />; })()}
             {personaName}
           </span>
         )}
@@ -1590,21 +1585,20 @@ function BentoTileMyState() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 5,
                   padding: '6px 8px',
                   fontFamily: '"IBM Plex Mono", monospace',
                   fontSize: '0.5625rem',
                   letterSpacing: '0.1em',
                   textTransform: 'uppercase',
-                  fontWeight: isActive ? 400 : 300,
-                  background: isActive ? 'var(--foreground)' : 'transparent',
-                  color: isActive ? 'var(--background)' : 'var(--muted-foreground)',
-                  border: `1px solid ${isActive ? 'var(--foreground)' : 'var(--border)'}`,
+                  fontWeight: isActive ? 500 : 400,
+                  background: isActive ? '#2B2D1C' : 'transparent',
+                  color: isActive ? '#F7F4EC' : 'var(--muted-foreground)',
+                  border: `1px solid ${isActive ? '#2B2D1C' : 'var(--border)'}`,
                   cursor: 'pointer',
                   transition: 'all 120ms ease',
+                  borderRadius: '4px',
                 }}
               >
-                <span style={{ fontStyle: 'normal' }}>{level.symbol}</span>
                 <span>{level.label}</span>
               </button>
             );
@@ -1773,7 +1767,7 @@ function BrandDnaDialog({ project, open, onOpenChange }: { project: Project; ope
       <DialogContent className="max-w-2xl max-h-[85vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Dna className="h-5 w-5 text-[hsl(150,20%,45%)]" />
+            <Dna className="h-5 w-5 text-[hsl(150,20%,45%)]" style={{ strokeWidth: 1.5 }} />
             Brand DNA for {project.name}
           </DialogTitle>
           <p className="text-sm text-slate-500 dark:text-gray-400 mt-1">
@@ -1931,7 +1925,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div style={{ width: 40, height: 40, background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-            <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic', fontWeight: 600, fontSize: '1.25rem', color: 'var(--primary-foreground)' }}>N</span>
+            <span style={{ fontFamily: '"Unbounded", system-ui, sans-serif', fontWeight: 600, fontSize: '1.25rem', color: 'var(--primary-foreground)' }}>N</span>
           </div>
           <p className="text-sm text-muted-foreground">Chargement…</p>
         </div>
@@ -1972,7 +1966,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
                   ) : activeProject ? (
                     <div className="flex items-center gap-1.5">
                       <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: activeProject.color || 'var(--accent)' }} />
-                      <span className="text-xs text-muted-foreground">{activeProject.icon || '📁'} {activeProject.name}</span>
+                      <span className="text-xs text-muted-foreground">{activeProject.name}</span>
                     </div>
                   ) : null}
                 </div>

@@ -46,7 +46,7 @@ function Router() {
     <>
       <Suspense fallback={
         <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--background)' }}>
-          <span style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.15em', animation: 'fade-in 0.3s ease both' }}>
+          <span style={{ fontFamily: '"Unbounded", system-ui, sans-serif', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.15em', animation: 'fade-in 0.3s ease both' }}>
             Naya
           </span>
         </div>

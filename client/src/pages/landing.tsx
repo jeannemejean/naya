@@ -33,8 +33,7 @@ export default function Landing() {
             >
               <span
                 style={{
-                  fontFamily: '"Cormorant Garamond", Georgia, serif',
-                  fontStyle: 'italic',
+                  fontFamily: '"Unbounded", system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: '1.25rem',
                   color: 'var(--primary-foreground)',
@@ -46,8 +45,7 @@ export default function Landing() {
             </div>
             <span
               style={{
-                fontFamily: '"Cormorant Garamond", Georgia, serif',
-                fontStyle: 'italic',
+                fontFamily: '"Unbounded", system-ui, sans-serif',
                 fontWeight: 500,
                 fontSize: '1.25rem',
                 color: 'var(--foreground)',
@@ -85,8 +83,7 @@ export default function Landing() {
       <section style={{ padding: '96px 32px', maxWidth: 860, margin: '0 auto' }}>
         <h1
           style={{
-            fontFamily: '"Cormorant Garamond", Georgia, serif',
-            fontStyle: 'italic',
+            fontFamily: '"Unbounded", system-ui, sans-serif',
             fontWeight: 400,
             fontSize: 'clamp(3rem, 7vw, 5.5rem)',
             lineHeight: 1.1,
@@ -171,7 +168,7 @@ export default function Landing() {
             <h2 className="text-4xl md:text-5xl font-display text-foreground tracking-tight">
               {t('landing.notJustSmart')}
             </h2>
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto font-serif leading-relaxed">
+            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto font-sans leading-relaxed">
               {t('landing.notJustSmartDescription')}
             </p>
           </div>
@@ -258,7 +255,7 @@ export default function Landing() {
           <h2 className="text-4xl md:text-5xl font-display text-white tracking-tight leading-tight">
             {t('landing.ctaTitle')}
           </h2>
-          <p className="text-xl text-white/90 font-serif leading-relaxed max-w-2xl mx-auto">
+          <p className="text-xl text-white/90 font-sans leading-relaxed max-w-2xl mx-auto">
             {t('landing.ctaSubtitle')}
           </p>
           <Button
@@ -281,7 +278,7 @@ export default function Landing() {
             </div>
             <span className="text-2xl font-display text-background">Naya</span>
           </div>
-          <p className="text-sm text-background/60 font-serif">
+          <p className="text-sm text-background/60 font-sans">
             {t('landing.footer')}
           </p>
         </div>

@@ -367,8 +367,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
         <div style={{ textAlign: 'center', paddingTop: 32, paddingBottom: 32 }}>
           <p
             style={{
-              fontFamily: '"Cormorant Garamond", Georgia, serif',
-              fontStyle: 'italic',
+              fontFamily: '"Unbounded", system-ui, sans-serif',
               fontSize: '1rem',
               color: 'var(--muted-foreground)',
               marginBottom: 6,
@@ -419,8 +418,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
             {msg.isLoading ? (
               <span
                 style={{
-                  fontFamily: '"Cormorant Garamond", Georgia, serif',
-                  fontStyle: 'italic',
+                  fontFamily: '"Unbounded", system-ui, sans-serif',
                   fontSize: '0.9rem',
                   color: 'var(--muted-foreground)',
                   letterSpacing: '0.1em',
@@ -536,8 +534,7 @@ export function NayaCompanionBar() {
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <span
             style={{
-              fontFamily: '"Cormorant Garamond", Georgia, serif',
-              fontStyle: 'italic',
+              fontFamily: '"Unbounded", system-ui, sans-serif',
               fontSize: '0.875rem',
               fontWeight: 500,
               color: open ? 'var(--accent)' : 'var(--muted-foreground)',
@@ -625,8 +622,7 @@ export function NayaCompanionBar() {
             <div className="flex items-center gap-2">
               <span
                 style={{
-                  fontFamily: '"Cormorant Garamond", Georgia, serif',
-                  fontStyle: 'italic',
+                  fontFamily: '"Unbounded", system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: '0.9375rem',
                   color: 'var(--primary-foreground)',
@@ -712,7 +708,7 @@ export default function NayaCompanion() {
 
   return (
     <>
-      {/* Bouton flottant — carré brun profond avec N en Cormorant */}
+      {/* Bouton flottant Naya */}
       {!open && (
         <div className="fixed bottom-6 right-6 z-50">
           <div className="relative">
@@ -737,8 +733,7 @@ export default function NayaCompanion() {
             >
               <span
                 style={{
-                  fontFamily: '"Cormorant Garamond", Georgia, serif',
-                  fontStyle: 'italic',
+                  fontFamily: '"Unbounded", system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: '1.375rem',
                   color: 'var(--primary-foreground)',
@@ -798,8 +793,7 @@ export default function NayaCompanion() {
             <div className="flex items-center gap-3">
               <span
                 style={{
-                  fontFamily: '"Cormorant Garamond", Georgia, serif',
-                  fontStyle: 'italic',
+                  fontFamily: '"Unbounded", system-ui, sans-serif',
                   fontWeight: 600,
                   fontSize: '1rem',
                   color: 'var(--primary-foreground)',

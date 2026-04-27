@@ -67,8 +67,7 @@ export function ModernDashboardLayout({
           {headerTitle && (
             <h1
               style={{
-                fontFamily: '"Cormorant Garamond", Georgia, serif',
-                fontStyle: 'italic',
+                fontFamily: '"Unbounded", system-ui, sans-serif',
                 fontWeight: 500,
                 fontSize: '1.75rem',
                 letterSpacing: '-0.01em',
@@ -104,7 +103,7 @@ export function ModernDashboardLayout({
               style={{
                 position: 'absolute', left: 10, top: '50%',
                 transform: 'translateY(-50%)', width: 13, height: 13,
-                color: 'var(--muted-foreground)'
+                color: 'var(--muted-foreground)', strokeWidth: 1.5
               }}
             />
             <input
@@ -142,7 +141,7 @@ export function ModernDashboardLayout({
                 background: isGenerating ? 'var(--muted)' : 'var(--primary)',
                 color: 'var(--primary-foreground)',
                 border: 'none',
-                borderRadius: 8,
+                borderRadius: 4,
                 fontFamily: 'Inter, system-ui, sans-serif',
                 fontSize: '0.8125rem',
                 letterSpacing: '-0.01em',
@@ -151,7 +150,6 @@ export function ModernDashboardLayout({
                 opacity: isGenerating ? 0.7 : 1,
               }}
             >
-              <Sparkles style={{ width: 12, height: 12 }} />
               {isGenerating ? 'Génération...' : 'Générer le plan'}
             </button>
           )}
@@ -193,9 +191,8 @@ export function ModernDashboardLayout({
                     </span>
                     <span
                       style={{
-                        fontFamily: '"Cormorant Garamond", Georgia, serif',
+                        fontFamily: '"Unbounded", system-ui, sans-serif',
                         fontSize: '0.875rem',
-                        fontStyle: 'italic',
                         fontWeight: 500,
                         color: 'var(--muted-foreground)',
                       }}
@@ -212,9 +209,10 @@ export function ModernDashboardLayout({
                         background: 'transparent',
                         color: 'var(--muted-foreground)',
                         cursor: 'pointer',
+                        borderRadius: 4,
                       }}
                     >
-                      <Plus style={{ width: 12, height: 12 }} />
+                      <Plus style={{ width: 12, height: 12, strokeWidth: 1.5 }} />
                     </button>
                   )}
                 </div>

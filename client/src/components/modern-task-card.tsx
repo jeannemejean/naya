@@ -38,9 +38,9 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
       style={{
         background: 'var(--card)',
         border: '1px solid var(--border)',
-        borderRadius: 'calc(var(--radius) - 2px)',
+        borderRadius: '6px',
         padding: '12px 14px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+        boxShadow: '0 1px 2px rgba(43, 45, 28, 0.06)',
       }}
       onMouseEnter={e => {
         (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)';
@@ -76,16 +76,17 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
               border: task.completed
                 ? 'none'
                 : '1px solid var(--border)',
-              background: task.completed ? 'var(--accent)' : 'transparent',
+              background: task.completed ? '#2B2D1C' : 'transparent',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              borderRadius: '2px',
             }}
           >
             {task.completed && (
               <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                <path d="M1 3L3 5L7 1" stroke="var(--primary-foreground)" strokeWidth="1.2" strokeLinecap="square" />
+                <path d="M1 3L3 5L7 1" stroke="#F7F4EC" strokeWidth="1.2" strokeLinecap="square" />
               </svg>
             )}
           </button>
@@ -144,7 +145,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
                 color: 'var(--muted-foreground)',
               }}
             >
-              <Clock style={{ width: 10, height: 10 }} />
+              <Clock style={{ width: 10, height: 10, strokeWidth: 1.5 }} />
               {task.scheduledTime}
             </span>
           )}
@@ -203,8 +204,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
             <span
               style={{
                 marginLeft: 'auto',
-                fontFamily: '"Cormorant Garamond", Georgia, serif',
-                fontStyle: 'italic',
+                fontFamily: '"Unbounded", system-ui, sans-serif',
                 fontSize: '0.75rem',
                 fontWeight: 400,
                 color: 'var(--muted-foreground)',

@@ -59,24 +59,25 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
       }}
     >
 
-      {/* Logo — N en Cormorant italic, fond or mat */}
-      <div className="h-[64px] flex items-center justify-center shrink-0" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
+      {/* Logo Naya */}
+      <div className="h-[64px] flex items-center justify-center shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
         <Link href="/">
           <div
-            className="w-9 h-9 flex items-center justify-center cursor-pointer"
-            style={{ background: 'var(--sidebar-primary)', color: 'var(--sidebar-primary-foreground)', borderRadius: 10 }}
+            className="flex items-center justify-center cursor-pointer"
+            style={{ background: '#2B2D1C', padding: '8px 6px', borderRadius: '4px' }}
           >
             <span
               style={{
-                fontFamily: '"Cormorant Garamond", Georgia, serif',
-                fontStyle: 'italic',
-                fontWeight: '600',
-                fontSize: '1.375rem',
+                fontFamily: '"Unbounded", system-ui, sans-serif',
+                fontWeight: '700',
+                fontSize: '10px',
                 lineHeight: 1,
-                letterSpacing: '-0.02em',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: '#F7F4EC',
               }}
             >
-              N
+              Naya
             </span>
           </div>
         </Link>
@@ -94,7 +95,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--sidebar-accent)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
-                <Search style={{ width: 15, height: 15 }} />
+                <Search style={{ width: 15, height: 15, strokeWidth: 1.5 }} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">Rechercher</TooltipContent>
@@ -137,7 +138,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
                       }
                     }}
                   >
-                    <Icon style={{ width: 16, height: 16 }} />
+                    <Icon style={{ width: 16, height: 16, strokeWidth: 1.5 }} />
                   </button>
                 </Link>
               </TooltipTrigger>
@@ -162,7 +163,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
                   onMouseEnter={e => (e.currentTarget.style.background = 'var(--sidebar-accent)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <FolderKanban style={{ width: 16, height: 16 }} />
+                  <FolderKanban style={{ width: 16, height: 16, strokeWidth: 1.5 }} />
                   {activeProjectId && (
                     <span
                       className="absolute top-2 right-2 w-1.5 h-1.5"
@@ -208,7 +209,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
                 fontWeight: 300,
               }}
             >
-              <Layers style={{ width: 14, height: 14, marginRight: 8, flexShrink: 0 }} />
+              <Layers style={{ width: 14, height: 14, marginRight: 8, flexShrink: 0, strokeWidth: 1.5 }} />
               {t('sidebar.allProjects')}
             </DropdownMenuItem>
 
@@ -243,7 +244,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
                 fontWeight: 300,
               }}
             >
-              <Settings style={{ width: 14, height: 14, marginRight: 8 }} />
+              <Settings style={{ width: 14, height: 14, marginRight: 8, strokeWidth: 1.5 }} />
               {t('sidebar.manageProjects')}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -271,7 +272,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
                   }
                 }}
               >
-                <Settings style={{ width: 16, height: 16 }} />
+                <Settings style={{ width: 16, height: 16, strokeWidth: 1.5 }} />
               </button>
             </Link>
           </TooltipTrigger>
@@ -302,9 +303,9 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
               aria-label={theme === 'dark' ? 'Passer en mode clair' : 'Passer en mode sombre'}
             >
               {theme === 'dark' ? (
-                <Sun style={{ width: 15, height: 15 }} />
+                <Sun style={{ width: 15, height: 15, strokeWidth: 1.5 }} />
               ) : (
-                <Moon style={{ width: 15, height: 15 }} />
+                <Moon style={{ width: 15, height: 15, strokeWidth: 1.5 }} />
               )}
             </button>
           </TooltipTrigger>
@@ -347,8 +348,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
               >
                 <span
                   style={{
-                    fontFamily: '"Cormorant Garamond", Georgia, serif',
-                    fontStyle: 'italic',
+                    fontFamily: '"Unbounded", system-ui, sans-serif',
                     fontWeight: '500',
                     fontSize: '1rem',
                     color: 'var(--sidebar-foreground)',
