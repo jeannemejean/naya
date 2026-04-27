@@ -87,6 +87,7 @@ import {
   getAuthUrl,
   exchangeCodeForTokens,
   getCalendarEvents,
+  getCalendarBlockedRanges,
 } from './services/google-calendar';
 import { 
   detectUserPersona, 
@@ -3990,6 +3991,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           usedRanges.push({ start: startMin, end: endMin });
         }
       }
+      // Add Google Calendar events as blocked ranges so generated tasks never overlap appointments
+      const calBlockedRanges = await getCalendarBlockedRanges(userId, todayStr).catch(() => []);
+      usedRanges.push(...calBlockedRanges);
+
       const rangeOverlaps = (startMin: number, endMin: number) =>
         usedRanges.some(r => startMin < r.end && endMin > r.start);
 
