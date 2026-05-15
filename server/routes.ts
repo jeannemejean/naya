@@ -1630,6 +1630,18 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   });
 
   // ── Planning Pause / Resume / Restart ──────────────────────────────
+  app.post('/api/planning/fix-overlaps', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const fixed = await storage.fixOverlappingTasks(userId, todayStr);
+      res.json({ fixed });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fix overlapping tasks" });
+    }
+  });
+
   app.post('/api/planning/pause', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -4936,11 +4948,28 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       const dayNextSlot = new Map<string, number>();
 
+      // Seed from completed tasks
       for (const t of allTasks) {
         if (t.completed && t.scheduledDate && t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
           const endMin = (t.scheduledEndTime && /^\d{2}:\d{2}$/.test(t.scheduledEndTime))
             ? hhmmToMinutes(t.scheduledEndTime)
             : hhmmToMinutes(t.scheduledTime) + (t.estimatedDuration || 30);
+          const current = dayNextSlot.get(t.scheduledDate);
+          if (current === undefined || endMin > current) {
+            dayNextSlot.set(t.scheduledDate, endMin);
+          }
+        }
+      }
+
+      // Also seed from incomplete tasks NOT being rebalanced (campaign tasks, fixed tasks).
+      // These tasks keep their existing slots — the rebalancer must work around them.
+      const rebalancedIds = new Set(rebalanced.map((t: any) => t.id));
+      for (const t of allTasks) {
+        if (!t.completed && !rebalancedIds.has(t.id) &&
+            t.scheduledDate && t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
+          const endMin = (t.scheduledEndTime && /^\d{2}:\d{2}$/.test(t.scheduledEndTime))
+            ? hhmmToMinutes(t.scheduledEndTime)
+            : hhmmToMinutes(t.scheduledTime) + (t.estimatedDuration || 30) + 15;
           const current = dayNextSlot.get(t.scheduledDate);
           if (current === undefined || endMin > current) {
             dayNextSlot.set(t.scheduledDate, endMin);

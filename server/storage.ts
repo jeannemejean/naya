@@ -1337,6 +1337,79 @@ export class DatabaseStorage implements IStorage {
     await db.delete(tasks).where(eq(tasks.id, taskId));
   }
 
+  async fixOverlappingTasks(userId: string, fromDate: string): Promise<number> {
+    const [toFix, prefs] = await Promise.all([
+      db.select().from(tasks).where(and(
+        eq(tasks.userId, userId),
+        eq(tasks.completed, false),
+        gte(tasks.scheduledDate, fromDate),
+      )),
+      this.getUserPreferences(userId),
+    ]);
+
+    const parseTime = (hhmm: string): number => {
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + (m || 0);
+    };
+    const formatTime = (min: number): string => {
+      const h = Math.floor(min / 60);
+      const m = min % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    const DAY_START = parseTime(prefs?.workDayStart || '09:00');
+    const DAY_END = parseTime(prefs?.workDayEnd || '18:00');
+    const LUNCH_START = parseTime(prefs?.lunchBreakStart || '12:00');
+    const LUNCH_END = parseTime(prefs?.lunchBreakEnd || '13:00');
+    const BUFFER = 15;
+
+    // Skip over lunch break — returns the next valid start time
+    const skipLunch = (start: number, duration: number): number => {
+      if (start < LUNCH_END && start + duration > LUNCH_START) return LUNCH_END;
+      return start;
+    };
+
+    // Group by date, skip tasks without scheduledTime
+    const byDate = new Map<string, typeof toFix>();
+    for (const t of toFix) {
+      if (!t.scheduledDate || !t.scheduledTime || !/^\d{2}:\d{2}$/.test(t.scheduledTime)) continue;
+      if (!byDate.has(t.scheduledDate)) byDate.set(t.scheduledDate, []);
+      byDate.get(t.scheduledDate)!.push(t);
+    }
+
+    let fixed = 0;
+    for (const dayTasks of Array.from(byDate.values())) {
+      dayTasks.sort((a: any, b: any) => parseTime(a.scheduledTime!) - parseTime(b.scheduledTime!));
+
+      let cursor = DAY_START;
+      for (const task of dayTasks) {
+        const duration = task.estimatedDuration || 30;
+        const currentStart = parseTime(task.scheduledTime!);
+        const idealStart = skipLunch(cursor, duration);
+
+        if (idealStart + duration > DAY_END) break; // overflow — leave task as-is
+
+        if (currentStart < cursor || (currentStart >= LUNCH_START && currentStart < LUNCH_END)) {
+          // Task overlaps previous or falls in lunch — move it
+          const newStart = idealStart;
+          const newEnd = newStart + duration;
+          await db.update(tasks)
+            .set({
+              scheduledTime: formatTime(newStart),
+              scheduledEndTime: formatTime(newEnd),
+            })
+            .where(eq(tasks.id, task.id));
+          cursor = newEnd + BUFFER;
+          fixed++;
+        } else {
+          cursor = currentStart + duration + BUFFER;
+        }
+        cursor = skipLunch(cursor, 0); // advance past lunch if cursor landed in it
+      }
+    }
+    return fixed;
+  }
+
   async deleteIncompleteFutureTasks(userId: string, fromDate: string): Promise<number> {
     const toDelete = await db.select({ id: tasks.id })
       .from(tasks)
