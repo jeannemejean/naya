@@ -24,41 +24,46 @@ export default function Landing() {
   ] as const;
 
   return (
-    <div className="min-h-screen naya-paper">
+    <div className="min-h-screen naya-paper flex flex-col">
 
       {/* ── Header ── */}
-      <header className="px-10 py-5 border-b border-naya-olive-10 bg-naya-cream/90 backdrop-blur-sm flex items-center justify-between sticky top-0 z-10">
+      <header className="px-8 py-4 border-b border-naya-olive-10 bg-naya-cream/90 backdrop-blur-sm flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <img
-            src="/naya-mark-elephant.png"
-            alt="Naya"
-            className="w-12 h-12 object-contain"
-          />
-          <span className="wordmark text-sm">NAYA</span>
+          <img src="/naya-mark-elephant.png" alt="Naya" className="w-10 h-10 object-contain" />
+          <span className="wordmark text-xs tracking-[0.22em]">NAYA</span>
         </div>
-
         <button
           onClick={() => handleOpenAuth("login")}
           data-testid="auth-login"
-          className="eyebrow hover:text-naya-olive transition-colors duration-base ease-quiet border-b border-transparent hover:border-naya-olive-35 pb-px cursor-pointer"
+          className="eyebrow text-[10px] hover:text-naya-olive transition-colors duration-base ease-quiet border-b border-transparent hover:border-naya-olive-35 pb-px cursor-pointer"
         >
           {t('landing.meetNaya')}
         </button>
       </header>
 
       {/* ── Hero ── */}
-      <section className="px-10 pt-20 pb-18 max-w-[740px] mx-auto">
-        <p className="eyebrow mb-6">Intelligence stratégique · For builders</p>
+      <section className="flex-1 flex flex-col items-center justify-center text-center px-6 pt-24 pb-20">
 
-        <h1 className="h1 text-[clamp(2rem,4vw,3.5rem)] mb-5">
+        {/* Eyebrow */}
+        <p className="eyebrow text-[10px] text-naya-olive-35 mb-8 tracking-[0.25em]">
+          Intelligence stratégique · For builders
+        </p>
+
+        {/* Title */}
+        <h1
+          className="font-display font-light uppercase tracking-[0.08em] text-naya-olive leading-[1.05] mb-8"
+          style={{ fontSize: 'clamp(2.6rem, 6vw, 5rem)', maxWidth: 780 }}
+        >
           {t('landing.heroTitle')}
         </h1>
 
-        <p className="text-base text-naya-olive-70 leading-[1.7] mb-10 max-w-[500px]">
+        {/* Description */}
+        <p className="text-base text-naya-olive-55 leading-[1.75] mb-10 max-w-[460px]">
           {t('landing.heroDescription')}
         </p>
 
-        <div className="flex gap-2.5 flex-wrap">
+        {/* CTAs */}
+        <div className="flex items-center gap-3 flex-wrap justify-center">
           <Button
             variant="display"
             size="lg"
@@ -67,42 +72,54 @@ export default function Landing() {
           >
             {t('landing.meetNaya')}
           </Button>
-          <Button
-            variant="secondary"
-            size="lg"
+          <button
             onClick={() => handleOpenAuth("login")}
+            className="eyebrow text-[10px] tracking-[0.18em] text-naya-olive-55 hover:text-naya-olive transition-colors border-b border-naya-olive-18 hover:border-naya-olive-35 pb-px cursor-pointer"
           >
-            {t('landing.seeHowItWorks')}
-          </Button>
+            {t('landing.seeHowItWorks')} →
+          </button>
         </div>
+
+        {/* Subtle social proof / credibility line */}
+        <p className="mt-12 text-[11px] text-naya-olive-18 font-display uppercase tracking-[0.18em]">
+          Conçu pour les entrepreneurs indépendants
+        </p>
       </section>
 
-      {/* ── Hairline ── */}
-      <div className="border-t border-naya-olive-10 max-w-[900px] mx-auto" />
+      {/* ── Hairline separator ── */}
+      <div className="border-t border-naya-olive-10" />
 
       {/* ── Features ── */}
-      <section className="px-10 py-18 bg-naya-cream">
-        <div className="max-w-[900px] mx-auto">
-          <div className="mb-14">
-            <p className="eyebrow mb-4">{t('landing.notJustSmart')}</p>
-            <p className="text-base text-naya-olive-70 leading-[1.65] max-w-[480px]">
+      <section className="bg-naya-cream px-6 py-20">
+        <div className="max-w-[960px] mx-auto">
+
+          {/* Section header */}
+          <div className="text-center mb-16">
+            <p className="eyebrow text-[10px] tracking-[0.25em] text-naya-olive-35 mb-5">
+              {t('landing.notJustSmart')}
+            </p>
+            <p className="text-base text-naya-olive-55 leading-[1.75] max-w-[440px] mx-auto">
               {t('landing.notJustSmartDescription')}
             </p>
           </div>
 
+          {/* Feature grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-naya-olive-10 border border-naya-olive-10">
             {features.map(({ icon: Icon, key }) => (
               <div
                 key={key}
-                className="bg-naya-cream p-8 hover:bg-naya-olive-06 transition-colors duration-base ease-quiet"
+                className="bg-naya-cream p-9 hover:bg-naya-olive-06 transition-colors duration-300 ease-quiet group"
               >
-                <div className="w-11 h-11 flex items-center justify-center border border-naya-olive-18 rounded-sm mb-6">
-                  <Icon size={22} strokeWidth={1.5} className="text-naya-olive-55" />
+                {/* Icon container */}
+                <div className="w-10 h-10 flex items-center justify-center border border-naya-olive-18 rounded-sm mb-7 group-hover:border-naya-olive-35 transition-colors">
+                  <Icon size={20} strokeWidth={1.4} className="text-naya-olive-55" />
                 </div>
-                <p className="font-display uppercase tracking-xwide text-[11px] text-naya-olive mb-3">
+                {/* Title */}
+                <p className="font-display uppercase tracking-[0.18em] text-[10px] text-naya-olive mb-3">
                   {t(`landing.${key}`)}
                 </p>
-                <p className="text-sm text-naya-olive-70 leading-[1.65]">
+                {/* Description */}
+                <p className="text-[13px] text-naya-olive-55 leading-[1.7]">
                   {t(`landing.${key}Description`)}
                 </p>
               </div>
@@ -111,18 +128,18 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── CTA — olive paper ── */}
-      <section className="px-10 py-20 naya-paper-inverse">
-        <div className="max-w-[560px] mx-auto text-center">
-          <h2 className="font-display uppercase tracking-xwide text-xl font-light text-naya-cream mb-4">
+      {/* ── CTA inverse ── */}
+      <section className="naya-paper-inverse px-6 py-24">
+        <div className="max-w-[520px] mx-auto text-center">
+          <p className="eyebrow text-[10px] tracking-[0.25em] text-naya-cream/40 mb-6">
             {t('landing.ctaTitle')}
-          </h2>
-          <p className="text-base text-naya-cream/65 leading-[1.65] mb-9">
+          </p>
+          <p className="text-[15px] text-naya-cream/60 leading-[1.75] mb-10">
             {t('landing.ctaSubtitle')}
           </p>
           <button
             onClick={() => handleOpenAuth("register")}
-            className="inline-flex items-center gap-2 px-8 h-11 bg-naya-cream text-naya-olive font-display uppercase tracking-xwide text-[11px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer"
+            className="inline-flex items-center gap-2 px-9 h-12 bg-naya-cream text-naya-olive font-display uppercase tracking-[0.18em] text-[10px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer"
           >
             {t('landing.startWithNaya')}
           </button>
@@ -130,18 +147,12 @@ export default function Landing() {
       </section>
 
       {/* ── Footer ── */}
-      <footer className="px-10 py-8 bg-naya-olive flex items-center justify-between flex-wrap gap-3">
+      <footer className="px-8 py-7 bg-naya-olive border-t border-naya-olive-35 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <img
-            src="/naya-mark-elephant.png"
-            alt=""
-            className="w-9 h-9 object-contain opacity-60"
-          />
-          <span className="wordmark text-[11px] text-naya-cream/80">
-            NAYA
-          </span>
+          <img src="/naya-mark-elephant.png" alt="" className="w-8 h-8 object-contain opacity-40" />
+          <span className="wordmark text-[10px] text-naya-cream/60 tracking-[0.22em]">NAYA</span>
         </div>
-        <p className="text-[13px] text-naya-cream/40">
+        <p className="text-[11px] text-naya-cream/30 font-display uppercase tracking-[0.15em]">
           {t('landing.footer')}
         </p>
       </footer>
