@@ -39,10 +39,10 @@ const SUCCESS_MODE_COLORS: Record<string, string> = {
 };
 
 const PERSONA_ICONS: Record<string, string> = {
-  Strategist:           "🧭",
-  Builder:              "⚡",
-  "Creative Marketer":  "🎨",
-  "Analytical Thinker": "📊",
+  Strategist:           "◆",
+  Builder:              "▶",
+  "Creative Marketer":  "◇",
+  "Analytical Thinker": "—",
 };
 
 const SELF_CARE_OPTIONS = [

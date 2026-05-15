@@ -69,10 +69,10 @@ const PROJECT_COLORS = [
 ];
 
 const TIME_OF_DAY_HINTS: Record<string, { emoji: string; label: string }> = {
-  morning:   { emoji: '🌅', label: 'Morning' },
-  afternoon: { emoji: '☀️', label: 'Afternoon' },
-  evening:   { emoji: '🌙', label: 'Evening' },
-  anytime:   { emoji: '🕒', label: 'Anytime' },
+  morning:   { emoji: '○', label: 'Morning' },
+  afternoon: { emoji: '◑', label: 'Afternoon' },
+  evening:   { emoji: '◆', label: 'Evening' },
+  anytime:   { emoji: '—', label: 'Anytime' },
 };
 
 function getProjectColor(projectId: number | null | undefined, _projects: Project[]): string {
@@ -269,7 +269,7 @@ export default function Planning({ onSearchClick }: Props) {
       queryClient.invalidateQueries({ queryKey: rangeQueryKey });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
       queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      toast({ title: "✅ Jalon confirmé !", description: "Le jalon suivant est maintenant débloqué." });
+      toast({ title: "Jalon confirmé", description: "Le jalon suivant est maintenant débloqué." });
     },
     onError: () => toast({ title: "Erreur", description: "Impossible de confirmer le jalon.", variant: "destructive" }),
   });
@@ -608,27 +608,27 @@ export default function Planning({ onSearchClick }: Props) {
             <div className="flex-1 flex min-h-0 overflow-hidden">
               <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
                 {lastStrategySignal && (
-                  <div className="mx-1 mb-2 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 rounded-lg px-3 py-1.5 flex-shrink-0">
+                  <div className="mx-1 mb-2 bg-[rgba(125,143,168,0.10)] border border-[rgba(125,143,168,0.28)] rounded-lg px-3 py-1.5 flex-shrink-0">
                     <div className="flex items-center gap-2">
-                      <Brain className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
-                      <p className="text-[11px] text-indigo-800 dark:text-indigo-300 truncate flex-1">{lastStrategySignal.focus}</p>
+                      <Brain className="h-3.5 w-3.5 text-naya-salvia flex-shrink-0" />
+                      <p className="text-[11px] text-[#354963] truncate flex-1">{lastStrategySignal.focus}</p>
                       {lastStrategySignal.reasoning && (
                         <button
                           onClick={() => setStrategyExpanded(!strategyExpanded)}
-                          className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 flex-shrink-0 whitespace-nowrap"
+                          className="text-[10px] text-naya-salvia hover:text-[#354963] flex-shrink-0 whitespace-nowrap"
                         >
                           {strategyExpanded ? t('planning.less') : 'Why these tasks?'}
                         </button>
                       )}
                     </div>
                     {strategyExpanded && lastStrategySignal.reasoning && (
-                      <div className="mt-1.5 space-y-1.5 border-t border-indigo-200/50 dark:border-indigo-800/30 pt-1.5">
-                        <p className="text-[11px] text-indigo-700 dark:text-indigo-300 leading-relaxed">{lastStrategySignal.reasoning}</p>
+                      <div className="mt-1.5 space-y-1.5 border-t border-[rgba(125,143,168,0.20)] pt-1.5">
+                        <p className="text-[11px] text-[#354963] leading-relaxed">{lastStrategySignal.reasoning}</p>
                         {lastStrategySignal.bottleneck && (
-                          <p className="text-[10px] text-amber-700 dark:text-amber-400"><span className="font-medium">⚠ Bottleneck:</span> {lastStrategySignal.bottleneck}</p>
+                          <p className="text-[10px] text-[#5a4f0d]"><span className="font-medium">! Bottleneck:</span> {lastStrategySignal.bottleneck}</p>
                         )}
                         {lastStrategySignal.suggestedNextMove && (
-                          <p className="text-[10px] text-emerald-700 dark:text-emerald-400"><span className="font-medium">→ Next move:</span> {lastStrategySignal.suggestedNextMove}</p>
+                          <p className="text-[10px] text-naya-olive"><span className="font-medium">→ Next move:</span> {lastStrategySignal.suggestedNextMove}</p>
                         )}
                       </div>
                     )}
@@ -746,7 +746,7 @@ export default function Planning({ onSearchClick }: Props) {
                           <TaskCard key={task.id} task={task} compact />
                         ))}
                       </div>
-                      <p className="text-[9px] text-slate-400 dark:text-gray-500 mt-2">{t('planning.dragToSchedule')}</p>
+                      <p className="text-[9px] text-naya-olive-35 mt-2">{t('planning.dragToSchedule')}</p>
                     </div>
                   );
                 })()}
@@ -767,8 +767,8 @@ export default function Planning({ onSearchClick }: Props) {
               <AlertDialogHeader>
                 <AlertDialogTitle>
                   {(milestoneConfirmTarget as any)?.milestoneStatus === 'locked'
-                    ? '🔒 Jalon bloqué'
-                    : '🏁 Confirmer ce jalon'}
+                    ? '○ Jalon bloqué'
+                    : '→ Confirmer ce jalon'}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {(milestoneConfirmTarget as any)?.milestoneStatus === 'locked' ? (
@@ -788,7 +788,7 @@ export default function Planning({ onSearchClick }: Props) {
                       if (mid) confirmMilestoneMutation.mutate(mid);
                       setMilestoneConfirmTarget(null);
                     }}
-                    className="bg-amber-500 hover:bg-amber-600 text-white"
+                    className="bg-naya-sulphur hover:opacity-90 text-naya-olive"
                   >
                     ✓ Confirmer le jalon
                   </AlertDialogAction>

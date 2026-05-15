@@ -5,7 +5,7 @@ import App from "./App";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
-  <Suspense fallback={<div />}>
-    <App />
-  </Suspense>
+ <Suspense fallback={<div />}>
+ <App />
+ </Suspense>
 );
