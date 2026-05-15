@@ -28,13 +28,13 @@ export default function Landing() {
 
       {/* ── Header ── */}
       <header className="px-10 py-5 border-b border-naya-olive-10 bg-naya-cream/90 backdrop-blur-sm flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <img
             src="/naya-mark-elephant.png"
             alt="Naya"
-            className="w-8 h-8 object-contain"
+            className="w-12 h-12 object-contain"
           />
-          <span className="wordmark text-[11px]">NAYA</span>
+          <span className="wordmark text-sm">NAYA</span>
         </div>
 
         <button
@@ -90,24 +90,19 @@ export default function Landing() {
             </p>
           </div>
 
-          <div
-            className="grid border border-naya-olive-18"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 0 }}
-          >
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-naya-olive-10 border border-naya-olive-10">
             {features.map(({ icon: Icon, key }) => (
               <div
                 key={key}
-                className="p-7 border-r border-b border-naya-olive-10 hover:bg-naya-olive-06 transition-colors duration-base ease-quiet"
+                className="bg-naya-cream p-8 hover:bg-naya-olive-06 transition-colors duration-base ease-quiet"
               >
-                <Icon
-                  size={17}
-                  strokeWidth={1.5}
-                  className="text-naya-olive-55 mb-4"
-                />
-                <p className="font-display uppercase tracking-wide text-sm text-naya-olive mb-2">
+                <div className="w-11 h-11 flex items-center justify-center border border-naya-olive-18 rounded-sm mb-6">
+                  <Icon size={22} strokeWidth={1.5} className="text-naya-olive-55" />
+                </div>
+                <p className="font-display uppercase tracking-xwide text-[11px] text-naya-olive mb-3">
                   {t(`landing.${key}`)}
                 </p>
-                <p className="text-sm text-naya-olive-70 leading-[1.6]">
+                <p className="text-sm text-naya-olive-70 leading-[1.65]">
                   {t(`landing.${key}Description`)}
                 </p>
               </div>
@@ -136,16 +131,13 @@ export default function Landing() {
 
       {/* ── Footer ── */}
       <footer className="px-10 py-8 bg-naya-olive flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <img
             src="/naya-mark-elephant.png"
             alt=""
-            className="w-6 h-6 object-contain opacity-60"
+            className="w-9 h-9 object-contain opacity-60"
           />
-          <span
-            className="font-display text-[10px] uppercase text-naya-cream/80"
-            style={{ letterSpacing: '0.30em' }}
-          >
+          <span className="wordmark text-[11px] text-naya-cream/80">
             NAYA
           </span>
         </div>
