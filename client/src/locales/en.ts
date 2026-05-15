@@ -68,6 +68,8 @@ const en = {
 
  landing: {
  meetNaya: "Meet Naya",
+ heroEyebrow: "Strategic intelligence · For builders",
+ heroCredibility: "Built for independent entrepreneurs",
  heroTitle: "Your AI Operating System",
  heroSubtitle: "for building without burning out.",
  heroDescription: "Naya learns how you think, work, and decide — then turns that into a personalized daily plan that actually fits your life. No more wondering what to do. No more energy wasted on the wrong things.",

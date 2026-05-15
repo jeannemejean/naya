@@ -46,7 +46,7 @@ export default function Landing() {
 
         {/* Eyebrow */}
         <p className="eyebrow text-[10px] text-naya-olive-35 mb-8 tracking-[0.25em]">
-          Intelligence stratégique · For builders
+          {t('landing.heroEyebrow')}
         </p>
 
         {/* Title */}
@@ -82,7 +82,7 @@ export default function Landing() {
 
         {/* Subtle social proof / credibility line */}
         <p className="mt-12 text-[11px] text-naya-olive-18 font-display uppercase tracking-[0.18em]">
-          Conçu pour les entrepreneurs indépendants
+          {t('landing.heroCredibility')}
         </p>
       </section>
 
