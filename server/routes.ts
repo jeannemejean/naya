@@ -1629,6 +1629,54 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     }
   });
 
+  // ── Planning Pause / Resume / Restart ──────────────────────────────
+  app.post('/api/planning/pause', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const prefs = await storage.upsertUserPreferences(userId, {
+        planningStatus: 'paused',
+        planningPausedAt: new Date(),
+      });
+      res.json({ planningStatus: prefs.planningStatus });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to pause planning" });
+    }
+  });
+
+  app.post('/api/planning/resume', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const prefs = await storage.upsertUserPreferences(userId, {
+        planningStatus: 'active',
+        planningStartDate: todayStr,
+      });
+      res.json({ planningStatus: prefs.planningStatus });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to resume planning" });
+    }
+  });
+
+  app.post('/api/planning/restart', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const now = new Date();
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const deleted = await storage.deleteIncompleteFutureTasks(userId, todayStr);
+      const prefs = await storage.upsertUserPreferences(userId, {
+        planningStatus: 'active',
+        planningStartDate: todayStr,
+        dailyBriefDate: null as any,
+        dailyBriefContent: null,
+        dailyBriefDismissed: false,
+      });
+      res.json({ planningStatus: prefs.planningStatus, tasksDeleted: deleted });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to restart planning" });
+    }
+  });
+
   // ── Energy Level endpoints ──────────────────────────────────────────
   app.get('/api/user/energy', isAuthenticated, async (req: any, res) => {
     try {
@@ -1710,6 +1758,10 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       const prefs = await storage.getUserPreferences(userId);
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      if (prefs?.planningStatus === 'paused') {
+        return res.json({ paused: true, message: "La planification est en pause." });
+      }
 
       const forceRefresh = req.body?.refresh === true || req.query?.refresh === 'true';
       if (!forceRefresh && prefs?.dailyBriefDate === todayStr && prefs.dailyBriefContent) {

@@ -260,6 +260,38 @@ export default function Planning({ onSearchClick }: Props) {
     },
   });
 
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
+
+  const pauseMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/planning/pause").then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/preferences'] });
+      toast({ title: t('planning.pausedTitle'), description: t('planning.pausedDesc') });
+    },
+    onError: () => toast({ title: t('common.error'), variant: "destructive" }),
+  });
+
+  const resumeMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/planning/resume").then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/preferences'] });
+      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
+      toast({ title: t('planning.resumedTitle'), description: t('planning.resumedDesc') });
+    },
+    onError: () => toast({ title: t('common.error'), variant: "destructive" }),
+  });
+
+  const restartMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/planning/restart").then(r => r.json()),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/preferences'] });
+      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+      toast({ title: t('planning.restartedTitle'), description: t('planning.restartedDesc', { count: data.tasksDeleted }) });
+    },
+    onError: () => toast({ title: t('common.error'), variant: "destructive" }),
+  });
+
   const confirmMilestoneMutation = useMutation({
     mutationFn: async (milestoneId: number) => {
       const res = await apiRequest("POST", `/api/milestones/${milestoneId}/confirm`);
@@ -470,7 +502,77 @@ export default function Planning({ onSearchClick }: Props) {
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
+
+            {/* Planning status controls */}
+            <div className="flex items-center gap-2 ml-3">
+              {preferences?.planningStatus === 'paused' ? (
+                <button
+                  onClick={() => resumeMutation.mutate()}
+                  disabled={resumeMutation.isPending}
+                  className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm bg-naya-sulphur/20 border border-naya-sulphur/40 text-naya-olive hover:bg-naya-sulphur/30 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span className="text-[10px]">▶</span>
+                  {t('planning.resume')}
+                </button>
+              ) : (
+                <button
+                  onClick={() => pauseMutation.mutate()}
+                  disabled={pauseMutation.isPending}
+                  className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <span className="text-[10px]">◑</span>
+                  {t('planning.pause')}
+                </button>
+              )}
+              <button
+                onClick={() => setRestartConfirmOpen(true)}
+                className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer"
+              >
+                <span className="text-[10px]">◈</span>
+                {t('planning.restart')}
+              </button>
+            </div>
           </div>
+
+          {/* Paused banner */}
+          {preferences?.planningStatus === 'paused' && (
+            <div className="px-5 py-2.5 bg-naya-sulphur/10 border-b border-naya-sulphur/20 flex items-center justify-between">
+              <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55">
+                {t('planning.pausedBanner')}
+              </p>
+              <button
+                onClick={() => resumeMutation.mutate()}
+                className="font-display uppercase tracking-xwide text-[9px] text-naya-olive underline cursor-pointer hover:no-underline"
+              >
+                {t('planning.resume')}
+              </button>
+            </div>
+          )}
+
+          {/* Restart confirmation dialog */}
+          <AlertDialog open={restartConfirmOpen} onOpenChange={setRestartConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display uppercase tracking-xwide text-[11px]">
+                  {t('planning.restartConfirmTitle')}
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-[13px] text-naya-olive-55">
+                  {t('planning.restartConfirmDesc')}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="font-display uppercase tracking-xwide text-[9px]">
+                  {t('common.cancel')}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => { setRestartConfirmOpen(false); restartMutation.mutate(); }}
+                  className="font-display uppercase tracking-xwide text-[9px] bg-naya-olive text-naya-cream hover:opacity-90"
+                >
+                  {t('planning.restartConfirm')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* Body */}
           {rangeLoading ? (
