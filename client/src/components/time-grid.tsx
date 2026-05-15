@@ -117,6 +117,10 @@ function snapToQuarter(minutes: number): number {
   return Math.round(minutes / 15) * 15;
 }
 
+// Maximum de colonnes visuelles dans une cellule de grille.
+// Au-delà, les tâches partagent une colonne (z-stacking léger).
+const MAX_VISUAL_LANES = 3;
+
 function assignLanes(tasks: Task[]): Map<number, { lane: number; totalLanes: number }> {
   const sorted = [...tasks].sort((a, b) => {
     const aMin = a.scheduledTime ? timeToMinutes(a.scheduledTime) : 0;
@@ -126,6 +130,8 @@ function assignLanes(tasks: Task[]): Map<number, { lane: number; totalLanes: num
 
   const laneMap = new Map<number, { lane: number; totalLanes: number }>();
   const laneEnds: number[] = [];
+  // Mémorise les intervalles pour le calcul de chevauchement local
+  const intervals: { id: number; start: number; end: number; lane: number }[] = [];
 
   for (const task of sorted) {
     const startMin = task.scheduledTime ? timeToMinutes(task.scheduledTime) : GRID_START_HOUR * 60;
@@ -133,24 +139,50 @@ function assignLanes(tasks: Task[]): Map<number, { lane: number; totalLanes: num
     const endMin = startMin + dur;
 
     let placed = false;
-    for (let l = 0; l < laneEnds.length; l++) {
+    let assignedLane = 0;
+
+    // Cherche une lane libre (dans la limite MAX_VISUAL_LANES)
+    for (let l = 0; l < Math.min(laneEnds.length, MAX_VISUAL_LANES); l++) {
       if (laneEnds[l] <= startMin) {
         laneEnds[l] = endMin;
-        laneMap.set(task.id, { lane: l, totalLanes: 0 });
+        assignedLane = l;
         placed = true;
         break;
       }
     }
+
     if (!placed) {
-      laneEnds.push(endMin);
-      laneMap.set(task.id, { lane: laneEnds.length - 1, totalLanes: 0 });
+      if (laneEnds.length < MAX_VISUAL_LANES) {
+        // Nouvelle lane (sous le plafond)
+        assignedLane = laneEnds.length;
+        laneEnds.push(endMin);
+      } else {
+        // Plafond atteint : recycle la lane qui se libère le plus tôt
+        let earliest = 0;
+        for (let l = 1; l < laneEnds.length; l++) {
+          if (laneEnds[l] < laneEnds[earliest]) earliest = l;
+        }
+        assignedLane = earliest;
+        laneEnds[earliest] = endMin;
+      }
     }
+
+    laneMap.set(task.id, { lane: assignedLane, totalLanes: 0 });
+    intervals.push({ id: task.id, start: startMin, end: endMin, lane: assignedLane });
   }
 
-  const totalLanes = laneEnds.length;
-  Array.from(laneMap.entries()).forEach(([id, info]) => {
-    laneMap.set(id, { ...info, totalLanes });
-  });
+  // 2e passe : totalLanes locaux = max concurrent dans le groupe de chevauchement
+  for (const task of sorted) {
+    const info   = laneMap.get(task.id)!;
+    const itvl   = intervals.find(i => i.id === task.id)!;
+    let maxLane  = 0;
+    for (const other of intervals) {
+      if (other.start < itvl.end && other.end > itvl.start) {
+        maxLane = Math.max(maxLane, other.lane);
+      }
+    }
+    laneMap.set(task.id, { lane: info.lane, totalLanes: Math.min(maxLane + 1, MAX_VISUAL_LANES) });
+  }
 
   return laneMap;
 }
