@@ -46,26 +46,26 @@ interface Task {
 
 type ViewScope = 'day' | 'week' | 'month';
 
-const ENERGY_BADGES: Record<string, { emoji: string; label: string; cls: string }> = {
-  deep_work:  { emoji: '🎯', label: 'Focus',     cls: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  creative:   { emoji: '✨', label: 'Creative',  cls: 'bg-purple-50 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400' },
-  admin:      { emoji: '📋', label: 'Admin',     cls: 'bg-slate-100 text-slate-500 dark:bg-gray-800 dark:text-gray-400' },
-  social:     { emoji: '💬', label: 'Social',    cls: 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-400' },
-  logistics:  { emoji: '📦', label: 'Logistics', cls: 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' },
-  execution:  { emoji: '⚡', label: 'Execute',   cls: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500' },
+const ENERGY_BADGES: Record<string, { symbol: string; label: string; cls: string }> = {
+  deep_work:  { symbol: '◆', label: 'Focus',       cls: 'bg-naya-olive-10 text-naya-olive border border-naya-olive-18' },
+  creative:   { symbol: '◇', label: 'Créatif',     cls: 'bg-[rgba(212,201,122,0.18)] text-[#5a4f0d] border border-[rgba(212,201,122,0.40)]' },
+  admin:      { symbol: '—', label: 'Admin',       cls: 'bg-naya-olive-06 text-naya-olive-55 border border-naya-olive-10' },
+  social:     { symbol: '◯', label: 'Social',      cls: 'bg-[rgba(125,143,168,0.18)] text-[#354963] border border-[rgba(125,143,168,0.40)]' },
+  logistics:  { symbol: '▷', label: 'Logistique',  cls: 'bg-[rgba(158,126,135,0.18)] text-[#5c3d45] border border-[rgba(158,126,135,0.40)]' },
+  execution:  { symbol: '▶', label: 'Exécution',   cls: 'bg-[rgba(212,201,122,0.12)] text-[#4a3e08] border border-[rgba(212,201,122,0.30)]' },
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  revenue: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
-  visibility: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  relationships: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  operations: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400',
-  growth: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400',
+  revenue:       'bg-[rgba(212,201,122,0.18)] text-[#5a4f0d] border border-[rgba(212,201,122,0.40)]',
+  visibility:    'bg-[rgba(125,143,168,0.18)] text-[#354963] border border-[rgba(125,143,168,0.40)]',
+  relationships: 'bg-[rgba(158,126,135,0.18)] text-[#5c3d45] border border-[rgba(158,126,135,0.40)]',
+  operations:    'bg-naya-olive-06 text-naya-olive-55 border border-naya-olive-10',
+  growth:        'bg-naya-olive-10 text-naya-olive border border-naya-olive-18',
 };
 
 const PROJECT_COLORS = [
-  '#6366f1', '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b',
-  '#ef4444', '#ec4899', '#84cc16', '#f97316', '#14b8a6',
+  '#D4C97A', '#7D8FA8', '#9E7E87', '#2B2D1C',
+  '#b8af6a', '#6d7e93', '#8e6e76',
 ];
 
 const TIME_OF_DAY_HINTS: Record<string, { emoji: string; label: string }> = {
@@ -341,24 +341,23 @@ export default function Planning({ onSearchClick }: Props) {
         >
           {energyBadge && (
             <span className={`flex-shrink-0 inline-flex items-center gap-0.5 px-1 rounded text-[8px] ${energyBadge.cls}`}>
-              {energyBadge.emoji}{energyBadge.label.slice(0, 3)}
+              {energyBadge.symbol}{energyBadge.label.slice(0, 3)}
             </span>
           )}
           <span className="truncate text-naya-olive-70">{task.title}</span>
-          {isBlocked && <span className="flex-shrink-0">🔒</span>}
+          {isBlocked && <span className="flex-shrink-0 text-naya-olive-35 text-[9px]">○</span>}
         </div>
       );
     }
 
-    // Task card color palette based on project id
     const TASK_PALETTES = [
-      { bg: '#EDE9FE', text: '#5B21B6', border: '#DDD6FE' },
-      { bg: '#FFF9C4', text: '#92400E', border: '#FDE68A' },
-      { bg: '#DCFCE7', text: '#14532D', border: '#BBF7D0' },
-      { bg: '#DBEAFE', text: '#1E3A5F', border: '#BFDBFE' },
-      { bg: '#FFE4E6', text: '#9F1239', border: '#FECDD3' },
-      { bg: '#FEF3C7', text: '#78350F', border: '#FDE68A' },
-      { bg: '#CFFAFE', text: '#164E63', border: '#A5F3FC' },
+      { bg: 'rgba(212,201,122,0.18)', text: '#5a4f0d', border: 'rgba(212,201,122,0.45)' },
+      { bg: 'rgba(125,143,168,0.18)', text: '#354963', border: 'rgba(125,143,168,0.45)' },
+      { bg: 'rgba(158,126,135,0.18)', text: '#5c3d45', border: 'rgba(158,126,135,0.45)' },
+      { bg: 'rgba(43,45,28,0.08)',    text: '#2B2D1C', border: 'rgba(43,45,28,0.22)'   },
+      { bg: 'rgba(212,201,122,0.11)', text: '#4a3e08', border: 'rgba(212,201,122,0.30)' },
+      { bg: 'rgba(125,143,168,0.11)', text: '#354963', border: 'rgba(125,143,168,0.30)' },
+      { bg: 'rgba(158,126,135,0.11)', text: '#5c3d45', border: 'rgba(158,126,135,0.30)' },
     ];
     const palette = task.projectId && !isBlocked && !task.completed
       ? TASK_PALETTES[task.projectId % TASK_PALETTES.length]
@@ -366,9 +365,9 @@ export default function Planning({ onSearchClick }: Props) {
 
     return (
       <div
-        className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all cursor-pointer hover-lift ${
-          isBlocked ? 'opacity-50 bg-muted border-border'
-          : task.completed ? 'opacity-50 bg-muted/50 border-border'
+        className={`flex items-start gap-3 p-3.5 rounded-lg border transition-shadow cursor-pointer hover:shadow-rest ${
+          isBlocked ? 'opacity-50 bg-naya-olive-06 border-naya-olive-10'
+          : task.completed ? 'opacity-40 bg-naya-olive-06 border-naya-olive-10'
           : 'border-transparent'
         }`}
         style={palette ? { backgroundColor: palette.bg, borderColor: palette.border } : undefined}
@@ -384,37 +383,36 @@ export default function Planning({ onSearchClick }: Props) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            {isBlocked && <span className="text-sm">🔒</span>}
+            {isBlocked && <span className="text-[11px] text-naya-olive-35">○</span>}
             <p
-              className={`text-sm font-semibold leading-snug ${task.completed ? 'line-through opacity-50' : ''}`}
+              className={`text-sm font-medium leading-snug ${task.completed ? 'line-through opacity-40' : ''}`}
               style={palette ? { color: palette.text } : undefined}
             >
               {task.title}
             </p>
           </div>
-          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             {energyBadge && (
               <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                style={palette ? { backgroundColor: palette.border, color: palette.text } : undefined}
+                className={`font-display uppercase tracking-xwide text-[9px] px-1.5 py-0.5 rounded-pill border ${energyBadge.cls}`}
               >
-                {energyBadge.emoji} {energyBadge.label}
+                {energyBadge.symbol} {energyBadge.label}
               </span>
             )}
             {task.estimatedDuration && (
               <span
-                className="text-[10px] flex items-center gap-0.5 opacity-60"
+                className="text-[10px] flex items-center gap-0.5 opacity-50 font-mono"
                 style={palette ? { color: palette.text } : undefined}
               >
-                <Clock className="h-2.5 w-2.5" />{task.estimatedDuration}m
+                <Clock className="h-2.5 w-2.5" />{task.estimatedDuration}min
               </span>
             )}
             {project && (
               <span
-                className="text-[10px] opacity-60"
+                className="text-[10px] opacity-50"
                 style={palette ? { color: palette.text } : undefined}
               >
-                {project.icon} {project.name}
+                {project.name}
               </span>
             )}
           </div>
@@ -430,39 +428,47 @@ export default function Planning({ onSearchClick }: Props) {
         <div className="flex-1 flex flex-col min-h-0 bg-card">
 
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-border flex-shrink-0">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-naya-olive-10 flex-shrink-0">
+            <div className="flex items-center gap-5">
               <div>
-                <h1 className="text-lg font-bold tracking-tight text-foreground">{t('planning.title')}</h1>
-                <p className="text-xs text-muted-foreground">{headerLabel}</p>
+                <h1 className="font-display uppercase tracking-xwide text-[11px] text-foreground">{t('planning.title')}</h1>
+                <p className="text-xs text-naya-olive-55 mt-0.5">{headerLabel}</p>
               </div>
-              <div className="view-toggle">
+              <div className="flex items-center gap-px bg-naya-olive-06 border border-naya-olive-10 rounded-sm p-0.5">
                 {(['day', 'week', 'month'] as ViewScope[]).map(v => (
                   <button
                     key={v}
                     onClick={() => setViewScope(v)}
-                    className={`view-toggle-btn ${viewScope === v ? 'active' : ''}`}
+                    className={`font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-xs transition-colors cursor-pointer ${
+                      viewScope === v
+                        ? 'bg-naya-olive text-naya-cream'
+                        : 'text-naya-olive-55 hover:text-naya-olive'
+                    }`}
                   >
                     {t(`planning.${v}`)}
                   </button>
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center bg-muted rounded-xl p-1 gap-0.5">
-                <button onClick={() => navigate(-1)} className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-muted-foreground/10 transition-colors text-muted-foreground hover:text-foreground">
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setSelectedDate(new Date())}
-                  className="px-3 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:bg-white dark:hover:bg-muted-foreground/10 hover:text-foreground transition-colors"
-                >
-                  {t('common.today')}
-                </button>
-                <button onClick={() => navigate(1)} className="p-1.5 rounded-lg hover:bg-white dark:hover:bg-muted-foreground/10 transition-colors text-muted-foreground hover:text-foreground">
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
+            <div className="flex items-center gap-1 bg-naya-olive-06 border border-naya-olive-10 rounded-sm p-0.5">
+              <button
+                onClick={() => navigate(-1)}
+                className="p-1.5 rounded-xs hover:bg-naya-olive-10 transition-colors text-naya-olive-55 hover:text-naya-olive cursor-pointer"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setSelectedDate(new Date())}
+                className="font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-xs text-naya-olive-55 hover:bg-naya-olive-10 hover:text-naya-olive transition-colors cursor-pointer"
+              >
+                {t('common.today')}
+              </button>
+              <button
+                onClick={() => navigate(1)}
+                className="p-1.5 rounded-xs hover:bg-naya-olive-10 transition-colors text-naya-olive-55 hover:text-naya-olive cursor-pointer"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
 
@@ -476,61 +482,72 @@ export default function Planning({ onSearchClick }: Props) {
             <div className="flex-1 overflow-auto p-4">
               <div className="grid grid-cols-7 mb-2">
                 {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(d => (
-                  <div key={d} className="text-center text-[10px] text-slate-400 dark:text-gray-500 uppercase tracking-wide py-1">
+                  <div key={d} className="text-center font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 py-1">
                     {t(`planning.days.${d}`)}
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-7 gap-1.5">
+              <div className="grid grid-cols-7 gap-1">
                 {calendarDays.map((day, i) => {
                   if (!day) {
-                    return <div key={`empty-${i}`} className="h-28 rounded-xl bg-muted/40" />;
+                    return <div key={`empty-${i}`} className="h-28 rounded bg-naya-olive-06/40" />;
                   }
                   const dateKey = formatDate(day);
                   const isToday = dateKey === today;
-                  const isPast = dateKey < today;
+                  const isPast  = dateKey < today;
                   const dayTasks = tasksByDate[dateKey] || [];
-                  const avail = availabilityData.find((a: any) => a.date === dateKey);
+                  const avail   = availabilityData.find((a: any) => a.date === dateKey);
                   const dayType = avail?.dayType;
-                  const visible = dayTasks.slice(0, 4);
+                  const visible  = dayTasks.slice(0, 4);
                   const overflow = dayTasks.length - visible.length;
+
+                  const DAY_TYPE_SYMBOL: Record<string, string> = {
+                    off: '○', 'deep-work': '◆', travel: '→', 'half-am': '◑', 'half-pm': '◐',
+                  };
+
                   return (
                     <div
                       key={dateKey}
-                      className={`h-28 rounded-xl border p-2 flex flex-col cursor-pointer transition-all hover:shadow-card ${
-                        isToday ? 'border-primary/50 bg-accent'
-                        : isPast ? 'border-border opacity-55'
-                        : 'border-border hover:border-primary/30 bg-card'
+                      className={`h-28 border p-2 flex flex-col cursor-pointer transition-shadow hover:shadow-rest rounded ${
+                        isToday  ? 'border-naya-olive bg-naya-olive-06'
+                        : isPast ? 'border-naya-olive-10 opacity-50'
+                        : 'border-naya-olive-10 hover:border-naya-olive-18 bg-card'
                       }`}
                       onClick={() => { setSelectedDate(day); setViewScope('day'); }}
                     >
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className={`text-xs font-bold ${isToday ? 'text-primary' : 'text-muted-foreground'}`}>
+                        <span className={`font-display text-[11px] ${isToday ? 'text-naya-olive font-medium' : 'text-naya-olive-55'}`}>
                           {day.getDate()}
                         </span>
                         {dayType && dayType !== 'full' && (
-                          <span className="text-[9px]">
-                            {dayType === 'off' ? '🌴' : dayType === 'deep-work' ? '🎯' : dayType === 'travel' ? '✈️' : dayType === 'half-am' ? '🌤' : '🌇'}
+                          <span className="text-[9px] text-naya-olive-35 font-mono">
+                            {DAY_TYPE_SYMBOL[dayType] || ''}
                           </span>
                         )}
                       </div>
                       <div className="space-y-0.5 flex-1 overflow-hidden">
                         {visible.map((task: Task) => {
-                          const projColor = getProjectColor(task.projectId, projects);
+                          const MONTH_PALETTES = [
+                            { bg: 'rgba(212,201,122,0.18)', text: '#5a4f0d' },
+                            { bg: 'rgba(125,143,168,0.18)', text: '#354963' },
+                            { bg: 'rgba(158,126,135,0.18)', text: '#5c3d45' },
+                            { bg: 'rgba(43,45,28,0.08)',    text: '#2B2D1C' },
+                          ];
+                          const pal = MONTH_PALETTES[(task.projectId || 0) % MONTH_PALETTES.length];
                           return (
                             <div
                               key={task.id}
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] truncate font-medium"
-                              style={{ backgroundColor: `${projColor}20`, color: projColor }}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[9px] truncate"
+                              style={{ backgroundColor: pal.bg, color: pal.text }}
                               onClick={e => { e.stopPropagation(); setWorkspaceTask(task); }}
                             >
-                              <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: projColor }} />
+                              <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: pal.text, opacity: 0.5 }} />
                               <span className="truncate">{task.title}</span>
                             </div>
                           );
                         })}
                         {overflow > 0 && (
-                          <p className="text-[9px] text-muted-foreground pl-1">+{overflow}</p>
+                          <p className="text-[9px] text-naya-olive-35 pl-1">+{overflow}</p>
                         )}
                       </div>
                     </div>
@@ -542,27 +559,27 @@ export default function Planning({ onSearchClick }: Props) {
             // ─── WEEK TIME-GRID VIEW ─────────────────────────────────
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {lastStrategySignal && (
-                <div className="mx-1 mb-2 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 rounded-lg px-3 py-1.5 flex-shrink-0">
+                <div className="mx-1 mb-2 bg-naya-olive-06 border border-naya-olive-18 rounded-lg px-3 py-1.5 flex-shrink-0">
                   <div className="flex items-center gap-2">
-                    <Brain className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
-                    <p className="text-[11px] text-indigo-800 dark:text-indigo-300 truncate flex-1">{lastStrategySignal.focus}</p>
+                    <Brain className="h-3 w-3 text-naya-olive-55 flex-shrink-0" />
+                    <p className="text-[11px] text-naya-olive-70 truncate flex-1">{lastStrategySignal.focus}</p>
                     {lastStrategySignal.reasoning && (
                       <button
                         onClick={() => setStrategyExpanded(!strategyExpanded)}
-                        className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 flex-shrink-0 whitespace-nowrap"
+                        className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 hover:text-naya-olive flex-shrink-0 whitespace-nowrap cursor-pointer"
                       >
-                        {strategyExpanded ? t('planning.less') : 'Why these tasks?'}
+                        {strategyExpanded ? t('planning.less') : 'Pourquoi ?'}
                       </button>
                     )}
                   </div>
                   {strategyExpanded && lastStrategySignal.reasoning && (
-                    <div className="mt-1.5 space-y-1.5 border-t border-indigo-200/50 dark:border-indigo-800/30 pt-1.5">
-                      <p className="text-[11px] text-indigo-700 dark:text-indigo-300 leading-relaxed">{lastStrategySignal.reasoning}</p>
+                    <div className="mt-1.5 space-y-1.5 border-t border-naya-olive-10 pt-1.5">
+                      <p className="text-[11px] text-naya-olive-55 leading-relaxed">{lastStrategySignal.reasoning}</p>
                       {lastStrategySignal.bottleneck && (
-                        <p className="text-[10px] text-amber-700 dark:text-amber-400"><span className="font-medium">⚠ Bottleneck:</span> {lastStrategySignal.bottleneck}</p>
+                        <p className="text-[10px] text-naya-olive-70"><span className="font-medium">Blocage :</span> {lastStrategySignal.bottleneck}</p>
                       )}
                       {lastStrategySignal.suggestedNextMove && (
-                        <p className="text-[10px] text-emerald-700 dark:text-emerald-400"><span className="font-medium">→ Next move:</span> {lastStrategySignal.suggestedNextMove}</p>
+                        <p className="text-[10px] text-naya-olive"><span className="font-medium">→ Prochain move :</span> {lastStrategySignal.suggestedNextMove}</p>
                       )}
                     </div>
                   )}
@@ -637,17 +654,17 @@ export default function Planning({ onSearchClick }: Props) {
               </div>
 
               {/* Right panel — strategy + feedback (day view only) */}
-              <div className="w-72 flex-shrink-0 border-l border-slate-200 dark:border-gray-800 overflow-y-auto p-4 flex flex-col gap-4">
+              <div className="w-72 flex-shrink-0 border-l border-naya-olive-10 overflow-y-auto p-4 flex flex-col gap-4">
                 {/* Daily feedback */}
                 {startDate === today && (tasksByDate[startDate] || []).length > 0 && !todayFeedbackStored && !dailyFeedbackGiven && (
-                  <div className="p-3.5 border border-naya-olive-18 rounded-xl">
-                    <p className="text-xs text-naya-olive-55 mb-2">{t('planning.howDidTodayGo')}</p>
-                    <div className="flex gap-2 flex-wrap">
+                  <div className="p-3.5 border border-naya-olive-18 rounded-lg bg-naya-olive-06">
+                    <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55 mb-2">{t('planning.howDidTodayGo')}</p>
+                    <div className="flex gap-1.5 flex-wrap">
                       {DAILY_FEEDBACK_OPTIONS.map(opt => (
                         <button
                           key={opt.key}
                           onClick={() => handleDailyFeedback(opt.key)}
-                          className="text-xs px-2.5 py-1 rounded-lg border border-naya-olive-18 hover:border-primary/50 hover:bg-primary/5 transition-colors text-slate-600 dark:text-gray-300"
+                          className="font-display uppercase tracking-xwide text-[9px] px-2.5 py-1.5 rounded-sm border border-naya-olive-18 hover:border-naya-olive-35 hover:bg-naya-olive-10 transition-colors text-naya-olive-55 hover:text-naya-olive cursor-pointer"
                         >
                           {t(opt.labelKey)}
                         </button>
@@ -656,33 +673,30 @@ export default function Planning({ onSearchClick }: Props) {
                   </div>
                 )}
                 {startDate === today && (dailyFeedbackGiven || todayFeedbackStored) && dailyFeedbackThanks && (
-                  <p className="text-xs text-center text-slate-400 dark:text-gray-500">{t('planning.thanksFeedback')}</p>
+                  <p className="font-display uppercase tracking-xwide text-[9px] text-center text-naya-olive-35">{t('planning.thanksFeedback')}</p>
                 )}
 
                 {/* Strategy panel */}
                 {lastStrategySignal ? (
-                  <div className="border border-indigo-200 dark:border-indigo-800/50 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 p-4">
+                  <div className="border border-naya-olive-18 rounded-lg bg-naya-olive-06 p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-[10px] text-indigo-700 dark:text-indigo-400 uppercase tracking-wide">
+                      <span className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55">
                         {t('planning.nayasReadToday')}
-                      </h3>
-                      <span className="text-[9px] text-slate-400">{lastStrategySignal.generatedAt}</span>
+                      </span>
+                      <span className="text-[9px] text-naya-olive-35">{lastStrategySignal.generatedAt}</span>
                     </div>
-                    <div className="flex items-start gap-2 mb-3">
-                      <span className="text-base">🎯</span>
-                      <div>
-                        <p className="text-[10px] text-naya-olive-55 uppercase">{t('planning.focus')}</p>
-                        <p className="text-xs text-foreground">{lastStrategySignal.focus}</p>
-                      </div>
+                    <div className="mb-3">
+                      <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.focus')}</p>
+                      <p className="text-xs text-foreground">{lastStrategySignal.focus}</p>
                     </div>
                     {lastStrategySignal.reasoning && (
                       <div className="mb-3">
-                        <p className="text-[10px] text-naya-olive-55 uppercase mb-1">{t('planning.whyTheseTasks')}</p>
-                        <p className={`text-xs text-naya-olive-70 ${!strategyExpanded ? 'line-clamp-4' : ''}`}>
+                        <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.whyTheseTasks')}</p>
+                        <p className={`text-xs text-naya-olive-70 leading-relaxed ${!strategyExpanded ? 'line-clamp-4' : ''}`}>
                           {lastStrategySignal.reasoning}
                         </p>
                         {lastStrategySignal.reasoning.length > 150 && (
-                          <button onClick={() => setStrategyExpanded(v => !v)} className="text-[10px] text-indigo-600 mt-1 hover:underline">
+                          <button onClick={() => setStrategyExpanded(v => !v)} className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55 hover:text-naya-olive mt-1 cursor-pointer">
                             {strategyExpanded ? t('planning.less') : t('planning.more')}
                           </button>
                         )}
@@ -690,31 +704,31 @@ export default function Planning({ onSearchClick }: Props) {
                     )}
                     <div className="space-y-2">
                       {lastStrategySignal.bottleneck && (
-                        <div className="bg-white/60 dark:bg-gray-900/40 rounded-lg p-2">
-                          <p className="text-[9px] text-slate-400 uppercase mb-0.5">{t('planning.bottleneck')}</p>
+                        <div className="bg-naya-olive-10 rounded-sm p-2">
+                          <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-0.5">{t('planning.bottleneck')}</p>
                           <p className="text-[10px] text-naya-olive-70">{lastStrategySignal.bottleneck}</p>
                         </div>
                       )}
                       {lastStrategySignal.suggestedNextMove && (
-                        <div className="bg-white/60 dark:bg-gray-900/40 rounded-lg p-2">
-                          <p className="text-[9px] text-slate-400 uppercase mb-0.5">{t('planning.nextMove')}</p>
+                        <div className="bg-naya-olive-10 rounded-sm p-2">
+                          <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-0.5">{t('planning.nextMove')}</p>
                           <p className="text-[10px] text-naya-olive-70">{lastStrategySignal.suggestedNextMove}</p>
                         </div>
                       )}
                     </div>
                     {lastStrategySignal.skippedProjects && lastStrategySignal.skippedProjects.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-indigo-200/50">
-                        <p className="text-[9px] text-amber-600 uppercase mb-1">{t('planning.projectsWithoutTasks')}</p>
+                      <div className="mt-3 pt-3 border-t border-naya-olive-10">
+                        <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.projectsWithoutTasks')}</p>
                         {lastStrategySignal.skippedProjects.map((sp, i) => (
-                          <p key={i} className="text-[10px] text-slate-500">{sp.name}: {sp.reason}</p>
+                          <p key={i} className="text-[10px] text-naya-olive-55">{sp.name}: {sp.reason}</p>
                         ))}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="border-2 border-dashed border-naya-olive-18 rounded-xl p-5 text-center">
-                    <p className="text-xs text-slate-400 dark:text-gray-500 mb-1">{t('planning.nayasStrategicRead')}</p>
-                    <p className="text-[10px] text-slate-400 dark:text-gray-500">{t('planning.generateToSee')}</p>
+                  <div className="border border-dashed border-naya-olive-18 rounded-lg p-5 text-center">
+                    <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.nayasStrategicRead')}</p>
+                    <p className="text-[10px] text-naya-olive-35">{t('planning.generateToSee')}</p>
                   </div>
                 )}
 
