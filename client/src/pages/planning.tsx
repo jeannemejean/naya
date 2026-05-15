@@ -344,7 +344,7 @@ export default function Planning({ onSearchClick }: Props) {
               {energyBadge.emoji}{energyBadge.label.slice(0, 3)}
             </span>
           )}
-          <span className="truncate text-slate-700 dark:text-gray-300">{task.title}</span>
+          <span className="truncate text-naya-olive-70">{task.title}</span>
           {isBlocked && <span className="flex-shrink-0">🔒</span>}
         </div>
       );
@@ -427,7 +427,7 @@ export default function Planning({ onSearchClick }: Props) {
     <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-card">
+        <div className="flex-1 flex flex-col min-h-0 bg-card">
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-border flex-shrink-0">
@@ -500,7 +500,7 @@ export default function Planning({ onSearchClick }: Props) {
                       className={`h-28 rounded-xl border p-2 flex flex-col cursor-pointer transition-all hover:shadow-card ${
                         isToday ? 'border-primary/50 bg-accent'
                         : isPast ? 'border-border opacity-55'
-                        : 'border-border hover:border-primary/30 bg-white dark:bg-card'
+                        : 'border-border hover:border-primary/30 bg-card'
                       }`}
                       onClick={() => { setSelectedDate(day); setViewScope('day'); }}
                     >
@@ -640,14 +640,14 @@ export default function Planning({ onSearchClick }: Props) {
               <div className="w-72 flex-shrink-0 border-l border-slate-200 dark:border-gray-800 overflow-y-auto p-4 flex flex-col gap-4">
                 {/* Daily feedback */}
                 {startDate === today && (tasksByDate[startDate] || []).length > 0 && !todayFeedbackStored && !dailyFeedbackGiven && (
-                  <div className="p-3.5 border border-slate-200 dark:border-gray-700 rounded-xl">
-                    <p className="text-xs text-slate-500 dark:text-gray-400 mb-2">{t('planning.howDidTodayGo')}</p>
+                  <div className="p-3.5 border border-naya-olive-18 rounded-xl">
+                    <p className="text-xs text-naya-olive-55 mb-2">{t('planning.howDidTodayGo')}</p>
                     <div className="flex gap-2 flex-wrap">
                       {DAILY_FEEDBACK_OPTIONS.map(opt => (
                         <button
                           key={opt.key}
                           onClick={() => handleDailyFeedback(opt.key)}
-                          className="text-xs px-2.5 py-1 rounded-lg border border-slate-200 dark:border-gray-700 hover:border-primary/50 hover:bg-primary/5 transition-colors text-slate-600 dark:text-gray-300"
+                          className="text-xs px-2.5 py-1 rounded-lg border border-naya-olive-18 hover:border-primary/50 hover:bg-primary/5 transition-colors text-slate-600 dark:text-gray-300"
                         >
                           {t(opt.labelKey)}
                         </button>
@@ -671,14 +671,14 @@ export default function Planning({ onSearchClick }: Props) {
                     <div className="flex items-start gap-2 mb-3">
                       <span className="text-base">🎯</span>
                       <div>
-                        <p className="text-[10px] text-slate-500 dark:text-gray-400 uppercase">{t('planning.focus')}</p>
-                        <p className="text-xs text-slate-900 dark:text-white">{lastStrategySignal.focus}</p>
+                        <p className="text-[10px] text-naya-olive-55 uppercase">{t('planning.focus')}</p>
+                        <p className="text-xs text-foreground">{lastStrategySignal.focus}</p>
                       </div>
                     </div>
                     {lastStrategySignal.reasoning && (
                       <div className="mb-3">
-                        <p className="text-[10px] text-slate-500 dark:text-gray-400 uppercase mb-1">{t('planning.whyTheseTasks')}</p>
-                        <p className={`text-xs text-slate-700 dark:text-gray-300 ${!strategyExpanded ? 'line-clamp-4' : ''}`}>
+                        <p className="text-[10px] text-naya-olive-55 uppercase mb-1">{t('planning.whyTheseTasks')}</p>
+                        <p className={`text-xs text-naya-olive-70 ${!strategyExpanded ? 'line-clamp-4' : ''}`}>
                           {lastStrategySignal.reasoning}
                         </p>
                         {lastStrategySignal.reasoning.length > 150 && (
@@ -692,13 +692,13 @@ export default function Planning({ onSearchClick }: Props) {
                       {lastStrategySignal.bottleneck && (
                         <div className="bg-white/60 dark:bg-gray-900/40 rounded-lg p-2">
                           <p className="text-[9px] text-slate-400 uppercase mb-0.5">{t('planning.bottleneck')}</p>
-                          <p className="text-[10px] text-slate-700 dark:text-gray-300">{lastStrategySignal.bottleneck}</p>
+                          <p className="text-[10px] text-naya-olive-70">{lastStrategySignal.bottleneck}</p>
                         </div>
                       )}
                       {lastStrategySignal.suggestedNextMove && (
                         <div className="bg-white/60 dark:bg-gray-900/40 rounded-lg p-2">
                           <p className="text-[9px] text-slate-400 uppercase mb-0.5">{t('planning.nextMove')}</p>
-                          <p className="text-[10px] text-slate-700 dark:text-gray-300">{lastStrategySignal.suggestedNextMove}</p>
+                          <p className="text-[10px] text-naya-olive-70">{lastStrategySignal.suggestedNextMove}</p>
                         </div>
                       )}
                     </div>
@@ -712,7 +712,7 @@ export default function Planning({ onSearchClick }: Props) {
                     )}
                   </div>
                 ) : (
-                  <div className="border-2 border-dashed border-slate-200 dark:border-gray-700 rounded-xl p-5 text-center">
+                  <div className="border-2 border-dashed border-naya-olive-18 rounded-xl p-5 text-center">
                     <p className="text-xs text-slate-400 dark:text-gray-500 mb-1">{t('planning.nayasStrategicRead')}</p>
                     <p className="text-[10px] text-slate-400 dark:text-gray-500">{t('planning.generateToSee')}</p>
                   </div>
@@ -724,7 +724,7 @@ export default function Planning({ onSearchClick }: Props) {
                   if (!unscheduled.length) return null;
                   return (
                     <div>
-                      <p className="text-[10px] text-slate-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                      <p className="text-[10px] text-naya-olive-55 uppercase tracking-wide mb-2">
                         {t('planning.unscheduled')} ({unscheduled.length})
                       </p>
                       <div className="space-y-1.5">

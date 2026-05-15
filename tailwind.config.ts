@@ -6,16 +6,30 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        /* Unbounded — titres, wordmark, headers (alternative gratuite à Anantason Ultra Expanded) */
-        /* Si Anantason est acheté plus tard : ajouter en premier dans ce tableau */
         display: ['"Anantason Ultra Expanded"', '"Montserrat"', 'system-ui', 'sans-serif'],
-        /* Helvetica Neue — corps de texte (fallback Inter pour Windows/Android) */
-        sans: ['"Helvetica Neue"', '"Helvetica"', '"Inter"', 'system-ui', '-apple-system', 'sans-serif'],
-        /* Inter — garanti cross-platform */
-        inter: ['"Inter"', 'system-ui', 'sans-serif'],
+        body:    ['"Inter"', '"Helvetica Neue"', '"Helvetica"', 'system-ui', 'sans-serif'],
+        sans:    ['"Inter"', '"Helvetica Neue"', '"Helvetica"', 'system-ui', '-apple-system', 'sans-serif'],
+        inter:   ['"Inter"', 'system-ui', 'sans-serif'],
+        mono:    ['ui-monospace', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
       },
       colors: {
-        /* ── Palette principale Naya ── */
+        /* ── Palette Naya — namespace direct (brand kit) ── */
+        naya: {
+          cream:      "#F7F4EC",
+          olive:      "#2B2D1C",
+          sulphur:    "#D4C97A",
+          salvia:     "#7D8FA8",
+          mauve:      "#9E7E87",
+          "olive-90": "rgb(43 45 28 / 0.90)",
+          "olive-70": "rgb(43 45 28 / 0.70)",
+          "olive-55": "rgb(43 45 28 / 0.55)",
+          "olive-35": "rgb(43 45 28 / 0.35)",
+          "olive-18": "rgb(43 45 28 / 0.18)",
+          "olive-10": "rgb(43 45 28 / 0.10)",
+          "olive-06": "rgb(43 45 28 / 0.06)",
+        },
+
+        /* ── Palette principale Naya (legacy) ── */
         cream: {
           DEFAULT: "#F7F4EC",
           dark:    "#EDE9DC",
@@ -28,20 +42,17 @@ export default {
           faint:   "rgba(43, 45, 28, 0.08)",
         },
 
-        /* ── Accents Sanzo Wada — palette 321 uniquement ── */
-        /* いおうこう — Sulphur Yellow */
+        /* ── Accents Sanzo Wada ── */
         sulphur: {
           DEFAULT: "#D4C97A",
           subtle:  "rgba(212, 201, 122, 0.15)",
           text:    "#7A6C1A",
         },
-        /* セージブルー — Salvia Blue */
         salvia: {
           DEFAULT: "#7D8FA8",
           subtle:  "rgba(125, 143, 168, 0.15)",
           text:    "#3A4F68",
         },
-        /* くすみばら — Dusty Mauve */
         mauve: {
           DEFAULT: "#9E7E87",
           subtle:  "rgba(158, 126, 135, 0.15)",
@@ -108,18 +119,36 @@ export default {
           olive:   "rgba(43, 45, 28, 0.10)",
         },
       },
+      letterSpacing: {
+        tight:  "-0.01em",
+        normal: "0",
+        wide:   "0.12em",
+        xwide:  "0.22em",
+        xxwide: "0.30em",
+      },
       borderRadius: {
         none:    "0px",
+        xs:      "2px",
         sm:      "4px",
-        DEFAULT: "6px",
-        md:      "6px",
-        lg:      "10px",
-        xl:      "14px",
-        "2xl":   "18px",
-        "3xl":   "24px",
+        DEFAULT: "8px",
+        md:      "8px",
+        lg:      "14px",
+        xl:      "22px",
+        "2xl":   "28px",
+        "3xl":   "36px",
         full:    "9999px",
+        pill:    "9999px",
+      },
+      borderWidth: {
+        hair: "0.5px",
+        thin: "1px",
+        base: "1.5px",
       },
       boxShadow: {
+        none:        "none",
+        rest:        "0 1px 0 rgb(43 45 28 / 0.06)",
+        lift:        "0 8px 24px -16px rgb(43 45 28 / 0.25), 0 2px 6px -3px rgb(43 45 28 / 0.10)",
+        panel:       "0 24px 60px -36px rgb(43 45 28 / 0.40)",
         sm:          "0 1px 2px rgba(43, 45, 28, 0.08)",
         DEFAULT:     "0 2px 6px rgba(43, 45, 28, 0.10)",
         md:          "0 4px 12px rgba(43, 45, 28, 0.10)",
@@ -130,7 +159,22 @@ export default {
         "card-hover":"0 4px 16px rgba(43, 45, 28, 0.12)",
         float:       "0 8px 28px rgba(43, 45, 28, 0.16)",
         inner:       "inset 0 1px 0 rgba(255, 255, 255, 0.6)",
-        none:        "none",
+      },
+      transitionTimingFunction: {
+        quiet: "cubic-bezier(0.25, 0.1, 0.25, 1)",
+        out:   "cubic-bezier(0.16, 1, 0.3, 1)",
+      },
+      transitionDuration: {
+        fast: "140ms",
+        base: "240ms",
+        slow: "420ms",
+      },
+      backgroundImage: {
+        "naya-paper":
+          "radial-gradient(rgb(43 45 28 / 0.025) 1px, transparent 1px), radial-gradient(rgb(43 45 28 / 0.018) 1px, transparent 1px)",
+      },
+      backgroundSize: {
+        "naya-paper": "3px 3px, 7px 7px",
       },
       keyframes: {
         "accordion-down": {
@@ -142,8 +186,8 @@ export default {
           to:   { height: "0" },
         },
         "fade-up": {
-          from: { opacity: "0", transform: "translateY(8px)" },
-          to:   { opacity: "1", transform: "translateY(0)" },
+          "0%":   { opacity: "0", transform: "translateY(4px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
         },
         "fade-in": {
           from: { opacity: "0" },
@@ -169,7 +213,7 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up":   "accordion-up 0.2s ease-out",
-        "fade-up":        "fade-up 0.3s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "fade-up":        "fade-up 240ms cubic-bezier(0.25, 0.1, 0.25, 1) both",
         "fade-in":        "fade-in 0.2s ease both",
         "scale-in":       "scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both",
         "slide-left":     "slide-left 0.25s cubic-bezier(0.22, 1, 0.36, 1) both",

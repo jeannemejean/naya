@@ -137,7 +137,7 @@ function ClientsTab({ project }: { project: Project }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg text-slate-900 dark:text-white">{t('projects.clients')}</h3>
+        <h3 className="text-lg text-foreground">{t('projects.clients')}</h3>
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-2">
@@ -370,8 +370,8 @@ function ProjectTasksPanel({ project }: { project: Project }) {
   function TaskList({ tasks, loading }: { tasks: any[]; loading: boolean }) {
     if (loading) return <div className="py-4 flex justify-center"><Loader2 className="h-4 w-4 animate-spin text-slate-400" /></div>;
     if (tasks.length === 0) return (
-      <div className="py-6 text-center border-2 border-dashed border-slate-200 dark:border-gray-700 rounded-lg">
-        <p className="text-sm text-slate-500 dark:text-gray-400">No tasks yet.</p>
+      <div className="py-6 text-center border-2 border-dashed border-naya-olive-18 rounded-lg">
+        <p className="text-sm text-naya-olive-55">No tasks yet.</p>
       </div>
     );
     return (
@@ -379,7 +379,7 @@ function ProjectTasksPanel({ project }: { project: Project }) {
         {tasks.map((task: any) => (
           <div
             key={task.id}
-            className="flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 dark:border-gray-700"
+            className="flex items-start gap-2.5 p-2.5 rounded-lg border border-naya-olive-18"
             style={{ borderLeftWidth: 3, borderLeftColor: project.color || '#6366f1' }}
           >
             <button
@@ -392,7 +392,7 @@ function ProjectTasksPanel({ project }: { project: Project }) {
                 : <Circle className="h-4 w-4 text-slate-400" />}
             </button>
             <div className="flex-1 min-w-0">
-              <p className={`text-sm text-slate-900 dark:text-white ${task.completed ? 'line-through opacity-60' : ''}`}>
+              <p className={`text-sm text-foreground ${task.completed ? 'line-through opacity-60' : ''}`}>
                 {task.title}
               </p>
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -418,7 +418,7 @@ function ProjectTasksPanel({ project }: { project: Project }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold text-slate-900 dark:text-white">{t('campaigns.tasks')}</h3>
+        <h3 className="font-semibold text-foreground">{t('campaigns.tasks')}</h3>
       </div>
       <Tabs defaultValue="today">
         <TabsList className="h-7 text-xs mb-3">
@@ -448,7 +448,7 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
   const monetInfo = MONETIZATION_LABELS[project.monetizationIntent || 'exploratory'];
 
   return (
-    <Card className="hover:shadow-md transition-shadow border-slate-200 dark:border-gray-700 overflow-hidden">
+    <Card className="hover:shadow-md transition-shadow border-naya-olive-18 overflow-hidden">
       <CardContent className="p-5">
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -484,9 +484,9 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
           className="cursor-pointer"
           onClick={() => onOpenTab(project, "tasks")}
         >
-          <h3 className="font-semibold text-slate-900 dark:text-white mb-1">{project.name}</h3>
+          <h3 className="font-semibold text-foreground mb-1">{project.name}</h3>
           {project.description && (
-            <p className="text-xs text-slate-500 dark:text-gray-400 line-clamp-2 mb-3">{project.description}</p>
+            <p className="text-xs text-naya-olive-55 line-clamp-2 mb-3">{project.description}</p>
           )}
 
           <div className="flex items-center gap-2 mt-3">
@@ -569,13 +569,13 @@ function BrandDnaProjectTab({ project }: { project: Project }) {
 
   if (isLoading) return (
     <div className="space-y-3 pt-2">
-      {[1,2,3,4].map(i => <div key={i} className="h-10 bg-slate-100 dark:bg-gray-800 rounded animate-pulse" />)}
+      {[1,2,3,4].map(i => <div key={i} className="h-10 bg-naya-olive-10 rounded animate-pulse" />)}
     </div>
   );
 
   const Field = ({ label, k, placeholder, rows }: { label: string; k: string; placeholder?: string; rows?: number }) => (
     <div className="space-y-1">
-      <Label className="text-xs text-slate-600 dark:text-gray-400">{label}</Label>
+      <Label className="text-xs text-naya-olive-70">{label}</Label>
       {rows ? (
         <Textarea value={fields[k] || ''} onChange={e => set(k)(e.target.value)} rows={rows} placeholder={placeholder} className="text-sm dark:bg-gray-800 dark:border-gray-600" />
       ) : (
@@ -586,7 +586,7 @@ function BrandDnaProjectTab({ project }: { project: Project }) {
 
   const SelectField = ({ label, k, options }: { label: string; k: string; options: {value: string; label: string}[] }) => (
     <div className="space-y-1">
-      <Label className="text-xs text-slate-600 dark:text-gray-400">{label}</Label>
+      <Label className="text-xs text-naya-olive-70">{label}</Label>
       <Select value={fields[k] || ''} onValueChange={set(k)}>
         <SelectTrigger className="text-sm dark:bg-gray-800 dark:border-gray-600"><SelectValue placeholder="Choose…" /></SelectTrigger>
         <SelectContent>
@@ -692,11 +692,11 @@ function invalidateAllProjects(queryClient: ReturnType<typeof useQueryClient>) {
 // ─── Roadmap Jalons ──────────────────────────────────────────────────────────
 
 const MILESTONE_STATUS_CONFIG: Record<string, { icon: React.ReactNode; label: string; color: string; bg: string }> = {
-  locked:    { icon: <Lock className="h-3.5 w-3.5" />,         label: "Bloqué",    color: "text-slate-400 dark:text-gray-500",       bg: "bg-slate-100 dark:bg-gray-800" },
+  locked:    { icon: <Lock className="h-3.5 w-3.5" />,         label: "Bloqué",    color: "text-slate-400 dark:text-gray-500",       bg: "bg-naya-olive-10" },
   unlocked:  { icon: <Unlock className="h-3.5 w-3.5" />,       label: "Débloqué",  color: "text-blue-600 dark:text-blue-400",        bg: "bg-blue-50 dark:bg-blue-900/20" },
   active:    { icon: <Zap className="h-3.5 w-3.5" />,          label: "Actif",     color: "text-indigo-600 dark:text-indigo-400",    bg: "bg-indigo-50 dark:bg-indigo-900/20" },
   completed: { icon: <Check className="h-3.5 w-3.5" />,        label: "Complété",  color: "text-green-600 dark:text-green-400",      bg: "bg-green-50 dark:bg-green-900/20" },
-  skipped:   { icon: <ChevronRight className="h-3.5 w-3.5" />, label: "Ignoré",    color: "text-slate-300 dark:text-gray-600",       bg: "bg-slate-50 dark:bg-gray-800" },
+  skipped:   { icon: <ChevronRight className="h-3.5 w-3.5" />, label: "Ignoré",    color: "text-slate-300 dark:text-gray-600",       bg: "bg-naya-olive-06" },
 };
 
 function MilestoneRoadmap({ project }: { project: any }) {
@@ -720,14 +720,14 @@ function MilestoneRoadmap({ project }: { project: any }) {
   });
 
   if (isLoading) {
-    return <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 bg-slate-100 dark:bg-gray-800 rounded-lg animate-pulse" />)}</div>;
+    return <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 bg-naya-olive-10 rounded-lg animate-pulse" />)}</div>;
   }
 
   if (!milestones || milestones.length === 0) {
     return (
-      <div className="text-center py-10 border-2 border-dashed border-slate-200 dark:border-gray-700 rounded-lg">
+      <div className="text-center py-10 border-2 border-dashed border-naya-olive-18 rounded-lg">
         <Flag className="h-8 w-8 text-slate-300 dark:text-gray-600 mx-auto mb-2" />
-        <p className="text-sm text-slate-500 dark:text-gray-400 font-medium">{t('milestoneRoadmap.noMilestones')}</p>
+        <p className="text-sm text-naya-olive-55 font-medium">{t('milestoneRoadmap.noMilestones')}</p>
         <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">{t('milestoneRoadmap.noMilestonesHint')}</p>
       </div>
     );
@@ -757,11 +757,11 @@ function MilestoneRoadmap({ project }: { project: any }) {
             <div className={`flex-1 min-w-0 pb-2 p-3 rounded-lg ${cfg.bg} ${isLocked ? 'opacity-60' : ''}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className={`text-sm font-medium truncate ${isLocked ? 'text-slate-400 dark:text-gray-500' : 'text-slate-900 dark:text-white'}`}>
+                  <p className={`text-sm font-medium truncate ${isLocked ? 'text-slate-400 dark:text-gray-500' : 'text-foreground'}`}>
                     {milestone.title}
                   </p>
                   {milestone.description && (
-                    <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5 line-clamp-1">{milestone.description}</p>
+                    <p className="text-xs text-naya-olive-55 mt-0.5 line-clamp-1">{milestone.description}</p>
                   )}
                   {milestone.conditions?.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1.5">
@@ -944,7 +944,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+        <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
           <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
           <div className="flex items-center justify-between">
             <div>
@@ -1045,7 +1045,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
 
                     {/* Color picker */}
                     <div>
-                      <p className="text-sm text-slate-700 dark:text-gray-300 mb-2">{t('projects.color')}</p>
+                      <p className="text-sm text-naya-olive-70 mb-2">{t('projects.color')}</p>
                       <div className="flex gap-2 flex-wrap">
                         {PROJECT_COLORS.map(color => (
                           <button
@@ -1085,8 +1085,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
           ) : projects.length === 0 ? (
             <div className="text-center py-20">
               <div className="text-5xl mb-4">📁</div>
-              <h3 className="text-lg text-slate-900 dark:text-white mb-2">{t('projects.noProjects')}</h3>
-              <p className="text-slate-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+              <h3 className="text-lg text-foreground mb-2">{t('projects.noProjects')}</h3>
+              <p className="text-naya-olive-55 mb-6 max-w-sm mx-auto">
                 {t('projects.noProjectsDescription')}
               </p>
               <Button onClick={() => setCreateOpen(true)} className="gap-2">
@@ -1195,7 +1195,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
                   {/* Goals Section */}
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="font-semibold text-slate-900 dark:text-white">{t('projects.goals')}</h3>
+                      <h3 className="font-semibold text-foreground">{t('projects.goals')}</h3>
                       <Button size="sm" variant="outline" onClick={() => setAddGoalOpen(true)} className="gap-1">
                         <Plus className="h-3.5 w-3.5" />
                         {t('projects.addGoal')}
@@ -1204,17 +1204,17 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
 
                     {goals === undefined ? (
                       <div className="space-y-2">
-                        {[1,2].map(i => <div key={i} className="h-14 bg-slate-100 dark:bg-gray-800 rounded animate-pulse" />)}
+                        {[1,2].map(i => <div key={i} className="h-14 bg-naya-olive-10 rounded animate-pulse" />)}
                       </div>
                     ) : activeGoals.length === 0 && completedGoals.length === 0 ? (
-                      <div className="text-center py-6 border-2 border-dashed border-slate-200 dark:border-gray-700 rounded-lg">
-                        <p className="text-sm text-slate-500 dark:text-gray-400">No goals yet.</p>
+                      <div className="text-center py-6 border-2 border-dashed border-naya-olive-18 rounded-lg">
+                        <p className="text-sm text-naya-olive-55">No goals yet.</p>
                         <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">Add a goal to give Naya direction for this project.</p>
                       </div>
                     ) : (
                       <div className="space-y-3">
                         {activeGoals.map((goal) => (
-                          <div key={goal.id} className="p-3 bg-slate-50 dark:bg-gray-800 rounded-lg space-y-2">
+                          <div key={goal.id} className="p-3 bg-naya-olive-06 rounded-lg space-y-2">
                             <div className="flex items-start gap-3">
                               <button
                                 onClick={() => updateGoalMutation.mutate({ id: goal.id, projectId: selectedProject.id, status: 'completed' })}
@@ -1223,9 +1223,9 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
                                 <Circle className="h-4 w-4" />
                               </button>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-slate-900 dark:text-white">{goal.title}</p>
+                                <p className="text-sm font-medium text-foreground">{goal.title}</p>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-xs text-slate-500 dark:text-gray-400">
+                                  <span className="text-xs text-naya-olive-55">
                                     {SUCCESS_MODE_LABELS[goal.successMode] || goal.successMode}
                                   </span>
                                   {goal.dueDate && (
@@ -1276,7 +1276,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
                               {completedGoals.map((goal) => (
                                 <div key={goal.id} className="flex items-center gap-3 p-2 opacity-60">
                                   <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                                  <p className="text-sm text-slate-600 dark:text-gray-400 line-through">{goal.title}</p>
+                                  <p className="text-sm text-naya-olive-70 line-through">{goal.title}</p>
                                 </div>
                               ))}
                             </div>

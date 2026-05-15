@@ -3,34 +3,54 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Naya tag / status chip — uppercase display caps, pill radius.
+ * One accent per visual surface; never two together.
+ */
 const badgeVariants = cva(
-  "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  [
+    "inline-flex items-center gap-1.5 px-2.5 py-1",
+    "rounded-pill font-display uppercase tracking-xwide text-[9px] font-normal",
+  ].join(" "),
   {
     variants: {
       variant: {
-        default:
-          "border-transparent bg-primary text-primary-foreground hover:bg-primary/80",
-        secondary:
-          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        destructive:
-          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
-        outline: "text-foreground",
+        default:     "bg-naya-olive-06 text-naya-olive",
+        neutral:     "bg-naya-olive-06 text-naya-olive",
+        secondary:   "bg-naya-olive-06 text-naya-olive",
+        sulphur:     "bg-[rgba(212,201,122,0.22)] text-[#6f6526]",
+        salvia:      "bg-[rgba(125,143,168,0.22)] text-[#46556d]",
+        mauve:       "bg-[rgba(158,126,135,0.22)] text-[#6e4b53]",
+        outline:     "bg-transparent text-naya-olive-70 border border-naya-olive-18",
+        destructive: "bg-[rgba(158,126,135,0.22)] text-[#6e4b53]",
       },
     },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
+    defaultVariants: { variant: "default" },
+  },
 )
 
-export interface BadgeProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof badgeVariants> {}
+interface BadgeProps
+  extends React.HTMLAttributes<HTMLSpanElement>,
+    VariantProps<typeof badgeVariants> {
+  dot?: boolean
+}
 
-function Badge({ className, variant, ...props }: BadgeProps) {
+function Badge({ className, variant, dot, ...props }: BadgeProps) {
   return (
-    <div className={cn(badgeVariants({ variant }), className)} {...props} />
+    <span
+      className={cn(
+        badgeVariants({ variant }),
+        dot && "before:inline-block before:w-[5px] before:h-[5px] before:rounded-full before:flex-shrink-0",
+        dot && variant === "sulphur" && "before:bg-naya-sulphur",
+        dot && variant === "salvia"  && "before:bg-naya-salvia",
+        dot && variant === "mauve"   && "before:bg-naya-mauve",
+        dot && (variant === "default" || variant === "neutral" || !variant) && "before:bg-naya-olive",
+        className,
+      )}
+      {...props}
+    />
   )
 }
 
 export { Badge, badgeVariants }
+export type { BadgeProps }

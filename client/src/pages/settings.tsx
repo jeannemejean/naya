@@ -145,16 +145,16 @@ function PillarListEditor({
   return (
     <div className="space-y-2">
       {pillars.map((p, i) => (
-        <div key={i} className="border border-slate-200 dark:border-gray-700 rounded-xl p-3 bg-white dark:bg-gray-800/60">
+        <div key={i} className="border border-naya-olive-18 rounded-xl p-3 bg-white dark:bg-gray-800/60">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1 min-w-0">
               <p className="text-sm text-slate-800 dark:text-white truncate">{p.name}</p>
-              {p.description && <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5 line-clamp-2">{p.description}</p>}
+              {p.description && <p className="text-xs text-naya-olive-55 mt-0.5 line-clamp-2">{p.description}</p>}
               <div className="flex flex-wrap gap-1 mt-1.5">
                 {p.formats.map(f => (
                   <span key={f} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{f}</span>
                 ))}
-                {p.frequency && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-slate-500 dark:text-gray-400">{p.frequency}</span>}
+                {p.frequency && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-gray-700 text-naya-olive-55">{p.frequency}</span>}
               </div>
             </div>
             <div className="flex gap-1 flex-shrink-0">
@@ -289,7 +289,7 @@ function MilestoneListEditor({
       {milestones.map((m, i) => {
         const st = STATUS_LABELS[m.status];
         return (
-          <div key={i} className="border border-slate-200 dark:border-gray-700 rounded-xl p-3 bg-white dark:bg-gray-800/60">
+          <div key={i} className="border border-naya-olive-18 rounded-xl p-3 bg-white dark:bg-gray-800/60">
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-slate-800 dark:text-white">{m.title}</p>
@@ -890,7 +890,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+        <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
           <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
           <h1 className="text-xl font-bold tracking-tight text-foreground">{t('settings.title')}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{t('settings.subtitle')}</p>
@@ -914,10 +914,10 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                     </span>
                   </div>
                   <div>
-                    <p className="font-medium text-slate-900 dark:text-white">
+                    <p className="font-medium text-foreground">
                       {user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.firstName || user?.email || "User"}
                     </p>
-                    <p className="text-sm text-slate-500 dark:text-gray-400">{user?.email}</p>
+                    <p className="text-sm text-naya-olive-55">{user?.email}</p>
                   </div>
                 </div>
               </CardContent>
@@ -933,8 +933,8 @@ export default function Settings({ onSearchClick }: SettingsProps) {
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-900 dark:text-white">{t('settings.dark')}</p>
-                    <p className="text-xs text-slate-500 dark:text-gray-400">
+                    <p className="text-sm text-foreground">{t('settings.dark')}</p>
+                    <p className="text-xs text-naya-olive-55">
                       {theme === 'light' ? t('settings.light') : t('settings.dark')}
                     </p>
                   </div>
@@ -958,7 +958,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                 {/* Date de démarrage de la planification */}
                 <div className="space-y-2">
                   <Label className="text-sm">Date de démarrage de la planification</Label>
-                  <p className="text-xs text-slate-500 dark:text-gray-400">
+                  <p className="text-xs text-naya-olive-55">
                     Naya ne génère aucune tâche et ne déplace rien avant cette date. Laisse vide pour démarrer immédiatement.
                   </p>
                   <div className="flex items-center gap-2">
@@ -966,7 +966,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                       type="date"
                       value={planningStartDate}
                       onChange={e => setPlanningStartDate(e.target.value)}
-                      className="text-sm px-3 py-1.5 rounded-md border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-slate-800 dark:text-gray-200"
+                      className="text-sm px-3 py-1.5 rounded-md border border-naya-olive-18 bg-white dark:bg-gray-900 text-slate-800 dark:text-gray-200"
                     />
                     {planningStartDate && (
                       <button
@@ -991,7 +991,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                         className={`px-3 py-1.5 rounded-md text-xs border transition-colors ${
                           workDays.includes(d.key)
                             ? 'bg-primary text-primary-foreground border-primary'
-                            : 'bg-slate-100 dark:bg-gray-800 text-slate-500 dark:text-gray-400 border-slate-200 dark:border-gray-700 hover:border-slate-300 dark:hover:border-gray-600'
+                            : 'bg-naya-olive-10 text-naya-olive-55 border-naya-olive-18 hover:border-slate-300 dark:hover:border-gray-600'
                         }`}
                       >
                         {d.label}
@@ -1013,7 +1013,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                         {TIME_OPTIONS.map(time => <SelectItem key={time} value={time}>{time}</SelectItem>)}
                       </SelectContent>
                     </Select>
-                    <span className="text-sm text-slate-500 dark:text-gray-400">to</span>
+                    <span className="text-sm text-naya-olive-55">to</span>
                     <Select value={workEnd} onValueChange={setWorkEnd}>
                       <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -1038,7 +1038,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                           {TIME_OPTIONS.map(time => <SelectItem key={time} value={time}>{time}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <span className="text-sm text-slate-500 dark:text-gray-400">to</span>
+                      <span className="text-sm text-naya-olive-55">to</span>
                       <Select value={lunchEnd} onValueChange={setLunchEnd}>
                         <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -1081,25 +1081,25 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                   <div className="space-y-2">
                     {operatingProfile.energyRhythm && (
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="text-slate-500 dark:text-gray-400 w-36">{t('settings.energyRhythm')}</span>
+                        <span className="text-naya-olive-55 w-36">{t('settings.energyRhythm')}</span>
                         <Badge variant="outline" className="text-xs">{operatingProfile.energyRhythm.replace(/-/g, ' ')}</Badge>
                       </div>
                     )}
                     {operatingProfile.planningStyle && (
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="text-slate-500 dark:text-gray-400 w-36">{t('settings.planningStyle')}</span>
+                        <span className="text-naya-olive-55 w-36">{t('settings.planningStyle')}</span>
                         <Badge variant="outline" className="text-xs">{operatingProfile.planningStyle}</Badge>
                       </div>
                     )}
                     {operatingProfile.activationStyle && (
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="text-slate-500 dark:text-gray-400 w-36">{t('settings.activationStyle')}</span>
+                        <span className="text-naya-olive-55 w-36">{t('settings.activationStyle')}</span>
                         <Badge variant="outline" className="text-xs">{operatingProfile.activationStyle.replace(/-/g, ' ')}</Badge>
                       </div>
                     )}
                     {operatingProfile.avoidanceTriggers && operatingProfile.avoidanceTriggers.length > 0 && (
                       <div className="flex items-start gap-2 text-sm">
-                        <span className="text-slate-500 dark:text-gray-400 w-36 mt-0.5">{t('settings.avoidanceTriggers')}</span>
+                        <span className="text-naya-olive-55 w-36 mt-0.5">{t('settings.avoidanceTriggers')}</span>
                         <div className="flex flex-wrap gap-1">
                           {operatingProfile.avoidanceTriggers.map(trigger => (
                             <Badge key={trigger} variant="secondary" className="text-xs">{trigger.replace(/-/g, ' ')}</Badge>
@@ -1108,14 +1108,14 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                       </div>
                     )}
                     {operatingProfile.selfDescribedFriction && (
-                      <p className="text-xs text-slate-500 dark:text-gray-400 italic mt-2">
+                      <p className="text-xs text-naya-olive-55 italic mt-2">
                         "{operatingProfile.selfDescribedFriction}"
                       </p>
                     )}
                   </div>
                 ) : (
                   <div className="text-center py-4">
-                    <p className="text-sm text-slate-500 dark:text-gray-400 mb-3">
+                    <p className="text-sm text-naya-olive-55 mb-3">
                       You haven't set up your operating profile yet. It helps Naya understand how you work best.
                     </p>
                     <Button variant="outline" size="sm" onClick={handleOpenProfileEdit}>
@@ -1141,7 +1141,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                     <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
                   </div>
                 ) : !brandDna ? (
-                  <p className="text-sm text-slate-500 dark:text-gray-400">Complete onboarding to set up your Brand DNA.</p>
+                  <p className="text-sm text-naya-olive-55">Complete onboarding to set up your Brand DNA.</p>
                 ) : (
                   <Tabs defaultValue="identity">
                     <TabsList className="grid w-full grid-cols-5 text-[11px]">
@@ -1444,7 +1444,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                           )}
                         </div>
                         {brandDna.nayaIntelligenceSummary ? (
-                          <p className="text-sm text-slate-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                          <p className="text-sm text-naya-olive-70 leading-relaxed whitespace-pre-wrap">
                             {brandDna.nayaIntelligenceSummary}
                           </p>
                         ) : (
@@ -1486,8 +1486,8 @@ export default function Settings({ onSearchClick }: SettingsProps) {
               <CardContent className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-900 dark:text-white">{t('settings.resetData')}</p>
-                    <p className="text-xs text-slate-500 dark:text-gray-400">
+                    <p className="text-sm text-foreground">{t('settings.resetData')}</p>
+                    <p className="text-xs text-naya-olive-55">
                       {t('settings.resetDataDescription')}
                     </p>
                   </div>
@@ -1511,7 +1511,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-600 dark:text-gray-400">
+                  <p className="text-sm text-naya-olive-70">
                     {t('settings.logOut')}
                   </p>
                   <Button
@@ -1640,7 +1640,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
                     className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors text-sm ${
                       (profileDraft.avoidanceTriggers || []).includes(opt.value)
                         ? 'border-primary bg-primary/5 text-primary'
-                        : 'border-slate-200 dark:border-gray-700 text-slate-700 dark:text-gray-300 hover:border-slate-300 dark:hover:border-gray-600'
+                        : 'border-naya-olive-18 text-naya-olive-70 hover:border-slate-300 dark:hover:border-gray-600'
                     }`}
                   >
                     <div className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center ${

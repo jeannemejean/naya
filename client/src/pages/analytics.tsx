@@ -72,7 +72,7 @@ function SkeletonCard({ className = "" }: { className?: string }) {
       <CardContent className="p-5">
         <div className="h-4 w-20 bg-slate-200 dark:bg-gray-700 rounded animate-pulse mb-3" />
         <div className="h-8 w-24 bg-slate-200 dark:bg-gray-700 rounded animate-pulse mb-2" />
-        <div className="h-3 w-16 bg-slate-100 dark:bg-gray-800 rounded animate-pulse" />
+        <div className="h-3 w-16 bg-naya-olive-10 rounded animate-pulse" />
       </CardContent>
     </Card>
   );
@@ -117,7 +117,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+        <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
           <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             {t('analytics.title')}{selectedProject ? ` — ${selectedProject.name}` : ""}
@@ -135,7 +135,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                   className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                     selectedProjectId === p.id
                       ? 'bg-primary text-white'
-                      : 'bg-slate-100 dark:bg-gray-800 text-slate-600 dark:text-gray-400 hover:bg-slate-200 dark:hover:bg-gray-700'
+                      : 'bg-naya-olive-10 text-naya-olive-70 hover:bg-slate-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {p.name}
@@ -143,7 +143,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
               ))}
               {projects.length > 5 && (
                 <select
-                  className="px-2 py-1 text-sm rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-slate-700 dark:text-gray-300"
+                  className="px-2 py-1 text-sm rounded-lg border border-naya-olive-18 bg-white dark:bg-gray-800 text-naya-olive-70"
                   value={selectedProjectId && projects.findIndex((p) => p.id === selectedProjectId) >= 5 ? selectedProjectId : ""}
                   onChange={(e) => setSelectedProjectId(parseInt(e.target.value))}
                 >
@@ -171,10 +171,10 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
           ) : isAllZero ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <BarChart3 className="h-12 w-12 text-slate-300 dark:text-gray-600 mb-4" />
-              <p className="text-lg text-slate-900 dark:text-white mb-1">
+              <p className="text-lg text-foreground mb-1">
                 {t('analytics.noData')} — {selectedProject?.name || ""}
               </p>
-              <p className="text-sm text-slate-500 dark:text-gray-400 max-w-md">
+              <p className="text-sm text-naya-olive-55 max-w-md">
                 {t('analytics.selectProject')}
               </p>
             </div>
@@ -186,8 +186,8 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-3xl text-slate-900 dark:text-white">{data.tasks.completionRate}%</p>
-                        <p className="text-sm text-slate-500 dark:text-gray-400 mt-1">{t('analytics.tasksCompleted')}</p>
+                        <p className="text-3xl text-foreground">{data.tasks.completionRate}%</p>
+                        <p className="text-sm text-naya-olive-55 mt-1">{t('analytics.tasksCompleted')}</p>
                       </div>
                       <div className="p-2 bg-indigo-100 dark:bg-indigo-900/40 rounded-lg">
                         <CheckCircle2 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
@@ -201,8 +201,8 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-3xl text-slate-900 dark:text-white">{data.content.byStatus.published}</p>
-                        <p className="text-sm text-slate-500 dark:text-gray-400 mt-1">{t('analytics.contentPieces')}</p>
+                        <p className="text-3xl text-foreground">{data.content.byStatus.published}</p>
+                        <p className="text-sm text-naya-olive-55 mt-1">{t('analytics.contentPieces')}</p>
                       </div>
                       <div className="p-2 bg-violet-100 dark:bg-violet-900/40 rounded-lg">
                         <FileText className="h-5 w-5 text-violet-600 dark:text-violet-400" />
@@ -215,8 +215,8 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-3xl text-slate-900 dark:text-white">{data.campaigns.active}</p>
-                        <p className="text-sm text-slate-500 dark:text-gray-400 mt-1">{t('analytics.activeCampaigns')}</p>
+                        <p className="text-3xl text-foreground">{data.campaigns.active}</p>
+                        <p className="text-sm text-naya-olive-55 mt-1">{t('analytics.activeCampaigns')}</p>
                       </div>
                       <div className="p-2 bg-amber-100 dark:bg-amber-900/40 rounded-lg">
                         <Rocket className="h-5 w-5 text-amber-600 dark:text-amber-400" />
@@ -229,8 +229,8 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="text-3xl text-slate-900 dark:text-white">{data.content.total}</p>
-                        <p className="text-sm text-slate-500 dark:text-gray-400 mt-1">{t('analytics.contentPipeline')}</p>
+                        <p className="text-3xl text-foreground">{data.content.total}</p>
+                        <p className="text-sm text-naya-olive-55 mt-1">{t('analytics.contentPipeline')}</p>
                       </div>
                       <div className="p-2 bg-cyan-100 dark:bg-cyan-900/40 rounded-lg">
                         <Layers className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
@@ -287,14 +287,14 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                         const pct = Math.round((count / max) * 100);
                         return (
                           <div key={status} className="flex items-center gap-3">
-                            <span className="text-xs text-slate-600 dark:text-gray-400 w-16">{PIPELINE_LABELS[status]}</span>
-                            <div className="flex-1 h-5 bg-slate-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                            <span className="text-xs text-naya-olive-70 w-16">{PIPELINE_LABELS[status]}</span>
+                            <div className="flex-1 h-5 bg-naya-olive-10 rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full transition-all ${PIPELINE_COLORS[status]}`}
                                 style={{ width: `${pct}%`, minWidth: count > 0 ? "8px" : "0" }}
                               />
                             </div>
-                            <span className="text-xs text-slate-700 dark:text-gray-300 w-6 text-right">{count}</span>
+                            <span className="text-xs text-naya-olive-70 w-6 text-right">{count}</span>
                           </div>
                         );
                       })}
@@ -348,18 +348,18 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                       <div className="space-y-3">
                         <div className="flex items-center gap-3">
                           <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-                          <span className="text-sm text-slate-700 dark:text-gray-300 flex-1">{t('campaigns.active')}</span>
-                          <span className="text-sm text-slate-900 dark:text-white">{data.campaigns.active}</span>
+                          <span className="text-sm text-naya-olive-70 flex-1">{t('campaigns.active')}</span>
+                          <span className="text-sm text-foreground">{data.campaigns.active}</span>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="w-2.5 h-2.5 rounded-full bg-blue-400" />
-                          <span className="text-sm text-slate-700 dark:text-gray-300 flex-1">{t('campaigns.completed')}</span>
-                          <span className="text-sm text-slate-900 dark:text-white">{data.campaigns.completed}</span>
+                          <span className="text-sm text-naya-olive-70 flex-1">{t('campaigns.completed')}</span>
+                          <span className="text-sm text-foreground">{data.campaigns.completed}</span>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-gray-600" />
-                          <span className="text-sm text-slate-700 dark:text-gray-300 flex-1">{t('campaigns.draft')}</span>
-                          <span className="text-sm text-slate-900 dark:text-white">{data.campaigns.draft}</span>
+                          <span className="text-sm text-naya-olive-70 flex-1">{t('campaigns.draft')}</span>
+                          <span className="text-sm text-foreground">{data.campaigns.draft}</span>
                         </div>
                         <p className="text-xs text-slate-400 dark:text-gray-500 pt-2 border-t border-slate-100 dark:border-gray-800">
                           Total tasks generated by campaigns: {data.campaigns.totalTasksGenerated}
@@ -377,7 +377,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                     <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-gray-500 mb-2">
                       {t('analytics.strategicFocus')}
                     </p>
-                    <p className="text-lg text-slate-900 dark:text-white mb-3">
+                    <p className="text-lg text-foreground mb-3">
                       {data.strategy.focus}
                     </p>
 
@@ -386,7 +386,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                         {data.strategy.recommendations.map((rec, i) => (
                           <div key={i} className="flex items-start gap-2.5">
                             <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${INSIGHT_COLORS[i % INSIGHT_COLORS.length]}`} />
-                            <p className="text-sm text-slate-700 dark:text-gray-300">{rec}</p>
+                            <p className="text-sm text-naya-olive-70">{rec}</p>
                           </div>
                         ))}
                       </div>
@@ -398,8 +398,8 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                           <div className="flex items-start gap-2">
                             <FileText className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <span className="text-xs text-slate-600 dark:text-gray-400">Content</span>
-                              <p className="text-xs text-slate-700 dark:text-gray-300 mt-0.5">{data.strategy.weeklyPlan.contentStrategy}</p>
+                              <span className="text-xs text-naya-olive-70">Content</span>
+                              <p className="text-xs text-naya-olive-70 mt-0.5">{data.strategy.weeklyPlan.contentStrategy}</p>
                             </div>
                           </div>
                         )}
@@ -407,8 +407,8 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                           <div className="flex items-start gap-2">
                             <Compass className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <span className="text-xs text-slate-600 dark:text-gray-400">Outreach</span>
-                              <p className="text-xs text-slate-700 dark:text-gray-300 mt-0.5">{data.strategy.weeklyPlan.outreachStrategy}</p>
+                              <span className="text-xs text-naya-olive-70">Outreach</span>
+                              <p className="text-xs text-naya-olive-70 mt-0.5">{data.strategy.weeklyPlan.outreachStrategy}</p>
                             </div>
                           </div>
                         )}
@@ -416,8 +416,8 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                           <div className="flex items-start gap-2">
                             <BarChart3 className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <span className="text-xs text-slate-600 dark:text-gray-400">Watch</span>
-                              <p className="text-xs text-slate-700 dark:text-gray-300 mt-0.5">{data.strategy.weeklyPlan.metrics}</p>
+                              <span className="text-xs text-naya-olive-70">Watch</span>
+                              <p className="text-xs text-naya-olive-70 mt-0.5">{data.strategy.weeklyPlan.metrics}</p>
                             </div>
                           </div>
                         )}
@@ -429,7 +429,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
                 <Card className="dark:bg-gray-900 dark:border-gray-700 border-2 border-dashed">
                   <CardContent className="p-6 text-center">
                     <Compass className="h-8 w-8 text-slate-300 dark:text-gray-600 mx-auto mb-2" />
-                    <p className="text-sm text-slate-500 dark:text-gray-400">
+                    <p className="text-sm text-naya-olive-55">
                       {t('analytics.noData')} —{" "}
                       <Link href="/strategy" className="text-primary hover:underline">
                         {t('strategy.generateBrief')}

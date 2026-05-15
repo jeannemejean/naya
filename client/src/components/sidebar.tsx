@@ -60,25 +60,14 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
     >
 
       {/* Logo Naya */}
-      <div className="h-[64px] flex items-center justify-center shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div className="h-[64px] flex items-center justify-center shrink-0 border-b border-naya-olive-10">
         <Link href="/">
-          <div
-            className="flex items-center justify-center cursor-pointer"
-            style={{ background: '#2B2D1C', padding: '8px 6px', borderRadius: '4px' }}
-          >
-            <span
-              style={{
-                fontFamily: '"Montserrat", system-ui, sans-serif',
-                fontWeight: '700',
-                fontSize: '10px',
-                lineHeight: 1,
-                letterSpacing: '0.15em',
-                textTransform: 'uppercase',
-                color: '#F7F4EC',
-              }}
-            >
-              Naya
-            </span>
+          <div className="flex items-center justify-center cursor-pointer p-1">
+            <img
+              src="/naya-mark-elephant.png"
+              alt="Naya"
+              className="w-9 h-9 object-contain"
+            />
           </div>
         </Link>
       </div>

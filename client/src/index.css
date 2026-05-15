@@ -1,12 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Inter:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   NAYA — Design System v2
+   NAYA — Design System
+   Quiet intelligence. Cream paper. Olive ink. One accent at a time.
    Palette : Crème #F7F4EC · Dark Olive #2B2D1C
    Accents Sanzo Wada 321 : Sulphur Yellow · Salvia Blue · Dusty Mauve
-   Typo : Anantason Ultra Expanded (display) · Helvetica Neue / Inter (body)
+   Typo : Montserrat Light/Regular (display) · Inter (body)
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 /* ── Anantason Ultra Expanded — à activer quand les fichiers woff2 sont disponibles ──
@@ -142,38 +145,41 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
-    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, -apple-system, sans-serif;
+    font-family: "Inter", "Helvetica Neue", "Helvetica", system-ui, -apple-system, sans-serif;
     font-weight: 400;
-    font-size: 14px;
-    letter-spacing: -0.01em;
-    line-height: 1.6;
+    font-size: 15px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
-  /* Titres — Anantason Ultra Expanded (fallback Inter bold) */
+  ::selection { background: #D4C97A; color: #2B2D1C; }
+
+  /* Titres — Anantason Ultra Expanded (fallback Montserrat) */
   h1, h2 {
     font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
-    font-weight: 400;
-    letter-spacing: 0.04em;
+    font-weight: 300;
+    letter-spacing: 0.22em;
     line-height: 1.1;
     color: var(--foreground);
     text-transform: uppercase;
   }
 
   h3, h4 {
-    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    line-height: 1.25;
+    font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    line-height: 1.3;
     color: var(--foreground);
+    text-transform: uppercase;
   }
 
   h5, h6 {
-    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
+    font-family: "Inter", "Helvetica Neue", system-ui, sans-serif;
     font-weight: 500;
-    font-size: 0.8125rem;
-    letter-spacing: 0.04em;
+    font-size: 0.6875rem;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
     color: var(--muted-foreground);
   }
@@ -196,17 +202,90 @@
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 @layer utilities {
+  /* ── Display type — Naya brand kit ── */
+  .wordmark {
+    font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.30em;
+    text-transform: uppercase;
+    color: var(--foreground);
+  }
+
+  .h1 {
+    font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
+    font-weight: 300;
+    font-size: 3.5rem;
+    letter-spacing: 0.22em;
+    line-height: 1.1;
+    text-transform: uppercase;
+    color: var(--foreground);
+  }
+
+  .h2 {
+    font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
+    font-weight: 300;
+    font-size: 1.75rem;
+    letter-spacing: 0.22em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    color: var(--foreground);
+  }
+
+  .h3 {
+    font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
+    font-weight: 400;
+    font-size: 1.0625rem;
+    letter-spacing: 0.12em;
+    line-height: 1.3;
+    text-transform: uppercase;
+    color: var(--foreground);
+  }
+
+  .eyebrow {
+    font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(43, 45, 28, 0.55);
+  }
+
+  /* ── Paper texture — fond crème papier légèrement grainé ── */
+  .naya-paper {
+    background-color: #F7F4EC;
+    background-image:
+      radial-gradient(rgba(43, 45, 28, 0.025) 1px, transparent 1px),
+      radial-gradient(rgba(43, 45, 28, 0.018) 1px, transparent 1px);
+    background-size: 3px 3px, 7px 7px;
+    background-position: 0 0, 1px 2px;
+  }
+
+  .naya-paper-inverse {
+    background-color: #2B2D1C;
+    color: #F7F4EC;
+    background-image: radial-gradient(rgba(247, 244, 236, 0.04) 1px, transparent 1px);
+    background-size: 4px 4px;
+  }
+
+  /* ── Focus ring — jamais de glow coloré ── */
+  .focus-naya {
+    outline: none;
+  }
+  .focus-naya:focus-visible {
+    box-shadow: 0 0 0 1px #2B2D1C, 0 0 0 3px #F7F4EC;
+  }
+
   /* Anantason Ultra Expanded — titres, wordmark, display */
   .font-display {
     font-family: "Anantason Ultra Expanded", "Montserrat", system-ui, sans-serif;
     font-weight: 400;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
   }
 
   /* Labels / metadata — uppercase tracking */
   .font-label {
-    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
+    font-family: "Inter", "Helvetica Neue", system-ui, sans-serif;
     font-weight: 500;
     font-size: 0.6875rem;
     letter-spacing: 0.08em;
@@ -570,13 +649,17 @@ button {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(43, 45, 28, 0.15) transparent;
+  scrollbar-color: rgba(43, 45, 28, 0.18) transparent;
 }
 
-*::-webkit-scrollbar        { width: 4px; height: 4px; }
+*::-webkit-scrollbar        { width: 12px; height: 12px; }
 *::-webkit-scrollbar-track  { background: transparent; }
-*::-webkit-scrollbar-thumb  { background: rgba(43, 45, 28, 0.15); border-radius: 4px; }
-*::-webkit-scrollbar-thumb:hover { background: rgba(43, 45, 28, 0.3); }
+*::-webkit-scrollbar-thumb  {
+  background: rgba(43, 45, 28, 0.18);
+  border-radius: 9999px;
+  border: 3px solid #F7F4EC;
+}
+*::-webkit-scrollbar-thumb:hover { background: rgba(43, 45, 28, 0.35); }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Radix UI / shadcn

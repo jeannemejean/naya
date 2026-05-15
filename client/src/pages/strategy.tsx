@@ -280,7 +280,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+        <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
           <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
             {t('strategy.title')}{selectedProject ? ` — ${selectedProject.name}` : ''}
@@ -298,7 +298,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                   className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                     selectedProjectId === p.id
                       ? 'bg-primary text-white'
-                      : 'bg-slate-100 dark:bg-gray-800 text-slate-600 dark:text-gray-400 hover:bg-slate-200 dark:hover:bg-gray-700'
+                      : 'bg-naya-olive-10 text-naya-olive-70 hover:bg-slate-200 dark:hover:bg-gray-700'
                   }`}
                 >
                   {p.name}
@@ -306,7 +306,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
               ))}
               {projects.length > 5 && (
                 <select
-                  className="px-2 py-1 text-sm rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-slate-700 dark:text-gray-300"
+                  className="px-2 py-1 text-sm rounded-lg border border-naya-olive-18 bg-white dark:bg-gray-800 text-naya-olive-70"
                   value={selectedProjectId && projects.findIndex(p => p.id === selectedProjectId) >= 5 ? selectedProjectId : ''}
                   onChange={e => setSelectedProjectId(parseInt(e.target.value))}
                 >
@@ -326,7 +326,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
           <Card className="dark:bg-gray-900 dark:border-gray-700">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm text-slate-900 dark:text-white">
+                <CardTitle className="text-sm text-foreground">
                   {t('strategy.nayasRead', { name: selectedProject?.name || 'your project' })}
                 </CardTitle>
                 <div className="flex items-center gap-2">
@@ -360,10 +360,10 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
             </CardHeader>
             <CardContent>
               {dnaLoading ? (
-                <div className="h-24 bg-slate-100 dark:bg-gray-800 rounded-lg animate-pulse" />
+                <div className="h-24 bg-naya-olive-10 rounded-lg animate-pulse" />
               ) : projectDna?.nayaIntelligenceSummary ? (
                 <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-4 border-l-4 border-indigo-400 dark:border-indigo-600">
-                  <p className={`text-sm leading-relaxed text-slate-700 dark:text-gray-300 whitespace-pre-line ${!showFullSummary ? 'line-clamp-5' : ''}`}>
+                  <p className={`text-sm leading-relaxed text-naya-olive-70 whitespace-pre-line ${!showFullSummary ? 'line-clamp-5' : ''}`}>
                     {projectDna.nayaIntelligenceSummary}
                   </p>
                   {projectDna.nayaIntelligenceSummary.length > 400 && (
@@ -376,8 +376,8 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                   )}
                 </div>
               ) : (
-                <div className="border-2 border-dashed border-slate-200 dark:border-gray-700 rounded-lg p-8 text-center">
-                  <p className="text-sm text-slate-500 dark:text-gray-400 mb-3">
+                <div className="border-2 border-dashed border-naya-olive-18 rounded-lg p-8 text-center">
+                  <p className="text-sm text-naya-olive-55 mb-3">
                     {t('strategy.notAnalyzedYet', { name: selectedProject?.name || 'this project' })}
                   </p>
                   <Button
@@ -399,7 +399,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
           {/* ─── Section 2: Weekly Command ─── */}
           <Card className="dark:bg-gray-900 dark:border-gray-700">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <CardTitle className="text-sm text-foreground flex items-center gap-2">
                 <Compass className="h-4 w-4 text-primary" />
                 {t('strategy.weeklyCommand')}
               </CardTitle>
@@ -409,7 +409,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                 <div className="space-y-4">
                   <div className="text-center py-4">
                     <Compass className="h-10 w-10 text-slate-300 dark:text-gray-600 mx-auto mb-3" />
-                    <p className="text-sm text-slate-700 dark:text-gray-300 mb-1">
+                    <p className="text-sm text-naya-olive-70 mb-1">
                       {t('strategy.noStrategyYet', { name: selectedProject?.name || 'this project' })}
                     </p>
                     <p className="text-xs text-slate-400 dark:text-gray-500 mb-4">
@@ -440,8 +440,8 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
               ) : (
                 <div className="space-y-4">
                   {/* Sub-card A: Weekly Focus */}
-                  <div className="bg-slate-50 dark:bg-gray-800/50 rounded-lg p-4">
-                    <p className="text-lg text-slate-900 dark:text-white">
+                  <div className="bg-naya-olive-06/50 rounded-lg p-4">
+                    <p className="text-lg text-foreground">
                       {weeklyStrategy.weeklyFocus}
                     </p>
                     <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">
@@ -450,7 +450,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                   </div>
 
                   {/* Sub-card B: Angles & Moves */}
-                  <div className="bg-slate-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-4">
+                  <div className="bg-naya-olive-06/50 rounded-lg p-4 space-y-4">
                     {weeklyStrategy.insights.length > 0 && (
                       <div>
                         <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-gray-500 mb-2">
@@ -460,7 +460,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                           {weeklyStrategy.insights.map((insight, i) => (
                             <div key={i} className="flex items-start gap-2.5">
                               <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${INSIGHT_COLORS[i % INSIGHT_COLORS.length]}`} />
-                              <p className="text-sm text-slate-700 dark:text-gray-300">{insight}</p>
+                              <p className="text-sm text-naya-olive-70">{insight}</p>
                             </div>
                           ))}
                         </div>
@@ -477,7 +477,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                             <div key={i} className="flex items-center justify-between group p-2 rounded-md hover:bg-white dark:hover:bg-gray-700/50 transition-colors">
                               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                 <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />
-                                <p className="text-sm text-slate-700 dark:text-gray-300 truncate">{rec}</p>
+                                <p className="text-sm text-naya-olive-70 truncate">{rec}</p>
                               </div>
                               <button
                                 onClick={() => addToPlanner(rec)}
@@ -495,7 +495,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
                   {/* Sub-card C: Direction this week */}
                   {weeklyStrategy.nextWeekPlan && (
-                    <div className="bg-slate-50 dark:bg-gray-800/50 rounded-lg p-4">
+                    <div className="bg-naya-olive-06/50 rounded-lg p-4">
                       <p className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-gray-500 mb-2">
                         {t('strategy.directionThisWeek')}
                       </p>
@@ -504,8 +504,8 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                           <div className="flex items-start gap-2">
                             <FileText className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <span className="text-xs text-slate-600 dark:text-gray-400">{t('strategy.content')}</span>
-                              <p className="text-sm text-slate-700 dark:text-gray-300">{weeklyStrategy.nextWeekPlan.contentStrategy}</p>
+                              <span className="text-xs text-naya-olive-70">{t('strategy.content')}</span>
+                              <p className="text-sm text-naya-olive-70">{weeklyStrategy.nextWeekPlan.contentStrategy}</p>
                             </div>
                           </div>
                         )}
@@ -513,8 +513,8 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                           <div className="flex items-start gap-2">
                             <Radio className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <span className="text-xs text-slate-600 dark:text-gray-400">{t('strategy.outreach')}</span>
-                              <p className="text-sm text-slate-700 dark:text-gray-300">{weeklyStrategy.nextWeekPlan.outreachStrategy}</p>
+                              <span className="text-xs text-naya-olive-70">{t('strategy.outreach')}</span>
+                              <p className="text-sm text-naya-olive-70">{weeklyStrategy.nextWeekPlan.outreachStrategy}</p>
                             </div>
                           </div>
                         )}
@@ -522,8 +522,8 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                           <div className="flex items-start gap-2">
                             <BarChart3 className="h-4 w-4 text-slate-400 mt-0.5 flex-shrink-0" />
                             <div>
-                              <span className="text-xs text-slate-600 dark:text-gray-400">{t('strategy.watch')}</span>
-                              <p className="text-sm text-slate-700 dark:text-gray-300">{weeklyStrategy.nextWeekPlan.metrics}</p>
+                              <span className="text-xs text-naya-olive-70">{t('strategy.watch')}</span>
+                              <p className="text-sm text-naya-olive-70">{weeklyStrategy.nextWeekPlan.metrics}</p>
                             </div>
                           </div>
                         )}
@@ -555,7 +555,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
           {/* ─── Section 4: Conditional Rules ─── */}
           <Card className="dark:bg-gray-900 dark:border-gray-700">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <CardTitle className="text-sm text-foreground flex items-center gap-2">
                 <Plus className="h-4 w-4 text-primary" />
                 {t('strategy.conditionalRules')}
               </CardTitle>
@@ -599,36 +599,36 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
                     <p className="text-xs text-emerald-700 dark:text-emerald-300 mb-2">{t('strategy.nayaParsedRule')}</p>
                     <div className="space-y-2">
                       <div>
-                        <span className="text-[11px] text-slate-500 dark:text-gray-400">{t('strategy.conditionLabel')}</span>
-                        <p className="text-sm text-slate-900 dark:text-white">{preview.conditionSummary}</p>
+                        <span className="text-[11px] text-naya-olive-55">{t('strategy.conditionLabel')}</span>
+                        <p className="text-sm text-foreground">{preview.conditionSummary}</p>
                       </div>
                       <div>
-                        <span className="text-[11px] text-slate-500 dark:text-gray-400">{t('strategy.typeLabel')}</span>
+                        <span className="text-[11px] text-naya-olive-55">{t('strategy.typeLabel')}</span>
                         <Badge variant="outline" className="ml-1 text-[10px]">{preview.conditionType}</Badge>
                         <Badge variant="outline" className="ml-1 text-[10px]">{preview.schedulingMode}</Badge>
                       </div>
                       <div>
-                        <span className="text-[11px] text-slate-500 dark:text-gray-400">{t('strategy.keywordsLabel')}</span>
+                        <span className="text-[11px] text-naya-olive-55">{t('strategy.keywordsLabel')}</span>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {preview.conditionKeywords.map((kw, i) => (
-                            <span key={i} className="text-[10px] px-1.5 py-0.5 bg-slate-100 dark:bg-gray-800 text-slate-600 dark:text-gray-400 rounded">{kw}</span>
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 bg-naya-olive-10 text-naya-olive-70 rounded">{kw}</span>
                           ))}
                         </div>
                       </div>
                       {preview.tasksToUnlock.length > 0 && (
                         <div>
-                          <span className="text-[11px] text-slate-500 dark:text-gray-400">{t('strategy.tasksToUnlockHeader')} ({preview.tasksToUnlock.length}):</span>
+                          <span className="text-[11px] text-naya-olive-55">{t('strategy.tasksToUnlockHeader')} ({preview.tasksToUnlock.length}):</span>
                           <div className="mt-1 space-y-1">
                             {preview.tasksToUnlock.map((task, i) => (
                               <div key={i} className="flex items-start gap-2 p-2 bg-white dark:bg-gray-800 rounded border border-slate-100 dark:border-gray-700">
                                 <span className="text-xs text-slate-400 mt-0.5">{i + 1}.</span>
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-xs text-slate-700 dark:text-gray-300">{task.title}</p>
+                                  <p className="text-xs text-naya-olive-70">{task.title}</p>
                                   {task.description && (
                                     <p className="text-[11px] text-slate-400 dark:text-gray-500 mt-0.5 line-clamp-2">{task.description}</p>
                                   )}
                                   <div className="flex items-center gap-2 mt-1">
-                                    {task.type && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-500 dark:text-gray-400">{task.type}</span>}
+                                    {task.type && <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-naya-olive-55">{task.type}</span>}
                                     {task.estimatedDuration && <span className="text-[10px] text-slate-400">{task.estimatedDuration}min</span>}
                                   </div>
                                 </div>
@@ -660,7 +660,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
           {watchingTriggers.length > 0 && (
             <div className="space-y-3">
-              <h2 className="text-sm text-slate-700 dark:text-gray-300 flex items-center gap-2">
+              <h2 className="text-sm text-naya-olive-70 flex items-center gap-2">
                 <Eye className="h-4 w-4" />
                 {t('strategy.watching')} ({watchingTriggers.length})
               </h2>
@@ -685,7 +685,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
           {triggeredTriggers.length > 0 && (
             <div className="space-y-3">
-              <h2 className="text-sm text-slate-700 dark:text-gray-300 flex items-center gap-2">
+              <h2 className="text-sm text-naya-olive-70 flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 {t('strategy.triggered')} ({triggeredTriggers.length})
               </h2>
@@ -735,7 +735,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
           {triggersLoading && (
             <div className="space-y-3">
               {[1, 2].map(i => (
-                <div key={i} className="h-20 bg-slate-100 dark:bg-gray-800 rounded-xl animate-pulse" />
+                <div key={i} className="h-20 bg-naya-olive-10 rounded-xl animate-pulse" />
               ))}
             </div>
           )}
@@ -743,8 +743,8 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
           {!triggersLoading && triggers.length === 0 && (
             <div className="text-center py-12">
               <Target className="h-10 w-10 text-slate-300 dark:text-gray-600 mx-auto mb-3" />
-              <h3 className="text-sm text-slate-700 dark:text-gray-300 mb-1">{t('strategy.noRulesYet')}</h3>
-              <p className="text-xs text-slate-500 dark:text-gray-400 max-w-md mx-auto">
+              <h3 className="text-sm text-naya-olive-70 mb-1">{t('strategy.noRulesYet')}</h3>
+              <p className="text-xs text-naya-olive-55 max-w-md mx-auto">
                 {t('strategy.noRulesDescription')}
               </p>
             </div>
@@ -860,7 +860,7 @@ function BusinessMemorySection() {
     <Card className="dark:bg-gray-900 dark:border-gray-700">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm text-slate-900 dark:text-white flex items-center gap-2">
+          <CardTitle className="text-sm text-foreground flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-primary" />
             {t('strategy.businessMemory')}
           </CardTitle>
@@ -918,12 +918,12 @@ function BusinessMemorySection() {
 
         {isLoading ? (
           <div className="space-y-2">
-            {[1, 2].map(i => <div key={i} className="h-14 bg-slate-100 dark:bg-gray-800 rounded animate-pulse" />)}
+            {[1, 2].map(i => <div key={i} className="h-14 bg-naya-olive-10 rounded animate-pulse" />)}
           </div>
         ) : memories.length === 0 ? (
           <div className="text-center py-6">
             <BookOpen className="h-8 w-8 text-slate-300 dark:text-gray-600 mx-auto mb-2" />
-            <p className="text-sm text-slate-500 dark:text-gray-400">{t('strategy.noMemoriesYet')}</p>
+            <p className="text-sm text-naya-olive-55">{t('strategy.noMemoriesYet')}</p>
             <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">
               {t('strategy.recordDecisions')}
             </p>
@@ -939,7 +939,7 @@ function BusinessMemorySection() {
                   className={`flex items-start gap-2.5 p-3 rounded-lg border transition-colors ${
                     mem.archived
                       ? 'bg-slate-50/50 dark:bg-gray-800/30 border-slate-200/50 dark:border-gray-700/50 opacity-60'
-                      : 'bg-slate-50 dark:bg-gray-800 border-slate-200 dark:border-gray-700'
+                      : 'bg-naya-olive-06 border-naya-olive-18'
                   }`}
                 >
                   {isEditing ? (
@@ -984,7 +984,7 @@ function BusinessMemorySection() {
                     <>
                       <span className="text-sm flex-shrink-0 mt-0.5">{cfg.icon}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm text-slate-700 dark:text-gray-300">{mem.content}</p>
+                        <p className="text-sm text-naya-olive-70">{mem.content}</p>
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${cfg.color}`}>
                             {t(`strategy.memoryTypes.${mem.type}`)}
@@ -1074,14 +1074,14 @@ function TriggerCard({
                 <input
                   value={editText}
                   onChange={e => onEditTextChange(e.target.value)}
-                  className="flex-1 text-sm border border-slate-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-slate-900 dark:text-white"
+                  className="flex-1 text-sm border border-slate-200 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-800 text-foreground"
                   onKeyDown={e => e.key === 'Enter' && onSaveEdit()}
                 />
                 <Button size="sm" variant="ghost" onClick={onSaveEdit}>{t('common.save')}</Button>
                 <Button size="sm" variant="ghost" onClick={onCancelEdit}><X className="h-3 w-3" /></Button>
               </div>
             ) : (
-              <p className="text-sm text-slate-900 dark:text-white">
+              <p className="text-sm text-foreground">
                 {trigger.conditionSummary || trigger.rawCondition}
               </p>
             )}
@@ -1096,7 +1096,7 @@ function TriggerCard({
                 {isTriggered ? t('strategy.triggered') : isDismissed ? t('strategy.dismissed') : t('strategy.watching')}
               </Badge>
               {tasksToUnlock.length > 0 && (
-                <span className="text-[11px] text-slate-500 dark:text-gray-400">
+                <span className="text-[11px] text-naya-olive-55">
                   {t('strategy.tasksToUnlockCount', { count: tasksToUnlock.length })}
                 </span>
               )}
@@ -1137,20 +1137,20 @@ function TriggerCard({
 
         {isExpanded && tasksToUnlock.length > 0 && (
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-gray-700 space-y-2">
-            <p className="text-[11px] text-slate-500 dark:text-gray-400 uppercase tracking-wide">
+            <p className="text-[11px] text-naya-olive-55 uppercase tracking-wide">
               {t('strategy.tasksToUnlockHeader')}
             </p>
             {tasksToUnlock.map((task, i) => (
-              <div key={i} className="flex items-start gap-2 p-2 bg-slate-50 dark:bg-gray-800 rounded-lg">
+              <div key={i} className="flex items-start gap-2 p-2 bg-naya-olive-06 rounded-lg">
                 <span className="text-xs mt-0.5 text-slate-400">{i + 1}.</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-slate-700 dark:text-gray-300">{task.title}</p>
+                  <p className="text-xs text-naya-olive-70">{task.title}</p>
                   {task.description && (
                     <p className="text-[11px] text-slate-400 dark:text-gray-500 mt-0.5 line-clamp-2">{task.description}</p>
                   )}
                   <div className="flex items-center gap-2 mt-1">
                     {task.type && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-slate-500 dark:text-gray-400">{task.type}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-700 text-naya-olive-55">{task.type}</span>
                     )}
                     {task.estimatedDuration && (
                       <span className="text-[10px] text-slate-400">{task.estimatedDuration}min</span>

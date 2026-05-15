@@ -197,16 +197,16 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
               <Card key={i} className="dark:bg-gray-900 dark:border-gray-700">
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-slate-900 dark:text-white">
+                    <span className="text-sm text-foreground">
                       {t('campaigns.phase')} {phase.number}: {phase.name}
                     </span>
                     <span className="text-[10px] text-slate-400 dark:text-gray-500">{phase.duration}</span>
                   </div>
-                  <p className="text-xs text-slate-600 dark:text-gray-400 mb-2">{phase.objective}</p>
+                  <p className="text-xs text-naya-olive-70 mb-2">{phase.objective}</p>
                   {phase.keyActions && phase.keyActions.length > 0 && (
                     <ul className="space-y-1 mb-2">
                       {phase.keyActions.map((action, j) => (
-                        <li key={j} className="text-xs text-slate-500 dark:text-gray-400 flex items-start gap-1.5">
+                        <li key={j} className="text-xs text-naya-olive-55 flex items-start gap-1.5">
                           <span className="text-slate-300 dark:text-gray-600 mt-0.5">•</span>
                           {action}
                         </li>
@@ -240,7 +240,7 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
                       <p className="text-[10px] text-slate-400 dark:text-gray-500 uppercase mb-0.5">{t('campaigns.proofPoints')}</p>
                       <ul className="space-y-0.5">
                         {mf.proofPoints.map((pp, i) => (
-                          <li key={i} className="text-xs text-slate-600 dark:text-gray-400 flex items-start gap-1.5">
+                          <li key={i} className="text-xs text-naya-olive-70 flex items-start gap-1.5">
                             <span className="text-slate-300 dark:text-gray-600 mt-0.5">•</span>{pp}
                           </li>
                         ))}
@@ -250,11 +250,11 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <p className="text-[10px] text-slate-400 dark:text-gray-500 uppercase mb-0.5">{t('campaigns.primaryCTA')}</p>
-                      <p className="text-xs text-slate-700 dark:text-gray-300">{mf.primaryCTA}</p>
+                      <p className="text-xs text-naya-olive-70">{mf.primaryCTA}</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-slate-400 dark:text-gray-500 uppercase mb-0.5">{t('campaigns.secondaryCTA')}</p>
-                      <p className="text-xs text-slate-700 dark:text-gray-300">{mf.secondaryCTA}</p>
+                      <p className="text-xs text-naya-olive-70">{mf.secondaryCTA}</p>
                     </div>
                   </div>
                   {mf.toneKeywords && mf.toneKeywords.length > 0 && (
@@ -288,12 +288,12 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
         <CollapsibleSection title={t('campaigns.channelStrategy')}>
           <div className="grid grid-cols-2 gap-2">
             {(campaign.channels as ChannelConfig[]).map((ch, i) => (
-              <div key={i} className="border border-slate-200 dark:border-gray-700 rounded-lg p-3">
+              <div key={i} className="border border-naya-olive-18 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-slate-900 dark:text-white capitalize">{ch.platform}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${ch.role === 'Primary' ? 'bg-primary/10 text-primary' : 'bg-slate-100 dark:bg-gray-800 text-slate-500'}`}>{ch.role}</span>
+                  <span className="text-xs text-foreground capitalize">{ch.platform}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${ch.role === 'Primary' ? 'bg-primary/10 text-primary' : 'bg-naya-olive-10 text-slate-500'}`}>{ch.role}</span>
                 </div>
-                <p className="text-[10px] text-slate-500 dark:text-gray-400">{ch.frequency} · {ch.contentFormat?.join(', ')}</p>
+                <p className="text-[10px] text-naya-olive-55">{ch.frequency} · {ch.contentFormat?.join(', ')}</p>
                 {ch.tone && <p className="text-[10px] text-slate-400 dark:text-gray-500 mt-1 italic">{ch.tone}</p>}
               </div>
             ))}
@@ -314,18 +314,18 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
               <div className="space-y-3">
                 {Object.entries(byPhase).sort(([a], [b]) => Number(a) - Number(b)).map(([phaseNum, items]) => (
                   <div key={phaseNum}>
-                    <p className="text-[10px] text-slate-500 dark:text-gray-400 mb-1">{t('campaigns.phase')} {phaseNum}</p>
+                    <p className="text-[10px] text-naya-olive-55 mb-1">{t('campaigns.phase')} {phaseNum}</p>
                     <div className="space-y-1.5">
                       {items.map((cp, j) => (
                         <div key={j} className="border border-slate-100 dark:border-gray-800 rounded-lg p-2.5 bg-white dark:bg-gray-900">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-gray-800 text-slate-500 dark:text-gray-400">{cp.week}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-naya-olive-10 text-naya-olive-55">{cp.week}</span>
                             <span className="text-[10px] text-slate-400 capitalize">{cp.platform}</span>
                             <span className="text-[10px] text-slate-400">·</span>
                             <span className="text-[10px] text-slate-400 capitalize">{cp.format}</span>
                           </div>
                           <p className="text-xs text-slate-800 dark:text-gray-200">{cp.angle}</p>
-                          {cp.copyDirections && <p className="text-[10px] text-slate-500 dark:text-gray-400 mt-1 italic">{cp.copyDirections}</p>}
+                          {cp.copyDirections && <p className="text-[10px] text-naya-olive-55 mt-1 italic">{cp.copyDirections}</p>}
                         </div>
                       ))}
                     </div>
@@ -350,17 +350,17 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
               <div className="space-y-3">
                 {Object.entries(byPhase).sort(([a], [b]) => Number(a) - Number(b)).map(([phaseNum, items]) => (
                   <div key={phaseNum}>
-                    <p className="text-[10px] text-slate-500 dark:text-gray-400 mb-1">{t('campaigns.phase')} {phaseNum}</p>
-                    <div className="border border-slate-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                      <div className="grid grid-cols-3 gap-0 bg-slate-50 dark:bg-gray-800 px-3 py-1.5 text-[10px] text-slate-500 dark:text-gray-400 uppercase">
+                    <p className="text-[10px] text-naya-olive-55 mb-1">{t('campaigns.phase')} {phaseNum}</p>
+                    <div className="border border-naya-olive-18 rounded-lg overflow-hidden">
+                      <div className="grid grid-cols-3 gap-0 bg-naya-olive-06 px-3 py-1.5 text-[10px] text-naya-olive-55 uppercase">
                         <span>{t('campaigns.metric')}</span>
                         <span>{t('campaigns.target')}</span>
                         <span>{t('campaigns.howToMeasure')}</span>
                       </div>
                       {items.map((kpi, i) => (
                         <div key={i} className="grid grid-cols-3 gap-0 px-3 py-2 border-t border-slate-100 dark:border-gray-800 text-xs">
-                          <span className="text-slate-700 dark:text-gray-300">{kpi.metric}</span>
-                          <span className="text-slate-600 dark:text-gray-400">{kpi.target}</span>
+                          <span className="text-naya-olive-70">{kpi.metric}</span>
+                          <span className="text-naya-olive-70">{kpi.target}</span>
                           <span className="text-slate-500 dark:text-gray-500">{kpi.howToMeasure}</span>
                         </div>
                       ))}
@@ -399,7 +399,7 @@ function TasksByPhase({ tasks, editingTaskIdx, editTaskTitle, setEditingTaskIdx,
       {Object.entries(grouped).sort(([a], [b]) => Number(a) - Number(b)).map(([phaseNum, items]) => (
         <div key={phaseNum}>
           {hasPhases && Number(phaseNum) > 0 && (
-            <p className="text-[10px] text-slate-500 dark:text-gray-400 mb-1.5 uppercase">{translate('campaigns.phase')} {phaseNum}</p>
+            <p className="text-[10px] text-naya-olive-55 mb-1.5 uppercase">{translate('campaigns.phase')} {phaseNum}</p>
           )}
           {items.map(({ task: t, originalIdx: i }) => {
             const EnergyIcon = ENERGY_ICONS[t.taskEnergyType] || Zap;
@@ -413,7 +413,7 @@ function TasksByPhase({ tasks, editingTaskIdx, editTaskTitle, setEditingTaskIdx,
                           <input
                             value={editTaskTitle}
                             onChange={(e) => setEditTaskTitle(e.target.value)}
-                            className="text-sm bg-transparent border-b border-primary outline-none flex-1 text-slate-900 dark:text-white"
+                            className="text-sm bg-transparent border-b border-primary outline-none flex-1 text-foreground"
                             autoFocus
                             onKeyDown={(e) => e.key === "Enter" && handleSaveTaskTitle(i)}
                           />
@@ -422,13 +422,13 @@ function TasksByPhase({ tasks, editingTaskIdx, editTaskTitle, setEditingTaskIdx,
                         </div>
                       ) : (
                         <div className="flex items-center gap-1 group/task">
-                          <p className="text-sm text-slate-900 dark:text-white">{t.title}</p>
+                          <p className="text-sm text-foreground">{t.title}</p>
                           <button onClick={() => { setEditingTaskIdx(i); setEditTaskTitle(t.title); }} className="opacity-0 group-hover/task:opacity-100 transition-opacity">
                             <Edit2 className="h-3 w-3 text-slate-400" />
                           </button>
                         </div>
                       )}
-                      <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5">{t.description}</p>
+                      <p className="text-xs text-naya-olive-55 mt-0.5">{t.description}</p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {t.priority === 1 && <div className="w-2 h-2 rounded-full bg-red-400" />}
@@ -483,10 +483,10 @@ function DetailTasksByPhase({ campaignTasks, generatedTasks }: { campaignTasks: 
       {Object.entries(grouped).sort(([a], [b]) => Number(a) - Number(b)).map(([phaseNum, items]) => (
         <div key={phaseNum}>
           {hasPhases && Number(phaseNum) > 0 && (
-            <p className="text-[10px] text-slate-500 dark:text-gray-400 mb-1.5 uppercase">{t('campaigns.phase')} {phaseNum}</p>
+            <p className="text-[10px] text-naya-olive-55 mb-1.5 uppercase">{t('campaigns.phase')} {phaseNum}</p>
           )}
           {hasPhases && Number(phaseNum) === 0 && items.length > 0 && (
-            <p className="text-[10px] text-slate-500 dark:text-gray-400 mb-1.5 uppercase">{t('campaigns.other')}</p>
+            <p className="text-[10px] text-naya-olive-55 mb-1.5 uppercase">{t('campaigns.other')}</p>
           )}
           <div className="space-y-2">
             {items.map((t) => {
@@ -502,11 +502,11 @@ function DetailTasksByPhase({ campaignTasks, generatedTasks }: { campaignTasks: 
                     <div className="w-4 h-4 rounded-full border-2 border-slate-300 dark:border-gray-600 flex-shrink-0" />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className={`text-sm ${t.completed ? "line-through text-slate-400 dark:text-gray-500" : "text-slate-900 dark:text-white"}`}>
+                    <p className={`text-sm ${t.completed ? "line-through text-slate-400 dark:text-gray-500" : "text-foreground"}`}>
                       {t.title}
                     </p>
                     {t.description && (
-                      <p className="text-xs text-slate-500 dark:text-gray-400 mt-0.5 line-clamp-1">{t.description}</p>
+                      <p className="text-xs text-naya-olive-55 mt-0.5 line-clamp-1">{t.description}</p>
                     )}
                     {t.scheduledDate && (
                       <p className="text-[10px] text-slate-400 dark:text-gray-500 mt-0.5">
@@ -537,7 +537,7 @@ function DetailTasksByPhase({ campaignTasks, generatedTasks }: { campaignTasks: 
                   key={t.id}
                   href={taskLink}
                   className={`flex items-center gap-3 p-3 rounded-lg border group cursor-pointer transition-colors
-                    bg-white dark:bg-gray-900 border-slate-200 dark:border-gray-700
+                    bg-white dark:bg-gray-900 border-naya-olive-18
                     hover:border-indigo-300 dark:hover:border-indigo-700 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10`}
                 >
                   {cardContent}
@@ -548,7 +548,7 @@ function DetailTasksByPhase({ campaignTasks, generatedTasks }: { campaignTasks: 
                   className={`flex items-center gap-3 p-3 rounded-lg border ${
                     t.completed
                       ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"
-                      : "bg-white dark:bg-gray-900 border-slate-200 dark:border-gray-700"
+                      : "bg-white dark:bg-gray-900 border-naya-olive-18"
                   }`}
                 >
                   {cardContent}
@@ -835,7 +835,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-white dark:bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
+        <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
           <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
           <div className="flex items-center justify-between">
             <div>
@@ -861,7 +861,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                   className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                     selectedProjectId === p.id
                       ? "bg-primary text-white"
-                      : "bg-slate-100 dark:bg-gray-800 text-slate-600 dark:text-gray-400 hover:bg-slate-200 dark:hover:bg-gray-700"
+                      : "bg-naya-olive-10 text-naya-olive-70 hover:bg-slate-200 dark:hover:bg-gray-700"
                   }`}
                 >
                   {p.name}
@@ -869,7 +869,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
               ))}
               {projects.length > 5 && (
                 <select
-                  className="px-2 py-1 text-sm rounded-lg border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-slate-700 dark:text-gray-300"
+                  className="px-2 py-1 text-sm rounded-lg border border-naya-olive-18 bg-white dark:bg-gray-800 text-naya-olive-70"
                   value={selectedProjectId && projects.findIndex((p) => p.id === selectedProjectId) >= 5 ? selectedProjectId : ""}
                   onChange={(e) => setSelectedProjectId(parseInt(e.target.value))}
                 >
@@ -885,7 +885,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
 
         <main className="flex-1 overflow-hidden flex">
           {/* Left Panel — Campaign List */}
-          <div className="w-[40%] border-r border-slate-200 dark:border-gray-700 overflow-y-auto p-4 space-y-2">
+          <div className="w-[40%] border-r border-naya-olive-18 overflow-y-auto p-4 space-y-2">
             {campaignsLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
@@ -893,7 +893,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
             ) : campaignList.length === 0 ? (
               <div className="text-center py-12">
                 <Rocket className="h-10 w-10 text-slate-300 dark:text-gray-600 mx-auto mb-3" />
-                <p className="text-sm text-slate-500 dark:text-gray-400">{t('campaigns.noCampaigns')}</p>
+                <p className="text-sm text-naya-olive-55">{t('campaigns.noCampaigns')}</p>
                 <Button size="sm" variant="ghost" className="mt-2" onClick={handleStartNew}>
                   {t('campaigns.createFirstCampaign')}
                 </Button>
@@ -909,15 +909,15 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     className={`w-full text-left p-3 rounded-lg border transition-colors ${
                       isSelected
                         ? "border-primary bg-primary/5 dark:bg-primary/10"
-                        : "border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-slate-300 dark:hover:border-gray-600"
+                        : "border-naya-olive-18 bg-white dark:bg-gray-900 hover:border-slate-300 dark:hover:border-gray-600"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-slate-900 dark:text-white truncate">
+                        <p className="text-sm text-foreground truncate">
                           {c.name}
                         </p>
-                        <p className="text-xs text-slate-500 dark:text-gray-400 line-clamp-1 mt-0.5">
+                        <p className="text-xs text-naya-olive-55 line-clamp-1 mt-0.5">
                           {c.objective}
                         </p>
                       </div>
@@ -956,13 +956,13 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
           <div className="w-[60%] overflow-y-auto p-6">
             {panelState === "empty" && (
               <div className="flex flex-col items-center justify-center h-full text-center">
-                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-gray-800 flex items-center justify-center mb-4">
+                <div className="w-16 h-16 rounded-full bg-naya-olive-10 flex items-center justify-center mb-4">
                   <Rocket className="h-8 w-8 text-slate-400 dark:text-gray-500" />
                 </div>
-                <p className="text-lg text-slate-900 dark:text-white mb-1">
+                <p className="text-lg text-foreground mb-1">
                   {t('campaigns.campaignEngine')}
                 </p>
-                <p className="text-sm text-slate-500 dark:text-gray-400 max-w-sm mb-6">
+                <p className="text-sm text-naya-olive-55 max-w-sm mb-6">
                   {t('campaigns.campaignEngineDescription')}
                 </p>
                 <Button onClick={handleStartNew}>
@@ -973,10 +973,10 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
 
             {panelState === "creating" && (
               <div className="max-w-lg mx-auto space-y-5">
-                <h2 className="text-lg text-slate-900 dark:text-white">{t('campaigns.newCampaignTitle')}</h2>
+                <h2 className="text-lg text-foreground">{t('campaigns.newCampaignTitle')}</h2>
 
                 <div>
-                  <label className="text-sm text-slate-700 dark:text-gray-300 block mb-1.5">
+                  <label className="text-sm text-naya-olive-70 block mb-1.5">
                     {t('campaigns.whatToAchieve')}
                   </label>
                   <Textarea
@@ -988,7 +988,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                 </div>
 
                 <div>
-                  <label className="text-sm text-slate-700 dark:text-gray-300 block mb-1.5">
+                  <label className="text-sm text-naya-olive-70 block mb-1.5">
                     {t('campaigns.duration')}
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -999,7 +999,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                         className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
                           duration === opt.value
                             ? "border-primary bg-primary/10 text-primary"
-                            : "border-slate-200 dark:border-gray-700 text-slate-600 dark:text-gray-400 hover:border-slate-300"
+                            : "border-naya-olive-18 text-naya-olive-70 hover:border-slate-300"
                         }`}
                       >
                         {t(opt.labelKey)}
@@ -1015,14 +1015,14 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                 </div>
 
                 <div>
-                  <label className="text-sm text-slate-700 dark:text-gray-300 block mb-1.5">
+                  <label className="text-sm text-naya-olive-70 block mb-1.5">
                     {t('campaigns.campaignStartDate')}
                   </label>
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full text-sm border border-slate-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-slate-900 dark:text-white"
+                    className="w-full text-sm border border-naya-olive-18 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-foreground"
                   />
                   <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">
                     {t('campaigns.startDateDescription')}
@@ -1032,7 +1032,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                 <div>
                   <button
                     onClick={() => setShowContext(!showContext)}
-                    className="text-xs text-slate-500 dark:text-gray-400 hover:text-primary transition-colors"
+                    className="text-xs text-naya-olive-55 hover:text-primary transition-colors"
                   >
                     {showContext ? "▼" : "▶"} {t('campaigns.additionalContext')}
                   </button>
@@ -1072,7 +1072,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                       <input
                         value={draftName}
                         onChange={(e) => setDraftName(e.target.value)}
-                        className="text-xl bg-transparent border-b-2 border-primary outline-none text-slate-900 dark:text-white flex-1"
+                        className="text-xl bg-transparent border-b-2 border-primary outline-none text-foreground flex-1"
                         autoFocus
                         onKeyDown={(e) => e.key === "Enter" && handleSaveName()}
                       />
@@ -1081,7 +1081,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 group">
-                      <h2 className="text-xl text-slate-900 dark:text-white">{selectedCampaign.name}</h2>
+                      <h2 className="text-xl text-foreground">{selectedCampaign.name}</h2>
                       <button onClick={() => { setDraftName(selectedCampaign.name); setEditingName(true); }} className="opacity-0 group-hover:opacity-100 transition-opacity">
                         <Edit2 className="h-4 w-4 text-slate-400" />
                       </button>
@@ -1122,7 +1122,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                 {selectedCampaign.coreMessage && (
                   <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-4 border-l-4 border-indigo-400 dark:border-indigo-600">
                     <p className="text-[10px] uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1">{t('campaigns.coreMessage')}</p>
-                    <p className="text-sm text-slate-700 dark:text-gray-300 leading-relaxed">{selectedCampaign.coreMessage}</p>
+                    <p className="text-sm text-naya-olive-70 leading-relaxed">{selectedCampaign.coreMessage}</p>
                   </div>
                 )}
 
@@ -1130,7 +1130,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                 {(selectedCampaign.targetAudience || selectedCampaign.audienceSegment) && (
                   <div className="space-y-1">
                     {selectedCampaign.targetAudience && (
-                      <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-gray-400">
+                      <div className="flex items-center gap-2 text-sm text-naya-olive-55">
                         <Target className="h-4 w-4 flex-shrink-0" />
                         <span>{selectedCampaign.targetAudience}</span>
                       </div>
@@ -1148,7 +1148,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     {(selectedCampaign.insights as string[]).map((insight, i) => (
                       <div key={i} className="flex items-start gap-2.5">
                         <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${INSIGHT_COLORS[i % INSIGHT_COLORS.length]}`} />
-                        <p className="text-sm text-slate-700 dark:text-gray-300">{insight}</p>
+                        <p className="text-sm text-naya-olive-70">{insight}</p>
                       </div>
                     ))}
                   </div>
@@ -1194,7 +1194,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
               <div className="space-y-5">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h2 className="text-xl text-slate-900 dark:text-white">{selectedCampaign.name}</h2>
+                    <h2 className="text-xl text-foreground">{selectedCampaign.name}</h2>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant={STATUS_BADGES[selectedCampaign.status || "draft"].variant}>
                         {t(STATUS_BADGES[selectedCampaign.status || "draft"].labelKey)}
@@ -1221,13 +1221,13 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     )}
                   </div>
                   {selectedCampaign.startDate && (
-                    <div className="bg-slate-50 dark:bg-gray-800/50 rounded-lg px-4 py-3 text-xs text-slate-500 dark:text-gray-400 space-y-1">
+                    <div className="bg-naya-olive-06/50 rounded-lg px-4 py-3 text-xs text-naya-olive-55 space-y-1">
                       <div className="flex items-center gap-2">
                         <CalendarDays className="h-3.5 w-3.5 flex-shrink-0" />
                         <span>
-                          {t('campaigns.starts')} <strong className="text-slate-700 dark:text-gray-300">{selectedCampaign.startDate}</strong>
+                          {t('campaigns.starts')} <strong className="text-naya-olive-70">{selectedCampaign.startDate}</strong>
                           {selectedCampaign.endDate && (
-                            <> → {t('campaigns.ends')} <strong className="text-slate-700 dark:text-gray-300">{selectedCampaign.endDate}</strong></>
+                            <> → {t('campaigns.ends')} <strong className="text-naya-olive-70">{selectedCampaign.endDate}</strong></>
                           )}
                         </span>
                       </div>
@@ -1270,7 +1270,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     {selectedCampaign.status === "active" && showPauseDialog && (
                       <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
                         <p className="text-xs text-amber-700 dark:text-amber-400">{t('campaigns.pauseThisCampaign')}</p>
-                        <p className="text-xs text-slate-500 dark:text-gray-400">{t('campaigns.pauseDescription')}</p>
+                        <p className="text-xs text-naya-olive-55">{t('campaigns.pauseDescription')}</p>
                         <Textarea
                           placeholder={t('campaigns.pauseAIInstruction')}
                           value={pauseNoteInput}
@@ -1318,7 +1318,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     {selectedCampaign.status === "completed" && !selectedCampaign.reviewedAt && selectedCampaign.endDate && selectedCampaign.endDate < formatLocalDate(new Date()) && reviewSubmitted !== selectedCampaign.id && (
                       <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 p-3 space-y-3">
                         <p className="text-xs text-emerald-700 dark:text-emerald-400">{t('campaigns.howDidItGo')}</p>
-                        <p className="text-xs text-slate-500 dark:text-gray-400">{t('campaigns.rateThreeDimensions')}</p>
+                        <p className="text-xs text-naya-olive-55">{t('campaigns.rateThreeDimensions')}</p>
                         {([
                           { key: 'contentQuality' as const, label: t('campaigns.contentQuality'), value: reviewContentQuality, set: setReviewContentQuality },
                           { key: 'audienceResponse' as const, label: t('campaigns.audienceResponse'), value: reviewAudienceResponse, set: setReviewAudienceResponse },
@@ -1369,7 +1369,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                 {selectedCampaign.coreMessage && (
                   <div className="bg-indigo-50 dark:bg-indigo-950/30 rounded-lg p-4 border-l-4 border-indigo-400 dark:border-indigo-600">
                     <p className="text-[10px] uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1">{t('campaigns.coreMessage')}</p>
-                    <p className="text-sm text-slate-700 dark:text-gray-300 leading-relaxed">{selectedCampaign.coreMessage}</p>
+                    <p className="text-sm text-naya-olive-70 leading-relaxed">{selectedCampaign.coreMessage}</p>
                   </div>
                 )}
 
@@ -1377,7 +1377,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                 {(selectedCampaign.targetAudience || selectedCampaign.audienceSegment) && (
                   <div className="space-y-1">
                     {selectedCampaign.targetAudience && (
-                      <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-gray-400">
+                      <div className="flex items-center gap-2 text-sm text-naya-olive-55">
                         <Target className="h-4 w-4 flex-shrink-0" />
                         <span>{selectedCampaign.targetAudience}</span>
                       </div>
@@ -1395,7 +1395,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
                     {(selectedCampaign.insights as string[]).map((insight, i) => (
                       <div key={i} className="flex items-start gap-2.5">
                         <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${INSIGHT_COLORS[i % INSIGHT_COLORS.length]}`} />
-                        <p className="text-sm text-slate-700 dark:text-gray-300">{insight}</p>
+                        <p className="text-sm text-naya-olive-70">{insight}</p>
                       </div>
                     ))}
                   </div>

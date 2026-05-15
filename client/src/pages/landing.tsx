@@ -2,14 +2,12 @@ import { useState } from "react";
 import { Target, Brain, Calendar, MessageSquare, BarChart3, Lightbulb } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import AuthDialog from "@/components/auth-dialog";
-
-const FONT_DISPLAY = '"Montserrat", system-ui, sans-serif';
-const FONT_BODY    = '"Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif';
+import { Button } from "@/components/ui/button";
 
 export default function Landing() {
   const { t } = useTranslation();
-  const [authDialogOpen, setAuthDialogOpen]   = useState(false);
-  const [authDialogTab,  setAuthDialogTab]    = useState<"login" | "register">("login");
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [authDialogTab,  setAuthDialogTab]  = useState<"login" | "register">("login");
 
   const handleOpenAuth = (tab: "login" | "register" = "login") => {
     setAuthDialogTab(tab);
@@ -17,222 +15,99 @@ export default function Landing() {
   };
 
   const features = [
-    { icon: Target,       key: "pilotBoard" },
-    { icon: Brain,        key: "weeklyIntelligence" },
-    { icon: BarChart3,    key: "campaignEngine" },
-    { icon: Calendar,     key: "contentCalendar" },
-    { icon: MessageSquare,key: "outreachCrm" },
-    { icon: Lightbulb,    key: "operatingProfile" },
+    { icon: Target,        key: "pilotBoard" },
+    { icon: Brain,         key: "weeklyIntelligence" },
+    { icon: BarChart3,     key: "campaignEngine" },
+    { icon: Calendar,      key: "contentCalendar" },
+    { icon: MessageSquare, key: "outreachCrm" },
+    { icon: Lightbulb,     key: "operatingProfile" },
   ] as const;
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)', fontFamily: FONT_BODY }}>
+    <div className="min-h-screen naya-paper">
 
       {/* ── Header ── */}
-      <header style={{
-        padding: '20px 40px',
-        borderBottom: '1px solid var(--border)',
-        background: 'var(--card)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        maxWidth: '100%',
-      }}>
-        {/* Wordmark NAYA */}
-        <span style={{
-          fontFamily: FONT_DISPLAY,
-          fontWeight: 500,
-          fontSize: '0.875rem',
-          letterSpacing: '0.25em',
-          textTransform: 'uppercase',
-          color: 'var(--foreground)',
-        }}>
-          NAYA
-        </span>
+      <header className="px-10 py-5 border-b border-naya-olive-10 bg-naya-cream/90 backdrop-blur-sm flex items-center justify-between sticky top-0 z-10">
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/naya-mark-elephant.png"
+            alt="Naya"
+            className="w-8 h-8 object-contain"
+          />
+          <span className="wordmark text-[11px]">NAYA</span>
+        </div>
 
         <button
           onClick={() => handleOpenAuth("login")}
           data-testid="auth-login"
-          style={{
-            fontFamily: FONT_BODY,
-            fontSize: '0.75rem',
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            fontWeight: 500,
-            color: 'var(--muted-foreground)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            padding: '6px 0',
-            borderBottom: '1px solid transparent',
-            transition: 'color 150ms ease, border-color 150ms ease',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.color = 'var(--foreground)';
-            (e.currentTarget as HTMLElement).style.borderBottomColor = 'var(--foreground)';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.color = 'var(--muted-foreground)';
-            (e.currentTarget as HTMLElement).style.borderBottomColor = 'transparent';
-          }}
+          className="eyebrow hover:text-naya-olive transition-colors duration-base ease-quiet border-b border-transparent hover:border-naya-olive-35 pb-px cursor-pointer"
         >
           {t('landing.meetNaya')}
         </button>
       </header>
 
       {/* ── Hero ── */}
-      <section style={{ padding: '80px 40px 72px', maxWidth: 740, margin: '0 auto' }}>
-        <p style={{
-          fontFamily: FONT_BODY,
-          fontSize: '0.6875rem',
-          fontWeight: 500,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          color: 'var(--muted-foreground)',
-          marginBottom: 24,
-        }}>
-          Intelligence stratégique · For builders
-        </p>
+      <section className="px-10 pt-20 pb-18 max-w-[740px] mx-auto">
+        <p className="eyebrow mb-6">Intelligence stratégique · For builders</p>
 
-        <h1 style={{
-          fontFamily: FONT_DISPLAY,
-          fontWeight: 600,
-          fontSize: 'clamp(1.75rem, 3.5vw, 2.75rem)',
-          lineHeight: 1.2,
-          letterSpacing: '-0.01em',
-          color: 'var(--foreground)',
-          marginBottom: 20,
-          textTransform: 'uppercase',
-        }}>
+        <h1 className="h1 text-[clamp(2rem,4vw,3.5rem)] mb-5">
           {t('landing.heroTitle')}
         </h1>
 
-        <p style={{
-          fontFamily: FONT_BODY,
-          fontSize: '0.9375rem',
-          fontWeight: 400,
-          lineHeight: 1.7,
-          color: 'var(--muted-foreground)',
-          marginBottom: 40,
-          maxWidth: 500,
-        }}>
+        <p className="text-base text-naya-olive-70 leading-[1.7] mb-10 max-w-[500px]">
           {t('landing.heroDescription')}
         </p>
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button
+        <div className="flex gap-2.5 flex-wrap">
+          <Button
+            variant="display"
+            size="lg"
             onClick={() => handleOpenAuth("register")}
             data-testid="auth-register-hero"
-            style={{
-              padding: '11px 28px',
-              background: 'var(--primary)',
-              color: 'var(--primary-foreground)',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontFamily: FONT_BODY,
-              fontSize: '0.75rem',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              fontWeight: 500,
-              transition: 'opacity 150ms ease',
-            }}
-            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '0.85')}
-            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
           >
             {t('landing.meetNaya')}
-          </button>
-
-          <button
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
             onClick={() => handleOpenAuth("login")}
-            style={{
-              padding: '11px 28px',
-              background: 'transparent',
-              color: 'var(--foreground)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontFamily: FONT_BODY,
-              fontSize: '0.75rem',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              fontWeight: 400,
-              transition: 'border-color 150ms ease',
-            }}
-            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--foreground)')}
-            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.borderColor = 'var(--border)')}
           >
             {t('landing.seeHowItWorks')}
-          </button>
+          </Button>
         </div>
       </section>
 
-      {/* ── Séparateur ── */}
-      <div style={{ borderTop: '1px solid var(--border)', maxWidth: 900, margin: '0 auto 0' }} />
+      {/* ── Hairline ── */}
+      <div className="border-t border-naya-olive-10 max-w-[900px] mx-auto" />
 
       {/* ── Features ── */}
-      <section style={{ padding: '72px 40px', background: 'var(--card)' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto' }}>
-          <div style={{ marginBottom: 56 }}>
-            <h2 style={{
-              fontFamily: FONT_DISPLAY,
-              fontWeight: 600,
-              fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)',
-              letterSpacing: '-0.01em',
-              textTransform: 'uppercase',
-              color: 'var(--foreground)',
-              marginBottom: 12,
-            }}>
-              {t('landing.notJustSmart')}
-            </h2>
-            <p style={{
-              fontFamily: FONT_BODY,
-              fontSize: '0.9375rem',
-              color: 'var(--muted-foreground)',
-              lineHeight: 1.65,
-              maxWidth: 480,
-            }}>
+      <section className="px-10 py-18 bg-naya-cream">
+        <div className="max-w-[900px] mx-auto">
+          <div className="mb-14">
+            <p className="eyebrow mb-4">{t('landing.notJustSmart')}</p>
+            <p className="text-base text-naya-olive-70 leading-[1.65] max-w-[480px]">
               {t('landing.notJustSmartDescription')}
             </p>
           </div>
 
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-            gap: 1,
-            border: '1px solid var(--border)',
-          }}>
+          <div
+            className="grid border border-naya-olive-18"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 0 }}
+          >
             {features.map(({ icon: Icon, key }) => (
               <div
                 key={key}
-                style={{
-                  padding: '28px 28px',
-                  background: 'var(--card)',
-                  borderRight: '1px solid var(--border)',
-                  borderBottom: '1px solid var(--border)',
-                }}
+                className="p-7 border-r border-b border-naya-olive-10 hover:bg-naya-olive-06 transition-colors duration-base ease-quiet"
               >
                 <Icon
-                  size={18}
+                  size={17}
                   strokeWidth={1.5}
-                  style={{ color: 'var(--muted-foreground)', marginBottom: 16 }}
+                  className="text-naya-olive-55 mb-4"
                 />
-                <p style={{
-                  fontFamily: FONT_BODY,
-                  fontWeight: 600,
-                  fontSize: '0.8125rem',
-                  color: 'var(--foreground)',
-                  marginBottom: 8,
-                  letterSpacing: '-0.01em',
-                }}>
+                <p className="font-display uppercase tracking-wide text-sm text-naya-olive mb-2">
                   {t(`landing.${key}`)}
                 </p>
-                <p style={{
-                  fontFamily: FONT_BODY,
-                  fontSize: '0.8125rem',
-                  color: 'var(--muted-foreground)',
-                  lineHeight: 1.6,
-                }}>
+                <p className="text-sm text-naya-olive-70 leading-[1.6]">
                   {t(`landing.${key}Description`)}
                 </p>
               </div>
@@ -241,50 +116,18 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── CTA — flat, pas de gradient ── */}
-      <section style={{
-        padding: '80px 40px',
-        background: 'var(--primary)',
-      }}>
-        <div style={{ maxWidth: 560, margin: '0 auto', textAlign: 'center' }}>
-          <h2 style={{
-            fontFamily: FONT_DISPLAY,
-            fontWeight: 600,
-            fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)',
-            letterSpacing: '-0.01em',
-            textTransform: 'uppercase',
-            color: 'var(--primary-foreground)',
-            marginBottom: 16,
-          }}>
+      {/* ── CTA — olive paper ── */}
+      <section className="px-10 py-20 naya-paper-inverse">
+        <div className="max-w-[560px] mx-auto text-center">
+          <h2 className="font-display uppercase tracking-xwide text-xl font-light text-naya-cream mb-4">
             {t('landing.ctaTitle')}
           </h2>
-          <p style={{
-            fontFamily: FONT_BODY,
-            fontSize: '0.9375rem',
-            color: 'rgba(247, 244, 236, 0.65)',
-            lineHeight: 1.65,
-            marginBottom: 36,
-          }}>
+          <p className="text-base text-naya-cream/65 leading-[1.65] mb-9">
             {t('landing.ctaSubtitle')}
           </p>
           <button
             onClick={() => handleOpenAuth("register")}
-            style={{
-              padding: '12px 32px',
-              background: 'var(--primary-foreground)',
-              color: 'var(--primary)',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontFamily: FONT_BODY,
-              fontSize: '0.75rem',
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              fontWeight: 600,
-              transition: 'opacity 150ms ease',
-            }}
-            onMouseEnter={e => ((e.currentTarget as HTMLElement).style.opacity = '0.9')}
-            onMouseLeave={e => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+            className="inline-flex items-center gap-2 px-8 h-11 bg-naya-cream text-naya-olive font-display uppercase tracking-xwide text-[11px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer"
           >
             {t('landing.startWithNaya')}
           </button>
@@ -292,31 +135,21 @@ export default function Landing() {
       </section>
 
       {/* ── Footer ── */}
-      <footer style={{
-        padding: '32px 40px',
-        background: 'var(--foreground)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 12,
-      }}>
-        <span style={{
-          fontFamily: FONT_DISPLAY,
-          fontWeight: 500,
-          fontSize: '0.75rem',
-          letterSpacing: '0.25em',
-          textTransform: 'uppercase',
-          color: 'var(--primary-foreground)',
-          opacity: 0.9,
-        }}>
-          NAYA
-        </span>
-        <p style={{
-          fontFamily: FONT_BODY,
-          fontSize: '0.75rem',
-          color: 'rgba(247, 244, 236, 0.4)',
-        }}>
+      <footer className="px-10 py-8 bg-naya-olive flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/naya-mark-elephant.png"
+            alt=""
+            className="w-6 h-6 object-contain opacity-60"
+          />
+          <span
+            className="font-display text-[10px] uppercase text-naya-cream/80"
+            style={{ letterSpacing: '0.30em' }}
+          >
+            NAYA
+          </span>
+        </div>
+        <p className="text-[13px] text-naya-cream/40">
           {t('landing.footer')}
         </p>
       </footer>
