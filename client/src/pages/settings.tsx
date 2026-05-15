@@ -613,7 +613,7 @@ function SocialConnectionsCard() {
 
 export default function Settings({ onSearchClick }: SettingsProps) {
  const { t } = useTranslation();
- const { user } = useAuth();
+ const { user, logout } = useAuth();
  const { theme, toggleTheme } = useTheme();
  const { toast } = useToast();
  const queryClient = useQueryClient();
@@ -1517,7 +1517,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <Button
  variant="outline"
  size="sm"
- onClick={() => { window.location.href = "/api/logout"; }}
+ onClick={logout}
  >
  {t('settings.logOut')}
  </Button>
