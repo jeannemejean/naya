@@ -29,8 +29,8 @@ export default function Landing() {
       {/* ── Header ── */}
       <header className="px-8 py-4 border-b border-naya-olive-10 bg-naya-cream/90 backdrop-blur-sm flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <img src="/naya-mark-elephant.png" alt="Naya" className="w-10 h-10 object-contain" />
-          <span className="wordmark text-xs tracking-[0.22em]">NAYA</span>
+          <img src="/naya-mark-elephant.png" alt="Naya" className="w-14 h-14 object-contain" />
+          <span className="wordmark text-sm tracking-[0.22em]">NAYA</span>
         </div>
         <button
           onClick={() => handleOpenAuth("login")}
@@ -149,8 +149,8 @@ export default function Landing() {
       {/* ── Footer ── */}
       <footer className="px-8 py-7 bg-naya-olive border-t border-naya-olive-35 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <img src="/naya-mark-elephant.png" alt="" className="w-8 h-8 object-contain opacity-40" />
-          <span className="wordmark text-[10px] text-naya-cream/60 tracking-[0.22em]">NAYA</span>
+          <img src="/naya-mark-elephant.png" alt="" className="w-12 h-12 object-contain opacity-40" />
+          <span className="wordmark text-xs text-naya-cream/60 tracking-[0.22em]">NAYA</span>
         </div>
         <p className="text-[11px] text-naya-cream/30 font-display uppercase tracking-[0.15em]">
           {t('landing.footer')}
