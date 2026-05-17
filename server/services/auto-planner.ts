@@ -200,10 +200,18 @@ export async function rolloverStaleTasks(
     const slot = findNextFreeSlot(curSlot, duration, blockedRanges, dayEndMin);
     if (slot === -1) continue; // plus de place ce jour-là
 
+    // DB verification — guard concurrent runs
+    const candidateTime = minToHHMM(slot);
+    const slotCheck = await storage.checkSlotAvailability(userId, scheduleDate, candidateTime, duration, task.id);
+    const finalSlot = (!slotCheck.available && slotCheck.nextAvailableTime)
+      ? (() => { const [h,m] = slotCheck.nextAvailableTime!.split(':').map(Number); return h*60+m; })()
+      : slot;
+    if (finalSlot + duration > dayEndMin) continue;
+
     const newCount = (task.learnedAdjustmentCount || 0) + 1;
     await storage.updateTask(task.id, {
       scheduledDate: scheduleDate,
-      scheduledTime: minToHHMM(slot),
+      scheduledTime: minToHHMM(finalSlot),
       learnedAdjustmentCount: newCount,
     });
 
@@ -212,8 +220,8 @@ export async function rolloverStaleTasks(
       console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
     );
 
-    blockedRanges.push({ start: slot, end: slot + duration });
-    curSlot = slot + duration + 5;
+    blockedRanges.push({ start: finalSlot, end: finalSlot + duration });
+    curSlot = finalSlot + duration + 5;
     moved++;
   }
 
@@ -416,9 +424,17 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         const slotMin = findNextFreeSlot(curSlot, duration, blockedRanges, workEndMin);
         if (slotMin === -1) continue; // plus de place ce jour-là
 
-        const scheduledTime = minToHHMM(slotMin);
-        blockedRanges.push({ start: slotMin, end: slotMin + duration });
-        curSlot = slotMin + duration + 5; // 5-min buffer
+        // Verify against DB to guard against concurrent runs
+        const candidateTime = minToHHMM(slotMin);
+        const slotCheck = await storage.checkSlotAvailability(userId, dateStr, candidateTime, duration);
+        const finalSlotMin = (!slotCheck.available && slotCheck.nextAvailableTime)
+          ? (() => { const [h,m] = slotCheck.nextAvailableTime!.split(':').map(Number); return h*60+m; })()
+          : slotMin;
+        if (finalSlotMin + duration > workEndMin) continue; // overflow après correction DB
+
+        const scheduledTime = minToHHMM(finalSlotMin);
+        blockedRanges.push({ start: finalSlotMin, end: finalSlotMin + duration });
+        curSlot = finalSlotMin + duration + 5; // 5-min buffer
 
         const created = await storage.createTask({
           userId,

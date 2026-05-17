@@ -3137,10 +3137,28 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const userId = req.userId;
       const taskData = insertTaskSchema.parse({ ...req.body, userId });
 
-      // Validate scheduling constraints
-      const validation = await validateTaskScheduling(userId, taskData);
-      if (!validation.valid) {
-        return res.status(400).json({ message: validation.error });
+      // Weekend check — still a hard reject (don't silently move to a work day)
+      if (taskData.scheduledDate) {
+        const prefs = await storage.getUserPreferences(userId).catch(() => null);
+        const workDaySet = parseWorkDays(prefs?.workDays);
+        const dow = new Date(taskData.scheduledDate + 'T00:00:00').getDay();
+        if (!workDaySet.has(DAY_ABBRS[dow])) {
+          const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+          return res.status(400).json({ message: `${names[dow]} is not one of your work days.` });
+        }
+      }
+
+      // Slot conflict — auto-shift to next available time, never reject
+      if (taskData.scheduledDate && taskData.scheduledTime && taskData.estimatedDuration) {
+        const check = await storage.checkSlotAvailability(
+          userId, taskData.scheduledDate, taskData.scheduledTime, taskData.estimatedDuration
+        );
+        if (!check.available && check.nextAvailableTime) {
+          taskData.scheduledTime = check.nextAvailableTime;
+          const [h, m] = check.nextAvailableTime.split(':').map(Number);
+          const endMin = h * 60 + m + taskData.estimatedDuration;
+          taskData.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2,'0')}:${String(endMin % 60).padStart(2,'0')}`;
+        }
       }
 
       const task = await storage.createTask(taskData);
@@ -3229,23 +3247,35 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const updates = req.body;
       const taskId = parseInt(id);
 
-      // If updating schedule-related fields, validate constraints
+      // If updating schedule-related fields, apply slot-safe logic
       if (updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration) {
-        // Get current task to merge with updates
         const currentTask = await storage.getTask(taskId);
-        if (!currentTask) {
-          return res.status(404).json({ message: "Task not found" });
+        if (!currentTask) return res.status(404).json({ message: "Task not found" });
+
+        const merged = { ...currentTask, ...updates, userId };
+
+        // Weekend check — hard reject
+        if (merged.scheduledDate) {
+          const prefs = await storage.getUserPreferences(userId).catch(() => null);
+          const workDaySet = parseWorkDays(prefs?.workDays);
+          const dow = new Date(merged.scheduledDate + 'T00:00:00').getDay();
+          if (!workDaySet.has(DAY_ABBRS[dow])) {
+            const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+            return res.status(400).json({ message: `${names[dow]} is not one of your work days.` });
+          }
         }
 
-        const mergedData = {
-          ...currentTask,
-          ...updates,
-          userId
-        };
-
-        const validation = await validateTaskScheduling(userId, mergedData, taskId);
-        if (!validation.valid) {
-          return res.status(400).json({ message: validation.error });
+        // Slot conflict — auto-shift
+        if (merged.scheduledDate && merged.scheduledTime && merged.estimatedDuration) {
+          const check = await storage.checkSlotAvailability(
+            userId, merged.scheduledDate, merged.scheduledTime, merged.estimatedDuration, taskId
+          );
+          if (!check.available && check.nextAvailableTime) {
+            updates.scheduledTime = check.nextAvailableTime;
+            const [h, m] = check.nextAvailableTime.split(':').map(Number);
+            const endMin = h * 60 + m + merged.estimatedDuration;
+            updates.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2,'0')}:${String(endMin % 60).padStart(2,'0')}`;
+          }
         }
       }
 
@@ -4335,6 +4365,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
                 finalDate = overflowTarget;
                 break;
               }
+            }
+          }
+
+          // DB-backed slot verification — last line of defense against concurrent planners
+          if (scheduledTimeVal && finalDate) {
+            const slotCheck = await storage.checkSlotAvailability(userId, finalDate, scheduledTimeVal, duration);
+            if (!slotCheck.available && slotCheck.nextAvailableTime) {
+              const corrected = slotCheck.nextAvailableTime;
+              genClaimSlot(finalDate, hhmmToMinutes(corrected) + duration);
+              scheduledTimeVal = corrected;
             }
           }
 
@@ -7547,7 +7587,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
             lastSubtaskDate = scheduledDate;
             const scheduledDateStr = campaignDateToStr(scheduledDate);
             campaignDayCounts.set(scheduledDateStr, (campaignDayCounts.get(scheduledDateStr) || 0) + 1);
-            const scheduledTime = assignSlot(scheduledDateStr, sub.estimatedDuration);
+
+            // In-memory slot from the map, then verify against DB (handles concurrent launches)
+            const inMemoryTime = assignSlot(scheduledDateStr, sub.estimatedDuration);
+            const slotCheck = await storage.checkSlotAvailability(
+              userId, scheduledDateStr, inMemoryTime, sub.estimatedDuration
+            );
+            const scheduledTime = (!slotCheck.available && slotCheck.nextAvailableTime)
+              ? slotCheck.nextAvailableTime
+              : inMemoryTime;
+            // Keep in-memory map consistent with what was actually written
+            if (scheduledTime !== inMemoryTime) {
+              const [sh, sm] = scheduledTime.split(':').map(Number);
+              dayNextSlot.set(scheduledDateStr, sh * 60 + sm + sub.estimatedDuration + BUFFER);
+            }
             const scheduledEndTime = minToHHMM(hhmmToMin(scheduledTime) + sub.estimatedDuration);
 
             await storage.createTask({

@@ -112,7 +112,7 @@ import {
   type InsertGoogleCalendarToken,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, gte, lte, isNull, isNotNull, inArray } from "drizzle-orm";
+import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -216,6 +216,7 @@ export interface IStorage {
   // Task operations
   getTask(taskId: number): Promise<Task | undefined>;
   getTasks(userId: string, dueDate?: Date, projectId?: number, campaignId?: number): Promise<Task[]>;
+  checkSlotAvailability(userId: string, date: string, startTime: string, durationMinutes: number, excludeTaskId?: number): Promise<{ available: boolean; nextAvailableTime?: string }>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: Partial<Task>): Promise<Task>;
   completeTask(id: number): Promise<Task>;
@@ -1335,6 +1336,57 @@ export class DatabaseStorage implements IStorage {
     await db.delete(taskWorkspaceEntries).where(eq(taskWorkspaceEntries.taskId, taskId));
     // Delete the task (taskDependencies cascade automatically)
     await db.delete(tasks).where(eq(tasks.id, taskId));
+  }
+
+  async checkSlotAvailability(
+    userId: string,
+    date: string,
+    startTime: string,
+    durationMinutes: number,
+    excludeTaskId?: number
+  ): Promise<{ available: boolean; nextAvailableTime?: string }> {
+    const conditions = [
+      eq(tasks.userId, userId),
+      eq(tasks.scheduledDate, date),
+      eq(tasks.completed, false),
+    ];
+    if (excludeTaskId) conditions.push(ne(tasks.id, excludeTaskId) as any);
+
+    const dayTasks = await db.select().from(tasks).where(and(...conditions as any[]));
+
+    const parseMin = (hhmm: string): number => {
+      const [h, m] = hhmm.split(':').map(Number);
+      return h * 60 + (m || 0);
+    };
+    const formatMin = (min: number): string =>
+      `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+    const newStart = parseMin(startTime);
+    const newEnd = newStart + durationMinutes;
+
+    // Build sorted occupied intervals from all tasks that have a scheduled time
+    const occupied = dayTasks
+      .filter(t => t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime))
+      .map(t => ({
+        start: parseMin(t.scheduledTime!),
+        end: parseMin(t.scheduledTime!) + (t.estimatedDuration || 30),
+      }))
+      .sort((a, b) => a.start - b.start);
+
+    // Check if proposed slot is free
+    const hasOverlap = occupied.some(r => newStart < r.end && newEnd > r.start);
+    if (!hasOverlap) return { available: true };
+
+    // Scan forward to find next free slot
+    let candidate = newStart;
+    for (let tries = 0; tries < 96; tries++) { // max 48h forward scan
+      const candidateEnd = candidate + durationMinutes;
+      const blocking = occupied.find(r => candidate < r.end && candidateEnd > r.start);
+      if (!blocking) return { available: false, nextAvailableTime: formatMin(candidate) };
+      candidate = blocking.end; // jump past blocking task
+    }
+
+    return { available: false, nextAvailableTime: formatMin(candidate) };
   }
 
   async fixOverlappingTasks(userId: string, fromDate: string): Promise<number> {
