@@ -121,8 +121,38 @@ function snapToQuarter(minutes: number): number {
 // Au-delà, les tâches partagent une colonne (z-stacking léger).
 const MAX_VISUAL_LANES = 3;
 
+/**
+ * Safety net: if tasks arrive from the server with overlapping times (stale data,
+ * concurrent writes, etc.), re-sequence them in memory before rendering so they
+ * never appear as side-by-side columns. The DB fix is the real solution; this
+ * prevents a bad visual while the data catches up.
+ */
+function deduplicateOverlaps(tasks: Task[]): Task[] {
+  if (tasks.length < 2) return tasks;
+  const sorted = [...tasks].sort((a, b) =>
+    (a.scheduledTime ? timeToMinutes(a.scheduledTime) : 0) -
+    (b.scheduledTime ? timeToMinutes(b.scheduledTime) : 0)
+  );
+  let cursor = -1;
+  return sorted.map(task => {
+    if (!task.scheduledTime) return task;
+    const start = timeToMinutes(task.scheduledTime);
+    const dur   = task.estimatedDuration || 30;
+    if (cursor !== -1 && start < cursor) {
+      console.error(
+        `[time-grid] overlap detected: task ${task.id} "${task.title}" at ${task.scheduledTime} overlaps previous end ${cursor}min — shifting display to ${cursor}min`
+      );
+      const shifted = { ...task, scheduledTime: minutesToHHMM(cursor) };
+      cursor = cursor + dur;
+      return shifted;
+    }
+    cursor = start + dur;
+    return task;
+  });
+}
+
 function assignLanes(tasks: Task[]): Map<number, { lane: number; totalLanes: number }> {
-  const sorted = [...tasks].sort((a, b) => {
+  const sorted = deduplicateOverlaps(tasks).sort((a, b) => {
     const aMin = a.scheduledTime ? timeToMinutes(a.scheduledTime) : 0;
     const bMin = b.scheduledTime ? timeToMinutes(b.scheduledTime) : 0;
     return aMin - bMin;
