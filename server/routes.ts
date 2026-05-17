@@ -3148,6 +3148,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
 
+      // Auto-assign time: date définie mais pas d'heure → trouver le premier créneau libre
+      if (taskData.scheduledDate && !taskData.scheduledTime) {
+        const slot = await storage.findFirstFreeSlot(userId, taskData.scheduledDate, taskData.estimatedDuration || 30);
+        taskData.scheduledDate = slot.date;
+        taskData.scheduledTime = slot.time;
+        const [h, m] = slot.time.split(':').map(Number);
+        const endMin = h * 60 + m + (taskData.estimatedDuration || 30);
+        taskData.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+      }
+
       // Slot conflict — auto-shift to next available time, never reject
       if (taskData.scheduledDate && taskData.scheduledTime && taskData.estimatedDuration) {
         const check = await storage.checkSlotAvailability(
@@ -3263,6 +3273,18 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
             return res.status(400).json({ message: `${names[dow]} is not one of your work days.` });
           }
+        }
+
+        // Auto-assign time: date définie mais pas d'heure → trouver le premier créneau libre
+        if (merged.scheduledDate && !merged.scheduledTime) {
+          const slot = await storage.findFirstFreeSlot(userId, merged.scheduledDate, merged.estimatedDuration || 30);
+          updates.scheduledDate = slot.date;
+          updates.scheduledTime = slot.time;
+          merged.scheduledDate = slot.date;
+          merged.scheduledTime = slot.time;
+          const [h, m] = slot.time.split(':').map(Number);
+          const endMin = h * 60 + m + (merged.estimatedDuration || 30);
+          updates.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
         }
 
         // Slot conflict — auto-shift

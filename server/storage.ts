@@ -217,6 +217,7 @@ export interface IStorage {
   getTask(taskId: number): Promise<Task | undefined>;
   getTasks(userId: string, dueDate?: Date, projectId?: number, campaignId?: number): Promise<Task[]>;
   checkSlotAvailability(userId: string, date: string, startTime: string, durationMinutes: number, excludeTaskId?: number): Promise<{ available: boolean; nextAvailableTime?: string }>;
+  findFirstFreeSlot(userId: string, fromDate: string, durationMinutes: number): Promise<{ date: string; time: string }>;
   createTask(task: InsertTask): Promise<Task>;
   updateTask(id: number, updates: Partial<Task>): Promise<Task>;
   completeTask(id: number): Promise<Task>;
@@ -1387,6 +1388,55 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { available: false, nextAvailableTime: formatMin(candidate) };
+  }
+
+  async findFirstFreeSlot(userId: string, fromDate: string, durationMinutes: number): Promise<{ date: string; time: string }> {
+    const prefs = await this.getUserPreferences(userId);
+    const parseMin = (hhmm: string): number => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + (m || 0); };
+    const formatMin = (min: number): string => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+    const DAY_START = parseMin(prefs?.workDayStart || '09:00');
+    const DAY_END = parseMin(prefs?.workDayEnd || '18:00');
+    const LUNCH_START = parseMin(prefs?.lunchBreakStart || '12:00');
+    const LUNCH_END = parseMin(prefs?.lunchBreakEnd || '13:00');
+    const lunchEnabled = prefs?.lunchBreakEnabled !== false;
+
+    const workDaysCsv = prefs?.workDays || 'mon,tue,wed,thu,fri';
+    const DAY_ABBRS_LOCAL = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const workDaySet = new Set(workDaysCsv.split(',').map((d: string) => d.trim().toLowerCase()));
+    // Use UTC to avoid timezone-shift bugs with toISOString()
+    const parseDateUTC = (ds: string) => { const [y,m,d] = ds.split('-').map(Number); return new Date(Date.UTC(y,m-1,d)); };
+    const isWorkDay = (ds: string) => workDaySet.has(DAY_ABBRS_LOCAL[parseDateUTC(ds).getUTCDay()]);
+    const nextDay = (ds: string): string => {
+      const d = parseDateUTC(ds);
+      d.setUTCDate(d.getUTCDate() + 1);
+      return d.toISOString().slice(0, 10);
+    };
+
+    let currentDate = fromDate;
+    for (let guard = 0; guard < 14; guard++) {
+      if (!isWorkDay(currentDate)) { currentDate = nextDay(currentDate); continue; }
+
+      const dayTasks = await db.select({ scheduledTime: tasks.scheduledTime, estimatedDuration: tasks.estimatedDuration })
+        .from(tasks).where(and(eq(tasks.userId, userId), eq(tasks.scheduledDate, currentDate), eq(tasks.completed, false)));
+
+      const occupied = dayTasks
+        .filter(t => t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime))
+        .map(t => ({ start: parseMin(t.scheduledTime!), end: parseMin(t.scheduledTime!) + (t.estimatedDuration || 30) }))
+        .sort((a, b) => a.start - b.start);
+
+      let candidate = DAY_START;
+      while (candidate + durationMinutes <= DAY_END) {
+        const candidateEnd = candidate + durationMinutes;
+        if (lunchEnabled && candidate < LUNCH_END && candidateEnd > LUNCH_START) { candidate = LUNCH_END; continue; }
+        const blocking = occupied.find(r => candidate < r.end && candidateEnd > r.start);
+        if (!blocking) return { date: currentDate, time: formatMin(candidate) };
+        candidate = blocking.end;
+      }
+      currentDate = nextDay(currentDate);
+    }
+
+    return { date: fromDate, time: formatMin(DAY_START) };
   }
 
   async fixOverlappingTasks(userId: string, fromDate: string): Promise<number> {
