@@ -7646,6 +7646,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         endDate: endDateStr,
       });
 
+      // Toujours éliminer les chevauchements générés par la campagne
+      await storage.fixOverlappingTasks(userId, campaignDateToStr(startDate)).catch(() => {});
+
       res.json({ campaign: updated, tasksCreated, contentCreated });
     } catch (error) {
       console.error("Error launching campaign:", error);

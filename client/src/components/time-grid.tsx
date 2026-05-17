@@ -65,10 +65,10 @@ const NAYA_TASK_PALETTES = [
 
 // Palette jalons — statut → couleur Naya
 const MILESTONE_PALETTE: Record<string, { bg: string; border: string; text: string }> = {
-  active:    { bg: 'rgba(212,201,122,0.20)', border: '#D4C97A',                  text: '#5a4f0d' }, // sulphur
-  unlocked:  { bg: 'rgba(125,143,168,0.20)', border: '#7D8FA8',                  text: '#354963' }, // salvia
-  locked:    { bg: 'rgba(43,45,28,0.05)',    border: 'rgba(43,45,28,0.18)',      text: 'rgba(43,45,28,0.30)' }, // olive fantôme
-  completed: { bg: 'rgba(43,45,28,0.10)',    border: 'rgba(43,45,28,0.32)',      text: '#2B2D1C' }, // olive
+  active:    { bg: 'rgba(212,201,122,0.28)', border: '#c9bc60',  text: '#453b06' }, // sulphur — texte foncé fort
+  unlocked:  { bg: 'rgba(125,143,168,0.28)', border: '#6a7f9a',  text: '#243450' }, // salvia — texte foncé fort
+  locked:    { bg: 'rgba(43,45,28,0.10)',    border: 'rgba(43,45,28,0.28)', text: 'rgba(43,45,28,0.55)' }, // olive fantôme — lisible
+  completed: { bg: 'rgba(43,45,28,0.14)',    border: 'rgba(43,45,28,0.40)', text: '#2B2D1C' }, // olive
 };
 
 // Google Calendar events → salvia (ton info)
@@ -600,13 +600,13 @@ export default function TimeGrid({
         })}
       </div>
 
-      {/* Bande tâches non-planifiées */}
+      {/* Bande tâches non-planifiées + jalons */}
       {dates.some(d => (tasksByDate[d] || []).some(t => !t.scheduledTime)) && (
-        <div className="flex flex-shrink-0 border-b border-naya-olive-10 bg-naya-olive-06/40" style={{ paddingLeft: 48 }}>
+        <div className="flex flex-shrink-0 border-b border-naya-olive-10" style={{ paddingLeft: 48 }}>
           {dates.map(date => {
             const unscheduled = (tasksByDate[date] || []).filter(t => !t.scheduledTime);
             return (
-              <div key={date} className="flex-1 border-l border-naya-olive-10 min-w-0 px-1.5 py-1.5">
+              <div key={date} className="flex-1 border-l border-naya-olive-10 min-w-0 px-1 py-1">
                 {unscheduled.length > 0 && (
                   <div className="flex flex-col gap-0.5">
                     {unscheduled.map(task => {
@@ -626,19 +626,19 @@ export default function TimeGrid({
                           key={isGcal ? `gcal-${task.scheduledDate}-${task.scheduledTime}-${task.title}` : task.id}
                           draggable={!isMTask && !isGcal}
                           onDragStart={(isMTask || isGcal) ? undefined : (e) => handleDragStart(e, task)}
-                          className={`flex items-center gap-1 py-1 px-1.5 rounded transition-opacity ${
-                            isMTask ? 'cursor-default opacity-70' : 'cursor-grab active:cursor-grabbing'
-                          } ${task.completed ? 'opacity-35' : 'hover:opacity-85'}`}
+                          className={`flex items-center gap-1 py-0.5 px-1.5 rounded transition-opacity ${
+                            isMTask ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+                          } ${task.completed ? 'opacity-40' : 'hover:opacity-80'}`}
                           style={{
                             backgroundColor: pal.bg,
                             border: `1px solid ${pal.border}`,
-                            borderLeft: isMTask ? `2.5px solid ${pal.border}` : `1px solid ${pal.border}`,
+                            borderLeft: isMTask ? `3px solid ${pal.border}` : `1px solid ${pal.border}`,
                             borderRadius: 4,
                           }}
                           onClick={() => onTaskClick(task)}
                         >
                           {isMTask ? (
-                            <span className="flex-shrink-0 text-[9px] font-mono" style={{ color: pal.text }}>{milestoneSymbol}</span>
+                            <span className="flex-shrink-0 text-[10px] font-mono leading-none" style={{ color: pal.border }}>{milestoneSymbol}</span>
                           ) : (
                             <div
                               onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
@@ -646,7 +646,7 @@ export default function TimeGrid({
                               style={{ borderColor: pal.border, backgroundColor: task.completed ? pal.border : 'transparent' }}
                             />
                           )}
-                          <p className="text-[9px] font-medium truncate flex-1" style={{ color: pal.text }}>
+                          <p className="text-[10px] font-medium truncate flex-1 leading-tight" style={{ color: pal.text }}>
                             {task.title}
                           </p>
                         </div>

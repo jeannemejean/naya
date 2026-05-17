@@ -212,6 +212,20 @@ export default function Planning({ onSearchClick }: Props) {
     }
   }, [urlParams.taskId, rangeTasks]);
 
+  // Fix overlapping tasks on every page mount — cheap, idempotent.
+  useEffect(() => {
+    apiRequest("POST", "/api/planning/fix-overlaps")
+      .then(r => r.json())
+      .then((data: any) => {
+        if (data.fixed > 0) {
+          queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Le planner tourne automatiquement à 06:00 via le cron serveur.
   // On ne déclenche plus le planner complet depuis l'UI pour éviter les runs
   // concurrents qui épuisaient le pool Neon et bloquaient le serveur.
