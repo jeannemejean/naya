@@ -92,6 +92,14 @@ const fr = {
  ctaSubtitle: "Naya s'adapte à toi. Pas l'inverse.",
  startWithNaya: "Commencer avec Naya",
  footer: "© 2025 Naya. Système d'exploitation IA pour les créateurs indépendants.",
+ waitlistEyebrow: "Bientôt disponible",
+ waitlistPlaceholder: "Ton adresse email",
+ waitlistCta: "Rejoindre la liste d'attente",
+ waitlistCtaLoading: "En cours…",
+ waitlistConfirm: "Tu es sur la liste.",
+ waitlistConfirmSub: "On te prévient en premier dès que Naya est disponible.",
+ waitlistDuplicate: "Cette adresse est déjà inscrite.",
+ waitlistError: "Une erreur est survenue. Réessaie.",
  },
 
  dashboard: {

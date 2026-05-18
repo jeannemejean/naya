@@ -1,7 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { pool } from "./db";
+import { pool, db } from "./db";
+import { waitlist } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { 
   generateContent, 
@@ -393,6 +395,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (err: any) {
       console.error('[health] DB connection error:', err.message);
       res.status(503).json({ status: 'error', db: 'disconnected', timestamp: new Date().toISOString() });
+    }
+  });
+
+  // ── Config publique (no auth) ──────────────────────────────────────
+  app.get('/api/config', (_req, res) => {
+    res.json({ waitlistMode: process.env.WAITLIST_MODE === 'true' });
+  });
+
+  // ── Waitlist ────────────────────────────────────────────────────────
+  app.post('/api/waitlist', async (req, res) => {
+    try {
+      const { email, language } = req.body;
+      if (!email || typeof email !== 'string' || !email.includes('@')) {
+        return res.status(400).json({ error: 'invalid_email' });
+      }
+      const existing = await db.select({ id: waitlist.id })
+        .from(waitlist)
+        .where(eq(waitlist.email, email.trim().toLowerCase()))
+        .limit(1);
+      if (existing.length > 0) {
+        return res.json({ error: 'already_registered' });
+      }
+      await db.insert(waitlist).values({
+        email: email.trim().toLowerCase(),
+        language: language || 'fr',
+        source: 'landing',
+      });
+      res.json({ success: true });
+    } catch (error) {
+      console.error('[waitlist] error:', error);
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // ── Admin waitlist (protégé par ADMIN_SECRET) ───────────────────────
+  app.get('/admin/waitlist', async (req, res) => {
+    const secret = process.env.ADMIN_SECRET;
+    const provided = req.headers['x-admin-secret'] || req.query.secret;
+    if (!secret || provided !== secret) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    try {
+      const entries = await db.select().from(waitlist).orderBy(waitlist.createdAt);
+      const total = entries.length;
+      const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<title>Naya Waitlist (${total})</title>
+<style>body{font-family:monospace;padding:2rem;background:#f7f5ee}h1{font-size:1rem;letter-spacing:.2em;text-transform:uppercase;color:#5a5235}table{width:100%;border-collapse:collapse;margin-top:1rem}th,td{text-align:left;padding:.5rem .75rem;border-bottom:1px solid #ddd;font-size:.85rem}th{background:#eae8df;color:#5a5235}tr:hover{background:#f0ede3}</style>
+</head><body>
+<h1>Waitlist — ${total} inscrit${total > 1 ? 's' : ''}</h1>
+<table><thead><tr><th>#</th><th>Email</th><th>Langue</th><th>Source</th><th>Date</th></tr></thead><tbody>
+${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.language || 'fr'}</td><td>${e.source || 'landing'}</td><td>${e.createdAt ? new Date(e.createdAt).toLocaleString('fr-FR') : '—'}</td></tr>`).join('')}
+</tbody></table></body></html>`;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(html);
+    } catch (error) {
+      res.status(500).json({ error: 'server_error' });
     }
   });
 

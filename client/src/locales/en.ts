@@ -92,6 +92,14 @@ const en = {
  ctaSubtitle: "Naya adapts to you. Not the other way around.",
  startWithNaya: "Start with Naya",
  footer: "© 2025 Naya. AI Operating System for independent builders.",
+ waitlistEyebrow: "Coming soon",
+ waitlistPlaceholder: "Your email address",
+ waitlistCta: "Join the waitlist",
+ waitlistCtaLoading: "Joining…",
+ waitlistConfirm: "You're on the list.",
+ waitlistConfirmSub: "You'll be the first to know when Naya is ready.",
+ waitlistDuplicate: "This email is already registered.",
+ waitlistError: "Something went wrong. Try again.",
  },
 
  dashboard: {

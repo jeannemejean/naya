@@ -1,17 +1,51 @@
 import { useState } from "react";
 import { Target, Brain, Calendar, MessageSquare, BarChart3, Lightbulb } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import AuthDialog from "@/components/auth-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Landing() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authDialogTab,  setAuthDialogTab]  = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const { data: config } = useQuery<{ waitlistMode: boolean }>({
+    queryKey: ["/api/config"],
+    staleTime: Infinity,
+  });
+
+  const waitlistMode = config?.waitlistMode ?? false;
+
+  const waitlistMutation = useMutation({
+    mutationFn: (emailVal: string) =>
+      apiRequest("POST", "/api/waitlist", { email: emailVal, language: i18n.language }).then(r => r.json()),
+    onSuccess: (data: any) => {
+      if (data.error === "already_registered") {
+        setSubmitError(t("landing.waitlistDuplicate"));
+      } else {
+        setSubmitted(true);
+        setSubmitError(null);
+      }
+    },
+    onError: () => setSubmitError(t("landing.waitlistError")),
+  });
 
   const handleOpenAuth = (tab: "login" | "register" = "login") => {
     setAuthDialogTab(tab);
     setAuthDialogOpen(true);
+  };
+
+  const handleWaitlistSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !email.includes("@")) return;
+    setSubmitError(null);
+    waitlistMutation.mutate(email.trim());
   };
 
   const features = [
@@ -32,24 +66,24 @@ export default function Landing() {
           <img src="/naya-mark-elephant.png" alt="Naya" className="w-14 h-14 object-contain" />
           <span className="wordmark text-sm tracking-[0.22em]">NAYA</span>
         </div>
-        <button
-          onClick={() => handleOpenAuth("login")}
-          data-testid="auth-login"
-          className="eyebrow text-[10px] hover:text-naya-olive transition-colors duration-base ease-quiet border-b border-transparent hover:border-naya-olive-35 pb-px cursor-pointer"
-        >
-          {t('landing.meetNaya')}
-        </button>
+        {!waitlistMode && (
+          <button
+            onClick={() => handleOpenAuth("login")}
+            data-testid="auth-login"
+            className="eyebrow text-[10px] hover:text-naya-olive transition-colors duration-base ease-quiet border-b border-transparent hover:border-naya-olive-35 pb-px cursor-pointer"
+          >
+            {t('landing.meetNaya')}
+          </button>
+        )}
       </header>
 
       {/* ── Hero ── */}
       <section className="flex-1 flex flex-col items-center justify-center text-center px-6 pt-24 pb-20">
 
-        {/* Eyebrow */}
         <p className="eyebrow text-[10px] text-naya-olive-35 mb-8 tracking-[0.25em]">
-          {t('landing.heroEyebrow')}
+          {waitlistMode ? t('landing.waitlistEyebrow') : t('landing.heroEyebrow')}
         </p>
 
-        {/* Title */}
         <h1
           className="font-display font-light uppercase tracking-[0.08em] text-naya-olive leading-[1.05] mb-8"
           style={{ fontSize: 'clamp(2.6rem, 6vw, 5rem)', maxWidth: 780 }}
@@ -57,30 +91,67 @@ export default function Landing() {
           {t('landing.heroTitle')}
         </h1>
 
-        {/* Description */}
         <p className="text-base text-naya-olive-55 leading-[1.75] mb-10 max-w-[460px]">
           {t('landing.heroDescription')}
         </p>
 
-        {/* CTAs */}
-        <div className="flex items-center gap-3 flex-wrap justify-center">
-          <Button
-            variant="display"
-            size="lg"
-            onClick={() => handleOpenAuth("register")}
-            data-testid="auth-register-hero"
-          >
-            {t('landing.meetNaya')}
-          </Button>
-          <button
-            onClick={() => handleOpenAuth("login")}
-            className="eyebrow text-[10px] tracking-[0.18em] text-naya-olive-55 hover:text-naya-olive transition-colors border-b border-naya-olive-18 hover:border-naya-olive-35 pb-px cursor-pointer"
-          >
-            {t('landing.seeHowItWorks')} →
-          </button>
-        </div>
+        {/* ── CTAs : waitlist mode ou auth normal ── */}
+        {waitlistMode ? (
+          <div className="w-full max-w-[400px]">
+            {submitted ? (
+              <div className="text-center space-y-2 py-4">
+                <p className="font-display uppercase tracking-[0.18em] text-[13px] text-naya-olive">
+                  {t('landing.waitlistConfirm')}
+                </p>
+                <p className="text-sm text-naya-olive-55">
+                  {t('landing.waitlistConfirmSub')}
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleWaitlistSubmit} className="flex flex-col sm:flex-row gap-2">
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder={t('landing.waitlistPlaceholder')}
+                  required
+                  className="flex-1 bg-white border-naya-olive-18 focus:border-naya-olive text-sm"
+                />
+                <Button
+                  type="submit"
+                  variant="display"
+                  disabled={waitlistMutation.isPending}
+                  className="shrink-0"
+                >
+                  {waitlistMutation.isPending
+                    ? t('landing.waitlistCtaLoading')
+                    : t('landing.waitlistCta')}
+                </Button>
+              </form>
+            )}
+            {submitError && (
+              <p className="mt-2 text-[12px] text-red-500 text-center">{submitError}</p>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 flex-wrap justify-center">
+            <Button
+              variant="display"
+              size="lg"
+              onClick={() => handleOpenAuth("register")}
+              data-testid="auth-register-hero"
+            >
+              {t('landing.meetNaya')}
+            </Button>
+            <button
+              onClick={() => handleOpenAuth("login")}
+              className="eyebrow text-[10px] tracking-[0.18em] text-naya-olive-55 hover:text-naya-olive transition-colors border-b border-naya-olive-18 hover:border-naya-olive-35 pb-px cursor-pointer"
+            >
+              {t('landing.seeHowItWorks')} →
+            </button>
+          </div>
+        )}
 
-        {/* Subtle social proof / credibility line */}
         <p className="mt-12 text-[11px] text-naya-olive-18 font-display uppercase tracking-[0.18em]">
           {t('landing.heroCredibility')}
         </p>
@@ -92,8 +163,6 @@ export default function Landing() {
       {/* ── Features ── */}
       <section className="bg-naya-cream px-6 py-20">
         <div className="max-w-[960px] mx-auto">
-
-          {/* Section header */}
           <div className="text-center mb-16">
             <p className="eyebrow text-[10px] tracking-[0.25em] text-naya-olive-35 mb-5">
               {t('landing.notJustSmart')}
@@ -102,23 +171,18 @@ export default function Landing() {
               {t('landing.notJustSmartDescription')}
             </p>
           </div>
-
-          {/* Feature grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-naya-olive-10 border border-naya-olive-10">
             {features.map(({ icon: Icon, key }) => (
               <div
                 key={key}
                 className="bg-naya-cream p-9 hover:bg-naya-olive-06 transition-colors duration-300 ease-quiet group"
               >
-                {/* Icon container */}
                 <div className="w-10 h-10 flex items-center justify-center border border-naya-olive-18 rounded-sm mb-7 group-hover:border-naya-olive-35 transition-colors">
                   <Icon size={20} strokeWidth={1.4} className="text-naya-olive-55" />
                 </div>
-                {/* Title */}
                 <p className="font-display uppercase tracking-[0.18em] text-[10px] text-naya-olive mb-3">
                   {t(`landing.${key}`)}
                 </p>
-                {/* Description */}
                 <p className="text-[13px] text-naya-olive-55 leading-[1.7]">
                   {t(`landing.${key}Description`)}
                 </p>
@@ -137,12 +201,38 @@ export default function Landing() {
           <p className="text-[15px] text-naya-cream/60 leading-[1.75] mb-10">
             {t('landing.ctaSubtitle')}
           </p>
-          <button
-            onClick={() => handleOpenAuth("register")}
-            className="inline-flex items-center gap-2 px-9 h-12 bg-naya-cream text-naya-olive font-display uppercase tracking-[0.18em] text-[10px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer"
-          >
-            {t('landing.startWithNaya')}
-          </button>
+          {waitlistMode ? (
+            submitted ? (
+              <p className="font-display uppercase tracking-[0.18em] text-[11px] text-naya-cream/60">
+                {t('landing.waitlistConfirm')}
+              </p>
+            ) : (
+              <form onSubmit={handleWaitlistSubmit} className="flex flex-col sm:flex-row gap-2 max-w-[360px] mx-auto">
+                <Input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder={t('landing.waitlistPlaceholder')}
+                  required
+                  className="flex-1 bg-naya-olive/20 border-naya-cream/20 text-naya-cream placeholder:text-naya-cream/40 focus:border-naya-cream/50 text-sm"
+                />
+                <button
+                  type="submit"
+                  disabled={waitlistMutation.isPending}
+                  className="shrink-0 inline-flex items-center justify-center gap-2 px-6 h-10 bg-naya-cream text-naya-olive font-display uppercase tracking-[0.18em] text-[10px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer disabled:opacity-50"
+                >
+                  {waitlistMutation.isPending ? t('landing.waitlistCtaLoading') : t('landing.waitlistCta')}
+                </button>
+              </form>
+            )
+          ) : (
+            <button
+              onClick={() => handleOpenAuth("register")}
+              className="inline-flex items-center gap-2 px-9 h-12 bg-naya-cream text-naya-olive font-display uppercase tracking-[0.18em] text-[10px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer"
+            >
+              {t('landing.startWithNaya')}
+            </button>
+          )}
         </div>
       </section>
 
@@ -157,11 +247,13 @@ export default function Landing() {
         </p>
       </footer>
 
-      <AuthDialog
-        open={authDialogOpen}
-        onOpenChange={setAuthDialogOpen}
-        defaultTab={authDialogTab}
-      />
+      {!waitlistMode && (
+        <AuthDialog
+          open={authDialogOpen}
+          onOpenChange={setAuthDialogOpen}
+          defaultTab={authDialogTab}
+        />
+      )}
     </div>
   );
 }

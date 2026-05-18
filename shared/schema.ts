@@ -95,6 +95,15 @@ export const projectStrategyProfiles = pgTable("project_strategy_profiles", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Waitlist — emails collectés en mode WAITLIST_MODE
+export const waitlist = pgTable("waitlist", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  language: text("language").default("fr"),
+  source: text("source").default("landing"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // User preferences — server-side source of truth for active project
 export const userPreferences = pgTable("user_preferences", {
   id: serial("id").primaryKey(),
@@ -118,6 +127,7 @@ export const userPreferences = pgTable("user_preferences", {
   planningStatus: text("planning_status").default("active"), // active | paused
   planningPausedAt: timestamp("planning_paused_at"),
   language: text("language").default("fr"), // fr | en — langue de génération IA
+
   durationCalibration: jsonb("duration_calibration"), // { "content": 0.7, "admin": 1.2, ... } ratio réel/estimé par catégorie
   behaviorPatterns: jsonb("behavior_patterns"),       // { bestTaskTypeByHour, worstCompletionByDayOfWeek, averageCompletionRateByCategory }
   updatedAt: timestamp("updated_at").defaultNow(),
