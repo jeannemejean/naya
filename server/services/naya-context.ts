@@ -165,8 +165,14 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
       sections.push(`## Mémoire business récente\n${memText}`);
     }
 
-    if (sections.length === 0) {
-      return "## Contexte\nPas de Brand DNA ni de projet configuré. L'utilisateur est probablement en onboarding.";
+    // Section finale : langue de génération (toujours présente)
+    const language = (energyPrefs as any)?.language || 'fr';
+    sections.push(`## Langue de travail
+Génère TOUT le contenu textuel (titres de tâches, recommandations, messages) en : ${language === 'en' ? 'anglais' : 'français'}.`);
+
+    if (sections.length === 1) {
+      // Seule la section langue est présente — pas encore d'onboarding
+      return "## Contexte\nPas de Brand DNA ni de projet configuré. L'utilisateur est probablement en onboarding.\n\n## Langue de travail\nGénère TOUT le contenu textuel en : français.";
     }
 
     return sections.join('\n\n');

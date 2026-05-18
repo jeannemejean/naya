@@ -17,7 +17,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import type { Project } from "@shared/schema";
 
 interface SidebarProps {
@@ -46,8 +47,20 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
     queryKey: ['/api/projects?limit=200'],
   });
 
+  const queryClient = useQueryClient();
   const currentLang = i18n.language;
-  const toggleLanguage = () => i18n.changeLanguage(currentLang === 'fr' ? 'en' : 'fr');
+
+  const saveLanguageMutation = useMutation({
+    mutationFn: (lang: string) =>
+      apiRequest('PATCH', '/api/preferences', { language: lang }).then(r => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/preferences'] }),
+  });
+
+  const toggleLanguage = () => {
+    const next = currentLang === 'fr' ? 'en' : 'fr';
+    i18n.changeLanguage(next);
+    saveLanguageMutation.mutate(next);
+  };
   const userInitial = user?.firstName?.charAt(0) || user?.email?.charAt(0) || "N";
 
   return (

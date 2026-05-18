@@ -191,6 +191,7 @@ export interface IStorage {
   updateTaskFeedback(id: number, data: Partial<InsertTaskFeedback>): Promise<TaskFeedback>;
   deleteTask(taskId: number): Promise<void>;
   deleteIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
+  archiveIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
 
   // Task Dependency operations
   getTaskDependencies(taskId: number): Promise<TaskDependency[]>;
@@ -1526,6 +1527,25 @@ export class DatabaseStorage implements IStorage {
       await db.delete(tasks).where(eq(tasks.id, id));
     }
     return toDelete.length;
+  }
+
+  async archiveIncompleteFutureTasks(userId: string, fromDate: string): Promise<number> {
+    const toArchive = await db.select({ id: tasks.id })
+      .from(tasks)
+      .where(and(
+        eq(tasks.userId, userId),
+        eq(tasks.completed, false),
+        gte(tasks.scheduledDate, fromDate),
+      ));
+    for (const { id } of toArchive) {
+      await db.update(tasks).set({
+        source: 'archived',
+        scheduledDate: null,
+        scheduledTime: null,
+        scheduledEndTime: null,
+      }).where(eq(tasks.id, id));
+    }
+    return toArchive.length;
   }
 
   async getTaskDependencies(taskId: number): Promise<TaskDependency[]> {

@@ -46,14 +46,18 @@ function todayStringParis(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
 }
 
+// Use 3-letter abbreviations matching DB format ("mon,tue,wed,thu,fri")
 function parseWorkDays(csv: string | null | undefined): Set<string> {
-  if (!csv) return new Set(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
+  if (!csv) return new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
   return new Set(csv.toLowerCase().split(',').map(s => s.trim()));
 }
 
+const DAY_ABBRS_AP = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+
 function dayOfWeekName(dateStr: string): string {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  return days[new Date(dateStr + 'T00:00:00').getDay()];
+  // Use UTC to avoid timezone-shift bugs
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return DAY_ABBRS_AP[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 }
 
 function hhmmToMin(hhmm: string): number {
@@ -126,15 +130,15 @@ function findNextFreeSlot(
 }
 
 function nextWorkDay(fromDate: string, workDays: Set<string>): string {
-  const d = new Date(fromDate + 'T00:00:00');
+  const [fy, fm, fd] = fromDate.split('-').map(Number);
+  const d = new Date(Date.UTC(fy, fm - 1, fd));
   for (let i = 1; i <= 7; i++) {
-    d.setDate(d.getDate() + 1);
-    const name = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][d.getDay()];
-    if (workDays.has(name)) {
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    d.setUTCDate(d.getUTCDate() + 1);
+    if (workDays.has(DAY_ABBRS_AP[d.getUTCDay()])) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     }
   }
-  return fromDate; // fallback (ne devrait pas arriver)
+  return fromDate;
 }
 
 export async function rolloverStaleTasks(
@@ -142,6 +146,13 @@ export async function rolloverStaleTasks(
   targetDate: string
 ): Promise<{ moved: number }> {
   const prefs = await storage.getUserPreferences(userId);
+
+  // Ne pas rollover si la planification est en pause
+  if (prefs?.planningStatus === 'paused') {
+    console.log(`[Rollover] Skipping ${userId} — planning paused`);
+    return { moved: 0 };
+  }
+
   const workDays = parseWorkDays(prefs?.workDays);
   const workDayStart = (prefs as any)?.workDayStart || '09:00';
   const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
@@ -181,51 +192,35 @@ export async function rolloverStaleTasks(
 
   if (incomplete.length === 0) return { moved: 0 };
 
-  // Créneaux déjà occupés sur scheduleDate + pause déjeuner + calendrier Google
-  const scheduledDayTasks = await storage.getTasksInRange(userId, scheduleDate, scheduleDate).catch(() => []);
-  const blockedRanges = buildBlockedRanges(scheduledDayTasks as any[], prefs);
-  const calBlocked = await getCalendarBlockedRanges(userId, scheduleDate).catch(() => []);
-  blockedRanges.push(...calBlocked);
-
-  // Point de départ : après le dernier créneau existant, jamais dans le passé
-  const latestExisting = blockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
-  const isSchedulingToday = scheduleDate === targetDate;
-  const minSlot = isSchedulingToday ? Math.max(nowMin + 15, latestExisting) : latestExisting;
-  let curSlot = minSlot;
-
+  // Utilise findFirstFreeSlot qui gère automatiquement le débordement sur les jours suivants
   let moved = 0;
   for (const task of incomplete) {
     const duration = task.estimatedDuration || 30;
 
-    const slot = findNextFreeSlot(curSlot, duration, blockedRanges, dayEndMin);
-    if (slot === -1) continue; // plus de place ce jour-là
-
-    // DB verification — guard concurrent runs
-    const candidateTime = minToHHMM(slot);
-    const slotCheck = await storage.checkSlotAvailability(userId, scheduleDate, candidateTime, duration, task.id);
-    const finalSlot = (!slotCheck.available && slotCheck.nextAvailableTime)
-      ? (() => { const [h,m] = slotCheck.nextAvailableTime!.split(':').map(Number); return h*60+m; })()
-      : slot;
-    if (finalSlot + duration > dayEndMin) continue;
+    // findFirstFreeSlot cherche à partir de scheduleDate et avance de jour en jour si nécessaire
+    const slot = await storage.findFirstFreeSlot(userId, scheduleDate, duration);
 
     const newCount = (task.learnedAdjustmentCount || 0) + 1;
     await storage.updateTask(task.id, {
-      scheduledDate: scheduleDate,
-      scheduledTime: minToHHMM(finalSlot),
+      scheduledDate: slot.date,
+      scheduledTime: slot.time,
+      scheduledEndTime: (() => {
+        const [h, m] = slot.time.split(':').map(Number);
+        const end = h * 60 + m + duration;
+        return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+      })(),
       learnedAdjustmentCount: newCount,
     });
 
-    // Intelligence layer — non-blocking
     handleTaskDeferral(userId, task, newCount).catch(e =>
       console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
     );
 
-    blockedRanges.push({ start: finalSlot, end: finalSlot + duration });
-    curSlot = finalSlot + duration + 5;
+    console.log(`[Rollover] Moved id=${task.id} → ${slot.date} ${slot.time}`);
     moved++;
   }
 
-  console.log(`[AutoPlanner] Rollover for ${userId}: moved ${moved} stale tasks → ${scheduleDate}`);
+  console.log(`[AutoPlanner] Rollover for ${userId}: moved ${moved} stale tasks from ${scheduleDate}`);
   return { moved };
 }
 
@@ -494,11 +489,13 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
 /** Génère la liste des N prochains jours de travail à partir de startDate. */
 function nextWorkingDates(startDate: string, count: number, workDays: Set<string>): string[] {
   const dates: string[] = [];
-  const d = new Date(startDate + 'T00:00:00');
+  const [sy, sm, sd] = startDate.split('-').map(Number);
+  const d = new Date(Date.UTC(sy, sm - 1, sd));
   while (dates.length < count) {
-    const name = d.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-    if (workDays.has(name)) dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-    d.setDate(d.getDate() + 1);
+    if (workDays.has(DAY_ABBRS_AP[d.getUTCDay()])) {
+      dates.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`);
+    }
+    d.setUTCDate(d.getUTCDate() + 1);
   }
   return dates;
 }
@@ -650,7 +647,11 @@ async function runEndOfDayRollover(): Promise<void> {
     try {
       const prefs = await storage.getUserPreferences(userId);
 
-      // Skip si la planification n'a pas encore démarré
+      // Skip si pause ou planning pas encore démarré
+      if (prefs?.planningStatus === 'paused') {
+        console.log(`[Rollover] Skipping ${userId} — planning paused`);
+        continue;
+      }
       if (prefs?.planningStartDate && prefs.planningStartDate > today) {
         console.log(`[Rollover] Skipping ${userId} — planning starts ${prefs.planningStartDate}`);
         continue;
@@ -658,11 +659,11 @@ async function runEndOfDayRollover(): Promise<void> {
 
       const workDays = parseWorkDays(prefs?.workDays);
 
-      // Tâches incomplètes de today et avant (lookback 30j)
+      // Tâches incomplètes de today et avant (lookback 30j) — UTC safe
       const lookback = (() => {
-        const d = new Date(today + 'T00:00:00');
-        d.setDate(d.getDate() - 30);
-        return d.toISOString().slice(0, 10);
+        const [y, m, d] = today.split('-').map(Number);
+        const dt = new Date(Date.UTC(y, m - 1, d - 30));
+        return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,'0')}-${String(dt.getUTCDate()).padStart(2,'0')}`;
       })();
 
       const staleTasks = await storage.getTasksInRange(userId, lookback, today).catch(() => []);

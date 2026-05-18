@@ -20,7 +20,7 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity,
+  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity, PauseCircle, PlayCircle,
 } from "lucide-react";
 import type { Project, ProjectGoal, PersonaAnalysisResult, TargetPersona, QuickCaptureEntry, MilestoneTrigger } from "@shared/schema";
 import { Link } from "wouter";
@@ -709,6 +709,7 @@ function ProjectSetupBanner() {
 export default function Dashboard({ onSearchClick }: DashboardProps) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { isAuthenticated, isLoading, user } = useAuth();
   const { activeProjectId, isAllProjects } = useProject();
   const [companionOpen, setCompanionOpen] = useState(false);
@@ -716,6 +717,28 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
   const { data: brandDna, isLoading: brandDnaLoading } = useQuery({
     queryKey: ["/api/brand-dna"],
     retry: false,
+  });
+
+  const { data: preferences } = useQuery<any>({
+    queryKey: ["/api/preferences"],
+  });
+
+  const pauseMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/planning/pause").then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/preferences"] });
+      toast({ title: t("planning.pausedTitle"), description: t("planning.pausedDesc") });
+    },
+    onError: () => toast({ title: t("common.error"), variant: "destructive" }),
+  });
+
+  const resumeMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/planning/resume").then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/preferences"] });
+      toast({ title: t("planning.resumedTitle"), description: t("planning.resumedDesc") });
+    },
+    onError: () => toast({ title: t("common.error"), variant: "destructive" }),
   });
 
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects?limit=200"] });
@@ -799,7 +822,30 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
                 {greeting()}{firstName ? `, ${firstName}` : ""}
               </h1>
             </div>
-            <LiveClock />
+            <div className="flex items-center gap-3">
+              {preferences?.planningStatus === "paused" ? (
+                <button
+                  onClick={() => resumeMutation.mutate()}
+                  disabled={resumeMutation.isPending}
+                  className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-xwide text-naya-olive-55 hover:text-naya-olive transition-colors"
+                  title={t("planning.resume")}
+                >
+                  <PlayCircle style={{ width: 14, height: 14 }} />
+                  <span className="hidden sm:inline">{t("planning.resume")}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => pauseMutation.mutate()}
+                  disabled={pauseMutation.isPending}
+                  className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-xwide text-naya-olive-35 hover:text-naya-olive-55 transition-colors"
+                  title={t("planning.pause")}
+                >
+                  <PauseCircle style={{ width: 14, height: 14 }} />
+                  <span className="hidden sm:inline">{t("planning.pause")}</span>
+                </button>
+              )}
+              <LiveClock />
+            </div>
           </div>
         </header>
 

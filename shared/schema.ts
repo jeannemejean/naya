@@ -117,6 +117,7 @@ export const userPreferences = pgTable("user_preferences", {
   planningStartDate: text("planning_start_date"), // YYYY-MM-DD — Naya ne planifie rien avant cette date
   planningStatus: text("planning_status").default("active"), // active | paused
   planningPausedAt: timestamp("planning_paused_at"),
+  language: text("language").default("fr"), // fr | en — langue de génération IA
   durationCalibration: jsonb("duration_calibration"), // { "content": 0.7, "admin": 1.2, ... } ratio réel/estimé par catégorie
   behaviorPatterns: jsonb("behavior_patterns"),       // { bestTaskTypeByHour, worstCompletionByDayOfWeek, averageCompletionRateByCategory }
   updatedAt: timestamp("updated_at").defaultNow(),

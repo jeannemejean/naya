@@ -617,8 +617,28 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  const { theme, toggleTheme } = useTheme();
  const { toast } = useToast();
  const queryClient = useQueryClient();
+ const [, setLocation] = useLocation();
  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
  const [profileEditOpen, setProfileEditOpen] = useState(false);
+ const [replanDate, setReplanDate] = useState('');
+ const [replanConfirmOpen, setReplanConfirmOpen] = useState(false);
+
+ const replanMutation = useMutation({
+   mutationFn: (fromDate: string) =>
+     apiRequest('POST', '/api/planning/reset', { fromDate }).then(r => r.json()),
+   onSuccess: (data: any) => {
+     queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+     queryClient.invalidateQueries({ queryKey: ['/api/preferences'] });
+     setReplanConfirmOpen(false);
+     setLocation('/');
+     setTimeout(() => {
+       window.dispatchEvent(new CustomEvent('naya:open-companion', {
+         detail: { message: "On repart de zéro. Avant de replanifier, dis-moi : est-ce que tes objectifs ou projets ont changé depuis la dernière fois ?" }
+       }));
+     }, 300);
+   },
+   onError: () => toast({ title: t('common.error'), variant: 'destructive' }),
+ });
 
  const ALL_DAYS = [
  { key: 'mon', label: 'Mon' },
@@ -1476,6 +1496,40 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  {/* Réseaux sociaux */}
  <SocialConnectionsCard />
 
+ {/* Replanifier depuis zéro */}
+ <Card className=" ">
+   <CardHeader>
+     <CardTitle className="flex items-center gap-2 text-base">
+       <Calendar className="h-4 w-4" /> Replanifier depuis zéro
+     </CardTitle>
+     <CardDescription className="text-xs text-naya-olive-55">
+       Archive toutes les tâches futures non complétées et régénère ton planning depuis une nouvelle date.
+     </CardDescription>
+   </CardHeader>
+   <CardContent className="space-y-3">
+     <div className="flex items-end gap-3">
+       <div className="flex-1 space-y-1">
+         <Label className="text-xs text-naya-olive-70">Date de démarrage</Label>
+         <Input
+           type="date"
+           value={replanDate}
+           onChange={e => setReplanDate(e.target.value)}
+           className="text-sm"
+           min={new Date().toISOString().slice(0, 10)}
+         />
+       </div>
+       <Button
+         size="sm"
+         variant="outline"
+         disabled={!replanDate || replanMutation.isPending}
+         onClick={() => setReplanConfirmOpen(true)}
+       >
+         Lancer la replanification
+       </Button>
+     </div>
+   </CardContent>
+ </Card>
+
  {/* Data & Reset */}
  <Card className=" ">
  <CardHeader>
@@ -1553,6 +1607,30 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </Button>
  </DialogFooter>
  </DialogContent>
+ </Dialog>
+
+ {/* Replan confirmation dialog */}
+ <Dialog open={replanConfirmOpen} onOpenChange={setReplanConfirmOpen}>
+   <DialogContent>
+     <DialogHeader>
+       <DialogTitle className="flex items-center gap-2">
+         <AlertTriangle className="h-5 w-5 text-naya-sulphur" />
+         Confirmer la replanification
+       </DialogTitle>
+       <DialogDescription>
+         Toutes tes tâches futures non complétées seront archivées (pas supprimées). Naya va ensuite t'aider à reconstruire ton planning depuis le {replanDate}.
+       </DialogDescription>
+     </DialogHeader>
+     <DialogFooter>
+       <Button variant="outline" onClick={() => setReplanConfirmOpen(false)}>{t('common.cancel')}</Button>
+       <Button
+         onClick={() => replanMutation.mutate(replanDate)}
+         disabled={replanMutation.isPending}
+       >
+         {replanMutation.isPending ? t('common.loading') : 'Replanifier'}
+       </Button>
+     </DialogFooter>
+   </DialogContent>
  </Dialog>
 
  {/* Operating profile edit dialog */}

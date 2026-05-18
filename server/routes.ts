@@ -1689,6 +1689,24 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     }
   });
 
+  app.post('/api/planning/reset', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { fromDate } = req.body;
+      if (!fromDate || !/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) {
+        return res.status(400).json({ message: "fromDate is required (YYYY-MM-DD)" });
+      }
+      const archived = await storage.archiveIncompleteFutureTasks(userId, fromDate);
+      await storage.upsertUserPreferences(userId, {
+        planningStatus: 'active',
+        planningStartDate: fromDate,
+      });
+      res.json({ archived, fromDate });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to reset planning" });
+    }
+  });
+
   // ── Energy Level endpoints ──────────────────────────────────────────
   app.get('/api/user/energy', isAuthenticated, async (req: any, res) => {
     try {
