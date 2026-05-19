@@ -43,8 +43,8 @@ export default function Privacy() {
             </h2>
             <p>
               Naya est un OS stratégique IA pour fondateurs indépendants, développé et opéré par Jeanne Méjean (Agence JMD). Pour toute question relative à vos données, vous pouvez nous contacter à{" "}
-              <a href="mailto:hellonaya@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
-                hellonaya@gmail.com
+              <a href="mailto:naya.ai.app@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
+                naya.ai.app@gmail.com
               </a>.
             </p>
           </section>
@@ -125,8 +125,8 @@ export default function Privacy() {
             </ul>
             <p className="mt-4">
               Pour exercer ces droits, envoyez un email à{" "}
-              <a href="mailto:hellonaya@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
-                hellonaya@gmail.com
+              <a href="mailto:naya.ai.app@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
+                naya.ai.app@gmail.com
               </a>{" "}
               avec l'objet "Données personnelles". Nous répondons sous 72h.
             </p>
@@ -147,8 +147,8 @@ export default function Privacy() {
             </h2>
             <p>
               Pour toute question sur cette politique ou sur le traitement de vos données :{" "}
-              <a href="mailto:hellonaya@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
-                hellonaya@gmail.com
+              <a href="mailto:naya.ai.app@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
+                naya.ai.app@gmail.com
               </a>
             </p>
           </section>
