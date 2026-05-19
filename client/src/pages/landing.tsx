@@ -1,255 +1,270 @@
 import { useState } from "react";
-import { Target, Brain, Calendar, MessageSquare, BarChart3, Lightbulb } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
-import AuthDialog from "@/components/auth-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
 
-// Baked at build time by Vite — pas de fetch, pas de race condition
+// Baked at build time by Vite — no runtime fetch, no race condition
 const waitlistMode = import.meta.env.VITE_WAITLIST_MODE === 'true';
 
-export default function Landing() {
+// ── Waitlist form — reused in hero and closing section ──────────────
+function WaitlistForm({ dark = false }: { dark?: boolean }) {
   const { t, i18n } = useTranslation();
-  const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [authDialogTab,  setAuthDialogTab]  = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const waitlistMutation = useMutation({
-    mutationFn: (emailVal: string) =>
-      apiRequest("POST", "/api/waitlist", { email: emailVal, language: i18n.language }).then(r => r.json()),
+  const mutation = useMutation({
+    mutationFn: (val: string) =>
+      apiRequest("POST", "/api/waitlist", { email: val, language: i18n.language }).then(r => r.json()),
     onSuccess: (data: any) => {
       if (data.error === "already_registered") {
-        setSubmitError(t("landing.waitlistDuplicate"));
+        setError(t("landing.waitlistDuplicate"));
       } else {
         setSubmitted(true);
-        setSubmitError(null);
+        setError(null);
       }
     },
-    onError: () => setSubmitError(t("landing.waitlistError")),
+    onError: () => setError(t("landing.waitlistError")),
   });
 
-  const handleOpenAuth = (tab: "login" | "register" = "login") => {
-    setAuthDialogTab(tab);
-    setAuthDialogOpen(true);
-  };
-
-  const handleWaitlistSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !email.includes("@")) return;
-    setSubmitError(null);
-    waitlistMutation.mutate(email.trim());
+    setError(null);
+    mutation.mutate(email.trim());
   };
 
-  const features = [
-    { icon: Target,        key: "pilotBoard" },
-    { icon: Brain,         key: "weeklyIntelligence" },
-    { icon: BarChart3,     key: "campaignEngine" },
-    { icon: Calendar,      key: "contentCalendar" },
-    { icon: MessageSquare, key: "outreachCrm" },
-    { icon: Lightbulb,     key: "operatingProfile" },
-  ] as const;
+  if (submitted) {
+    return (
+      <div className="text-center space-y-2 py-2">
+        <p className={`font-display text-[11px] tracking-[0.22em] uppercase ${dark ? "text-naya-cream" : "text-naya-olive"}`}>
+          {t("landing.waitlistConfirm")}
+        </p>
+        <p className={`text-[13px] leading-[1.6] ${dark ? "text-naya-cream/60" : "text-naya-olive-55"}`}>
+          {t("landing.waitlistConfirmSub")}
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen naya-paper flex flex-col">
+    <div className="w-full">
+      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          placeholder={t("landing.waitlistPlaceholder")}
+          required
+          className={`
+            flex-1 min-w-0 h-11 px-4 text-sm rounded-md border outline-none transition-colors
+            ${dark
+              ? "bg-white/10 border-white/20 text-naya-cream placeholder:text-naya-cream/40 focus:border-naya-cream/60"
+              : "bg-white border-naya-olive-18 text-naya-olive placeholder:text-naya-olive-35 focus:border-naya-olive"
+            }
+          `}
+        />
+        <button
+          type="submit"
+          disabled={mutation.isPending}
+          className={`
+            shrink-0 h-11 px-6 font-display text-[10px] tracking-[0.2em] uppercase rounded-md
+            transition-opacity duration-150 cursor-pointer disabled:opacity-50
+            ${dark
+              ? "bg-naya-cream text-naya-olive hover:opacity-90"
+              : "bg-naya-olive text-naya-cream hover:opacity-85"
+            }
+          `}
+        >
+          {mutation.isPending ? t("landing.waitlistCtaLoading") : t("landing.waitlistCta")}
+        </button>
+      </form>
+      {error && (
+        <p className={`mt-2 text-[11px] text-center ${dark ? "text-naya-cream/50" : "text-red-500"}`}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
-      {/* ── Header ── */}
-      <header className="px-8 py-4 border-b border-naya-olive-10 bg-naya-cream/90 backdrop-blur-sm flex items-center justify-between sticky top-0 z-10">
+// ── Main Landing ─────────────────────────────────────────────────────
+export default function Landing() {
+  const { t, i18n } = useTranslation();
+
+  const toggleLanguage = () =>
+    i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
+
+  const pains = [
+    t("landing.pain1"),
+    t("landing.pain2"),
+    t("landing.pain3"),
+  ];
+
+  const transforms = [
+    { before: t("landing.before1"), after: t("landing.after1") },
+    { before: t("landing.before2"), after: t("landing.after2") },
+    { before: t("landing.before3"), after: t("landing.after3") },
+  ];
+
+  return (
+    <div className="min-h-screen naya-paper flex flex-col text-naya-olive">
+
+      {/* ── ① Header ─────────────────────────────────────────────── */}
+      <header
+        className="px-6 sm:px-10 py-4 flex items-center justify-between sticky top-0 z-20 border-b border-naya-olive-10"
+        style={{ background: "rgba(247,244,236,0.92)", backdropFilter: "blur(8px)" }}
+      >
         <div className="flex items-center gap-3">
-          <img src="/naya-mark-elephant.png" alt="Naya" className="w-14 h-14 object-contain" />
-          <span className="wordmark text-sm tracking-[0.22em]">NAYA</span>
+          <img src="/naya-mark-elephant.png" alt="Naya" className="w-9 h-9 object-contain" />
+          <span className="wordmark text-xs">NAYA</span>
         </div>
-        {!waitlistMode && (
-          <button
-            onClick={() => handleOpenAuth("login")}
-            data-testid="auth-login"
-            className="eyebrow text-[10px] hover:text-naya-olive transition-colors duration-base ease-quiet border-b border-transparent hover:border-naya-olive-35 pb-px cursor-pointer"
-          >
-            {t('landing.meetNaya')}
-          </button>
-        )}
+        <button
+          onClick={toggleLanguage}
+          className="eyebrow text-[10px] text-naya-olive-35 hover:text-naya-olive transition-colors border-b border-transparent hover:border-naya-olive-18 pb-px cursor-pointer"
+        >
+          {i18n.language === "fr" ? "EN" : "FR"}
+        </button>
       </header>
 
-      {/* ── Hero ── */}
-      <section className="flex-1 flex flex-col items-center justify-center text-center px-6 pt-24 pb-20">
+      {/* ── ② Hero ───────────────────────────────────────────────── */}
+      <section className="flex flex-col items-center justify-center text-center px-6 pt-16 pb-16 sm:pt-24 sm:pb-24 min-h-[calc(100dvh-57px)]">
 
-        <p className="eyebrow text-[10px] text-naya-olive-35 mb-8 tracking-[0.25em]">
-          {waitlistMode ? t('landing.waitlistEyebrow') : t('landing.heroEyebrow')}
+        <p className="eyebrow text-[10px] text-naya-olive-35 tracking-[0.28em] mb-10">
+          {t("landing.heroEyebrow")}
         </p>
 
-        <h1
-          className="font-display font-light uppercase tracking-[0.08em] text-naya-olive leading-[1.05] mb-8"
-          style={{ fontSize: 'clamp(2.6rem, 6vw, 5rem)', maxWidth: 780 }}
-        >
-          {t('landing.heroTitle')}
-        </h1>
+        {/* Title — deux temps */}
+        <div className="mb-8" style={{ maxWidth: 680 }}>
+          <h1
+            className="font-display font-light uppercase leading-[1.08] text-naya-olive mb-0"
+            style={{ fontSize: "clamp(2rem, 5.5vw, 4.2rem)", letterSpacing: "0.06em" }}
+          >
+            {t("landing.heroLine1")}
+          </h1>
+          <p
+            className="font-display font-light uppercase leading-[1.6] text-naya-olive-35 mt-3"
+            style={{ fontSize: "clamp(0.9rem, 2vw, 1.25rem)", letterSpacing: "0.1em" }}
+          >
+            {t("landing.heroLine2")}
+          </p>
+          <p
+            className="font-display font-light uppercase leading-[1.08] text-naya-olive mt-4"
+            style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.8rem)", letterSpacing: "0.06em" }}
+          >
+            {t("landing.heroLine3")}
+          </p>
+        </div>
 
-        <p className="text-base text-naya-olive-55 leading-[1.75] mb-10 max-w-[460px]">
-          {t('landing.heroDescription')}
+        {/* Sous-titre */}
+        <p className="text-[15px] sm:text-base text-naya-olive-55 leading-[1.75] mb-10 max-w-[440px]">
+          {t("landing.heroSub")}
         </p>
 
-        {/* ── CTAs : waitlist mode ou auth normal ── */}
-        {waitlistMode ? (
-          <div className="w-full max-w-[400px]">
-            {submitted ? (
-              <div className="text-center space-y-2 py-4">
-                <p className="font-display uppercase tracking-[0.18em] text-[13px] text-naya-olive">
-                  {t('landing.waitlistConfirm')}
-                </p>
-                <p className="text-sm text-naya-olive-55">
-                  {t('landing.waitlistConfirmSub')}
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleWaitlistSubmit} className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder={t('landing.waitlistPlaceholder')}
-                  required
-                  className="flex-1 bg-white border-naya-olive-18 focus:border-naya-olive text-sm"
-                />
-                <Button
-                  type="submit"
-                  variant="display"
-                  disabled={waitlistMutation.isPending}
-                  className="shrink-0"
-                >
-                  {waitlistMutation.isPending
-                    ? t('landing.waitlistCtaLoading')
-                    : t('landing.waitlistCta')}
-                </Button>
-              </form>
-            )}
-            {submitError && (
-              <p className="mt-2 text-[12px] text-red-500 text-center">{submitError}</p>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 flex-wrap justify-center">
-            <Button
-              variant="display"
-              size="lg"
-              onClick={() => handleOpenAuth("register")}
-              data-testid="auth-register-hero"
-            >
-              {t('landing.meetNaya')}
-            </Button>
-            <button
-              onClick={() => handleOpenAuth("login")}
-              className="eyebrow text-[10px] tracking-[0.18em] text-naya-olive-55 hover:text-naya-olive transition-colors border-b border-naya-olive-18 hover:border-naya-olive-35 pb-px cursor-pointer"
-            >
-              {t('landing.seeHowItWorks')} →
-            </button>
-          </div>
-        )}
+        {/* CTA */}
+        <div className="w-full max-w-[420px]">
+          <WaitlistForm />
+        </div>
 
-        <p className="mt-12 text-[11px] text-naya-olive-18 font-display uppercase tracking-[0.18em]">
-          {t('landing.heroCredibility')}
-        </p>
       </section>
 
-      {/* ── Hairline separator ── */}
-      <div className="border-t border-naya-olive-10" />
+      {/* ── ③ La douleur en 3 lignes ─────────────────────────────── */}
+      <section className="border-t border-naya-olive-10">
+        {pains.map((pain, i) => (
+          <div key={i}>
+            <div className="px-6 sm:px-16 py-9 sm:py-11 flex items-center justify-center">
+              <p
+                className="font-display uppercase text-center text-naya-olive leading-[1.3]"
+                style={{
+                  fontSize: "clamp(0.9rem, 2.2vw, 1.35rem)",
+                  letterSpacing: "0.1em",
+                  maxWidth: 720,
+                }}
+              >
+                {pain}
+              </p>
+            </div>
+            {i < pains.length - 1 && <div className="border-t border-naya-olive-10" />}
+          </div>
+        ))}
+      </section>
 
-      {/* ── Features ── */}
-      <section className="bg-naya-cream px-6 py-20">
-        <div className="max-w-[960px] mx-auto">
-          <div className="text-center mb-16">
-            <p className="eyebrow text-[10px] tracking-[0.25em] text-naya-olive-35 mb-5">
-              {t('landing.notJustSmart')}
+      {/* ── ④ Transformation — avant / avec Naya ─────────────────── */}
+      <section className="border-t border-naya-olive-10 py-20 px-6 sm:px-10">
+        <div className="max-w-[800px] mx-auto">
+
+          <p className="eyebrow text-[10px] text-naya-olive-35 tracking-[0.28em] text-center mb-14">
+            {t("landing.transformEyebrow")}
+          </p>
+
+          {/* Table header */}
+          <div className="grid grid-cols-2 mb-4 px-2">
+            <p className="eyebrow text-[9px] text-naya-olive-18 tracking-[0.2em]">
+              {t("landing.colBefore")}
             </p>
-            <p className="text-base text-naya-olive-55 leading-[1.75] max-w-[440px] mx-auto">
-              {t('landing.notJustSmartDescription')}
+            <p className="eyebrow text-[9px] text-naya-olive tracking-[0.2em] text-right">
+              {t("landing.colAfter")}
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-naya-olive-10 border border-naya-olive-10">
-            {features.map(({ icon: Icon, key }) => (
+
+          {/* Rows */}
+          <div className="border border-naya-olive-10">
+            {transforms.map((row, i) => (
               <div
-                key={key}
-                className="bg-naya-cream p-9 hover:bg-naya-olive-06 transition-colors duration-300 ease-quiet group"
+                key={i}
+                className={`grid grid-cols-2 ${i < transforms.length - 1 ? "border-b border-naya-olive-10" : ""}`}
               >
-                <div className="w-10 h-10 flex items-center justify-center border border-naya-olive-18 rounded-sm mb-7 group-hover:border-naya-olive-35 transition-colors">
-                  <Icon size={20} strokeWidth={1.4} className="text-naya-olive-55" />
+                {/* Before */}
+                <div className="p-6 sm:p-8 border-r border-naya-olive-10">
+                  <p className="text-[13px] sm:text-sm text-naya-olive-35 leading-[1.65]">
+                    {row.before}
+                  </p>
                 </div>
-                <p className="font-display uppercase tracking-[0.18em] text-[10px] text-naya-olive mb-3">
-                  {t(`landing.${key}`)}
-                </p>
-                <p className="text-[13px] text-naya-olive-55 leading-[1.7]">
-                  {t(`landing.${key}Description`)}
-                </p>
+                {/* After */}
+                <div className="p-6 sm:p-8 bg-naya-olive-06">
+                  <p className="text-[13px] sm:text-sm text-naya-olive leading-[1.65]">
+                    {row.after}
+                  </p>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── CTA inverse ── */}
-      <section className="naya-paper-inverse px-6 py-24">
+      {/* ── ⑤ Section finale — scarcité douce ────────────────────── */}
+      <section className="naya-paper-inverse px-6 py-20 sm:py-28">
         <div className="max-w-[520px] mx-auto text-center">
-          <p className="eyebrow text-[10px] tracking-[0.25em] text-naya-cream/40 mb-6">
-            {t('landing.ctaTitle')}
+
+          <p className="eyebrow text-[10px] text-naya-cream/35 tracking-[0.28em] mb-8">
+            {t("landing.scarcityEyebrow")}
           </p>
-          <p className="text-[15px] text-naya-cream/60 leading-[1.75] mb-10">
-            {t('landing.ctaSubtitle')}
+
+          <p
+            className="font-display font-light uppercase text-naya-cream leading-[1.15] mb-10"
+            style={{ fontSize: "clamp(1.4rem, 3.5vw, 2.2rem)", letterSpacing: "0.07em" }}
+          >
+            {t("landing.scarcityTitle")}
           </p>
-          {waitlistMode ? (
-            submitted ? (
-              <p className="font-display uppercase tracking-[0.18em] text-[11px] text-naya-cream/60">
-                {t('landing.waitlistConfirm')}
-              </p>
-            ) : (
-              <form onSubmit={handleWaitlistSubmit} className="flex flex-col sm:flex-row gap-2 max-w-[360px] mx-auto">
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder={t('landing.waitlistPlaceholder')}
-                  required
-                  className="flex-1 bg-naya-olive/20 border-naya-cream/20 text-naya-cream placeholder:text-naya-cream/40 focus:border-naya-cream/50 text-sm"
-                />
-                <button
-                  type="submit"
-                  disabled={waitlistMutation.isPending}
-                  className="shrink-0 inline-flex items-center justify-center gap-2 px-6 h-10 bg-naya-cream text-naya-olive font-display uppercase tracking-[0.18em] text-[10px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer disabled:opacity-50"
-                >
-                  {waitlistMutation.isPending ? t('landing.waitlistCtaLoading') : t('landing.waitlistCta')}
-                </button>
-              </form>
-            )
-          ) : (
-            <button
-              onClick={() => handleOpenAuth("register")}
-              className="inline-flex items-center gap-2 px-9 h-12 bg-naya-cream text-naya-olive font-display uppercase tracking-[0.18em] text-[10px] rounded-md hover:opacity-90 transition-opacity duration-base cursor-pointer"
-            >
-              {t('landing.startWithNaya')}
-            </button>
-          )}
+
+          <div className="max-w-[400px] mx-auto">
+            <WaitlistForm dark />
+          </div>
+
         </div>
       </section>
 
-      {/* ── Footer ── */}
-      <footer className="px-8 py-7 bg-naya-olive border-t border-naya-olive-35 flex items-center justify-between flex-wrap gap-3">
+      {/* ── ⑥ Footer ─────────────────────────────────────────────── */}
+      <footer className="bg-naya-olive px-6 sm:px-10 py-6 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <img src="/naya-mark-elephant.png" alt="" className="w-12 h-12 object-contain opacity-40" />
-          <span className="wordmark text-xs text-naya-cream/60 tracking-[0.22em]">NAYA</span>
+          <img src="/naya-mark-elephant.png" alt="" className="w-8 h-8 object-contain opacity-30" />
+          <span className="wordmark text-[10px] text-naya-cream/50">NAYA</span>
         </div>
-        <p className="text-[11px] text-naya-cream/30 font-display uppercase tracking-[0.15em]">
-          {t('landing.footer')}
+        <p className="eyebrow text-[9px] text-naya-cream/30 tracking-[0.18em]">
+          {t("landing.footer")}
         </p>
       </footer>
 
-      {!waitlistMode && (
-        <AuthDialog
-          open={authDialogOpen}
-          onOpenChange={setAuthDialogOpen}
-          defaultTab={authDialogTab}
-        />
-      )}
     </div>
   );
 }
