@@ -144,8 +144,8 @@ export default function Landing() {
         style={{ background: "rgba(247,244,236,0.92)", backdropFilter: "blur(8px)" }}
       >
         <div className="flex items-center gap-3">
-          <img src="/naya-mark-elephant.png" alt="Naya" className="w-12 h-12 object-contain" />
-          <span className="wordmark text-sm">NAYA</span>
+          <img src="/naya-mark-elephant.png" alt="Naya" className="w-16 h-16 object-contain" />
+          <span className="wordmark text-base">NAYA</span>
         </div>
         <div className="flex items-center gap-6">
           <span className="font-mono text-[11px] text-naya-olive-35 tracking-[0.04em] hidden sm:block">
