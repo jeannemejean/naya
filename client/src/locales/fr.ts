@@ -69,9 +69,7 @@ const fr = {
  landing: {
  // ── Hero ──
  heroEyebrow: "pour fondateurs solo",
- heroH1a: "tu n'as pas un problème de tâches.",
- heroH1b: "tu as un problème",
- heroH1em: "d'arbitrage.",
+ heroH1: "Pour les ambitions qui dépassent la to-do list.",
  heroSub: "Naya est l'assistant qui pense ton business avec toi. Il connaît tes objectifs, tes projets et tes clients. Il transforme ce que tu veux accomplir en plan d'action concret, et t'aide à décider quand tout ne peut pas être prioritaire.",
  heroCta: "rejoindre la liste d'attente",
  heroMeta: "bêta privée · 50 premières places",

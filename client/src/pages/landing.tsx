@@ -170,10 +170,7 @@ export default function Landing() {
           className="font-sans font-medium text-naya-olive leading-[1.07] mb-8"
           style={{ fontSize: "clamp(2.5rem, 5.5vw, 4.5rem)", letterSpacing: "-0.025em", maxWidth: 860 }}
         >
-          {t("landing.heroH1a")}
-          <br />
-          {t("landing.heroH1b")}{" "}
-          <em className="italic font-normal text-naya-olive-55">{t("landing.heroH1em")}</em>
+          {t("landing.heroH1")}
         </h1>
 
         <p
