@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { Target, Brain, Calendar, MessageSquare, BarChart3, Lightbulb } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import AuthDialog from "@/components/auth-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiRequest } from "@/lib/queryClient";
+
+// Baked at build time by Vite — pas de fetch, pas de race condition
+const waitlistMode = import.meta.env.VITE_WAITLIST_MODE === 'true';
 
 export default function Landing() {
   const { t, i18n } = useTranslation();
@@ -14,13 +17,6 @@ export default function Landing() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  const { data: config } = useQuery<{ waitlistMode: boolean }>({
-    queryKey: ["/api/config"],
-    staleTime: Infinity,
-  });
-
-  const waitlistMode = config?.waitlistMode ?? false;
 
   const waitlistMutation = useMutation({
     mutationFn: (emailVal: string) =>
