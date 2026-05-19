@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import AuthDialog from "@/components/auth-dialog";
 
 // Baked at build time by Vite — no runtime fetch, no race condition
 const waitlistMode = import.meta.env.VITE_WAITLIST_MODE === 'true';
@@ -115,6 +116,7 @@ export default function Landing() {
   const toggleLanguage = () => i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
   const scrollToWaitlist = () =>
     document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" });
+  const [showAuth, setShowAuth] = useState(false);
 
   const phases = [
     { label: t("landing.mockupP1Label"), title: t("landing.mockupP1Title"), meta: t("landing.mockupP1Meta") },
@@ -153,6 +155,12 @@ export default function Landing() {
             {t("landing.heroMeta")}
           </span>
           <button
+            onClick={() => setShowAuth(true)}
+            className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer tracking-[0.04em]"
+          >
+            Connexion
+          </button>
+          <button
             onClick={toggleLanguage}
             className="eyebrow text-[10px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer"
           >
@@ -160,6 +168,7 @@ export default function Landing() {
           </button>
         </div>
       </header>
+      <AuthDialog open={showAuth} onOpenChange={setShowAuth} defaultTab="login" />
 
       {/* ── ② Hero ───────────────────────────────────────────────────── */}
       <section className="px-6 sm:px-10 lg:px-16 pt-20 pb-24 sm:pt-28 sm:pb-32 w-full max-w-screen-xl mx-auto">
