@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -474,9 +475,14 @@ export default function Landing() {
           <img src="/naya-mark-elephant.png" alt="" className="w-7 h-7 object-contain opacity-25" />
           <span className="wordmark text-[10px] text-naya-olive-35">NAYA</span>
         </div>
-        <p className="font-mono text-[11px] text-naya-olive-35 tracking-[0.02em]">
-          {t("landing.footerTagline")}
-        </p>
+        <div className="flex items-center gap-6">
+          <p className="font-mono text-[11px] text-naya-olive-35 tracking-[0.02em]">
+            {t("landing.footerTagline")}
+          </p>
+          <Link href="/privacy" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors tracking-[0.02em] cursor-pointer border-b border-transparent hover:border-naya-olive-18">
+            Politique de confidentialité
+          </Link>
+        </div>
       </footer>
 
     </div>

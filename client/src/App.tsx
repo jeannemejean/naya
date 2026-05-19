@@ -11,6 +11,7 @@ import { useGlobalSearch } from "@/hooks/useGlobalSearch";
 import GlobalSearch from "@/components/global-search";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
+import Privacy from "@/pages/privacy";
 import Dashboard from "@/pages/dashboard";
 import NayaCompanion from "@/components/NayaCompanion";
 
@@ -89,6 +90,7 @@ function Router() {
  </Route>
  </>
  )}
+ <Route path="/privacy" component={Privacy} />
  <Route component={NotFound} />
  </Switch>
  </Suspense>
