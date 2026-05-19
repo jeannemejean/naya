@@ -1,0 +1,23 @@
+[build]
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "npm run start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# ── Production (branche main) ──────────────────────────────────────────
+# Landing publique + liste d'attente uniquement
+[environments.production.variables]
+NODE_ENV = "production"
+WAITLIST_MODE = "true"
+# PORT est injecté automatiquement par Railway
+
+# ── Dev (branche dev) ─────────────────────────────────────────────────
+# App complète, accès direct — pas de liste d'attente
+[environments.dev.variables]
+NODE_ENV = "production"
+WAITLIST_MODE = "false"
+# PORT est injecté automatiquement par Railway
