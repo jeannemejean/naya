@@ -119,7 +119,7 @@ const fr = {
  case2V2: "audit ops · 1500€",
  case2Sub2: "priorité acquisition q3",
  case2L3: "client signal",
- case2V3: "groupe scoping · 3 missions",
+ case2V3: "studio kova · 3 missions",
  case2Sub3: "paiement en attente · jalon bloqué",
  case3Title: "elle s'adapte à toi, pas l'inverse.",
  case3Desc: "tu lui dis ton énergie du jour. elle réorganise ta journée. elle connaît ton archétype et présente les tâches comme tu en as besoin.",

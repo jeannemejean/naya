@@ -119,7 +119,7 @@ const en = {
  case2V2: "ops audit · €1500",
  case2Sub2: "q3 acquisition priority",
  case2L3: "client signal",
- case2V3: "scoping group · 3 engagements",
+ case2V3: "studio kova · 3 engagements",
  case2Sub3: "payment pending · milestone blocked",
  case3Title: "it adapts to you, not the other way around.",
  case3Desc: "tell naya your energy. it reshapes your day. it knows your archetype and presents tasks the way you need them.",
