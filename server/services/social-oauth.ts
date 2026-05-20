@@ -130,7 +130,6 @@ const LINKEDIN_SCOPES = [
   'openid',
   'profile',
   'email',
-  'w_member_social',
 ].join(' ');
 
 export function getLinkedInAuthUrl(state: string): string {
