@@ -654,13 +654,20 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const accounts = await storage.getSocialAccounts(userId);
       const status: Record<string, { connected: boolean; accountName?: string; expiresAt?: Date; configured: boolean }> = {};
 
-      for (const platform of ['instagram', 'linkedin', 'twitter'] as const) {
+      for (const platform of ['instagram', 'linkedin'] as const) {
         const account = accounts.find(a => a.platform === platform && a.isActive);
+        // Compter les pages LinkedIn connectées
+        const linkedinPages = platform === 'linkedin'
+          ? accounts.filter(a => a.platform.startsWith('linkedin_page_') && a.isActive)
+          : [];
         status[platform] = {
           configured: isPlatformConfigured(platform),
           connected: !!account,
           accountName: account?.accountName,
           expiresAt: account?.expiresAt || undefined,
+          ...(platform === 'linkedin' && linkedinPages.length > 0 && {
+            pagesCount: linkedinPages.length,
+          }),
         };
       }
       res.json(status);
