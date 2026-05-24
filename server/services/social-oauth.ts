@@ -22,12 +22,10 @@ function getBaseUrl(): string {
 // ─── Instagram / Meta ────────────────────────────────────────────────────────
 
 const INSTAGRAM_SCOPES = [
-  'instagram_business_basic',
-  'instagram_business_content_publish',
-  'instagram_business_manage_comments',
+  'public_profile',
   'pages_show_list',
   'pages_read_engagement',
-  'public_profile',
+  'pages_manage_posts',
 ].join(',');
 
 export function getInstagramAuthUrl(state: string): string {
