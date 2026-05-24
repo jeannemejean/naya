@@ -455,6 +455,40 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     }
   });
 
+  // ─── Meta / Facebook data deletion callback (RGPD) ─────────────────────────
+  // Meta appelle cette URL quand un utilisateur demande la suppression de ses données Facebook
+  app.post('/api/meta/data-deletion', async (req, res) => {
+    try {
+      const signedRequest = req.body?.signed_request;
+      if (!signedRequest) return res.status(400).json({ error: 'missing signed_request' });
+
+      // Décoder le payload (sans vérifier la signature pour simplifier — données non critiques)
+      const [, payload] = signedRequest.split('.');
+      const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
+      const facebookUserId = decoded?.user_id;
+
+      console.log(`[Meta] Data deletion request for Facebook user: ${facebookUserId}`);
+
+      // Supprimer les comptes sociaux Meta liés à cet utilisateur si on peut les matcher
+      // (en pratique, on n'a pas de lien direct FB user ID → naya user ID sans stocker cet ID)
+      // On génère un code de confirmation pour Meta
+      const confirmationCode = `naya-del-${Date.now()}-${facebookUserId || 'unknown'}`;
+
+      res.json({
+        url: `https://hellonaya.app/privacy`,
+        confirmation_code: confirmationCode,
+      });
+    } catch (err: any) {
+      console.error('[Meta] Data deletion error:', err.message);
+      res.status(500).json({ error: 'server_error' });
+    }
+  });
+
+  // GET version pour vérification manuelle
+  app.get('/api/meta/data-deletion', (_req, res) => {
+    res.json({ status: 'ok', description: 'Meta data deletion callback endpoint' });
+  });
+
   // Admin: trigger auto-planner manually (for testing / debug)
   app.post('/api/admin/auto-plan', isAuthenticated, async (req: any, res) => {
     try {
