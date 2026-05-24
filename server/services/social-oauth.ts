@@ -129,6 +129,8 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
 const LINKEDIN_SCOPES = [
   'r_basicprofile',
   'w_member_social',
+  'r_organization_social',
+  'w_organization_social',
 ].join(' ');
 
 export function getLinkedInAuthUrl(state: string): string {
@@ -175,7 +177,40 @@ export async function exchangeLinkedInCode(userId: string, code: string): Promis
   const accountId = profile.id || 'unknown';
   const accountName = `${profile.localizedFirstName || ''} ${profile.localizedLastName || ''}`.trim() || 'LinkedIn';
 
-  // 3. Sauvegarder (upsert)
+  // 3. Récupérer les pages LinkedIn gérées par l'utilisateur
+  let orgPages: Array<{ id: string; name: string }> = [];
+  try {
+    const aclRes = await fetch(
+      'https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=10',
+      {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+      }
+    );
+    const aclData = await aclRes.json();
+    const elements = aclData.elements || [];
+
+    for (const acl of elements) {
+      const orgUrn: string = acl.organizationalTarget || '';
+      const orgId = orgUrn.replace('urn:li:organization:', '');
+      if (!orgId) continue;
+
+      const orgRes = await fetch(`https://api.linkedin.com/v2/organizations/${orgId}?projection=(id,localizedName)`, {
+        headers: {
+          Authorization: `Bearer ${tokenData.access_token}`,
+          'X-Restli-Protocol-Version': '2.0.0',
+        },
+      });
+      const orgData = await orgRes.json();
+      if (orgData.id) orgPages.push({ id: String(orgData.id), name: orgData.localizedName || `Page ${orgId}` });
+    }
+  } catch (e) {
+    console.warn('[LinkedIn] Could not fetch org pages:', e);
+  }
+
+  // 4. Sauvegarder profil personnel (upsert)
   const existing = await storage.getSocialAccountByPlatform(userId, 'linkedin');
   const expiresAt = tokenData.expires_in
     ? new Date(Date.now() + tokenData.expires_in * 1000)
@@ -205,6 +240,33 @@ export async function exchangeLinkedInCode(userId: string, code: string): Promis
       lastSyncAt: new Date(),
     });
   }
+
+  // 5. Sauvegarder chaque page comme compte séparé (linkedin_page)
+  for (const page of orgPages) {
+    const existingPage = await storage.getSocialAccountByPlatform(userId, `linkedin_page_${page.id}`);
+    if (existingPage) {
+      await storage.updateSocialAccount(existingPage.id, userId, {
+        accessToken: tokenData.access_token,
+        accountName: page.name,
+        expiresAt,
+        isActive: true,
+        lastSyncAt: new Date(),
+      });
+    } else {
+      await storage.createSocialAccount({
+        userId,
+        platform: `linkedin_page_${page.id}`,
+        accountId: page.id,
+        accountName: page.name,
+        accessToken: tokenData.access_token,
+        expiresAt,
+        permissions: ['w_organization_social', 'r_organization_social'],
+        isActive: true,
+        lastSyncAt: new Date(),
+      });
+    }
+  }
+
 }
 
 // ─── Twitter / X ─────────────────────────────────────────────────────────────
