@@ -616,15 +616,16 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       return res.redirect(`/settings?social=${platform}&status=error&reason=${encodeURIComponent(error)}`);
     }
 
-    const userId = (req.session as any)?.socialOAuthUserId || (req.session as any)?.userId;
-    const savedState = (req.session as any)?.socialOAuthState;
+    // Récupérer userId depuis la session OU depuis le state (fallback si session perdue)
+    const sessionUserId = (req.session as any)?.socialOAuthUserId || (req.session as any)?.userId;
+    const stateUserId = state?.split(':')[0];
+    const userId = sessionUserId || stateUserId;
 
-    if (!code || !userId) {
+    if (!code) {
       return res.redirect(`/settings?social=${platform}&status=error&reason=missing_code`);
     }
-    // Vérification state basique (préfixe userId)
-    if (savedState && !state.startsWith(userId.split(':')[0])) {
-      return res.redirect(`/settings?social=${platform}&status=error&reason=invalid_state`);
+    if (!userId) {
+      return res.redirect(`/settings?social=${platform}&status=error&reason=missing_session`);
     }
 
     try {
