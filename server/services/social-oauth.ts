@@ -127,9 +127,8 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
 // ─── LinkedIn ────────────────────────────────────────────────────────────────
 
 const LINKEDIN_SCOPES = [
-  'openid',
-  'profile',
-  'email',
+  'r_basicprofile',
+  'w_member_social',
 ].join(' ');
 
 export function getLinkedInAuthUrl(state: string): string {
@@ -164,14 +163,17 @@ export async function exchangeLinkedInCode(userId: string, code: string): Promis
     throw new Error(`LinkedIn token exchange failed: ${JSON.stringify(tokenData)}`);
   }
 
-  // 2. Récupérer le profil
-  const profileRes = await fetch('https://api.linkedin.com/v2/userinfo', {
-    headers: { Authorization: `Bearer ${tokenData.access_token}` },
+  // 2. Récupérer le profil via API v2 (compatible r_basicprofile)
+  const profileRes = await fetch('https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName)', {
+    headers: {
+      Authorization: `Bearer ${tokenData.access_token}`,
+      'X-Restli-Protocol-Version': '2.0.0',
+    },
   });
   const profile = await profileRes.json();
 
-  const accountId = profile.sub || 'unknown';
-  const accountName = profile.name || `${profile.given_name || ''} ${profile.family_name || ''}`.trim() || 'LinkedIn';
+  const accountId = profile.id || 'unknown';
+  const accountName = `${profile.localizedFirstName || ''} ${profile.localizedLastName || ''}`.trim() || 'LinkedIn';
 
   // 3. Sauvegarder (upsert)
   const existing = await storage.getSocialAccountByPlatform(userId, 'linkedin');
