@@ -234,7 +234,9 @@ export interface IStorage {
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
-  
+  getDueScheduledContent(now: Date): Promise<Content[]>;
+  claimContentForPosting(id: number): Promise<boolean>;
+
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
   getProspectionCampaign(id: number): Promise<ProspectionCampaign | null>;
@@ -848,6 +850,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteContent(id: number): Promise<void> {
     await db.delete(content).where(eq(content.id, id));
+  }
+
+  // ── Auto-publication des posts programmés ────────────────────────────────
+  // Renvoie les contenus dont l'heure de publication vient d'être atteinte et
+  // qui attendent encore d'être postés (autoPost activé, pas déjà publiés).
+  //
+  // FENÊTRE DE GRÂCE (sécurité critique) : on ne publie QUE les posts dont
+  // l'heure prévue est dans [now - grâce, now]. Un post en retard de plus que
+  // la fenêtre (ex. programmé il y a plusieurs jours) n'est JAMAIS auto-publié
+  // — sinon le worker « viderait » tout l'arriéré d'un coup. Ces posts restent
+  // en attente et devront être republiés/replanifiés manuellement.
+  // Réglable via SOCIAL_PUBLISH_GRACE_MINUTES (défaut 120 min).
+  async getDueScheduledContent(now: Date): Promise<Content[]> {
+    const graceMin = parseInt(process.env.SOCIAL_PUBLISH_GRACE_MINUTES || '120', 10);
+    const earliest = new Date(now.getTime() - graceMin * 60 * 1000);
+    return await db.select().from(content)
+      .where(and(
+        eq(content.autoPost, true),
+        eq(content.postStatus, 'pending'),
+        isNull(content.publishedAt),
+        isNotNull(content.scheduledFor),
+        lte(content.scheduledFor, now),
+        gte(content.scheduledFor, earliest),
+      ))
+      .orderBy(content.scheduledFor)
+      .limit(25);
+  }
+
+  // Claim atomique : passe pending → posting une seule fois. Renvoie false si
+  // un autre passage du worker a déjà pris ce contenu (anti double-publication).
+  async claimContentForPosting(id: number): Promise<boolean> {
+    const claimed = await db.update(content)
+      .set({ postStatus: 'posting', updatedAt: new Date() })
+      .where(and(eq(content.id, id), eq(content.postStatus, 'pending')))
+      .returning({ id: content.id });
+    return claimed.length > 0;
   }
 
   async deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number> {

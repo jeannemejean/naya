@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
 import { scheduleAutoPlanner, scheduleEndOfDayRollover, scheduleIntraDayReschedule } from "./services/auto-planner";
+import { scheduleSocialPublisher } from "./services/social-publisher";
 import { computeDurationCalibration } from "./services/duration-calibration";
 import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
 import { storage } from "./storage";
@@ -92,6 +93,9 @@ function scheduleWeeklyIntelligence() {
 
   // ─── Cron hebdomadaire : intelligence analytics (dimanche ~23h UTC) ───────────
   scheduleWeeklyIntelligence();
+
+  // ─── Worker d'auto-publication des posts programmés (chaque minute) ───────────
+  scheduleSocialPublisher();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
