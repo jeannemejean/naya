@@ -12,7 +12,6 @@ import SchedulePreview from "@/components/schedule-preview";
 import MilestoneChain from "@/components/milestone-chain";
 import { StuckTasksCard } from "@/components/StuckTasksCard";
 import PlanningStartBanner from "@/components/PlanningStartBanner";
-import { NayaCompanionBar } from "@/components/NayaCompanion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -712,7 +711,6 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
   const queryClient = useQueryClient();
   const { isAuthenticated, isLoading, user } = useAuth();
   const { activeProjectId, isAllProjects } = useProject();
-  const [companionOpen, setCompanionOpen] = useState(false);
 
   const { data: brandDna, isLoading: brandDnaLoading } = useQuery({
     queryKey: ["/api/brand-dna"],
@@ -868,7 +866,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
               {/* Left column — tasks */}
               <div className="lg:col-span-2 space-y-6">
                 <TodaysTasks />
-                <StuckTasksCard onOpenCompanion={() => setCompanionOpen(true)} />
+                <StuckTasksCard onOpenCompanion={() => window.dispatchEvent(new CustomEvent('naya:open-companion'))} />
                 <SchedulePreview />
               </div>
 
@@ -890,8 +888,6 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
         </main>
       </div>
 
-      {/* Companion bar (floating, bottom-right) */}
-      <NayaCompanionBar />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route } from "wouter";
 import { lazy, Suspense, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -31,7 +31,6 @@ function Router() {
  const { isAuthenticated, isLoading } = useAuth();
  const qc = useQueryClient();
  const { isOpen, setIsOpen, openSearch } = useGlobalSearch();
- const [location] = useLocation();
 
  // Prefetch brand-dna as soon as auth confirms — avoids spinner on first dashboard visit
  useEffect(() => {
@@ -40,8 +39,8 @@ function Router() {
  qc.prefetchQuery({ queryKey: ["/api/projects?limit=200"] });
  }
  }, [isAuthenticated, qc]);
- // Le dashboard a sa propre barre Companion dans le header — pas de bouton flottant
- const showFloatingCompanion = isAuthenticated && location !== "/";
+ // Bouton flottant Naya sur toutes les pages authentifiées (dashboard inclus)
+ const showFloatingCompanion = isAuthenticated;
 
  return (
  <>
