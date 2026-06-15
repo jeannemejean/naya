@@ -161,17 +161,33 @@ export async function getCalendarEvents(
 /**
  * Returns blocked time ranges for a specific date (for auto-planner use).
  * Returns [] if no calendar connected.
+ *
+ * Cache court (60s) par (userId, date) : lors d'une génération en lot, le
+ * planificateur crée plusieurs tâches qui appellent chacune le garde-fou de
+ * collision — sans cache, on frapperait l'API Google à chaque tâche.
  */
+const _blockedCache = new Map<string, { at: number; ranges: Array<{ start: number; end: number }> }>();
+const BLOCKED_CACHE_TTL_MS = 60 * 1000;
+
 export async function getCalendarBlockedRanges(
   userId: string,
   date: string  // YYYY-MM-DD
 ): Promise<Array<{ start: number; end: number }>> {
+  const key = `${userId}:${date}`;
+  const cached = _blockedCache.get(key);
+  if (cached && (Date.now() - cached.at) < BLOCKED_CACHE_TTL_MS) {
+    return cached.ranges;
+  }
+
   const events = await getCalendarEvents(userId, date, date);
-  return events
+  const ranges = events
     .filter(e => !e.allDay && e.startTime !== e.endTime)
     .map(e => {
       const [sh, sm] = e.startTime.split(':').map(Number);
       const [eh, em] = e.endTime.split(':').map(Number);
       return { start: sh * 60 + sm, end: eh * 60 + em };
     });
+
+  _blockedCache.set(key, { at: Date.now(), ranges });
+  return ranges;
 }

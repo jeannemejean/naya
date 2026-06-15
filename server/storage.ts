@@ -1434,14 +1434,24 @@ export class DatabaseStorage implements IStorage {
     const newStart = parseMin(startTime);
     const newEnd = newStart + durationMinutes;
 
-    // Build sorted occupied intervals from all tasks that have a scheduled time
+    // Build occupied intervals from tasks that have a scheduled time…
     const occupied = dayTasks
       .filter(t => t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime))
       .map(t => ({
         start: parseMin(t.scheduledTime!),
         end: parseMin(t.scheduledTime!) + (t.estimatedDuration || 30),
-      }))
-      .sort((a, b) => a.start - b.start);
+      }));
+
+    // …ET des événements Google Calendar (rendez-vous). Une tâche ne doit jamais
+    // se poser par-dessus un rendez-vous. Import dynamique pour éviter une
+    // dépendance circulaire ; si GCal est indisponible, on continue sans bloquer.
+    try {
+      const { getCalendarBlockedRanges } = await import('./services/google-calendar');
+      const calRanges = await getCalendarBlockedRanges(userId, date);
+      for (const r of calRanges) occupied.push({ start: r.start, end: r.end });
+    } catch { /* GCal optionnel — ne bloque pas la création de tâche */ }
+
+    occupied.sort((a, b) => a.start - b.start);
 
     // Check if proposed slot is free
     const hasOverlap = occupied.some(r => newStart < r.end && newEnd > r.start);
@@ -1491,8 +1501,16 @@ export class DatabaseStorage implements IStorage {
 
       const occupied = dayTasks
         .filter(t => t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime))
-        .map(t => ({ start: parseMin(t.scheduledTime!), end: parseMin(t.scheduledTime!) + (t.estimatedDuration || 30) }))
-        .sort((a, b) => a.start - b.start);
+        .map(t => ({ start: parseMin(t.scheduledTime!), end: parseMin(t.scheduledTime!) + (t.estimatedDuration || 30) }));
+
+      // Inclure les rendez-vous Google Calendar comme créneaux occupés.
+      try {
+        const { getCalendarBlockedRanges } = await import('./services/google-calendar');
+        const calRanges = await getCalendarBlockedRanges(userId, currentDate);
+        for (const r of calRanges) occupied.push({ start: r.start, end: r.end });
+      } catch { /* GCal optionnel */ }
+
+      occupied.sort((a, b) => a.start - b.start);
 
       let candidate = DAY_START;
       while (candidate + durationMinutes <= DAY_END) {
