@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sun, Moon, LogOut, RefreshCw, AlertTriangle, User, Zap, Brain, Clock, Calendar, Sparkles, Loader2, CheckCircle2, Link2Off, ExternalLink } from "lucide-react";
 import { useLocation } from "wouter";
-import type { UserOperatingProfile, UserPreferences, BrandDna } from "@shared/schema";
+import type { UserOperatingProfile, UserPreferences, BrandDna, Project } from "@shared/schema";
 
 // ─── Chip Keyword Input ──────────────────────────────────────────────────────
 function KeywordChipInput({
@@ -728,9 +728,13 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  onError: () => toast({ title: t('common.error'), description: t('settings.failedToSave'), variant: "destructive" }),
  });
 
- // ─── Brand DNA ───────────────────────────────────────────────────────────
+ // ─── Brand DNA (par marque) ───────────────────────────────────────────────
+ const { data: dnaProjects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
+ // null = ADN général (utilisateur) ; sinon ADN spécifique à une marque/projet
+ const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
+ const brandDnaUrl = selectedBrandId ? `/api/projects/${selectedBrandId}/brand-dna` : '/api/brand-dna';
  const { data: brandDna, isLoading: brandDnaLoading } = useQuery<BrandDna | null>({
- queryKey: ['/api/brand-dna'],
+ queryKey: [brandDnaUrl],
  });
 
  // Identity tab
@@ -779,33 +783,35 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  const [dnaKeyMilestones, setDnaKeyMilestones] = useState<Milestone[]>([]);
 
  useEffect(() => {
- if (!brandDna) return;
- setDnaBusinessName(brandDna.businessName || '');
- setDnaWebsite(brandDna.website || '');
- setDnaLinkedin(brandDna.linkedinProfile || '');
- setDnaInstagram(brandDna.instagramHandle || '');
- setDnaBusinessType(brandDna.businessType || '');
- setDnaBusinessModel(brandDna.businessModel || '');
- setDnaTargetAudience(brandDna.targetAudience || '');
- setDnaUniquePositioning(brandDna.uniquePositioning || '');
- setDnaCorePainPoint(brandDna.corePainPoint || '');
- setDnaAudienceAspiration(brandDna.audienceAspiration || '');
- setDnaAuthorityLevel(brandDna.authorityLevel || '');
- setDnaOffers(brandDna.offers || '');
- setDnaPriceRange(brandDna.priceRange || '');
- setDnaClientJourney(brandDna.clientJourney || '');
- setDnaCompetitorLandscape(brandDna.competitorLandscape || '');
- setDnaVoiceKw(brandDna.brandVoiceKeywords || []);
- setDnaAntiKw(brandDna.brandVoiceAntiKeywords || []);
- setDnaEditorialTerritory(brandDna.editorialTerritory || '');
- setDnaPlatformPriority(brandDna.platformPriority || '');
- setDnaCommunicationStyle(brandDna.communicationStyle || '');
- setDnaCurrentPresence(brandDna.currentPresence || '');
- setDnaContentBandwidth(brandDna.contentBandwidth || '');
- setDnaVisualIdentityNotes(brandDna.visualIdentityNotes || '');
- setDnaReferenceBrands(brandDna.referenceBrands || []);
+ // d?. partout : quand on passe sur une marque sans ADN encore, le formulaire
+ // se vide (au lieu de garder les valeurs de la marque précédente).
+ const d = brandDna;
+ setDnaBusinessName(d?.businessName || '');
+ setDnaWebsite(d?.website || '');
+ setDnaLinkedin(d?.linkedinProfile || '');
+ setDnaInstagram(d?.instagramHandle || '');
+ setDnaBusinessType(d?.businessType || '');
+ setDnaBusinessModel(d?.businessModel || '');
+ setDnaTargetAudience(d?.targetAudience || '');
+ setDnaUniquePositioning(d?.uniquePositioning || '');
+ setDnaCorePainPoint(d?.corePainPoint || '');
+ setDnaAudienceAspiration(d?.audienceAspiration || '');
+ setDnaAuthorityLevel(d?.authorityLevel || '');
+ setDnaOffers(d?.offers || '');
+ setDnaPriceRange(d?.priceRange || '');
+ setDnaClientJourney(d?.clientJourney || '');
+ setDnaCompetitorLandscape(d?.competitorLandscape || '');
+ setDnaVoiceKw(d?.brandVoiceKeywords || []);
+ setDnaAntiKw(d?.brandVoiceAntiKeywords || []);
+ setDnaEditorialTerritory(d?.editorialTerritory || '');
+ setDnaPlatformPriority(d?.platformPriority || '');
+ setDnaCommunicationStyle(d?.communicationStyle || '');
+ setDnaCurrentPresence(d?.currentPresence || '');
+ setDnaContentBandwidth(d?.contentBandwidth || '');
+ setDnaVisualIdentityNotes(d?.visualIdentityNotes || '');
+ setDnaReferenceBrands(d?.referenceBrands || []);
  // contentPillarsDetailed: jsonb — stored as ContentPillar[] objects
- const pillarsRaw = brandDna.contentPillarsDetailed;
+ const pillarsRaw = d?.contentPillarsDetailed;
  if (Array.isArray(pillarsRaw)) {
  setDnaContentPillarsDetailed(pillarsRaw.map((p: any) =>
  typeof p === 'string'
@@ -815,19 +821,19 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  } else {
  setDnaContentPillarsDetailed([]);
  }
- setDnaActiveBusinessPriority(brandDna.activeBusinessPriority || '');
- setDnaCurrentBusinessStage(brandDna.currentBusinessStage || '');
- setDnaRevenueTarget(brandDna.revenueTarget || '');
- setDnaRevenueUrgency(brandDna.revenueUrgency || '');
- setDnaPrimaryGoal(brandDna.primaryGoal || '');
- setDnaSuccessDefinition(brandDna.successDefinition || '');
- setDnaCurrentChallenges(brandDna.currentChallenges || '');
- setDnaTeamStructure(brandDna.teamStructure || '');
- setDnaOperationalConstraints(brandDna.operationalConstraints || '');
- setDnaGeographicFocus(brandDna.geographicFocus || '');
- setDnaLanguageStrategy(brandDna.languageStrategy || '');
+ setDnaActiveBusinessPriority(d?.activeBusinessPriority || '');
+ setDnaCurrentBusinessStage(d?.currentBusinessStage || '');
+ setDnaRevenueTarget(d?.revenueTarget || '');
+ setDnaRevenueUrgency(d?.revenueUrgency || '');
+ setDnaPrimaryGoal(d?.primaryGoal || '');
+ setDnaSuccessDefinition(d?.successDefinition || '');
+ setDnaCurrentChallenges(d?.currentChallenges || '');
+ setDnaTeamStructure(d?.teamStructure || '');
+ setDnaOperationalConstraints(d?.operationalConstraints || '');
+ setDnaGeographicFocus(d?.geographicFocus || '');
+ setDnaLanguageStrategy(d?.languageStrategy || '');
  // keyMilestones: jsonb — stored as Milestone[] objects
- const milestonesRaw = brandDna.keyMilestones;
+ const milestonesRaw = d?.keyMilestones;
  if (Array.isArray(milestonesRaw)) {
  setDnaKeyMilestones(milestonesRaw.map((m: any) =>
  typeof m === 'string'
@@ -853,18 +859,18 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
  const patchBrandDna = useMutation({
- mutationFn: (data: Partial<BrandDna>) => apiRequest('PATCH', '/api/brand-dna', data),
+ mutationFn: (data: Partial<BrandDna>) => apiRequest('PATCH', brandDnaUrl, data),
  onSuccess: () => {
- queryClient.invalidateQueries({ queryKey: ['/api/brand-dna'] });
+ queryClient.invalidateQueries({ queryKey: [brandDnaUrl] });
  toast({ title: t('settings.saved') });
  },
  onError: () => toast({ title: t('common.error'), description: t('settings.failedToSave'), variant: "destructive" }),
  });
 
  const refreshIntelligence = useMutation({
- mutationFn: () => apiRequest('POST', '/api/brand-dna/refresh-intelligence'),
+ mutationFn: () => apiRequest('POST', '/api/brand-dna/refresh-intelligence', selectedBrandId ? { projectId: selectedBrandId } : {}),
  onSuccess: () => {
- queryClient.invalidateQueries({ queryKey: ['/api/brand-dna'] });
+ queryClient.invalidateQueries({ queryKey: [brandDnaUrl] });
  toast({ title: t('settings.saved') });
  },
  onError: () => toast({ title: t('common.error'), description: t('settings.failedToSave'), variant: "destructive" }),
@@ -1145,20 +1151,37 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <CardDescription>The strategic profile Naya uses to generate all your content and tasks</CardDescription>
  </CardHeader>
  <CardContent>
+ {/* Sélecteur de marque — chaque marque a son propre ADN */}
+ <div className="mb-6 flex flex-col gap-1.5">
+ <Label className="text-xs text-naya-olive-55">Marque</Label>
+ <Select value={selectedBrandId === null ? 'general' : String(selectedBrandId)} onValueChange={(v) => setSelectedBrandId(v === 'general' ? null : Number(v))}>
+ <SelectTrigger className="w-full sm:w-80"><SelectValue /></SelectTrigger>
+ <SelectContent>
+ <SelectItem value="general">Général (profil par défaut)</SelectItem>
+ {dnaProjects.map((p) => (
+ <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+ ))}
+ </SelectContent>
+ </Select>
+ <p className="text-[11px] text-naya-olive-35 leading-relaxed">
+ {selectedBrandId
+ ? "Tu édites l'ADN de cette marque — il guide la génération de tâches et de contenu pour elle."
+ : "Profil par défaut, utilisé quand une marque n'a pas encore son propre ADN."}
+ </p>
+ </div>
+
  {brandDnaLoading ? (
  <div className="flex items-center justify-center py-8 text-naya-olive-35 ">
  <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
  </div>
- ) : !brandDna ? (
- <p className="text-sm text-naya-olive-55">Complete onboarding to set up your Brand DNA.</p>
  ) : (
  <Tabs defaultValue="identity">
- <TabsList className="grid w-full grid-cols-5 text-[11px]">
- <TabsTrigger value="identity">{t('settings.tabs.identity')}</TabsTrigger>
- <TabsTrigger value="offers">{t('settings.tabs.offersMarket')}</TabsTrigger>
- <TabsTrigger value="content">{t('settings.tabs.contentPlatforms')}</TabsTrigger>
- <TabsTrigger value="priorities">{t('settings.tabs.activePriorities')}</TabsTrigger>
- <TabsTrigger value="intelligence">{t('settings.tabs.nayaIntelligence')}</TabsTrigger>
+ <TabsList className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 w-full h-auto gap-1 text-xs">
+ <TabsTrigger className="whitespace-normal leading-tight py-1.5 h-auto" value="identity">{t('settings.tabs.identity')}</TabsTrigger>
+ <TabsTrigger className="whitespace-normal leading-tight py-1.5 h-auto" value="offers">{t('settings.tabs.offersMarket')}</TabsTrigger>
+ <TabsTrigger className="whitespace-normal leading-tight py-1.5 h-auto" value="content">{t('settings.tabs.contentPlatforms')}</TabsTrigger>
+ <TabsTrigger className="whitespace-normal leading-tight py-1.5 h-auto" value="priorities">{t('settings.tabs.activePriorities')}</TabsTrigger>
+ <TabsTrigger className="whitespace-normal leading-tight py-1.5 h-auto" value="intelligence">{t('settings.tabs.nayaIntelligence')}</TabsTrigger>
  </TabsList>
 
  {/* ── Identity ── */}
@@ -1446,13 +1469,13 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <p className="text-xs text-primary uppercase tracking-wider flex items-center gap-1.5">
  <Sparkles className="h-3.5 w-3.5" /> {t('settings.strategicSummary')}
  </p>
- {brandDna.lastStrategyRefreshAt && (
+ {brandDna?.lastStrategyRefreshAt && (
  <span className="text-[10px] text-naya-olive-35 ">
  Last updated: {new Date(brandDna.lastStrategyRefreshAt).toLocaleDateString()}
  </span>
  )}
  </div>
- {brandDna.nayaIntelligenceSummary ? (
+ {brandDna?.nayaIntelligenceSummary ? (
  <p className="text-sm text-naya-olive-70 leading-relaxed whitespace-pre-wrap">
  {brandDna.nayaIntelligenceSummary}
  </p>
