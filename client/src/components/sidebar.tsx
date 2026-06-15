@@ -33,7 +33,8 @@ const NAV_ITEMS = [
   { key: 'campaigns',       href: "/campaigns",        icon: Rocket       },
   { key: 'contentCalendar', href: "/content-calendar", icon: Calendar     },
   { key: 'outreachCrm',     href: "/outreach",         icon: MessageSquare},
-  { key: 'knowledgeHub',    href: "/reading-hub",      icon: BookOpen     },
+  // Masqué temporairement — pas utilisé pour le moment (réactiver en décommentant)
+  // { key: 'knowledgeHub',    href: "/reading-hub",      icon: BookOpen     },
 ] as const;
 
 export default function Sidebar({ onSearchClick }: SidebarProps) {
