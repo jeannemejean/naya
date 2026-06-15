@@ -746,6 +746,36 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTask(task: InsertTask): Promise<Task> {
+    // ── Slot-collision guard ───────────────────────────────────────────────
+    // Règle non négociable : deux tâches ne sont jamais planifiées en même temps.
+    // Toute tâche avec une date + une heure concrètes est décalée au prochain
+    // créneau libre si le slot est déjà occupé. S'applique à TOUS les chemins de
+    // création (auto-planner, companion, jalons, manuel…), pas seulement certains.
+    // Exception : les tâches `fixed` (ancrées par l'utilisateur, ex. un rendez-vous)
+    // gardent leur heure — ce sont les autres tâches qui les évitent.
+    if (
+      task.userId &&
+      task.scheduledDate &&
+      typeof task.scheduledTime === 'string' &&
+      /^\d{2}:\d{2}$/.test(task.scheduledTime) &&
+      task.schedulingMode !== 'fixed'
+    ) {
+      const duration = (task.estimatedDuration as number) || 30;
+      const check = await this.checkSlotAvailability(
+        task.userId as string,
+        task.scheduledDate as string,
+        task.scheduledTime,
+        duration,
+      );
+      if (!check.available && check.nextAvailableTime) {
+        const start = check.nextAvailableTime;
+        const [h, m] = start.split(':').map(Number);
+        const endMin = h * 60 + m + duration;
+        const endStr = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+        task = { ...task, scheduledTime: start, scheduledEndTime: endStr };
+      }
+    }
+
     const [newTask] = await db.insert(tasks).values(task).returning();
     return newTask;
   }
