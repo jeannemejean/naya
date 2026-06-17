@@ -113,6 +113,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne } from "drizzle-orm";
+import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 
 export interface IStorage {
   // User operations
@@ -282,6 +283,7 @@ export interface IStorage {
   updateSocialAccount(id: number, userId: string, updates: Partial<SocialAccount>): Promise<SocialAccount | null>;
   updateSafeSocialAccount(id: number, userId: string, updates: Partial<SocialAccount>): Promise<SafeSocialAccount | null>;
   deleteSocialAccount(id: number, userId: string): Promise<boolean>;
+  deleteSocialAccountsByPlatformUserId(platformUserId: string): Promise<number>;
   getSocialAccountById(id: number, userId: string): Promise<SocialAccount | undefined>;
   getSafeSocialAccountById(id: number, userId: string): Promise<SafeSocialAccount | undefined>;
   getSocialAccountByPlatform(userId: string, platform: string): Promise<SocialAccount | undefined>;
@@ -1102,23 +1104,41 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Social account operations
+  // Déchiffre les jetons d'un compte renvoyé par la DB (cf. token-crypto.ts).
+  private decryptSocialAccount(account: SocialAccount): SocialAccount {
+    return {
+      ...account,
+      accessToken: decryptToken(account.accessToken) as string,
+      refreshToken: decryptToken(account.refreshToken),
+    };
+  }
+
   async getSocialAccounts(userId: string): Promise<SocialAccount[]> {
-    return await db.select().from(socialAccounts)
+    const rows = await db.select().from(socialAccounts)
       .where(eq(socialAccounts.userId, userId))
       .orderBy(desc(socialAccounts.createdAt));
+    return rows.map(r => this.decryptSocialAccount(r));
   }
 
   async createSocialAccount(account: InsertSocialAccount): Promise<SocialAccount> {
-    const [newAccount] = await db.insert(socialAccounts).values(account).returning();
-    return newAccount;
+    const values = {
+      ...account,
+      accessToken: encryptToken(account.accessToken),
+      refreshToken: encryptNullable(account.refreshToken),
+    };
+    const [newAccount] = await db.insert(socialAccounts).values(values).returning();
+    return this.decryptSocialAccount(newAccount);
   }
 
   async updateSocialAccount(id: number, userId: string, updates: Partial<SocialAccount>): Promise<SocialAccount | null> {
+    const enc: Partial<SocialAccount> = { ...updates };
+    if (typeof updates.accessToken === "string") enc.accessToken = encryptToken(updates.accessToken);
+    if (updates.refreshToken !== undefined) enc.refreshToken = encryptNullable(updates.refreshToken);
     const [updated] = await db.update(socialAccounts)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...enc, updatedAt: new Date() })
       .where(and(eq(socialAccounts.id, id), eq(socialAccounts.userId, userId)))
       .returning();
-    return updated || null;
+    return updated ? this.decryptSocialAccount(updated) : null;
   }
 
   async deleteSocialAccount(id: number, userId: string): Promise<boolean> {
@@ -1127,16 +1147,24 @@ export class DatabaseStorage implements IStorage {
     return (result.rowCount ?? 0) > 0;
   }
 
+  // Suppression de tous les comptes liés à un identifiant utilisateur de plateforme
+  // (utilisé par le callback Meta data deletion : signed_request.user_id).
+  async deleteSocialAccountsByPlatformUserId(platformUserId: string): Promise<number> {
+    const result = await db.delete(socialAccounts)
+      .where(eq(socialAccounts.platformUserId, platformUserId));
+    return result.rowCount ?? 0;
+  }
+
   async getSocialAccountById(id: number, userId: string): Promise<SocialAccount | undefined> {
     const [account] = await db.select().from(socialAccounts)
       .where(and(eq(socialAccounts.id, id), eq(socialAccounts.userId, userId)));
-    return account;
+    return account ? this.decryptSocialAccount(account) : undefined;
   }
 
   async getSocialAccountByPlatform(userId: string, platform: string): Promise<SocialAccount | undefined> {
     const [account] = await db.select().from(socialAccounts)
       .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.platform, platform)));
-    return account;
+    return account ? this.decryptSocialAccount(account) : undefined;
   }
 
   private toSafeSocialAccount(account: SocialAccount): SafeSocialAccount {

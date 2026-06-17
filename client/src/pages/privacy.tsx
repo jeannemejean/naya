@@ -32,7 +32,7 @@ export default function Privacy() {
         </h1>
 
         <p className="font-mono text-[11px] text-naya-olive-35 tracking-[0.02em] mb-14">
-          Dernière mise à jour : mai 2026
+          Dernière mise à jour : juin 2026
         </p>
 
         <div className="space-y-10 text-[15px] leading-[1.75] text-naya-olive-70">
@@ -42,20 +42,20 @@ export default function Privacy() {
               Qui sommes-nous
             </h2>
             <p>
-              Naya est un OS stratégique IA pour fondateurs indépendants, développé et opéré par Jeanne Méjean (Agence JMD). Pour toute question relative à vos données, vous pouvez nous contacter à{" "}
+              Naya est un OS stratégique IA pour fondateurs indépendants, développé et opéré par Jeanne Méjean (Agence JMD). Pour toute question relative à vos données, contactez-nous à{" "}
               <a href="mailto:naya.ai.app@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
                 naya.ai.app@gmail.com
               </a>.
+            </p>
+            <p className="mt-4">
+              Cette politique couvre deux contextes : (1) la <strong>liste d'attente</strong> sur le site public, et (2) l'<strong>application Naya</strong> elle-même, qui connecte vos comptes de réseaux sociaux pour créer, planifier et publier du contenu en votre nom.
             </p>
           </section>
 
           <section>
             <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
-              Données collectées
+              Données collectées — liste d'attente
             </h2>
-            <p className="mb-4">
-              Sur la page d'accueil, nous collectons uniquement :
-            </p>
             <ul className="space-y-2 pl-4">
               {[
                 "Votre adresse email — pour vous contacter lors de l'ouverture de la bêta.",
@@ -69,53 +69,44 @@ export default function Privacy() {
               ))}
             </ul>
             <p className="mt-4">
-              Aucune donnée de navigation, aucun cookie de tracking, aucun pixel publicitaire n'est utilisé sur ce site.
+              Aucun cookie de tracking ni pixel publicitaire n'est utilisé sur le site vitrine.
             </p>
           </section>
 
           <section>
             <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
-              Pourquoi nous collectons ces données
-            </h2>
-            <p>
-              Uniquement pour gérer la liste d'attente de la bêta privée Naya : vous informer de l'ouverture des accès, filtrer les profils selon la cible produit, et vous envoyer un seul email de confirmation à votre inscription.
-            </p>
-            <p className="mt-4">
-              Nous ne faisons pas de prospection commerciale, de newsletter non sollicitée, ni de revente de données. Point.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
-              Stockage et sécurité
-            </h2>
-            <p>
-              Vos données sont stockées dans une base de données PostgreSQL hébergée sur Railway (infrastructure AWS, région EU). L'accès est restreint et les connexions sont chiffrées (TLS). Aucune donnée n'est transmise à des tiers.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
-              Durée de conservation
-            </h2>
-            <p>
-              Vos données sont conservées jusqu'à l'ouverture de la bêta ou jusqu'à votre demande de suppression, selon ce qui arrive en premier. Si la bêta ne se concrétise pas, les données sont supprimées dans un délai de 12 mois suivant votre inscription.
-            </p>
-          </section>
-
-          <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
-              Vos droits (RGPD)
+              Données collectées — application
             </h2>
             <p className="mb-4">
-              Conformément au Règlement Général sur la Protection des Données (RGPD), vous disposez des droits suivants :
+              Lorsque vous utilisez l'application, nous traitons :
             </p>
             <ul className="space-y-2 pl-4">
               {[
-                "Droit d'accès — consulter les données que nous détenons sur vous.",
-                "Droit de rectification — corriger une donnée inexacte.",
-                "Droit à l'effacement — demander la suppression de vos données.",
-                "Droit d'opposition — vous opposer à tout traitement.",
+                "Compte : email, nom, mot de passe haché. Une session technique maintient votre connexion.",
+                "Profil business (Brand DNA) : informations que vous saisissez sur votre activité, vos objectifs, vos projets et vos tâches.",
+                "Comptes sociaux connectés : lorsque vous reliez Instagram, Facebook, LinkedIn ou X, nous stockons un jeton d'accès, l'identifiant et le nom du compte, et l'identifiant utilisateur fourni par la plateforme.",
+                "Contenu : les posts, légendes, images et calendriers de publication que vous créez ou laissez Naya générer.",
+                "Métriques publiques : statistiques d'engagement renvoyées par les API des plateformes, pour vous afficher vos performances.",
+              ].map((item, i) => (
+                <li key={i} className="flex gap-3 items-start">
+                  <span className="font-mono text-[10px] text-naya-olive-35 pt-1 shrink-0">—</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+              Comment nous utilisons les données des plateformes
+            </h2>
+            <p className="mb-4">
+              Les données obtenues via les API de Meta (Instagram, Facebook), LinkedIn et X sont utilisées <strong>exclusivement</strong> pour les fonctionnalités que vous activez :
+            </p>
+            <ul className="space-y-2 pl-4">
+              {[
+                "Publier et planifier le contenu que vous validez, en votre nom, sur les comptes que vous avez connectés.",
+                "Lire les métriques d'engagement de vos publications pour vous les présenter dans Naya.",
               ].map((item, i) => (
                 <li key={i} className="flex gap-3 items-start">
                   <span className="font-mono text-[10px] text-naya-olive-35 pt-1 shrink-0">—</span>
@@ -124,6 +115,70 @@ export default function Privacy() {
               ))}
             </ul>
             <p className="mt-4">
+              Nous ne vendons jamais ces données, ne les utilisons pas pour de la publicité ciblée, ne construisons pas de profils à des fins publicitaires, et ne les partageons avec aucun tiers en dehors des sous-traitants techniques listés ci-dessous. Notre usage est conforme aux <strong>Conditions des plateformes Meta</strong> et aux politiques des autres réseaux.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+              Sous-traitants et tiers
+            </h2>
+            <p className="mb-4">
+              Naya s'appuie sur un nombre limité de prestataires, chacun pour une finalité précise :
+            </p>
+            <ul className="space-y-2 pl-4">
+              {[
+                "Anthropic (Claude) et OpenAI — génération de contenu et assistance IA. Vos requêtes et le contexte business nécessaire leur sont transmis pour produire une réponse. Ces données ne servent pas à entraîner leurs modèles dans le cadre de notre usage API.",
+                "Meta, LinkedIn, X — pour publier et lire les statistiques sur les comptes que vous connectez.",
+                "Google — uniquement si vous connectez Google Calendar, pour synchroniser vos rendez-vous.",
+                "Railway / Neon (PostgreSQL, région EU) — hébergement et base de données.",
+              ].map((item, i) => (
+                <li key={i} className="flex gap-3 items-start">
+                  <span className="font-mono text-[10px] text-naya-olive-35 pt-1 shrink-0">—</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+              Stockage et sécurité
+            </h2>
+            <p>
+              Vos données sont stockées dans une base PostgreSQL (Railway / Neon, infrastructure AWS, région EU). Les connexions sont chiffrées en transit (TLS) et l'accès est restreint. Les jetons d'accès aux réseaux sociaux ne sont jamais exposés à l'interface : ils sont utilisés uniquement côté serveur pour exécuter les actions que vous demandez.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+              Durée de conservation
+            </h2>
+            <p>
+              Les données de liste d'attente sont conservées jusqu'à l'ouverture de la bêta ou votre demande de suppression (max. 12 mois). Les données de l'application sont conservées tant que votre compte est actif. Lorsque vous déconnectez un réseau social, le jeton et le compte lié sont supprimés immédiatement. À la suppression de votre compte, l'ensemble de vos données est effacé.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+              Suppression de vos données
+            </h2>
+            <p>
+              Vous pouvez déconnecter un réseau à tout moment depuis Réglages → Comptes connectés, retirer Naya depuis les paramètres de Facebook/Instagram (nous sommes notifiés et purgeons automatiquement vos jetons), ou nous écrire. La procédure complète est détaillée sur la page{" "}
+              <Link href="/data-deletion" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
+                Suppression des données
+              </Link>.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+              Vos droits (RGPD)
+            </h2>
+            <p className="mb-4">
+              Conformément au RGPD, vous disposez des droits d'accès, de rectification, d'effacement, d'opposition et de portabilité de vos données.
+            </p>
+            <p>
               Pour exercer ces droits, envoyez un email à{" "}
               <a href="mailto:naya.ai.app@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
                 naya.ai.app@gmail.com
@@ -137,7 +192,7 @@ export default function Privacy() {
               Cookies
             </h2>
             <p>
-              Ce site n'utilise pas de cookies de tracking, d'analyse ou publicitaires. Un cookie de session technique peut être créé si vous vous connectez à l'application Naya (bêta), uniquement pour maintenir votre session active.
+              Le site vitrine n'utilise pas de cookies de tracking, d'analyse ou publicitaires. Un cookie de session technique est créé lorsque vous vous connectez à l'application, uniquement pour maintenir votre session active.
             </p>
           </section>
 
@@ -146,7 +201,7 @@ export default function Privacy() {
               Contact
             </h2>
             <p>
-              Pour toute question sur cette politique ou sur le traitement de vos données :{" "}
+              Pour toute question sur cette politique ou le traitement de vos données :{" "}
               <a href="mailto:naya.ai.app@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
                 naya.ai.app@gmail.com
               </a>
@@ -159,8 +214,8 @@ export default function Privacy() {
       {/* Footer */}
       <footer className="border-t border-naya-olive-10 px-6 sm:px-10 py-7 flex items-center justify-between gap-4 flex-wrap max-w-2xl mx-auto">
         <span className="wordmark text-[10px] text-naya-olive-35">NAYA · 2026</span>
-        <Link href="/" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer tracking-[0.02em]">
-          ← Retour à l'accueil
+        <Link href="/data-deletion" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer tracking-[0.02em]">
+          Suppression des données →
         </Link>
       </footer>
     </div>

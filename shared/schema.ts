@@ -597,6 +597,9 @@ export const socialAccounts = pgTable("social_accounts", {
   userId: varchar("user_id").notNull().references(() => users.id),
   platform: text("platform").notNull(),
   accountId: text("account_id").notNull(),
+  // ID utilisateur sur la plateforme (ex: Facebook user ID). Requis pour honorer
+  // le callback de suppression de données Meta (signed_request.user_id → comptes à purger).
+  platformUserId: text("platform_user_id"),
   accountName: text("account_name").notNull(),
   accessToken: text("access_token").notNull(),
   refreshToken: text("refresh_token"),

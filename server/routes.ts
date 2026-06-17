@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
 import { waitlist } from "@shared/schema";
@@ -455,27 +456,66 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     }
   });
 
-  // ─── Meta / Facebook data deletion callback (RGPD) ─────────────────────────
-  // Meta appelle cette URL quand un utilisateur demande la suppression de ses données Facebook
+  // ─── Meta / Facebook signed_request helper ─────────────────────────────────
+  // Décode ET vérifie la signature HMAC-SHA256 du signed_request envoyé par Meta.
+  // Réf : https://developers.facebook.com/docs/facebook-login/guides/advanced/data-deletion-callback
+  function parseSignedRequest(signedRequest: string): { user_id?: string } | null {
+    const appSecret = process.env.INSTAGRAM_APP_SECRET;
+    if (!appSecret) {
+      console.error('[Meta] INSTAGRAM_APP_SECRET absent — impossible de vérifier le signed_request');
+      return null;
+    }
+    const [encodedSig, payload] = signedRequest.split('.');
+    if (!encodedSig || !payload) return null;
+
+    // base64url → base64
+    const b64url = (s: string) => s.replace(/-/g, '+').replace(/_/g, '/');
+    const expectedSig = crypto
+      .createHmac('sha256', appSecret)
+      .update(payload)
+      .digest();
+    const providedSig = Buffer.from(b64url(encodedSig), 'base64');
+
+    if (
+      expectedSig.length !== providedSig.length ||
+      !crypto.timingSafeEqual(expectedSig, providedSig)
+    ) {
+      console.error('[Meta] signed_request : signature invalide');
+      return null;
+    }
+    try {
+      return JSON.parse(Buffer.from(b64url(payload), 'base64').toString('utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  // ─── Meta / Facebook data deletion callback (RGPD + Platform Terms) ─────────
+  // Meta appelle cette URL quand un utilisateur demande la suppression de ses données.
   app.post('/api/meta/data-deletion', async (req, res) => {
     try {
       const signedRequest = req.body?.signed_request;
       if (!signedRequest) return res.status(400).json({ error: 'missing signed_request' });
 
-      // Décoder le payload (sans vérifier la signature pour simplifier — données non critiques)
-      const [, payload] = signedRequest.split('.');
-      const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf-8'));
-      const facebookUserId = decoded?.user_id;
+      const decoded = parseSignedRequest(signedRequest);
+      if (!decoded) return res.status(400).json({ error: 'invalid_signed_request' });
 
-      console.log(`[Meta] Data deletion request for Facebook user: ${facebookUserId}`);
-
-      // Supprimer les comptes sociaux Meta liés à cet utilisateur si on peut les matcher
-      // (en pratique, on n'a pas de lien direct FB user ID → naya user ID sans stocker cet ID)
-      // On génère un code de confirmation pour Meta
+      const facebookUserId = decoded.user_id;
       const confirmationCode = `naya-del-${Date.now()}-${facebookUserId || 'unknown'}`;
 
+      // Suppression effective des comptes sociaux Meta liés à cet utilisateur.
+      if (facebookUserId) {
+        try {
+          const removed = await storage.deleteSocialAccountsByPlatformUserId(facebookUserId);
+          console.log(`[Meta] Data deletion ${facebookUserId} : ${removed} compte(s) social(aux) supprimé(s) — code ${confirmationCode}`);
+        } catch (e: any) {
+          console.error(`[Meta] Échec suppression pour ${facebookUserId}:`, e.message);
+        }
+      }
+
+      // Meta exige une URL de statut + un code de confirmation traçable.
       res.json({
-        url: `https://hellonaya.app/privacy`,
+        url: `https://hellonaya.app/data-deletion?code=${confirmationCode}`,
         confirmation_code: confirmationCode,
       });
     } catch (err: any) {
@@ -484,9 +524,31 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     }
   });
 
-  // GET version pour vérification manuelle
+  // GET version pour vérification manuelle / page de statut
   app.get('/api/meta/data-deletion', (_req, res) => {
     res.json({ status: 'ok', description: 'Meta data deletion callback endpoint' });
+  });
+
+  // ─── Meta / Facebook deauthorize callback ──────────────────────────────────
+  // Meta appelle cette URL quand un utilisateur retire l'app de ses paramètres.
+  // On révoque immédiatement les tokens stockés pour cet utilisateur Meta.
+  app.post('/api/meta/deauthorize', async (req, res) => {
+    try {
+      const signedRequest = req.body?.signed_request;
+      if (!signedRequest) return res.status(400).json({ error: 'missing signed_request' });
+
+      const decoded = parseSignedRequest(signedRequest);
+      if (!decoded) return res.status(400).json({ error: 'invalid_signed_request' });
+
+      if (decoded.user_id) {
+        const removed = await storage.deleteSocialAccountsByPlatformUserId(decoded.user_id);
+        console.log(`[Meta] Deauthorize ${decoded.user_id} : ${removed} compte(s) révoqué(s)`);
+      }
+      res.sendStatus(200);
+    } catch (err: any) {
+      console.error('[Meta] Deauthorize error:', err.message);
+      res.status(500).json({ error: 'server_error' });
+    }
   });
 
   // Admin: trigger auto-planner manually (for testing / debug)

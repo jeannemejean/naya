@@ -21,11 +21,18 @@ function getBaseUrl(): string {
 
 // ─── Instagram / Meta ────────────────────────────────────────────────────────
 
+// Scopes requis par Meta pour publier sur Instagram + Facebook Pages (Facebook Login).
+// instagram_basic + instagram_content_publish sont OBLIGATOIRES pour /{ig}/media + /media_publish.
+// pages_read_engagement est requis comme dépendance de la publication Instagram.
+// pages_show_list (énumérer les Pages) + pages_manage_posts (publier sur le feed d'une Page FB).
+// Réf : https://developers.facebook.com/docs/instagram-platform/content-publishing/
 const INSTAGRAM_SCOPES = [
   'public_profile',
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_posts',
+  'instagram_basic',
+  'instagram_content_publish',
 ].join(',');
 
 export function getInstagramAuthUrl(state: string): string {
@@ -35,7 +42,7 @@ export function getInstagramAuthUrl(state: string): string {
   const redirect = encodeURIComponent(`${getBaseUrl()}/api/social/oauth/instagram/callback`);
   const scope = encodeURIComponent(INSTAGRAM_SCOPES);
 
-  return `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirect}&scope=${scope}&state=${state}&response_type=code`;
+  return `https://www.facebook.com/v23.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirect}&scope=${scope}&state=${state}&response_type=code`;
 }
 
 export async function exchangeInstagramCode(userId: string, code: string): Promise<void> {
@@ -45,7 +52,7 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
 
   // 1. Échanger le code contre un short-lived token
   const tokenRes = await fetch(
-    `https://graph.facebook.com/v18.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
+    `https://graph.facebook.com/v23.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
   );
   const tokenData = await tokenRes.json();
   if (!tokenData.access_token) {
@@ -54,14 +61,24 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
 
   // 2. Échanger contre un long-lived token (60 jours)
   const longRes = await fetch(
-    `https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`
+    `https://graph.facebook.com/v23.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`
   );
   const longData = await longRes.json();
   const longToken = longData.access_token || tokenData.access_token;
 
+  // 2b. Récupérer l'ID utilisateur Meta (pour honorer le data deletion callback)
+  let metaUserId: string | null = null;
+  try {
+    const meRes = await fetch(`https://graph.facebook.com/v23.0/me?fields=id&access_token=${longToken}`);
+    const meData = await meRes.json();
+    metaUserId = meData?.id ?? null;
+  } catch {
+    metaUserId = null;
+  }
+
   // 3. Récupérer les pages Facebook de l'utilisateur
   const pagesRes = await fetch(
-    `https://graph.facebook.com/v18.0/me/accounts?access_token=${longToken}`
+    `https://graph.facebook.com/v23.0/me/accounts?access_token=${longToken}`
   );
   const pagesData = await pagesRes.json();
   const pages = pagesData.data || [];
@@ -76,7 +93,7 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
 
   for (const page of pages) {
     const igRes = await fetch(
-      `https://graph.facebook.com/v18.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token || longToken}`
+      `https://graph.facebook.com/v23.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token || longToken}`
     );
     const igData = await igRes.json();
     if (igData.instagram_business_account?.id) {
@@ -103,6 +120,7 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
     await storage.updateSocialAccount(existing.id, userId, {
       accessToken: longToken,
       accountId: finalAccountId,
+      platformUserId: metaUserId,
       accountName: finalAccountName,
       expiresAt,
       isActive: true,
@@ -113,6 +131,7 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
       userId,
       platform: 'instagram',
       accountId: finalAccountId,
+      platformUserId: metaUserId,
       accountName: finalAccountName,
       accessToken: longToken,
       expiresAt,
