@@ -48,7 +48,7 @@ export class SocialMediaIntegrationService {
   async connectInstagramBusiness(accessToken: string): Promise<SocialMediaCredentials> {
     try {
       // Verify Instagram Business account access
-      const response = await fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`);
+      const response = await fetch(`https://graph.facebook.com/v23.0/me/accounts?access_token=${accessToken}`);
       const data = await response.json();
       
       if (!response.ok) {
@@ -113,7 +113,7 @@ export class SocialMediaIntegrationService {
       
       if (post.imageUrl) {
         // Create media object with image
-        const mediaResponse = await fetch(`https://graph.facebook.com/v18.0/${credentials.accountId}/media`, {
+        const mediaResponse = await fetch(`https://graph.facebook.com/v23.0/${credentials.accountId}/media`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -127,7 +127,7 @@ export class SocialMediaIntegrationService {
         mediaId = mediaData.id;
       } else {
         // Text-only post (Story or Reel)
-        const mediaResponse = await fetch(`https://graph.facebook.com/v18.0/${credentials.accountId}/media`, {
+        const mediaResponse = await fetch(`https://graph.facebook.com/v23.0/${credentials.accountId}/media`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -142,7 +142,7 @@ export class SocialMediaIntegrationService {
       }
       
       // Publish the media
-      const publishResponse = await fetch(`https://graph.facebook.com/v18.0/${credentials.accountId}/media_publish`, {
+      const publishResponse = await fetch(`https://graph.facebook.com/v23.0/${credentials.accountId}/media_publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -287,7 +287,7 @@ export class SocialMediaIntegrationService {
   async connectFacebook(accessToken: string): Promise<SocialMediaCredentials> {
     try {
       // Get user's pages
-      const response = await fetch(`https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`);
+      const response = await fetch(`https://graph.facebook.com/v23.0/me/accounts?access_token=${accessToken}`);
       const data = await response.json();
       
       if (!response.ok) {
@@ -327,7 +327,7 @@ export class SocialMediaIntegrationService {
         postData.link = post.imageUrl;
       }
       
-      const response = await fetch(`https://graph.facebook.com/v18.0/${credentials.accountId}/feed`, {
+      const response = await fetch(`https://graph.facebook.com/v23.0/${credentials.accountId}/feed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(postData)
@@ -356,14 +356,14 @@ export class SocialMediaIntegrationService {
       
       // Get account insights
       const insightsResponse = await fetch(
-        `https://graph.facebook.com/v18.0/${credentials.accountId}/insights?metric=impressions,reach,profile_views&period=day&since=${since}&access_token=${credentials.accessToken}`
+        `https://graph.facebook.com/v23.0/${credentials.accountId}/insights?metric=impressions,reach,profile_views&period=day&since=${since}&access_token=${credentials.accessToken}`
       );
       
       const insightsData = await insightsResponse.json();
       
       // Get recent media
       const mediaResponse = await fetch(
-        `https://graph.facebook.com/v18.0/${credentials.accountId}/media?fields=id,caption,like_count,comments_count,timestamp&limit=25&access_token=${credentials.accessToken}`
+        `https://graph.facebook.com/v23.0/${credentials.accountId}/media?fields=id,caption,like_count,comments_count,timestamp&limit=25&access_token=${credentials.accessToken}`
       );
       
       const mediaData = await mediaResponse.json();

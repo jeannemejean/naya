@@ -12,6 +12,7 @@ import GlobalSearch from "@/components/global-search";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Privacy from "@/pages/privacy";
+import DataDeletion from "@/pages/data-deletion";
 import Dashboard from "@/pages/dashboard";
 import NayaCompanion from "@/components/NayaCompanion";
 
@@ -90,6 +91,7 @@ function Router() {
  </>
  )}
  <Route path="/privacy" component={Privacy} />
+ <Route path="/data-deletion" component={DataDeletion} />
  <Route component={NotFound} />
  </Switch>
  </Suspense>

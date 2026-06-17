@@ -416,7 +416,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
  border: msg.role === "user"
  ? 'none'
  : '1px solid var(--border)',
- borderRadius: msg.role === "user" ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+ borderRadius: msg.role === "user" ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
  }}
  >
  {msg.isLoading ? (
@@ -532,7 +532,7 @@ export function NayaCompanionBar() {
  cursor: 'text',
  width: open ? 300 : 240,
  transition: 'width 200ms ease, border-color 150ms ease',
- boxShadow: open ? '0 0 0 3px rgba(139,127,168,0.12)' : 'none',
+ boxShadow: open ? '0 0 0 3px rgba(43,45,28,0.10)' : 'none',
  }}
  >
  <div style={{ position: 'relative', flexShrink: 0 }}>
@@ -615,7 +615,7 @@ export function NayaCompanionBar() {
  background: 'var(--card)',
  border: '1px solid var(--border)',
  borderRadius: 16,
- boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+ boxShadow: '0 24px 60px -36px rgba(43,45,28,0.40), 0 4px 16px rgba(43,45,28,0.12)',
  }}
  >
  {/* Header */}
@@ -722,14 +722,14 @@ export default function NayaCompanion() {
  width: 52,
  height: 52,
  background: 'var(--primary)',
- border: '1px solid rgba(139,127,168,0.4)',
+ border: '1px solid rgba(43,45,28,0.18)',
  borderRadius: 14,
  display: 'flex',
  alignItems: 'center',
  justifyContent: 'center',
  cursor: 'pointer',
  transition: 'all 150ms ease',
- boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+ boxShadow: '0 8px 28px rgba(43,45,28,0.16)',
  }}
  onMouseEnter={e => ((e.currentTarget as HTMLElement).style.background = 'var(--accent)')}
  onMouseLeave={e => ((e.currentTarget as HTMLElement).style.background = 'var(--primary)')}
@@ -783,7 +783,7 @@ export default function NayaCompanion() {
  background: 'var(--card)',
  border: '1px solid var(--border)',
  borderRadius: 16,
- boxShadow: '0 16px 48px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.3)',
+ boxShadow: '0 24px 60px -36px rgba(43,45,28,0.40), 0 4px 16px rgba(43,45,28,0.12)',
  }}
  >
  {/* Header */}
