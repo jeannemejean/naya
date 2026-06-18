@@ -22,7 +22,7 @@ import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/cla
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
-import { requireActiveSubscription } from "./middleware/require-subscription";
+import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
@@ -629,6 +629,10 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
 
   // Auth middleware
   await setupAuth(app);
+
+  // Gate d'abonnement global : protège toutes les routes de données métier.
+  // (auth, billing, stripe, meta, oauth, waitlist, health, admin sont en allowlist)
+  app.use(gateNayaAccess);
 
   // ─── Google Calendar OAuth ────────────────────────────────────────────────
 
