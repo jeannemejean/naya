@@ -110,9 +110,16 @@ import {
   googleCalendarTokens,
   type GoogleCalendarToken,
   type InsertGoogleCalendarToken,
+  subscriptions,
+  type Subscription,
+  type InsertSubscription,
+  accessCodes,
+  type AccessCode,
+  accessCodeRedemptions,
+  processedStripeEvents,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 
 export interface IStorage {
@@ -284,6 +291,18 @@ export interface IStorage {
   updateSafeSocialAccount(id: number, userId: string, updates: Partial<SocialAccount>): Promise<SafeSocialAccount | null>;
   deleteSocialAccount(id: number, userId: string): Promise<boolean>;
   deleteSocialAccountsByPlatformUserId(platformUserId: string): Promise<number>;
+
+  // Abonnement & accès (Stripe)
+  getSubscription(userId: string): Promise<Subscription | undefined>;
+  upsertSubscription(sub: InsertSubscription): Promise<Subscription>;
+  setUserRole(userId: string, role: string): Promise<void>;
+  setUserRoleByEmail(email: string, role: string): Promise<boolean>;
+  getAccessCodeByCode(code: string): Promise<AccessCode | undefined>;
+  createAccessCode(input: { code: string; label?: string; maxRedemptions?: number | null; expiresAt?: Date | null }): Promise<AccessCode>;
+  hasRedeemed(codeId: number, userId: string): Promise<boolean>;
+  recordRedemption(codeId: number, userId: string): Promise<void>;
+  isStripeEventProcessed(eventId: string): Promise<boolean>;
+  markStripeEventProcessed(eventId: string): Promise<void>;
   getSocialAccountById(id: number, userId: string): Promise<SocialAccount | undefined>;
   getSafeSocialAccountById(id: number, userId: string): Promise<SafeSocialAccount | undefined>;
   getSocialAccountByPlatform(userId: string, platform: string): Promise<SocialAccount | undefined>;
@@ -1153,6 +1172,72 @@ export class DatabaseStorage implements IStorage {
     const result = await db.delete(socialAccounts)
       .where(eq(socialAccounts.platformUserId, platformUserId));
     return result.rowCount ?? 0;
+  }
+
+  // ─── Abonnement & accès (Stripe) ───────────────────────────────────────────
+
+  async getSubscription(userId: string): Promise<Subscription | undefined> {
+    const [s] = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+    return s;
+  }
+
+  async upsertSubscription(sub: InsertSubscription): Promise<Subscription> {
+    const existing = await this.getSubscription(sub.userId);
+    if (existing) {
+      const [updated] = await db.update(subscriptions)
+        .set({ ...sub, updatedAt: new Date() })
+        .where(eq(subscriptions.userId, sub.userId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(subscriptions).values(sub).returning();
+    return created;
+  }
+
+  async setUserRole(userId: string, role: string): Promise<void> {
+    await db.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, userId));
+  }
+
+  async setUserRoleByEmail(email: string, role: string): Promise<boolean> {
+    const res = await db.update(users).set({ role, updatedAt: new Date() }).where(eq(users.email, email));
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async getAccessCodeByCode(code: string): Promise<AccessCode | undefined> {
+    const [c] = await db.select().from(accessCodes).where(eq(accessCodes.code, code));
+    return c;
+  }
+
+  async createAccessCode(input: { code: string; label?: string; maxRedemptions?: number | null; expiresAt?: Date | null }): Promise<AccessCode> {
+    const [c] = await db.insert(accessCodes).values({
+      code: input.code,
+      label: input.label ?? null,
+      maxRedemptions: input.maxRedemptions ?? null,
+      expiresAt: input.expiresAt ?? null,
+    }).returning();
+    return c;
+  }
+
+  async hasRedeemed(codeId: number, userId: string): Promise<boolean> {
+    const [r] = await db.select().from(accessCodeRedemptions)
+      .where(and(eq(accessCodeRedemptions.codeId, codeId), eq(accessCodeRedemptions.userId, userId)));
+    return !!r;
+  }
+
+  async recordRedemption(codeId: number, userId: string): Promise<void> {
+    await db.insert(accessCodeRedemptions).values({ codeId, userId });
+    await db.update(accessCodes)
+      .set({ redemptionCount: sql`${accessCodes.redemptionCount} + 1` })
+      .where(eq(accessCodes.id, codeId));
+  }
+
+  async isStripeEventProcessed(eventId: string): Promise<boolean> {
+    const [e] = await db.select().from(processedStripeEvents).where(eq(processedStripeEvents.eventId, eventId));
+    return !!e;
+  }
+
+  async markStripeEventProcessed(eventId: string): Promise<void> {
+    await db.insert(processedStripeEvents).values({ eventId }).onConflictDoNothing();
   }
 
   async getSocialAccountById(id: number, userId: string): Promise<SocialAccount | undefined> {

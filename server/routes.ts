@@ -19,6 +19,10 @@ import {
   getMemoryContext,
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
+import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
+import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
+import { hasNayaAccess } from "./services/access";
+import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
@@ -562,8 +566,73 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     }
   });
 
+  // ─── Stripe webhook (corps brut monté dans index.ts) ───────────────────────
+  app.post("/api/stripe/webhook", async (req, res) => {
+    const sig = req.headers["stripe-signature"] as string;
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+    } catch (err: any) {
+      console.error("[Stripe] signature webhook invalide:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Idempotence : on ignore un event déjà traité.
+    if (await storage.isStripeEventProcessed(event.id)) return res.json({ received: true });
+
+    async function resolveUserId(sub: any): Promise<string | undefined> {
+      let uid = sub.metadata?.nayaUserId as string | undefined;
+      if (!uid) {
+        const customer = await stripe.customers.retrieve(sub.customer as string) as any;
+        uid = customer?.metadata?.nayaUserId;
+      }
+      return uid;
+    }
+
+    try {
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object as any;
+          const userId = session.metadata?.nayaUserId;
+          if (userId && session.subscription) {
+            const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+            await syncSubscriptionFromStripe(userId, sub);
+          }
+          break;
+        }
+        case "customer.subscription.created":
+        case "customer.subscription.updated":
+        case "customer.subscription.deleted": {
+          const sub = event.data.object as any;
+          const uid = await resolveUserId(sub);
+          if (uid) await syncSubscriptionFromStripe(uid, sub);
+          break;
+        }
+        case "invoice.paid":
+        case "invoice.payment_failed": {
+          const invoice = event.data.object as any;
+          if (invoice.subscription) {
+            const sub = await stripe.subscriptions.retrieve(invoice.subscription as string) as any;
+            const uid = await resolveUserId(sub);
+            if (uid) await syncSubscriptionFromStripe(uid, sub);
+          }
+          break;
+        }
+      }
+      await storage.markStripeEventProcessed(event.id);
+      res.json({ received: true });
+    } catch (err: any) {
+      console.error("[Stripe] erreur traitement webhook:", err.message);
+      res.status(500).json({ error: "webhook_handler_failed" });
+    }
+  });
+
   // Auth middleware
   await setupAuth(app);
+
+  // Gate d'abonnement global : protège toutes les routes de données métier.
+  // (auth, billing, stripe, meta, oauth, waitlist, health, admin sont en allowlist)
+  app.use(gateNayaAccess);
 
   // ─── Google Calendar OAuth ────────────────────────────────────────────────
 
@@ -853,12 +922,105 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      // Return user without password
+      const sub = await storage.getSubscription(userId);
+      const allowed = hasNayaAccess(user, sub ?? null);
       const { hashedPassword, ...userWithoutPassword } = user;
-      res.json(userWithoutPassword);
+      res.json({
+        ...userWithoutPassword,
+        access: {
+          allowed,
+          status: sub?.status ?? null,
+          trialEndsAt: sub?.trialEndsAt ?? null,
+          cancelAtPeriodEnd: sub?.cancelAtPeriodEnd ?? false,
+        },
+      });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // ─── Billing (Stripe) ──────────────────────────────────────────────────────
+  app.post("/api/billing/checkout", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const existing = await storage.getSubscription(user.id);
+      const customerId = await getOrCreateCustomer({
+        existingCustomerId: existing?.stripeCustomerId,
+        email: user.email,
+        userId: user.id,
+      });
+      if (!existing?.stripeCustomerId) {
+        await storage.upsertSubscription({ userId: user.id, stripeCustomerId: customerId });
+      }
+      const url = await createCheckoutSession({ customerId, userId: user.id });
+      res.json({ url });
+    } catch (err: any) {
+      console.error("[Billing] checkout error:", err.message);
+      res.status(500).json({ message: "checkout_failed" });
+    }
+  });
+
+  app.get("/api/billing/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const sub = await storage.getSubscription(req.userId);
+      if (sub?.stripeSubscriptionId) {
+        const fresh = await fetchSubscription(sub.stripeSubscriptionId);
+        await syncSubscriptionFromStripe(req.userId, fresh);
+      } else if (sub?.stripeCustomerId) {
+        const list = await stripe.subscriptions.list({ customer: sub.stripeCustomerId, limit: 1 });
+        if (list.data[0]) await syncSubscriptionFromStripe(req.userId, list.data[0]);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[Billing] sync error:", err.message);
+      res.status(500).json({ message: "sync_failed" });
+    }
+  });
+
+  app.post("/api/billing/portal", isAuthenticated, async (req: any, res) => {
+    try {
+      const sub = await storage.getSubscription(req.userId);
+      if (!sub?.stripeCustomerId) return res.status(400).json({ message: "no_customer" });
+      const url = await createPortalSession(sub.stripeCustomerId);
+      res.json({ url });
+    } catch (err: any) {
+      console.error("[Billing] portal error:", err.message);
+      res.status(500).json({ message: "portal_failed" });
+    }
+  });
+
+  app.post("/api/billing/redeem-code", isAuthenticated, async (req: any, res) => {
+    try {
+      const { code } = req.body;
+      if (!code || typeof code !== "string") return res.status(400).json({ message: "code_required" });
+      const result = await redeemAccessCode(req.userId, code);
+      if (!result.ok) return res.status(400).json({ message: result.reason });
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[Billing] redeem error:", err.message);
+      res.status(500).json({ message: "redeem_failed" });
+    }
+  });
+
+  // Owner only — création de codes d'accès (testeurs)
+  app.post("/api/admin/access-codes", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+      const { code, label, maxRedemptions, expiresAt } = req.body;
+      if (!code || typeof code !== "string") return res.status(400).json({ message: "code_required" });
+      const created = await storage.createAccessCode({
+        code: code.trim(),
+        label,
+        maxRedemptions: maxRedemptions ?? null,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      });
+      res.json(created);
+    } catch (err: any) {
+      console.error("[Admin] create code error:", err.message);
+      res.status(500).json({ message: "create_code_failed" });
     }
   });
 

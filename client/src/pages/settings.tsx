@@ -1568,6 +1568,33 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </CardContent>
  </Card>
 
+ {/* Abonnement */}
+ <Card className=" ">
+ <CardHeader>
+ <CardTitle className="text-base">Abonnement</CardTitle>
+ </CardHeader>
+ <CardContent>
+ <div className="flex items-center justify-between">
+ <p className="text-sm text-naya-olive-70">
+ Gère ton abonnement, ton moyen de paiement et tes factures.
+ </p>
+ <Button
+ variant="outline"
+ size="sm"
+ onClick={async () => {
+ try {
+ const res = await fetch('/api/billing/portal', { method: 'POST', credentials: 'include' });
+ const { url } = await res.json();
+ if (url) window.location.href = url;
+ } catch { /* noop */ }
+ }}
+ >
+ Gérer mon abonnement
+ </Button>
+ </div>
+ </CardContent>
+ </Card>
+
  {/* Sign out */}
  <Card className=" ">
  <CardHeader>

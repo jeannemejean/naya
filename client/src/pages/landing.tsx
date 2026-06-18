@@ -117,6 +117,8 @@ export default function Landing() {
   const scrollToWaitlist = () =>
     document.getElementById("waitlist")?.scrollIntoView({ behavior: "smooth" });
   const [showAuth, setShowAuth] = useState(false);
+  const [authTab, setAuthTab] = useState<"login" | "register">("login");
+  const openAuth = (tab: "login" | "register") => { setAuthTab(tab); setShowAuth(true); };
 
   const phases = [
     { label: t("landing.mockupP1Label"), title: t("landing.mockupP1Title"), meta: t("landing.mockupP1Meta") },
@@ -155,7 +157,7 @@ export default function Landing() {
             {t("landing.heroMeta")}
           </span>
           <button
-            onClick={() => setShowAuth(true)}
+            onClick={() => openAuth("login")}
             className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer tracking-[0.04em]"
           >
             Connexion
@@ -168,7 +170,7 @@ export default function Landing() {
           </button>
         </div>
       </header>
-      <AuthDialog open={showAuth} onOpenChange={setShowAuth} defaultTab="login" />
+      <AuthDialog key={authTab} open={showAuth} onOpenChange={setShowAuth} defaultTab={authTab} />
 
       {/* ── ② Hero ───────────────────────────────────────────────────── */}
       <section className="px-6 sm:px-10 lg:px-16 pt-20 pb-24 sm:pt-28 sm:pb-32 w-full max-w-screen-xl mx-auto">
@@ -192,14 +194,14 @@ export default function Landing() {
 
         <div className="flex flex-wrap gap-4 items-center">
           <button
-            onClick={scrollToWaitlist}
+            onClick={waitlistMode ? scrollToWaitlist : () => openAuth("register")}
             className="group flex items-center gap-3 bg-naya-olive text-naya-cream py-4 px-7 font-sans font-medium text-[15px] tracking-[0.01em] hover:opacity-85 transition-opacity cursor-pointer"
           >
-            {t("landing.heroCta")}
+            {waitlistMode ? t("landing.heroCta") : "Commencer — 7 jours gratuits"}
             <span className="inline-block transition-transform duration-150 group-hover:translate-x-1">→</span>
           </button>
           <span className="font-mono text-[11px] text-naya-olive-35 tracking-[0.02em]">
-            {t("landing.heroMeta")}
+            {waitlistMode ? t("landing.heroMeta") : "Puis 29 €/mois · sans engagement"}
           </span>
         </div>
       </section>
