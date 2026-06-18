@@ -13,6 +13,8 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Privacy from "@/pages/privacy";
 import DataDeletion from "@/pages/data-deletion";
+import Paywall from "@/pages/paywall";
+import Welcome from "@/pages/welcome";
 import Dashboard from "@/pages/dashboard";
 import NayaCompanion from "@/components/NayaCompanion";
 
@@ -29,7 +31,7 @@ const Planning = lazy(() => import("@/pages/planning"));
 const Campaigns = lazy(() => import("@/pages/campaigns"));
 
 function Router() {
- const { isAuthenticated, isLoading } = useAuth();
+ const { isAuthenticated, isLoading, hasAccess } = useAuth();
  const qc = useQueryClient();
  const { isOpen, setIsOpen, openSearch } = useGlobalSearch();
 
@@ -41,7 +43,7 @@ function Router() {
  }
  }, [isAuthenticated, qc]);
  // Bouton flottant Naya sur toutes les pages authentifiées (dashboard inclus)
- const showFloatingCompanion = isAuthenticated;
+ const showFloatingCompanion = isAuthenticated && hasAccess;
 
  return (
  <>
@@ -53,8 +55,15 @@ function Router() {
  </div>
  }>
  <Switch>
+ <Route path="/privacy" component={Privacy} />
+ <Route path="/data-deletion" component={DataDeletion} />
  {isLoading || !isAuthenticated ? (
  <Route path="/" component={Landing} />
+ ) : !hasAccess ? (
+ <>
+ <Route path="/welcome" component={Welcome} />
+ <Route component={Paywall} />
+ </>
  ) : (
  <>
  <Route path="/">
@@ -90,8 +99,6 @@ function Router() {
  </Route>
  </>
  )}
- <Route path="/privacy" component={Privacy} />
- <Route path="/data-deletion" component={DataDeletion} />
  <Route component={NotFound} />
  </Switch>
  </Suspense>
