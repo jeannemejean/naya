@@ -27,6 +27,9 @@ export async function createCheckoutSession(params: {
   customerId: string;
   userId: string;
 }): Promise<string> {
+  // Stripe Tax n'est activé que si le compte l'a configuré (sinon Checkout échoue).
+  // Mettre STRIPE_TAX_ENABLED=true une fois la TVA configurée dans le dashboard.
+  const taxEnabled = process.env.STRIPE_TAX_ENABLED === "true";
   const session = await stripe.checkout.sessions.create(
     {
       mode: "subscription",
@@ -36,8 +39,8 @@ export async function createCheckoutSession(params: {
         trial_period_days: 7,
         metadata: { nayaUserId: params.userId },
       },
-      automatic_tax: { enabled: true },
-      customer_update: { address: "auto" },
+      automatic_tax: { enabled: taxEnabled },
+      ...(taxEnabled ? { customer_update: { address: "auto" as const } } : {}),
       success_url: `${APP_URL}/welcome?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/paywall?canceled=1`,
       metadata: { nayaUserId: params.userId },
