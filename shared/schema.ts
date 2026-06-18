@@ -8,6 +8,7 @@ import {
   serial,
   boolean,
   integer,
+  unique,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -31,6 +32,7 @@ export const users = pgTable("users", {
   email: varchar("email").unique().notNull(),
   hashedPassword: varchar("hashed_password"),
   emailVerified: boolean("email_verified").default(false),
+  role: text("role").notNull().default("user"), // 'user' | 'owner' | 'comped'
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -1234,3 +1236,49 @@ export const googleCalendarTokens = pgTable("google_calendar_tokens", {
 
 export type GoogleCalendarToken = typeof googleCalendarTokens.$inferSelect;
 export type InsertGoogleCalendarToken = typeof googleCalendarTokens.$inferInsert;
+
+// ─── Abonnement & accès (Stripe) ─────────────────────────────────────────────
+
+export const subscriptions = pgTable("subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().unique().references(() => users.id),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  status: text("status"), // trialing|active|past_due|canceled|incomplete|unpaid
+  priceId: text("price_id"),
+  currentPeriodEnd: timestamp("current_period_end"),
+  trialEndsAt: timestamp("trial_ends_at"),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const accessCodes = pgTable("access_codes", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  label: text("label"),
+  maxRedemptions: integer("max_redemptions"), // null = illimité
+  redemptionCount: integer("redemption_count").notNull().default(0),
+  expiresAt: timestamp("expires_at"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const accessCodeRedemptions = pgTable("access_code_redemptions", {
+  id: serial("id").primaryKey(),
+  codeId: integer("code_id").notNull().references(() => accessCodes.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  redeemedAt: timestamp("redeemed_at").defaultNow(),
+}, (t) => ({
+  uniqueCodeUser: unique().on(t.codeId, t.userId),
+}));
+
+export const processedStripeEvents = pgTable("processed_stripe_events", {
+  eventId: text("event_id").primaryKey(),
+  processedAt: timestamp("processed_at").defaultNow(),
+});
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscription = typeof subscriptions.$inferInsert;
+export type AccessCode = typeof accessCodes.$inferSelect;
+export type InsertAccessCode = typeof accessCodes.$inferInsert;
