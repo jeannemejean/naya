@@ -17,6 +17,8 @@ process.on('uncaughtException', (err) => {
 });
 
 const app = express();
+// Stripe exige le corps BRUT pour vérifier la signature du webhook — monté avant express.json().
+app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

@@ -19,6 +19,10 @@ import {
   getMemoryContext,
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
+import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
+import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
+import { hasNayaAccess } from "./services/access";
+import { requireActiveSubscription } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
@@ -559,6 +563,67 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       res.json({ ok: true, ...result });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Stripe webhook (corps brut monté dans index.ts) ───────────────────────
+  app.post("/api/stripe/webhook", async (req, res) => {
+    const sig = req.headers["stripe-signature"] as string;
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET!);
+    } catch (err: any) {
+      console.error("[Stripe] signature webhook invalide:", err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    // Idempotence : on ignore un event déjà traité.
+    if (await storage.isStripeEventProcessed(event.id)) return res.json({ received: true });
+
+    async function resolveUserId(sub: any): Promise<string | undefined> {
+      let uid = sub.metadata?.nayaUserId as string | undefined;
+      if (!uid) {
+        const customer = await stripe.customers.retrieve(sub.customer as string) as any;
+        uid = customer?.metadata?.nayaUserId;
+      }
+      return uid;
+    }
+
+    try {
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object as any;
+          const userId = session.metadata?.nayaUserId;
+          if (userId && session.subscription) {
+            const sub = await stripe.subscriptions.retrieve(session.subscription as string);
+            await syncSubscriptionFromStripe(userId, sub);
+          }
+          break;
+        }
+        case "customer.subscription.created":
+        case "customer.subscription.updated":
+        case "customer.subscription.deleted": {
+          const sub = event.data.object as any;
+          const uid = await resolveUserId(sub);
+          if (uid) await syncSubscriptionFromStripe(uid, sub);
+          break;
+        }
+        case "invoice.paid":
+        case "invoice.payment_failed": {
+          const invoice = event.data.object as any;
+          if (invoice.subscription) {
+            const sub = await stripe.subscriptions.retrieve(invoice.subscription as string) as any;
+            const uid = await resolveUserId(sub);
+            if (uid) await syncSubscriptionFromStripe(uid, sub);
+          }
+          break;
+        }
+      }
+      await storage.markStripeEventProcessed(event.id);
+      res.json({ received: true });
+    } catch (err: any) {
+      console.error("[Stripe] erreur traitement webhook:", err.message);
+      res.status(500).json({ error: "webhook_handler_failed" });
     }
   });
 
