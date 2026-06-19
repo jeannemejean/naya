@@ -121,6 +121,7 @@ import {
 import { db } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
+import { repackDay } from "./services/schedule-repack";
 
 export interface IStorage {
   // User operations
@@ -1659,19 +1660,22 @@ export class DatabaseStorage implements IStorage {
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
-    const DAY_START = parseTime(prefs?.workDayStart || '09:00');
-    const DAY_END = parseTime(prefs?.workDayEnd || '18:00');
-    const LUNCH_START = parseTime(prefs?.lunchBreakStart || '12:00');
-    const LUNCH_END = parseTime(prefs?.lunchBreakEnd || '13:00');
-    const BUFFER = 15;
+    const dayStartMin   = parseTime(prefs?.workDayStart || '09:00');
+    const dayEndMin     = parseTime(prefs?.workDayEnd   || '18:00');
+    const lunchStartMin = parseTime(prefs?.lunchBreakStart || '12:00');
+    const lunchEndMin   = parseTime(prefs?.lunchBreakEnd   || '13:00');
+    const lunchEnabled  = prefs?.lunchBreakEnabled !== false;
 
-    // Skip over lunch break — returns the next valid start time
-    const skipLunch = (start: number, duration: number): number => {
-      if (start < LUNCH_END && start + duration > LUNCH_START) return LUNCH_END;
-      return start;
-    };
+    // « Maintenant » et « aujourd'hui » en heure de Paris — pour ne JAMAIS
+    // replanifier une tâche du jour courant dans le passé.
+    const parisToday = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+    const parisNowMin = parseTime(new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false,
+    }).format(new Date()));
 
-    // Group by date, skip tasks without scheduledTime
+    // Grouper par date, ignorer les tâches sans heure valide.
     const byDate = new Map<string, typeof toFix>();
     for (const t of toFix) {
       if (!t.scheduledDate || !t.scheduledTime || !/^\d{2}:\d{2}$/.test(t.scheduledTime)) continue;
@@ -1680,33 +1684,23 @@ export class DatabaseStorage implements IStorage {
     }
 
     let fixed = 0;
-    for (const dayTasks of Array.from(byDate.values())) {
-      dayTasks.sort((a: any, b: any) => parseTime(a.scheduledTime!) - parseTime(b.scheduledTime!));
+    for (const [date, dayTasks] of Array.from(byDate.entries())) {
+      const repackTasks = dayTasks.map(t => ({
+        id: t.id,
+        startMin: parseTime(t.scheduledTime!),
+        durationMin: t.estimatedDuration || 30,
+      }));
 
-      let cursor = DAY_START;
-      for (const task of dayTasks) {
-        const duration = task.estimatedDuration || 30;
-        const currentStart = parseTime(task.scheduledTime!);
-        const idealStart = skipLunch(cursor, duration);
+      const moves = repackDay(repackTasks, {
+        dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,
+        floorMin: date === parisToday ? parisNowMin : undefined,
+      });
 
-        if (idealStart + duration > DAY_END) break; // overflow — leave task as-is
-
-        if (currentStart < cursor || (currentStart >= LUNCH_START && currentStart < LUNCH_END)) {
-          // Task overlaps previous or falls in lunch — move it
-          const newStart = idealStart;
-          const newEnd = newStart + duration;
-          await db.update(tasks)
-            .set({
-              scheduledTime: formatTime(newStart),
-              scheduledEndTime: formatTime(newEnd),
-            })
-            .where(eq(tasks.id, task.id));
-          cursor = newEnd + BUFFER;
-          fixed++;
-        } else {
-          cursor = currentStart + duration + BUFFER;
-        }
-        cursor = skipLunch(cursor, 0); // advance past lunch if cursor landed in it
+      for (const mv of moves) {
+        await db.update(tasks)
+          .set({ scheduledTime: formatTime(mv.newStartMin), scheduledEndTime: formatTime(mv.newEndMin) })
+          .where(eq(tasks.id, mv.id));
+        fixed++;
       }
     }
     return fixed;
