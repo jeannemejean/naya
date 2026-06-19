@@ -25,6 +25,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/auth",
   "/api/billing",
   "/api/stripe",
+  "/api/sendgrid",
   "/api/meta",
   "/api/waitlist",
   "/api/health",

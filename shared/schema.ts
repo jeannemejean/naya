@@ -543,6 +543,10 @@ export const outreachMessages = pgTable("outreach_messages", {
   sentAt: timestamp("sent_at"),
   responseReceived: boolean("response_received").notNull().default(false),
   responseDate: timestamp("response_date"),
+  // Tracking (webhook SendGrid)
+  openedAt: timestamp("opened_at"),
+  clickedAt: timestamp("clicked_at"),
+  bouncedAt: timestamp("bounced_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

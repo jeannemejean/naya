@@ -692,6 +692,15 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/prospection/campaigns'] }),
  });
 
+ const launch = useMutation({
+ mutationFn: (id: number) => apiRequest('POST', `/api/prospection/campaigns/${id}/launch`).then(r => r.json()),
+ onSuccess: (res: any) => {
+ queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+ toast({ title: `${res.enrolled} prospect(s) enrôlé(s)`, description: res.skipped ? `${res.skipped} ignoré(s).` : 'Séquence lancée.' });
+ },
+ onError: () => toast({ title: 'Erreur', description: "Définis d'abord une séquence d'envoi.", variant: 'destructive' }),
+ });
+
  const generateBrief = async (id: number) => {
  setLoadingBrief(id);
  try {
@@ -820,6 +829,14 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  onClick={() => setSeqCampaign(campaign)}
  >
  <Mail className="w-3 h-3" /> Séquence d'envoi
+ </Button>
+ <Button
+ size="sm"
+ className="text-xs h-7 gap-1.5"
+ disabled={launch.isPending}
+ onClick={() => launch.mutate(campaign.id)}
+ >
+ <Zap className="w-3 h-3" /> Lancer la séquence
  </Button>
  </div>
 

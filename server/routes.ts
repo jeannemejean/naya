@@ -6304,11 +6304,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const userId = req.userId;
       const updates = updateLeadSchema.parse(req.body);
       const lead = await storage.updateLead(parseInt(id), userId, updates);
-      
+
       if (!lead) {
         return res.status(404).json({ message: "Lead not found or access denied" });
       }
-      
+
+      // Stop-on-reply : si le lead passe à un stade « répondu/engagé », on stoppe sa séquence.
+      const ENGAGED = ['connected', 'in_discussion', 'proposal_sent', 'signed'];
+      if (typeof (updates as any).stage === 'string' && ENGAGED.includes((updates as any).stage)) {
+        const st = await storage.getLeadSequenceState(parseInt(id));
+        if (st && st.status === 'active') {
+          await storage.updateLeadSequenceState(parseInt(id), { status: 'stopped_replied', repliedAt: new Date(), nextRunAt: null }).catch(() => {});
+        }
+      }
+
       res.json(lead);
     } catch (error) {
       console.error("Error updating lead:", error);
@@ -6440,6 +6449,79 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       res.json(state || null);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Analytics d'une campagne de prospection (taux d'ouverture / réponse…)
+  app.get('/api/prospection/campaigns/:id/analytics', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const leadsForCampaign = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id);
+      const ids = leadsForCampaign.map(l => l.id);
+      const msgs = await storage.getOutreachForLeads(ids);
+      const sent = msgs.filter(m => m.sentAt).length;
+      const opened = msgs.filter(m => (m as any).openedAt).length;
+      const clicked = msgs.filter(m => (m as any).clickedAt).length;
+      const bounced = msgs.filter(m => (m as any).bouncedAt).length;
+      const replied = leadsForCampaign.filter(l => ['connected', 'in_discussion', 'proposal_sent', 'signed'].includes((l as any).stage)).length;
+      const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+      res.json({
+        leads: leadsForCampaign.length, sent, opened, clicked, bounced, replied,
+        openRate: pct(opened, sent), clickRate: pct(clicked, sent), replyRate: pct(replied, sent), bounceRate: pct(bounced, sent),
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Lance la séquence : enrôle en masse les leads de la campagne (action "launch" lemlist)
+  app.post('/api/prospection/campaigns/:id/launch', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const steps = await storage.getSequenceSteps(campaign.id);
+      if (steps.length === 0) return res.status(400).json({ message: 'no_sequence_defined' });
+
+      const campaignLeads = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id);
+      let enrolled = 0, skipped = 0;
+      for (const lead of campaignLeads) {
+        const existing = await storage.getLeadSequenceState(lead.id);
+        if (existing && ['active', 'stopped_replied', 'completed'].includes(existing.status)) { skipped++; continue; }
+        const st = await storage.enrollLead(lead.id, campaign.id, req.userId);
+        if (st) enrolled++; else skipped++;
+      }
+      res.json({ enrolled, skipped, total: campaignLeads.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── Webhook SendGrid (tracking : ouvertures / clics / bounces) ─────────────
+  // Pas d'auth (appelé par SendGrid). Corrélation via custom_args.leadId.
+  app.post('/api/sendgrid/webhook', async (req, res) => {
+    try {
+      const events = Array.isArray(req.body) ? req.body : [];
+      for (const ev of events) {
+        const leadId = Number(ev?.leadId);
+        if (!leadId) continue;
+        const msg = await storage.getLatestOutreachByLead(leadId);
+        if (!msg) continue;
+        const when = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
+        if (ev.event === 'open') {
+          if (!(msg as any).openedAt) await storage.updateOutreachMessage(msg.id, { openedAt: when } as any);
+        } else if (ev.event === 'click') {
+          await storage.updateOutreachMessage(msg.id, { clickedAt: when } as any);
+        } else if (['bounce', 'dropped', 'spamreport'].includes(ev.event)) {
+          await storage.updateOutreachMessage(msg.id, { bouncedAt: when } as any);
+          // Stop : ne plus envoyer à une adresse morte / plainte.
+          await storage.updateLeadSequenceState(leadId, { status: 'bounced', nextRunAt: null }).catch(() => {});
+        }
+      }
+      res.json({ received: true });
+    } catch (e: any) {
+      console.error('[SendGrid webhook]', e.message);
+      res.status(500).json({ error: 'webhook_failed' });
     }
   });
 

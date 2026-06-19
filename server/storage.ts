@@ -277,6 +277,8 @@ export interface IStorage {
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
   createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage>;
   updateOutreachMessage(id: number, updates: Partial<OutreachMessage>): Promise<OutreachMessage>;
+  getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
+  getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
   
   // Metrics operations
   getMetrics(userId: string, week?: string): Promise<Metrics | undefined>;
@@ -1092,6 +1094,21 @@ export class DatabaseStorage implements IStorage {
     const [updatedMessage] = await db.update(outreachMessages).set(updates)
       .where(eq(outreachMessages.id, id)).returning();
     return updatedMessage;
+  }
+
+  // Dernier message envoyé pour un lead (pour le webhook de tracking).
+  async getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined> {
+    const [m] = await db.select().from(outreachMessages)
+      .where(and(eq(outreachMessages.leadId, leadId), isNotNull(outreachMessages.sentAt)))
+      .orderBy(desc(outreachMessages.sentAt))
+      .limit(1);
+    return m;
+  }
+
+  // Tous les messages d'une liste de leads (pour l'analytics de campagne).
+  async getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]> {
+    if (leadIds.length === 0) return [];
+    return await db.select().from(outreachMessages).where(inArray(outreachMessages.leadId, leadIds));
   }
 
   // Metrics operations
