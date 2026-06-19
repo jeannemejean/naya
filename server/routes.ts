@@ -59,6 +59,7 @@ import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milest
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { enrichProspect, generateSearchBrief } from "./services/prospection";
+import { parseCsv, mapLeadRow } from "./services/csv";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -6245,6 +6246,55 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     } catch (error) {
       console.error("Error creating lead:", error);
       res.status(500).json({ message: "Failed to create lead" });
+    }
+  });
+
+  // Import CSV de leads en masse (style lemlist : coller/uploader une liste)
+  app.post('/api/leads/import', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
+      if (!csv.trim()) return res.status(400).json({ message: 'csv_required' });
+
+      let projectId: number | null = null;
+      const campaignId = Number(req.body?.campaignId) || null;
+      if (campaignId) {
+        const campaign = await storage.getProspectionCampaign(campaignId);
+        if (!campaign || campaign.userId !== userId) return res.status(404).json({ message: 'campaign_not_found' });
+        projectId = (campaign as any).projectId ?? null;
+      }
+
+      const rows = parseCsv(csv);
+      const mapped = rows.map(mapLeadRow).filter((l): l is NonNullable<typeof l> => l !== null);
+
+      // Déduplication par email (parmi les leads existants de l'utilisateur).
+      const existing = await storage.getLeads(userId);
+      const existingEmails = new Set(existing.map(l => (l.email || '').toLowerCase()).filter(Boolean));
+
+      let imported = 0, skipped = 0;
+      for (const m of mapped) {
+        const emailKey = (m.email || '').toLowerCase();
+        if (emailKey && existingEmails.has(emailKey)) { skipped++; continue; }
+        if (emailKey) existingEmails.add(emailKey);
+        await storage.createLead({
+          userId,
+          projectId: projectId ?? undefined,
+          prospectionCampaignId: campaignId ?? undefined,
+          name: m.name || m.email || 'Sans nom',
+          email: m.email ?? undefined,
+          company: m.company ?? undefined,
+          role: m.role ?? undefined,
+          sector: m.sector ?? undefined,
+          linkedinUrl: m.linkedinUrl ?? undefined,
+          stage: 'identified',
+          status: 'discovered',
+        } as any);
+        imported++;
+      }
+      res.json({ imported, skipped, total: mapped.length });
+    } catch (e: any) {
+      console.error('Error importing leads:', e.message);
+      res.status(500).json({ message: 'import_failed' });
     }
   });
 
