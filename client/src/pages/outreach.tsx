@@ -54,6 +54,9 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  const [activeTab, setActiveTab] = useState<'pipeline' | 'campaigns'>('pipeline');
  const [addLeadOpen, setAddLeadOpen] = useState(false);
  const [addCampaignOpen, setAddCampaignOpen] = useState(false);
+ const [importOpen, setImportOpen] = useState(false);
+ const [importCsv, setImportCsv] = useState('');
+ const [importCampaign, setImportCampaign] = useState('');
 
  const { data: leads = [], isLoading: leadsLoading } = useQuery<Lead[]>({ queryKey: ['/api/leads'] });
  const { data: campaigns = [] } = useQuery<any[]>({ queryKey: ['/api/prospection/campaigns'] });
@@ -73,6 +76,23 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  toast({ title: '✦ Enrichissement terminé', description: 'Audit + 3 messages générés par Naya.' });
  },
  onError: () => toast({ title: t('common.error'), description: 'Impossible de générer le contenu.', variant: 'destructive' }),
+ });
+
+ const importMutation = useMutation({
+ mutationFn: () => apiRequest('POST', '/api/leads/import', {
+ csv: importCsv,
+ campaignId: importCampaign ? Number(importCampaign) : undefined,
+ }).then(r => r.json()),
+ onSuccess: (res: any) => {
+ queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+ setImportOpen(false);
+ setImportCsv('');
+ toast({
+ title: `${res.imported} prospect(s) importé(s)`,
+ description: res.skipped ? `${res.skipped} doublon(s) ignoré(s).` : 'Liste ajoutée à la prospection.',
+ });
+ },
+ onError: () => toast({ title: t('common.error'), description: 'Import impossible — vérifie le format CSV.', variant: 'destructive' }),
  });
 
  // Filter
@@ -121,6 +141,9 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  <div className="flex gap-2">
  <Button variant="outline" size="sm" onClick={() => setAddCampaignOpen(true)}>
  <Plus className="w-4 h-4 mr-1" /> Campagne
+ </Button>
+ <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+ <Plus className="w-4 h-4 mr-1" /> Importer CSV
  </Button>
  <Button size="sm" onClick={() => setAddLeadOpen(true)}>
  <Plus className="w-4 h-4 mr-1" /> Prospect
@@ -251,6 +274,40 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  )}
  </SheetContent>
  </Sheet>
+
+ {/* Import CSV Dialog */}
+ <Dialog open={importOpen} onOpenChange={setImportOpen}>
+ <DialogContent className="sm:max-w-lg">
+ <DialogHeader><DialogTitle>Importer des prospects (CSV)</DialogTitle></DialogHeader>
+ <div className="space-y-3">
+ <p className="text-xs text-muted-foreground">
+ Colle ton CSV avec une ligne d'en-têtes. Colonnes reconnues (FR/EN) :
+ <span className="font-mono"> nom, email, société, poste, secteur, linkedin</span>. Les doublons (email) sont ignorés.
+ </p>
+ <Select value={importCampaign} onValueChange={setImportCampaign}>
+ <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Rattacher à une campagne (optionnel)" /></SelectTrigger>
+ <SelectContent>
+ {campaigns.map((c: any) => (
+ <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+ ))}
+ </SelectContent>
+ </Select>
+ <textarea
+ value={importCsv}
+ onChange={(e) => setImportCsv(e.target.value)}
+ placeholder={"nom,email,société,poste\nMarie Dupont,marie@x.co,Encore Merci,CMO"}
+ rows={8}
+ className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+ />
+ <div className="flex justify-end gap-2">
+ <Button variant="outline" size="sm" onClick={() => setImportOpen(false)}>Annuler</Button>
+ <Button size="sm" disabled={!importCsv.trim() || importMutation.isPending} onClick={() => importMutation.mutate()}>
+ {importMutation.isPending ? 'Import…' : 'Importer'}
+ </Button>
+ </div>
+ </div>
+ </DialogContent>
+ </Dialog>
 
  {/* Add Lead Dialog */}
  <Dialog open={addLeadOpen} onOpenChange={setAddLeadOpen}>
