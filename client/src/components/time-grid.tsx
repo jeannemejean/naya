@@ -716,7 +716,12 @@ export default function TimeGrid({
             const breaks: { start: string; end: string }[] = (avail?.breaks as any) || [];
             const dayTasks       = tasksByDate[date] || [];
             const scheduledTasks = dayTasks.filter(t => t.scheduledTime != null);
-            const laneMap        = assignLanes(scheduledTasks);
+            // Filet d'affichage : on re-séquence EN MÉMOIRE (décalage des heures qui se
+            // chevauchent) et on positionne les cartes sur ces heures dédupliquées, pour ne
+            // JAMAIS superposer deux tâches — même si les données serveur sont transitoirement
+            // en conflit. Le vrai correctif reste côté serveur (fixOverlappingTasks).
+            const displayTasks   = deduplicateOverlaps(scheduledTasks);
+            const laneMap        = assignLanes(displayTasks);
             const isOff          = dayType === 'off';
             const isHalfAm       = dayType === 'half-am';
             const isHalfPm       = dayType === 'half-pm';
@@ -833,7 +838,7 @@ export default function TimeGrid({
                 })()}
 
                 {/* Blocs de tâches planifiées */}
-                {scheduledTasks.map(task => {
+                {displayTasks.map(task => {
                   const { lane, totalLanes: tl } = laneMap.get(task.id) || { lane: 0, totalLanes: 1 };
                   const isBlocked = dependencies[task.id] !== undefined;
                   return (
