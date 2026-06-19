@@ -220,6 +220,11 @@ export async function rolloverStaleTasks(
     moved++;
   }
 
+  // Filet anti-chevauchement après rollover des tâches en retard.
+  await storage.fixOverlappingTasks(userId, scheduleDate).catch((e: any) =>
+    console.error(`[Rollover] fixOverlappingTasks ${userId}:`, e.message),
+  );
+
   console.log(`[AutoPlanner] Rollover for ${userId}: moved ${moved} stale tasks from ${scheduleDate}`);
   return { moved };
 }
@@ -446,6 +451,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
           estimatedDuration: duration,
           scheduledDate: dateStr,
           scheduledTime,
+          scheduledEndTime: minToHHMM(finalSlotMin + duration),
           taskEnergyType: taskData.taskEnergyType || 'execution',
           setupCost: taskData.setupCost || 'low',
           canBeFragmented: taskData.canBeFragmented ?? false,
@@ -478,6 +484,11 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
       // Continue with next project
     }
   }
+
+  // Filet anti-chevauchement : re-tasse la journée quoi qu'il arrive (multi-projets, races).
+  await storage.fixOverlappingTasks(userId, dateStr).catch((e: any) =>
+    console.error(`[AutoPlanner] fixOverlappingTasks ${userId}:`, e.message),
+  );
 }
 
 // ─── Public API ───────────────────────────────────────────────────
@@ -724,6 +735,7 @@ async function runEndOfDayRollover(): Promise<void> {
         await storage.updateTask(task.id, {
           scheduledDate: targetDate,
           scheduledTime: newTime,
+          scheduledEndTime: minToHHMM(targetSlot + dur),
           learnedAdjustmentCount: newCount,
         }).catch(e => console.error(`[Rollover] updateTask ${task.id} failed:`, e.message));
 
@@ -743,6 +755,11 @@ async function runEndOfDayRollover(): Promise<void> {
       }
 
       if (moved > 0) console.log(`[Rollover] Moved ${moved} tasks → ${scheduleDate}/${overflowDate} for user ${userId}`);
+
+      // Filet anti-chevauchement après rollover de fin de journée.
+      await storage.fixOverlappingTasks(userId, scheduleDate).catch((e: any) =>
+        console.error(`[Rollover] fixOverlappingTasks ${userId}:`, e.message),
+      );
     } catch (err: any) {
       console.error(`[Rollover] Error for user ${userId}:`, err.message);
     }
@@ -911,6 +928,7 @@ async function runIntraDayReschedule(): Promise<void> {
           await storage.updateTask(task.id, {
             scheduledDate: targetDate,
             scheduledTime: minToHHMM(targetSlot),
+            scheduledEndTime: minToHHMM(targetSlot + dur),
             learnedAdjustmentCount: timesDeferred + 1,
           }).catch(e => console.error(`[IntraDay] updateTask ${task.id}:`, e.message));
 
@@ -928,6 +946,11 @@ async function runIntraDayReschedule(): Promise<void> {
             tomorrowSlot = targetSlot + dur;
           }
         }
+
+        // Filet anti-chevauchement après repositionnement (aujourd'hui + débordements).
+        await storage.fixOverlappingTasks(userId, today).catch((e: any) =>
+          console.error(`[IntraDay] fixOverlappingTasks ${userId}:`, e.message),
+        );
       } catch (err: any) {
         console.error(`[IntraDay] Error for user ${userId}:`, err.message);
       }
