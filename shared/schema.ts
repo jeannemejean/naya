@@ -1282,3 +1282,43 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
 export type AccessCode = typeof accessCodes.$inferSelect;
 export type InsertAccessCode = typeof accessCodes.$inferInsert;
+
+// ─── Séquences de prospection (style lemlist) ────────────────────────────────
+
+// Définition d'une séquence : N étapes (canal + délai + template) par campagne.
+export const campaignSequenceSteps = pgTable("campaign_sequence_steps", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaign_id").notNull().references(() => prospectionCampaigns.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  stepOrder: integer("step_order").notNull(),       // 1, 2, 3…
+  channel: text("channel").notNull().default("email"), // email | linkedin
+  // Délai (en jours) APRÈS l'étape précédente (ou après l'enrôlement pour l'étape 1).
+  delayDays: integer("delay_days").notNull().default(0),
+  subjectTemplate: text("subject_template"),         // email uniquement
+  bodyTemplate: text("body_template").notNull(),     // supporte les {{variables}}
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// État d'enrôlement d'un lead dans la séquence de sa campagne (1 ligne / lead).
+export const leadSequenceState = pgTable("lead_sequence_state", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").notNull().unique().references(() => leads.id),
+  campaignId: integer("campaign_id").notNull().references(() => prospectionCampaigns.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  // active | paused | completed | stopped_replied | bounced | failed
+  status: text("status").notNull().default("active"),
+  currentStep: integer("current_step").notNull().default(0), // dernière étape envoyée (0 = aucune)
+  nextRunAt: timestamp("next_run_at"),               // quand envoyer la prochaine étape
+  enrolledAt: timestamp("enrolled_at").defaultNow(),
+  lastStepSentAt: timestamp("last_step_sent_at"),
+  repliedAt: timestamp("replied_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type CampaignSequenceStep = typeof campaignSequenceSteps.$inferSelect;
+export type InsertCampaignSequenceStep = typeof campaignSequenceSteps.$inferInsert;
+export type LeadSequenceState = typeof leadSequenceState.$inferSelect;
+export type InsertLeadSequenceState = typeof leadSequenceState.$inferInsert;
