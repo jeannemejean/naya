@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import Sidebar from '@/components/sidebar';
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import {
  Plus, Search, Copy, Sparkles, ExternalLink, CheckCircle2,
  Users, TrendingUp, Target, Zap, ChevronRight, Loader2,
- Instagram, Linkedin,
+ Instagram, Linkedin, Mail, Trash2,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -679,6 +679,7 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  const [editingCampaign, setEditingCampaign] = useState<any | null>(null);
  const [searchBrief, setSearchBrief] = useState<{ id: number; brief: any } | null>(null);
  const [loadingBrief, setLoadingBrief] = useState<number | null>(null);
+ const [seqCampaign, setSeqCampaign] = useState<any | null>(null);
 
  const updateCampaign = useMutation({
  mutationFn: ({ id, updates }: { id: number; updates: any }) =>
@@ -812,6 +813,14 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  {loadingBrief === campaign.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
  Générer brief de recherche
  </Button>
+ <Button
+ size="sm"
+ variant="outline"
+ className="text-xs h-7 gap-1.5"
+ onClick={() => setSeqCampaign(campaign)}
+ >
+ <Mail className="w-3 h-3" /> Séquence d'envoi
+ </Button>
  </div>
 
  {/* Search brief result */}
@@ -855,6 +864,9 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  </div>
  );
  })}
+ {seqCampaign && (
+ <SequenceEditorDialog campaign={seqCampaign} onClose={() => setSeqCampaign(null)} />
+ )}
  </div>
  );
 }
@@ -1078,4 +1090,105 @@ function CampaignForm({ onClose, initial }: { onClose: () => void; initial?: any
  </div>
  </form>
  );
+}
+
+// ─── Builder de séquence d'envoi (style lemlist) ────────────────────────────
+type SeqStep = { channel: string; delayDays: number; subjectTemplate: string; bodyTemplate: string };
+
+const DEFAULT_SEQUENCE: SeqStep[] = [
+  { channel: 'email', delayDays: 0, subjectTemplate: 'Une idée pour {{company}}', bodyTemplate: 'Bonjour {{firstName|}},\n\n' },
+  { channel: 'email', delayDays: 3, subjectTemplate: 'Re: {{company}}', bodyTemplate: 'Bonjour {{firstName|}},\n\nJe me permets de revenir vers toi…' },
+];
+
+function SequenceEditorDialog({ campaign, onClose }: { campaign: any; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: fetched } = useQuery<any[]>({ queryKey: [`/api/prospection/campaigns/${campaign.id}/sequence`] });
+  const [steps, setSteps] = useState<SeqStep[]>([]);
+  const loaded = useRef(false);
+
+  useEffect(() => {
+    if (fetched && !loaded.current) {
+      loaded.current = true;
+      setSteps(fetched.length
+        ? fetched.map((s: any) => ({ channel: s.channel, delayDays: s.delayDays ?? 0, subjectTemplate: s.subjectTemplate || '', bodyTemplate: s.bodyTemplate || '' }))
+        : DEFAULT_SEQUENCE);
+    }
+  }, [fetched]);
+
+  const update = (i: number, patch: Partial<SeqStep>) =>
+    setSteps(prev => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  const addStep = () =>
+    setSteps(prev => [...prev, { channel: 'email', delayDays: 3, subjectTemplate: '', bodyTemplate: '' }]);
+  const removeStep = (i: number) => setSteps(prev => prev.filter((_, idx) => idx !== i));
+
+  const save = useMutation({
+    mutationFn: () => apiRequest('PUT', `/api/prospection/campaigns/${campaign.id}/sequence`, { steps }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${campaign.id}/sequence`] });
+      toast({ title: 'Séquence enregistrée', description: `${steps.length} étape(s).` });
+      onClose();
+    },
+    onError: () => toast({ title: 'Erreur', description: "Impossible d'enregistrer la séquence.", variant: 'destructive' }),
+  });
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Séquence — {campaign.name}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Variables : <span className="font-mono">{'{{firstName}} {{company}} {{role}} {{sector}}'}</span> — fallback <span className="font-mono">{'{{firstName|toi}}'}</span>. L'envoi email automatique nécessite la config SendGrid (sinon les étapes restent en attente).
+        </p>
+
+        <div className="space-y-4 mt-2">
+          {steps.map((step, i) => (
+            <div key={i} className="rounded-lg border border-border p-3 space-y-2 bg-muted/20">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-foreground">Étape {i + 1}</span>
+                <div className="flex items-center gap-2">
+                  <Select value={step.channel} onValueChange={(v) => update(i, { channel: v })}>
+                    <SelectTrigger className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="email">Email</SelectItem>
+                      <SelectItem value="linkedin">LinkedIn</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <span>+</span>
+                    <Input type="number" min={0} value={step.delayDays}
+                      onChange={(e) => update(i, { delayDays: Math.max(0, Number(e.target.value) || 0) })}
+                      className="h-7 w-14 text-xs" />
+                    <span>j</span>
+                  </div>
+                  <button onClick={() => removeStep(i)} className="text-muted-foreground hover:text-red-600" aria-label="Supprimer l'étape">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              {step.channel === 'email' && (
+                <Input placeholder="Objet de l'email — {{company}}…" value={step.subjectTemplate}
+                  onChange={(e) => update(i, { subjectTemplate: e.target.value })} className="h-8 text-sm" />
+              )}
+              <Textarea placeholder={'Bonjour {{firstName|}},\n\n…'} value={step.bodyTemplate}
+                onChange={(e) => update(i, { bodyTemplate: e.target.value })} className="text-sm min-h-[90px]" />
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between mt-3">
+          <Button variant="outline" size="sm" onClick={addStep} className="gap-1.5">
+            <Plus className="w-3.5 h-3.5" /> Ajouter une étape
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Annuler</Button>
+            <Button size="sm" disabled={save.isPending || steps.length === 0} onClick={() => save.mutate()}>
+              {save.isPending ? 'Enregistrement…' : 'Enregistrer la séquence'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
