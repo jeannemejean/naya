@@ -6319,6 +6319,80 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
+  // ─── Séquences de prospection (style lemlist) ──────────────────────────────
+
+  // Étapes de la séquence d'une campagne
+  app.get('/api/prospection/campaigns/:id/sequence', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      res.json(await storage.getSequenceSteps(campaign.id));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Remplace toute la séquence d'une campagne (builder côté UI)
+  app.put('/api/prospection/campaigns/:id/sequence', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const steps = Array.isArray(req.body?.steps) ? req.body.steps : [];
+      // Validation minimale : chaque étape doit avoir un corps de message.
+      const cleaned = steps
+        .filter((s: any) => typeof s?.bodyTemplate === 'string' && s.bodyTemplate.trim())
+        .map((s: any, i: number) => ({
+          stepOrder: i + 1,
+          channel: s.channel === 'linkedin' ? 'linkedin' : 'email',
+          delayDays: Math.max(0, Number(s.delayDays) || 0),
+          subjectTemplate: s.subjectTemplate ?? null,
+          bodyTemplate: String(s.bodyTemplate),
+        }));
+      const saved = await storage.replaceSequenceSteps(campaign.id, req.userId, cleaned);
+      res.json(saved);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Enrôle un lead dans la séquence de sa campagne
+  app.post('/api/leads/:id/enroll', isAuthenticated, async (req: any, res) => {
+    try {
+      const lead = (await storage.getLeads(req.userId)).find(l => l.id === Number(req.params.id));
+      if (!lead) return res.status(404).json({ message: 'not_found' });
+      const campaignId = Number(req.body?.campaignId) || lead.prospectionCampaignId;
+      if (!campaignId) return res.status(400).json({ message: 'no_campaign' });
+      const state = await storage.enrollLead(lead.id, campaignId, req.userId);
+      if (!state) return res.status(400).json({ message: 'no_sequence_defined' });
+      res.json(state);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Désenrôle / met en pause un lead
+  app.post('/api/leads/:id/unenroll', isAuthenticated, async (req: any, res) => {
+    try {
+      const state = await storage.getLeadSequenceState(Number(req.params.id));
+      if (!state || state.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const updated = await storage.updateLeadSequenceState(Number(req.params.id), { status: 'paused', nextRunAt: null });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // État d'enrôlement d'un lead
+  app.get('/api/leads/:id/sequence-state', isAuthenticated, async (req: any, res) => {
+    try {
+      const state = await storage.getLeadSequenceState(Number(req.params.id));
+      if (state && state.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      res.json(state || null);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // Enrichit un lead avec audit 6 sections + 3 messages
   app.post('/api/leads/:id/enrich', isAuthenticated, async (req: any, res) => {
     try {

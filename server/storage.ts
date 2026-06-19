@@ -117,6 +117,12 @@ import {
   type AccessCode,
   accessCodeRedemptions,
   processedStripeEvents,
+  campaignSequenceSteps,
+  type CampaignSequenceStep,
+  type InsertCampaignSequenceStep,
+  leadSequenceState,
+  type LeadSequenceState,
+  type InsertLeadSequenceState,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -252,6 +258,14 @@ export interface IStorage {
   createProspectionCampaign(campaign: InsertProspectionCampaign): Promise<ProspectionCampaign>;
   updateProspectionCampaign(id: number, userId: string, updates: Partial<ProspectionCampaign>): Promise<ProspectionCampaign | null>;
   deleteProspectionCampaign(id: number, userId: string): Promise<void>;
+
+  // Séquences de prospection
+  getSequenceSteps(campaignId: number): Promise<CampaignSequenceStep[]>;
+  replaceSequenceSteps(campaignId: number, userId: string, steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string }>): Promise<CampaignSequenceStep[]>;
+  getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined>;
+  enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
+  updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
+  getDueEnrollments(now: Date, limit?: number): Promise<LeadSequenceState[]>;
 
   // Lead operations
   getLeads(userId: string): Promise<Lead[]>;
@@ -955,6 +969,80 @@ export class DatabaseStorage implements IStorage {
   async deleteProspectionCampaign(id: number, userId: string): Promise<void> {
     await db.delete(prospectionCampaigns)
       .where(and(eq(prospectionCampaigns.id, id), eq(prospectionCampaigns.userId, userId)));
+  }
+
+  // ─── Séquences de prospection ──────────────────────────────────────────────
+
+  async getSequenceSteps(campaignId: number): Promise<CampaignSequenceStep[]> {
+    return await db.select().from(campaignSequenceSteps)
+      .where(eq(campaignSequenceSteps.campaignId, campaignId))
+      .orderBy(campaignSequenceSteps.stepOrder);
+  }
+
+  async replaceSequenceSteps(
+    campaignId: number,
+    userId: string,
+    steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string }>,
+  ): Promise<CampaignSequenceStep[]> {
+    await db.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.campaignId, campaignId));
+    if (steps.length === 0) return [];
+    const rows = await db.insert(campaignSequenceSteps).values(
+      steps.map(s => ({
+        campaignId,
+        userId,
+        stepOrder: s.stepOrder,
+        channel: s.channel,
+        delayDays: s.delayDays,
+        subjectTemplate: s.subjectTemplate ?? null,
+        bodyTemplate: s.bodyTemplate,
+      })),
+    ).returning();
+    return rows;
+  }
+
+  async getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined> {
+    const [s] = await db.select().from(leadSequenceState).where(eq(leadSequenceState.leadId, leadId));
+    return s;
+  }
+
+  async enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null> {
+    const steps = await this.getSequenceSteps(campaignId);
+    if (steps.length === 0) return null; // pas de séquence définie → rien à enrôler
+    const firstDelayDays = steps[0].delayDays || 0;
+    const nextRunAt = new Date(Date.now() + firstDelayDays * 86400000);
+
+    const existing = await this.getLeadSequenceState(leadId);
+    const values = {
+      leadId, campaignId, userId,
+      status: "active", currentStep: 0, nextRunAt,
+      lastStepSentAt: null, repliedAt: null,
+    };
+    if (existing) {
+      const [updated] = await db.update(leadSequenceState)
+        .set({ ...values, updatedAt: new Date() })
+        .where(eq(leadSequenceState.leadId, leadId)).returning();
+      return updated || null;
+    }
+    const [created] = await db.insert(leadSequenceState).values(values).returning();
+    return created || null;
+  }
+
+  async updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null> {
+    const [updated] = await db.update(leadSequenceState)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(leadSequenceState.leadId, leadId)).returning();
+    return updated || null;
+  }
+
+  async getDueEnrollments(now: Date, limit: number = 50): Promise<LeadSequenceState[]> {
+    return await db.select().from(leadSequenceState)
+      .where(and(
+        eq(leadSequenceState.status, "active"),
+        isNotNull(leadSequenceState.nextRunAt),
+        lte(leadSequenceState.nextRunAt, now),
+      ))
+      .orderBy(leadSequenceState.nextRunAt)
+      .limit(limit);
   }
 
   // Lead operations
