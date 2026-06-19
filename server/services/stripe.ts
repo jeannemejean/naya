@@ -1,12 +1,19 @@
 import Stripe from "stripe";
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  console.warn("[Stripe] STRIPE_SECRET_KEY absente — les routes billing échoueront.");
+const stripeKeyConfigured = !!process.env.STRIPE_SECRET_KEY;
+if (!stripeKeyConfigured) {
+  console.warn("[Stripe] STRIPE_SECRET_KEY absente — les routes billing échoueront (l'app reste debout).");
 }
 
-// Pas d'apiVersion explicite : la version est figée par la version du package `stripe`
-// (lockfile). Les montées de version sont donc volontaires (bump de dépendance).
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "");
+// IMPORTANT : ne JAMAIS faire planter le boot du serveur si la clé manque.
+// `new Stripe("")` lève une erreur fatale au chargement du module → tout l'app
+// tombe (auth, planning, etc.). On construit donc avec un placeholder NON VIDE :
+// la construction réussit, et seuls les appels API billing échoueront proprement
+// (interceptés par les try/catch des routes) si la clé est réellement absente.
+// Pas d'apiVersion explicite : figée par la version du package `stripe` (lockfile).
+export const stripe = new Stripe(
+  process.env.STRIPE_SECRET_KEY || "sk_unconfigured_placeholder",
+);
 
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
