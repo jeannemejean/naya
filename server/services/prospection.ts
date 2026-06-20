@@ -350,3 +350,80 @@ Réponds UNIQUEMENT avec un tableau JSON, sans texte autour :
     bodyTemplate: typeof s?.body === "string" ? s.body : "",
   })).filter((s) => s.bodyTemplate);
 }
+
+// ─── Lead Finder : l'IA définit le profil de prospect idéal (ICP) ────────────
+export interface IdealCustomerProfile {
+  rationale: string;
+  jobTitles: string[];
+  seniority: string[];
+  sectors: string[];
+  companySize: string;
+  geographies: string[];
+  keywords: string[];
+  exclusions: string[];
+  linkedinQueries: string[]; // recherches booléennes (Sales Navigator / LinkedIn)
+  googleQueries: string[];   // recherches X-ray Google
+}
+
+export async function generateLeadCriteria(userId: string, campaignId: number): Promise<IdealCustomerProfile | null> {
+  const [brandDna, campaign] = await Promise.all([
+    storage.getBrandDna(userId),
+    storage.getProspectionCampaign(campaignId),
+  ]);
+
+  const ctx = [
+    brandDna?.businessName ? `Entreprise: ${brandDna.businessName}` : "",
+    (brandDna as any)?.businessDescription ? `Activité: ${(brandDna as any).businessDescription}` : "",
+    (brandDna as any)?.uniquePositioning ? `Positionnement: ${(brandDna as any).uniquePositioning}` : "",
+    (brandDna as any)?.primaryAudience ? `Audience principale: ${(brandDna as any).primaryAudience}` : "",
+    (brandDna as any)?.coreAudiencePain ? `Douleur de l'audience: ${(brandDna as any).coreAudiencePain}` : "",
+    (brandDna as any)?.offers ? `Offres: ${(brandDna as any).offers}` : "",
+    campaign?.targetSector ? `Secteur visé (campagne): ${campaign.targetSector}` : "",
+    (campaign as any)?.offer ? `Offre de la campagne: ${(campaign as any).offer}` : "",
+    (campaign as any)?.messageAngle ? `Angle: ${(campaign as any).messageAngle}` : "",
+    (campaign as any)?.buyingSignals ? `Signaux d'achat: ${(campaign as any).buyingSignals}` : "",
+    (campaign as any)?.campaignBrief ? `Objectif: ${(campaign as any).campaignBrief}` : "",
+  ].filter(Boolean).join("\n");
+
+  const prompt = `Tu es un expert en ciblage B2B (ICP - Ideal Customer Profile). À partir de la marque et de l'objectif de campagne ci-dessous, définis le PROFIL DE PROSPECT IDÉAL à contacter, puis génère des requêtes de recherche concrètes.
+
+CONTEXTE :
+${ctx || "(contexte minimal — propose un ICP plausible et généraliste)"}
+
+Donne :
+- Les intitulés de poste à cibler (décideurs pertinents pour cette offre).
+- La séniorité, les secteurs, la taille d'entreprise typique, les zones géographiques.
+- Des mots-clés / signaux qui indiquent un bon prospect, et des exclusions (qui éviter).
+- Des requêtes LinkedIn booléennes (style Sales Navigator) ET des requêtes Google X-ray (site:linkedin.com/in …) prêtes à copier-coller.
+- Une courte justification du ciblage.
+
+Réponds UNIQUEMENT avec ce JSON :
+{"rationale":"...","jobTitles":["..."],"seniority":["..."],"sectors":["..."],"companySize":"...","geographies":["..."],"keywords":["..."],"exclusions":["..."],"linkedinQueries":["..."],"googleQueries":["..."]}`;
+
+  const raw = await callClaude({
+    model: CLAUDE_MODELS.fast,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 1400,
+    temperature: 0.5,
+  });
+
+  try {
+    const json = raw.match(/\{[\s\S]*\}/)?.[0] || raw;
+    const p = JSON.parse(json);
+    const arr = (v: any): string[] => Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+    return {
+      rationale: typeof p.rationale === "string" ? p.rationale : "",
+      jobTitles: arr(p.jobTitles),
+      seniority: arr(p.seniority),
+      sectors: arr(p.sectors),
+      companySize: typeof p.companySize === "string" ? p.companySize : "",
+      geographies: arr(p.geographies),
+      keywords: arr(p.keywords),
+      exclusions: arr(p.exclusions),
+      linkedinQueries: arr(p.linkedinQueries),
+      googleQueries: arr(p.googleQueries),
+    };
+  } catch {
+    return null;
+  }
+}
