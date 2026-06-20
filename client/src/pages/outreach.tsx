@@ -810,6 +810,9 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  </div>
  </div>
 
+ {/* Analytics envoi (ouvertures / réponses / bounces) */}
+ <CampaignAnalytics campaignId={campaign.id} />
+
  {/* Actions */}
  <div className="flex gap-2 border-t border-border pt-3">
  <Button
@@ -1207,5 +1210,27 @@ function SequenceEditorDialog({ campaign, onClose }: { campaign: any; onClose: (
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Analytics d'envoi d'une campagne ───────────────────────────────────────
+function CampaignAnalytics({ campaignId }: { campaignId: number }) {
+  const { data } = useQuery<{ sent: number; opened: number; replied: number; bounced: number; openRate: number; replyRate: number; bounceRate: number }>({
+    queryKey: [`/api/prospection/campaigns/${campaignId}/analytics`],
+  });
+  if (!data || data.sent === 0) return null;
+  const Stat = ({ label, value }: { label: string; value: string }) => (
+    <div className="flex flex-col">
+      <span className="text-sm font-semibold text-foreground">{value}</span>
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+    </div>
+  );
+  return (
+    <div className="flex gap-5 mb-3 px-3 py-2 rounded-lg bg-[rgba(125,143,168,0.10)]">
+      <Stat label="Envoyés" value={String(data.sent)} />
+      <Stat label="Ouvertures" value={`${data.openRate}%`} />
+      <Stat label="Réponses" value={`${data.replyRate}%`} />
+      <Stat label="Bounces" value={`${data.bounceRate}%`} />
+    </div>
   );
 }
