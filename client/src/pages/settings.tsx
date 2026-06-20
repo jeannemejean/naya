@@ -1568,6 +1568,9 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </CardContent>
  </Card>
 
+ {/* Email d'envoi de prospection */}
+ <ProspectionSenderCard />
+
  {/* Abonnement */}
  <Card className=" ">
  <CardHeader>
@@ -1798,4 +1801,72 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </Dialog>
  </div>
  );
+}
+
+// ─── Carte : email d'envoi de prospection (propre à l'utilisateur) ──────────
+function ProspectionSenderCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data } = useQuery<{ senderEmail: string; senderName: string; hasOwnKey: boolean }>({
+    queryKey: ["/api/prospection/sender"],
+  });
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const loaded = useState({ done: false })[0];
+
+  useEffect(() => {
+    if (data && !loaded.done) {
+      loaded.done = true;
+      setEmail(data.senderEmail || "");
+      setName(data.senderName || "");
+    }
+  }, [data, loaded]);
+
+  const save = useMutation({
+    mutationFn: () =>
+      apiRequest("PUT", "/api/prospection/sender", {
+        senderEmail: email,
+        senderName: name,
+        ...(apiKey.trim() ? { sendgridApiKey: apiKey.trim() } : {}),
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prospection/sender"] });
+      setApiKey("");
+      toast({ title: "Email d'envoi enregistré", description: "Tes prospections partiront de cette adresse." });
+    },
+    onError: () => toast({ title: "Erreur", description: "Enregistrement impossible.", variant: "destructive" }),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Email d'envoi (prospection)</CardTitle>
+        <CardDescription>
+          Tes campagnes de prospection partent de TON adresse. Le domaine doit être vérifié dans SendGrid pour éviter le spam.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Adresse expéditrice</Label>
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jeanne@agence-jmd.com" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Nom affiché</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jeanne Méjean" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Clé SendGrid personnelle (optionnel)</Label>
+          <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+            placeholder={data?.hasOwnKey ? "•••••••• (configurée — laisser vide pour ne pas changer)" : "SG.… (sinon : compte partagé Naya)"} />
+          <p className="text-[11px] text-naya-olive-35">Laisse vide pour utiliser le compte d'envoi partagé de Naya.</p>
+        </div>
+        <div className="flex justify-end">
+          <Button size="sm" disabled={save.isPending || !email.trim()} onClick={() => save.mutate()}>
+            {save.isPending ? "Enregistrement…" : "Enregistrer"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }

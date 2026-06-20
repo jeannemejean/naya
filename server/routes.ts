@@ -60,6 +60,7 @@ import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./util
 import { generateGoalTasks } from "./services/goal-tasks";
 import { enrichProspect, generateSearchBrief } from "./services/prospection";
 import { parseCsv, mapLeadRow } from "./services/csv";
+import { encryptToken } from "./services/token-crypto";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -6447,6 +6448,37 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const state = await storage.getLeadSequenceState(Number(req.params.id));
       if (state && state.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       res.json(state || null);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Réglages d'envoi de l'utilisateur (adresse expéditrice propre — jamais celle de l'app)
+  app.get('/api/prospection/sender', isAuthenticated, async (req: any, res) => {
+    try {
+      const prefs = await storage.getUserPreferences(req.userId);
+      res.json({
+        senderEmail: prefs?.prospectionSenderEmail || '',
+        senderName: prefs?.prospectionSenderName || '',
+        hasOwnKey: !!(prefs as any)?.prospectionSendgridApiKey, // on ne renvoie jamais la clé
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put('/api/prospection/sender', isAuthenticated, async (req: any, res) => {
+    try {
+      const { senderEmail, senderName, sendgridApiKey } = req.body || {};
+      const data: any = {};
+      if (typeof senderEmail === 'string') data.prospectionSenderEmail = senderEmail.trim() || null;
+      if (typeof senderName === 'string') data.prospectionSenderName = senderName.trim() || null;
+      // Clé : chiffrée si fournie non vide ; effacée si chaîne vide ; inchangée si absente.
+      if (typeof sendgridApiKey === 'string') {
+        data.prospectionSendgridApiKey = sendgridApiKey.trim() ? encryptToken(sendgridApiKey.trim()) : null;
+      }
+      await storage.updateUserPreferences(req.userId, data);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

@@ -2,18 +2,21 @@
  * Worker d'envoi des séquences de prospection (style lemlist).
  *
  * SÉCURITÉ (cf. incident des 14 posts) : le worker est TOTALEMENT INERTE tant que
- * l'envoi n'est pas explicitement activé. Pour envoyer réellement, il faut les TROIS :
- *   PROSPECTION_SENDING_ENABLED=true
- *   SENDGRID_API_KEY=...
- *   PROSPECTION_FROM_EMAIL=...   (domaine expéditeur vérifié dans SendGrid)
- * Sinon → dry-run : log uniquement, aucune écriture, aucun envoi.
+ * `PROSPECTION_SENDING_ENABLED=true` (kill-switch global).
+ *
+ * MULTI-UTILISATEUR : chaque email part de l'adresse expéditrice PROPRE À L'UTILISATEUR
+ * (`userPreferences.prospectionSenderEmail`) — jamais l'adresse de l'app. La clé SendGrid
+ * utilisée est celle de l'utilisateur si elle est configurée (`prospectionSendgridApiKey`,
+ * chiffrée), sinon la clé partagée `SENDGRID_API_KEY`. Si un utilisateur n'a pas d'adresse
+ * expéditrice configurée, ses étapes restent EN ATTENTE (rien n'est envoyé en son nom).
  *
  * Stop-on-reply : le worker ne traite que les enrôlements `status='active'` ;
- * une réponse fait passer le statut à `stopped_replied` (via le webhook, Phase 3).
+ * une réponse fait passer le statut à `stopped_replied`.
  */
 
 import { storage } from "../storage";
 import { renderTemplate, leadVars } from "./personalization";
+import { decryptToken } from "./token-crypto";
 
 const POLL_MS = 60_000;
 let running = false;
@@ -42,28 +45,37 @@ export function planNextStep(currentStep: number, steps: { delayDays: number }[]
   };
 }
 
-function sendingEnabled(): boolean {
-  return (
-    process.env.PROSPECTION_SENDING_ENABLED === "true" &&
-    !!process.env.SENDGRID_API_KEY &&
-    !!process.env.PROSPECTION_FROM_EMAIL
-  );
+// Kill-switch global. L'envoi effectif dépend AUSSI de la config expéditeur de chaque user.
+function masterSendingEnabled(): boolean {
+  return process.env.PROSPECTION_SENDING_ENABLED === "true";
 }
 
-async function sendEmail(to: string, toName: string, subject: string, body: string, leadId: number): Promise<boolean> {
+// Résout la config d'envoi PROPRE à l'utilisateur (adresse + clé). Renvoie null si incomplète.
+async function resolveSenderConfig(userId: string): Promise<{ apiKey: string; fromEmail: string; fromName: string } | null> {
+  const prefs = await storage.getUserPreferences(userId);
+  const fromEmail = prefs?.prospectionSenderEmail?.trim();
+  if (!fromEmail) return null; // pas d'adresse expéditrice → on n'envoie jamais en son nom
+  const userKey = (prefs as any)?.prospectionSendgridApiKey
+    ? decryptToken((prefs as any).prospectionSendgridApiKey)
+    : null;
+  const apiKey = userKey || process.env.SENDGRID_API_KEY;
+  if (!apiKey) return null; // ni clé perso ni clé partagée
+  return { apiKey, fromEmail, fromName: prefs?.prospectionSenderName?.trim() || "" };
+}
+
+async function sendEmail(opts: {
+  apiKey: string; fromEmail: string; fromName: string;
+  to: string; toName: string; subject: string; body: string; leadId: number;
+}): Promise<boolean> {
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.SENDGRID_API_KEY}`,
-      "Content-Type": "application/json",
-    },
+    headers: { Authorization: `Bearer ${opts.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      personalizations: [{ to: [{ email: to, name: toName || undefined }], subject }],
-      from: { email: process.env.PROSPECTION_FROM_EMAIL, name: process.env.PROSPECTION_FROM_NAME || "Naya" },
-      content: [{ type: "text/plain", value: body }],
+      personalizations: [{ to: [{ email: opts.to, name: opts.toName || undefined }], subject: opts.subject }],
+      from: { email: opts.fromEmail, name: opts.fromName || undefined },
+      content: [{ type: "text/plain", value: opts.body }],
       tracking_settings: { click_tracking: { enable: true }, open_tracking: { enable: true } },
-      // Corrélation pour le webhook de tracking (Phase 3).
-      custom_args: { leadId: String(leadId) },
+      custom_args: { leadId: String(opts.leadId) }, // corrélation webhook tracking
     }),
   });
   return res.ok;
@@ -76,14 +88,15 @@ export async function runProspectionSender(): Promise<void> {
     const due = await storage.getDueEnrollments(new Date(), 100).catch(() => []);
     if (due.length === 0) return;
 
-    if (!sendingEnabled()) {
+    if (!masterSendingEnabled()) {
       console.log(
-        `[ProspectionSender] DRY-RUN : ${due.length} étape(s) due(s) — envoi DÉSACTIVÉ, aucune action. ` +
-          `(Activer : PROSPECTION_SENDING_ENABLED=true + SENDGRID_API_KEY + PROSPECTION_FROM_EMAIL)`,
+        `[ProspectionSender] DRY-RUN : ${due.length} étape(s) due(s) — envoi GLOBALEMENT DÉSACTIVÉ, aucune action. ` +
+          `(Activer : PROSPECTION_SENDING_ENABLED=true)`,
       );
       return; // aucune écriture, aucun envoi
     }
 
+    const senderCache = new Map<string, Awaited<ReturnType<typeof resolveSenderConfig>>>();
     for (const state of due) {
       try {
         const steps = await storage.getSequenceSteps(state.campaignId);
@@ -110,7 +123,17 @@ export async function runProspectionSender(): Promise<void> {
             await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
             continue;
           }
-          const ok = await sendEmail(lead.email, lead.name || "", subject, body, lead.id);
+          // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
+          if (!senderCache.has(state.userId)) senderCache.set(state.userId, await resolveSenderConfig(state.userId));
+          const sender = senderCache.get(state.userId);
+          if (!sender) {
+            console.log(`[ProspectionSender] user ${state.userId} sans adresse expéditrice configurée — étape EN ATTENTE (rien envoyé)`);
+            continue; // on n'avance pas : l'utilisateur doit configurer son email d'envoi
+          }
+          const ok = await sendEmail({
+            apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName,
+            to: lead.email, toName: lead.name || "", subject, body, leadId: lead.id,
+          });
           if (!ok) {
             console.error(`[ProspectionSender] échec envoi lead ${lead.id} — retry au prochain tick`);
             continue; // on n'avance pas → retry
@@ -144,7 +167,7 @@ export async function runProspectionSender(): Promise<void> {
 
 export function scheduleProspectionSender(): void {
   console.log(
-    `[ProspectionSender] Worker démarré (chaque minute) — envoi ${sendingEnabled() ? "ACTIVÉ" : "DÉSACTIVÉ (dry-run)"}`,
+    `[ProspectionSender] Worker démarré (chaque minute) — envoi global ${masterSendingEnabled() ? "ACTIVÉ" : "DÉSACTIVÉ (dry-run)"} ; chaque user envoie depuis SA propre adresse`,
   );
   setInterval(() => {
     runProspectionSender().catch((e) => console.error("[ProspectionSender]", e.message));

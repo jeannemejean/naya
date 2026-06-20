@@ -133,6 +133,12 @@ export const userPreferences = pgTable("user_preferences", {
 
   durationCalibration: jsonb("duration_calibration"), // { "content": 0.7, "admin": 1.2, ... } ratio réel/estimé par catégorie
   behaviorPatterns: jsonb("behavior_patterns"),       // { bestTaskTypeByHour, worstCompletionByDayOfWeek, averageCompletionRateByCategory }
+
+  // Réglages d'envoi de prospection PROPRES À L'UTILISATEUR (jamais l'adresse de l'app).
+  // Chaque utilisateur envoie depuis SA propre adresse.
+  prospectionSenderEmail: text("prospection_sender_email"),     // ex: jeanne@agence-jmd.com
+  prospectionSenderName: text("prospection_sender_name"),       // ex: Jeanne Méjean
+  prospectionSendgridApiKey: text("prospection_sendgrid_api_key"), // optionnel, CHIFFRÉ — clé SendGrid de l'utilisateur
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
