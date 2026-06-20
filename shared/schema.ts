@@ -139,6 +139,10 @@ export const userPreferences = pgTable("user_preferences", {
   prospectionSenderEmail: text("prospection_sender_email"),     // ex: jeanne@agence-jmd.com
   prospectionSenderName: text("prospection_sender_name"),       // ex: Jeanne Méjean
   prospectionSendgridApiKey: text("prospection_sendgrid_api_key"), // optionnel, CHIFFRÉ — clé SendGrid de l'utilisateur
+  // Adresse postale (requise par SendGrid / CAN-SPAM pour vérifier un expéditeur)
+  prospectionSenderAddress: text("prospection_sender_address"),
+  prospectionSenderCity: text("prospection_sender_city"),
+  prospectionSenderCountry: text("prospection_sender_country"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

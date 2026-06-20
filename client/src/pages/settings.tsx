@@ -1807,11 +1807,15 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 function ProspectionSenderCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data } = useQuery<{ senderEmail: string; senderName: string; hasOwnKey: boolean }>({
-    queryKey: ["/api/prospection/sender"],
-  });
+  const { data } = useQuery<{
+    senderEmail: string; senderName: string; address: string; city: string; country: string;
+    hasOwnKey: boolean; verificationStatus: string;
+  }>({ queryKey: ["/api/prospection/sender"] });
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("");
   const [apiKey, setApiKey] = useState("");
   const loaded = useState({ done: false })[0];
 
@@ -1820,30 +1824,56 @@ function ProspectionSenderCard() {
       loaded.done = true;
       setEmail(data.senderEmail || "");
       setName(data.senderName || "");
+      setAddress(data.address || "");
+      setCity(data.city || "");
+      setCountry(data.country || "");
     }
   }, [data, loaded]);
 
   const save = useMutation({
     mutationFn: () =>
       apiRequest("PUT", "/api/prospection/sender", {
-        senderEmail: email,
-        senderName: name,
+        senderEmail: email, senderName: name, address, city, country,
         ...(apiKey.trim() ? { sendgridApiKey: apiKey.trim() } : {}),
       }).then((r) => r.json()),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/prospection/sender"] });
       setApiKey("");
-      toast({ title: "Email d'envoi enregistré", description: "Tes prospections partiront de cette adresse." });
+      if (res.verificationTriggered) {
+        toast({ title: "📩 Email de vérification envoyé", description: `Clique le lien reçu sur ${email} pour activer l'envoi.` });
+      } else if (res.verificationStatus === "verified") {
+        toast({ title: "✅ Adresse vérifiée", description: "Tes prospections partiront de cette adresse." });
+      } else {
+        toast({ title: "Enregistré", description: "Renseigne l'adresse postale pour lancer la vérification." });
+      }
     },
     onError: () => toast({ title: "Erreur", description: "Enregistrement impossible.", variant: "destructive" }),
   });
 
+  const resend = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/prospection/sender/verify").then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prospection/sender"] });
+      toast({ title: "📩 Email de vérification renvoyé", description: `Vérifie la boîte ${email}.` });
+    },
+    onError: () => toast({ title: "Erreur", description: "Renseigne l'adresse postale d'abord.", variant: "destructive" }),
+  });
+
+  const status = data?.verificationStatus;
+  const statusBadge =
+    status === "verified" ? { label: "✅ Vérifiée", cls: "bg-naya-olive-10 text-naya-olive" }
+    : status === "pending" ? { label: "📩 En attente de validation", cls: "bg-[rgba(212,201,122,0.20)] text-[#5a4f0d]" }
+    : { label: "⚠️ Non vérifiée", cls: "bg-[rgba(158,126,135,0.15)] text-[#5c3d45]" };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Email d'envoi (prospection)</CardTitle>
+        <CardTitle className="text-base flex items-center gap-2">
+          Email d'envoi (prospection)
+          {data?.senderEmail && <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusBadge.cls}`}>{statusBadge.label}</span>}
+        </CardTitle>
         <CardDescription>
-          Tes campagnes de prospection partent de TON adresse. Le domaine doit être vérifié dans SendGrid pour éviter le spam.
+          Tes campagnes partent de TON adresse. On t'envoie un email de vérification (SendGrid) à valider en 1 clic.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -1855,13 +1885,32 @@ function ProspectionSenderCard() {
           <Label className="text-xs">Nom affiché</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jeanne Méjean" />
         </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="space-y-1 col-span-3">
+            <Label className="text-xs">Adresse postale (requise par SendGrid / loi anti-spam)</Label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="12 rue de la République" />
+          </div>
+          <div className="space-y-1 col-span-2">
+            <Label className="text-xs">Ville</Label>
+            <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Lyon" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Pays</Label>
+            <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="France" />
+          </div>
+        </div>
         <div className="space-y-1">
           <Label className="text-xs">Clé SendGrid personnelle (optionnel)</Label>
           <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
             placeholder={data?.hasOwnKey ? "•••••••• (configurée — laisser vide pour ne pas changer)" : "SG.… (sinon : compte partagé Naya)"} />
           <p className="text-[11px] text-naya-olive-35">Laisse vide pour utiliser le compte d'envoi partagé de Naya.</p>
         </div>
-        <div className="flex justify-end">
+        <div className="flex justify-between items-center">
+          {status === "pending" ? (
+            <Button variant="outline" size="sm" disabled={resend.isPending} onClick={() => resend.mutate()}>
+              {resend.isPending ? "…" : "Renvoyer l'email de vérification"}
+            </Button>
+          ) : <span />}
           <Button size="sm" disabled={save.isPending || !email.trim()} onClick={() => save.mutate()}>
             {save.isPending ? "Enregistrement…" : "Enregistrer"}
           </Button>

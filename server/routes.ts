@@ -60,7 +60,8 @@ import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./util
 import { generateGoalTasks } from "./services/goal-tasks";
 import { enrichProspect, generateSearchBrief } from "./services/prospection";
 import { parseCsv, mapLeadRow } from "./services/csv";
-import { encryptToken } from "./services/token-crypto";
+import { encryptToken, decryptToken } from "./services/token-crypto";
+import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -6454,13 +6455,26 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // Réglages d'envoi de l'utilisateur (adresse expéditrice propre — jamais celle de l'app)
+  // Résout la clé SendGrid à utiliser pour CE user (sa clé perso, sinon partagée).
+  const resolveUserSendgridKey = (prefs: any): string | undefined =>
+    (prefs?.prospectionSendgridApiKey ? decryptToken(prefs.prospectionSendgridApiKey) : null)
+      || process.env.SENDGRID_API_KEY || undefined;
+
   app.get('/api/prospection/sender', isAuthenticated, async (req: any, res) => {
     try {
       const prefs = await storage.getUserPreferences(req.userId);
+      const email = prefs?.prospectionSenderEmail || '';
+      const verificationStatus = email
+        ? await getSenderStatus(resolveUserSendgridKey(prefs), email)
+        : 'none';
       res.json({
-        senderEmail: prefs?.prospectionSenderEmail || '',
+        senderEmail: email,
         senderName: prefs?.prospectionSenderName || '',
+        address: (prefs as any)?.prospectionSenderAddress || '',
+        city: (prefs as any)?.prospectionSenderCity || '',
+        country: (prefs as any)?.prospectionSenderCountry || '',
         hasOwnKey: !!(prefs as any)?.prospectionSendgridApiKey, // on ne renvoie jamais la clé
+        verificationStatus, // verified | pending | none | unknown
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -6469,16 +6483,65 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.put('/api/prospection/sender', isAuthenticated, async (req: any, res) => {
     try {
-      const { senderEmail, senderName, sendgridApiKey } = req.body || {};
+      const { senderEmail, senderName, sendgridApiKey, address, city, country } = req.body || {};
       const data: any = {};
       if (typeof senderEmail === 'string') data.prospectionSenderEmail = senderEmail.trim() || null;
       if (typeof senderName === 'string') data.prospectionSenderName = senderName.trim() || null;
+      if (typeof address === 'string') data.prospectionSenderAddress = address.trim() || null;
+      if (typeof city === 'string') data.prospectionSenderCity = city.trim() || null;
+      if (typeof country === 'string') data.prospectionSenderCountry = country.trim() || null;
       // Clé : chiffrée si fournie non vide ; effacée si chaîne vide ; inchangée si absente.
       if (typeof sendgridApiKey === 'string') {
         data.prospectionSendgridApiKey = sendgridApiKey.trim() ? encryptToken(sendgridApiKey.trim()) : null;
       }
       await storage.updateUserPreferences(req.userId, data);
-      res.json({ ok: true });
+
+      // Auto-vérification : si une adresse est définie et pas encore vérifiée, on déclenche
+      // l'email de vérification SendGrid (Single Sender). Non bloquant.
+      const prefs = await storage.getUserPreferences(req.userId);
+      const email = prefs?.prospectionSenderEmail;
+      let verificationStatus: string = 'none';
+      let verificationTriggered = false;
+      if (email) {
+        const key = resolveUserSendgridKey(prefs);
+        verificationStatus = await getSenderStatus(key, email);
+        if (verificationStatus === 'none' && (prefs as any)?.prospectionSenderAddress && (prefs as any)?.prospectionSenderCity && (prefs as any)?.prospectionSenderCountry) {
+          const r = await createSingleSender(key, {
+            email,
+            name: prefs?.prospectionSenderName || '',
+            address: (prefs as any).prospectionSenderAddress,
+            city: (prefs as any).prospectionSenderCity,
+            country: (prefs as any).prospectionSenderCountry,
+          });
+          if (r.ok) { verificationStatus = 'pending'; verificationTriggered = true; }
+        }
+      }
+      res.json({ ok: true, verificationStatus, verificationTriggered });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Renvoyer l'email de vérification de l'adresse expéditrice
+  app.post('/api/prospection/sender/verify', isAuthenticated, async (req: any, res) => {
+    try {
+      const prefs = await storage.getUserPreferences(req.userId);
+      const email = prefs?.prospectionSenderEmail;
+      if (!email) return res.status(400).json({ message: 'no_sender_email' });
+      const key = resolveUserSendgridKey(prefs);
+      const status = await getSenderStatus(key, email);
+      if (status === 'verified') return res.json({ verificationStatus: 'verified' });
+      if (!(prefs as any)?.prospectionSenderAddress || !(prefs as any)?.prospectionSenderCity || !(prefs as any)?.prospectionSenderCountry) {
+        return res.status(400).json({ message: 'address_required' });
+      }
+      const r = await createSingleSender(key, {
+        email, name: prefs?.prospectionSenderName || '',
+        address: (prefs as any).prospectionSenderAddress,
+        city: (prefs as any).prospectionSenderCity,
+        country: (prefs as any).prospectionSenderCountry,
+      });
+      if (!r.ok) return res.status(400).json({ message: r.error });
+      res.json({ verificationStatus: 'pending' });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
