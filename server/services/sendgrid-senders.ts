@@ -10,10 +10,29 @@ export type SenderStatus = "verified" | "pending" | "none" | "unknown";
 
 const BASE = "https://api.sendgrid.com/v3/verified_senders";
 
-/** Statut de vérification d'une adresse expéditrice dans le compte SendGrid. */
+/**
+ * Statut de vérification d'une adresse expéditrice.
+ * 1) Si le DOMAINE de l'adresse est authentifié (Domain Authentication valide), l'adresse
+ *    est utilisable sans Single Sender → 'verified'.
+ * 2) Sinon on regarde les Single Senders du compte.
+ */
 export async function getSenderStatus(apiKey: string | undefined, email: string): Promise<SenderStatus> {
   if (!apiKey || !email) return "none";
+  const domain = email.split("@")[1]?.toLowerCase();
   try {
+    // 1) Domain Authentication — couvre toutes les adresses du domaine.
+    if (domain) {
+      const dRes = await fetch("https://api.sendgrid.com/v3/whitelabel/domains", {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (dRes.ok) {
+        const domains: any = await dRes.json();
+        if (Array.isArray(domains) && domains.some((d) => d?.valid && (d?.domain || "").toLowerCase() === domain)) {
+          return "verified";
+        }
+      }
+    }
+    // 2) Single Sender Verification.
     const res = await fetch(BASE, { headers: { Authorization: `Bearer ${apiKey}` } });
     if (!res.ok) return "unknown";
     const data: any = await res.json();
