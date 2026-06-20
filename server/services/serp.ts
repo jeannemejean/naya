@@ -6,6 +6,8 @@
  * Env : BRIGHT_DATA_API_KEY, BRIGHT_DATA_SERP_ZONE (def. "naya").
  */
 
+import { recordSpend, SERP_COST_EUR } from "./usage";
+
 const SERP_ENDPOINT = "https://api.brightdata.com/request";
 
 export interface SerpResult { link: string; title: string; description?: string }
@@ -16,7 +18,7 @@ export function serpConfigured(): boolean {
 }
 
 /** Exécute une requête Google via la SERP API et renvoie les résultats organiques. */
-export async function serpSearch(query: string): Promise<SerpResult[]> {
+export async function serpSearch(query: string, userId?: string): Promise<SerpResult[]> {
   const apiKey = process.env.BRIGHT_DATA_API_KEY;
   if (!apiKey) return [];
   const zone = process.env.BRIGHT_DATA_SERP_ZONE || "naya";
@@ -27,6 +29,8 @@ export async function serpSearch(query: string): Promise<SerpResult[]> {
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ zone, url, format: "json", data_format: "parsed_light" }),
     });
+    // Imputation du coût Bright Data (1 requête facturée), même si le parsing échoue ensuite.
+    if (userId) recordSpend(userId, SERP_COST_EUR).catch(() => {});
     if (!res.ok) return [];
     const wrapper: any = await res.json();
     // La réponse SERP API : { status_code, headers, body } où body est une STRING JSON.
@@ -63,11 +67,11 @@ export function extractLinkedInLead(result: SerpResult): ExtractedLead | null {
 }
 
 /** Lance plusieurs requêtes X-ray, agrège et déduplique les profils trouvés (par URL). */
-export async function sourceLeadsFromQueries(queries: string[], maxQueries = 4): Promise<ExtractedLead[]> {
+export async function sourceLeadsFromQueries(queries: string[], userId?: string, maxQueries = 4): Promise<ExtractedLead[]> {
   const seen = new Set<string>();
   const out: ExtractedLead[] = [];
   for (const q of queries.slice(0, maxQueries)) {
-    const results = await serpSearch(q);
+    const results = await serpSearch(q, userId);
     for (const r of results) {
       const lead = extractLinkedInLead(r);
       if (!lead) continue;

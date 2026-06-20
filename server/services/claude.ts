@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Response } from "express";
 import { NAYA_SYSTEM_VOICE } from "../naya-voice";
 import { buildNayaContext } from "./naya-context";
+import { recordSpend, estimateClaudeCostEur } from "./usage";
 
 export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -51,6 +52,7 @@ ${nayaContext}${additionalSystemContext ? `\n\n${additionalSystemContext}` : ""}
     messages: [{ role: "user", content: userMessage }],
     max_tokens,
     temperature,
+    userId, // imputation du coût à l'utilisateur
   });
 }
 
@@ -60,8 +62,9 @@ export async function callClaude(options: {
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   max_tokens?: number;
   temperature?: number;
+  userId?: string; // si fourni, le coût (tokens) est imputé à cet utilisateur
 }): Promise<string> {
-  const { model = CLAUDE_MODELS.fast, messages, max_tokens = 1024, system, temperature } = options;
+  const { model = CLAUDE_MODELS.fast, messages, max_tokens = 1024, system, temperature, userId } = options;
 
   const systemMsg = system ?? messages.find((m) => m.role === "system")?.content;
   const chatMessages = messages
@@ -75,6 +78,12 @@ export async function callClaude(options: {
     ...(temperature !== undefined ? { temperature } : {}),
     messages: chatMessages,
   });
+
+  // Imputation du coût IA (garde-fou plafond).
+  if (userId && response.usage) {
+    recordSpend(userId, estimateClaudeCostEur(model, response.usage.input_tokens || 0, response.usage.output_tokens || 0))
+      .catch(() => {});
+  }
 
   return response.content
     .filter((block) => block.type === "text")

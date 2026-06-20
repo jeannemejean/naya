@@ -9,6 +9,7 @@ import {
   boolean,
   integer,
   unique,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -143,6 +144,8 @@ export const userPreferences = pgTable("user_preferences", {
   prospectionSenderAddress: text("prospection_sender_address"),
   prospectionSenderCity: text("prospection_sender_city"),
   prospectionSenderCountry: text("prospection_sender_country"),
+  // Dépense IA cumulée (Claude + Bright Data) en EUR — plafonnée pour limiter les coûts.
+  aiSpendEur: doublePrecision("ai_spend_eur").notNull().default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

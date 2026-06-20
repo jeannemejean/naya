@@ -63,6 +63,7 @@ import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
 import { serpConfigured, sourceLeadsFromQueries } from "./services/serp";
+import { isAiBlocked, getSpend, AI_BUDGET_EUR } from "./services/usage";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -928,6 +929,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       }
       const sub = await storage.getSubscription(userId);
       const allowed = hasNayaAccess(user, sub ?? null);
+      const aiSpend = await getSpend(userId).catch(() => 0);
       const { hashedPassword, ...userWithoutPassword } = user;
       res.json({
         ...userWithoutPassword,
@@ -936,6 +938,11 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
           status: sub?.status ?? null,
           trialEndsAt: sub?.trialEndsAt ?? null,
           cancelAtPeriodEnd: sub?.cancelAtPeriodEnd ?? false,
+        },
+        ai: {
+          spendEur: Math.round(aiSpend * 100) / 100,
+          budgetEur: AI_BUDGET_EUR,
+          blocked: user.role !== 'owner' && aiSpend >= AI_BUDGET_EUR,
         },
       });
     } catch (error) {
@@ -2707,6 +2714,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   app.post('/api/companion/chat', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
+      if (await isAiBlocked(userId)) return res.status(402).json({ message: 'ai_budget_exceeded' });
       const { message, context, conversationHistory } = req.body;
 
       if (!message?.trim()) {
@@ -6399,6 +6407,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // jamais de faux leads).
   app.post('/api/prospection/campaigns/:id/find-leads', isAuthenticated, async (req: any, res) => {
     try {
+      if (await isAiBlocked(req.userId)) return res.status(402).json({ message: 'ai_budget_exceeded' });
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       const icp = await generateLeadCriteria(req.userId, campaign.id);
@@ -6413,6 +6422,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // (profils LinkedIn) → importe les prospects trouvés dans la campagne (dédup).
   app.post('/api/prospection/campaigns/:id/source-leads', isAuthenticated, async (req: any, res) => {
     try {
+      if (await isAiBlocked(req.userId)) return res.status(402).json({ message: 'ai_budget_exceeded' });
       if (!serpConfigured()) return res.status(400).json({ message: 'provider_not_configured' });
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
@@ -6424,7 +6434,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       }
       if (queries.length === 0) return res.status(400).json({ message: 'no_queries' });
 
-      const found = await sourceLeadsFromQueries(queries);
+      const found = await sourceLeadsFromQueries(queries, req.userId);
 
       // Déduplication contre les leads existants (par URL LinkedIn).
       const existing = await storage.getLeads(req.userId);
@@ -6459,6 +6469,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // Génère une séquence par IA (Brand DNA + campagne) — renvoyée, pas sauvegardée (pré-remplit le builder)
   app.post('/api/prospection/campaigns/:id/generate-sequence', isAuthenticated, async (req: any, res) => {
     try {
+      if (await isAiBlocked(req.userId)) return res.status(402).json({ message: 'ai_budget_exceeded' });
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       const steps = await generateSequence(req.userId, campaign.id);
@@ -6700,6 +6711,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/leads/:id/enrich', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
+      if (await isAiBlocked(userId)) return res.status(402).json({ message: 'ai_budget_exceeded' });
       const leadId = Number(req.params.id);
       const leads = await storage.getLeads(userId);
       const lead = leads.find(l => l.id === leadId);

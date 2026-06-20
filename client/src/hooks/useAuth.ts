@@ -4,6 +4,7 @@ import type { User } from "@shared/schema";
 
 type AuthUser = User & {
   access?: { allowed: boolean; status: string | null; trialEndsAt: string | null; cancelAtPeriodEnd: boolean };
+  ai?: { spendEur: number; budgetEur: number; blocked: boolean };
 };
 
 export function useAuth() {
@@ -29,6 +30,9 @@ export function useAuth() {
     isLoading,
     isAuthenticated: !!user,
     hasAccess: !!user?.access?.allowed,
+    aiBlocked: !!user?.ai?.blocked,
+    aiSpend: user?.ai?.spendEur ?? 0,
+    aiBudget: user?.ai?.budgetEur ?? 2,
     logout,
   };
 }
