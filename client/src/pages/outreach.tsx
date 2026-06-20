@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/hooks/useAuth';
 import type { Lead } from '@shared/schema';
 
 interface OutreachProps { onSearchClick?: () => void; }
@@ -47,7 +46,6 @@ const STAGE_MAP = Object.fromEntries(STAGES.map(s => [s.key, s])) as Record<Stag
 export default function Outreach({ onSearchClick }: OutreachProps) {
  const { t } = useTranslation();
  const { toast } = useToast();
- const { aiBlocked, aiBudget } = useAuth();
  const queryClient = useQueryClient();
  const [searchTerm, setSearchTerm] = useState('');
  const [campaignFilter, setCampaignFilter] = useState('all');
@@ -153,12 +151,6 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  </div>
  </div>
  </header>
-
- {aiBlocked && (
- <div className="bg-[rgba(158,126,135,0.15)] border-b border-[rgba(158,126,135,0.4)] px-6 py-2.5 text-sm text-[#5c3d45] flex-shrink-0">
- ⚠️ Tu as atteint ta limite d'utilisation IA ({aiBudget} €). La génération IA et le sourcing sont suspendus sur ton compte. Contacte le support pour augmenter ta limite.
- </div>
- )}
 
  {/* Metrics strip */}
  <div className="border-b border-border px-6 py-3 flex gap-6 bg-white flex-shrink-0">

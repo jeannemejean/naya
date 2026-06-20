@@ -144,8 +144,9 @@ export const userPreferences = pgTable("user_preferences", {
   prospectionSenderAddress: text("prospection_sender_address"),
   prospectionSenderCity: text("prospection_sender_city"),
   prospectionSenderCountry: text("prospection_sender_country"),
-  // Dépense IA cumulée (Claude + Bright Data) en EUR — plafonnée pour limiter les coûts.
+  // Dépense IA (Claude + Bright Data) en EUR sur le mois en cours — reset mensuel auto.
   aiSpendEur: doublePrecision("ai_spend_eur").notNull().default(0),
+  aiSpendPeriod: text("ai_spend_period"), // "YYYY-MM" du compteur courant
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

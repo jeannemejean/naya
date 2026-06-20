@@ -27,24 +27,40 @@ export function estimateClaudeCostEur(model: string, inputTokens: number, output
 // Bright Data SERP API : ~$1.50 / 1000 requêtes.
 export const SERP_COST_EUR = (1.5 / 1000) * USD_TO_EUR;
 
-/** Ajoute une dépense (EUR) au compteur de l'utilisateur (atomique). Non bloquant en cas d'erreur. */
+/** Mois courant au format "YYYY-MM" (UTC). Sert au reset mensuel automatique. */
+function currentPeriod(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+
+/**
+ * Ajoute une dépense (EUR) au compteur du MOIS COURANT de l'utilisateur (atomique).
+ * Reset mensuel automatique : si le compteur date d'un mois antérieur, il repart de zéro.
+ */
 export async function recordSpend(userId: string, eur: number): Promise<void> {
   if (!userId || !(eur > 0)) return;
+  const period = currentPeriod();
   try {
     await db.insert(userPreferences)
-      .values({ userId, aiSpendEur: eur })
+      .values({ userId, aiSpendEur: eur, aiSpendPeriod: period })
       .onConflictDoUpdate({
         target: userPreferences.userId,
-        set: { aiSpendEur: sql`${userPreferences.aiSpendEur} + ${eur}` },
+        set: {
+          aiSpendEur: sql`CASE WHEN ${userPreferences.aiSpendPeriod} = ${period} THEN ${userPreferences.aiSpendEur} + ${eur} ELSE ${eur} END`,
+          aiSpendPeriod: period,
+        },
       });
   } catch (e: any) {
     console.error("[usage] recordSpend:", e.message);
   }
 }
 
+/** Dépense du mois courant. Renvoie 0 si le compteur stocké date d'un mois antérieur (reset auto). */
 export async function getSpend(userId: string): Promise<number> {
-  const [p] = await db.select({ s: userPreferences.aiSpendEur }).from(userPreferences).where(eq(userPreferences.userId, userId));
-  return p?.s ?? 0;
+  const [p] = await db.select({ s: userPreferences.aiSpendEur, period: userPreferences.aiSpendPeriod })
+    .from(userPreferences).where(eq(userPreferences.userId, userId));
+  if (!p) return 0;
+  if (p.period !== currentPeriod()) return 0; // nouveau mois → compteur logiquement remis à zéro
+  return p.s ?? 0;
 }
 
 /** Vrai si l'utilisateur a dépassé le plafond IA (l'owner n'est jamais bloqué). */
