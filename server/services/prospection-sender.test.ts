@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { planNextStep } from "./prospection-sender";
+import { planNextStep, withinSendingWindow } from "./prospection-sender";
+
+describe("withinSendingWindow", () => {
+  const opts = { startMin: 9 * 60, endMin: 18 * 60, workDays: new Set(["mon", "tue", "wed", "thu", "fri"]) };
+  it("jour ouvré + dans les heures → true", () => {
+    expect(withinSendingWindow(10 * 60, "tue", opts)).toBe(true);
+  });
+  it("avant l'ouverture → false", () => {
+    expect(withinSendingWindow(8 * 60, "tue", opts)).toBe(false);
+  });
+  it("après la fermeture → false", () => {
+    expect(withinSendingWindow(18 * 60, "tue", opts)).toBe(false);
+  });
+  it("week-end → false même en pleine journée", () => {
+    expect(withinSendingWindow(11 * 60, "sat", opts)).toBe(false);
+    expect(withinSendingWindow(11 * 60, "sun", opts)).toBe(false);
+  });
+});
 
 const steps = [
   { delayDays: 0 }, // étape 1 (index 0)

@@ -50,31 +50,74 @@ function masterSendingEnabled(): boolean {
   return process.env.PROSPECTION_SENDING_ENABLED === "true";
 }
 
-// Résout la config d'envoi PROPRE à l'utilisateur (adresse + clé). Renvoie null si incomplète.
-async function resolveSenderConfig(userId: string): Promise<{ apiKey: string; fromEmail: string; fromName: string } | null> {
-  const prefs = await storage.getUserPreferences(userId);
+// Plafond d'emails / utilisateur / jour (délivrabilité). Configurable via env.
+const DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80;
+
+/** Vrai si on est dans la fenêtre d'envoi (jour ouvré + heures de travail). Pure & testable. */
+export function withinSendingWindow(
+  nowMin: number,
+  dayAbbr: string,
+  opts: { startMin: number; endMin: number; workDays: Set<string> },
+): boolean {
+  if (!opts.workDays.has(dayAbbr)) return false;
+  return nowMin >= opts.startMin && nowMin < opts.endMin;
+}
+
+const DAY_ABBRS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// "Maintenant" dans le fuseau de l'utilisateur → { nowMin, dayAbbr }.
+function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
+  const tz = timezone || "UTC";
+  try {
+    const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+    const [h, m] = hm.split(":").map(Number);
+    const wd = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(new Date()).toLowerCase().slice(0, 3);
+    return { nowMin: h * 60 + m, dayAbbr: wd };
+  } catch {
+    const d = new Date();
+    return { nowMin: d.getUTCHours() * 60 + d.getUTCMinutes(), dayAbbr: DAY_ABBRS[d.getUTCDay()] };
+  }
+}
+
+function hhmmToMin(hhmm: string | null | undefined, fallback: number): number {
+  if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return fallback;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Résout la config d'envoi PROPRE à l'utilisateur (adresse + clé) depuis ses préférences.
+function resolveSenderConfig(prefs: any): { apiKey: string; fromEmail: string; fromName: string } | null {
   const fromEmail = prefs?.prospectionSenderEmail?.trim();
   if (!fromEmail) return null; // pas d'adresse expéditrice → on n'envoie jamais en son nom
-  const userKey = (prefs as any)?.prospectionSendgridApiKey
-    ? decryptToken((prefs as any).prospectionSendgridApiKey)
-    : null;
+  const userKey = prefs?.prospectionSendgridApiKey ? decryptToken(prefs.prospectionSendgridApiKey) : null;
   const apiKey = userKey || process.env.SENDGRID_API_KEY;
   if (!apiKey) return null; // ni clé perso ni clé partagée
   return { apiKey, fromEmail, fromName: prefs?.prospectionSenderName?.trim() || "" };
 }
 
 async function sendEmail(opts: {
-  apiKey: string; fromEmail: string; fromName: string;
+  apiKey: string; fromEmail: string; fromName: string; footerAddress: string;
   to: string; toName: string; subject: string; body: string; leadId: number;
 }): Promise<boolean> {
+  // Conformité anti-spam (CAN-SPAM / RGPD) : adresse postale + lien de désinscription.
+  // SendGrid remplace <%unsubscribe%> par l'URL de désinscription et supprime automatiquement
+  // les désinscrits des envois suivants (subscription_tracking).
+  const footer =
+    `\n\n—\n${opts.fromName || ""}` +
+    (opts.footerAddress ? `\n${opts.footerAddress}` : "") +
+    `\nSe désinscrire : <%unsubscribe%>`;
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
     headers: { Authorization: `Bearer ${opts.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       personalizations: [{ to: [{ email: opts.to, name: opts.toName || undefined }], subject: opts.subject }],
       from: { email: opts.fromEmail, name: opts.fromName || undefined },
-      content: [{ type: "text/plain", value: opts.body }],
-      tracking_settings: { click_tracking: { enable: true }, open_tracking: { enable: true } },
+      content: [{ type: "text/plain", value: opts.body + footer }],
+      tracking_settings: {
+        click_tracking: { enable: true },
+        open_tracking: { enable: true },
+        subscription_tracking: { enable: true, substitution_tag: "<%unsubscribe%>" },
+      },
       custom_args: { leadId: String(opts.leadId) }, // corrélation webhook tracking
     }),
   });
@@ -96,9 +139,25 @@ export async function runProspectionSender(): Promise<void> {
       return; // aucune écriture, aucun envoi
     }
 
-    const senderCache = new Map<string, Awaited<ReturnType<typeof resolveSenderConfig>>>();
+    const prefsCache = new Map<string, any>();
+    const sentCount = new Map<string, number>(); // emails envoyés sur 24h glissantes, par user
+    const getPrefs = async (uid: string) => {
+      if (!prefsCache.has(uid)) prefsCache.set(uid, await storage.getUserPreferences(uid));
+      return prefsCache.get(uid);
+    };
     for (const state of due) {
       try {
+        const prefs = await getPrefs(state.userId);
+
+        // Fenêtre d'envoi : uniquement pendant les heures ouvrées de l'utilisateur (fuseau inclus).
+        const { nowMin, dayAbbr } = localNow(prefs?.timezone || "UTC");
+        const inWindow = withinSendingWindow(nowMin, dayAbbr, {
+          startMin: hhmmToMin(prefs?.workDayStart, 9 * 60),
+          endMin: hhmmToMin(prefs?.workDayEnd, 18 * 60),
+          workDays: new Set((prefs?.workDays || "mon,tue,wed,thu,fri").split(",").map((d: string) => d.trim().toLowerCase())),
+        });
+        if (!inWindow) continue; // hors fenêtre → on réessaiera (nextRunAt inchangé)
+
         const steps = await storage.getSequenceSteps(state.campaignId);
         const plan = planNextStep(state.currentStep, steps);
 
@@ -124,14 +183,22 @@ export async function runProspectionSender(): Promise<void> {
             continue;
           }
           // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
-          if (!senderCache.has(state.userId)) senderCache.set(state.userId, await resolveSenderConfig(state.userId));
-          const sender = senderCache.get(state.userId);
+          const sender = resolveSenderConfig(prefs);
           if (!sender) {
             console.log(`[ProspectionSender] user ${state.userId} sans adresse expéditrice configurée — étape EN ATTENTE (rien envoyé)`);
             continue; // on n'avance pas : l'utilisateur doit configurer son email d'envoi
           }
+          // Plafond d'envoi / jour (24h glissantes) pour préserver la délivrabilité.
+          if (!sentCount.has(state.userId)) {
+            sentCount.set(state.userId, await storage.countOutreachSentSince(state.userId, new Date(Date.now() - 86400000)).catch(() => 0));
+          }
+          if ((sentCount.get(state.userId) || 0) >= DAILY_CAP) {
+            continue; // plafond atteint → on réessaiera plus tard (nextRunAt inchangé)
+          }
+          const footerAddress = [prefs?.prospectionSenderAddress, prefs?.prospectionSenderCity, prefs?.prospectionSenderCountry]
+            .filter(Boolean).join(", ");
           const ok = await sendEmail({
-            apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName,
+            apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName, footerAddress,
             to: lead.email, toName: lead.name || "", subject, body, leadId: lead.id,
           });
           if (!ok) {
@@ -142,6 +209,7 @@ export async function runProspectionSender(): Promise<void> {
             userId: state.userId, leadId: lead.id, platform: "email",
             messageType: `step_${plan.sendIndex + 1}`, subject, body, sentAt: new Date(),
           } as any);
+          sentCount.set(state.userId, (sentCount.get(state.userId) || 0) + 1);
         } else {
           // LinkedIn : pas d'auto-envoi (API/ToS) → brouillon à envoyer manuellement.
           await storage.createOutreachMessage({

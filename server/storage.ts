@@ -279,6 +279,7 @@ export interface IStorage {
   updateOutreachMessage(id: number, updates: Partial<OutreachMessage>): Promise<OutreachMessage>;
   getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
   getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
+  countOutreachSentSince(userId: string, since: Date): Promise<number>;
   
   // Metrics operations
   getMetrics(userId: string, week?: string): Promise<Metrics | undefined>;
@@ -1109,6 +1110,17 @@ export class DatabaseStorage implements IStorage {
   async getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]> {
     if (leadIds.length === 0) return [];
     return await db.select().from(outreachMessages).where(inArray(outreachMessages.leadId, leadIds));
+  }
+
+  // Nombre d'emails envoyés par un user depuis `since` (plafond anti-spam du worker).
+  async countOutreachSentSince(userId: string, since: Date): Promise<number> {
+    const rows = await db.select({ id: outreachMessages.id }).from(outreachMessages)
+      .where(and(
+        eq(outreachMessages.userId, userId),
+        isNotNull(outreachMessages.sentAt),
+        gte(outreachMessages.sentAt, since),
+      ));
+    return rows.length;
   }
 
   // Metrics operations
