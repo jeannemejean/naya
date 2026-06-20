@@ -62,6 +62,7 @@ import { enrichProspect, generateSearchBrief, generateSequence, generateLeadCrit
 import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
+import { serpConfigured, sourceLeadsFromQueries } from "./services/serp";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -6402,11 +6403,55 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       const icp = await generateLeadCriteria(req.userId, campaign.id);
       if (!icp) return res.status(502).json({ message: 'generation_failed' });
-      const providerConfigured = !!process.env.BRIGHT_DATA_API_KEY;
-      // candidats réels seulement si un provider est branché (à venir) ; jamais de faux leads.
-      const candidates: any[] = [];
-      res.json({ icp, providerConfigured, candidates });
+      res.json({ icp, providerConfigured: serpConfigured() });
     } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Sourcing automatique réel via Bright Data SERP API : exécute les requêtes Google X-ray
+  // (profils LinkedIn) → importe les prospects trouvés dans la campagne (dédup).
+  app.post('/api/prospection/campaigns/:id/source-leads', isAuthenticated, async (req: any, res) => {
+    try {
+      if (!serpConfigured()) return res.status(400).json({ message: 'provider_not_configured' });
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+
+      let queries: string[] = Array.isArray(req.body?.queries) ? req.body.queries.filter((q: any) => typeof q === 'string' && q.trim()) : [];
+      if (queries.length === 0) {
+        const icp = await generateLeadCriteria(req.userId, campaign.id);
+        queries = icp?.googleQueries || [];
+      }
+      if (queries.length === 0) return res.status(400).json({ message: 'no_queries' });
+
+      const found = await sourceLeadsFromQueries(queries);
+
+      // Déduplication contre les leads existants (par URL LinkedIn).
+      const existing = await storage.getLeads(req.userId);
+      const existingUrls = new Set(existing.map(l => ((l as any).linkedinUrl || '').toLowerCase().split('?')[0]).filter(Boolean));
+      const projectId = (campaign as any).projectId ?? null;
+
+      let imported = 0, skipped = 0;
+      for (const f of found) {
+        const key = f.linkedinUrl.toLowerCase();
+        if (existingUrls.has(key)) { skipped++; continue; }
+        existingUrls.add(key);
+        await storage.createLead({
+          userId: req.userId,
+          projectId: projectId ?? undefined,
+          prospectionCampaignId: campaign.id,
+          name: f.name,
+          role: f.role ?? undefined,
+          company: f.company ?? undefined,
+          linkedinUrl: f.linkedinUrl,
+          stage: 'identified',
+          status: 'discovered',
+        } as any);
+        imported++;
+      }
+      res.json({ found: found.length, imported, skipped });
+    } catch (e: any) {
+      console.error('[source-leads]', e.message);
       res.status(500).json({ message: e.message });
     }
   });

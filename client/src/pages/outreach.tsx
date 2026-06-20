@@ -1266,6 +1266,7 @@ function CampaignAnalytics({ campaignId }: { campaignId: number }) {
 // ─── Lead Finder IA : l'IA définit le profil de prospect idéal + requêtes ────
 function LeadFinderDialog({ campaign, onClose }: { campaign: any; onClose: () => void }) {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [icp, setIcp] = useState<any | null>(null);
   const [providerConfigured, setProviderConfigured] = useState(false);
   const fired = useRef(false);
@@ -1274,6 +1275,15 @@ function LeadFinderDialog({ campaign, onClose }: { campaign: any; onClose: () =>
     mutationFn: () => apiRequest('POST', `/api/prospection/campaigns/${campaign.id}/find-leads`).then((r) => r.json()),
     onSuccess: (res: any) => { setIcp(res.icp); setProviderConfigured(!!res.providerConfigured); },
     onError: () => toast({ title: 'Erreur', description: 'Génération impossible — réessaie.', variant: 'destructive' }),
+  });
+
+  const source = useMutation({
+    mutationFn: () => apiRequest('POST', `/api/prospection/campaigns/${campaign.id}/source-leads`, { queries: icp?.googleQueries || [] }).then((r) => r.json()),
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+      toast({ title: `${res.imported} prospect(s) importé(s)`, description: `${res.found} trouvé(s)${res.skipped ? `, ${res.skipped} déjà présent(s)` : ''}.` });
+    },
+    onError: () => toast({ title: 'Erreur', description: 'Sourcing impossible — réessaie.', variant: 'destructive' }),
   });
 
   useEffect(() => { if (!fired.current) { fired.current = true; find.mutate(); } }, []); // eslint-disable-line
@@ -1344,7 +1354,14 @@ function LeadFinderDialog({ campaign, onClose }: { campaign: any; onClose: () =>
 
             <div className="flex justify-between">
               <Button variant="outline" size="sm" disabled={find.isPending} onClick={() => find.mutate()}>Régénérer</Button>
-              <Button size="sm" onClick={onClose}>Fermer</Button>
+              <div className="flex gap-2">
+                {providerConfigured && (
+                  <Button size="sm" disabled={source.isPending} onClick={() => source.mutate()} className="gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" /> {source.isPending ? 'Sourcing…' : 'Sourcer automatiquement'}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={onClose}>Fermer</Button>
+              </div>
             </div>
           </div>
         )}
