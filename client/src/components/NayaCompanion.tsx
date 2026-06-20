@@ -313,10 +313,13 @@ function useCompanionChat() {
  }
  }
  },
- onError: () => {
+ onError: (err: any) => {
+ const limit = String(err?.message || err).includes("ai_monthly_limit_reached");
  setMessages(prev => {
  const withoutLoading = prev.filter(m => !m.isLoading);
- return [...withoutLoading, { role: "assistant", content: "Une erreur est survenue. Réessaie dans un instant." }];
+ return [...withoutLoading, { role: "assistant", content: limit
+ ? "Tu as atteint ta limite d'utilisation de l'IA pour ce mois-ci. Je serai de nouveau disponible le mois prochain."
+ : "Une erreur est survenue. Réessaie dans un instant." }];
  });
  },
  });
