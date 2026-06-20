@@ -58,7 +58,7 @@ import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
 import { generateGoalTasks } from "./services/goal-tasks";
-import { enrichProspect, generateSearchBrief } from "./services/prospection";
+import { enrichProspect, generateSearchBrief, generateSequence } from "./services/prospection";
 import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
@@ -6388,6 +6388,19 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       res.json(await storage.getSequenceSteps(campaign.id));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Génère une séquence par IA (Brand DNA + campagne) — renvoyée, pas sauvegardée (pré-remplit le builder)
+  app.post('/api/prospection/campaigns/:id/generate-sequence', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const steps = await generateSequence(req.userId, campaign.id);
+      if (steps.length === 0) return res.status(502).json({ message: 'generation_failed' });
+      res.json(steps);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

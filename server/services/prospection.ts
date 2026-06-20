@@ -292,3 +292,61 @@ Réponds UNIQUEMENT avec le JSON.`;
     return { linkedinQueries: [], webQueries: [], criteria: raw };
   }
 }
+
+// ─── Génération d'une séquence d'emails par IA (Brand DNA + campagne) ────────
+export interface GeneratedStep { channel: string; delayDays: number; subjectTemplate: string; bodyTemplate: string }
+
+export async function generateSequence(userId: string, campaignId: number): Promise<GeneratedStep[]> {
+  const [brandDna, campaign] = await Promise.all([
+    storage.getBrandDna(userId),
+    storage.getProspectionCampaign(campaignId),
+  ]);
+
+  const ctx = [
+    brandDna?.businessName ? `Entreprise: ${brandDna.businessName}` : "",
+    (brandDna as any)?.businessDescription ? `Activité: ${(brandDna as any).businessDescription}` : "",
+    (brandDna as any)?.uniquePositioning ? `Positionnement: ${(brandDna as any).uniquePositioning}` : "",
+    (brandDna as any)?.communicationStyle ? `Ton de com: ${(brandDna as any).communicationStyle}` : "",
+    (brandDna as any)?.offers ? `Offres: ${(brandDna as any).offers}` : "",
+    campaign?.targetSector ? `Cible: ${campaign.targetSector}` : "",
+    (campaign as any)?.offer ? `Offre de cette campagne: ${(campaign as any).offer}` : "",
+    (campaign as any)?.messageAngle ? `Angle d'approche: ${(campaign as any).messageAngle}` : "",
+    (campaign as any)?.campaignBrief ? `Proposition: ${(campaign as any).campaignBrief}` : "",
+  ].filter(Boolean).join("\n");
+
+  const prompt = `Tu es un expert en cold email B2B. Rédige une séquence de prospection de 3 emails, en français, pour ce contexte :
+${ctx || "(contexte minimal — reste générique mais crédible)"}
+
+Règles :
+- Emails COURTS (4-6 phrases max), humains, sans jargon ni ton corporate. Pas de "j'espère que vous allez bien".
+- Personnalise avec les variables : {{firstName}}, {{company}}, {{role}}, {{sector}}. Utilise un fallback pour le prénom : {{firstName|bonjour}}.
+- Email 1 (J+0) : accroche contextualisée, pas de pitch lourd, une question ouverte.
+- Email 2 (J+3) : relance avec un angle de valeur différent.
+- Email 3 (J+6) : relance courte de clôture ("dois-je laisser tomber ?").
+- Objets courts et curieux (pas de majuscules criardes, pas d'emoji).
+
+Réponds UNIQUEMENT avec un tableau JSON, sans texte autour :
+[{"delayDays":0,"subject":"...","body":"..."},{"delayDays":3,"subject":"...","body":"..."},{"delayDays":6,"subject":"...","body":"..."}]`;
+
+  const raw = await callClaude({
+    model: CLAUDE_MODELS.fast,
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 1400,
+    temperature: 0.7,
+  });
+
+  let parsed: any[];
+  try {
+    const json = raw.match(/\[[\s\S]*\]/)?.[0] || raw;
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.slice(0, 5).map((s: any, i: number) => ({
+    channel: "email",
+    delayDays: Math.max(0, Number(s?.delayDays) ?? (i === 0 ? 0 : i * 3)),
+    subjectTemplate: typeof s?.subject === "string" ? s.subject : "",
+    bodyTemplate: typeof s?.body === "string" ? s.body : "",
+  })).filter((s) => s.bodyTemplate);
+}

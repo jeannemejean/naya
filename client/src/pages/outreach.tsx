@@ -1152,6 +1152,17 @@ function SequenceEditorDialog({ campaign, onClose }: { campaign: any; onClose: (
     onError: () => toast({ title: 'Erreur', description: "Impossible d'enregistrer la séquence.", variant: 'destructive' }),
   });
 
+  const generate = useMutation({
+    mutationFn: () => apiRequest('POST', `/api/prospection/campaigns/${campaign.id}/generate-sequence`).then(r => r.json()),
+    onSuccess: (gen: any[]) => {
+      if (Array.isArray(gen) && gen.length) {
+        setSteps(gen.map((s) => ({ channel: s.channel || 'email', delayDays: s.delayDays ?? 0, subjectTemplate: s.subjectTemplate || '', bodyTemplate: s.bodyTemplate || '' })));
+        toast({ title: '✦ Séquence générée par Naya', description: 'Relis et ajuste avant d\'enregistrer.' });
+      }
+    },
+    onError: () => toast({ title: 'Erreur', description: 'Génération impossible — réessaie.', variant: 'destructive' }),
+  });
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
@@ -1198,9 +1209,14 @@ function SequenceEditorDialog({ campaign, onClose }: { campaign: any; onClose: (
         </div>
 
         <div className="flex items-center justify-between mt-3">
-          <Button variant="outline" size="sm" onClick={addStep} className="gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Ajouter une étape
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={addStep} className="gap-1.5">
+              <Plus className="w-3.5 h-3.5" /> Ajouter une étape
+            </Button>
+            <Button variant="outline" size="sm" disabled={generate.isPending} onClick={() => generate.mutate()} className="gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> {generate.isPending ? 'Génération…' : 'Générer par IA'}
+            </Button>
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={onClose}>Annuler</Button>
             <Button size="sm" disabled={save.isPending || steps.length === 0} onClick={() => save.mutate()}>
