@@ -138,6 +138,7 @@ Règles :
 
   const auditRaw = await callClaude({
     model: CLAUDE_MODELS.fast,
+    userId,
     messages: [{ role: "user", content: auditPrompt }],
     max_tokens: 1200,
     temperature: 0.3,
@@ -225,6 +226,7 @@ Réponds UNIQUEMENT avec le JSON.`;
 
   const messagesRaw = await callClaude({
     model: CLAUDE_MODELS.fast,
+    userId,
     messages: [{ role: "user", content: messagesPrompt }],
     max_tokens: 1500,
     temperature: 0.6,
@@ -281,6 +283,7 @@ Réponds UNIQUEMENT avec le JSON.`;
 
   const raw = await callClaude({
     model: CLAUDE_MODELS.fast,
+    userId,
     messages: [{ role: "user", content: prompt }],
     max_tokens: 600,
   });
@@ -330,6 +333,7 @@ Réponds UNIQUEMENT avec un tableau JSON, sans texte autour :
 
   const raw = await callClaude({
     model: CLAUDE_MODELS.fast,
+    userId,
     messages: [{ role: "user", content: prompt }],
     max_tokens: 1400,
     temperature: 0.7,
@@ -402,6 +406,7 @@ Réponds UNIQUEMENT avec ce JSON :
 
   const raw = await callClaude({
     model: CLAUDE_MODELS.fast,
+    userId,
     messages: [{ role: "user", content: prompt }],
     max_tokens: 1400,
     temperature: 0.5,
