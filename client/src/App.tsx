@@ -12,6 +12,7 @@ import GlobalSearch from "@/components/global-search";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Privacy from "@/pages/privacy";
+import Terms from "@/pages/terms";
 import DataDeletion from "@/pages/data-deletion";
 import Paywall from "@/pages/paywall";
 import Welcome from "@/pages/welcome";
@@ -56,6 +57,7 @@ function Router() {
  }>
  <Switch>
  <Route path="/privacy" component={Privacy} />
+ <Route path="/terms" component={Terms} />
  <Route path="/data-deletion" component={DataDeletion} />
  {isLoading || !isAuthenticated ? (
  <Route path="/" component={Landing} />
