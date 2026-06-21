@@ -71,6 +71,14 @@ const MILESTONE_PALETTE: Record<string, { bg: string; border: string; text: stri
   completed: { bg: 'rgba(43,45,28,0.14)',    border: 'rgba(43,45,28,0.40)', text: '#2B2D1C' }, // olive
 };
 
+// Couleur DÉDIÉE par jalon (déterministe) — utilisée à la fois sur le marqueur du jalon
+// et sur le liseré des tâches qui y mènent, pour rendre le lien jalon↔tâches visible.
+const MILESTONE_ACCENTS = ['#c9762e', '#3f7d8a', '#7d5ba6', '#a6543f', '#4a7a3f', '#b08a1e', '#5a6fb0', '#9a4f6e'];
+function milestoneAccent(id?: number | null): string {
+  if (id == null) return MILESTONE_PALETTE.active.border;
+  return MILESTONE_ACCENTS[Math.abs(id) % MILESTONE_ACCENTS.length];
+}
+
 // Google Calendar events → salvia (ton info)
 const GCAL_PALETTE = { bg: 'rgba(125,143,168,0.12)', border: '#7D8FA8', text: '#354963' };
 
@@ -382,7 +390,11 @@ function TaskBlock({
         width: laneWidth - 2,
         backgroundColor: palette.bg,
         border: `1px solid ${palette.border}`,
-        borderLeft: (isMilestone || isGcalEvent) ? `2.5px solid ${palette.border}` : `1px solid ${palette.border}`,
+        borderLeft: (isMilestone || isGcalEvent)
+          ? `2.5px solid ${palette.border}`
+          : (task as any).milestoneId != null
+            ? `2.5px solid ${milestoneAccent((task as any).milestoneId)}`
+            : `1px solid ${palette.border}`,
         borderRadius: 4,
         zIndex: isMilestone ? 15 : 10,
       }}
@@ -650,6 +662,12 @@ export default function TimeGrid({
                           : getNayaTaskPalette(task);
 
                       const milestoneSymbol = mStatus === 'locked' ? '○' : mStatus === 'completed' ? '✓' : '◈';
+                      const mAccent = milestoneAccent((task as any).milestoneId);
+                      const prog = (task as any).milestoneProgress as { done: number; total: number } | undefined;
+                      const undated = (task as any).milestoneUndated;
+                      const linkedAccent = !isMTask && !isGcal && (task as any).milestoneId != null
+                        ? milestoneAccent((task as any).milestoneId)
+                        : null;
 
                       return (
                         <div
@@ -662,13 +680,17 @@ export default function TimeGrid({
                           style={{
                             backgroundColor: pal.bg,
                             border: `1px solid ${pal.border}`,
-                            borderLeft: isMTask ? `3px solid ${pal.border}` : `1px solid ${pal.border}`,
+                            borderLeft: isMTask
+                              ? `3px ${undated ? 'dashed' : 'solid'} ${mAccent}`
+                              : linkedAccent
+                                ? `3px solid ${linkedAccent}`
+                                : `1px solid ${pal.border}`,
                             borderRadius: 4,
                           }}
                           onClick={() => onTaskClick(task)}
                         >
                           {isMTask ? (
-                            <span className="flex-shrink-0 text-[10px] font-mono leading-none" style={{ color: pal.border }}>{milestoneSymbol}</span>
+                            <span className="flex-shrink-0 text-[10px] font-mono leading-none" style={{ color: mAccent }}>{milestoneSymbol}</span>
                           ) : (
                             <div
                               onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
@@ -679,6 +701,16 @@ export default function TimeGrid({
                           <p className="text-[10px] font-medium truncate flex-1 leading-tight" style={{ color: pal.text }}>
                             {task.title}
                           </p>
+                          {isMTask && prog && prog.total > 0 && (
+                            <span className="text-[9px] font-mono flex-shrink-0 leading-none" style={{ color: pal.text, opacity: 0.55 }}>
+                              {prog.done}/{prog.total}
+                            </span>
+                          )}
+                          {isMTask && undated && (
+                            <span className="text-[8px] font-display uppercase tracking-xwide flex-shrink-0 leading-none" style={{ color: mAccent }}>
+                              à dater
+                            </span>
+                          )}
                         </div>
                       );
                     })}

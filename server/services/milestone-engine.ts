@@ -1,40 +1,14 @@
 import { storage } from "../storage";
 import type { ProjectMilestone, MilestoneCondition } from "@shared/schema";
 
-/** Crée une tâche-jalon dans le planning pour rendre le jalon visible et actionnable. */
-async function createMilestoneTask(milestone: ProjectMilestone): Promise<void> {
-  try {
-    const today = new Date();
-    const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    // Vérifier qu'il n'y a pas déjà une tâche active pour ce jalon (via requête SQL directe)
-    const { db } = await import('../db');
-    const { tasks } = await import('../../shared/schema');
-    const { and, eq } = await import('drizzle-orm');
-    const existingTasks = await db.select({ id: tasks.id, completed: tasks.completed })
-      .from(tasks)
-      .where(and(eq(tasks.milestoneId, milestone.id), eq(tasks.completed, false)));
-    if (existingTasks.length > 0) return;
-
-    await storage.createTask({
-      userId: milestone.userId,
-      projectId: milestone.projectId,
-      milestoneId: milestone.id,
-      title: `🏁 ${milestone.title}`,
-      description: milestone.description || '',
-      type: 'milestone',
-      category: 'planning',
-      priority: 1,
-      estimatedDuration: 30,
-      scheduledDate: dateStr,
-      scheduledTime: '08:30',
-      taskEnergyType: 'execution',
-      source: 'milestone',
-      completed: false,
-    } as any);
-  } catch (e: any) {
-    console.error(`[MilestoneEngine] Failed to create task for milestone ${milestone.id}:`, e.message);
-  }
+/**
+ * NB : les jalons ne sont PLUS des tâches horaires dans le planning.
+ * Ils sont injectés comme marqueurs « toute la journée » à leur date LOGIQUE par
+ * GET /api/tasks/range (cf. server/services/milestone-dates.ts). Cette fonction est
+ * conservée comme no-op pour ne pas recréer de « fausses tâches » (ex. 8h30 aujourd'hui).
+ */
+async function createMilestoneTask(_milestone: ProjectMilestone): Promise<void> {
+  /* no-op volontaire — voir le commentaire ci-dessus */
 }
 
 /**

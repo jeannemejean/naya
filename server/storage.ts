@@ -2229,6 +2229,36 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(tasks.milestoneId, milestoneId), eq(tasks.isBlockedByMilestone, true)));
   }
 
+  /**
+   * Stats des tâches RÉELLES liées à des jalons (pour la date logique + la progression).
+   * Renvoie, par milestoneId : les dates planifiées des tâches + le nb total/terminées.
+   * Exclut les anciennes tâches-jalons (type='milestone').
+   */
+  async getMilestoneTaskStats(
+    userId: string,
+    milestoneIds: number[],
+  ): Promise<Record<number, { dates: string[]; done: number; total: number }>> {
+    if (milestoneIds.length === 0) return {};
+    const rows = await db
+      .select({ milestoneId: tasks.milestoneId, scheduledDate: tasks.scheduledDate, completed: tasks.completed })
+      .from(tasks)
+      .where(and(
+        eq(tasks.userId, userId),
+        inArray(tasks.milestoneId, milestoneIds),
+        ne(tasks.type, "milestone"),
+      ));
+    const out: Record<number, { dates: string[]; done: number; total: number }> = {};
+    for (const r of rows) {
+      const id = r.milestoneId;
+      if (id == null) continue;
+      (out[id] ||= { dates: [], done: 0, total: 0 });
+      out[id].total++;
+      if (r.completed) out[id].done++;
+      if (r.scheduledDate) out[id].dates.push(r.scheduledDate);
+    }
+    return out;
+  }
+
   /** Complète la tâche-jalon (🏁) associée à un jalon confirmé/complété. */
   async completeMilestoneTask(milestoneId: number): Promise<void> {
     await db.update(tasks)

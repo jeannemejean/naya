@@ -65,6 +65,7 @@ import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders
 import { serpConfigured, sourceLeadsFromQueries } from "./services/serp";
 import { isAiBlocked } from "./services/usage";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
+import { deriveMilestoneDate } from "./services/milestone-dates";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -4987,11 +4988,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           : await storage.getProjects(userId);
 
         const milestoneTasks: any[] = [];
-        // Jalons déjà couverts par une vraie tâche dans la plage (évite les doublons)
-        const coveredMilestoneIds = new Set(
-          (tasks as any[]).filter(t => t.milestoneId && t.scheduledDate >= start && t.scheduledDate <= end)
-            .map(t => t.milestoneId)
-        );
+        const startDate = start as string;
+
+        // Tâches réelles SANS les anciennes tâches-jalons (désormais des marqueurs « toute la journée »).
+        const baseTasks = (tasks as any[]).filter(t => t.type !== 'milestone');
 
         // Paralléliser les queries milestones pour tous les projets
         const validProjects = projects.filter((p): p is typeof p & { id: number } => !!p?.id);
@@ -4999,50 +4999,88 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           validProjects.map(p => storage.getMilestones(p.id, userId).catch(() => []))
         );
 
-        const startDate = start as string;
+        // Jalons visibles (verrouillés/ignorés masqués), aplatis avec leur projet.
+        const flat: { project: any; m: any }[] = [];
         validProjects.forEach((project, i) => {
-          const milestones = allMilestones[i] as any[];
-          const visibleMilestones = milestones.filter(
-            m => m.status !== 'completed' && m.status !== 'skipped'
+          for (const m of ((allMilestones[i] as any[]) || [])) {
+            if (m.status === 'locked' || m.status === 'skipped') continue;
+            flat.push({ project, m });
+          }
+        });
+
+        if (flat.length > 0) {
+          const msIds = flat.map(f => f.m.id);
+          // Conditions (durée + dépendance) et stats des tâches liées (dates + progression).
+          const condEntries = await Promise.all(
+            flat.map(async f => [f.m.id, await storage.getMilestoneConditions(f.m.id).catch(() => [])] as const)
           );
-          const sortedMilestones = [...visibleMilestones].sort((a, b) => {
-            const order = { active: 0, unlocked: 1, locked: 2 };
-            return (order[a.status as keyof typeof order] ?? 3) - (order[b.status as keyof typeof order] ?? 3);
+          const condById = new Map<number, any[]>(condEntries);
+          const stats: Record<number, { dates: string[]; done: number; total: number }> =
+            await storage.getMilestoneTaskStats(userId, msIds).catch(() => ({}));
+
+          const durationDaysOf = (m: any) => {
+            const c = (condById.get(m.id) || []).find((x: any) => x.conditionType === 'duration_elapsed' && x.requiredDays != null);
+            return c ? c.requiredDays : null;
+          };
+          const depIdOf = (m: any) => {
+            const c = (condById.get(m.id) || []).find((x: any) => x.blockedByMilestoneId);
+            return c ? c.blockedByMilestoneId : null;
+          };
+          const inputOf = (m: any, depDate: string | null) => ({
+            status: m.status, targetDate: m.targetDate, completedAt: m.completedAt,
+            activatedAt: m.activatedAt, durationDays: durationDaysOf(m),
+            linkedTaskDates: (stats[m.id]?.dates) || [], depDate,
           });
 
-          for (let idx = 0; idx < sortedMilestones.length; idx++) {
-            const m = sortedMilestones[idx];
-            if (coveredMilestoneIds.has(m.id)) continue;
-            const dayOffset = Math.min(idx, 6);
-            const d = new Date(startDate + 'T00:00:00');
-            d.setDate(d.getDate() + dayOffset);
-            const milestoneDate = m.targetDate && m.targetDate >= start && m.targetDate <= end
-              ? m.targetDate
-              : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-            const isActiveOrUnlocked = m.status === 'active' || m.status === 'unlocked';
+          // Date logique en 2 passes (passe 2 = jalons dépendant d'un autre jalon).
+          const resolved = new Map<number, string | null>();
+          for (const { m } of flat) resolved.set(m.id, deriveMilestoneDate(inputOf(m, null)));
+          for (const { m } of flat) {
+            if (resolved.get(m.id)) continue;
+            const depId = depIdOf(m);
+            const depDate = depId ? (resolved.get(depId) || null) : null;
+            if (depDate) resolved.set(m.id, deriveMilestoneDate(inputOf(m, depDate)));
+          }
+
+          for (const { project, m } of flat) {
+            const date = resolved.get(m.id) || null;
+            const prog = stats[m.id] || { done: 0, total: 0 };
+            const inRange = !!date && date >= start && date <= end;
+            const completed = m.status === 'completed';
+            const needsAttention = m.status === 'active' || m.status === 'unlocked';
+            // « à dater » = jalon actionnable sans date FUTURE ferme (date nulle ou passée).
+            const undatedActionable = needsAttention && (!date || date < start);
+            if (completed) {
+              if (!inRange) continue; // jalon terminé → uniquement dans sa semaine de réalisation
+            } else if (!inRange && !undatedActionable) {
+              continue;
+            }
+            const showUndated = undatedActionable && !inRange;
             milestoneTasks.push({
               id: -(m.id),
               userId,
               projectId: project.id,
               milestoneId: m.id,
               milestoneStatus: m.status,
+              milestoneProgress: { done: prog.done, total: prog.total },
+              milestoneUndated: showUndated,
               title: m.title,
               description: m.description || '',
               type: 'milestone',
               category: 'planning',
               priority: 1,
               estimatedDuration: 45,
-              scheduledDate: milestoneDate,
-              scheduledTime: isActiveOrUnlocked ? '09:00' : null,
+              scheduledDate: inRange ? (date as string) : startDate, // « à dater » → 1re colonne (flag milestoneUndated)
+              scheduledTime: null, // ALL-DAY → rendu dans la bande, jamais dans la grille horaire
               source: 'milestone',
               completed: m.status === 'completed',
               _virtual: true,
             });
           }
-        });
+        }
 
-        console.log(`[tasks/range] Injecting ${milestoneTasks.length} virtual milestone tasks`);
-        const finalTasks = [...tasks, ...milestoneTasks];
+        console.log(`[tasks/range] Injecting ${milestoneTasks.length} virtual milestone tasks (all-day)`);
+        const finalTasks = [...baseTasks, ...milestoneTasks];
 
         // Inject Google Calendar events as virtual (read-only) tasks
         try {
@@ -5081,7 +5119,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         res.json(finalTasks);
       } catch (milestoneErr: any) {
         console.error('[tasks/range] Milestone injection error:', milestoneErr?.message || milestoneErr);
-        res.json(tasks); // fallback silencieux
+        res.json((tasks as any[]).filter(t => t.type !== 'milestone')); // fallback silencieux
       }
     } catch (error) {
       console.error("Error fetching tasks in range:", error);
