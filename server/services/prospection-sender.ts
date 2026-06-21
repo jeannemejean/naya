@@ -17,6 +17,7 @@
 import { storage } from "../storage";
 import { renderTemplate, leadVars } from "./personalization";
 import { decryptToken } from "./token-crypto";
+import { linkedinConfigured, sendLinkedInStep, LINKEDIN_DAILY_CAP } from "./linkedin";
 
 const POLL_MS = 60_000;
 let running = false;
@@ -141,6 +142,7 @@ export async function runProspectionSender(): Promise<void> {
 
     const prefsCache = new Map<string, any>();
     const sentCount = new Map<string, number>(); // emails envoyés sur 24h glissantes, par user
+    const liSentCount = new Map<string, number>(); // messages LinkedIn envoyés sur 24h glissantes, par user
     const getPrefs = async (uid: string) => {
       if (!prefsCache.has(uid)) prefsCache.set(uid, await storage.getUserPreferences(uid));
       return prefsCache.get(uid);
@@ -211,11 +213,36 @@ export async function runProspectionSender(): Promise<void> {
           } as any);
           sentCount.set(state.userId, (sentCount.get(state.userId) || 0) + 1);
         } else {
-          // LinkedIn : pas d'auto-envoi (API/ToS) → brouillon à envoyer manuellement.
-          await storage.createOutreachMessage({
-            userId: state.userId, leadId: lead.id, platform: "linkedin",
-            messageType: `step_${plan.sendIndex + 1}`, subject: null, body, sentAt: null,
-          } as any);
+          // LinkedIn : auto-envoi via Unipile depuis le compte de l'utilisateur, SI configuré.
+          const liAccountId = prefs?.linkedinUnipileAccountId?.trim();
+          if (linkedinConfigured() && liAccountId && lead.linkedinUrl) {
+            // Plafond quotidien BAS (limites LinkedIn → éviter toute restriction du compte).
+            if (!liSentCount.has(state.userId)) {
+              liSentCount.set(
+                state.userId,
+                await storage.countOutreachSentSince(state.userId, new Date(Date.now() - 86400000), "linkedin").catch(() => 0),
+              );
+            }
+            if ((liSentCount.get(state.userId) || 0) >= LINKEDIN_DAILY_CAP) {
+              continue; // plafond LinkedIn atteint → retry plus tard (nextRunAt inchangé)
+            }
+            const result = await sendLinkedInStep({ accountId: liAccountId, linkedinUrl: lead.linkedinUrl, text: body });
+            if (!result.ok) {
+              console.error(`[ProspectionSender] LinkedIn lead ${lead.id} échec (${result.error}) — retry au prochain tick`);
+              continue; // on n'avance pas → retry
+            }
+            await storage.createOutreachMessage({
+              userId: state.userId, leadId: lead.id, platform: "linkedin",
+              messageType: `step_${plan.sendIndex + 1}_${result.action}`, subject: null, body, sentAt: new Date(),
+            } as any);
+            liSentCount.set(state.userId, (liSentCount.get(state.userId) || 0) + 1);
+          } else {
+            // Non configuré (ou lead sans URL LinkedIn) → brouillon à envoyer manuellement.
+            await storage.createOutreachMessage({
+              userId: state.userId, leadId: lead.id, platform: "linkedin",
+              messageType: `step_${plan.sendIndex + 1}`, subject: null, body, sentAt: null,
+            } as any);
+          }
         }
 
         await storage.updateLeadSequenceState(state.leadId, {

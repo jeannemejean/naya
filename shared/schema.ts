@@ -147,6 +147,8 @@ export const userPreferences = pgTable("user_preferences", {
   // Dépense IA (Claude + Bright Data) en EUR sur le mois en cours — reset mensuel auto.
   aiSpendEur: doublePrecision("ai_spend_eur").notNull().default(0),
   aiSpendPeriod: text("ai_spend_period"), // "YYYY-MM" du compteur courant
+  // Compte LinkedIn connecté via Unipile (pour l'envoi automatique de messages LinkedIn).
+  linkedinUnipileAccountId: text("linkedin_unipile_account_id"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

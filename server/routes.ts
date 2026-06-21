@@ -64,6 +64,7 @@ import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
 import { serpConfigured, sourceLeadsFromQueries } from "./services/serp";
 import { isAiBlocked } from "./services/usage";
+import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -6625,6 +6626,46 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       });
       if (!r.ok) return res.status(400).json({ message: r.error });
       res.json({ verificationStatus: 'pending' });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── Connexion LinkedIn (Unipile) — chaque utilisateur connecte SON propre compte ──
+  app.get('/api/prospection/linkedin/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const prefs = await storage.getUserPreferences(req.userId);
+      res.json({
+        configured: linkedinConfigured(),
+        connected: !!(prefs as any)?.linkedinUnipileAccountId,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Génère le lien hébergé pour connecter son compte LinkedIn.
+  app.post('/api/prospection/linkedin/connect-link', isAuthenticated, async (req: any, res) => {
+    try {
+      if (!linkedinConfigured()) return res.status(400).json({ message: 'linkedin_not_configured' });
+      const url = await generateConnectLink(req.userId);
+      if (!url) return res.status(502).json({ message: 'link_generation_failed' });
+      res.json({ url });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Après connexion : retrouve le compte LinkedIn de l'utilisateur (tagué name=userId) et le stocke.
+  app.post('/api/prospection/linkedin/sync', isAuthenticated, async (req: any, res) => {
+    try {
+      if (!linkedinConfigured()) return res.status(400).json({ message: 'linkedin_not_configured' });
+      const accounts = await listUnipileAccounts();
+      const mine = accounts.find(a => a.name === req.userId)
+        || (accounts.length === 1 ? accounts[0] : undefined);
+      if (!mine) return res.status(404).json({ message: 'no_linkedin_account_found' });
+      await storage.updateUserPreferences(req.userId, { linkedinUnipileAccountId: mine.id } as any);
+      res.json({ connected: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
