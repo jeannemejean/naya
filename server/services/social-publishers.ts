@@ -184,18 +184,46 @@ async function liUploadImage(token: string, owner: string, mediaUrl: string): Pr
   return imageUrn;
 }
 
+/** Upload réel d'une vidéo vers LinkedIn (Videos API : init → upload parts → finalize). */
+async function liUploadVideo(token: string, owner: string, mediaUrl: string): Promise<string> {
+  const bytes = Buffer.from(await (await fetch(mediaUrl)).arrayBuffer());
+  const init = await fetch(`${LI_API}/videos?action=initializeUpload`, {
+    method: "POST",
+    headers: liHeaders(token),
+    body: JSON.stringify({ initializeUploadRequest: { owner, fileSizeBytes: bytes.length, uploadCaptions: false, uploadThumbnail: false } }),
+  });
+  const ij: any = await init.json().catch(() => ({}));
+  if (!init.ok) throw new Error(`li_vid_init_${init.status}: ${JSON.stringify(ij).slice(0, 150)}`);
+  const video = ij?.value?.video;
+  const instructions = ij?.value?.uploadInstructions || [];
+  const uploadToken = ij?.value?.uploadToken || "";
+  if (!video || instructions.length === 0) throw new Error("li_vid_init_no_instructions");
+  const etags: string[] = [];
+  for (const ins of instructions) {
+    const part = bytes.subarray(ins.firstByte, (ins.lastByte ?? bytes.length - 1) + 1);
+    const up = await fetch(ins.uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: part });
+    if (!up.ok) throw new Error(`li_vid_part_${up.status}`);
+    etags.push(up.headers.get("etag") || "");
+  }
+  const fin = await fetch(`${LI_API}/videos?action=finalizeUpload`, {
+    method: "POST",
+    headers: liHeaders(token),
+    body: JSON.stringify({ finalizeUploadRequest: { video, uploadToken, uploadedPartIds: etags } }),
+  });
+  if (!fin.ok) throw new Error(`li_vid_finalize_${fin.status}`);
+  return video;
+}
+
 async function publishLinkedIn(input: PubInput): Promise<PubResult> {
   const token = input.credentials.accessToken;
   const author = linkedinAuthorUrn(input.credentials.accountPlatform, input.credentials.accountId);
 
-  if (input.media.some((m) => m.kind === "video")) {
-    // Vidéo LinkedIn : itération suivante (upload vidéo multipart + finalize).
-    return { state: "failed", error: "linkedin_video_not_yet" };
-  }
-
   let content: any;
+  const video = input.media.find((m) => m.kind === "video");
   const images = input.media.filter((m) => m.kind === "image");
-  if (images.length === 1) {
+  if (video) {
+    content = { media: { id: await liUploadVideo(token, author, video.url) } };
+  } else if (images.length === 1) {
     content = { media: { id: await liUploadImage(token, author, images[0].url) } };
   } else if (images.length > 1) {
     const urns: string[] = [];
@@ -218,6 +246,47 @@ async function publishLinkedIn(input: PubInput): Promise<PubResult> {
   return { state: "posted", platformPostId: res.headers.get("x-restli-id") || "posted" };
 }
 
+// ─────────────────────────── Facebook (Page) ───────────────────────────
+
+async function publishFacebook(input: PubInput): Promise<PubResult> {
+  const { credentials: c, format, media, caption } = input;
+  const pageId = c.accountId;
+  const token = c.accessToken;
+
+  // Texte seul
+  if (media.length === 0) {
+    const d = await graphPost(`${pageId}/feed`, { message: caption }, token);
+    return { state: "posted", platformPostId: d.id };
+  }
+
+  // Carrousel : photos non publiées → post feed avec attached_media
+  if (format === "carousel") {
+    const ids: string[] = [];
+    for (const m of media.filter((x) => x.kind === "image")) {
+      const ph = await graphPost(`${pageId}/photos`, { url: m.url, published: false }, token);
+      ids.push(ph.id);
+    }
+    const d = await graphPost(`${pageId}/feed`, { message: caption, attached_media: ids.map((media_fbid) => ({ media_fbid })) }, token);
+    return { state: "posted", platformPostId: d.id };
+  }
+
+  const item = media[0];
+  if (item.kind === "video") {
+    if (format === "story" || format === "reel") return { state: "failed", error: "fb_video_story_reel_not_yet" };
+    const d = await graphPost(`${pageId}/videos`, { file_url: item.url, description: caption }, token);
+    return { state: "posted", platformPostId: d.id };
+  }
+
+  // Image
+  if (format === "story") {
+    const ph = await graphPost(`${pageId}/photos`, { url: item.url, published: false }, token);
+    const d = await graphPost(`${pageId}/photo_stories`, { photo_id: ph.id }, token);
+    return { state: "posted", platformPostId: d.post_id || d.id || "posted" };
+  }
+  const d = await graphPost(`${pageId}/photos`, { url: item.url, caption, published: true }, token);
+  return { state: "posted", platformPostId: d.post_id || d.id };
+}
+
 // ─────────────────────────── Dispatcher ───────────────────────────
 
 /** Publie un post selon le réseau + format. */
@@ -225,12 +294,11 @@ export async function publishPost(input: PubInput): Promise<PubResult> {
   try {
     if (input.platform === "instagram") return await publishInstagram(input);
     if (input.platform === "linkedin") return await publishLinkedIn(input);
+    if (input.platform === "facebook") return await publishFacebook(input);
 
-    // FB / Twitter : ancien chemin (image/texte) en attendant l'upgrade format-aware.
+    // Twitter : ancien chemin (texte) — hors périmètre de la refonte.
     const legacy = { platform: input.platform, content: input.caption, imageUrl: input.media[0]?.url } as any;
-    let platformPostId: string;
-    if (input.platform === "twitter") platformPostId = await socialMediaService.postToTwitter(input.credentials as any, legacy);
-    else platformPostId = await socialMediaService.postToFacebook(input.credentials as any, legacy);
+    const platformPostId = await socialMediaService.postToTwitter(input.credentials as any, legacy);
     return { state: "posted", platformPostId };
   } catch (e: any) {
     return { state: "failed", error: e?.message || String(e) };
