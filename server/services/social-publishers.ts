@@ -21,6 +21,8 @@ export interface PubMedia {
 export interface PubCredentials {
   accessToken: string;
   accountId: string;
+  /** Plateforme du compte (ex. "linkedin" ou "linkedin_page_123") → auteur profil vs page. */
+  accountPlatform?: string;
 }
 export interface PubInput {
   platform: string; // instagram|facebook|linkedin|tiktok
@@ -144,18 +146,90 @@ async function publishInstagram(input: PubInput): Promise<PubResult> {
   return { state: "posted", platformPostId: id };
 }
 
+// ─────────────────────────── LinkedIn (profil + page entreprise) ───────────────────────────
+
+const LI_API = "https://api.linkedin.com/rest";
+const LI_VERSION = "202405";
+
+function liHeaders(token: string, json = true): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    "X-Restli-Protocol-Version": "2.0.0",
+    "LinkedIn-Version": LI_VERSION,
+    ...(json ? { "Content-Type": "application/json" } : {}),
+  };
+}
+
+/** URN auteur LinkedIn : organisation (page) ou personne (profil). Pur & testable. */
+export function linkedinAuthorUrn(accountPlatform: string | undefined, accountId: string): string {
+  if (accountPlatform && accountPlatform.startsWith("linkedin_page")) return `urn:li:organization:${accountId}`;
+  return `urn:li:person:${accountId}`;
+}
+
+/** Upload réel d'une image vers LinkedIn (Assets API) → renvoie l'URN image. */
+async function liUploadImage(token: string, owner: string, mediaUrl: string): Promise<string> {
+  const init = await fetch(`${LI_API}/images?action=initializeUpload`, {
+    method: "POST",
+    headers: liHeaders(token),
+    body: JSON.stringify({ initializeUploadRequest: { owner } }),
+  });
+  const ij: any = await init.json().catch(() => ({}));
+  if (!init.ok) throw new Error(`li_img_init_${init.status}: ${JSON.stringify(ij).slice(0, 150)}`);
+  const uploadUrl = ij?.value?.uploadUrl;
+  const imageUrn = ij?.value?.image;
+  if (!uploadUrl || !imageUrn) throw new Error("li_img_init_no_url");
+  const bytes = Buffer.from(await (await fetch(mediaUrl)).arrayBuffer());
+  const up = await fetch(uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: bytes });
+  if (!up.ok) throw new Error(`li_img_upload_${up.status}`);
+  return imageUrn;
+}
+
+async function publishLinkedIn(input: PubInput): Promise<PubResult> {
+  const token = input.credentials.accessToken;
+  const author = linkedinAuthorUrn(input.credentials.accountPlatform, input.credentials.accountId);
+
+  if (input.media.some((m) => m.kind === "video")) {
+    // Vidéo LinkedIn : itération suivante (upload vidéo multipart + finalize).
+    return { state: "failed", error: "linkedin_video_not_yet" };
+  }
+
+  let content: any;
+  const images = input.media.filter((m) => m.kind === "image");
+  if (images.length === 1) {
+    content = { media: { id: await liUploadImage(token, author, images[0].url) } };
+  } else if (images.length > 1) {
+    const urns: string[] = [];
+    for (const m of images) urns.push(await liUploadImage(token, author, m.url));
+    content = { multiImage: { images: urns.map((id) => ({ id })) } };
+  }
+
+  const body: any = {
+    author,
+    commentary: input.caption || "",
+    visibility: "PUBLIC",
+    distribution: { feedDistribution: "MAIN_FEED", targetEntities: [], thirdPartyDistributionChannels: [] },
+    lifecycleState: "PUBLISHED",
+    isReshareDisabledByAuthor: false,
+  };
+  if (content) body.content = content;
+
+  const res = await fetch(`${LI_API}/posts`, { method: "POST", headers: liHeaders(token), body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`li_post_${res.status}: ${(await res.text()).slice(0, 150)}`);
+  return { state: "posted", platformPostId: res.headers.get("x-restli-id") || "posted" };
+}
+
 // ─────────────────────────── Dispatcher ───────────────────────────
 
 /** Publie un post selon le réseau + format. */
 export async function publishPost(input: PubInput): Promise<PubResult> {
   try {
     if (input.platform === "instagram") return await publishInstagram(input);
+    if (input.platform === "linkedin") return await publishLinkedIn(input);
 
-    // FB / LinkedIn / Twitter : ancien chemin (image/texte) en attendant l'upgrade format-aware.
+    // FB / Twitter : ancien chemin (image/texte) en attendant l'upgrade format-aware.
     const legacy = { platform: input.platform, content: input.caption, imageUrl: input.media[0]?.url } as any;
     let platformPostId: string;
-    if (input.platform === "linkedin") platformPostId = await socialMediaService.postToLinkedIn(input.credentials as any, legacy);
-    else if (input.platform === "twitter") platformPostId = await socialMediaService.postToTwitter(input.credentials as any, legacy);
+    if (input.platform === "twitter") platformPostId = await socialMediaService.postToTwitter(input.credentials as any, legacy);
     else platformPostId = await socialMediaService.postToFacebook(input.credentials as any, legacy);
     return { state: "posted", platformPostId };
   } catch (e: any) {

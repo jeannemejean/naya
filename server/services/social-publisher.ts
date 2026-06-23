@@ -76,7 +76,7 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
     // 5. Publication format-aware.
     const result = await publishPost({
       platform, format, caption: item.body, media,
-      credentials: { accessToken: credentials.accessToken, accountId: credentials.accountId },
+      credentials: { accessToken: credentials.accessToken, accountId: credentials.accountId, accountPlatform: account.platform },
     });
 
     if (result.state === 'processing') {

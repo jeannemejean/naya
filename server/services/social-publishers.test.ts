@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { igMediaType, igIsAsync, igContainerParams } from "./social-publishers";
+import { igMediaType, igIsAsync, igContainerParams, linkedinAuthorUrn } from "./social-publishers";
+
+describe("linkedinAuthorUrn", () => {
+  it("profil → urn:li:person", () => expect(linkedinAuthorUrn("linkedin", "ABC123")).toBe("urn:li:person:ABC123"));
+  it("page entreprise → urn:li:organization", () => expect(linkedinAuthorUrn("linkedin_page_999", "999")).toBe("urn:li:organization:999"));
+  it("défaut (undefined) → person", () => expect(linkedinAuthorUrn(undefined, "X")).toBe("urn:li:person:X"));
+});
 
 describe("igMediaType", () => {
   it("image feed → IMAGE", () => expect(igMediaType("feed_image", "image")).toBe("IMAGE"));
