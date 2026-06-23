@@ -377,9 +377,59 @@ export async function exchangeTwitterCode(userId: string, code: string, codeVeri
   }
 }
 
+// ─── TikTok (Login Kit v2 + Content Posting API) ────────────────────────────
+
+const TIKTOK_SCOPES = 'user.info.basic,video.publish,video.upload';
+
+export function getTikTokAuthUrl(state: string): string {
+  const clientKey = process.env.TIKTOK_CLIENT_KEY!;
+  const redirect = encodeURIComponent(`${getBaseUrl()}/api/social/oauth/tiktok/callback`);
+  return `https://www.tiktok.com/v2/auth/authorize/?client_key=${clientKey}&scope=${encodeURIComponent(TIKTOK_SCOPES)}&response_type=code&redirect_uri=${redirect}&state=${state}`;
+}
+
+export async function exchangeTikTokCode(userId: string, code: string): Promise<void> {
+  const redirectUri = `${getBaseUrl()}/api/social/oauth/tiktok/callback`;
+  const tokenRes = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_key: process.env.TIKTOK_CLIENT_KEY!,
+      client_secret: process.env.TIKTOK_CLIENT_SECRET!,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri,
+    }),
+  });
+  const tok: any = await tokenRes.json();
+  if (!tokenRes.ok || !tok.access_token) throw new Error(`tiktok_token: ${JSON.stringify(tok).slice(0, 200)}`);
+
+  let accountName = 'TikTok';
+  try {
+    const me = await fetch('https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name', {
+      headers: { Authorization: `Bearer ${tok.access_token}` },
+    });
+    const mj: any = await me.json();
+    accountName = mj?.data?.user?.display_name || accountName;
+  } catch { /* ignore */ }
+
+  const expiresAt = tok.expires_in ? new Date(Date.now() + tok.expires_in * 1000) : undefined;
+  await storage.createSocialAccount({
+    userId,
+    platform: 'tiktok',
+    accountId: tok.open_id,
+    accountName,
+    accessToken: tok.access_token,
+    refreshToken: tok.refresh_token || undefined,
+    expiresAt,
+    permissions: TIKTOK_SCOPES.split(','),
+    isActive: true,
+    lastSyncAt: new Date(),
+  } as any);
+}
+
 // ─── Helper : vérifie si une plateforme est configurée ───────────────────────
 
-export function isPlatformConfigured(platform: 'instagram' | 'linkedin' | 'twitter'): boolean {
+export function isPlatformConfigured(platform: 'instagram' | 'linkedin' | 'twitter' | 'tiktok'): boolean {
   switch (platform) {
     case 'instagram':
       return !!(process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET);
@@ -387,5 +437,7 @@ export function isPlatformConfigured(platform: 'instagram' | 'linkedin' | 'twitt
       return !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
     case 'twitter':
       return !!(process.env.TWITTER_CLIENT_ID && process.env.TWITTER_CLIENT_SECRET);
+    case 'tiktok':
+      return !!(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET);
   }
 }

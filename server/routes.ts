@@ -51,6 +51,7 @@ import {
   getInstagramAuthUrl, exchangeInstagramCode,
   getLinkedInAuthUrl,  exchangeLinkedInCode,
   getTwitterAuthUrl,   exchangeTwitterCode,
+  getTikTokAuthUrl,    exchangeTikTokCode,
   isPlatformConfigured,
 } from "./services/social-oauth";
 import { leadScrapingService } from "./services/lead-scraping";
@@ -714,7 +715,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
   // GET /api/social/oauth/:platform/url — génère l'URL de consentement
   app.get('/api/social/oauth/:platform/url', isAuthenticated, async (req: any, res) => {
     const { platform } = req.params;
-    const validPlatforms = ['instagram', 'linkedin', 'twitter'];
+    const validPlatforms = ['instagram', 'linkedin', 'twitter', 'tiktok'];
     if (!validPlatforms.includes(platform)) {
       return res.status(400).json({ message: `Plateforme non supportée: ${platform}` });
     }
@@ -734,6 +735,8 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
         url = getInstagramAuthUrl(state);
       } else if (platform === 'linkedin') {
         url = getLinkedInAuthUrl(state);
+      } else if (platform === 'tiktok') {
+        url = getTikTokAuthUrl(state);
       } else {
         // twitter — génère un code_verifier simple
         const codeVerifier = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
@@ -773,6 +776,8 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
         await exchangeInstagramCode(userId, code);
       } else if (platform === 'linkedin') {
         await exchangeLinkedInCode(userId, code);
+      } else if (platform === 'tiktok') {
+        await exchangeTikTokCode(userId, code);
       } else if (platform === 'twitter') {
         const codeVerifier = (req.session as any)?.twitterCodeVerifier || '';
         await exchangeTwitterCode(userId, code, codeVerifier);

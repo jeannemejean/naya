@@ -287,6 +287,56 @@ async function publishFacebook(input: PubInput): Promise<PubResult> {
   return { state: "posted", platformPostId: d.post_id || d.id };
 }
 
+// ─────────────────────────── TikTok (Content Posting API) ───────────────────────────
+
+const TIKTOK_API = "https://open.tiktokapis.com/v2";
+// Apps non auditées : publication en privé (SELF_ONLY) tant que l'audit TikTok n'est pas validé.
+const TIKTOK_PRIVACY = process.env.TIKTOK_PRIVACY_LEVEL || "SELF_ONLY";
+
+async function publishTikTok(input: PubInput): Promise<PubResult> {
+  const token = input.credentials.accessToken;
+  const item = input.media.find((m) => m.kind === "video");
+  if (!item) return { state: "failed", error: "tiktok_requires_video" };
+
+  // Upload direct du fichier (FILE_UPLOAD) → pas de vérification de domaine requise.
+  const bytes = Buffer.from(await (await fetch(item.url)).arrayBuffer());
+  const init = await fetch(`${TIKTOK_API}/post/publish/video/init/`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      post_info: { title: (input.caption || "").slice(0, 2200), privacy_level: TIKTOK_PRIVACY, disable_comment: false, disable_duet: false, disable_stitch: false },
+      source_info: { source: "FILE_UPLOAD", video_size: bytes.length, chunk_size: bytes.length, total_chunk_count: 1 },
+    }),
+  });
+  const ij: any = await init.json().catch(() => ({}));
+  if (!init.ok || ij?.error?.code !== "ok") throw new Error(`tiktok_init: ${JSON.stringify(ij?.error || ij).slice(0, 200)}`);
+  const publishId = ij.data.publish_id;
+  const uploadUrl = ij.data.upload_url;
+
+  const put = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "video/mp4", "Content-Range": `bytes 0-${bytes.length - 1}/${bytes.length}` },
+    body: bytes,
+  });
+  if (!put.ok) throw new Error(`tiktok_upload_${put.status}`);
+
+  return { state: "processing", containerId: publishId };
+}
+
+/** Worker : vérifie le statut d'une publication TikTok et conclut. */
+export async function tiktokFinishAsync(creds: PubCredentials, publishId: string): Promise<PubResult> {
+  const res = await fetch(`${TIKTOK_API}/post/publish/status/fetch/`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${creds.accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ publish_id: publishId }),
+  });
+  const j: any = await res.json().catch(() => ({}));
+  const status = j?.data?.status;
+  if (status === "PUBLISH_COMPLETE") return { state: "posted", platformPostId: publishId };
+  if (status === "FAILED") return { state: "failed", error: `tiktok_${j?.data?.fail_reason || "failed"}` };
+  return { state: "processing", containerId: publishId };
+}
+
 // ─────────────────────────── Dispatcher ───────────────────────────
 
 /** Publie un post selon le réseau + format. */
@@ -295,6 +345,7 @@ export async function publishPost(input: PubInput): Promise<PubResult> {
     if (input.platform === "instagram") return await publishInstagram(input);
     if (input.platform === "linkedin") return await publishLinkedIn(input);
     if (input.platform === "facebook") return await publishFacebook(input);
+    if (input.platform === "tiktok") return await publishTikTok(input);
 
     // Twitter : ancien chemin (texte) — hors périmètre de la refonte.
     const legacy = { platform: input.platform, content: input.caption, imageUrl: input.media[0]?.url } as any;

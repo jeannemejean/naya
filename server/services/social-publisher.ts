@@ -14,7 +14,7 @@
  */
 import { storage } from '../storage';
 import { socialMediaService } from './social-integrations';
-import { publishPost, igFinishAsync } from './social-publishers';
+import { publishPost, igFinishAsync, tiktokFinishAsync } from './social-publishers';
 
 const SUPPORTED = new Set(['instagram', 'linkedin', 'twitter', 'facebook']);
 
@@ -106,14 +106,17 @@ async function finishProcessing(): Promise<number> {
   const rows = await storage.getProcessingContent().catch(() => [] as any[]);
   let done = 0;
   for (const item of rows) {
-    if (item.platform !== 'instagram' || !item.providerContainerId) continue;
+    if (!item.providerContainerId || (item.platform !== 'instagram' && item.platform !== 'tiktok')) continue;
     try {
       const accounts = await storage.getSocialAccounts(item.userId);
       const account = item.socialAccountId
         ? accounts.find((a: any) => a.id === item.socialAccountId)
-        : accounts.find((a: any) => a.platform === 'instagram' && a.isActive);
+        : accounts.find((a: any) => a.platform === item.platform && a.isActive);
       if (!account) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'no_account' } as any); continue; }
-      const r = await igFinishAsync({ accessToken: account.accessToken, accountId: account.accountId }, item.providerContainerId);
+      const creds = { accessToken: account.accessToken, accountId: account.accountId };
+      const r = item.platform === 'tiktok'
+        ? await tiktokFinishAsync(creds, item.providerContainerId)
+        : await igFinishAsync(creds, item.providerContainerId);
       if (r.state === 'posted') {
         await storage.updateContent(item.id, { status: 'published', publishedAt: new Date(), platformPostId: r.platformPostId, postStatus: 'posted' } as any);
         done++;
