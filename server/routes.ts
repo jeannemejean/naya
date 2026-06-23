@@ -820,7 +820,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const accounts = await storage.getSocialAccounts(userId);
       const status: Record<string, { connected: boolean; accountName?: string; expiresAt?: Date; configured: boolean }> = {};
 
-      for (const platform of ['instagram', 'linkedin'] as const) {
+      for (const platform of ['instagram', 'linkedin', 'tiktok'] as const) {
         const account = accounts.find(a => a.platform === platform && a.isActive);
         // Compter les pages LinkedIn connectées
         const linkedinPages = platform === 'linkedin'
