@@ -66,6 +66,7 @@ import { serpConfigured, sourceLeadsFromQueries } from "./services/serp";
 import { isAiBlocked } from "./services/usage";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
 import { deriveMilestoneDate } from "./services/milestone-dates";
+import { r2Configured, createUploadUrl } from "./services/r2-storage";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -7800,6 +7801,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // Endpoint for getting upload URL for media files
+  // Upload de médias (image/vidéo) sur Cloudflare R2 — URL présignée pour upload direct.
+  app.post("/api/media/upload-url", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!r2Configured()) return res.status(503).json({ message: "storage_not_configured" });
+      const { filename, contentType } = req.body || {};
+      if (!filename || !contentType) return res.status(400).json({ message: "filename_and_contentType_required" });
+      if (!/^(image|video)\//.test(contentType)) return res.status(400).json({ message: "unsupported_content_type" });
+      const out = await createUploadUrl({ userId: req.userId, filename, contentType });
+      res.json(out); // { uploadUrl, publicUrl, key }
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   app.post("/api/objects/upload", isAuthenticated, async (req: any, res) => {
     try {
       // Validate object storage configuration first
