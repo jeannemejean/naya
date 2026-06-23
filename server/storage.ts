@@ -917,6 +917,16 @@ export class DatabaseStorage implements IStorage {
       .limit(25);
   }
 
+  /** Contenus dont la vidéo est en cours de traitement (conteneur async à finaliser). */
+  async getProcessingContent(): Promise<Content[]> {
+    return await db.select().from(content)
+      .where(and(
+        eq(content.postStatus, 'processing'),
+        isNotNull(content.providerContainerId),
+      ))
+      .limit(25);
+  }
+
   // Claim atomique : passe pending → posting une seule fois. Renvoie false si
   // un autre passage du worker a déjà pris ce contenu (anti double-publication).
   async claimContentForPosting(id: number): Promise<boolean> {

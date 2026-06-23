@@ -14,6 +14,7 @@
  */
 import { storage } from '../storage';
 import { socialMediaService } from './social-integrations';
+import { publishPost, igFinishAsync } from './social-publishers';
 
 const SUPPORTED = new Set(['instagram', 'linkedin', 'twitter', 'facebook']);
 
@@ -55,31 +56,43 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
       accountName: account.accountName,
     } as any;
 
-    // 3. Média éventuel (1re image de la bibliothèque, sinon mediaUrl).
-    let imageUrl: string | undefined;
+    // 3. Liste ordonnée des médias (type + durée) depuis la médiathèque, sinon mediaUrl.
+    const media: { url: string; kind: 'image' | 'video'; durationSec?: number }[] = [];
     if (Array.isArray(item.mediaIds) && item.mediaIds.length > 0) {
-      const media = await storage.getMediaItemById(item.mediaIds[0], item.userId);
-      if (media) imageUrl = media.url;
+      for (const mid of item.mediaIds as any[]) {
+        const m = await storage.getMediaItemById(Number(mid), item.userId);
+        if (m?.url) media.push({ url: m.url, kind: (m.mimeType || '').startsWith('video/') ? 'video' : 'image', durationSec: (m as any).duration ?? undefined });
+      }
     }
-    if (!imageUrl && item.mediaUrl) imageUrl = item.mediaUrl;
+    if (media.length === 0 && item.mediaUrl) media.push({ url: item.mediaUrl, kind: 'image' });
 
-    const postData = { platform, content: item.body, imageUrl } as any;
+    // 4. Format (défaut feed_image ; texte si LinkedIn sans média).
+    const format: string = item.postFormat || (media.length ? 'feed_image' : 'text');
+    if (media.length === 0 && platform !== 'linkedin') {
+      await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'media_required' } as any);
+      return 'failed';
+    }
 
-    // 4. Publication via la fonction existante de la plateforme.
-    let platformPostId: string;
-    if (platform === 'instagram') platformPostId = await socialMediaService.postToInstagram(credentials, postData);
-    else if (platform === 'linkedin') platformPostId = await socialMediaService.postToLinkedIn(credentials, postData);
-    else if (platform === 'twitter') platformPostId = await socialMediaService.postToTwitter(credentials, postData);
-    else platformPostId = await socialMediaService.postToFacebook(credentials, postData);
+    // 5. Publication format-aware.
+    const result = await publishPost({
+      platform, format, caption: item.body, media,
+      credentials: { accessToken: credentials.accessToken, accountId: credentials.accountId },
+    });
 
-    // 5. Succès.
+    if (result.state === 'processing') {
+      await storage.updateContent(item.id, { postStatus: 'processing', providerContainerId: result.containerId || null } as any);
+      console.log(`[SocialPublisher] ⏳ vidéo en traitement id=${item.id} (${platform}) container=${result.containerId}`);
+      return 'skipped';
+    }
+    if (result.state === 'failed') {
+      await storage.updateContent(item.id, { postStatus: 'failed', lastError: (result.error || '').slice(0, 300) } as any);
+      console.error(`[SocialPublisher] ❌ échec id=${item.id} sur ${platform}: ${result.error}`);
+      return 'failed';
+    }
     await storage.updateContent(item.id, {
-      status: 'published',
-      publishedAt: new Date(),
-      platformPostId,
-      postStatus: 'posted',
+      status: 'published', publishedAt: new Date(), platformPostId: result.platformPostId, postStatus: 'posted',
     } as any);
-    console.log(`[SocialPublisher] ✅ publié id=${item.id} sur ${platform} (postId=${platformPostId})`);
+    console.log(`[SocialPublisher] ✅ publié id=${item.id} sur ${platform} (postId=${result.platformPostId})`);
     return 'posted';
   } catch (err: any) {
     await storage.updateContent(item.id, { postStatus: 'failed' } as any).catch(() => {});
@@ -88,9 +101,37 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
   }
 }
 
+/** Reprend les vidéos en cours de traitement (conteneurs IG) et les publie quand prêtes. */
+async function finishProcessing(): Promise<number> {
+  const rows = await storage.getProcessingContent().catch(() => [] as any[]);
+  let done = 0;
+  for (const item of rows) {
+    if (item.platform !== 'instagram' || !item.providerContainerId) continue;
+    try {
+      const accounts = await storage.getSocialAccounts(item.userId);
+      const account = item.socialAccountId
+        ? accounts.find((a: any) => a.id === item.socialAccountId)
+        : accounts.find((a: any) => a.platform === 'instagram' && a.isActive);
+      if (!account) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'no_account' } as any); continue; }
+      const r = await igFinishAsync({ accessToken: account.accessToken, accountId: account.accountId }, item.providerContainerId);
+      if (r.state === 'posted') {
+        await storage.updateContent(item.id, { status: 'published', publishedAt: new Date(), platformPostId: r.platformPostId, postStatus: 'posted' } as any);
+        done++;
+      } else if (r.state === 'failed') {
+        await storage.updateContent(item.id, { postStatus: 'failed', lastError: (r.error || '').slice(0, 300) } as any);
+      }
+      // 'processing' → on laisse, retry au prochain cycle
+    } catch (e: any) {
+      console.error(`[SocialPublisher] poll vidéo id=${item.id}:`, e?.message || e);
+    }
+  }
+  return done;
+}
+
 /** Publie tous les contenus programmés arrivés à échéance. */
 export async function publishDueContent(): Promise<{ posted: number; failed: number; skipped: number }> {
   const now = new Date();
+  await finishProcessing(); // reprend d'abord les vidéos en traitement
   const due = await storage.getDueScheduledContent(now).catch((e: any) => {
     console.error('[SocialPublisher] erreur récupération contenus dus:', e?.message || e);
     return [] as any[];
