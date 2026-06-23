@@ -14,6 +14,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
 import Sidebar from '@/components/sidebar';
+import { SocialComposer } from '@/components/SocialComposer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -134,6 +135,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const [campaignFilter, setCampaignFilter] = useState<number | null>(null);
  const [searchQuery, setSearchQuery] = useState('');
  const [showCreateDialog, setShowCreateDialog] = useState(false);
+ const [showComposer, setShowComposer] = useState(false);
  const [selectedPost, setSelectedPost] = useState<Content | null>(null);
  const [showStrategyRecs, setShowStrategyRecs] = useState(false);
  const [formData, setFormData] = useState<PostFormData>({
@@ -1094,9 +1096,14 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </h1>
  <p className="text-sm text-muted-foreground mt-1">{t('contentCalendar.subtitle')}</p>
  </div>
+ <div className="flex items-center gap-2">
+ <Button variant="default" className="flex items-center gap-2" onClick={() => setShowComposer(true)}>
+ <Sparkles className="h-4 w-4" />
+ Composer multi-réseaux
+ </Button>
  <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) resetForm(); }}>
  <DialogTrigger asChild>
- <Button className="flex items-center gap-2">
+ <Button variant="outline" className="flex items-center gap-2">
  <Plus className="h-4 w-4" />
  {t('contentCalendar.newPiece')}
  </Button>
@@ -1104,6 +1111,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {renderCreateEditModal()}
  </Dialog>
  </div>
+ </div>
+ <SocialComposer open={showComposer} onClose={() => setShowComposer(false)} projectId={selectedProjectId} />
 
  {projects.length > 0 && (
  <div className="flex items-center gap-2 mt-3 flex-wrap">

@@ -67,6 +67,7 @@ import { isAiBlocked } from "./services/usage";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
 import { deriveMilestoneDate } from "./services/milestone-dates";
 import { r2Configured, createUploadUrl } from "./services/r2-storage";
+import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
   ObjectNotFoundError,
@@ -787,6 +788,27 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
   });
 
   // GET /api/social/status — état de connexion de tous les réseaux
+  // Liste des comptes sociaux connectés (avec IDs) pour le composer multi-réseaux.
+  // Inclut profils + pages LinkedIn + IG/FB/TikTok.
+  app.get('/api/social/accounts', isAuthenticated, async (req: any, res) => {
+    try {
+      const accounts = await storage.getSocialAccounts(req.userId);
+      res.json(
+        accounts
+          .filter((a: any) => a.isActive)
+          .map((a: any) => ({
+            id: a.id,
+            platform: a.platform,                                   // instagram|facebook|linkedin|linkedin_page_<id>|tiktok
+            basePlatform: a.platform.startsWith('linkedin') ? 'linkedin' : a.platform,
+            accountName: a.accountName,
+            isPage: a.platform.startsWith('linkedin_page_'),
+          })),
+      );
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get('/api/social/status', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -5729,6 +5751,45 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     } catch (error) {
       console.error("Error creating content:", error);
       res.status(500).json({ message: "Failed to create content" });
+    }
+  });
+
+  // Composer multi-réseaux : crée une ligne de contenu par réseau cible (même crossPostGroupId).
+  app.post('/api/content/cross-post', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { targets, caption, mediaIds, scheduledFor, autoPost, projectId, pillar, goal } = req.body || {};
+      if (!Array.isArray(targets) || targets.length === 0) return res.status(400).json({ message: 'no_targets' });
+      const groupId = randomUUID();
+      const when = scheduledFor ? new Date(scheduledFor) : null;
+      const title = (caption || 'Publication').slice(0, 80);
+      const created = [];
+      for (const tgt of targets) {
+        const row = await storage.createContent({
+          userId,
+          projectId: projectId || null,
+          title,
+          body: caption || '',
+          platform: tgt.basePlatform || tgt.platform,        // instagram|facebook|linkedin|tiktok
+          contentType: tgt.format || 'feed_image',
+          postFormat: tgt.format || 'feed_image',
+          pillar: pillar || 'general',
+          goal: goal || 'visibility',
+          status: 'draft',
+          contentStatus: when ? 'ready' : 'draft',
+          scheduledFor: when,
+          autoPost: autoPost !== false,
+          postStatus: 'pending',
+          mediaIds: Array.isArray(mediaIds) ? mediaIds : [],
+          socialAccountId: tgt.socialAccountId || null,
+          crossPostGroupId: groupId,
+        } as any);
+        created.push(row);
+      }
+      res.json({ groupId, count: created.length, items: created });
+    } catch (error: any) {
+      console.error('Error creating cross-post:', error);
+      res.status(500).json({ message: error?.message || 'cross_post_failed' });
     }
   });
 
