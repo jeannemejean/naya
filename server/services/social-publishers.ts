@@ -10,7 +10,8 @@
  */
 import { socialMediaService } from "./social-integrations";
 
-const GRAPH = "https://graph.facebook.com/v23.0";
+const GRAPH = "https://graph.facebook.com/v23.0";          // Facebook (Pages)
+const IG_GRAPH = "https://graph.instagram.com/v23.0";      // Instagram (API « Instagram Login »)
 
 export type MediaKind = "image" | "video";
 export interface PubMedia {
@@ -92,19 +93,31 @@ async function graphPost(path: string, body: Record<string, any>, accessToken: s
   return data;
 }
 
+/** POST sur graph.instagram.com (API Instagram Login). */
+async function igPost(path: string, body: Record<string, any>, accessToken: string): Promise<any> {
+  const res = await fetch(`${IG_GRAPH}/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, access_token: accessToken }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`ig_${res.status}: ${data?.error?.message || JSON.stringify(data).slice(0, 200)}`);
+  return data;
+}
+
 async function igCreateContainer(creds: PubCredentials, params: Record<string, any>): Promise<string> {
-  const d = await graphPost(`${creds.accountId}/media`, params, creds.accessToken);
+  const d = await igPost(`${creds.accountId}/media`, params, creds.accessToken);
   return d.id;
 }
 
 async function igPublish(creds: PubCredentials, creationId: string): Promise<string> {
-  const d = await graphPost(`${creds.accountId}/media_publish`, { creation_id: creationId }, creds.accessToken);
+  const d = await igPost(`${creds.accountId}/media_publish`, { creation_id: creationId }, creds.accessToken);
   return d.id;
 }
 
 /** Statut d'un conteneur vidéo : FINISHED | IN_PROGRESS | ERROR | EXPIRED | PUBLISHED. */
 export async function igContainerStatus(creds: PubCredentials, containerId: string): Promise<string> {
-  const res = await fetch(`${GRAPH}/${containerId}?fields=status_code&access_token=${encodeURIComponent(creds.accessToken)}`);
+  const res = await fetch(`${IG_GRAPH}/${containerId}?fields=status_code&access_token=${encodeURIComponent(creds.accessToken)}`);
   const d = await res.json().catch(() => ({}));
   return d?.status_code || "UNKNOWN";
 }

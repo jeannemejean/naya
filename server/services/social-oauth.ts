@@ -19,125 +19,76 @@ function getBaseUrl(): string {
       : 'http://localhost:3000');
 }
 
-// ─── Instagram / Meta ────────────────────────────────────────────────────────
-
-// Scopes requis par Meta pour publier sur Instagram + Facebook Pages (Facebook Login).
-// instagram_basic + instagram_content_publish sont OBLIGATOIRES pour /{ig}/media + /media_publish.
-// pages_read_engagement est requis comme dépendance de la publication Instagram.
-// pages_show_list (énumérer les Pages) + pages_manage_posts (publier sur le feed d'une Page FB).
-// Réf : https://developers.facebook.com/docs/instagram-platform/content-publishing/
-const INSTAGRAM_SCOPES = [
-  'public_profile',
-  'pages_show_list',
-  'pages_read_engagement',
-  'pages_manage_posts',
-  'instagram_basic',
-  'instagram_content_publish',
-].join(',');
+// ─── Instagram (API « Instagram Login » — graph.instagram.com) ────────────────
+//
+// Flux Instagram Login (≠ Facebook Login) : app Instagram dédiée (IG_APP_ID/IG_APP_SECRET),
+// consentement sur instagram.com, jeton échangé sur api.instagram.com puis long-lived sur
+// graph.instagram.com. Permet de PUBLIER sans Page Facebook ni vérification d'entreprise.
+// Réf : https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
+const INSTAGRAM_SCOPES = ['instagram_business_basic', 'instagram_business_content_publish'].join(',');
 
 export function getInstagramAuthUrl(state: string): string {
-  const appId = process.env.INSTAGRAM_APP_ID;
-  if (!appId) throw new Error('INSTAGRAM_APP_ID non configuré');
-
+  const appId = process.env.IG_APP_ID;
+  if (!appId) throw new Error('IG_APP_ID non configuré');
   const redirect = encodeURIComponent(`${getBaseUrl()}/api/social/oauth/instagram/callback`);
   const scope = encodeURIComponent(INSTAGRAM_SCOPES);
-
-  return `https://www.facebook.com/v23.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirect}&scope=${scope}&state=${state}&response_type=code`;
+  return `https://www.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${redirect}&response_type=code&scope=${scope}&state=${state}`;
 }
 
 export async function exchangeInstagramCode(userId: string, code: string): Promise<void> {
-  const appId = process.env.INSTAGRAM_APP_ID!;
-  const appSecret = process.env.INSTAGRAM_APP_SECRET!;
+  const appId = process.env.IG_APP_ID!;
+  const appSecret = process.env.IG_APP_SECRET!;
   const redirectUri = `${getBaseUrl()}/api/social/oauth/instagram/callback`;
 
-  // 1. Échanger le code contre un short-lived token
-  const tokenRes = await fetch(
-    `https://graph.facebook.com/v23.0/oauth/access_token?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&client_secret=${appSecret}&code=${code}`
-  );
-  const tokenData = await tokenRes.json();
-  if (!tokenData.access_token) {
-    throw new Error(`Meta token exchange failed: ${JSON.stringify(tokenData.error || tokenData)}`);
-  }
+  // 1. Code → short-lived token (api.instagram.com, form-urlencoded). Instagram renvoie parfois
+  //    le code suffixé de "#_" → on nettoie.
+  const tokenRes = await fetch('https://api.instagram.com/oauth/access_token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: appId,
+      client_secret: appSecret,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri,
+      code: code.replace(/#_$/, ''),
+    }),
+  });
+  const tokenData: any = await tokenRes.json();
+  const shortToken = tokenData?.access_token;
+  if (!shortToken) throw new Error(`Instagram token exchange failed: ${JSON.stringify(tokenData?.error || tokenData)}`);
+  const igUserId = String(tokenData.user_id);
 
-  // 2. Échanger contre un long-lived token (60 jours)
-  const longRes = await fetch(
-    `https://graph.facebook.com/v23.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${tokenData.access_token}`
-  );
-  const longData = await longRes.json();
-  const longToken = longData.access_token || tokenData.access_token;
-
-  // 2b. Récupérer l'ID utilisateur Meta (pour honorer le data deletion callback)
-  let metaUserId: string | null = null;
+  // 2. Short-lived → long-lived (60 jours) sur graph.instagram.com
+  let longToken = shortToken;
+  let expiresIn = 60 * 24 * 60 * 60;
   try {
-    const meRes = await fetch(`https://graph.facebook.com/v23.0/me?fields=id&access_token=${longToken}`);
-    const meData = await meRes.json();
-    metaUserId = meData?.id ?? null;
-  } catch {
-    metaUserId = null;
-  }
-
-  // 3. Récupérer les pages Facebook de l'utilisateur
-  const pagesRes = await fetch(
-    `https://graph.facebook.com/v23.0/me/accounts?access_token=${longToken}`
-  );
-  const pagesData = await pagesRes.json();
-  const pages = pagesData.data || [];
-
-  if (pages.length === 0) {
-    throw new Error('Aucune Page Facebook trouvée. Connecte une Page Facebook à ton compte Instagram Business.');
-  }
-
-  // 4. Trouver le compte Instagram Business lié à la première page
-  let igAccountId: string | null = null;
-  let igAccountName: string = pages[0].name;
-
-  for (const page of pages) {
-    const igRes = await fetch(
-      `https://graph.facebook.com/v23.0/${page.id}?fields=instagram_business_account&access_token=${page.access_token || longToken}`
+    const longRes = await fetch(
+      `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${appSecret}&access_token=${shortToken}`,
     );
-    const igData = await igRes.json();
-    if (igData.instagram_business_account?.id) {
-      igAccountId = igData.instagram_business_account.id;
-      igAccountName = page.name;
-      break;
-    }
-  }
+    const longData: any = await longRes.json();
+    if (longData?.access_token) { longToken = longData.access_token; expiresIn = longData.expires_in || expiresIn; }
+  } catch { /* garde le short-lived */ }
 
-  if (!igAccountId) {
-    // Fallback : utiliser l'ID de la page directement (pour poster via Creator Studio)
-    igAccountId = pages[0].id as string;
-    igAccountName = pages[0].name as string;
-  }
+  // 3. Nom d'utilisateur (non bloquant)
+  let accountName = 'Instagram';
+  let accountId = igUserId;
+  try {
+    const me = await fetch(`https://graph.instagram.com/me?fields=user_id,username&access_token=${longToken}`);
+    const mj: any = await me.json();
+    accountName = mj?.username || accountName;
+    accountId = String(mj?.user_id || igUserId);
+  } catch { /* ignore */ }
 
-  const finalAccountId: string = igAccountId!;
-  const finalAccountName: string = igAccountName;
-
-  // 5. Sauvegarder dans la DB (upsert)
+  const expiresAt = new Date(Date.now() + expiresIn * 1000);
   const existing = await storage.getSocialAccountByPlatform(userId, 'instagram');
-  const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 jours
-
   if (existing) {
     await storage.updateSocialAccount(existing.id, userId, {
-      accessToken: longToken,
-      accountId: finalAccountId,
-      platformUserId: metaUserId,
-      accountName: finalAccountName,
-      expiresAt,
-      isActive: true,
-      lastSyncAt: new Date(),
+      accessToken: longToken, accountId, platformUserId: accountId, accountName, expiresAt, isActive: true, lastSyncAt: new Date(),
     });
   } else {
     await storage.createSocialAccount({
-      userId,
-      platform: 'instagram',
-      accountId: finalAccountId,
-      platformUserId: metaUserId,
-      accountName: finalAccountName,
-      accessToken: longToken,
-      expiresAt,
-      permissions: INSTAGRAM_SCOPES.split(','),
-      isActive: true,
-      lastSyncAt: new Date(),
+      userId, platform: 'instagram', accountId, platformUserId: accountId, accountName,
+      accessToken: longToken, expiresAt, permissions: INSTAGRAM_SCOPES.split(','), isActive: true, lastSyncAt: new Date(),
     });
   }
 }
@@ -432,7 +383,7 @@ export async function exchangeTikTokCode(userId: string, code: string): Promise<
 export function isPlatformConfigured(platform: 'instagram' | 'linkedin' | 'twitter' | 'tiktok'): boolean {
   switch (platform) {
     case 'instagram':
-      return !!(process.env.INSTAGRAM_APP_ID && process.env.INSTAGRAM_APP_SECRET);
+      return !!(process.env.IG_APP_ID && process.env.IG_APP_SECRET);
     case 'linkedin':
       return !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
     case 'twitter':
