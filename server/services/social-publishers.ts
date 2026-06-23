@@ -133,6 +133,17 @@ export async function igFinishAsync(creds: PubCredentials, containerId: string):
   return { state: "processing", containerId }; // IN_PROGRESS / UNKNOWN → réessayer
 }
 
+/** Attend qu'un conteneur soit prêt (FINISHED). Renvoie FINISHED | PENDING | ERROR. */
+async function igWaitReady(creds: PubCredentials, containerId: string, maxTries = 8, delayMs = 1500): Promise<"FINISHED" | "PENDING" | "ERROR"> {
+  for (let i = 0; i < maxTries; i++) {
+    const s = await igContainerStatus(creds, containerId).catch(() => "UNKNOWN");
+    if (s === "FINISHED") return "FINISHED";
+    if (s === "ERROR" || s === "EXPIRED") return "ERROR";
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return "PENDING";
+}
+
 async function publishInstagram(input: PubInput): Promise<PubResult> {
   const { credentials: creds, format, media, caption } = input;
 
@@ -140,11 +151,14 @@ async function publishInstagram(input: PubInput): Promise<PubResult> {
     const childIds: string[] = [];
     for (const m of media) {
       const childId = await igCreateContainer(creds, igContainerParams(format, m, caption, true));
+      await igWaitReady(creds, childId); // chaque enfant doit être prêt avant le conteneur carrousel
       childIds.push(childId);
     }
     const carouselId = await igCreateContainer(creds, { media_type: "CAROUSEL", children: childIds.join(","), caption });
-    const id = await igPublish(creds, carouselId);
-    return { state: "posted", platformPostId: id };
+    const ready = await igWaitReady(creds, carouselId);
+    if (ready === "ERROR") return { state: "failed", error: "carousel_container_error" };
+    if (ready === "PENDING") return { state: "processing", containerId: carouselId };
+    return { state: "posted", platformPostId: await igPublish(creds, carouselId) };
   }
 
   const item = media[0];
@@ -152,11 +166,14 @@ async function publishInstagram(input: PubInput): Promise<PubResult> {
   const containerId = await igCreateContainer(creds, igContainerParams(format, item, caption));
 
   if (igIsAsync(format, media)) {
-    // Vidéo : laisser le worker poller le statut puis publier.
+    // Vidéo : traitement long → le worker poll le statut puis publie.
     return { state: "processing", containerId };
   }
-  const id = await igPublish(creds, containerId);
-  return { state: "posted", platformPostId: id };
+  // Image : on attend que le conteneur soit prêt (évite « Media ID is not available »).
+  const ready = await igWaitReady(creds, containerId);
+  if (ready === "ERROR") return { state: "failed", error: "container_error" };
+  if (ready === "PENDING") return { state: "processing", containerId };
+  return { state: "posted", platformPostId: await igPublish(creds, containerId) };
 }
 
 // ─────────────────────────── LinkedIn (profil + page entreprise) ───────────────────────────
