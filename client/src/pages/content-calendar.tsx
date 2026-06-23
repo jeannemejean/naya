@@ -469,11 +469,16 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  });
  };
 
- const handleGetUploadParameters = async () => {
+ const handleGetUploadParameters = async (file: { name?: string; type?: string }) => {
  try {
- const response = await fetch('/api/objects/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+ const response = await fetch('/api/media/upload-url', {
+ method: 'POST',
+ headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify({ filename: file.name || 'media', contentType: file.type || 'application/octet-stream' }),
+ });
+ if (!response.ok) throw new Error('upload_url_failed');
  const data = await response.json();
- return { method: 'PUT' as const, url: data.uploadURL };
+ return { method: 'PUT' as const, url: data.uploadUrl, publicUrl: data.publicUrl };
  } catch (error) {
  toast({ title: t('contentCalendar.failedToGetUploadUrl'), variant: 'destructive' });
  throw error;
@@ -483,14 +488,16 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const handleUploadComplete = (result: any) => {
  if (result.successful && result.successful.length > 0) {
  const file = result.successful[0];
- uploadMediaMutation.mutate({ fileUrl: file.uploadURL, fileName: file.name || 'Uploaded file', fileType: file.type || 'unknown', fileSize: file.size || 0 });
+ const url = file.meta?.publicUrl || file.uploadURL;
+ uploadMediaMutation.mutate({ fileUrl: url, fileName: file.name || 'Uploaded file', fileType: file.type || 'unknown', fileSize: file.size || 0 });
  }
  };
 
  const handlePostMediaUpload = (result: any) => {
  if (result.successful && result.successful.length > 0) {
  const file = result.successful[0];
- setFormData(prev => ({ ...prev, mediaUrl: file.uploadURL, mediaFileName: file.name || 'Uploaded media' }));
+ const url = file.meta?.publicUrl || file.uploadURL;
+ setFormData(prev => ({ ...prev, mediaUrl: url, mediaFileName: file.name || 'Uploaded media' }));
  toast({ title: t('contentCalendar.mediaUploaded') });
  }
  };
