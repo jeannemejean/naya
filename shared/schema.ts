@@ -481,8 +481,14 @@ export const content = pgTable("content", {
   campaignId: integer("campaign_id").references(() => campaigns.id), // lien vers la campagne d'origine
   socialAccountId: integer("social_account_id").references(() => socialAccounts.id),
   autoPost: boolean("auto_post").default(true),
-  postStatus: text("post_status").default("pending"),
+  postStatus: text("post_status").default("pending"), // pending|uploading|processing|posting|posted|failed
   platformPostId: text("platform_post_id"),
+  // ── Refonte publication sociale (Metricool/Later) ──
+  postFormat: text("post_format").default("feed_image"), // feed_image|feed_video|carousel|story|reel|short|text
+  crossPostGroupId: text("cross_post_group_id"),         // regroupe les lignes d'un même post multi-réseaux
+  videoMeta: jsonb("video_meta"),                        // { durationSec, width, height, thumbnailUrl }
+  providerContainerId: text("provider_container_id"),    // conteneur média IG/FB / publish_id TikTok (async)
+  lastError: text("last_error"),                         // dernier message d'échec de publication
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
