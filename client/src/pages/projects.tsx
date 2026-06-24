@@ -22,6 +22,7 @@ import { useProject } from "@/lib/project-context";
 import { Plus, Target, TrendingUp, Zap, Star, Settings, CheckCircle2, Circle, Archive, Loader2, Clock, Sparkles, Dna, Lock, Unlock, Flag, ChevronRight, Check } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
+import { BrandDnaEditor } from "@/components/brand-dna-editor";
 import type { Project, ProjectGoal, Client, Task } from "@shared/schema";
 
 const createClientSchema = z.object({
@@ -522,162 +523,13 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
  );
 }
 
-// ─── Brand DNA per-project tab ────────────────────────────────────────────────
+// ─── Brand DNA per-project tab (full editor) ─────────────────────
 function BrandDnaProjectTab({ project }: { project: Project }) {
- const { t } = useTranslation();
- const queryClient = useQueryClient();
- const { toast } = useToast();
-
- const { data: dna, isLoading } = useQuery<any>({
- queryKey: ['/api/projects', project.id, 'brand-dna'],
- queryFn: () => fetch(`/api/projects/${project.id}/brand-dna`, { credentials: 'include' }).then(r => r.json()),
- });
-
- const [fields, setFields] = useState<Record<string, string>>({});
- const [initialised, setInitialised] = useState(false);
-
- const set = (k: string) => (v: string) => setFields(f => ({ ...f, [k]: v }));
-
- // Populate form once data arrives
- if (dna && !initialised) {
- setFields({
- businessType: dna.businessType || '',
- businessModel: dna.businessModel || '',
- targetAudience: dna.targetAudience || '',
- corePainPoint: dna.corePainPoint || '',
- audienceAspiration: dna.audienceAspiration || '',
- uniquePositioning: dna.uniquePositioning || '',
- communicationStyle: dna.communicationStyle || '',
- platformPriority: dna.platformPriority || '',
- primaryGoal: dna.primaryGoal || '',
- revenueUrgency: dna.revenueUrgency || '',
- activeBusinessPriority: dna.activeBusinessPriority || '',
- authorityLevel: dna.authorityLevel || '',
- });
- setInitialised(true);
- }
-
- const saveMutation = useMutation({
- mutationFn: (data: Record<string, string>) =>
- apiRequest('PATCH', `/api/projects/${project.id}/brand-dna`, data),
- onSuccess: () => {
- queryClient.invalidateQueries({ queryKey: ['/api/projects', project.id, 'brand-dna'] });
- toast({ title: t('settings.saved') });
- },
- onError: () => toast({ title: t('common.error'), variant: "destructive" }),
- });
-
- if (isLoading) return (
- <div className="space-y-3 pt-2">
- {[1,2,3,4].map(i => <div key={i} className="h-10 bg-naya-olive-10 rounded animate-pulse" />)}
- </div>
- );
-
- const Field = ({ label, k, placeholder, rows }: { label: string; k: string; placeholder?: string; rows?: number }) => (
- <div className="space-y-1">
- <Label className="text-xs text-naya-olive-70">{label}</Label>
- {rows ? (
- <Textarea value={fields[k] || ''} onChange={e => set(k)(e.target.value)} rows={rows} placeholder={placeholder} className="text-sm " />
- ) : (
- <Input value={fields[k] || ''} onChange={e => set(k)(e.target.value)} placeholder={placeholder} className="text-sm " />
- )}
- </div>
- );
-
- const SelectField = ({ label, k, options }: { label: string; k: string; options: {value: string; label: string}[] }) => (
- <div className="space-y-1">
- <Label className="text-xs text-naya-olive-70">{label}</Label>
- <Select value={fields[k] || ''} onValueChange={set(k)}>
- <SelectTrigger className="text-sm "><SelectValue placeholder="Choose…" /></SelectTrigger>
- <SelectContent>
- {options.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
- </SelectContent>
- </Select>
- </div>
- );
-
- return (
- <div className="space-y-5 pb-4">
- {!dna?.projectId && dna && (
- <div className="flex items-start gap-2 p-3 rounded-lg bg-[rgba(125,143,168,0.12)] border border-[rgba(125,143,168,0.35)] ">
- <Sparkles className="h-3.5 w-3.5 text-naya-salvia mt-0.5 flex-shrink-0" />
- <p className="text-xs text-[#354963] ">Showing your global Brand DNA as a starting point. Save to create a profile specific to <strong>{project.name}</strong>.</p>
- </div>
- )}
-
- <div>
- <p className="text-[11px] uppercase tracking-wider text-naya-olive-35 mb-2">Business</p>
- <div className="space-y-3">
- <Field label="What type of business is this?" k="businessType" placeholder="e.g. Agency, Freelance, SaaS, Coaching…" />
- <Field label="Business model" k="businessModel" placeholder="e.g. services, productized, subscription…" />
- <SelectField label="Authority level" k="authorityLevel" options={[
- { value: 'emerging', label: 'Emerging — building credibility' },
- { value: 'established', label: 'Established — known in niche' },
- { value: 'authority', label: 'Authority — widely recognized' },
- { value: 'thought-leader', label: 'Thought leader — industry voice' },
- ]} />
- </div>
- </div>
-
- <div>
- <p className="text-[11px] uppercase tracking-wider text-naya-olive-35 mb-2">Audience</p>
- <div className="space-y-3">
- <Field label="Target audience" k="targetAudience" placeholder="Who you serve — role, context, mindset…" rows={2} />
- <Field label="Core pain point" k="corePainPoint" placeholder="The #1 frustration your audience faces…" rows={2} />
- <Field label="Audience aspiration" k="audienceAspiration" placeholder="What they most want to achieve…" rows={2} />
- </div>
- </div>
-
- <div>
- <p className="text-[11px] uppercase tracking-wider text-naya-olive-35 mb-2">Voice & Platform</p>
- <div className="space-y-3">
- <Field label="Unique positioning" k="uniquePositioning" placeholder="What sets this project apart…" rows={2} />
- <SelectField label="Communication style" k="communicationStyle" options={[
- { value: 'direct', label: 'Direct & bold' },
- { value: 'nurturing', label: 'Nurturing & supportive' },
- { value: 'educational', label: 'Educational & informative' },
- { value: 'inspiring', label: 'Inspiring & visionary' },
- { value: 'conversational', label: 'Conversational & relatable' },
- { value: 'authoritative', label: 'Authoritative & expert' },
- ]} />
- <SelectField label="Primary platform" k="platformPriority" options={[
- { value: 'linkedin', label: 'LinkedIn' },
- { value: 'instagram', label: 'Instagram' },
- { value: 'twitter', label: 'Twitter / X' },
- { value: 'newsletter', label: 'Newsletter' },
- { value: 'youtube', label: 'YouTube' },
- { value: 'podcast', label: 'Podcast' },
- { value: 'blog', label: 'Blog / SEO' },
- { value: 'tiktok', label: 'TikTok' },
- ]} />
- </div>
- </div>
-
- <div>
- <p className="text-[11px] uppercase tracking-wider text-naya-olive-35 mb-2">Priorities</p>
- <div className="space-y-3">
- <Field label="Primary goal for this project" k="primaryGoal" placeholder="e.g. sign 2 retainer clients, grow to 5k subscribers…" rows={2} />
- <SelectField label="Revenue urgency" k="revenueUrgency" options={[
- { value: 'revenue-now', label: 'Need revenue now — critical' },
- { value: '3-months', label: 'Within 3 months' },
- { value: 'growing-steadily', label: 'Growing steadily — not urgent' },
- { value: 'authority-building', label: 'Building authority first' },
- { value: 'scale-existing', label: 'Scaling what\'s already working' },
- ]} />
- <Field label="Active priority right now" k="activeBusinessPriority" placeholder="e.g. launch podcast, close discovery calls…" />
- </div>
- </div>
-
- <Button
- size="sm"
- onClick={() => saveMutation.mutate(fields)}
- disabled={saveMutation.isPending}
- className="w-full"
- >
- {saveMutation.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />{t('common.loading')}</> : <><Dna className="h-3.5 w-3.5 mr-1.5" />{t('common.save')}</>}
- </Button>
- </div>
- );
+  return (
+    <div className="pb-4">
+      <BrandDnaEditor projectId={project.id} projectName={project.name} />
+    </div>
+  );
 }
 
 interface ProjectsProps {
