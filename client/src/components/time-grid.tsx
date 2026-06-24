@@ -650,7 +650,10 @@ export default function TimeGrid({
 
       {/* Bande tâches non-planifiées + jalons */}
       {dates.some(d => (tasksByDate[d] || []).some(t => !t.scheduledTime)) && (
-        <div className="flex flex-shrink-0 border-b border-naya-olive-10" style={{ paddingLeft: 48 }}>
+        <div className="flex flex-shrink-0 border-b border-naya-olive-10 bg-naya-olive-10/40">
+          <div className="flex-shrink-0 flex items-center justify-end pr-1.5" style={{ width: 48 }} title="Tâches à planifier — glisse-les sur la grille">
+            <span className="text-[8px] font-display uppercase tracking-xwide text-naya-olive-35 text-right leading-[1.1]">À<br />planifier</span>
+          </div>
           {dates.map(date => {
             const unscheduled = (tasksByDate[date] || []).filter(t => !t.scheduledTime);
             return (
