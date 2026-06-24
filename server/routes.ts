@@ -7867,6 +7867,17 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // Endpoint for getting upload URL for media files
+  // Diagnostic crash mobile (sans auth) — l'app poste l'erreur JS fatale ici.
+  const mobileCrashes: any[] = [];
+  app.post("/api/mobile-crash", async (req: any, res) => {
+    const entry = { ...(req.body || {}), at: new Date().toISOString() };
+    mobileCrashes.unshift(entry);
+    if (mobileCrashes.length > 20) mobileCrashes.pop();
+    console.error("[MobileCrash]", JSON.stringify(entry).slice(0, 800));
+    res.json({ ok: true });
+  });
+  app.get("/api/mobile-crash", (_req, res) => res.json(mobileCrashes));
+
   // Upload de médias (image/vidéo) sur Cloudflare R2 — URL présignée pour upload direct.
   app.post("/api/media/upload-url", isAuthenticated, async (req: any, res) => {
     try {
