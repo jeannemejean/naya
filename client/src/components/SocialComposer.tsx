@@ -201,6 +201,37 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
             </div>
           )}
 
+          {/* Aperçu réaliste par format */}
+          {validations.length > 0 && media.length > 0 && (() => {
+            const primary = validations[0];
+            const fmt = primary.format;
+            const tall = fmt === "story" || fmt === "reel" || fmt === "short";
+            const m0 = media[0];
+            return (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-naya-olive-35 mb-2 font-mono">
+                  Aperçu — {PLATFORM_LABEL[primary.acc.basePlatform]} · {fmt}
+                </p>
+                <div className="mx-auto bg-black rounded-2xl overflow-hidden relative" style={{ width: tall ? 200 : 264, aspectRatio: tall ? "9 / 16" : "1 / 1" }}>
+                  {m0.kind === "image"
+                    ? <img src={m0.url} alt="" className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center"><Video className="w-10 h-10 text-white/70" /></div>}
+                  {media.length > 1 && (
+                    <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full">1/{media.length}</span>
+                  )}
+                  {tall && caption ? (
+                    <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/70 to-transparent">
+                      <p className="text-white text-[11px] leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{caption}</p>
+                    </div>
+                  ) : null}
+                </div>
+                {!tall && caption ? (
+                  <p className="text-[12px] text-naya-olive-70 mt-2 mx-auto whitespace-pre-wrap" style={{ maxWidth: 264, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{caption}</p>
+                ) : null}
+              </div>
+            );
+          })()}
+
           {/* Légende */}
           <div>
             <p className="text-xs uppercase tracking-wide text-naya-olive-35 mb-2 font-mono">Légende</p>
