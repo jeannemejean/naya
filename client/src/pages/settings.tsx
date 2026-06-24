@@ -482,6 +482,13 @@ function SocialConnectionsCard() {
  retry: false,
  });
 
+ // Comptes connectés détaillés (pour afficher les Pages LinkedIn entreprise).
+ const { data: accounts = [] } = useQuery<Array<{ id: number; platform: string; basePlatform: string; accountName: string; isPage: boolean }>>({
+ queryKey: ['/api/social/accounts'],
+ retry: false,
+ });
+ const linkedinPages = accounts.filter((a) => a.isPage);
+
  // Notifications after OAuth callback
  useEffect(() => {
  const params = new URLSearchParams(window.location.search);
@@ -570,6 +577,20 @@ function SocialConnectionsCard() {
  )}
  {!isConfigured && (
  <p className="text-xs text-naya-sulphur mt-0.5">Variables d'env manquantes</p>
+ )}
+ {/* Pages entreprise LinkedIn connectées */}
+ {id === 'linkedin' && isConnected && (
+ linkedinPages.length > 0 ? (
+ <div className="mt-1.5 flex flex-wrap gap-1">
+ {linkedinPages.map((p) => (
+ <span key={p.id} className="text-[10px] px-2 py-0.5 rounded-full bg-naya-olive-06 text-naya-olive-70 border border-naya-olive-10 flex items-center gap-1">
+ <CheckCircle2 className="h-2.5 w-2.5" /> {p.accountName}
+ </span>
+ ))}
+ </div>
+ ) : (
+ <p className="text-[11px] text-naya-olive-35 mt-1">Aucune page entreprise détectée — reconnecte LinkedIn en autorisant l'accès à tes Pages.</p>
+ )
  )}
  </div>
 
@@ -1598,9 +1619,16 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  onClick={async () => {
  try {
  const res = await fetch('/api/billing/portal', { method: 'POST', credentials: 'include' });
- const { url } = await res.json();
- if (url) window.location.href = url;
- } catch { /* noop */ }
+ const data = await res.json();
+ if (data?.url) { window.location.href = data.url; return; }
+ if (data?.message === 'no_customer') {
+ toast({ title: "Aucun abonnement à gérer", description: "Ton compte est en accès propriétaire/offert — il n'y a pas d'abonnement payant associé." });
+ } else {
+ toast({ title: "Indisponible", description: "Impossible d'ouvrir la gestion d'abonnement pour le moment.", variant: "destructive" });
+ }
+ } catch {
+ toast({ title: "Erreur", description: "Réessaie dans un instant.", variant: "destructive" });
+ }
  }}
  >
  Gérer mon abonnement
@@ -1827,7 +1855,6 @@ function ProspectionSenderCard() {
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("");
-  const [apiKey, setApiKey] = useState("");
   const loaded = useState({ done: false })[0];
 
   useEffect(() => {
@@ -1845,11 +1872,9 @@ function ProspectionSenderCard() {
     mutationFn: () =>
       apiRequest("PUT", "/api/prospection/sender", {
         senderEmail: email, senderName: name, address, city, country,
-        ...(apiKey.trim() ? { sendgridApiKey: apiKey.trim() } : {}),
       }).then((r) => r.json()),
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/prospection/sender"] });
-      setApiKey("");
       if (res.verificationTriggered) {
         toast({ title: "📩 Email de vérification envoyé", description: `Clique le lien reçu sur ${email} pour activer l'envoi.` });
       } else if (res.verificationStatus === "verified") {
@@ -1909,12 +1934,6 @@ function ProspectionSenderCard() {
             <Label className="text-xs">Pays</Label>
             <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="France" />
           </div>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Clé SendGrid personnelle (optionnel)</Label>
-          <Input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
-            placeholder={data?.hasOwnKey ? "•••••••• (configurée — laisser vide pour ne pas changer)" : "SG.… (sinon : compte partagé Naya)"} />
-          <p className="text-[11px] text-naya-olive-35">Laisse vide pour utiliser le compte d'envoi partagé de Naya.</p>
         </div>
         <div className="flex justify-between items-center">
           {status === "pending" ? (

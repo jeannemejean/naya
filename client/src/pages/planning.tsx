@@ -142,7 +142,7 @@ export default function Planning({ onSearchClick }: Props) {
     };
   }, [location]);
 
-  const [viewScope, setViewScope] = useState<ViewScope>('week');
+  const [viewScope, setViewScope] = useState<ViewScope>('day');
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const params = new URLSearchParams(window.location.search);
     const d = params.get('date');

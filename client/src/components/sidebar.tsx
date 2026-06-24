@@ -341,30 +341,32 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
           </TooltipContent>
         </Tooltip>
 
-        {/* Avatar utilisateur */}
+        {/* Avatar utilisateur → ouvre les Réglages du compte */}
         <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
-            <button className="w-full h-9 flex items-center justify-center">
-              <div
-                className="w-8 h-8 flex items-center justify-center"
-                style={{ border: '1px solid var(--sidebar-border)', borderRadius: 8, background: 'var(--sidebar-accent)' }}
-              >
-                <span
-                  style={{
-                    fontFamily: '"Montserrat", system-ui, sans-serif',
-                    fontWeight: '500',
-                    fontSize: '1rem',
-                    color: 'var(--sidebar-foreground)',
-                    lineHeight: 1,
-                  }}
+            <Link href="/settings">
+              <button className="w-full h-9 flex items-center justify-center cursor-pointer">
+                <div
+                  className="w-8 h-8 flex items-center justify-center transition-colors"
+                  style={{ border: '1px solid var(--sidebar-border)', borderRadius: 8, background: location === "/settings" ? 'var(--sidebar-primary)' : 'var(--sidebar-accent)' }}
                 >
-                  {userInitial}
-                </span>
-              </div>
-            </button>
+                  <span
+                    style={{
+                      fontFamily: '"Montserrat", system-ui, sans-serif',
+                      fontWeight: '500',
+                      fontSize: '1rem',
+                      color: location === "/settings" ? 'var(--sidebar-primary-foreground)' : 'var(--sidebar-foreground)',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {userInitial}
+                  </span>
+                </div>
+              </button>
+            </Link>
           </TooltipTrigger>
           <TooltipContent side="right">
-            {user?.firstName || user?.email || "Profil"}
+            {user?.firstName || user?.email || "Profil"} — Réglages
           </TooltipContent>
         </Tooltip>
       </div>
