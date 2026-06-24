@@ -1,0 +1,66 @@
+The new implementation is very strong and the realism engine, effectiveness signals, and workflow bundle logic are all meaningful improvements.
+
+However, after testing deeply, I believe the next evolution of Naya must address a structural intelligence gap.
+
+Right now, task intelligence is still fundamentally daily-centric.
+
+Even though tasks are now more realistic, personality-aware, and workflow-aware, the system still behaves as a reactive day planner rather than a long-range execution strategist.
+
+1 — Introduce a Monthly Planning Engine (Macro Layer)
+
+Naya should be able to generate a full monthly execution roadmap based on:
+	•	project goals
+	•	milestones
+	•	workflow chains
+	•	user capacity signals
+
+This monthly plan should:
+	•	distribute tasks across the month
+	•	respect dependencies and workflow phases
+	•	avoid overloading certain weeks
+	•	create momentum structures
+
+Daily task generation should then become:
+	•	a refinement layer
+	•	not the primary planning logic
+
+2 — Add Weekly Rebalancing Logic
+
+Each week, the system should:
+	•	analyse completed vs incomplete tasks
+	•	detect blocked chains
+	•	rebalance effort distribution
+	•	move workflow bundles intelligently
+	•	adjust priorities based on progress
+
+This would allow Naya to function as a true adaptive planning intelligence system.
+
+3 — Introduce Goal Trajectory Modeling
+
+Tasks should not only relate to goals contextually.
+
+They should be structured as:
+	•	phases
+	•	milestones
+	•	execution ladders
+
+This would allow the AI to reason about:
+	•	when a workflow should start
+	•	when it should intensify
+	•	when to shift focus
+
+4 — Add Agency → Client → Task hierarchy
+
+When a project is marked as an Agency, users should be able to:
+	•	create client entities
+	•	assign goals and workflows per client
+	•	generate client-specific tasks
+	•	balance workload across clients
+
+This will significantly increase real-world usefulness for agencies and service businesses.
+
+5 — Ensure Persistent Sidebar in Planning View
+
+The Planning page should maintain the main layout and sidebar navigation.
+
+Removing it breaks spatial continuity and reduces the perception of Naya as a unified operating system.

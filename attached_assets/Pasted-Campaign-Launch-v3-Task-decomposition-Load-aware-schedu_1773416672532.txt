@@ -1,0 +1,273 @@
+Campaign Launch v3 — Task decomposition + Load-aware scheduling
+Three problems to solve
+Problem 1 — Content tasks need sub-task decomposition. A campaign task like "Publish LinkedIn carousel about brand positioning" is not one action — it's a workflow: write copy → create visuals → review & schedule → publish. These steps must be created as separate tasks spread across the days before the publication date.
+Problem 2 — No awareness of existing workload. The launch route creates tasks without knowing what already exists in the user's planning. This causes pile-ups where 8 tasks land on the same day.
+Problem 3 — No global daily capacity. The user has multiple projects running in parallel. Campaign tasks must respect a daily cap that counts all tasks across all projects, not just this campaign.
+
+Task 1 — Content task decomposition engine
+In server/routes.ts, add this function before the launch route:
+tsinterface SubTask {
+  title: string;
+  description: string;
+  type: string;
+  taskEnergyType: string;
+  estimatedDuration: number;
+  daysBeforePublication: number; // negative = before, 0 = publication day
+}
+
+function decomposeContentTask(task: {
+  title: string;
+  description: string;
+  type: string;
+  taskEnergyType: string;
+  estimatedDuration: number;
+  phase?: number;
+}): SubTask[] {
+  const t = task.title.toLowerCase();
+  const isContentTask =
+    t.includes('publish') || t.includes('post') || t.includes('write') ||
+    t.includes('create') || t.includes('carousel') || t.includes('reel') ||
+    t.includes('article') || t.includes('newsletter') || t.includes('email') ||
+    t.includes('caption') || t.includes('content') || t.includes('video') ||
+    task.type === 'content';
+
+  if (!isContentTask) {
+    // Non-content task: return as-is with daysBeforePublication = 0
+    return [{
+      ...task,
+      daysBeforePublication: 0,
+    }];
+  }
+
+  // Detect format
+  const isVideo = t.includes('video') || t.includes('reel') || t.includes('reels');
+  const isNewsletter = t.includes('newsletter') || t.includes('email');
+  const isArticle = t.includes('article') || t.includes('blog');
+  const isCarousel = t.includes('carousel') || t.includes('slides');
+
+  if (isVideo) {
+    return [
+      { title: `Script — ${task.title}`, description: `Write the script and structure the narrative. ${task.description}`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 45, daysBeforePublication: -5 },
+      { title: `Shoot/record — ${task.title}`, description: `Film or record the video content.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 90, daysBeforePublication: -3 },
+      { title: `Edit & caption — ${task.title}`, description: `Edit the video, add captions and music/sound.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 60, daysBeforePublication: -1 },
+      { title: `Schedule & publish — ${task.title}`, description: `Program the video with final caption copy and hashtags.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 20, daysBeforePublication: 0 },
+    ];
+  }
+
+  if (isNewsletter || isArticle) {
+    return [
+      { title: `Outline — ${task.title}`, description: `Structure the key arguments and sections. ${task.description}`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 30, daysBeforePublication: -4 },
+      { title: `Write — ${task.title}`, description: `Write the full draft.`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 90, daysBeforePublication: -2 },
+      { title: `Edit & format — ${task.title}`, description: `Proofread, format, add visuals or links.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 30, daysBeforePublication: -1 },
+      { title: `Schedule — ${task.title}`, description: `Send or schedule with final subject line/caption.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 15, daysBeforePublication: 0 },
+    ];
+  }
+
+  if (isCarousel) {
+    return [
+      { title: `Angle & structure — ${task.title}`, description: `Define the hook, slide structure and key message. ${task.description}`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 30, daysBeforePublication: -3 },
+      { title: `Write copy — ${task.title}`, description: `Write the copy for each slide.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 45, daysBeforePublication: -2 },
+      { title: `Design slides — ${task.title}`, description: `Create the visual design for all slides.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 60, daysBeforePublication: -1 },
+      { title: `Schedule — ${task.title}`, description: `Post or schedule with caption and hashtags.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 15, daysBeforePublication: 0 },
+    ];
+  }
+
+  // Generic content post (text post, story, etc.)
+  return [
+    { title: `Write copy — ${task.title}`, description: `Write and refine the post copy. ${task.description}`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 30, daysBeforePublication: -1 },
+    { title: `Publish — ${task.title}`, description: `Post with final copy, visuals, and hashtags.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 15, daysBeforePublication: 0 },
+  ];
+}
+
+Task 2 — Rebuild the launch route with load-aware scheduling
+Replace the entire /api/campaigns/:id/launch route:
+tsapp.post('/api/campaigns/:id/launch', isAuthenticated, async (req: any, res) => {
+  const userId = req.user.claims.sub;
+  const id = parseInt(req.params.id);
+  const campaign = await storage.getCampaign(id, userId);
+  if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+  if (campaign.status === 'active') return res.status(400).json({ message: "Campaign already launched" });
+
+  // ── Resolve start/end dates ─────────────────────────────────────
+  const rawStart = req.body.startDate || campaign.startDate;
+  const startDate = rawStart ? new Date(rawStart + 'T00:00:00') : new Date();
+  
+  // Compute campaign end date from duration
+  const durationMap: Record<string, number> = {
+    '1_week': 7, '2_weeks': 14, '3_weeks': 21,
+    '1_month': 30, '2_months': 60, '3_months': 90,
+    '6_months': 180, '12_months': 365,
+  };
+  const campaignDays = durationMap[campaign.duration || '1_month'] || 30;
+  const endDate = addDays(startDate, campaignDays);
+  const endDateStr = dateToStr(endDate);
+
+  // ── Load existing tasks across the entire campaign period ───────
+  const existingTasks = await storage.getTasksInRange(userId, dateToStr(startDate), endDateStr);
+  
+  // Build a map of date → current task count (all projects)
+  const dayCounts = new Map<string, number>();
+  for (const t of existingTasks) {
+    if (t.scheduledDate) {
+      dayCounts.set(t.scheduledDate, (dayCounts.get(t.scheduledDate) || 0) + 1);
+    }
+  }
+
+  const DAILY_CAP = 4; // max total tasks per day across all projects
+
+  // ── Build working days set across campaign period ───────────────
+  // Use Mon-Fri as default; could later read user prefs
+  function isWorkDay(dateStr: string): boolean {
+    const dow = new Date(dateStr + 'T00:00:00').getDay();
+    return dow >= 1 && dow <= 5; // Mon-Fri
+  }
+
+  function nextAvailableDay(fromDate: Date, minDate: Date): Date {
+    let d = new Date(fromDate);
+    if (d < minDate) d = new Date(minDate);
+    let safety = 0;
+    while (safety < 365) {
+      const ds = dateToStr(d);
+      if (isWorkDay(ds) && (dayCounts.get(ds) || 0) < DAILY_CAP) return d;
+      d = addDays(d, 1);
+      safety++;
+    }
+    return fromDate; // fallback
+  }
+
+  function reserveDay(dateStr: string) {
+    dayCounts.set(dateStr, (dayCounts.get(dateStr) || 0) + 1);
+  }
+
+  // ── Parse phases into date ranges ──────────────────────────────
+  const phases = (campaign.phases || []) as Array<{ number: number; name: string; duration: string }>;
+  const phaseRanges: Record<number, { start: Date; end: Date }> = {};
+  for (const phase of phases) {
+    phaseRanges[phase.number] = parsePhaseDateRange(phase.duration, startDate, campaign.duration || '1_month');
+  }
+
+  // ── Process tasks with decomposition ───────────────────────────
+  const generatedTasks = (campaign.generatedTasks || []) as Array<{
+    title: string; description: string; type: string; category: string;
+    priority: number; estimatedDuration: number; taskEnergyType: string; phase?: number;
+  }>;
+
+  let tasksCreated = 0;
+  
+  // Group by phase, process phase by phase
+  const tasksByPhase: Record<number, typeof generatedTasks> = {};
+  for (const t of generatedTasks) {
+    const p = t.phase || 1;
+    if (!tasksByPhase[p]) tasksByPhase[p] = [];
+    tasksByPhase[p].push(t);
+  }
+
+  for (const [phaseNumStr, phaseTasks] of Object.entries(tasksByPhase)) {
+    const phaseNum = parseInt(phaseNumStr);
+    const phaseRange = phaseRanges[phaseNum] || { start: startDate, end: addDays(startDate, 7) };
+    
+    // For each original task, decompose it into sub-tasks
+    for (const originalTask of phaseTasks) {
+      const subTasks = decomposeContentTask(originalTask);
+      
+      // Find the "anchor date" = publication/execution date for this task
+      // Place it at the midpoint of the phase, then find next available day
+      const phaseMidpoint = new Date(phaseRange.start.getTime() + (phaseRange.end.getTime() - phaseRange.start.getTime()) / 2);
+      const anchorDate = nextAvailableDay(phaseMidpoint, phaseRange.start);
+      
+      // Schedule sub-tasks relative to anchor date
+      for (const sub of subTasks) {
+        const rawDate = addDays(anchorDate, sub.daysBeforePublication);
+        // Clamp to phase start minimum (can't go before campaign starts)
+        const minDate = rawDate < startDate ? startDate : rawDate;
+        const scheduledDate = nextAvailableDay(minDate, startDate);
+        const scheduledDateStr = dateToStr(scheduledDate);
+        
+        await storage.createTask({
+          userId,
+          projectId: campaign.projectId ?? undefined,
+          campaignId: campaign.id,
+          title: sub.title,
+          description: sub.description,
+          type: sub.type || 'content',
+          category: originalTask.category || 'planning',
+          priority: originalTask.priority || 2,
+          estimatedDuration: sub.estimatedDuration,
+          taskEnergyType: sub.taskEnergyType,
+          source: 'campaign',
+          scheduledDate: scheduledDateStr,
+          completed: false,
+        });
+        reserveDay(scheduledDateStr);
+        tasksCreated++;
+      }
+    }
+  }
+
+  // ── Create content pieces in Content Calendar ──────────────────
+  const contentPlan = (campaign.contentPlan || []) as Array<{
+    phase: number; week: string; platform: string; format: string;
+    angle: string; pillar: string; goal: string; copyDirections: string;
+  }>;
+
+  let contentCreated = 0;
+  for (const piece of contentPlan) {
+    const wMatch = piece.week.match(/[Ww]eek\s*(\d+)/);
+    const mMatch = piece.week.match(/[Mm]onth\s*(\d+)/);
+    let weekNum = 1;
+    if (wMatch) weekNum = parseInt(wMatch[1]);
+    else if (mMatch) weekNum = (parseInt(mMatch[1]) - 1) * 4 + 1;
+
+    // Wednesday of that week at 10:00
+    const pieceDate = addDays(startDate, (weekNum - 1) * 7 + 2);
+    pieceDate.setHours(10, 0, 0, 0);
+
+    await storage.createContent({
+      userId,
+      projectId: campaign.projectId ?? undefined,
+      title: piece.angle,
+      body: piece.copyDirections,
+      platform: piece.platform,
+      contentType: mapFormatToContentType(piece.format),
+      pillar: piece.pillar,
+      goal: piece.goal,
+      status: 'draft',
+      contentStatus: 'idea',
+      scheduledFor: pieceDate,
+    });
+    contentCreated++;
+  }
+
+  // ── Compute end date and update campaign ───────────────────────
+  const updated = await storage.updateCampaign(id, userId, {
+    tasksGenerated: true,
+    status: 'active',
+    startDate: dateToStr(startDate),
+    endDate: endDateStr,
+  });
+
+  res.json({ campaign: updated, tasksCreated, contentCreated });
+});
+Make sure addDays, dateToStr, parsePhaseDateRange, and mapFormatToContentType are defined as standalone functions before this route (not inside any other function). If they were added in the previous step inside the route, move them outside.
+
+Task 3 — Update launchMutation success toast in campaigns.tsx
+tsonSuccess: (data: { campaign: Campaign; tasksCreated: number; contentCreated: number }) => {
+  queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+  setPanelState("detail");
+  toast({
+    title: "Campaign deployed 🚀",
+    description: `${data.tasksCreated} tasks scheduled across phases (respecting your existing workload) · ${data.contentCreated} content ideas added to your calendar`,
+  });
+},
+
+Verification expected
+
+Launch a 1-month campaign with 8 generated tasks → tasks are decomposed: a "Publish LinkedIn carousel" becomes 4 sub-tasks (Angle & structure / Write copy / Design slides / Schedule) spread across 4 different days
+No day has more than 4 tasks total (counting tasks from all other projects)
+Sub-tasks respect the phase date range (Phase 1 tasks don't appear in Phase 2's weeks)
+Content Calendar shows content pieces as "Idea" cards with scheduled dates
+If the user already has 3 tasks on a given day, the campaign scheduler skips to the next available day
+Tasks from different campaigns or projects do NOT pile up on the same day
+

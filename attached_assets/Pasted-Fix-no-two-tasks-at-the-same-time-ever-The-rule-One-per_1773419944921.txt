@@ -1,0 +1,83 @@
+Fix: no two tasks at the same time — ever
+The rule
+One person = one task at a time. Every task must have a scheduledTime. No two tasks on the same day can have overlapping time slots.
+Root cause
+The campaign launch route creates tasks with scheduledDate but no scheduledTime. When generate-daily runs afterward, it does not see these timeless campaign tasks as occupying any slot, so it places new tasks on top of them. The result is multiple tasks with no time or conflicting times on the same day.
+The fix
+In server/routes.ts, inside the /api/campaigns/:id/launch route, replace the dayCounts map with a proper per-day time cursor that reads existing scheduled times.
+Step 1 — Load existing tasks with their times
+The getTasksInRange call already exists. After loading existingTasks, build a map of date → next available minute by reading each task's scheduledTime and estimatedDuration:
+tsconst existingTasks = await storage.getTasksInRange(userId, campaignDateToStr(startDate), endDateStr);
+
+// For each day, track what minute the day is "full up to"
+const dayNextSlot = new Map<string, number>(); // date → next free minute (0-based from midnight)
+
+const DAY_START = 9 * 60;  // 9:00 AM
+const DAY_END = 18 * 60;   // 6:00 PM
+const LUNCH_START = 12 * 60;
+const LUNCH_END = 13 * 60;
+const BUFFER = 15; // minutes between tasks
+
+for (const t of existingTasks) {
+  if (!t.scheduledDate) continue;
+  const existing = dayNextSlot.get(t.scheduledDate) ?? DAY_START;
+  if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
+    const startMin = hhmmToMinutes(t.scheduledTime);
+    const endMin = startMin + (t.estimatedDuration || 30) + BUFFER;
+    if (endMin > existing) dayNextSlot.set(t.scheduledDate, endMin);
+  }
+}
+Make sure hhmmToMinutes and minutesToHHMM are accessible — they are already defined inside the generate-daily route closure. Either duplicate them as small top-level helpers before the launch route, or extract them to module scope. Add these two functions outside all route handlers, near the top of the registerRoutes function:
+tsfunction hhmmToMin(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+function minToHHMM(mins: number): string {
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+Step 2 — Replace nextAvailableDayBounded + reserveDay with a time-aware slot function
+Remove the old dayCounts map entirely. Replace it with dayNextSlot as defined above.
+Add this function inside the launch route (after dayNextSlot is built):
+tsfunction assignSlot(dateStr: string, durationMin: number): string {
+  let slot = dayNextSlot.get(dateStr) ?? DAY_START;
+
+  // Skip lunch
+  if (slot < LUNCH_END && slot + durationMin > LUNCH_START) {
+    slot = LUNCH_END;
+  }
+
+  // If past end of day, caller should not have placed a task here — use DAY_START as fallback
+  if (slot + durationMin > DAY_END) slot = DAY_START;
+
+  // Advance cursor
+  dayNextSlot.set(dateStr, slot + durationMin + BUFFER);
+
+  return minToHHMM(slot);
+}
+Also replace the daily cap logic. Instead of counting tasks per day, check if the day still has time available:
+tsfunction dayHasCapacity(dateStr: string, durationMin: number): boolean {
+  const slot = dayNextSlot.get(dateStr) ?? DAY_START;
+  const adjusted = (slot < LUNCH_END && slot + durationMin > LUNCH_START) ? LUNCH_END : slot;
+  return adjusted + durationMin <= DAY_END;
+}
+Step 3 — Update nextAvailableDayBounded to use dayHasCapacity
+Replace the condition (dayCounts.get(ds) || 0) < DAILY_CAP everywhere inside nextAvailableDayBounded with dayHasCapacity(ds, 30) (use 30 as a safe minimum — we just need to know the day isn't completely full).
+Step 4 — Add scheduledTime to every createTask call in the launch route
+In the sub-task creation loop, after computing scheduledDateStr, add:
+tsconst scheduledTime = assignSlot(scheduledDateStr, sub.estimatedDuration);
+
+await storage.createTask({
+  ...
+  scheduledDate: scheduledDateStr,
+  scheduledTime: scheduledTime,  // ADD
+  scheduledEndTime: minToHHMM(hhmmToMin(scheduledTime) + sub.estimatedDuration),  // ADD
+  ...
+});
+Verification expected
+
+Launch a campaign → open Planning week view
+Every task has a visible time block — none are in the "Unscheduled" strip
+No two tasks on the same day overlap in time
+Tasks run sequentially: if task A ends at 10:30, task B starts at 10:45
+Lunch (12:00–13:00) is respected — no task spans it
+Days that are already full with existing tasks get no new campaign tasks assigned — they spill to the next available day

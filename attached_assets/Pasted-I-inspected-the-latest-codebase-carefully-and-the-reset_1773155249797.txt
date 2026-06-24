@@ -1,0 +1,143 @@
+I inspected the latest codebase carefully and the reset issue is still almost certainly server-side, not frontend-only.
+
+The Settings page is correctly calling:
+
+DELETE /api/me/onboarding-reset
+
+and the red toast only appears because that endpoint is still returning a non-2xx response.
+
+So I need you to debug this as a real backend failure.
+
+What I found
+
+1. resetUserOnboardingState() still looks fragile
+
+In server/storage.ts, the reset now deletes many things, including:
+	•	taskScheduleEvents
+	•	tasks
+	•	personaAnalysisResults
+	•	targetPersonas
+	•	outreachMessages
+	•	leads
+	•	content
+	•	activeProjectId
+	•	projectGoals
+	•	projectStrategyProfiles
+	•	projects
+	•	brandDna
+	•	userOperatingProfiles
+
+So the reset logic is much better than before.
+
+However, I found an important missing piece:
+
+2. persona_strategy_mapping is not cleaned up
+
+The schema includes a persona_strategy_mapping table, and it references target_personas.id.
+
+But resetUserOnboardingState() does not delete personaStrategyMapping before deleting targetPersonas.
+
+If rows exist in that table, then deleting targetPersonas can fail with a foreign key constraint, which would explain why /api/me/onboarding-reset still returns 500.
+
+Please verify this specifically and add cleanup for persona_strategy_mapping before deleting target_personas.
+
+⸻
+
+3. The reset should be wrapped in a database transaction
+
+Right now the reset is a sequence of deletes/updates, but not a transaction.
+
+That means:
+	•	if one step fails in the middle,
+	•	the workspace can be left in a half-reset state,
+	•	and debugging becomes much harder.
+
+Please move resetUserOnboardingState(userId) into a DB transaction so reset becomes atomic.
+
+If one step fails, nothing should be partially deleted.
+
+⸻
+
+4. I need step-by-step logging inside reset
+
+Right now the route only logs a generic reset error.
+
+That is not enough.
+
+Please add explicit logs around every reset step so we know exactly what fails.
+
+For example, log before each step:
+	•	clearing quick capture references
+	•	deleting task schedule events
+	•	deleting tasks
+	•	deleting persona analysis results
+	•	deleting persona strategy mappings
+	•	deleting target personas
+	•	deleting outreach messages
+	•	deleting leads
+	•	deleting content
+	•	clearing active project
+	•	deleting project goals
+	•	deleting strategy profiles
+	•	deleting projects
+	•	deleting brand DNA
+	•	deleting operating profile
+
+If this is a Postgres FK issue, I want the actual constraint name in the logs.
+
+⸻
+
+5. Please also check the dev reset endpoint
+
+There is still a dev endpoint:
+
+POST /api/dev/reset-onboarding
+
+and it only deletes Brand DNA.
+
+That is not a true onboarding reset.
+
+Please either:
+	•	update it to call the same full reset logic,
+or
+	•	stop using it for reset testing.
+
+Because right now it creates confusion between “delete brand DNA” and “full onboarding reset”.
+
+⸻
+
+What I want you to do now
+
+A. Add missing cleanup for remaining FK-linked tables
+
+At minimum:
+	•	delete persona_strategy_mapping before target_personas
+
+Also re-check whether any other tables still reference records being deleted during reset.
+
+B. Make resetUserOnboardingState() transactional
+
+Use a DB transaction so reset is all-or-nothing.
+
+C. Add precise step-by-step logs
+
+I want to know exactly which step fails.
+
+D. Return the real backend error during development
+
+In dev mode, please return more detail than just:
+Failed to reset onboarding
+
+so debugging is possible.
+
+⸻
+
+Expected result
+
+When I click Reset onboarding in Settings:
+	•	the request should return 200
+	•	no red error toast should appear
+	•	onboarding should truly reset
+	•	the board should restart from a clean state
+
+Right now that is still not happening, so please debug this as an actual backend failure rather than assuming it is already fixed.

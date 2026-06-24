@@ -1819,7 +1819,7 @@ export class DatabaseStorage implements IStorage {
         durationMin: t.estimatedDuration || 30,
       }));
 
-      const moves = repackDay(repackTasks, {
+      const { moves, overflow } = repackDay(repackTasks, {
         dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,
         floorMin: date === parisToday ? parisNowMin : undefined,
       });
@@ -1828,6 +1828,14 @@ export class DatabaseStorage implements IStorage {
         await db.update(tasks)
           .set({ scheduledTime: formatTime(mv.newStartMin), scheduledEndTime: formatTime(mv.newEndMin) })
           .where(eq(tasks.id, mv.id));
+        fixed++;
+      }
+      // Tâches qui débordent des heures de travail → déplanifiées (repassent en « non planifiées »,
+      // glissables sur la grille). On NE les place jamais hors des heures de travail.
+      for (const id of overflow) {
+        await db.update(tasks)
+          .set({ scheduledTime: null, scheduledEndTime: null })
+          .where(eq(tasks.id, id));
         fixed++;
       }
     }

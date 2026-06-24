@@ -1,0 +1,266 @@
+Strategy Page + Per-Project Brand DNA enforcement
+The core problem to fix first
+Three server-side issues break per-project Brand DNA. Every piece of the Strategy page depends on these being fixed before the UI is built. Fix them in order before touching the frontend.
+
+Server fix 1 — POST /api/brand-dna/refresh-intelligence must be project-aware
+Currently this route always calls storage.getBrandDna(userId) which returns the global DNA record, ignoring the project entirely. Agence JMD and Naya are completely different brands — a global DNA summary is meaningless.
+In server/routes.ts, modify the route:
+tsapp.post('/api/brand-dna/refresh-intelligence', isAuthenticated, async (req: any, res) => {
+  const userId = req.user.claims.sub;
+  const projectId = req.body.projectId ? parseInt(req.body.projectId) : null;
+
+  // Always use per-project DNA — never global
+  const dna = projectId
+    ? await storage.getBrandDnaForProject(userId, projectId)
+    : await storage.getBrandDna(userId);
+
+  if (!dna) return res.status(404).json({ message: "Brand DNA not found for this project" });
+
+  // ... existing prompt construction using dna fields ...
+
+  // Save back to the correct record
+  const updated = projectId
+    ? await storage.upsertBrandDnaForProject(userId, projectId, {
+        nayaIntelligenceSummary: summary,
+        lastStrategyRefreshAt: new Date(),
+      })
+    : await storage.upsertBrandDna({ ...dnaFields, nayaIntelligenceSummary: summary, lastStrategyRefreshAt: new Date(), userId });
+
+  res.json({ summary, updatedAt: updated.lastStrategyRefreshAt, projectId });
+});
+The prompt construction remains identical — just replace brandDna with dna throughout.
+
+Server fix 2 — POST /api/strategy/generate must be project-aware
+Currently always calls storage.getBrandDna(userId). Must use the project's specific DNA.
+In server/routes.ts, modify the route:
+tsapp.post('/api/strategy/generate', isAuthenticated, async (req: any, res) => {
+  const userId = req.user.claims.sub;
+  const projectId = req.body.projectId ? parseInt(req.body.projectId) : null;
+  const weekContext = req.body.weekContext || '';
+
+  // Always use per-project DNA
+  const dna = projectId
+    ? await storage.getBrandDnaForProject(userId, projectId)
+    : await storage.getBrandDna(userId);
+
+  if (!dna) return res.status(400).json({ message: "Brand DNA not configured for this project." });
+
+  // Pass weekContext into the AI prompt — add it to the existing prompt block:
+  // "User's focus this week: ${weekContext || 'Not specified'}"
+
+  // Save strategy report with projectId
+  const report = await storage.createStrategyReport({
+    userId,
+    projectId: projectId || null,   // <-- add this
+    week: currentWeek,
+    focus: aiResponse.weeklyFocus,
+    reasoning: aiResponse.insights.join(" "),
+    recommendations: aiResponse.recommendations,
+    weeklyPlan: aiResponse.nextWeekPlan,
+  });
+});
+```
+
+Also add `weekContext` to the `generateStrategyInsights` prompt in `server/services/openai.ts` — append this line to the Brand Profile block:
+```
+- User's focus this week: ${request.weekContext || 'Not specified'}
+And add weekContext?: string to the StrategyAnalysisRequest interface.
+
+Server fix 3 — strategy_reports table needs projectId
+In shared/schema.ts, add projectId to strategyReports:
+tsexport const strategyReports = pgTable("strategy_reports", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").references(() => projects.id), // ADD THIS
+  week: text("week").notNull(),
+  // ... rest unchanged
+});
+In server/storage.ts, update getStrategyReport to filter by projectId:
+tsasync getStrategyReport(userId: string, week: string, projectId?: number | null): Promise<StrategyReport | undefined> {
+  const conditions = [eq(strategyReports.userId, userId), eq(strategyReports.week, week)];
+  if (projectId) conditions.push(eq(strategyReports.projectId, projectId));
+  const [report] = await db.select().from(strategyReports).where(and(...conditions)).orderBy(desc(strategyReports.createdAt)).limit(1);
+  return report;
+}
+Update GET /api/strategy/report in routes.ts to accept and pass projectId from query params:
+tsconst projectId = req.query.projectId ? parseInt(req.query.projectId as string) : null;
+const report = await storage.getStrategyReport(userId, week as string, projectId);
+Run npm run db:push after schema changes.
+
+Frontend — Strategy page complete rewrite
+Now rewrite client/src/pages/strategy.tsx with full per-project awareness throughout. Every data fetch, mutation, and display is scoped to the selected project.
+Project selector — the spine of the entire page
+At the very top of the page (inside the header, below the title), add a project selector. This is not optional decoration — it controls everything on the page.
+tsconst { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects'] });
+const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+
+// On load, default to the first project (or primary project if available)
+useEffect(() => {
+  if (projects.length > 0 && selectedProjectId === null) {
+    const primary = projects.find(p => p.isPrimary) || projects[0];
+    setSelectedProjectId(primary.id);
+  }
+}, [projects]);
+Render the selector as a row of pill buttons (not a dropdown) — one pill per project, showing the project name. Active project pill is filled (primary color), others are outlined. Max 5 projects shown; if more, use a small dropdown for overflow.
+Every query and mutation on the page uses selectedProjectId as a dependency. When selectedProjectId changes, all data refreshes.
+
+Section 1 — Strategic Intelligence (per-project)
+tsconst { data: projectDna, isLoading: dnaLoading } = useQuery<BrandDna | null>({
+  queryKey: ['/api/projects', selectedProjectId, 'brand-dna'],
+  queryFn: async () => {
+    if (!selectedProjectId) return null;
+    const res = await apiRequest('GET', `/api/projects/${selectedProjectId}/brand-dna`);
+    return res.json();
+  },
+  enabled: !!selectedProjectId,
+});
+Display card:
+
+Header row: bold label "Naya's read on [project name]" + "Refresh" ghost button with RefreshCw icon + muted "Updated X days ago" text if lastStrategyRefreshAt exists
+If projectDna?.nayaIntelligenceSummary exists: flowing prose, text-sm leading-relaxed, soft indigo/violet background (bg-indigo-50 dark:bg-indigo-950/30), rounded, with subtle left border in indigo. Clamp to 5 lines with "Read more" toggle using a showFull boolean state.
+If no summary: dashed border card, centered content — "Naya hasn't analyzed [project name] yet." + "Generate brief" primary button
+Refresh mutation:
+
+tsconst refreshMutation = useMutation({
+  mutationFn: async () => {
+    const res = await apiRequest('POST', '/api/brand-dna/refresh-intelligence', { projectId: selectedProjectId });
+    return res.json();
+  },
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/projects', selectedProjectId, 'brand-dna'] });
+    toast({ title: `Strategic brief updated for ${selectedProject?.name}` });
+  },
+});
+
+Section 2 — Weekly Command (per-project)
+tsconst currentWeek = (() => {
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-W' + Math.ceil(now.getDate() / 7);
+})();
+
+const { data: existingReport } = useQuery({
+  queryKey: ['/api/strategy/report', selectedProjectId, currentWeek],
+  queryFn: async () => {
+    if (!selectedProjectId) return null;
+    const res = await apiRequest('GET', `/api/strategy/report?week=${currentWeek}&projectId=${selectedProjectId}`);
+    return res.json();
+  },
+  enabled: !!selectedProjectId,
+});
+
+const [weeklyStrategy, setWeeklyStrategy] = useState<WeeklyStrategy | null>(null);
+const [weekContext, setWeekContext] = useState('');
+
+// Populate from existing report on load
+useEffect(() => {
+  if (existingReport?.focus) {
+    setWeeklyStrategy({
+      weeklyFocus: existingReport.focus,
+      insights: existingReport.reasoning ? [existingReport.reasoning] : [],
+      recommendations: existingReport.recommendations || [],
+      nextWeekPlan: existingReport.weeklyPlan || {},
+    });
+  } else {
+    setWeeklyStrategy(null);
+  }
+}, [existingReport, selectedProjectId]);
+
+// Reset when project changes
+useEffect(() => {
+  setWeeklyStrategy(null);
+  setWeekContext('');
+}, [selectedProjectId]);
+Generate mutation:
+tsconst generateMutation = useMutation({
+  mutationFn: async () => {
+    const res = await apiRequest('POST', '/api/strategy/generate', {
+      projectId: selectedProjectId,
+      weekContext,
+    });
+    return res.json();
+  },
+  onSuccess: (data) => {
+    setWeeklyStrategy({
+      weeklyFocus: data.weeklyFocus,
+      insights: data.insights || [],
+      recommendations: data.recommendations || [],
+      nextWeekPlan: data.nextWeekPlan || {},
+    });
+    queryClient.invalidateQueries({ queryKey: ['/api/strategy/report', selectedProjectId, currentWeek] });
+  },
+  onError: () => toast({ title: "Failed to generate strategy", variant: "destructive" }),
+});
+Empty state card (when weeklyStrategy is null):
+
+Icon: Compass from lucide
+Title: "No strategy for [project name] this week yet"
+Textarea placeholder: "e.g. I'm pitching a new client next week, I want to grow my LinkedIn presence, I'm launching a new offer..."
+Button: "Generate my week →" (disabled if generateMutation.isPending)
+Loading state text: "Naya is thinking about [project name]..." with animated dots
+
+Filled state — 3 sub-cards:
+Sub-card A — Weekly Focus:
+
+Large bold text: weeklyFocus
+Muted subtitle: "Strategic north star for [project name] this week"
+Small "Regenerate →" link that clears weeklyStrategy and shows the textarea again
+
+Sub-card B — Angles & Moves:
+
+"This week's angles" label (uppercase, small, muted)
+insights as vertical cards — colored left dot (cycle indigo/violet/cyan/emerald) + insight text
+"Recommended moves" label
+recommendations as action list — each item has a decorative circle icon + text + hoverable "+ Add to planner" button
+"+ Add to planner" calls:
+
+tsawait apiRequest('POST', '/api/tasks', {
+  title: recommendation,
+  type: 'planning',
+  category: 'planning',
+  priority: 2,
+  source: 'strategy',
+  projectId: selectedProjectId,
+  scheduledDate: localDateStr(new Date()),
+});
+queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+toast({ title: "Added to your plan" });
+```
+
+Sub-card C — Direction this week:
+- Three rows from `nextWeekPlan`: 📝 Content / 📡 Outreach / 📊 Watch
+- Compact, dense, icon + bold label + value
+
+Footer: "Generated [formatted date]" muted text + "Regenerate →" link
+
+---
+
+### Section 3 — Conditional Rules (unchanged, but project-aware)
+
+Keep the existing Conditional Rules section. Add `projectId: selectedProjectId` to the `createMutation` body so new rules are linked to the selected project.
+
+The existing `TriggerCard` component stays 100% identical.
+
+---
+
+### Page header
+```
+Strategy — [selected project name]
+Your brand's direction, this week's focus, and conditional planning rules
+The project name in the header updates dynamically as the selector changes.
+
+Files to modify
+
+shared/schema.ts — add projectId to strategy_reports
+server/storage.ts — update getStrategyReport to filter by projectId
+server/routes.ts — fix refresh-intelligence, strategy/generate, and strategy/report to be project-aware; add weekContext to generate route
+server/services/openai.ts — add weekContext?: string to StrategyAnalysisRequest interface and include it in the prompt
+client/src/pages/strategy.tsx — full rewrite as described
+
+Do not modify
+
+server/storage.ts getBrandDnaForProject — already correct
+GET /api/projects/:id/brand-dna and PATCH /api/projects/:id/brand-dna — already correct
+Any other page, component, or schema table
+
+Expected result
+When the user opens Strategy and selects "Agence JMD", every piece of data — the intelligence brief, the weekly angles, the conditional rules — is sourced from Agence JMD's Brand DNA exclusively. Switching to "Naya" reloads everything from Naya's Brand DNA. There is zero global DNA contamination anywhere on this page.

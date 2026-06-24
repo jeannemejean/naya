@@ -1,0 +1,42 @@
+T#50: Onboarding & auth UX fixes (8 issues)
+
+Bug 1 — Dashboard flash fix (dashboard.tsx):
+- Added `if (!brandDna) return null` guard immediately after the loading
+  block so the dashboard never renders when onboarding is needed.
+- Changed loading text from "Loading Naya..." to "Chargement…".
+
+Bug 2 — Onboarding step navigation (onboarding.tsx):
+- Merged the two separate Card blocks ({step === 1} and {step > 1}) into
+  a single <Card> with step-conditional content inside.
+- Step 1 welcome content is now a <div> inside the shared Card.
+- Navigation row is wrapped in {step > 1 && (...)} so it doesn't show
+  on the welcome screen (which has its own "Let's begin" button).
+- CardContent className switches between welcome padding and form padding
+  based on step via ternary.
+
+Bug 3 — Step 3 blank page:
+- Not a code issue; all fr.ts translation keys were already present.
+  No changes needed.
+
+Bug 4 — Keyword capitalisation (onboarding.tsx):
+- Removed `.toLowerCase()` from addKeyword() in KeywordChipInput.
+- Updated regex from `/[^a-z0-9\-À-öø-ÿ ]/gi` to
+  `/[^a-zA-Z0-9\-À-öø-ÿ ]/gi` to preserve user casing.
+
+Issue 5 — Question label sizing (onboarding.tsx):
+- FieldLabel className: `text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5`
+  → `text-base font-semibold text-slate-900 dark:text-white mb-2 mt-1`.
+- All step <h2> titles changed from `text-xl font-bold` to `text-2xl font-bold`
+  (11 occurrences replaced via replace_all).
+
+Issue 6 — Auth consent screen (server/replitAuth.ts):
+- Strategy scope: "openid email profile offline_access" → "openid profile".
+- /api/login prompt: "login consent" → "login".
+- /api/login scope array: ["openid","email","profile","offline_access"]
+  → ["openid","profile"].
+
+Issues 7 & 8 — Copy and redirect:
+- "Loading Naya..." → "Chargement…" covered by Bug 1.
+- Landing page feature card names already use i18n keys (no change needed).
+- Post-auth redirect (Issue 8) is resolved by Bug 1 + Bug 2 eliminating
+  the flash and enabling clean navigation to onboarding.

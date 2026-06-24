@@ -1,0 +1,261 @@
+Campaign Launch v2 — Temporal deployment + Content Calendar injection
+The problem
+When a campaign is launched today, all tasks land on todayStr (today's date) regardless of their phase, and the content pieces from contentPlan are never created anywhere. The campaign already contains everything needed to deploy correctly across time: phases with durations, tasks with phase numbers, and content pieces with week labels and platforms. This step makes the launch route read all of that and distribute everything correctly across the calendar.
+
+Core concept: date calculation from campaign structure
+The launch route receives an optional startDate (YYYY-MM-DD) from the request body. If not provided, default to today. All task and content dates are computed from this anchor date using the phase structure.
+Phase → date range mapping:
+Parse each phase's duration field (e.g. "Weeks 1–2", "Week 3", "Months 1–2", "Month 3") to extract the start week/month offset. Use this to compute an absolute date range for each phase.
+Use this helper logic (implement in the route):
+tsfunction parsePhaseDateRange(duration: string, startDate: Date, campaignDurationStr: string): { start: Date; end: Date } {
+  // duration examples: "Weeks 1–2", "Week 3", "Month 1", "Months 2–3", "Weeks 5–8"
+  // Parse the start number from the duration string
+  const weekMatch = duration.match(/[Ww]eeks?\s*(\d+)/);
+  const monthMatch = duration.match(/[Mm]onths?\s*(\d+)/);
+  
+  const start = new Date(startDate);
+  const end = new Date(startDate);
+  
+  if (weekMatch) {
+    const weekNum = parseInt(weekMatch[1]);
+    start.setDate(start.getDate() + (weekNum - 1) * 7);
+    // End: look for end week number e.g. "Weeks 1-2" → end at week 2
+    const endWeekMatch = duration.match(/[–\-]\s*(\d+)/);
+    const endWeek = endWeekMatch ? parseInt(endWeekMatch[1]) : weekNum;
+    end.setDate(startDate.getDate() + (endWeek * 7) - 1);
+  } else if (monthMatch) {
+    const monthNum = parseInt(monthMatch[1]);
+    start.setMonth(start.getMonth() + (monthNum - 1));
+    const endMonthMatch = duration.match(/[–\-]\s*(\d+)/);
+    const endMonth = endMonthMatch ? parseInt(endMonthMatch[1]) : monthNum;
+    end.setMonth(startDate.getMonth() + endMonth);
+    end.setDate(end.getDate() - 1);
+  }
+  
+  return { start, end };
+}
+
+function dateToStr(d: Date): string {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function addWeeks(d: Date, weeks: number): Date {
+  const result = new Date(d);
+  result.setDate(result.getDate() + weeks * 7);
+  return result;
+}
+
+function addDays(d: Date, days: number): Date {
+  const result = new Date(d);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+Task scheduling logic:
+Each task has a phase number. Map each phase number to its date range using parsePhaseDateRange. Schedule the task on the first Monday of that phase's date range — or the phase start date if it's already a weekday. Space multiple tasks within the same phase across the week: task 1 → Monday, task 2 → Wednesday, task 3 → Friday, task 4 → next Monday, etc.
+Content piece scheduling logic:
+Each content piece has a week field (e.g. "Week 1", "Week 3", "Month 2"). Parse this similarly — "Week N" means startDate + (N-1) * 7 days. "Month N" means startDate + (N-1) * 30 days. Schedule the scheduledFor timestamp for the Wednesday of that week at 10:00 AM (good default publication time).
+
+Task 1 — Schema: add startDate input to campaign creation form
+In client/src/pages/campaigns.tsx:
+Add a startDate state variable initialized to today's date string:
+tsconst [startDate, setStartDate] = useState<string>(() => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+});
+In the creation form (panelState === "creating"), add a date input between the duration selector and the optional context:
+tsx<div>
+  <label className="text-sm font-medium text-slate-700 dark:text-gray-300 block mb-1.5">
+    Campaign start date
+  </label>
+  <input
+    type="date"
+    value={startDate}
+    onChange={(e) => setStartDate(e.target.value)}
+    className="w-full text-sm border border-slate-200 dark:border-gray-700 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 text-slate-900 dark:text-white"
+  />
+  <p className="text-xs text-slate-400 dark:text-gray-500 mt-1">
+    Tasks and content pieces will be scheduled from this date based on campaign phases.
+  </p>
+</div>
+Pass startDate to the generateMutation body — add it to POST /api/campaigns/generate so it's saved on the campaign record:
+tsmutationFn: async () => {
+  const res = await apiRequest("POST", "/api/campaigns/generate", {
+    objective,
+    duration,
+    projectId: selectedProjectId,
+    weekContext: weekContext || undefined,
+    startDate,  // ADD THIS
+  });
+In server/routes.ts /api/campaigns/generate, read startDate from body and save it to the campaign:
+tsconst campaign = await storage.createCampaign({
+  ...
+  startDate: req.body.startDate || dateToStr(new Date()),
+  ...
+});
+Also pass startDate to the launchMutation:
+tsmutationFn: async (campaignId: number) => {
+  const res = await apiRequest("POST", `/api/campaigns/${campaignId}/launch`, {
+    startDate: selectedCampaign?.startDate || undefined,
+  });
+
+Task 2 — Server: rebuild /api/campaigns/:id/launch completely
+Replace the entire launch route with this logic:
+tsapp.post('/api/campaigns/:id/launch', isAuthenticated, async (req: any, res) => {
+  const userId = req.user.claims.sub;
+  const id = parseInt(req.params.id);
+  const campaign = await storage.getCampaign(id, userId);
+  if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+  if (campaign.status === 'active') return res.status(400).json({ message: "Campaign already launched" });
+
+  // Resolve start date — from body, campaign record, or today
+  const rawStart = req.body.startDate || campaign.startDate;
+  const startDate = rawStart ? new Date(rawStart) : new Date();
+
+  const phases = (campaign.phases || []) as CampaignPhase[];
+  const generatedTasks = (campaign.generatedTasks || []) as GeneratedTask[];
+  const contentPlan = (campaign.contentPlan || []) as ContentPiece[];
+
+  // ── 1. Build phase → date range map ──────────────────────────────
+  const phaseMap: Record<number, { start: Date; end: Date }> = {};
+  for (const phase of phases) {
+    phaseMap[phase.number] = parsePhaseDateRange(phase.duration, startDate, campaign.duration || '1_month');
+  }
+
+  // Fallback for tasks with no phase: spread from startDate
+  const fallbackPhaseStart = startDate;
+
+  // ── 2. Create tasks with correct scheduledDate ────────────────────
+  // Group tasks by phase, then space them within the phase week
+  const tasksByPhase: Record<number, typeof generatedTasks> = {};
+  for (const t of generatedTasks) {
+    const p = t.phase || 1;
+    if (!tasksByPhase[p]) tasksByPhase[p] = [];
+    tasksByPhase[p].push(t);
+  }
+
+  let tasksCreated = 0;
+  for (const [phaseNumStr, phaseTasks] of Object.entries(tasksByPhase)) {
+    const phaseNum = parseInt(phaseNumStr);
+    const phaseRange = phaseMap[phaseNum] || { start: fallbackPhaseStart, end: addWeeks(fallbackPhaseStart, 1) };
+    
+    // Distribute tasks across the phase: Monday, Wednesday, Friday, next Monday...
+    const WEEKDAY_OFFSETS = [0, 2, 4, 7, 9, 11, 14]; // Mon, Wed, Fri, Mon, Wed, Fri, Mon
+    
+    phaseTasks.forEach((t, idx) => {
+      const dayOffset = WEEKDAY_OFFSETS[idx % WEEKDAY_OFFSETS.length] + Math.floor(idx / WEEKDAY_OFFSETS.length) * 14;
+      const taskDate = addDays(phaseRange.start, dayOffset);
+      // Don't schedule past the phase end
+      const clampedDate = taskDate <= phaseRange.end ? taskDate : phaseRange.start;
+      
+      storage.createTask({
+        userId,
+        projectId: campaign.projectId ?? undefined,
+        campaignId: campaign.id,
+        title: t.title,
+        description: t.description,
+        type: t.type || 'planning',
+        category: t.category || 'planning',
+        priority: t.priority || 2,
+        estimatedDuration: t.estimatedDuration || 30,
+        taskEnergyType: t.taskEnergyType || 'execution',
+        source: 'campaign',
+        scheduledDate: dateToStr(clampedDate),
+        completed: false,
+      });
+      tasksCreated++;
+    });
+  }
+
+  // ── 3. Create content pieces in Content Calendar ──────────────────
+  let contentCreated = 0;
+  for (const piece of contentPlan) {
+    // Parse "Week N" or "Month N" from piece.week
+    let weekNum = 1;
+    const wMatch = piece.week.match(/[Ww]eek\s*(\d+)/);
+    const mMatch = piece.week.match(/[Mm]onth\s*(\d+)/);
+    if (wMatch) weekNum = parseInt(wMatch[1]);
+    else if (mMatch) weekNum = (parseInt(mMatch[1]) - 1) * 4 + 1;
+
+    // Wednesday of that week at 10:00 AM
+    const pieceDate = addDays(startDate, (weekNum - 1) * 7 + 2); // +2 = Wednesday
+    pieceDate.setHours(10, 0, 0, 0);
+
+    await storage.createContent({
+      userId,
+      projectId: campaign.projectId ?? undefined,
+      title: piece.angle,           // The angle IS the content title/idea
+      body: piece.copyDirections,   // Copy directions as the body/brief
+      platform: piece.platform,
+      contentType: mapFormatToContentType(piece.format), // helper below
+      pillar: piece.pillar,
+      goal: piece.goal,
+      status: 'draft',
+      contentStatus: 'idea',        // Start as "Idea" in the pipeline
+      scheduledFor: pieceDate,
+    });
+    contentCreated++;
+  }
+
+  // ── 4. Update campaign ────────────────────────────────────────────
+  const updated = await storage.updateCampaign(id, userId, {
+    tasksGenerated: true,
+    status: 'active',
+    startDate: dateToStr(startDate),
+  });
+
+  res.json({ campaign: updated, tasksCreated, contentCreated });
+});
+Add this helper function before the route handler (or at the top of the routes file utilities section):
+tsfunction mapFormatToContentType(format: string): string {
+  const f = format.toLowerCase();
+  if (f.includes('email') || f.includes('newsletter')) return 'email';
+  if (f.includes('article') || f.includes('blog')) return 'article';
+  if (f.includes('story') || f.includes('reel') || f.includes('video')) return 'story';
+  return 'post'; // default for carousel, text post, etc.
+}
+
+Task 3 — Update the launch success toast in campaigns.tsx
+The launchMutation.onSuccess currently shows only tasksCreated. Update it to show both:
+tsonSuccess: (data: { campaign: Campaign; tasksCreated: number; contentCreated: number }) => {
+  queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedProjectId] });
+  queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/content", selectedProjectId] });
+  setPanelState("detail");
+  toast({
+    title: `Campaign launched`,
+    description: `${data.tasksCreated} tasks scheduled across phases · ${data.contentCreated} content pieces added to your calendar`,
+  });
+},
+
+Task 4 — Show deployment summary in campaign detail view
+In panelState === "detail", after the status badge row, add a compact deployment summary block if the campaign has a startDate:
+tsx{selectedCampaign.startDate && (
+  <div className="bg-slate-50 dark:bg-gray-800/50 rounded-lg px-4 py-3 text-xs text-slate-500 dark:text-gray-400 space-y-1">
+    <div className="flex items-center gap-2">
+      <CalendarDays className="h-3.5 w-3.5 flex-shrink-0" />
+      <span>
+        Starts <strong className="text-slate-700 dark:text-gray-300">{selectedCampaign.startDate}</strong>
+        {selectedCampaign.endDate && (
+          <> → ends <strong className="text-slate-700 dark:text-gray-300">{selectedCampaign.endDate}</strong></>
+        )}
+      </span>
+    </div>
+    {selectedCampaign.tasksGenerated && (
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+        <span>Tasks and content pieces deployed to your planning calendar</span>
+      </div>
+    )}
+  </div>
+)}
+Add CalendarDays to the lucide imports.
+
+Verification expected
+
+Create a 3-month campaign for Agence JMD, set start date to March 23 → launch
+Phase 1 tasks appear in Planning on the week of March 23 (Mon/Wed/Fri)
+Phase 2 tasks appear several weeks later matching their phase duration
+Phase 3 tasks appear in the final phase's date range
+Content Calendar (Pipeline view) shows all content pieces as "Idea" cards with scheduled dates matching their week label
+Switching to Content Calendar and filtering by Agence JMD shows the content pieces with correct platforms, pillars, and copy directions as body text
+Toast shows "X tasks scheduled across phases · Y content pieces added to your calendar"

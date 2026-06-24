@@ -1,0 +1,607 @@
+Thanks — this is a strong start, but I want to correct the direction before implementation begins.
+
+Your Persona Intelligence plan is good, but it is still too narrow for what Naya actually needs to become.
+
+The key correction
+
+Naya is not just a persona-aware marketing assistant for one business.
+
+Naya must become a project-aware operating system for entrepreneurs who are often building multiple things at the same time.
+
+That means the current Persona Intelligence work should not be the first architectural layer added in isolation.
+
+It must sit on top of a more important foundation:
+
+Naya must become multi-project and goal-aware first
+
+Right now, from the current architecture, the product is still fundamentally built around:
+	•	one user
+	•	one Brand DNA
+	•	one business context
+	•	one global goal logic
+
+That is too limited.
+
+In real use, a Naya user may have:
+	•	a main revenue-generating business
+	•	a second business or client project
+	•	a personal brand
+	•	a passion project
+	•	an internal project
+	•	a personal development or lifestyle project
+
+And these projects do not all behave the same way.
+
+Example:
+	•	Project A = agency → must generate money
+	•	Project B = content brand → long-term strategic visibility
+	•	Project C = passion project → no monetization goal for now
+
+Naya must understand this distinction clearly.
+
+A passion project should not receive the same AI recommendations, urgency, task structure, or performance logic as a revenue-critical business project.
+
+So before you implement the Persona Intelligence System exactly as proposed, I want to revise the architecture.
+
+⸻
+
+What I want changed in the roadmap
+
+1. Add a Project System before or alongside Persona Intelligence
+
+This is the main missing layer.
+
+We need a new central concept:
+
+projects
+
+Each user can have multiple projects.
+
+Each project must have its own:
+	•	name
+	•	type
+	•	description
+	•	status
+	•	strategic intent
+	•	monetization intent
+	•	time horizon
+	•	priority level
+	•	business context
+	•	target audience
+	•	goals
+	•	preferred channels
+	•	operating mode
+
+Project types should support examples like:
+	•	Business
+	•	Personal Brand
+	•	Passion Project
+	•	Client Project
+	•	Internal Project
+	•	Lifestyle / Personal
+
+Each project must also store:
+	•	whether it is intended to generate revenue now
+	•	whether it is exploratory only
+	•	whether it is long-term or urgent
+	•	whether it is active, paused, or incubating
+
+This changes everything about how AI should reason.
+
+⸻
+
+2. Brand DNA cannot remain global-only
+
+The current brand_dna model is useful, but it is currently tied too strongly to the user as a single global identity.
+
+That is not enough.
+
+We need to move toward one of these two models:
+
+Preferred approach
+	•	Keep a lightweight global user profile
+	•	Add project-level strategy profiles for each project
+
+That means:
+	•	one user can have a general operating profile
+	•	each project can have its own context and strategic DNA
+
+Because the way I communicate for one project may be completely different from another.
+
+⸻
+
+3. Tasks must become project-based
+
+Right now tasks are tied to the user.
+
+That is not sufficient.
+
+We need tasks to belong to a specific project.
+
+Every task should include:
+	•	projectId
+	•	goal relation
+	•	AI source / manual source
+	•	task intent
+	•	recommended duration
+	•	actual duration
+	•	scheduling flexibility
+	•	energy type if possible
+	•	whether it is strategic, executional, admin, content, outreach, or personal
+
+This is important because Naya must be able to answer:
+	•	which project is this task serving?
+	•	why is this task here?
+	•	is it urgent because of revenue or only because of consistency?
+	•	is this task aligned with the user’s current objective for this project?
+
+⸻
+
+4. Goals must exist per project
+
+This is another missing core layer.
+
+We need something like:
+
+project_goals
+
+Each project should be able to have:
+	•	monthly goals
+	•	quarterly goals
+	•	milestone goals
+	•	non-monetary goals
+	•	revenue goals
+	•	visibility goals
+	•	discipline / consistency goals
+
+Example:
+	•	Agency → sign 2 clients this quarter
+	•	Content project → publish 3 pieces per week
+	•	Passion project → explore direction and create without pressure
+	•	Personal project → build consistency, not money
+
+This is extremely important.
+
+Naya must generate tasks and recommendations based on the goal of that specific project, not only on a generic business prompt.
+
+⸻
+
+Persona Intelligence is still needed — but repositioned
+
+I do want the Persona Intelligence System.
+
+But it should be implemented in this order:
+
+first:
+	•	multi-project architecture
+	•	project goals
+	•	project-level task generation
+
+then:
+	•	user persona detection
+	•	target persona analysis
+	•	persona-aware task and content recommendations
+
+Because otherwise the persona layer will be built on top of the wrong product logic.
+
+⸻
+
+Revised product vision for Naya
+
+Naya should become:
+
+a strategic AI operating system for multi-project entrepreneurs
+
+It should understand:
+	•	how the user works
+	•	what the user is building
+	•	how many projects are active
+	•	what each project is for
+	•	what success means for each one
+	•	what deserves urgency and what does not
+
+Then it should generate:
+	•	tasks
+	•	planning
+	•	recommendations
+	•	strategy
+	•	content
+	•	outreach
+
+with that full context.
+
+⸻
+
+Very important UI / product direction
+
+I also want the product roadmap to align better with the dashboard direction I’ve already been designing.
+
+The dashboard should not just become “more cards”.
+
+It should evolve toward a more operational cockpit.
+
+Core dashboard direction I want
+
+Sidebar
+
+The sidebar should be split into two sections:
+
+Top section
+Projects managed by the user, each with its own icon / visual identity
+
+Bottom section
+Main product areas such as:
+	•	communication
+	•	prospecting
+	•	finance
+	•	personal
+	•	settings
+
+So the user can navigate both by project and by function.
+
+This is much closer to the way I want Naya to feel.
+
+⸻
+
+Main dashboard structure
+
+I want a homepage centered around:
+	•	greeting with name, date, and time
+	•	Today
+	•	Tomorrow
+	•	Monthly objective
+	•	quick capture
+	•	self-care / support block
+	•	AI recommendations before important deadlines
+
+Today / Tomorrow view
+
+The to-do list should be viewable in two modes:
+	•	list mode
+	•	planner mode with hour-by-hour layout
+
+The AI can propose an ideal schedule, but the user must be able to:
+	•	drag tasks
+	•	move them
+	•	extend them
+	•	shorten them
+	•	reorganize them manually
+
+And Naya should learn from these changes over time.
+
+That means the platform needs to track:
+	•	suggested duration
+	•	actual scheduled duration
+	•	manual movement
+	•	completion time
+	•	repeated patterns
+
+This learning behavior is important.
+
+⸻
+
+Quick capture
+
+There should be a place where the user can:
+	•	dictate something by voice
+	•	quickly type something
+	•	add a lightweight note, task, or idea
+
+This should be fast and frictionless.
+
+⸻
+
+Time for self
+
+I want a dedicated block for things like:
+	•	meditation
+	•	breathing exercise
+	•	focus podcast
+	•	playlist
+	•	any other ritual that helps the user work better
+
+The user should be able to switch between options.
+
+This matters because Naya is not only a business dashboard. It is supposed to support the user’s functioning.
+
+⸻
+
+AI recommendations before key dates
+
+There should also be a place where Naya suggests actions that should be done before certain deadlines or important milestones.
+
+These recommendations should be generated from:
+	•	project goals
+	•	deadlines
+	•	strategic priorities
+	•	current state of progress
+
+⸻
+
+What I think of the current task list
+
+Good
+
+These are good and should stay:
+	•	persona tables
+	•	persona detection
+	•	target persona analysis
+	•	persona-aware prompt injection
+	•	onboarding integration
+	•	persona UI blocks
+
+But incomplete / wrongly ordered
+
+They currently miss the more important structural layer:
+	•	project model
+	•	project goals
+	•	task-to-project relationship
+	•	project-aware dashboard
+	•	scheduling / planner logic
+	•	quick capture
+	•	adaptive learning from task moves
+
+So I do not want you to start with the existing T001–T007 exactly as written.
+
+I want the roadmap revised.
+
+⸻
+
+Revised implementation order
+
+Phase 1 — Structural foundation
+
+Before Persona Intelligence UI work, implement:
+
+T001 — Multi-Project Data Model
+
+Add tables such as:
+	•	projects
+	•	project_goals
+	•	project_strategy_profiles or project-level DNA
+	•	optionally project_status_history
+
+Minimum projects fields:
+	•	id
+	•	userId
+	•	name
+	•	slug
+	•	icon
+	•	color
+	•	type
+	•	description
+	•	monetizationIntent
+	•	priorityLevel
+	•	projectStatus
+	•	isPrimary
+	•	createdAt
+	•	updatedAt
+
+Minimum project_goals fields:
+	•	id
+	•	projectId
+	•	title
+	•	description
+	•	goalType
+	•	targetValue
+	•	currentValue
+	•	timeframe
+	•	dueDate
+	•	status
+
+T002 — Make existing modules project-aware
+
+Update:
+	•	tasks
+	•	content
+	•	leads
+	•	outreach
+	•	strategy reports
+
+to support projectId where relevant.
+
+At minimum:
+	•	tasks must require projectId
+	•	content should support projectId
+	•	leads/outreach should support projectId if they belong to a specific project or pipeline
+
+T003 — Project selection in UI
+
+Add project switcher in sidebar.
+User should be able to:
+	•	view all projects
+	•	select one project context
+	•	optionally view “all projects”
+
+⸻
+
+Phase 2 — Planning and dashboard logic
+
+T004 — Dashboard redesign toward operational cockpit
+
+Rework dashboard to support:
+	•	greeting
+	•	monthly objective
+	•	Today
+	•	Tomorrow
+	•	recommendation block
+	•	quick capture
+	•	self-care block
+
+T005 — Task scheduling model
+
+Add fields to tasks such as:
+	•	suggestedStartTime
+	•	suggestedEndTime
+	•	actualStartTime
+	•	actualEndTime
+	•	estimatedDuration
+	•	actualDuration
+	•	schedulingMode
+	•	source (ai/manual)
+	•	learnedAdjustmentCount
+
+T006 — Planner mode + list mode
+
+Allow tasks to be shown:
+	•	as simple lists
+	•	as planner blocks in the day
+
+User can move tasks manually.
+
+T007 — Task learning / scheduling feedback
+
+When a user moves or resizes tasks, store:
+	•	old slot
+	•	new slot
+	•	duration change
+	•	pattern label if possible
+
+This will allow future adaptive scheduling recommendations.
+
+⸻
+
+Phase 3 — Persona Intelligence
+
+Now implement the persona system, but adapt it to the project-aware architecture.
+
+T008 — Persona tables and service
+
+Your previous persona tables can still exist, but:
+	•	target personas should preferably be linked to projectId, not only userId
+	•	persona analysis results should support both user-level and project-level context
+
+T009 — User persona detection
+
+This should describe how the user works globally.
+
+T010 — Target persona analysis
+
+This should be project-specific, because one project may target a CMO and another may target consumers or followers.
+
+T011 — Persona matching engine
+
+This should use:
+	•	user persona
+	•	project type
+	•	project goal
+	•	target persona
+
+not only user persona + target persona in isolation.
+
+⸻
+
+Phase 4 — AI generation updates
+
+T012 — Make all AI modules both project-aware and persona-aware
+
+Update:
+	•	content generation
+	•	task generation
+	•	outreach generation
+	•	strategy generation
+
+Inputs must now include:
+	•	current project
+	•	project goal
+	•	monetization intent
+	•	user persona
+	•	target persona if relevant
+
+This is critical.
+
+A passion project with no revenue objective must not produce the same urgency or call-to-action style as a client acquisition project.
+
+⸻
+
+Phase 5 — UI persona surfaces
+
+T013 — Sidebar persona badge
+
+Good idea, keep it.
+
+T014 — Dashboard persona intelligence card
+
+Good idea, keep it.
+
+T015 — Persona context in content and outreach
+
+Good idea, keep it.
+
+But this should come after the platform is project-aware.
+
+⸻
+
+Additional requirements I want explicitly included
+
+1. Do not overfit Naya to marketing only
+
+Naya includes communication, outreach, strategy, and content today, but the product direction is wider than that.
+
+The architecture should not assume the user is only using Naya for content marketing.
+
+2. Distinguish strategic projects from passion projects
+
+This is non-negotiable.
+
+The system must understand:
+	•	money-generating project
+	•	authority-building project
+	•	exploratory project
+	•	passion project
+
+and behave differently for each.
+
+3. The AI should reason at project level
+
+When generating tasks, recommendations, and planning, the AI must know:
+	•	which project we are working on
+	•	what that project is trying to achieve
+	•	whether urgency is financial, strategic, creative, or personal
+
+4. The homepage must feel like an operating desk
+
+Not just a SaaS dashboard full of metrics.
+
+It should feel like:
+	•	a command center
+	•	a planner
+	•	an assistant
+	•	a calm but intelligent daily cockpit
+
+⸻
+
+Final instruction
+
+Please revise the current task plan accordingly.
+
+I want you to do this next:
+
+Step 1
+
+Audit the current codebase again from this revised perspective and identify:
+	•	what already supports project-aware logic
+	•	what must be refactored
+	•	which current tables and endpoints should be extended rather than replaced
+
+Step 2
+
+Replace the current T001–T007 plan with a new roadmap organized in this order:
+	1.	multi-project foundation
+	2.	project goals
+	3.	dashboard / planner foundation
+	4.	persona intelligence
+	5.	persona-aware AI generation
+	6.	persona-aware UI surfaces
+
+Step 3
+
+Then start implementation from the new roadmap, beginning with the project system and data model.
+
+The main idea is:
+
+Persona Intelligence is important, but multi-project intelligence is even more fundamental to Naya.
+
+Naya must understand not just who the user is and who they want to influence, but also what they are building, why they are building it, and whether that project is meant to make money at all.
+
+That is the version of Naya I want us to build.

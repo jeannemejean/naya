@@ -1,0 +1,80 @@
+ Content Calendar: Per-Project Content Pipeline
+What this step does
+The Content Calendar currently ignores which project the user is working on — all content from all projects is mixed together. This step makes it fully project-aware, adds a Kanban-style pipeline view (Idea → Draft → Ready → Published), connects AI content generation to the selected project's Brand DNA instead of the global record, and adds a "Generate from strategy" shortcut that pre-fills content briefs from the current week's strategy recommendations.
+
+Task 1 — Server: make /api/content routes project-aware
+GET /api/content — update to accept an optional ?projectId= query parameter. When provided, filter results to that project only. When absent, return all content for the user (backward compatible).
+In server/storage.ts, update getContent(userId, limit?, projectId?) — add the optional projectId parameter and filter when present.
+POST /api/content — already accepts projectId in body. Ensure it is persisted correctly (it is in schema, just verify it flows through).
+POST /api/content/generate — currently calls storage.getBrandDna(userId) (global). Fix: when projectId is present in req.body, call storage.getBrandDnaForProject(userId, projectId) instead. Fall back to getBrandDna(userId) only when no projectId is provided.
+
+Task 2 — Schema: add contentStatus field (migration-safe)
+The existing status field uses values draft / scheduled / published. We need a richer editorial status. Add a new column to the content table in shared/schema.ts:
+tscontentStatus: text("content_status").default("idea"), // idea | draft | ready | published
+This is separate from the existing status field (which handles publishing mechanics). contentStatus tracks the editorial workflow. Run npm run db:push.
+
+Task 3 — Frontend: full rewrite of content-calendar.tsx
+This is the main change. Keep all existing mutations and data fetching logic. Restructure the page as follows.
+Header:
+
+Title: Content Calendar — [Project Name] (dynamic, updates with selection)
+Project selector: same pill pattern as Strategy page — one pill per project (max 5 shown, overflow in select), defaults to primary project, all queries depend on selectedProjectId
+"New piece" button (replaces "Create Post")
+
+Four tabs (replace current calendar/list/accounts/media tabs):
+
+Pipeline (default) — Kanban with 4 columns
+Calendar — existing drag-and-drop calendar, filtered to selectedProjectId
+Accounts — existing social accounts tab, unchanged
+Media — existing media library tab, unchanged
+
+Pipeline tab — Kanban view:
+Four columns, left to right: Idea, Draft, Ready, Published
+Each column:
+
+Header with column name + count badge
+Vertically scrollable list of ContentCards
+"Add idea" button in the Idea column only (opens the creation modal)
+
+ContentCard component (compact, ~120px tall):
+
+Platform color dot + platform name (top left)
+Title (bold, 1 line clamp)
+Pillar badge (outline, small)
+Scheduled date if present (small, muted)
+On click → opens the existing edit modal (selectedPost + showCreateDialog)
+On hover → shows action buttons: move left ←, move right →, delete
+Moving right = advancing contentStatus: idea → draft → draft → ready → ready → published
+Moving left = going back one step
+Moving to published also sets status = 'published' and publishedAt = new Date()
+
+Status advancement is done via PATCH /api/content/:id with { contentStatus: newStatus } (and optionally status, publishedAt).
+Filter ContentCards in each column by contentStatus. Filter the whole pipeline by selectedProjectId using ?projectId=selectedProjectId on the GET /api/content query.
+Creation/Edit modal — add two things:
+
+A contentStatus selector at the top (4 options: Idea / Draft / Ready / Published) — default idea
+A "From strategy" section: if the current week's strategy report exists for selectedProjectId (use the same query as Strategy page: GET /api/strategy/report?week=X&projectId=Y), show a collapsible "Strategy recommendations" panel listing the recommendations. Clicking one pre-fills the title field with that recommendation. This is a shortcut only — no new routes needed.
+
+Content generation fix: In the generateContentMutation call inside the modal, always pass projectId: selectedProjectId. This ensures the AI uses the correct project's Brand DNA.
+Query key: ['/api/content', selectedProjectId] — refetch when selectedProjectId changes.
+
+Task 4 — Preserve existing functionality exactly
+
+Drag-and-drop calendar: unchanged, just filtered by selectedProjectId
+Media library: unchanged
+Social accounts: unchanged
+AI generate button in modal: unchanged (just pass projectId)
+Character counter: unchanged
+Platform preview: unchanged
+Publish Now button: unchanged
+
+
+Verification expected
+
+Select Agence JMD → Pipeline shows only Agence JMD content, organized by editorial status
+Create a new piece → it is linked to Agence JMD (projectId saved)
+Switch to Naya → Pipeline empties or shows Naya content only — zero cross-contamination
+Move a card from Idea → Draft → Ready → Published → card moves columns, PATCH is fired with correct contentStatus
+"From strategy" panel shows this week's recommendations from Agence JMD's strategy report
+AI Generate in modal uses Agence JMD's Brand DNA (not global)
+Calendar tab shows only Agence JMD's scheduled content

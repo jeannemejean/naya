@@ -1,0 +1,77 @@
+The new plan looks very strong and aligns very well with the direction I want for Naya.
+
+The overall architecture — goal-aware task generation, project-scoped tasks, task workspaces, and the intelligence loop — is exactly what Naya needs to evolve into a real multi-project thinking and execution OS.
+
+I want to proceed with this plan.
+
+Before implementation, I would like to add a few small adjustments to make the system more robust and scalable.
+
+⸻
+
+1 — Add a soft limit to generated tasks
+
+Even though tasks are now generated based on project goals and progress, we should still add a safety limit to prevent overwhelming the user.
+
+Suggested rule:
+
+• maximum 5 tasks per project
+• maximum 10 tasks total in All Projects mode
+
+The AI should still decide the type of tasks, but these limits protect the slowpreneur experience.
+
+⸻
+
+2 — Add a source field to workspace entries
+
+In the task_workspace_entries schema, please add:
+
+source text default 'task'
+
+Possible values later could include:
+
+task
+capture
+brainstorm
+ai
+
+This will allow the workspace system to evolve into a broader knowledge layer for Naya.
+
+⸻
+
+3 — Add an optional title field for workspace entries
+
+Sometimes workspace entries may need a small title.
+
+Please add an optional field:
+
+title text
+
+Example:
+
+title: “Behind-the-scenes strategy idea”
+content: “Documenting how strategic thinking works when working with clients…”
+
+This will make workspace entries easier to reuse later.
+
+⸻
+
+4 — Ensure checkbox interaction never opens the workspace
+
+When wiring the workspace interaction in todays-tasks.tsx, please ensure that:
+
+• clicking the checkbox
+• clicking the checkbox label
+
+only toggles completion and never opens the workspace sheet.
+
+The workspace should open only when clicking the task title.
+
+⸻
+
+Other than these small adjustments, the plan is solid and I want you to proceed with the implementation.
+
+This change is important because Naya should evolve from a task manager into a system where:
+
+Task → Workspace → Knowledge → AI context → Better tasks
+
+and this plan is a strong step in that direction.

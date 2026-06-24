@@ -1,0 +1,167 @@
+# Naya — Targeted Fix: Rebalance Week (v18)
+
+The rebalance-week endpoint still produces scheduling conflicts after multiple clicks.
+After deep code analysis, there are **3 specific bugs** in `server/routes.ts` causing this.
+Fix them exactly as described below.
+
+---
+
+## BUG A — `existingDayCounts` is always `undefined` (line 3454)
+
+**Current code:**
+```typescript
+const rebalanced = rebalanceTasksForward(pending, todayStr, weekEnd, rebalDailyCap, undefined, 14, userWorkDays, offDates)
+```
+
+The `undefined` parameter is `existingDayCounts`. This means `rebalanceTasksForward` treats every day as completely empty when distributing tasks by count. It ignores how many tasks are already on each day.
+
+**Fix:** Build a `Map<string, number>` from `allTasks` (which includes completed tasks) before calling `rebalanceTasksForward`, and pass it instead of `undefined`:
+
+```typescript
+// Build existing day counts from ALL tasks (including completed)
+// so the distribution algorithm knows what's already on each day
+const existingDayCountsForRebal = new Map<string, number>();
+for (const t of allTasks) {
+  if (t.scheduledDate) {
+    existingDayCountsForRebal.set(
+      t.scheduledDate,
+      (existingDayCountsForRebal.get(t.scheduledDate) || 0) + 1
+    );
+  }
+}
+
+const rebalanced = rebalanceTasksForward(
+  pending, todayStr, weekEnd, rebalDailyCap,
+  existingDayCountsForRebal,   // ← pass this instead of undefined
+  14, userWorkDays, offDates
+).filter((t: any) => !t._unschedulable);
+```
+
+---
+
+## BUG B — Overflow tasks collide with the next day's own tasks (lines 3553–3610)
+
+**The problem:**
+In the `byDate` loop, when Monday's tasks overflow to Tuesday (via `tryOverflowSlot`), those overflow tasks get placed starting at some time on Tuesday. But when the loop then processes Tuesday's own tasks, it resets `curSlot = window.start` (09:00). So Tuesday's tasks and Monday's overflow tasks both start at 09:00 — direct conflict.
+
+**Fix:** Track which time slots have been "claimed" on each day across the entire loop (including overflow placements), and use that as the starting cursor when processing any day:
+
+Replace the `byDate` loop section entirely with this approach:
+
+```typescript
+// Global occupied slots tracker: date → next available minute
+const dayNextSlot = new Map<string, number>();
+
+const getNextSlotForDate = (date: string): number => {
+  const window = getEffectiveWindow(date);
+  return dayNextSlot.get(date) ?? (
+    (date === todayStr && clientNowMin !== null)
+      ? Math.max(window.start, clientNowMin + 15)
+      : window.start
+  );
+};
+
+const claimSlot = (date: string, endMinute: number) => {
+  dayNextSlot.set(date, endMinute);
+};
+
+// Process all tasks in a single ordered pass
+// Sort: by date first, then by priority
+const allRebalancedSorted = [...rebalanced].sort((a: any, b: any) => {
+  const dateCmp = (a.scheduledDate || todayStr).localeCompare(b.scheduledDate || todayStr);
+  if (dateCmp !== 0) return dateCmp;
+  return (a.priority || 5) - (b.priority || 5);
+});
+
+let moved = 0;
+const days: Record<string, number> = {};
+
+for (const task of allRebalancedSorted) {
+  const duration = task.estimatedDuration || 30;
+  let targetDate = task.scheduledDate || todayStr;
+  let scheduledTimeVal: string | null = null;
+  let finalDate = targetDate;
+
+  // Try to fit in targetDate, then find next available day
+  for (let dayTries = 0; dayTries < 14; dayTries++) {
+    const window = getEffectiveWindow(finalDate);
+    const effectiveEnd = window.end;
+    const startSlot = getNextSlotForDate(finalDate);
+    const breaksForDate = getBreaksForDate(finalDate);
+
+    const result = findSlotAvoidingBreaks(startSlot, duration, breaksForDate, effectiveEnd);
+
+    if (result.found) {
+      scheduledTimeVal = minutesToHHMM(result.slot);
+      claimSlot(finalDate, result.slot + duration);
+      break;
+    }
+
+    // Day is full — move to next work day
+    finalDate = nextWorkDay(finalDate);
+  }
+
+  const scheduledEndTimeVal = scheduledTimeVal
+    ? minutesToHHMM(hhmmToMinutes(scheduledTimeVal) + duration)
+    : null;
+
+  const orig = originalDates.get(task.id);
+  const changed = !orig || orig.scheduledDate !== finalDate || orig.scheduledTime !== scheduledTimeVal;
+  if (changed) moved++;
+
+  await storage.updateTask(task.id, {
+    scheduledDate: finalDate,
+    scheduledTime: scheduledTimeVal,
+    scheduledEndTime: scheduledEndTimeVal,
+  });
+
+  days[finalDate] = (days[finalDate] || 0) + 1;
+}
+
+res.json({ moved, days });
+```
+
+This replaces the existing `byDate` map + per-day loop logic (lines ~3495–3632).
+
+---
+
+## BUG C — `_unschedulable` tasks keep their old date and reappear on every rebalance
+
+**The problem:**
+Tasks that `rebalanceTasksForward` marks `_unschedulable` are filtered out of `rebalanced`. Their DB records are never updated. So their old `scheduledDate` (within weekStart–weekEnd) stays in the DB. On the next rebalance call, `getTasksInRange` returns them again, creating an infinite loop.
+
+**Fix:** After the main loop, find which tasks from `pending` were NOT in `rebalanced`, and clear their scheduledDate and scheduledTime:
+
+```typescript
+// Clear scheduledDate/Time for tasks that could not be scheduled
+const scheduledTaskIds = new Set(rebalanced.map((t: any) => t.id));
+const unschedulableTasks = pending.filter((t: any) => !scheduledTaskIds.has(t.id));
+
+for (const task of unschedulableTasks) {
+  await storage.updateTask(task.id, {
+    scheduledDate: null,
+    scheduledTime: null,
+    scheduledEndTime: null,
+  });
+}
+```
+
+Add this block right after the main scheduling loop, before `res.json({ moved, days })`.
+
+---
+
+## Summary of changes
+
+| Bug | Location | What to change |
+|-----|----------|---------------|
+| A | Line ~3454 | Pass `existingDayCountsForRebal` instead of `undefined` |
+| B | Lines ~3495–3632 | Replace per-day loop with single-pass global slot tracker |
+| C | After main loop | Add cleanup block for `_unschedulable` tasks |
+
+These three changes together guarantee that:
+- One call to rebalance-week produces a conflict-free schedule
+- No two tasks share the same time slot on the same day
+- Tasks that overflow beyond the available week are properly cleared, not stuck in limbo
+
+Do not change any other part of the rebalance-week endpoint.
+Do not change `rebalanceTasksForward` itself.

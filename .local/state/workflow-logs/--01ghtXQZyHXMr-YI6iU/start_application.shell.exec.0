@@ -1,0 +1,58 @@
+
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[1G[0K6:39:04 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 17 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+6:39:10 PM [express] GET /api/auth/user 401 in 2ms :: {"message":"Unauthorized"}
+6:39:10 PM [express] GET /api/preferences 401 in 1ms :: {"message":"Unauthorized"}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:41:17 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/planning.tsx, /src/index.css?v=p3s-RO3nUKyB1CMP8YdCr[22m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[1;1H[0J[2m6:41:29 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/pages/planning.tsx, /src/index.css?v=p3s-RO3nUKyB1CMP8YdCr[22m [33m(x2)[39m

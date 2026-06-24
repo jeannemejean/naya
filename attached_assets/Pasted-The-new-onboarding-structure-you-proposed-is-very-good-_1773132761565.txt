@@ -1,0 +1,102 @@
+The new onboarding structure you proposed is very good and aligned with the direction I had in mind.
+
+The three-layer structure is exactly what Naya needs:
+	1.	The Person (User Operating Profile)
+	2.	Primary Project (main work)
+	3.	Additional Projects (side ventures, goals, personal pursuits)
+
+This will allow users to arrive on a dashboard that already reflects their real life structure.
+
+Before implementation, I would like to add a few small improvements to make sure the system fully supports the long-term vision of Naya.
+
+⸻
+
+1. Add a clearer “Life / Routine” project type
+
+Right now additional project types include:
+	•	Business
+	•	Creative
+	•	Learning
+	•	Personal
+	•	Lifestyle
+
+However Naya should also support projects that are not traditional projects but life systems, for example:
+	•	wellbeing routines
+	•	fitness
+	•	personal habits
+	•	daily life management
+	•	long-term personal development
+
+So I suggest adding a type such as:
+
+Life / Routine / Wellbeing
+
+This allows users to organize things like:
+	•	exercise
+	•	meditation
+	•	reading goals
+	•	personal routines
+
+without forcing them into “personal”.
+
+⸻
+
+2. Improve the first goal structure for the primary project
+
+Currently the schema includes:
+
+initialGoalTitle
+initialGoalType
+
+To make goals more useful for AI planning, it would help to also capture:
+
+goalTimeframe
+goalTarget (optional)
+
+Example:
+
+Goal title: Sign new clients
+Goal timeframe: 3 months
+Goal target: 3 clients
+
+This will allow Naya to generate better planning suggestions and task roadmaps.
+
+⸻
+
+3. Additional projects should remain editable after onboarding
+
+The projects created in Layer 3 should be considered initial seeds, not final project configurations.
+
+Users must be able to later:
+	•	edit project details
+	•	add strategy profiles
+	•	refine goals
+	•	expand project information
+
+This ensures onboarding stays lightweight while still allowing deeper setup later.
+
+⸻
+
+4. Allow users to skip additional projects easily
+
+In Layer 3 the user can add up to 5 projects, which is great.
+
+However the UI should also clearly communicate that they can add projects later from the dashboard.
+
+Something like:
+
+“You can also add more projects later from your board.”
+
+This avoids friction during onboarding.
+
+⸻
+
+5. End goal
+
+The goal of this onboarding is that when the user reaches the dashboard:
+	•	their operating profile is already known
+	•	their main project is configured
+	•	additional projects exist if relevant
+	•	their board immediately reflects the structure of their life and work
+
+This is what will make Naya feel like a real life and project operating system, rather than a blank productivity tool.

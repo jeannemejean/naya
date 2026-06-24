@@ -1,0 +1,350 @@
+Campaign Engine v2 — Digital Communication Campaign Architecture
+The problem with v1
+The current campaign engine generates a flat task list. A real digital communication campaign is an orchestrated system with phases, narrative arcs, channels, content formats, messaging frameworks, and multi-week deployment logic. This step rebuilds the AI generation layer and the schema to reflect that, while keeping the existing UI structure and adding the necessary new display sections.
+
+Task 1 — Schema: enrich the campaigns table
+Add these columns to the campaigns table in shared/schema.ts (all nullable, migration-safe with npm run db:push):
+// Campaign architecture fields
+campaignType: text("campaign_type"),           // lead_generation | authority_building | product_launch | nurturing | visibility | conversion
+phases: jsonb("phases"),                        // array of CampaignPhase objects
+messagingFramework: jsonb("messaging_framework"), // core message, proof points, objections, CTAs
+channels: jsonb("channels"),                    // array of channel configs
+contentPlan: jsonb("content_plan"),             // array of content pieces per phase
+kpis: jsonb("kpis"),                            // array of { metric, target, how_to_measure }
+startDate: text("start_date"),                  // YYYY-MM-DD
+endDate: text("end_date"),                      // YYYY-MM-DD computed from duration
+audienceSegment: text("audience_segment"),      // refined audience for this specific campaign
+Also update the duration column's default to 3_months and ensure it accepts any of these values: 1_week | 2_weeks | 3_weeks | 1_month | 2_months | 3_months | 6_months | 12_months.
+Run npm run db:push.
+
+Task 2 — OpenAI: rebuild generateCampaign with full campaign intelligence
+Replace the existing generateCampaign function in server/services/openai.ts.
+New interfaces:
+export interface CampaignPhase {
+  number: number;
+  name: string;                    // e.g. "Foundation & Awareness"
+  duration: string;                // e.g. "Weeks 1–2"
+  objective: string;               // What this phase achieves
+  keyActions: string[];            // 3-5 concrete actions
+  successSignal: string;           // How you know this phase worked
+}
+
+export interface ChannelConfig {
+  platform: string;               // linkedin | instagram | email | blog | podcast | etc.
+  role: string;                   // Primary | Secondary | Amplification
+  frequency: string;              // e.g. "3x/week", "1x/week"
+  contentFormat: string[];        // e.g. ["carousel", "short-form video", "text post"]
+  tone: string;                   // How the brand voice adapts on this channel
+}
+
+export interface ContentPiece {
+  phase: number;                   // Which phase this belongs to
+  week: string;                    // e.g. "Week 1", "Month 2"
+  platform: string;
+  format: string;                  // carousel | video | article | email | story | etc.
+  angle: string;                   // The specific angle/hook for this piece
+  pillar: string;                  // Content pillar it serves
+  goal: string;                    // visibility | trust | conversion | engagement
+  copyDirections: string;          // 1-2 sentences on what the copy should say/feel
+}
+
+export interface MessagingFramework {
+  coreMessage: string;             // The one sentence the whole campaign communicates
+  proofPoints: string[];           // 3 reasons the audience should believe it
+  primaryCTA: string;              // The main action you want the audience to take
+  secondaryCTA: string;            // A lower-commitment action
+  toneKeywords: string[];          // 4-5 words that define the voice of this campaign
+  thingsToAvoid: string[];         // 3 phrases/approaches that would dilute the message
+}
+
+export interface CampaignKPI {
+  metric: string;                  // e.g. "LinkedIn connection acceptance rate"
+  target: string;                  // e.g. ">40%"
+  howToMeasure: string;            // e.g. "Check weekly in LinkedIn analytics"
+  phase: number;                   // Which phase this KPI matters most in
+}
+
+export interface GeneratedCampaign {
+  name: string;
+  campaignType: string;
+  coreMessage: string;
+  targetAudience: string;
+  audienceSegment: string;
+  insights: string[];
+  messagingFramework: MessagingFramework;
+  phases: CampaignPhase[];
+  channels: ChannelConfig[];
+  contentPlan: ContentPiece[];
+  kpis: CampaignKPI[];
+  tasks: Array<{
+    title: string;
+    description: string;
+    type: string;
+    category: string;
+    priority: number;
+    estimatedDuration: number;
+    taskEnergyType: string;
+    phase: number;                 // Which phase this task belongs to
+  }>;
+}
+New prompt — replace the existing one entirely:
+You are Naya, a senior digital communications strategist embedded in an AI operating system for independent founders and creative agencies.
+
+Your role is to generate a comprehensive, professional digital communication campaign — not a task list. Think like a strategic communications director who deeply understands this brand.
+
+CAMPAIGN REQUEST:
+- Objective: ${request.objective}
+- Campaign type (inferred): identify whether this is lead_generation | authority_building | product_launch | nurturing | visibility | conversion
+- Duration: ${request.duration}
+${request.weekContext ? `- Context: ${request.weekContext}` : ''}
+
+BRAND DNA:
+- Business name: ${request.brandDna.businessName || 'Not specified'}
+- Business type: ${request.brandDna.businessType || 'Not specified'}  
+- Business model: ${request.brandDna.businessModel || 'Not specified'}
+- Offers: ${request.brandDna.offers || 'Not specified'}
+- Price range: ${request.brandDna.priceRange || 'Not specified'}
+- Target audience: ${request.brandDna.targetAudience || request.brandDna.audience || 'Not specified'}
+- Core pain point addressed: ${request.brandDna.corePainPoint || 'Not specified'}
+- Audience aspiration: ${request.brandDna.audienceAspiration || 'Not specified'}
+- Unique positioning: ${request.brandDna.uniquePositioning || 'Not specified'}
+- Communication style: ${request.brandDna.communicationStyle || 'Professional'}
+- Editorial territory: ${request.brandDna.editorialTerritory || 'Not specified'}
+- Brand voice keywords: ${(request.brandDna.brandVoiceKeywords as string[] || []).join(', ') || 'Not specified'}
+- Brand voice anti-keywords: ${(request.brandDna.brandVoiceAntiKeywords as string[] || []).join(', ') || 'Not specified'}
+- Platform priority: ${request.brandDna.platformPriority || 'Not specified'}
+- Active business priority: ${request.brandDna.activeBusinessPriority || 'Not specified'}
+- Content pillars: ${(request.brandDna.contentPillars as string[] || []).join(', ') || 'Not specified'}
+- Revenue target: ${request.brandDna.revenueTarget || 'Not specified'}
+
+STRATEGIC RULES:
+- Authority building campaigns require minimum 3 months. Never generate a 1-week authority campaign.
+- Lead generation campaigns require minimum 2 months for sustainable results.
+- A product launch campaign for a premium offer requires minimum 4 weeks of pre-launch + launch + post-launch.
+- Each phase must be distinct and build on the previous one — not just a repeat at higher frequency.
+- Content pieces must be specific to THIS brand's positioning — not generic best practices.
+- Channel roles must reflect the brand's actual platform priority, not generic digital marketing.
+- Tasks must be executable by a founder working alone or with a small team. No vague "create content" tasks.
+
+DURATION GUIDANCE:
+${getDurationGuidance(request.duration)}
+
+Return ONLY a JSON object matching this exact structure (no preamble, no markdown):
+{
+  "name": "Campaign name — 5 words max, evocative",
+  "campaignType": "lead_generation|authority_building|product_launch|nurturing|visibility|conversion",
+  "coreMessage": "The single sentence this entire campaign communicates",
+  "targetAudience": "Specific audience for this campaign",
+  "audienceSegment": "The specific sub-segment being addressed (more granular than brand DNA audience)",
+  "insights": ["3 strategic observations about why this approach fits this brand right now"],
+  "messagingFramework": {
+    "coreMessage": "Same as above but as a headline-ready statement",
+    "proofPoints": ["3 credibility anchors"],
+    "primaryCTA": "The main action",
+    "secondaryCTA": "The lower-commitment entry point",
+    "toneKeywords": ["5 voice descriptors specific to this campaign"],
+    "thingsToAvoid": ["3 messaging traps that would dilute this campaign"]
+  },
+  "phases": [
+    {
+      "number": 1,
+      "name": "Phase name",
+      "duration": "Weeks 1-2",
+      "objective": "What this phase achieves",
+      "keyActions": ["3-5 specific actions"],
+      "successSignal": "How you know this phase worked"
+    }
+  ],
+  "channels": [
+    {
+      "platform": "linkedin",
+      "role": "Primary",
+      "frequency": "3x/week",
+      "contentFormat": ["text post", "carousel"],
+      "tone": "How voice adapts on this platform"
+    }
+  ],
+  "contentPlan": [
+    {
+      "phase": 1,
+      "week": "Week 1",
+      "platform": "linkedin",
+      "format": "carousel",
+      "angle": "Specific hook/angle",
+      "pillar": "Content pillar name",
+      "goal": "visibility|trust|conversion|engagement",
+      "copyDirections": "What the copy should say and feel like"
+    }
+  ],
+  "kpis": [
+    {
+      "metric": "Specific measurable metric",
+      "target": "Quantified target",
+      "howToMeasure": "Where and how to check",
+      "phase": 1
+    }
+  ],
+  "tasks": [
+    {
+      "title": "Specific executable task",
+      "description": "1-2 sentences: what exactly to do and why it matters in this campaign",
+      "type": "content|outreach|admin|planning",
+      "category": "trust|conversion|engagement|planning",
+      "priority": 1,
+      "estimatedDuration": 60,
+      "taskEnergyType": "deep_work|creative|admin|social|execution",
+      "phase": 1
+    }
+  ]
+}
+
+Generate the right number of phases for the duration. For a 1-month campaign: 3 phases. For 3 months: 4 phases. For 6 months: 5-6 phases.
+Generate 2-4 content pieces per phase. Generate 8-15 tasks distributed across phases. Generate 3-5 KPIs.
+Add a helper function getDurationGuidance(duration: string): string that returns appropriate guidance based on duration — e.g. for 6_months: "This is a long-form campaign. Generate 5-6 distinct phases. Each phase should have a different strategic focus (e.g. foundation → credibility → acceleration → conversion → retention → optimization). Tasks should be distributed across all phases."
+
+Task 3 — Schema update for CampaignGenerationRequest
+In server/services/openai.ts, update CampaignGenerationRequest to include the new Brand DNA fields already present in the BrandDnaInput interface:
+export interface CampaignGenerationRequest {
+  objective: string;
+  duration: string;
+  brandDna: BrandDnaInput & {
+    businessName?: string;
+    offers?: string;
+    priceRange?: string;
+    audienceAspiration?: string;
+    editorialTerritory?: string;
+    brandVoiceKeywords?: string[];
+    brandVoiceAntiKeywords?: string[];
+    activeBusinessPriority?: string;
+    revenueTarget?: string;
+  };
+  weekContext?: string;
+}
+In server/routes.ts, update the /api/campaigns/generate route to pass these additional fields when building brandDnaInput from the loaded DNA record.
+
+Task 4 — Server: update /api/campaigns/generate to save new fields
+After generateCampaign() returns, save all new fields to the campaign record:
+const campaign = await storage.createCampaign({
+  userId,
+  projectId: pid,
+  name: generated.name,
+  objective,
+  campaignType: generated.campaignType,
+  coreMessage: generated.coreMessage,
+  targetAudience: generated.targetAudience,
+  audienceSegment: generated.audienceSegment,
+  duration: duration || '3_months',
+  status: 'draft',
+  tasksGenerated: false,
+  generatedTasks: generated.tasks,
+  insights: generated.insights,
+  phases: generated.phases,
+  messagingFramework: generated.messagingFramework,
+  channels: generated.channels,
+  contentPlan: generated.contentPlan,
+  kpis: generated.kpis,
+});
+
+Task 5 — Frontend: update duration options + display new campaign sections
+In campaigns.tsx:
+Duration options — replace the current 3 options with:
+const DURATION_OPTIONS = [
+  { value: "1_week", label: "1 week" },
+  { value: "2_weeks", label: "2 weeks" },
+  { value: "3_weeks", label: "3 weeks" },
+  { value: "1_month", label: "1 month" },
+  { value: "2_months", label: "2 months" },
+  { value: "3_months", label: "3 months" },
+  { value: "6_months", label: "6 months" },
+  { value: "12_months", label: "12 months" },
+];
+Display them as a wrapping pill grid (not a single-row flex — they won't fit).
+Add a campaign type hint — below the duration selector, add a small contextual warning for short durations with strategic campaign types. Detect from the objective text (simple keyword match) and show an inline note:
+{(objective.toLowerCase().includes('lead') || objective.toLowerCase().includes('authority') || objective.toLowerCase().includes('notoriété')) 
+  && ['1_week', '2_weeks', '3_weeks'].includes(duration) && (
+  <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2">
+    ⚠️ Lead generation and authority building campaigns typically need at least 3 months to show results. Consider extending the duration.
+  </p>
+)}
+In the "generated" and "detail" panel states, add three new sections after the existing insights section:
+Section: Messaging Framework (collapsible, default collapsed)
+<CollapsibleSection title="Messaging framework" defaultOpen={false}>
+  {/* coreMessage large, then proofPoints as numbered list, primaryCTA + secondaryCTA as two buttons outline, toneKeywords as chips, thingsToAvoid as strikethrough list */}
+</CollapsibleSection>
+Section: Campaign Phases (always visible, this is the core of the new UX)
+Each phase as a card with: phase number badge, phase name bold, duration muted, objective text, keyActions as a bulleted list, successSignal in a green highlighted row.
+<div className="space-y-3">
+  <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Campaign phases</p>
+  {selectedCampaign.phases?.map((phase: CampaignPhase) => (
+    <div key={phase.number} className="border border-slate-200 dark:border-gray-700 rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="w-5 h-5 rounded-full bg-primary text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0">{phase.number}</span>
+        <span className="text-sm font-semibold text-slate-900 dark:text-white">{phase.name}</span>
+        <span className="text-xs text-slate-400 ml-auto">{phase.duration}</span>
+      </div>
+      <p className="text-xs text-slate-600 dark:text-gray-400 mb-2">{phase.objective}</p>
+      <ul className="space-y-1 mb-2">
+        {phase.keyActions.map((action: string, i: number) => (
+          <li key={i} className="text-xs text-slate-700 dark:text-gray-300 flex items-start gap-1.5">
+            <span className="text-primary mt-0.5">→</span>{action}
+          </li>
+        ))}
+      </ul>
+      <div className="bg-green-50 dark:bg-green-900/20 rounded px-2 py-1">
+        <span className="text-[10px] text-green-700 dark:text-green-400 font-medium">✓ Success signal: </span>
+        <span className="text-[10px] text-green-700 dark:text-green-400">{phase.successSignal}</span>
+      </div>
+    </div>
+  ))}
+</div>
+Section: Channels (compact row of channel cards)
+<div className="space-y-2">
+  <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Channel strategy</p>
+  <div className="grid grid-cols-2 gap-2">
+    {selectedCampaign.channels?.map((ch: ChannelConfig, i: number) => (
+      <div key={i} className="border border-slate-200 dark:border-gray-700 rounded-lg p-3">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs font-semibold text-slate-900 dark:text-white capitalize">{ch.platform}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${ch.role === 'Primary' ? 'bg-primary/10 text-primary' : 'bg-slate-100 dark:bg-gray-800 text-slate-500'}`}>{ch.role}</span>
+        </div>
+        <p className="text-[10px] text-slate-500 dark:text-gray-400">{ch.frequency} · {ch.contentFormat.join(', ')}</p>
+      </div>
+    ))}
+  </div>
+</div>
+Section: KPIs (collapsible)
+Simple table: metric | target | how to measure. Grouped by phase.
+The tasks section remains as-is but add a phase label above each group of tasks (group by task.phase).
+The CollapsibleSection component — add inline as a simple local component:
+function CollapsibleSection({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-2 w-full text-left mb-2">
+        <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 flex-1">{title}</p>
+        {open ? <ChevronUp className="h-3 w-3 text-slate-400" /> : <ChevronDown className="h-3 w-3 text-slate-400" />}
+      </button>
+      {open && children}
+    </div>
+  );
+}
+Add ChevronUp to the lucide imports.
+
+Task 6 — Update Campaign interface in campaigns.tsx
+Add the new fields to the local Campaign interface at the top of the file:
+campaignType: string | null;
+phases: CampaignPhase[] | null;
+messagingFramework: MessagingFramework | null;
+channels: ChannelConfig[] | null;
+contentPlan: ContentPiece[] | null;
+kpis: CampaignKPI[] | null;
+audienceSegment: string | null;
+And declare the matching types (CampaignPhase, ChannelConfig, ContentPiece, MessagingFramework, CampaignKPI) as interfaces at the top of the file.
+
+Verification expected
+* Creating a 6-month authority building campaign generates 5-6 phases, a messaging framework, 3+ channels, 2-4 content pieces per phase, and 10+ tasks distributed across phases
+* Creating a 1-week campaign with "lead generation" in the objective shows the amber duration warning
+* Each phase card shows name, duration, objective, key actions, and success signal
+* Channel cards show platform, role (Primary/Secondary), frequency, and content formats
+* Task descriptions are rich enough to understand what to do and why — not just a title
+* Switching duration from 1_month to 6_months and regenerating produces visibly different phase architecture

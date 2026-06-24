@@ -1,0 +1,493 @@
+I think this new plan is much better.
+It is far closer to the real Naya.
+
+And after looking at the current codebase structure you sent, I think the direction is right, but I would still ask Replit to make a few important corrections before building.
+
+My overall opinion
+
+What is good
+
+This version finally fixes the biggest conceptual problem:
+Naya is no longer being treated like a single-business content tool.
+
+It is now being treated as:
+	•	a multi-project system
+	•	with different project intents
+	•	different goal types
+	•	different urgency logic
+	•	and only then persona intelligence on top
+
+That is exactly the right hierarchy.
+
+Also, this plan matches the dashboard logic you showed much better:
+	•	project navigation
+	•	operational cockpit
+	•	today / tomorrow
+	•	quick capture
+	•	self-care
+	•	AI recommendations linked to deadlines
+
+So the product direction is now coherent.
+
+⸻
+
+What I noticed from the current codebase
+
+From the current platform files, the app is still structurally centered around:
+	•	one brand_dna per user
+	•	one global user context
+	•	tasks/content/leads/outreach all tied directly to userId
+	•	no real project layer yet
+	•	no project-scoped strategy memory
+	•	no true planner logic yet
+
+So yes: this roadmap is the correct pivot.
+
+But I would still change a few things.
+
+⸻
+
+What I would ask Replit to change before implementation
+
+1. Do not make project_strategy_profiles too marketing-specific
+
+Right now the proposed fields are:
+	•	targetAudience
+	•	corePainPoint
+	•	audienceAspiration
+	•	communicationStyle
+	•	uniquePositioning
+	•	contentPillars
+	•	platformPriority
+	•	notes
+
+That is good for communication-heavy projects, but too narrow for all project types.
+
+A passion project, internal project, or lifestyle project may not have:
+	•	a real audience yet
+	•	a core pain point
+	•	positioning
+	•	content pillars
+
+So I would ask to make this table more flexible.
+
+Better approach
+
+Keep the communication fields, but add broader strategic fields such as:
+	•	projectIntent
+	•	successDefinition
+	•	operatingMode
+	•	mainConstraint
+	•	currentStage
+	•	notes
+
+And make most communication-specific fields nullable.
+
+Otherwise the architecture will quietly drift back into “marketing platform” logic.
+
+⸻
+
+2. Add a real project context concept, not just activeProjectId in localStorage
+
+The sidebar context in localStorage is fine for the front-end, but not enough.
+
+The backend also needs a consistent way to know:
+	•	what the user’s current active project is
+	•	what the default project should be for task generation
+	•	what context the dashboard should load first
+
+I would add either:
+	•	activeProjectId stored on the user profile
+or
+	•	a lightweight user_preferences table
+
+Because if this lives only in localStorage:
+	•	it breaks across devices
+	•	it is fragile
+	•	it makes backend logic less coherent
+
+So localStorage is fine for UI persistence, but there should also be a server-side active project source of truth.
+
+⸻
+
+3. project_goals needs one more field: goal intent / success mode
+
+The current goal fields are good, but I would add something like:
+	•	successMode or goalIntent
+
+Examples:
+	•	revenue
+	•	visibility
+	•	consistency
+	•	exploration
+	•	learning
+	•	personal wellbeing
+
+This matters because two goals can both be “monthly”, but require completely different task logic.
+
+Example:
+	•	“Sign 2 clients this month”
+	•	“Explore visual direction for my passion project”
+
+These should not generate the same type of recommendations.
+
+⸻
+
+4. For tasks, learnedAdjustmentCount is not enough
+
+I agree with tracking scheduling adaptation, but only storing a counter is too thin.
+
+If Naya is supposed to learn from task changes, you need some kind of scheduling history.
+
+I would strongly recommend adding a table like:
+
+task_schedule_events
+
+With fields like:
+	•	id
+	•	taskId
+	•	userId
+	•	projectId
+	•	previousStartTime
+	•	newStartTime
+	•	previousEndTime
+	•	newEndTime
+	•	changeType
+	•	createdAt
+
+Because otherwise the app will know that something changed 5 times, but not:
+	•	how it changed
+	•	when it changed
+	•	whether the user always moves deep work later
+	•	whether the user keeps shortening admin tasks
+	•	whether they avoid certain task types in mornings
+
+If you want adaptive planning later, this event log is much more valuable than a simple count.
+
+⸻
+
+5. Quick Capture should not be task-only
+
+In your dashboard sketch, quick capture is broader than task creation.
+
+It should support:
+	•	task
+	•	note
+	•	idea
+	•	reminder
+	•	maybe project thought
+
+So I would not wire it only to POST /api/tasks.
+
+Better:
+
+either
+	•	add a capture_type in the same flow
+or
+	•	create a lightweight inbox_items / quick_capture_entries table
+
+This would fit your vision much better.
+
+Because sometimes the user wants to dump:
+	•	a thought
+	•	a voice memo transcription
+	•	an insight
+	•	something to sort later
+
+not necessarily a task.
+
+⸻
+
+6. The dashboard should use the active project, but also allow “all projects”
+
+This is important.
+
+The project switcher should support:
+	•	one selected project
+	•	and an All Projects view
+
+Because part of Naya’s value is helping the user manage several things at once.
+
+So I would explicitly ask Replit to support:
+	•	activeProjectId
+	•	plus all-projects mode
+
+That affects:
+	•	dashboard aggregation
+	•	tasks
+	•	recommendations
+	•	goals overview
+
+⸻
+
+7. T006 AI Recommendations block needs a real backend task
+
+The current plan says:
+
+Pulled from /api/analytics/insights enriched with active project goal data
+
+That is too vague.
+
+I would ask Replit to create an explicit backend task for this.
+
+Something like:
+
+GET /api/projects/:id/recommendations
+or
+POST /api/ai/project-recommendations
+
+And the logic should be based on:
+	•	project goals
+	•	due dates
+	•	incomplete tasks
+	•	project status
+	•	monetization intent
+	•	urgency level
+
+Because otherwise that block will become a fake placeholder very fast.
+
+⸻
+
+8. T007 planner mode is right, but add task type colors or grouping
+
+For your UI vision, planner mode should not just be blocks in time.
+
+It should also communicate:
+	•	what kind of task it is
+	•	what project it belongs to
+	•	how important it is
+
+So I would ask for:
+	•	project color indicator on each task block
+	•	task type badge or icon
+	•	optional grouping/filter by project
+
+That will make the cockpit much clearer.
+
+⸻
+
+9. Persona system should be linked to project goals, not only project type
+
+This is a big one.
+
+The current T009/T012 logic is already better than before, because it includes:
+	•	project type
+	•	monetization intent
+
+But I would still push one step further.
+
+Persona matching should consider:
+	•	user persona
+	•	target persona
+	•	project type
+	•	monetization intent
+	•	current project goal
+
+Because a business project can still have different phases:
+	•	visibility push
+	•	offer refinement
+	•	lead generation
+	•	authority building
+
+The same project should not produce identical outputs every time.
+
+So I would ask Replit to include goal context in:
+	•	strategy matching
+	•	content generation
+	•	task generation
+	•	outreach generation
+
+⸻
+
+10. Onboarding should not create only one “business” default if the user is not a business-first user
+
+The default-project creation logic is useful, but it should stay cautious.
+
+If the app always assumes:
+	•	businessName
+	•	businessType
+	•	revenueUrgency
+
+then Naya still starts from a business-only mental model.
+
+I would ask for:
+	•	inferred project type
+	•	but editable immediately
+	•	with an onboarding step or post-onboarding prompt:
+“What kind of project is this?”
+
+Because some users may begin with:
+	•	a personal brand
+	•	a creator project
+	•	a passion project
+	•	a lifestyle system
+
+not necessarily a standard business.
+
+⸻
+
+My verdict on the current roadmap
+
+Keep
+	•	Phase 1 overall
+	•	Phase 2 overall
+	•	Phase 3 overall
+	•	Phase 4 overall
+	•	Phase 5 overall
+	•	Phase 6 overall
+
+The sequence is good.
+
+Adjust
+
+I would ask for these additions / changes:
+
+Add to Phase 1
+	•	server-side active project persistence
+	•	richer project strategy profile
+	•	goal intent / success mode
+	•	task scheduling event history
+	•	quick capture entry model or inbox model
+
+Add to Phase 3
+	•	All Projects mode
+	•	project-colored planner blocks
+	•	recommendation endpoint explicitly defined
+
+Add to Phase 5
+	•	AI generation must use current project goal, not just monetization intent
+
+⸻
+
+What I would send to Replit
+
+You can send this almost as-is:
+
+⸻
+
+This roadmap is much closer to the correct version of Naya, and I want to proceed in this direction.
+
+The overall sequence is right:
+	1.	multi-project foundation
+	2.	project-aware modules
+	3.	dashboard cockpit
+	4.	persona intelligence
+	5.	project-aware + persona-aware AI
+	6.	persona UI surfaces
+
+However, before implementation starts, I want to make a few important refinements so the architecture truly supports the product vision.
+
+Requested adjustments
+
+1. Make project_strategy_profiles broader than marketing
+
+Please do not make this table too communication-specific.
+Keep the existing audience/positioning fields, but also add broader strategic fields such as:
+	•	projectIntent
+	•	successDefinition
+	•	operatingMode
+	•	mainConstraint
+	•	currentStage
+	•	notes
+
+Most communication-specific fields should remain nullable.
+
+2. Add server-side active project persistence
+
+The front-end activeProjectId in localStorage is useful, but not sufficient as the sole source of truth.
+Please also persist the user’s active project server-side, either on the user profile or in a user_preferences table.
+
+3. Enrich project_goals
+
+Please add a field such as:
+	•	successMode
+or
+	•	goalIntent
+
+Possible values:
+	•	revenue
+	•	visibility
+	•	consistency
+	•	exploration
+	•	learning
+	•	wellbeing
+
+This is needed so Naya can distinguish fundamentally different goal logics.
+
+4. Add scheduling history, not only learnedAdjustmentCount
+
+Please add a task_schedule_events table so Naya can later learn from how users actually move and resize tasks.
+
+Suggested fields:
+	•	id
+	•	taskId
+	•	userId
+	•	projectId
+	•	previousStartTime
+	•	newStartTime
+	•	previousEndTime
+	•	newEndTime
+	•	changeType
+	•	createdAt
+
+learnedAdjustmentCount can remain, but it should not be the only scheduling memory.
+
+5. Quick Capture should support more than tasks
+
+The Quick Capture block should not be limited to task creation only.
+Please design it to support:
+	•	task
+	•	note
+	•	idea
+	•	reminder
+
+This can be done either via a lightweight quick_capture_entries / inbox_items table or an equivalent flexible approach.
+
+6. Support “All Projects” mode
+
+The project switcher should support both:
+	•	one active project
+	•	an “All Projects” mode
+
+This should be reflected in dashboard aggregation and task/recommendation views.
+
+7. Define a dedicated backend endpoint for AI recommendations
+
+The AI Recommendations block on the dashboard should not depend on a vague generic analytics endpoint.
+Please create an explicit backend route for project-aware recommendations based on:
+	•	project goals
+	•	due dates
+	•	incomplete tasks
+	•	monetization intent
+	•	urgency type
+	•	project status
+
+8. Improve planner readability
+
+In planner mode, tasks should visually communicate:
+	•	project
+	•	task type
+	•	importance
+
+Please add project color markers and/or task-type badges to task blocks.
+
+9. Use current project goal in AI reasoning
+
+In Phase 5, AI generation should not rely only on project type and monetization intent.
+It must also use the current project goal context when generating:
+	•	tasks
+	•	content
+	•	outreach
+	•	strategy recommendations
+
+10. Keep default project creation editable
+
+The onboarding auto-created first project is a good idea, but it should remain easy to edit immediately.
+The system should not over-assume that the first project is a classic business project.
+
+Final direction
+
+With these refinements, I am happy with this roadmap and want implementation to proceed.
+
+The most important principle remains:
+Naya must understand not only who the user is and who they want to influence, but also what they are building, why they are building it, and whether that project is meant to make money at all.

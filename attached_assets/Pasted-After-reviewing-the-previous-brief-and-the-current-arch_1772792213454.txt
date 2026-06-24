@@ -1,0 +1,338 @@
+After reviewing the previous brief and the current architecture proposal, we need to extend Naya’s design to include a central intelligence layer called the Persona Intelligence System.
+
+This system is a core differentiator of Naya and must be integrated into the platform architecture.
+
+The goal is for Naya to reason based on human profiles rather than generic prompts.
+
+Instead of simply generating marketing outputs, Naya must:
+	•	understand who the user is
+	•	understand who the user wants to influence
+	•	adapt strategies and recommendations accordingly
+
+This document explains how the Persona Intelligence System should be implemented in Naya.
+
+⸻
+
+1. New Core Component — Persona Intelligence System
+
+We need to introduce a new system layer inside Naya called:
+
+Persona Intelligence System
+
+This system will act as a behavioral intelligence layer used by all AI modules.
+
+It must allow the platform to:
+	1.	Identify the user persona
+	2.	Identify the target persona
+	3.	Match strategies to personas
+	4.	Generate recommendations adapted to those personas
+
+This means that all strategic outputs should be persona-aware.
+
+The system should never produce completely generic outputs.
+
+⸻
+
+2. Two Types of Personas
+
+Naya must support two distinct categories of personas.
+
+A. User Personas (internal)
+
+These describe how the user operates as a decision-maker.
+
+Examples:
+
+Strategist
+Builder / Operator
+Creative Marketer
+Analytical Thinker
+
+Each persona influences:
+	•	how Naya communicates
+	•	the level of detail in outputs
+	•	the format of recommendations
+	•	the type of insights provided
+
+Example:
+
+A Strategist receives:
+	•	high-level insights
+	•	strategic frameworks
+	•	positioning advice
+
+A Builder receives:
+	•	concrete steps
+	•	execution checklists
+	•	short-term actions
+
+⸻
+
+B. Target Personas (external)
+
+These represent the audience the user wants to influence.
+
+Examples:
+
+CMO of a beauty brand
+Startup founder
+Head of marketing
+Communication director
+
+Each target persona should include:
+
+Demographic context
+Psychological profile
+Motivations
+Frustrations
+Decision triggers
+Preferred communication channels
+Persuasion patterns
+
+The goal is for Naya to understand:
+
+how to influence that type of person.
+
+⸻
+
+3. New Database Structures
+
+We need to add new structured entities.
+
+Table: user_personas
+
+Fields:
+
+id
+name
+description
+behavior_traits
+decision_style
+preferred_output_style
+
+Example entries:
+
+Strategist
+Builder
+Creative
+Analytical
+
+⸻
+
+Table: target_personas
+
+Fields:
+
+id
+name
+industry
+job_title
+company_size
+motivations
+frustrations
+decision_triggers
+persuasion_drivers
+preferred_channels
+
+This table should support manual additions and AI-generated entries.
+
+⸻
+
+Table: persona_analysis_results
+
+This stores AI analysis outputs.
+
+Fields:
+
+id
+workspace_id
+persona_type (user or target)
+input_context
+analysis_result
+created_at
+
+⸻
+
+Table: persona_strategy_mapping
+
+This table links personas to strategy types.
+
+Fields:
+
+persona_id
+recommended_strategy_types
+message_patterns
+channel_preferences
+
+⸻
+
+4. AI Modules That Must Use Persona Intelligence
+
+All AI features must integrate persona data.
+
+The following modules must be updated:
+
+Onboarding Analysis
+
+Output should now include:
+
+user persona classification
+
+Example:
+
+“Primary persona: Strategic Thinker”
+
+⸻
+
+Target Persona Analyzer
+
+Output should generate:
+
+target persona profile including
+
+motivations
+pain points
+decision triggers
+messaging approach
+
+⸻
+
+Strategy Generator
+
+The strategy generator must now consider:
+
+user persona
+target persona
+
+Example logic:
+
+Strategist user + CMO target → strategic positioning
+
+Builder user + startup founder target → concrete execution plan
+
+⸻
+
+Action Plan Generator
+
+The format of the action plan should change depending on user persona.
+
+Example:
+
+Builder → actionable checklist
+
+Strategist → roadmap + frameworks
+
+⸻
+
+5. Persona Matching Engine
+
+We need to introduce a persona matching step in the AI pipeline.
+
+New process:
+	1.	Identify user persona
+	2.	Identify target persona
+	3.	Determine optimal strategy type
+	4.	Generate strategy
+	5.	Generate execution plan
+
+This matching layer is what creates Naya’s strategic intelligence.
+
+⸻
+
+6. Persona Knowledge Library
+
+The platform should include a persona knowledge library.
+
+This can initially be implemented as:
+
+structured JSON or database records
+
+Each persona entry should include:
+
+psychological traits
+decision patterns
+communication preferences
+effective messaging angles
+
+This library should be expandable over time.
+
+⸻
+
+7. Evolution and Learning
+
+The Persona Intelligence System must be designed to evolve.
+
+Sources of updates may include:
+
+user feedback
+campaign results
+new persona analyses
+
+Future versions could:
+
+track which strategies work best for each persona.
+
+⸻
+
+8. API Changes
+
+New AI endpoints should be added.
+
+Example routes:
+
+POST /api/persona/detect-user
+
+POST /api/persona/analyze-target
+
+POST /api/persona/match-strategy
+
+These endpoints should return structured outputs used by other modules.
+
+⸻
+
+9. UI Changes
+
+We need new UI components.
+
+Persona Insight Panels
+
+When viewing a strategy, users should see:
+
+Target Persona Summary
+Decision Triggers
+Messaging Approach
+
+⸻
+
+User Persona Display
+
+Dashboard should show:
+
+Detected user persona
+Recommended working mode
+
+⸻
+
+10. Implementation Priority
+
+The implementation order should be:
+	1.	Extend database with persona tables
+	2.	Implement user persona detection
+	3.	Implement target persona analysis
+	4.	Modify strategy generator to use persona inputs
+	5.	Add persona insights to UI
+	6.	Store persona outputs in memory/history
+
+⸻
+
+Goal
+
+The objective is to transform Naya from:
+
+a generic AI tool
+
+into
+
+a behavioral strategic intelligence system.
+
+The Persona Intelligence System is the first major step toward that goal.

@@ -556,7 +556,13 @@ export default function TimeGrid({
 
   function handleDrop(e: React.DragEvent, targetDate: string, gridRef: HTMLDivElement | null) {
     e.preventDefault();
-    const task = draggingTask.current;
+    let task = draggingTask.current;
+    if (!task) {
+      // Drag provenant d'ailleurs (panneau latéral des tâches non planifiées) → retrouver par id.
+      const id = Number(e.dataTransfer.getData('text/plain'));
+      task = tasks.find((t) => t.id === id) || null;
+      dragOffsetMin.current = 0; // pas d'offset de saisie connu pour un drag externe
+    }
     if (!task || !gridRef) return;
 
     const relY = e.clientY - gridRef.getBoundingClientRect().top;

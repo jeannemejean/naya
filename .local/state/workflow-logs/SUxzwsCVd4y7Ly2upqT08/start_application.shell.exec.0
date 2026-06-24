@@ -1,0 +1,72 @@
+[1G[0K⠙[1G[0K
+> rest-express@1.0.0 dev
+> NODE_ENV=development tsx server/index.ts
+
+[1G[0K⠙[1G[0K7:55:33 AM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 17 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+7:55:39 AM [express] GET /api/auth/user 401 in 2ms :: {"message":"Unauthorized"}
+7:55:39 AM [express] GET /api/preferences 401 in 1ms :: {"message":"Unauthorized"}
+7:57:59 AM [express] GET /api/preferences 401 in 176ms :: {"message":"Unauthorized"}
+7:57:59 AM [express] GET /api/auth/user 304 in 212ms :: {"id":"44761544","email":"mejean.jeanne@gmai…
+7:57:59 AM [express] GET /api/projects 304 in 15ms :: [{"id":15,"userId":"44761544","name":"Agence J…
+7:57:59 AM [express] GET /api/brand-dna 304 in 29ms :: {"id":13,"userId":"44761544","projectId":null…
+7:57:59 AM [express] GET /api/tasks/range 200 in 25ms :: [{"id":397,"userId":"44761544","projectId":…
+7:57:59 AM [express] GET /api/persona/my-persona 304 in 27ms :: {"id":6,"userId":"44761544","project…
+7:57:59 AM [express] POST /api/projects/16/recommendations 200 in 49ms :: {"projectId":16,"projectNa…
+7:57:59 AM [express] GET /api/tasks/range 200 in 50ms :: [{"id":397,"userId":"44761544","projectId":…
+7:57:59 AM [express] POST /api/projects/15/recommendations 200 in 56ms :: {"projectId":15,"projectNa…
+7:57:59 AM [express] POST /api/projects/17/recommendations 200 in 52ms :: {"projectId":17,"projectNa…
+7:57:59 AM [express] GET /api/me/operating-profile 304 in 12ms :: {"id":3,"userId":"44761544","plann…
+7:57:59 AM [express] GET /api/user/energy 200 in 11ms :: {"energyLevel":"high","emotionalContext":nu…
+7:57:59 AM [express] GET /api/projects/15 304 in 18ms :: {"id":15,"userId":"44761544","name":"Agence…
+7:57:59 AM [express] GET /api/projects/16 304 in 17ms :: {"id":16,"userId":"44761544","name":"Encore…
+7:57:59 AM [express] GET /api/tasks/range 304 in 16ms :: [{"id":397,"userId":"44761544","projectId":…
+7:57:59 AM [express] GET /api/projects/17 304 in 26ms :: {"id":17,"userId":"44761544","name":"Naya",…
+7:58:00 AM [express] GET /api/projects/18 304 in 13ms :: {"id":18,"userId":"44761544","name":"Jeanne…
+7:58:00 AM [express] GET /api/tasks/dependencies 304 in 15ms :: [{"id":28,"taskId":382,"dependsOnTas…
+7:58:00 AM [express] GET /api/milestone-triggers 304 in 11ms :: []
+7:58:00 AM [express] GET /api/dashboard/schedule-preview 200 in 26ms :: {"tasksByDate":{"2026-03-17"…
+7:58:00 AM [express] GET /api/capture 304 in 9ms :: []
+7:58:00 AM [express] GET /api/persona/target-personas 304 in 8ms :: [{"id":6,"userId":"44761544","pr…
+7:58:03 AM [express] GET /api/preferences 200 in 8ms :: {"id":13,"userId":"44761544","activeProjectI…
+7:58:03 AM [express] GET /api/tasks/range 304 in 9ms :: [{"id":397,"userId":"44761544","projectId":1…
+7:58:03 AM [express] GET /api/tasks/range 304 in 10ms :: [{"id":397,"userId":"44761544","projectId":…
+7:58:03 AM [express] GET /api/availability 304 in 12ms :: [{"id":4,"userId":"44761544","date":"2026-…
+7:59:53 AM [express] POST /api/tasks/generate-daily 200 in 102558ms :: {"focus":"Build consistent Li…
+7:59:54 AM [express] GET /api/tasks/range 200 in 13ms :: [{"id":402,"userId":"44761544","projectId":…
+7:59:54 AM [express] GET /api/tasks/range 200 in 9ms :: [{"id":402,"userId":"44761544","projectId":1…
+7:59:54 AM [express] GET /api/tasks/range 200 in 14ms :: [{"id":402,"userId":"44761544","projectId":…
+7:59:54 AM [express] GET /api/tasks/range 200 in 31ms :: [{"id":402,"userId":"44761544","projectId":…
+7:59:56 AM [express] POST /api/tasks/rebalance-week 200 in 61ms :: {"moved":9,"days":{"2026-03-17":4…
+7:59:56 AM [express] GET /api/tasks/range 200 in 10ms :: [{"id":402,"userId":"44761544","projectId":…
+7:59:56 AM [express] GET /api/tasks/range 200 in 28ms :: [{"id":402,"userId":"44761544","projectId":…
+8:02:10 AM [express] GET /api/campaigns 304 in 75ms :: [{"id":3,"userId":"44761544","projectId":15,"…
+8:08:06 AM [express] POST /api/campaigns/generate 200 in 275653ms :: {"campaign":{"id":4,"userId":"4…
+8:08:06 AM [express] GET /api/campaigns 200 in 18ms :: [{"id":4,"userId":"44761544","projectId":15,"…
+Campaign 4: could not find valid slot for sub-task "Write copy — Rewrite LinkedIn profile with philosophy-first positioning" within 30-day search
+Campaign 4: could not find valid slot for sub-task "Publish — Rewrite LinkedIn profile with philosophy-first positioning" within 30-day search
+8:22:43 AM [express] POST /api/campaigns/4/launch 200 in 727ms :: {"campaign":{"id":4,"userId":"4476…
+8:22:43 AM [express] GET /api/campaigns 200 in 9ms :: [{"id":4,"userId":"44761544","projectId":15,"n…
+8:22:43 AM [express] GET /api/tasks 200 in 8ms :: [{"id":412,"userId":"44761544","projectId":15,"tit…
+8:22:44 AM [express] POST /api/tasks/rebalance-week 200 in 69ms :: {"moved":2,"days":{"2026-03-17":4…
+8:22:44 AM [express] GET /api/tasks 304 in 6ms :: [{"id":412,"userId":"44761544","projectId":15,"tit…
+8:22:49 AM [express] PATCH /api/preferences 200 in 12ms :: {"id":13,"userId":"44761544","activeProje…
+8:22:49 AM [express] GET /api/preferences 200 in 6ms :: {"id":13,"userId":"44761544","activeProjectI…
+8:22:52 AM [express] GET /api/persona/target-personas 304 in 7ms :: [{"id":6,"userId":"44761544","pr…
+8:22:52 AM [express] GET /api/persona/target-personas 304 in 87ms :: [{"id":6,"userId":"44761544","p…
+8:22:52 AM [express] GET /api/media-library 304 in 102ms :: []
+8:22:52 AM [express] GET /api/content 200 in 74ms :: [{"id":23,"userId":"44761544","projectId":15,"t…
+8:22:52 AM [express] GET /api/social-accounts 304 in 104ms :: [{"id":3,"userId":"44761544","platform…
+8:22:52 AM [express] GET /api/strategy/report 200 in 80ms
+8:23:03 AM [express] GET /api/tasks/range 200 in 42ms :: [{"id":405,"userId":"44761544","projectId":…
+8:23:03 AM [express] GET /api/tasks/dependencies 200 in 43ms :: [{"id":17,"taskId":239,"dependsOnTas…
+8:23:03 AM [express] GET /api/availability 304 in 47ms :: [{"id":4,"userId":"44761544","date":"2026-…
+8:23:03 AM [express] GET /api/tasks/range 200 in 47ms :: [{"id":405,"userId":"44761544","projectId":…
+8:23:07 AM [express] GET /api/tasks/dependencies 304 in 13ms :: [{"id":28,"taskId":382,"dependsOnTas…
+8:23:07 AM [express] GET /api/tasks/range 200 in 10ms :: [{"id":401,"userId":"44761544","projectId":…
+8:23:07 AM [express] GET /api/tasks/range 200 in 15ms :: [{"id":401,"userId":"44761544","projectId":…
+8:23:07 AM [express] PATCH /api/preferences 200 in 23ms :: {"id":13,"userId":"44761544","activeProje…
+8:23:07 AM [express] GET /api/preferences 200 in 7ms :: {"id":13,"userId":"44761544","activeProjectI…
+8:23:15 AM [express] GET /api/tasks/400/workspace 200 in 6ms :: []

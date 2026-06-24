@@ -1,0 +1,33 @@
+VERDICT: APPROVED_WITH_COMMENTS
+The diff implements the onboarding/auth UX task requirements end-to-end, with no blocking functional regressions found in the reviewed files.
+
+Critical findings / analysis:
+- **Dashboard loading guard fixed** (`clienVERDICT: APPROVED_WITH_COMMENTS
+t/src/pages/dashboard.tsx`): after the `isLoading || brandDnaLoading` guard,The diff implements the onboarding/auth UX task requirements end-to-end, with no blocking functional regressions found in the reviewed files.
+ `if (!brandDna) return null;` is present, preventin
+g dashboard flash before onboarding redirect. Spinner copCritical findings / analysis:
+y is updated to **“Chargement…”**.
+- **Onboarding step-1 consolidation completed** (`client/src/pages/onboarding.tsx`): step 1 and subsequent steps now render inside a single shared `<Card><CardContent>...`, so advancing from “Let’s begin” no longer remounts wrapper structure.
+- **Step 3 content renders correctly**: the step 3 avoidance/friction block is intact and rendered within the unified card.
+- **Keyword capitalization preserved**: `KeywordChipInput.addKeyword` no longer lowercases; keyword casing is preserved as entered.
+- **Label/title typography updated**: `FieldLabel` class changed to `text-base font-semibold text-slate-900 dark:text-white mb-2 mt-1`. Step headings in onboarding use `text-2xl font-bold` throughout the step flow.
+- **Auth consent/scope changes applied** (`server/replitAuth.ts`): strategy scope is `"openid profile"`; `/api/login` now uses `prompt: "login"` and scope `["openid","profile"]`, matching requirement to avoid repeat consent prompts.
+
+Security: none observed (no serious authz/injection/secret-handling issues introduced in this diff).
+
+Next actions (high-impact):
+1. Run a quick manual smoke test of first-run auth flow (fresh user + returning user) to confirm no dashboard flash and no consent re-prompt.
+2. Verify token-expiry behavior in staging after removing `offline_access` (non-blocking but worth validating expected re-auth cadence).
+3. Optional: UI QA in FR locale to confirm loading copy consistency with product wording across all auth/onboarding states.- **Dashboard loading guard fixed** (`client/src/pages/dashboard.tsx`): after the `isLoading || brandDnaLoading` guard, `if (!brandDna) return null;` is present, preventing dashboard flash before onboarding redirect. Spinner copy is updated to **“Chargement…”**.
+- **Onboarding step-1 consolidation completed** (`client/src/pages/onboarding.tsx`): step 1 and subsequent steps now render inside a single shared `<Card><CardContent>...`, so advancing from “Let’s begin” no longer remounts wrapper structure.
+- **Step 3 content renders correctly**: the step 3 avoidance/friction block is intact and rendered within the unified card.
+- **Keyword capitalization preserved**: `KeywordChipInput.addKeyword` no longer lowercases; keyword casing is preserved as entered.
+- **Label/title typography updated**: `FieldLabel` class changed to `text-base font-semibold text-slate-900 dark:text-white mb-2 mt-1`. Step headings in onboarding use `text-2xl font-bold` throughout the step flow.
+- **Auth consent/scope changes applied** (`server/replitAuth.ts`): strategy scope is `"openid profile"`; `/api/login` now uses `prompt: "login"` and scope `["openid","profile"]`, matching requirement to avoid repeat consent prompts.
+
+Security: none observed (no serious authz/injection/secret-handling issues introduced in this diff).
+
+Next actions (high-impact):
+1. Run a quick manual smoke test of first-run auth flow (fresh user + returning user) to confirm no dashboard flash and no consent re-prompt.
+2. Verify token-expiry behavior in staging after removing `offline_access` (non-blocking but worth validating expected re-auth cadence).
+3. Optional: UI QA in FR locale to confirm loading copy consistency with product wording across all auth/onboarding states.

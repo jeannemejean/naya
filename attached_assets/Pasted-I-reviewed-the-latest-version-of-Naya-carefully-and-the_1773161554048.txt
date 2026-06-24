@@ -1,0 +1,263 @@
+I reviewed the latest version of Naya carefully, and the product is moving in the right direction.
+The task → workspace → intelligence loop is a strong foundation.
+
+Now I want to move to the next level of task intelligence.
+
+This is not just about adding more UI.
+It is about making Naya understand:
+	•	when a task is useful
+	•	when a task is not useful
+	•	how tasks relate to each other
+	•	how tasks should be placed across day / week / month
+	•	how the system should learn from user feedback and rescheduling
+
+Below are the next structural changes I want.
+
+⸻
+
+1. Allow users to delete a suggested task and explain why
+
+Right now, if Naya gives me a task that I do not want to do, there is no meaningful feedback loop.
+
+I want to be able to:
+	•	delete a task
+	•	choose or write why I do not want it
+	•	feed that information back into Naya’s intelligence
+
+This is important because a deleted task is not just “removed” — it is a signal.
+
+Naya should learn things like:
+	•	this type of task is not useful for this project
+	•	this task is too early
+	•	this task is not aligned with how the user works
+	•	this task is not relevant right now
+	•	this task does not match the user’s priorities
+
+Proposed implementation
+
+Add a delete / dismiss action on task cards.
+
+When clicked, open a small modal or sheet asking:
+
+Why are you removing this task?
+
+Suggested options:
+	•	Not useful
+	•	Wrong timing
+	•	Already done elsewhere
+	•	Not aligned with this project
+	•	Too vague
+	•	I do not want to work this way
+	•	Other (free text)
+
+Store this in a new feedback table, for example:
+
+task_feedback
+
+with fields such as:
+	•	id
+	•	taskId
+	•	userId
+	•	projectId
+	•	feedbackType (deleted, dismissed, not_useful, etc.)
+	•	reason
+	•	freeText
+	•	createdAt
+
+This feedback should later be included in AI context so Naya can learn what kinds of tasks are accepted or rejected.
+
+⸻
+
+2. Add task dependencies / sequencing / blocked-by logic
+
+Right now tasks are generated as isolated items.
+
+But for project execution, tasks often depend on each other.
+
+Example:
+	•	record the video
+	•	then edit the video
+	•	then publish the video
+
+The system should not allow downstream tasks to appear before upstream tasks in a confusing way.
+
+I want Naya to understand task relationships such as:
+	•	blocked by
+	•	follows
+	•	depends on
+	•	next step after
+
+Proposed implementation
+
+Add dependency fields or a dedicated dependency table.
+
+For example:
+
+task_dependencies
+
+with:
+	•	id
+	•	taskId
+	•	dependsOnTaskId
+	•	relationType (blocked_by, follows, subtask_of)
+	•	createdAt
+
+This should allow Naya to:
+	•	order generated tasks more logically
+	•	show when a task is blocked
+	•	prevent impossible scheduling
+	•	maintain project flow
+
+UI expectation
+
+In task cards / planner / project pages, I want to be able to see:
+	•	if a task is blocked by another
+	•	if a task comes after another
+	•	if a task is part of a sequence
+
+Example labels:
+	•	Blocked by: “Record video”
+	•	Next after: “Draft outline”
+
+⸻
+
+3. Expand planning views beyond Today
+
+Right now the task experience is still too focused on the current day.
+
+I need planning visibility across:
+	•	Day
+	•	Week
+	•	Month
+
+This is essential because many tasks should not live only in “today”.
+
+Some tasks belong:
+	•	today
+	•	this week
+	•	later this month
+
+What I want
+
+A planning interface where tasks can be viewed and organized in:
+	•	day view
+	•	week view
+	•	month view
+
+This should work for:
+	•	all projects
+	•	individual project views
+
+And when placing tasks in the calendar/planner, Naya should respect dependency logic.
+
+That means:
+	•	a task that depends on another should not be scheduled before it
+	•	if it is moved before its prerequisite, the UI should warn or prevent it
+
+⸻
+
+4. Introduce intelligent replanning
+
+Next to the “Generate Tasks” button, I want a second action such as:
+
+Review / Replan
+
+This button should let Naya reorganize work based on real behavior.
+
+The system should use signals such as:
+	•	completed tasks
+	•	uncompleted tasks
+	•	deleted tasks
+	•	task feedback reasons
+	•	workspace notes
+	•	scheduling changes
+	•	due dates chosen by the user
+
+Then Naya should be able to:
+	•	reorganize today
+	•	reorganize the week
+	•	reorganize the month
+	•	regenerate a more coherent set of next steps
+
+This is very important because planning should not be static.
+
+It should evolve based on what actually happened.
+
+⸻
+
+5. Scheduling changes should feed intelligence
+
+If I move a task to another day or another time, that should not just be a visual change.
+
+It should become a signal.
+
+Example:
+	•	if I keep postponing visibility tasks, Naya should notice
+	•	if I place planning tasks at the beginning of the week, Naya should notice
+	•	if I always push execution tasks after research tasks, Naya should notice
+
+This means task scheduling should become part of the intelligence loop.
+
+⸻
+
+6. Workspace notes should influence replanning
+
+The task workspace system is already a strong foundation.
+
+Now I want what I write in those workspaces to influence:
+	•	future tasks
+	•	dependencies
+	•	task ordering
+	•	day/week/month planning
+
+For example:
+	•	if I write content ideas in a task workspace, Naya should later use them in the Content Calendar
+	•	if I write strategic reflections, Naya should use them to generate better follow-up tasks
+	•	if I write that I changed direction, future tasks should reflect that
+
+So the workspace system should not only feed AI context generally — it should feed planning and task logic more directly.
+
+⸻
+
+7. Summary of requested improvements
+
+Please add the following next layer to Naya:
+
+A. Task feedback intelligence
+	•	delete a task
+	•	explain why
+	•	store feedback
+	•	feed it to AI
+
+B. Task dependencies
+	•	blocked by
+	•	follows
+	•	sequencing
+	•	dependency-aware ordering and scheduling
+
+C. Multi-horizon planning
+	•	day
+	•	week
+	•	month
+
+D. Intelligent replanning
+	•	review/replan button
+	•	use task completion, deletion, notes, and rescheduling as signals
+
+E. Better continuity between task workspaces and the rest of Naya
+	•	reflections should influence future tasks
+	•	content ideas should feed content systems
+	•	strategy notes should feed strategy and planning
+
+⸻
+
+Goal
+
+The goal is for Naya to become not just a task generator, but a system that understands:
+	•	what to suggest
+	•	what not to suggest
+	•	what depends on what
+	•	when things should happen
+	•	how to reorganize work over time
+
+That is the direction I want now.

@@ -1,0 +1,183 @@
+There are several critical UX and bug issues to fix in the onboarding and authentication flow. Please fix all of them.
+
+Bug 1 — Brief flash of the dashboard before redirect to onboarding (the "vision du bord")
+File: client/src/pages/dashboard.tsx
+Currently, when a new user logs in, the Dashboard renders fully for a split second, then the useEffect redirects them to /onboarding. This flash is jarring.
+Fix: add a guard at the top of the loading block so we never render the dashboard if onboarding is needed:
+// FIND this block (around line 1055):
+if (isLoading || brandDnaLoading) {
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950 flex items-center justify-center">
+      ...
+    </div>
+  );
+}
+
+// REPLACE with:
+if (isLoading || brandDnaLoading) {
+  return (
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950 flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center mx-auto mb-4">
+          <span className="text-white font-bold text-sm">N</span>
+        </div>
+        <p className="text-slate-600 dark:text-gray-400">Chargement…</p>
+      </div>
+    </div>
+  );
+}
+
+// ADD this immediately after the loading guard:
+if (!brandDna) {
+  return null; // useEffect will redirect to /onboarding
+}
+
+Bug 2 — Can't advance through questionnaire questions (navigation is broken)
+File: client/src/pages/onboarding.tsx
+The next() button on step 1 calls setStep(s => Math.min(s + 1, TOTAL_STEPS)), but the step 1 card and the step > 1 card are sibling JSX nodes — not inside the same conditional. This causes a re-render issue where clicking "Let's begin" may not correctly transition.
+Fix: restructure so all steps including step 1 use the same card wrapper:
+// FIND (around line 457-476):
+{step === 1 && (
+  <Card className="dark:bg-gray-900 dark:border-gray-700">
+    <CardContent className="p-8 sm:p-12 text-center space-y-6">
+      ...
+      <Button onClick={next} className="px-8 py-5 text-base">
+        {t('onboarding.welcome.letsBegin')} <ArrowRight className="w-4 h-4 ml-2" />
+      </Button>
+    </CardContent>
+  </Card>
+)}
+
+{step > 1 && (
+  <Card className="dark:bg-gray-900 dark:border-gray-700">
+    ...
+  </Card>
+)}
+Consolidate into a single Card that always renders, and use step-based content inside:
+<Card className="dark:bg-gray-900 dark:border-gray-700">
+  <CardContent className={step === 1 ? "p-8 sm:p-12 text-center space-y-6" : "p-6 sm:p-8"}>
+
+    {/* STEP 1: Welcome */}
+    {step === 1 && (
+      <div className="space-y-6 flex flex-col items-center">
+        <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto">
+          <span className="text-white font-bold text-2xl">N</span>
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{t('onboarding.welcome.greeting')}</h2>
+        <div className="max-w-md mx-auto space-y-4 text-sm text-slate-600 dark:text-gray-400 leading-relaxed">
+          <p>{t('onboarding.welcome.intro1')}</p>
+          <p>{t('onboarding.welcome.intro2')}</p>
+          <p className="font-medium text-slate-800 dark:text-gray-200">{t('onboarding.welcome.intro3')}</p>
+        </div>
+        <Button onClick={next} className="px-8 py-5 text-base">
+          {t('onboarding.welcome.letsBegin')} <ArrowRight className="w-4 h-4 ml-2" />
+        </Button>
+      </div>
+    )}
+
+    {/* STEPS 2-12: existing content stays exactly as-is */}
+    {step === 2 && ( ... )}
+    ...
+
+    {/* Navigation — only shown for steps 2+ */}
+    {step > 1 && (
+      <div className="flex items-center justify-between pt-8">
+        ... existing navigation ...
+      </div>
+    )}
+
+  </CardContent>
+</Card>
+
+Bug 3 — Page 3 is completely blank
+File: client/src/pages/onboarding.tsx
+Step 3 ({step === 3 && ...}) renders avoidance checkboxes using AVOIDANCE_OPTIONS. If any translation key is missing or there's a JS error in a parent render, the page appears empty.
+Add an error boundary around the step content, and ensure all translation keys in getAvoidanceOptions() exist in client/src/locales/fr.ts. Specifically verify these keys exist:
+* onboarding.avoidanceOptions.visibility
+* onboarding.avoidanceOptions.selling
+* onboarding.avoidanceOptions.starting
+* onboarding.avoidanceOptions.adminTasks
+* onboarding.avoidanceOptions.perfectionism
+* onboarding.avoidanceOptions.repetitive
+* onboarding.avoidanceOptions.askingForHelp
+* onboarding.avoidanceOptions.wellbeingRoutines
+* onboarding.frictionSectionDesc
+* onboarding.frictionDetailQuestion
+* onboarding.frictionDetailPlaceholder
+If any are missing, add them to fr.ts with French translations.
+
+Bug 4 — French keywords lose their capital letters
+File: client/src/pages/onboarding.tsx, function addKeyword (inside KeywordChipInput)
+// FIND:
+const kw = raw.trim().toLowerCase().replace(/[^a-z0-9\-À-öø-ÿ ]/gi, '');
+
+// REPLACE with (remove .toLowerCase() to preserve user's capitalization):
+const kw = raw.trim().replace(/[^a-zA-Z0-9\-À-öø-ÿ ]/gi, '');
+
+Issue 5 — Questionnaire question titles are too small / same size as answers
+File: client/src/pages/onboarding.tsx, FieldLabel component (around line 234)
+// FIND:
+function FieldLabel({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+
+// REPLACE with (larger, bolder, more distinct):
+function FieldLabel({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <label className="block text-base font-semibold text-slate-900 dark:text-white mb-2 mt-1">
+Also increase step titles from text-xl to text-2xl everywhere they appear:
+// All occurrences of:
+<h2 className="text-xl font-bold text-slate-900 dark:text-white">
+// Replace with:
+<h2 className="text-2xl font-bold text-slate-900 dark:text-white">
+
+Issue 6 — Replit login asks for email permissions (consent screen)
+File: server/replitAuth.ts, lines 104-108
+// FIND:
+app.get("/api/login", (req, res, next) => {
+  passport.authenticate(`replitauth:${req.hostname}`, {
+    prompt: "login consent",
+    scope: ["openid", "email", "profile", "offline_access"],
+  })(req, res, next);
+});
+
+// REPLACE with (removes forced consent screen on repeat logins):
+app.get("/api/login", (req, res, next) => {
+  passport.authenticate(`replitauth:${req.hostname}`, {
+    prompt: "login",
+    scope: ["openid", "profile"],
+  })(req, res, next);
+});
+Also update the strategy scope at line 93:
+// FIND:
+scope: "openid email profile offline_access",
+// REPLACE:
+scope: "openid profile",
+
+Issue 7 — Naya presents itself as a tool for developers
+File: client/src/pages/landing.tsx
+The landing page feature cards (Pilot Board, etc.) sound technical. Also "Loading Naya..." in dashboard sounds dev-facing.
+In dashboard.tsx, change the loading text:
+// FIND:
+<p className="text-slate-600 dark:text-gray-400">Loading Naya...</p>
+// REPLACE:
+<p className="text-slate-600 dark:text-gray-400">Préparation de ton espace…</p>
+In landing.tsx, make the hero section warmer and non-technical. The heroTitle and heroDescription in fr.ts are already good — but verify the feature card titles don't use technical names like "Pilot Board". Replace them with user-friendly names:
+* "Pilot Board" → "Tableau de bord"
+* "Planning" → "Mon agenda intelligent"
+
+Issue 8 — After completing the Replit auth, user lands on a blank or wrong page
+File: server/replitAuth.ts, line 111-115
+The successReturnToOrRedirect: "/" redirects to / which renders the Dashboard, which then redirects to /onboarding. This creates two redirects.
+Fix: check if the user needs onboarding in the callback and redirect directly:
+app.get("/api/callback", (req, res, next) => {
+  passport.authenticate(`replitauth:${req.hostname}`, {
+    failureRedirect: "/api/login",
+  })(req, res, next, () => {
+    res.redirect("/");
+  });
+});
+The real fix is Bug 1 and Bug 2 above — once those are fixed, the flow will be: login → / → Dashboard loading guard checks for brandDna → if none, redirect to /onboarding → questionnaire renders cleanly without flash.
+

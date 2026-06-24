@@ -1,0 +1,163 @@
+# REPLIT FIX — Claude JSON Parsing Bug (v24)
+
+## Context
+
+Naya was recently migrated from OpenAI to Claude (Anthropic). There is one critical bug introduced by this migration that causes **all AI-generated planning tasks and campaigns to silently fall back to a generic static engine** instead of using Claude.
+
+**Root cause:** Claude (unlike GPT-4o) sometimes wraps JSON responses in markdown code fences like ` ```json ... ``` `. Every `JSON.parse()` call in `server/services/openai.ts` fails on this format, throws a SyntaxError, and the catch block falls back to the non-AI `nayaIntelligence.generateDailyTasks()` — producing generic, low-quality output that doesn't reflect the user's Brand DNA or Naya's intelligence.
+
+There are also `max_tokens` values that are too low for Claude's longer reasoning chains.
+
+---
+
+## Fix — `server/services/openai.ts`
+
+### Step 1 — Add a JSON stripping helper at the very top of the file (after imports)
+
+Add this function immediately after all the import statements, before any other code:
+
+```typescript
+/**
+ * Strips markdown code fences from Claude's JSON responses.
+ * Claude sometimes wraps JSON in ```json ... ``` or ``` ... ```
+ * JSON.parse() fails on this — this helper fixes it.
+ */
+function stripMarkdownJSON(raw: string | null | undefined): string {
+  if (!raw) return '{}';
+  const trimmed = raw.trim();
+  // Strip ```json ... ``` or ``` ... ```
+  const fenced = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/);
+  if (fenced) return fenced[1].trim();
+  return trimmed;
+}
+```
+
+### Step 2 — Replace ALL `JSON.parse(raw || '{}')` calls
+
+In the entire file `server/services/openai.ts`, replace every occurrence of:
+```typescript
+return JSON.parse(raw || "{}");
+```
+with:
+```typescript
+return JSON.parse(stripMarkdownJSON(raw));
+```
+
+And replace every occurrence of:
+```typescript
+const result = JSON.parse(raw || "{}");
+```
+with:
+```typescript
+const result = JSON.parse(stripMarkdownJSON(raw));
+```
+
+And replace every occurrence of:
+```typescript
+const result = JSON.parse(raw || '{}');
+```
+with:
+```typescript
+const result = JSON.parse(stripMarkdownJSON(raw));
+```
+
+There are approximately 10 occurrences of these patterns in the file. Replace ALL of them.
+
+### Step 3 — Fix `generateCampaign` specifically
+
+In the `generateCampaign` function, find:
+```typescript
+try {
+  parsed = JSON.parse(raw) as GeneratedCampaign;
+} catch (parseError) {
+  throw new Error("Failed to parse campaign JSON from AI response: " + (parseError as Error).message);
+}
+```
+
+Replace with:
+```typescript
+try {
+  parsed = JSON.parse(stripMarkdownJSON(raw)) as GeneratedCampaign;
+} catch (parseError) {
+  throw new Error("Failed to parse campaign JSON from AI response: " + (parseError as Error).message);
+}
+```
+
+### Step 4 — Increase max_tokens for generateDailyTasks
+
+In the `generateDailyTasks` function, find:
+```typescript
+      max_tokens: 4000,
+    });
+
+    return JSON.parse(raw || "{}");
+```
+
+Change `max_tokens: 4000` to `max_tokens: 8000`.
+
+### Step 5 — Increase max_tokens for generateCampaign
+
+In the `generateCampaign` function, find:
+```typescript
+      max_tokens: 4000,
+    });
+    let parsed: GeneratedCampaign;
+```
+
+Change `max_tokens: 4000` to `max_tokens: 8000`.
+
+### Step 6 — Increase max_tokens for generateWeeklyBriefing
+
+In the `generateWeeklyBriefing` function, find:
+```typescript
+      max_tokens: 1500,
+    });
+
+    const result = JSON.parse(raw || "{}")
+```
+
+Change `max_tokens: 1500` to `max_tokens: 3000`.
+
+---
+
+## Fix — `server/routes.ts`
+
+### Update the error logging message
+
+In `routes.ts`, find:
+```typescript
+console.log("OpenAI unavailable, using Naya Intelligence:", aiError.message);
+```
+
+Replace with:
+```typescript
+console.error("Claude AI error (check JSON parsing or API key):", aiError.message);
+```
+
+This makes it easier to debug if a problem remains.
+
+---
+
+## Why this fixes the planning and campaigns
+
+When `generateDailyTasks` throws (because `JSON.parse` fails on Claude's fenced JSON), the catch block silently falls back to:
+```typescript
+return nayaIntelligence.generateDailyTasks(brandDnaInput, recentContent);
+```
+
+This is a **static, rule-based engine** — not Claude. It produces generic tasks that don't use the user's Brand DNA, projects, operating profile, or any real intelligence. The user sees these as "nul" because they are generic.
+
+After this fix, Claude's JSON will always be parsed correctly, and the real AI-powered tasks will be returned.
+
+The same failure was happening in `generateCampaign`, causing campaigns to throw an error entirely.
+
+---
+
+## Verification
+
+After applying this fix:
+1. Click "Generate my plan" on the Planning page → tasks should be specific to the user's business, brand voice, and active goals
+2. Create a new campaign → it should generate with full phases, messaging framework, content plan, and KPIs
+3. Check the console — there should be NO `"OpenAI unavailable"` or `"Failed to parse campaign JSON"` errors
+
+Do NOT change any other logic, routes, or UI. This is a surgical fix to the JSON parsing layer only.

@@ -1,0 +1,14 @@
+Parfait — Replit a produit exactement le task brief que tu lui avais soumis. C'est le document de travail qu'il va exécuter. Tu n'as rien à faire d'autre que de lui envoyer ce message de confirmation :
+Message pour Replit :
+This task brief is correct and complete. Please implement all 6 tasks in the exact order specified, without skipping or combining steps.
+A few additional precision notes to ensure correctness:
+On Task 1 (time-grid): The unscheduled tasks list inside each column should render above the 7AM grid line as a compact stacked list — simple rows with checkbox + title + duration, no absolute positioning. The assignLanes call must only receive tasks where scheduledTime != null. Do not change the TaskBlock rendering for scheduled tasks.
+On Task 3 (slot cursor): The currentSlotMin initialization must be scoped per-project-per-day. After rebalancing (Task 5) moves tasks to different days, the slot cursor for each day must be initialized independently — not carried over from the previous project's loop. This is critical: if project A fills today's slots and project B's tasks land on tomorrow after rebalancing, tomorrow's cursor must start at dayStartMin, not at wherever today's cursor ended.
+On Task 5 (collect-then-rebalance): The refactor means the per-project loop must NO LONGER call storage.createTask directly. It only pushes to allPendingTasks. The single save loop happens after rebalancing and time assignment are both complete. Make sure the skippedProjects array, lastFocus, lastReasoning, lastBottleneck, and lastSuggestedNextMove variables are still populated correctly from the AI responses — they come from the generation step, not the save step, so they should be unaffected.
+On Task 6 (time assignment after rebalancing): Group allPendingTasks by their post-rebalance scheduledDate. For each date, sort tasks by priority (1 = highest first), then run the slot-cursor loop. For todayStr, start cursor at Math.max(dayStartMin, nowFloorMin + 15). For all other dates, start at dayStartMin. Assign scheduledTime and scheduledEndTime in-place on the task object before saving.
+Verification expected after implementation:
+At 4PM, newly generated tasks have scheduledTime >= 16:15 for today, or scheduledDate = tomorrow/later if today has < 90 min remaining
+Week view shows tasks spread across multiple days, never > 4 tasks on a single day
+Time grid columns show zero overlapping cards
+Unscheduled tasks appear as a clean list above the grid, not as stacked blocks on the 7AM line
+Please confirm each task with the file name, function name, and line range modified.

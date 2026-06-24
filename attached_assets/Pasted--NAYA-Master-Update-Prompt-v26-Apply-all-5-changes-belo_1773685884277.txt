@@ -1,0 +1,470 @@
+# NAYA — Master Update Prompt (v26)
+
+Apply all 5 changes below in order. Do not skip any section.
+
+---
+
+## CHANGE 1 — Planning grid: tasks too small to read
+
+**File: `client/src/components/time-grid.tsx`**
+
+**1a.** Find:
+```typescript
+const PX_PER_HOUR = 64;
+```
+Replace with:
+```typescript
+const PX_PER_HOUR = 80;
+```
+
+**1b.** Find:
+```typescript
+const height = Math.max(duration * PX_PER_MINUTE, 28);
+```
+Replace with:
+```typescript
+const height = Math.max(duration * PX_PER_MINUTE, 44);
+```
+
+**1c.** Find:
+```typescript
+const showTitle = height >= 32;
+const showDuration = height >= 48;
+const showFull = height >= 64;
+```
+Replace with:
+```typescript
+const showTitle = true;
+const showDuration = height >= 56;
+const showFull = height >= 72;
+```
+
+**1d.** Find:
+```typescript
+className={`absolute rounded-md overflow-hidden cursor-grab active:cursor-grabbing select-none transition-shadow hover:shadow-md ${
+  task.completed ? 'opacity-40' : isBlocked ? 'opacity-60' : ''
+}`}
+```
+Replace with:
+```typescript
+className={`absolute rounded-md overflow-hidden cursor-grab active:cursor-grabbing select-none transition-shadow hover:shadow-md ${
+  task.completed ? 'opacity-35 saturate-0' : isBlocked ? 'opacity-60' : ''
+}`}
+```
+
+**1e.** Find:
+```typescript
+className={`text-[10px] font-semibold leading-tight flex-1 ${task.completed ? 'line-through' : ''}`}
+```
+Replace with:
+```typescript
+className={`text-[10px] font-semibold leading-tight flex-1 ${task.completed ? 'line-through opacity-60' : ''}`}
+```
+
+---
+
+## CHANGE 2 — Planning: slot-collision guard (prevent task overlap)
+
+**File: `server/routes.ts`**
+
+Find the `generate-daily` route section. Inside the `for` loop that creates tasks from `aiResult.tasks`, BEFORE any `storage.createTask(...)` call, insert this collision guard:
+
+```typescript
+// SLOT COLLISION GUARD — run once before the loop
+const usedSlots = new Set<string>();
+const existingTasks = await storage.getTasks(userId, { scheduledDate: todayStr });
+for (const t of existingTasks as any[]) {
+  if (t.scheduledTime && !t.completed) usedSlots.add(t.scheduledTime);
+}
+
+// Then inside the loop, before creating each task:
+for (const taskData of aiResult.tasks) {
+  let slot = taskData.scheduledTime || workDayStart || '09:00';
+  while (usedSlots.has(slot)) {
+    const [h, m] = slot.split(':').map(Number);
+    const pushed = h * 60 + m + (taskData.estimatedDuration || 30);
+    slot = `${String(Math.floor(pushed / 60)).padStart(2, '0')}:${String(pushed % 60).padStart(2, '0')}`;
+  }
+  usedSlots.add(slot);
+  taskData.scheduledTime = slot;
+  // ... continue with existing storage.createTask(...) call
+}
+```
+
+---
+
+## CHANGE 3 — Dashboard: replace "Today" and "This Week" tiles
+
+**File: `client/src/pages/dashboard.tsx`**
+
+**3a. Replace the entire `BentoTileToday` function** with:
+
+```typescript
+function BentoTileNextAction() {
+  const { activeProjectId } = useProject();
+  const { data: todayTasks = [] } = useQuery<any[]>({
+    queryKey: ['/api/tasks/today', activeProjectId],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      let url = `/api/tasks/range?start=${today}&end=${today}`;
+      if (activeProjectId) url += `&projectId=${activeProjectId}`;
+      const res = await fetch(url, { credentials: 'include' });
+      return res.json();
+    },
+  });
+
+  const pending = (todayTasks as any[])
+    .filter(t => !t.completed)
+    .sort((a, b) => {
+      const aMin = a.scheduledTime ? parseInt(a.scheduledTime.replace(':', '')) : 9999;
+      const bMin = b.scheduledTime ? parseInt(b.scheduledTime.replace(':', '')) : 9999;
+      return aMin - bMin;
+    });
+
+  const next = pending[0] || null;
+  const remaining = pending.length;
+  const done = (todayTasks as any[]).filter(t => t.completed).length;
+  const total = (todayTasks as any[]).length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const ENERGY_EMOJI: Record<string, string> = {
+    deep_work: '🎯', creative: '✨', admin: '📋', social: '💬', logistics: '📦', execution: '⚡',
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 rounded-xl p-4 flex flex-col h-full min-h-[120px] max-h-[140px]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+          <Zap className="h-3.5 w-3.5 text-indigo-500" />
+          Next Up
+        </span>
+        {total > 0 && (
+          <span className="text-[10px] text-slate-400 dark:text-gray-500 font-medium">{done}/{total} done</span>
+        )}
+      </div>
+      {next ? (
+        <div className="flex-1 flex flex-col justify-between min-h-0">
+          <div className="flex items-start gap-2">
+            {next.taskEnergyType && (
+              <span className="text-sm flex-shrink-0 mt-0.5">{ENERGY_EMOJI[next.taskEnergyType] || '•'}</span>
+            )}
+            <p className="text-sm font-medium text-slate-900 dark:text-white line-clamp-2 leading-snug flex-1">
+              {next.title}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            {next.estimatedDuration && (
+              <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                <Clock className="h-2.5 w-2.5" />{next.estimatedDuration}m
+              </span>
+            )}
+            {remaining > 1 && <span className="text-[10px] text-slate-400">+{remaining - 1} more</span>}
+            <div className="flex-1 h-1 bg-slate-100 dark:bg-gray-800 rounded-full overflow-hidden ml-auto" style={{ maxWidth: '60px' }}>
+              <div className="h-full bg-indigo-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        </div>
+      ) : total === 0 ? (
+        <div className="flex-1 flex flex-col justify-center">
+          <p className="text-xs text-slate-500 dark:text-gray-400">No tasks yet today.</p>
+          <Link href="/planning">
+            <a className="text-xs text-primary hover:underline mt-1">Generate my plan →</a>
+          </Link>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col justify-center items-start gap-1">
+          <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">All done for today 🎉</p>
+          <p className="text-[10px] text-slate-400">{done} tasks completed</p>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**3b. Replace the entire `BentoTileThisWeek` function** (including any Drawer/briefing inside it) with:
+
+```typescript
+function BentoTileWeekPulse() {
+  const { activeProjectId } = useProject();
+  const mon = (() => {
+    const d = new Date(); const day = d.getDay();
+    d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    return d.toISOString().split('T')[0];
+  })();
+  const sun = (() => { const d = new Date(mon); d.setDate(d.getDate() + 6); return d.toISOString().split('T')[0]; })();
+
+  const { data: weekTasks = [] } = useQuery<any[]>({
+    queryKey: ['/api/tasks/range', mon, sun, activeProjectId, 'pulse'],
+    queryFn: async () => {
+      let url = `/api/tasks/range?start=${mon}&end=${sun}`;
+      if (activeProjectId) url += `&projectId=${activeProjectId}`;
+      const res = await fetch(url, { credentials: 'include' });
+      return res.json();
+    },
+  });
+
+  const tasks = weekTasks as any[];
+  const done = tasks.filter(t => t.completed).length;
+  const total = tasks.length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const todayIdx = (() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; })();
+
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-700 rounded-xl p-4 flex flex-col h-full min-h-[120px] max-h-[140px]">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+          <Activity className="h-3.5 w-3.5 text-emerald-500" />
+          This Week
+        </span>
+        <span className={`text-sm font-bold ${pct >= 75 ? 'text-emerald-500' : pct >= 40 ? 'text-amber-500' : 'text-slate-400'}`}>{pct}%</span>
+      </div>
+      <div className="flex gap-1 flex-1 items-end mb-1">
+        {days.map((day, i) => {
+          const d = new Date(mon); d.setDate(d.getDate() + i);
+          const key = d.toISOString().split('T')[0];
+          const dayTasks = tasks.filter(t => t.scheduledDate === key);
+          const dayDone = dayTasks.filter(t => t.completed).length;
+          const barPct = dayTasks.length > 0 ? dayDone / dayTasks.length : 0;
+          const isToday = i === todayIdx;
+          const isPast = i < todayIdx;
+          return (
+            <div key={day} className="flex-1 flex flex-col items-center gap-1">
+              <div className="w-full bg-slate-100 dark:bg-gray-800 rounded-sm overflow-hidden flex flex-col justify-end" style={{ height: '36px' }}>
+                <div
+                  className={`w-full transition-all ${isToday ? 'bg-indigo-400' : isPast ? 'bg-emerald-400' : 'bg-slate-200 dark:bg-gray-700'}`}
+                  style={{ height: `${Math.max(barPct * 100, dayTasks.length > 0 ? 8 : 0)}%` }}
+                />
+              </div>
+              <span className={`text-[9px] font-medium ${isToday ? 'text-indigo-500' : 'text-slate-400 dark:text-gray-500'}`}>{day}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-slate-400 dark:text-gray-500">{done} of {total} tasks done this week</p>
+    </div>
+  );
+}
+```
+
+**3c. In the Dashboard JSX return**, find:
+```typescript
+<div className="lg:col-span-2">
+  <BentoTileToday />
+</div>
+<BentoTileThisWeek />
+```
+Replace with:
+```typescript
+<div className="lg:col-span-2">
+  <BentoTileNextAction />
+</div>
+<BentoTileWeekPulse />
+```
+
+**3d.** Add `Activity` to lucide-react imports if not already there. Remove any weekly briefing queries/mutations that are now unused.
+
+---
+
+## CHANGE 4 — Planning: show Naya's reasoning above the grid
+
+**File: `client/src/pages/planning.tsx`**
+
+Find where `lastStrategySignal` is used in the JSX (near the time grid). Make sure this block exists and is visible. If it doesn't exist or is hidden, add it directly above the `<TimeGrid .../>` component:
+
+```typescript
+{lastStrategySignal && (
+  <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30">
+    <p className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 mb-0.5">
+      🧠 {lastStrategySignal.focus}
+    </p>
+    {strategyExpanded && (
+      <p className="text-[10px] text-indigo-600 dark:text-indigo-400 leading-relaxed">
+        {lastStrategySignal.reasoning}
+      </p>
+    )}
+    <button
+      onClick={() => setStrategyExpanded(v => !v)}
+      className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 mt-0.5"
+    >
+      {strategyExpanded ? 'Show less' : 'Why these tasks?'}
+    </button>
+  </div>
+)}
+```
+
+---
+
+## CHANGE 5 — The brain: rewrite generateDailyTasks to use the full Brand DNA
+
+**File: `server/services/openai.ts`**
+
+This is the most important change. The current prompt passes 6 Brand DNA fields to Claude. The Brand DNA has 30+ fields. Claude generates generic tasks because it doesn't know what the founder sells, to whom, at what price, in what voice, on what platform.
+
+Find the `generateDailyTasks` function. Inside it, find the `const prompt = ...` variable (the large template string). **Replace the entire `prompt` variable AND the `callClaude(...)` call at the bottom of the function** with the following:
+
+```typescript
+    const offers = [request.brandDna.offers, request.brandDna.offer].filter(Boolean).join(' | ') || 'Not specified';
+    const contentPillars = [
+      ...(request.brandDna.contentPillars || []),
+      ...(Array.isArray(request.brandDna.contentPillarsDetailed)
+        ? (request.brandDna.contentPillarsDetailed as any[]).map((p: any) => p?.name || p)
+        : []),
+    ].filter(Boolean).join(', ') || 'Not specified';
+    const brandVoice = (request.brandDna.brandVoiceKeywords || []).join(', ');
+    const brandAntiVoice = (request.brandDna.brandVoiceAntiKeywords || []).join(', ');
+
+    const prompt = `You are Naya, the Strategic Intelligence Engine of an AI Operating System for independent founders.
+
+Your job is NOT to generate a generic to-do list. Your job is to identify the highest-leverage moves for this specific business TODAY — expressed as concrete, executable actions that reference the founder's actual offers, audience, voice, and positioning.
+
+Every task must be so specific it could only apply to THIS person. If a task could apply to any business, it is wrong.
+
+═══ WORKING HOURS ═══
+Work day: ${workDayStart} – ${workDayEnd}
+${breaksBlock}
+
+═══ FULL BUSINESS INTELLIGENCE ═══
+
+IDENTITY:
+- Business: ${request.brandDna.businessName || 'Not specified'} | Type: ${request.brandDna.businessType || 'Not specified'} | Model: ${request.brandDna.businessModel || 'Not specified'}
+- Stage: ${request.brandDna.currentBusinessStage || 'Not specified'} | Team: ${request.brandDna.teamStructure || 'Solo'} | Geography: ${request.brandDna.geographicFocus || 'Not specified'}
+
+OFFERS & MARKET:
+- Offers: ${offers}
+- Price range: ${request.brandDna.priceRange || 'Not specified'}
+- Client journey: ${request.brandDna.clientJourney || 'Not specified'}
+- Revenue target: ${request.brandDna.revenueTarget || 'Not specified'} | Urgency: ${request.brandDna.revenueUrgency || 'Not specified'}
+- Active priority: ${request.brandDna.activeBusinessPriority || 'Not specified'}
+- Competitor landscape: ${request.brandDna.competitorLandscape || 'Not specified'}
+
+AUDIENCE PSYCHOLOGY:
+- Target audience: ${request.brandDna.targetAudience || request.brandDna.audience || 'Not specified'}
+- Core pain point: ${request.brandDna.corePainPoint || (request.brandDna.painPoints || []).join(', ') || 'Not specified'}
+- Audience aspiration: ${request.brandDna.audienceAspiration || (request.brandDna.desires || []).join(', ') || 'Not specified'}
+
+BRAND VOICE & POSITIONING:
+- Unique positioning: ${request.brandDna.uniquePositioning || 'Not specified'}
+- Authority level: ${request.brandDna.authorityLevel || 'Not specified'}
+- Communication style: ${request.brandDna.communicationStyle || 'Not specified'}
+- Editorial territory: ${request.brandDna.editorialTerritory || 'Not specified'}
+- Voice keywords (USE): ${brandVoice || 'Not specified'}
+- Voice anti-keywords (AVOID): ${brandAntiVoice || 'Not specified'}
+
+CONTENT STRATEGY:
+- Content pillars: ${contentPillars}
+- Platform priority: ${request.brandDna.platformPriority || 'Not specified'}
+- Current presence: ${request.brandDna.currentPresence || 'Not specified'}
+- Content bandwidth: ${request.brandDna.contentBandwidth || 'Not specified'}
+
+CONTEXT:
+- Current challenges: ${request.brandDna.currentChallenges || 'Not specified'}
+- Past successes: ${request.brandDna.pastSuccess || 'Not specified'}
+- Constraints: ${request.brandDna.operationalConstraints || 'Not specified'}
+- Success definition: ${request.brandDna.successDefinition || 'Not specified'}
+${projectPersonaBlock}
+${profileSection}
+${profileFramingRules}
+${urgencyInstruction}
+
+TODAY'S STATE:
+- Content created recently: ${request.recentContent.length} | Outreach sent: ${request.recentOutreach.length} | Done today: ${request.completedTasksToday.length}
+${workspaceSection}
+${rejectedSection}
+${positiveSection}
+${energyBlock}
+
+═══ NAYA'S 5-STEP STRATEGIC REASONING ═══
+
+Before generating tasks, work through each step:
+
+STEP 1 — GOAL ANCHOR: What is the ONE active goal? What does a winning day look like toward that goal, given the current stage?
+
+STEP 2 — HIGHEST LEVERAGE: Given this business's offers (${offers}), audience pain point (${request.brandDna.corePainPoint || 'the core pain point'}), and platform (${request.brandDna.platformPriority || 'the main platform'}), what action category moves the needle most TODAY? Choose: authority content | direct outreach | offer refinement | platform presence | relationship nurturing | operational | strategy.
+
+STEP 3 — TASK SELECTION: Pick exactly ${maxTasks} tasks. Each task must: (a) directly advance the goal, (b) reference the actual offer or positioning, (c) target the actual audience, (d) be on the right platform. If any answer is no — rewrite.
+
+STEP 4 — SPECIFICITY CHECK: Every task title must name WHAT specifically (not "write content" — write what, about what angle, for which audience, on which platform). Tasks that could apply to any business fail this check.
+
+STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${workDayEnd}. Deep work first (morning). Each task starts exactly when the previous ends (scheduledTime + estimatedDuration). Zero overlaps.
+
+═══ WHAT NOT TO GENERATE ═══
+
+❌ "Create content about your business"
+❌ "Do outreach to potential clients"
+❌ "Prepare a strategy document"
+❌ "Review your week"
+❌ "Update your LinkedIn profile"
+
+✅ "Write 200-word LinkedIn post: angle — [specific editorial territory angle]. Open with [audience pain point] moment. Close with soft CTA to [offer]. Save as draft."
+✅ "DM 5 [platform] followers who engaged with your last post — acknowledge their comment, share one insight about [audience aspiration], zero pitch. List their names in the task."
+✅ "Draft the first 3 bullet points of [offer] sales page — transformation from [pain point] → [aspiration], in [brand voice] tone."
+
+═══ OUTPUT FORMAT — JSON only ═══
+
+{
+  "focus": "Strategic focus — name the exact goal move and who it serves",
+  "reasoning": "2-3 sentences: why these specific tasks, in this order, are the right moves today",
+  "tasks": [
+    {
+      "title": "Specific first-physical-action (not the outcome)",
+      "description": "Step-by-step. Must reference the actual business: offer, audience pain point, platform, brand voice. Specific enough to execute without thinking.",
+      "type": "content|outreach|admin|planning",
+      "category": "trust|conversion|engagement|planning|visibility",
+      "priority": 1,
+      "estimatedDuration": 45,
+      "taskEnergyType": "deep_work|creative|admin|social|logistics|execution",
+      "setupCost": "low|medium|high",
+      "canBeFragmented": false,
+      "recommendedTimeOfDay": "morning|afternoon|evening|flexible",
+      "scheduledTime": "09:00",
+      "workflowGroup": null,
+      "activationPrompt": "One sentence that gets them started in 30 seconds"
+    }
+  ],
+  "dependencies": [],
+  "workflowSuggestions": []
+}
+
+RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. No markdown fences in output.`;
+
+    const raw = await callClaude({
+      model: CLAUDE_MODELS.smart,
+      messages: [
+        {
+          role: "system",
+          content: `You are Naya — the strategic intelligence engine of an AI Operating System for independent founders.
+
+You think like a business strategist who knows this founder's business as well as they do. You never give generic advice. Every task is derived from the specific business intelligence you've been given.
+
+Naya's voice (apply to all task descriptions): Direct. Warm. Never corporate. Second person. Every sentence earns its place. Never: "It looks like...", "Here's a summary...", "Great!", "Certainly!". Reference the brand's own voice keywords in descriptions.
+
+Always respond with valid JSON only. No markdown fences. No preamble.${memoryBlock}`,
+        },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 8000,
+    });
+```
+
+---
+
+## DO NOT TOUCH
+
+- `stripMarkdownJSON` function — keep as is
+- `NAYA_SYSTEM_VOICE` in `naya-voice.ts` — keep as is
+- `generateCampaign` — keep as is
+- Database schema and migration files
+- Any other functions in `openai.ts`
+
+---
+
+## Verification
+
+1. Planning grid → tasks are readable (min 44px height, title always visible)
+2. Completed tasks → greyed out + desaturated + strikethrough
+3. Generate plan → tasks reference actual business name, offer, audience, platform
+4. Dashboard "Next Up" → shows next pending task + progress bar (instant, no AI)
+5. Dashboard "This Week" → shows Mon–Fri progress bars (instant, no AI)
+6. No task overlap in the time grid
+7. "Why these tasks?" button appears after generating plan

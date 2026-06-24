@@ -1,0 +1,48 @@
+The plan is very strong and I want to proceed with this implementation.
+
+It aligns very well with the direction I want for Naya:
+moving from a flat task generator to a real task decision and planning intelligence system.
+
+Before you start building, I want to introduce a few refinements to make the system more adaptive and scalable.
+
+1 — Daily capacity should not be hardcoded
+
+The realism engine currently assumes a fixed daily capacity of 360 minutes.
+
+I want this to be more flexible and eventually derived from the user’s operating profile or learned behavior.
+
+For now, please make the capacity configurable or adaptive rather than fixed.
+
+Different users have very different realistic working capacities.
+
+2 — Workflow suggestions should influence scheduling logic
+
+WorkflowSuggestions are a great addition.
+
+However, I want them to be more than a visual grouping.
+
+If the AI suggests a workflow bundle with a recommendedBlockMinutes value, the realism engine should try to preserve a contiguous block for that workflow instead of allowing unrelated tasks to fragment it.
+
+This will make workflow intelligence materially useful.
+
+3 — Realism validation should consider existing scheduled tasks
+
+When generating new tasks, the realism engine should evaluate total workload including tasks that are already scheduled for that day.
+
+Otherwise, the system may still overload the user after multiple generations.
+
+4 — Context switch overload should be partially auto-corrected
+
+If too many different taskEnergyTypes are detected in the same day, I want the system to not only warn the user but also consider deferring the lowest-priority mismatching task to protect focus.
+
+Warnings alone are not sufficient — the system should actively help rebalance the day.
+
+5 — Prepare effectiveness model for future impact signals
+
+The new feedback fields (completionDelayDays, timesRescheduled, duration variance) are excellent.
+
+Please make sure the architecture can later support richer effectiveness signals such as user-marked high-impact tasks or milestone-unlocking actions.
+
+Other than these refinements, the direction is correct and I want to proceed.
+
+This is an important step toward making Naya a system that understands not only what tasks exist, but which ones are realistic, useful, and strategically meaningful for each user.

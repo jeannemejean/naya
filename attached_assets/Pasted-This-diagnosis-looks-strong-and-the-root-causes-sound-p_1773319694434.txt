@@ -1,0 +1,65 @@
+This diagnosis looks strong and the root causes sound plausible, especially for the date bug, project allocation cap, color instability, and the missing Agency type.
+
+I want to proceed with these fixes, but I want a few refinements added to the implementation plan.
+
+1. Date fix
+
+Please go ahead with the local-date formatter fix and make sure the same corrected helper is used consistently everywhere relevant:
+	•	task scheduling
+	•	planning page date navigation
+	•	“today” highlighting
+	•	query params for date/range APIs
+	•	any comparisons involving scheduledDate
+
+I want one single source of truth for local date formatting.
+
+2. Multi-project task generation
+
+Please do not solve this only as a proportional allocation problem.
+
+I want the generation logic to guarantee that every eligible project is considered, and if a project receives no tasks, the UI or response should make that explicit rather than silently skipping it.
+
+In other words:
+	•	every valid project should either get tasks
+	•	or return a clear “no tasks generated because…” reason
+
+This is important for trust.
+
+3. Color stability
+
+Please proceed with stable color assignment from project ID rather than array order.
+
+That should apply consistently across:
+	•	task cards
+	•	planning items
+	•	grouped workflow headers
+	•	project labels anywhere else in the app
+
+4. Energy / intelligence visibility
+
+Please make sure the system does both:
+	•	require taskEnergyType much more consistently in generation
+	•	render these signals clearly in the UI
+
+I also want recommendedTimeOfDay to be visible where it is useful, not just present in the data model.
+
+5. Agency type + client layer
+
+Please proceed with adding “Agency” as a real selectable project type so the existing client layer becomes accessible.
+
+Also verify that existing agency-like projects can be updated to that type cleanly.
+
+6. Strategy Intelligence panel
+
+I do want a persistent Strategy Intelligence panel, but I do not want it to be just a saved version of the last generation toast.
+
+At minimum, I want it to show:
+	•	current focus
+	•	why today’s tasks were chosen
+	•	current bottleneck
+	•	suggested next strategic move
+	•	a good placeholder when no strategy has been generated yet
+
+That will make the panel feel like a real intelligence layer rather than an empty shell.
+
+Other than these refinements, I agree with the fix plan and want implementation to move forward.

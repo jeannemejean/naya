@@ -1,0 +1,224 @@
+Voici le prompt complet à envoyer à Replit :
+
+---
+
+I need you to implement a pause/resume system for campaigns with the following behavior:
+
+**1. Database — add a column to `campaigns` table:**
+- `pause_note TEXT` (nullable) — stores an optional AI instruction left by the user when pausing
+
+Run `npm run db:push` (or equivalent) after updating the schema.
+
+---
+
+**2. `shared/schema.ts` — add the field to the campaigns table definition:**
+```ts
+pauseNote: text("pause_note"),
+```
+
+---
+
+**3. `server/storage.ts` — add a new method `deleteCampaignFutureTasks`:**
+
+In the interface:
+```ts
+deleteCampaignFutureTasks(campaignId: number, fromDate: string): Promise<number>;
+```
+
+In the implementation:
+```ts
+async deleteCampaignFutureTasks(campaignId: number, fromDate: string): Promise<number> {
+  const deleted = await db.delete(tasks).where(
+    and(
+      eq(tasks.campaignId, campaignId),
+      eq(tasks.completed, false),
+      gte(tasks.scheduledDate, fromDate)
+    )
+  ).returning({ id: tasks.id });
+  return deleted.length;
+}
+```
+
+---
+
+**4. `server/routes.ts` — add two new routes before `const httpServer = createServer(app)`:**
+
+```ts
+// Pause a campaign: save note + delete future incomplete tasks
+app.post('/api/campaigns/:id/pause', isAuthenticated, async (req: any, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const id = parseInt(req.params.id);
+    const { pauseNote } = req.body as { pauseNote?: string };
+    const campaign = await storage.getCampaign(id, userId);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+    if (campaign.status !== 'active') return res.status(400).json({ message: "Campaign is not active" });
+    const today = new Date().toISOString().slice(0, 10);
+    const deleted = await storage.deleteCampaignFutureTasks(id, today);
+    const updated = await storage.updateCampaign(id, userId, {
+      status: 'paused',
+      pauseNote: pauseNote?.trim() || null,
+    });
+    res.json({ campaign: updated, tasksRemoved: deleted });
+  } catch (error) {
+    console.error("Error pausing campaign:", error);
+    res.status(500).json({ message: "Failed to pause campaign" });
+  }
+});
+
+// Resume a paused campaign: optionally apply AI note, then re-launch
+app.post('/api/campaigns/:id/resume', isAuthenticated, async (req: any, res) => {
+  try {
+    const userId = req.user.claims.sub;
+    const id = parseInt(req.params.id);
+    const campaign = await storage.getCampaign(id, userId);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+    if (campaign.status !== 'paused') return res.status(400).json({ message: "Campaign is not paused" });
+
+    if (campaign.pauseNote) {
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const existingTasks = (campaign.generatedTasks || []) as Array<any>;
+      const prompt = `You are a campaign planning assistant. The user has paused a marketing campaign and left the following modification note:\n\n"${campaign.pauseNote}"\n\nHere are the current campaign tasks (JSON array):\n${JSON.stringify(existingTasks, null, 2)}\n\nPlease return a modified JSON array of tasks reflecting the user's requested changes. Keep the same structure (title, description, type, category, priority, estimatedDuration, taskEnergyType, phase). Return ONLY valid JSON, no explanation.`;
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+      });
+      const raw = completion.choices[0]?.message?.content || '{}';
+      let parsed: any;
+      try { parsed = JSON.parse(raw); } catch { parsed = {}; }
+      const updatedTasks: any[] = Array.isArray(parsed) ? parsed : (parsed.tasks ?? existingTasks);
+      await storage.updateCampaign(id, userId, { generatedTasks: updatedTasks });
+    }
+
+    await storage.updateCampaign(id, userId, { status: 'active', pauseNote: null });
+    const resumeStartDate = new Date().toISOString().slice(0, 10);
+    res.json({ message: "Campaign resumed", resumeStartDate });
+  } catch (error) {
+    console.error("Error resuming campaign:", error);
+    res.status(500).json({ message: "Failed to resume campaign" });
+  }
+});
+```
+
+---
+
+**5. `client/src/pages/campaigns.tsx` — update the UI:**
+
+**5a.** Add `pauseNote: string | null` to the `Campaign` interface.
+
+**5b.** Add these state variables inside the component:
+```ts
+const [showPauseDialog, setShowPauseDialog] = useState(false);
+const [pauseNoteInput, setPauseNoteInput] = useState("");
+const [resumeNoteInput, setResumeNoteInput] = useState("");
+```
+
+**5c.** Add these two mutations (after `deleteMutation`):
+```ts
+const pauseMutation = useMutation({
+  mutationFn: async ({ id, note }: { id: number; note: string }) => {
+    const res = await apiRequest("POST", `/api/campaigns/${id}/pause`, { pauseNote: note });
+    return res.json();
+  },
+  onSuccess: (data: { campaign: Campaign; tasksRemoved: number }) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedProjectId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    setShowPauseDialog(false);
+    setPauseNoteInput("");
+    toast({ title: "Campaign paused", description: `${data.tasksRemoved} future task(s) removed from planning.` });
+  },
+  onError: () => toast({ title: "Failed to pause campaign", variant: "destructive" }),
+});
+
+const resumeMutation = useMutation({
+  mutationFn: async ({ id, note }: { id: number; note: string }) => {
+    if (note.trim()) {
+      await apiRequest("PATCH", `/api/campaigns/${id}`, { pauseNote: note.trim() });
+    }
+    const resumeRes = await apiRequest("POST", `/api/campaigns/${id}/resume`, {});
+    const resumeData = await resumeRes.json();
+    const launchRes = await apiRequest("POST", `/api/campaigns/${id}/launch`, { startDate: resumeData.resumeStartDate });
+    return launchRes.json();
+  },
+  onSuccess: (data: { campaign: Campaign; tasksCreated: number }) => {
+    queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedProjectId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    setResumeNoteInput("");
+    toast({ title: "Campaign resumed 🚀", description: `${data.tasksCreated} task(s) rescheduled from today.` });
+  },
+  onError: () => toast({ title: "Failed to resume campaign", variant: "destructive" }),
+});
+```
+
+**5d.** Replace the existing action buttons block (the `{selectedCampaign.status === "active" && (...)}` section) with this:
+```tsx
+<div className="flex flex-col gap-2">
+  {selectedCampaign.status === "active" && !showPauseDialog && (
+    <div className="flex gap-2">
+      <Button size="sm" variant="outline" onClick={() => { setShowPauseDialog(true); setPauseNoteInput(""); }}>
+        <Pause className="h-3.5 w-3.5 mr-1" />
+        Pause
+      </Button>
+      <Button size="sm" onClick={() => { updateMutation.mutate({ id: selectedCampaign.id, data: { status: "completed" } }); toast({ title: "Campaign marked as complete" }); }}>
+        <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+        Mark complete
+      </Button>
+    </div>
+  )}
+  {selectedCampaign.status === "active" && showPauseDialog && (
+    <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 space-y-2">
+      <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">Pause this campaign</p>
+      <p className="text-xs text-slate-500 dark:text-gray-400">Future tasks linked to this campaign will be removed from your planning. You can resume at any time.</p>
+      <Textarea
+        placeholder="Optional AI instruction — e.g. 'Shift tasks by 2 weeks' or 'Add a LinkedIn phase'"
+        value={pauseNoteInput}
+        onChange={(e) => setPauseNoteInput(e.target.value)}
+        className="text-xs min-h-[60px] resize-none"
+      />
+      <div className="flex gap-2">
+        <Button size="sm" variant="outline" className="text-amber-700 border-amber-300 hover:bg-amber-100 dark:text-amber-400 dark:border-amber-700"
+          onClick={() => pauseMutation.mutate({ id: selectedCampaign.id, note: pauseNoteInput })}
+          disabled={pauseMutation.isPending}>
+          {pauseMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Pause className="h-3.5 w-3.5 mr-1" />}
+          Confirm pause
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setShowPauseDialog(false)}>
+          <X className="h-3.5 w-3.5 mr-1" />Cancel
+        </Button>
+      </div>
+    </div>
+  )}
+  {selectedCampaign.status === "paused" && (
+    <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/30 p-3 space-y-2">
+      <p className="text-xs font-semibold text-indigo-700 dark:text-indigo-400">Campaign paused</p>
+      {selectedCampaign.pauseNote && (
+        <div className="rounded bg-indigo-100 dark:bg-indigo-900/40 px-2 py-1.5">
+          <p className="text-[10px] uppercase tracking-wider font-semibold text-indigo-500 mb-0.5">Saved note</p>
+          <p className="text-xs text-slate-600 dark:text-gray-300">{selectedCampaign.pauseNote}</p>
+        </div>
+      )}
+      <Textarea
+        placeholder="Optional AI instruction before resuming — e.g. 'Shift by 2 weeks' or 'Reduce LinkedIn frequency'"
+        value={resumeNoteInput}
+        onChange={(e) => setResumeNoteInput(e.target.value)}
+        className="text-xs min-h-[60px] resize-none"
+      />
+      <Button size="sm"
+        onClick={() => resumeMutation.mutate({ id: selectedCampaign.id, note: resumeNoteInput })}
+        disabled={resumeMutation.isPending}>
+        {resumeMutation.isPending
+          ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{resumeNoteInput.trim() ? "Applying AI changes…" : "Resuming…"}</>
+          : <><Rocket className="h-3.5 w-3.5 mr-1" />{resumeNoteInput.trim() ? "Modify & Resume" : "Resume campaign"}</>
+        }
+      </Button>
+    </div>
+  )}
+</div>
+```
+
+---
+
+That's the full implementation. Please also run the DB migration to add the `pause_note` column.

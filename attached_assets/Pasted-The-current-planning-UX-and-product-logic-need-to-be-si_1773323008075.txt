@@ -1,0 +1,97 @@
+The current planning UX and product logic need to be simplified and unified.
+
+Right now there are too many separate task-generation buttons and modes exposed to the user:
+	•	generate month
+	•	generate day
+	•	refine week
+	•	etc.
+
+This makes the experience confusing and breaks the feeling that Naya is one intelligent system.
+
+I do not want users to choose between multiple planning engines.
+
+Product direction change
+
+I want a single primary action:
+
+“Generate my plan”
+
+The user should only see one intelligent entry point.
+
+Behind the scenes, Naya can still run planning in layers:
+	1.	Month layer — create the overall monthly structure based on goals, projects, workflows, and estimated capacity
+	2.	Week layer — refine that structure for the current week based on progress, blocked items, and changing priorities
+	3.	Day layer — shape the actual day based on available time, user behavior, and realism constraints
+
+But that layering should be internal logic, not exposed as multiple competing buttons.
+
+Feedback loop direction
+
+Instead of asking the user to constantly choose generation modes, the system should rely more on lightweight feedback loops such as:
+	•	“How did today go?”
+	•	“Was this week realistic?”
+	•	“Did these tasks move the project forward?”
+
+This gives the AI the signals it needs to refine the plan without creating UX clutter.
+
+Date bug — systemic issue
+
+The fact that “refine week” is still scheduling tasks in the past confirms that the date-awareness bug is systemic, not isolated to one feature.
+
+I want a hard scheduling constraint applied at every level of the planning engine:
+
+Global rule
+
+No generated, refined, deferred, or replanned task should ever be scheduled before today’s local date, unless it is explicitly marked as overdue carryover.
+
+This must be enforced in:
+	•	monthly generation
+	•	weekly refinement
+	•	daily generation
+	•	replan flows
+	•	any date-shifting logic inside the realism engine
+
+This should not depend on a specific button or mode. It should be a universal invariant in the scheduling logic.
+
+Requested changes
+
+1. Simplify the planning UI
+
+Replace multiple generation buttons with one primary action:
+	•	Generate my plan
+
+Any secondary actions should be much more subtle and clearly framed as refinements, not competing generation modes.
+
+2. Keep the layered logic internally
+
+The system should still think in:
+	•	month
+	•	week
+	•	day
+
+but that complexity should stay behind the scenes.
+
+3. Add lightweight user feedback prompts
+
+Prefer simple prompts like:
+	•	“How did today go?”
+	•	“What felt unrealistic?”
+	•	“What should shift this week?”
+
+This is a better feedback loop than asking users to manually pick planning engines.
+
+4. Enforce a global no-past-date rule
+
+At every scheduling layer, today’s local date must be injected as a hard lower boundary.
+
+No task should land before today unless the system intentionally marks it as overdue carryover.
+
+Goal
+
+The goal is for Naya to feel like one intelligent planning system, not a set of different planning buttons.
+
+Planning should be:
+	•	coherent
+	•	layered internally
+	•	simple externally
+	•	date-safe by design

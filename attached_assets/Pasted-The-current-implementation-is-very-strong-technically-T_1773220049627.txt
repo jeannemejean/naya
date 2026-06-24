@@ -1,0 +1,59 @@
+The current implementation is very strong technically.
+
+The realism engine, energy modeling, workflow bundle preservation, and effectiveness signal capture are all meaningful improvements and clearly move Naya toward a more intelligent execution system.
+
+However, after testing deeply, I believe the next evolution must address a structural intelligence gap.
+
+Right now, Naya still behaves as a daily execution optimizer rather than a temporal planning strategist.
+
+Even with better tasks and realism validation, the system does not yet design execution trajectories across weeks and months.
+
+1 — Introduce a Monthly Execution Engine
+
+Naya should be able to generate a full monthly execution structure based on:
+	•	project goals
+	•	estimated effort
+	•	workflow chains
+	•	dependencies
+	•	user capacity signals
+
+This engine should:
+	•	distribute tasks across weeks
+	•	preserve workflow momentum
+	•	avoid overloading certain time windows
+	•	structure execution phases
+
+Daily task generation should then become a refinement layer rather than the primary planning mechanism.
+
+2 — Add Temporal Workflow Modeling
+
+Workflow bundles currently exist only as same-day groupings.
+
+They should evolve into temporal sequences where:
+	•	workflows can span multiple days or weeks
+	•	phases are recognized (research → production → distribution)
+	•	momentum can be increased or decreased strategically
+
+This would allow the AI to reason not only about what tasks to do, but when a workflow should begin or intensify.
+
+3 — Add Agency → Client → Task hierarchy
+
+When a project is defined as an agency, users should be able to:
+	•	create client entities
+	•	define deliverables per client
+	•	generate client-specific task flows
+	•	balance capacity across clients
+
+This will significantly increase real-world usefulness for service businesses and agencies.
+
+4 — Move toward Goal Trajectory Modeling
+
+Tasks should not only be related to goals contextually.
+
+They should form structured execution ladders:
+	•	milestones
+	•	phases
+	•	pacing logic
+	•	progress velocity
+
+This would make Naya capable of designing execution strategies rather than only generating tasks.

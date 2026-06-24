@@ -1,0 +1,276 @@
+Here is the next structural improvement I want to implement in Naya.
+I tested the current version of the board carefully and there are several issues that need to be addressed in order for Naya to function as a real multi-project operating system.
+
+This is not a bug fix request — this is a structural UX + intelligence improvement.
+
+Please read the whole description carefully before implementing.
+
+⸻
+
+1. Tasks must visibly belong to a project
+
+Right now when tasks are generated on the All Projects dashboard, there is no visible indication of which project they belong to.
+
+Example:
+A task like
+“Share behind-the-scenes strategy thinking”
+
+is most likely related to Agence JMD, but the UI gives me no visual clue.
+
+This makes the board confusing when multiple projects exist.
+
+What I want
+
+Every task must clearly display its project context.
+
+UI changes
+
+In the task card:
+
+Add a project badge showing:
+
+• project name
+• project color
+• project icon
+
+Example:
+
+🟡 Agence JMD
+🟣 Encore Merci
+🔵 Naya
+
+The badge should appear next to the task title.
+
+Data
+
+Tasks already have a projectId.
+Use it to fetch project metadata.
+
+⸻
+
+2. Task generation must respect project context
+
+Right now the system behaves incorrectly:
+
+If I generate tasks while inside a project (for example Encore Merci), the tasks still appear in the global Today list, and the project page still shows no tasks.
+
+This means task generation is not properly scoped.
+
+Correct behavior
+
+If user is on “All Projects”
+
+Generate tasks for all active projects
+
+The AI should:
+
+• generate tasks per project
+• attach the correct projectId
+• display them in the global Today list
+
+Example:
+
+🟡 Agence JMD — Write behind-the-scenes strategy thread
+🟣 Encore Merci — Plan spring seasonal recipes
+🔵 Naya — Refine onboarding experience
+
+⸻
+
+If user is inside a specific project
+
+Example: /projects/encore-merci
+
+Then:
+
+• generate tasks only for that project
+• attach that project’s projectId
+• those tasks must appear only when that project is selected
+• they must still appear inside the All Projects board, filtered by project badge
+
+⸻
+
+3. Project pages must filter tasks properly
+
+When I click a project in the sidebar, I should see:
+
+• today’s tasks for that project
+• tomorrow preview for that project
+• goals for that project
+
+Right now this filtering is not working properly.
+
+So ensure that:
+
+GET /api/tasks accepts projectId
+
+and that the UI passes:
+
+?projectId=activeProjectId
+
+when a specific project is selected.
+
+⸻
+
+4. Tasks must be actionable (task → workspace)
+
+Right now tasks are dead text.
+
+Example task:
+
+“Document how the strategic thinking process works when working with a client.”
+
+Clicking the task should open a workspace to perform that task.
+
+Naya should not just tell me to think — it should give me a place to think.
+
+⸻
+
+New concept: Task Workspaces
+
+Each task type should open a relevant workspace.
+
+Examples:
+
+Strategy / thinking task
+
+Opens:
+
+Strategy board
+
+User can write notes, ideas, bullet points.
+
+Example fields:
+
+• thinking notes
+• ideas
+• questions
+• insights
+
+⸻
+
+Content thinking task
+
+Opens:
+
+Content idea board
+
+User writes ideas.
+
+Later Naya can move those ideas into:
+
+Content Calendar → Idea Pool
+
+⸻
+
+Writing task
+
+Opens:
+
+Writing editor
+
+User writes:
+
+• draft
+• thread
+• caption
+• blog outline
+
+⸻
+
+Planning task
+
+Opens:
+
+Planning board
+
+User defines:
+
+• steps
+• milestones
+• checklist
+
+⸻
+
+5. Intelligence loop
+
+This is extremely important.
+
+What the user writes while doing the task should feed Naya’s intelligence.
+
+Example:
+
+User clicks task
+→ opens strategy board
+→ writes reflections
+
+Those reflections should later be usable by AI:
+
+• content ideas
+• strategy insights
+• messaging
+• outreach
+• campaign ideas
+
+So the system should store these entries in a structured way.
+
+Example table:
+
+task_workspace_entries
+
+fields:
+
+id
+taskId
+userId
+projectId
+type (strategy | content | reflection | notes)
+content
+createdAt
+
+⸻
+
+6. UX flow
+
+Correct flow should be:
+
+Generate tasks
+↓
+Tasks appear with project badge
+↓
+User clicks task
+↓
+Task workspace opens
+↓
+User works inside Naya
+↓
+Content becomes AI-usable knowledge
+
+This turns Naya from a task manager into a thinking system.
+
+⸻
+
+7. Summary of changes
+
+Please implement:
+
+UI
+	1.	Project badge on task cards
+	2.	Clicking a task opens a workspace
+	3.	Project pages filter tasks correctly
+
+Logic
+	4.	Task generation must respect project scope
+	5.	Global generation = all projects
+	6.	Project generation = only that project
+
+Intelligence
+	7.	Introduce task workspaces
+	8.	Store user reflections as structured knowledge
+
+⸻
+
+This change is important because Naya is not meant to be a simple task manager.
+
+It is meant to be a multi-project thinking and execution OS for independent builders.
+
+Tasks must therefore lead to action spaces, not just reminders.

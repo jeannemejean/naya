@@ -859,7 +859,18 @@ export default function Planning({ onSearchClick }: Props) {
                       </p>
                       <div className="space-y-1.5">
                         {unscheduled.map((task: Task) => (
-                          <TaskCard key={task.id} task={task} compact />
+                          <div
+                            key={task.id}
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', String(task.id));
+                              e.dataTransfer.effectAllowed = 'move';
+                            }}
+                            className="cursor-grab active:cursor-grabbing"
+                            title="Glisse-moi sur la grille pour me planifier"
+                          >
+                            <TaskCard task={task} compact />
+                          </div>
                         ))}
                       </div>
                       <p className="text-[9px] text-naya-olive-35 mt-2">{t('planning.dragToSchedule')}</p>

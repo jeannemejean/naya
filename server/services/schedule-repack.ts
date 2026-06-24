@@ -34,8 +34,19 @@ export interface RepackMove {
   newEndMin: number;
 }
 
-/** Retourne uniquement les tâches à déplacer (avec leur nouvelle position). */
-export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackMove[] {
+export interface RepackResult {
+  /** Tâches à repositionner (chevauchement / pause déjeuner). */
+  moves: RepackMove[];
+  /** Tâches qui ne tiennent PAS dans la journée de travail → à déplanifier. */
+  overflow: number[];
+}
+
+/**
+ * Réorganise une journée : zéro chevauchement, respect de la pause déjeuner, ET respect strict
+ * de la fin de journée de travail (`dayEndMin`). Toute tâche qui finirait après `dayEndMin` est
+ * renvoyée dans `overflow` (à déplanifier) plutôt que de déborder hors des heures de travail.
+ */
+export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResult {
   const floor = Math.max(opts.dayStartMin, opts.floorMin ?? opts.dayStartMin);
 
   const skipLunch = (start: number, duration: number): number => {
@@ -47,13 +58,19 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackMove[
 
   const sorted = [...tasks].sort((a, b) => a.startMin - b.startMin);
   const moves: RepackMove[] = [];
+  const overflow: number[] = [];
   let cursor = floor;
 
   for (const task of sorted) {
     let start = Math.max(task.startMin, cursor);
     start = skipLunch(start, task.durationMin);
-    // skipLunch peut avoir reculé… non : il avance toujours. Re-garantir >= cursor.
     start = Math.max(start, cursor);
+
+    // La tâche déborde des heures de travail → on la déplanifie (curseur inchangé).
+    if (start + task.durationMin > opts.dayEndMin) {
+      overflow.push(task.id);
+      continue;
+    }
 
     if (start !== task.startMin) {
       moves.push({ id: task.id, newStartMin: start, newEndMin: start + task.durationMin });
@@ -61,5 +78,5 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackMove[
     cursor = start + task.durationMin;
   }
 
-  return moves;
+  return { moves, overflow };
 }
