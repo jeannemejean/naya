@@ -787,6 +787,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTask(task: InsertTask): Promise<Task> {
+    // ── Auto-assignation d'horaire ─────────────────────────────────────────
+    // Cœur produit : une tâche DATÉE doit avoir une HEURE de réalisation (Naya
+    // place les tâches dans la semaine). Les générateurs (goal-tasks, pré-génération
+    // stratégique) ne fournissent qu'une date suggérée → on place ici la tâche au
+    // premier créneau libre (respecte heures/jours de travail + tâches existantes).
+    // Couvre TOUS les chemins de création, pas seulement la route POST /api/tasks.
+    // Exclusions : jalons (all-day) et tâches `fixed` (ancrées par l'utilisateur).
+    if (
+      task.userId &&
+      task.scheduledDate &&
+      (typeof task.scheduledTime !== 'string' || !/^\d{2}:\d{2}$/.test(task.scheduledTime as string)) &&
+      (task as any).type !== 'milestone' &&
+      (task as any).schedulingMode !== 'fixed'
+    ) {
+      const duration = (task.estimatedDuration as number) || 30;
+      const slot = await this.findFirstFreeSlot(task.userId as string, task.scheduledDate as string, duration);
+      const [h, m] = slot.time.split(':').map(Number);
+      const endMin = h * 60 + m + duration;
+      const endStr = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+      task = { ...task, scheduledDate: slot.date, scheduledTime: slot.time, scheduledEndTime: endStr };
+    }
+
     // ── Slot-collision guard ───────────────────────────────────────────────
     // Règle non négociable : deux tâches ne sont jamais planifiées en même temps.
     // Toute tâche avec une date + une heure concrètes est décalée au prochain
