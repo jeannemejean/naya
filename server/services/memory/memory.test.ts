@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { scoreCandidates, recencyScore, type Fil } from "./retrieve";
 import { runUpdateEngine, parseEntries, type MemoryRepo, type MemoryCandidate } from "./extract";
+import { resolveSubjectBrand, resolveEntryProjectId, isMatchable } from "./brand-resolve";
 
 // ── Scoring : SOMME PONDÉRÉE NORMALISÉE (pas un produit) ────────────────────────
 describe("scoreCandidates — somme pondérée normalisée", () => {
@@ -124,5 +125,66 @@ describe("parseEntries — pas d'hallucination", () => {
     const out = parseEntries('[{"fil":"inconnu","content":"x"},{"fil":"founder","entryType":"préférence","content":"Décide vite","importance":6}]');
     expect(out.length).toBe(1);
     expect(out[0].fil).toBe("founder");
+  });
+});
+
+// ── Routage de marque (BRIEF-FIX-ROUTAGE-MARQUE) ─────────────────────────────────
+const PROJECTS = [
+  { id: 1, name: "Agence JMD" }, { id: 2, name: "Jeanne Mejean" },
+  { id: 3, name: "Encore Merci" }, { id: 4, name: "Naya" },
+  { id: 5, name: "Test Jalons" }, { id: 6, name: "Test Cascade" },
+];
+
+describe("resolveSubjectBrand — silencieux si certain, sinon ambigu", () => {
+  it("une marque nommée → résout vers ce projet (indépendant du projet actif)", () => {
+    const r = resolveSubjectBrand("on retravaille le positionnement d'Encore Merci", PROJECTS);
+    expect(r.projectId).toBe(3);
+    expect(r.ambiguous).toBe(false);
+  });
+
+  it("normalisation : 'encore merci' (sans accents/majuscules) matche 'Encore Merci'", () => {
+    expect(resolveSubjectBrand("parlons d'encore merci", PROJECTS).projectId).toBe(3);
+    expect(resolveSubjectBrand("parlons d'Éncore Mérci", PROJECTS).projectId).toBe(3);
+  });
+
+  it("marque-sujet établie PLUS TÔT (dans l'historique) → réutilisée même si le message courant ne la nomme pas", () => {
+    const convo = ["User: on bosse sur Encore Merci", "Naya: ok", "User: et niveau ton de voix ?"].join("\n");
+    expect(resolveSubjectBrand(convo, PROJECTS).projectId).toBe(3);
+  });
+
+  it("aucune marque nommée → ambigu (null)", () => {
+    expect(resolveSubjectBrand("je préfère bosser le matin", PROJECTS).projectId).toBe(null);
+  });
+
+  it("deux marques nommées → ambigu (null), on ne devine pas", () => {
+    const r = resolveSubjectBrand("compare Encore Merci et Agence JMD", PROJECTS);
+    expect(r.projectId).toBe(null);
+    expect(r.ambiguous).toBe(true);
+  });
+
+  it("pas de faux positif sur un nom court/générique (match en limite de mots)", () => {
+    // "test" dans la phrase ne doit PAS matcher "Test Jalons"/"Test Cascade"
+    expect(resolveSubjectBrand("je fais juste un petit test", PROJECTS).projectId).toBe(null);
+    // "Naya" (1 mot, 4 lettres) exclu → un message qui s'adresse à Naya ne matche pas le projet
+    expect(resolveSubjectBrand("merci naya tu gères", PROJECTS).projectId).toBe(null);
+    expect(isMatchable("Naya")).toBe(false);
+    expect(isMatchable("Encore Merci")).toBe(true);
+  });
+});
+
+describe("resolveEntryProjectId — cap/reception exigent une marque, founder transverse", () => {
+  it("cap avec marque-sujet résolue → tag sur ce projet", () => {
+    expect(resolveEntryProjectId("cap", 3)).toEqual({ projectId: 3, skip: false });
+    expect(resolveEntryProjectId("reception", 3)).toEqual({ projectId: 3, skip: false });
+  });
+
+  it("cap/reception SANS marque-sujet → SKIP (jamais le projet actif deviné)", () => {
+    expect(resolveEntryProjectId("cap", null)).toEqual({ projectId: null, skip: true });
+    expect(resolveEntryProjectId("reception", undefined)).toEqual({ projectId: null, skip: true });
+  });
+
+  it("founder → transverse (null), jamais sauté, même sans marque", () => {
+    expect(resolveEntryProjectId("founder", null)).toEqual({ projectId: null, skip: false });
+    expect(resolveEntryProjectId("founder", 3)).toEqual({ projectId: null, skip: false });
   });
 });

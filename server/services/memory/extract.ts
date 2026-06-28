@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { memoryEntries } from "@shared/schema";
 import { callClaude, CLAUDE_MODELS } from "../claude";
 import { embedText, toVectorLiteral } from "./embed";
+import { resolveEntryProjectId } from "./brand-resolve";
 import type { Fil } from "./retrieve";
 
 // ════════════════════════════════════════════════════════════════════════════════
@@ -169,7 +170,8 @@ export async function runUpdateEngine(
 // ── Pipeline complet (Temps 1 + Temps 2), BEST-EFFORT / fire-and-forget ─────────
 export async function extractToMemory(input: {
   userId: string;
-  projectId?: number | null;
+  projectId?: number | null;        // projet ACTIF (UI) — pour audit uniquement, jamais pour taguer
+  subjectProjectId?: number | null; // marque-SUJET résolue (named brand) — sert à taguer cap/reception
   sourceText: string;
   sourceType: "capture" | "companion" | "feedback";
   sourceCaptureId?: number | null;
@@ -191,14 +193,22 @@ export async function extractToMemory(input: {
     const entries = parseEntries(raw);
     if (entries.length === 0) return; // rien de durable → aucune entrée fabriquée
 
-    // Temps 2 — embed + moteur de mise à jour, entrée par entrée.
+    // Temps 2 — routage de marque + embed + moteur de mise à jour, entrée par entrée.
     for (const e of entries) {
+      // Routage de marque (BRIEF-FIX-ROUTAGE-MARQUE) :
+      //  - founder → transverse (null) ;
+      //  - cap/reception → marque-SUJET résolue ; sans elle, on SAUTE (jamais le projet actif).
+      const { projectId, skip } = resolveEntryProjectId(e.fil, input.subjectProjectId);
+      if (skip) {
+        // Audit best-effort : aucun fait d'ADN sous une marque non confirmée.
+        console.info(`[brand-routing] SKIP ${e.fil} (aucune marque-sujet) src=${input.sourceType} active=${input.projectId ?? "null"} content="${e.content.slice(0, 60)}"`);
+        continue;
+      }
       const embedding = await embedText(e.content); // best-effort
       if (!embedding) continue; // pas d'embedding → on saute (dégradation silencieuse)
       await runUpdateEngine({
         userId: input.userId,
-        // founder = transverse (projectId null) ; cap/reception = la marque.
-        projectId: e.fil === "founder" ? null : (input.projectId ?? null),
+        projectId,
         fil: e.fil,
         entryType: e.entryType,
         content: e.content,

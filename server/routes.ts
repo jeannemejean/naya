@@ -20,6 +20,7 @@ import {
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
 import { extractToMemory } from "./services/memory/extract";
+import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -2806,10 +2807,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       res.json(response);
 
-      // Mémoire (Phase 2, best-effort, fire-and-forget) : extraire de ce tour de conversation.
+      // Mémoire (Phase 2, best-effort) : extraire de ce tour de conversation.
+      // Routage de marque (BRIEF-FIX-ROUTAGE-MARQUE) : la marque-sujet est la marque
+      // NOMMÉE dans la conversation (message + historique), PAS le projet actif (faillible).
+      const convoText = [...(conversationHistory || []).map((m: any) => m?.content || ""), message].join("\n");
+      const subject = resolveSubjectBrand(convoText, (userProjects as any[]).map((p) => ({ id: p.id, name: p.name })));
+      console.info(`[brand-routing] companion active=${activeProjectId ?? "null"} subject=${subject.projectId ?? "null"} matched=[${subject.matched.join(", ")}] ambiguous=${subject.ambiguous}`);
       extractToMemory({
         userId,
-        projectId: activeProjectId ?? null,
+        projectId: activeProjectId ?? null,        // audit only
+        subjectProjectId: subject.projectId,        // marque-sujet résolue (ou null → cap/reception sautés)
         sourceText: `Utilisateur : ${message}\nNaya : ${(response as any)?.message ?? ""}`,
         sourceType: "companion",
       }).catch(() => {});
@@ -2949,13 +2956,20 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       res.json(entry);
 
       // Mémoire (Phase 2, best-effort, fire-and-forget) : extraire les faits durables.
-      extractToMemory({
-        userId,
-        projectId: entry.projectId ?? null,
-        sourceText: entry.content,
-        sourceType: "capture",
-        sourceCaptureId: entry.id,
-      }).catch(() => {});
+      // Routage de marque : marque-sujet = marque NOMMÉE dans le texte de la capture ;
+      // sinon les faits cap/reception sont sautés (jamais devinés).
+      (async () => {
+        const capProjects = await storage.getProjects(userId).catch(() => []);
+        const capSubject = resolveSubjectBrand(entry.content, (capProjects as any[]).map((p) => ({ id: p.id, name: p.name })));
+        await extractToMemory({
+          userId,
+          projectId: entry.projectId ?? null,        // audit only
+          subjectProjectId: capSubject.projectId,
+          sourceText: entry.content,
+          sourceType: "capture",
+          sourceCaptureId: entry.id,
+        });
+      })().catch(() => {});
 
       const conditionalPattern = /\b(quand|when|si|if|dès que|once|après|after)\b/i;
       if (conditionalPattern.test(entry.content.trim())) {

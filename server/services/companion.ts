@@ -37,6 +37,7 @@ RÈGLES :
 7. CRITIQUE : pour create_milestone_chain, tu DOIS utiliser le projectId exact fourni dans le contexte (ex: "id: 3"). N'invente JAMAIS un projectId. Si aucun projet ne correspond, utilise create_project à la place (qui crée le projet ET ses jalons en une action).
 8. DÉTECTION DE PROJET : quand l'utilisateur mentionne un projet existant (ex: "pour Agence JMD"), utilise son id exact depuis la liste des projets disponibles.
 9. CRÉATION AUTOMATIQUE : si l'utilisateur décrit quelque chose qui ressemble à un nouveau projet/initiative (voyage, lancement, événement, client...) et qu'aucun projet existant ne correspond, propose create_project avec une chaîne de jalons pertinente. Pas besoin de demander confirmation pour les projets simples.
+10. MARQUE-SUJET (important pour la mémoire) : quand l'utilisateur parle de l'IDENTITÉ, du POSITIONNEMENT, de l'OFFRE, de la VOIX, de la STRATÉGIE ou de l'AUDIENCE d'une marque SPÉCIFIQUE, et qu'AUCUNE marque parmi les "Projets disponibles" n'est clairement nommée dans la conversation, DEMANDE simplement de quelle marque il s'agit avant de donner un conseil spécifique à cette marque (propose le projet actif en suggestion, sans le présumer). Ne devine jamais. Une fois la marque nommée dans la conversation, garde-la pour la suite — ne redemande pas. NE DEMANDE JAMAIS pour ce qui concerne SA façon de travailler à lui (rythme, énergie, habitudes, préférences d'organisation) : c'est transverse, pas lié à une marque.
 `;
 
 export type CompanionAction =
