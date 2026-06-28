@@ -1355,8 +1355,8 @@ export type InsertLeadSequenceState = typeof leadSequenceState.$inferInsert;
 // et la base de la triangulation par marque (projectId).
 export const aiInvocations = pgTable("ai_invocations", {
   id: serial("id").primaryKey(),
-  userId: varchar("user_id").references(() => users.id),
-  projectId: integer("project_id").references(() => projects.id), // quelle marque
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }), // quelle marque
   taskKind: text("task_kind"),               // TaskKind (strategic_reasoning, fast_generation, …)
   provider: text("provider").notNull(),      // anthropic | openai | naya-local
   model: text("model").notNull(),
