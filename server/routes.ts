@@ -19,6 +19,7 @@ import {
   getMemoryContext,
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
+import { extractToMemory } from "./services/memory/extract";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -2804,6 +2805,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       });
 
       res.json(response);
+
+      // Mémoire (Phase 2, best-effort, fire-and-forget) : extraire de ce tour de conversation.
+      extractToMemory({
+        userId,
+        projectId: activeProjectId ?? null,
+        sourceText: `Utilisateur : ${message}\nNaya : ${(response as any)?.message ?? ""}`,
+        sourceType: "companion",
+      }).catch(() => {});
     } catch (error: any) {
       console.error("Companion chat error:", error?.message || error);
       res.status(500).json({ message: "Erreur du Companion", detail: error?.message });
@@ -2938,6 +2947,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const entry = await storage.createCaptureEntry(captureData);
 
       res.json(entry);
+
+      // Mémoire (Phase 2, best-effort, fire-and-forget) : extraire les faits durables.
+      extractToMemory({
+        userId,
+        projectId: entry.projectId ?? null,
+        sourceText: entry.content,
+        sourceType: "capture",
+        sourceCaptureId: entry.id,
+      }).catch(() => {});
 
       const conditionalPattern = /\b(quand|when|si|if|dès que|once|après|after)\b/i;
       if (conditionalPattern.test(entry.content.trim())) {

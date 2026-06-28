@@ -15,6 +15,13 @@
       "when": 1782642976516,
       "tag": "0001_add_ai_invocations",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782654314622,
+      "tag": "0002_add_memory_entries",
+      "breakpoints": true
     }
   ]
 }

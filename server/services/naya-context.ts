@@ -1,14 +1,20 @@
 import { storage } from "../storage";
 import { computeGoalUrgencyScore, formatGoalsWithUrgency } from "./goal-urgency";
 import { formatBehaviorPatternsForContext } from "./behavior-patterns";
+import { retrieveMemories } from "./memory/retrieve";
 
 /**
  * Build complete Naya context for AI calls.
  * Injected into EVERY AI call via callClaudeWithContext().
+ *
+ * @param focusText  3e param OPTIONNEL (Phase 2) : sujet de la décision en cours.
+ *   Sert à récupérer la mémoire pertinente par similarité. Les appelants qui n'ont
+ *   pas de focus naturel l'omettent (fallback fraîcheur) — aucun site d'appel cassé.
  */
 export async function buildNayaContext(
   userId: string,
-  projectId?: number | null
+  projectId?: number | null,
+  focusText?: string
 ): Promise<string> {
   const sections: string[] = [];
 
@@ -157,8 +163,19 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
       sections.push(formatBehaviorPatternsForContext(bp, todayName));
     }
 
-    // Section 7 : Mémoire business récente
-    if (recentMemories && recentMemories.length > 0) {
+    // Section 7 : Mémoire pertinente PAR FIL (Phase 2 — remplace « les 5 dernières »).
+    // Récupération sémantique × fraîcheur(fil) × salience. Best-effort : en cas d'échec
+    // (ex. pas d'embeddings), on retombe sur la mémoire plate historique.
+    const mem = await retrieveMemories(userId, projectId ?? null, focusText).catch(() => ({ cap: [], founder: [], reception: [] }));
+    const fmtMem = (arr: { content: string }[]) => arr.map((m) => `- ${m.content}`).join('\n');
+    const memSubs: string[] = [];
+    if (mem.cap.length) memSubs.push(`### Cap — ADN de la marque\n${fmtMem(mem.cap)}`);
+    if (mem.founder.length) memSubs.push(`### Fondateur — ta façon de travailler\n${fmtMem(mem.founder)}`);
+    if (mem.reception.length) memSubs.push(`### Réception — audience & marché\n${fmtMem(mem.reception)}`);
+    if (memSubs.length > 0) {
+      sections.push(`## Mémoire pertinente\n${memSubs.join('\n\n')}`);
+    } else if (recentMemories && recentMemories.length > 0) {
+      // Fallback : mémoire plate historique (compat).
       const memText = recentMemories
         .map((m: any) => `- [${m.type || 'mémoire'}] ${m.content}`)
         .join('\n');

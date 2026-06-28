@@ -47,8 +47,9 @@ export async function callClaudeWithContext(options: {
     additionalSystemContext = "",
   } = options;
 
-  // Build complete Naya context
-  const nayaContext = await buildNayaContext(userId, projectId);
+  // Build complete Naya context. Le userMessage sert de focusText (Phase 2) pour
+  // récupérer la mémoire pertinente à la décision en cours.
+  const nayaContext = await buildNayaContext(userId, projectId, userMessage);
 
   // Assemble system prompt with voice + context + optional additional context
   const systemPrompt = `${NAYA_SYSTEM_VOICE}
@@ -128,8 +129,11 @@ export async function streamClaude(options: {
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
   max_tokens?: number;
   res: Response;
+  // Phase 2 — fix du trou Phase 1 : attribution des appels streamés au corpus.
+  userId?: string;
+  projectId?: number | null;
 }): Promise<void> {
-  const { model = CLAUDE_MODELS.smart, messages, max_tokens = 8192, system, res } = options;
+  const { model = CLAUDE_MODELS.smart, messages, max_tokens = 8192, system, res, userId, projectId } = options;
 
   const systemMsg = system ?? messages.find((m) => m.role === "system")?.content;
   const chatMessages = messages
@@ -150,13 +154,15 @@ export async function streamClaude(options: {
         res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
       })
       .on("finalMessage", (msg) => {
-        // Journalisation best-effort du message final (pas de userId dans cette signature).
+        // Journalisation best-effort du message final, AVEC userId/projectId (Phase 2).
         try {
           const output = (msg?.content || [])
             .filter((b: any) => b.type === "text")
             .map((b: any) => b.text)
             .join("");
           logInvocation({
+            userId,
+            projectId,
             taskKind: model === CLAUDE_MODELS.fast ? "fast_generation" : "strategic_reasoning",
             provider: "anthropic",
             model,

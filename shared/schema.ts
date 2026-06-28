@@ -10,6 +10,7 @@ import {
   integer,
   unique,
   doublePrecision,
+  vector,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1372,3 +1373,26 @@ export const aiInvocations = pgTable("ai_invocations", {
 export const insertAiInvocationSchema = createInsertSchema(aiInvocations).omit({ id: true, createdAt: true });
 export type AiInvocation = typeof aiInvocations.$inferSelect;
 export type InsertAiInvocation = typeof aiInvocations.$inferInsert;
+
+// ─── Mémoire à trois fils (Phase 2) ─────────────────────────────────────────────
+// Une table unique discriminée par `fil` (cap / founder / reception), avec embeddings
+// pgvector. La cadence est gérée à la RÉCUPÉRATION (demi-vie de fraîcheur par fil),
+// pas par des tables séparées. Voir DECISIONS-MEMOIRE-IA.md + SCHEMA-TRIANGULATION.md.
+export const memoryEntries = pgTable("memory_entries", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }), // null = mémoire transverse (fil founder global)
+  fil: text("fil").notNull(),               // "cap" | "founder" | "reception"
+  entryType: text("entry_type").notNull(),  // fait | décision | préférence | observation
+  content: text("content").notNull(),
+  embedding: vector("embedding", { dimensions: 1536 }), // text-embedding-3-large réduit à 1536
+  salience: doublePrecision("salience").default(0.5),   // importance 0-1 (importance/10 à l'extraction)
+  sourceCaptureId: integer("source_capture_id").references(() => quickCaptureEntries.id, { onDelete: "set null" }),
+  supersededAt: timestamp("superseded_at"), // bi-temporel : périmé = invalidé, pas supprimé
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  embIdx: index("memory_emb_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
+  filIdx: index("memory_fil_idx").on(t.userId, t.projectId, t.fil),
+}));
+export type MemoryEntry = typeof memoryEntries.$inferSelect;
+export type InsertMemoryEntry = typeof memoryEntries.$inferInsert;

@@ -15,10 +15,10 @@ describe("ai/router", () => {
     expect(route("classification").model).toBe("claude-haiku-4-5-20251001");
   });
 
-  it("route l'embedding vers OpenAI text-embedding-3-small (1536 dim)", () => {
+  it("route l'embedding vers OpenAI text-embedding-3-large (réduit à 1536 dim — Décision 5)", () => {
     const r = route("embedding");
     expect(r.provider).toBe("openai");
-    expect(r.model).toBe("text-embedding-3-small");
+    expect(r.model).toBe("text-embedding-3-large");
   });
 });
 

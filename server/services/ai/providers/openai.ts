@@ -37,9 +37,15 @@ export class OpenAIProvider implements NayaModelProvider {
     };
   }
 
-  // Embeddings — text-embedding-3-small → vecteurs 1536 dim (figé pour pgvector, Phase 2).
+  // Embeddings — text-embedding-3-large RÉDUIT à 1536 dim (matryoshka, Décision 5).
+  // La dimension 1536 est FIGÉE (plafond index pgvector HNSW + cohérence mémoire).
   async embed(input: EmbedInput, model: string): Promise<EmbedResult> {
-    const resp = await this.client.embeddings.create({ model, input: input.texts });
+    const resp = await this.client.embeddings.create({
+      model,
+      input: input.texts,
+      // Réduction de dimension supportée par les modèles text-embedding-3-*.
+      ...(model.startsWith("text-embedding-3") ? { dimensions: 1536 } : {}),
+    });
     return {
       vectors: resp.data.map((d) => d.embedding),
       model,

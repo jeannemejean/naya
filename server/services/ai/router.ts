@@ -18,8 +18,11 @@ export function route(task: TaskKind): { provider: string; model: string } {
     case "extraction":
       return { provider: "anthropic", model: "claude-haiku-4-5-20251001" };
     case "embedding":
-      // DÉCIDÉ : text-embedding-3-small → 1536 dim (fige pgvector côté mémoire Phase 2).
-      return { provider: "openai", model: "text-embedding-3-small" };
+      // DÉCISION 5 (Phase 2) : text-embedding-3-large RÉDUIT à 1536 dim (matryoshka).
+      // Meilleure qualité (surtout en français) ; 1536 reste sous le plafond d'index
+      // pgvector HNSW (2000 dim) et fige la dimension côté mémoire. Réduction appliquée
+      // par le provider OpenAI (dimensions: 1536).
+      return { provider: "openai", model: "text-embedding-3-large" };
   }
 }
 
