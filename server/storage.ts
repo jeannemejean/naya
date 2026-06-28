@@ -123,6 +123,9 @@ import {
   leadSequenceState,
   type LeadSequenceState,
   type InsertLeadSequenceState,
+  aiInvocations,
+  type AiInvocation,
+  type InsertAiInvocation,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -395,6 +398,10 @@ export interface IStorage {
     learnedAdjustmentCount: number | null;
     scheduledDate: string | null;
   }>>;
+
+  // Journal des invocations IA (Phase 1 — corpus propriétaire)
+  createAiInvocation(entry: InsertAiInvocation): Promise<AiInvocation>;
+  getAiInvocations(opts?: { userId?: string; limit?: number }): Promise<AiInvocation[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1090,6 +1097,25 @@ export class DatabaseStorage implements IStorage {
   async createLead(leadData: InsertLead): Promise<Lead> {
     const [newLead] = await db.insert(leads).values(leadData).returning();
     return newLead;
+  }
+
+  // ─── Journal des invocations IA (Phase 1) ───────────────────────────────────
+  async createAiInvocation(entry: InsertAiInvocation): Promise<AiInvocation> {
+    const [row] = await db.insert(aiInvocations).values(entry).returning();
+    return row;
+  }
+
+  async getAiInvocations(opts?: { userId?: string; limit?: number }): Promise<AiInvocation[]> {
+    const limit = opts?.limit ?? 100;
+    if (opts?.userId) {
+      return db.select().from(aiInvocations)
+        .where(eq(aiInvocations.userId, opts.userId))
+        .orderBy(desc(aiInvocations.createdAt))
+        .limit(limit);
+    }
+    return db.select().from(aiInvocations)
+      .orderBy(desc(aiInvocations.createdAt))
+      .limit(limit);
   }
 
   async updateLead(id: number, userId: string, updates: Partial<Lead>): Promise<Lead | null> {

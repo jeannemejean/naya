@@ -1348,3 +1348,27 @@ export type CampaignSequenceStep = typeof campaignSequenceSteps.$inferSelect;
 export type InsertCampaignSequenceStep = typeof campaignSequenceSteps.$inferInsert;
 export type LeadSequenceState = typeof leadSequenceState.$inferSelect;
 export type InsertLeadSequenceState = typeof leadSequenceState.$inferInsert;
+
+// ─── Journal des invocations IA (Phase 1 — socle du corpus propriétaire) ────────
+// Chaque appel IA (contexte d'entrée → sortie, modèle, tokens, latence, coût) est
+// journalisé en best-effort. C'est le minerai du futur jeu d'entraînement (Phase 5)
+// et la base de la triangulation par marque (projectId).
+export const aiInvocations = pgTable("ai_invocations", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").references(() => users.id),
+  projectId: integer("project_id").references(() => projects.id), // quelle marque
+  taskKind: text("task_kind"),               // TaskKind (strategic_reasoning, fast_generation, …)
+  provider: text("provider").notNull(),      // anthropic | openai | naya-local
+  model: text("model").notNull(),
+  systemPrompt: text("system_prompt"),       // contexte injecté (or du futur fine-tuning)
+  userMessage: text("user_message"),
+  output: text("output"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  latencyMs: integer("latency_ms"),
+  costEur: doublePrecision("cost_eur"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export const insertAiInvocationSchema = createInsertSchema(aiInvocations).omit({ id: true, createdAt: true });
+export type AiInvocation = typeof aiInvocations.$inferSelect;
+export type InsertAiInvocation = typeof aiInvocations.$inferInsert;
