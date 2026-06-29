@@ -35,6 +35,7 @@ export async function buildNayaContext(
       recentMemories,
       energyPrefs,
       projectMilestonesList,
+      projectSpecificDna,
     ] = await Promise.all([
       storage.getBrandDna(userId),
       storage.getUser(userId),
@@ -46,6 +47,9 @@ export async function buildNayaContext(
       getRecentMemories(userId, 5),
       storage.getUserPreferences(userId),
       projectId ? storage.getMilestones(projectId, userId).catch(() => []) : [],
+      // Perf : Brand DNA spécifique au projet récupéré DANS le batch parallèle
+      // (au lieu d'un aller-retour séquentiel supplémentaire après).
+      projectId ? storage.getBrandDnaForProject(userId, projectId).catch(() => null) : null,
     ]);
 
     // Load goal progress for all active goals
@@ -58,12 +62,9 @@ export async function buildNayaContext(
       );
     }
 
-    // Project-specific Brand DNA takes priority over global
+    // Project-specific Brand DNA takes priority over global (récupéré en parallèle ci-dessus)
     let brandDna = globalBrandDna;
-    if (projectId) {
-      const projectSpecificDna = await storage.getBrandDnaForProject(userId, projectId).catch(() => null);
-      if (projectSpecificDna) brandDna = projectSpecificDna;
-    }
+    if (projectSpecificDna) brandDna = projectSpecificDna;
 
     // Section 1 : Identité business
     if (brandDna) {
