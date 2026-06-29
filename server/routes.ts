@@ -120,6 +120,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // Helper: fetch project + persona context for AI generation
 async function fetchAIContext(userId: string, projectIdOverride?: number | null): Promise<{
   projectContext: {
+    projectId?: number;
     projectType?: string;
     projectName?: string;
     monetizationIntent?: string;
@@ -150,6 +151,8 @@ async function fetchAIContext(userId: string, projectIdOverride?: number | null)
         const topGoal = goals[0];
         const stratProfile = await storage.getProjectStrategyProfile(projectId);
         projectContext = {
+          projectId: projectId ?? undefined, // CRITIQUE : sert à buildNayaContext(userId, projectId) →
+                     // contexte DU projet, pas du principal. Sans lui, tous héritaient d'Agence JMD.
           projectType: project.type,
           projectName: project.name,
           monetizationIntent: project.monetizationIntent,
@@ -1501,6 +1504,35 @@ Write in clear, direct language. Be specific — reference actual offers, audien
             projectIntent: ap.intent || undefined,
             operatingMode: "explore",
           });
+
+          // Brand DNA PROPRE au projet — un projet additionnel est souvent un AUTRE business
+          // (ex. un blog de cuisine ≠ une agence de com mode). On NE doit PAS hériter de
+          // l'identité du projet principal. On renseigne les champs connus et on VIDE
+          // explicitement les champs substantiels (audience, douleur, positionnement…) pour
+          // qu'ils ne soient pas recopiés depuis le DNA global. L'utilisateur les affine
+          // ensuite par projet (page Stratégie / réglages).
+          await storage.upsertProjectBrandDnaClean(userId, apProject.id, {
+            businessName: ap.name,
+            website: null, linkedinProfile: null, instagramHandle: null,
+            businessType: ap.type || 'Independent Professional',
+            businessModel: '',
+            revenueUrgency: ap.intent === 'revenue' ? 'growing-steadily' : 'exploratory',
+            targetAudience: '',
+            corePainPoint: '',
+            audienceAspiration: '',
+            authorityLevel: '',
+            communicationStyle: '',
+            uniquePositioning: ap.description || ap.name,
+            platformPriority: '',
+            currentPresence: '',
+            primaryGoal: ap.goalTitle || '',
+            contentBandwidth: '',
+            successDefinition: '',
+            currentChallenges: null, pastSuccess: null, inspiration: null,
+            offers: null, priceRange: null, clientJourney: null,
+            brandVoiceKeywords: [], brandVoiceAntiKeywords: [],
+            editorialTerritory: null, competitorLandscape: null,
+          } as any).catch((e: any) => console.error(`Project DNA for "${ap.name}" failed:`, e?.message));
         } catch (apErr) {
           console.error(`Failed to create additional project "${ap.name}":`, apErr);
         }

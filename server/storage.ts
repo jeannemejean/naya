@@ -145,6 +145,7 @@ export interface IStorage {
   getBrandDnaForProject(userId: string, projectId: number): Promise<BrandDna | undefined>;
   upsertBrandDna(brandDnaData: InsertBrandDna): Promise<BrandDna>;
   upsertBrandDnaForProject(userId: string, projectId: number, brandDnaData: Partial<InsertBrandDna>): Promise<BrandDna>;
+  upsertProjectBrandDnaClean(userId: string, projectId: number, brandDnaData: Partial<InsertBrandDna>): Promise<BrandDna>;
   
   // Project operations
   getProjects(userId: string, limit?: number, offset?: number): Promise<Project[]>;
@@ -481,6 +482,25 @@ export class DatabaseStorage implements IStorage {
       : {};
     const [inserted] = await db.insert(brandDna)
       .values({ ...baseData, ...brandDnaData, userId, projectId })
+      .returning();
+    return inserted;
+  }
+
+  // DNA propre à un projet, SANS hériter du DNA global. À utiliser quand le projet est un
+  // AUTRE business (ex. blog de cuisine ≠ agence mode) : aucun champ (y compris
+  // nayaIntelligenceSummary) ne doit être recopié depuis le projet principal.
+  async upsertProjectBrandDnaClean(userId: string, projectId: number, brandDnaData: Partial<InsertBrandDna>): Promise<BrandDna> {
+    const [existing] = await db.select({ id: brandDna.id }).from(brandDna)
+      .where(and(eq(brandDna.userId, userId), eq(brandDna.projectId, projectId)));
+    if (existing) {
+      const [updated] = await db.update(brandDna)
+        .set({ ...brandDnaData, nayaIntelligenceSummary: null, lastStrategyRefreshAt: null, updatedAt: new Date() } as any)
+        .where(eq(brandDna.id, existing.id))
+        .returning();
+      return updated;
+    }
+    const [inserted] = await db.insert(brandDna)
+      .values({ ...brandDnaData, userId, projectId } as any)
       .returning();
     return inserted;
   }
