@@ -63,10 +63,12 @@ export class TaskPreGenerationService {
           category: task.category,
           priority: task.priority,
           dueDate: new Date(),
+          // Donne une date → createTask auto-planifie sur la grille (jamais "non planifié").
+          scheduledDate: new Date().toISOString().slice(0, 10),
           completed: false
         });
       }
-      
+
       console.log(`✅ Generated ${welcomeTasks.length} strategic tasks for user`);
       
     } catch (error) {
@@ -193,6 +195,8 @@ export class TaskPreGenerationService {
         category: task.category,
         priority: task.priority,
         dueDate: new Date(),
+        // Donne une date → createTask auto-planifie sur la grille (jamais "non planifié").
+        scheduledDate: new Date().toISOString().slice(0, 10),
         completed: false
       });
     }
