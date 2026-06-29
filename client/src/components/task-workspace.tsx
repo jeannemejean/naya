@@ -34,6 +34,23 @@ function formatRelative(date: string | Date) {
  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// Choisit le module le plus pertinent selon la nature de la tâche (type / catégorie /
+// énergie / titre). L'utilisateur peut toujours changer manuellement ensuite.
+function inferWorkspaceModule(task: Task | null): string {
+  if (!task) return "strategy";
+  const hay = `${(task as any).type || ""} ${(task as any).category || ""} ${(task as any).taskEnergyType || ""} ${task.title || ""}`.toLowerCase();
+  if (/(content|writ|copy|post|caption|r[ée]dig|[ée]cri|draft|messaging|outreach|social|engagement|prospect|email|message|newsletter|script|l[ée]gende|bio)/.test(hay)) return "writing";
+  if (/(reflect|r[ée]flex|bilan|review|revue|r[ée]tro|journal|d[ée]brief)/.test(hay)) return "reflection";
+  if (/(research|recherche|analy|[ée]tude|study|explore|veille|benchmark|sourc|identifier|lister)/.test(hay)) return "research";
+  if (/(plan|setup|organi[sz]|schedule|logistic|admin|pr[ée]par|calendr|roadmap|process)/.test(hay)) return "planning";
+  if (/(strateg|strat[ée]g|position|vision|offre|offer|brand|adn|d[ée]cision|decision|pricing|prix|pilier)/.test(hay)) return "strategy";
+  const e = ((task as any).taskEnergyType || "").toLowerCase();
+  if (e === "creative" || e === "social") return "writing";
+  if (e === "admin" || e === "logistics") return "planning";
+  if (e === "deep_work") return "strategy";
+  return "strategy";
+}
+
 export default function TaskWorkspace({ task, project, open, onClose, onDeleted }: TaskWorkspaceProps) {
  const { t } = useTranslation();
  const queryClient = useQueryClient();
@@ -92,6 +109,8 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  setShowReschedule(false);
  setRescheduleDate(task?.scheduledDate || "");
  setRescheduleTime(task?.scheduledTime || "");
+ // Auto-sélection du module selon la nature de la tâche.
+ if (task) setActiveType(inferWorkspaceModule(task));
  }, [task?.id]);
 
  const WORKSPACE_TYPES = [
@@ -321,10 +340,11 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  <button
  key={wt.id}
  onClick={() => setActiveType(wt.id)}
+ style={activeType === wt.id ? { backgroundColor: '#2B2D1C', color: '#F7F4EC' } : undefined}
  className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-all ${
  activeType === wt.id
- ? 'bg-naya-olive text-white '
- : 'bg-naya-olive-10 text-naya-olive-55 hover:bg-naya-olive-18 :bg-naya-olive-70'
+ ? 'font-medium'
+ : 'bg-naya-olive-10 text-naya-olive-55 hover:bg-naya-olive-18'
  }`}
  >
  <span>{wt.icon}</span>
