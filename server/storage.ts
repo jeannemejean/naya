@@ -107,6 +107,7 @@ import {
   businessMemory,
   type BusinessMemory,
   type InsertBusinessMemory,
+  memoryEntries,
   googleCalendarTokens,
   type GoogleCalendarToken,
   type InsertGoogleCalendarToken,
@@ -1518,81 +1519,90 @@ export class DatabaseStorage implements IStorage {
     console.log(`[reset] Starting full onboarding reset for user ${userId}`);
 
     await db.transaction(async (tx) => {
-      // ── Step 1: Null FK references in records we are KEEPING ─────────────────
-      // quickCaptureEntries.convertedToTaskId → tasks.id  (must be null before deleting tasks)
-      // quickCaptureEntries.projectId → projects.id       (must be null before deleting projects)
-      console.log(`[reset] Step 1: clearing quick capture references`);
+      // Ordre FK-safe : on supprime TOUJOURS les enfants avant les parents.
+      // (Beaucoup de FK sont en ON DELETE NO ACTION → une seule table enfant oubliée
+      //  faisait échouer tout le reset. Liste dérivée du graphe de FK réel.)
+
+      // IDs nécessaires pour les tables sans user_id.
+      const projRows = await tx.select({ id: projects.id }).from(projects).where(eq(projects.userId, userId));
+      const projectIds = projRows.map((p) => p.id);
+      const mileRows = await tx.select({ id: projectMilestones.id }).from(projectMilestones).where(eq(projectMilestones.userId, userId));
+      const milestoneIds = mileRows.map((m) => m.id);
+      const listRows = await tx.select({ id: taskLists.id }).from(taskLists).where(eq(taskLists.userId, userId));
+      const listIds = listRows.map((l) => l.id);
+      const personaRows = await tx.select({ id: targetPersonas.id }).from(targetPersonas).where(eq(targetPersonas.userId, userId));
+      const personaIds = personaRows.map((p) => p.id);
+
+      // ── Phase 1 : libérer les FK des enregistrements qu'on GARDE ──────────────
+      console.log(`[reset] phase 1: clearing kept references (captures, preferences)`);
       await tx.update(quickCaptureEntries)
         .set({ convertedToTaskId: null, projectId: null })
         .where(eq(quickCaptureEntries.userId, userId));
-
-      // ── Step 2: Null activeProjectId BEFORE deleting projects ─────────────────
-      // user_preferences.activeProjectId → projects.id (FK must be released first)
-      console.log(`[reset] Step 2: clearing active project reference in preferences`);
       await tx.update(userPreferences)
         .set({ activeProjectId: null })
         .where(eq(userPreferences.userId, userId));
 
-      // ── Step 3: Delete task schedule events before tasks ──────────────────────
-      // taskScheduleEvents.taskId → tasks.id (NOT NULL FK)
-      console.log(`[reset] Step 3: deleting task schedule events`);
-      await tx.delete(taskScheduleEvents).where(eq(taskScheduleEvents.userId, userId));
-
-      console.log(`[reset] Step 4: deleting tasks`);
+      // ── Phase 2 : enfants de TASKS, puis tasks ────────────────────────────────
+      console.log(`[reset] phase 2: task children + tasks`);
+      await tx.delete(companionPendingMessages).where(eq(companionPendingMessages.userId, userId)); // related_task_id → tasks
+      await tx.delete(taskWorkspaceEntries).where(eq(taskWorkspaceEntries.userId, userId));         // task_id/project_id
+      await tx.delete(taskFeedback).where(eq(taskFeedback.userId, userId));                         // project_id
+      await tx.delete(taskScheduleEvents).where(eq(taskScheduleEvents.userId, userId));             // task_id (NOT NULL)
+      // task_dependencies → tasks en CASCADE (auto)
       await tx.delete(tasks).where(eq(tasks.userId, userId));
 
-      // ── Step 4: Delete persona_strategy_mapping before target_personas ────────
-      // personaStrategyMapping.targetPersonaId → targetPersonas.id (FK)
-      // personaStrategyMapping has no userId column, so join via targetPersonas
-      console.log(`[reset] Step 5: deleting persona strategy mappings`);
-      const userPersonaIds = await tx
-        .select({ id: targetPersonas.id })
-        .from(targetPersonas)
-        .where(eq(targetPersonas.userId, userId));
-      if (userPersonaIds.length > 0) {
-        const ids = userPersonaIds.map((p) => p.id);
-        await tx.delete(personaStrategyMapping)
-          .where(inArray(personaStrategyMapping.targetPersonaId, ids));
-      }
-
-      // ── Step 5: Delete persona analysis results before target personas ────────
-      // personaAnalysisResults.userPersonaId → userPersonas.id (we keep userPersonas)
-      console.log(`[reset] Step 6: deleting persona analysis results`);
-      await tx.delete(personaAnalysisResults).where(eq(personaAnalysisResults.userId, userId));
-
-      console.log(`[reset] Step 7: deleting target personas`);
-      await tx.delete(targetPersonas).where(eq(targetPersonas.userId, userId));
-
-      // ── Step 6: Delete outreach data ──────────────────────────────────────────
-      // outreachMessages.leadId → leads.id (NOT NULL FK — must delete messages before leads)
-      console.log(`[reset] Step 8: deleting outreach messages`);
-      await tx.delete(outreachMessages).where(eq(outreachMessages.userId, userId));
-
-      console.log(`[reset] Step 9: deleting leads`);
+      // ── Phase 3 : enfants de LEADS, puis leads ────────────────────────────────
+      console.log(`[reset] phase 3: lead children + leads`);
+      await tx.delete(leadSequenceState).where(eq(leadSequenceState.userId, userId)); // lead_id (NOT NULL)
+      await tx.delete(outreachMessages).where(eq(outreachMessages.userId, userId));   // lead_id (NOT NULL)
       await tx.delete(leads).where(eq(leads.userId, userId));
 
-      console.log(`[reset] Step 10: deleting content`);
-      await tx.delete(content).where(eq(content.userId, userId));
+      // ── Phase 4 : content, puis campagnes (content/tasks les référencent) ─────
+      console.log(`[reset] phase 4: content + campaigns`);
+      await tx.delete(content).where(eq(content.userId, userId));                 // campaign_id, project_id
+      await tx.delete(campaigns).where(eq(campaigns.userId, userId));             // project_id
+      await tx.delete(prospectionCampaigns).where(eq(prospectionCampaigns.userId, userId)); // project_id
 
-      // ── Step 7: Delete project-scoped child records, then projects ─────────────
-      // projectGoals.projectId → projects.id (NOT NULL FK)
-      // projectStrategyProfiles.projectId → projects.id (NOT NULL FK)
-      console.log(`[reset] Step 11: deleting project goals and strategy profiles`);
-      const userProjects = await tx.select({ id: projects.id }).from(projects).where(eq(projects.userId, userId));
-      if (userProjects.length > 0) {
-        const projectIds = userProjects.map((p) => p.id);
+      // ── Phase 5 : jalons (conditions avant milestones) + triggers ─────────────
+      console.log(`[reset] phase 5: milestones`);
+      if (milestoneIds.length > 0) {
+        await tx.delete(milestoneConditions).where(inArray(milestoneConditions.milestoneId, milestoneIds));
+      }
+      await tx.delete(projectMilestones).where(eq(projectMilestones.userId, userId)); // project_id
+      await tx.delete(milestoneTriggers).where(eq(milestoneTriggers.userId, userId)); // project_id
+
+      // ── Phase 6 : task lists (items avant lists) ──────────────────────────────
+      console.log(`[reset] phase 6: task lists`);
+      if (listIds.length > 0) {
+        await tx.delete(taskListItems).where(inArray(taskListItems.listId, listIds));
+      }
+      await tx.delete(taskLists).where(eq(taskLists.userId, userId)); // project_id
+
+      // ── Phase 7 : personas ────────────────────────────────────────────────────
+      console.log(`[reset] phase 7: personas`);
+      if (personaIds.length > 0) {
+        await tx.delete(personaStrategyMapping).where(inArray(personaStrategyMapping.targetPersonaId, personaIds));
+      }
+      await tx.delete(personaAnalysisResults).where(eq(personaAnalysisResults.userId, userId));
+      await tx.delete(targetPersonas).where(eq(targetPersonas.userId, userId)); // project_id
+
+      // ── Phase 8 : autres enfants de PROJECTS ──────────────────────────────────
+      console.log(`[reset] phase 8: remaining project children`);
+      if (projectIds.length > 0) {
         await tx.delete(projectGoals).where(inArray(projectGoals.projectId, projectIds));
         await tx.delete(projectStrategyProfiles).where(inArray(projectStrategyProfiles.projectId, projectIds));
       }
+      await tx.delete(clients).where(eq(clients.userId, userId));                 // parent_project_id
+      await tx.delete(strategyReports).where(eq(strategyReports.userId, userId)); // project_id
+      await tx.delete(brandDna).where(eq(brandDna.userId, userId));               // project_id (AVANT projects!)
+      await tx.delete(memoryEntries).where(eq(memoryEntries.userId, userId));     // mémoire Naya (reset all data)
 
-      console.log(`[reset] Step 12: deleting projects`);
+      // ── Phase 9 : projects ────────────────────────────────────────────────────
+      console.log(`[reset] phase 9: projects`);
       await tx.delete(projects).where(eq(projects.userId, userId));
 
-      // ── Step 8: Delete brand DNA and operating profile ────────────────────────
-      console.log(`[reset] Step 13: deleting brand DNA`);
-      await tx.delete(brandDna).where(eq(brandDna.userId, userId));
-
-      console.log(`[reset] Step 14: deleting user operating profile`);
+      // ── Phase 10 : profil opératoire ──────────────────────────────────────────
+      console.log(`[reset] phase 10: operating profile`);
       await tx.delete(userOperatingProfiles).where(eq(userOperatingProfiles.userId, userId));
     });
 
