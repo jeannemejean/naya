@@ -435,9 +435,33 @@ export default function TodaysTasks() {
  : [];
 
  const completedTasks = realTasks.filter((t: Task) => t.completed);
- const pendingTasks = realTasks.filter((t: Task) => !t.completed);
- const scheduledTasks = pendingTasks.filter((t: Task) => t.suggestedStartTime);
- const unscheduledTasks = pendingTasks.filter((t: Task) => !t.suggestedStartTime);
+
+ // Tri par horloge : la tâche EN COURS (selon l'heure actuelle) ou la PROCHAINE remonte en
+ // haut ; puis les suivantes par ordre chronologique ; les tâches en retard en bas (marquées) ;
+ // les sans-heure tout en bas.
+ const nowMin = (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
+ const clockInfo = (task: Task): { bucket: number; start: number; state: 'now' | 'upcoming' | 'late' | 'none' } => {
+   const st = (task as any).scheduledTime as string | undefined | null;
+   if (!st || !/^\d{2}:\d{2}$/.test(st)) return { bucket: 3, start: 99999, state: 'none' };
+   const [h, m] = st.split(':').map(Number);
+   const start = h * 60 + m;
+   const et = (task as any).scheduledEndTime as string | undefined | null;
+   let end = start + (task.estimatedDuration || 30);
+   if (et && /^\d{2}:\d{2}$/.test(et)) { const [eh, em] = et.split(':').map(Number); end = eh * 60 + em; }
+   if (start <= nowMin && nowMin < end) return { bucket: 0, start, state: 'now' };
+   if (start >= nowMin) return { bucket: 1, start, state: 'upcoming' };
+   return { bucket: 2, start, state: 'late' };
+ };
+ const pendingTasks = realTasks
+   .filter((t: Task) => !t.completed)
+   .slice()
+   .sort((a: Task, b: Task) => {
+     const ca = clockInfo(a), cb = clockInfo(b);
+     if (ca.bucket !== cb.bucket) return ca.bucket - cb.bucket;
+     return ca.start - cb.start;
+   });
+ const scheduledTasks = pendingTasks.filter((t: Task) => (t as any).scheduledTime);
+ const unscheduledTasks = pendingTasks.filter((t: Task) => !(t as any).scheduledTime);
 
  function getTaskPosition(task: Task): { top: number; height: number } {
  if (!task.suggestedStartTime) return { top: 0, height: 60 };
@@ -612,10 +636,8 @@ export default function TodaysTasks() {
  grouped.push({ group: null, tasks: [task] });
  }
  }
- const ordered = [
- ...grouped.filter(g => g.group !== null),
- ...grouped.filter(g => g.group === null),
- ];
+ // On garde l'ordre chronologique (tâche en cours / prochaine en haut).
+ const ordered = grouped;
 
  return ordered.map(({ group, tasks: groupTasks }, gIdx) => {
  const groupTotalMin = group
@@ -719,6 +741,21 @@ export default function TodaysTasks() {
  </p>
  )}
  <div className="flex items-center gap-2 mt-2 flex-wrap">
+ {(() => {
+ const ci = clockInfo(task);
+ if (ci.state === 'none') return null;
+ const st = (task as any).scheduledTime as string;
+ const cls = ci.state === 'now' ? 'bg-primary text-white'
+ : ci.state === 'late' ? 'bg-naya-mauve/15 text-naya-mauve'
+ : 'bg-naya-olive-10 text-naya-olive-70';
+ const label = ci.state === 'now' ? ' · maintenant' : ci.state === 'late' ? ' · en retard' : '';
+ return (
+ <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-0.5 ${cls}`}>
+ <Clock className="h-2.5 w-2.5" />
+ {st}{label}
+ </span>
+ );
+ })()}
  {energyBadge && (() => {
  const EnergyIcon = energyBadge.icon;
  return (
