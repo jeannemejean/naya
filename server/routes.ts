@@ -4356,21 +4356,30 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const allPendingTasks: PendingTask[] = [];
       const allWorkflowSugs: any[] = [];
 
-      for (const proj of projectsToProcess) {
+      // PERF : on génère les projets EN PARALLÈLE (les appels IA sont le coût dominant et
+      // sont indépendants — le placement vient après, séquentiellement). On collecte des
+      // résultats par projet, puis on les fusionne DANS L'ORDRE (déterminisme préservé).
+      type ProjResult = {
+        skipped?: { projectId: number | null; projectName: string; reason: string };
+        created?: any[];
+        pending: PendingTask[];
+        workflowSugs: any[];
+        focus?: string; reasoning?: string; bottleneck?: string; suggestedNextMove?: string;
+      };
+
+      const projResults: ProjResult[] = await Promise.all(projectsToProcess.map(async (proj): Promise<ProjResult> => {
         const projectBatchKey = proj.id?.toString() || 'general';
 
         const existingProjectTasks = (existingTasksByProject.get(projectBatchKey) || [])
           .filter((t: any) => !t.completed && t.type !== 'milestone' && t.source !== 'milestone');
         if (existingProjectTasks.length >= WEEKLY_PROJECT_CAP) {
-          skippedProjects.push({ projectId: proj.id, projectName: proj.name, reason: 'Already has tasks this week' });
-          allCreatedTasks.push(...existingProjectTasks);
-          continue;
+          return { skipped: { projectId: proj.id, projectName: proj.name, reason: 'Already has tasks this week' }, created: existingProjectTasks, pending: [], workflowSugs: [] };
         }
 
         // Get project-specific Brand DNA if available, otherwise use global
         let projectBrandDna = brandDna;
         if (proj.id !== null) {
-          const projectSpecificDna = await storage.getBrandDnaForProject(userId, proj.id);
+          const projectSpecificDna = await storage.getBrandDnaForProject(userId, proj.id).catch(() => null);
           if (projectSpecificDna) {
             projectBrandDna = projectSpecificDna;
           }
@@ -4394,24 +4403,20 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           );
         } catch (projError: any) {
           console.error(`Task generation failed for project ${proj.id} (${proj.name}):`, projError.message);
-          skippedProjects.push({ projectId: proj.id, projectName: proj.name, reason: `AI error — will retry next time` });
-          continue;
+          return { skipped: { projectId: proj.id, projectName: proj.name, reason: `AI error — will retry next time` }, pending: [], workflowSugs: [] };
         }
 
         if (!aiResponse?.tasks?.length) {
-          skippedProjects.push({ projectId: proj.id, projectName: proj.name, reason: 'AI returned no tasks for this project' });
-          continue;
+          return { skipped: { projectId: proj.id, projectName: proj.name, reason: 'AI returned no tasks for this project' }, pending: [], workflowSugs: [] };
         }
 
         const rawTasksToCreate = (aiResponse.tasks || []).slice(0, perProjectCap);
 
         const aiResponseAny = aiResponse as any;
-        const workflowSugs = aiResponseAny.workflowSuggestions || [];
-        const namespacedSugs = workflowSugs.map((s: any) => ({
+        const namespacedSugs = (aiResponseAny.workflowSuggestions || []).map((s: any) => ({
           ...s,
           label: `${projectBatchKey}::${s.label}`,
         }));
-        allWorkflowSugs.push(...namespacedSugs);
         for (const sug of namespacedSugs) {
           for (const idx of (sug.taskIndexes || [])) {
             if (rawTasksToCreate[idx]) {
@@ -4420,22 +4425,35 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           }
         }
 
-        for (let i = 0; i < rawTasksToCreate.length; i++) {
-          const taskData = normaliseTaskData(rawTasksToCreate[i]);
-          allPendingTasks.push({
-            taskData,
-            scheduledDate: todayStr,
-            projId: proj.id,
-            aiResponseAny,
-            taskIndex: i,
-            projectBatchKey,
-          });
-        }
+        const pending: PendingTask[] = rawTasksToCreate.map((rt: any, i: number) => ({
+          taskData: normaliseTaskData(rt),
+          scheduledDate: todayStr,
+          projId: proj.id,
+          aiResponseAny,
+          taskIndex: i,
+          projectBatchKey,
+        }));
 
-        if (aiResponse.focus) lastFocus = aiResponse.focus;
-        if (aiResponse.reasoning) lastReasoning = aiResponse.reasoning;
-        if ((aiResponse as any).bottleneck) lastBottleneck = (aiResponse as any).bottleneck;
-        if ((aiResponse as any).suggestedNextMove) lastSuggestedNextMove = (aiResponse as any).suggestedNextMove;
+        return {
+          pending,
+          workflowSugs: namespacedSugs,
+          focus: aiResponse.focus,
+          reasoning: aiResponse.reasoning,
+          bottleneck: aiResponseAny.bottleneck,
+          suggestedNextMove: aiResponseAny.suggestedNextMove,
+        };
+      }));
+
+      // Fusion ordonnée (le dernier projet non vide gagne pour focus/reasoning/etc.)
+      for (const r of projResults) {
+        if (r.skipped) skippedProjects.push(r.skipped);
+        if (r.created?.length) allCreatedTasks.push(...r.created);
+        if (r.pending.length) allPendingTasks.push(...r.pending);
+        if (r.workflowSugs.length) allWorkflowSugs.push(...r.workflowSugs);
+        if (r.focus) lastFocus = r.focus;
+        if (r.reasoning) lastReasoning = r.reasoning;
+        if (r.bottleneck) lastBottleneck = r.bottleneck;
+        if (r.suggestedNextMove) lastSuggestedNextMove = r.suggestedNextMove;
       }
 
       // ── Milestone trigger check — inject unlocked tasks into pending ──────

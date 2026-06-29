@@ -514,13 +514,36 @@ export default function TimeGrid({
       }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+    // Mise à jour OPTIMISTE : la tâche bouge instantanément dans la grille (plus de
+    // "retour à la place puis réapparition" — on n'attend plus l'aller-retour serveur).
+    onMutate: async (payload) => {
+      await queryClient.cancelQueries({ queryKey: rangeQueryKey });
+      const previous = queryClient.getQueryData<Task[]>(rangeQueryKey);
+      if (previous) {
+        queryClient.setQueryData<Task[]>(rangeQueryKey, previous.map((t) =>
+          t.id === payload.taskId
+            ? {
+                ...t,
+                ...(payload.scheduledDate !== undefined ? { scheduledDate: payload.scheduledDate } : {}),
+                ...(payload.scheduledTime !== undefined ? { scheduledTime: payload.scheduledTime } : {}),
+                ...(payload.scheduledEndTime !== undefined ? { scheduledEndTime: payload.scheduledEndTime } : {}),
+                ...(payload.estimatedDuration !== undefined ? { estimatedDuration: payload.estimatedDuration } : {}),
+              }
+            : t
+        ));
+      }
+      return { previous };
     },
-    onError: (error: any) => {
+    onError: (error: any, _payload, context: any) => {
+      // Rollback : on remet l'état précédent si le serveur refuse.
+      if (context?.previous) queryClient.setQueryData(rangeQueryKey, context.previous);
       const msg = error?.message || "Erreur lors de la mise à jour.";
       toast({ title: "Erreur", description: msg, variant: "destructive" });
+    },
+    onSettled: () => {
+      // Réconciliation avec le serveur (silencieuse — l'optimiste correspond déjà).
+      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
     },
   });
 

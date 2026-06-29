@@ -18,6 +18,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
 import { useTranslation } from "react-i18next";
 import TaskWorkspace from "@/components/task-workspace";
+import GeneratingOverlay from "@/components/GeneratingOverlay";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
 import type { Project } from "@shared/schema";
 
@@ -468,6 +469,7 @@ export default function TodaysTasks() {
 
  return (
  <div className="bg-white rounded-lg shadow-card border border-border overflow-hidden">
+ <GeneratingOverlay open={isGenerating} />
  <div className="p-5 border-b border-border">
  <div className="flex items-center justify-between mb-3">
  <div className="flex items-center gap-2.5">
@@ -481,10 +483,10 @@ export default function TodaysTasks() {
  onClick={() => generateTasksMutation.mutate()}
  disabled={isGenerating}
  title="Générer des tâches avec Naya"
- className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-all disabled:opacity-50"
+ className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary shadow-sm hover:brightness-110 hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-wait"
  >
- {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
- Générer
+ {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+ {isGenerating ? 'Génération…' : 'Générer mon plan'}
  </button>
  <div className="view-toggle">
  <button
