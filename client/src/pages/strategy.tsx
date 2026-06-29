@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -174,6 +174,21 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  },
  onError: () => toast({ title: t('strategy.failedToGenerate'), variant: "destructive" }),
  });
+
+ // Auto-génération : Naya produit la stratégie de la semaine d'elle-même si elle est
+ // absente (plus de geste manuel obligatoire). Une seule tentative par (projet, semaine).
+ const autoGenAttempted = useRef<Set<string>>(new Set());
+ useEffect(() => {
+ if (!selectedProjectId) return;
+ if (existingReport === undefined) return; // requête pas encore résolue
+ if (existingReport?.focus) return; // une stratégie existe déjà
+ const key = `${selectedProjectId}:${currentWeek}`;
+ if (autoGenAttempted.current.has(key)) return; // déjà tenté (évite la boucle)
+ if (generateMutation.isPending) return;
+ autoGenAttempted.current.add(key);
+ generateMutation.mutate();
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [existingReport, selectedProjectId, currentWeek]);
 
  const addToPlanner = async (recommendation: string) => {
  try {
@@ -406,6 +421,17 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  </CardHeader>
  <CardContent>
  {!weeklyStrategy ? (
+ generateMutation.isPending ? (
+ /* Auto-génération en cours — Naya prépare la semaine seule */
+ <div className="text-center py-8 space-y-3">
+ <Loader2 className="h-8 w-8 text-primary animate-spin mx-auto" />
+ <p className="text-sm text-naya-olive-70">{t('strategy.nayaThinking')}</p>
+ <p className="text-xs text-naya-olive-35">
+ {t('strategy.noStrategyYet', { name: selectedProject?.name || 'this project' })}
+ </p>
+ </div>
+ ) : (
+ /* Rafraîchir / préciser (optionnel) — fallback si l'auto-génération a échoué */
  <div className="space-y-4">
  <div className="text-center py-4">
  <Compass className="h-10 w-10 text-naya-olive-18 mx-auto mb-3" />
@@ -427,16 +453,10 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  disabled={generateMutation.isPending || !selectedProjectId}
  className="w-full"
  >
- {generateMutation.isPending ? (
- <span className="flex items-center gap-2">
- <Loader2 className="h-4 w-4 animate-spin" />
- {t('strategy.nayaThinking')}
- </span>
- ) : (
- t('strategy.generateMyWeek')
- )}
+ {t('strategy.generateMyWeek')}
  </Button>
  </div>
+ )
  ) : (
  <div className="space-y-4">
  {/* Sub-card A: Weekly Focus */}

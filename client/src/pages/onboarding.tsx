@@ -142,7 +142,9 @@ function BoardGeneratingScreen() {
  ];
 
  useEffect(() => {
- const stepDuration = 900;
+ // Plus lent : la génération réelle (tous projets) prend ~10-30s ; l'animation
+ // se termine sur un spinner à 99% qui signale « en cours » jusqu'à la redirection.
+ const stepDuration = 3000;
  const totalDuration = stepDuration * 3;
  let start: number | null = null;
  const animate = (timestamp: number) => {
@@ -306,7 +308,8 @@ function KeywordChipInput({
 // ─── Main Onboarding Component ────────────────────────────────────────────────
 
 export default function Onboarding() {
- const { t } = useTranslation();
+ const { t, i18n } = useTranslation();
+ const toggleLanguage = () => i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
  const { toast } = useToast();
  const [step, setStep] = useState(1);
  const [boardGenerating, setBoardGenerating] = useState(false);
@@ -357,14 +360,22 @@ export default function Onboarding() {
  return res.json();
  },
  onMutate: () => setBoardGenerating(true),
- onSuccess: () => {
+ onSuccess: async () => {
  localStorage.removeItem('naya_active_project_id');
  // Fire-and-forget intelligence generation if enough core brand fields were filled
  const hasCoreBrandFields = !!(primary.businessType && primary.offers && primary.uniquePositioning && primary.platformPriority);
  if (hasCoreBrandFields) {
  apiRequest("POST", "/api/brand-dna/refresh-intelligence").catch(() => {});
  }
- setTimeout(() => { window.location.href = "/"; }, 2800);
+ // Génère la première semaine pour TOUS les projets (projectId: null → le serveur boucle
+ // sur tous les projets). Best-effort, plafonné à 35s pour ne pas bloquer la redirection.
+ const now = new Date();
+ const clientTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+ const clientToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+ const gen = apiRequest("POST", "/api/tasks/generate-daily", { projectId: null, clientToday, clientTime }).catch(() => {});
+ const timeout = new Promise((r) => setTimeout(r, 35000));
+ await Promise.race([gen, timeout]);
+ window.location.href = "/";
  },
  onError: () => {
  setBoardGenerating(false);
@@ -415,6 +426,17 @@ export default function Onboarding() {
  return (
  <div className="min-h-screen bg-naya-olive-06 flex items-center justify-center p-4">
  <div className="w-full max-w-2xl">
+ {/* Sélecteur de langue — visible à toutes les étapes (y compris l'accueil) */}
+ <div className="flex justify-end mb-3">
+ <button
+ type="button"
+ onClick={toggleLanguage}
+ className="text-xs px-3 py-1.5 rounded-full bg-naya-olive-10 text-naya-olive-55 hover:bg-naya-olive-18 transition-colors"
+ aria-label="Switch language"
+ >
+ {i18n.language === "fr" ? "EN" : "FR"}
+ </button>
+ </div>
  {step > 1 && (
  <>
  {/* Header */}

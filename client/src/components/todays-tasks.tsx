@@ -380,9 +380,8 @@ export default function TodaysTasks() {
  const clientTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
  const d = now;
  const clientToday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
- const body = activeProjectId
- ? { projectId: activeProjectId, clientToday, clientTime }
- : { clientToday, clientTime };
+ // projectId: null → le serveur génère pour TOUS les projets (pas seulement l'actif).
+ const body = { projectId: null, clientToday, clientTime };
  const res = await apiRequest("POST", "/api/tasks/generate-daily", body);
  return res.json();
  },
