@@ -19,6 +19,11 @@ export async function buildNayaContext(
   const sections: string[] = [];
 
   try {
+    // Perf : lance la récupération mémoire EN PARALLÈLE des autres requêtes (au lieu de
+    // l'attendre séquentiellement en Section 7). On l'await seulement au moment du rendu.
+    const memPromise = retrieveMemories(userId, projectId ?? null, focusText)
+      .catch(() => ({ cap: [], founder: [], reception: [] }));
+
     const [
       globalBrandDna,
       user,
@@ -166,7 +171,7 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
     // Section 7 : Mémoire pertinente PAR FIL (Phase 2 — remplace « les 5 dernières »).
     // Récupération sémantique × fraîcheur(fil) × salience. Best-effort : en cas d'échec
     // (ex. pas d'embeddings), on retombe sur la mémoire plate historique.
-    const mem = await retrieveMemories(userId, projectId ?? null, focusText).catch(() => ({ cap: [], founder: [], reception: [] }));
+    const mem = await memPromise;
     const fmtMem = (arr: { content: string }[]) => arr.map((m) => `- ${m.content}`).join('\n');
     const memSubs: string[] = [];
     if (mem.cap.length) memSubs.push(`### Cap — ADN de la marque\n${fmtMem(mem.cap)}`);

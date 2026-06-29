@@ -228,12 +228,18 @@ function QuickCapture() {
 
   const { data: entries = [] } = useQuery<QuickCaptureEntry[]>({
     queryKey: ["/api/capture"],
-    refetchInterval: 4000,
+    // Poll rapide UNIQUEMENT tant qu'il reste des captures en cours de classification IA ;
+    // sinon poll lent (évite de spammer l'API toutes les 4s en continu).
+    refetchInterval: (q) => {
+      const data = q.state.data as QuickCaptureEntry[] | undefined;
+      const pending = Array.isArray(data) && data.some((e) => !e.classifiedType);
+      return pending ? 4000 : 60000;
+    },
   });
 
   const { data: milestoneTriggers = [] } = useQuery<MilestoneTrigger[]>({
     queryKey: ["/api/milestone-triggers"],
-    refetchInterval: 5000,
+    refetchInterval: 30000,
   });
 
   const createMutation = useMutation({

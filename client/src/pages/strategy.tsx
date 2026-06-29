@@ -202,7 +202,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
  const { data: triggers = [], isLoading: triggersLoading } = useQuery<MilestoneTrigger[]>({
  queryKey: ['/api/milestone-triggers'],
- refetchInterval: 5000,
+ refetchInterval: 30000,
  });
 
  const previewMutation = useMutation({

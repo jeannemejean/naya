@@ -73,6 +73,11 @@ export async function retrieveMemories(
 ): Promise<{ cap: ScoredMemory[]; founder: ScoredMemory[]; reception: ScoredMemory[] }> {
   const out = { cap: [] as ScoredMemory[], founder: [] as ScoredMemory[], reception: [] as ScoredMemory[] };
   try {
+    // Court-circuit perf : si l'utilisateur n'a AUCUNE mémoire, inutile d'embedder
+    // (évite un aller-retour OpenAI dans le chemin critique de chaque appel IA).
+    const has: any = await db.execute(sql`SELECT 1 FROM memory_entries WHERE user_id = ${userId} AND superseded_at IS NULL LIMIT 1`);
+    if ((has.rows ?? has).length === 0) return out;
+
     // Embedde le focus (sujet de la décision en cours). Best-effort : null = fallback fraîcheur.
     const focusVec = focusText ? await embedText(focusText) : null;
     const vecLit = focusVec ? toVectorLiteral(focusVec) : null;
