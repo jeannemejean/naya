@@ -76,7 +76,11 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
       {/* Logo Naya */}
       <div className="h-[64px] flex items-center justify-center shrink-0 border-b border-naya-olive-10">
         <Link href="/">
-          <div className="flex items-center justify-center cursor-pointer p-1">
+          {/* Le logo ramène TOUJOURS au dashboard global (toutes les marques) */}
+          <div
+            onClick={() => setActiveProjectId(null)}
+            className="flex items-center justify-center cursor-pointer p-1"
+          >
             <img
               src="/naya-mark-elephant.png"
               alt="Naya"
@@ -117,6 +121,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
               <TooltipTrigger asChild>
                 <Link href={item.href}>
                   <button
+                    onClick={() => { if (item.href === '/') setActiveProjectId(null); }}
                     className="relative w-full h-10 flex items-center justify-center transition-colors duration-120"
                     style={{
                       color: isActive
