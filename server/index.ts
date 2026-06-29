@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
 import { scheduleAutoPlanner, scheduleEndOfDayRollover, scheduleIntraDayReschedule } from "./services/auto-planner";
+import { scheduleEndOfDayReflection } from "./services/end-of-day-reflection";
 import { scheduleSocialPublisher } from "./services/social-publisher";
 import { scheduleProspectionSender } from "./services/prospection-sender";
 import { computeDurationCalibration } from "./services/duration-calibration";
@@ -93,6 +94,9 @@ function scheduleWeeklyIntelligence() {
   scheduleEndOfDayRollover();
   // Intra-day reschedule: adjusts pending tasks throughout the day
   scheduleIntraDayReschedule();
+  // End-of-day reflection: comprend pourquoi des tâches ont glissé et prépare une question
+  // Companion pour le lendemain (16:45 UTC, avant le rollover).
+  scheduleEndOfDayReflection();
 
   // ─── Cron hebdomadaire : intelligence analytics (dimanche ~23h UTC) ───────────
   scheduleWeeklyIntelligence();
