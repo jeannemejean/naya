@@ -26,6 +26,7 @@ import { resolveStrategyWeekKey } from "@shared/strategy-week";
 import { budgetWeight, taskCapForBudget } from "./services/task-allocation";
 import { runPlaceToday } from "./services/place-today-runner";
 import { selectOverdueTasks } from "./services/overdue-tasks";
+import { evaluateProjectOvercommit } from "./services/overcommit";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -4172,6 +4173,43 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     } catch (error: any) {
       console.error('POST /api/tasks/:id/archive error:', error?.message);
       res.status(500).json({ message: 'Failed to archive task' });
+    }
+  });
+
+  // Statut de surcharge PAR PROJET (jamais un cumul global) : pour chaque projet, on compare le
+  // nombre de ses tâches du jour à un seuil dérivé de SON budget temps/jour et de la durée
+  // moyenne RÉELLE de ses tâches. overcommitted=true seulement si CE projet dépasse SON seuil.
+  app.get('/api/projects/overcommit', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const today = (typeof req.query.clientToday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.clientToday))
+        ? (req.query.clientToday as string)
+        : new Date().toISOString().slice(0, 10);
+
+      const projects = await storage.getProjects(userId);
+      const todayTasks = (await storage.getTasksInRange(userId, today, today))
+        .filter((t: any) => t.type !== 'milestone' && t.source !== 'milestone' && !t.completed && !t.archivedAt);
+
+      const byProject = new Map<number, any[]>();
+      for (const t of todayTasks as any[]) {
+        if (t.projectId == null) continue;
+        if (!byProject.has(t.projectId)) byProject.set(t.projectId, []);
+        byProject.get(t.projectId)!.push(t);
+      }
+
+      const result = projects.map((p: any) => {
+        const tasks = byProject.get(p.id) || [];
+        const status = evaluateProjectOvercommit(
+          tasks.length,
+          p.dailyTimeBudgetHours,
+          tasks.map((t: any) => t.estimatedDuration),
+        );
+        return { projectId: p.id, projectName: p.name, ...status };
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error('GET /api/projects/overcommit error:', error?.message);
+      res.status(500).json({ message: 'Failed to compute overcommit status' });
     }
   });
 
