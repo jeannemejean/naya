@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import type { MilestoneTrigger, Project, BrandDna, BusinessMemory } from "@shared/schema";
 import { getISOWeekNumber, formatLocalDate } from "@/lib/dateUtils";
+import { strategyWeekKey } from "@shared/strategy-week";
+import { usePageVisible } from "@/hooks/usePageVisible";
 
 type UnlockedTask = {
  title: string;
@@ -82,6 +84,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  const queryClient = useQueryClient();
  const { toast } = useToast();
  const { t } = useTranslation();
+ const pageVisible = usePageVisible();
 
  const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
@@ -105,10 +108,9 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  enabled: !!selectedProjectId,
  });
 
- const currentWeek = (() => {
- const now = new Date();
- return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-W' + getISOWeekNumber(now);
- })();
+ // Clé de semaine PARTAGÉE avec le serveur (même fonction) — sinon la stratégie générée
+ // n'est jamais retrouvée et un appel Claude se relance à chaque chargement.
+ const currentWeek = strategyWeekKey(new Date());
 
  const { data: existingReport } = useQuery({
  queryKey: ['/api/strategy/report', selectedProjectId, currentWeek],
@@ -160,6 +162,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  const res = await apiRequest('POST', '/api/strategy/generate', {
  projectId: selectedProjectId,
  weekContext,
+ week: currentWeek, // stocker sous la MÊME clé que celle interrogée à la lecture
  });
  return res.json() as Promise<StrategyGenerateResponse>;
  },
@@ -217,7 +220,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
  const { data: triggers = [], isLoading: triggersLoading } = useQuery<MilestoneTrigger[]>({
  queryKey: ['/api/milestone-triggers'],
- refetchInterval: 30000,
+ refetchInterval: pageVisible ? 30000 : false, // en pause quand l'onglet n'est pas visible
  });
 
  const previewMutation = useMutation({

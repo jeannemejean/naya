@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useProject } from "@/lib/project-context";
+import { usePageVisible } from "@/hooks/usePageVisible";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "react-i18next";
 import { formatLocalDate } from "@/lib/dateUtils";
@@ -222,6 +223,7 @@ function QuickCapture() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { activeProjectId } = useProject();
+  const pageVisible = usePageVisible();
   const [content, setContent] = useState("");
   const [classifyingIds, setClassifyingIds] = useState<Set<number>>(new Set());
   const [expandedMilestones, setExpandedMilestones] = useState<Set<number>>(new Set());
@@ -229,8 +231,9 @@ function QuickCapture() {
   const { data: entries = [] } = useQuery<QuickCaptureEntry[]>({
     queryKey: ["/api/capture"],
     // Poll rapide UNIQUEMENT tant qu'il reste des captures en cours de classification IA ;
-    // sinon poll lent (évite de spammer l'API toutes les 4s en continu).
+    // sinon poll lent. ET en pause totale quand l'onglet n'est pas visible.
     refetchInterval: (q) => {
+      if (!pageVisible) return false;
       const data = q.state.data as QuickCaptureEntry[] | undefined;
       const pending = Array.isArray(data) && data.some((e) => !e.classifiedType);
       return pending ? 4000 : 60000;
@@ -239,7 +242,7 @@ function QuickCapture() {
 
   const { data: milestoneTriggers = [] } = useQuery<MilestoneTrigger[]>({
     queryKey: ["/api/milestone-triggers"],
-    refetchInterval: 30000,
+    refetchInterval: pageVisible ? 30000 : false, // en pause quand l'onglet n'est pas visible
   });
 
   const createMutation = useMutation({

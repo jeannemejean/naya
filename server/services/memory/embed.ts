@@ -1,12 +1,38 @@
+import { createHash } from "crypto";
 import { route } from "../ai/router";
 import { registry } from "../ai/registry";
 
-// Embedding BEST-EFFORT. Ne lève JAMAIS : si le provider d'embeddings est absent
-// (pas d'OPENAI_API_KEY → openai non enregistré dans le registre) ou échoue,
-// on renvoie null et la mémoire se dégrade en silence (jamais de crash d'appel IA).
+// ── Cache d'embedding par HASH DE CONTENU ───────────────────────────────────────
+// Les prompts longs (brief stratégique, génération de campagne) ré-embeddent souvent
+// le MÊME texte (focusText = le prompt). On met le vecteur en cache (clé = sha1 du texte)
+// pour ne pas repayer l'aller-retour OpenAI (~300-800 ms) sur le chemin critique.
+const EMBED_CACHE = new Map<string, { vec: number[]; expires: number }>();
+const EMBED_CACHE_TTL_MS = 15 * 60 * 1000; // 15 min
+const EMBED_CACHE_MAX = 500;
+
+function hashText(text: string): string {
+  return createHash("sha1").update(text).digest("hex");
+}
+
+// BEST-EFFORT + CACHE. Ne lève JAMAIS : si le provider d'embeddings est absent
+// (pas d'OPENAI_API_KEY) ou échoue, renvoie null (la mémoire se dégrade en silence).
 export async function embedText(text: string): Promise<number[] | null> {
+  const key = hashText(text);
+  const hit = EMBED_CACHE.get(key);
+  if (hit && hit.expires > Date.now()) {
+    return hit.vec.slice(); // copie défensive
+  }
   const vecs = await embedTexts([text]);
-  return vecs ? vecs[0] ?? null : null;
+  const vec = vecs ? vecs[0] ?? null : null;
+  if (vec) {
+    if (EMBED_CACHE.size >= EMBED_CACHE_MAX) {
+      // éviction simple du plus ancien inséré
+      const oldest = EMBED_CACHE.keys().next().value;
+      if (oldest !== undefined) EMBED_CACHE.delete(oldest);
+    }
+    EMBED_CACHE.set(key, { vec: vec.slice(), expires: Date.now() + EMBED_CACHE_TTL_MS });
+  }
+  return vec;
 }
 
 const EMBED_TIMEOUT_MS = 2500; // borne le pire cas (réseau OpenAI) dans le chemin critique
