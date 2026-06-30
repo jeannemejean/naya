@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { fetchJson } from '@/lib/fetchJson';
 import { useTranslation } from 'react-i18next';
 import { Plus, Search, Filter, BookOpen, ExternalLink, Heart, Eye, Trash2, Tags, Clock } from 'lucide-react';
 import Sidebar from '@/components/sidebar';
@@ -71,7 +72,7 @@ export default function ReadingHub({ onSearchClick }: ReadingHubProps) {
  if (selectedCategory !== 'all') {
  params.append('category', selectedCategory);
  }
- return fetch(`/api/saved-articles?${params}`).then(res => res.json());
+ return fetchJson<any[]>(`/api/saved-articles?${params}`);
  },
  });
 

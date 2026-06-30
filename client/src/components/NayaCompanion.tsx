@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/fetchJson";
 import { useProject } from "@/lib/project-context";
 import { MessageCircle, X, Send, Loader2, Sparkles, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
@@ -229,7 +230,7 @@ function useCompanionChat() {
  const { data: projects = [] } = useQuery<any[]>({ queryKey: ['/api/projects?limit=200'] });
  const activeProject = projects.find((p: any) => p.id === activeProjectId) ?? null;
  const today = new Date().toISOString().slice(0, 10);
- const { data: todayTasks = [] } = useQuery<any[]>({ queryKey: ['/api/tasks', today], queryFn: async () => { const r = await fetch(`/api/tasks?date=${today}`, { credentials: 'include' }); return r.json(); } });
+ const { data: todayTasks = [] } = useQuery<any[]>({ queryKey: ['/api/tasks', today], queryFn: () => fetchJson(`/api/tasks?date=${today}`) });
  const executeAction = useActionExecutor(activeProject, projects);
 
  const { data: history } = useQuery<any[]>({
@@ -239,10 +240,7 @@ function useCompanionChat() {
 
  const { data: pendingData } = useQuery<{ messages: Array<{ id: number; message: string }>; unreadCount: number }>({
  queryKey: ['/api/companion/pending'],
- queryFn: async () => {
- const r = await fetch('/api/companion/pending', { credentials: 'include' });
- return r.json();
- },
+ queryFn: () => fetchJson('/api/companion/pending'),
  refetchInterval: 60 * 1000,
  });
 

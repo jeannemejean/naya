@@ -7109,43 +7109,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const userId = req.userId;
       const { week } = req.query;
-      let metrics = await storage.getMetrics(userId, week as string);
-      
-      // If no metrics exist, return sample data structure
+      const metrics = await storage.getMetrics(userId, week as string);
+
+      // Aucune métrique réelle (l'ingestion n'est pas branchée) → état vide EXPLICITE.
+      // On ne fabrique plus de chiffres fictifs (engagement_rate, reach…) qui s'afficheraient
+      // comme s'ils étaient réels. Les consommateurs doivent gérer null = « pas de données ».
       if (!metrics) {
-        metrics = {
-          id: 0,
-          userId,
-          week: week as string || new Date().toISOString().slice(0, 7) + "-W" + Math.ceil(new Date().getDate() / 7),
-          contentMetrics: {
-            engagement_rate: 28,
-            total_reach: 2100,
-            instagram_reach: 1200,
-            linkedin_reach: 900,
-            shares: 15,
-            saves: 8,
-            comments_sentiment: 'positive'
-          },
-          outreachMetrics: {
-            leads_generated: 7,
-            conversion_rate: 12,
-            response_rate: 35,
-            direct_outreach: 15
-          },
-          emailMetrics: {
-            open_rate: 48,
-            total_sent: 120,
-            click_rate: 12
-          },
-          goals: {
-            monthly_leads: 20,
-            engagement_rate: 50,
-            conversion_rate: 15
-          },
-          createdAt: new Date()
-        };
+        return res.json(null);
       }
-      
+
       res.json(metrics);
     } catch (error) {
       console.error("Error fetching metrics:", error);

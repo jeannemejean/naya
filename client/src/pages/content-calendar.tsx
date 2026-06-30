@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'wouter';
+import { fetchJson } from '@/lib/fetchJson';
 import { useTranslation } from 'react-i18next';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
@@ -174,7 +175,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const params = new URLSearchParams();
  if (selectedProjectId) params.set('projectId', String(selectedProjectId));
  if (campaignFilter) params.set('campaignId', String(campaignFilter));
- return fetch(`/api/content?${params}`, { credentials: 'include' }).then(r => r.json());
+ return fetchJson(`/api/content?${params}`);
  },
  enabled: !!selectedProjectId,
  });
@@ -260,7 +261,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
 
  const { data: socialAccounts = [] } = useQuery({
  queryKey: ['/api/social-accounts'],
- queryFn: () => fetch('/api/social-accounts').then(res => res.json()),
+ queryFn: () => fetchJson<any[]>('/api/social-accounts'),
  });
 
  const connectAccountMutation = useMutation({
@@ -290,7 +291,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
 
  const { data: mediaLibrary = [], isLoading: mediaLoading } = useQuery({
  queryKey: ['/api/media-library'],
- queryFn: () => fetch('/api/media-library').then(res => res.json()),
+ queryFn: () => fetchJson<any[]>('/api/media-library'),
  });
 
  const uploadMediaMutation = useMutation({
@@ -327,7 +328,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const url = selectedProjectId
  ? `/api/persona/target-personas?projectId=${selectedProjectId}`
  : '/api/persona/target-personas';
- return fetch(url, { credentials: 'include' }).then(r => r.json());
+ return fetchJson(url);
  },
  });
 

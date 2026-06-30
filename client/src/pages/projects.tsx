@@ -18,6 +18,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/fetchJson";
 import { useProject } from "@/lib/project-context";
 import { Plus, Target, TrendingUp, Zap, Star, Settings, CheckCircle2, Circle, Archive, Loader2, Clock, Sparkles, Dna, Lock, Unlock, Flag, ChevronRight, Check } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -105,8 +106,7 @@ function ClientsTab({ project }: { project: Project }) {
  const { data: clients = [], isLoading } = useQuery<Client[]>({
  queryKey: ["/api/clients", { projectId: project.id }],
  queryFn: async () => {
- const res = await fetch(`/api/clients?projectId=${project.id}`, { credentials: "include" });
- return res.json();
+ return fetchJson(`/api/clients?projectId=${project.id}`);
  }
  });
 
@@ -255,8 +255,7 @@ function ClientCard({ client, isExpanded, onToggle }: { client: Client, isExpand
  const { data: tasks = [], isLoading } = useQuery<Task[]>({
  queryKey: ["/api/clients", client.id, "tasks"],
  queryFn: async () => {
- const res = await fetch(`/api/clients/${client.id}/tasks`, { credentials: "include" });
- return res.json();
+ return fetchJson(`/api/clients/${client.id}/tasks`);
  },
  enabled: isExpanded
  });
@@ -323,22 +322,19 @@ function ProjectTasksPanel({ project }: { project: Project }) {
  const { data: todayTasks = [], isLoading: todayLoading } = useQuery<any[]>({
  queryKey: ['/api/tasks', { projectId: project.id, date: today }],
  queryFn: async () => {
- const res = await fetch(`/api/tasks?projectId=${project.id}&date=${today}`, { credentials: 'include' });
- return res.json();
+ return fetchJson(`/api/tasks?projectId=${project.id}&date=${today}`);
  },
  });
  const { data: tomorrowTasks = [], isLoading: tomorrowLoading } = useQuery<any[]>({
  queryKey: ['/api/tasks', { projectId: project.id, date: tomorrow }],
  queryFn: async () => {
- const res = await fetch(`/api/tasks?projectId=${project.id}&date=${tomorrow}`, { credentials: 'include' });
- return res.json();
+ return fetchJson(`/api/tasks?projectId=${project.id}&date=${tomorrow}`);
  },
  });
  const { data: upcomingTasks = [], isLoading: upcomingLoading } = useQuery<any[]>({
  queryKey: ['/api/tasks', { projectId: project.id, upcoming: upcoming }],
  queryFn: async () => {
- const res = await fetch(`/api/tasks?projectId=${project.id}`, { credentials: 'include' });
- return res.json();
+ return fetchJson(`/api/tasks?projectId=${project.id}`);
  },
  });
 
@@ -442,7 +438,7 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
  // Check if Brand DNA is configured for this project
  const { data: brandDna } = useQuery<any>({
  queryKey: ['/api/projects', project.id, 'brand-dna'],
- queryFn: () => fetch(`/api/projects/${project.id}/brand-dna`, { credentials: 'include' }).then(r => r.json()),
+ queryFn: () => fetchJson(`/api/projects/${project.id}/brand-dna`),
  });
 
  const hasProjectSpecificDna = brandDna?.projectId === project.id;
@@ -668,8 +664,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  queryFn: async () => {
  const allResults: Project[] = [];
  for (let page = 0; page < projectPages; page++) {
- const res = await fetch(`/api/projects?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`, { credentials: 'include' });
- const batch = await res.json();
+ const batch = await fetchJson<Project[]>(`/api/projects?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`);
  allResults.push(...batch);
  if (batch.length < PAGE_SIZE) break;
  }

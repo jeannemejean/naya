@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/fetchJson";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import Sidebar from "@/components/sidebar";
@@ -615,8 +616,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  const url = selectedProjectId
  ? `/api/campaigns?projectId=${selectedProjectId}`
  : "/api/campaigns";
- const res = await fetch(url, { credentials: "include" });
- return res.json();
+ return fetchJson<Campaign[]>(url);
  },
  enabled: !!selectedProjectId,
  });
@@ -639,8 +639,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  queryKey: ["/api/tasks", "campaign", selectedCampaignId],
  queryFn: async () => {
  if (!selectedCampaignId) return [];
- const res = await fetch(`/api/tasks?campaignId=${selectedCampaignId}`, { credentials: "include" });
- return res.json();
+ return fetchJson<Task[]>(`/api/tasks?campaignId=${selectedCampaignId}`);
  },
  enabled: !!selectedCampaignId && (selectedCampaign?.status === "active" || selectedCampaign?.status === "completed"),
  });

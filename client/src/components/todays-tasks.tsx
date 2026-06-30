@@ -367,7 +367,7 @@ export default function TodaysTasks() {
  onError: (error) => {
  if (isUnauthorizedError(error)) {
  toast({ title: t('todaysTasks.unauthorized'), description: t('todaysTasks.loggingIn'), variant: "destructive" });
- setTimeout(() => { window.location.href = "/api/login"; }, 500);
+ setTimeout(() => { window.location.href = "/"; }, 500); // "/" = Landing (login). /api/login servait le SPA → page 404 si encore authentifié.
  return;
  }
  toast({ title: t('common.error'), description: t('todaysTasks.failedUpdateTask'), variant: "destructive" });
@@ -404,7 +404,7 @@ export default function TodaysTasks() {
  onError: (error) => {
  if (isUnauthorizedError(error)) {
  toast({ title: t('todaysTasks.unauthorized'), variant: "destructive" });
- setTimeout(() => { window.location.href = "/api/login"; }, 500);
+ setTimeout(() => { window.location.href = "/"; }, 500); // "/" = Landing (login). /api/login servait le SPA → page 404 si encore authentifié.
  return;
  }
  const errMsg = error?.message || '';

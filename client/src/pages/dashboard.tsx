@@ -758,7 +758,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
         description: "Reconnexion en cours…",
         variant: "destructive",
       });
-      setTimeout(() => { window.location.href = "/api/login"; }, 500);
+      setTimeout(() => { window.location.href = "/"; }, 500); // "/" = Landing (login). /api/login servait le SPA → page 404 si encore authentifié.
     }
   }, [isAuthenticated, isLoading, toast]);
 
