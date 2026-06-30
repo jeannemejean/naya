@@ -11,6 +11,9 @@ export const ALLOWED_PROJECT_PATCH_FIELDS = [
   "monetizationIntent",
   "priorityLevel",
   "projectStatus",
+  "category",
+  "dailyTimeBudgetHours",
+  "statusNote",
 ] as const;
 
 export function pickAllowedProjectFields(body: Record<string, any> | null | undefined): Record<string, any> {

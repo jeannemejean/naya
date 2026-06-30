@@ -89,15 +89,25 @@ Résumé intelligence Naya : ${(brandDna as any).nayaIntelligenceSummary || 'Pas
     // Section 2 : Projet actif
     if (project) {
       const topGoal = activeGoals[0];
+      const p = project as any;
+      const budgetLine = p.dailyTimeBudgetHours != null
+        ? `Budget temps : ${p.dailyTimeBudgetHours} h/jour`
+        : `Budget temps : non défini`;
+      // « Dis à Naya où tu en es » : contexte que l'utilisateur a saisi à la main, sur ce qui
+      // N'EST PAS tracké par l'app. À prendre en compte explicitement (sans le redemander).
+      const statusNoteBlock = (p.statusNote && String(p.statusNote).trim())
+        ? `\n\n## Où en est ${project.name} (dit par l'utilisateur, hors app — à prendre en compte)\n${String(p.statusNote).trim()}`
+        : '';
       sections.push(`## Projet actif : ${project.name}
 Type : ${project.type} | Intent : ${project.monetizationIntent}
+Catégorie : ${p.category || 'non définie'} | ${budgetLine}
 Niveau de priorité : ${project.priorityLevel}
 Stade actuel : ${stratProfile?.currentStage || 'Non renseigné'}
 Objectif actif : ${topGoal?.title || 'Aucun'}
 Mode de succès : ${topGoal?.successMode || 'Non renseigné'}
 Audience (projet) : ${stratProfile?.targetAudience || 'Non renseigné'}
 Positionnement (projet) : ${stratProfile?.uniquePositioning || 'Non renseigné'}
-Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}`);
+Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}${statusNoteBlock}`);
     }
 
     // Section 2b : Objectifs actifs avec score d'urgence dynamique

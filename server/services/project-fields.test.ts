@@ -38,9 +38,24 @@ describe("pickAllowedProjectFields — whitelist PATCH /api/projects/:id", () =>
     expect(pickAllowedProjectFields({})).toEqual({});
   });
 
+  it("garde les nouveaux champs éditables (category, dailyTimeBudgetHours, statusNote)", () => {
+    const out = pickAllowedProjectFields({
+      category: "revenue",
+      dailyTimeBudgetHours: 4,
+      statusNote: "J'ai signé un nouveau client hors Naya",
+      userId: "evil",
+    });
+    expect(out).toEqual({
+      category: "revenue",
+      dailyTimeBudgetHours: 4,
+      statusNote: "J'ai signé un nouveau client hors Naya",
+    });
+  });
+
   it("liste des champs autorisés (référence)", () => {
     expect([...ALLOWED_PROJECT_PATCH_FIELDS]).toEqual([
       "name", "icon", "color", "type", "description", "monetizationIntent", "priorityLevel", "projectStatus",
+      "category", "dailyTimeBudgetHours", "statusNote",
     ]);
   });
 });

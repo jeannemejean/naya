@@ -714,6 +714,102 @@ function ProjectSetupBanner() {
   );
 }
 
+// « Dis à Naya où tu en es » + réglages du projet (catégorie / budget temps / priorité).
+// La note de statut sert UNIQUEMENT au contexte non tracké par l'app (Naya connaît déjà
+// les tâches faites, contenus, campagnes…). Tout est injecté dans le contexte IA du projet.
+function ProjectStatusNote({ projectId }: { projectId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: project } = useQuery<any>({
+    queryKey: ["/api/projects", projectId, "full"],
+    queryFn: async () => { const r = await apiRequest("GET", `/api/projects/${projectId}`); return r.json(); },
+  });
+
+  const [note, setNote] = useState("");
+  const [category, setCategory] = useState("");
+  const [budget, setBudget] = useState("");
+  const [priority, setPriority] = useState("secondary");
+
+  useEffect(() => {
+    if (!project) return;
+    setNote(project.statusNote ?? "");
+    setCategory(project.category ?? "");
+    setBudget(project.dailyTimeBudgetHours != null ? String(project.dailyTimeBudgetHours) : "");
+    setPriority(project.priorityLevel ?? "secondary");
+  }, [project?.id, project?.statusNote, project?.category, project?.dailyTimeBudgetHours, project?.priorityLevel]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const budgetNum = budget.trim() === "" ? null : Math.max(0, parseInt(budget, 10) || 0);
+      return apiRequest("PATCH", `/api/projects/${projectId}`, {
+        statusNote: note,
+        category: category || null,
+        dailyTimeBudgetHours: budgetNum,
+        priorityLevel: priority,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Enregistré", description: "Naya en tiendra compte pour ce projet." });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "full"] });
+    },
+    onError: () => toast({ title: "Échec de l'enregistrement", variant: "destructive" }),
+  });
+
+  const fieldCls = "w-full px-2 py-1.5 text-sm rounded-lg border border-naya-olive-18 bg-white text-naya-olive-70";
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <Brain className="h-4 w-4 text-naya-olive" />
+          <h3 className="text-sm font-medium text-foreground">Dis à Naya où tu en es</h3>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-naya-olive-55">
+          Tout ce que tu fais <strong>dans</strong> Naya (tâches faites, contenus, campagnes…) est déjà connu —
+          inutile de le réécrire. Note ici seulement ce que l'app ne peut pas savoir : un événement externe,
+          une décision, un blocage, un changement de contexte.
+        </p>
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Ex : j'ai signé un nouveau client hors Naya ; le lancement est repoussé à octobre…"
+          rows={4}
+          className="text-sm"
+        />
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="text-[11px] text-naya-olive-55 block mb-1">Catégorie</label>
+            <select className={fieldCls} value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="">—</option>
+              <option value="revenue">Revenu</option>
+              <option value="passion">Passion</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] text-naya-olive-55 block mb-1">Heures/jour</label>
+            <input type="number" min={0} max={16} className={fieldCls} value={budget}
+              onChange={(e) => setBudget(e.target.value)} placeholder="ex : 4" />
+          </div>
+          <div>
+            <label className="text-[11px] text-naya-olive-55 block mb-1">Priorité</label>
+            <select className={fieldCls} value={priority} onChange={(e) => setPriority(e.target.value)}>
+              <option value="primary">Principale</option>
+              <option value="secondary">Secondaire</option>
+              <option value="background">En fond</option>
+            </select>
+          </div>
+        </div>
+        <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} className="w-full">
+          {save.isPending ? "Enregistrement…" : "Enregistrer"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Dashboard({ onSearchClick }: DashboardProps) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
@@ -881,6 +977,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
 
               {/* Right column — widgets */}
               <div className="space-y-4">
+                {activeProjectId && <ProjectStatusNote projectId={activeProjectId} />}
                 <QuickCapture />
                 {activeProjectId && (
                   <MilestoneChain

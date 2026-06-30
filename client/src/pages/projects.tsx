@@ -71,6 +71,8 @@ const createProjectSchema = z.object({
  description: z.string().optional(),
  monetizationIntent: z.string().default("exploratory"),
  priorityLevel: z.string().default("secondary"),
+ category: z.string().optional(),
+ dailyTimeBudgetHours: z.coerce.number().int().min(0).max(16).optional(),
  icon: z.string().default("◇"),
  color: z.string().default("#6366f1"),
 });
@@ -751,6 +753,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  description: "",
  monetizationIntent: "exploratory",
  priorityLevel: "secondary",
+ category: "",
+ dailyTimeBudgetHours: undefined,
  icon: "◇",
  color: "#6366f1",
  },
@@ -869,6 +873,58 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <SelectItem value="authority-building">Authority Building</SelectItem>
  <SelectItem value="exploratory">Exploratory</SelectItem>
  <SelectItem value="none">Non-commercial</SelectItem>
+ </SelectContent>
+ </Select>
+ <FormMessage />
+ </FormItem>
+ )}
+ />
+ </div>
+
+ <div className="grid grid-cols-3 gap-3">
+ <FormField
+ control={createForm.control}
+ name="category"
+ render={({ field }) => (
+ <FormItem>
+ <FormLabel>Catégorie</FormLabel>
+ <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
+ <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
+ <SelectContent>
+ <SelectItem value="revenue">Revenu</SelectItem>
+ <SelectItem value="passion">Passion</SelectItem>
+ </SelectContent>
+ </Select>
+ <FormMessage />
+ </FormItem>
+ )}
+ />
+ <FormField
+ control={createForm.control}
+ name="dailyTimeBudgetHours"
+ render={({ field }) => (
+ <FormItem>
+ <FormLabel>Heures/jour</FormLabel>
+ <FormControl>
+ <Input type="number" min={0} max={16} placeholder="ex : 4"
+ value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))} />
+ </FormControl>
+ <FormMessage />
+ </FormItem>
+ )}
+ />
+ <FormField
+ control={createForm.control}
+ name="priorityLevel"
+ render={({ field }) => (
+ <FormItem>
+ <FormLabel>Priorité</FormLabel>
+ <Select onValueChange={field.onChange} defaultValue={field.value}>
+ <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+ <SelectContent>
+ <SelectItem value="primary">Principale</SelectItem>
+ <SelectItem value="secondary">Secondaire</SelectItem>
+ <SelectItem value="background">En fond</SelectItem>
  </SelectContent>
  </Select>
  <FormMessage />

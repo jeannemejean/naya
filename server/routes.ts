@@ -23,6 +23,7 @@ import { extractToMemory } from "./services/memory/extract";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { resolveStrategyWeekKey } from "@shared/strategy-week";
+import { budgetWeight, taskCapForBudget } from "./services/task-allocation";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -4306,13 +4307,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
 
-      let projectsToProcess: Array<{ id: number | null; name: string }> = [];
+      let projectsToProcess: Array<{ id: number | null; name: string; dailyTimeBudgetHours?: number | null; category?: string | null }> = [];
       if (resolvedProjectId) {
-        projectsToProcess = [{ id: resolvedProjectId, name: '' }];
+        const sp = await storage.getProject(resolvedProjectId, userId).catch(() => null);
+        projectsToProcess = [{ id: resolvedProjectId, name: sp?.name || '', dailyTimeBudgetHours: (sp as any)?.dailyTimeBudgetHours ?? null, category: (sp as any)?.category ?? null }];
       } else {
         const allProjects = await storage.getProjects(userId);
         if (allProjects.length > 0) {
-          projectsToProcess = allProjects.map(p => ({ id: p.id, name: p.name }));
+          // On conserve le budget temps + catégorie pour pondérer la répartition des tâches.
+          projectsToProcess = allProjects.map(p => ({ id: p.id, name: p.name, dailyTimeBudgetHours: (p as any).dailyTimeBudgetHours ?? null, category: (p as any).category ?? null }));
         } else {
           projectsToProcess = [{ id: null, name: '' }];
         }
@@ -4369,7 +4372,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const TASKS_PER_PROJECT_MAX = 6; // 6 tasks per project = enough for a full week
       const WEEKLY_TASK_CAP = energyCaps[energyLevel] || 20;
       const projectCount = projectsToProcess.length;
-      const perProjectCap = Math.min(TASKS_PER_PROJECT_MAX, Math.ceil(WEEKLY_TASK_CAP / Math.max(projectCount, 1)));
+      // Répartition PONDÉRÉE par le budget temps/jour (au lieu d'un split égal cap/nbProjets).
+      const totalBudget = projectsToProcess.reduce((s: number, pr: any) => s + budgetWeight(pr?.dailyTimeBudgetHours), 0) || 1;
+      const capForProject = (pr: any): number => taskCapForBudget(pr?.dailyTimeBudgetHours, totalBudget, WEEKLY_TASK_CAP);
 
       const WEEKLY_PROJECT_CAP = 20; // Allow more tasks per project per week
 
@@ -4456,7 +4461,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             userId, projectBrandDna, projectContext, personaContext,
             recentContent, recentOutreach, completedTasksToday, recentWorkspaceNotes,
             rejectedTasksContext, operatingProfileSummary, positiveEffectivenessContext,
-            workDayStartStr, workDayEndStr, todayBreaks, perProjectCap,
+            workDayStartStr, workDayEndStr, todayBreaks, capForProject(proj),
             energyLevel, isEnergyStale ? undefined : (prefs?.currentEmotionalContext || undefined),
           );
         } catch (projError: any) {
@@ -4468,7 +4473,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           return { skipped: { projectId: proj.id, projectName: proj.name, reason: 'AI returned no tasks for this project' }, pending: [], workflowSugs: [] };
         }
 
-        const rawTasksToCreate = (aiResponse.tasks || []).slice(0, perProjectCap);
+        const rawTasksToCreate = (aiResponse.tasks || []).slice(0, capForProject(proj));
 
         const aiResponseAny = aiResponse as any;
         const namespacedSugs = (aiResponseAny.workflowSuggestions || []).map((s: any) => ({

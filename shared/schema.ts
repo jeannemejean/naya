@@ -57,6 +57,9 @@ export const projects = pgTable("projects", {
   monetizationIntent: text("monetization_intent").default("exploratory"), // revenue-now | authority-building | exploratory | none
   priorityLevel: text("priority_level").default("secondary"), // primary | secondary | background
   projectStatus: text("project_status").default("active"), // active | paused | incubating
+  category: text("category"), // revenue | passion — catégorie éditable pilotant la priorité
+  dailyTimeBudgetHours: integer("daily_time_budget_hours"), // budget temps/jour → pondère la répartition des tâches
+  statusNote: text("status_note"), // « Dis à Naya où tu en es » — contexte NON tracké par l'app
   isPrimary: boolean("is_primary").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
