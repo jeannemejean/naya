@@ -24,6 +24,7 @@ import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { resolveStrategyWeekKey } from "@shared/strategy-week";
 import { budgetWeight, taskCapForBudget } from "./services/task-allocation";
+import { placeTasksFromNow, minutesToHHMM as dpMinutesToHHMM } from "./services/day-placement";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -4088,6 +4089,75 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     } catch (error) {
       console.error("Error generating weekly refinement:", error);
       res.status(500).json({ message: "Failed to generate weekly refinement" });
+    }
+  });
+
+  // Place les tâches du JOUR restées sans heure (cause : génération tardive → pas de créneau
+  // avant la fin de journée ; ces tâches ne sont jamais re-placées quand le jour redevient ouvert).
+  // Garde-fou : on ne place que dans les créneaux libres À PARTIR DE L'HEURE COURANTE, jamais dans
+  // le passé ni hors fenêtre. Une tâche qui ne rentre pas reste « À planifier ».
+  app.post('/api/tasks/place-today', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const prefs = await storage.getUserPreferences(userId);
+      const hhmm = (s: string): number => { const [h, m] = s.split(':').map(Number); return h * 60 + (m || 0); };
+      const workDayStartStr = (prefs as any)?.workDayStart || '09:00';
+      const workDayEndStr = (prefs as any)?.workDayEnd || '18:00';
+
+      const today = (typeof req.body.clientToday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clientToday))
+        ? req.body.clientToday
+        : new Date().toISOString().slice(0, 10);
+      const nowMin = (typeof req.body.clientTime === 'string' && /^\d{2}:\d{2}$/.test(req.body.clientTime))
+        ? hhmm(req.body.clientTime)
+        : (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
+
+      const todayTasks = (await storage.getTasksInRange(userId, today, today))
+        .filter((t: any) => t.type !== 'milestone' && t.source !== 'milestone' && !t.completed);
+
+      const toPlace = todayTasks
+        .filter((t: any) => !t.scheduledTime)
+        .map((t: any) => ({ id: t.id as number, durationMin: t.estimatedDuration || 30 }));
+      if (toPlace.length === 0) return res.json({ placed: 0, unplaced: 0 });
+
+      // Créneaux occupés : tâches déjà datées + pause déjeuner + pauses + agenda Google.
+      const used: Array<{ start: number; end: number }> = [];
+      for (const t of todayTasks as any[]) {
+        if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
+          const s = hhmm(t.scheduledTime);
+          const e = (t.scheduledEndTime && /^\d{2}:\d{2}$/.test(t.scheduledEndTime)) ? hhmm(t.scheduledEndTime) : s + (t.estimatedDuration || 30);
+          used.push({ start: s, end: e });
+        }
+      }
+      if ((prefs as any)?.lunchBreakEnabled !== false && (prefs as any)?.lunchBreakStart && (prefs as any)?.lunchBreakEnd) {
+        used.push({ start: hhmm((prefs as any).lunchBreakStart), end: hhmm((prefs as any).lunchBreakEnd) });
+      }
+      for (const b of (Array.isArray((prefs as any)?.breaks) ? (prefs as any).breaks : [])) {
+        if (b?.start && b?.end) used.push({ start: hhmm(b.start), end: hhmm(b.end) });
+      }
+      try {
+        const { getCalendarBlockedRanges } = await import('./services/google-calendar');
+        const calRanges = await getCalendarBlockedRanges(userId, today);
+        for (const r of calRanges as any[]) used.push({ start: r.start, end: r.end });
+      } catch { /* best-effort : agenda absent → on ignore */ }
+
+      const { placed, unplaced } = placeTasksFromNow(toPlace, {
+        workDayStartMin: hhmm(workDayStartStr),
+        workDayEndMin: hhmm(workDayEndStr),
+        nowMin,
+        usedRanges: used,
+      });
+
+      for (const p of placed) {
+        await storage.updateTask(p.id, {
+          scheduledTime: dpMinutesToHHMM(p.startMin),
+          scheduledEndTime: dpMinutesToHHMM(p.endMin),
+          scheduledDate: today,
+        } as any);
+      }
+      res.json({ placed: placed.length, unplaced: unplaced.length });
+    } catch (error: any) {
+      console.error("Error placing today's tasks:", error?.message);
+      res.status(500).json({ message: "Failed to place tasks" });
     }
   });
 

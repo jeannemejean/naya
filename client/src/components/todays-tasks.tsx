@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { DEFAULT_TODAY_VIEW, nextPlannerDay, tasksForPlannerDay, type TodayView } from "@/lib/today-view";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -205,7 +206,7 @@ export default function TodaysTasks() {
  const isDark = theme === 'dark';
  const [isGenerating, setIsGenerating] = useState(false);
  // Vue par défaut = planning horaire (pas une to-do liste plate).
- const [viewMode, setViewMode] = useState<'list' | 'planner'>('planner');
+ const [viewMode, setViewMode] = useState<TodayView>(DEFAULT_TODAY_VIEW);
  // Jour affiché dans le planning : 0 = aujourd'hui, 1 = demain (bascule via flèche latérale).
  const [plannerDay, setPlannerDay] = useState<0 | 1>(0);
  const [openPopover, setOpenPopover] = useState<number | null>(null);
@@ -476,8 +477,23 @@ export default function TodaysTasks() {
  const tomorrowScheduled = tomorrowPending.filter((t: Task) => (t as any).scheduledTime);
  const tomorrowUnscheduled = tomorrowPending.filter((t: Task) => !(t as any).scheduledTime);
  // Jeu de tâches rendu par le planning selon le jour sélectionné.
- const plannerScheduled = plannerDay === 0 ? scheduledTasks : tomorrowScheduled;
- const plannerUnscheduled = plannerDay === 0 ? unscheduledTasks : tomorrowUnscheduled;
+ const plannerScheduled = tasksForPlannerDay(plannerDay, scheduledTasks, tomorrowScheduled);
+ const plannerUnscheduled = tasksForPlannerDay(plannerDay, unscheduledTasks, tomorrowUnscheduled);
+
+ // Auto-placement (une seule fois) : si des tâches du JOUR sont restées sans heure — typiquement
+ // générées tardivement la veille et jamais re-placées — on les place dans les créneaux libres
+ // À PARTIR DE MAINTENANT (jamais dans le passé ; ce qui ne rentre pas reste « À planifier »).
+ const placedTodayRef = useRef(false);
+ useEffect(() => {
+   if (placedTodayRef.current || unscheduledTasks.length === 0) return;
+   placedTodayRef.current = true;
+   const now = new Date();
+   const clientTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+   apiRequest('POST', '/api/tasks/place-today', { clientToday: today, clientTime })
+     .then((r) => r.json())
+     .then((res) => { if (res?.placed > 0) queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] }); })
+     .catch(() => { /* best-effort */ });
+ }, [unscheduledTasks.length, today]);
 
  function getTaskPosition(task: Task): { top: number; height: number } {
  // Positionne par scheduledTime (HH:MM) — le champ réel. suggestedStartTime est legacy
@@ -837,7 +853,7 @@ export default function TodaysTasks() {
  {/* Bascule jour — flèche latérale aujourd'hui ⇄ demain, sans changer de page */}
  <div className="flex items-center justify-between mb-3">
  <button
- onClick={() => setPlannerDay(0)}
+ onClick={() => setPlannerDay((d) => nextPlannerDay(d, -1))}
  disabled={plannerDay === 0}
  title="Aujourd'hui"
  className="p-1.5 rounded-lg text-naya-olive-70 hover:bg-naya-olive-10 disabled:opacity-30 disabled:cursor-default transition-colors"
@@ -850,7 +866,7 @@ export default function TodaysTasks() {
  : `Demain — ${new Date(tomorrowDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}`}
  </span>
  <button
- onClick={() => setPlannerDay(1)}
+ onClick={() => setPlannerDay((d) => nextPlannerDay(d, 1))}
  disabled={plannerDay === 1}
  title="Demain"
  className="p-1.5 rounded-lg text-naya-olive-70 hover:bg-naya-olive-10 disabled:opacity-30 disabled:cursor-default transition-colors"
