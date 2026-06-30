@@ -21,6 +21,7 @@ import {
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
 import { extractToMemory } from "./services/memory/extract";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
+import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -1254,10 +1255,16 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
         if (!Number.isFinite(projectId)) return res.status(400).json({ message: "Invalid projectId" });
       }
 
-      const dna = projectId
-        ? await storage.getBrandDnaForProject(userId, projectId)
-        : await storage.getBrandDna(userId);
+      // Le DNA propre au projet peut être absent (ex. le projet PRINCIPAL utilise le DNA
+      // global). Dans ce cas on retombe sur le global au lieu de renvoyer 404 — c'était la
+      // cause réelle de « échec du rafraîchissement » sur Agence JMD (projet principal).
+      const projectDna = projectId ? await storage.getBrandDnaForProject(userId, projectId) : null;
+      const globalDna = await storage.getBrandDna(userId);
+      const dna = projectDna ?? globalDna;
       if (!dna) return res.status(404).json({ message: "Brand DNA not found" });
+      // On écrit le résumé là où le DNA existe vraiment : sur le DNA du projet s'il en a un,
+      // sinon sur le DNA global (cas du projet principal).
+      const writeToProject = projectId !== null && projectDna !== null;
 
       const prompt = `Write a strategic intelligence brief (200–300 words) in first person (addressing the business owner as "you").
 
@@ -1270,19 +1277,32 @@ Cover these sections:
 
 Write in clear, direct language. Be specific — reference actual offers, audience, and positioning from the business context above. Avoid generic business advice. This summary is used by Naya to generate better, more targeted content and task recommendations.`;
 
-      // Use callClaudeWithContext for automatic Brand DNA + project injection
-      const summary = await callClaudeWithContext({
-        userId,
-        projectId,
-        userMessage: prompt,
-        model: CLAUDE_MODELS.smart,
-        max_tokens: 2000,
-        additionalSystemContext: 'You are Naya\'s strategic intelligence engine. You write sharp, specific, actionable strategic summaries for independent builders.',
-      });
+      // Appel IA avec un petit retry (robustesse face aux aléas réseau/transitoires).
+      // (Le résumé est du TEXTE libre, pas du JSON — il n'y a donc pas de JSON.parse ici.)
+      let summary = "";
+      let lastErr: any = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          summary = await callClaudeWithContext({
+            userId,
+            projectId,
+            userMessage: prompt,
+            model: CLAUDE_MODELS.smart,
+            max_tokens: 2000,
+            additionalSystemContext: 'You are Naya\'s strategic intelligence engine. You write sharp, specific, actionable strategic summaries for independent builders.',
+          });
+          if (summary && summary.trim().length > 0) { lastErr = null; break; }
+          lastErr = new Error("Empty summary returned");
+        } catch (e: any) {
+          lastErr = e;
+          console.error(`[refresh-intelligence] attempt ${attempt} failed:`, e?.message);
+        }
+      }
+      if (lastErr || !summary) throw (lastErr || new Error("Empty summary"));
 
       let updated;
-      if (projectId) {
-        updated = await storage.upsertBrandDnaForProject(userId, projectId, {
+      if (writeToProject) {
+        updated = await storage.upsertBrandDnaForProject(userId, projectId as number, {
           nayaIntelligenceSummary: summary,
           lastStrategyRefreshAt: new Date(),
         });
@@ -1297,9 +1317,11 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       }
 
       res.json({ summary, updatedAt: updated.lastStrategyRefreshAt, projectId });
-    } catch (error) {
-      console.error("Error refreshing intelligence:", error);
-      res.status(500).json({ message: "Failed to refresh intelligence" });
+    } catch (error: any) {
+      // Logue la VRAIE cause (pas un message générique) pour diagnostic.
+      console.error("Error refreshing intelligence:", error?.stack || error?.message || error);
+      const detail = process.env.NODE_ENV !== 'production' ? { detail: error?.message } : {};
+      res.status(500).json({ message: "Failed to refresh intelligence", ...detail });
     }
   });
 
@@ -1678,7 +1700,10 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   app.patch('/api/projects/:id', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const project = await storage.updateProject(parseInt(req.params.id), userId, req.body);
+      // Sécurité : seuls les champs whitelistés sont appliqués (pas de userId/id/isPrimary
+      // arbitraire). Les champs hors-liste sont ignorés.
+      const updates = pickAllowedProjectFields(req.body);
+      const project = await storage.updateProject(parseInt(req.params.id), userId, updates);
       if (!project) return res.status(404).json({ message: "Project not found" });
       res.json(project);
     } catch (error) {

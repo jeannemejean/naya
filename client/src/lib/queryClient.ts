@@ -1,5 +1,12 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+// Vrai si l'erreur est un 401 (non authentifié) — quelle que soit la langue du message.
+// Ces erreurs sont gérées par le flux d'auth (Landing), JAMAIS par l'ErrorBoundary.
+function is401(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error ?? "");
+  return /^401\b/.test(msg);
+}
+
 async function throwIfResNotOk(res: Response) {
  if (!res.ok) {
  const text = (await res.text()) || res.statusText;
@@ -48,7 +55,11 @@ export const queryClient = new QueryClient({
  refetchInterval: false,
  refetchOnWindowFocus: false,
  staleTime: Infinity,
- retry: false,
+ retry: 1, // un retry pour absorber les aléas transitoires avant d'afficher une erreur
+ // Les erreurs persistantes non-401 remontent à l'ErrorBoundary (écran « Naya cherche
+ // la meilleure réponse… ») au lieu de laisser une UI cassée/blanche. Le 401 reste géré
+ // par le flux d'auth (pas d'écran d'erreur quand on est simplement déconnecté).
+ throwOnError: (error: unknown) => !is401(error),
  },
  mutations: {
  retry: false,

@@ -18,6 +18,18 @@ import Paywall from "@/pages/paywall";
 import Welcome from "@/pages/welcome";
 import Dashboard from "@/pages/dashboard";
 import NayaCompanion from "@/components/NayaCompanion";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+// Écran de chargement neutre — affiché tant que l'auth se résout (jamais Landing ni 404).
+function LoadingScreen({ label = "Naya" }: { label?: string }) {
+  return (
+    <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--background)' }}>
+      <span style={{ fontFamily: '"Montserrat", system-ui, sans-serif', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.15em', animation: 'fade-in 0.3s ease both' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
 
 // Lazy-loaded pages (chargées à la demande)
 const ContentCalendar = lazy(() => import("@/pages/content-calendar"));
@@ -48,19 +60,18 @@ function Router() {
 
  return (
  <>
- <Suspense fallback={
- <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--background)' }}>
- <span style={{ fontFamily: '"Montserrat", system-ui, sans-serif', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.15em', animation: 'fade-in 0.3s ease both' }}>
- Naya
- </span>
- </div>
- }>
+ <Suspense fallback={<LoadingScreen />}>
  <Switch>
  <Route path="/privacy" component={Privacy} />
  <Route path="/terms" component={Terms} />
  <Route path="/data-deletion" component={DataDeletion} />
- {isLoading || !isAuthenticated ? (
+ {isLoading ? (
+ <Route><LoadingScreen label="Naya prépare ton espace…" /></Route>
+ ) : !isAuthenticated ? (
+ <>
  <Route path="/" component={Landing} />
+ <Route component={Landing} />
+ </>
  ) : !hasAccess ? (
  <>
  <Route path="/welcome" component={Welcome} />
@@ -123,7 +134,9 @@ function App() {
  <ProjectProvider>
  <TooltipProvider>
  <Toaster />
+ <ErrorBoundary>
  <Router />
+ </ErrorBoundary>
  </TooltipProvider>
  </ProjectProvider>
  </ThemeProvider>
