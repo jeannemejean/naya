@@ -436,6 +436,7 @@ export const tasks = pgTable("tasks", {
   actionData: jsonb("action_data"), // { message?, postContent?, canvaBrief?, externalUrl?, leadName?, platform?, leadId? }
   createdAt: timestamp("created_at").defaultNow(),
   completedAt: timestamp("completed_at"),
+  archivedAt: timestamp("archived_at"), // « ignorer/archiver » une tâche en retard non planifiée
   clientId: integer("client_id").references(() => clients.id),
 });
 

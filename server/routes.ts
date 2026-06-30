@@ -24,7 +24,8 @@ import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { resolveStrategyWeekKey } from "@shared/strategy-week";
 import { budgetWeight, taskCapForBudget } from "./services/task-allocation";
-import { placeTasksFromNow, minutesToHHMM as dpMinutesToHHMM } from "./services/day-placement";
+import { runPlaceToday } from "./services/place-today-runner";
+import { selectOverdueTasks } from "./services/overdue-tasks";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -4099,11 +4100,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   app.post('/api/tasks/place-today', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const prefs = await storage.getUserPreferences(userId);
       const hhmm = (s: string): number => { const [h, m] = s.split(':').map(Number); return h * 60 + (m || 0); };
-      const workDayStartStr = (prefs as any)?.workDayStart || '09:00';
-      const workDayEndStr = (prefs as any)?.workDayEnd || '18:00';
-
       const today = (typeof req.body.clientToday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clientToday))
         ? req.body.clientToday
         : new Date().toISOString().slice(0, 10);
@@ -4111,58 +4108,70 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         ? hhmm(req.body.clientTime)
         : (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
 
-      const todayTasks = (await storage.getTasksInRange(userId, today, today))
-        .filter((t: any) => t.type !== 'milestone' && t.source !== 'milestone' && !t.completed);
-
-      // On passe TOUTES les tâches du jour comme candidates ; placeTasksFromNow saute celles qui
-      // ont déjà une heure (placées par Naya ou déplacées à la main) → jamais replacées.
-      const nullTimeCount = (todayTasks as any[]).filter((t) => !t.scheduledTime).length;
-      if (nullTimeCount === 0) return res.json({ placed: 0, unplaced: 0 });
-      const toPlace = (todayTasks as any[]).map((t) => ({
-        id: t.id as number,
-        durationMin: t.estimatedDuration || 30,
-        currentScheduledTime: t.scheduledTime ?? null,
-      }));
-
-      // Créneaux occupés : tâches déjà datées + pause déjeuner + pauses + agenda Google.
-      const used: Array<{ start: number; end: number }> = [];
-      for (const t of todayTasks as any[]) {
-        if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
-          const s = hhmm(t.scheduledTime);
-          const e = (t.scheduledEndTime && /^\d{2}:\d{2}$/.test(t.scheduledEndTime)) ? hhmm(t.scheduledEndTime) : s + (t.estimatedDuration || 30);
-          used.push({ start: s, end: e });
-        }
-      }
-      if ((prefs as any)?.lunchBreakEnabled !== false && (prefs as any)?.lunchBreakStart && (prefs as any)?.lunchBreakEnd) {
-        used.push({ start: hhmm((prefs as any).lunchBreakStart), end: hhmm((prefs as any).lunchBreakEnd) });
-      }
-      for (const b of (Array.isArray((prefs as any)?.breaks) ? (prefs as any).breaks : [])) {
-        if (b?.start && b?.end) used.push({ start: hhmm(b.start), end: hhmm(b.end) });
-      }
-      try {
-        const { getCalendarBlockedRanges } = await import('./services/google-calendar');
-        const calRanges = await getCalendarBlockedRanges(userId, today);
-        for (const r of calRanges as any[]) used.push({ start: r.start, end: r.end });
-      } catch { /* best-effort : agenda absent → on ignore */ }
-
-      const { placed, unplaced } = placeTasksFromNow(toPlace, {
-        workDayStartMin: hhmm(workDayStartStr),
-        workDayEndMin: hhmm(workDayEndStr),
-        nowMin,
-        usedRanges: used,
-      });
-
-      for (const p of placed) {
-        await storage.updateTask(p.id, {
-          scheduledTime: dpMinutesToHHMM(p.startMin),
-          scheduledEndTime: dpMinutesToHHMM(p.endMin),
-          scheduledDate: today,
-        } as any);
-      }
-      res.json({ placed: placed.length, unplaced: unplaced.length });
+      const result = await runPlaceToday(userId, today, nowMin);
+      res.json(result);
     } catch (error: any) {
       console.error("Error placing today's tasks:", error?.message);
       res.status(500).json({ message: "Failed to place tasks" });
+    }
+  });
+
+  // Tâches « orphelines » : non complétées, non archivées, scheduled_date STRICTEMENT avant
+  // aujourd'hui (toute semaine, y compris au-delà de la semaine courante). Surface PASSIVE —
+  // aucune mutation ici, juste ce qui existe en base mais n'est plus remonté ailleurs.
+  app.get('/api/tasks/overdue', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const today = (typeof req.query.clientToday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.clientToday))
+        ? (req.query.clientToday as string)
+        : new Date().toISOString().slice(0, 10);
+      const past = await storage.getTasksInRange(userId, '2000-01-01', today);
+      res.json(selectOverdueTasks(past as any[], today));
+    } catch (error: any) {
+      console.error('GET /api/tasks/overdue error:', error?.message);
+      res.status(500).json({ message: 'Failed to fetch overdue tasks' });
+    }
+  });
+
+  // Reporter une tâche en retard à AUJOURD'HUI, puis la placer dans un créneau libre (placeTasksFromNow).
+  app.post('/api/tasks/:id/defer-to-today', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
+      const task = await storage.getTask(id);
+      if (!task || task.userId !== userId) return res.status(404).json({ message: 'Task not found' });
+
+      const hhmm = (s: string): number => { const [h, m] = s.split(':').map(Number); return h * 60 + (m || 0); };
+      const today = (typeof req.body.clientToday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clientToday))
+        ? req.body.clientToday : new Date().toISOString().slice(0, 10);
+      const nowMin = (typeof req.body.clientTime === 'string' && /^\d{2}:\d{2}$/.test(req.body.clientTime))
+        ? hhmm(req.body.clientTime) : (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
+
+      // Sur aujourd'hui, sans heure, puis placement dans les créneaux libres à partir de maintenant.
+      await storage.updateTask(id, { scheduledDate: today, scheduledTime: null, scheduledEndTime: null } as any);
+      const placement = await runPlaceToday(userId, today, nowMin);
+      const updated = await storage.getTask(id);
+      res.json({ task: updated, placement });
+    } catch (error: any) {
+      console.error('POST /api/tasks/:id/defer-to-today error:', error?.message);
+      res.status(500).json({ message: 'Failed to defer task' });
+    }
+  });
+
+  // Ignorer / archiver une tâche en retard (soft — ne supprime pas, la sort juste de la surface).
+  app.post('/api/tasks/:id/archive', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
+      const task = await storage.getTask(id);
+      if (!task || task.userId !== userId) return res.status(404).json({ message: 'Task not found' });
+      await storage.updateTask(id, { archivedAt: new Date() } as any);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error('POST /api/tasks/:id/archive error:', error?.message);
+      res.status(500).json({ message: 'Failed to archive task' });
     }
   });
 
