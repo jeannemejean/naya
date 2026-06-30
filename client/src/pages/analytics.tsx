@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
+import { throwIfResNotOk, is401 } from "@/lib/queryClient";
 import Sidebar from "@/components/sidebar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -92,23 +93,38 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
 
  const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
- const { data, isLoading } = useQuery<ProjectSummary>({
+ const { data, isLoading, error } = useQuery<ProjectSummary>({
  queryKey: ["/api/analytics/project-summary", selectedProjectId],
  queryFn: async () => {
  const res = await fetch(`/api/analytics/project-summary?projectId=${selectedProjectId}`, { credentials: "include" });
- return res.json();
+ // Vérifie le statut : un 401/4xx/5xx devient une vraie erreur (message « status: … »),
+ // pas une donnée corrompue. Le 401 est exclu de l'ErrorBoundary (is401) et géré ci-dessous.
+ await throwIfResNotOk(res);
+ const json = await res.json();
+ // Réponse 200 mais forme inattendue → erreur explicite (→ ErrorBoundary), pas un crash silencieux.
+ if (!json || typeof json !== "object" || typeof (json as any).tasks !== "object") {
+ throw new Error("Réponse /analytics malformée");
+ }
+ return json as ProjectSummary;
  },
  enabled: !!selectedProjectId,
  });
 
- const isAllZero = data &&
- data.tasks.total === 0 &&
- data.content.total === 0 &&
- data.campaigns.active === 0 &&
- data.campaigns.completed === 0 &&
- data.campaigns.draft === 0;
+ // Session expirée (401) : redirection silencieuse vers le login (Landing), sans écran d'erreur.
+ useEffect(() => {
+ if (error && is401(error)) {
+ window.location.href = "/";
+ }
+ }, [error]);
 
- const taskTypeData = data
+ const isAllZero = data &&
+ data.tasks?.total === 0 &&
+ data.content?.total === 0 &&
+ data.campaigns?.active === 0 &&
+ data.campaigns?.completed === 0 &&
+ data.campaigns?.draft === 0;
+
+ const taskTypeData = data?.tasks?.byType
  ? Object.entries(data.tasks.byType).map(([name, value]) => ({ name, value }))
  : [];
 

@@ -1,17 +1,17 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
-// Vrai si l'erreur est un 401 (non authentifié) — quelle que soit la langue du message.
-// Ces erreurs sont gérées par le flux d'auth (Landing), JAMAIS par l'ErrorBoundary.
-function is401(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error ?? "");
-  return /^401\b/.test(msg);
-}
-
-async function throwIfResNotOk(res: Response) {
+export async function throwIfResNotOk(res: Response) {
  if (!res.ok) {
  const text = (await res.text()) || res.statusText;
  throw new Error(`${res.status}: ${text}`);
  }
+}
+
+// Vrai si l'erreur est un 401 (message « 401: … »). Exporté pour que les queryFn custom
+// ET le mécanisme global d'exclusion (throwOnError) utilisent la MÊME détection.
+export function is401(error: unknown): boolean {
+ const msg = error instanceof Error ? error.message : String(error ?? "");
+ return /^401\b/.test(msg);
 }
 
 export async function apiRequest(
