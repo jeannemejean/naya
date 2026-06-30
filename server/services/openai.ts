@@ -553,8 +553,11 @@ RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType
       userId: request.userId,
       projectId,
       userMessage: prompt,
-      model: CLAUDE_MODELS.smart,
-      max_tokens: 8000,
+      // PERF : Haiku (rapide) + tokens bornés. Le contexte spécifique au projet (DNA + Naya
+      // context) est injecté quel que soit le modèle, donc les tâches restent pertinentes ;
+      // on gagne surtout en latence (génération multi-projets bien plus rapide).
+      model: CLAUDE_MODELS.fast,
+      max_tokens: 3500,
       additionalSystemContext: `You are Naya — the strategic intelligence engine of an AI Operating System for independent founders.
 
 You think like a business strategist who knows this founder's business as well as they do. You never give generic advice. Every task is derived from the specific business intelligence you've been given.

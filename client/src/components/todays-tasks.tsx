@@ -464,9 +464,12 @@ export default function TodaysTasks() {
  const unscheduledTasks = pendingTasks.filter((t: Task) => !(t as any).scheduledTime);
 
  function getTaskPosition(task: Task): { top: number; height: number } {
- if (!task.suggestedStartTime) return { top: 0, height: 60 };
- const start = new Date(task.suggestedStartTime);
- const startHour = start.getHours() + start.getMinutes() / 60;
+ // Positionne par scheduledTime (HH:MM) — le champ réel. suggestedStartTime est legacy
+ // et toujours null → c'est ce qui empilait toutes les tâches à 7h.
+ const st = (task as any).scheduledTime as string | undefined | null;
+ if (!st || !/^\d{2}:\d{2}$/.test(st)) return { top: 0, height: 60 };
+ const [h, m] = st.split(':').map(Number);
+ const startHour = h + m / 60;
  const duration = task.estimatedDuration || 30;
  const slotHeight = 64;
  const top = (startHour - 7) * slotHeight;
@@ -507,7 +510,8 @@ export default function TodaysTasks() {
  onClick={() => generateTasksMutation.mutate()}
  disabled={isGenerating}
  title="Générer des tâches avec Naya"
- className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary shadow-sm hover:brightness-110 hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-wait"
+ style={{ backgroundColor: '#2B2D1C', color: '#F7F4EC' }}
+ className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold shadow-sm hover:brightness-125 hover:shadow-md transition-all disabled:opacity-60 disabled:cursor-wait"
  >
  {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
  {isGenerating ? 'Génération…' : 'Générer mon plan'}
