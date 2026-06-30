@@ -11,7 +11,7 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import {
  Loader2, Plus, List, LayoutGrid, Clock, CheckCircle2, Circle, X, RotateCcw,
  Target, Sparkles, ClipboardList, MessageCircle, Package, Zap,
- Sunrise, Sun, Moon, Lock, Flag, AlertCircle, Check,
+ Sunrise, Sun, Moon, Lock, Flag, AlertCircle, Check, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useProject } from "@/lib/project-context";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -204,7 +204,10 @@ export default function TodaysTasks() {
  const { theme } = useTheme();
  const isDark = theme === 'dark';
  const [isGenerating, setIsGenerating] = useState(false);
- const [viewMode, setViewMode] = useState<'list' | 'planner'>('list');
+ // Vue par défaut = planning horaire (pas une to-do liste plate).
+ const [viewMode, setViewMode] = useState<'list' | 'planner'>('planner');
+ // Jour affiché dans le planning : 0 = aujourd'hui, 1 = demain (bascule via flèche latérale).
+ const [plannerDay, setPlannerDay] = useState<0 | 1>(0);
  const [openPopover, setOpenPopover] = useState<number | null>(null);
  const [workspaceTask, setWorkspaceTask] = useState<Task | null>(null);
  const { triggerAutoRebalance } = useAutoRebalance();
@@ -462,6 +465,19 @@ export default function TodaysTasks() {
    });
  const scheduledTasks = pendingTasks.filter((t: Task) => (t as any).scheduledTime);
  const unscheduledTasks = pendingTasks.filter((t: Task) => !(t as any).scheduledTime);
+
+ // Tâches de DEMAIN (issues de la fenêtre 7 jours déjà chargée) — pour basculer le planning
+ // sur demain sans changer de page. On ne touche ni aux tâches d'aujourd'hui ni au reste.
+ const tomorrowDate = (() => {
+   const d = new Date(); d.setDate(d.getDate() + 1);
+   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+ })();
+ const tomorrowPending = upcomingReal.filter((t: Task) => (t as any).scheduledDate === tomorrowDate);
+ const tomorrowScheduled = tomorrowPending.filter((t: Task) => (t as any).scheduledTime);
+ const tomorrowUnscheduled = tomorrowPending.filter((t: Task) => !(t as any).scheduledTime);
+ // Jeu de tâches rendu par le planning selon le jour sélectionné.
+ const plannerScheduled = plannerDay === 0 ? scheduledTasks : tomorrowScheduled;
+ const plannerUnscheduled = plannerDay === 0 ? unscheduledTasks : tomorrowUnscheduled;
 
  function getTaskPosition(task: Task): { top: number; height: number } {
  // Positionne par scheduledTime (HH:MM) — le champ réel. suggestedStartTime est legacy
@@ -817,6 +833,31 @@ export default function TodaysTasks() {
  })()}
  </div>
  ) : (
+ <div>
+ {/* Bascule jour — flèche latérale aujourd'hui ⇄ demain, sans changer de page */}
+ <div className="flex items-center justify-between mb-3">
+ <button
+ onClick={() => setPlannerDay(0)}
+ disabled={plannerDay === 0}
+ title="Aujourd'hui"
+ className="p-1.5 rounded-lg text-naya-olive-70 hover:bg-naya-olive-10 disabled:opacity-30 disabled:cursor-default transition-colors"
+ >
+ <ChevronLeft className="h-4 w-4" />
+ </button>
+ <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
+ {plannerDay === 0
+ ? "Aujourd'hui"
+ : `Demain — ${new Date(tomorrowDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}`}
+ </span>
+ <button
+ onClick={() => setPlannerDay(1)}
+ disabled={plannerDay === 1}
+ title="Demain"
+ className="p-1.5 rounded-lg text-naya-olive-70 hover:bg-naya-olive-10 disabled:opacity-30 disabled:cursor-default transition-colors"
+ >
+ <ChevronRight className="h-4 w-4" />
+ </button>
+ </div>
  <div className="flex gap-4">
  <div className="flex-1 relative">
  <div className="relative" style={{ minHeight: `${HOURS.length * 64}px` }}>
@@ -833,7 +874,7 @@ export default function TodaysTasks() {
  </div>
  ))}
 
- {scheduledTasks.map((task: Task) => {
+ {plannerScheduled.map((task: Task) => {
  const { top, height } = getTaskPosition(task);
  const projColor = getProjectColor(task.projectId, projects);
  const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
@@ -876,11 +917,11 @@ export default function TodaysTasks() {
  </div>
  </div>
 
- {unscheduledTasks.length > 0 && (
+ {plannerUnscheduled.length > 0 && (
  <div className="w-48 flex-shrink-0">
  <p className="text-xs text-naya-cream0 uppercase tracking-wide mb-2">{t('todaysTasks.unscheduled')}</p>
  <div className="space-y-2">
- {unscheduledTasks.map((task: Task) => {
+ {plannerUnscheduled.map((task: Task) => {
  const projColor = getProjectColor(task.projectId, projects);
  return (
  <Popover
@@ -915,6 +956,7 @@ export default function TodaysTasks() {
  </div>
  </div>
  )}
+ </div>
  </div>
  )}
  </div>
