@@ -22,7 +22,7 @@ import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/cla
 import { extractToMemory } from "./services/memory/extract";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
-import { strategyWeekKey } from "@shared/strategy-week";
+import { resolveStrategyWeekKey } from "@shared/strategy-week";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
@@ -7633,14 +7633,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       }
 
       const now = new Date();
-      const currentWeek = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-W' + Math.ceil(now.getDate() / 7);
-      // Clé sous laquelle on STOCKE le rapport = celle envoyée par le client (= celle qu'il
-      // interroge à la lecture). Sans ça, la stratégie n'était jamais retrouvée → regénération.
-      const reportWeek = (typeof req.body.week === 'string' && /^\d{4}-\d{2}-W\d{1,2}$/.test(req.body.week))
-        ? req.body.week
-        : strategyWeekKey(now);
+      // Clé de semaine UNIQUE (shared/strategy-week) : la clé du client si valide (= celle
+      // qu'il interroge à la lecture), sinon la clé serveur partagée. Utilisée pour les
+      // MÉTRIQUES ET le RAPPORT → garantit qu'ils emploient la même clé (fin de l'incohérence
+      // Math.ceil(jour/7) vs semaine ISO).
+      const weekKey = resolveStrategyWeekKey(req.body.week, now);
       const [weeklyMetrics, content, outreach] = await Promise.all([
-        storage.getMetrics(userId, currentWeek),
+        storage.getMetrics(userId, weekKey),
         storage.getContent(userId, 20),
         storage.getOutreachMessages(userId),
       ]);
@@ -7683,7 +7682,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const report = await storage.createStrategyReport({
         userId,
         projectId: projectId || undefined,
-        week: reportWeek,
+        week: weekKey,
         focus: aiResponse.weeklyFocus,
         reasoning: aiResponse.insights.join(" "),
         recommendations: aiResponse.recommendations,

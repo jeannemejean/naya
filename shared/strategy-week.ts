@@ -15,3 +15,13 @@ export function getISOWeekNumber(d: Date): number {
 export function strategyWeekKey(d: Date = new Date()): string {
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-W" + getISOWeekNumber(d);
 }
+
+// Format d'une clé de semaine valide (ex. "2026-06-W27").
+export const WEEK_KEY_RE = /^\d{4}-\d{2}-W\d{1,2}$/;
+
+// Résout la clé de semaine à utiliser : celle envoyée par le client si elle est bien
+// formée (= celle qu'il interroge à la lecture), sinon la clé serveur partagée.
+// SOURCE UNIQUE : metrics ET rapport de stratégie passent par ici → même clé garantie.
+export function resolveStrategyWeekKey(clientWeek?: unknown, now: Date = new Date()): string {
+  return (typeof clientWeek === "string" && WEEK_KEY_RE.test(clientWeek)) ? clientWeek : strategyWeekKey(now);
+}
