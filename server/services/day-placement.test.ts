@@ -39,6 +39,19 @@ describe("placeTasksFromNow — placement des tâches du jour (garde-fous condit
     expect(placed[0].startMin).toBe(H("15:00")); // poussé après le créneau occupé
   });
 
+  it("ne REPLACE JAMAIS une tâche qui a déjà une heure (placée ou déplacée à la main)", () => {
+    const tasks = [
+      { id: 1, durationMin: 30, currentScheduledTime: "10:00" }, // déjà placée à la main
+      { id: 2, durationMin: 30, currentScheduledTime: null },     // à placer
+      { id: 3, durationMin: 30 },                                  // à placer
+    ];
+    const { placed, unplaced } = placeTasksFromNow(tasks, { ...base, nowMin: H("09:00") });
+    const placedIds = placed.map((p) => p.id);
+    expect(placedIds).not.toContain(1);          // la tâche déjà datée n'est pas touchée
+    expect(unplaced).not.toContain(1);           // ni listée comme à planifier — on l'ignore
+    expect(placedIds).toEqual([2, 3]);           // seules les sans-heure sont placées
+  });
+
   it("plusieurs tâches s'enchaînent sans chevauchement", () => {
     const { placed } = placeTasksFromNow(
       [{ id: 1, durationMin: 30 }, { id: 2, durationMin: 45 }],

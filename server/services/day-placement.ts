@@ -6,7 +6,13 @@
 //  - une tâche qui ne rentre pas reste SANS heure (→ « À planifier »), jamais forcée dans un créneau passé/hors fenêtre.
 
 export interface Range { start: number; end: number } // minutes depuis minuit
-export interface PlaceableTask { id: number; durationMin: number }
+export interface PlaceableTask {
+  id: number;
+  durationMin: number;
+  // Heure actuelle de la tâche (HH:MM) si elle en a déjà une. GARANTIE : une tâche déjà placée
+  // — par Naya OU déplacée à la main — n'est JAMAIS replacée automatiquement.
+  currentScheduledTime?: string | null;
+}
 export interface PlacementResult { id: number; startMin: number; endMin: number }
 export interface PlaceOptions {
   workDayStartMin: number;
@@ -35,6 +41,10 @@ export function placeTasksFromNow(
   const unplaced: number[] = [];
 
   for (const task of tasks) {
+    // GARDE-FOU : tâche déjà placée (heure existante) → on n'y touche JAMAIS.
+    if (task.currentScheduledTime && /^\d{2}:\d{2}$/.test(task.currentScheduledTime)) {
+      continue;
+    }
     const dur = task.durationMin > 0 ? task.durationMin : 30;
     let slot = cursor;
     let safety = 0;

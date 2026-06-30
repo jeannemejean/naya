@@ -4114,10 +4114,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const todayTasks = (await storage.getTasksInRange(userId, today, today))
         .filter((t: any) => t.type !== 'milestone' && t.source !== 'milestone' && !t.completed);
 
-      const toPlace = todayTasks
-        .filter((t: any) => !t.scheduledTime)
-        .map((t: any) => ({ id: t.id as number, durationMin: t.estimatedDuration || 30 }));
-      if (toPlace.length === 0) return res.json({ placed: 0, unplaced: 0 });
+      // On passe TOUTES les tâches du jour comme candidates ; placeTasksFromNow saute celles qui
+      // ont déjà une heure (placées par Naya ou déplacées à la main) → jamais replacées.
+      const nullTimeCount = (todayTasks as any[]).filter((t) => !t.scheduledTime).length;
+      if (nullTimeCount === 0) return res.json({ placed: 0, unplaced: 0 });
+      const toPlace = (todayTasks as any[]).map((t) => ({
+        id: t.id as number,
+        durationMin: t.estimatedDuration || 30,
+        currentScheduledTime: t.scheduledTime ?? null,
+      }));
 
       // Créneaux occupés : tâches déjà datées + pause déjeuner + pauses + agenda Google.
       const used: Array<{ start: number; end: number }> = [];
