@@ -18,16 +18,26 @@ export async function apiRequest(
  method: string,
  url: string,
  data?: unknown | undefined,
+ opts?: { timeoutMs?: number },
 ): Promise<Response> {
+ // Timeout optionnel (AbortController) pour les requêtes longues (ex. génération de campagne
+ // ~135s) : au-delà de timeoutMs, on abandonne proprement (AbortError) au lieu d'attendre à l'infini.
+ const controller = opts?.timeoutMs ? new AbortController() : undefined;
+ const timer = opts?.timeoutMs ? setTimeout(() => controller!.abort(), opts.timeoutMs) : undefined;
+ try {
  const res = await fetch(url, {
  method,
  headers: data ? { "Content-Type": "application/json" } : {},
  body: data ? JSON.stringify(data) : undefined,
  credentials: "include",
+ signal: controller?.signal,
  });
 
  await throwIfResNotOk(res);
  return res;
+ } finally {
+ if (timer) clearTimeout(timer);
+ }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";

@@ -6,6 +6,7 @@ import { fetchJson } from "@/lib/fetchJson";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import Sidebar from "@/components/sidebar";
+import GeneratingOverlay from "@/components/GeneratingOverlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -652,7 +653,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  projectId: selectedProjectId,
  weekContext: weekContext || undefined,
  startDate,
- });
+ }, { timeoutMs: 180000 }); // la génération prend ~2 min ; on abandonne après 3 min
  return res.json();
  },
  onSuccess: (data) => {
@@ -661,7 +662,15 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  setPanelState("generated");
  queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedProjectId] });
  },
- onError: () => toast({ title: t('campaigns.failedToGenerate'), variant: "destructive" }),
+ onError: (err: any) => {
+ const timedOut = err?.name === "AbortError";
+ toast({
+ title: timedOut
+ ? "La génération a dépassé 3 minutes. Réessaie dans un moment."
+ : t('campaigns.failedToGenerate'),
+ variant: "destructive",
+ });
+ },
  });
 
  const launchMutation = useMutation({
@@ -831,6 +840,16 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
 
  return (
  <div className="flex h-screen bg-background">
+ {/* Overlay explicite pendant la génération (~2 min) : sinon l'utilisateur croit qu'il ne se passe rien */}
+ <GeneratingOverlay
+ open={generateMutation.isPending}
+ messages={[
+ "Naya construit ta campagne…",
+ "Analyse de ton positionnement et de ton audience…",
+ "Structuration des phases et du plan de contenu…",
+ "Ça prend environ 2 minutes — ne ferme pas l'onglet.",
+ ]}
+ />
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">

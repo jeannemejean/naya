@@ -1,6 +1,30 @@
-import { describe, it, expect } from "vitest";
-import { throwIfResNotOk, is401 } from "./queryClient";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { throwIfResNotOk, is401, apiRequest } from "./queryClient";
 import { isUnauthorizedError } from "./authUtils";
+
+describe("apiRequest — timeout optionnel (génération de campagne)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("abandonne (AbortError) après timeoutMs sur une requête qui traîne", async () => {
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) =>
+      new Promise((_res, rej) => {
+        init.signal?.addEventListener("abort", () =>
+          rej(Object.assign(new Error("aborted"), { name: "AbortError" })));
+      }));
+    await expect(apiRequest("POST", "/slow", {}, { timeoutMs: 30 })).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("sans timeout : ne pose pas de signal, la requête aboutit (rétro-compatible)", async () => {
+    let sawSignal = false;
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      sawSignal = !!init.signal;
+      return { ok: true, status: 200, text: async () => "{}" } as unknown as Response;
+    });
+    const res = await apiRequest("GET", "/x");
+    expect(res).toBeTruthy();
+    expect(sawSignal).toBe(false);
+  });
+});
 
 function mockRes(status: number, body: string, ok: boolean, statusText = ""): Response {
   return { ok, status, statusText, text: async () => body } as unknown as Response;
