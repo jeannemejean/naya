@@ -424,14 +424,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DIAGNOSTIC TEMPORAIRE — mesure du timeout proxy Railway (à retirer après mesure).
-  app.get('/api/__probe', async (req: any, res) => {
-    const ms = Math.min(Math.max(parseInt(req.query.ms as string) || 0, 0), 200000);
-    const t = Date.now();
-    await new Promise((r) => setTimeout(r, ms));
-    res.json({ ok: true, requestedMs: ms, actualMs: Date.now() - t });
-  });
-
   // ── Config publique (no auth) ──────────────────────────────────────
   app.get('/api/config', (_req, res) => {
     res.json({ waitlistMode: process.env.WAITLIST_MODE === 'true' });
