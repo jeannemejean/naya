@@ -311,18 +311,24 @@ interface TaskBlockProps {
   onDragStart: (e: React.DragEvent, task: Task) => void;
   onResize: (taskId: number, newDurationMin: number) => void;
   onMilestoneConfirm?: (milestoneId: number) => void;
+  fullWidth?: boolean; // vue Jour : la tâche prend 100 % de la colonne (on ignore les lanes)
 }
 
 function TaskBlock({
-  task, lane, totalLanes, columnWidth, isBlocked, onTaskClick, onToggle, onDragStart, onResize, onMilestoneConfirm,
+  task, lane, totalLanes, columnWidth, isBlocked, onTaskClick, onToggle, onDragStart, onResize, onMilestoneConfirm, fullWidth,
 }: TaskBlockProps) {
   const startMin = task.scheduledTime ? timeToMinutes(task.scheduledTime) : GRID_START_HOUR * 60;
   const duration = Math.max(task.estimatedDuration || 30, 15);
   const top    = minutesToGridPx(startMin);
   const height = Math.max(duration * PX_PER_MINUTE, 28);
 
-  const laneWidth = totalLanes > 0 ? (columnWidth - 6) / totalLanes : columnWidth - 6;
-  const left = 3 + lane * laneWidth;
+  // Vue Jour (fullWidth) : chaque tâche occupe la PLEINE largeur de la colonne — on ignore le
+  // calcul de lanes (chevauchement). Deux tâches qui se chevauchent se superposent visuellement,
+  // c'est accepté. Ailleurs (semaine), on garde le placement côte-à-côte par lanes.
+  const laneWidth = fullWidth
+    ? columnWidth - 6
+    : (totalLanes > 0 ? (columnWidth - 6) / totalLanes : columnWidth - 6);
+  const left = fullWidth ? 3 : (3 + lane * laneWidth);
 
   const resizing = useRef(false);
   const resizeStartY = useRef(0);
@@ -914,6 +920,7 @@ export default function TimeGrid({
                       lane={lane}
                       totalLanes={tl || 1}
                       columnWidth={gridRefs.current[date]?.clientWidth || 120}
+                      fullWidth={dates.length === 1}
                       isBlocked={isBlocked}
                       onTaskClick={onTaskClick}
                       onToggle={onToggle}
