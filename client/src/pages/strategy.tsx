@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { readJsonSafe } from "@/lib/fetchJson";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/sidebar";
 import { Badge } from "@/components/ui/badge";
@@ -103,7 +104,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  queryFn: async () => {
  if (!selectedProjectId) return null;
  const res = await apiRequest('GET', `/api/projects/${selectedProjectId}/brand-dna`);
- return res.json();
+ return readJsonSafe<BrandDna>(res); // tolère un corps vide → null (pas de throw → pas d'ErrorBoundary)
  },
  enabled: !!selectedProjectId,
  });
@@ -117,7 +118,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  queryFn: async () => {
  if (!selectedProjectId) return null;
  const res = await apiRequest('GET', `/api/strategy/report?week=${currentWeek}&projectId=${selectedProjectId}`);
- return res.json();
+ return readJsonSafe<any>(res); // corps vide (aucun rapport) → null au lieu de JSON.parse('') qui throw
  },
  enabled: !!selectedProjectId,
  });

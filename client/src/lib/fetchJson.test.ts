@@ -1,6 +1,25 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { fetchJson } from "./fetchJson";
+import { fetchJson, readJsonSafe } from "./fetchJson";
 import { is401 } from "./queryClient";
+
+function resWithBody(body: string): Response {
+  return { text: async () => body } as unknown as Response;
+}
+
+describe("readJsonSafe — tolère un corps vide (cause ErrorBoundary Stratégie)", () => {
+  it("corps VIDE → null (au lieu de JSON.parse('') qui throw)", async () => {
+    await expect(readJsonSafe(resWithBody(""))).resolves.toBeNull();
+  });
+  it("corps 'null' → null", async () => {
+    await expect(readJsonSafe(resWithBody("null"))).resolves.toBeNull();
+  });
+  it("JSON valide → objet parsé", async () => {
+    await expect(readJsonSafe(resWithBody('{"focus":"x"}'))).resolves.toEqual({ focus: "x" });
+  });
+  it("JSON invalide → null (ne throw pas)", async () => {
+    await expect(readJsonSafe(resWithBody("{oops"))).resolves.toBeNull();
+  });
+});
 
 function stubFetchOnce(status: number, body: unknown, ok = status < 400) {
   const res = {

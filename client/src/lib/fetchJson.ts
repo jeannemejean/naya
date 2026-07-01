@@ -11,3 +11,16 @@ export async function fetchJson<T = unknown>(url: string, init?: RequestInit): P
   await throwIfResNotOk(res);
   return res.json() as Promise<T>;
 }
+
+// Lit le corps JSON d'une réponse en TOLÉRANT un corps vide → null (au lieu de JSON.parse('')
+// qui throw « Unexpected end of JSON input »). Utile quand un endpoint peut répondre 200 sans
+// contenu (ex. res.json(undefined)). À utiliser sur une Response déjà vérifiée (apiRequest).
+export async function readJsonSafe<T = unknown>(res: Response): Promise<T | null> {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}

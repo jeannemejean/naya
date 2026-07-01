@@ -7700,7 +7700,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         if (!Number.isFinite(projectId)) return res.status(400).json({ message: "Invalid projectId" });
       }
       const report = await storage.getStrategyReport(userId, week as string, projectId);
-      res.json(report);
+      // ⚠️ Ne JAMAIS renvoyer undefined : res.json(undefined) envoie un corps VIDE, et côté client
+      // res.json() fait JSON.parse('') → throw → ErrorBoundary. On renvoie null explicitement.
+      res.json(report ?? null);
     } catch (error) {
       console.error("Error fetching strategy report:", error);
       res.status(500).json({ message: "Failed to fetch strategy report" });
