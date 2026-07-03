@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -72,9 +72,11 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState(initialNote);
-  // Re-synchronise le brouillon sur la valeur serveur à chaque ouverture / changement de note.
+  const skipSaveRef = useRef(false); // posé par Annuler / bouton pour ne PAS re-sauver à la fermeture
+  // Re-synchronise le brouillon sur la valeur serveur (ouverture, et refetch après enregistrement).
   useEffect(() => { setNote(initialNote); }, [initialNote, open]);
   const hasNote = (initialNote || "").trim().length > 0;
+  const dirty = note !== initialNote; // modifié localement mais pas encore persisté
 
   const save = useMutation({
     mutationFn: () => apiRequest("PATCH", `/api/projects/${projectId}`, { statusNote: note }),
@@ -83,13 +85,24 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "full"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects?limit=200"] });
-      setOpen(false);
     },
     onError: () => toast({ title: "Échec de l'enregistrement", variant: "destructive" }),
   });
 
+  // Auto-save à la FERMETURE : si la note a changé et qu'on ne vient ni d'un abandon (Annuler)
+  // ni d'un enregistrement explicite (bouton), on persiste avant de fermer. Le bouton n'est donc
+  // plus le seul chemin de sauvegarde. skipSaveRef évite un double PATCH sur ces deux chemins.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && !skipSaveRef.current && note !== initialNote) save.mutate();
+    skipSaveRef.current = false;
+    setOpen(next);
+  };
+  const handleSave = () => { skipSaveRef.current = true; save.mutate(); setOpen(false); };
+  // Annuler : abandon explicite — réinitialise le champ local, ne sauvegarde pas.
+  const handleCancel = () => { skipSaveRef.current = true; setNote(initialNote); setOpen(false); };
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -105,6 +118,12 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
         <div className="flex items-center gap-2">
           <Brain className="h-4 w-4 text-naya-olive" />
           <h4 className="text-sm font-medium text-foreground">Dis à Naya où tu en es</h4>
+          {dirty && (
+            <span className="ml-auto flex items-center gap-1 text-[10px] text-[#6f6526]" title="Modifications non enregistrées">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#d4c97a]" />
+              non enregistré
+            </span>
+          )}
         </div>
         <p className="text-[11px] text-naya-olive-55 leading-relaxed">
           Naya connaît déjà tout ce que tu fais <strong>dans</strong> l'app (tâches, contenus, campagnes).
@@ -118,8 +137,8 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
           className="text-sm resize-none"
         />
         <div className="flex justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setOpen(false)} className="h-7 text-xs">Annuler</Button>
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} className="h-7 text-xs">
+          <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 text-xs">Annuler</Button>
+          <Button size="sm" onClick={handleSave} disabled={save.isPending || !dirty} className="h-7 text-xs">
             {save.isPending ? "Enregistrement…" : "Enregistrer"}
           </Button>
         </div>
