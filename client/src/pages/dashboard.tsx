@@ -20,8 +20,9 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity, PauseCircle, PlayCircle, Gauge,
+  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity, PauseCircle, PlayCircle, Gauge, StickyNote,
 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Project, ProjectGoal, PersonaAnalysisResult, TargetPersona, QuickCaptureEntry, MilestoneTrigger } from "@shared/schema";
 import { Link } from "wouter";
 
@@ -62,6 +63,70 @@ const CLASSIFIED_TYPE_CONFIG: Record<string, { icon: string; label: string; colo
   behavioral_insight: { icon: "◈",  label: "Noted",   colorClass: "bg-[rgba(125,143,168,0.18)] text-[#46556d] border-[rgba(125,143,168,0.35)]", noteKey: "nayaLoggedPattern" },
   milestone_trigger:  { icon: "⬡",  label: "Trigger", colorClass: "bg-naya-olive-10 text-naya-olive border-naya-olive-18", noteKey: "nayaCreatedRule" },
 };
+
+// Popover LÉGER « Dis à Naya où tu en es » accessible en 1 clic depuis chaque carte projet,
+// sans naviguer vers la vue projet. Édite le seul champ statusNote (contexte non tracké par
+// l'app) et sauvegarde via PATCH. L'icône est REMPLIE si une note existe déjà, VIDE sinon.
+function StatusNotePopover({ projectId, initialNote }: { projectId: number; initialNote: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState(initialNote);
+  // Re-synchronise le brouillon sur la valeur serveur à chaque ouverture / changement de note.
+  useEffect(() => { setNote(initialNote); }, [initialNote, open]);
+  const hasNote = (initialNote || "").trim().length > 0;
+
+  const save = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/projects/${projectId}`, { statusNote: note }),
+    onSuccess: () => {
+      toast({ title: "Enregistré", description: "Naya en tiendra compte pour ce projet." });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "full"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects?limit=200"] });
+      setOpen(false);
+    },
+    onError: () => toast({ title: "Échec de l'enregistrement", variant: "destructive" }),
+  });
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          title={hasNote ? "Note pour Naya (remplie) — modifier" : "Dis à Naya où tu en es"}
+          aria-label="Dis à Naya où tu en es"
+          className={`flex-shrink-0 transition-colors ${hasNote ? "text-naya-olive hover:text-naya-olive-70" : "text-naya-olive-35 hover:text-naya-olive"}`}
+        >
+          <StickyNote className="h-3.5 w-3.5" fill={hasNote ? "currentColor" : "none"} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <Brain className="h-4 w-4 text-naya-olive" />
+          <h4 className="text-sm font-medium text-foreground">Dis à Naya où tu en es</h4>
+        </div>
+        <p className="text-[11px] text-naya-olive-55 leading-relaxed">
+          Naya connaît déjà tout ce que tu fais <strong>dans</strong> l'app (tâches, contenus, campagnes).
+          Note ici seulement ce qu'elle ne peut pas deviner : un événement externe, une décision, un blocage.
+        </p>
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Ex : j'ai signé un client hors Naya ; le lancement est repoussé à octobre…"
+          rows={4}
+          className="text-sm resize-none"
+        />
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setOpen(false)} className="h-7 text-xs">Annuler</Button>
+          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} className="h-7 text-xs">
+            {save.isPending ? "Enregistrement…" : "Enregistrer"}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 function ActiveProjectBand({ projectId, compact = false, overcommitted = false }: { projectId: number; compact?: boolean; overcommitted?: boolean }) {
   const { data: project } = useQuery<Project & { goals: ProjectGoal[] }>({
@@ -118,13 +183,16 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
             </span>
           )}
         </div>
-        {daysLeft !== null && daysLeft >= 0 && (
-          <span className={`font-display uppercase tracking-xwide text-[9px] ${
-            daysLeft <= 7 ? "text-[#6f6526]" : daysLeft <= 14 ? "text-[#6e4b53]" : "text-naya-olive-55"
-          }`}>
-            {daysLeft}j
-          </span>
-        )}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {daysLeft !== null && daysLeft >= 0 && (
+            <span className={`font-display uppercase tracking-xwide text-[9px] ${
+              daysLeft <= 7 ? "text-[#6f6526]" : daysLeft <= 14 ? "text-[#6e4b53]" : "text-naya-olive-55"
+            }`}>
+              {daysLeft}j
+            </span>
+          )}
+          <StatusNotePopover projectId={project.id} initialNote={(project as any).statusNote ?? ""} />
+        </div>
       </div>
       {topGoal ? (
         <>
