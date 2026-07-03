@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { readJsonSafe } from "@/lib/fetchJson";
+import { fetchJson, readJsonSafe } from "@/lib/fetchJson";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/sidebar";
 import { Badge } from "@/components/ui/badge";
@@ -87,7 +87,10 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  const { t } = useTranslation();
  const pageVisible = usePageVisible();
 
- const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
+ const { data: projects = [] } = useQuery<Project[]>({
+ queryKey: ['/api/projects?limit=200'],
+ queryFn: () => fetchJson<Project[]>('/api/projects?limit=200'),
+ });
  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
 
  useEffect(() => {
@@ -221,6 +224,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
  const { data: triggers = [], isLoading: triggersLoading } = useQuery<MilestoneTrigger[]>({
  queryKey: ['/api/milestone-triggers'],
+ queryFn: () => fetchJson<MilestoneTrigger[]>('/api/milestone-triggers'),
  refetchInterval: pageVisible ? 30000 : false, // en pause quand l'onglet n'est pas visible
  });
 
@@ -800,10 +804,9 @@ function BusinessMemorySection() {
 
  const { data: memories = [], isLoading } = useQuery<BusinessMemory[]>({
  queryKey: ['/api/memory', showArchived ? 'all' : 'active'],
- queryFn: async () => {
+ queryFn: () => {
  const params = showArchived ? '?archived=all' : '';
- const res = await apiRequest('GET', `/api/memory${params}`);
- return res.json();
+ return fetchJson<BusinessMemory[]>(`/api/memory${params}`);
  },
  });
 
