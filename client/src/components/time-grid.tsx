@@ -791,7 +791,11 @@ export default function TimeGrid({
             // JAMAIS superposer deux tâches — même si les données serveur sont transitoirement
             // en conflit. Le vrai correctif reste côté serveur (fixOverlappingTasks).
             const displayTasks   = deduplicateOverlaps(scheduledTasks);
-            const laneMap        = assignLanes(displayTasks);
+            // Vue Jour (une seule colonne) : AUCUN calcul de largeur par chevauchement (lanes).
+            // Chaque tâche prend la pleine largeur ; deux tâches qui se chevauchent se superposent
+            // visuellement, c'est accepté. Vue semaine : placement côte-à-côte par lanes conservé.
+            const singleDay      = dates.length === 1;
+            const laneMap        = singleDay ? null : assignLanes(displayTasks);
             const isOff          = dayType === 'off';
             const isHalfAm       = dayType === 'half-am';
             const isHalfPm       = dayType === 'half-pm';
@@ -909,7 +913,7 @@ export default function TimeGrid({
 
                 {/* Blocs de tâches planifiées */}
                 {displayTasks.map(task => {
-                  const { lane, totalLanes: tl } = laneMap.get(task.id) || { lane: 0, totalLanes: 1 };
+                  const { lane, totalLanes: tl } = laneMap?.get(task.id) || { lane: 0, totalLanes: 1 };
                   const isBlocked = dependencies[task.id] !== undefined;
                   return (
                     <TaskBlock
@@ -920,7 +924,7 @@ export default function TimeGrid({
                       lane={lane}
                       totalLanes={tl || 1}
                       columnWidth={gridRefs.current[date]?.clientWidth || 120}
-                      fullWidth={dates.length === 1}
+                      fullWidth={singleDay}
                       isBlocked={isBlocked}
                       onTaskClick={onTaskClick}
                       onToggle={onToggle}
