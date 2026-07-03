@@ -1688,6 +1688,44 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     }
   });
 
+  // Statut de surcharge PAR PROJET (jamais un cumul global) : pour chaque projet, on compare le
+  // nombre de ses tâches du jour à un seuil dérivé de SON budget temps/jour et de la durée
+  // moyenne RÉELLE de ses tâches. overcommitted=true seulement si CE projet dépasse SON seuil.
+  // IMPORTANT : doit être déclarée AVANT `/api/projects/:id` sinon le param `:id` capte "overcommit".
+  app.get('/api/projects/overcommit', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const today = (typeof req.query.clientToday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.clientToday))
+        ? (req.query.clientToday as string)
+        : new Date().toISOString().slice(0, 10);
+
+      const projects = await storage.getProjects(userId);
+      const todayTasks = (await storage.getTasksInRange(userId, today, today))
+        .filter((t: any) => t.type !== 'milestone' && t.source !== 'milestone' && !t.completed && !t.archivedAt);
+
+      const byProject = new Map<number, any[]>();
+      for (const t of todayTasks as any[]) {
+        if (t.projectId == null) continue;
+        if (!byProject.has(t.projectId)) byProject.set(t.projectId, []);
+        byProject.get(t.projectId)!.push(t);
+      }
+
+      const result = projects.map((p: any) => {
+        const tasks = byProject.get(p.id) || [];
+        const status = evaluateProjectOvercommit(
+          tasks.length,
+          p.dailyTimeBudgetHours,
+          tasks.map((t: any) => t.estimatedDuration),
+        );
+        return { projectId: p.id, projectName: p.name, ...status };
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error('GET /api/projects/overcommit error:', error?.message);
+      res.status(500).json({ message: 'Failed to compute overcommit status' });
+    }
+  });
+
   app.get('/api/projects/:id', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -4160,6 +4198,24 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // Récupérer les tâches ARCHIVÉES (archivedAt non nul) — surface explicite, jamais mélangée
+  // aux vues actives. Optionnellement filtrée par projet (?projectId=).
+  app.get('/api/tasks/archived', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      let pid: number | undefined;
+      if (req.query.projectId) {
+        const parsed = Number(req.query.projectId);
+        if (Number.isFinite(parsed) && parsed > 0) pid = parsed;
+      }
+      const archived = await storage.getArchivedTasks(userId, pid);
+      res.json(archived);
+    } catch (error: any) {
+      console.error('GET /api/tasks/archived error:', error?.message);
+      res.status(500).json({ message: 'Failed to fetch archived tasks' });
+    }
+  });
+
   // Ignorer / archiver une tâche en retard (soft — ne supprime pas, la sort juste de la surface).
   app.post('/api/tasks/:id/archive', isAuthenticated, async (req: any, res) => {
     try {
@@ -4173,43 +4229,6 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     } catch (error: any) {
       console.error('POST /api/tasks/:id/archive error:', error?.message);
       res.status(500).json({ message: 'Failed to archive task' });
-    }
-  });
-
-  // Statut de surcharge PAR PROJET (jamais un cumul global) : pour chaque projet, on compare le
-  // nombre de ses tâches du jour à un seuil dérivé de SON budget temps/jour et de la durée
-  // moyenne RÉELLE de ses tâches. overcommitted=true seulement si CE projet dépasse SON seuil.
-  app.get('/api/projects/overcommit', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.userId;
-      const today = (typeof req.query.clientToday === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.clientToday))
-        ? (req.query.clientToday as string)
-        : new Date().toISOString().slice(0, 10);
-
-      const projects = await storage.getProjects(userId);
-      const todayTasks = (await storage.getTasksInRange(userId, today, today))
-        .filter((t: any) => t.type !== 'milestone' && t.source !== 'milestone' && !t.completed && !t.archivedAt);
-
-      const byProject = new Map<number, any[]>();
-      for (const t of todayTasks as any[]) {
-        if (t.projectId == null) continue;
-        if (!byProject.has(t.projectId)) byProject.set(t.projectId, []);
-        byProject.get(t.projectId)!.push(t);
-      }
-
-      const result = projects.map((p: any) => {
-        const tasks = byProject.get(p.id) || [];
-        const status = evaluateProjectOvercommit(
-          tasks.length,
-          p.dailyTimeBudgetHours,
-          tasks.map((t: any) => t.estimatedDuration),
-        );
-        return { projectId: p.id, projectName: p.name, ...status };
-      });
-      res.json(result);
-    } catch (error: any) {
-      console.error('GET /api/projects/overcommit error:', error?.message);
-      res.status(500).json({ message: 'Failed to compute overcommit status' });
     }
   });
 

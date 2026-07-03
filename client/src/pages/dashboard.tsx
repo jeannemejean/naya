@@ -20,7 +20,7 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity, PauseCircle, PlayCircle,
+  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity, PauseCircle, PlayCircle, Gauge,
 } from "lucide-react";
 import type { Project, ProjectGoal, PersonaAnalysisResult, TargetPersona, QuickCaptureEntry, MilestoneTrigger } from "@shared/schema";
 import { Link } from "wouter";
@@ -63,7 +63,7 @@ const CLASSIFIED_TYPE_CONFIG: Record<string, { icon: string; label: string; colo
   milestone_trigger:  { icon: "⬡",  label: "Trigger", colorClass: "bg-naya-olive-10 text-naya-olive border-naya-olive-18", noteKey: "nayaCreatedRule" },
 };
 
-function ActiveProjectBand({ projectId, compact = false }: { projectId: number; compact?: boolean }) {
+function ActiveProjectBand({ projectId, compact = false, overcommitted = false }: { projectId: number; compact?: boolean; overcommitted?: boolean }) {
   const { data: project } = useQuery<Project & { goals: ProjectGoal[] }>({
     queryKey: [`/api/projects/${projectId}`],
   });
@@ -72,6 +72,14 @@ function ActiveProjectBand({ projectId, compact = false }: { projectId: number; 
   const topGoal = activeGoals[0] as ProjectGoal | undefined;
 
   if (!project) return null;
+
+  // Signal de surcharge SOBRE (jamais rouge/alerte). Traitement différencié par catégorie :
+  //  · revenu  → indicateur AMBRÉ visible mais non bloquant (liseré + badge « Planning chargé »)
+  //  · passion → ton plus DOUX (texte grisé « planning chargé »), pas de liseré ni d'icône
+  // Catégorie non renseignée → traité comme passion (le moins présomptueux). Seuil = 1.25 uniforme.
+  const isRevenue = project.category === "revenue";
+  const showAmber = overcommitted && isRevenue;
+  const showSoft  = overcommitted && !isRevenue;
 
   const daysLeft = topGoal?.dueDate
     ? Math.ceil((new Date(topGoal.dueDate as any).getTime() - Date.now()) / 86400000)
@@ -82,15 +90,32 @@ function ActiveProjectBand({ projectId, compact = false }: { projectId: number; 
     : null;
 
   return (
-    <div className={`bg-card border border-naya-olive-18 rounded-lg p-4 shadow-rest ${compact ? "" : "mb-6"}`}>
+    <div
+      className={`bg-card border border-naya-olive-18 rounded-lg p-4 shadow-rest ${compact ? "" : "mb-6"}`}
+      style={showAmber ? { borderLeft: "3px solid rgba(212,201,122,0.75)" } : undefined}
+    >
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: project.color || "#2B2D1C" }} />
-          <span className="font-display uppercase tracking-xwide text-[11px] text-foreground">{project.name}</span>
+          <span className="font-display uppercase tracking-xwide text-[11px] text-foreground truncate">{project.name}</span>
           {topGoal?.successMode && (
             <Badge className={`text-[9px] border ${SUCCESS_MODE_COLORS[topGoal.successMode] || "bg-naya-olive-06 text-naya-olive-55"}`}>
               {topGoal.successMode}
             </Badge>
+          )}
+          {showAmber && (
+            <span
+              className="flex items-center gap-1 flex-shrink-0 text-[9px] font-display uppercase tracking-xwide px-1.5 py-0.5 rounded border border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] text-[#6f6526]"
+              title="Ce projet dépasse son budget de tâches du jour"
+            >
+              <Gauge className="h-3 w-3" />
+              Planning chargé
+            </span>
+          )}
+          {showSoft && (
+            <span className="flex-shrink-0 text-[10px] text-naya-olive-35 italic" title="Journée bien remplie sur ce projet">
+              planning chargé
+            </span>
           )}
         </div>
         {daysLeft !== null && daysLeft >= 0 && (
@@ -126,12 +151,20 @@ function ActiveProjectBand({ projectId, compact = false }: { projectId: number; 
 
 function AllProjectsBand() {
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects?limit=200"] });
+  const today = formatLocalDate(new Date());
+  // Statut de surcharge PAR PROJET (seuil dérivé du budget/jour du projet, multiplicateur 1.25).
+  const { data: overcommit = [] } = useQuery<Array<{ projectId: number; overcommitted: boolean }>>({
+    queryKey: ["/api/projects/overcommit", today],
+    queryFn: async () => { const r = await apiRequest("GET", `/api/projects/overcommit?clientToday=${today}`); return r.json(); },
+  });
+  const overcommitById = new Map(overcommit.map(o => [o.projectId, o.overcommitted]));
+
   const active = projects.filter(p => p.projectStatus === "active");
   if (active.length === 0) return null;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
       {active.slice(0, 4).map(p => (
-        <ActiveProjectBand key={p.id} projectId={p.id} compact />
+        <ActiveProjectBand key={p.id} projectId={p.id} compact overcommitted={overcommitById.get(p.id) ?? false} />
       ))}
     </div>
   );

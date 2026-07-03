@@ -221,6 +221,7 @@ export interface IStorage {
 
   // Task range query (for planning views)
   getTasksInRange(userId: string, startDate: string, endDate: string, projectId?: number): Promise<Task[]>;
+  getArchivedTasks(userId: string, projectId?: number): Promise<Task[]>;
 
   // Scheduling signals (for replan)
   getRecentScheduleEvents(userId: string, limit?: number): Promise<TaskScheduleEvent[]>;
@@ -764,7 +765,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTasks(userId: string, dueDate?: Date, projectId?: number, campaignId?: number): Promise<Task[]> {
-    const conditions = [eq(tasks.userId, userId)];
+    // Les tâches archivées (« Ignorer » → archivedAt non nul) sont exclues GLOBALEMENT de toutes
+    // les surfaces actives (Planning, Today, analytics). Pour les retrouver : getArchivedTasks().
+    const conditions = [eq(tasks.userId, userId), isNull(tasks.archivedAt)];
     if (dueDate) {
       const startOfDay = new Date(dueDate);
       startOfDay.setHours(0, 0, 0, 0);
@@ -791,7 +794,7 @@ export class DatabaseStorage implements IStorage {
     const tomorrowEnd = new Date(now); tomorrowEnd.setDate(now.getDate() + 1); tomorrowEnd.setHours(23, 59, 59, 999);
     const in7Days = new Date(now); in7Days.setDate(now.getDate() + 7);
 
-    const baseConditions = [eq(tasks.userId, userId)];
+    const baseConditions = [eq(tasks.userId, userId), isNull(tasks.archivedAt)];
     if (projectId) baseConditions.push(eq(tasks.projectId, projectId));
 
     const todayConditions = [...baseConditions, eq(tasks.completed, false), gte(tasks.dueDate, todayStart), lte(tasks.dueDate, todayEnd)];
@@ -1984,12 +1987,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTasksInRange(userId: string, startDate: string, endDate: string, projectId?: number): Promise<Task[]> {
+    // Archivées exclues globalement (cf. getTasks). Aucune surface active (Planning/Today) ne
+    // doit afficher une tâche archivée. Récupération explicite via getArchivedTasks().
     const conditions = projectId
-      ? and(eq(tasks.userId, userId), eq(tasks.projectId, projectId), gte(tasks.scheduledDate, startDate), lte(tasks.scheduledDate, endDate))
-      : and(eq(tasks.userId, userId), gte(tasks.scheduledDate, startDate), lte(tasks.scheduledDate, endDate));
+      ? and(eq(tasks.userId, userId), isNull(tasks.archivedAt), eq(tasks.projectId, projectId), gte(tasks.scheduledDate, startDate), lte(tasks.scheduledDate, endDate))
+      : and(eq(tasks.userId, userId), isNull(tasks.archivedAt), gte(tasks.scheduledDate, startDate), lte(tasks.scheduledDate, endDate));
     return await db.select().from(tasks)
       .where(conditions)
       .orderBy(tasks.scheduledDate);
+  }
+
+  // Tâches ARCHIVÉES uniquement (archivedAt non nul) — surface explicite pour les retrouver.
+  // N'est jamais utilisée par les widgets actifs.
+  async getArchivedTasks(userId: string, projectId?: number): Promise<Task[]> {
+    const conditions = [eq(tasks.userId, userId), isNotNull(tasks.archivedAt)];
+    if (projectId) conditions.push(eq(tasks.projectId, projectId));
+    return await db.select().from(tasks)
+      .where(and(...conditions))
+      .orderBy(desc(tasks.archivedAt));
   }
 
   async getRecentScheduleEvents(userId: string, limit = 40): Promise<TaskScheduleEvent[]> {
