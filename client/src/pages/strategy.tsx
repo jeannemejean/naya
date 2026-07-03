@@ -87,10 +87,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  const { t } = useTranslation();
  const pageVisible = usePageVisible();
 
- const { data: projects = [] } = useQuery<Project[]>({
- queryKey: ['/api/projects?limit=200'],
- queryFn: () => fetchJson<Project[]>('/api/projects?limit=200'),
- });
+ const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
 
  useEffect(() => {
@@ -224,7 +221,6 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
  const { data: triggers = [], isLoading: triggersLoading } = useQuery<MilestoneTrigger[]>({
  queryKey: ['/api/milestone-triggers'],
- queryFn: () => fetchJson<MilestoneTrigger[]>('/api/milestone-triggers'),
  refetchInterval: pageVisible ? 30000 : false, // en pause quand l'onglet n'est pas visible
  });
 
