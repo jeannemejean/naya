@@ -72,9 +72,11 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState(initialNote);
-  const skipSaveRef = useRef(false); // posé par Annuler / bouton pour ne PAS re-sauver à la fermeture
-  // Re-synchronise le brouillon sur la valeur serveur (ouverture, et refetch après enregistrement).
-  useEffect(() => { setNote(initialNote); }, [initialNote, open]);
+  const seedRef = useRef(initialNote);
+  seedRef.current = initialNote; // dernière valeur serveur, lue sans re-déclencher l'effet de seed
+  // #3 — Re-seed du brouillon UNIQUEMENT à l'ouverture (jamais pendant que le popover est ouvert) :
+  // un refetch en arrière-plan ne peut donc pas écraser la saisie en cours.
+  useEffect(() => { if (open) setNote(seedRef.current); }, [open]);
   const hasNote = (initialNote || "").trim().length > 0;
   const dirty = note !== initialNote; // modifié localement mais pas encore persisté
 
@@ -85,24 +87,18 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "full"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects?limit=200"] });
+      setOpen(false); // #1 — on ne ferme QU'au succès : un PATCH échoué garde le popover ouvert, brouillon intact
     },
-    onError: () => toast({ title: "Échec de l'enregistrement", variant: "destructive" }),
+    onError: () => toast({ title: "Échec de l'enregistrement — ta note est conservée", variant: "destructive" }),
   });
 
-  // Auto-save à la FERMETURE : si la note a changé et qu'on ne vient ni d'un abandon (Annuler)
-  // ni d'un enregistrement explicite (bouton), on persiste avant de fermer. Le bouton n'est donc
-  // plus le seul chemin de sauvegarde. skipSaveRef évite un double PATCH sur ces deux chemins.
-  const handleOpenChange = (next: boolean) => {
-    if (!next && !skipSaveRef.current && note !== initialNote) save.mutate();
-    skipSaveRef.current = false;
-    setOpen(next);
-  };
-  const handleSave = () => { skipSaveRef.current = true; save.mutate(); setOpen(false); };
-  // Annuler : abandon explicite — réinitialise le champ local, ne sauvegarde pas.
-  const handleCancel = () => { skipSaveRef.current = true; setNote(initialNote); setOpen(false); };
+  // Abandon : le clic-dehors / Échap (via onOpenChange={setOpen}) ET « Annuler » ferment SANS
+  // sauvegarder. Le brouillon local est perdu (re-seedé depuis le serveur à la prochaine ouverture).
+  // Seul le bouton « Enregistrer » déclenche le PATCH.
+  const handleCancel = () => { setNote(initialNote); setOpen(false); };
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -138,7 +134,7 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
         />
         <div className="flex justify-end gap-2">
           <Button size="sm" variant="ghost" onClick={handleCancel} className="h-7 text-xs">Annuler</Button>
-          <Button size="sm" onClick={handleSave} disabled={save.isPending || !dirty} className="h-7 text-xs">
+          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !dirty} className="h-7 text-xs">
             {save.isPending ? "Enregistrement…" : "Enregistrer"}
           </Button>
         </div>
