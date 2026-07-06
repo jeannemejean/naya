@@ -652,7 +652,10 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  // (pas de troncature, pas de timeout à 3 min). L'overlay suit la progression via genStep.
  mutationFn: async () => {
  const base = { objective, duration, projectId: selectedProjectId, weekContext: weekContext || undefined };
- const STEP_TIMEOUT = 120000; // 2 min par étape (marge large : chaque étape prend ~20-50s)
+ // Timeout PAR APPEL (pas cumulé) : chaque apiRequest crée son propre AbortController + timer
+ // (queryClient.ts:25-26), démarré à son lancement et nettoyé en finally. Les 3 étapes ont donc
+ // chacune 4 min pleines indépendamment. Mesuré ~50-65 s/étape ; 4 min = large marge prod.
+ const STEP_TIMEOUT = 240000; // 4 min par étape
 
  setGenStep('strategy');
  const s = await apiRequest("POST", "/api/campaigns/generate/strategy", base, { timeoutMs: STEP_TIMEOUT });
