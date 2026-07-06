@@ -1,4 +1,4 @@
-import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./claude";
+import { callClaude, callClaudeDetailed, callClaudeWithContext, assertNotTruncated, CLAUDE_MODELS } from "./claude";
 import { storage } from "../storage";
 import { NAYA_SYSTEM_VOICE } from "../naya-voice";
 
@@ -1057,6 +1057,7 @@ export interface CampaignKPI {
 
 export interface CampaignGenerationRequest {
   userId: string;
+  projectId?: number | null;
   objective: string;
   duration: string;
   brandDna: BrandDnaInput & {
@@ -1134,40 +1135,57 @@ function getDurationGuidance(duration: string): string {
   }
 }
 
-export async function generateCampaign(request: CampaignGenerationRequest): Promise<GeneratedCampaign> {
-  try {
-    const projectId = (request as any).projectId || null;
 
-    const prompt = `Generate a comprehensive, professional digital communication campaign — not a task list. Think like a strategic communications director who deeply understands this brand.
+// ─── Génération de campagne EN 3 ÉTAPES SÉQUENTIELLES ────────────────────────
+// Chaque appel tient LARGEMENT sous 8000 tokens (2500/3000/2000) → aucune troncature possible,
+// et chaque appel est court (~20-50s) → jamais de timeout à 3 min. Garde-fou assertNotTruncated
+// sur chacun : si la réponse est coupée (max_tokens), on lève une erreur explicite AVANT tout parse.
+
+export type CampaignStrategy = Omit<GeneratedCampaign, "contentPlan" | "tasks">;
+
+const CAMPAIGN_SYSTEM = `You are Naya's campaign planning intelligence. You generate comprehensive, strategic campaign architectures for independent builders. Return ONLY valid JSON matching the exact structure requested. No preamble, no markdown fences, no text outside the JSON object.`;
+
+function buildCampaignBrandContext(bd: CampaignGenerationRequest["brandDna"] | undefined): string {
+  const b = (bd || {}) as any;
+  return `\n\nBRAND CONTEXT:
+- Business type: ${b.businessType || 'Independent'}
+- Unique positioning: ${b.uniquePositioning || ''}
+- Target audience: ${b.targetAudience || b.audience || ''}
+- Core pain point: ${b.corePainPoint || ''}
+- Communication style: ${b.communicationStyle || 'Professional'}
+- Platform priority: ${b.platformPriority || ''}
+- Offers: ${b.offers || ''}${b.revenueTarget ? `\n- Revenue target: ${b.revenueTarget}` : ''}${b.brandVoiceKeywords?.length ? `\n- Voice keywords: ${b.brandVoiceKeywords.join(', ')}` : ''}${b.editorialTerritory ? `\n- Editorial territory: ${b.editorialTerritory}` : ''}${b.activeBusinessPriority ? `\n- Active priority: ${b.activeBusinessPriority}` : ''}`;
+}
+
+// ÉTAPE 1/3 — Stratégie : structure de la campagne (phases, canaux, messaging, KPIs, prospection).
+// PAS de plan de contenu ni de tâches ici. max_tokens 2500.
+export async function generateCampaignStrategy(request: CampaignGenerationRequest): Promise<CampaignStrategy> {
+  const prompt = `Generate the STRATEGIC STRUCTURE of a professional digital communication campaign — NOT the content pieces, NOT the tasks. Think like a strategic communications director who deeply understands this brand.
 
 CAMPAIGN REQUEST:
 - Objective: ${request.objective}
-- Campaign type (inferred): identify whether this is lead_generation | authority_building | product_launch | nurturing | visibility | conversion
 - Duration: ${request.duration}
 ${request.weekContext ? `- Context: ${request.weekContext}` : ''}
 
 STRATEGIC RULES:
-- Authority building campaigns require minimum 3 months. Never generate a 1-week authority campaign.
-- Lead generation campaigns require minimum 2 months for sustainable results.
-- A product launch campaign for a premium offer requires minimum 4 weeks of pre-launch + launch + post-launch.
-- Each phase must be distinct and build on the previous one — not just a repeat at higher frequency.
-- Content pieces must be specific to THIS brand's positioning — not generic best practices.
-- Channel roles must reflect the brand's actual platform priority, not generic digital marketing.
-- Tasks must be executable by a founder working alone or with a small team. No vague "create content" tasks.
+- Infer the campaign type: lead_generation | authority_building | product_launch | nurturing | visibility | conversion.
+- Each phase must be distinct and build on the previous one — not a repeat at higher frequency.
+- Channel roles must reflect the brand's ACTUAL platform priority, not generic digital marketing.
+- Everything must be specific to THIS brand's positioning.
 
 DURATION GUIDANCE:
 ${getDurationGuidance(request.duration)}
 
-Return ONLY a JSON object matching this exact structure (no preamble, no markdown):
+Return ONLY this JSON object (no preamble, no markdown, no contentPlan, no tasks):
 {
   "name": "Campaign name — 5 words max, evocative",
   "campaignType": "lead_generation|authority_building|product_launch|nurturing|visibility|conversion",
   "coreMessage": "The single sentence this entire campaign communicates",
   "targetAudience": "Specific audience for this campaign",
-  "audienceSegment": "The specific sub-segment being addressed (more granular than brand DNA audience)",
+  "audienceSegment": "The specific sub-segment (more granular than brand DNA audience)",
   "insights": ["3 strategic observations about why this approach fits this brand right now"],
   "messagingFramework": {
-    "coreMessage": "Same as above but as a headline-ready statement",
+    "coreMessage": "Headline-ready statement",
     "proofPoints": ["3 credibility anchors"],
     "primaryCTA": "The main action",
     "secondaryCTA": "The lower-commitment entry point",
@@ -1175,107 +1193,130 @@ Return ONLY a JSON object matching this exact structure (no preamble, no markdow
     "thingsToAvoid": ["3 messaging traps that would dilute this campaign"]
   },
   "phases": [
-    {
-      "number": 1,
-      "name": "Phase name",
-      "duration": "Weeks 1-2",
-      "objective": "What this phase achieves",
-      "keyActions": ["3-5 specific actions"],
-      "successSignal": "How you know this phase worked"
-    }
+    { "number": 1, "name": "Phase name", "duration": "Weeks 1-2", "objective": "What this phase achieves", "keyActions": ["3-5 specific actions"], "successSignal": "How you know this phase worked" }
   ],
   "channels": [
-    {
-      "platform": "linkedin",
-      "role": "Primary",
-      "frequency": "3x/week",
-      "contentFormat": ["text post", "carousel"],
-      "tone": "How voice adapts on this platform"
-    }
-  ],
-  "contentPlan": [
-    {
-      "phase": 1,
-      "week": "Week 1",
-      "platform": "linkedin",
-      "format": "carousel",
-      "angle": "Specific hook/angle",
-      "pillar": "Content pillar name",
-      "goal": "visibility|trust|conversion|engagement",
-      "copyDirections": "What the copy should say and feel like"
-    }
+    { "platform": "linkedin", "role": "Primary", "frequency": "3x/week", "contentFormat": ["text post", "carousel"], "tone": "How voice adapts on this platform" }
   ],
   "kpis": [
-    {
-      "metric": "Specific measurable metric",
-      "target": "Quantified target",
-      "howToMeasure": "Where and how to check",
-      "phase": 1
-    }
-  ],
-  "tasks": [
-    {
-      "title": "Specific executable task",
-      "description": "1-2 sentences: what exactly to do and why it matters in this campaign",
-      "type": "content|outreach|admin|planning",
-      "category": "trust|conversion|engagement|planning",
-      "priority": 1,
-      "estimatedDuration": 60,
-      "taskEnergyType": "deep_work|creative|admin|social|execution",
-      "phase": 1
-    }
+    { "metric": "Specific measurable metric", "target": "Quantified target", "howToMeasure": "Where and how to check", "phase": 1 }
   ],
   "prospection": null
 }
 
-The "prospection" field rules:
-- Set to null if objective is purely content/visibility/authority.
-- Set to an object (nested inside the main JSON above) if objective involves acquiring clients, leads, or partners:
-  {"needed": true, "rationale": "why needed", "targetSector": "sector/profile", "channel": "linkedin|email|both", "digitalLevel": "fort|faible|tous", "campaignBrief": "one sentence proposition", "messageAngle": "unique angle", "buyingSignals": "readiness criteria", "prospectsPerDay": 3, "offer": "concrete offer"}
-The prospection value must be either null or an inline object — never a separate JSON block.
+Generate the right number of phases for the duration (see guidance). Generate 3-5 KPIs.
+The "prospection" field: null if the objective is purely content/visibility/authority; otherwise an inline object:
+{"needed": true, "rationale": "...", "targetSector": "...", "channel": "linkedin|email|both", "digitalLevel": "fort|faible|tous", "campaignBrief": "...", "messageAngle": "...", "buyingSignals": "...", "prospectsPerDay": 3, "offer": "..."}`;
 
-Generate the right number of phases for the duration. For a 1-month campaign: 3 phases. For 3 months: 4 phases. For 6 months: 5-6 phases.
+  const { text, stopReason } = await callClaudeDetailed({
+    model: CLAUDE_MODELS.smart,
+    system: CAMPAIGN_SYSTEM,
+    messages: [{ role: 'user', content: prompt + buildCampaignBrandContext(request.brandDna) }],
+    // Plafond avec marge SOUS le plafond 6000 : garantit la complétion (2500 tronquait la
+    // stratégie 3 mois). Le modèle s'arrête naturellement bien avant → pas de coût de latence.
+    max_tokens: 4500,
+    projectId: request.projectId ?? null,
+  });
+  assertNotTruncated(stopReason, "stratégie");
+  try {
+    return JSON.parse(stripMarkdownJSON(text)) as CampaignStrategy;
+  } catch (e) {
+    throw new Error("Failed to parse campaign strategy JSON: " + (e as Error).message);
+  }
+}
 
-CONTENT PLAN RULES — this is critical:
-- The contentPlan array must reflect the ACTUAL weekly frequency declared in channels.
-- Example: if channels say LinkedIn 3x/week + Instagram 2x/week + email 1x/week, generate that many pieces per week.
-- Distribute pieces week by week (week 1, 2, 3...). Each piece has a specific angle — not generic.
-- Minimum: match the declared frequency for at least 3 weeks per phase. For a 3-month campaign, generate 25-40 pieces.
-- Each piece must have a distinct angle. No two pieces on the same platform can have the same angle.
-- DO NOT generate "brand critique" or "competitive analysis" content unless the brief explicitly requests it.
-- Pieces should demonstrate the brand's OWN expertise and positioning, not commentary on others.
+// ÉTAPE 2/3 — Plan de contenu par phase et par canal, à partir de la stratégie. max_tokens 3000.
+export async function generateCampaignContent(
+  request: CampaignGenerationRequest,
+  strategy: CampaignStrategy,
+): Promise<GeneratedCampaign["contentPlan"]> {
+  const phasesSummary = (strategy.phases || [])
+    .map((p) => `- Phase ${p.number} "${p.name}" (${p.duration}): ${p.objective}`).join('\n');
+  const channelsSummary = (strategy.channels || [])
+    .map((c) => `- ${c.platform} (${c.role}, ${c.frequency}) — formats: ${(c.contentFormat || []).join(' / ')}`).join('\n');
 
-Generate 8-15 tasks distributed across phases. Generate 3-5 KPIs.`;
+  const prompt = `Generate the CONTENT PLAN for an existing campaign. Only the content plan — no strategy, no tasks.
 
-    // Build focused brand context from brandDna parameter (avoids double-context via buildNayaContext)
-    const bd = request.brandDna || {};
-    const brandContext = `\n\nBRAND CONTEXT:
-- Business type: ${bd.businessType || 'Independent'}
-- Unique positioning: ${bd.uniquePositioning || ''}
-- Target audience: ${bd.targetAudience || bd.audience || ''}
-- Core pain point: ${bd.corePainPoint || ''}
-- Communication style: ${bd.communicationStyle || 'Professional'}
-- Platform priority: ${bd.platformPriority || ''}
-- Offers: ${bd.offers || ''}${bd.revenueTarget ? `\n- Revenue target: ${bd.revenueTarget}` : ''}${bd.brandVoiceKeywords?.length ? `\n- Voice keywords: ${bd.brandVoiceKeywords.join(', ')}` : ''}${bd.editorialTerritory ? `\n- Editorial territory: ${bd.editorialTerritory}` : ''}${bd.activeBusinessPriority ? `\n- Active priority: ${bd.activeBusinessPriority}` : ''}`;
+CAMPAIGN: ${strategy.name} — ${strategy.campaignType}
+Core message: ${strategy.coreMessage}
+Audience: ${strategy.targetAudience} / ${strategy.audienceSegment}
 
-    const raw = await callClaude({
-      model: CLAUDE_MODELS.smart,
-      system: `You are Naya's campaign planning intelligence. You generate comprehensive, strategic campaign architectures for independent builders. Return ONLY valid JSON matching the exact structure requested. No preamble, no markdown fences, no text outside the JSON object.`,
-      messages: [{ role: 'user', content: prompt + brandContext }],
-      max_tokens: 8000,
-    });
-    let parsed: GeneratedCampaign;
-    try {
-      parsed = JSON.parse(stripMarkdownJSON(raw)) as GeneratedCampaign;
-    } catch (parseError) {
-      throw new Error("Failed to parse campaign JSON from AI response: " + (parseError as Error).message);
-    }
-    return parsed;
-  } catch (error) {
-    if ((error as Error).message.startsWith("Failed to parse campaign JSON")) {
-      throw error;
-    }
-    throw new Error("Failed to generate campaign: " + (error as Error).message);
+PHASES:
+${phasesSummary}
+
+CHANNELS (respect each channel's declared frequency and formats):
+${channelsSummary}
+
+CONTENT RULES:
+- For EACH phase, generate 2-3 representative pieces PER active channel (aim for 10-16 pieces total across the campaign — a representative plan, not every single week).
+- Each piece must have a DISTINCT angle. No two pieces on the same platform share the same angle.
+- Pieces demonstrate the brand's OWN expertise/positioning — never "brand critique" or competitor commentary.
+- Keep "copyDirections" to ONE concise sentence.
+
+Return ONLY this JSON object:
+{
+  "contentPlan": [
+    { "phase": 1, "week": "Week 1", "platform": "linkedin", "format": "carousel", "angle": "Specific hook/angle", "pillar": "Content pillar name", "goal": "visibility|trust|conversion|engagement", "copyDirections": "One sentence on what the copy should say and feel like" }
+  ]
+}`;
+
+  const { text, stopReason } = await callClaudeDetailed({
+    model: CLAUDE_MODELS.smart,
+    system: CAMPAIGN_SYSTEM,
+    messages: [{ role: 'user', content: prompt + buildCampaignBrandContext(request.brandDna) }],
+    max_tokens: 4500, // marge sous 6000 ; le plan représentatif (~10-16 pièces) finit bien avant
+    projectId: request.projectId ?? null,
+  });
+  assertNotTruncated(stopReason, "plan de contenu");
+  try {
+    const parsed = JSON.parse(stripMarkdownJSON(text));
+    return (Array.isArray(parsed) ? parsed : parsed.contentPlan || []) as GeneratedCampaign["contentPlan"];
+  } catch (e) {
+    throw new Error("Failed to parse campaign content JSON: " + (e as Error).message);
+  }
+}
+
+// ÉTAPE 3/3 — Tâches opérationnelles distribuées par phase, à partir de la stratégie. max_tokens 2000.
+export async function generateCampaignTasks(
+  request: CampaignGenerationRequest,
+  strategy: CampaignStrategy,
+): Promise<GeneratedCampaign["tasks"]> {
+  const phasesSummary = (strategy.phases || [])
+    .map((p) => `- Phase ${p.number} "${p.name}" (${p.duration}): ${p.objective} — key actions: ${(p.keyActions || []).join('; ')}`).join('\n');
+
+  const prompt = `Generate the OPERATIONAL TASKS for an existing campaign. Only the tasks — no strategy, no content plan.
+
+CAMPAIGN: ${strategy.name} — ${strategy.campaignType}
+Core message: ${strategy.coreMessage}
+
+PHASES:
+${phasesSummary}
+
+TASK RULES:
+- Generate 8-15 concrete, executable tasks distributed across the phases (use the phase "number" in each task).
+- Executable by a founder working alone or with a small team. No vague "create content" tasks.
+- Each task title is a specific action; description is 1-2 sentences on what to do and why it matters in THIS campaign.
+
+Return ONLY this JSON object:
+{
+  "tasks": [
+    { "title": "Specific executable task", "description": "1-2 sentences", "type": "content|outreach|admin|planning", "category": "trust|conversion|engagement|planning", "priority": 1, "estimatedDuration": 60, "taskEnergyType": "deep_work|creative|admin|social|execution", "phase": 1 }
+  ]
+}`;
+
+  const { text, stopReason } = await callClaudeDetailed({
+    model: CLAUDE_MODELS.smart,
+    system: CAMPAIGN_SYSTEM,
+    messages: [{ role: 'user', content: prompt + buildCampaignBrandContext(request.brandDna) }],
+    max_tokens: 3000, // marge sous 6000 ; 8-15 tâches finissent bien avant
+    projectId: request.projectId ?? null,
+  });
+  assertNotTruncated(stopReason, "tâches");
+  try {
+    const parsed = JSON.parse(stripMarkdownJSON(text));
+    return (Array.isArray(parsed) ? parsed : parsed.tasks || []) as GeneratedCampaign["tasks"];
+  } catch (e) {
+    throw new Error("Failed to parse campaign tasks JSON: " + (e as Error).message);
   }
 }
 

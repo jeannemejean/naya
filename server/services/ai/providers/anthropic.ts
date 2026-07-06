@@ -37,6 +37,7 @@ export class AnthropicProvider implements NayaModelProvider {
       usage: response.usage
         ? { inputTokens: response.usage.input_tokens || 0, outputTokens: response.usage.output_tokens || 0 }
         : undefined,
+      stopReason: response.stop_reason ?? undefined, // "max_tokens" = tronqué
     };
   }
 }

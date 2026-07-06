@@ -596,6 +596,8 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  const [reviewAudienceResponse, setReviewAudienceResponse] = useState(0);
  const [reviewTaskExecution, setReviewTaskExecution] = useState(0);
  const [reviewSubmitted, setReviewSubmitted] = useState<number | null>(null);
+ // Étape courante de la génération de campagne (pilote l'overlay de progression).
+ const [genStep, setGenStep] = useState<'strategy' | 'content' | 'tasks' | null>(null);
 
  useEffect(() => {
  if (projects.length > 0 && selectedProjectId === null) {
@@ -646,15 +648,23 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  });
 
  const generateMutation = useMutation<GenerateResponse>({
+ // Génération EN 3 ÉTAPES SÉQUENTIELLES — chaque appel est court et borné en tokens
+ // (pas de troncature, pas de timeout à 3 min). L'overlay suit la progression via genStep.
  mutationFn: async () => {
- const res = await apiRequest("POST", "/api/campaigns/generate", {
- objective,
- duration,
- projectId: selectedProjectId,
- weekContext: weekContext || undefined,
- startDate,
- }, { timeoutMs: 180000 }); // la génération prend ~2 min ; on abandonne après 3 min
- return res.json();
+ const base = { objective, duration, projectId: selectedProjectId, weekContext: weekContext || undefined };
+ const STEP_TIMEOUT = 120000; // 2 min par étape (marge large : chaque étape prend ~20-50s)
+
+ setGenStep('strategy');
+ const s = await apiRequest("POST", "/api/campaigns/generate/strategy", base, { timeoutMs: STEP_TIMEOUT });
+ const { strategy } = await s.json();
+
+ setGenStep('content');
+ const c = await apiRequest("POST", "/api/campaigns/generate/content", { ...base, strategy }, { timeoutMs: STEP_TIMEOUT });
+ const { contentPlan } = await c.json();
+
+ setGenStep('tasks');
+ const t = await apiRequest("POST", "/api/campaigns/generate/tasks", { ...base, startDate, strategy, contentPlan }, { timeoutMs: STEP_TIMEOUT });
+ return t.json() as Promise<GenerateResponse>;
  },
  onSuccess: (data) => {
  setSelectedCampaignId(data.campaign.id);
@@ -664,13 +674,15 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  },
  onError: (err: any) => {
  const timedOut = err?.name === "AbortError";
+ const stepLabel = genStep === 'strategy' ? "la stratégie" : genStep === 'content' ? "le plan de contenu" : "les tâches";
  toast({
  title: timedOut
- ? "La génération a dépassé 3 minutes. Réessaie dans un moment."
+ ? `L'étape « ${stepLabel} » a dépassé le délai. Réessaie dans un moment.`
  : t('campaigns.failedToGenerate'),
  variant: "destructive",
  });
  },
+ onSettled: () => setGenStep(null),
  });
 
  const launchMutation = useMutation({
@@ -840,15 +852,22 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
 
  return (
  <div className="flex h-screen bg-background">
- {/* Overlay explicite pendant la génération (~2 min) : sinon l'utilisateur croit qu'il ne se passe rien */}
+ {/* Overlay de PROGRESSION par étape (pas un spinner unique) : chaque étape s'affiche,
+ les précédentes sont cochées ✓. */}
  <GeneratingOverlay
  open={generateMutation.isPending}
- messages={[
- "Naya construit ta campagne…",
- "Analyse de ton positionnement et de ton audience…",
- "Structuration des phases et du plan de contenu…",
- "Ça prend environ 2 minutes — ne ferme pas l'onglet.",
- ]}
+ title={
+ genStep === 'strategy' ? "Naya construit la stratégie…" :
+ genStep === 'content' ? "Naya génère le plan de contenu…" :
+ genStep === 'tasks' ? "Naya prépare les tâches…" :
+ "Naya prépare ta campagne…"
+ }
+ messages={
+ genStep === 'strategy' ? ["Structure, phases et canaux de ta campagne…"] :
+ genStep === 'content' ? ["✓ Stratégie prête", "Contenus par phase et par canal…"] :
+ genStep === 'tasks' ? ["✓ Stratégie", "✓ Plan de contenu", "Tâches opérationnelles à exécuter…"] :
+ ["Un instant…"]
+ }
  />
  <Sidebar onSearchClick={onSearchClick} />
 

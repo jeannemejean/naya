@@ -14,7 +14,10 @@ import {
   analyzeContentPerformance,
   generateMonthlyPlan,
   generateWeeklyRefinement,
-  generateCampaign,
+  generateCampaignStrategy,
+  generateCampaignContent,
+  generateCampaignTasks,
+  type CampaignStrategy,
   generateWeeklyBriefing,
   getMemoryContext,
 } from "./services/openai";
@@ -8280,70 +8283,123 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
-  app.post('/api/campaigns/generate', isAuthenticated, async (req: any, res) => {
+
+  // ─── Génération de campagne EN 3 ÉTAPES (anti-troncature + anti-timeout 3 min) ───
+  // Le client appelle ces endpoints en séquence en affichant la progression. Chaque étape est
+  // un appel Claude borné (2500/3000/2000 tokens) → jamais tronqué, chacune courte (~20-50s).
+
+  function campaignBrandDnaInput(brandDna: any) {
+    return {
+      businessType: brandDna?.businessType || "",
+      businessModel: brandDna?.businessModel || "",
+      targetAudience: brandDna?.targetAudience || "",
+      corePainPoint: brandDna?.corePainPoint || "",
+      uniquePositioning: brandDna?.uniquePositioning || "",
+      primaryGoal: brandDna?.primaryGoal || "",
+      communicationStyle: brandDna?.communicationStyle || "Professional",
+      audience: brandDna?.audience,
+      businessGoal: brandDna?.businessGoal,
+      contentPillars: brandDna?.contentPillars,
+      platformPriority: brandDna?.platformPriority,
+      audienceAspiration: brandDna?.audienceAspiration,
+      businessName: brandDna?.businessName,
+      offers: brandDna?.offers,
+      priceRange: brandDna?.priceRange,
+      editorialTerritory: brandDna?.editorialTerritory,
+      brandVoiceKeywords: brandDna?.brandVoiceKeywords as string[] | undefined,
+      brandVoiceAntiKeywords: brandDna?.brandVoiceAntiKeywords as string[] | undefined,
+      activeBusinessPriority: brandDna?.activeBusinessPriority,
+      revenueTarget: brandDna?.revenueTarget,
+    };
+  }
+
+  // Résout projectId (validé) + brandDna d'une étape. Erreur typée si projet invalide.
+  async function resolveCampaignCtx(
+    userId: string, projectIdRaw: any,
+  ): Promise<{ pid?: number; brandDnaInput: any } | { error: string; status: number }> {
+    let pid: number | undefined;
+    if (projectIdRaw) {
+      pid = Number(projectIdRaw);
+      if (!Number.isFinite(pid) || pid <= 0) return { error: "Invalid projectId", status: 400 };
+      const project = await storage.getProject(pid, userId);
+      if (!project) return { error: "Project not found", status: 404 };
+    }
+    const brandDna = pid
+      ? (await storage.getBrandDnaForProject(userId, pid)) || (await storage.getBrandDna(userId))
+      : await storage.getBrandDna(userId);
+    return { pid, brandDnaInput: campaignBrandDnaInput(brandDna) };
+  }
+
+  // ÉTAPE 1/3 — stratégie + phases + canaux + messaging + KPIs + prospection.
+  app.post('/api/campaigns/generate/strategy', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const { objective, duration, projectId, weekContext, startDate: bodyStartDate } = req.body;
+      const { objective, duration, projectId, weekContext } = req.body;
       if (!objective) return res.status(400).json({ message: "Objective is required" });
+      const ctx = await resolveCampaignCtx(userId, projectId);
+      if ('error' in ctx) return res.status(ctx.status).json({ message: ctx.error });
 
-      let pid: number | undefined;
-      if (projectId) {
-        pid = Number(projectId);
-        if (!Number.isFinite(pid) || pid <= 0) return res.status(400).json({ message: "Invalid projectId" });
-        const project = await storage.getProject(pid, userId);
-        if (!project) return res.status(404).json({ message: "Project not found" });
-      }
+      const allCampaigns = await storage.getCampaigns(userId, ctx.pid);
+      const reviewed = allCampaigns.filter(c => c.reviewedAt && c.reviewContentQuality).slice(0, 5);
+      const pastReviewContext = reviewed.length
+        ? `\n\nPAST CAMPAIGN REVIEWS (adjust pacing/strategy):\n${reviewed.map(c => `- "${c.name}" (${c.campaignType || 'general'}): content ${c.reviewContentQuality}/5, audience ${c.reviewAudienceResponse}/5, execution ${c.reviewTaskExecution}/5`).join('\n')}`
+        : '';
 
-      let brandDna;
-      if (pid) {
-        brandDna = await storage.getBrandDnaForProject(userId, pid);
-        if (!brandDna) brandDna = await storage.getBrandDna(userId);
-      } else {
-        brandDna = await storage.getBrandDna(userId);
-      }
-
-      const brandDnaInput = {
-        businessType: brandDna?.businessType || "",
-        businessModel: brandDna?.businessModel || "",
-        targetAudience: brandDna?.targetAudience || "",
-        corePainPoint: brandDna?.corePainPoint || "",
-        uniquePositioning: brandDna?.uniquePositioning || "",
-        primaryGoal: brandDna?.primaryGoal || "",
-        communicationStyle: brandDna?.communicationStyle || "Professional",
-        audience: brandDna?.audience,
-        businessGoal: brandDna?.businessGoal,
-        contentPillars: brandDna?.contentPillars,
-        platformPriority: brandDna?.platformPriority,
-        audienceAspiration: brandDna?.audienceAspiration,
-        businessName: brandDna?.businessName,
-        offers: brandDna?.offers,
-        priceRange: brandDna?.priceRange,
-        editorialTerritory: brandDna?.editorialTerritory,
-        brandVoiceKeywords: brandDna?.brandVoiceKeywords as string[] | undefined,
-        brandVoiceAntiKeywords: brandDna?.brandVoiceAntiKeywords as string[] | undefined,
-        activeBusinessPriority: brandDna?.activeBusinessPriority,
-        revenueTarget: brandDna?.revenueTarget,
-      };
-
-      const allCampaigns = await storage.getCampaigns(userId, pid);
-      const reviewedCampaigns = allCampaigns
-        .filter(c => c.reviewedAt && c.reviewContentQuality)
-        .slice(0, 5);
-      let pastReviewContext = '';
-      if (reviewedCampaigns.length > 0) {
-        const summaries = reviewedCampaigns.map(c =>
-          `- "${c.name}" (${c.campaignType || 'general'}): content quality ${c.reviewContentQuality}/5, audience response ${c.reviewAudienceResponse}/5, task execution ${c.reviewTaskExecution}/5`
-        );
-        pastReviewContext = `\n\nPAST CAMPAIGN REVIEWS (adjust this campaign's pacing and strategy based on these scores):\n${summaries.join('\n')}`;
-      }
-
-      const generated = await generateCampaign({
-        userId,
-        objective,
-        duration: duration || '3_months',
-        brandDna: brandDnaInput as any,
-        weekContext: (weekContext || '') + pastReviewContext,
+      const strategy = await generateCampaignStrategy({
+        userId, projectId: ctx.pid, objective, duration: duration || '3_months',
+        brandDna: ctx.brandDnaInput as any, weekContext: (weekContext || '') + pastReviewContext,
       });
+      res.json({ strategy });
+    } catch (error: any) {
+      console.error("[campaign/generate/strategy] Error:", error?.message || error);
+      res.status(500).json({ message: error?.message || "Failed to generate campaign strategy" });
+    }
+  });
+
+  // ÉTAPE 2/3 — plan de contenu par phase et canal (à partir de la stratégie).
+  app.post('/api/campaigns/generate/content', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { objective, duration, projectId, weekContext, strategy } = req.body;
+      if (!strategy || typeof strategy !== 'object' || !Array.isArray(strategy.phases)) {
+        return res.status(400).json({ message: "A valid strategy (with phases) is required" });
+      }
+      const ctx = await resolveCampaignCtx(userId, projectId);
+      if ('error' in ctx) return res.status(ctx.status).json({ message: ctx.error });
+
+      const contentPlan = await generateCampaignContent(
+        { userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext },
+        strategy as CampaignStrategy,
+      );
+      res.json({ contentPlan });
+    } catch (error: any) {
+      console.error("[campaign/generate/content] Error:", error?.message || error);
+      res.status(500).json({ message: error?.message || "Failed to generate campaign content" });
+    }
+  });
+
+  // ÉTAPE 3/3 — tâches opérationnelles + création de la campagne (draft).
+  app.post('/api/campaigns/generate/tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { objective, duration, projectId, weekContext, startDate: bodyStartDate, strategy, contentPlan } = req.body;
+      if (!objective) return res.status(400).json({ message: "Objective is required" });
+      if (!strategy || typeof strategy !== 'object' || !Array.isArray(strategy.phases)) {
+        return res.status(400).json({ message: "A valid strategy (with phases) is required" });
+      }
+      const ctx = await resolveCampaignCtx(userId, projectId);
+      if ('error' in ctx) return res.status(ctx.status).json({ message: ctx.error });
+
+      const tasks = await generateCampaignTasks(
+        { userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext },
+        strategy as CampaignStrategy,
+      );
+
+      const generated: any = {
+        ...strategy,
+        contentPlan: Array.isArray(contentPlan) ? contentPlan : [],
+        tasks,
+      };
 
       const durationDays: Record<string, number> = {
         '1_week': 7, '2_weeks': 14, '3_weeks': 21, '1_month': 30,
@@ -8356,60 +8412,37 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const endDate = sharedFormatDate(endD);
 
       const campaign = await storage.createCampaign({
-        userId,
-        projectId: pid,
-        name: generated.name,
-        objective,
-        coreMessage: generated.coreMessage,
-        targetAudience: generated.targetAudience,
-        duration: duration || '3_months',
-        status: 'draft',
-        tasksGenerated: false,
-        generatedTasks: generated.tasks,
-        insights: generated.insights,
-        campaignType: generated.campaignType,
-        phases: generated.phases,
-        messagingFramework: generated.messagingFramework,
-        channels: generated.channels,
-        contentPlan: generated.contentPlan,
-        kpis: generated.kpis,
-        audienceSegment: generated.audienceSegment,
-        startDate,
-        endDate,
+        userId, projectId: ctx.pid, name: generated.name, objective,
+        coreMessage: generated.coreMessage, targetAudience: generated.targetAudience,
+        duration: duration || '3_months', status: 'draft', tasksGenerated: false,
+        generatedTasks: generated.tasks, insights: generated.insights, campaignType: generated.campaignType,
+        phases: generated.phases, messagingFramework: generated.messagingFramework, channels: generated.channels,
+        contentPlan: generated.contentPlan, kpis: generated.kpis, audienceSegment: generated.audienceSegment,
+        startDate, endDate,
       });
 
-      // Si Claude estime qu'une prospection est nécessaire, créer la campagne liée
       let prospectionCampaign = null;
       if (generated.prospection?.needed) {
         try {
           const p = generated.prospection;
           prospectionCampaign = await storage.createProspectionCampaign({
-            userId,
-            projectId: pid,
-            name: `${generated.name} — Prospection`,
-            status: 'active',
-            targetSector: p.targetSector || generated.targetAudience,
-            channel: p.channel || 'linkedin',
-            digitalLevel: p.digitalLevel || 'tous',
-            campaignBrief: p.campaignBrief || generated.coreMessage,
-            messageAngle: p.messageAngle || generated.coreMessage,
-            buyingSignals: p.buyingSignals || null,
-            prospectsPerDay: p.prospectsPerDay || 3,
-            offer: p.offer || null,
-            linkedCampaignId: campaign.id,
+            userId, projectId: ctx.pid, name: `${generated.name} — Prospection`, status: 'active',
+            targetSector: p.targetSector || generated.targetAudience, channel: p.channel || 'linkedin',
+            digitalLevel: p.digitalLevel || 'tous', campaignBrief: p.campaignBrief || generated.coreMessage,
+            messageAngle: p.messageAngle || generated.coreMessage, buyingSignals: p.buyingSignals || null,
+            prospectsPerDay: p.prospectsPerDay || 3, offer: p.offer || null, linkedCampaignId: campaign.id,
           } as any);
-          // Mettre à jour la campagne avec le lien retour
           await storage.updateCampaign(campaign.id, userId, { linkedProspectionCampaignId: prospectionCampaign.id } as any);
           (campaign as any).linkedProspectionCampaignId = prospectionCampaign.id;
         } catch (prospectionError) {
-          console.error("[campaign/generate] Prospection creation failed (campaign saved without link):", prospectionError);
+          console.error("[campaign/generate/tasks] Prospection creation failed (campaign saved without link):", prospectionError);
         }
       }
 
       res.json({ campaign, generated, prospectionCampaign });
     } catch (error: any) {
-      console.error("[campaign/generate] Error:", error?.message || error);
-      res.status(500).json({ message: error?.message || "Failed to generate campaign" });
+      console.error("[campaign/generate/tasks] Error:", error?.message || error);
+      res.status(500).json({ message: error?.message || "Failed to generate campaign tasks" });
     }
   });
 

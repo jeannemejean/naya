@@ -34,6 +34,7 @@ export class OpenAIProvider implements NayaModelProvider {
       usage: resp.usage
         ? { inputTokens: resp.usage.prompt_tokens || 0, outputTokens: resp.usage.completion_tokens || 0 }
         : undefined,
+      stopReason: resp.choices?.[0]?.finish_reason ?? undefined, // "length" = tronqué
     };
   }
 

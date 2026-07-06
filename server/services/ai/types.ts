@@ -26,6 +26,9 @@ export interface GenerateResult {
   model: string;
   provider: string;
   usage?: { inputTokens: number; outputTokens: number };
+  // Raison d'arrêt du modèle. "max_tokens" (Anthropic) / "length" (OpenAI) = réponse TRONQUÉE
+  // (le budget de tokens a été atteint) → le texte est incomplet, ne jamais le parser en JSON.
+  stopReason?: string;
 }
 
 export interface EmbedInput {

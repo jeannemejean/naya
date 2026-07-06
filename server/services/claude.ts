@@ -68,7 +68,7 @@ ${nayaContext}${additionalSystemContext ? `\n\n${additionalSystemContext}` : ""}
   });
 }
 
-export async function callClaude(options: {
+interface CallClaudeOptions {
   model?: string;
   system?: string;
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>;
@@ -78,7 +78,11 @@ export async function callClaude(options: {
   // Champs internes optionnels (rétro-compatibles, défaut = comportement historique) :
   taskKind?: TaskKind;          // intention métier (sinon dérivée du modèle)
   projectId?: number | null;    // marque concernée (journalisation)
-}): Promise<string> {
+}
+
+// Variante qui expose la RAISON D'ARRÊT (stopReason) en plus du texte — indispensable pour
+// détecter une réponse tronquée (max_tokens) AVANT tout JSON.parse. Voir assertNotTruncated().
+export async function callClaudeDetailed(options: CallClaudeOptions): Promise<{ text: string; stopReason?: string }> {
   const { model = CLAUDE_MODELS.fast, messages, max_tokens = 1024, system, temperature, userId, projectId } = options;
 
   const systemMsg = system ?? messages.find((m) => m.role === "system")?.content;
@@ -120,7 +124,20 @@ export async function callClaude(options: {
     costEur,
   });
 
-  return result.text;
+  return { text: result.text, stopReason: result.stopReason };
+}
+
+// Wrapper rétro-compatible : renvoie uniquement le texte (comportement historique).
+export async function callClaude(options: CallClaudeOptions): Promise<string> {
+  return (await callClaudeDetailed(options)).text;
+}
+
+// Garde-fou anti-troncature : une réponse coupée (max_tokens / length) est un JSON incomplet
+// qu'on ne DOIT jamais parser. On lève une erreur explicite (étape nommée) à la place.
+export function assertNotTruncated(stopReason: string | undefined, step: string): void {
+  if (stopReason === "max_tokens" || stopReason === "length") {
+    throw new Error(`CAMPAIGN_TRUNCATED: l'étape « ${step} » a dépassé son budget de tokens (réponse coupée). Réessaie.`);
+  }
 }
 
 export async function streamClaude(options: {
