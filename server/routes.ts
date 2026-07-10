@@ -6769,8 +6769,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (await isAiBlocked(req.userId)) return res.status(429).json({ message: 'ai_monthly_limit_reached' });
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      // generateLeadCriteria lève après 2 tentatives ratées → capturé plus bas en 500 explicite.
       const icp = await generateLeadCriteria(req.userId, campaign.id);
-      if (!icp) return res.status(502).json({ message: 'generation_failed' });
       res.json({ icp, providerConfigured: serpConfigured() });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

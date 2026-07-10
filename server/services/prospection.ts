@@ -8,7 +8,7 @@
  * 4. Respecte le Brand DNA de l'utilisateur (ton, offres, positionnement)
  */
 
-import { callClaude } from "./claude";
+import { callClaude, callClaudeDetailed, assertNotTruncated } from "./claude";
 import { storage } from "../storage";
 import { CLAUDE_MODELS } from "./claude";
 
@@ -369,19 +369,21 @@ export interface IdealCustomerProfile {
   googleQueries: string[];   // recherches X-ray Google
 }
 
-export async function generateLeadCriteria(userId: string, campaignId: number): Promise<IdealCustomerProfile | null> {
-  const [brandDna, campaign] = await Promise.all([
-    storage.getBrandDna(userId),
-    storage.getProspectionCampaign(campaignId),
-  ]);
+export async function generateLeadCriteria(userId: string, campaignId: number): Promise<IdealCustomerProfile> {
+  const campaign = await storage.getProspectionCampaign(campaignId);
+  // Brand DNA du PROJET de la campagne (pas le DNA global = « Agence JMD »), avec fallback global.
+  const projectId = (campaign as any)?.projectId ?? null;
+  const brandDna =
+    (projectId ? await storage.getBrandDnaForProject(userId, projectId) : undefined) ??
+    (await storage.getBrandDna(userId));
 
   const ctx = [
     brandDna?.businessName ? `Entreprise: ${brandDna.businessName}` : "",
-    (brandDna as any)?.businessDescription ? `Activité: ${(brandDna as any).businessDescription}` : "",
-    (brandDna as any)?.uniquePositioning ? `Positionnement: ${(brandDna as any).uniquePositioning}` : "",
-    (brandDna as any)?.primaryAudience ? `Audience principale: ${(brandDna as any).primaryAudience}` : "",
-    (brandDna as any)?.coreAudiencePain ? `Douleur de l'audience: ${(brandDna as any).coreAudiencePain}` : "",
-    (brandDna as any)?.offers ? `Offres: ${(brandDna as any).offers}` : "",
+    brandDna?.businessType ? `Activité: ${brandDna.businessType}` : "",
+    brandDna?.uniquePositioning ? `Positionnement: ${brandDna.uniquePositioning}` : "",
+    brandDna?.targetAudience ? `Audience principale: ${brandDna.targetAudience}` : "",
+    brandDna?.corePainPoint ? `Douleur de l'audience: ${brandDna.corePainPoint}` : "",
+    brandDna?.offers ? `Offres: ${brandDna.offers}` : "",
     campaign?.targetSector ? `Secteur visé (campagne): ${campaign.targetSector}` : "",
     (campaign as any)?.offer ? `Offre de la campagne: ${(campaign as any).offer}` : "",
     (campaign as any)?.messageAngle ? `Angle: ${(campaign as any).messageAngle}` : "",
@@ -394,41 +396,52 @@ export async function generateLeadCriteria(userId: string, campaignId: number): 
 CONTEXTE :
 ${ctx || "(contexte minimal — propose un ICP plausible et généraliste)"}
 
+CIBLAGE (impératif) : Génère des requêtes ciblant les personnes qui ACHÈTENT ou PROGRAMMENT ce type de service (décideurs, acheteurs, organisateurs) — PAS les personnes qui travaillent dans le secteur mentionné. Exemple : pour "speaker événements digitaux", cibler "directeur de conférence", "responsable programmation événementielle", "producteur d'événement B2B" — PAS "responsable réseaux sociaux" ni "directeur artistique".
+
 Donne :
-- Les intitulés de poste à cibler (décideurs pertinents pour cette offre).
+- Les intitulés de poste à cibler : uniquement des DÉCIDEURS / ACHETEURS / ORGANISATEURS qui achètent ou programment cette offre (jamais des profils qui exercent le même métier ou travaillent simplement dans le secteur).
 - La séniorité, les secteurs, la taille d'entreprise typique, les zones géographiques.
 - Des mots-clés / signaux qui indiquent un bon prospect, et des exclusions (qui éviter).
-- Des requêtes LinkedIn booléennes (style Sales Navigator) ET des requêtes Google X-ray (site:linkedin.com/in …) prêtes à copier-coller.
+- Des requêtes LinkedIn booléennes (style Sales Navigator) ET des requêtes Google X-ray (site:linkedin.com/in …) prêtes à copier-coller, cohérentes avec le CIBLAGE ci-dessus.
 - Une courte justification du ciblage.
 
 Réponds UNIQUEMENT avec ce JSON :
 {"rationale":"...","jobTitles":["..."],"seniority":["..."],"sectors":["..."],"companySize":"...","geographies":["..."],"keywords":["..."],"exclusions":["..."],"linkedinQueries":["..."],"googleQueries":["..."]}`;
 
-  const raw = await callClaude({
-    model: CLAUDE_MODELS.fast,
-    userId,
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: 1400,
-    temperature: 0.5,
-  });
-
-  try {
-    const json = raw.match(/\{[\s\S]*\}/)?.[0] || raw;
-    const p = JSON.parse(json);
-    const arr = (v: any): string[] => Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
-    return {
-      rationale: typeof p.rationale === "string" ? p.rationale : "",
-      jobTitles: arr(p.jobTitles),
-      seniority: arr(p.seniority),
-      sectors: arr(p.sectors),
-      companySize: typeof p.companySize === "string" ? p.companySize : "",
-      geographies: arr(p.geographies),
-      keywords: arr(p.keywords),
-      exclusions: arr(p.exclusions),
-      linkedinQueries: arr(p.linkedinQueries),
-      googleQueries: arr(p.googleQueries),
-    };
-  } catch {
-    return null;
+  // Ciblage = critique → modèle strategic (Sonnet). max_tokens relevé à 2500 (l'ICP + 2 listes
+  // de requêtes dépassait 1400 → JSON tronqué). Anti-troncature + retry (2 tentatives) au lieu
+  // d'un parse voué à l'échec renvoyé en 502 opaque.
+  const MAX_ATTEMPTS = 2;
+  let lastErr: any;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const { text, stopReason } = await callClaudeDetailed({
+        model: CLAUDE_MODELS.smart,
+        userId,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 2500,
+        temperature: 0.5,
+      });
+      assertNotTruncated(stopReason, "génération ICP prospection");
+      const json = text.match(/\{[\s\S]*\}/)?.[0] || text;
+      const p = JSON.parse(json);
+      const arr = (v: any): string[] => Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+      return {
+        rationale: typeof p.rationale === "string" ? p.rationale : "",
+        jobTitles: arr(p.jobTitles),
+        seniority: arr(p.seniority),
+        sectors: arr(p.sectors),
+        companySize: typeof p.companySize === "string" ? p.companySize : "",
+        geographies: arr(p.geographies),
+        keywords: arr(p.keywords),
+        exclusions: arr(p.exclusions),
+        linkedinQueries: arr(p.linkedinQueries),
+        googleQueries: arr(p.googleQueries),
+      };
+    } catch (e: any) {
+      lastErr = e;
+      console.warn(`[generateLeadCriteria] tentative ${attempt}/${MAX_ATTEMPTS} échouée: ${e?.message || e}`);
+    }
   }
+  throw new Error(`Génération ICP échouée après ${MAX_ATTEMPTS} tentatives${lastErr?.message ? ` (${lastErr.message})` : ""}`);
 }
