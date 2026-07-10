@@ -75,7 +75,16 @@ const createProjectSchema = z.object({
  dailyTimeBudgetHours: z.coerce.number().int().min(0).max(16).optional(),
  icon: z.string().default("◇"),
  color: z.string().default("#6366f1"),
-});
+ // Perso vs client (axe orthogonal à type/category). Les champs client ne sont
+ // pertinents que si projectKind === 'client' (clientName alors obligatoire).
+ projectKind: z.enum(["personal", "client"]).default("personal"),
+ clientName: z.string().optional(),
+ clientContact: z.string().optional(),
+ clientBrief: z.string().optional(),
+}).refine(
+ (d) => d.projectKind !== "client" || !!(d.clientName && d.clientName.trim()),
+ { message: "Le nom du client est obligatoire pour un projet client", path: ["clientName"] },
+);
 
 const createGoalSchema = z.object({
  title: z.string().min(1, "Goal title is required"),
@@ -757,6 +766,10 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  dailyTimeBudgetHours: undefined,
  icon: "◇",
  color: "#6366f1",
+ projectKind: "personal",
+ clientName: "",
+ clientContact: "",
+ clientBrief: "",
  },
  });
 
@@ -773,7 +786,11 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  });
 
  const onCreateProject = (data: z.infer<typeof createProjectSchema>) => {
- createProjectMutation.mutate(data);
+ // kind='personal' : les champs client sont non pertinents → non envoyés (restent null en base).
+ const payload = data.projectKind === "client"
+ ? data
+ : { ...data, clientName: undefined, clientContact: undefined, clientBrief: undefined };
+ createProjectMutation.mutate(payload);
  };
 
  const onCreateGoal = (data: z.infer<typeof createGoalSchema>) => {
@@ -828,6 +845,61 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </FormItem>
  )}
  />
+
+ {/* Nature du projet : perso vs client (champs client conditionnels). */}
+ <FormField
+ control={createForm.control}
+ name="projectKind"
+ render={({ field }) => (
+ <FormItem>
+ <FormLabel>Nature du projet</FormLabel>
+ <Select onValueChange={field.onChange} value={field.value}>
+ <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+ <SelectContent>
+ <SelectItem value="personal">🙂 Projet personnel</SelectItem>
+ <SelectItem value="client">💼 Projet client</SelectItem>
+ </SelectContent>
+ </Select>
+ <FormMessage />
+ </FormItem>
+ )}
+ />
+
+ {createForm.watch("projectKind") === "client" && (
+ <div className="space-y-3 rounded-lg border border-naya-olive-18 bg-naya-olive-06 p-3">
+ <FormField
+ control={createForm.control}
+ name="clientName"
+ render={({ field }) => (
+ <FormItem>
+ <FormLabel>Nom du client</FormLabel>
+ <FormControl><Input placeholder="Ex : Acme SARL" {...field} /></FormControl>
+ <FormMessage />
+ </FormItem>
+ )}
+ />
+ <FormField
+ control={createForm.control}
+ name="clientContact"
+ render={({ field }) => (
+ <FormItem>
+ <FormLabel>Contact client <span className="text-naya-olive-35">(optionnel)</span></FormLabel>
+ <FormControl><Input placeholder="Nom · email · téléphone" {...field} /></FormControl>
+ </FormItem>
+ )}
+ />
+ <FormField
+ control={createForm.control}
+ name="clientBrief"
+ render={({ field }) => (
+ <FormItem>
+ <FormLabel>Brief client <span className="text-naya-olive-35">(optionnel)</span></FormLabel>
+ <FormControl><Textarea placeholder="Contexte, objectifs, contraintes…" rows={2} {...field} /></FormControl>
+ </FormItem>
+ )}
+ />
+ </div>
+ )}
 
  <div className="grid grid-cols-2 gap-4">
  <FormField

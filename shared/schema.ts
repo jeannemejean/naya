@@ -11,6 +11,7 @@ import {
   unique,
   doublePrecision,
   vector,
+  pgEnum,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -45,6 +46,11 @@ export const users = pgTable("users", {
 
 // ─── Multi-Project System ───────────────────────────────────────────────────
 
+// Nature du projet : perso (pour soi) vs client (travail réalisé POUR un client externe).
+// Axe ORTHOGONAL à `type`, `category` (revenue/passion) et `monetizationIntent`. NE PAS confondre
+// avec la table `clients` (mini-CRM de contacts rattachés à un projet).
+export const projectKindEnum = pgEnum("project_kind", ["personal", "client"]);
+
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
@@ -53,6 +59,12 @@ export const projects = pgTable("projects", {
   icon: text("icon").default("📁"),
   color: text("color").default("#6366f1"),
   type: text("type").notNull().default("Business"), // Business | Personal Brand | Passion Project | Client Project | Agency | Internal | Lifestyle
+  // Perso vs client — NOT NULL DEFAULT 'personal' (les projets existants deviennent 'personal').
+  projectKind: projectKindEnum("project_kind").notNull().default("personal"),
+  // Métadonnées pertinentes UNIQUEMENT pour kind='client' (nullable côté perso).
+  clientName: text("client_name"),
+  clientContact: text("client_contact"),
+  clientBrief: text("client_brief"),
   description: text("description"),
   monetizationIntent: text("monetization_intent").default("exploratory"), // revenue-now | authority-building | exploratory | none
   priorityLevel: text("priority_level").default("secondary"), // primary | secondary | background

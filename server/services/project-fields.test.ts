@@ -52,10 +52,28 @@ describe("pickAllowedProjectFields — whitelist PATCH /api/projects/:id", () =>
     });
   });
 
+  it("garde les champs projet client (projectKind + métadonnées client)", () => {
+    const out = pickAllowedProjectFields({
+      projectKind: "client",
+      clientName: "Acme SARL",
+      clientContact: "jean@acme.fr",
+      clientBrief: "Refonte site + campagne Q1",
+      userId: "evil",
+      id: 42,
+    });
+    expect(out).toEqual({
+      projectKind: "client",
+      clientName: "Acme SARL",
+      clientContact: "jean@acme.fr",
+      clientBrief: "Refonte site + campagne Q1",
+    });
+  });
+
   it("liste des champs autorisés (référence)", () => {
     expect([...ALLOWED_PROJECT_PATCH_FIELDS]).toEqual([
       "name", "icon", "color", "type", "description", "monetizationIntent", "priorityLevel", "projectStatus",
       "category", "dailyTimeBudgetHours", "statusNote",
+      "projectKind", "clientName", "clientContact", "clientBrief",
     ]);
   });
 });

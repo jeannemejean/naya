@@ -177,26 +177,41 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: project.color || "#2B2D1C" }} />
-          <span className="font-display uppercase tracking-xwide text-[11px] text-foreground truncate">{project.name}</span>
-          {topGoal?.successMode && (
-            <Badge className={`text-[9px] border ${SUCCESS_MODE_COLORS[topGoal.successMode] || "bg-naya-olive-06 text-naya-olive-55"}`}>
-              {topGoal.successMode}
-            </Badge>
-          )}
-          {showAmber && (
-            <span
-              className="flex items-center gap-1 flex-shrink-0 text-[9px] font-display uppercase tracking-xwide px-1.5 py-0.5 rounded border border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] text-[#6f6526]"
-              title="Ce projet dépasse son budget de tâches du jour"
-            >
-              <Gauge className="h-3 w-3" />
-              Planning chargé
-            </span>
-          )}
-          {showSoft && (
-            <span className="flex-shrink-0 text-[10px] text-naya-olive-35 italic" title="Journée bien remplie sur ce projet">
-              planning chargé
-            </span>
-          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-display uppercase tracking-xwide text-[11px] text-foreground truncate">{project.name}</span>
+              {(project as any).projectKind === "client" && (
+                <span
+                  className="flex-shrink-0 text-[9px] font-display uppercase tracking-xwide px-1.5 py-0.5 rounded border border-[rgba(125,143,168,0.45)] bg-[rgba(125,143,168,0.18)] text-[#354963]"
+                  title="Projet client"
+                >
+                  💼 Client
+                </span>
+              )}
+              {topGoal?.successMode && (
+                <Badge className={`text-[9px] border ${SUCCESS_MODE_COLORS[topGoal.successMode] || "bg-naya-olive-06 text-naya-olive-55"}`}>
+                  {topGoal.successMode}
+                </Badge>
+              )}
+              {showAmber && (
+                <span
+                  className="flex items-center gap-1 flex-shrink-0 text-[9px] font-display uppercase tracking-xwide px-1.5 py-0.5 rounded border border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] text-[#6f6526]"
+                  title="Ce projet dépasse son budget de tâches du jour"
+                >
+                  <Gauge className="h-3 w-3" />
+                  Planning chargé
+                </span>
+              )}
+              {showSoft && (
+                <span className="flex-shrink-0 text-[10px] text-naya-olive-35 italic" title="Journée bien remplie sur ce projet">
+                  planning chargé
+                </span>
+              )}
+            </div>
+            {(project as any).projectKind === "client" && (project as any).clientName && (
+              <span className="block text-[10px] text-naya-olive-55 truncate" title="Client">{(project as any).clientName}</span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {daysLeft !== null && daysLeft >= 0 && (
@@ -241,14 +256,48 @@ function AllProjectsBand() {
     queryFn: async () => { const r = await apiRequest("GET", `/api/projects/overcommit?clientToday=${today}`); return r.json(); },
   });
   const overcommitById = new Map(overcommit.map(o => [o.projectId, o.overcommitted]));
+  const [kindFilter, setKindFilter] = useState<"all" | "client" | "personal">("all");
 
   const active = projects.filter(p => p.projectStatus === "active");
   if (active.length === 0) return null;
+
+  // Le toggle n'apparaît que s'il y a au moins un projet client (sinon inutile → board plus propre).
+  const hasClient = active.some(p => (p as any).projectKind === "client");
+  const filtered = active.filter(p => {
+    if (kindFilter === "all") return true;
+    const kind = (p as any).projectKind === "client" ? "client" : "personal";
+    return kind === kindFilter;
+  });
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-      {active.slice(0, 4).map(p => (
-        <ActiveProjectBand key={p.id} projectId={p.id} compact overcommitted={overcommitById.get(p.id) ?? false} />
-      ))}
+    <div className="mb-6">
+      {hasClient && (
+        <div className="flex items-center gap-1 mb-3">
+          {([["all", "Tous"], ["client", "Clients"], ["personal", "Personnels"]] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setKindFilter(val)}
+              className={`text-[10px] font-display uppercase tracking-xwide px-2.5 py-1 rounded-full border transition-colors ${
+                kindFilter === val
+                  ? "bg-primary text-primary-foreground border-transparent"
+                  : "bg-naya-olive-06 text-naya-olive-55 border-naya-olive-18 hover:bg-naya-olive-10"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {filtered.length === 0 ? (
+        <p className="text-xs text-naya-olive-35 italic">Aucun projet {kindFilter === "client" ? "client" : "personnel"}.</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {filtered.slice(0, 4).map(p => (
+            <ActiveProjectBand key={p.id} projectId={p.id} compact overcommitted={overcommitById.get(p.id) ?? false} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -845,6 +894,10 @@ function ProjectStatusNote({ projectId }: { projectId: number }) {
   const [category, setCategory] = useState("");
   const [budget, setBudget] = useState("");
   const [priority, setPriority] = useState("secondary");
+  const [projectKind, setProjectKind] = useState<"personal" | "client">("personal");
+  const [clientName, setClientName] = useState("");
+  const [clientContact, setClientContact] = useState("");
+  const [clientBrief, setClientBrief] = useState("");
 
   useEffect(() => {
     if (!project) return;
@@ -852,16 +905,26 @@ function ProjectStatusNote({ projectId }: { projectId: number }) {
     setCategory(project.category ?? "");
     setBudget(project.dailyTimeBudgetHours != null ? String(project.dailyTimeBudgetHours) : "");
     setPriority(project.priorityLevel ?? "secondary");
-  }, [project?.id, project?.statusNote, project?.category, project?.dailyTimeBudgetHours, project?.priorityLevel]);
+    setProjectKind(project.projectKind === "client" ? "client" : "personal");
+    setClientName(project.clientName ?? "");
+    setClientContact(project.clientContact ?? "");
+    setClientBrief(project.clientBrief ?? "");
+  }, [project?.id, project?.statusNote, project?.category, project?.dailyTimeBudgetHours, project?.priorityLevel, project?.projectKind, project?.clientName, project?.clientContact, project?.clientBrief]);
 
   const save = useMutation({
     mutationFn: async () => {
       const budgetNum = budget.trim() === "" ? null : Math.max(0, parseInt(budget, 10) || 0);
+      const isClient = projectKind === "client";
       return apiRequest("PATCH", `/api/projects/${projectId}`, {
         statusNote: note,
         category: category || null,
         dailyTimeBudgetHours: budgetNum,
         priorityLevel: priority,
+        projectKind,
+        // kind='personal' → on efface les métadonnées client (null) ; kind='client' → on les persiste.
+        clientName: isClient ? (clientName.trim() || null) : null,
+        clientContact: isClient ? (clientContact.trim() || null) : null,
+        clientBrief: isClient ? (clientBrief.trim() || null) : null,
       });
     },
     onSuccess: () => {
@@ -917,6 +980,32 @@ function ProjectStatusNote({ projectId }: { projectId: number }) {
               <option value="background">En fond</option>
             </select>
           </div>
+        </div>
+        {/* Nature du projet : perso vs client + métadonnées client conditionnelles. */}
+        <div className="space-y-2 pt-1 border-t border-naya-olive-10">
+          <div>
+            <label className="text-[11px] text-naya-olive-55 block mb-1">Nature du projet</label>
+            <select className={fieldCls} value={projectKind} onChange={(e) => setProjectKind(e.target.value === "client" ? "client" : "personal")}>
+              <option value="personal">🙂 Projet personnel</option>
+              <option value="client">💼 Projet client</option>
+            </select>
+          </div>
+          {projectKind === "client" && (
+            <div className="space-y-2 rounded-lg border border-naya-olive-18 bg-naya-olive-06 p-2.5">
+              <div>
+                <label className="text-[11px] text-naya-olive-55 block mb-1">Nom du client</label>
+                <input className={fieldCls} value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Ex : Acme SARL" />
+              </div>
+              <div>
+                <label className="text-[11px] text-naya-olive-55 block mb-1">Contact (optionnel)</label>
+                <input className={fieldCls} value={clientContact} onChange={(e) => setClientContact(e.target.value)} placeholder="Nom · email · téléphone" />
+              </div>
+              <div>
+                <label className="text-[11px] text-naya-olive-55 block mb-1">Brief (optionnel)</label>
+                <textarea className={fieldCls} rows={2} value={clientBrief} onChange={(e) => setClientBrief(e.target.value)} placeholder="Contexte, objectifs, contraintes…" />
+              </div>
+            </div>
+          )}
         </div>
         <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} className="w-full">
           {save.isPending ? "Enregistrement…" : "Enregistrer"}
