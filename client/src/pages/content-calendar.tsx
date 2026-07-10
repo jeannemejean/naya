@@ -624,7 +624,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  />
  <div className="flex gap-2 mt-2">
  <button
- className="flex-1 text-xs py-1.5 bg-[rgba(212,201,122,0.12)]0 hover:bg-naya-sulphur text-white rounded flex items-center justify-center gap-1 disabled:opacity-50"
+ className="flex-1 text-xs py-1.5 bg-[rgba(212,201,122,0.12)]0 hover:bg-naya-sulphur text-foreground rounded flex items-center justify-center gap-1 disabled:opacity-50"
  disabled={isRegenerating}
  onClick={() => regenerateMutation.mutate({ id: item.id, feedback: regenerateFeedback })}
  >
@@ -1265,7 +1265,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <div className="mt-4 p-4 bg-[rgba(212,201,122,0.12)] border border-[rgba(212,201,122,0.35)] rounded-lg">
  <div className="flex items-start gap-3">
  <div className="w-5 h-5 bg-[rgba(212,201,122,0.12)]0 rounded-full flex items-center justify-center mt-0.5">
- <span className="text-white text-xs">!</span>
+ <span className="text-foreground text-xs">!</span>
  </div>
  <div>
  <h4 className="font-medium text-[#5a4f0d] mb-1">{t('contentCalendar.demoModeActive')}</h4>

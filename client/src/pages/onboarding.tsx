@@ -178,7 +178,7 @@ function BoardGeneratingScreen() {
  {generationSteps.map((step, i) => (
  <div key={i} className="flex items-center gap-3">
  <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500 ${
- i < activeStep ? 'bg-naya-olive-060 text-white' : i === activeStep ? 'bg-primary text-white' : 'bg-naya-olive-10 text-naya-olive-18'
+ i < activeStep ? 'bg-primary text-white' : i === activeStep ? 'bg-primary text-white' : 'bg-naya-olive-10 text-naya-olive-18'
  }`}>
  {i < activeStep ? <CheckCircle2 className="h-3.5 w-3.5" /> : i === activeStep ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-xs">{i + 1}</span>}
  </div>
@@ -456,8 +456,8 @@ export default function Onboarding() {
  <div
  key={l.layer}
  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-all ${
- isActive ? `${l.color} text-white` :
- isPast ? 'bg-naya-olive-18 text-naya-cream0 ' :
+ isActive ? 'bg-primary text-white' :
+ isPast ? 'bg-naya-olive-18 text-naya-olive-55 ' :
  'bg-naya-olive-10 text-naya-olive-35 '
  }`}
  >

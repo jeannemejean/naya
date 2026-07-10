@@ -33,7 +33,7 @@ export default function QuickActions() {
  </Button>
 
  <Button 
- className="w-full flex items-center justify-center space-x-2 bg-secondary text-white hover:bg-secondary/90"
+ className="w-full flex items-center justify-center space-x-2 bg-secondary text-secondary-foreground hover:bg-secondary/90"
  onClick={handleViewLeads}
  >
  <MessageSquare className="w-4 h-4" />

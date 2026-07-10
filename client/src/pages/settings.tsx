@@ -504,7 +504,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </CardHeader>
  <CardContent className="space-y-3">
  <div className="flex items-center gap-3">
- <div className="w-10 h-10 bg-gradient-to-r from-primary to-secondary rounded-full flex items-center justify-center">
+ <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
  <span className="text-white">
  {user?.firstName?.charAt(0) || user?.email?.charAt(0) || "U"}
  </span>

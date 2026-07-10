@@ -461,8 +461,10 @@
   .text-gray-900,
   .text-slate-900,
   .text-gray-800,
-  .text-slate-800,
-  .text-white     { color: var(--foreground) !important; }
+  .text-slate-800 { color: var(--foreground) !important; }
+  /* NB : `.text-white` était inclus ici et forçait TOUT texte blanc en olive foncé
+     (#2B2D1C) → texte sombre invisible sur les boutons/fonds sombres. Retiré : le blanc
+     redevient blanc. Les rares `text-white` sur fond clair ont été migrés vers un token sombre. */
 
   .text-gray-300,
   .text-slate-300,
