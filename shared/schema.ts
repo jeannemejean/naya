@@ -565,6 +565,7 @@ export const leads = pgTable("leads", {
   lastContactDate: timestamp("last_contact_date"),
   nextFollowUp: timestamp("next_follow_up"),
   enrichedAt: timestamp("enriched_at"),   // date de dernière génération IA
+  archivedAt: timestamp("archived_at"),   // soft-delete (pattern tasks) : non nul = archivé, exclu des vues actives
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

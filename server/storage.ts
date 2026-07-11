@@ -277,6 +277,8 @@ export interface IStorage {
   getLeads(userId: string): Promise<Lead[]>;
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, userId: string, updates: Partial<Lead>): Promise<Lead | null>;
+  bulkArchiveLeads(ids: number[], userId: string): Promise<number>;
+  bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   
   // Outreach operations
@@ -1113,9 +1115,30 @@ export class DatabaseStorage implements IStorage {
 
   // Lead operations
   async getLeads(userId: string): Promise<Lead[]> {
+    // Exclut les prospects archivés (soft-delete) des vues actives, comme les tâches.
     return await db.select().from(leads)
-      .where(eq(leads.userId, userId))
+      .where(and(eq(leads.userId, userId), isNull(leads.archivedAt)))
       .orderBy(desc(leads.updatedAt));
+  }
+
+  // Archivage groupé (soft-delete) : renvoie le nombre de prospects archivés (scopé userId).
+  async bulkArchiveLeads(ids: number[], userId: string): Promise<number> {
+    if (ids.length === 0) return 0;
+    const rows = await db.update(leads)
+      .set({ archivedAt: new Date(), updatedAt: new Date() })
+      .where(and(inArray(leads.id, ids), eq(leads.userId, userId), isNull(leads.archivedAt)))
+      .returning({ id: leads.id });
+    return rows.length;
+  }
+
+  // Déplacement groupé vers une campagne : met à jour prospection_campaign_id (scopé userId).
+  async bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number> {
+    if (ids.length === 0) return 0;
+    const rows = await db.update(leads)
+      .set({ prospectionCampaignId: campaignId, updatedAt: new Date() })
+      .where(and(inArray(leads.id, ids), eq(leads.userId, userId), isNull(leads.archivedAt)))
+      .returning({ id: leads.id });
+    return rows.length;
   }
 
   async createLead(leadData: InsertLead): Promise<Lead> {
@@ -1152,7 +1175,7 @@ export class DatabaseStorage implements IStorage {
 
   async getLeadsByStatus(userId: string, status: string): Promise<Lead[]> {
     return await db.select().from(leads)
-      .where(and(eq(leads.userId, userId), eq(leads.status, status)))
+      .where(and(eq(leads.userId, userId), eq(leads.status, status), isNull(leads.archivedAt)))
       .orderBy(desc(leads.updatedAt));
   }
 

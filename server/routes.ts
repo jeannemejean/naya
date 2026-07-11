@@ -6668,6 +6668,37 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
+  // Archivage groupé (soft-delete) : { ids: number[] } → archived_at = now. Scopé userId.
+  app.post('/api/leads/bulk-archive', isAuthenticated, async (req: any, res) => {
+    try {
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((n: any) => Number.isInteger(n)) : [];
+      if (ids.length === 0) return res.status(400).json({ message: 'no_ids' });
+      const archived = await storage.bulkArchiveLeads(ids, req.userId);
+      res.json({ archived });
+    } catch (error: any) {
+      console.error('Error bulk-archiving leads:', error?.message);
+      res.status(500).json({ message: 'Failed to archive leads' });
+    }
+  });
+
+  // Déplacement groupé vers une campagne : { ids: number[], campaignId } → prospection_campaign_id.
+  app.post('/api/leads/bulk-move', isAuthenticated, async (req: any, res) => {
+    try {
+      const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter((n: any) => Number.isInteger(n)) : [];
+      const campaignId = Number(req.body?.campaignId);
+      if (ids.length === 0) return res.status(400).json({ message: 'no_ids' });
+      if (!Number.isInteger(campaignId)) return res.status(400).json({ message: 'invalid_campaign' });
+      // La campagne cible doit appartenir à l'utilisateur.
+      const campaign = await storage.getProspectionCampaign(campaignId);
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'campaign_not_found' });
+      const moved = await storage.bulkMoveLeads(ids, req.userId, campaignId);
+      res.json({ moved });
+    } catch (error: any) {
+      console.error('Error bulk-moving leads:', error?.message);
+      res.status(500).json({ message: 'Failed to move leads' });
+    }
+  });
+
   app.patch('/api/leads/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;

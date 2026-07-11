@@ -12,14 +12,20 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+ AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+ AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
  Plus, Search, Copy, Sparkles, ExternalLink, CheckCircle2,
  Users, TrendingUp, Target, Zap, ChevronRight, Loader2,
- Instagram, Linkedin, Mail, Trash2,
+ Instagram, Linkedin, Mail, Trash2, X, ArrowRightLeft,
 } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { headerCheckboxState, toggleId, setSelection, countSelectedIn } from '@/lib/bulk-selection';
 import type { Lead } from '@shared/schema';
 
 interface OutreachProps { onSearchClick?: () => void; }
@@ -59,6 +65,10 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  const [importOpen, setImportOpen] = useState(false);
  const [importCsv, setImportCsv] = useState('');
  const [importCampaign, setImportCampaign] = useState('');
+ // Sélection groupée (locale, non persistée) : ids de prospects cochés.
+ const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+ const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+ const [moveTarget, setMoveTarget] = useState('');
 
  const { data: leads = [], isLoading: leadsLoading } = useQuery<Lead[]>({ queryKey: ['/api/leads'] });
  const { data: campaigns = [] } = useQuery<any[]>({ queryKey: ['/api/prospection/campaigns'] });
@@ -97,6 +107,31 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  onError: () => toast({ title: t('common.error'), description: 'Import impossible — vérifie le format CSV.', variant: 'destructive' }),
  });
 
+ const clearSelection = () => setSelectedIds(new Set());
+
+ const bulkArchiveMutation = useMutation({
+ mutationFn: (ids: number[]) => apiRequest('POST', '/api/leads/bulk-archive', { ids }).then(r => r.json()),
+ onSuccess: (res: any) => {
+ queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+ clearSelection();
+ setConfirmDeleteOpen(false);
+ toast({ title: `${res.archived} prospect(s) supprimé(s)` });
+ },
+ onError: () => toast({ title: t('common.error'), description: 'Suppression impossible.', variant: 'destructive' }),
+ });
+
+ const bulkMoveMutation = useMutation({
+ mutationFn: ({ ids, campaignId }: { ids: number[]; campaignId: number }) =>
+ apiRequest('POST', '/api/leads/bulk-move', { ids, campaignId }).then(r => r.json()),
+ onSuccess: (res: any) => {
+ queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+ clearSelection();
+ setMoveTarget('');
+ toast({ title: `${res.moved} prospect(s) déplacé(s)` });
+ },
+ onError: () => toast({ title: t('common.error'), description: 'Déplacement impossible.', variant: 'destructive' }),
+ });
+
  // Filter
  const filtered = leads.filter(l => {
  const matchSearch = !searchTerm ||
@@ -112,6 +147,16 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  acc[s.key] = filtered.filter(l => (l as any).stage === s.key || (!( l as any).stage && s.key === 'identified'));
  return acc;
  }, {} as Record<StageKey, Lead[]>);
+
+ // Sélection groupée (sur les prospects VISIBLES = filtrés)
+ const filteredIds = filtered.map(l => l.id);
+ const selectedVisibleCount = countSelectedIn(selectedIds, filteredIds);
+ const headerState = headerCheckboxState(selectedVisibleCount, filteredIds.length);
+ const headerChecked: boolean | 'indeterminate' =
+ headerState === 'all' ? true : headerState === 'some' ? 'indeterminate' : false;
+ const toggleLead = (id: number) => setSelectedIds(prev => toggleId(prev, id));
+ const toggleAll = () => setSelectedIds(prev => setSelection(prev, filteredIds, headerState !== 'all'));
+ const selectedList = Array.from(selectedIds);
 
  // Metrics
  const total = leads.length;
@@ -192,7 +237,17 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  {activeTab === 'pipeline' && (
  <div className="flex-1 overflow-hidden flex flex-col">
  {/* Filters */}
- <div className="px-6 py-3 border-b border-border bg-background/50 flex gap-3 flex-shrink-0">
+ <div className="px-6 py-3 border-b border-border bg-background/50 flex items-center gap-3 flex-shrink-0">
+ {/* « Tout sélectionner » (indéterminé si sélection partielle) — agit sur les prospects visibles */}
+ <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none" title="Tout sélectionner">
+ <Checkbox
+ checked={headerChecked}
+ onCheckedChange={toggleAll}
+ disabled={filteredIds.length === 0}
+ aria-label="Tout sélectionner"
+ />
+ Tout
+ </label>
  <div className="relative flex-1 max-w-sm">
  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
  <Input
@@ -214,6 +269,45 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  </SelectContent>
  </Select>
  </div>
+
+ {/* Barre d'actions groupées — visible dès qu'au moins 1 prospect est sélectionné */}
+ {selectedList.length > 0 && (
+ <div className="px-6 py-2 border-b border-border bg-primary/5 flex items-center gap-3 flex-shrink-0">
+ <span className="text-xs font-semibold text-foreground">
+ {selectedList.length} sélectionné{selectedList.length > 1 ? 's' : ''}
+ </span>
+ <Select
+ value={moveTarget}
+ onValueChange={(v) => { setMoveTarget(v); bulkMoveMutation.mutate({ ids: selectedList, campaignId: Number(v) }); }}
+ disabled={bulkMoveMutation.isPending || campaigns.length === 0}
+ >
+ <SelectTrigger className="w-56 h-8 text-xs">
+ <ArrowRightLeft className="w-3.5 h-3.5 mr-1 shrink-0" />
+ <SelectValue placeholder="Déplacer vers une campagne…" />
+ </SelectTrigger>
+ <SelectContent>
+ {campaigns.map((c: any) => (
+ <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+ ))}
+ </SelectContent>
+ </Select>
+ <Button
+ variant="destructive"
+ size="sm"
+ className="h-8"
+ onClick={() => setConfirmDeleteOpen(true)}
+ disabled={bulkArchiveMutation.isPending}
+ >
+ <Trash2 className="w-3.5 h-3.5 mr-1" /> Supprimer
+ </Button>
+ <button
+ onClick={clearSelection}
+ className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+ >
+ <X className="w-3.5 h-3.5" /> Désélectionner
+ </button>
+ </div>
+ )}
 
  {/* Kanban */}
  <div className="flex-1 overflow-x-auto overflow-y-hidden">
@@ -239,6 +333,8 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  <LeadCard
  key={lead.id}
  lead={lead}
+ selected={selectedIds.has(lead.id)}
+ onToggleSelect={() => toggleLead(lead.id)}
  onDragStart={() => setDraggedLead(lead)}
  onDragEnd={() => setDraggedLead(null)}
  onClick={() => setSelectedLead(lead)}
@@ -335,6 +431,29 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  <CampaignForm onClose={() => setAddCampaignOpen(false)} />
  </DialogContent>
  </Dialog>
+
+ {/* Confirmation de suppression groupée (soft-delete) */}
+ <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+ <AlertDialogContent>
+ <AlertDialogHeader>
+ <AlertDialogTitle>
+ Supprimer {selectedList.length} prospect{selectedList.length > 1 ? 's' : ''} ?
+ </AlertDialogTitle>
+ <AlertDialogDescription>
+ Ils seront archivés et disparaîtront de la liste active.
+ </AlertDialogDescription>
+ </AlertDialogHeader>
+ <AlertDialogFooter>
+ <AlertDialogCancel>Annuler</AlertDialogCancel>
+ <AlertDialogAction
+ onClick={() => bulkArchiveMutation.mutate(selectedList)}
+ disabled={bulkArchiveMutation.isPending}
+ >
+ Supprimer
+ </AlertDialogAction>
+ </AlertDialogFooter>
+ </AlertDialogContent>
+ </AlertDialog>
  </div>
  );
 }
@@ -355,8 +474,10 @@ function Metric({ icon, label, value, color }: { icon: React.ReactNode; label: s
 
 // ─── Lead Card (Kanban) ───────────────────────────────────────────────────────
 
-function LeadCard({ lead, onDragStart, onDragEnd, onClick, onEnrich, isEnriching }: {
+function LeadCard({ lead, selected, onToggleSelect, onDragStart, onDragEnd, onClick, onEnrich, isEnriching }: {
  lead: Lead;
+ selected: boolean;
+ onToggleSelect: () => void;
  onDragStart: () => void;
  onDragEnd: () => void;
  onClick: () => void;
@@ -367,13 +488,23 @@ function LeadCard({ lead, onDragStart, onDragEnd, onClick, onEnrich, isEnriching
 
  return (
  <div
- className="bg-white rounded-lg border border-border p-3 cursor-pointer hover:shadow-rest transition-all group"
+ className={`bg-white rounded-lg border p-3 cursor-pointer hover:shadow-rest transition-all group ${selected ? 'border-primary ring-1 ring-primary' : 'border-border'}`}
  draggable
  onDragStart={onDragStart}
  onDragEnd={onDragEnd}
  onClick={onClick}
  >
  <div className="flex items-start gap-2">
+ {/* Checkbox de sélection — stopPropagation pour ne pas ouvrir le détail ni déclencher le drag */}
+ <span
+ className="pt-0.5 flex-shrink-0"
+ onClick={e => e.stopPropagation()}
+ onPointerDown={e => e.stopPropagation()}
+ draggable
+ onDragStart={e => { e.preventDefault(); e.stopPropagation(); }}
+ >
+ <Checkbox checked={selected} onCheckedChange={onToggleSelect} aria-label={`Sélectionner ${lead.name}`} />
+ </span>
  <Avatar className="w-8 h-8 flex-shrink-0">
  <AvatarFallback className="text-[10px] bg-[rgba(158,126,135,0.20)] text-[#5c3d45] font-medium">
  {lead.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
