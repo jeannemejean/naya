@@ -26,6 +26,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { headerCheckboxState, toggleId, setSelection, countSelectedIn } from '@/lib/bulk-selection';
+import { campaignBadgeStyle, shortCampaignName } from '@/lib/campaign-color';
 import type { Lead } from '@shared/schema';
 
 interface OutreachProps { onSearchClick?: () => void; }
@@ -158,6 +159,11 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  const toggleAll = () => setSelectedIds(prev => setSelection(prev, filteredIds, headerState !== 'all'));
  const selectedList = Array.from(selectedIds);
 
+ // Attribution par campagne : map id→campagne + campagnes AYANT des prospects (pour le filtre).
+ const campaignById = new Map<number, any>(campaigns.map((c: any) => [c.id, c]));
+ const campaignsWithLeads = campaigns.filter((c: any) =>
+ leads.some(l => (l as any).prospectionCampaignId === c.id));
+
  // Metrics
  const total = leads.length;
  const withMessages = leads.filter(l => (l as any).message1).length;
@@ -262,8 +268,9 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  <SelectValue placeholder="Toutes les campagnes" />
  </SelectTrigger>
  <SelectContent>
+ {/* Option « Toutes » + uniquement les campagnes qui ont des prospects */}
  <SelectItem value="all">Toutes les campagnes</SelectItem>
- {campaigns.map((c: any) => (
+ {campaignsWithLeads.map((c: any) => (
  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
  ))}
  </SelectContent>
@@ -333,6 +340,7 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  <LeadCard
  key={lead.id}
  lead={lead}
+ campaign={campaignById.get((lead as any).prospectionCampaignId)}
  selected={selectedIds.has(lead.id)}
  onToggleSelect={() => toggleLead(lead.id)}
  onDragStart={() => setDraggedLead(lead)}
@@ -474,8 +482,9 @@ function Metric({ icon, label, value, color }: { icon: React.ReactNode; label: s
 
 // ─── Lead Card (Kanban) ───────────────────────────────────────────────────────
 
-function LeadCard({ lead, selected, onToggleSelect, onDragStart, onDragEnd, onClick, onEnrich, isEnriching }: {
+function LeadCard({ lead, campaign, selected, onToggleSelect, onDragStart, onDragEnd, onClick, onEnrich, isEnriching }: {
  lead: Lead;
+ campaign?: { id: number; name: string };
  selected: boolean;
  onToggleSelect: () => void;
  onDragStart: () => void;
@@ -522,7 +531,17 @@ function LeadCard({ lead, selected, onToggleSelect, onDragStart, onDragEnd, onCl
  </div>
 
  <div className="mt-2 flex items-center justify-between">
- <div className="flex gap-1">
+ <div className="flex gap-1 items-center min-w-0">
+ {/* Badge d'attribution de campagne — couleur déterministe dérivée de l'id (campagne COURANTE) */}
+ {campaign && (
+ <span
+ className="text-[10px] px-1.5 py-0.5 rounded-full font-medium border max-w-[100px] truncate shrink-0"
+ style={campaignBadgeStyle(campaign.id)}
+ title={campaign.name}
+ >
+ {shortCampaignName(campaign.name)}
+ </span>
+ )}
  {lead.score === 'hot' && <span className="text-[10px] bg-[rgba(158,126,135,0.20)] text-[#5c3d45] px-1.5 py-0.5 rounded-full font-medium">Chaud</span>}
  {lead.score === 'warm' && <span className="text-[10px] bg-[rgba(212,201,122,0.20)] text-[#5a4f0d] px-1.5 py-0.5 rounded-full font-medium">Tiède</span>}
  {lead.score === 'cold' && <span className="text-[10px] bg-[rgba(125,143,168,0.20)] text-[#354963] px-1.5 py-0.5 rounded-full font-medium">Froid</span>}
