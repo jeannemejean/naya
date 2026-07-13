@@ -369,6 +369,38 @@ export interface IdealCustomerProfile {
   googleQueries: string[];   // recherches X-ray Google
 }
 
+// Nature CONCISE de la prestation VENDUE par le projet (offers > positionnement > type d'activité).
+// Sert de signal d'exclusion des concurrents directs. 100% dérivé du DNA du projet → générique,
+// jamais spécifique à un projet particulier.
+export function projectOfferNature(
+  brandDna: { offers?: string | null; uniquePositioning?: string | null; businessType?: string | null } | null | undefined,
+): string {
+  const raw = (brandDna?.offers || brandDna?.uniquePositioning || brandDna?.businessType || "").trim();
+  if (!raw) return "";
+  const oneLine = raw.replace(/\s+/g, " ");
+  return oneLine.length > 280 ? oneLine.slice(0, 279).trimEnd() + "…" : oneLine;
+}
+
+// Construit le contexte ${ctx} de génération d'ICP (marque du PROJET + campagne). Pur/testable.
+// Inclut explicitement la nature de l'offre du projet → cible des exclusions de concurrents.
+export function buildProspectionContext(brandDna: any, campaign: any): string {
+  const offerNature = projectOfferNature(brandDna);
+  return [
+    brandDna?.businessName ? `Entreprise: ${brandDna.businessName}` : "",
+    brandDna?.businessType ? `Activité: ${brandDna.businessType}` : "",
+    brandDna?.uniquePositioning ? `Positionnement: ${brandDna.uniquePositioning}` : "",
+    brandDna?.targetAudience ? `Audience principale: ${brandDna.targetAudience}` : "",
+    brandDna?.corePainPoint ? `Douleur de l'audience: ${brandDna.corePainPoint}` : "",
+    brandDna?.offers ? `Offres: ${brandDna.offers}` : "",
+    offerNature ? `Type de prestation VENDUE par le projet (ses concurrents directs vendent la même chose → à EXCLURE des prospects): ${offerNature}` : "",
+    campaign?.targetSector ? `Secteur visé (campagne): ${campaign.targetSector}` : "",
+    (campaign as any)?.offer ? `Offre de la campagne: ${(campaign as any).offer}` : "",
+    (campaign as any)?.messageAngle ? `Angle: ${(campaign as any).messageAngle}` : "",
+    (campaign as any)?.buyingSignals ? `Signaux d'achat: ${(campaign as any).buyingSignals}` : "",
+    (campaign as any)?.campaignBrief ? `Objectif: ${(campaign as any).campaignBrief}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 export async function generateLeadCriteria(userId: string, campaignId: number): Promise<IdealCustomerProfile> {
   const campaign = await storage.getProspectionCampaign(campaignId);
   // Brand DNA du PROJET de la campagne (pas le DNA global = « Agence JMD »), avec fallback global.
@@ -377,19 +409,7 @@ export async function generateLeadCriteria(userId: string, campaignId: number): 
     (projectId ? await storage.getBrandDnaForProject(userId, projectId) : undefined) ??
     (await storage.getBrandDna(userId));
 
-  const ctx = [
-    brandDna?.businessName ? `Entreprise: ${brandDna.businessName}` : "",
-    brandDna?.businessType ? `Activité: ${brandDna.businessType}` : "",
-    brandDna?.uniquePositioning ? `Positionnement: ${brandDna.uniquePositioning}` : "",
-    brandDna?.targetAudience ? `Audience principale: ${brandDna.targetAudience}` : "",
-    brandDna?.corePainPoint ? `Douleur de l'audience: ${brandDna.corePainPoint}` : "",
-    brandDna?.offers ? `Offres: ${brandDna.offers}` : "",
-    campaign?.targetSector ? `Secteur visé (campagne): ${campaign.targetSector}` : "",
-    (campaign as any)?.offer ? `Offre de la campagne: ${(campaign as any).offer}` : "",
-    (campaign as any)?.messageAngle ? `Angle: ${(campaign as any).messageAngle}` : "",
-    (campaign as any)?.buyingSignals ? `Signaux d'achat: ${(campaign as any).buyingSignals}` : "",
-    (campaign as any)?.campaignBrief ? `Objectif: ${(campaign as any).campaignBrief}` : "",
-  ].filter(Boolean).join("\n");
+  const ctx = buildProspectionContext(brandDna, campaign);
 
   const prompt = `Tu es un expert en ciblage B2B (ICP - Ideal Customer Profile). À partir de la marque et de l'objectif de campagne ci-dessous, définis le PROFIL DE PROSPECT IDÉAL à contacter, puis génère des requêtes de recherche concrètes.
 
@@ -397,6 +417,8 @@ CONTEXTE :
 ${ctx || "(contexte minimal — propose un ICP plausible et généraliste)"}
 
 CIBLAGE (impératif) : Génère des requêtes ciblant les personnes qui ACHÈTENT ou PROGRAMMENT ce type de service (décideurs, acheteurs, organisateurs) — PAS les personnes qui travaillent dans le secteur mentionné. Exemple : pour "speaker événements digitaux", cibler "directeur de conférence", "responsable programmation événementielle", "producteur d'événement B2B" — PAS "responsable réseaux sociaux" ni "directeur artistique".
+
+EXCLUSIONS OBLIGATOIRES : n'inclus jamais dans les requêtes des entreprises ou personnes qui VENDENT les mêmes services que le projet ci-dessus (prestataires concurrents directs). Exclure : les agences, studios, freelances ou consultants dont l'offre principale est identique ou substituable à celle du projet. Inclure : les entreprises qui ACHÈTENT ces services (marques, directions marketing, porteurs de projets).
 
 Donne :
 - Les intitulés de poste à cibler : uniquement des DÉCIDEURS / ACHETEURS / ORGANISATEURS qui achètent ou programment cette offre (jamais des profils qui exercent le même métier ou travaillent simplement dans le secteur).

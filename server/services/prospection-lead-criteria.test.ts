@@ -17,7 +17,7 @@ vi.mock("./claude", async (importOriginal) => {
 import { storage } from "../storage";
 import * as claude from "./claude";
 import { assertNotTruncated } from "./claude";
-import { generateLeadCriteria } from "./prospection";
+import { generateLeadCriteria, buildProspectionContext, projectOfferNature } from "./prospection";
 
 const VALID_JSON = JSON.stringify({
   rationale: "cible les acheteurs de conférences",
@@ -116,5 +116,57 @@ describe("POINT 2 — anti-troncature + retry", () => {
     (claude.callClaudeDetailed as any).mockResolvedValue({ text: '{"rationale":"...tronqué', stopReason: "max_tokens" });
     await expect(generateLeadCriteria("u1", 3)).rejects.toThrow(/échouée après 2 tentatives/);
     expect(claude.callClaudeDetailed).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("projectOfferNature — nature de la prestation vendue (générique, dérivée du DNA)", () => {
+  it("priorise offers > uniquePositioning > businessType", () => {
+    expect(projectOfferNature({ offers: "gestion de réseaux sociaux", uniquePositioning: "X", businessType: "Y" }))
+      .toBe("gestion de réseaux sociaux");
+    expect(projectOfferNature({ offers: null, uniquePositioning: "stratégie de marque", businessType: "Y" }))
+      .toBe("stratégie de marque");
+    expect(projectOfferNature({ offers: null, uniquePositioning: null, businessType: "Marque personnelle" }))
+      .toBe("Marque personnelle");
+  });
+  it("aplatit les espaces et tronque à ~280 caractères", () => {
+    const long = "a ".repeat(300);
+    const out = projectOfferNature({ offers: long });
+    expect(out.length).toBeLessThanOrEqual(280);
+    expect(out.endsWith("…")).toBe(true);
+  });
+  it("DNA vide → chaîne vide", () => {
+    expect(projectOfferNature(null)).toBe("");
+    expect(projectOfferNature({})).toBe("");
+  });
+});
+
+describe("buildProspectionContext — inclut la nature de l'offre (dynamique par projet)", () => {
+  it("le contexte contient explicitement la prestation vendue par le projet", () => {
+    const ctx = buildProspectionContext(
+      { businessName: "Agence JMD", offers: "community management et stratégie de marque" },
+      { targetSector: "mode" },
+    );
+    expect(ctx).toContain("Type de prestation VENDUE par le projet");
+    expect(ctx).toContain("community management et stratégie de marque");
+  });
+  it("la nature diffère selon le projet (règle dynamique, non hardcodée)", () => {
+    const jmd = buildProspectionContext({ offers: "agence de communication pour marques mode/beauté" }, {});
+    const naya = buildProspectionContext({ offers: "plateforme IA d'aide à la décision stratégique" }, {});
+    expect(jmd).toContain("agence de communication pour marques mode/beauté");
+    expect(naya).toContain("plateforme IA d'aide à la décision stratégique");
+    expect(jmd).not.toBe(naya);
+  });
+});
+
+describe("prompt de génération — bloc EXCLUSIONS OBLIGATOIRES (concurrents directs)", () => {
+  it("le prompt envoyé au modèle contient le bloc d'exclusion + la nature de l'offre", async () => {
+    (storage.getBrandDnaForProject as any).mockResolvedValue({ ...PROJECT_DNA, offers: "agence social media pour marques" });
+    await generateLeadCriteria("u1", 3);
+    const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain("EXCLUSIONS OBLIGATOIRES");
+    expect(prompt).toContain("prestataires concurrents directs");
+    expect(prompt).toContain("Inclure : les entreprises qui ACHÈTENT ces services");
+    expect(prompt).toContain("Type de prestation VENDUE par le projet");
+    expect(prompt).toContain("agence social media pour marques");
   });
 });
