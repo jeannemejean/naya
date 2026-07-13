@@ -871,6 +871,17 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  genStep === 'tasks' ? ["✓ Stratégie", "✓ Plan de contenu", "Tâches opérationnelles à exécuter…"] :
  ["Un instant…"]
  }
+ // Une fois la 1re étape (stratégie) passée, on rassure : la génération continue même
+ // si l'utilisateur quitte la page (fetch non annulé au démontage + onSuccess invalide
+ // la liste → la campagne apparaît au retour).
+ hints={
+ genStep === 'content' || genStep === 'tasks'
+ ? [
+ "Encore 2-3 minutes · Tu peux naviguer dans l'app, la génération continue en arrière-plan.",
+ "Pas besoin de rester ici · Naya termine ta campagne en arrière-plan.",
+ ]
+ : undefined
+ }
  />
  <Sidebar onSearchClick={onSearchClick} />
 
