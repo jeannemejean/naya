@@ -34,6 +34,7 @@ import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
+import { runCampaignSearch, enrichProspects, prospectionErrorResponse } from "./services/prospection-pipeline";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
@@ -6868,6 +6869,55 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       res.json({ found: found.length, imported, skipped });
     } catch (e: any) {
       console.error('[source-leads]', e.message);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── Pipeline complet ────────────────────────────────────────────────────
+  // PHASE 1+2 : recherche adaptive + pré-filtrage + import brut (plan base, pas de quota).
+  app.post('/api/prospection/campaigns/:id/search', isAuthenticated, async (req: any, res) => {
+    try {
+      if (await isAiBlocked(req.userId)) return res.status(429).json({ message: 'ai_monthly_limit_reached' });
+      if (!serpConfigured()) return res.status(400).json({ message: 'provider_not_configured' });
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const result = await runCampaignSearch(req.userId, campaign);
+      res.json(result);
+    } catch (e: any) {
+      console.error('[prospection/search]', e.message);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // PHASE 3+4 : enrichissement + audit + message (plan enrichissement uniquement).
+  // Body: { prospectIds: number[] }. Bloque en 403 (plan base ou limite LinkedIn atteinte).
+  app.post('/api/prospection/campaigns/:id/enrich', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const prospectIds = Array.isArray(req.body?.prospectIds)
+        ? req.body.prospectIds.filter((n: any) => Number.isInteger(n))
+        : [];
+      if (prospectIds.length === 0) return res.status(400).json({ message: 'no_prospects' });
+      const result = await enrichProspects(req.userId, campaign, prospectIds);
+      res.json(result);
+    } catch (e: any) {
+      const gated = prospectionErrorResponse(e);
+      if (gated) return res.status(gated.status).json(gated.body);
+      console.error('[prospection/enrich]', e.message);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Liste les prospects d'une campagne avec leur statut d'enrichissement (deux plans).
+  app.get('/api/prospection/campaigns/:id/prospects', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const prospects = await storage.getLeadsByCampaign(campaign.id, req.userId);
+      res.json(prospects);
+    } catch (e: any) {
+      console.error('[prospection/prospects]', e.message);
       res.status(500).json({ message: e.message });
     }
   });

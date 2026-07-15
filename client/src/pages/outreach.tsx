@@ -135,6 +135,38 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  onError: () => toast({ title: t('common.error'), description: 'Déplacement impossible.', variant: 'destructive' }),
  });
 
+ // Enrichissement IA groupé (plan enrichissement) — groupe les sélectionnés par campagne.
+ const bulkEnrichMutation = useMutation({
+ mutationFn: async (ids: number[]) => {
+ const groups = new Map<number, number[]>();
+ for (const id of ids) {
+ const lead = leads.find(l => l.id === id);
+ const cid = (lead as any)?.prospectionCampaignId;
+ if (cid) groups.set(cid, [...(groups.get(cid) || []), id]);
+ }
+ if (groups.size === 0) throw new Error('{"message":"Attribue d’abord ces prospects à une campagne."}');
+ let enriched = 0, failed = 0;
+ for (const [cid, pids] of Array.from(groups.entries())) {
+ const r = await apiRequest('POST', `/api/prospection/campaigns/${cid}/enrich`, { prospectIds: pids });
+ const j = await r.json();
+ enriched += j.enriched || 0; failed += j.failed || 0;
+ }
+ return { enriched, failed };
+ },
+ onSuccess: (res: any) => {
+ queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+ queryClient.invalidateQueries({ queryKey: ['/api/prospection/status'] });
+ clearSelection();
+ toast({ title: `${res.enriched} prospect(s) enrichi(s)${res.failed ? `, ${res.failed} échec(s)` : ''}` });
+ },
+ onError: (e: any) => {
+ let msg = e?.message || 'Enrichissement impossible.';
+ const m = msg.match(/\{[\s\S]*\}/);
+ if (m) { try { msg = JSON.parse(m[0]).message || msg; } catch {} }
+ toast({ title: 'Enrichissement', description: msg, variant: 'destructive' });
+ },
+ });
+
  // Filter
  const filtered = leads.filter(l => {
  const matchSearch = !searchTerm ||
@@ -302,6 +334,19 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  ))}
  </SelectContent>
  </Select>
+ {prospectionStatus?.enrichment_available && (
+ <Button
+ size="sm"
+ className="h-8"
+ onClick={() => bulkEnrichMutation.mutate(selectedList)}
+ disabled={bulkEnrichMutation.isPending}
+ >
+ {bulkEnrichMutation.isPending
+ ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+ : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+ Enrichir (IA)
+ </Button>
+ )}
  <Button
  variant="destructive"
  size="sm"

@@ -277,6 +277,8 @@ export interface IStorage {
 
   // Lead operations
   getLeads(userId: string): Promise<Lead[]>;
+  getLead(id: number, userId: string): Promise<Lead | undefined>;
+  getLeadsByCampaign(campaignId: number, userId: string): Promise<Lead[]>;
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, userId: string, updates: Partial<Lead>): Promise<Lead | null>;
   bulkArchiveLeads(ids: number[], userId: string): Promise<number>;
@@ -1124,6 +1126,22 @@ export class DatabaseStorage implements IStorage {
     // Exclut les prospects archivés (soft-delete) des vues actives, comme les tâches.
     return await db.select().from(leads)
       .where(and(eq(leads.userId, userId), isNull(leads.archivedAt)))
+      .orderBy(desc(leads.updatedAt));
+  }
+
+  async getLead(id: number, userId: string): Promise<Lead | undefined> {
+    const [row] = await db.select().from(leads)
+      .where(and(eq(leads.id, id), eq(leads.userId, userId)));
+    return row;
+  }
+
+  async getLeadsByCampaign(campaignId: number, userId: string): Promise<Lead[]> {
+    return await db.select().from(leads)
+      .where(and(
+        eq(leads.userId, userId),
+        eq(leads.prospectionCampaignId, campaignId),
+        isNull(leads.archivedAt),
+      ))
       .orderBy(desc(leads.updatedAt));
   }
 

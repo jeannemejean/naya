@@ -13,8 +13,10 @@ import { hasNayaAccess, type AccessUser, type AccessSubscription } from "./acces
 import {
   LINKEDIN_WEEKLY_LIMIT,
   LINKEDIN_REQUEST_OPERATIONS,
+  OPERATION_COST_CENTS,
   PROSPECTION_TIMEZONE,
   PROSPECTION_WEEK_RESET_DAY,
+  type ProspectionOperationType,
 } from "./prospection-config";
 
 export type ProspectionPlan = "base" | "enrichissement";
@@ -187,6 +189,28 @@ export async function checkLinkedInWeeklyLimit(
 ): Promise<void> {
   const count = await getLinkedInRequestsThisWeek(userId, now);
   assertWithinLinkedInWeeklyLimit(count);
+}
+
+/**
+ * Enregistre un coût de prospection dans le tracking interne (jamais exposé user).
+ * Le coût est figé par la config (source de vérité unique). Ne throw jamais.
+ */
+export async function logProspectionUsage(
+  userId: string,
+  operationType: ProspectionOperationType,
+  refs: { prospectId?: number | null; campaignId?: number | null } = {},
+): Promise<void> {
+  try {
+    await storage.recordProspectionUsage({
+      userId,
+      operationType,
+      costCents: OPERATION_COST_CENTS[operationType] ?? 0,
+      prospectId: refs.prospectId ?? undefined,
+      campaignId: refs.campaignId ?? undefined,
+    });
+  } catch (e: any) {
+    console.error("[prospection] logProspectionUsage:", e?.message || e);
+  }
 }
 
 /**

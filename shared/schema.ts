@@ -561,6 +561,13 @@ export const leads = pgTable("leads", {
   message1: text("message1"),              // message de connexion LinkedIn (≤200 cars)
   message2: text("message2"),              // message de suivi après connexion
   message3: text("message3"),              // message de clôture
+  // ─── Pipeline d'enrichissement (plan enrichissement) ───────────────────────
+  enriched: boolean("enriched").notNull().default(false), // profil enrichi (phase 3)
+  priority: text("priority"),              // hot | warm — dérivé d'un signal d'achat
+  auditNotes: text("audit_notes"),         // audit structuré adapté au secteur (JSON stringifié)
+  linkedinMessage: text("linkedin_message"), // note de connexion LinkedIn (≤200 cars)
+  emailMessage: text("email_message"),     // email personnalisé (5-8 phrases)
+  enrichedProfile: jsonb("enriched_profile"), // données brutes scrapées (linkedin/instagram/web)
   firstContactDate: timestamp("first_contact_date"),
   lastContactDate: timestamp("last_contact_date"),
   nextFollowUp: timestamp("next_follow_up"),
