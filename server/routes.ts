@@ -33,6 +33,7 @@ import { evaluateProjectOvercommit } from "./services/overcommit";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
+import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
@@ -6723,6 +6724,21 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     } catch (error) {
       console.error("Error updating lead:", error);
       res.status(500).json({ message: "Failed to update lead" });
+    }
+  });
+
+  // Statut d'abonnement prospection (plan + compteur LinkedIn hebdo). Ne dévoile aucun coût interne.
+  app.get('/api/prospection/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const plan = await getProspectionPlan(userId);
+      // Le compteur LinkedIn n'a de sens que pour le plan enrichissement.
+      const linkedinRequestsThisWeek =
+        plan === "enrichissement" ? await getLinkedInRequestsThisWeek(userId) : 0;
+      res.json(buildProspectionStatus({ plan, linkedinRequestsThisWeek }));
+    } catch (e: any) {
+      console.error("Error fetching prospection status:", e);
+      res.status(500).json({ message: "Failed to fetch prospection status" });
     }
   });
 

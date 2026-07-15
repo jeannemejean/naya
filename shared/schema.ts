@@ -1283,6 +1283,11 @@ export type InsertGoogleCalendarToken = typeof googleCalendarTokens.$inferInsert
 
 // ─── Abonnement & accès (Stripe) ─────────────────────────────────────────────
 
+// Niveau d'abonnement PROSPECTION (orthogonal à l'accès Naya de base).
+// 'base' = recherche + pré-filtrage + import CRM brut ; 'enrichissement' = base + enrichissement
+// complet + audit IA + messages personnalisés (option +15€/mois).
+export const prospectionPlanEnum = pgEnum("prospection_plan", ["base", "enrichissement"]);
+
 export const subscriptions = pgTable("subscriptions", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().unique().references(() => users.id),
@@ -1293,6 +1298,8 @@ export const subscriptions = pgTable("subscriptions", {
   currentPeriodEnd: timestamp("current_period_end"),
   trialEndsAt: timestamp("trial_ends_at"),
   cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  // Flag additif, PRÉSERVÉ par upsertSubscription (n'est pas écrit par la sync webhook Stripe).
+  prospectionPlan: prospectionPlanEnum("prospection_plan").notNull().default("base"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1326,6 +1333,23 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
 export type AccessCode = typeof accessCodes.$inferSelect;
 export type InsertAccessCode = typeof accessCodes.$inferInsert;
+
+// Tracking INTERNE des coûts de prospection (admin uniquement, jamais exposé à l'utilisateur).
+// operation_type ∈ prospection-config.ProspectionOperationType. cost_cents = coût unitaire figé.
+export const prospectionUsage = pgTable("prospection_usage", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  operationType: text("operation_type").notNull(),
+  costCents: integer("cost_cents").notNull().default(0),
+  prospectId: integer("prospect_id").references(() => leads.id),
+  campaignId: integer("campaign_id").references(() => prospectionCampaigns.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_prospection_usage_user_created").on(t.userId, t.createdAt),
+  index("idx_prospection_usage_user_op").on(t.userId, t.operationType),
+]);
+export type ProspectionUsage = typeof prospectionUsage.$inferSelect;
+export type InsertProspectionUsage = typeof prospectionUsage.$inferInsert;
 
 // ─── Séquences de prospection (style lemlist) ────────────────────────────────
 

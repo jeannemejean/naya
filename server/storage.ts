@@ -118,6 +118,8 @@ import {
   type AccessCode,
   accessCodeRedemptions,
   processedStripeEvents,
+  prospectionUsage,
+  type InsertProspectionUsage,
   campaignSequenceSteps,
   type CampaignSequenceStep,
   type InsertCampaignSequenceStep,
@@ -321,6 +323,10 @@ export interface IStorage {
   // Abonnement & accès (Stripe)
   getSubscription(userId: string): Promise<Subscription | undefined>;
   upsertSubscription(sub: InsertSubscription): Promise<Subscription>;
+  setProspectionPlan(userId: string, plan: "base" | "enrichissement"): Promise<void>;
+  // Tracking interne des coûts de prospection
+  recordProspectionUsage(entry: InsertProspectionUsage): Promise<void>;
+  countProspectionOperationsSince(userId: string, operationTypes: string[], since: Date): Promise<number>;
   setUserRole(userId: string, role: string): Promise<void>;
   setUserRoleByEmail(email: string, role: string): Promise<boolean>;
   getAccessCodeByCode(code: string): Promise<AccessCode | undefined>;
@@ -1416,6 +1422,38 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(subscriptions).values(sub).returning();
     return created;
+  }
+
+  // Fixe le plan prospection. Upsert : crée une ligne minimale si l'abonnement n'existe pas
+  // encore (ex: utilisateur en essai sans objet Stripe complet).
+  async setProspectionPlan(userId: string, plan: "base" | "enrichissement"): Promise<void> {
+    await db.insert(subscriptions)
+      .values({ userId, prospectionPlan: plan })
+      .onConflictDoUpdate({
+        target: subscriptions.userId,
+        set: { prospectionPlan: plan, updatedAt: new Date() },
+      });
+  }
+
+  async recordProspectionUsage(entry: InsertProspectionUsage): Promise<void> {
+    await db.insert(prospectionUsage).values(entry);
+  }
+
+  async countProspectionOperationsSince(
+    userId: string,
+    operationTypes: string[],
+    since: Date,
+  ): Promise<number> {
+    if (operationTypes.length === 0) return 0;
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(prospectionUsage)
+      .where(and(
+        eq(prospectionUsage.userId, userId),
+        inArray(prospectionUsage.operationType, operationTypes),
+        gte(prospectionUsage.createdAt, since),
+      ));
+    return row?.n ?? 0;
   }
 
   async setUserRole(userId: string, role: string): Promise<void> {

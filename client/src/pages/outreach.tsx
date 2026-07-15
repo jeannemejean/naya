@@ -27,6 +27,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { headerCheckboxState, toggleId, setSelection, countSelectedIn } from '@/lib/bulk-selection';
 import { campaignBadgeStyle, shortCampaignName } from '@/lib/campaign-color';
+import { prospectionWidgetModel, type ProspectionStatusDTO } from '@/lib/prospection-widget';
 import type { Lead } from '@shared/schema';
 
 interface OutreachProps { onSearchClick?: () => void; }
@@ -73,6 +74,7 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
 
  const { data: leads = [], isLoading: leadsLoading } = useQuery<Lead[]>({ queryKey: ['/api/leads'] });
  const { data: campaigns = [] } = useQuery<any[]>({ queryKey: ['/api/prospection/campaigns'] });
+ const { data: prospectionStatus } = useQuery<ProspectionStatusDTO>({ queryKey: ['/api/prospection/status'] });
 
  const updateLeadMutation = useMutation({
  mutationFn: ({ id, updates }: { id: number; updates: Partial<Lead> }) =>
@@ -219,6 +221,8 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  <Metric icon={<CheckCircle2 className="w-4 h-4" />} label="Signés" value={signed} color="text-naya-olive" />
  <Metric icon={<Target className="w-4 h-4" />} label="Campagnes actives" value={campaigns.filter((c: any) => c.status === 'active').length} color="text-[#5c3d45]" />
  </div>
+
+ <ProspectionAccessBar status={prospectionStatus} />
 
  {/* Tabs */}
  <div className="flex-1 overflow-hidden flex flex-col">
@@ -476,6 +480,44 @@ function Metric({ icon, label, value, color }: { icon: React.ReactNode; label: s
  <p className="text-xs text-muted-foreground">{label}</p>
  <p className="text-lg font-bold text-foreground leading-none">{value}</p>
  </div>
+ </div>
+ );
+}
+
+// ─── Barre d'accès prospection (sobre) ───────────────────────────────────────
+function ProspectionAccessBar({ status }: { status?: ProspectionStatusDTO }) {
+ const m = prospectionWidgetModel(status);
+ if (m.mode === 'hidden') return null;
+
+ if (m.mode === 'upsell') {
+ return (
+ <div className="border-b border-border bg-naya-olive-06 px-6 py-2.5 flex items-center justify-between gap-4 flex-shrink-0">
+ <p className="text-sm text-muted-foreground">
+ Passe à l'option <span className="font-medium text-foreground">Enrichissement (+15€/mois)</span> pour accéder à l'audit IA et aux messages personnalisés.
+ </p>
+ <a
+ href="/settings"
+ className="text-sm font-medium text-naya-olive whitespace-nowrap hover:underline"
+ >
+ Activer l'enrichissement →
+ </a>
+ </div>
+ );
+ }
+
+ // mode enrichment : compteur discret + barre de progression
+ return (
+ <div className="border-b border-border bg-white px-6 py-2.5 flex items-center gap-4 flex-shrink-0">
+ <span className="text-sm text-muted-foreground whitespace-nowrap">
+ <span className={`font-semibold ${m.atLimit ? 'text-[#5c3d45]' : 'text-foreground'}`}>{m.used}/{m.limit}</span> prospects LinkedIn cette semaine
+ </span>
+ <div className="flex-1 max-w-xs h-1.5 rounded-full bg-naya-olive-10 overflow-hidden">
+ <div
+ className={`h-full rounded-full transition-all ${m.atLimit ? 'bg-[#9e7e87]' : 'bg-naya-olive'}`}
+ style={{ width: `${m.percent}%` }}
+ />
+ </div>
+ <span className="text-xs text-muted-foreground whitespace-nowrap">Réinitialisation lundi</span>
  </div>
  );
 }
