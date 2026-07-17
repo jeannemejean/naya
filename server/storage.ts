@@ -1042,9 +1042,34 @@ export class DatabaseStorage implements IStorage {
     return c || null;
   }
 
+  // Suppression d'une campagne de prospection AVEC cascade (les FK n'ont pas ON DELETE CASCADE) :
+  // - prospects : ARCHIVÉS (soft-delete réversible) + détachés de la campagne
+  // - séquences (steps + états d'enrôlement) : supprimées
+  // - tracking de coûts : campaign_id remis à NULL (historique préservé)
+  // - campagne marketing liée : lien remis à NULL
+  // Le tout dans une transaction pour rester cohérent.
   async deleteProspectionCampaign(id: number, userId: string): Promise<void> {
-    await db.delete(prospectionCampaigns)
+    const [owned] = await db.select({ id: prospectionCampaigns.id }).from(prospectionCampaigns)
       .where(and(eq(prospectionCampaigns.id, id), eq(prospectionCampaigns.userId, userId)));
+    if (!owned) return; // inexistante ou pas au user → no-op
+
+    await db.transaction(async (tx) => {
+      // Prospects : archiver (réversible) + détacher pour lever la FK
+      await tx.update(leads)
+        .set({ archivedAt: new Date(), prospectionCampaignId: null, updatedAt: new Date() })
+        .where(and(eq(leads.prospectionCampaignId, id), eq(leads.userId, userId)));
+      // Séquences liées à la campagne
+      await tx.delete(leadSequenceState).where(eq(leadSequenceState.campaignId, id));
+      await tx.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.campaignId, id));
+      // Tracking de coûts : conserver la ligne, retirer la référence
+      await tx.update(prospectionUsage).set({ campaignId: null }).where(eq(prospectionUsage.campaignId, id));
+      // Campagne marketing qui pointait vers cette prospection : délier
+      await tx.update(campaigns).set({ linkedProspectionCampaignId: null } as any)
+        .where(eq((campaigns as any).linkedProspectionCampaignId, id));
+      // Enfin, la campagne elle-même
+      await tx.delete(prospectionCampaigns)
+        .where(and(eq(prospectionCampaigns.id, id), eq(prospectionCampaigns.userId, userId)));
+    });
   }
 
   // ─── Séquences de prospection ──────────────────────────────────────────────
@@ -2186,6 +2211,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCampaign(id: number, userId: string): Promise<void> {
+    // Cascade : supprimer d'abord la/les campagne(s) de prospection liée(s) à cette campagne
+    // marketing (lien dans les deux sens : campaigns.linkedProspectionCampaignId ET
+    // prospectionCampaigns.linkedCampaignId), avec leur propre cascade (prospects, séquences…).
+    const linkedIds = new Set<number>();
+    const [camp] = await db.select({ linked: (campaigns as any).linkedProspectionCampaignId })
+      .from(campaigns).where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)));
+    if (camp?.linked) linkedIds.add(camp.linked as number);
+    const backrefs = await db.select({ id: prospectionCampaigns.id }).from(prospectionCampaigns)
+      .where(and(eq((prospectionCampaigns as any).linkedCampaignId, id), eq(prospectionCampaigns.userId, userId)));
+    for (const b of backrefs) linkedIds.add(b.id);
+    for (const pcId of Array.from(linkedIds)) {
+      await this.deleteProspectionCampaign(pcId, userId);
+    }
     await db.delete(campaigns)
       .where(and(eq(campaigns.id, id), eq(campaigns.userId, userId)));
   }

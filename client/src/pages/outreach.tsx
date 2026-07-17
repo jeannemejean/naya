@@ -947,9 +947,16 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/prospection/campaigns'] }),
  });
 
+ const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
  const deleteCampaign = useMutation({
  mutationFn: (id: number) => apiRequest('DELETE', `/api/prospection/campaigns/${id}`),
- onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/prospection/campaigns'] }),
+ onSuccess: () => {
+ queryClient.invalidateQueries({ queryKey: ['/api/prospection/campaigns'] });
+ queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+ setConfirmDelete(null);
+ toast({ title: 'Campagne supprimée', description: 'Ses prospects ont été archivés.' });
+ },
+ onError: () => toast({ title: 'Erreur', description: 'Suppression impossible.', variant: 'destructive' }),
  });
 
  const launch = useMutation({
@@ -1109,6 +1116,15 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  >
  <Sparkles className="w-3 h-3" /> Trouver des prospects (IA)
  </Button>
+ <Button
+ size="sm"
+ variant="ghost"
+ className="text-xs h-7 gap-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 ml-auto"
+ onClick={() => setConfirmDelete(campaign)}
+ title="Supprimer la campagne"
+ >
+ <Trash2 className="w-3 h-3" /> Supprimer
+ </Button>
  </div>
 
  {/* Search brief result */}
@@ -1158,6 +1174,27 @@ function CampaignsTab({ campaigns, leads }: { campaigns: any[]; leads: Lead[] })
  {finderCampaign && (
  <LeadFinderDialog campaign={finderCampaign} onClose={() => setFinderCampaign(null)} />
  )}
+ <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && setConfirmDelete(null)}>
+ <AlertDialogContent>
+ <AlertDialogHeader>
+ <AlertDialogTitle>Supprimer cette campagne de prospection ?</AlertDialogTitle>
+ <AlertDialogDescription>
+ « {confirmDelete?.name} » et sa séquence d'envoi seront supprimées.
+ Ses prospects seront <strong>archivés</strong> (récupérables), pas effacés.
+ </AlertDialogDescription>
+ </AlertDialogHeader>
+ <AlertDialogFooter>
+ <AlertDialogCancel>Annuler</AlertDialogCancel>
+ <AlertDialogAction
+ className="bg-red-600 hover:bg-red-700"
+ disabled={deleteCampaign.isPending}
+ onClick={() => confirmDelete && deleteCampaign.mutate(confirmDelete.id)}
+ >
+ Supprimer
+ </AlertDialogAction>
+ </AlertDialogFooter>
+ </AlertDialogContent>
+ </AlertDialog>
  </div>
  );
 }
