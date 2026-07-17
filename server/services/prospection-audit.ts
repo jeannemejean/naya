@@ -132,6 +132,23 @@ export function enforceLinkedInLimit(s: string, max = 200): string {
 }
 
 /**
+ * Résout le PRÉNOM du créateur pour signer les messages.
+ * Priorité : prénom du user (le créateur) → founderName/contactName du DNA.
+ * Ne renvoie JAMAIS le nom d'agence (businessName) ni « Naya » : dernier recours = "" (aucune signature).
+ */
+export function resolveFounderName(
+  user?: { firstName?: string | null } | null,
+  dna?: { founderName?: string | null; contactName?: string | null } | null,
+): string {
+  return (
+    user?.firstName?.trim() ||
+    (dna as any)?.founderName?.trim() ||
+    (dna as any)?.contactName?.trim() ||
+    ""
+  );
+}
+
+/**
  * Détecte un signal d'achat de la campagne dans les données enrichies.
  * Renvoie 'hot' si un signal est identifiable, 'warm' sinon.
  */

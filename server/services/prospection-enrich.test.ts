@@ -8,6 +8,7 @@ vi.mock("../storage", () => ({
     getProject: vi.fn(),
     getBrandDnaForProject: vi.fn(),
     getBrandDna: vi.fn(),
+    getUser: vi.fn(),
     updateLead: vi.fn(),
   },
 }));
@@ -56,8 +57,9 @@ beforeEach(() => {
     company: "Maison X", linkedinUrl: "https://linkedin.com/in/marie", instagramUrl: null, profileUrl: null,
   });
   (storage.getProject as any).mockResolvedValue({ id: 8, name: "Agence JMD", type: "Agency" });
-  (storage.getBrandDnaForProject as any).mockResolvedValue({ businessType: "agence de communication", founderName: "Jeanne" });
-  (storage.getBrandDna as any).mockResolvedValue({ businessType: "agence de communication", founderName: "Jeanne" });
+  (storage.getBrandDnaForProject as any).mockResolvedValue({ businessType: "agence de communication", businessName: "Agence JMD" });
+  (storage.getBrandDna as any).mockResolvedValue({ businessType: "agence de communication", businessName: "Agence JMD" });
+  (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
   (storage.updateLead as any).mockResolvedValue({});
   (claude.callClaude as any)
     .mockResolvedValueOnce(JSON.stringify({
@@ -90,6 +92,14 @@ describe("enrichProspects — condition 3 (données + coûts enregistrés)", () 
     expect(upd.linkedinMessage).not.toContain("—");
     expect(upd.stage).toBe("messages_ready");
     expect(upd.enrichedProfile.linkedin.company).toBe("Maison X");
+    // Compat affichage : champs legacy remplis
+    expect(upd.strategicNotes).toBe(upd.auditNotes);
+    expect(upd.message1).toBe(upd.linkedinMessage);
+
+    // Signature = PRÉNOM (Jeanne), jamais le nom d'agence dans le prompt de message
+    const messagePrompt = (claude.callClaude as any).mock.calls[1][0].messages[0].content;
+    expect(messagePrompt).toContain("Jeanne");
+    expect(messagePrompt).not.toMatch(/Signé du prénom : Agence JMD/);
   });
 
   it("la garde d'accès bloque en entrée (plan base → throw, aucun scrape)", async () => {

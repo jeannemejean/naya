@@ -72,7 +72,7 @@ import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
 import { generateGoalTasks } from "./services/goal-tasks";
-import { enrichProspect, generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
+import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
@@ -7204,36 +7204,27 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // Enrichit un lead avec audit 6 sections + 3 messages
+  // Enrichissement d'UN prospect — unifié sur le pipeline complet (scraping Bright Data +
+  // audit Sonnet adapté + message + tracking + gate 2-niveaux). Nécessite une campagne (contexte).
   app.post('/api/leads/:id/enrich', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
       if (await isAiBlocked(userId)) return res.status(429).json({ message: 'ai_monthly_limit_reached' });
       const leadId = Number(req.params.id);
-      const leads = await storage.getLeads(userId);
-      const lead = leads.find(l => l.id === leadId);
+      const lead = await storage.getLead(leadId, userId);
       if (!lead) return res.status(404).json({ message: "Lead not found" });
+      if (!lead.prospectionCampaignId) {
+        return res.status(400).json({ message: 'Associe d’abord ce prospect à une campagne pour l’enrichir.' });
+      }
+      const campaign = await storage.getProspectionCampaign(lead.prospectionCampaignId);
+      if (!campaign || campaign.userId !== userId) return res.status(404).json({ message: 'campaign_not_found' });
 
-      const enrichment = await enrichProspect(
-        userId,
-        {
-          name: lead.name,
-          company: lead.company || '',
-          role: lead.role || undefined,
-          sector: lead.sector || undefined,
-          linkedinUrl: lead.linkedinUrl || undefined,
-          instagramUrl: lead.instagramUrl || undefined,
-          notes: lead.notes || undefined,
-        },
-        lead.prospectionCampaignId ?? null
-      );
-
-      const updated = await storage.updateLead(leadId, userId, {
-        ...enrichment,
-        stage: 'messages_ready',
-        enrichedAt: new Date(),
-      });
+      await enrichProspects(userId, campaign, [leadId]);
+      const updated = await storage.getLead(leadId, userId);
       res.json(updated);
     } catch (e: any) {
+      const gated = prospectionErrorResponse(e);
+      if (gated) return res.status(gated.status).json(gated.body);
       console.error('[prospection/enrich]', e.message);
       res.status(500).json({ message: e.message });
     }

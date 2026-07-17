@@ -16,6 +16,7 @@ import {
   detectPriority,
   sanitizeMessage,
   enforceLinkedInLimit,
+  resolveFounderName,
 } from "./prospection-audit";
 import { sourceLeadsFromQueries } from "./serp";
 import {
@@ -258,11 +259,14 @@ export async function enrichProspects(
   // PHASE 3 — garde d'accès en entrée (plan + limite LinkedIn). Throw → 403.
   await assertEnrichmentAccess(userId);
 
-  const project = campaign.projectId ? await storage.getProject(campaign.projectId, userId) : null;
-  const dna = await projectDnaFor(userId, campaign);
+  const [project, dna, user] = await Promise.all([
+    campaign.projectId ? storage.getProject(campaign.projectId, userId) : Promise.resolve(null),
+    projectDnaFor(userId, campaign),
+    storage.getUser(userId),
+  ]);
   const projectType = classifyProjectType(project, dna);
-  const founderName =
-    (dna as any)?.founderName || (dna as any)?.contactName || (dna as any)?.businessName || "Naya";
+  // Signature = PRÉNOM du créateur (jamais le nom d'agence ni "Naya").
+  const founderName = resolveFounderName(user, dna);
   const projectName = project?.name || (dna as any)?.businessName || campaign?.name || "";
   const channel = campaign?.channel || "linkedin";
 
@@ -306,17 +310,24 @@ export async function enrichProspects(
       const msg = await generateChannelMessage(userId, { channel, founderName, projectName, campaign, lead, audit });
       await logProspectionUsage(userId, "claude_message", { prospectId: lead.id, campaignId: campaign.id });
 
-      // PHASE 5 — mise à jour CRM
+      // PHASE 5 — mise à jour CRM.
+      // On écrit AUSSI les champs "legacy" (strategicNotes, message1/2) pour que l'affichage
+      // historique (détail prospect, badges LeadCard) reste cohérent après unification.
       const hasMessage = !!(msg.linkedinMessage || msg.emailMessage);
+      const auditJson = JSON.stringify(audit);
       await storage.updateLead(lead.id, userId, {
         enriched: true,
         enrichedAt: new Date(),
         priority,
-        auditNotes: JSON.stringify(audit),
+        auditNotes: auditJson,
         linkedinMessage: msg.linkedinMessage,
         emailMessage: msg.emailMessage,
         enrichedProfile: data,
         stage: hasMessage ? "messages_ready" : "identified",
+        // Compat affichage
+        strategicNotes: auditJson,
+        message1: msg.linkedinMessage ?? (msg.emailMessage ? undefined : undefined),
+        message2: msg.emailMessage,
       } as any);
       enriched++;
     } catch (e: any) {

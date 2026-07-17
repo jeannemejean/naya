@@ -14,6 +14,7 @@ import {
   validateEmailMessage,
   enforceLinkedInLimit,
   detectPriority,
+  resolveFounderName,
 } from "./prospection-audit";
 import {
   dedupeAgainstExisting,
@@ -148,6 +149,24 @@ describe("messages — tirets longs et longueur", () => {
 
   it("Condition 5 — email de 3 phrases → invalide", () => {
     expect(validateEmailMessage("Une. Deux. Trois.").ok).toBe(false);
+  });
+});
+
+// ─── Signature du message : PRÉNOM du créateur (jamais nom d'agence / "Naya") ──
+describe("resolveFounderName", () => {
+  it("priorise le prénom du user (le créateur du projet)", () => {
+    expect(resolveFounderName({ firstName: "Jeanne" }, { businessName: "Agence JMD", founderName: null })).toBe("Jeanne");
+  });
+  it("ne renvoie JAMAIS le nom d'agence seul ni 'Naya' si un prénom existe", () => {
+    const n = resolveFounderName({ firstName: "Marc" }, { businessName: "Agence JMD" });
+    expect(n).toBe("Marc");
+    expect(n).not.toMatch(/Naya|Agence/i);
+  });
+  it("retombe sur founderName du DNA si pas de firstName", () => {
+    expect(resolveFounderName({ firstName: null }, { founderName: "Sophie", businessName: "Studio X" })).toBe("Sophie");
+  });
+  it("ne retombe PAS sur businessName (nom d'agence) — dernier recours neutre", () => {
+    expect(resolveFounderName({ firstName: null }, { businessName: "Studio X" })).not.toBe("Studio X");
   });
 });
 

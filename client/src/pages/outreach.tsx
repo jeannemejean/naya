@@ -87,10 +87,17 @@ export default function Outreach({ onSearchClick }: OutreachProps) {
  mutationFn: (id: number) => apiRequest('POST', `/api/leads/${id}/enrich`).then(r => r.json()),
  onSuccess: (data) => {
  queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+ queryClient.invalidateQueries({ queryKey: ['/api/prospection/status'] });
  setSelectedLead(data);
- toast({ title: '✦ Enrichissement terminé', description: 'Audit + 3 messages générés par Naya.' });
+ toast({ title: '✦ Enrichissement terminé', description: 'Profil analysé, audit et message générés par Naya.' });
  },
- onError: () => toast({ title: t('common.error'), description: 'Impossible de générer le contenu.', variant: 'destructive' }),
+ onError: (e: any) => {
+ // Erreurs de gate (403) : message clair renvoyé par l'API (plan / limite LinkedIn).
+ let msg = 'Impossible de générer le contenu.';
+ const m = (e?.message || '').match(/\{[\s\S]*\}/);
+ if (m) { try { msg = JSON.parse(m[0]).message || msg; } catch {} }
+ toast({ title: 'Enrichissement', description: msg, variant: 'destructive' });
+ },
  });
 
  const importMutation = useMutation({
@@ -580,7 +587,7 @@ function LeadCard({ lead, campaign, selected, onToggleSelect, onDragStart, onDra
  onEnrich: () => void;
  isEnriching: boolean;
 }) {
- const hasMessages = !!(lead as any).message1;
+ const hasMessages = !!((lead as any).linkedinMessage || (lead as any).emailMessage || (lead as any).message1);
 
  return (
  <div
@@ -650,6 +657,18 @@ function LeadCard({ lead, campaign, selected, onToggleSelect, onDragStart, onDra
 
 // ─── Lead Detail Sheet ────────────────────────────────────────────────────────
 
+// Labels lisibles des sections d'audit (clés dynamiques selon le type de projet).
+const AUDIT_LABELS: Record<string, string> = {
+ contexteMarque: 'Contexte marque', audience: 'Audience', contenu: 'Contenu & présence',
+ positionnement: 'Positionnement', enjeux: 'Enjeux identifiés', angle: 'Notre angle projet',
+ contexteEntreprise: 'Contexte entreprise', stackActuel: 'Stack actuel', signauxAchat: 'Signaux d’achat',
+ decideurs: 'Décideurs', contextePersonne: 'Contexte personne', activitePublique: 'Activité publique',
+ besoinsProbables: 'Besoins probables', contexte: 'Contexte', observations: 'Observations',
+};
+function auditSectionLabel(key: string): string {
+ return AUDIT_LABELS[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase()).trim();
+}
+
 function LeadDetail({ lead, campaigns, onUpdate, onEnrich, isEnriching }: {
  lead: Lead;
  campaigns: any[];
@@ -658,12 +677,12 @@ function LeadDetail({ lead, campaigns, onUpdate, onEnrich, isEnriching }: {
  isEnriching: boolean;
 }) {
  const { toast } = useToast();
- const hasAudit = !!(lead as any).strategicNotes;
- const hasMessages = !!(lead as any).message1;
+ const hasAudit = !!((lead as any).auditNotes || (lead as any).strategicNotes);
+ const hasMessages = !!((lead as any).linkedinMessage || (lead as any).emailMessage || (lead as any).message1);
 
  let audit: Record<string, string> = {};
  if (hasAudit) {
- try { audit = JSON.parse((lead as any).strategicNotes); } catch { /* ignore */ }
+ try { audit = JSON.parse((lead as any).auditNotes || (lead as any).strategicNotes); } catch { /* ignore */ }
  }
 
  const copy = (text: string, label: string) => {
@@ -806,16 +825,12 @@ function LeadDetail({ lead, campaigns, onUpdate, onEnrich, isEnriching }: {
  </div>
  ) : (
  <div className="space-y-4">
- {[
- { key: 'contexteMarque', label: '1. Contexte marque', emoji: '—' },
- { key: 'audience', label: '2. Audience', emoji: '◯' },
- { key: 'contenu', label: '3. Contenu & présence', emoji: '◇' },
- { key: 'positionnement', label: '4. Positionnement', emoji: '→' },
- { key: 'enjeux', label: '5. Enjeux identifiés', emoji: '◆' },
- { key: 'angle', label: '6. Notre angle', emoji: '✦' },
- ].map(({ key, label, emoji }) => (
+ {/* Sections dynamiques : dérivées du type de projet (l'« angle projet » ferme toujours) */}
+ {Object.keys(audit).map((key, i) => (
  <div key={key} className="bg-muted/40 rounded-lg p-4">
- <p className="text-xs font-semibold text-foreground mb-1.5">{emoji} {label}</p>
+ <p className="text-xs font-semibold text-foreground mb-1.5">
+ {key === 'angle' ? '✦' : `${i + 1}.`} {auditSectionLabel(key)}
+ </p>
  <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
  {audit[key] || '—'}
  </p>
@@ -849,17 +864,16 @@ function LeadDetail({ lead, campaigns, onUpdate, onEnrich, isEnriching }: {
  ) : (
  <div className="space-y-4">
  {[
- { key: 'message1', label: 'Message 1 — Connexion LinkedIn', badge: '≤200 cars', color: 'bg-[rgba(125,143,168,0.12)] border-[rgba(125,143,168,0.35)] ' },
- { key: 'message2', label: 'Message 2 — Suivi après connexion', badge: '5-8 phrases', color: 'bg-[rgba(158,126,135,0.12)] border-[rgba(158,126,135,0.35)] ' },
- { key: 'message3', label: 'Message 3 — Clôture', badge: '2-3 phrases', color: 'bg-naya-olive-06 border-border' },
- ].map(({ key, label, badge, color }) => (
+ { key: 'linkedin', value: (lead as any).linkedinMessage || (lead as any).message1, label: 'Message LinkedIn — Connexion', badge: '≤200 cars', color: 'bg-[rgba(125,143,168,0.12)] border-[rgba(125,143,168,0.35)] ', limit: true },
+ { key: 'email', value: (lead as any).emailMessage || (lead as any).message2, label: 'Email personnalisé', badge: '5-8 phrases', color: 'bg-[rgba(158,126,135,0.12)] border-[rgba(158,126,135,0.35)] ', limit: false },
+ ].filter(m => m.value).map(({ key, value, label, badge, color, limit }) => (
  <div key={key} className={`rounded-lg border p-4 ${color}`}>
  <div className="flex items-center justify-between mb-2">
  <p className="text-xs font-semibold text-foreground">{label}</p>
  <div className="flex items-center gap-2">
  <span className="text-[10px] text-muted-foreground">{badge}</span>
  <button
- onClick={() => copy((lead as any)[key], label)}
+ onClick={() => copy(value, label)}
  className="p-1.5 rounded-lg hover:bg-background/60 transition-colors text-muted-foreground hover:text-foreground"
  >
  <Copy className="w-3.5 h-3.5" />
@@ -867,11 +881,11 @@ function LeadDetail({ lead, campaigns, onUpdate, onEnrich, isEnriching }: {
  </div>
  </div>
  <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">
- {(lead as any)[key]}
+ {value}
  </p>
- {key === 'message1' && (
+ {limit && (
  <p className="text-[10px] text-muted-foreground mt-2">
- {(lead as any)[key]?.length || 0} / 200 caractères
+ {value?.length || 0} / 200 caractères
  </p>
  )}
  </div>
