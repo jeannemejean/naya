@@ -179,6 +179,11 @@ export async function runProspectionSender(): Promise<void> {
         const subject = renderTemplate(step.subjectTemplate || "", vars);
         const body = renderTemplate(step.bodyTemplate || "", vars);
 
+        if (!body.trim()) {
+          console.warn(`[ProspectionSender] lead ${lead.id} : corps de message vide (étape ${plan.sendIndex + 1}) — étape SAUTÉE, rien envoyé`);
+          continue; // sécurité : ne jamais envoyer un message vide à un prospect réel
+        }
+
         if (step.channel === "email") {
           if (!lead.email) {
             await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
