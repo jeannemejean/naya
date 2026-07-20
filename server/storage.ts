@@ -127,6 +127,8 @@ import {
   type LeadSequenceState,
   type InsertLeadSequenceState,
   leadStepMessages,
+  type LeadStepMessage,
+  type InsertLeadStepMessage,
   aiInvocations,
   type AiInvocation,
   type InsertAiInvocation,
@@ -277,6 +279,8 @@ export interface IStorage {
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
   updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
   getDueEnrollments(now: Date, limit?: number): Promise<LeadSequenceState[]>;
+  getLeadStepMessage(leadId: number, stepId: number): Promise<LeadStepMessage | undefined>;
+  upsertLeadStepMessage(row: InsertLeadStepMessage): Promise<void>;
 
   // Lead operations
   getLeads(userId: string): Promise<Lead[]>;
@@ -1181,6 +1185,20 @@ export class DatabaseStorage implements IStorage {
       ))
       .orderBy(leadSequenceState.nextRunAt)
       .limit(limit);
+  }
+
+  async getLeadStepMessage(leadId: number, stepId: number): Promise<LeadStepMessage | undefined> {
+    const [row] = await db.select().from(leadStepMessages)
+      .where(and(eq(leadStepMessages.leadId, leadId), eq(leadStepMessages.stepId, stepId)));
+    return row;
+  }
+
+  async upsertLeadStepMessage(row: InsertLeadStepMessage): Promise<void> {
+    await db.insert(leadStepMessages).values(row)
+      .onConflictDoUpdate({
+        target: [leadStepMessages.leadId, leadStepMessages.stepId],
+        set: { subject: row.subject ?? null, body: row.body!, edited: row.edited ?? false, generatedAt: new Date() },
+      });
   }
 
   // Lead operations

@@ -18,6 +18,11 @@ import {
   enforceLinkedInLimit,
   resolveFounderName,
 } from "./prospection-audit";
+
+// Ré-export : ces helpers vivent dans prospection-audit.ts mais Task 5 (génération
+// bespoke du message d'étape) les consomme depuis ce module d'orchestration —
+// comportement strictement inchangé (simple forward des mêmes fonctions).
+export { sanitizeMessage, enforceLinkedInLimit, resolveFounderName };
 import { sourceLeadsFromQueries } from "./serp";
 import {
   scrapeLinkedInProfile,
@@ -111,7 +116,7 @@ export function enrichmentText(lead: any, data: any): string {
   return parts.join("\n") || "Données limitées : audit prudent à partir du nom/rôle/société.";
 }
 
-function parseJsonObject(raw: string): Record<string, any> {
+export function parseJsonObject(raw: string): Record<string, any> {
   try {
     return JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
   } catch {
