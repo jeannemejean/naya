@@ -73,6 +73,7 @@ import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milest
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
+import { generateSequencePlan } from "./services/sequence-plan";
 import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
@@ -6922,15 +6923,18 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
-  // Génère une séquence par IA (Brand DNA + campagne) — renvoyée, pas sauvegardée (pré-remplit le builder)
+  // Génère le PLAN de séquence par IA (canal intelligent : email + LinkedIn, branches
+  // conditionnelles, rationale) — Brand DNA + campagne — et le sauvegarde directement.
   app.post('/api/prospection/campaigns/:id/generate-sequence', isAuthenticated, async (req: any, res) => {
     try {
       if (await isAiBlocked(req.userId)) return res.status(429).json({ message: 'ai_monthly_limit_reached' });
-      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      const campaignId = Number(req.params.id);
+      const campaign = await storage.getProspectionCampaign(campaignId);
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
-      const steps = await generateSequence(req.userId, campaign.id);
-      if (steps.length === 0) return res.status(502).json({ message: 'generation_failed' });
-      res.json(steps);
+      const plan = await generateSequencePlan(req.userId, campaignId);
+      if (plan.steps.length === 0) return res.status(502).json({ message: 'generation_failed' });
+      await storage.saveSequencePlan(campaignId, req.userId, plan);
+      res.json({ rationale: plan.rationale, steps: await storage.getSequenceSteps(campaignId) });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

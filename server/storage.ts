@@ -271,6 +271,7 @@ export interface IStorage {
   // Séquences de prospection
   getSequenceSteps(campaignId: number): Promise<CampaignSequenceStep[]>;
   replaceSequenceSteps(campaignId: number, userId: string, steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string }>): Promise<CampaignSequenceStep[]>;
+  saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string }[] }): Promise<void>;
   getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined>;
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
   updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
@@ -1101,6 +1102,19 @@ export class DatabaseStorage implements IStorage {
       })),
     ).returning();
     return rows;
+  }
+
+  // Plan de séquence multicanal généré par l'IA (canal intelligent + branches conditionnelles).
+  // Remplace toute la séquence existante — pas de bodyTemplate/subjectTemplate : le texte réel
+  // est généré sur-mesure par prospect (voir leadStepMessages).
+  async saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string }[] }): Promise<void> {
+    await db.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.campaignId, campaignId));
+    if (plan.steps.length === 0) return;
+    await db.insert(campaignSequenceSteps).values(plan.steps.map((s, i) => ({
+      campaignId, userId, stepOrder: i + 1,
+      channel: s.channel, delayDays: s.delayDays, intention: s.intention, condition: s.condition,
+      bodyTemplate: null, subjectTemplate: null, isActive: true,
+    })));
   }
 
   async getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined> {

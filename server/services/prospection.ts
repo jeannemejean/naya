@@ -299,6 +299,11 @@ Réponds UNIQUEMENT avec le JSON.`;
 // ─── Génération d'une séquence d'emails par IA (Brand DNA + campagne) ────────
 export interface GeneratedStep { channel: string; delayDays: number; subjectTemplate: string; bodyTemplate: string }
 
+/**
+ * @deprecated remplacé par generateSequencePlan (server/services/sequence-plan.ts) — plan
+ * multicanal (email + LinkedIn) avec branches conditionnelles et rationale. Conservé pour
+ * compatibilité (plus appelé par les routes) ; ne pas supprimer sans vérifier les usages.
+ */
 export async function generateSequence(userId: string, campaignId: number): Promise<GeneratedStep[]> {
   const [brandDna, campaign] = await Promise.all([
     storage.getBrandDna(userId),
