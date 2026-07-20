@@ -126,6 +126,7 @@ import {
   leadSequenceState,
   type LeadSequenceState,
   type InsertLeadSequenceState,
+  leadStepMessages,
   aiInvocations,
   type AiInvocation,
   type InsertAiInvocation,
@@ -1088,6 +1089,16 @@ export class DatabaseStorage implements IStorage {
     userId: string,
     steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string }>,
   ): Promise<CampaignSequenceStep[]> {
+    // Fetch old step IDs and purge dependent leadStepMessages before deletion
+    const oldStepIds = (
+      await db.select({ id: campaignSequenceSteps.id })
+        .from(campaignSequenceSteps)
+        .where(eq(campaignSequenceSteps.campaignId, campaignId))
+    ).map((r) => r.id);
+    if (oldStepIds.length > 0) {
+      await db.delete(leadStepMessages).where(inArray(leadStepMessages.stepId, oldStepIds));
+    }
+
     await db.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.campaignId, campaignId));
     if (steps.length === 0) return [];
     const rows = await db.insert(campaignSequenceSteps).values(
@@ -1108,6 +1119,16 @@ export class DatabaseStorage implements IStorage {
   // Remplace toute la séquence existante — pas de bodyTemplate/subjectTemplate : le texte réel
   // est généré sur-mesure par prospect (voir leadStepMessages).
   async saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string }[] }): Promise<void> {
+    // Fetch old step IDs and purge dependent leadStepMessages before deletion
+    const oldStepIds = (
+      await db.select({ id: campaignSequenceSteps.id })
+        .from(campaignSequenceSteps)
+        .where(eq(campaignSequenceSteps.campaignId, campaignId))
+    ).map((r) => r.id);
+    if (oldStepIds.length > 0) {
+      await db.delete(leadStepMessages).where(inArray(leadStepMessages.stepId, oldStepIds));
+    }
+
     await db.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.campaignId, campaignId));
     if (plan.steps.length === 0) return;
     await db.insert(campaignSequenceSteps).values(plan.steps.map((s, i) => ({
