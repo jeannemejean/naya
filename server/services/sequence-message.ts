@@ -50,7 +50,11 @@ export async function generateStepMessage(
   const body = opts.step.channel === "linkedin"
     ? enforceLinkedInLimit(typeof p.body === "string" ? p.body : "")
     : sanitizeMessage(typeof p.body === "string" ? p.body : "");
-  const subject = opts.step.channel === "email" && typeof p.subject === "string" ? p.subject.trim() : null;
+  if (!body.trim()) {
+    throw new Error(`generateStepMessage: corps vide pour lead ${opts.lead.id}, étape ${opts.step.id} (réponse IA non parsable) — non mis en cache`);
+  }
+  const subjectRaw = opts.step.channel === "email" && typeof p.subject === "string" ? p.subject.trim() : "";
+  const subject = subjectRaw || null;
   await storage.upsertLeadStepMessage({ leadId: opts.lead.id, stepId: opts.step.id, subject, body, edited: false });
   return { subject, body };
 }
