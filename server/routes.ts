@@ -7200,9 +7200,11 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const bounced = msgs.filter(m => (m as any).bouncedAt).length;
       const replied = leadsForCampaign.filter(l => ['connected', 'in_discussion', 'proposal_sent', 'signed'].includes((l as any).stage)).length;
       const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+      const detail = await storage.getCampaignStepAnalytics(campaign.id);
       res.json({
         leads: leadsForCampaign.length, sent, opened, clicked, bounced, replied,
         openRate: pct(opened, sent), clickRate: pct(clicked, sent), replyRate: pct(replied, sent), bounceRate: pct(bounced, sent),
+        byStep: detail.byStep, byChannel: detail.byChannel,
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

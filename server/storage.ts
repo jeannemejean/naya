@@ -138,6 +138,7 @@ import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "dr
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
+import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 
 export interface IStorage {
   // User operations
@@ -302,7 +303,11 @@ export interface IStorage {
   getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
   getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
   countOutreachSentSince(userId: string, since: Date, platform?: string): Promise<number>;
-  
+  getCampaignStepAnalytics(campaignId: number): Promise<{
+    byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
+    byChannel: { channel: string; sent: number; replied: number }[];
+  }>;
+
   // Metrics operations
   getMetrics(userId: string, week?: string): Promise<Metrics | undefined>;
   upsertMetrics(metricsData: InsertMetrics): Promise<Metrics>;
@@ -1366,6 +1371,26 @@ export class DatabaseStorage implements IStorage {
         ...(platform ? [eq(outreachMessages.platform, platform)] : []),
       ));
     return rows.length;
+  }
+
+  // Analytics de séquence par étape et par canal (Task 9). Agrégation faite côté TS
+  // (helper pur testé) plutôt qu'en SQL — volumes faibles par campagne, code plus lisible.
+  async getCampaignStepAnalytics(campaignId: number): Promise<{
+    byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
+    byChannel: { channel: string; sent: number; replied: number }[];
+  }> {
+    const campaignLeads = await db.select().from(leads)
+      .where(and(eq(leads.prospectionCampaignId, campaignId), isNull(leads.archivedAt)));
+    const leadIds = campaignLeads.map((l) => l.id);
+    if (leadIds.length === 0) return { byStep: [], byChannel: [] };
+
+    const messages = await this.getOutreachForLeads(leadIds);
+    const states = await db.select().from(leadSequenceState).where(inArray(leadSequenceState.leadId, leadIds));
+    const repliedLeadIds = new Set(
+      states.filter((s) => s.status === "stopped_replied").map((s) => s.leadId),
+    );
+
+    return aggregateStepAnalytics(messages, repliedLeadIds);
   }
 
   // Metrics operations
