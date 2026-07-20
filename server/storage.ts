@@ -291,7 +291,9 @@ export interface IStorage {
   bulkArchiveLeads(ids: number[], userId: string): Promise<number>;
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
-  
+  setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
+  getLeadsAwaitingInvite(): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]>;
+
   // Outreach operations
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
   getLeadSignals(leadId: number): Promise<LeadSignals>;
@@ -1281,6 +1283,25 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(leads)
       .where(and(eq(leads.userId, userId), eq(leads.status, status), isNull(leads.archivedAt)))
       .orderBy(desc(leads.updatedAt));
+  }
+
+  // Stampe l'acceptation de l'invitation LinkedIn — signal lu par le moteur de décision
+  // (branches if_invite_accepted / if_invite_not_accepted). Poller Unipile (Task 7).
+  async setLeadLinkedinConnected(leadId: number, at: Date): Promise<void> {
+    await db.update(leads).set({ linkedinConnectedAt: at, updatedAt: new Date() }).where(eq(leads.id, leadId));
+  }
+
+  // Leads enrôlés (séquence active) dont l'invitation LinkedIn n'a pas encore été confirmée
+  // acceptée — candidats au poller Unipile.
+  async getLeadsAwaitingInvite(): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]> {
+    return await db.select({ id: leads.id, userId: leads.userId, linkedinUrl: leads.linkedinUrl })
+      .from(leads)
+      .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
+      .where(and(
+        eq(leadSequenceState.status, "active"),
+        isNull(leads.linkedinConnectedAt),
+        isNull(leads.archivedAt),
+      ));
   }
 
   // Outreach operations

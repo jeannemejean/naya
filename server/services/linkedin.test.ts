@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { publicIdFromUrl } from "./linkedin";
+import { publicIdFromUrl, interpretConnectionResponse } from "./linkedin";
 
 describe("publicIdFromUrl", () => {
   it("extrait l'identifiant d'une URL standard", () => {
@@ -18,5 +18,24 @@ describe("publicIdFromUrl", () => {
     expect(publicIdFromUrl("https://linkedin.com/company/acme")).toBeNull();
     expect(publicIdFromUrl(null)).toBeNull();
     expect(publicIdFromUrl("")).toBeNull();
+  });
+});
+
+describe("interpretConnectionResponse", () => {
+  it("renvoie true quand network_distance vaut FIRST_DEGREE", () => {
+    expect(interpretConnectionResponse({ network_distance: "FIRST_DEGREE" })).toBe(true);
+  });
+  it("renvoie true quand is_relationship vaut true", () => {
+    expect(interpretConnectionResponse({ is_relationship: true })).toBe(true);
+  });
+  it("renvoie false pour un 2e/3e degré explicite", () => {
+    expect(interpretConnectionResponse({ network_distance: "SECOND_DEGREE" })).toBe(false);
+    expect(interpretConnectionResponse({ network_distance: "THIRD_DEGREE", is_relationship: false })).toBe(false);
+  });
+  it("renvoie false sur une forme de réponse inconnue (fail closed)", () => {
+    expect(interpretConnectionResponse({})).toBe(false);
+    expect(interpretConnectionResponse(null)).toBe(false);
+    expect(interpretConnectionResponse(undefined)).toBe(false);
+    expect(interpretConnectionResponse({ some_other_field: "x" })).toBe(false);
   });
 });

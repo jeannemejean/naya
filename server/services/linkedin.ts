@@ -78,6 +78,42 @@ export async function resolveProviderId(accountId: string, publicId: string): Pr
   return data?.provider_id || data?.id || null;
 }
 
+/**
+ * Interprète la réponse Unipile `GET /api/v1/users/:id` pour déterminer si le profil est
+ * désormais une relation de 1er degré (invitation de connexion acceptée).
+ * Pure & testable : isole le champ incertain du reste du fetch réseau.
+ * ⚠️ Champ à confirmer sur la doc/API Unipile réelle : on accepte `network_distance ===
+ * "FIRST_DEGREE"` (nom de champ documenté à date) OU `is_relationship === true` (variante
+ * observée sur certaines réponses) ; sur une forme inconnue on renvoie `false` (fail closed).
+ */
+export function interpretConnectionResponse(data: any): boolean {
+  return data?.network_distance === "FIRST_DEGREE" || data?.is_relationship === true;
+}
+
+/**
+ * Vrai si le profil (résolu depuis `linkedinUrl`) est désormais une relation 1er degré du
+ * compte Unipile `accountId`, càd que l'invitation de connexion a été acceptée.
+ * Ne lève jamais : toute erreur réseau/API ou forme de réponse inconnue → `false` (fail closed),
+ * pour ne jamais faire avancer une branche `if_invite_accepted` sur un faux positif.
+ */
+export async function isConnected(accountId: string, linkedinUrl: string): Promise<boolean> {
+  try {
+    const publicId = publicIdFromUrl(linkedinUrl);
+    if (!publicId) return false;
+    const providerId = await resolveProviderId(accountId, publicId).catch(() => null);
+    if (!providerId) return false;
+    const res = await fetch(
+      `${DSN}/api/v1/users/${encodeURIComponent(providerId)}?account_id=${encodeURIComponent(accountId)}`,
+      { headers: headers() },
+    );
+    if (!res.ok) return false;
+    const data: any = await res.json().catch(() => ({}));
+    return interpretConnectionResponse(data);
+  } catch {
+    return false;
+  }
+}
+
 export interface LinkedInSendResult {
   ok: boolean;
   action: "message" | "invitation" | "none";

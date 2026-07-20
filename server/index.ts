@@ -6,6 +6,7 @@ import { scheduleAutoPlanner, scheduleEndOfDayRollover, scheduleIntraDayReschedu
 import { scheduleEndOfDayReflection } from "./services/end-of-day-reflection";
 import { scheduleSocialPublisher } from "./services/social-publisher";
 import { scheduleProspectionSender } from "./services/prospection-sender";
+import { scheduleLinkedInSync } from "./services/linkedin-sync";
 import { computeDurationCalibration } from "./services/duration-calibration";
 import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
 import { storage } from "./storage";
@@ -106,6 +107,9 @@ function scheduleWeeklyIntelligence() {
 
   // ─── Worker d'envoi des séquences de prospection (inerte tant que non activé) ──
   scheduleProspectionSender();
+
+  // ─── Poller Unipile : acceptation d'invitation LinkedIn (lecture seule, chaque 15 min) ──
+  scheduleLinkedInSync();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
