@@ -134,6 +134,7 @@ import { db } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
+import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 
 export interface IStorage {
   // User operations
@@ -287,6 +288,7 @@ export interface IStorage {
   
   // Outreach operations
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
+  getLeadSignals(leadId: number): Promise<LeadSignals>;
   createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage>;
   updateOutreachMessage(id: number, updates: Partial<OutreachMessage>): Promise<OutreachMessage>;
   getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
@@ -1238,6 +1240,20 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(outreachMessages)
       .where(eq(outreachMessages.userId, userId))
       .orderBy(desc(outreachMessages.createdAt));
+  }
+
+  // Signaux de réception agrégés pour un prospect (ouverture/clic/bounce/réponse/invite acceptée).
+  async getLeadSignals(leadId: number): Promise<LeadSignals> {
+    const [msgs, leadRow, state] = await Promise.all([
+      db.select().from(outreachMessages).where(eq(outreachMessages.leadId, leadId)),
+      db.select().from(leads).where(eq(leads.id, leadId)).then((r) => r[0]),
+      this.getLeadSequenceState(leadId),
+    ]);
+    return deriveSignals(
+      msgs.map((m) => ({ platform: m.platform, openedAt: m.openedAt, clickedAt: m.clickedAt, bouncedAt: m.bouncedAt })),
+      { linkedinConnectedAt: leadRow?.linkedinConnectedAt ?? null },
+      { repliedAt: state?.repliedAt ?? null, status: state?.status ?? "active" },
+    );
   }
 
   async createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage> {
