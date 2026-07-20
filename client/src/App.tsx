@@ -42,6 +42,7 @@ const Projects = lazy(() => import("@/pages/projects"));
 const Settings = lazy(() => import("@/pages/settings"));
 const Planning = lazy(() => import("@/pages/planning"));
 const Campaigns = lazy(() => import("@/pages/campaigns"));
+const CampaignWorkspace = lazy(() => import("@/pages/outreach/CampaignWorkspace"));
 
 function Router() {
  const { isAuthenticated, isLoading, hasAccess } = useAuth();
@@ -91,6 +92,9 @@ function Router() {
  </Route>
  <Route path="/outreach">
  {() => <Outreach onSearchClick={openSearch} />}
+ </Route>
+ <Route path="/outreach/campaigns/:id">
+ {(params) => <CampaignWorkspace id={Number(params.id)} />}
  </Route>
  <Route path="/analytics">
  {() => <Analytics onSearchClick={openSearch} />}
