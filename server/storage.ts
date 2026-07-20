@@ -1075,6 +1075,16 @@ export class DatabaseStorage implements IStorage {
         .where(and(eq(leads.prospectionCampaignId, id), eq(leads.userId, userId)));
       // Séquences liées à la campagne
       await tx.delete(leadSequenceState).where(eq(leadSequenceState.campaignId, id));
+      // Messages générés par step (FK step_id → campaign_sequence_steps.id, pas de cascade) :
+      // purger AVANT de supprimer les steps pour éviter une violation FK.
+      const stepIds = (
+        await tx.select({ id: campaignSequenceSteps.id })
+          .from(campaignSequenceSteps)
+          .where(eq(campaignSequenceSteps.campaignId, id))
+      ).map((r) => r.id);
+      if (stepIds.length > 0) {
+        await tx.delete(leadStepMessages).where(inArray(leadStepMessages.stepId, stepIds));
+      }
       await tx.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.campaignId, id));
       // Tracking de coûts : conserver la ligne, retirer la référence
       await tx.update(prospectionUsage).set({ campaignId: null }).where(eq(prospectionUsage.campaignId, id));
