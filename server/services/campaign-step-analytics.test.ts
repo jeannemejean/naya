@@ -68,4 +68,22 @@ describe("aggregateStepAnalytics", () => {
     const { byChannel } = aggregateStepAnalytics(messages, new Set([5]));
     expect(byChannel).toEqual([{ channel: "linkedin", sent: 0, replied: 0 }]);
   });
+
+  it("byChannel et l'attribution de réponse ignorent les messages hors séquence (ancien flux POST /api/outreach)", () => {
+    const older = new Date(d.getTime() - 60_000);
+    const messages: OutreachMessageRow[] = [
+      // Message legacy (flux libre pré-séquence), envoyé APRÈS le message de séquence du lead 1.
+      // S'il était compté, il ferait diverger byChannel["email"].sent du total byStep et
+      // s'attribuerait la réponse à tort (au lieu du dernier message de séquence réel).
+      { leadId: 1, platform: "email", messageType: "initial", sentAt: d, openedAt: null, clickedAt: null, bouncedAt: null },
+      { leadId: 1, platform: "linkedin", messageType: "step_1", sentAt: older, openedAt: null, clickedAt: null, bouncedAt: null },
+    ];
+    const { byStep, byChannel } = aggregateStepAnalytics(messages, new Set([1]));
+    // byStep ne voit que le message de séquence.
+    expect(byStep).toEqual([{ stepOrder: 1, channel: "linkedin", sent: 1, opened: 0, clicked: 0, bounced: 0 }]);
+    // byChannel ne doit PAS inclure le message legacy "initial" (canal email absent, sent=1
+    // au total, égal à la somme de byStep) et la réponse doit être attribuée au dernier
+    // message de SÉQUENCE (linkedin), pas au message legacy (email) pourtant plus récent.
+    expect(byChannel).toEqual([{ channel: "linkedin", sent: 1, replied: 1 }]);
+  });
 });

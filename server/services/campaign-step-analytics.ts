@@ -30,6 +30,10 @@ export function parseStepNumber(messageType: string): number | null {
 //   'stopped_replied'), on attribue la réponse au canal de son DERNIER message réellement envoyé.
 //   Un lead répondu sans aucun message envoyé n'est attribué à aucun canal (ne peut pas arriver
 //   en pratique, mais on l'ignore plutôt que de fausser un canal arbitraire).
+// - Les trois sorties (byStep, byChannel, attribution de réponse) ne considèrent QUE les
+//   messages de séquence (messageType = `step_N` / `step_N_action`). Un message issu de
+//   l'ancien flux libre POST /api/outreach (messageType "initial", "follow_up", ...) est
+//   ignoré partout, pour que byChannel[].sent reste égal à la somme de byStep[].sent par canal.
 export function aggregateStepAnalytics(
   messages: OutreachMessageRow[],
   repliedLeadIds: Set<number>,
@@ -40,18 +44,18 @@ export function aggregateStepAnalytics(
 
   for (const m of messages) {
     const stepOrder = parseStepNumber(m.messageType);
-    if (stepOrder !== null) {
-      const key = `${stepOrder}::${m.platform}`;
-      let row = stepMap.get(key);
-      if (!row) {
-        row = { stepOrder, channel: m.platform, sent: 0, opened: 0, clicked: 0, bounced: 0 };
-        stepMap.set(key, row);
-      }
-      if (m.sentAt) row.sent++;
-      if (m.openedAt) row.opened++;
-      if (m.clickedAt) row.clicked++;
-      if (m.bouncedAt) row.bounced++;
+    if (stepOrder === null) continue; // pas un message de séquence → ignoré partout
+
+    const key = `${stepOrder}::${m.platform}`;
+    let row = stepMap.get(key);
+    if (!row) {
+      row = { stepOrder, channel: m.platform, sent: 0, opened: 0, clicked: 0, bounced: 0 };
+      stepMap.set(key, row);
     }
+    if (m.sentAt) row.sent++;
+    if (m.openedAt) row.opened++;
+    if (m.clickedAt) row.clicked++;
+    if (m.bouncedAt) row.bounced++;
 
     let channelRow = channelMap.get(m.platform);
     if (!channelRow) {
