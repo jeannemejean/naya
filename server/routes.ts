@@ -34,7 +34,8 @@ import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
-import { runCampaignSearch, enrichProspects, prospectionErrorResponse } from "./services/prospection-pipeline";
+import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
+import { generateStepMessage } from "./services/sequence-message";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
@@ -6806,6 +6807,57 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       res.json(await storage.getSequenceSteps(campaign.id));
     } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Aperçu de la séquence rendue avec un vrai prospect (lecture/génération, AUCUN envoi).
+  // Réutilise generateStepMessage (cache lead_step_messages) pour que l'aperçu et l'envoi
+  // affichent exactement le même texte.
+  app.get('/api/prospection/campaigns/:id/preview', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const campaignId = Number(req.params.id);
+      const leadId = Number(req.query.leadId);
+      const campaign = await storage.getProspectionCampaign(campaignId);
+      if (!campaign || (campaign as any).userId !== userId) return res.status(404).json({ message: "Campagne introuvable" });
+      const steps = await storage.getSequenceSteps(campaignId);
+      const lead = (await storage.getLeads(userId)).find((l) => l.id === leadId);
+      if (!lead) return res.status(404).json({ message: "Prospect introuvable" });
+
+      // Signature = PRÉNOM du créateur (jamais le nom d'agence) — même résolution que l'envoi.
+      const dna = await storage.getBrandDna(userId);
+      const user = await storage.getUser(userId);
+      const founderName = resolveFounderName(user, dna as any);
+      const campaignWithFounder = { ...campaign, founderName };
+
+      const rendered: any[] = [];
+      for (const step of steps) {
+        try {
+          const msg = await generateStepMessage(userId, {
+            lead, campaign: campaignWithFounder,
+            step: { id: step.id, channel: step.channel, intention: step.intention ?? null },
+            useCache: true,
+          });
+          rendered.push({
+            stepOrder: step.stepOrder, channel: step.channel, delayDays: step.delayDays,
+            intention: step.intention ?? null, condition: step.condition ?? "always",
+            subject: msg.subject, body: msg.body, error: false,
+          });
+        } catch (stepError: any) {
+          // Une étape ratée (sortie IA vide/imparsable — non mise en cache) ne doit pas faire
+          // échouer tout l'aperçu : on la marque error:true, l'UI proposera "régénérer".
+          console.error('[prospection/preview] step failed', step.id, stepError.message);
+          rendered.push({
+            stepOrder: step.stepOrder, channel: step.channel, delayDays: step.delayDays,
+            intention: step.intention ?? null, condition: step.condition ?? "always",
+            subject: null, body: null, error: true,
+          });
+        }
+      }
+      res.json({ lead: { id: lead.id, name: lead.name, company: lead.company }, steps: rendered });
+    } catch (e: any) {
+      console.error('[prospection/preview]', e.message);
       res.status(500).json({ message: e.message });
     }
   });
