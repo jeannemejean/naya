@@ -14,9 +14,15 @@ describe("evaluateCondition", () => {
     expect(evaluateCondition("if_not_opened", NONE)).toBe(true);
     expect(evaluateCondition("if_not_opened", { ...NONE, opened: true })).toBe(false);
   });
+  it("if_clicked", () => {
+    expect(evaluateCondition("if_clicked", NONE)).toBe(false);
+    expect(evaluateCondition("if_clicked", { ...NONE, clicked: true })).toBe(true);
+  });
   it("if_invite_accepted / not_accepted", () => {
     expect(evaluateCondition("if_invite_accepted", { ...NONE, inviteAccepted: true })).toBe(true);
+    expect(evaluateCondition("if_invite_accepted", NONE)).toBe(false);
     expect(evaluateCondition("if_invite_not_accepted", NONE)).toBe(true);
+    expect(evaluateCondition("if_invite_not_accepted", { ...NONE, inviteAccepted: true })).toBe(false);
   });
 });
 
