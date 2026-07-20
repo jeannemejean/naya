@@ -15,9 +15,11 @@
  */
 
 import { storage } from "../storage";
-import { renderTemplate, leadVars } from "./personalization";
 import { decryptToken } from "./token-crypto";
 import { linkedinConfigured, sendLinkedInStep, LINKEDIN_DAILY_CAP } from "./linkedin";
+import { decideNextStep } from "./sequence-engine";
+import { generateStepMessage } from "./sequence-message";
+import { resolveFounderName } from "./prospection-pipeline";
 
 const POLL_MS = 60_000;
 let running = false;
@@ -44,6 +46,11 @@ export function planNextStep(currentStep: number, steps: { delayDays: number }[]
     done: willComplete,
     nextDelayDays: willComplete ? null : steps[after].delayDays || 0,
   };
+}
+
+/** Nombre de jours PLEINS écoulés entre deux dates. Pure & testable. */
+export function daysBetween(from: Date, to: Date): number {
+  return Math.floor((to.getTime() - from.getTime()) / 86_400_000);
 }
 
 // Kill-switch global. L'envoi effectif dépend AUSSI de la config expéditeur de chaque user.
@@ -161,28 +168,62 @@ export async function runProspectionSender(): Promise<void> {
         if (!inWindow) continue; // hors fenêtre → on réessaiera (nextRunAt inchangé)
 
         const steps = await storage.getSequenceSteps(state.campaignId);
-        const plan = planNextStep(state.currentStep, steps);
+        const engineSteps = steps.map((s) => ({ delayDays: s.delayDays, condition: (s as any).condition || "always" }));
 
-        if (plan.sendIndex === null) {
-          await storage.updateLeadSequenceState(state.leadId, { status: "completed", nextRunAt: null });
+        // Signaux du prospect → règles de stop globales AVANT toute décision/génération.
+        const signals = await storage.getLeadSignals(state.leadId);
+        if (signals.bounced) {
+          await storage.updateLeadSequenceState(state.leadId, { status: "bounced", nextRunAt: null });
+          continue;
+        }
+        if (signals.replied) {
+          await storage.updateLeadSequenceState(state.leadId, { status: "stopped_replied", nextRunAt: null });
           continue;
         }
 
+        // Le délai d'une étape court depuis le DERNIER ENVOI réel (jamais depuis un skip).
+        const lastSend = state.lastStepSentAt ? new Date(state.lastStepSentAt) : new Date(state.enrolledAt || Date.now());
+        const daysSince = daysBetween(lastSend, new Date());
+
+        // Sélection conditionnelle : sauter les étapes dont la condition est fausse
+        // (un skip avance currentStep mais ne consomme PAS de délai), attendre, terminer ou envoyer.
+        let decision = decideNextStep(state.currentStep, engineSteps, signals, daysSince);
+        while (decision.action === "skip") {
+          await storage.updateLeadSequenceState(state.leadId, { currentStep: decision.index + 1 });
+          state.currentStep = decision.index + 1;
+          decision = decideNextStep(state.currentStep, engineSteps, signals, daysSince);
+        }
+        if (decision.action === "done") {
+          await storage.updateLeadSequenceState(state.leadId, { status: "completed", nextRunAt: null });
+          continue;
+        }
+        if (decision.action === "wait") {
+          continue; // pas encore dû → nextRunAt inchangé, on réessaiera
+        }
+
+        const step = steps[decision.index];
         const lead = (await storage.getLeads(state.userId)).find((l) => l.id === state.leadId);
         if (!lead) {
           await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
           continue;
         }
 
-        const step = steps[plan.sendIndex];
-        const vars = leadVars(lead);
-        const subject = renderTemplate(step.subjectTemplate || "", vars);
-        const body = renderTemplate(step.bodyTemplate || "", vars);
-
-        if (!body.trim()) {
-          console.warn(`[ProspectionSender] lead ${lead.id} : corps de message vide (étape ${plan.sendIndex + 1}) — étape SAUTÉE, rien envoyé`);
-          continue; // sécurité : ne jamais envoyer un message vide à un prospect réel
-        }
+        // Texte SUR-MESURE au dernier moment. useCache:true → réutilise EXACTEMENT le message
+        // déjà généré/mis en cache par l'aperçu (parité aperçu ↔ envoi). generateStepMessage
+        // LÈVE une exception si le corps est vide : le lead reste alors non avancé (retry via le
+        // try/catch par lead). On ne fabrique JAMAIS de corps vide ici.
+        const dna = await storage.getBrandDna(state.userId);
+        const user = await storage.getUser(state.userId);
+        const founderName = resolveFounderName(user, dna as any);
+        const campaign = await storage.getProspectionCampaign(state.campaignId);
+        const gen = await generateStepMessage(state.userId, {
+          lead,
+          campaign: { ...campaign, founderName },
+          step: { id: step.id, channel: step.channel, intention: (step as any).intention ?? null },
+          useCache: true,
+        });
+        const subject = gen.subject || "";
+        const body = gen.body;
 
         if (step.channel === "email") {
           if (!lead.email) {
@@ -214,7 +255,7 @@ export async function runProspectionSender(): Promise<void> {
           }
           await storage.createOutreachMessage({
             userId: state.userId, leadId: lead.id, platform: "email",
-            messageType: `step_${plan.sendIndex + 1}`, subject, body, sentAt: new Date(),
+            messageType: `step_${decision.index + 1}`, subject, body, sentAt: new Date(),
           } as any);
           sentCount.set(state.userId, (sentCount.get(state.userId) || 0) + 1);
         } else {
@@ -238,23 +279,27 @@ export async function runProspectionSender(): Promise<void> {
             }
             await storage.createOutreachMessage({
               userId: state.userId, leadId: lead.id, platform: "linkedin",
-              messageType: `step_${plan.sendIndex + 1}_${result.action}`, subject: null, body, sentAt: new Date(),
+              messageType: `step_${decision.index + 1}_${result.action}`, subject: null, body, sentAt: new Date(),
             } as any);
             liSentCount.set(state.userId, (liSentCount.get(state.userId) || 0) + 1);
           } else {
             // Non configuré (ou lead sans URL LinkedIn) → brouillon à envoyer manuellement.
             await storage.createOutreachMessage({
               userId: state.userId, leadId: lead.id, platform: "linkedin",
-              messageType: `step_${plan.sendIndex + 1}`, subject: null, body, sentAt: null,
+              messageType: `step_${decision.index + 1}`, subject: null, body, sentAt: null,
             } as any);
           }
         }
 
+        // Étape envoyée : programmer la suite via la décision (le délai de l'étape suivante
+        // court à partir de maintenant, ce dernier envoi étant la nouvelle référence).
+        const after = decideNextStep(decision.index + 1, engineSteps, signals, 0);
+        const nextDelay = after.action === "send" ? 0 : after.action === "wait" ? (steps[decision.index + 1]?.delayDays || 1) : null;
         await storage.updateLeadSequenceState(state.leadId, {
-          currentStep: plan.sendIndex + 1,
+          currentStep: decision.index + 1,
           lastStepSentAt: new Date(),
-          status: plan.done ? "completed" : "active",
-          nextRunAt: plan.done ? null : new Date(Date.now() + (plan.nextDelayDays || 0) * 86400000),
+          status: decision.done ? "completed" : "active",
+          nextRunAt: decision.done ? null : new Date(Date.now() + (nextDelay || 0) * 86_400_000),
         });
       } catch (e: any) {
         console.error(`[ProspectionSender] lead ${state.leadId}:`, e.message);

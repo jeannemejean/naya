@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { planNextStep, withinSendingWindow } from "./prospection-sender";
+import { planNextStep, withinSendingWindow, daysBetween } from "./prospection-sender";
+
+describe("daysBetween", () => {
+  it("compte les jours pleins écoulés", () => {
+    expect(daysBetween(new Date("2026-07-01T09:00:00Z"), new Date("2026-07-04T09:00:00Z"))).toBe(3);
+    expect(daysBetween(new Date("2026-07-01T09:00:00Z"), new Date("2026-07-01T20:00:00Z"))).toBe(0);
+  });
+});
 
 describe("withinSendingWindow", () => {
   const opts = { startMin: 9 * 60, endMin: 18 * 60, workDays: new Set(["mon", "tue", "wed", "thu", "fri"]) };
