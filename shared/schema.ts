@@ -9,6 +9,7 @@ import {
   boolean,
   integer,
   unique,
+  uniqueIndex,
   doublePrecision,
   vector,
   pgEnum,
@@ -572,6 +573,7 @@ export const leads = pgTable("leads", {
   lastContactDate: timestamp("last_contact_date"),
   nextFollowUp: timestamp("next_follow_up"),
   enrichedAt: timestamp("enriched_at"),   // date de dernière génération IA
+  linkedinConnectedAt: timestamp("linkedin_connected_at"), // invitation LinkedIn acceptée (poller Unipile)
   archivedAt: timestamp("archived_at"),   // soft-delete (pattern tasks) : non nul = archivé, exclu des vues actives
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -1370,7 +1372,14 @@ export const campaignSequenceSteps = pgTable("campaign_sequence_steps", {
   // Délai (en jours) APRÈS l'étape précédente (ou après l'enrôlement pour l'étape 1).
   delayDays: integer("delay_days").notNull().default(0),
   subjectTemplate: text("subject_template"),         // email uniquement
-  bodyTemplate: text("body_template").notNull(),     // supporte les {{variables}}
+  bodyTemplate: text("body_template"),     // supporte les {{variables}}
+  // Angle/objectif de l'étape (remplace l'usage de bodyTemplate pour l'IA). Le texte réel
+  // est généré sur-mesure par prospect (voir leadStepMessages). bodyTemplate reste nullable
+  // pour rétrocompat mais n'est plus alimenté par le générateur.
+  intention: text("intention"),
+  // Condition d'exécution (gate) évaluée par le moteur : always | if_opened | if_not_opened
+  // | if_clicked | if_invite_accepted | if_invite_not_accepted.
+  condition: text("condition").notNull().default("always"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -1393,10 +1402,25 @@ export const leadSequenceState = pgTable("lead_sequence_state", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Message sur-mesure généré pour un couple (lead, étape). Réutilisé par l'aperçu ET l'envoi.
+export const leadStepMessages = pgTable("lead_step_messages", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").notNull().references(() => leads.id),
+  stepId: integer("step_id").notNull().references(() => campaignSequenceSteps.id),
+  subject: text("subject"),          // email uniquement
+  body: text("body").notNull(),
+  edited: boolean("edited").notNull().default(false), // true si Jeanne a édité à la main
+  generatedAt: timestamp("generated_at").defaultNow(),
+}, (t) => ({
+  uniqLeadStep: uniqueIndex("lead_step_messages_lead_step_uq").on(t.leadId, t.stepId),
+}));
+
 export type CampaignSequenceStep = typeof campaignSequenceSteps.$inferSelect;
 export type InsertCampaignSequenceStep = typeof campaignSequenceSteps.$inferInsert;
 export type LeadSequenceState = typeof leadSequenceState.$inferSelect;
 export type InsertLeadSequenceState = typeof leadSequenceState.$inferInsert;
+export type LeadStepMessage = typeof leadStepMessages.$inferSelect;
+export type InsertLeadStepMessage = typeof leadStepMessages.$inferInsert;
 
 // ─── Journal des invocations IA (Phase 1 — socle du corpus propriétaire) ────────
 // Chaque appel IA (contexte d'entrée → sortie, modèle, tokens, latence, coût) est

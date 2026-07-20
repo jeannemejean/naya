@@ -177,7 +177,7 @@ export async function runProspectionSender(): Promise<void> {
         const step = steps[plan.sendIndex];
         const vars = leadVars(lead);
         const subject = renderTemplate(step.subjectTemplate || "", vars);
-        const body = renderTemplate(step.bodyTemplate, vars);
+        const body = renderTemplate(step.bodyTemplate || "", vars);
 
         if (step.channel === "email") {
           if (!lead.email) {
