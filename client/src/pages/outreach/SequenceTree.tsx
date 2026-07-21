@@ -155,9 +155,9 @@ function ForkSegment({
   return (
     <div className="space-y-2">
       <ForkConnector />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[positive, negative].map((node) => (
-          <div key={stepKey(node.step, node.index)} className="space-y-1.5">
+          <div key={stepKey(node.step, node.index)} className="space-y-1.5 min-w-0">
             <BranchLabel node={node} />
             <SequenceStepCard
               step={node.step}
