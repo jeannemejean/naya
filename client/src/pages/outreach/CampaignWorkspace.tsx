@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCampaign, useLeads } from './useOutreach';
 import { channelMeta, type ChannelId } from './channels';
 import SequenceTab from './SequenceTab';
+import PreviewTab from './PreviewTab';
 
 interface CampaignWorkspaceProps {
   id: number;
@@ -124,7 +125,7 @@ export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspa
             </TabsContent>
 
             <TabsContent value="preview" className="flex-1 overflow-y-auto m-0">
-              <div className="p-6 text-muted-foreground">Aperçu — à venir (Task 7).</div>
+              <PreviewTab campaignId={id} />
             </TabsContent>
 
             <TabsContent value="results" className="flex-1 overflow-y-auto m-0">
