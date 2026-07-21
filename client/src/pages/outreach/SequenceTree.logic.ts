@@ -7,13 +7,22 @@ import { CONDITION_LABELS, type DraftSequenceStep } from './types';
 
 export type Affordance = 'positive' | 'negative';
 
-export type IndexedStep = { step: DraftSequenceStep; index: number };
-export type BranchNode = IndexedStep & { label: string; affordance: Affordance };
+// Le dérivateur ne lit que `channel` (pour la pastille de canal) et `condition` (pour la
+// polarité) — il est donc générique sur toute forme d'étape portant ces deux champs. Cela permet
+// à l'onglet Aperçu de faire passer ses `PreviewStep` (qui ajoutent subject/body/error) dans le
+// même arbre que les `DraftSequenceStep` éditables de l'onglet Séquence, sans copier la logique.
+export type TreeStep = { channel: string; condition: string };
 
-export type TreeSegment =
-  | { kind: 'trunk'; nodes: IndexedStep[] }
-  | { kind: 'fork'; positive: BranchNode; negative: BranchNode }
-  | { kind: 'branch'; node: BranchNode };
+export type IndexedStep<T extends TreeStep = DraftSequenceStep> = { step: T; index: number };
+export type BranchNode<T extends TreeStep = DraftSequenceStep> = IndexedStep<T> & {
+  label: string;
+  affordance: Affordance;
+};
+
+export type TreeSegment<T extends TreeStep = DraftSequenceStep> =
+  | { kind: 'trunk'; nodes: IndexedStep<T>[] }
+  | { kind: 'fork'; positive: BranchNode<T>; negative: BranchNode<T> }
+  | { kind: 'branch'; node: BranchNode<T> };
 
 // Groupe "opposition" d'une condition — deux steps adjacents du même groupe et de signe différent
 // forment une fourche. `if_clicked` est traité comme le pendant positif de `if_not_opened`, au
@@ -35,7 +44,7 @@ export function polarity(condition: string): { group: 'invite' | 'email'; sign: 
   }
 }
 
-function toBranchNode({ step, index }: IndexedStep): BranchNode {
+function toBranchNode<T extends TreeStep>({ step, index }: IndexedStep<T>): BranchNode<T> {
   const pol = polarity(step.condition);
   return {
     step,
@@ -49,9 +58,9 @@ function toBranchNode({ step, index }: IndexedStep): BranchNode {
 
 // Cœur testable et pur : dérive la structure d'arbre — tronc / fourches / branches seules — de la
 // liste plate `steps`. Voir SequenceTree.test.ts.
-export function buildBranches(steps: DraftSequenceStep[]): TreeSegment[] {
-  const segments: TreeSegment[] = [];
-  let trunkRun: IndexedStep[] = [];
+export function buildBranches<T extends TreeStep>(steps: T[]): TreeSegment<T>[] {
+  const segments: TreeSegment<T>[] = [];
+  let trunkRun: IndexedStep<T>[] = [];
 
   const flushTrunk = () => {
     if (trunkRun.length > 0) {

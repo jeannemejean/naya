@@ -4,10 +4,11 @@
 // lente (quelques secondes) : le skeleton de droite doit rester agréable pendant l'attente.
 //
 // Deux volets : gauche = liste cherchable des prospects de CETTE campagne (score badge, sélection) ;
-// droite = timeline des étapes rendues pour le prospect sélectionné, dans le langage visuel de
-// SequenceTimeline (rail olive + nœud coloré par canal via channelMeta). En bas, la CTA de
-// lancement (enrôle TOUS les prospects, pas seulement celui prévisualisé), gardée par une
-// AlertDialog de confirmation.
+// droite = ARBRE de décision complet rendu pour le prospect sélectionné — chaque branche (« si
+// invitation acceptée » / « non acceptée »…) montre le vrai message bespoke de ce prospect, en
+// lecture seule, dans le même langage visuel que l'onglet Séquence (via SequenceTreeLayout, partagé).
+// En bas, la CTA de lancement (enrôle TOUS les prospects, pas seulement celui prévisualisé), gardée
+// par une AlertDialog de confirmation.
 import { useMemo, useState } from 'react';
 import { Search, Shuffle, Copy, RefreshCw, Clock, Rocket, Loader2, Inbox } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -31,7 +32,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useLeads, usePreview, useLaunchCampaign } from './useOutreach';
 import { channelMeta } from './channels';
-import { CONDITION_LABELS, type PreviewStep } from './types';
+import SequenceTreeLayout, { type TreeNodeRenderer } from './SequenceTreeLayout';
+import { type PreviewStep } from './types';
 
 interface PreviewTabProps {
   campaignId: number;
@@ -222,16 +224,17 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
                       Cette campagne n'a pas encore de séquence — configure l'onglet Séquence d'abord.
                     </p>
                   ) : (
-                    <div className="border-l-2 border-naya-olive-18 pl-6 space-y-5">
-                      {preview.steps.map((step) => (
-                        <PreviewStepRow
-                          key={step.stepOrder}
-                          step={step}
+                    <SequenceTreeLayout
+                      steps={preview.steps}
+                      nodeKey={(node) => node.step.stepOrder}
+                      renderNode={(node) => (
+                        <PreviewMessageCard
+                          step={node.step}
                           onCopy={handleCopy}
                           onRegenerate={handleRegenerate}
                         />
-                      ))}
-                    </div>
+                      )}
+                    />
                   )}
                 </div>
               ) : null}
@@ -312,23 +315,22 @@ function PreviewSkeleton({ leadName }: { leadName: string }) {
   );
 }
 
-interface PreviewStepRowProps {
+interface PreviewMessageCardProps {
   step: PreviewStep;
   onCopy: (text: string) => void;
   onRegenerate: () => void;
 }
 
-function PreviewStepRow({ step, onCopy, onRegenerate }: PreviewStepRowProps) {
+// Carte de message en lecture seule = CONTENU d'un nœud de l'arbre (le tronc/fourche/connecteur
+// et le label de condition sont rendus par SequenceTreeLayout autour). D'où l'absence de badge de
+// condition et de pastille de positionnement ici : le layout les fournit déjà.
+function PreviewMessageCard({ step, onCopy, onRegenerate }: PreviewMessageCardProps) {
   const meta = channelMeta(step.channel);
   const Icon = meta.Icon;
   const isUnavailable = step.error || !step.body;
 
   return (
     <div className="relative">
-      <span
-        className={`absolute -left-[1.875rem] top-4 w-3 h-3 rounded-full ring-4 ring-background ${meta.dot}`}
-        aria-hidden
-      />
       <Card className="p-4 flex flex-col gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${meta.chip}`}>
@@ -339,12 +341,9 @@ function PreviewStepRow({ step, onCopy, onRegenerate }: PreviewStepRowProps) {
             <Clock className="w-3 h-3" />
             J+{step.delayDays}
           </span>
-          {step.condition !== 'always' && (
-            <Badge variant="outline">{CONDITION_LABELS[step.condition] ?? step.condition}</Badge>
-          )}
           {/* Intention rendue en texte (pas dans le composant Badge) : c'est souvent une phrase
               complète et Badge applique des small-caps tout-en-majuscules pensés pour des mots
-              courts (cf. condition ci-dessus) — une phrase y serait illisible. */}
+              courts — une phrase y serait illisible. */}
           {step.intention && (
             <span className="text-xs text-naya-olive-70 italic truncate max-w-[16rem]">{step.intention}</span>
           )}
