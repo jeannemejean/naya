@@ -79,6 +79,36 @@ export const useUpdateLead = () =>
     },
   });
 
+// Enrichissement IA d'un prospect (audit + messages) — voir ancien outreach.tsx (git show
+// 80a5a90) enrichMutation. Invalide aussi le statut de prospection (compteur hebdo LinkedIn).
+export const useEnrichLead = () =>
+  useMutation<Lead, Error, number>({
+    mutationFn: (id) => apiRequest("POST", `/api/leads/${id}/enrich`).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/prospection/status"] });
+    },
+  });
+
+// Déplacement groupé de prospects vers une autre campagne (barre d'actions du Pipeline).
+export const useBulkMoveLeads = () =>
+  useMutation<{ moved: number }, Error, { ids: number[]; campaignId: number }>({
+    mutationFn: ({ ids, campaignId }) =>
+      apiRequest("POST", "/api/leads/bulk-move", { ids, campaignId }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+  });
+
+// Archivage groupé (soft-delete) de prospects (barre d'actions du Pipeline).
+export const useBulkArchiveLeads = () =>
+  useMutation<{ archived: number }, Error, number[]>({
+    mutationFn: (ids) => apiRequest("POST", "/api/leads/bulk-archive", { ids }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+  });
+
 // Sauvegarde les consignes de rédaction GLOBALES (toutes campagnes).
 export const useSaveWritingInstructions = () =>
   useMutation<Response, Error, { global: string }>({
