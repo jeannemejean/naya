@@ -1,11 +1,12 @@
 // Accueil Outreach — shell de page + barre d'accès prospection + onglets Campagnes / Pipeline.
-// Les corps des onglets sont des placeholders pour cette tâche ; ils seront remplacés par
-// CampaignsGrid (Task 3) et PipelineBoard (Task 8).
+// L'onglet Campagnes affiche CampaignsGrid (Task 3) ; le corps de l'onglet Pipeline reste un
+// placeholder, remplacé par PipelineBoard (Task 8).
 import { useTranslation } from 'react-i18next';
 import Sidebar from '@/components/sidebar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useProspectionStatus } from './useOutreach';
 import ProspectionAccessBar from './dialogs/ProspectionAccessBar';
+import CampaignsGrid from './CampaignsGrid';
 
 interface OutreachHomeProps {
   onSearchClick?: () => void;
@@ -57,7 +58,7 @@ export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
             </div>
 
             <TabsContent value="campaigns" className="flex-1 overflow-y-auto m-0">
-              <div className="p-6 text-muted-foreground">Campagnes — à venir (Task 3).</div>
+              <CampaignsGrid />
             </TabsContent>
 
             <TabsContent value="pipeline" className="flex-1 overflow-hidden m-0">
