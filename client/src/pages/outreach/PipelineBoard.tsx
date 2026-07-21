@@ -5,15 +5,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ArrowRightLeft, Instagram, Linkedin, Loader2, Plus, Search, Sparkles, Trash2, X,
+  ArrowRightLeft, Plus, Search, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -27,8 +24,9 @@ import {
   useUpdateLead, useEnrichLead, useBulkMoveLeads, useBulkArchiveLeads,
 } from './useOutreach';
 import LeadCard from './LeadCard';
+import LeadDetail from './LeadDetail';
 import AddLeadForm from './dialogs/AddLeadForm';
-import { STAGES, STAGE_MAP, type StageKey } from './stages';
+import { STAGES, type StageKey } from './stages';
 
 export default function PipelineBoard() {
   const { t } = useTranslation();
@@ -112,6 +110,12 @@ export default function PipelineBoard() {
     }
     setDraggedLead(null);
   };
+
+  // Prospect sélectionné, relu depuis la liste vivante (`leads`) plutôt que le snapshot capturé
+  // au clic — reflète l'enrichissement / changement d'étape dès que /api/leads est invalidé.
+  const selectedLeadLive = selectedLead
+    ? leads.find((l) => l.id === selectedLead.id) ?? selectedLead
+    : null;
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
@@ -269,23 +273,15 @@ export default function PipelineBoard() {
         </div>
       </div>
 
-      {/* Lead Detail Sheet — stub minimal ; sera remplacé par LeadDetail (Task 9, fiche repensée
-          Profil/Audit/Séquence). Ici : identité, lien profils, stage, score, messages en lecture. */}
-      <Sheet open={!!selectedLead} onOpenChange={(open) => !open && setSelectedLead(null)}>
-        <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
-          {selectedLead && (
-            <LeadDetailStub
-              lead={selectedLead}
-              onUpdate={(updates) => {
-                handleUpdateLead(selectedLead.id, updates);
-                setSelectedLead({ ...selectedLead, ...updates } as Lead);
-              }}
-              onEnrich={() => handleEnrich(selectedLead.id)}
-              isEnriching={enrichMutation.isPending && enrichMutation.variables === selectedLead.id}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
+      {/* Lead Detail Sheet — fiche prospect repensée (Profil/Audit structuré/Séquence), voir
+          LeadDetail.tsx (Task 9). `selectedLeadLive` relit le prospect depuis `leads` pour que la
+          fiche reflète les mises à jour serveur (enrichissement, changement d'étape) sans
+          dépendre d'un snapshot figé au moment du clic. */}
+      <LeadDetail
+        lead={selectedLeadLive}
+        open={!!selectedLead}
+        onOpenChange={(open) => !open && setSelectedLead(null)}
+      />
 
       {/* Add Lead Dialog */}
       <Dialog open={addLeadOpen} onOpenChange={setAddLeadOpen}>
@@ -324,133 +320,6 @@ export default function PipelineBoard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  );
-}
-
-// ─── Lead Detail (stub minimal) ────────────────────────────────────────────────
-// NOTE : Task 9 possède l'interface finale `LeadDetail({ lead, open, onOpenChange })` (fiche
-// repensée avec onglets Profil/Audit/Séquence, voir task-9-brief.md). Ce stub reste local à
-// PipelineBoard (pas exporté sous le nom `LeadDetail`) pour ne pas entrer en collision avec le
-// fichier que Task 9 créera. Il couvre : identité, stage, score, messages générés en lecture.
-
-function LeadDetailStub({ lead, onUpdate, onEnrich, isEnriching }: {
-  lead: Lead;
-  onUpdate: (updates: Partial<Lead>) => void;
-  onEnrich: () => void;
-  isEnriching: boolean;
-}) {
-  const { toast } = useToast();
-  const hasMessages = !!((lead as any).linkedinMessage || (lead as any).emailMessage || (lead as any).message1);
-  const currentStage = STAGE_MAP[((lead as any).stage as StageKey) || 'identified'];
-
-  const copy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: `${label} copié` });
-  };
-
-  return (
-    <div className="space-y-4">
-      <SheetHeader>
-        <div className="flex items-start gap-3">
-          <Avatar className="w-12 h-12">
-            <AvatarFallback className="bg-naya-mauve/20 text-naya-mauve font-medium text-sm">
-              {lead.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <SheetTitle className="text-xl">{lead.name}</SheetTitle>
-            {lead.company && <p className="text-sm text-muted-foreground">{lead.company}</p>}
-            {(lead as any).role && <p className="text-xs text-muted-foreground">{(lead as any).role}</p>}
-          </div>
-          <div className="flex gap-1.5">
-            {(lead as any).linkedinUrl && (
-              <a href={(lead as any).linkedinUrl} target="_blank" rel="noopener noreferrer"
-                className="p-1.5 rounded-lg bg-naya-salvia/15 text-naya-salvia hover:bg-naya-salvia/25 transition-colors">
-                <Linkedin className="w-4 h-4" />
-              </a>
-            )}
-            {(lead as any).instagramUrl && (
-              <a href={(lead as any).instagramUrl} target="_blank" rel="noopener noreferrer"
-                className="p-1.5 rounded-lg bg-naya-mauve/15 text-naya-mauve hover:bg-naya-mauve/25 transition-colors">
-                <Instagram className="w-4 h-4" />
-              </a>
-            )}
-          </div>
-        </div>
-      </SheetHeader>
-
-      {/* Stage selector */}
-      <div className="flex items-center gap-2">
-        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: currentStage.color }} />
-        <Select value={(lead as any).stage || 'identified'} onValueChange={(v) => onUpdate({ stage: v } as any)}>
-          <SelectTrigger className="h-8 text-xs flex-1">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STAGES.map((s) => (
-              <SelectItem key={s.key} value={s.key}>
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
-                  {s.label}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {!hasMessages && (
-          <Button size="sm" className="h-8 text-xs gap-1 bg-primary text-primary-foreground hover:opacity-90" onClick={onEnrich} disabled={isEnriching}>
-            {isEnriching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-            Enrichir avec Naya
-          </Button>
-        )}
-        {hasMessages && (
-          <Badge variant="mauve" className="h-8 px-3 text-xs">✦ Enrichi</Badge>
-        )}
-      </div>
-
-      {/* Score */}
-      <div>
-        <Select value={lead.score} onValueChange={(v) => onUpdate({ score: v })}>
-          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="hot">◆ Chaud</SelectItem>
-            <SelectItem value="warm">◑ Tiède</SelectItem>
-            <SelectItem value="cold">○ Froid</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Messages (lecture seule) */}
-      {hasMessages ? (
-        <div className="space-y-3">
-          {[
-            { key: 'linkedin', value: (lead as any).linkedinMessage || (lead as any).message1, label: 'Message LinkedIn — Connexion' },
-            { key: 'email', value: (lead as any).emailMessage || (lead as any).message2, label: 'Email personnalisé' },
-          ].filter((m) => m.value).map(({ key, value, label }) => (
-            <div key={key} className="rounded-lg border border-naya-olive-18 p-3">
-              <div className="flex items-center justify-between mb-1.5">
-                <p className="text-xs font-semibold text-foreground">{label}</p>
-                <button
-                  onClick={() => copy(value, label)}
-                  className="text-muted-foreground hover:text-foreground transition-colors text-[11px]"
-                >
-                  Copier
-                </button>
-              </div>
-              <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{value}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground text-center py-6">
-          Aucun message généré — clique sur « Enrichir avec Naya ».
-        </p>
-      )}
-
-      <p className="text-[10px] text-muted-foreground text-center pt-2 border-t border-naya-olive-10">
-        Fiche prospect complète (audit, séquence) — à venir (Task 9).
-      </p>
     </div>
   );
 }
