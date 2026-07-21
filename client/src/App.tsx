@@ -94,7 +94,7 @@ function Router() {
  {() => <Outreach onSearchClick={openSearch} />}
  </Route>
  <Route path="/outreach/campaigns/:id">
- {(params) => <CampaignWorkspace id={Number(params.id)} />}
+ {(params) => <CampaignWorkspace id={Number(params.id)} onSearchClick={openSearch} />}
  </Route>
  <Route path="/analytics">
  {() => <Analytics onSearchClick={openSearch} />}
