@@ -20,6 +20,10 @@ interface SequenceStepCardProps {
   // Intention manquante détectée à la dernière tentative de save — affiche un indice discret
   // (bordure) sans bloquer la saisie.
   hasError?: boolean;
+  // SequenceTree affiche déjà la condition sous forme de label de branche (✓/✗) au-dessus de la
+  // carte — passer false évite un badge de condition redondant. Le tronc (condition "always") ne
+  // montre de toute façon jamais ce badge, donc la valeur par défaut reste correcte partout.
+  showConditionBadge?: boolean;
 }
 
 const FIELD_LABEL = 'text-[10px] font-medium uppercase tracking-wide text-naya-olive-55';
@@ -32,6 +36,7 @@ export default function SequenceStepCard({
   onRemove,
   onMove,
   hasError = false,
+  showConditionBadge = true,
 }: SequenceStepCardProps) {
   const meta = channelMeta(step.channel);
   const Icon = meta.Icon;
@@ -45,7 +50,7 @@ export default function SequenceStepCard({
             {meta.label}
           </span>
           <span className="text-xs text-naya-olive-55">Étape {index + 1}</span>
-          {step.condition !== 'always' && (
+          {showConditionBadge && step.condition !== 'always' && (
             <Badge variant="outline">{CONDITION_LABELS[step.condition] ?? step.condition}</Badge>
           )}
         </div>

@@ -1,14 +1,15 @@
-// Onglet Séquence de CampaignWorkspace — bannière de rationale IA + timeline visuelle éditable
-// + enregistrement. Reprend le câblage (endpoints generate/save) de l'ancien SequenceEditorDialog
-// (git history, client/src/pages/outreach.tsx ~1431-1538) mais avec une vue neuve (timeline, pas
-// une modale à plat) et lit bien { rationale, steps } du generate (pas un tableau nu).
+// Onglet Séquence de CampaignWorkspace — bannière de rationale IA + arbre de décision visuel
+// éditable (SequenceTree) + enregistrement. Reprend le câblage (endpoints generate/save) de
+// l'ancien SequenceEditorDialog (git history, client/src/pages/outreach.tsx ~1431-1538) mais avec
+// une vue neuve (arbre, pas une modale à plat) et lit bien { rationale, steps } du generate (pas
+// un tableau nu).
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useGenerateSequence, useSaveSequence, useSequence } from './useOutreach';
-import SequenceTimeline from './SequenceTimeline';
+import SequenceTree from './SequenceTree';
 import type { DraftSequenceStep, SequenceStepDTO } from './types';
 
 interface SequenceTabProps {
@@ -178,7 +179,7 @@ export default function SequenceTab({ campaignId }: SequenceTabProps) {
           <Skeleton className="h-32 w-full" />
         </div>
       ) : (
-        <SequenceTimeline
+        <SequenceTree
           steps={draft}
           onChange={handleChange}
           onRemove={handleRemove}
