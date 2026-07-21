@@ -17,6 +17,7 @@ describe("channelMeta", () => {
     const m = channelMeta("email");
     expect(m.id).toBe("email");
     expect(m.label).toBe("Email");
+    expect(m.dot).toContain("sulphur");
     expect(m.Icon).toBe(Mail);
   });
 

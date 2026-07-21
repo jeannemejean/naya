@@ -74,7 +74,7 @@ import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milest
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
-import { generateSequencePlan } from "./services/sequence-plan";
+import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
 import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
@@ -7007,6 +7007,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           delayDays: Math.max(0, Number(s.delayDays) || 0),
           subjectTemplate: s.subjectTemplate ?? null,
           bodyTemplate: String(s.bodyTemplate),
+          intention: typeof s.intention === 'string' && s.intention.trim() ? s.intention.trim() : null,
+          condition: SEQUENCE_STEP_CONDITIONS.has(s.condition) ? s.condition : 'always',
         }));
       const saved = await storage.replaceSequenceSteps(campaign.id, req.userId, cleaned);
       res.json(saved);

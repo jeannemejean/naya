@@ -6,7 +6,7 @@ export type PlanStep = { channel: "email" | "linkedin"; delayDays: number; inten
 export type SequencePlan = { rationale: string; steps: PlanStep[] };
 
 const CHANNELS = new Set(["email", "linkedin"]);
-const CONDITIONS = new Set(["always", "if_opened", "if_not_opened", "if_clicked", "if_invite_accepted", "if_invite_not_accepted"]);
+export const CONDITIONS = new Set(["always", "if_opened", "if_not_opened", "if_clicked", "if_invite_accepted", "if_invite_not_accepted"]);
 
 export function parseSequencePlan(raw: string): SequencePlan {
   let obj: any;

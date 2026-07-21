@@ -1108,7 +1108,7 @@ export class DatabaseStorage implements IStorage {
   async replaceSequenceSteps(
     campaignId: number,
     userId: string,
-    steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string }>,
+    steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string; intention?: string | null; condition?: string }>,
   ): Promise<CampaignSequenceStep[]> {
     // Fetch old step IDs and purge dependent leadStepMessages before deletion
     const oldStepIds = (
@@ -1131,6 +1131,8 @@ export class DatabaseStorage implements IStorage {
         delayDays: s.delayDays,
         subjectTemplate: s.subjectTemplate ?? null,
         bodyTemplate: s.bodyTemplate,
+        intention: s.intention ?? null,
+        condition: s.condition ?? "always",
       })),
     ).returning();
     return rows;

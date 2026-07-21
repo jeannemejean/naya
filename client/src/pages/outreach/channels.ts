@@ -8,8 +8,8 @@ const EMAIL: Meta = {
   id: "email",
   label: "Email",
   Icon: Mail,
-  dot: "bg-[#D4C97A]",
-  chip: "bg-[#D4C97A]/15 text-naya-olive border border-[#D4C97A]/40",
+  dot: "bg-naya-sulphur",
+  chip: "bg-naya-sulphur/15 text-naya-olive border border-naya-sulphur/40",
   text: "text-naya-olive",
 };
 
