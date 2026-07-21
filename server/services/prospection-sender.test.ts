@@ -22,6 +22,7 @@ vi.mock("../storage", () => ({
 
 vi.mock("./sequence-message", () => ({
   generateStepMessage: vi.fn(),
+  combineInstructions: vi.fn(() => ""),
 }));
 
 vi.mock("./linkedin", () => ({

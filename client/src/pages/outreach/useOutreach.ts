@@ -35,6 +35,10 @@ export const usePreview = (id: number, leadId: number | null) =>
 export const useAnalytics = (id: number) =>
   useQuery<StepAnalytics>({ queryKey: [`/api/prospection/campaigns/${id}/analytics`] });
 
+// Consignes de rédaction GLOBALES (toutes campagnes) — stockées sur userPreferences.
+export const useWritingInstructions = () =>
+  useQuery<{ global: string }>({ queryKey: ["/api/prospection/writing-instructions"] });
+
 // ─── Mutations ──────────────────────────────────────────────────────────────
 
 // Génère le plan de séquence par IA — le backend renvoie { rationale, steps } (steps déjà
@@ -72,5 +76,23 @@ export const useUpdateLead = () =>
     mutationFn: ({ id, updates }) => apiRequest("PATCH", `/api/leads/${id}`, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+  });
+
+// Sauvegarde les consignes de rédaction GLOBALES (toutes campagnes).
+export const useSaveWritingInstructions = () =>
+  useMutation<Response, Error, { global: string }>({
+    mutationFn: (payload) => apiRequest("PUT", "/api/prospection/writing-instructions", payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prospection/writing-instructions"] });
+    },
+  });
+
+// Mise à jour partielle d'une campagne (ex: messageInstructions par campagne).
+export const useUpdateCampaign = (id: number) =>
+  useMutation<Response, Error, Record<string, any>>({
+    mutationFn: (updates) => apiRequest("PATCH", `/api/prospection/campaigns/${id}`, updates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/prospection/campaigns"] });
     },
   });

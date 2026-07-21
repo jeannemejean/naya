@@ -35,7 +35,7 @@ import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing
 import { hasNayaAccess } from "./services/access";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
-import { generateStepMessage } from "./services/sequence-message";
+import { generateStepMessage, combineInstructions } from "./services/sequence-message";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
@@ -6830,6 +6830,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const user = await storage.getUser(userId);
       const founderName = resolveFounderName(user, dna as any);
       const campaignWithFounder = { ...campaign, founderName };
+      const prefs = await storage.getUserPreferences(userId);
+      const instructions = combineInstructions((prefs as any)?.messageInstructions, (campaign as any)?.messageInstructions);
 
       const rendered: any[] = [];
       for (const step of steps) {
@@ -6837,7 +6839,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           const msg = await generateStepMessage(userId, {
             lead, campaign: campaignWithFounder,
             step: { id: step.id, channel: step.channel, intention: step.intention ?? null },
-            useCache: true,
+            useCache: true, instructions,
           });
           rendered.push({
             stepOrder: step.stepOrder, channel: step.channel, delayDays: step.delayDays,
@@ -7149,6 +7151,28 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       });
       if (!r.ok) return res.status(400).json({ message: r.error });
       res.json({ verificationStatus: 'pending' });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Consignes de rédaction GLOBALES (toutes campagnes) — cumulées avec l'override par
+  // campagne (prospectionCampaigns.messageInstructions) au moment de la génération.
+  app.get('/api/prospection/writing-instructions', isAuthenticated, async (req: any, res) => {
+    try {
+      const prefs = await storage.getUserPreferences(req.userId);
+      res.json({ global: (prefs as any)?.messageInstructions || '' });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.put('/api/prospection/writing-instructions', isAuthenticated, async (req: any, res) => {
+    try {
+      const { global: globalInstructions } = req.body || {};
+      if (typeof globalInstructions !== 'string') return res.status(400).json({ message: 'global (string) requis' });
+      await storage.updateUserPreferences(req.userId, { messageInstructions: globalInstructions.trim() || null });
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

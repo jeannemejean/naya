@@ -18,7 +18,7 @@ import { storage } from "../storage";
 import { decryptToken } from "./token-crypto";
 import { linkedinConfigured, sendLinkedInStep, LINKEDIN_DAILY_CAP } from "./linkedin";
 import { decideNextStep } from "./sequence-engine";
-import { generateStepMessage } from "./sequence-message";
+import { generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
 
 const POLL_MS = 60_000;
@@ -216,11 +216,12 @@ export async function runProspectionSender(): Promise<void> {
         const user = await storage.getUser(state.userId);
         const founderName = resolveFounderName(user, dna as any);
         const campaign = await storage.getProspectionCampaign(state.campaignId);
+        const instructions = combineInstructions((prefs as any)?.messageInstructions, (campaign as any)?.messageInstructions);
         const gen = await generateStepMessage(state.userId, {
           lead,
           campaign: { ...campaign, founderName },
           step: { id: step.id, channel: step.channel, intention: (step as any).intention ?? null },
-          useCache: true,
+          useCache: true, instructions,
         });
         const subject = gen.subject || "";
         const body = gen.body;

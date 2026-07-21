@@ -10,16 +10,19 @@ import { sanitizeMessage, enforceLinkedInLimit, parseJsonObject } from "./prospe
 
 export function buildStepPrompt(args: {
   founderName: string; projectName: string; channel: string; intention: string;
-  lead: any; audit: Record<string, string>;
+  lead: any; audit: Record<string, string>; instructions?: string;
 }): string {
   const isLi = args.channel === "linkedin";
+  const instructionsBlock = args.instructions?.trim()
+    ? `\nCONSIGNES DE RÉDACTION DE L'UTILISATEUR (impératives, à respecter absolument) :\n${args.instructions.trim()}\n`
+    : "";
   return `Tu es Naya. Rédige ${isLi ? "un message LinkedIn" : "un email"} de prospection sur-mesure.
 
 PROSPECT : ${args.lead?.name || ""} — ${args.lead?.role || ""} @ ${args.lead?.company || ""}
 INTENTION DE CETTE ÉTAPE : ${args.intention || "prise de contact"}
 ANGLE (audit) : ${args.audit?.angle || ""}
 ENJEUX : ${args.audit?.enjeux || args.audit?.observations || ""}
-
+${instructionsBlock}
 RÈGLES ABSOLUES :
 - Ton humain, curieux, jamais commercial. JAMAIS de tiret long.
 ${isLi
@@ -30,9 +33,21 @@ Réponds UNIQUEMENT avec ce JSON :
 {${isLi ? '"body":"..."' : '"subject":"...","body":"..."'}}`;
 }
 
+/**
+ * Combine les consignes de rédaction GLOBALES (userPreferences.messageInstructions) et
+ * PAR CAMPAGNE (prospectionCampaigns.messageInstructions) en un seul bloc de texte à
+ * injecter dans le prompt. Pure, testée isolément.
+ */
+export function combineInstructions(global?: string | null, campaign?: string | null): string {
+  return [global, campaign]
+    .map((s) => (s ?? "").trim())
+    .filter((s) => s.length > 0)
+    .join("\n");
+}
+
 export async function generateStepMessage(
   userId: string,
-  opts: { lead: any; campaign: any; step: { id: number; channel: string; intention: string | null }; useCache?: boolean },
+  opts: { lead: any; campaign: any; step: { id: number; channel: string; intention: string | null }; useCache?: boolean; instructions?: string },
 ): Promise<{ subject: string | null; body: string }> {
   if (opts.useCache !== false) {
     const cached = await storage.getLeadStepMessage(opts.lead.id, opts.step.id);
@@ -43,7 +58,7 @@ export async function generateStepMessage(
   const audit = safeAudit(opts.lead?.auditNotes);
   const prompt = buildStepPrompt({
     founderName, projectName, channel: opts.step.channel,
-    intention: opts.step.intention || "", lead: opts.lead, audit,
+    intention: opts.step.intention || "", lead: opts.lead, audit, instructions: opts.instructions,
   });
   const raw = await callClaude({ model: CLAUDE_MODELS.smart, userId, messages: [{ role: "user", content: prompt }], max_tokens: 900, temperature: 0.6 });
   const p = parseJsonObject(raw);

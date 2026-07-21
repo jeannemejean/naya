@@ -4,11 +4,22 @@
 // une vue neuve (arbre, pas une modale à plat) et lit bien { rationale, steps } du generate (pas
 // un tableau nu).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, PenLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useToast } from '@/hooks/use-toast';
-import { useGenerateSequence, useSaveSequence, useSequence } from './useOutreach';
+import {
+  useGenerateSequence,
+  useSaveSequence,
+  useSequence,
+  useCampaign,
+  useWritingInstructions,
+  useSaveWritingInstructions,
+  useUpdateCampaign,
+} from './useOutreach';
 import SequenceTree from './SequenceTree';
 import type { DraftSequenceStep, SequenceStepDTO } from './types';
 
@@ -25,6 +36,106 @@ function toDraft(step: SequenceStepDTO): DraftSequenceStep {
     intention: step.intention ?? '',
     condition: step.condition,
   };
+}
+
+// Panneau collapsible « Consignes de rédaction pour Naya » — consignes GLOBALES (toutes
+// campagnes, stockées sur userPreferences) + consignes PAR CAMPAGNE (override/complément,
+// stockées sur la campagne). Les deux sont cumulées côté serveur au moment de la génération
+// (combineInstructions dans server/services/sequence-message.ts) : le global s'applique
+// toujours, la campagne vient s'y ajouter.
+function WritingInstructionsPanel({ campaignId }: { campaignId: number }) {
+  const { data: writingInstructions, isLoading: loadingGlobal } = useWritingInstructions();
+  const { data: campaign } = useCampaign(campaignId);
+  const saveGlobal = useSaveWritingInstructions();
+  const updateCampaign = useUpdateCampaign(campaignId);
+  const { toast } = useToast();
+
+  const [globalText, setGlobalText] = useState('');
+  const [campaignText, setCampaignText] = useState('');
+  const seededGlobal = useRef(false);
+  const seededCampaign = useRef(false);
+
+  useEffect(() => {
+    if (writingInstructions && !seededGlobal.current) {
+      seededGlobal.current = true;
+      setGlobalText(writingInstructions.global ?? '');
+    }
+  }, [writingInstructions]);
+
+  useEffect(() => {
+    if (campaign && !seededCampaign.current) {
+      seededCampaign.current = true;
+      setCampaignText(campaign.messageInstructions ?? '');
+    }
+  }, [campaign]);
+
+  const isPending = saveGlobal.isPending || updateCampaign.isPending;
+
+  const handleSave = async () => {
+    try {
+      await Promise.all([
+        saveGlobal.mutateAsync({ global: globalText }),
+        updateCampaign.mutateAsync({ messageInstructions: campaignText.trim() || null }),
+      ]);
+      toast({ title: 'Consignes enregistrées', description: 'Naya en tiendra compte dès la prochaine génération.' });
+    } catch {
+      toast({ title: 'Erreur', description: "Impossible d'enregistrer les consignes.", variant: 'destructive' });
+    }
+  };
+
+  return (
+    <Accordion type="single" collapsible defaultValue="writing-instructions" className="rounded-lg border border-naya-olive-18 px-4">
+      <AccordionItem value="writing-instructions" className="border-b-0">
+        <AccordionTrigger className="hover:no-underline">
+          <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <PenLine className="w-4 h-4 text-naya-olive-55" />
+            Consignes de rédaction pour Naya
+          </span>
+        </AccordionTrigger>
+        <AccordionContent>
+          <div className="space-y-4 pt-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="writing-instructions-global" className="text-xs font-medium text-naya-olive-70">
+                Globales — appliquées à toutes tes campagnes
+              </Label>
+              <Textarea
+                id="writing-instructions-global"
+                value={globalText}
+                onChange={(e) => setGlobalText(e.target.value)}
+                disabled={loadingGlobal}
+                placeholder="Ex. Jamais de tiret long. Ton direct et humain. Pas de « j'espère que vous allez bien »."
+                className="min-h-[88px] text-sm"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="writing-instructions-campaign" className="text-xs font-medium text-naya-olive-70">
+                Cette campagne (optionnel)
+              </Label>
+              <Textarea
+                id="writing-instructions-campaign"
+                value={campaignText}
+                onChange={(e) => setCampaignText(e.target.value)}
+                placeholder="Ex. Mentionne toujours l'offre de lancement early-bird."
+                className="min-h-[72px] text-sm"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5 bg-primary text-primary-foreground"
+                disabled={isPending}
+                onClick={handleSave}
+              >
+                {isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                Enregistrer les consignes
+              </Button>
+            </div>
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
+  );
 }
 
 export default function SequenceTab({ campaignId }: SequenceTabProps) {
@@ -138,6 +249,8 @@ export default function SequenceTab({ campaignId }: SequenceTabProps) {
 
   return (
     <div className="p-6 space-y-5">
+      <WritingInstructionsPanel campaignId={campaignId} />
+
       <div className="rounded-lg border border-naya-olive-18 bg-naya-sulphur/10 p-4 flex flex-col sm:flex-row sm:items-start gap-3">
         <Sparkles className="w-4 h-4 text-naya-sulphur mt-0.5 flex-shrink-0" />
         <div className="flex-1 min-w-0">

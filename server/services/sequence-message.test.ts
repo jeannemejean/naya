@@ -13,7 +13,7 @@ vi.mock("./claude", async (io) => {
   return { ...actual, callClaude: vi.fn() };
 });
 
-import { buildStepPrompt, generateStepMessage } from "./sequence-message";
+import { buildStepPrompt, generateStepMessage, combineInstructions } from "./sequence-message";
 import { storage } from "../storage";
 import * as claude from "./claude";
 
@@ -34,6 +34,39 @@ describe("buildStepPrompt", () => {
     const p = buildStepPrompt({ ...base, channel: "email", intention: "Email de valeur" });
     expect(p.toLowerCase()).toContain("objet");
     expect(p).toContain("Email de valeur");
+  });
+  it("injecte les consignes de rédaction utilisateur quand fournies", () => {
+    const p = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture", instructions: "Jamais de tiret long. Ton direct." });
+    expect(p).toContain("CONSIGNES DE RÉDACTION DE L'UTILISATEUR");
+    expect(p).toContain("Jamais de tiret long. Ton direct.");
+  });
+  it("n'ajoute aucun bloc de consignes quand instructions est absent ou vide", () => {
+    const pAbsent = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture" });
+    expect(pAbsent).not.toContain("CONSIGNES DE RÉDACTION DE L'UTILISATEUR");
+    const pEmpty = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture", instructions: "   " });
+    expect(pEmpty).not.toContain("CONSIGNES DE RÉDACTION DE L'UTILISATEUR");
+  });
+});
+
+describe("combineInstructions", () => {
+  it("combine les deux quand global et campagne sont fournis", () => {
+    expect(combineInstructions("Jamais de tiret long.", "Mentionne notre offre early-bird.")).toBe(
+      "Jamais de tiret long.\nMentionne notre offre early-bird.",
+    );
+  });
+  it("retourne uniquement le global quand la campagne est absente", () => {
+    expect(combineInstructions("Jamais de tiret long.", undefined)).toBe("Jamais de tiret long.");
+    expect(combineInstructions("Jamais de tiret long.", null)).toBe("Jamais de tiret long.");
+    expect(combineInstructions("Jamais de tiret long.", "   ")).toBe("Jamais de tiret long.");
+  });
+  it("retourne uniquement la campagne quand le global est absent", () => {
+    expect(combineInstructions(undefined, "Mentionne notre offre early-bird.")).toBe("Mentionne notre offre early-bird.");
+    expect(combineInstructions(null, "Mentionne notre offre early-bird.")).toBe("Mentionne notre offre early-bird.");
+  });
+  it("retourne une chaîne vide quand ni l'un ni l'autre n'est fourni", () => {
+    expect(combineInstructions(undefined, undefined)).toBe("");
+    expect(combineInstructions(null, null)).toBe("");
+    expect(combineInstructions("  ", "  ")).toBe("");
   });
 });
 

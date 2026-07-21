@@ -166,6 +166,8 @@ export const userPreferences = pgTable("user_preferences", {
   aiSpendPeriod: text("ai_spend_period"), // "YYYY-MM" du compteur courant
   // Compte LinkedIn connecté via Unipile (pour l'envoi automatique de messages LinkedIn).
   linkedinUnipileAccountId: text("linkedin_unipile_account_id"),
+  // Consignes de rédaction GLOBALES pour la génération de messages de prospection (toutes campagnes).
+  messageInstructions: text("message_instructions"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -527,6 +529,7 @@ export const prospectionCampaigns = pgTable("prospection_campaigns", {
   buyingSignals: text("buying_signals"),              // critères de qualification
   campaignBrief: text("campaign_brief"),              // proposition en une phrase
   messageAngle: text("message_angle"),                // angle d'approche unique
+  messageInstructions: text("message_instructions"),  // consignes de rédaction spécifiques à cette campagne (override/complément du global)
   linkedCampaignId: integer("linked_campaign_id"),    // FK → campaigns.id (set après création)
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
