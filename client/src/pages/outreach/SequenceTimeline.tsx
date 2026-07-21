@@ -13,9 +13,19 @@ interface SequenceTimelineProps {
   onRemove: (index: number) => void;
   onMove: (index: number, direction: -1 | 1) => void;
   onAdd: () => void;
+  // Indices d'étapes invalides (ex. intention manquante) — undefined tant qu'aucune tentative
+  // de save n'a eu lieu (voir SequenceTab.handleSave).
+  invalidIndices?: Set<number>;
 }
 
-export default function SequenceTimeline({ steps, onChange, onRemove, onMove, onAdd }: SequenceTimelineProps) {
+export default function SequenceTimeline({
+  steps,
+  onChange,
+  onRemove,
+  onMove,
+  onAdd,
+  invalidIndices,
+}: SequenceTimelineProps) {
   return (
     <div className="max-w-2xl">
       {steps.length > 0 && (
@@ -23,7 +33,10 @@ export default function SequenceTimeline({ steps, onChange, onRemove, onMove, on
           {steps.map((step, index) => {
             const meta = channelMeta(step.channel);
             return (
-              <div key={step.id ?? `draft-${index}`} className="relative">
+              // Clé stable : `_key` (étapes pas encore persistées) ou `id` (étapes persistées) —
+              // ne dépend jamais de `index` seul, sinon un réordonnancement remonte la carte et
+              // fait perdre le focus des inputs.
+              <div key={step._key ?? step.id ?? `draft-${index}`} className="relative">
                 <span
                   className={`absolute -left-[1.875rem] top-4 w-3 h-3 rounded-full ring-4 ring-background ${meta.dot}`}
                   aria-hidden
@@ -35,6 +48,7 @@ export default function SequenceTimeline({ steps, onChange, onRemove, onMove, on
                   onChange={onChange}
                   onRemove={onRemove}
                   onMove={onMove}
+                  hasError={invalidIndices?.has(index) ?? false}
                 />
               </div>
             );

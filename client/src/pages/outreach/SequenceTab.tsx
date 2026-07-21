@@ -34,7 +34,20 @@ export default function SequenceTab({ campaignId }: SequenceTabProps) {
 
   const [draft, setDraft] = useState<DraftSequenceStep[]>([]);
   const [rationale, setRationale] = useState<string | null>(null);
+  // Tant que ce flag est faux, aucun indice n'affiche son état invalide — évite de peindre les
+  // cartes en rouge dès l'ajout d'une étape, avant même une tentative de sauvegarde.
+  const [saveAttempted, setSaveAttempted] = useState(false);
   const seeded = useRef(false);
+  const keyCounter = useRef(0);
+
+  // Clé stable UI-only pour une étape pas encore persistée (voir DraftSequenceStep._key).
+  const makeDraftKey = () => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    keyCounter.current += 1;
+    return `draft-key-${keyCounter.current}`;
+  };
 
   // Seed le brouillon local une seule fois, au premier chargement de la séquence persistée —
   // les modifications suivantes du brouillon ne doivent pas être écrasées par un refetch.
@@ -66,7 +79,19 @@ export default function SequenceTab({ campaignId }: SequenceTabProps) {
     });
 
   const handleAdd = () =>
-    setDraft((prev) => [...prev, { channel: 'email', delayDays: 3, intention: '', condition: 'always' }]);
+    setDraft((prev) => [
+      ...prev,
+      { channel: 'email', delayDays: 3, intention: '', condition: 'always', _key: makeDraftKey() },
+    ]);
+
+  // Une étape doit porter une intention (le body-only vient de l'ancien flux "builder à plat" —
+  // DraftSequenceStep ne porte jamais de bodyTemplate ici, la timeline est le PLAN, pas le
+  // message final, cf. SequenceStepCard) — sinon le keep-filter serveur (server/routes.ts
+  // ~L7004-7008) la droppe silencieusement au save.
+  const invalidIndices = useMemo(
+    () => new Set(draft.map((s, i) => (s.intention.trim() ? -1 : i)).filter((i) => i >= 0)),
+    [draft],
+  );
 
   const handleGenerate = () => {
     generateSequence.mutate(undefined, {
@@ -80,6 +105,16 @@ export default function SequenceTab({ campaignId }: SequenceTabProps) {
   };
 
   const handleSave = () => {
+    if (invalidIndices.size > 0) {
+      setSaveAttempted(true);
+      toast({
+        title: 'Intention manquante',
+        description: "Chaque étape doit avoir une intention avant d'enregistrer.",
+        variant: 'destructive',
+      });
+      return;
+    }
+    setSaveAttempted(false);
     const payload = draft.map((s, i) => ({
       id: s.id,
       stepOrder: i + 1,
@@ -149,6 +184,7 @@ export default function SequenceTab({ campaignId }: SequenceTabProps) {
           onRemove={handleRemove}
           onMove={handleMove}
           onAdd={handleAdd}
+          invalidIndices={saveAttempted ? invalidIndices : undefined}
         />
       )}
     </div>

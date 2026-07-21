@@ -62,4 +62,8 @@ export type DraftSequenceStep = {
   delayDays: number;
   intention: string;
   condition: string;
+  // Clé stable UI-only pour les étapes pas encore persistées (pas d'`id` serveur) — évite que
+  // React ne remonte les cartes (et perde le focus des inputs) lors d'un réordonnancement.
+  // Générée côté client au moment de l'ajout (SequenceTab.handleAdd), jamais envoyée au save.
+  _key?: string;
 };

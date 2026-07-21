@@ -17,16 +17,27 @@ interface SequenceStepCardProps {
   onChange: (index: number, partial: Partial<DraftSequenceStep>) => void;
   onRemove: (index: number) => void;
   onMove: (index: number, direction: -1 | 1) => void;
+  // Intention manquante détectée à la dernière tentative de save — affiche un indice discret
+  // (bordure) sans bloquer la saisie.
+  hasError?: boolean;
 }
 
 const FIELD_LABEL = 'text-[10px] font-medium uppercase tracking-wide text-naya-olive-55';
 
-export default function SequenceStepCard({ step, index, total, onChange, onRemove, onMove }: SequenceStepCardProps) {
+export default function SequenceStepCard({
+  step,
+  index,
+  total,
+  onChange,
+  onRemove,
+  onMove,
+  hasError = false,
+}: SequenceStepCardProps) {
   const meta = channelMeta(step.channel);
   const Icon = meta.Icon;
 
   return (
-    <Card className="p-4 flex flex-col gap-3">
+    <Card className={`p-4 flex flex-col gap-3 ${hasError ? 'border-naya-mauve' : ''}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs ${meta.chip}`}>
@@ -91,15 +102,15 @@ export default function SequenceStepCard({ step, index, total, onChange, onRemov
 
         <div className="space-y-1">
           <span className={FIELD_LABEL}>Délai</span>
-          <div className="flex items-center gap-1.5 h-9 px-2.5 rounded-sm border border-naya-olive-18">
+          <div className="flex items-center gap-1.5 h-9 px-2.5 rounded-sm border border-naya-olive-18 focus-within:ring-1 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background focus-within:border-naya-olive">
             <Clock className="w-3.5 h-3.5 text-naya-olive-55 flex-shrink-0" />
             <span className="text-sm text-naya-olive-70 flex-shrink-0">J+</span>
-            <input
+            <Input
               type="number"
               min={0}
               value={step.delayDays}
               onChange={(e) => onChange(index, { delayDays: Math.max(0, Number(e.target.value) || 0) })}
-              className="w-full bg-transparent outline-none text-sm text-foreground"
+              className="h-auto w-full border-0 p-0 bg-transparent text-sm text-foreground hover:border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
               aria-label="Délai en jours après l'étape précédente"
             />
           </div>
@@ -111,8 +122,10 @@ export default function SequenceStepCard({ step, index, total, onChange, onRemov
             value={step.intention}
             onChange={(e) => onChange(index, { intention: e.target.value })}
             placeholder="Ex. Présenter l'offre, relancer si pas de réponse…"
-            className="h-9 text-sm"
+            className={`h-9 text-sm ${hasError ? 'border-naya-mauve' : ''}`}
+            aria-invalid={hasError}
           />
+          {hasError && <p className="text-xs text-naya-mauve">L'intention est requise.</p>}
         </div>
       </div>
 
