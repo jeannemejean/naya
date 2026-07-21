@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCampaign, useLeads } from './useOutreach';
 import { channelMeta, type ChannelId } from './channels';
+import SequenceTab from './SequenceTab';
 
 interface CampaignWorkspaceProps {
   id: number;
@@ -115,7 +116,7 @@ export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspa
             </div>
 
             <TabsContent value="sequence" className="flex-1 overflow-y-auto m-0">
-              <div className="p-6 text-muted-foreground">Séquence — à venir (Task 5).</div>
+              <SequenceTab campaignId={id} />
             </TabsContent>
 
             <TabsContent value="prospects" className="flex-1 overflow-y-auto m-0">

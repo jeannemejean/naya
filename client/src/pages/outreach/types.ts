@@ -50,3 +50,16 @@ export const CONDITION_LABELS: Record<string, string> = {
   if_invite_accepted: "si invitation acceptée",
   if_invite_not_accepted: "si invitation non acceptée",
 };
+
+// Forme locale (éditable) d'une étape de séquence dans l'onglet Séquence — mêmes champs que
+// SequenceStepDTO, mais `intention`/`condition` ne sont jamais null (normalisés à la lecture),
+// et `id`/`stepOrder` restent optionnels tant que l'étape n'a pas été persistée / re-numérotée
+// (au save, voir SequenceTab.tsx).
+export type DraftSequenceStep = {
+  id?: number;
+  stepOrder?: number;
+  channel: string;
+  delayDays: number;
+  intention: string;
+  condition: string;
+};

@@ -6998,15 +6998,21 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       const steps = Array.isArray(req.body?.steps) ? req.body.steps : [];
-      // Validation minimale : chaque étape doit avoir un corps de message.
+      // Validation minimale : une étape doit porter soit un message tout fait (ancien flux —
+      // builder à plat avec sujet/corps rédigés à la main), soit une intention de plan (nouveau
+      // flux — timeline visuelle, Task 5 : le texte réel est généré par prospect, cf. Aperçu).
       const cleaned = steps
-        .filter((s: any) => typeof s?.bodyTemplate === 'string' && s.bodyTemplate.trim())
+        .filter((s: any) => {
+          const hasBody = typeof s?.bodyTemplate === 'string' && s.bodyTemplate.trim();
+          const hasIntention = typeof s?.intention === 'string' && s.intention.trim();
+          return hasBody || hasIntention;
+        })
         .map((s: any, i: number) => ({
           stepOrder: i + 1,
           channel: s.channel === 'linkedin' ? 'linkedin' : 'email',
           delayDays: Math.max(0, Number(s.delayDays) || 0),
           subjectTemplate: s.subjectTemplate ?? null,
-          bodyTemplate: String(s.bodyTemplate),
+          bodyTemplate: typeof s.bodyTemplate === 'string' && s.bodyTemplate.trim() ? s.bodyTemplate : null,
           intention: typeof s.intention === 'string' && s.intention.trim() ? s.intention.trim() : null,
           condition: SEQUENCE_STEP_CONDITIONS.has(s.condition) ? s.condition : 'always',
         }));

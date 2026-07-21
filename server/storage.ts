@@ -274,7 +274,7 @@ export interface IStorage {
 
   // Séquences de prospection
   getSequenceSteps(campaignId: number): Promise<CampaignSequenceStep[]>;
-  replaceSequenceSteps(campaignId: number, userId: string, steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string }>): Promise<CampaignSequenceStep[]>;
+  replaceSequenceSteps(campaignId: number, userId: string, steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate?: string | null; intention?: string | null; condition?: string }>): Promise<CampaignSequenceStep[]>;
   saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string }[] }): Promise<void>;
   getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined>;
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
@@ -1108,7 +1108,7 @@ export class DatabaseStorage implements IStorage {
   async replaceSequenceSteps(
     campaignId: number,
     userId: string,
-    steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate: string; intention?: string | null; condition?: string }>,
+    steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate?: string | null; intention?: string | null; condition?: string }>,
   ): Promise<CampaignSequenceStep[]> {
     // Fetch old step IDs and purge dependent leadStepMessages before deletion
     const oldStepIds = (
@@ -1130,7 +1130,7 @@ export class DatabaseStorage implements IStorage {
         channel: s.channel,
         delayDays: s.delayDays,
         subjectTemplate: s.subjectTemplate ?? null,
-        bodyTemplate: s.bodyTemplate,
+        bodyTemplate: s.bodyTemplate ?? null,
         intention: s.intention ?? null,
         condition: s.condition ?? "always",
       })),
