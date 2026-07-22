@@ -87,7 +87,7 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
     setLeadId(pick.id);
   };
 
-  const { data: preview, isLoading, isFetching, refetch } = usePreview(campaignId, leadId);
+  const { data: preview, isLoading, isFetching, regenerate, isRegenerating } = usePreview(campaignId, leadId);
 
   const handleCopy = async (text: string) => {
     try {
@@ -99,10 +99,11 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
   };
 
   // Il n'existe pas de régénération par étape côté serveur (une seule route /preview qui rend
-  // toutes les étapes) — Régénérer refetch donc l'aperçu complet du prospect, que ce soit déclenché
-  // depuis une étape en erreur ou depuis le bouton global.
+  // toutes les étapes) — Régénérer relance donc la génération IA de l'aperçu complet du prospect
+  // (refresh=1, ignore + écrase le cache), que ce soit déclenché depuis une étape en erreur ou
+  // depuis le bouton global. C'est ce qui garantit un texte RÉELLEMENT différent après un clic.
   const handleRegenerate = () => {
-    refetch();
+    regenerate();
   };
 
   const handleLaunch = () => {
@@ -120,7 +121,7 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
 
   // La génération IA prend plusieurs secondes — on montre le skeleton tant que la requête est en
   // vol, y compris sur un refetch (Régénérer), pas seulement au premier chargement.
-  const showSkeleton = leadId != null && (isLoading || isFetching);
+  const showSkeleton = leadId != null && (isLoading || isFetching || isRegenerating);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">

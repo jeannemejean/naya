@@ -55,7 +55,7 @@ export default function LeadCard({
   // ("2/4") n'est pas disponible sur le payload lead. On affiche donc le canal (dérivé de
   // campaign.channel) + le stage pipeline courant (lead.stage), qui EST disponible — pas
   // d'endpoint backend inventé pour combler l'écart.
-  const stage = STAGE_MAP[((lead as any).stage as StageKey) || 'identified'];
+  const stage = STAGE_MAP[((lead as any).stage as StageKey)] || STAGE_MAP.identified;
   const channel = campaign ? channelMeta(primaryChannel(campaign.channel)) : null;
   const ChannelIcon = channel?.Icon;
 

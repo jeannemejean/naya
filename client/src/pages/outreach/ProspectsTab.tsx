@@ -118,7 +118,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
 
 function ProspectRow({ lead, onClick }: { lead: Lead; onClick: () => void }) {
   const l = lead as any;
-  const stage = STAGE_MAP[(l.stage as StageKey) || 'identified'];
+  const stage = STAGE_MAP[(l.stage as StageKey)] || STAGE_MAP.identified;
 
   return (
     <button

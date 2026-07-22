@@ -282,6 +282,8 @@ export interface IStorage {
   getDueEnrollments(now: Date, limit?: number): Promise<LeadSequenceState[]>;
   getLeadStepMessage(leadId: number, stepId: number): Promise<LeadStepMessage | undefined>;
   upsertLeadStepMessage(row: InsertLeadStepMessage): Promise<void>;
+  purgeLeadStepMessagesForCampaign(campaignId: number): Promise<void>;
+  purgeLeadStepMessagesForUser(userId: string): Promise<void>;
 
   // Lead operations
   getLeads(userId: string): Promise<Lead[]>;
@@ -1218,6 +1220,33 @@ export class DatabaseStorage implements IStorage {
         target: [leadStepMessages.leadId, leadStepMessages.stepId],
         set: { subject: row.subject ?? null, body: row.body!, edited: row.edited ?? false, generatedAt: new Date() },
       });
+  }
+
+  // Purge le cache de messages générés (lead_step_messages) d'une campagne — même approche
+  // inArray(stepId) que saveSequencePlan. Appelé quand les consignes de rédaction PAR CAMPAGNE
+  // changent, pour que l'aperçu/l'envoi régénèrent avec les nouvelles règles.
+  async purgeLeadStepMessagesForCampaign(campaignId: number): Promise<void> {
+    const stepIds = (
+      await db.select({ id: campaignSequenceSteps.id })
+        .from(campaignSequenceSteps)
+        .where(eq(campaignSequenceSteps.campaignId, campaignId))
+    ).map((s) => s.id);
+    if (stepIds.length > 0) {
+      await db.delete(leadStepMessages).where(inArray(leadStepMessages.stepId, stepIds));
+    }
+  }
+
+  // Purge le cache de messages générés pour TOUS les prospects de l'utilisateur (join via
+  // leads.userId). Appelé quand les consignes de rédaction GLOBALES changent.
+  async purgeLeadStepMessagesForUser(userId: string): Promise<void> {
+    const leadIds = (
+      await db.select({ id: leads.id })
+        .from(leads)
+        .where(eq(leads.userId, userId))
+    ).map((l) => l.id);
+    if (leadIds.length > 0) {
+      await db.delete(leadStepMessages).where(inArray(leadStepMessages.leadId, leadIds));
+    }
   }
 
   // Lead operations

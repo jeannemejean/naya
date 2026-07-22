@@ -25,11 +25,11 @@ export default function ProspectionAccessBar({ status }: { status?: ProspectionS
   return (
     <div className="border-b border-border bg-white px-6 py-2.5 flex items-center gap-4 flex-shrink-0">
       <span className="text-sm text-muted-foreground whitespace-nowrap">
-        <span className={`font-semibold ${m.atLimit ? 'text-[#5c3d45]' : 'text-foreground'}`}>{m.used}/{m.limit}</span> prospects LinkedIn cette semaine
+        <span className={`font-semibold ${m.atLimit ? 'text-mauve-text' : 'text-foreground'}`}>{m.used}/{m.limit}</span> prospects LinkedIn cette semaine
       </span>
       <div className="flex-1 max-w-xs h-1.5 rounded-full bg-naya-olive-10 overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${m.atLimit ? 'bg-[#9e7e87]' : 'bg-naya-olive'}`}
+          className={`h-full rounded-full transition-all ${m.atLimit ? 'bg-naya-mauve' : 'bg-naya-olive'}`}
           style={{ width: `${m.percent}%` }}
         />
       </div>

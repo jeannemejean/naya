@@ -6769,8 +6769,22 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.patch('/api/prospection/campaigns/:id', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const updated = await storage.updateProspectionCampaign(Number(req.params.id), userId, req.body);
+      const campaignId = Number(req.params.id);
+      // Détecte un changement des consignes de rédaction PAR CAMPAGNE avant l'update, pour ne
+      // purger le cache lead_step_messages QUE si elles changent (pas sur une édition sans rapport).
+      const hasInstructions = req.body && Object.prototype.hasOwnProperty.call(req.body, 'messageInstructions');
+      let instructionsChanged = false;
+      if (hasInstructions) {
+        const existing = await storage.getProspectionCampaign(campaignId);
+        const prev = (existing as any)?.messageInstructions ?? null;
+        const nextRaw = req.body.messageInstructions;
+        const next = typeof nextRaw === 'string' ? (nextRaw.trim() || null) : (nextRaw ?? null);
+        instructionsChanged = !!existing && (existing as any).userId === userId && next !== prev;
+      }
+      const updated = await storage.updateProspectionCampaign(campaignId, userId, req.body);
       if (!updated) return res.status(404).json({ message: "Campaign not found" });
+      // Consignes par campagne modifiées → cache périmé pour cette campagne : purge ciblée.
+      if (instructionsChanged) await storage.purgeLeadStepMessagesForCampaign(campaignId);
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -6819,6 +6833,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const userId = req.userId;
       const campaignId = Number(req.params.id);
       const leadId = Number(req.query.leadId);
+      // refresh=1 → force la régénération IA (ignore le cache lead_step_messages et l'écrase avec
+      // le texte frais). Sans le flag, on sert le cache pour que l'aperçu et l'envoi coïncident.
+      const force = req.query.refresh === '1';
       const campaign = await storage.getProspectionCampaign(campaignId);
       if (!campaign || (campaign as any).userId !== userId) return res.status(404).json({ message: "Campagne introuvable" });
       const steps = await storage.getSequenceSteps(campaignId);
@@ -6839,7 +6856,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           const msg = await generateStepMessage(userId, {
             lead, campaign: campaignWithFounder,
             step: { id: step.id, channel: step.channel, intention: step.intention ?? null },
-            useCache: true, instructions,
+            useCache: !force, instructions,
           });
           rendered.push({
             stepOrder: step.stepOrder, channel: step.channel, delayDays: step.delayDays,
@@ -7171,7 +7188,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const { global: globalInstructions } = req.body || {};
       if (typeof globalInstructions !== 'string') return res.status(400).json({ message: 'global (string) requis' });
-      await storage.updateUserPreferences(req.userId, { messageInstructions: globalInstructions.trim() || null });
+      const next = globalInstructions.trim() || null;
+      const prevPrefs = await storage.getUserPreferences(req.userId);
+      const prev = (prevPrefs as any)?.messageInstructions ?? null;
+      await storage.updateUserPreferences(req.userId, { messageInstructions: next });
+      // Les consignes globales ont changé → le cache lead_step_messages est périmé : on le purge
+      // pour que le prochain aperçu/envoi régénère avec les nouvelles règles. No-op si inchangé.
+      if (next !== prev) await storage.purgeLeadStepMessagesForUser(req.userId);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

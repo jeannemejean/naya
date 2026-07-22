@@ -2,6 +2,7 @@
 // alignés sur les patterns réels du client (voir client/src/lib/queryClient.ts et
 // client/src/pages/outreach.tsx) : queryKey[0] == URL fetchée (cookie auth), apiRequest(method,
 // url, data?) pour les mutations.
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Lead } from "@shared/schema";
@@ -26,11 +27,31 @@ export const useCampaign = (id: number) =>
 export const useSequence = (id: number) =>
   useQuery<SequenceStepDTO[]>({ queryKey: [`/api/prospection/campaigns/${id}/sequence`] });
 
-export const usePreview = (id: number, leadId: number | null) =>
-  useQuery<PreviewResponse>({
-    queryKey: [`/api/prospection/campaigns/${id}/preview?leadId=${leadId}`],
+// Aperçu d'un prospect. Par défaut la query sert le cache serveur (lead_step_messages) via la
+// queryFn par défaut. `regenerate()` force une génération IA fraîche : il fetch la MÊME URL avec
+// &refresh=1 (le serveur ignore alors le cache et l'écrase avec le texte neuf), puis écrit le
+// résultat dans le cache react-query de la clé normale — donc les vues normales suivantes
+// réutilisent ce texte à jour sans re-générer. `isRegenerating` pilote l'état de chargement.
+export const usePreview = (id: number, leadId: number | null) => {
+  const url = `/api/prospection/campaigns/${id}/preview?leadId=${leadId}`;
+  const query = useQuery<PreviewResponse>({
+    queryKey: [url],
     enabled: leadId != null,
   });
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const regenerate = async () => {
+    if (leadId == null) return;
+    setIsRegenerating(true);
+    try {
+      const res = await apiRequest("GET", `${url}&refresh=1`);
+      const data = (await res.json()) as PreviewResponse;
+      queryClient.setQueryData([url], data);
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
+  return { ...query, regenerate, isRegenerating };
+};
 
 export const useAnalytics = (id: number) =>
   useQuery<StepAnalytics>({ queryKey: [`/api/prospection/campaigns/${id}/analytics`] });
