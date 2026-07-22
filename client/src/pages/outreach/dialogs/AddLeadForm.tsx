@@ -14,16 +14,18 @@ import { useToast } from '@/hooks/use-toast';
 interface AddLeadFormProps {
   campaigns: any[];
   onClose: () => void;
+  /** Pré-sélectionne la campagne (ex: ouverture depuis ProspectsTab, scoped à une campagne). */
+  defaultCampaignId?: number;
 }
 
-export default function AddLeadForm({ campaigns, onClose }: AddLeadFormProps) {
+export default function AddLeadForm({ campaigns, onClose, defaultCampaignId }: AddLeadFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     name: '', company: '', role: '', sector: '',
     email: '', linkedinUrl: '', instagramUrl: '',
     score: 'cold', stage: 'identified',
-    prospectionCampaignId: 'none', notes: '',
+    prospectionCampaignId: defaultCampaignId ? String(defaultCampaignId) : 'none', notes: '',
   });
 
   const addLead = useMutation({

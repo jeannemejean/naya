@@ -1,6 +1,5 @@
-// Espace de travail d'une campagne — coquille (Task 4) : Sidebar + header (nom + retour) +
-// Tabs à 4 sous-onglets (Séquence, Prospects, Aperçu, Résultats). Chaque onglet est un
-// placeholder ici, remplacé par les vraies vues dans les Tasks 5-9.
+// Espace de travail d'une campagne — Sidebar + header (nom + retour) + Tabs à 4 sous-onglets
+// (Séquence, Prospects, Aperçu, Résultats), chacun branché sur sa vraie vue (Tasks 5-10).
 import { Link } from 'wouter';
 import { ArrowLeft, Users } from 'lucide-react';
 import Sidebar from '@/components/sidebar';
@@ -9,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCampaign, useLeads } from './useOutreach';
 import { channelMeta, type ChannelId } from './channels';
 import SequenceTab from './SequenceTab';
+import ProspectsTab from './ProspectsTab';
 import PreviewTab from './PreviewTab';
 import ResultsTab from './ResultsTab';
 
@@ -122,7 +122,7 @@ export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspa
             </TabsContent>
 
             <TabsContent value="prospects" className="flex-1 overflow-y-auto m-0">
-              <div className="p-6 text-muted-foreground">Prospects — à venir (Task 6).</div>
+              <ProspectsTab campaignId={id} />
             </TabsContent>
 
             <TabsContent value="preview" className="flex-1 overflow-y-auto m-0">

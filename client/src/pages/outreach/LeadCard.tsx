@@ -11,8 +11,9 @@ import { channelMeta, type ChannelId } from './channels';
 import { STAGE_MAP, type StageKey } from './stages';
 import type { Lead } from '@shared/schema';
 
-const SCORE_LABEL: Record<string, string> = { hot: 'Chaud', warm: 'Tiède', cold: 'Froid' };
-const SCORE_VARIANT: Record<string, 'mauve' | 'sulphur' | 'salvia'> = {
+// Exportés pour réutilisation (ex: ProspectsTab) — même mapping score→libellé/couleur partout.
+export const SCORE_LABEL: Record<string, string> = { hot: 'Chaud', warm: 'Tiède', cold: 'Froid' };
+export const SCORE_VARIANT: Record<string, 'mauve' | 'sulphur' | 'salvia'> = {
   hot: 'mauve',
   warm: 'sulphur',
   cold: 'salvia',
