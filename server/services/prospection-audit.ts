@@ -76,9 +76,17 @@ export function classifyProjectType(
 
 export const EM_DASH = "—";
 
-/** Retire les tirets longs (— et –) en les remplaçant par une ponctuation douce. */
+/**
+ * Retire les tirets utilisés comme ponctuation (—, –, --, et un tiret simple entouré
+ * d'espaces) en les remplaçant par une virgule. Préserve les tirets internes aux mots
+ * (ex. "sur-mesure", "Petit-Bivouac") qui n'ont pas d'espace autour.
+ */
 export function stripEmDash(s: string): string {
-  return (s || "").replace(/\s*[—–]\s*/g, ", ").replace(/\s+/g, " ").trim();
+  return (s || "")
+    .replace(/\s*(?:—|–|--)\s*/g, ", ") // em/en dash et double-tiret → virgule
+    .replace(/\s+-\s+/g, ", ") // tiret simple entouré d'espaces (utilisé comme tiret) → virgule
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Assainit un message : retire tirets longs, espaces superflus. */

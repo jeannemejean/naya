@@ -35,6 +35,17 @@ describe("buildStepPrompt", () => {
     expect(p.toLowerCase()).toContain("objet");
     expect(p).toContain("Email de valeur");
   });
+  it("LinkedIn : interdit d'inventer un lien/ressource et les placeholders entre crochets", () => {
+    const p = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture" });
+    expect(p).toContain("N'invente");
+    expect(p).toContain("crochets");
+    expect(p).not.toMatch(/un lien personnel/i);
+  });
+  it("Email : interdit d'inventer un lien/ressource et les placeholders entre crochets", () => {
+    const p = buildStepPrompt({ ...base, channel: "email", intention: "Email de valeur" });
+    expect(p).toContain("N'invente");
+    expect(p).toContain("crochets");
+  });
   it("injecte les consignes de rédaction utilisateur quand fournies", () => {
     const p = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture", instructions: "Jamais de tiret long. Ton direct." });
     expect(p).toContain("CONSIGNES DE RÉDACTION DE L'UTILISATEUR");

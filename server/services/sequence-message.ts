@@ -25,8 +25,11 @@ ENJEUX : ${args.audit?.enjeux || args.audit?.observations || ""}
 ${instructionsBlock}
 RÈGLES ABSOLUES :
 - Ton humain, curieux, jamais commercial. JAMAIS de tiret long.
+- N'invente JAMAIS et ne promets JAMAIS un lien, un article, une étude, un contenu, une ressource ou une pièce jointe. Ne prétends pas que l'expéditeur a écrit/publié/créé quelque chose. Le message vaut par une observation sincère et une question ouverte, pas par une ressource promise.
+- N'écris AUCUN placeholder entre crochets ([lien], [url], [prénom], [entreprise], ...). Tout doit être du texte final, prêt à envoyer.
+- Aucun tiret en guise de ponctuation : ni —, ni –, ni --. Utilise des virgules ou des points.
 ${isLi
-  ? `- MESSAGE LINKEDIN : MAXIMUM 200 caractères strict. Un lien personnel + une question sincère. Signé : ${args.founderName}.`
+  ? `- MESSAGE LINKEDIN : MAXIMUM 200 caractères strict. Une accroche personnelle liée à la marque/la personne + une question sincère. Signé : ${args.founderName}.`
   : `- EMAIL : rédige un objet court et accrocheur, puis un corps de 5 à 8 phrases. Observation d'ouverture, angle, question ouverte. Signé : ${args.founderName} — ${args.projectName}.`}
 
 Réponds UNIQUEMENT avec ce JSON :

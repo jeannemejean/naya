@@ -115,6 +115,25 @@ describe("messages — tirets longs et longueur", () => {
     expect(stripEmDash("bonjour — ça va")).not.toContain("—");
   });
 
+  it("stripEmDash retire le double tiret --", () => {
+    const out = stripEmDash("j'ai écrit quelque chose -- en pensant à vous");
+    expect(out).not.toContain("--");
+    expect(out).toContain(",");
+  });
+
+  it("stripEmDash retire un tiret simple entouré d'espaces", () => {
+    const out = stripEmDash("bonjour - ça va bien ?");
+    expect(out).not.toMatch(/\s-\s/);
+    expect(out).toContain(",");
+  });
+
+  it("stripEmDash préserve les tirets internes aux mots", () => {
+    expect(stripEmDash("un projet sur-mesure pour Petit-Bivouac")).toBe(
+      "un projet sur-mesure pour Petit-Bivouac",
+    );
+    expect(stripEmDash("Vermot-Desroches")).toBe("Vermot-Desroches");
+  });
+
   it("Condition 4 — message LinkedIn ≤ 200 caractères, pas de tiret long", () => {
     const good = "Bonjour Marie, j'ai remarqué votre travail sur la nouvelle collection. Qu'est-ce qui a inspiré ce virage ? Curieuse d'en savoir plus. Jeanne";
     const v = validateLinkedInMessage(good);
