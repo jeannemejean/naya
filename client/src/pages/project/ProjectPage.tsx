@@ -2,12 +2,14 @@
 // ce projet ?, Feuille de route). Shell uniquement : le contenu réel des sections arrive aux
 // Tasks 6-7. Pattern calqué sur client/src/pages/outreach/CampaignWorkspace.tsx.
 import { Link } from "wouter";
-import { ArrowLeft, Briefcase } from "lucide-react";
+import { ArrowLeft, Briefcase, ListChecks, Target, Dna } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useProjectDetail, useProjectMilestones } from "./useProjectPage";
 import ProjectSummaryBar from "./ProjectSummaryBar";
+import ProjectContextEditor from "./ProjectContextEditor";
+import MilestoneRoadmap from "./MilestoneRoadmap";
 
 interface ProjectPageProps {
   id: number;
@@ -75,13 +77,41 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold text-foreground mb-2">Où en est ce projet ?</h2>
-              <div className="p-6 text-muted-foreground">À venir.</div>
+              <ProjectContextEditor project={project} strategyProfile={project.strategyProfile} />
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold text-foreground mb-2">Feuille de route</h2>
-              <div className="p-6 text-muted-foreground">À venir.</div>
+              <h2 className="text-sm font-semibold text-foreground mb-2">
+                Feuille de route (ce qui est fait / à faire)
+              </h2>
+              <MilestoneRoadmap project={project} />
+            </section>
+
+            <section>
+              <h2 className="text-sm font-semibold text-foreground mb-2">Accès rapides</h2>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/projects"
+                  className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border border-border bg-white hover:bg-naya-olive-06 text-foreground transition-colors"
+                >
+                  <ListChecks className="w-3.5 h-3.5" />
+                  Tâches
+                </Link>
+                <Link
+                  href="/projects"
+                  className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border border-border bg-white hover:bg-naya-olive-06 text-foreground transition-colors"
+                >
+                  <Target className="w-3.5 h-3.5" />
+                  Objectifs
+                </Link>
+                <Link
+                  href="/projects"
+                  className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-md border border-border bg-white hover:bg-naya-olive-06 text-foreground transition-colors"
+                >
+                  <Dna className="w-3.5 h-3.5" />
+                  ADN de marque
+                </Link>
+              </div>
             </section>
           </main>
         )}
