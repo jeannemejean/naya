@@ -20,6 +20,7 @@ import { getCalendarBlockedRanges } from './google-calendar';
 import { handleTaskDeferral } from './task-intelligence';
 import { computeDurationCalibration, applyCalibration, formatCalibrationForPrompt } from './duration-calibration';
 import { sortTasksByDependencies, groupTasksByWorkflow } from './dependency-sort';
+import { summarizeMilestones } from './project-summary';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -261,6 +262,8 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   const allMilestones = await Promise.all(
     projects.map(p => storage.getMilestones(p.id, userId).catch(() => [] as any[]))
   );
+  // Lookup réutilisé plus bas pour enrichir projectContext sans requête DB supplémentaire
+  const milestonesByProjectId = new Map(projects.map((p, i) => [p.id, allMilestones[i]]));
   projects.forEach((project, i) => {
     const milestones = allMilestones[i];
     const hasActiveMilestone = milestones.some((m: any) =>
@@ -354,6 +357,8 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         activeGoalTitle: activeGoals[0]?.title,
         activeGoalSuccessMode: activeGoals[0]?.successMode,
         currentStage: (stratProfile as any)?.currentStage,
+        statusNote: projectData.statusNote ?? null,
+        milestonesSummary: summarizeMilestones(milestonesByProjectId.get(projectData.id) ?? []),
       } : undefined;
 
       const result = await generateDailyTasks({
