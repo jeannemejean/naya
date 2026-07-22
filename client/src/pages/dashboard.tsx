@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Project, ProjectGoal, PersonaAnalysisResult, TargetPersona, QuickCaptureEntry, MilestoneTrigger } from "@shared/schema";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 
 interface DashboardProps {
   onSearchClick?: () => void;
@@ -144,6 +144,7 @@ function StatusNotePopover({ projectId, initialNote }: { projectId: number; init
 }
 
 function ActiveProjectBand({ projectId, compact = false, overcommitted = false }: { projectId: number; compact?: boolean; overcommitted?: boolean }) {
+  const [, navigate] = useLocation();
   const { data: project } = useQuery<Project & { goals: ProjectGoal[] }>({
     queryKey: [`/api/projects/${projectId}`],
   });
@@ -171,7 +172,11 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
 
   return (
     <div
-      className={`bg-card border border-naya-olive-18 rounded-lg p-4 shadow-rest ${compact ? "" : "mb-6"}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => navigate(`/projects/${project.id}`)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/projects/${project.id}`); } }}
+      className={`bg-card border border-naya-olive-18 rounded-lg p-4 shadow-rest cursor-pointer hover:border-naya-olive-35 transition-colors ${compact ? "" : "mb-6"}`}
       style={showAmber ? { borderLeft: "3px solid rgba(212,201,122,0.75)" } : undefined}
     >
       <div className="flex items-center justify-between mb-3">
@@ -237,7 +242,7 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
           )}
         </>
       ) : (
-        <Link href="/projects">
+        <Link href="/projects" onClick={(e) => e.stopPropagation()}>
           <span className="text-xs text-naya-olive-55 hover:text-foreground transition-colors cursor-pointer border-b border-naya-olive-18 hover:border-naya-olive pb-px">
             Aucun objectif actif — en ajouter un
           </span>

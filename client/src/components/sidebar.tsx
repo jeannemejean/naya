@@ -224,7 +224,10 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
             {projects.map((project) => (
               <DropdownMenuItem
                 key={project.id}
-                onClick={() => setActiveProjectId(project.id)}
+                onClick={() => {
+                  setActiveProjectId(project.id);
+                  navigate(`/projects/${project.id}`);
+                }}
                 style={{
                   background: activeProjectId === project.id ? 'var(--muted)' : 'transparent',
                   fontFamily: '"IBM Plex Mono", monospace',
