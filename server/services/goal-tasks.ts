@@ -10,7 +10,7 @@
  *   - generic            → tâche standard avec checkbox
  */
 
-import { callClaude, CLAUDE_MODELS } from "./claude";
+import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
 import { storage } from "../storage";
 
 export interface GeneratedTask {
@@ -122,9 +122,11 @@ Réponds UNIQUEMENT en JSON avec ce format :
   ]
 }`;
 
-  const raw = await callClaude({
+  const raw = await callClaudeWithContext({
+    userId,
+    projectId: goal.projectId ?? null,
+    userMessage: prompt,
     model: CLAUDE_MODELS.smart,
-    messages: [{ role: "user", content: prompt }],
     max_tokens: 3000,
     temperature: 0.4,
   });
