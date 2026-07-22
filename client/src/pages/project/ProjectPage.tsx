@@ -6,7 +6,8 @@ import { ArrowLeft, Briefcase } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { useProjectDetail } from "./useProjectPage";
+import { useProjectDetail, useProjectMilestones } from "./useProjectPage";
+import ProjectSummaryBar from "./ProjectSummaryBar";
 
 interface ProjectPageProps {
   id: number;
@@ -15,6 +16,7 @@ interface ProjectPageProps {
 
 export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
   const { data: project, isLoading } = useProjectDetail(id);
+  const { data: milestones } = useProjectMilestones(id);
 
   return (
     <div className="flex h-screen bg-background">
@@ -63,7 +65,13 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
           <main className="flex-1 overflow-y-auto p-6 space-y-6">
             <section>
               <h2 className="text-sm font-semibold text-foreground mb-2">Résumé</h2>
-              <div className="p-6 text-muted-foreground">À venir.</div>
+              <ProjectSummaryBar
+                project={project}
+                goals={project.goals}
+                strategyProfile={project.strategyProfile}
+                milestones={milestones}
+                projectId={id}
+              />
             </section>
 
             <section>
