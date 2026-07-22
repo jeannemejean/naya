@@ -277,6 +277,7 @@ export interface IStorage {
   replaceSequenceSteps(campaignId: number, userId: string, steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate?: string | null; intention?: string | null; condition?: string }>): Promise<CampaignSequenceStep[]>;
   saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string }[] }): Promise<void>;
   getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined>;
+  getEnrollmentsByCampaign(campaignId: number): Promise<{ leadId: number; status: string }[]>;
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
   updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
   getDueEnrollments(now: Date, limit?: number): Promise<LeadSequenceState[]>;
@@ -1166,6 +1167,14 @@ export class DatabaseStorage implements IStorage {
   async getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined> {
     const [s] = await db.select().from(leadSequenceState).where(eq(leadSequenceState.leadId, leadId));
     return s;
+  }
+
+  // État d'enrôlement groupé par campagne — sert la sélection manuelle (badge de statut par
+  // prospect dans ProspectsTab) sans faire un aller-retour par lead.
+  async getEnrollmentsByCampaign(campaignId: number): Promise<{ leadId: number; status: string }[]> {
+    return await db.select({ leadId: leadSequenceState.leadId, status: leadSequenceState.status })
+      .from(leadSequenceState)
+      .where(eq(leadSequenceState.campaignId, campaignId));
   }
 
   async enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null> {

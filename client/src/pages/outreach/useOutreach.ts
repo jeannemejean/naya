@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Lead } from "@shared/schema";
-import type { SequenceStepDTO, PreviewResponse, StepAnalytics } from "./types";
+import type { SequenceStepDTO, PreviewResponse, StepAnalytics, EnrollmentDTO } from "./types";
 import type { ProspectionStatusDTO } from "@/lib/prospection-widget";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
@@ -56,6 +56,11 @@ export const usePreview = (id: number, leadId: number | null) => {
 export const useAnalytics = (id: number) =>
   useQuery<StepAnalytics>({ queryKey: [`/api/prospection/campaigns/${id}/analytics`] });
 
+// État d'enrôlement groupé de la campagne — alimente le badge de statut par prospect dans
+// l'onglet Prospects (sélection manuelle).
+export const useEnrollments = (id: number) =>
+  useQuery<EnrollmentDTO[]>({ queryKey: [`/api/prospection/campaigns/${id}/enrollments`] });
+
 // Consignes de rédaction GLOBALES (toutes campagnes) — stockées sur userPreferences.
 export const useWritingInstructions = () =>
   useQuery<{ global: string }>({ queryKey: ["/api/prospection/writing-instructions"] });
@@ -89,6 +94,28 @@ export const useLaunchCampaign = (id: number) =>
     mutationFn: () => apiRequest("POST", `/api/prospection/campaigns/${id}/launch`).then((r) => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+  });
+
+// Enrôlement manuel groupé (sélection du owner) — contrairement à useLaunchCampaign (tous les
+// prospects), n'enrôle que les ids passés. Invalide les leads (badge "Prêt") + le statut groupé.
+export const useBulkEnroll = (id: number) =>
+  useMutation<{ enrolled: number; skipped: number }, Error, number[]>({
+    mutationFn: (leadIds) =>
+      apiRequest("POST", `/api/prospection/campaigns/${id}/enroll`, { leadIds }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${id}/enrollments`] });
+    },
+  });
+
+// Désenrôle (met en pause) un lead — endpoint per-lead existant, réutilisé pour le retrait
+// groupé côté UI (un appel par lead sélectionné).
+export const useUnenrollLead = (id: number) =>
+  useMutation<Response, Error, number>({
+    mutationFn: (leadId) => apiRequest("POST", `/api/leads/${leadId}/unenroll`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${id}/enrollments`] });
     },
   });
 

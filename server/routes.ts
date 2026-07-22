@@ -7266,6 +7266,52 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
+  // État d'enrôlement groupé de la campagne — alimente les badges de statut par prospect dans
+  // l'onglet Prospects (sélection manuelle) sans faire un aller-retour par lead.
+  app.get('/api/prospection/campaigns/:id/enrollments', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const rows = await storage.getEnrollmentsByCampaign(campaign.id);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Enrôlement manuel groupé : le owner choisit exactement quels prospects entrent dans la
+  // séquence (contrairement à /launch, qui enrôle TOUS les prospects de la campagne). Même
+  // logique de skip que /launch (états actifs/terminés/ayant répondu jamais ré-enrôlés).
+  app.post('/api/prospection/campaigns/:id/enroll', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const steps = await storage.getSequenceSteps(campaign.id);
+      if (steps.length === 0) return res.status(400).json({ message: 'no_sequence_defined' });
+
+      const leadIds: number[] = Array.isArray(req.body?.leadIds)
+        ? req.body.leadIds.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n))
+        : [];
+      const campaignLeadIds = new Set(
+        (await storage.getLeads(req.userId))
+          .filter(l => (l as any).prospectionCampaignId === campaign.id)
+          .map(l => l.id),
+      );
+
+      let enrolled = 0, skipped = 0;
+      for (const leadId of leadIds) {
+        if (!campaignLeadIds.has(leadId)) { skipped++; continue; } // n'appartient pas à cette campagne
+        const existing = await storage.getLeadSequenceState(leadId);
+        if (existing && ['active', 'stopped_replied', 'completed'].includes(existing.status)) { skipped++; continue; }
+        const st = await storage.enrollLead(leadId, campaign.id, req.userId);
+        if (st) enrolled++; else skipped++;
+      }
+      res.json({ enrolled, skipped });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // Lance la séquence : enrôle en masse les leads de la campagne (action "launch" lemlist)
   app.post('/api/prospection/campaigns/:id/launch', isAuthenticated, async (req: any, res) => {
     try {

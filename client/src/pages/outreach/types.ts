@@ -29,6 +29,12 @@ export type PreviewResponse = {
   steps: PreviewStep[];
 };
 
+// État d'enrôlement d'un prospect dans la séquence de sa campagne (GET .../enrollments).
+export type EnrollmentDTO = {
+  leadId: number;
+  status: string; // active | paused | completed | stopped_replied | bounced | failed
+};
+
 export type StepAnalytics = {
   byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
   byChannel: { channel: string; sent: number; replied: number }[];
