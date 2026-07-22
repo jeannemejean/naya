@@ -21,7 +21,7 @@ import { headerCheckboxState, toggleId, setSelection, countSelectedIn } from '@/
 import type { Lead } from '@shared/schema';
 import {
   useCampaigns, useLeads, useProspectionStatus,
-  useUpdateLead, useEnrichLead, useBulkMoveLeads, useBulkArchiveLeads,
+  useUpdateLead, useEnrichLead, useBulkMoveLeads, useBulkArchiveLeads, useBulkEnrich,
 } from './useOutreach';
 import LeadCard from './LeadCard';
 import LeadDetail from './LeadDetail';
@@ -49,6 +49,7 @@ export default function PipelineBoard() {
   const enrichMutation = useEnrichLead();
   const bulkMoveMutation = useBulkMoveLeads();
   const bulkArchiveMutation = useBulkArchiveLeads();
+  const bulkEnrichMutation = useBulkEnrich();
 
   const clearSelection = () => setSelectedIds(new Set());
 
@@ -203,10 +204,21 @@ export default function PipelineBoard() {
                   toast({ title: 'Enrichissement', description: "Attribue d'abord ces prospects à une campagne.", variant: 'destructive' });
                   return;
                 }
-                clearSelection();
-                toast({ title: 'Enrichissement lancé', description: `${groups.size} campagne(s) concernée(s).` });
+                const payload = Array.from(groups.entries()).map(([campaignId, prospectIds]) => ({ campaignId, prospectIds }));
+                bulkEnrichMutation.mutate(payload, {
+                  onSuccess: (res: any) => {
+                    clearSelection();
+                    toast({ title: `${res.enriched} prospect(s) enrichi(s)${res.failed ? `, ${res.failed} échec(s)` : ''}` });
+                  },
+                  onError: (e: any) => {
+                    let msg = e?.message || 'Enrichissement impossible.';
+                    const m = msg.match(/\{[\s\S]*\}/);
+                    if (m) { try { msg = JSON.parse(m[0]).message || msg; } catch { /* ignore */ } }
+                    toast({ title: 'Enrichissement', description: msg, variant: 'destructive' });
+                  },
+                });
               }}
-              disabled={bulkArchiveMutation.isPending}
+              disabled={bulkEnrichMutation.isPending}
             >
               <Sparkles className="w-3.5 h-3.5 mr-1" />
               Enrichir (IA)

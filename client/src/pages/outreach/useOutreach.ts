@@ -100,6 +100,34 @@ export const useBulkMoveLeads = () =>
     },
   });
 
+// Enrichissement IA groupé (barre d'actions du Pipeline) — le backend n'accepte les
+// enrôlements que PAR CAMPAGNE, donc on POST une fois par groupe {campaignId, prospectIds}
+// (le regroupement des leads sélectionnés par campagne se fait côté appelant). Voir ancien
+// outreach.tsx (git show 80a5a90:client/src/pages/outreach.tsx ~146-161) bulkEnrichMutation —
+// même endpoint, même forme de réponse par groupe ({ enriched, failed }), agrégée ici.
+export const useBulkEnrich = () =>
+  useMutation<{ enriched: number; failed: number }, Error, { campaignId: number; prospectIds: number[] }[]>({
+    mutationFn: async (groups) => {
+      const results = await Promise.all(
+        groups.map(({ campaignId, prospectIds }) =>
+          apiRequest("POST", `/api/prospection/campaigns/${campaignId}/enrich`, { prospectIds })
+            .then((r) => r.json()),
+        ),
+      );
+      return results.reduce(
+        (acc: { enriched: number; failed: number }, j: any) => ({
+          enriched: acc.enriched + (j?.enriched || 0),
+          failed: acc.failed + (j?.failed || 0),
+        }),
+        { enriched: 0, failed: 0 },
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/prospection/status"] });
+    },
+  });
+
 // Archivage groupé (soft-delete) de prospects (barre d'actions du Pipeline).
 export const useBulkArchiveLeads = () =>
   useMutation<{ archived: number }, Error, number[]>({
