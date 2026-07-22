@@ -175,6 +175,7 @@ export interface IStorage {
   // Project strategy profile operations
   getProjectStrategyProfile(projectId: number): Promise<ProjectStrategyProfile | undefined>;
   upsertProjectStrategyProfile(data: InsertProjectStrategyProfile): Promise<ProjectStrategyProfile>;
+  updateProjectStrategyProfileFields(projectId: number, patch: Partial<InsertProjectStrategyProfile>): Promise<ProjectStrategyProfile>;
 
   // User preferences operations
   getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
@@ -650,6 +651,21 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return profile;
+  }
+
+  async updateProjectStrategyProfileFields(projectId: number, patch: Partial<InsertProjectStrategyProfile>): Promise<ProjectStrategyProfile> {
+    const existing = await this.getProjectStrategyProfile(projectId);
+    if (existing) {
+      const [updated] = await db.update(projectStrategyProfiles)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(projectStrategyProfiles.projectId, projectId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(projectStrategyProfiles)
+      .values({ projectId, ...patch } as InsertProjectStrategyProfile)
+      .returning();
+    return created;
   }
 
   // User preferences

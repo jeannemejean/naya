@@ -25,6 +25,7 @@ import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/cla
 import { extractToMemory } from "./services/memory/extract";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
+import { isValidStage } from "./services/project-summary";
 import { resolveStrategyWeekKey } from "@shared/strategy-week";
 import { budgetWeight, taskCapForBudget } from "./services/task-allocation";
 import { runPlaceToday } from "./services/place-today-runner";
@@ -1759,6 +1760,28 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     } catch (error) {
       console.error("Error updating project:", error);
       res.status(500).json({ message: "Failed to update project" });
+    }
+  });
+
+  app.patch('/api/projects/:id/strategy-profile', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const project = await storage.getProject(parseInt(req.params.id), userId);
+      if (!project) return res.status(404).json({ message: "not_found" });
+
+      const { currentStage } = req.body || {};
+      if (currentStage !== undefined && !isValidStage(currentStage)) {
+        return res.status(400).json({ message: "invalid_stage" });
+      }
+
+      const patch: Record<string, unknown> = {};
+      if (currentStage !== undefined) patch.currentStage = currentStage;
+
+      const strategyProfile = await storage.updateProjectStrategyProfileFields(project.id, patch);
+      res.json({ strategyProfile });
+    } catch (error) {
+      console.error("Error updating project strategy profile:", error);
+      res.status(500).json({ message: "Failed to update project strategy profile" });
     }
   });
 
