@@ -6,7 +6,7 @@ import Sidebar from '@/components/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCampaign, useLeads } from './useOutreach';
-import { channelMeta, type ChannelId } from './channels';
+import { channelMeta, campaignChannels } from './channels';
 import SequenceTab from './SequenceTab';
 import ProspectsTab from './ProspectsTab';
 import PreviewTab from './PreviewTab';
@@ -15,13 +15,6 @@ import ResultsTab from './ResultsTab';
 interface CampaignWorkspaceProps {
   id: number;
   onSearchClick?: () => void;
-}
-
-/** Canaux distincts d'une campagne — `both` déplie en [linkedin, email] (cf. CampaignCard). */
-function campaignChannels(channel: string | null | undefined): ChannelId[] {
-  if (channel === 'both') return ['linkedin', 'email'];
-  if (channel === 'email') return ['email'];
-  return ['linkedin'];
 }
 
 export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspaceProps) {

@@ -32,7 +32,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { useLeads, usePreview, useLaunchCampaign } from './useOutreach';
 import { channelMeta } from './channels';
-import SequenceTreeLayout, { type TreeNodeRenderer } from './SequenceTreeLayout';
+import SequenceTreeLayout from './SequenceTreeLayout';
 import { type PreviewStep } from './types';
 
 interface PreviewTabProps {

@@ -25,3 +25,10 @@ const LINKEDIN: Meta = {
 export function channelMeta(channel: string): Meta {
   return channel === "linkedin" ? LINKEDIN : EMAIL;
 }
+
+/** Canaux distincts d'une campagne — `both` déplie en [linkedin, email]. */
+export function campaignChannels(channel: string | null | undefined): ChannelId[] {
+  if (channel === "both") return ["linkedin", "email"];
+  if (channel === "email") return ["email"];
+  return ["linkedin"];
+}

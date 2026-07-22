@@ -5,7 +5,7 @@ import { Link } from 'wouter';
 import { Users, CheckCircle2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { channelMeta, type ChannelId } from './channels';
+import { channelMeta, campaignChannels } from './channels';
 
 export interface CampaignLeadCount {
   /** Nombre total de prospects rattachés à cette campagne (hors archivés). */
@@ -30,13 +30,6 @@ const STATUS_VARIANT: Record<string, 'default' | 'sulphur' | 'outline'> = {
   paused: 'sulphur',
   completed: 'outline',
 };
-
-/** Canaux distincts d'une campagne — `both` déplie en [linkedin, email]. */
-function campaignChannels(channel: string | null | undefined): ChannelId[] {
-  if (channel === 'both') return ['linkedin', 'email'];
-  if (channel === 'email') return ['email'];
-  return ['linkedin'];
-}
 
 export default function CampaignCard({ campaign, leadCount }: CampaignCardProps) {
   const channels = campaignChannels(campaign.channel);

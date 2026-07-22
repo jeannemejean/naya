@@ -81,13 +81,15 @@ function LeadDetailBody({ lead }: { lead: Lead }) {
   };
 
   const copy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: `${label} copié` });
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast({ title: `${label} copié` }))
+      .catch(() => toast({ title: 'Erreur', description: 'Impossible de copier.', variant: 'destructive' }));
   };
 
   const l = localLead as any;
   const hasMessages = !!(l.linkedinMessage || l.emailMessage || l.message1);
-  const currentStage = STAGE_MAP[(l.stage as StageKey) || 'identified'];
+  const currentStage = STAGE_MAP[(l.stage as StageKey)] || STAGE_MAP.identified;
   const enrichmentAvailable = prospectionStatus?.enrichment_available ?? false;
 
   const socialLinks: { key: string; href: string; Icon: LucideIcon; className: string }[] = [
@@ -282,13 +284,28 @@ function SequenceTabContent({ lead, onCopy }: { lead: Lead; onCopy: (text: strin
 }
 
 // ─── Champ éditable inline ──────────────────────────────────────────────────────
-// Migré tel quel depuis l'ancien outreach.tsx (~913-931).
+// Adapté de l'ancien outreach.tsx (~913-931) : la sauvegarde (onChange, qui déclenche la
+// mutation PATCH côté parent) ne part plus à CHAQUE frappe mais seulement à la perte de focus
+// (onBlur) — le champ reste contrôlé et affiche la frappe en cours via un état local, resynchronisé
+// si `value` change depuis l'extérieur (nouveau prospect ouvert, données rafraîchies).
 
 function InfoField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    if (draft !== value) onChange(draft);
+  };
+
   return (
     <div>
       <Label className="text-xs text-muted-foreground mb-1 block">{label}</Label>
-      <Input value={value} onChange={(e) => onChange(e.target.value)} className="h-8 text-xs" />
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        className="h-8 text-xs"
+      />
     </div>
   );
 }

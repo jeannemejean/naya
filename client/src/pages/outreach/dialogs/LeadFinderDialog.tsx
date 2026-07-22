@@ -59,7 +59,15 @@ export default function LeadFinderDialog({ campaign, onClose }: LeadFinderDialog
         {queries.map((q, i) => (
           <div key={i} className="flex items-center gap-2 mb-1">
             <code className="text-[11px] bg-background border border-border rounded px-2 py-1 flex-1 break-all">{q}</code>
-            <button onClick={() => { navigator.clipboard.writeText(q); toast({ title: 'Copié' }); }} className="text-muted-foreground hover:text-foreground shrink-0">
+            <button
+              onClick={() => {
+                navigator.clipboard
+                  .writeText(q)
+                  .then(() => toast({ title: 'Copié' }))
+                  .catch(() => toast({ title: 'Erreur', description: 'Impossible de copier.', variant: 'destructive' }));
+              }}
+              className="text-muted-foreground hover:text-foreground shrink-0"
+            >
               <Copy className="w-3.5 h-3.5" />
             </button>
           </div>
