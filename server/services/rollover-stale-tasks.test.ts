@@ -65,20 +65,24 @@ describe("rolloverStaleTasks", () => {
 
     const { moved } = await rolloverStaleTasks("u1", TODAY, {
       limit: Infinity,
-      countAsDeferral: false,
+      deferralMode: 'reset' as const,
     });
 
     expect(moved).toBe(28);
     expect(storage.updateTask).toHaveBeenCalledTimes(28);
   });
 
-  it("ne compte pas un redémarrage comme un report (pas de pénalité sur la tâche)", async () => {
-    (storage.getTasksInRange as any).mockResolvedValue(staleTasks(3));
+  it("remet le compteur de reports à zéro lors d'un redémarrage", async () => {
+    // 3 tâches déjà signalées « reviennent depuis plusieurs jours » (compteur ≥ 2).
+    const flagged = staleTasks(3).map(t => ({ ...t, learnedAdjustmentCount: 3 }));
+    (storage.getTasksInRange as any).mockResolvedValue(flagged);
 
-    await rolloverStaleTasks("u1", TODAY, { limit: Infinity, countAsDeferral: false });
+    await rolloverStaleTasks("u1", TODAY, { limit: Infinity, deferralMode: 'reset' });
 
+    // Sans remise à zéro, l'encadré « Naya a remarqué » resterait affiché
+    // (getStuckTasks filtre sur learnedAdjustmentCount >= 2).
     for (const call of (storage.updateTask as any).mock.calls) {
-      expect(call[1]).not.toHaveProperty("learnedAdjustmentCount");
+      expect(call[1].learnedAdjustmentCount).toBe(0);
     }
   });
 
@@ -105,7 +109,7 @@ describe("rolloverStaleTasks", () => {
   it("replanifie sur un créneau libre et repasse le filet anti-chevauchement", async () => {
     (storage.getTasksInRange as any).mockResolvedValue(staleTasks(2));
 
-    await rolloverStaleTasks("u1", TODAY, { limit: Infinity, countAsDeferral: false });
+    await rolloverStaleTasks("u1", TODAY, { limit: Infinity, deferralMode: 'reset' as const });
 
     expect((storage.updateTask as any).mock.calls[0][1]).toMatchObject({
       scheduledDate: TODAY,

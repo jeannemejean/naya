@@ -150,12 +150,14 @@ export interface RolloverOptions {
    */
   limit?: number;
   /**
-   * Compter ce déplacement comme un report (incrémente learnedAdjustmentCount et
-   * déclenche l'arbitrage IA « cette tâche vaut-elle encore le coup ? »). Défaut true.
-   * Un redémarrage passe false : la tâche n'est pas en cause, l'utilisateur a
-   * simplement décroché — la pénaliser (et payer un appel IA par tâche) n'a pas de sens.
+   * Traitement du compteur de reports (`learnedAdjustmentCount`), qui alimente
+   * l'encadré « Naya a remarqué » (seuil : 2 reports) :
+   *  - 'count' (défaut) : +1 et arbitrage IA « cette tâche vaut-elle encore le coup ? ».
+   *  - 'reset' : remise à 0, sans arbitrage IA. C'est le mode d'un redémarrage —
+   *    repartir de zéro inclut l'ardoise des reports : les tâches ne sont pas en
+   *    cause, l'utilisateur a décroché sans mettre son planning en pause.
    */
-  countAsDeferral?: boolean;
+  deferralMode?: 'count' | 'reset';
 }
 
 export async function rolloverStaleTasks(
@@ -163,7 +165,7 @@ export async function rolloverStaleTasks(
   targetDate: string,
   options: RolloverOptions = {},
 ): Promise<{ moved: number }> {
-  const { limit = 8, countAsDeferral = true } = options;
+  const { limit = 8, deferralMode = 'count' } = options;
   const prefs = await storage.getUserPreferences(userId);
 
   // Ne pas rollover si la planification est en pause
@@ -228,10 +230,10 @@ export async function rolloverStaleTasks(
         const end = h * 60 + m + duration;
         return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
       })(),
-      ...(countAsDeferral ? { learnedAdjustmentCount: newCount } : {}),
+      learnedAdjustmentCount: deferralMode === 'reset' ? 0 : newCount,
     });
 
-    if (countAsDeferral) {
+    if (deferralMode === 'count') {
       handleTaskDeferral(userId, task, newCount).catch(e =>
         console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
       );

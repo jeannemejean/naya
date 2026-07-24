@@ -2215,23 +2215,46 @@ export class DatabaseStorage implements IStorage {
       timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false,
     }).format(new Date()));
 
-    // Grouper par date, ignorer les tâches sans heure valide.
-    const byDate = new Map<string, typeof toFix>();
+    // Jours ouvrés, pour reporter le débordement au bon jour.
+    const workDaySet = new Set(
+      (prefs?.workDays || 'mon,tue,wed,thu,fri').split(',').map((d: string) => d.trim().toLowerCase()),
+    );
+    const DAY_ABBRS_FIX = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const nextWorkDay = (ds: string): string => {
+      const [y, m, d] = ds.split('-').map(Number);
+      const cur = new Date(Date.UTC(y, m - 1, d));
+      for (let i = 0; i < 14; i++) {
+        cur.setUTCDate(cur.getUTCDate() + 1);
+        if (workDaySet.has(DAY_ABBRS_FIX[cur.getUTCDay()])) break;
+      }
+      return cur.toISOString().slice(0, 10);
+    };
+
+    // Grouper par date. Les tâches SANS créneau sont incluses (marquées `unplaced`) :
+    // exigence produit — aucune tâche ne doit rester « non planifiée ».
+    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean }>>();
     for (const t of toFix) {
-      if (!t.scheduledDate || !t.scheduledTime || !/^\d{2}:\d{2}$/.test(t.scheduledTime)) continue;
+      if (!t.scheduledDate) continue;
+      const hasTime = t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime);
       if (!byDate.has(t.scheduledDate)) byDate.set(t.scheduledDate, []);
-      byDate.get(t.scheduledDate)!.push(t);
+      byDate.get(t.scheduledDate)!.push({
+        id: t.id,
+        startMin: hasTime ? parseTime(t.scheduledTime!) : 0,
+        durationMin: t.estimatedDuration || 30,
+        ...(hasTime ? {} : { unplaced: true as const }),
+      });
     }
 
     let fixed = 0;
-    for (const [date, dayTasks] of Array.from(byDate.entries())) {
-      const repackTasks = dayTasks.map(t => ({
-        id: t.id,
-        startMin: parseTime(t.scheduledTime!),
-        durationMin: t.estimatedDuration || 30,
-      }));
+    // Ordre chronologique STRICT : le débordement d'un jour alimente le suivant,
+    // en cascade (« tout redécaler »), au lieu d'être déplanifié.
+    const queue = Array.from(byDate.keys()).sort();
+    for (let i = 0; i < queue.length && i < 400; i++) {
+      const date = queue[i];
+      const dayTasks = byDate.get(date)!;
+      if (dayTasks.length === 0) continue;
 
-      const { moves, overflow } = repackDay(repackTasks, {
+      const { moves, overflow } = repackDay(dayTasks, {
         dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,
         floorMin: date === parisToday ? parisNowMin : undefined,
       });
@@ -2242,13 +2265,28 @@ export class DatabaseStorage implements IStorage {
           .where(eq(tasks.id, mv.id));
         fixed++;
       }
-      // Tâches qui débordent des heures de travail → déplanifiées (repassent en « non planifiées »,
-      // glissables sur la grille). On NE les place jamais hors des heures de travail.
-      for (const id of overflow) {
-        await db.update(tasks)
-          .set({ scheduledTime: null, scheduledEndTime: null })
-          .where(eq(tasks.id, id));
-        fixed++;
+
+      // Ce qui ne tient pas est REPORTÉ au jour ouvré suivant (jamais déplanifié),
+      // puis retassé avec les tâches de ce jour-là.
+      if (overflow.length > 0) {
+        const target = nextWorkDay(date);
+        const overflowSet = new Set(overflow);
+        const moved = dayTasks.filter(t => overflowSet.has(t.id));
+
+        for (const t of moved) {
+          await db.update(tasks)
+            .set({ scheduledDate: target, scheduledTime: null, scheduledEndTime: null })
+            .where(eq(tasks.id, t.id));
+          fixed++;
+        }
+
+        if (!byDate.has(target)) {
+          byDate.set(target, []);
+          queue.push(target);
+          queue.sort();
+        }
+        // `unplaced` : elles se rangent derrière les tâches déjà horodatées du jour cible.
+        byDate.get(target)!.push(...moved.map(t => ({ ...t, startMin: 0, unplaced: true as const })));
       }
     }
     return fixed;

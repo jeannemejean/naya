@@ -88,3 +88,59 @@ describe("repackDay", () => {
     expect(repackDay(tasks, opts).overflow).toEqual([]);
   });
 });
+
+describe("repackDay — tâches sans créneau (exigence : rien de « non planifié »)", () => {
+  const OPTS = {
+    dayStartMin: 9 * 60, dayEndMin: 18 * 60,
+    lunchStartMin: 12 * 60, lunchEndMin: 14 * 60, lunchEnabled: true,
+  };
+
+  it("place une tâche sans créneau après les tâches déjà horodatées", () => {
+    const { moves, overflow } = repackDay([
+      { id: 2, startMin: 0, durationMin: 30, unplaced: true },
+      { id: 1, startMin: 9 * 60, durationMin: 60 },
+    ], OPTS);
+
+    expect(overflow).toEqual([]);
+    // La tâche 1 garde 09:00, la tâche 2 se range juste derrière à 10:00.
+    expect(moves).toEqual([{ id: 2, newStartMin: 10 * 60, newEndMin: 10 * 60 + 30 }]);
+  });
+
+  it("produit toujours un move pour une tâche sans créneau, même si l'heure coïncide", () => {
+    const { moves } = repackDay(
+      [{ id: 1, startMin: 9 * 60, durationMin: 30, unplaced: true }],
+      OPTS,
+    );
+    // startMin vaudrait 09:00 par coïncidence : sans ce cas, la tâche resterait sans heure.
+    expect(moves).toEqual([{ id: 1, newStartMin: 9 * 60, newEndMin: 9 * 60 + 30 }]);
+  });
+
+  it("reporte en overflow ce qui ne tient plus dans la journée", () => {
+    const { moves, overflow } = repackDay([
+      { id: 1, startMin: 17 * 60, durationMin: 60 },        // 17:00 → 18:00, tient
+      { id: 2, startMin: 0, durationMin: 60, unplaced: true }, // ne tient plus
+    ], OPTS);
+
+    expect(moves).toEqual([]);
+    expect(overflow).toEqual([2]);
+  });
+
+  it("respecte « maintenant » : l'après-midi, rien n'est placé le matin", () => {
+    const { moves, overflow } = repackDay(
+      [{ id: 1, startMin: 0, durationMin: 60, unplaced: true }],
+      { ...OPTS, floorMin: 15 * 60 }, // il est 15h
+    );
+
+    expect(overflow).toEqual([]);
+    expect(moves).toEqual([{ id: 1, newStartMin: 15 * 60, newEndMin: 16 * 60 }]);
+  });
+
+  it("saute la pause déjeuner pour une tâche sans créneau", () => {
+    const { moves } = repackDay(
+      [{ id: 1, startMin: 0, durationMin: 60, unplaced: true }],
+      { ...OPTS, floorMin: 11 * 60 + 30 }, // 11:30, chevaucherait 12:00-14:00
+    );
+
+    expect(moves).toEqual([{ id: 1, newStartMin: 14 * 60, newEndMin: 15 * 60 }]);
+  });
+});

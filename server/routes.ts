@@ -2208,7 +2208,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       //    a décroché sans mettre son planning en pause.
       const { moved } = await rolloverStaleTasks(userId, todayStr, {
         limit: Infinity,
-        countAsDeferral: false,
+        deferralMode: 'reset', // repartir de zéro efface aussi l'ardoise des reports
       });
 
       res.json({ planningStatus: prefs.planningStatus, tasksDeleted: deleted, tasksRescheduled: moved });
@@ -5164,6 +5164,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           }
         }
       }
+
+      // Filet obligatoire de fin de chemin d'écriture (règle projet) : c'était le
+      // SEUL chemin de (re)planification qui ne l'appelait pas — d'où des tâches
+      // hors heures de travail et des tâches sans créneau qui survivaient.
+      // Il garantit zéro chevauchement, le respect des horaires, et reporte au
+      // jour ouvré suivant tout ce qui ne tient pas.
+      await storage.fixOverlappingTasks(userId, todayStr).catch((e: any) =>
+        console.error('[generate-daily] fixOverlappingTasks:', e?.message),
+      );
 
       res.json({
         focus: lastFocus,
