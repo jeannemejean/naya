@@ -19,14 +19,23 @@ const VALID_DAYS = new Set(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
 
 /** Une proposition inexploitable est écartée : mieux vaut ne rien proposer qu'un rituel faux. */
 function isValidProposal(p: any): p is RitualProposal {
-  return (
-    p && p.kind === "create_ritual" &&
-    typeof p.title === "string" && p.title.trim().length > 0 &&
-    typeof p.startTime === "string" && /^\d{2}:\d{2}$/.test(p.startTime) &&
-    typeof p.durationMinutes === "number" && p.durationMinutes > 0 && p.durationMinutes <= 480 &&
-    typeof p.days === "string" &&
-    p.days.split(",").map((d: string) => d.trim().toLowerCase()).every((d: string) => VALID_DAYS.has(d))
-  );
+  if (
+    !(
+      p && p.kind === "create_ritual" &&
+      typeof p.title === "string" && p.title.trim().length > 0 &&
+      typeof p.startTime === "string" && /^\d{2}:\d{2}$/.test(p.startTime) &&
+      typeof p.durationMinutes === "number" && p.durationMinutes > 0 && p.durationMinutes <= 480 &&
+      typeof p.days === "string" &&
+      p.days.split(",").map((d: string) => d.trim().toLowerCase()).every((d: string) => VALID_DAYS.has(d))
+    )
+  ) {
+    return false;
+  }
+
+  // Le pattern /^\d{2}:\d{2}$/ accepte des heures impossibles ("99:99", "25:70") : on
+  // vérifie donc en plus les bornes réelles d'une heure (0-23) et de minutes (0-59).
+  const [hours, minutes] = p.startTime.split(":").map((n: string) => Number(n));
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 }
 
 /** Extrait le premier objet JSON d'une réponse éventuellement entourée de texte. */

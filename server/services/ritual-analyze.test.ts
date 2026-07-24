@@ -85,6 +85,99 @@ describe("analyzeStatusNote", () => {
     expect(result.proposals[0].title).toBe("Valide");
   });
 
+  it("écarte une heure au format correct mais hors plage (99:99)", async () => {
+    // Ce cas doit échouer AVANT le correctif de isValidProposal (regex seule laisse passer 99:99)
+    // et réussir APRÈS (bornes 0-23 / 0-59 vérifiées).
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({
+        understood: "ok",
+        proposals: [
+          { kind: "create_ritual", title: "Heure impossible", days: "mon", startTime: "99:99", durationMinutes: 20 },
+        ],
+      }),
+      stopReason: "end_turn",
+    });
+
+    const result = await analyzeStatusNote(ARGS);
+
+    expect(result.proposals).toEqual([]);
+  });
+
+  it("écarte une heure hors plage même avec des minutes valides (25:00)", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({
+        understood: "ok",
+        proposals: [
+          { kind: "create_ritual", title: "Heure impossible", days: "mon", startTime: "25:00", durationMinutes: 20 },
+        ],
+      }),
+      stopReason: "end_turn",
+    });
+
+    const result = await analyzeStatusNote(ARGS);
+
+    expect(result.proposals).toEqual([]);
+  });
+
+  it("écarte une durée nulle", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({
+        understood: "ok",
+        proposals: [
+          { kind: "create_ritual", title: "Durée nulle", days: "mon", startTime: "09:00", durationMinutes: 0 },
+        ],
+      }),
+      stopReason: "end_turn",
+    });
+
+    const result = await analyzeStatusNote(ARGS);
+
+    expect(result.proposals).toEqual([]);
+  });
+
+  it("écarte une durée négative", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({
+        understood: "ok",
+        proposals: [
+          { kind: "create_ritual", title: "Durée négative", days: "mon", startTime: "09:00", durationMinutes: -10 },
+        ],
+      }),
+      stopReason: "end_turn",
+    });
+
+    const result = await analyzeStatusNote(ARGS);
+
+    expect(result.proposals).toEqual([]);
+  });
+
+  it("écarte un jour écrit en toutes lettres au lieu du code à 3 lettres", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({
+        understood: "ok",
+        proposals: [
+          { kind: "create_ritual", title: "Jour invalide", days: "lundi", startTime: "09:00", durationMinutes: 20 },
+        ],
+      }),
+      stopReason: "end_turn",
+    });
+
+    const result = await analyzeStatusNote(ARGS);
+
+    expect(result.proposals).toEqual([]);
+  });
+
+  it("renvoie proposals: [] sans planter quand le champ proposals est absent du JSON", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({ understood: "ok" }),
+      stopReason: "end_turn",
+    });
+
+    const result = await analyzeStatusNote(ARGS);
+
+    expect(result.proposals).toEqual([]);
+  });
+
   it("impute le coût IA à l'utilisateur", async () => {
     (claude.callClaudeDetailed as any).mockResolvedValue({
       text: JSON.stringify({ understood: "ok", proposals: [] }), stopReason: "end_turn",
