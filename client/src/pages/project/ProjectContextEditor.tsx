@@ -1,10 +1,11 @@
 // Éditeur de contexte projet (Task 7) — la note libre que Naya ne peut pas deviner + le stade
-// stratégique du projet. Deux champs, deux mutations indépendantes (useSaveStatusNote,
-// useSaveStatusNote, useSaveStage — Task 5), chacune avec son propre feedback.
+// stratégique du projet. La note est envoyée à Naya via le bouton « Envoyer à Naya » : elle est
+// enregistrée puis analysée, et Naya peut proposer un rituel récurrent à valider (Task 12).
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Send } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -13,7 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useSaveStage, useSaveStatusNote, type ProjectDetail } from "./useProjectPage";
+import { useSaveStage, useAnalyzeNote, useCreateRitual, type ProjectDetail, type NoteAnalysis, type RitualProposal } from "./useProjectPage";
+import RitualList from "./RitualList";
+import { formatDays } from "./ritual-format";
 import type { ProjectStrategyProfile } from "@shared/schema";
 
 interface ProjectContextEditorProps {
@@ -30,33 +33,49 @@ const STAGE_OPTIONS: { value: string; label: string }[] = [
 
 export default function ProjectContextEditor({ project, strategyProfile }: ProjectContextEditorProps) {
   const { toast } = useToast();
-  const saveNote = useSaveStatusNote(project.id);
+  const analyze = useAnalyzeNote(project.id);
+  const createRitual = useCreateRitual(project.id);
   const saveStage = useSaveStage(project.id);
 
   const [noteDraft, setNoteDraft] = useState(project.statusNote ?? "");
-  const [justSaved, setJustSaved] = useState(false);
+  const [analysis, setAnalysis] = useState<NoteAnalysis | null>(null);
 
   // Resynchronise le brouillon si on navigue vers un autre projet (le composant est réutilisé
   // avec un nouvel id sans forcément être démonté).
   useEffect(() => {
     setNoteDraft(project.statusNote ?? "");
+    setAnalysis(null);
   }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleNoteBlur = () => {
-    const current = project.statusNote ?? "";
-    if (noteDraft === current) return; // rien à enregistrer
-    saveNote.mutate(noteDraft, {
-      onSuccess: () => {
-        setJustSaved(true);
-        setTimeout(() => setJustSaved(false), 2000);
-      },
-      onError: () => {
+  const unchanged = noteDraft.trim() === (project.statusNote ?? "").trim();
+
+  const handleSend = () => {
+    setAnalysis(null);
+    analyze.mutate(noteDraft, {
+      onSuccess: (result) => setAnalysis(result),
+      onError: (err: any) => {
+        const msg = String(err?.message ?? "");
         toast({
-          title: "Erreur",
-          description: "Impossible d'enregistrer la note. Réessaie.",
+          title: "Naya n'a pas pu lire ton message",
+          description: msg.includes("429")
+            ? "Limite d'utilisation de l'IA atteinte pour ce mois-ci. Ta note est bien enregistrée."
+            : "Ta note est enregistrée, mais l'analyse a échoué. Réessaie.",
           variant: "destructive",
         });
       },
+    });
+  };
+
+  const handleApply = (proposal: RitualProposal) => {
+    createRitual.mutate(proposal, {
+      onSuccess: () => {
+        toast({
+          title: "Rituel ajouté à ton planning",
+          description: `${proposal.title} — ${formatDays(proposal.days)}, ${proposal.startTime}.`,
+        });
+        setAnalysis(null);
+      },
+      onError: () => toast({ title: "Impossible d'ajouter le rituel", variant: "destructive" }),
     });
   };
 
@@ -78,21 +97,9 @@ export default function ProjectContextEditor({ project, strategyProfile }: Proje
   return (
     <Card className="p-4 sm:p-5 space-y-4">
       <div>
-        <div className="flex items-center justify-between gap-2">
-          <label htmlFor="project-status-note" className="text-sm font-medium text-foreground">
-            Où en est ce projet ? (dis tout à Naya)
-          </label>
-          {(saveNote.isPending || justSaved) && (
-            <span className="text-xs text-naya-olive-55 flex items-center gap-1 flex-shrink-0">
-              {saveNote.isPending ? "Enregistrement…" : (
-                <>
-                  <Check className="w-3 h-3" />
-                  Enregistré
-                </>
-              )}
-            </span>
-          )}
-        </div>
+        <label htmlFor="project-status-note" className="text-sm font-medium text-foreground">
+          Où en est ce projet ? (dis tout à Naya)
+        </label>
         <p className="text-xs text-naya-olive-55 mt-1 mb-2">
           Naya connaît déjà ce que tu fais dans l'app. Note ici ce qu'elle ne peut pas deviner : un
           événement externe, une décision, un blocage, ce que tu as fait hors Naya.
@@ -101,11 +108,45 @@ export default function ProjectContextEditor({ project, strategyProfile }: Proje
           id="project-status-note"
           value={noteDraft}
           onChange={(e) => setNoteDraft(e.target.value)}
-          onBlur={handleNoteBlur}
-          placeholder="Ex : le client a validé le devis hier, on attend le virement avant de lancer la prod…"
+          placeholder="Ex : tous les matins je fais un brief news, ça me prend 20 min…"
           className="min-h-[100px]"
         />
+
+        <div className="flex justify-end mt-2">
+          <Button size="sm" onClick={handleSend} disabled={analyze.isPending || !noteDraft.trim() || unchanged}>
+            <Send className="w-3.5 h-3.5 mr-1.5" />
+            {analyze.isPending ? "Naya lit…" : "Envoyer à Naya"}
+          </Button>
+        </div>
+
+        {analysis && (
+          <div className="mt-3 rounded-lg border border-naya-olive-18 bg-naya-olive-06 p-3 space-y-3">
+            <p className="text-xs text-foreground">{analysis.understood}</p>
+
+            {analysis.proposals.map((p, i) => (
+              <div key={i} className="rounded-md border border-naya-olive-18 bg-white p-2.5 space-y-2">
+                <p className="text-xs text-foreground">
+                  <strong className="font-medium">{p.title}</strong>
+                  {" — "}{formatDays(p.days)}, {p.startTime}, {p.durationMinutes} min
+                </p>
+                <p className="text-[11px] text-naya-olive-55">
+                  Ce créneau sera réservé : rien ne sera planifié par-dessus.
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => handleApply(p)} disabled={createRitual.isPending}>
+                    {createRitual.isPending ? "Ajout…" : "Appliquer"}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setAnalysis(null)}>
+                    Ignorer
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      <RitualList projectId={project.id} />
 
       <div className="flex items-center gap-3 pt-1 border-t border-border">
         <label htmlFor="project-stage" className="text-sm font-medium text-foreground flex-shrink-0 pt-3">
