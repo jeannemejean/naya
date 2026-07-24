@@ -61,11 +61,17 @@ export function PlanningRestartButton({ className, children, title }: PlanningRe
         data.regenerated
           ? {
               title: t("planning.restartedTitle"),
-              description: t("planning.restartedDesc", { count: data.tasksDeleted }),
+              description: t("planning.restartedDesc", {
+                count: data.tasksDeleted,
+                rescheduled: data.tasksRescheduled ?? 0,
+              }),
             }
           : {
               title: t("planning.restartedTitle"),
-              description: t("planning.restartedNoPlanDesc", { count: data.tasksDeleted }),
+              description: t("planning.restartedNoPlanDesc", {
+                count: data.tasksDeleted,
+                rescheduled: data.tasksRescheduled ?? 0,
+              }),
               variant: "destructive" as const,
             },
       );

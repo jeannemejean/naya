@@ -142,10 +142,28 @@ function nextWorkDay(fromDate: string, workDays: Set<string>): string {
   return fromDate;
 }
 
+export interface RolloverOptions {
+  /**
+   * Nombre max de tâches remontées. Défaut 8 (passage quotidien : on ne veut pas
+   * noyer la journée). Un redémarrage de planification passe Infinity : l'objectif
+   * est justement de TOUT reprogrammer.
+   */
+  limit?: number;
+  /**
+   * Compter ce déplacement comme un report (incrémente learnedAdjustmentCount et
+   * déclenche l'arbitrage IA « cette tâche vaut-elle encore le coup ? »). Défaut true.
+   * Un redémarrage passe false : la tâche n'est pas en cause, l'utilisateur a
+   * simplement décroché — la pénaliser (et payer un appel IA par tâche) n'a pas de sens.
+   */
+  countAsDeferral?: boolean;
+}
+
 export async function rolloverStaleTasks(
   userId: string,
-  targetDate: string
+  targetDate: string,
+  options: RolloverOptions = {},
 ): Promise<{ moved: number }> {
+  const { limit = 8, countAsDeferral = true } = options;
   const prefs = await storage.getUserPreferences(userId);
 
   // Ne pas rollover si la planification est en pause
@@ -189,7 +207,7 @@ export async function rolloverStaleTasks(
   const incomplete = (staleTasks as any[])
     .filter(t => !t.completed && t.scheduledDate && t.scheduledDate <= rangeEnd)
     .sort((a, b) => (a.priority || 5) - (b.priority || 5))
-    .slice(0, 8); // cap à 8 quand on a plus de place
+    .slice(0, limit);
 
   if (incomplete.length === 0) return { moved: 0 };
 
@@ -210,12 +228,14 @@ export async function rolloverStaleTasks(
         const end = h * 60 + m + duration;
         return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
       })(),
-      learnedAdjustmentCount: newCount,
+      ...(countAsDeferral ? { learnedAdjustmentCount: newCount } : {}),
     });
 
-    handleTaskDeferral(userId, task, newCount).catch(e =>
-      console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
-    );
+    if (countAsDeferral) {
+      handleTaskDeferral(userId, task, newCount).catch(e =>
+        console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
+      );
+    }
 
     console.log(`[Rollover] Moved id=${task.id} → ${slot.date} ${slot.time}`);
     moved++;

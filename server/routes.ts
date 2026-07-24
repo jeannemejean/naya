@@ -2189,7 +2189,8 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       const userId = req.userId;
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const deleted = await storage.deleteIncompleteFutureTasks(userId, todayStr);
+      // 1. Réactiver AVANT le rollover : rolloverStaleTasks se saute lui-même
+      //    si la planification est en pause — or c'est souvent le cas de départ.
       const prefs = await storage.upsertUserPreferences(userId, {
         planningStatus: 'active',
         planningStartDate: todayStr,
@@ -2197,7 +2198,20 @@ Write in clear, direct language. Be specific — reference actual offers, audien
         dailyBriefContent: null,
         dailyBriefDismissed: false,
       });
-      res.json({ planningStatus: prefs.planningStatus, tasksDeleted: deleted });
+
+      // 2. Repartir de zéro sur le futur.
+      const deleted = await storage.deleteIncompleteFutureTasks(userId, todayStr);
+
+      // 3. Reprogrammer TOUTES les tâches en retard. Le passage quotidien en
+      //    remonte 8 max, donc au-delà elles stagnent indéfiniment. Un redémarrage
+      //    doit justement les reprendre : elles ne sont pas en cause, l'utilisateur
+      //    a décroché sans mettre son planning en pause.
+      const { moved } = await rolloverStaleTasks(userId, todayStr, {
+        limit: Infinity,
+        countAsDeferral: false,
+      });
+
+      res.json({ planningStatus: prefs.planningStatus, tasksDeleted: deleted, tasksRescheduled: moved });
     } catch (error) {
       console.error("Error restarting planning:", error);
       res.status(500).json({ message: "Failed to restart planning" });
