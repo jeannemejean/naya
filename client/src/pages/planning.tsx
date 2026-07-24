@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useProject } from "@/lib/project-context";
 import { ChevronLeft, ChevronRight, Clock, Loader2, Brain } from "lucide-react";
 import TaskWorkspace from "@/components/task-workspace";
+import { PlanningRestartButton } from "@/components/planning-restart-button";
 import Sidebar from "@/components/sidebar";
 import TimeGrid from "@/components/time-grid";
 import type { Project } from "@shared/schema";
@@ -274,7 +275,6 @@ export default function Planning({ onSearchClick }: Props) {
     },
   });
 
-  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
 
   const pauseMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/planning/pause").then(r => r.json()),
@@ -291,17 +291,6 @@ export default function Planning({ onSearchClick }: Props) {
       queryClient.invalidateQueries({ queryKey: ['/api/preferences'] });
       queryClient.invalidateQueries({ queryKey: rangeQueryKey });
       toast({ title: t('planning.resumedTitle'), description: t('planning.resumedDesc') });
-    },
-    onError: () => toast({ title: t('common.error'), variant: "destructive" }),
-  });
-
-  const restartMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/planning/restart").then(r => r.json()),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/preferences'] });
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-      toast({ title: t('planning.restartedTitle'), description: t('planning.restartedDesc', { count: data.tasksDeleted }) });
     },
     onError: () => toast({ title: t('common.error'), variant: "destructive" }),
   });
@@ -538,13 +527,10 @@ export default function Planning({ onSearchClick }: Props) {
                   {t('planning.pause')}
                 </button>
               )}
-              <button
-                onClick={() => setRestartConfirmOpen(true)}
-                className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer"
-              >
+              <PlanningRestartButton className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer disabled:opacity-50">
                 <span className="text-[10px]">◈</span>
                 {t('planning.restart')}
-              </button>
+              </PlanningRestartButton>
             </div>
           </div>
 
@@ -563,30 +549,6 @@ export default function Planning({ onSearchClick }: Props) {
             </div>
           )}
 
-          {/* Restart confirmation dialog */}
-          <AlertDialog open={restartConfirmOpen} onOpenChange={setRestartConfirmOpen}>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle className="font-display uppercase tracking-xwide text-[11px]">
-                  {t('planning.restartConfirmTitle')}
-                </AlertDialogTitle>
-                <AlertDialogDescription className="text-[13px] text-naya-olive-55">
-                  {t('planning.restartConfirmDesc')}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel className="font-display uppercase tracking-xwide text-[9px]">
-                  {t('common.cancel')}
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => { setRestartConfirmOpen(false); restartMutation.mutate(); }}
-                  className="font-display uppercase tracking-xwide text-[9px] bg-naya-olive text-naya-cream hover:opacity-90"
-                >
-                  {t('planning.restartConfirm')}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
 
           {/* Body */}
           {rangeLoading ? (

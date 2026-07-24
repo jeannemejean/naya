@@ -2199,6 +2199,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       });
       res.json({ planningStatus: prefs.planningStatus, tasksDeleted: deleted });
     } catch (error) {
+      console.error("Error restarting planning:", error);
       res.status(500).json({ message: "Failed to restart planning" });
     }
   });

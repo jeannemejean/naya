@@ -20,8 +20,9 @@ import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity, PauseCircle, PlayCircle, Gauge, StickyNote,
+  Zap, ArrowRight, Brain, User, Users, Plus, X, Sparkles, Activity, PauseCircle, PlayCircle, Gauge, StickyNote, RotateCcw,
 } from "lucide-react";
+import { PlanningRestartButton } from "@/components/planning-restart-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Project, ProjectGoal, PersonaAnalysisResult, TargetPersona, QuickCaptureEntry, MilestoneTrigger } from "@shared/schema";
 import { Link, useLocation } from "wouter";
@@ -1230,6 +1231,10 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
                   <span className="hidden sm:inline">{t("planning.pause")}</span>
                 </button>
               )}
+              <PlanningRestartButton className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-xwide text-naya-olive-35 hover:text-naya-olive-55 transition-colors disabled:opacity-50">
+                <RotateCcw style={{ width: 14, height: 14 }} />
+                <span className="hidden sm:inline">{t("planning.restart")}</span>
+              </PlanningRestartButton>
               <LiveClock />
             </div>
           </div>

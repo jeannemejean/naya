@@ -133,7 +133,7 @@ import {
   type AiInvocation,
   type InsertAiInvocation,
 } from "@shared/schema";
-import { db } from "./db";
+import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
@@ -1830,6 +1830,11 @@ export class DatabaseStorage implements IStorage {
       // Ordre FK-safe : on supprime TOUJOURS les enfants avant les parents.
       // (Beaucoup de FK sont en ON DELETE NO ACTION → une seule table enfant oubliée
       //  faisait échouer tout le reset. Liste dérivée du graphe de FK réel.)
+      //
+      // ⚠️ Cet ordre est décrit dans `server/services/account-reset-plan.ts`
+      //    (ACCOUNT_RESET_PLAN). Toute modification ici doit y être reportée :
+      //    le test `account-reset-plan.test.ts` confronte le plan au graphe de FK
+      //    du schéma et échoue si une table enfant n'est pas couverte.
 
       // IDs nécessaires pour les tables sans user_id.
       const projRows = await tx.select({ id: projects.id }).from(projects).where(eq(projects.userId, userId));
@@ -1840,18 +1845,35 @@ export class DatabaseStorage implements IStorage {
       const listIds = listRows.map((l) => l.id);
       const personaRows = await tx.select({ id: targetPersonas.id }).from(targetPersonas).where(eq(targetPersonas.userId, userId));
       const personaIds = personaRows.map((p) => p.id);
+      const leadRows = await tx.select({ id: leads.id }).from(leads).where(eq(leads.userId, userId));
+      const leadIds = leadRows.map((l) => l.id);
 
       // ── Phase 1 : libérer les FK des enregistrements qu'on GARDE ──────────────
-      console.log(`[reset] phase 1: clearing kept references (captures, preferences)`);
-      await tx.update(quickCaptureEntries)
-        .set({ convertedToTaskId: null, projectId: null })
-        .where(eq(quickCaptureEntries.userId, userId));
+      // Seuls survivent : le compte, l'abonnement, les réglages et les connexions
+      // (comptes sociaux, Google Calendar). Tout le contenu part.
+      console.log(`[reset] phase 1: clearing kept references (preferences)`);
       await tx.update(userPreferences)
         .set({ activeProjectId: null })
         .where(eq(userPreferences.userId, userId));
 
-      // ── Phase 2 : enfants de TASKS, puis tasks ────────────────────────────────
-      console.log(`[reset] phase 2: task children + tasks`);
+      // ── Phase 2 : mémoire, captures et contenus transverses ───────────────────
+      // behavioral_signals et business_memory référencent quick_capture_entries,
+      // qui référence tasks et projects → ce bloc passe en premier.
+      console.log(`[reset] phase 2: memory, captures, cross-cutting content`);
+      await tx.delete(behavioralSignals).where(eq(behavioralSignals.userId, userId));   // capture_entry_id
+      await tx.delete(businessMemory).where(eq(businessMemory.userId, userId));         // source_entry_id
+      await tx.delete(quickCaptureEntries).where(eq(quickCaptureEntries.userId, userId)); // task_id/project_id
+      await tx.delete(companionConversations).where(eq(companionConversations.userId, userId));
+      await tx.delete(savedArticles).where(eq(savedArticles.userId, userId));
+      await tx.delete(metrics).where(eq(metrics.userId, userId));
+      await tx.delete(dayAvailability).where(eq(dayAvailability.userId, userId));
+      // ⚠️ les objets R2 correspondants ne sont pas supprimés (seules les lignes le sont)
+      await tx.delete(mediaLibrary).where(eq(mediaLibrary.userId, userId));
+      // Ledger de coûts prospection : remet aussi le compteur LinkedIn hebdo à zéro.
+      await tx.delete(prospectionUsage).where(eq(prospectionUsage.userId, userId));
+
+      // ── Phase 3 : enfants de TASKS, puis tasks ────────────────────────────────
+      console.log(`[reset] phase 3: task children + tasks`);
       await tx.delete(companionPendingMessages).where(eq(companionPendingMessages.userId, userId)); // related_task_id → tasks
       await tx.delete(taskWorkspaceEntries).where(eq(taskWorkspaceEntries.userId, userId));         // task_id/project_id
       await tx.delete(taskFeedback).where(eq(taskFeedback.userId, userId));                         // project_id
@@ -1859,43 +1881,47 @@ export class DatabaseStorage implements IStorage {
       // task_dependencies → tasks en CASCADE (auto)
       await tx.delete(tasks).where(eq(tasks.userId, userId));
 
-      // ── Phase 3 : enfants de LEADS, puis leads ────────────────────────────────
-      console.log(`[reset] phase 3: lead children + leads`);
+      // ── Phase 4 : enfants de LEADS, puis leads ────────────────────────────────
+      console.log(`[reset] phase 4: lead children + leads`);
+      if (leadIds.length > 0) {
+        await tx.delete(leadStepMessages).where(inArray(leadStepMessages.leadId, leadIds)); // lead_id (NOT NULL, pas de user_id)
+      }
       await tx.delete(leadSequenceState).where(eq(leadSequenceState.userId, userId)); // lead_id (NOT NULL)
       await tx.delete(outreachMessages).where(eq(outreachMessages.userId, userId));   // lead_id (NOT NULL)
       await tx.delete(leads).where(eq(leads.userId, userId));
 
-      // ── Phase 4 : content, puis campagnes (content/tasks les référencent) ─────
-      console.log(`[reset] phase 4: content + campaigns`);
+      // ── Phase 5 : content, puis campagnes (content/tasks les référencent) ─────
+      console.log(`[reset] phase 5: content + campaigns`);
       await tx.delete(content).where(eq(content.userId, userId));                 // campaign_id, project_id
       await tx.delete(campaigns).where(eq(campaigns.userId, userId));             // project_id
+      await tx.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.userId, userId)); // campaign_id (NOT NULL)
       await tx.delete(prospectionCampaigns).where(eq(prospectionCampaigns.userId, userId)); // project_id
 
-      // ── Phase 5 : jalons (conditions avant milestones) + triggers ─────────────
-      console.log(`[reset] phase 5: milestones`);
+      // ── Phase 6 : jalons (conditions avant milestones) + triggers ─────────────
+      console.log(`[reset] phase 6: milestones`);
       if (milestoneIds.length > 0) {
         await tx.delete(milestoneConditions).where(inArray(milestoneConditions.milestoneId, milestoneIds));
       }
       await tx.delete(projectMilestones).where(eq(projectMilestones.userId, userId)); // project_id
       await tx.delete(milestoneTriggers).where(eq(milestoneTriggers.userId, userId)); // project_id
 
-      // ── Phase 6 : task lists (items avant lists) ──────────────────────────────
-      console.log(`[reset] phase 6: task lists`);
+      // ── Phase 7 : task lists (items avant lists) ──────────────────────────────
+      console.log(`[reset] phase 7: task lists`);
       if (listIds.length > 0) {
         await tx.delete(taskListItems).where(inArray(taskListItems.listId, listIds));
       }
       await tx.delete(taskLists).where(eq(taskLists.userId, userId)); // project_id
 
-      // ── Phase 7 : personas ────────────────────────────────────────────────────
-      console.log(`[reset] phase 7: personas`);
+      // ── Phase 8 : personas ────────────────────────────────────────────────────
+      console.log(`[reset] phase 8: personas`);
       if (personaIds.length > 0) {
         await tx.delete(personaStrategyMapping).where(inArray(personaStrategyMapping.targetPersonaId, personaIds));
       }
       await tx.delete(personaAnalysisResults).where(eq(personaAnalysisResults.userId, userId));
       await tx.delete(targetPersonas).where(eq(targetPersonas.userId, userId)); // project_id
 
-      // ── Phase 8 : autres enfants de PROJECTS ──────────────────────────────────
-      console.log(`[reset] phase 8: remaining project children`);
+      // ── Phase 9 : autres enfants de PROJECTS ──────────────────────────────────
+      console.log(`[reset] phase 9: remaining project children`);
       if (projectIds.length > 0) {
         await tx.delete(projectGoals).where(inArray(projectGoals.projectId, projectIds));
         await tx.delete(projectStrategyProfiles).where(inArray(projectStrategyProfiles.projectId, projectIds));
@@ -1905,12 +1931,12 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(brandDna).where(eq(brandDna.userId, userId));               // project_id (AVANT projects!)
       await tx.delete(memoryEntries).where(eq(memoryEntries.userId, userId));     // mémoire Naya (reset all data)
 
-      // ── Phase 9 : projects ────────────────────────────────────────────────────
-      console.log(`[reset] phase 9: projects`);
+      // ── Phase 10 : projects ────────────────────────────────────────────────────
+      console.log(`[reset] phase 10: projects`);
       await tx.delete(projects).where(eq(projects.userId, userId));
 
-      // ── Phase 10 : profil opératoire ──────────────────────────────────────────
-      console.log(`[reset] phase 10: operating profile`);
+      // ── Phase 11 : profil opératoire ──────────────────────────────────────────
+      console.log(`[reset] phase 11: operating profile`);
       await tx.delete(userOperatingProfiles).where(eq(userOperatingProfiles.userId, userId));
     });
 
@@ -2001,19 +2027,39 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async deleteTask(taskId: number): Promise<void> {
-    // Nullify FK references before deleting (no cascade on these)
-    await db.update(quickCaptureEntries)
+  /**
+   * Libère TOUTES les FK enfants de `tasks` avant une suppression.
+   *
+   * Aucune de ces FK n'est en ON DELETE CASCADE (seule `task_dependencies` l'est).
+   * En oublier une = erreur 23503 et échec de la suppression. Tout chemin qui
+   * supprime des tâches DOIT passer par ici, dans une transaction.
+   */
+  private async clearTaskReferences(tx: DbExecutor, taskIds: number[]): Promise<void> {
+    if (taskIds.length === 0) return;
+    // Références qu'on GARDE en détachant (captures et messages du Companion survivent)
+    await tx.update(quickCaptureEntries)
       .set({ convertedToTaskId: null })
-      .where(eq(quickCaptureEntries.convertedToTaskId, taskId));
-    await db.update(companionPendingMessages)
+      .where(inArray(quickCaptureEntries.convertedToTaskId, taskIds));
+    await tx.update(companionPendingMessages)
       .set({ relatedTaskId: null })
-      .where(eq(companionPendingMessages.relatedTaskId, taskId));
-    // Delete child records
-    await db.delete(taskScheduleEvents).where(eq(taskScheduleEvents.taskId, taskId));
-    await db.delete(taskWorkspaceEntries).where(eq(taskWorkspaceEntries.taskId, taskId));
-    // Delete the task (taskDependencies cascade automatically)
-    await db.delete(tasks).where(eq(tasks.id, taskId));
+      .where(inArray(companionPendingMessages.relatedTaskId, taskIds));
+    // Enfants purs, supprimés avec la tâche
+    await tx.delete(taskScheduleEvents).where(inArray(taskScheduleEvents.taskId, taskIds));
+    await tx.delete(taskWorkspaceEntries).where(inArray(taskWorkspaceEntries.taskId, taskIds));
+  }
+
+  /** Supprime un lot de tâches de façon atomique (tout ou rien). */
+  private async deleteTasksByIds(taskIds: number[]): Promise<number> {
+    if (taskIds.length === 0) return 0;
+    await db.transaction(async (tx) => {
+      await this.clearTaskReferences(tx, taskIds);
+      await tx.delete(tasks).where(inArray(tasks.id, taskIds)); // taskDependencies en CASCADE
+    });
+    return taskIds.length;
+  }
+
+  async deleteTask(taskId: number): Promise<void> {
+    await this.deleteTasksByIds([taskId]);
   }
 
   async checkSlotAvailability(
@@ -2216,12 +2262,10 @@ export class DatabaseStorage implements IStorage {
         eq(tasks.completed, false),
         gte(tasks.scheduledDate, fromDate),
       ));
-    for (const { id } of toDelete) {
-      await db.delete(taskScheduleEvents).where(eq(taskScheduleEvents.taskId, id));
-      await db.delete(taskWorkspaceEntries).where(eq(taskWorkspaceEntries.taskId, id));
-      await db.delete(tasks).where(eq(tasks.id, id));
-    }
-    return toDelete.length;
+    // Atomique : avant, la boucle supprimait tâche par tâche hors transaction — au
+    // premier blocage FK (ex. un message du Companion lié), les tâches déjà traitées
+    // étaient perdues alors que l'utilisateur voyait « échec ».
+    return await this.deleteTasksByIds(toDelete.map((t) => t.id));
   }
 
   async archiveIncompleteFutureTasks(userId: string, fromDate: string): Promise<number> {
@@ -2410,24 +2454,24 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCampaignFutureTasks(campaignId: number, fromDate: string): Promise<number> {
-    const deleted = await db.delete(tasks).where(
+    const toDelete = await db.select({ id: tasks.id }).from(tasks).where(
       and(
         eq(tasks.campaignId, campaignId),
         eq(tasks.completed, false),
         gte(tasks.scheduledDate, fromDate)
       )
-    ).returning({ id: tasks.id });
-    return deleted.length;
+    );
+    return await this.deleteTasksByIds(toDelete.map((t) => t.id));
   }
 
   async deleteAllIncompleteCampaignTasks(campaignId: number): Promise<number> {
-    const deleted = await db.delete(tasks).where(
+    const toDelete = await db.select({ id: tasks.id }).from(tasks).where(
       and(
         eq(tasks.campaignId, campaignId),
         eq(tasks.completed, false)
       )
-    ).returning({ id: tasks.id });
-    return deleted.length;
+    );
+    return await this.deleteTasksByIds(toDelete.map((t) => t.id));
   }
 
   async getBusinessMemories(userId: string, opts?: { archived?: boolean; limit?: number }): Promise<BusinessMemory[]> {

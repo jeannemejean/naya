@@ -862,9 +862,19 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <AlertTriangle className="h-5 w-5 text-naya-sulphur" />
  {t('settings.confirmReset')}
  </DialogTitle>
- <DialogDescription>
- This is a full workspace reset. It will permanently delete your projects, goals, tasks, personas, and all onboarding-generated data. Your account stays, but your board will be completely cleared.
- You'll go through onboarding again to rebuild from scratch.
+ <DialogDescription asChild>
+ <div className="space-y-2">
+ <p>
+ Remise à zéro complète. Sont <strong>définitivement supprimés</strong> : tes projets, objectifs, tâches, jalons,
+ personas, campagnes, <strong>prospects et leur historique</strong>, la mémoire de Naya, tes conversations avec
+ le Companion, tes captures rapides, ta médiathèque, tes métriques, tes articles sauvegardés et tes disponibilités.
+ </p>
+ <p>
+ Sont <strong>conservés</strong> : ton compte, ton abonnement, tes réglages et tes comptes connectés
+ (LinkedIn, Instagram, TikTok, Google Calendar).
+ </p>
+ <p>Tu repasseras par l'onboarding pour tout reconstruire.</p>
+ </div>
  </DialogDescription>
  </DialogHeader>
  <DialogFooter>

@@ -33,3 +33,6 @@ pool.on('error', (err) => {
 });
 
 export const db = drizzle(pool, { schema });
+
+/** `db` ou une transaction — pour les helpers qui doivent fonctionner dans les deux. */
+export type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
