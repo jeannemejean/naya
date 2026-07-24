@@ -30,15 +30,45 @@ export function PlanningRestartButton({ className, children, title }: PlanningRe
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const restartMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/planning/restart").then((r) => r.json()),
+    mutationFn: async () => {
+      const restarted = await apiRequest("POST", "/api/planning/restart").then((r) => r.json());
+
+      // Le planificateur automatique ne passe qu'à 06:00 UTC : sans cet appel,
+      // l'utilisateur se retrouve avec un planning VIDE jusqu'au lendemain matin.
+      // On régénère donc tout de suite, via le même chemin que « Générer mon plan ».
+      const now = new Date();
+      const clientToday = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+      const clientTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+      try {
+        await apiRequest("POST", "/api/tasks/generate-daily", {
+          projectId: null, // tous les projets, pas seulement l'actif
+          clientToday,
+          clientTime,
+        }).then((r) => r.json());
+        return { ...restarted, regenerated: true };
+      } catch {
+        // Les tâches sont supprimées : on ne fait PAS échouer le redémarrage,
+        // on signale juste que la régénération n'a pas abouti.
+        return { ...restarted, regenerated: false };
+      }
+    },
     onSuccess: (data: any) => {
-      // Le redémarrage supprime toutes les tâches futures : à peu près tout
-      // l'écran devient obsolète, on invalide donc largement.
+      // Le redémarrage supprime toutes les tâches futures et en recrée : à peu
+      // près tout l'écran devient obsolète, on invalide donc largement.
       queryClient.invalidateQueries();
-      toast({
-        title: t("planning.restartedTitle"),
-        description: t("planning.restartedDesc", { count: data.tasksDeleted }),
-      });
+      toast(
+        data.regenerated
+          ? {
+              title: t("planning.restartedTitle"),
+              description: t("planning.restartedDesc", { count: data.tasksDeleted }),
+            }
+          : {
+              title: t("planning.restartedTitle"),
+              description: t("planning.restartedNoPlanDesc", { count: data.tasksDeleted }),
+              variant: "destructive" as const,
+            },
+      );
     },
     onError: () => toast({ title: t("common.error"), variant: "destructive" }),
   });
