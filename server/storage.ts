@@ -132,6 +132,9 @@ import {
   aiInvocations,
   type AiInvocation,
   type InsertAiInvocation,
+  recurringRituals,
+  type RecurringRitual,
+  type InsertRecurringRitual,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -430,6 +433,13 @@ export interface IStorage {
     learnedAdjustmentCount: number | null;
     scheduledDate: string | null;
   }>>;
+
+  // Rituels récurrents
+  createRitual(data: InsertRecurringRitual): Promise<RecurringRitual>;
+  getRituals(userId: string, projectId?: number): Promise<RecurringRitual[]>;
+  getActiveRituals(userId: string): Promise<RecurringRitual[]>;
+  deactivateRitual(id: number, userId: string): Promise<boolean>;
+  getRitualTaskForDate(ritualId: number, date: string): Promise<{ id: number } | undefined>;
 
   // Journal des invocations IA (Phase 1 — corpus propriétaire)
   createAiInvocation(entry: InsertAiInvocation): Promise<AiInvocation>;
@@ -1321,6 +1331,42 @@ export class DatabaseStorage implements IStorage {
   async createLead(leadData: InsertLead): Promise<Lead> {
     const [newLead] = await db.insert(leads).values(leadData).returning();
     return newLead;
+  }
+
+  // ─── Rituels récurrents ───────────────────────────────────────────────────
+
+  async createRitual(data: InsertRecurringRitual): Promise<RecurringRitual> {
+    const [row] = await db.insert(recurringRituals).values(data).returning();
+    return row;
+  }
+
+  async getRituals(userId: string, projectId?: number): Promise<RecurringRitual[]> {
+    const conditions = [eq(recurringRituals.userId, userId)];
+    if (projectId !== undefined) conditions.push(eq(recurringRituals.projectId, projectId));
+    return db.select().from(recurringRituals)
+      .where(and(...conditions))
+      .orderBy(recurringRituals.startTime);
+  }
+
+  async getActiveRituals(userId: string): Promise<RecurringRitual[]> {
+    return db.select().from(recurringRituals)
+      .where(and(eq(recurringRituals.userId, userId), eq(recurringRituals.active, true)))
+      .orderBy(recurringRituals.startTime);
+  }
+
+  async deactivateRitual(id: number, userId: string): Promise<boolean> {
+    const result = await db.update(recurringRituals)
+      .set({ active: false })
+      .where(and(eq(recurringRituals.id, id), eq(recurringRituals.userId, userId)));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  /** Une tâche existe-t-elle déjà pour ce rituel à cette date ? (idempotence) */
+  async getRitualTaskForDate(ritualId: number, date: string): Promise<{ id: number } | undefined> {
+    const [row] = await db.select({ id: tasks.id }).from(tasks)
+      .where(and(eq(tasks.ritualId, ritualId), eq(tasks.scheduledDate, date)))
+      .limit(1);
+    return row;
   }
 
   // ─── Journal des invocations IA (Phase 1) ───────────────────────────────────
