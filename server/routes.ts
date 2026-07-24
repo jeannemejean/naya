@@ -84,6 +84,8 @@ import { isAiBlocked } from "./services/usage";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
 import { deriveMilestoneDate } from "./services/milestone-dates";
 import { r2Configured, createUploadUrl } from "./services/r2-storage";
+import { analyzeStatusNote } from "./services/ritual-analyze";
+import { materializeRituals } from "./services/ritual-materialize";
 import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
@@ -2202,6 +2204,11 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       // 2. Repartir de zéro sur le futur.
       const deleted = await storage.deleteIncompleteFutureTasks(userId, todayStr);
 
+      // Le rituel survit au redémarrage : on le re-matérialise immédiatement.
+      await materializeRituals(userId, todayStr).catch((e: any) =>
+        console.error('[planning/restart] materializeRituals:', e?.message),
+      );
+
       // 3. Reprogrammer TOUTES les tâches en retard. Le passage quotidien en
       //    remonte 8 max, donc au-delà elles stagnent indéfiniment. Un redémarrage
       //    doit justement les reprendre : elles ne sont pas en cause, l'utilisateur
@@ -2603,6 +2610,110 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         ? { message: error?.message, constraint: error?.constraint, detail: error?.detail }
         : { message: "Failed to reset onboarding" };
       res.status(500).json(detail);
+    }
+  });
+
+  // ─── Rituels récurrents ─────────────────────────────────────────────────────
+
+  app.post('/api/projects/:id/status-note/analyze', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const projectId = parseInt(req.params.id, 10);
+      const { note } = req.body ?? {};
+      if (typeof note !== 'string') {
+        return res.status(400).json({ message: "note requise" });
+      }
+
+      const project = await storage.getProject(projectId, userId);
+      if (!project) return res.status(404).json({ message: "Projet introuvable" });
+
+      // La note est enregistrée quoi qu'il arrive : l'analyse est un bonus,
+      // son échec ne doit jamais faire perdre ce que l'utilisateur a écrit.
+      await storage.updateProject(projectId, userId, { statusNote: note });
+
+      if (await isAiBlocked(userId)) {
+        return res.status(429).json({ message: "ai_monthly_limit_reached" });
+      }
+
+      const analysis = await analyzeStatusNote({
+        userId, projectId, note, projectName: project.name,
+      });
+      res.json(analysis);
+    } catch (error: any) {
+      console.error("Error analyzing status note:", error);
+      res.status(500).json({ message: "Analyse impossible" });
+    }
+  });
+
+  app.get('/api/projects/:id/rituals', isAuthenticated, async (req: any, res) => {
+    try {
+      const rituals = await storage.getRituals(req.userId, parseInt(req.params.id, 10));
+      res.json(rituals);
+    } catch (error) {
+      console.error("Error fetching rituals:", error);
+      res.status(500).json({ message: "Lecture des rituels impossible" });
+    }
+  });
+
+  app.post('/api/rituals', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { projectId, title, days, startTime, durationMinutes } = req.body ?? {};
+
+      if (typeof title !== 'string' || !title.trim()) {
+        return res.status(400).json({ message: "title requis" });
+      }
+      if (typeof startTime !== 'string' || !/^\d{2}:\d{2}$/.test(startTime)) {
+        return res.status(400).json({ message: "startTime requis (HH:MM)" });
+      }
+      const duration = Number(durationMinutes);
+      if (!Number.isFinite(duration) || duration <= 0 || duration > 480) {
+        return res.status(400).json({ message: "durationMinutes invalide" });
+      }
+      if (projectId != null) {
+        const project = await storage.getProject(Number(projectId), userId);
+        if (!project) return res.status(404).json({ message: "Projet introuvable" });
+      }
+
+      const ritual = await storage.createRitual({
+        userId,
+        projectId: projectId != null ? Number(projectId) : null,
+        title: title.trim(),
+        days: typeof days === 'string' && days.trim() ? days.trim() : 'mon,tue,wed,thu,fri',
+        startTime,
+        durationMinutes: duration,
+      });
+
+      // Matérialiser les 14 prochains jours pour que l'effet soit visible tout de suite.
+      const today = new Date();
+      let materialized = 0;
+      for (let i = 0; i < 14; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + i);
+        const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        materialized += await materializeRituals(userId, ds);
+      }
+
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      await storage.fixOverlappingTasks(userId, todayStr).catch((e: any) =>
+        console.error('[rituals] fixOverlappingTasks:', e?.message),
+      );
+
+      res.json({ ritual, materialized });
+    } catch (error) {
+      console.error("Error creating ritual:", error);
+      res.status(500).json({ message: "Création du rituel impossible" });
+    }
+  });
+
+  app.post('/api/rituals/:id/deactivate', isAuthenticated, async (req: any, res) => {
+    try {
+      const ok = await storage.deactivateRitual(parseInt(req.params.id, 10), req.userId);
+      if (!ok) return res.status(404).json({ message: "Rituel introuvable" });
+      res.json({ deactivated: true });
+    } catch (error) {
+      console.error("Error deactivating ritual:", error);
+      res.status(500).json({ message: "Désactivation impossible" });
     }
   });
 
@@ -4635,6 +4746,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         workflowSugs: any[];
         focus?: string; reasoning?: string; bottleneck?: string; suggestedNextMove?: string;
       };
+
+      // Les rituels occupent leur créneau AVANT que l'IA ne place quoi que ce soit.
+      await materializeRituals(userId, todayStr).catch((e: any) =>
+        console.error('[generate-daily] materializeRituals:', e?.message),
+      );
 
       const projResults: ProjResult[] = await Promise.all(projectsToProcess.map(async (proj): Promise<ProjResult> => {
         const projectBatchKey = proj.id?.toString() || 'general';
