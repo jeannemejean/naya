@@ -2279,7 +2279,11 @@ export class DatabaseStorage implements IStorage {
 
     // Grouper par date. Les tâches SANS créneau sont incluses (marquées `unplaced`) :
     // exigence produit — aucune tâche ne doit rester « non planifiée ».
-    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean }>>();
+    // Les tâches « rituel » (schedulingMode === 'fixed') sont marquées `anchored` :
+    // repackDay garde alors leur créneau tel quel (promesse UI « rien ne sera
+    // planifié par-dessus »). Une tâche fixed sans heure n'a pas de sens à ancrer
+    // (rien à préserver) : seul le cas horodaté est marqué.
+    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean; anchored?: boolean }>>();
     for (const t of toFix) {
       if (!t.scheduledDate) continue;
       const hasTime = t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime);
@@ -2289,6 +2293,7 @@ export class DatabaseStorage implements IStorage {
         startMin: hasTime ? parseTime(t.scheduledTime!) : 0,
         durationMin: t.estimatedDuration || 30,
         ...(hasTime ? {} : { unplaced: true as const }),
+        ...(hasTime && t.schedulingMode === 'fixed' ? { anchored: true as const } : {}),
       });
     }
 
@@ -2333,7 +2338,9 @@ export class DatabaseStorage implements IStorage {
           queue.sort();
         }
         // `unplaced` : elles se rangent derrière les tâches déjà horodatées du jour cible.
-        byDate.get(target)!.push(...moved.map(t => ({ ...t, startMin: 0, unplaced: true as const })));
+        // On retire `anchored` : une tâche qui a débordé n'a plus d'heure à préserver,
+        // elle redevient une tâche normale à replacer côté jour cible.
+        byDate.get(target)!.push(...moved.map(({ anchored, ...t }) => ({ ...t, startMin: 0, unplaced: true as const })));
       }
     }
     return fixed;

@@ -21,14 +21,6 @@ export const useProjectMilestones = (id: number) =>
 
 // ─── Mutations ──────────────────────────────────────────────────────────────
 
-export const useSaveStatusNote = (id: number) =>
-  useMutation<Response, Error, string>({
-    mutationFn: (statusNote: string) => apiRequest("PATCH", `/api/projects/${id}`, { statusNote }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}`] });
-    },
-  });
-
 export const useSaveStage = (id: number) =>
   useMutation<Response, Error, string>({
     mutationFn: (currentStage: string) =>

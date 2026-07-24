@@ -144,3 +144,76 @@ describe("repackDay — tâches sans créneau (exigence : rien de « non planifi
     expect(moves).toEqual([{ id: 1, newStartMin: 14 * 60, newEndMin: 15 * 60 }]);
   });
 });
+
+describe("repackDay — tâches ancrées (rituels schedulingMode='fixed')", () => {
+  // Une tâche ancrée garde IMPÉRATIVEMENT son créneau : le repack ne doit jamais
+  // la déplacer (promesse UI « rien ne sera planifié par-dessus »). Les tâches
+  // flexibles doivent se ranger autour d'elle, y compris quand le curseur du
+  // matin déborderait naturellement sur son créneau.
+
+  it("un rituel à 14:00 reste à 14:00 même si le matin déborde ; la flexible qui le chevaucherait passe après", () => {
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 9 * 60, durationMin: 180 },        // 09:00–12:00, flexible, tient tel quel
+      { id: 2, startMin: 12 * 60, durationMin: 90 },        // voudrait 12:00, poussée par la pause déj. puis par l'ancre
+      { id: 100, startMin: 14 * 60, durationMin: 30, anchored: true }, // rituel 14:00–14:30
+    ];
+    const { moves, overflow } = repackDay(tasks, opts);
+
+    expect(overflow).toEqual([]);
+    // L'ancre ne bouge JAMAIS.
+    expect(moves.find((m) => m.id === 100)).toBeUndefined();
+    // La flexible #1 tient avant l'ancre : pas de move.
+    expect(moves.find((m) => m.id === 1)).toBeUndefined();
+    // La flexible #2 est repoussée après la fin de l'ancre (14:30), pas avant.
+    const move2 = moves.find((m) => m.id === 2);
+    expect(move2?.newStartMin).toBe(14 * 60 + 30);
+
+    const final = apply(tasks, moves, overflow);
+    assertNoOverlap(final);
+    // Vérifie explicitement que rien ne chevauche le créneau de l'ancre.
+    const anchorFinal = { startMin: 14 * 60, durationMin: 30 };
+    for (const t of final) {
+      if (t.startMin === anchorFinal.startMin) continue; // c'est l'ancre elle-même
+      const noOverlap = t.startMin >= anchorFinal.startMin + anchorFinal.durationMin
+        || t.startMin + t.durationMin <= anchorFinal.startMin;
+      expect(noOverlap).toBe(true);
+    }
+  });
+
+  it("un rituel à 09:00 (début de journée) reste à 09:00 ; une flexible qui voulait 09:00 passe après", () => {
+    const tasks: RepackTask[] = [
+      { id: 200, startMin: 9 * 60, durationMin: 60, anchored: true }, // rituel 09:00–10:00
+      { id: 201, startMin: 9 * 60, durationMin: 30 },                  // flexible voulant aussi 09:00
+    ];
+    const { moves, overflow } = repackDay(tasks, opts);
+
+    expect(overflow).toEqual([]);
+    expect(moves.find((m) => m.id === 200)).toBeUndefined();
+    expect(moves.find((m) => m.id === 201)?.newStartMin).toBe(10 * 60);
+  });
+
+  it("sans aucune tâche ancrée, comportement identique à avant (non-régression, cascade)", () => {
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 600, durationMin: 60 },
+      { id: 2, startMin: 610, durationMin: 30 },
+      { id: 3, startMin: 615, durationMin: 30 },
+    ];
+    const { moves, overflow } = repackDay(tasks, opts);
+    assertNoOverlap(apply(tasks, moves, overflow));
+  });
+
+  it("une flexible qui rentre avant l'ancre reste avant ; l'ordre relatif des flexibles est préservé", () => {
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 9 * 60, durationMin: 60 },        // 09:00–10:00, tient avant l'ancre
+      { id: 2, startMin: 10 * 60, durationMin: 60 },       // 10:00–11:00, tient avant l'ancre
+      { id: 100, startMin: 14 * 60, durationMin: 30, anchored: true }, // rituel 14:00–14:30
+    ];
+    const { moves, overflow } = repackDay(tasks, opts);
+
+    expect(overflow).toEqual([]);
+    // Aucune des deux flexibles n'a besoin de bouger : elles tiennent avant l'ancre.
+    expect(moves.find((m) => m.id === 1)).toBeUndefined();
+    expect(moves.find((m) => m.id === 2)).toBeUndefined();
+    expect(moves.find((m) => m.id === 100)).toBeUndefined();
+  });
+});

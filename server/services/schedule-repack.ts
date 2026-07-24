@@ -23,6 +23,14 @@ export interface RepackTask {
    * « non planifiée ».
    */
   unplaced?: boolean;
+  /**
+   * Tâche « rituel » à créneau fixe (`schedulingMode === 'fixed'`). Le repack ne
+   * la déplace JAMAIS : elle garde [startMin, startMin+durationMin] tel quel. Les
+   * tâches flexibles s'organisent autour d'elle sans jamais la chevaucher. Seule
+   * exception : si elle déborde elle-même de la journée de travail, elle part en
+   * overflow comme n'importe quelle autre tâche.
+   */
+  anchored?: boolean;
 }
 
 export interface RepackOptions {
@@ -67,22 +75,66 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
     return start;
   };
 
+  const moves: RepackMove[] = [];
+  const overflow: number[] = [];
+
+  // --- Étape 1 : réserver les créneaux des tâches ancrées (rituels à heure fixe).
+  // Une tâche ancrée garde IMPÉRATIVEMENT son créneau, elle n'entre jamais dans la
+  // boucle de curseur ci-dessous. Deux cas la font quand même basculer en overflow :
+  //  - elle déborde elle-même de la journée de travail (comme une tâche normale) ;
+  //  - elle chevauche une autre ancre déjà réservée (saisie pathologique : on garde
+  //    la première par heure de début, la suivante part en overflow — choix simple
+  //    et déterministe, pas de résolution plus fine nécessaire ici).
+  const anchoredSorted = tasks
+    .filter((t) => t.anchored)
+    .sort((a, b) => a.startMin - b.startMin);
+
+  const reservedBlocks: { start: number; end: number }[] = [];
+  for (const anchor of anchoredSorted) {
+    const end = anchor.startMin + anchor.durationMin;
+    const overlapsReserved = reservedBlocks.some((b) => anchor.startMin < b.end && end > b.start);
+    if (end > opts.dayEndMin || overlapsReserved) {
+      overflow.push(anchor.id);
+      continue;
+    }
+    reservedBlocks.push({ start: anchor.startMin, end });
+  }
+
+  // Renvoie la fin du bloc ancré chevauché par [start, start+duration), sinon `start` inchangé.
+  const skipAnchors = (start: number, duration: number): number => {
+    for (const block of reservedBlocks) {
+      if (start < block.end && start + duration > block.start) {
+        return block.end;
+      }
+    }
+    return start;
+  };
+
+  // --- Étape 2 : couler les tâches flexibles autour des ancres et de la pause
+  // déjeuner, exactement comme avant pour ce qui concerne la pause déjeuner seule.
   // Les tâches déjà horodatées gardent la main sur l'ordre de la journée ;
   // celles sans créneau viennent se glisser derrière, dans l'ordre reçu.
-  const sorted = [...tasks].sort((a, b) => {
+  const flexible = tasks.filter((t) => !t.anchored);
+  const sorted = [...flexible].sort((a, b) => {
     if (!!a.unplaced !== !!b.unplaced) return a.unplaced ? 1 : -1;
     if (a.unplaced && b.unplaced) return 0;
     return a.startMin - b.startMin;
   });
-  const moves: RepackMove[] = [];
-  const overflow: number[] = [];
+
   let cursor = floor;
 
   for (const task of sorted) {
     // Une tâche sans créneau démarre au curseur : son startMin ne veut rien dire.
     let start = task.unplaced ? cursor : Math.max(task.startMin, cursor);
-    start = skipLunch(start, task.durationMin);
-    start = Math.max(start, cursor);
+
+    // On alterne pause déjeuner / blocs ancrés jusqu'à stabilisation : sauter l'un
+    // peut faire retomber sur l'autre (ex. juste après l'ancre = dans la pause).
+    // Borne de sécurité largement suffisante (au plus un saut par bloc bloquant).
+    for (let guard = 0; guard < reservedBlocks.length + 2; guard++) {
+      const next = Math.max(skipLunch(start, task.durationMin), skipAnchors(start, task.durationMin), cursor);
+      if (next === start) break;
+      start = next;
+    }
 
     // La tâche ne tient pas dans la journée de travail → l'appelant la reporte
     // au jour ouvré suivant (curseur inchangé).
