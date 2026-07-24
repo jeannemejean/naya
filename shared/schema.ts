@@ -190,6 +190,27 @@ export const insertDayAvailabilitySchema = createInsertSchema(dayAvailability).o
 export type DayAvailability = typeof dayAvailability.$inferSelect;
 export type InsertDayAvailability = z.infer<typeof insertDayAvailabilitySchema>;
 
+// ─── Rituels récurrents ──────────────────────────────────────────────────────
+// La DÉFINITION d'un engagement répété (ex. « brief news 20 min tous les matins »).
+// Elle survit à tout, notamment au redémarrage de la planification qui supprime les
+// tâches futures : les tâches du jour n'en sont que le reflet, re-matérialisé.
+export const recurringRituals = pgTable("recurring_rituals", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").references(() => projects.id), // null = transverse
+  title: text("title").notNull(),
+  days: text("days").notNull().default("mon,tue,wed,thu,fri"), // même format que work_days
+  startTime: text("start_time").notNull(),                     // "HH:MM"
+  durationMinutes: integer("duration_minutes").notNull().default(30),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_recurring_rituals_user").on(t.userId),
+]);
+
+export type RecurringRitual = typeof recurringRituals.$inferSelect;
+export type InsertRecurringRitual = typeof recurringRituals.$inferInsert;
+
 // Task schedule events — scheduling history for adaptive learning
 export const taskScheduleEvents = pgTable("task_schedule_events", {
   id: serial("id").primaryKey(),
@@ -442,6 +463,7 @@ export const tasks = pgTable("tasks", {
   scheduledEndTime: text("scheduled_end_time"), // HH:MM — computed from scheduledTime + estimatedDuration
   milestoneTriggerId: integer("milestone_trigger_id"),
   milestoneId: integer("milestone_id").references(() => projectMilestones.id),
+  ritualId: integer("ritual_id").references(() => recurringRituals.id),
   isBlockedByMilestone: boolean("is_blocked_by_milestone").default(false),
   campaignId: integer("campaign_id").references(() => campaigns.id),
   // Goal-driven tasks
@@ -453,7 +475,9 @@ export const tasks = pgTable("tasks", {
   completedAt: timestamp("completed_at"),
   archivedAt: timestamp("archived_at"), // « ignorer/archiver » une tâche en retard non planifiée
   clientId: integer("client_id").references(() => clients.id),
-});
+}, (t) => [
+  uniqueIndex("tasks_ritual_date_uq").on(t.ritualId, t.scheduledDate),
+]);
 
 // Clients table - for Agency/Client management
 export const clients = pgTable("clients", {
