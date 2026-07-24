@@ -21,6 +21,7 @@ import { handleTaskDeferral } from './task-intelligence';
 import { computeDurationCalibration, applyCalibration, formatCalibrationForPrompt } from './duration-calibration';
 import { sortTasksByDependencies, groupTasksByWorkflow } from './dependency-sort';
 import { summarizeMilestones } from './project-summary';
+import { materializeRituals } from './ritual-materialize';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -258,6 +259,11 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   // 1. Load brand DNA — skip user if not onboarded
   const brandDna = await storage.getBrandDna(userId);
   if (!brandDna) return;
+
+  // Les rituels d'abord : leur créneau est pris avant que l'IA ne place ses tâches.
+  await materializeRituals(userId, dateStr).catch(e =>
+    console.error(`[AutoPlanner] materializeRituals ${userId} ${dateStr}:`, e.message)
+  );
 
   // 2. Load preferences
   const prefs = await storage.getUserPreferences(userId);
