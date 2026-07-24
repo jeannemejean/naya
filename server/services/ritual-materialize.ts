@@ -24,10 +24,12 @@ export async function materializeRituals(userId: string, date: string): Promise<
         userId,
         projectId: ritual.projectId,
         ritualId: ritual.id,
-        type: "execution",
+        type: "admin",
+        category: "planning",
+        taskEnergyType: "execution",
         priority: 1,
         ...draft,
-      } as any);
+      });
       created++;
     } catch (e: any) {
       // Un rituel en échec ne doit jamais bloquer les autres ni la génération.
