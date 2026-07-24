@@ -1,6 +1,7 @@
 // Lit le message libre écrit par l'utilisateur dans « Où en est ce projet ? » et en
 // extrait d'éventuels RITUELS récurrents. N'écrit RIEN : ne fait que proposer.
 import { callClaudeDetailed, assertNotTruncated, CLAUDE_MODELS } from "./claude";
+import { isValidTimeOfDay, areValidDays } from "./rituals";
 
 export interface RitualProposal {
   kind: "create_ritual";
@@ -15,27 +16,19 @@ export interface NoteAnalysis {
   proposals: RitualProposal[];
 }
 
-const VALID_DAYS = new Set(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
-
-/** Une proposition inexploitable est écartée : mieux vaut ne rien proposer qu'un rituel faux. */
+/**
+ * Une proposition inexploitable est écartée : mieux vaut ne rien proposer qu'un rituel faux.
+ * La validation de l'heure et des jours vient de ./rituals (module pur), partagée avec
+ * la route POST /api/rituals pour éviter toute divergence entre les deux points d'entrée.
+ */
 function isValidProposal(p: any): p is RitualProposal {
-  if (
-    !(
-      p && p.kind === "create_ritual" &&
-      typeof p.title === "string" && p.title.trim().length > 0 &&
-      typeof p.startTime === "string" && /^\d{2}:\d{2}$/.test(p.startTime) &&
-      typeof p.durationMinutes === "number" && p.durationMinutes > 0 && p.durationMinutes <= 480 &&
-      typeof p.days === "string" &&
-      p.days.split(",").map((d: string) => d.trim().toLowerCase()).every((d: string) => VALID_DAYS.has(d))
-    )
-  ) {
-    return false;
-  }
-
-  // Le pattern /^\d{2}:\d{2}$/ accepte des heures impossibles ("99:99", "25:70") : on
-  // vérifie donc en plus les bornes réelles d'une heure (0-23) et de minutes (0-59).
-  const [hours, minutes] = p.startTime.split(":").map((n: string) => Number(n));
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+  return !!(
+    p && p.kind === "create_ritual" &&
+    typeof p.title === "string" && p.title.trim().length > 0 &&
+    typeof p.startTime === "string" && isValidTimeOfDay(p.startTime) &&
+    typeof p.durationMinutes === "number" && p.durationMinutes > 0 && p.durationMinutes <= 480 &&
+    typeof p.days === "string" && areValidDays(p.days)
+  );
 }
 
 /** Extrait le premier objet JSON d'une réponse éventuellement entourée de texte. */

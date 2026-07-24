@@ -86,6 +86,7 @@ import { deriveMilestoneDate } from "./services/milestone-dates";
 import { r2Configured, createUploadUrl } from "./services/r2-storage";
 import { analyzeStatusNote } from "./services/ritual-analyze";
 import { materializeRituals } from "./services/ritual-materialize";
+import { isValidTimeOfDay, areValidDays } from "./services/rituals";
 import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
@@ -2663,12 +2664,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       if (typeof title !== 'string' || !title.trim()) {
         return res.status(400).json({ message: "title requis" });
       }
-      if (typeof startTime !== 'string' || !/^\d{2}:\d{2}$/.test(startTime)) {
+      if (typeof startTime !== 'string' || !isValidTimeOfDay(startTime)) {
         return res.status(400).json({ message: "startTime requis (HH:MM)" });
       }
       const duration = Number(durationMinutes);
       if (!Number.isFinite(duration) || duration <= 0 || duration > 480) {
         return res.status(400).json({ message: "durationMinutes invalide" });
+      }
+      // "days" est optionnel : s'il est fourni, il doit être une liste de jours valide.
+      // S'il est absent, le défaut mon-ven s'applique plus bas (comportement inchangé).
+      if (typeof days === 'string' && days.trim() && !areValidDays(days)) {
+        return res.status(400).json({ message: "days invalide (jours attendus : mon..sun)" });
       }
       if (projectId != null) {
         const project = await storage.getProject(Number(projectId), userId);
