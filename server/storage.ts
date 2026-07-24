@@ -1973,6 +1973,7 @@ export class DatabaseStorage implements IStorage {
         await tx.delete(projectStrategyProfiles).where(inArray(projectStrategyProfiles.projectId, projectIds));
       }
       await tx.delete(clients).where(eq(clients.userId, userId));                 // parent_project_id
+      await tx.delete(recurringRituals).where(eq(recurringRituals.userId, userId)); // tasks déjà supprimées (phase 3)
       await tx.delete(strategyReports).where(eq(strategyReports.userId, userId)); // project_id
       await tx.delete(brandDna).where(eq(brandDna.userId, userId));               // project_id (AVANT projects!)
       await tx.delete(memoryEntries).where(eq(memoryEntries.userId, userId));     // mémoire Naya (reset all data)

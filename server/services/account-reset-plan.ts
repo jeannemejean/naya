@@ -91,6 +91,8 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "project_goals", mode: "delete" },
   { table: "project_strategy_profiles", mode: "delete" },
   { table: "clients", mode: "delete" },
+  // Les tâches (phase 3) sont déjà supprimées : les rituels peuvent partir.
+  { table: "recurring_rituals", mode: "delete" },
   { table: "strategy_reports", mode: "delete" },
   { table: "brand_dna", mode: "delete" },
   { table: "memory_entries", mode: "delete" },
