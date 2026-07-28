@@ -195,10 +195,27 @@ export async function runProspectionSender(): Promise<void> {
         const lastSend = state.lastStepSentAt ? new Date(state.lastStepSentAt) : new Date(state.enrolledAt || Date.now());
         const daysSince = daysBetween(lastSend, new Date());
 
+        // Rattrapage : quand une campagne est relancée, `enrollLead` remet currentStep
+        // à 0 et toutes les étapes déjà envoyées seraient reparcourues une par une,
+        // espacées du délai complet de chaque étape — et chacune coûterait quand même
+        // une génération de message par IA. Chargé UNE SEULE fois avant la boucle de
+        // décision ; `.catch(() => [])` pour qu'une lecture qui échoue ne fasse pas
+        // tomber le prospect (la réservation en aval de sendOnce joue alors son rôle
+        // de filet de sécurité).
+        const reservedOrders = new Set(await storage.getReservedStepOrders(state.leadId, state.campaignId).catch(() => []));
+
         // Sélection conditionnelle : sauter les étapes dont la condition est fausse
-        // (un skip avance currentStep mais ne consomme PAS de délai), attendre, terminer ou envoyer.
+        // (un skip avance currentStep mais ne consomme PAS de délai), dépasser celles
+        // déjà réservées (déjà parties, donc sans envoi ni génération IA), attendre,
+        // terminer ou envoyer.
         let decision = decideNextStep(state.currentStep, engineSteps, signals, daysSince);
-        while (decision.action === "skip") {
+        while (
+          decision.action === "skip" ||
+          (decision.action === "send" && reservedOrders.has(decision.index + 1))
+        ) {
+          if (decision.action === "send") {
+            console.log(`[ProspectionSender] étape ${decision.index + 1} déjà réservée pour le lead ${state.leadId} — rattrapage sans envoi ni génération IA`);
+          }
           await storage.updateLeadSequenceState(state.leadId, { currentStep: decision.index + 1 });
           state.currentStep = decision.index + 1;
           decision = decideNextStep(state.currentStep, engineSteps, signals, daysSince);

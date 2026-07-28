@@ -20,6 +20,7 @@ vi.mock("../storage", () => ({
     claimStepSend: vi.fn(),
     markStepSendSent: vi.fn(),
     releaseStepSend: vi.fn(),
+    getReservedStepOrders: vi.fn(),
   },
 }));
 
@@ -190,6 +191,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.claimStepSend as any).mockResolvedValue(true);
     (storage.markStepSendSent as any).mockResolvedValue(undefined);
     (storage.releaseStepSend as any).mockResolvedValue(undefined);
+    (storage.getReservedStepOrders as any).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -682,6 +684,61 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(storage.markStepSendSent).not.toHaveBeenCalled();
       expect(storage.createOutreachMessage).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("rattrapage : les rangs déjà réservés (relance de campagne) sont dépassés sans envoi ni génération IA", async () => {
+      // Séquence de 3 étapes, rangs 1 et 2 déjà réservés (campagne relancée,
+      // currentStep remis à 0). delayDays:0 sur toutes les étapes pour que la
+      // décision reste `send` et que le rattrapage soit exercé dans le même tick.
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([
+        baseStep({ stepOrder: 1, delayDays: 0 }),
+        baseStep({ id: 101, stepOrder: 2, delayDays: 0 }),
+        baseStep({ id: 102, stepOrder: 3, delayDays: 0 }),
+      ]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (storage.getReservedStepOrders as any).mockResolvedValue([1, 2]);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
+      await runProspectionSender();
+
+      // Aucun message généré (donc aucun coût IA) pour les rangs 1 et 2 : un seul
+      // appel, pour l'étape 3, envoyée directement dans le même tick.
+      expect(generateStepMessage).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(storage.claimStepSend).toHaveBeenCalledTimes(1);
+      expect(storage.claimStepSend).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 3 }));
+      const advance = (storage.updateLeadSequenceState as any).mock.calls.at(-1);
+      expect(advance[1]).toMatchObject({ currentStep: 3 });
+    });
+
+    it("rattrapage : une lecture des rangs réservés qui échoue ne fait pas tomber le prospect", async () => {
+      // getReservedStepOrders().catch(() => []) : le comportement reste celui
+      // d'aujourd'hui — l'étape courante est traitée normalement, la réservation en
+      // aval (claimStepSend) jouant son rôle de filet contre une éventuelle course.
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ delayDays: 0 })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (storage.getReservedStepOrders as any).mockRejectedValue(new Error("DB down"));
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
+      await expect(runProspectionSender()).resolves.toBeUndefined();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(storage.claimStepSend).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }));
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, expect.objectContaining({ currentStep: 1 }));
     });
   });
 });

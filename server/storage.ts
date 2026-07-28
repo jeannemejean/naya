@@ -312,6 +312,8 @@ export interface IStorage {
   claimStepSend(key: StepSendKey): Promise<boolean>;
   markStepSendSent(key: StepSendKey, status: "sent" | "draft"): Promise<void>;
   releaseStepSend(key: StepSendKey): Promise<void>;
+  /** Rangs d'étapes déjà réservés pour ce couple (prospect, campagne) — sert au rattrapage. */
+  getReservedStepOrders(leadId: number, campaignId: number): Promise<number[]>;
   updateOutreachMessage(id: number, updates: Partial<OutreachMessage>): Promise<OutreachMessage>;
   getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
   getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
@@ -1494,6 +1496,16 @@ export class DatabaseStorage implements IStorage {
 
   async releaseStepSend(key: StepSendKey): Promise<void> {
     await db.delete(outreachStepSends).where(this.stepSendWhere(key));
+  }
+
+  async getReservedStepOrders(leadId: number, campaignId: number): Promise<number[]> {
+    // Sert au rattrapage : quand une campagne est relancée (currentStep remis à 0),
+    // permet de dépasser d'un coup les étapes déjà réservées au lieu de les
+    // reparcourir une par une, espacées du délai complet de chaque étape.
+    const rows = await db.select({ stepOrder: outreachStepSends.stepOrder })
+      .from(outreachStepSends)
+      .where(and(eq(outreachStepSends.leadId, leadId), eq(outreachStepSends.campaignId, campaignId)));
+    return rows.map((r) => r.stepOrder);
   }
 
   async createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage> {
