@@ -1483,8 +1483,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markStepSendSent(key: StepSendKey, status: "sent" | "draft"): Promise<void> {
+    // sentAt ne doit dater qu'un envoi RÉEL : un brouillon (status "draft") ne part
+    // nulle part, il doit donc garder sentAt à null.
     await db.update(outreachStepSends)
-      .set({ status, sentAt: new Date() })
+      .set({ status, sentAt: status === "sent" ? new Date() : null })
       .where(this.stepSendWhere(key));
   }
 

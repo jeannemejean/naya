@@ -296,7 +296,10 @@ export async function runProspectionSender(): Promise<void> {
         } else {
           // LinkedIn : auto-envoi via Unipile depuis le compte de l'utilisateur, SI configuré.
           const liAccountId = prefs?.linkedinUnipileAccountId?.trim();
-          if (linkedinConfigured() && liAccountId && lead.linkedinUrl) {
+          // Capturé après la garde : le narrowing `lead.linkedinUrl` ne survit pas à la
+          // fermeture `async` de `sendOnce` ci-dessous (TS le retypera en nullable).
+          const linkedinUrl = lead.linkedinUrl;
+          if (linkedinConfigured() && liAccountId && linkedinUrl) {
             // Plafond quotidien BAS (limites LinkedIn → éviter toute restriction du compte).
             if (!liSentCount.has(state.userId)) {
               liSentCount.set(
@@ -308,8 +311,11 @@ export async function runProspectionSender(): Promise<void> {
               continue; // plafond LinkedIn atteint → retry plus tard (nextRunAt inchangé)
             }
             const outcome = await sendOnce(claimStore, sendKey, async () => {
-              const result = await sendLinkedInStep({ accountId: liAccountId, linkedinUrl: lead.linkedinUrl!, text: body });
-              if (!result.ok) return { ok: false };
+              const result = await sendLinkedInStep({ accountId: liAccountId, linkedinUrl, text: body });
+              if (!result.ok) {
+                console.error(`[ProspectionSender] LinkedIn lead ${lead.id} — détail échec : ${result.error}`);
+                return { ok: false };
+              }
               await storage.createOutreachMessage({
                 userId: state.userId, leadId: lead.id, platform: "linkedin",
                 messageType: `step_${decision.index + 1}_${result.action}`, subject: null, body, sentAt: new Date(),

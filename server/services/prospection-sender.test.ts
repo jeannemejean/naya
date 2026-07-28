@@ -31,7 +31,10 @@ vi.mock("./sequence-message", () => ({
 vi.mock("./linkedin", () => ({
   linkedinConfigured: vi.fn(() => false),
   sendLinkedInStep: vi.fn(),
-  LINKEDIN_DAILY_CAP: 25,
+  // Recalculé à CHAQUE (ré)invocation de la factory (donc à chaque vi.resetModules())
+  // pour permettre au test « plafond quotidien LinkedIn » de le stubber via l'env,
+  // exactement comme LINKEDIN_DAILY_CAP est calculé dans le vrai module ./linkedin.
+  LINKEDIN_DAILY_CAP: Number(process.env.LINKEDIN_DAILY_CAP) || 25,
 }));
 
 import { planNextStep, withinSendingWindow, daysBetween, runProspectionSender } from "./prospection-sender";
@@ -498,8 +501,116 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
       await runProspectionSender();
 
+      expect(storage.claimStepSend).toHaveBeenCalledWith(expect.objectContaining({ channel: "linkedin", stepOrder: 1 }));
       expect(storage.createOutreachMessage).toHaveBeenCalledTimes(1);
+      // Un brouillon n'est PAS un envoi réel : sentAt doit rester null (sinon un
+      // brouillon enregistré à tort comme parti passerait ce test).
+      expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ sentAt: null }));
       expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "draft");
+    });
+
+    it("brouillon LinkedIn déjà réservé : ne recrée PAS de brouillon, la séquence avance quand même", async () => {
+      // Symétrique du test « étape déjà réservée » côté email/LinkedIn-envoi-réel :
+      // preuve par mutation qu'on peut aujourd'hui réécrire le chemin brouillon pour
+      // qu'il crée le brouillon puis marque `draft` SANS consulter le résultat du
+      // claim — ce qui recréerait un brouillon identique à chaque tick du worker.
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.claimStepSend as any).mockResolvedValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.markStepSendSent).not.toHaveBeenCalled();
+      const advance = (storage.updateLeadSequenceState as any).mock.calls.at(-1);
+      expect(advance[1]).toMatchObject({ currentStep: 1 });
+    });
+
+    it("plafond quotidien LinkedIn (LINKEDIN_DAILY_CAP) : une étape sautée (déjà réservée) ne consomme pas le plafond", async () => {
+      // Même logique que le test DAILY_CAP email : LINKEDIN_DAILY_CAP est lu UNE
+      // SEULE FOIS au chargement du module ./linkedin. On réinitialise le registre
+      // de modules puis on stubbe l'env AVANT de réimporter dynamiquement, pour que
+      // le worker relu voie bien LINKEDIN_DAILY_CAP=1.
+      vi.resetModules();
+      vi.stubEnv("LINKEDIN_DAILY_CAP", "1");
+      try {
+        const { storage: freshStorage } = await import("../storage");
+        const { generateStepMessage: freshGenerateStepMessage } = await import("./sequence-message");
+        const { linkedinConfigured: freshLinkedinConfigured, sendLinkedInStep: freshSendLinkedInStep } = await import(
+          "./linkedin"
+        );
+        const { runProspectionSender: freshRunProspectionSender } = await import("./prospection-sender");
+
+        const state1 = baseState({ id: 1, leadId: 1 });
+        const state2 = baseState({ id: 2, leadId: 2 });
+
+        (freshLinkedinConfigured as any).mockReturnValue(true);
+        (freshSendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+        (freshStorage.getDueEnrollments as any).mockResolvedValue([state1, state2]);
+        (freshStorage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+        (freshStorage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+        (freshStorage.getLeadSignals as any).mockResolvedValue(baseSignals());
+        (freshStorage.getLeads as any).mockResolvedValue([
+          baseLead({ id: 1, linkedinUrl: "https://linkedin.com/in/lead1" }),
+          baseLead({ id: 2, linkedinUrl: "https://linkedin.com/in/lead2" }),
+        ]);
+        (freshStorage.getBrandDna as any).mockResolvedValue(null);
+        (freshStorage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+        (freshStorage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+        (freshStorage.countOutreachSentSince as any).mockResolvedValue(0);
+        (freshStorage.updateLeadSequenceState as any).mockResolvedValue(null);
+        (freshStorage.createOutreachMessage as any).mockResolvedValue({});
+        (freshStorage.markStepSendSent as any).mockResolvedValue(undefined);
+        (freshStorage.releaseStepSend as any).mockResolvedValue(undefined);
+        (freshStorage.claimStepSend as any)
+          .mockResolvedValueOnce(false) // prospect 1 : déjà réservée → sautée, ne doit PAS consommer le plafond LinkedIn
+          .mockResolvedValueOnce(true); // prospect 2 : doit partir quand même malgré LINKEDIN_DAILY_CAP=1
+        (freshGenerateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+        await freshRunProspectionSender();
+
+        // Un seul prospect a réellement pu réserver (le second) ; s'il n'était pas
+        // parti, ce serait la preuve que le premier (sauté) a quand même consommé
+        // le plafond LinkedIn de 1.
+        expect(freshSendLinkedInStep).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it("exception après envoi Unipile réussi (DB down) : la réservation N'EST PAS libérée, la séquence n'avance pas", async () => {
+      // Pendant côté LinkedIn du test email « exception après fetch réussi » :
+      // sendLinkedInStep réussit, puis storage.createOutreachMessage (DANS l'attempt
+      // de sendOnce) rejette. Le worker a un try/catch PAR PROSPECT qui avale
+      // l'exception : runProspectionSender ne rejette donc pas.
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      (storage.createOutreachMessage as any).mockRejectedValue(new Error("DB down"));
+
+      await expect(runProspectionSender()).resolves.toBeUndefined();
+
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+      expect(storage.releaseStepSend).not.toHaveBeenCalled();
+      expect(storage.markStepSendSent).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
   });
 });
