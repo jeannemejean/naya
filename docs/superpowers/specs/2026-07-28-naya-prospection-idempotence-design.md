@@ -116,6 +116,29 @@ horaire, plafonds quotidiens, génération du message) et sans en modifier aucun
 
 Aucun chemin d'envoi ne peut atteindre SendGrid ou Unipile sans détenir la réservation.
 
+### Deux distinctions ajoutées après la revue finale
+
+**L'écriture du journal n'est pas l'envoi.** `createOutreachMessage` a lieu après que le
+fournisseur a répondu positivement : à cet instant on SAIT que le message est parti. Si cette
+écriture échoue, l'étape est donc marquée `sent` et la séquence avance normalement ; seule la
+ligne de journal manque (et avec elle le tracking d'ouverture et le décompte du plafond 24h pour
+ce message). Ce qui reste soumis à « dans le doute, ne jamais renvoyer », c'est l'exception du
+**fournisseur** lui-même, dont l'issue est réellement inconnue.
+
+**Un brouillon perdu n'a rien à protéger.** Sur le chemin brouillon LinkedIn (compte Unipile non
+connecté), rien n'est parti : si l'écriture échoue, la réservation est **libérée** et l'étape
+sera rejouée au tick suivant. Appliquer la règle du doute ici ferait perdre le brouillon
+définitivement et en silence, sans rien empêcher.
+
+### Rattrapage au re-lancement
+
+Avant la génération du message, le worker lit une fois les rangs déjà réservés pour
+`(prospect, campagne)` et **dépasse d'un coup** ceux qui sont déjà partis. Sans cela, un
+re-lancement de campagne re-parcourrait la séquence à raison d'une étape par tick, espacée du
+délai complet de chaque étape — une séquence gelée pendant des semaines — et paierait une
+génération IA pour chaque étape déjà envoyée. La réservation en aval reste en place comme filet
+contre une course entre deux instances du worker.
+
 ### Découpage
 
 - `server/services/prospection-idempotence.ts` — décision **pure** et testable :
