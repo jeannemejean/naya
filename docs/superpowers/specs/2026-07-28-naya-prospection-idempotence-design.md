@@ -144,8 +144,9 @@ Aucun chemin d'envoi ne peut atteindre SendGrid ou Unipile sans détenir la rés
 - **Worker (mocks storage)** : un enrôlement dû dont l'étape est déjà réservée ne déclenche aucun
   appel d'envoi et avance quand même `currentStep` ; un envoi en échec ne laisse pas de
   réservation derrière lui.
-- **Intégration (contrainte SQL)** : deux réservations du même `(lead, campagne, rang)` — une
-  seule passe, la seconde est refusée sans lever d'erreur côté appelant.
+- **Contrainte SQL** : deux réservations du même `(lead, campagne, rang)` — une seule passe.
+  Vérifié **à la main sur la branche dev** au moment de la migration : la suite Vitest ne dispose
+  d'aucune base, il n'existe pas de test automatisé touchant Postgres dans ce repo.
 - **Non-régression** : le kill-switch `PROSPECTION_SENDING_ENABLED`, la fenêtre horaire et les
   plafonds quotidiens restent inchangés ; en dry-run, aucune réservation n'est écrite.
 
