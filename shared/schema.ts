@@ -1449,6 +1449,35 @@ export type InsertLeadSequenceState = typeof leadSequenceState.$inferInsert;
 export type LeadStepMessage = typeof leadStepMessages.$inferSelect;
 export type InsertLeadStepMessage = typeof leadStepMessages.$inferInsert;
 
+// Réservation d'envoi (garde d'idempotence). Une ligne = « l'étape N de la campagne C
+// a été prise en charge pour le prospect L ». La contrainte d'unicité est le verrou :
+// le worker ne peut appeler SendGrid/Unipile qu'après avoir inséré sa ligne.
+//
+// Pourquoi (lead, campagne, RANG) et pas step_id : `replaceSequenceSteps` et
+// `saveSequencePlan` suppriment et recréent TOUTES les lignes de campaign_sequence_steps
+// à chaque modification de séquence. Une clé sur step_id serait vidée à la première
+// retouche, et un re-lancement renverrait tout.
+//
+// Une ligne restée en `claimed` est la trace d'un envoi dont l'issue est inconnue
+// (crash entre l'appel au fournisseur et son enregistrement) : elle n'est jamais rejouée.
+export const outreachStepSends = pgTable("outreach_step_sends", {
+  id: serial("id").primaryKey(),
+  leadId: integer("lead_id").notNull().references(() => leads.id),
+  campaignId: integer("campaign_id").notNull().references(() => prospectionCampaigns.id),
+  stepOrder: integer("step_order").notNull(),        // rang de l'étape (1 = première)
+  userId: varchar("user_id").notNull().references(() => users.id),
+  channel: text("channel").notNull(),                // email | linkedin
+  status: text("status").notNull().default("claimed"), // claimed | sent | draft
+  claimedAt: timestamp("claimed_at").defaultNow(),
+  sentAt: timestamp("sent_at"),
+}, (t) => ({
+  uniqLeadCampaignStep: uniqueIndex("outreach_step_sends_lead_campaign_step_uq")
+    .on(t.leadId, t.campaignId, t.stepOrder),
+}));
+
+export type OutreachStepSend = typeof outreachStepSends.$inferSelect;
+export type InsertOutreachStepSend = typeof outreachStepSends.$inferInsert;
+
 // ─── Journal des invocations IA (Phase 1 — socle du corpus propriétaire) ────────
 // Chaque appel IA (contexte d'entrée → sortie, modèle, tokens, latence, coût) est
 // journalisé en best-effort. C'est le minerai du futur jeu d'entraînement (Phase 5)
