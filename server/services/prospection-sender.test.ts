@@ -441,5 +441,65 @@ describe("runProspectionSender — worker loop (intégration)", () => {
         vi.unstubAllEnvs();
       }
     });
+
+    it("LinkedIn envoyé : réserve puis marque la réservation en sent", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.claimStepSend).toHaveBeenCalledWith(expect.objectContaining({ channel: "linkedin", stepOrder: 1 }));
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+      expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "sent");
+    });
+
+    it("LinkedIn déjà réservé : ne rappelle pas Unipile", async () => {
+      (storage.claimStepSend as any).mockResolvedValue(false);
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect((storage.updateLeadSequenceState as any).mock.calls.at(-1)[1]).toMatchObject({ currentStep: 1 });
+    });
+
+    it("brouillon LinkedIn (compte non connecté) : réserve et marque en draft", async () => {
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.createOutreachMessage).toHaveBeenCalledTimes(1);
+      expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "draft");
+    });
   });
 });

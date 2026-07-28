@@ -307,22 +307,38 @@ export async function runProspectionSender(): Promise<void> {
             if ((liSentCount.get(state.userId) || 0) >= LINKEDIN_DAILY_CAP) {
               continue; // plafond LinkedIn atteint → retry plus tard (nextRunAt inchangé)
             }
-            const result = await sendLinkedInStep({ accountId: liAccountId, linkedinUrl: lead.linkedinUrl, text: body });
-            if (!result.ok) {
-              console.error(`[ProspectionSender] LinkedIn lead ${lead.id} échec (${result.error}) — retry au prochain tick`);
+            const outcome = await sendOnce(claimStore, sendKey, async () => {
+              const result = await sendLinkedInStep({ accountId: liAccountId, linkedinUrl: lead.linkedinUrl!, text: body });
+              if (!result.ok) return { ok: false };
+              await storage.createOutreachMessage({
+                userId: state.userId, leadId: lead.id, platform: "linkedin",
+                messageType: `step_${decision.index + 1}_${result.action}`, subject: null, body, sentAt: new Date(),
+              } as any);
+              return { ok: true, status: "sent" as const };
+            });
+            if (outcome.action === "failed") {
+              console.error(`[ProspectionSender] LinkedIn lead ${lead.id} échec — retry au prochain tick`);
               continue; // on n'avance pas → retry
             }
-            await storage.createOutreachMessage({
-              userId: state.userId, leadId: lead.id, platform: "linkedin",
-              messageType: `step_${decision.index + 1}_${result.action}`, subject: null, body, sentAt: new Date(),
-            } as any);
-            liSentCount.set(state.userId, (liSentCount.get(state.userId) || 0) + 1);
+            if (outcome.action === "skipped") {
+              console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} (LinkedIn) — avancement sans envoi`);
+            } else {
+              liSentCount.set(state.userId, (liSentCount.get(state.userId) || 0) + 1);
+            }
           } else {
             // Non configuré (ou lead sans URL LinkedIn) → brouillon à envoyer manuellement.
-            await storage.createOutreachMessage({
-              userId: state.userId, leadId: lead.id, platform: "linkedin",
-              messageType: `step_${decision.index + 1}`, subject: null, body, sentAt: null,
-            } as any);
+            // Le brouillon réserve lui aussi : une étape ne produit qu'UNE seule sortie,
+            // jamais trois brouillons identiques pour le même prospect.
+            const outcome = await sendOnce(claimStore, sendKey, async () => {
+              await storage.createOutreachMessage({
+                userId: state.userId, leadId: lead.id, platform: "linkedin",
+                messageType: `step_${decision.index + 1}`, subject: null, body, sentAt: null,
+              } as any);
+              return { ok: true, status: "draft" as const };
+            });
+            if (outcome.action === "skipped") {
+              console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà traitée pour le lead ${lead.id} — pas de nouveau brouillon`);
+            }
           }
         }
 
