@@ -129,6 +129,7 @@ import {
   leadStepMessages,
   type LeadStepMessage,
   type InsertLeadStepMessage,
+  outreachStepSends,
   aiInvocations,
   type AiInvocation,
   type InsertAiInvocation,
@@ -142,6 +143,7 @@ import { encryptToken, encryptNullable, decryptToken } from "./services/token-cr
 import { repackDay } from "./services/schedule-repack";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
+import type { StepSendKey } from "./services/prospection-idempotence";
 
 export interface IStorage {
   // User operations
@@ -306,6 +308,10 @@ export interface IStorage {
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
   getLeadSignals(leadId: number): Promise<LeadSignals>;
   createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage>;
+  // Garde d'idempotence des envois de séquence (cf. services/prospection-idempotence.ts)
+  claimStepSend(key: StepSendKey): Promise<boolean>;
+  markStepSendSent(key: StepSendKey, status: "sent" | "draft"): Promise<void>;
+  releaseStepSend(key: StepSendKey): Promise<void>;
   updateOutreachMessage(id: number, updates: Partial<OutreachMessage>): Promise<OutreachMessage>;
   getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
   getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
@@ -1445,6 +1451,45 @@ export class DatabaseStorage implements IStorage {
       { linkedinConnectedAt: leadRow?.linkedinConnectedAt ?? null },
       { repliedAt: state?.repliedAt ?? null, status: state?.status ?? "active" },
     );
+  }
+
+  // ─── Garde d'idempotence des envois de séquence ────────────────────────────
+  // Le verrou est la contrainte d'unicité (lead_id, campaign_id, step_order) :
+  // c'est Postgres qui arbitre, donc la garantie tient même avec deux instances.
+
+  private stepSendWhere(key: StepSendKey) {
+    return and(
+      eq(outreachStepSends.leadId, key.leadId),
+      eq(outreachStepSends.campaignId, key.campaignId),
+      eq(outreachStepSends.stepOrder, key.stepOrder),
+    );
+  }
+
+  async claimStepSend(key: StepSendKey): Promise<boolean> {
+    const rows = await db.insert(outreachStepSends)
+      .values({
+        leadId: key.leadId,
+        campaignId: key.campaignId,
+        stepOrder: key.stepOrder,
+        userId: key.userId,
+        channel: key.channel,
+        status: "claimed",
+      })
+      .onConflictDoNothing({
+        target: [outreachStepSends.leadId, outreachStepSends.campaignId, outreachStepSends.stepOrder],
+      })
+      .returning({ id: outreachStepSends.id });
+    return rows.length > 0; // 0 ligne = réservation déjà détenue
+  }
+
+  async markStepSendSent(key: StepSendKey, status: "sent" | "draft"): Promise<void> {
+    await db.update(outreachStepSends)
+      .set({ status, sentAt: new Date() })
+      .where(this.stepSendWhere(key));
+  }
+
+  async releaseStepSend(key: StepSendKey): Promise<void> {
+    await db.delete(outreachStepSends).where(this.stepSendWhere(key));
   }
 
   async createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage> {
