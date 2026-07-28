@@ -531,6 +531,30 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "draft");
     });
 
+    it("brouillon LinkedIn : createOutreachMessage rejette → réservation libérée, la séquence n'avance pas", async () => {
+      // Rien n'est parti ici (c'est un brouillon) : contrairement au chemin d'envoi
+      // réel, rejouer est totalement inoffensif. Une exception à la création du
+      // brouillon doit donc libérer la réservation pour que l'étape soit retentée
+      // au prochain tick, plutôt que de perdre le brouillon en silence.
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      (storage.createOutreachMessage as any).mockRejectedValue(new Error("DB down"));
+
+      await runProspectionSender();
+
+      expect(storage.releaseStepSend).toHaveBeenCalledTimes(1);
+      expect(storage.markStepSendSent).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
     it("brouillon LinkedIn déjà réservé : ne recrée PAS de brouillon, la séquence avance quand même", async () => {
       // Symétrique du test « étape déjà réservée » côté email/LinkedIn-envoi-réel :
       // preuve par mutation qu'on peut aujourd'hui réécrire le chemin brouillon pour

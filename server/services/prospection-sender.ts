@@ -356,12 +356,25 @@ export async function runProspectionSender(): Promise<void> {
             // Le brouillon réserve lui aussi : une étape ne produit qu'UNE seule sortie,
             // jamais trois brouillons identiques pour le même prospect.
             const outcome = await sendOnce(claimStore, sendKey, async () => {
-              await storage.createOutreachMessage({
-                userId: state.userId, leadId: lead.id, platform: "linkedin",
-                messageType: `step_${decision.index + 1}`, subject: null, body, sentAt: null,
-              } as any);
+              // Rien n'est parti ici (brouillon) : rejouer est totalement inoffensif.
+              // Une exception à la création renvoie donc { ok: false } plutôt que de se
+              // propager, pour que sendOnce libère la réservation et retente au tick
+              // suivant — au lieu de perdre le brouillon en silence.
+              try {
+                await storage.createOutreachMessage({
+                  userId: state.userId, leadId: lead.id, platform: "linkedin",
+                  messageType: `step_${decision.index + 1}`, subject: null, body, sentAt: null,
+                } as any);
+              } catch (e: any) {
+                console.error(`[ProspectionSender] échec création brouillon LinkedIn lead ${lead.id} — retry au prochain tick : ${e.message}`);
+                return { ok: false };
+              }
               return { ok: true, status: "draft" as const };
             });
+            if (outcome.action === "failed") {
+              console.error(`[ProspectionSender] brouillon LinkedIn lead ${lead.id} échec — retry au prochain tick`);
+              continue; // on n'avance pas → retry
+            }
             if (outcome.action === "skipped") {
               console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà traitée pour le lead ${lead.id} — pas de nouveau brouillon`);
             }
