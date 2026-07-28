@@ -1110,6 +1110,8 @@ export class DatabaseStorage implements IStorage {
         .where(and(eq(leads.prospectionCampaignId, id), eq(leads.userId, userId)));
       // Séquences liées à la campagne
       await tx.delete(leadSequenceState).where(eq(leadSequenceState.campaignId, id));
+      // Réservations d'envoi de cette campagne (FK campaign_id, pas de cascade)
+      await tx.delete(outreachStepSends).where(eq(outreachStepSends.campaignId, id));
       // Messages générés par step (FK step_id → campaign_sequence_steps.id, pas de cascade) :
       // purger AVANT de supprimer les steps pour éviter une violation FK.
       const stepIds = (
@@ -1979,6 +1981,7 @@ export class DatabaseStorage implements IStorage {
       if (leadIds.length > 0) {
         await tx.delete(leadStepMessages).where(inArray(leadStepMessages.leadId, leadIds)); // lead_id (NOT NULL, pas de user_id)
       }
+      await tx.delete(outreachStepSends).where(eq(outreachStepSends.userId, userId)); // réservations d'envoi
       await tx.delete(leadSequenceState).where(eq(leadSequenceState.userId, userId)); // lead_id (NOT NULL)
       await tx.delete(outreachMessages).where(eq(outreachMessages.userId, userId));   // lead_id (NOT NULL)
       await tx.delete(leads).where(eq(leads.userId, userId));
