@@ -251,6 +251,9 @@ export async function runProspectionSender(): Promise<void> {
             await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
             continue;
           }
+          // Capturé après la garde : le narrowing `lead.email` ne survit pas à la
+          // fermeture `async` de `sendOnce` ci-dessous (TS le retypera en nullable).
+          const toEmail = lead.email;
           // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
           const sender = resolveSenderConfig(prefs);
           if (!sender) {
@@ -272,7 +275,7 @@ export async function runProspectionSender(): Promise<void> {
           const outcome = await sendOnce(claimStore, sendKey, async () => {
             const ok = await sendEmail({
               apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName, footerAddress,
-              to: lead.email!, toName: lead.name || "", subject, body, leadId: lead.id,
+              to: toEmail, toName: lead.name || "", subject, body, leadId: lead.id,
             });
             if (!ok) return { ok: false };
             await storage.createOutreachMessage({

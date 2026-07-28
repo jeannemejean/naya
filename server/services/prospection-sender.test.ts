@@ -345,6 +345,10 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       });
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "sent");
+      // Ordre réel des appels, pas seulement leur présence : la réservation doit
+      // précéder l'appel réseau à SendGrid (sinon deux ticks concurrents pourraient
+      // tous les deux appeler SendGrid avant que l'un des deux ne réserve).
+      expect((storage.claimStepSend as any).mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0]);
     });
 
     it("kill-switch désactivé : aucune réservation n'est prise", async () => {
@@ -355,6 +359,87 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
       expect(storage.claimStepSend).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("exception après fetch réussi (DB down) : la réservation N'EST PAS libérée, la séquence n'avance pas", async () => {
+      // `storage.createOutreachMessage` est appelé DANS l'`attempt` de `sendOnce`, après
+      // un fetch réussi. Une exception à cet endroit doit laisser la réservation en
+      // l'état (ni marquée, ni libérée) : dans le doute, on ne renvoie jamais. Ce test
+      // verrouille ce comportement au niveau du worker (pas seulement du module pur
+      // `sendOnce`), pour qu'un futur try/catch ajouté autour de l'envoi ne puisse pas
+      // transformer silencieusement cette exception en `{ok:false}` (ce qui libérerait
+      // la réservation et renverrait le mail à un vrai prospect).
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+      (storage.createOutreachMessage as any).mockRejectedValue(new Error("DB down"));
+
+      // `runProspectionSender` a un try/catch PAR PROSPECT qui avale l'exception et
+      // passe au suivant : elle ne rejette donc pas — c'est le comportement attendu.
+      await expect(runProspectionSender()).resolves.toBeUndefined();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(storage.releaseStepSend).not.toHaveBeenCalled();
+      expect(storage.markStepSendSent).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("plafond quotidien (DAILY_CAP) : une étape sautée (déjà réservée) ne consomme pas le plafond", async () => {
+      // DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80 est lu UNE SEULE FOIS,
+      // au chargement du module. Pour le fixer à 1 sans toucher au code de production, on
+      // réinitialise le registre de modules puis on stubbe la variable d'env AVANT de
+      // réimporter dynamiquement le worker. Les dépendances mockées (storage,
+      // generateStepMessage) doivent elles aussi être réimportées ici : après
+      // `vi.resetModules()`, les factories de `vi.mock` ci-dessus sont ré-exécutées et
+      // produisent de NOUVELLES instances de mocks, distinctes de `storage`/`generateStepMessage`
+      // importés en haut du fichier — c'est cette instance fraîche que le worker relu
+      // utilise en interne, donc c'est elle qu'il faut configurer et interroger.
+      vi.resetModules();
+      vi.stubEnv("PROSPECTION_DAILY_CAP", "1");
+      try {
+        const { storage: freshStorage } = await import("../storage");
+        const { generateStepMessage: freshGenerateStepMessage } = await import("./sequence-message");
+        const { runProspectionSender: freshRunProspectionSender } = await import("./prospection-sender");
+
+        const state1 = baseState({ id: 1, leadId: 1 });
+        const state2 = baseState({ id: 2, leadId: 2 });
+
+        (freshStorage.getDueEnrollments as any).mockResolvedValue([state1, state2]);
+        (freshStorage.getUserPreferences as any).mockResolvedValue(openPrefs());
+        (freshStorage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
+        (freshStorage.getLeadSignals as any).mockResolvedValue(baseSignals());
+        (freshStorage.getLeads as any).mockResolvedValue([
+          baseLead({ id: 1, email: "lead1@example.com" }),
+          baseLead({ id: 2, email: "lead2@example.com" }),
+        ]);
+        (freshStorage.getBrandDna as any).mockResolvedValue(null);
+        (freshStorage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+        (freshStorage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+        (freshStorage.countOutreachSentSince as any).mockResolvedValue(0);
+        (freshStorage.updateLeadSequenceState as any).mockResolvedValue(null);
+        (freshStorage.createOutreachMessage as any).mockResolvedValue({});
+        (freshStorage.markStepSendSent as any).mockResolvedValue(undefined);
+        (freshStorage.releaseStepSend as any).mockResolvedValue(undefined);
+        (freshStorage.claimStepSend as any)
+          .mockResolvedValueOnce(false) // prospect 1 : déjà réservée → sautée, ne doit PAS consommer le plafond
+          .mockResolvedValueOnce(true); // prospect 2 : doit partir quand même malgré DAILY_CAP=1
+        (freshGenerateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
+        await freshRunProspectionSender();
+
+        // Un seul prospect a réellement pu réserver (le second) ; s'il n'était pas parti,
+        // ce serait la preuve que le premier (sauté) a quand même consommé le plafond de 1.
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.unstubAllEnvs();
+      }
     });
   });
 });
