@@ -307,7 +307,7 @@ export async function runProspectionSender(): Promise<void> {
               } as any);
             } catch (e: any) {
               console.error(
-                `[ProspectionSender] email PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${e.message}`,
+                `[ProspectionSender] email PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${String(e?.message ?? e)}`,
               );
             }
             return { ok: true, status: "sent" as const };
@@ -354,7 +354,7 @@ export async function runProspectionSender(): Promise<void> {
                 } as any);
               } catch (e: any) {
                 console.error(
-                  `[ProspectionSender] LinkedIn PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${e.message}`,
+                  `[ProspectionSender] LinkedIn PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${String(e?.message ?? e)}`,
                 );
               }
               return { ok: true, status: "sent" as const };
@@ -383,7 +383,7 @@ export async function runProspectionSender(): Promise<void> {
                   messageType: `step_${decision.index + 1}`, subject: null, body, sentAt: null,
                 } as any);
               } catch (e: any) {
-                console.error(`[ProspectionSender] échec création brouillon LinkedIn lead ${lead.id} — retry au prochain tick : ${e.message}`);
+                console.error(`[ProspectionSender] échec création brouillon LinkedIn lead ${lead.id} — retry au prochain tick : ${String(e?.message ?? e)}`);
                 return { ok: false };
               }
               return { ok: true, status: "draft" as const };

@@ -711,11 +711,49 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       // Aucun message généré (donc aucun coût IA) pour les rangs 1 et 2 : un seul
       // appel, pour l'étape 3, envoyée directement dans le même tick.
       expect(generateStepMessage).toHaveBeenCalledTimes(1);
+      // L'étape générée est bien la troisième de la séquence (id 102), pas
+      // n'importe laquelle : le comptage d'appels seul ne suffit pas à le garantir.
+      expect(generateStepMessage).toHaveBeenCalledWith(
+        "u1",
+        expect.objectContaining({ step: expect.objectContaining({ id: 102 }) }),
+      );
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(storage.claimStepSend).toHaveBeenCalledTimes(1);
       expect(storage.claimStepSend).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 3 }));
+      // La lecture des rangs réservés doit avoir lieu UNE SEULE FOIS par prospect,
+      // avant la boucle de décision — pas à chaque itération de rattrapage.
+      expect(storage.getReservedStepOrders).toHaveBeenCalledTimes(1);
       const advance = (storage.updateLeadSequenceState as any).mock.calls.at(-1);
       expect(advance[1]).toMatchObject({ currentStep: 3 });
+    });
+
+    it("rattrapage total : tous les rangs déjà réservés → séquence terminée sans envoi ni génération IA", async () => {
+      // Cas normal d'une relance de campagne déjà terminée : les 3 rangs sont déjà
+      // réservés, il ne reste donc rien à envoyer ni à générer — la séquence doit
+      // simplement se conclure en `completed`.
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([
+        baseStep({ stepOrder: 1, delayDays: 0 }),
+        baseStep({ id: 101, stepOrder: 2, delayDays: 0 }),
+        baseStep({ id: 102, stepOrder: 3, delayDays: 0 }),
+      ]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (storage.getReservedStepOrders as any).mockResolvedValue([1, 2, 3]);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      const advance = (storage.updateLeadSequenceState as any).mock.calls.at(-1);
+      expect(advance[1]).toMatchObject({ status: "completed", nextRunAt: null });
     });
 
     it("rattrapage : une lecture des rangs réservés qui échoue ne fait pas tomber le prospect", async () => {
