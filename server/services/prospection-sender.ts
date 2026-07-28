@@ -20,6 +20,7 @@ import { linkedinConfigured, sendLinkedInStep, LINKEDIN_DAILY_CAP } from "./link
 import { decideNextStep } from "./sequence-engine";
 import { generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
+import { sendOnce, type ClaimStore, type StepSendKey } from "./prospection-idempotence";
 
 const POLL_MS = 60_000;
 let running = false;
@@ -72,6 +73,15 @@ export function withinSendingWindow(
 }
 
 const DAY_ABBRS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+// Adaptateur du protocole d'idempotence sur le storage. Le worker ne parle jamais
+// directement aux trois méthodes : il passe par `sendOnce`, qui garantit l'ordre
+// réserver → envoyer → marquer/libérer.
+const claimStore: ClaimStore = {
+  claim: (key) => storage.claimStepSend(key),
+  markSent: (key, status) => storage.markStepSendSent(key, status),
+  release: (key) => storage.releaseStepSend(key),
+};
 
 // "Maintenant" dans le fuseau de l'utilisateur → { nowMin, dayAbbr }.
 function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
@@ -208,6 +218,16 @@ export async function runProspectionSender(): Promise<void> {
           continue;
         }
 
+        // Clé de réservation : le RANG de l'étape, stable à travers les rééditions
+        // de séquence (replaceSequenceSteps recrée les lignes et change leurs ids).
+        const sendKey: StepSendKey = {
+          leadId: lead.id,
+          campaignId: state.campaignId,
+          stepOrder: decision.index + 1,
+          userId: state.userId,
+          channel: step.channel === "email" ? "email" : "linkedin",
+        };
+
         // Texte SUR-MESURE au dernier moment. useCache:true → réutilise EXACTEMENT le message
         // déjà généré/mis en cache par l'aperçu (parité aperçu ↔ envoi). generateStepMessage
         // LÈVE une exception si le corps est vide : le lead reste alors non avancé (retry via le
@@ -246,19 +266,30 @@ export async function runProspectionSender(): Promise<void> {
           }
           const footerAddress = [prefs?.prospectionSenderAddress, prefs?.prospectionSenderCity, prefs?.prospectionSenderCountry]
             .filter(Boolean).join(", ");
-          const ok = await sendEmail({
-            apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName, footerAddress,
-            to: lead.email, toName: lead.name || "", subject, body, leadId: lead.id,
+          // Réservation AVANT tout appel à SendGrid. Réservation refusée = l'étape est
+          // déjà partie (ou son sort est inconnu) : on n'envoie rien et on laisse la
+          // séquence avancer plus bas.
+          const outcome = await sendOnce(claimStore, sendKey, async () => {
+            const ok = await sendEmail({
+              apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName, footerAddress,
+              to: lead.email!, toName: lead.name || "", subject, body, leadId: lead.id,
+            });
+            if (!ok) return { ok: false };
+            await storage.createOutreachMessage({
+              userId: state.userId, leadId: lead.id, platform: "email",
+              messageType: `step_${decision.index + 1}`, subject, body, sentAt: new Date(),
+            } as any);
+            return { ok: true, status: "sent" as const };
           });
-          if (!ok) {
+          if (outcome.action === "failed") {
             console.error(`[ProspectionSender] échec envoi lead ${lead.id} — retry au prochain tick`);
             continue; // on n'avance pas → retry
           }
-          await storage.createOutreachMessage({
-            userId: state.userId, leadId: lead.id, platform: "email",
-            messageType: `step_${decision.index + 1}`, subject, body, sentAt: new Date(),
-          } as any);
-          sentCount.set(state.userId, (sentCount.get(state.userId) || 0) + 1);
+          if (outcome.action === "skipped") {
+            console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} — avancement sans envoi`);
+          } else {
+            sentCount.set(state.userId, (sentCount.get(state.userId) || 0) + 1);
+          }
         } else {
           // LinkedIn : auto-envoi via Unipile depuis le compte de l'utilisateur, SI configuré.
           const liAccountId = prefs?.linkedinUnipileAccountId?.trim();

@@ -17,6 +17,9 @@ vi.mock("../storage", () => ({
     getUserPreferences: vi.fn(),
     createOutreachMessage: vi.fn(),
     countOutreachSentSince: vi.fn(),
+    claimStepSend: vi.fn(),
+    markStepSendSent: vi.fn(),
+    releaseStepSend: vi.fn(),
   },
 }));
 
@@ -181,6 +184,9 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.createOutreachMessage as any).mockResolvedValue({});
     (storage.countOutreachSentSince as any).mockResolvedValue(0);
     (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Corps du message" });
+    (storage.claimStepSend as any).mockResolvedValue(true);
+    (storage.markStepSendSent as any).mockResolvedValue(undefined);
+    (storage.releaseStepSend as any).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -273,5 +279,82 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     expect(storage.createOutreachMessage).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(sendLinkedInStep).not.toHaveBeenCalled();
+  });
+
+  describe("garde d'idempotence", () => {
+    it("étape déjà réservée : n'envoie RIEN mais fait avancer la séquence", async () => {
+      (storage.claimStepSend as any).mockResolvedValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep(), baseStep({ id: 101, stepOrder: 2, delayDays: 3 })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      // La séquence avance quand même, avec lastStepSentAt renseigné pour que
+      // l'étape suivante respecte son délai au lieu de partir dans la foulée.
+      const advance = (storage.updateLeadSequenceState as any).mock.calls.at(-1);
+      expect(advance[1]).toMatchObject({ currentStep: 1 });
+      expect(advance[1].lastStepSentAt).toBeInstanceOf(Date);
+    });
+
+    it("échec franc de SendGrid : libère la réservation et n'avance pas", async () => {
+      fetchMock.mockResolvedValue({ ok: false });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.releaseStepSend).toHaveBeenCalledTimes(1);
+      expect(storage.markStepSendSent).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("envoi réussi : réserve AVANT d'appeler SendGrid puis marque la réservation", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.claimStepSend).toHaveBeenCalledWith({
+        leadId: 1, campaignId: 10, stepOrder: 1, userId: "u1", channel: "email",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "sent");
+    });
+
+    it("kill-switch désactivé : aucune réservation n'est prise", async () => {
+      process.env.PROSPECTION_SENDING_ENABLED = "false";
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+      await runProspectionSender();
+
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });
