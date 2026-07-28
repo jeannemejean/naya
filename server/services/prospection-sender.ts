@@ -278,10 +278,21 @@ export async function runProspectionSender(): Promise<void> {
               to: toEmail, toName: lead.name || "", subject, body, leadId: lead.id,
             });
             if (!ok) return { ok: false };
-            await storage.createOutreachMessage({
-              userId: state.userId, leadId: lead.id, platform: "email",
-              messageType: `step_${decision.index + 1}`, subject, body, sentAt: new Date(),
-            } as any);
+            // À partir d'ici le message EST parti (SendGrid a répondu positivement) :
+            // une exception d'écriture du journal n'est plus « dans le doute » — on SAIT
+            // que l'envoi a eu lieu. On logge et on continue au lieu de laisser
+            // l'exception se propager, pour que l'étape soit quand même marquée envoyée
+            // et la séquence avancée ; seule la ligne de journal manque.
+            try {
+              await storage.createOutreachMessage({
+                userId: state.userId, leadId: lead.id, platform: "email",
+                messageType: `step_${decision.index + 1}`, subject, body, sentAt: new Date(),
+              } as any);
+            } catch (e: any) {
+              console.error(
+                `[ProspectionSender] email PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${e.message}`,
+              );
+            }
             return { ok: true, status: "sent" as const };
           });
           if (outcome.action === "failed") {
@@ -316,10 +327,19 @@ export async function runProspectionSender(): Promise<void> {
                 console.error(`[ProspectionSender] LinkedIn lead ${lead.id} — détail échec : ${result.error}`);
                 return { ok: false };
               }
-              await storage.createOutreachMessage({
-                userId: state.userId, leadId: lead.id, platform: "linkedin",
-                messageType: `step_${decision.index + 1}_${result.action}`, subject: null, body, sentAt: new Date(),
-              } as any);
+              // Le message EST parti (Unipile a répondu positivement) : une exception de
+              // journalisation ne doit plus faire perdre la trace de l'envoi (cf. chemin
+              // email). On logge et on continue ; seule la ligne de journal manque.
+              try {
+                await storage.createOutreachMessage({
+                  userId: state.userId, leadId: lead.id, platform: "linkedin",
+                  messageType: `step_${decision.index + 1}_${result.action}`, subject: null, body, sentAt: new Date(),
+                } as any);
+              } catch (e: any) {
+                console.error(
+                  `[ProspectionSender] LinkedIn PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${e.message}`,
+                );
+              }
               return { ok: true, status: "sent" as const };
             });
             if (outcome.action === "failed") {

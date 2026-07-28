@@ -364,14 +364,11 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it("exception après fetch réussi (DB down) : la réservation N'EST PAS libérée, la séquence n'avance pas", async () => {
-      // `storage.createOutreachMessage` est appelé DANS l'`attempt` de `sendOnce`, après
-      // un fetch réussi. Une exception à cet endroit doit laisser la réservation en
-      // l'état (ni marquée, ni libérée) : dans le doute, on ne renvoie jamais. Ce test
-      // verrouille ce comportement au niveau du worker (pas seulement du module pur
-      // `sendOnce`), pour qu'un futur try/catch ajouté autour de l'envoi ne puisse pas
-      // transformer silencieusement cette exception en `{ok:false}` (ce qui libérerait
-      // la réservation et renverrait le mail à un vrai prospect).
+    it("échec d'écriture du journal après envoi réussi (createOutreachMessage rejette) : réservation marquée sent, la séquence avance quand même", async () => {
+      // Le message EST parti (fetch a répondu ok). Seule l'écriture dans
+      // outreach_messages échoue : ce n'est plus un cas « dans le doute » — on SAIT
+      // que l'envoi a eu lieu, donc on marque la réservation `sent` et on avance la
+      // séquence ; seule la ligne de journal manque (loggée en erreur).
       (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
       (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
       (storage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
@@ -384,13 +381,38 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
       (storage.createOutreachMessage as any).mockRejectedValue(new Error("DB down"));
 
-      // `runProspectionSender` a un try/catch PAR PROSPECT qui avale l'exception et
-      // passe au suivant : elle ne rejette donc pas — c'est le comportement attendu.
+      await expect(runProspectionSender()).resolves.toBeUndefined();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(storage.releaseStepSend).not.toHaveBeenCalled();
+      expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "sent");
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, expect.objectContaining({ currentStep: 1 }));
+    });
+
+    it("exception du fournisseur (fetch rejette) : la réservation N'EST PAS libérée, la séquence n'avance pas", async () => {
+      // C'est désormais ce test qui porte l'invariant « dans le doute, ne jamais
+      // renvoyer » : ici l'issue de l'envoi est réellement inconnue (le fournisseur
+      // n'a pas répondu), donc la réservation doit rester `claimed` et rien ne doit
+      // avancer. `runProspectionSender` a un try/catch PAR PROSPECT qui avale
+      // l'exception et passe au suivant : elle ne rejette donc pas.
+      fetchMock.mockRejectedValue(new Error("network down"));
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Sujet", body: "Corps" });
+
       await expect(runProspectionSender()).resolves.toBeUndefined();
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(storage.releaseStepSend).not.toHaveBeenCalled();
       expect(storage.markStepSendSent).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
 
@@ -586,11 +608,11 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       }
     });
 
-    it("exception après envoi Unipile réussi (DB down) : la réservation N'EST PAS libérée, la séquence n'avance pas", async () => {
-      // Pendant côté LinkedIn du test email « exception après fetch réussi » :
-      // sendLinkedInStep réussit, puis storage.createOutreachMessage (DANS l'attempt
-      // de sendOnce) rejette. Le worker a un try/catch PAR PROSPECT qui avale
-      // l'exception : runProspectionSender ne rejette donc pas.
+    it("échec d'écriture du journal après envoi Unipile réussi (DB down) : réservation marquée sent, la séquence avance quand même", async () => {
+      // Pendant côté LinkedIn du test email équivalent : sendLinkedInStep réussit
+      // (le message EST parti), puis storage.createOutreachMessage (DANS l'attempt de
+      // sendOnce) rejette. On SAIT que l'envoi a eu lieu : on marque `sent` et on
+      // avance, seule la ligne de journal manque.
       (linkedinConfigured as any).mockReturnValue(true);
       (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
       (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
@@ -609,7 +631,32 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
       expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
       expect(storage.releaseStepSend).not.toHaveBeenCalled();
+      expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "sent");
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, expect.objectContaining({ currentStep: 1 }));
+    });
+
+    it("exception du fournisseur LinkedIn (sendLinkedInStep rejette) : la réservation N'EST PAS libérée, la séquence n'avance pas", async () => {
+      // Invariant « dans le doute, ne jamais renvoyer » côté LinkedIn : Unipile n'a
+      // pas répondu, l'issue est inconnue, la réservation doit rester `claimed`.
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockRejectedValue(new Error("Unipile injoignable"));
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await expect(runProspectionSender()).resolves.toBeUndefined();
+
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+      expect(storage.releaseStepSend).not.toHaveBeenCalled();
       expect(storage.markStepSendSent).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
   });
