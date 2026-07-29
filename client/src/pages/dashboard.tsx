@@ -177,15 +177,18 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
       tabIndex={0}
       onClick={() => navigate(`/projects/${project.id}`)}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/projects/${project.id}`); } }}
-      className={`bg-card border border-naya-olive-18 rounded-lg p-4 shadow-rest cursor-pointer hover:border-naya-olive-35 transition-colors ${compact ? "" : "mb-6"}`}
+      className={`bg-card border border-naya-olive-18 rounded-lg shadow-rest cursor-pointer hover:border-naya-olive-35 transition-colors ${compact ? "p-2.5" : "p-4 mb-6"}`}
       style={showAmber ? { borderLeft: "3px solid rgba(212,201,122,0.75)" } : undefined}
     >
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: project.color || "#2B2D1C" }} />
+      <div className={`flex items-center justify-between ${compact ? "mb-2" : "mb-3"}`}>
+        <div className={`flex items-center min-w-0 ${compact ? "gap-1.5" : "gap-2"}`}>
+          <div
+            className={`rounded-full flex-shrink-0 ${compact ? "w-1.5 h-1.5" : "w-2 h-2"}`}
+            style={{ backgroundColor: project.color || "#2B2D1C" }}
+          />
           <div className="min-w-0">
             <div className="flex items-center gap-2 min-w-0">
-              <span className="font-display uppercase tracking-xwide text-[11px] text-foreground truncate">{project.name}</span>
+              <span className={`font-display uppercase tracking-xwide text-foreground truncate ${compact ? "text-[10px]" : "text-[11px]"}`}>{project.name}</span>
               {(project as any).projectKind === "client" && (
                 <span
                   className="flex-shrink-0 text-[9px] font-display uppercase tracking-xwide px-1.5 py-0.5 rounded border border-[rgba(125,143,168,0.45)] bg-[rgba(125,143,168,0.18)] text-[#354963]"
@@ -232,11 +235,11 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
       </div>
       {topGoal ? (
         <>
-          <p className="text-sm text-foreground mb-2">{topGoal.title}</p>
+          <p className={`text-foreground ${compact ? "text-[11px] leading-snug mb-1 line-clamp-2" : "text-sm mb-2"}`}>{topGoal.title}</p>
           {progressPct !== null ? (
             <div>
               <Progress value={progressPct} className="h-[2px]" />
-              <p className="text-[10px] text-naya-olive-55 mt-1">{topGoal.currentValue} / {topGoal.targetValue}</p>
+              <p className={`text-naya-olive-55 mt-1 ${compact ? "text-[9px]" : "text-[10px]"}`}>{topGoal.currentValue} / {topGoal.targetValue}</p>
             </div>
           ) : (
             <Progress value={0} className="h-[2px] opacity-20" />
@@ -298,7 +301,7 @@ function AllProjectsBand() {
       {filtered.length === 0 ? (
         <p className="text-xs text-naya-olive-35 italic">Aucun projet {kindFilter === "client" ? "client" : "personnel"}.</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {filtered.slice(0, 4).map(p => (
             <ActiveProjectBand key={p.id} projectId={p.id} compact overcommitted={overcommitById.get(p.id) ?? false} />
           ))}
