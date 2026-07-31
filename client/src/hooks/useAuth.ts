@@ -1,10 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { User } from "@shared/schema";
+import type { Language } from "@shared/language";
 
 type AuthUser = User & {
   access?: { allowed: boolean; status: string | null; trialEndsAt: string | null; cancelAtPeriodEnd: boolean };
   ai?: { blocked: boolean };
+  language?: Language;
 };
 
 export function useAuth() {
@@ -31,6 +33,7 @@ export function useAuth() {
     isAuthenticated: !!user,
     hasAccess: !!user?.access?.allowed,
     aiBlocked: !!user?.ai?.blocked,
+    language: user?.language,
     logout,
   };
 }

@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ProjectProvider } from "@/lib/project-context";
 import { useAuth } from "@/hooks/useAuth";
+import { useLanguageSync } from "@/hooks/useLanguageSync";
 import { useGlobalSearch } from "@/hooks/useGlobalSearch";
 import GlobalSearch from "@/components/global-search";
 import NotFound from "@/pages/not-found";
@@ -135,6 +136,11 @@ function Router() {
  );
 }
 
+function LanguageGate({ children }: { children: React.ReactNode }) {
+ useLanguageSync();
+ return <>{children}</>;
+}
+
 function App() {
  return (
  <QueryClientProvider client={queryClient}>
@@ -143,7 +149,9 @@ function App() {
  <TooltipProvider>
  <Toaster />
  <ErrorBoundary>
+ <LanguageGate>
  <Router />
+ </LanguageGate>
  </ErrorBoundary>
  </TooltipProvider>
  </ProjectProvider>
