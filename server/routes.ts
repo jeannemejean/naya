@@ -740,10 +740,11 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     const { platform } = req.params;
     const validPlatforms = ['instagram', 'linkedin', 'twitter', 'tiktok'];
     if (!validPlatforms.includes(platform)) {
-      return res.status(400).json({ message: `Plateforme non supportée: ${platform}` });
+      return res.status(400).json({ error: "social_connect_failed", message: `Plateforme non supportée: ${platform}` });
     }
     if (!isPlatformConfigured(platform as any)) {
       return res.status(503).json({
+        error: "social_not_configured",
         message: `${platform} n'est pas encore configuré sur ce serveur. Ajoute les variables d'environnement.`,
         notConfigured: true,
       });
@@ -768,7 +769,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       }
       res.json({ url });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      res.status(500).json({ error: "social_connect_failed", message: err.message });
     }
   });
 
@@ -8380,24 +8381,32 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // Get the content to publish
       const content = await storage.getContentById(contentId, userId);
       if (!content) {
-        return res.status(404).json({ message: "Content not found" });
+        return res.status(404).json({ error: "content_not_found", message: "Content not found" });
       }
-      
+
       if (content.status === 'published') {
-        return res.status(400).json({ message: "Content is already published" });
+        return res.status(400).json({ error: "content_already_published", message: "Content is already published" });
       }
-      
+
       // Get connected account for this platform
       const accounts = await storage.getSocialAccounts(userId);
       const socialAccount = accounts.find(acc => acc.platform === content.platform && acc.isActive);
-      
+
       if (!socialAccount) {
-        return res.status(400).json({ message: `No connected ${content.platform} account found. Please connect your account first.` });
+        return res.status(400).json({
+          error: "social_account_not_connected",
+          params: { platform: content.platform },
+          message: `No connected ${content.platform} account found. Please connect your account first.`,
+        });
       }
-      
+
       // Check if token is expired
       if (socialAccount.expiresAt && new Date() > socialAccount.expiresAt) {
-        return res.status(400).json({ message: `${content.platform} account token has expired. Please reconnect your account.` });
+        return res.status(400).json({
+          error: "social_token_expired",
+          params: { platform: content.platform },
+          message: `${content.platform} account token has expired. Please reconnect your account.`,
+        });
       }
       
       const credentials = {

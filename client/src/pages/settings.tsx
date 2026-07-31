@@ -5,6 +5,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
+import { throwApiError, translateError, ApiError } from "@/lib/api-error";
 import Sidebar from "@/components/sidebar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -150,6 +151,7 @@ const SOCIAL_PLATFORMS = [
 ];
 
 function SocialConnectionsCard() {
+ const { t } = useTranslation();
  const { toast } = useToast();
  const queryClient = useQueryClient();
  const [location] = useLocation();
@@ -196,13 +198,17 @@ function SocialConnectionsCard() {
  const connectMutation = useMutation({
  mutationFn: async (platform: string) => {
  const res = await fetch(`/api/social/oauth/${platform}/url`, { credentials: 'include' });
+ if (!res.ok) await throwApiError(res, 'social_connect_failed');
  const data = await res.json();
- if (!res.ok) throw new Error(data.message || 'Erreur');
- if (data.notConfigured) throw new Error(data.message);
+ if (data.notConfigured) throw new ApiError('social_not_configured');
  window.location.href = data.url;
  },
- onError: (err: Error) => {
- toast({ title: 'Connexion impossible', description: err.message, variant: 'destructive' });
+ onError: (err: unknown) => {
+ toast({
+ title: t('errors.social_connect_failed'),
+ description: translateError(t, err, 'social_connect_failed'),
+ variant: 'destructive',
+ });
  },
  });
 

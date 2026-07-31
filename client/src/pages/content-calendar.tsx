@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'wouter';
 import { fetchJson } from '@/lib/fetchJson';
 import { useTranslation } from 'react-i18next';
+import { throwApiError, translateError } from '@/lib/api-error';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import { format } from 'date-fns/format';
@@ -360,8 +361,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  headers: { 'Content-Type': 'application/json' },
  });
  if (!response.ok) {
- const errorData = await response.json();
- throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+ await throwApiError(response, 'content_publish_failed');
  }
  return response.json();
  },
@@ -369,8 +369,12 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
  toast({ title: t('contentCalendar.contentPublished'), description: t('contentCalendar.postedTo', { platform: data.platform }) });
  },
- onError: (error: Error) => {
- toast({ title: t('contentCalendar.failedToPublish'), description: error.message || t('contentCalendar.checkAccountConnection'), variant: 'destructive' });
+ onError: (error: unknown) => {
+ toast({
+ title: t('contentCalendar.failedToPublish'),
+ description: translateError(t, error, 'content_publish_failed'),
+ variant: 'destructive',
+ });
  },
  });
 
