@@ -27,6 +27,7 @@ import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { isValidStage, buildSituationPrompt } from "./services/project-summary";
 import { resolveStrategyWeekKey } from "@shared/strategy-week";
+import { normalizeLanguage, DEFAULT_LANGUAGE } from "@shared/language";
 import { budgetWeight, taskCapForBudget } from "./services/task-allocation";
 import { runPlaceToday } from "./services/place-today-runner";
 import { selectOverdueTasks } from "./services/overdue-tasks";
@@ -982,9 +983,12 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const sub = await storage.getSubscription(userId);
       const allowed = hasNayaAccess(user, sub ?? null);
       const aiBlocked = await isAiBlocked(userId).catch(() => false);
+      const prefs = await storage.getUserPreferences(userId).catch(() => undefined);
       const { hashedPassword, ...userWithoutPassword } = user;
       res.json({
         ...userWithoutPassword,
+        // Langue du compte : fait autorité sur le cache du navigateur (cf. useLanguageSync).
+        language: normalizeLanguage(prefs?.language) ?? DEFAULT_LANGUAGE,
         access: {
           allowed,
           status: sub?.status ?? null,
