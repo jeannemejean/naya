@@ -11,6 +11,7 @@ import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, Plus, X, ChevronDown, Che
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
+import { useLanguageToggle } from "@/hooks/useLanguageToggle";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -309,7 +310,7 @@ function KeywordChipInput({
 
 export default function Onboarding() {
  const { t, i18n } = useTranslation();
- const toggleLanguage = () => i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
+ const { toggle: toggleLanguage } = useLanguageToggle();
  const { toast } = useToast();
  const [step, setStep] = useState(1);
  const [boardGenerating, setBoardGenerating] = useState(false);
