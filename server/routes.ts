@@ -885,13 +885,13 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const { email, password, firstName, lastName } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
+        return res.status(400).json({ error: "missing_credentials", message: "Email and password are required" });
       }
 
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser) {
-        return res.status(400).json({ message: "Email already registered" });
+        return res.status(400).json({ error: "email_already_registered", message: "Email already registered" });
       }
 
       // Hash password and create user
@@ -919,7 +919,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       res.json({ ...userWithoutPassword, token });
     } catch (error) {
       console.error("Registration error:", error);
-      res.status(500).json({ message: "Failed to register user" });
+      res.status(500).json({ error: "register_failed", message: "Failed to register user" });
     }
   });
 
@@ -928,19 +928,19 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const { email, password } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({ message: "Email and password are required" });
+        return res.status(400).json({ error: "missing_credentials", message: "Email and password are required" });
       }
 
       // Find user by email
       const user = await storage.getUserByEmail(email);
       if (!user || !user.hashedPassword) {
-        return res.status(401).json({ message: "Invalid email or password" });
+        return res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password" });
       }
 
       // Verify password
       const isValid = await verifyPassword(password, user.hashedPassword);
       if (!isValid) {
-        return res.status(401).json({ message: "Invalid email or password" });
+        return res.status(401).json({ error: "invalid_credentials", message: "Invalid email or password" });
       }
 
       // Create session (web)
@@ -953,7 +953,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       res.json({ ...userWithoutPassword, token });
     } catch (error) {
       console.error("Login error:", error);
-      res.status(500).json({ message: "Failed to login" });
+      res.status(500).json({ error: "login_failed", message: "Failed to login" });
     }
   });
 

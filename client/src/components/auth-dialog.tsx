@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useTranslation } from "react-i18next";
 import {
  Dialog,
  DialogContent,
@@ -14,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
+import { throwApiError, translateError } from "@/lib/api-error";
 
 type AuthDialogProps = {
  open: boolean;
@@ -24,6 +26,7 @@ type AuthDialogProps = {
 export default function AuthDialog({ open, onOpenChange, defaultTab = "login" }: AuthDialogProps) {
  const [, setLocation] = useLocation();
  const { toast } = useToast();
+ const { t } = useTranslation();
  const [activeTab, setActiveTab] = useState(defaultTab);
 
  // Login mutation
@@ -37,8 +40,7 @@ export default function AuthDialog({ open, onOpenChange, defaultTab = "login" }:
  });
 
  if (!res.ok) {
- const error = await res.json();
- throw new Error(error.message || "Login failed");
+ await throwApiError(res, "login_failed");
  }
 
  return res.json();
@@ -48,14 +50,14 @@ export default function AuthDialog({ open, onOpenChange, defaultTab = "login" }:
  onOpenChange(false);
  setLocation("/");
  toast({
- title: "Welcome back!",
- description: "You've successfully logged in.",
+ title: t("auth.welcomeBackTitle"),
+ description: t("auth.welcomeBackBody"),
  });
  },
- onError: (error: Error) => {
+ onError: (error: unknown) => {
  toast({
- title: "Login failed",
- description: error.message,
+ title: t("errors.login_failed"),
+ description: translateError(t, error, "login_failed"),
  variant: "destructive",
  });
  },
@@ -72,8 +74,7 @@ export default function AuthDialog({ open, onOpenChange, defaultTab = "login" }:
  });
 
  if (!res.ok) {
- const error = await res.json();
- throw new Error(error.message || "Registration failed");
+ await throwApiError(res, "register_failed");
  }
 
  return res.json();
@@ -83,14 +84,14 @@ export default function AuthDialog({ open, onOpenChange, defaultTab = "login" }:
  onOpenChange(false);
  setLocation("/onboarding");
  toast({
- title: "Welcome to Naya!",
- description: "Your account has been created successfully.",
+ title: t("auth.accountCreatedTitle"),
+ description: t("auth.accountCreatedBody"),
  });
  },
- onError: (error: Error) => {
+ onError: (error: unknown) => {
  toast({
- title: "Registration failed",
- description: error.message,
+ title: t("errors.register_failed"),
+ description: translateError(t, error, "register_failed"),
  variant: "destructive",
  });
  },

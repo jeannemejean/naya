@@ -1393,6 +1393,28 @@ const fr = {
  errorSend: "Impossible d'envoyer le message.",
  send: "Envoyer",
  },
+
+ errors: {
+ missing_credentials: "Renseigne ton email et ton mot de passe.",
+ email_already_registered: "Un compte existe déjà avec cet email.",
+ invalid_credentials: "Email ou mot de passe incorrect.",
+ register_failed: "La création du compte a échoué. Réessaie.",
+ login_failed: "La connexion a échoué. Réessaie.",
+ social_not_configured: "Ce réseau n'est pas configuré sur le serveur.",
+ social_connect_failed: "La connexion au réseau a échoué. Réessaie.",
+ content_not_found: "Ce contenu est introuvable.",
+ content_already_published: "Ce contenu est déjà publié.",
+ social_account_not_connected: "Aucun compte {{platform}} connecté. Connecte-le d'abord dans les réglages.",
+ social_token_expired: "Ta connexion {{platform}} a expiré. Reconnecte le compte.",
+ content_publish_failed: "La publication a échoué. Vérifie la connexion du compte.",
+ },
+
+ auth: {
+ welcomeBackTitle: "Content de te revoir",
+ welcomeBackBody: "Tu es connectée.",
+ accountCreatedTitle: "Bienvenue dans Naya",
+ accountCreatedBody: "Ton compte est créé.",
+ },
 };
 
 export default fr;

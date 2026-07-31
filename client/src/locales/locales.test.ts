@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fr from "./fr";
 import en from "./en";
+import { ERROR_CODES } from "@shared/error-codes";
 
 /** Aplatit un dictionnaire imbriqué en liste de chemins : { a: { b: "x" } } → ["a.b"]. */
 function flattenKeys(obj: unknown, prefix = ""): string[] {
@@ -27,6 +28,14 @@ describe("dictionnaires de traduction", () => {
   it("aucune valeur n'est vide", () => {
     const vides = [...flattenValues(fr, "fr"), ...flattenValues(en, "en")];
     expect(vides).toEqual([]);
+  });
+
+  it("chaque code d'erreur a sa traduction dans les deux langues", () => {
+    const sansTraduction = ERROR_CODES.flatMap((code) => [
+      frKeys.includes(`errors.${code}`) ? [] : [`fr:errors.${code}`],
+      enKeys.includes(`errors.${code}`) ? [] : [`en:errors.${code}`],
+    ].flat());
+    expect(sansTraduction).toEqual([]);
   });
 });
 
