@@ -19,4 +19,20 @@ export function useLanguageSync(): void {
       void i18n.changeLanguage(cible);
     }
   }, [language, i18n]);
+
+  // Garde l'attribut lang du document aligné sur la langue active de i18next,
+  // y compris pour un visiteur non connecté qui bascule la langue sur la landing.
+  // Ne dépend que de `i18n` (référence stable) — jamais de `i18n.language` —
+  // pour éviter toute boucle de rendu ; on s'abonne une fois à l'événement
+  // "languageChanged" et on nettoie l'écouteur au démontage.
+  useEffect(() => {
+    const appliquer = (langue: string) => {
+      document.documentElement.lang = langue;
+    };
+    appliquer(i18n.language);
+    i18n.on("languageChanged", appliquer);
+    return () => {
+      i18n.off("languageChanged", appliquer);
+    };
+  }, [i18n]);
 }
