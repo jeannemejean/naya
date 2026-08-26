@@ -1162,6 +1162,7 @@ const fr = {
  confirmReset: "Es-tu sûr de vouloir réinitialiser toutes les données ?",
  dataReset: "Les données ont été réinitialisées",
  logOut: "Se déconnecter",
+ socialConnectFailedTitle: "Connexion impossible",
  tabs: {
  identity: "Identité",
  offersMarket: "Offres & Marché",
@@ -1400,6 +1401,7 @@ const fr = {
  invalid_credentials: "Email ou mot de passe incorrect.",
  register_failed: "La création du compte a échoué. Réessaie.",
  login_failed: "La connexion a échoué. Réessaie.",
+ language_save_failed: "L'enregistrement de la langue a échoué. Réessaie.",
  social_not_configured: "Ce réseau n'est pas configuré sur le serveur.",
  social_connect_failed: "La connexion au réseau a échoué. Réessaie.",
  content_not_found: "Ce contenu est introuvable.",
@@ -1414,6 +1416,12 @@ const fr = {
  welcomeBackBody: "Tu es connectée.",
  accountCreatedTitle: "Bienvenue dans Naya",
  accountCreatedBody: "Ton compte est créé.",
+ loginFailedTitle: "Connexion impossible",
+ registerFailedTitle: "Inscription impossible",
+ },
+
+ app: {
+ documentTitle: "Naya — Ton intelligence stratégique",
  },
 };
 

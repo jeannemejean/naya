@@ -205,7 +205,7 @@ function SocialConnectionsCard() {
  },
  onError: (err: unknown) => {
  toast({
- title: t('errors.social_connect_failed'),
+ title: t('settings.socialConnectFailedTitle'),
  description: translateError(t, err, 'social_connect_failed'),
  variant: 'destructive',
  });

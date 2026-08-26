@@ -10,6 +10,8 @@ export const ERROR_CODES = [
   "invalid_credentials",
   "register_failed",
   "login_failed",
+  // préférences du compte
+  "language_save_failed",
   // comptes sociaux (câblés en tâche 7)
   "social_not_configured",
   "social_connect_failed",

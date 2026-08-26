@@ -27,7 +27,7 @@ import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { isValidStage, buildSituationPrompt } from "./services/project-summary";
 import { resolveStrategyWeekKey } from "@shared/strategy-week";
-import { normalizeLanguage, DEFAULT_LANGUAGE } from "@shared/language";
+import { normalizeLanguage } from "@shared/language";
 import { budgetWeight, taskCapForBudget } from "./services/task-allocation";
 import { runPlaceToday } from "./services/place-today-runner";
 import { selectOverdueTasks } from "./services/overdue-tasks";
@@ -989,7 +989,12 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       res.json({
         ...userWithoutPassword,
         // Langue du compte : fait autorité sur le cache du navigateur (cf. useLanguageSync).
-        language: normalizeLanguage(prefs?.language) ?? DEFAULT_LANGUAGE,
+        // `undefined` signifie « ce compte n'a pas d'avis » — pas d'écrasement d'une
+        // préférence choisie côté navigateur (ex. sur la landing publique avant inscription).
+        // JSON.stringify retire alors le champ de la réponse, et le garde
+        // `if (!language) return;` de useLanguageSync laisse le cache décider.
+        // Le français reste le défaut via client/src/lib/i18n.ts et via la colonne en base.
+        language: normalizeLanguage(prefs?.language) ?? undefined,
         access: {
           allowed,
           status: sub?.status ?? null,

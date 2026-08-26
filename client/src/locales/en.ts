@@ -1162,6 +1162,7 @@ const en = {
  confirmReset: "Are you sure you want to reset all data?",
  dataReset: "Data has been reset",
  logOut: "Log Out",
+ socialConnectFailedTitle: "Connection failed",
  tabs: {
  identity: "Identity",
  offersMarket: "Offers & Market",
@@ -1400,6 +1401,7 @@ const en = {
  invalid_credentials: "Incorrect email or password.",
  register_failed: "Account creation failed. Please try again.",
  login_failed: "Sign-in failed. Please try again.",
+ language_save_failed: "Saving your language failed. Please try again.",
  social_not_configured: "This network is not configured on the server.",
  social_connect_failed: "Connecting to the network failed. Please try again.",
  content_not_found: "This content could not be found.",
@@ -1414,6 +1416,12 @@ const en = {
  welcomeBackBody: "You're signed in.",
  accountCreatedTitle: "Welcome to Naya",
  accountCreatedBody: "Your account has been created.",
+ loginFailedTitle: "Sign-in failed",
+ registerFailedTitle: "Sign-up failed",
+ },
+
+ app: {
+ documentTitle: "Naya — Your Strategic Intelligence",
  },
 };
 

@@ -56,7 +56,7 @@ export default function AuthDialog({ open, onOpenChange, defaultTab = "login" }:
  },
  onError: (error: unknown) => {
  toast({
- title: t("errors.login_failed"),
+ title: t("auth.loginFailedTitle"),
  description: translateError(t, error, "login_failed"),
  variant: "destructive",
  });
@@ -90,7 +90,7 @@ export default function AuthDialog({ open, onOpenChange, defaultTab = "login" }:
  },
  onError: (error: unknown) => {
  toast({
- title: t("errors.register_failed"),
+ title: t("auth.registerFailedTitle"),
  description: translateError(t, error, "register_failed"),
  variant: "destructive",
  });
