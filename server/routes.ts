@@ -2170,6 +2170,36 @@ Write in clear, direct language. Be specific — reference actual offers, audien
     }
   });
 
+  app.post('/api/planning/daily-feedback', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const { date, signal } = req.body;
+
+      const ALLOWED = ['on_track', 'felt_overloaded', 'tasks_wrong'];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '') || !ALLOWED.includes(signal)) {
+        return res.status(400).json({ message: 'date (YYYY-MM-DD) et signal valides requis' });
+      }
+
+      // Le contexte est dérivé côté serveur : le client ne sait pas ce qui compte.
+      const dayTasks = await storage.getTasksInRange(userId, date, date);
+      const prefs = await storage.getUserPreferences(userId).catch(() => null);
+
+      await storage.recordDailyRhythmFeedback({
+        userId,
+        feedbackDate: date,
+        signal,
+        taskCount: dayTasks.length,
+        plannedMinutes: dayTasks.reduce((sum, t) => sum + (t.estimatedDuration || 30), 0),
+        bufferMin: prefs?.bufferMin ?? 10,
+      });
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Error recording daily feedback:', error);
+      res.status(500).json({ message: 'Failed to record daily feedback' });
+    }
+  });
+
   app.post('/api/planning/pause', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;

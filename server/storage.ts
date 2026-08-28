@@ -25,6 +25,8 @@ import {
   taskWorkspaceEntries,
   taskFeedback,
   taskDependencies,
+  dailyRhythmFeedback,
+  type DailyRhythmFeedback,
   clients,
   milestoneTriggers,
   projectMilestones,
@@ -223,6 +225,13 @@ export interface IStorage {
   createTaskFeedback(data: InsertTaskFeedback): Promise<TaskFeedback>;
   getRecentTaskFeedback(userId: string, projectId?: number, limit?: number): Promise<TaskFeedback[]>;
   updateTaskFeedback(id: number, data: Partial<InsertTaskFeedback>): Promise<TaskFeedback>;
+
+  // Daily Rhythm Feedback operations
+  recordDailyRhythmFeedback(entry: {
+    userId: string; feedbackDate: string; signal: string;
+    taskCount: number; plannedMinutes: number; bufferMin: number;
+  }): Promise<void>;
+  getRecentRhythmFeedback(userId: string, days: number): Promise<DailyRhythmFeedback[]>;
   deleteTask(taskId: number): Promise<void>;
   deleteIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
   archiveIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
@@ -2135,6 +2144,33 @@ export class DatabaseStorage implements IStorage {
   async updateTaskFeedback(id: number, data: Partial<InsertTaskFeedback>): Promise<TaskFeedback> {
     const [row] = await db.update(taskFeedback).set(data).where(eq(taskFeedback.id, id)).returning();
     return row;
+  }
+
+  /** Un seul retour par jour : un second envoi corrige le premier. */
+  async recordDailyRhythmFeedback(entry: {
+    userId: string; feedbackDate: string; signal: string;
+    taskCount: number; plannedMinutes: number; bufferMin: number;
+  }): Promise<void> {
+    await db.insert(dailyRhythmFeedback).values(entry)
+      .onConflictDoUpdate({
+        target: [dailyRhythmFeedback.userId, dailyRhythmFeedback.feedbackDate],
+        set: {
+          signal: entry.signal,
+          taskCount: entry.taskCount,
+          plannedMinutes: entry.plannedMinutes,
+          bufferMin: entry.bufferMin,
+        },
+      });
+  }
+
+  async getRecentRhythmFeedback(userId: string, days: number): Promise<DailyRhythmFeedback[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    return await db.select().from(dailyRhythmFeedback)
+      .where(and(
+        eq(dailyRhythmFeedback.userId, userId),
+        gte(dailyRhythmFeedback.createdAt, since),
+      ));
   }
 
   /**

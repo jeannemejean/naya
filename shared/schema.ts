@@ -1291,6 +1291,26 @@ export const insertTaskDependencySchema = createInsertSchema(taskDependencies).o
 export type InsertTaskDependency = z.infer<typeof insertTaskDependencySchema>;
 export type TaskDependency = typeof taskDependencies.$inferSelect;
 
+// ─── Daily Rhythm Feedback ─────────────────────────────────────────────────────
+/**
+ * Retour quotidien de l'utilisateur sur la densité de sa journée. Alimente l'ajustement
+ * automatique de la respiration (cf. server/services/rhythm-buffer.ts). Le contexte du
+ * jour est figé au moment du signal : les tâches concernées peuvent disparaître ensuite.
+ */
+export const dailyRhythmFeedback = pgTable("daily_rhythm_feedback", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  feedbackDate: text("feedback_date").notNull(),   // YYYY-MM-DD
+  signal: text("signal").notNull(),                // on_track | felt_overloaded | tasks_wrong
+  taskCount: integer("task_count"),
+  plannedMinutes: integer("planned_minutes"),
+  bufferMin: integer("buffer_min"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  userDateUnique: unique("daily_rhythm_feedback_user_date_unique").on(table.userId, table.feedbackDate),
+}));
+export type DailyRhythmFeedback = typeof dailyRhythmFeedback.$inferSelect;
+
 // ─── Business Memory ─────────────────────────────────────────────────────────
 export const businessMemory = pgTable("business_memory", {
   id: serial("id").primaryKey(),

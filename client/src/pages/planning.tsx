@@ -309,11 +309,19 @@ export default function Planning({ onSearchClick }: Props) {
     onError: () => toast({ title: "Erreur", description: "Impossible de confirmer le jalon.", variant: "destructive" }),
   });
 
+  const dailyFeedbackMutation = useMutation({
+    mutationFn: (signal: string) =>
+      apiRequest('POST', '/api/planning/daily-feedback', { date: today, signal }).then(r => r.json()),
+  });
+
   function handleDailyFeedback(key: string) {
+    // Le localStorage reste, mais seulement pour ne pas re-demander le même jour :
+    // la source de vérité est désormais le serveur.
     localStorage.setItem(`naya_daily_feedback_${today}`, key);
     setDailyFeedbackGiven(key);
     setDailyFeedbackThanks(true);
     setTimeout(() => setDailyFeedbackThanks(false), 2000);
+    dailyFeedbackMutation.mutate(key);
   }
 
   const todayFeedbackStored = typeof window !== 'undefined'
