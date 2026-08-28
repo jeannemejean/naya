@@ -41,6 +41,17 @@ export interface RepackOptions {
   lunchEnabled: boolean;
   /** Début minimal autorisé (jour courant = maintenant). Défaut : dayStartMin. */
   floorMin?: number;
+  /**
+   * Plages déjà occupées par des éléments que le re-tassage NE POSSÈDE PAS et ne peut
+   * donc ni déplacer ni reprogrammer :
+   *  - les rendez-vous Google Agenda ;
+   *  - les tâches DÉJÀ TERMINÉES (leur créneau est de l'histoire, pas du stock libre).
+   *
+   * Les tâches flexibles s'organisent autour, exactement comme autour d'un rituel ancré,
+   * mais ces plages ne sortent jamais dans `moves` ni dans `overflow` : elles ne nous
+   * appartiennent pas.
+   */
+  blockedRanges?: { start: number; end: number }[];
 }
 
 export interface RepackMove {
@@ -89,7 +100,12 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
     .filter((t) => t.anchored)
     .sort((a, b) => a.startMin - b.startMin);
 
-  const reservedBlocks: { start: number; end: number }[] = [];
+  // Les plages externes (rendez-vous, tâches terminées) sont réservées AVANT tout le
+  // reste : ni les ancres ni les tâches flexibles ne peuvent se poser dessus.
+  const reservedBlocks: { start: number; end: number }[] = (opts.blockedRanges ?? [])
+    .filter((b) => b.end > b.start)
+    .map((b) => ({ start: b.start, end: b.end }));
+
   for (const anchor of anchoredSorted) {
     const end = anchor.startMin + anchor.durationMin;
     const overlapsReserved = reservedBlocks.some((b) => anchor.startMin < b.end && end > b.start);

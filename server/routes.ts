@@ -120,6 +120,7 @@ import {
 } from "@shared/schema";
 import { articleAnalysisService } from "./services/article-analysis";
 import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner";
+import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import {
   getAuthUrl,
   exchangeCodeForTokens,
@@ -3963,7 +3964,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const taskId = parseInt(id);
 
       // If updating schedule-related fields, apply slot-safe logic
-      if (updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration) {
+      const touchesSchedule = !!(updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration);
+      if (touchesSchedule) {
         const currentTask = await storage.getTask(taskId);
         if (!currentTask) return res.status(404).json({ message: "Task not found" });
 
@@ -3987,9 +3989,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           updates.scheduledTime = slot.time;
           merged.scheduledDate = slot.date;
           merged.scheduledTime = slot.time;
-          const [h, m] = slot.time.split(':').map(Number);
-          const endMin = h * 60 + m + (merged.estimatedDuration || 30);
-          updates.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
+          // `scheduledEndTime` est dérivée plus bas, une seule fois pour tous les chemins.
         }
 
         // Slot conflict — auto-shift
@@ -3999,11 +3999,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           );
           if (!check.available && check.nextAvailableTime) {
             updates.scheduledTime = check.nextAvailableTime;
-            const [h, m] = check.nextAvailableTime.split(':').map(Number);
-            const endMin = h * 60 + m + merged.estimatedDuration;
-            updates.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2,'0')}:${String(endMin % 60).padStart(2,'0')}`;
+            merged.scheduledTime = check.nextAvailableTime;
           }
         }
+
+        // `scheduledEndTime` est DÉRIVÉE : on la recalcule dès que l'heure ou la durée
+        // bouge, quel que soit le chemin. Sans ça, redimensionner une carte (qui n'envoie
+        // que `estimatedDuration`) laissait une heure de fin périmée en base.
+        updates.scheduledEndTime = resolveScheduledEndTime(
+          merged.scheduledTime,
+          merged.estimatedDuration,
+        );
       }
 
       // Normalise completedAt : si completed=true, on force un vrai Date (pas une string ISO)
@@ -4017,6 +4023,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       }
 
       const task = await storage.updateTask(taskId, safeUpdates);
+
+      // Règle du projet : tout chemin de (re)planification se termine par le filet
+      // idempotent. Cette route ne le faisait pas — déplacer ou redimensionner une carte
+      // pouvait donc laisser la journée en chevauchement jusqu'au prochain passage d'un
+      // worker (toutes les 15 min), voire durablement si aucun worker ne tournait.
+      if (touchesSchedule && task?.scheduledDate) {
+        await storage.fixOverlappingTasks(userId, task.scheduledDate).catch((e: any) =>
+          console.error('[tasks:patch] fixOverlappingTasks:', e?.message),
+        );
+      }
+
       res.json(task);
     } catch (error) {
       console.error("Error updating task:", error);

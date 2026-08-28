@@ -89,6 +89,58 @@ describe("repackDay", () => {
   });
 });
 
+/**
+ * Plages occupées par des éléments que le re-tassage ne possède pas et ne peut pas
+ * déplacer : rendez-vous Google Agenda et tâches DÉJÀ TERMINÉES (leur créneau est de
+ * l'histoire, on ne le réattribue pas). Avant, `repackDay` ne connaissait que la pause
+ * déjeuner et les rituels ancrés : il re-tassait par-dessus ces plages-là.
+ */
+describe("repackDay — plages bloquées externes (rendez-vous, tâches terminées)", () => {
+  it("ne pose pas une tâche sur une plage bloquée", () => {
+    const tasks: RepackTask[] = [{ id: 1, startMin: 600, durationMin: 30 }]; // 10:00–10:30
+    const { moves, overflow } = repackDay(tasks, {
+      ...opts,
+      blockedRanges: [{ start: 615, end: 690 }], // 10:15–11:30
+    });
+    expect(overflow).toEqual([]);
+    expect(moves.find((m) => m.id === 1)?.newStartMin).toBe(690); // poussée à 11:30
+  });
+
+  it("laisse intacte une tâche qui ne touche aucune plage bloquée", () => {
+    const tasks: RepackTask[] = [{ id: 1, startMin: 540, durationMin: 30 }]; // 09:00–09:30
+    const r = repackDay(tasks, { ...opts, blockedRanges: [{ start: 630, end: 690 }] });
+    expect(r.moves).toEqual([]);
+    expect(r.overflow).toEqual([]);
+  });
+
+  it("enchaîne autour de plusieurs plages bloquées sans jamais les chevaucher", () => {
+    const blockedRanges = [
+      { start: 600, end: 660 }, // 10:00–11:00
+      { start: 690, end: 720 }, // 11:30–12:00
+    ];
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 570, durationMin: 60 }, // 09:30, déborderait sur le 1er bloc
+      { id: 2, startMin: 600, durationMin: 30 },
+    ];
+    const { moves, overflow } = repackDay(tasks, { ...opts, blockedRanges });
+    expect(overflow).toEqual([]);
+
+    const final = apply(tasks, moves, overflow);
+    assertNoOverlap(final);
+    for (const t of final) {
+      for (const b of blockedRanges) {
+        expect(t.startMin < b.end && t.startMin + t.durationMin > b.start).toBe(false);
+      }
+    }
+  });
+
+  it("ne renvoie jamais une plage bloquée dans les moves (elle n'appartient pas au re-tassage)", () => {
+    const tasks: RepackTask[] = [{ id: 1, startMin: 600, durationMin: 30 }];
+    const { moves } = repackDay(tasks, { ...opts, blockedRanges: [{ start: 600, end: 660 }] });
+    expect(moves.every((m) => m.id === 1)).toBe(true);
+  });
+});
+
 describe("repackDay — tâches sans créneau (exigence : rien de « non planifié »)", () => {
   const OPTS = {
     dayStartMin: 9 * 60, dayEndMin: 18 * 60,

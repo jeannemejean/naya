@@ -141,6 +141,7 @@ import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
+import { blockedRangesByDate } from "./services/task-schedule-fields";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
@@ -2178,10 +2179,14 @@ export class DatabaseStorage implements IStorage {
     durationMinutes: number,
     excludeTaskId?: number
   ): Promise<{ available: boolean; nextAvailableTime?: string }> {
+    // Le garde de collision doit voir ce que la grille affiche : les tâches TERMINÉES
+    // occupent toujours leur créneau à l'écran, donc elles bloquent (avant, cocher une
+    // tâche rendait son créneau « libre » et la suivante s'empilait dessus). Les tâches
+    // ARCHIVÉES, elles, ne sont plus affichées : elles ne doivent plus rien bloquer.
     const conditions = [
       eq(tasks.userId, userId),
       eq(tasks.scheduledDate, date),
-      eq(tasks.completed, false),
+      isNull(tasks.archivedAt),
     ];
     if (excludeTaskId) conditions.push(ne(tasks.id, excludeTaskId) as any);
 
@@ -2259,8 +2264,10 @@ export class DatabaseStorage implements IStorage {
     for (let guard = 0; guard < 14; guard++) {
       if (!isWorkDay(currentDate)) { currentDate = nextDay(currentDate); continue; }
 
+      // Mêmes règles que checkSlotAvailability : une tâche TERMINÉE occupe toujours son
+      // créneau (elle reste affichée), une tâche ARCHIVÉE n'occupe plus rien.
       const dayTasks = await db.select({ scheduledTime: tasks.scheduledTime, estimatedDuration: tasks.estimatedDuration })
-        .from(tasks).where(and(eq(tasks.userId, userId), eq(tasks.scheduledDate, currentDate), eq(tasks.completed, false)));
+        .from(tasks).where(and(eq(tasks.userId, userId), eq(tasks.scheduledDate, currentDate), isNull(tasks.archivedAt)));
 
       const occupied = dayTasks
         .filter(t => t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime))
@@ -2290,14 +2297,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async fixOverlappingTasks(userId: string, fromDate: string): Promise<number> {
-    const [toFix, prefs] = await Promise.all([
+    // Le re-tassage doit voir EXACTEMENT ce que la grille affiche, sinon il réattribue
+    // des créneaux qui semblent occupés à l'utilisateur :
+    //  - les tâches ARCHIVÉES sont exclues (la grille ne les montre pas — cf. getTasksInRange) ;
+    //  - les tâches TERMINÉES sont chargées mais jamais déplacées : elles deviennent des
+    //    plages bloquées (leur créneau est de l'histoire, pas du stock libre).
+    const [visibleTasks, prefs] = await Promise.all([
       db.select().from(tasks).where(and(
         eq(tasks.userId, userId),
-        eq(tasks.completed, false),
+        isNull(tasks.archivedAt),
         gte(tasks.scheduledDate, fromDate),
       )),
       this.getUserPreferences(userId),
     ]);
+
+    const toFix = visibleTasks.filter((t) => !t.completed);
 
     const parseTime = (hhmm: string): number => {
       const [h, m] = hhmm.split(':').map(Number);
@@ -2359,10 +2373,52 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
+    // Plages que le re-tassage ne possède pas et ne doit jamais réattribuer.
+    // 1) Les tâches TERMINÉES : leur créneau reste occupé à l'écran, donc il reste occupé
+    //    pour le planificateur. Sans ça, cocher une tâche « libère » son créneau et la
+    //    suivante vient s'empiler dessus — chevauchement que rien ne corrige ensuite.
+    const blockedByDate = blockedRangesByDate(visibleTasks);
+    const addBlocked = (date: string, start: number, end: number) => {
+      if (end <= start) return;
+      if (!blockedByDate.has(date)) blockedByDate.set(date, []);
+      blockedByDate.get(date)!.push({ start, end });
+    };
+
+    // 2) Les rendez-vous Google Agenda. UN SEUL appel réseau pour toute la plage (le
+    //    service renvoie [] sans jeton et n'échoue jamais bruyamment) ; en cas de
+    //    problème on dégrade proprement : on re-tasse sans le calendrier plutôt que
+    //    de faire échouer l'écriture appelante.
+    const datesWithTasks = Array.from(byDate.keys()).sort();
+    if (datesWithTasks.length > 0) {
+      try {
+        const { getCalendarEvents } = await import('./services/google-calendar');
+        // La borne haute déborde de 14 jours : une tâche qui déborde d'un jour est
+        // reportée au jour ouvré suivant, qui peut sortir de la plage des tâches
+        // actuelles — sans ça ce jour-là serait re-tassé en ignorant l'agenda.
+        const lastDate = datesWithTasks[datesWithTasks.length - 1];
+        const [ly, lm, ld] = lastDate.split('-').map(Number);
+        const horizon = new Date(Date.UTC(ly, lm - 1, ld));
+        horizon.setUTCDate(horizon.getUTCDate() + 14);
+
+        const events = await getCalendarEvents(
+          userId,
+          datesWithTasks[0],
+          horizon.toISOString().slice(0, 10),
+        );
+        for (const ev of events) {
+          if (ev.allDay) continue;
+          if (!/^\d{2}:\d{2}$/.test(ev.startTime) || !/^\d{2}:\d{2}$/.test(ev.endTime)) continue;
+          addBlocked(ev.date, parseTime(ev.startTime), parseTime(ev.endTime));
+        }
+      } catch (e: any) {
+        console.error('[fixOverlappingTasks] GCal indisponible, re-tassage sans agenda:', e?.message);
+      }
+    }
+
     let fixed = 0;
     // Ordre chronologique STRICT : le débordement d'un jour alimente le suivant,
     // en cascade (« tout redécaler »), au lieu d'être déplanifié.
-    const queue = Array.from(byDate.keys()).sort();
+    const queue = datesWithTasks;
     for (let i = 0; i < queue.length && i < 400; i++) {
       const date = queue[i];
       const dayTasks = byDate.get(date)!;
@@ -2371,6 +2427,7 @@ export class DatabaseStorage implements IStorage {
       const { moves, overflow } = repackDay(dayTasks, {
         dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,
         floorMin: date === parisToday ? parisNowMin : undefined,
+        blockedRanges: blockedByDate.get(date) ?? [],
       });
 
       for (const mv of moves) {
