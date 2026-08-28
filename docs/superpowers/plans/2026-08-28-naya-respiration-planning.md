@@ -39,7 +39,7 @@
 
 ---
 
-### Tâche 1 : le tampon dans le re-tassage
+### Task 1 : le tampon dans le re-tassage
 
 **Fichiers :**
 - Modifier : `server/services/schedule-repack.ts`
@@ -147,7 +147,7 @@ git commit -m "feat(planning): option bufferMin dans le re-tassage"
 
 ---
 
-### Tâche 2 : stocker le tampon et le brancher
+### Task 2 : stocker le tampon et le brancher
 
 **Fichiers :**
 - Modifier : `shared/schema.ts:129` (table `userPreferences`)
@@ -217,7 +217,7 @@ git commit -m "feat(planning): tampon persisté dans les préférences et appliq
 
 ---
 
-### Tâche 3 : la génération quotidienne tient compte du tampon
+### Task 3 : la génération quotidienne tient compte du tampon
 
 **Fichiers :**
 - Modifier : `server/services/auto-planner.ts:356-357`
@@ -265,7 +265,7 @@ git commit -m "feat(planning): la génération quotidienne intègre la respirati
 
 ---
 
-### Tâche 4 : persister le retour de fin de journée
+### Task 4 : persister le retour de fin de journée
 
 **Fichiers :**
 - Modifier : `shared/schema.ts` (nouvelle table)
@@ -440,7 +440,7 @@ git commit -m "feat(planning): le retour de fin de journée est enfin persisté"
 
 ---
 
-### Tâche 5 : la règle d'adaptation
+### Task 5 : la règle d'adaptation
 
 **Fichiers :**
 - Créer : `server/services/rhythm-buffer.ts`
@@ -635,7 +635,7 @@ git commit -m "feat(planning): la respiration s'ajuste chaque semaine d'après l
 
 ---
 
-### Tâche 6 : restituer et permettre de corriger
+### Task 6 : restituer et permettre de corriger
 
 **Fichiers :**
 - Modifier : `client/src/pages/settings.tsx` (carte horaires, ~ligne 375-420)
@@ -735,7 +735,7 @@ git commit -m "feat(planning): la respiration est visible et modifiable dans les
 
 ---
 
-### Tâche 7 : vérification de bout en bout, puis déploiement
+### Task 7 : vérification de bout en bout, puis déploiement
 
 **Fichiers :** aucun (vérification).
 
