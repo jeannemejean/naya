@@ -2328,6 +2328,7 @@ export class DatabaseStorage implements IStorage {
     const lunchStartMin = parseTime(prefs?.lunchBreakStart || '12:00');
     const lunchEndMin   = parseTime(prefs?.lunchBreakEnd   || '13:00');
     const lunchEnabled  = prefs?.lunchBreakEnabled !== false;
+    const bufferMin = Math.max(0, prefs?.bufferMin ?? 10);
 
     // « Maintenant » et « aujourd'hui » en heure de Paris — pour ne JAMAIS
     // replanifier une tâche du jour courant dans le passé.
@@ -2428,6 +2429,7 @@ export class DatabaseStorage implements IStorage {
         dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,
         floorMin: date === parisToday ? parisNowMin : undefined,
         blockedRanges: blockedByDate.get(date) ?? [],
+        bufferMin,
       });
 
       for (const mv of moves) {

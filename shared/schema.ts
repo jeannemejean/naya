@@ -138,6 +138,10 @@ export const userPreferences = pgTable("user_preferences", {
   lunchBreakEnabled: boolean("lunch_break_enabled").default(true),
   lunchBreakStart: text("lunch_break_start").default("12:00"), // HH:MM
   lunchBreakEnd: text("lunch_break_end").default("13:00"),     // HH:MM
+  // Respiration entre deux tâches, en minutes. Ajustée automatiquement chaque semaine
+  // d'après les retours de fin de journée (cf. rhythm-buffer.ts), modifiable à la main.
+  bufferMin: integer("buffer_min").notNull().default(10),
+  bufferAdjustedAt: timestamp("buffer_adjusted_at"),
   currentEnergyLevel: text("current_energy_level").default("high"), // high | medium | low | depleted
   currentEmotionalContext: text("current_emotional_context"),       // optional free text
   energyUpdatedDate: text("energy_updated_date"),                   // YYYY-MM-DD local date
