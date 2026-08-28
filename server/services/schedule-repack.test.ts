@@ -269,3 +269,43 @@ describe("repackDay — tâches ancrées (rituels schedulingMode='fixed')", () =
     expect(moves.find((m) => m.id === 100)).toBeUndefined();
   });
 });
+
+describe("repackDay — respiration entre les tâches", () => {
+  it("insère le tampon entre deux tâches consécutives", () => {
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 540, durationMin: 30 }, // 09:00–09:30
+      { id: 2, startMin: 570, durationMin: 30 }, // 09:30 → doit passer à 09:40
+    ];
+    const { moves } = repackDay(tasks, { ...opts, bufferMin: 10 });
+    expect(moves.find((m) => m.id === 2)?.newStartMin).toBe(580);
+  });
+
+  it("n'insère pas de tampon avant la première tâche de la journée", () => {
+    const tasks: RepackTask[] = [{ id: 1, startMin: 540, durationMin: 30 }];
+    const r = repackDay(tasks, { ...opts, bufferMin: 10 });
+    expect(r.moves).toEqual([]);
+  });
+
+  it("ne décale pas une tâche ancrée avec le tampon", () => {
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 540, durationMin: 30 },              // 09:00–09:30
+      { id: 2, startMin: 570, durationMin: 30, anchored: true }, // rituel 09:30, intouchable
+    ];
+    const { moves } = repackDay(tasks, { ...opts, bufferMin: 10 });
+    expect(moves.find((m) => m.id === 2)).toBeUndefined();
+  });
+
+  it("ne fait pas déborder une tâche qui finit pile à la fin de journée", () => {
+    const tasks: RepackTask[] = [{ id: 1, startMin: 17 * 60, durationMin: 60 }]; // 17:00–18:00
+    expect(repackDay(tasks, { ...opts, bufferMin: 15 }).overflow).toEqual([]);
+  });
+
+  it("tampon absent ou nul = comportement inchangé", () => {
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 540, durationMin: 30 },
+      { id: 2, startMin: 570, durationMin: 30 },
+    ];
+    expect(repackDay(tasks, { ...opts, bufferMin: 0 }).moves).toEqual([]);
+    expect(repackDay(tasks, opts).moves).toEqual([]);
+  });
+});

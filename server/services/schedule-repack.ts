@@ -42,6 +42,13 @@ export interface RepackOptions {
   /** Début minimal autorisé (jour courant = maintenant). Défaut : dayStartMin. */
   floorMin?: number;
   /**
+   * Respiration insérée APRÈS chaque tâche flexible placée, en minutes. Elle avance
+   * seulement le curseur : elle ne décale donc jamais une ancre ni une plage bloquée
+   * (réservées avant la boucle), et n'entre pas dans le test de débordement — une tâche
+   * qui finit pile à `dayEndMin` reste planifiée, son tampon est simplement tronqué.
+   */
+  bufferMin?: number;
+  /**
    * Plages déjà occupées par des éléments que le re-tassage NE POSSÈDE PAS et ne peut
    * donc ni déplacer ni reprogrammer :
    *  - les rendez-vous Google Agenda ;
@@ -163,7 +170,7 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
     if (task.unplaced || start !== task.startMin) {
       moves.push({ id: task.id, newStartMin: start, newEndMin: start + task.durationMin });
     }
-    cursor = start + task.durationMin;
+    cursor = start + task.durationMin + (opts.bufferMin ?? 0);
   }
 
   return { moves, overflow };
