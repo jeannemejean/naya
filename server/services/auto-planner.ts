@@ -355,7 +355,11 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
     1.0;
 
   const AVG_TASK_MIN = 45;
-  const dynamicMaxTotal = Math.max(1, Math.min(8, Math.floor((availableMin * energyFactor) / AVG_TASK_MIN)));
+  // Une tâche coûte sa durée MOYENNE plus sa respiration : sans ça, on génère une journée
+  // pleine qui déborde dès que le re-tassage insère les tampons.
+  const bufferMin = Math.max(0, prefs?.bufferMin ?? 10);
+  const slotCostMin = AVG_TASK_MIN + bufferMin;
+  const dynamicMaxTotal = Math.max(1, Math.min(8, Math.floor((availableMin * energyFactor) / slotCostMin)));
   const maxTasksPerProject = Math.max(1, Math.floor(dynamicMaxTotal / Math.max(projectsToProcess.length, 1)));
 
   // 9. Slot-collision guard: tâches existantes + pause déjeuner + calendrier Google
