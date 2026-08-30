@@ -407,6 +407,11 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  toast({ title: "Select at least one work day", variant: "destructive" });
  return;
  }
+ // Le verrou hebdomadaire ne doit se lever que si le tampon a VRAIMENT changé —
+ // pas à chaque sauvegarde de la carte horaires (ex. modifier juste la pause
+ // déjeuner ne doit pas relancer l'ajustement automatique de la respiration).
+ const hydratedBufferMin = (schedulePrefs as any)?.bufferMin ?? 10;
+ const bufferMinChanged = bufferMin !== hydratedBufferMin;
  updateScheduleMutation.mutate({
  workDays: workDays.join(','),
  lunchBreakEnabled: lunchEnabled,
@@ -416,9 +421,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  workDayEnd: workEnd,
  planningStartDate: planningStartDate || null,
  bufferMin,
- // Réglage manuel : on lève le verrou hebdomadaire pour que l'ajustement
- // automatique reparte de la valeur choisie.
- bufferAdjustedAt: null,
+ ...(bufferMinChanged ? { bufferAdjustedAt: null } : {}),
  });
  };
 
