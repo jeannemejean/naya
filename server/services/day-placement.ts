@@ -19,6 +19,13 @@ export interface PlaceOptions {
   workDayEndMin: number;
   nowMin: number;          // heure courante (minutes) — utilisée seulement si on planifie pour aujourd'hui
   bufferMin?: number;      // marge après "maintenant" avant le 1er placement (défaut 15)
+  /**
+   * Respiration insérée APRÈS chaque tâche placée, en minutes (défaut 0). À NE PAS
+   * confondre avec `bufferMin` ci-dessus, qui est la marge ponctuelle après « maintenant »
+   * avant le tout premier placement — `gapMin` s'applique entre chaque tâche consécutive,
+   * exactement comme le `bufferMin` de `repackDay`/`fixOverlappingTasks`.
+   */
+  gapMin?: number;
   usedRanges?: Range[];    // créneaux occupés (tâches déjà datées, agenda, pauses)
   slotStepMin?: number;    // pas de sondage (défaut 15)
 }
@@ -30,6 +37,7 @@ export function placeTasksFromNow(
   opts: PlaceOptions,
 ): { placed: PlacementResult[]; unplaced: number[] } {
   const buffer = opts.bufferMin ?? 15;
+  const gap = Math.max(0, opts.gapMin ?? 0);
   const step = opts.slotStepMin ?? 15;
   // Départ : au plus tôt maintenant+buffer, jamais avant le début de journée. → jamais dans le passé.
   let cursor = Math.max(opts.workDayStartMin, opts.nowMin + buffer);
@@ -61,7 +69,7 @@ export function placeTasksFromNow(
     placed.push({ id: task.id, startMin: slot, endMin: slot + dur });
     used.push({ start: slot, end: slot + dur });
     used.sort((a, b) => a.start - b.start);
-    cursor = slot + dur;
+    cursor = slot + dur + gap;
   }
 
   return { placed, unplaced };

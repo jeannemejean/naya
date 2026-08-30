@@ -47,11 +47,15 @@ export async function runPlaceToday(
     for (const r of calRanges as any[]) used.push({ start: r.start, end: r.end });
   } catch { /* best-effort : agenda absent → ignoré */ }
 
+  // Respiration entre tâches placées : même lecture que le reste de la branche.
+  const gapMin = Math.max(0, prefs?.bufferMin ?? 10);
+
   const { placed, unplaced } = placeTasksFromNow(candidates, {
     workDayStartMin: hhmm(workDayStartStr),
     workDayEndMin: hhmm(workDayEndStr),
     nowMin,
     usedRanges: used,
+    gapMin,
   });
 
   for (const p of placed) {

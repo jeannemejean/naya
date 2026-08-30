@@ -5751,6 +5751,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       };
 
       // Réassigner les créneaux horaires en séquence, en sautant la pause
+      // Respiration entre tâches : même lecture que le reste de la branche.
+      const bufferMin = Math.max(0, (prefs as any)?.bufferMin ?? 10);
       let slot = hhmmToMin(workDayStart);
       const dayEnd = hhmmToMin(workDayEnd);
       let count = 0;
@@ -5764,7 +5766,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           scheduledDate: targetDate,
         });
         blocked.push({ start: slot, end: slot + duration });
-        slot += duration + 5;
+        slot += duration + bufferMin;
         count++;
       }
 
@@ -5808,6 +5810,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       ]);
 
       const userWorkDays = parseWorkDays(prefs?.workDays);
+      // Respiration entre tâches replacées : sans elle, ce chemin de rebalance-semaine
+      // recolle les tâches bout-à-bout et efface le tampon inséré ailleurs (cf. finding 1).
+      const gapMin = Math.max(0, (prefs as any)?.bufferMin ?? 10);
 
       const dayTypeByDate = new Map<string, string>();
       const offDates = new Set<string>();
@@ -6006,7 +6011,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
           if (result.found) {
             scheduledTimeVal = minutesToHHMM(result.slot);
-            claimSlot(finalDate, result.slot + duration);
+            claimSlot(finalDate, result.slot + duration + gapMin);
             break;
           }
 
