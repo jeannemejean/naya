@@ -312,15 +312,19 @@ export default function Planning({ onSearchClick }: Props) {
   const dailyFeedbackMutation = useMutation({
     mutationFn: (signal: string) =>
       apiRequest('POST', '/api/planning/daily-feedback', { date: today, signal }).then(r => r.json()),
+    // On ne marque le jour comme répondu qu'une fois le serveur confirmé : chaque retour
+    // compte (Jeanne ne répond qu'occasionnellement), le perdre silencieusement est pire
+    // qu'un léger délai. Tant que la requête n'a pas abouti, la question reste posée.
+    onSuccess: (_data, key) => {
+      localStorage.setItem(`naya_daily_feedback_${today}`, key);
+      setDailyFeedbackGiven(key);
+      setDailyFeedbackThanks(true);
+      setTimeout(() => setDailyFeedbackThanks(false), 2000);
+    },
+    onError: () => toast({ title: t('common.error'), variant: "destructive" }),
   });
 
   function handleDailyFeedback(key: string) {
-    // Le localStorage reste, mais seulement pour ne pas re-demander le même jour :
-    // la source de vérité est désormais le serveur.
-    localStorage.setItem(`naya_daily_feedback_${today}`, key);
-    setDailyFeedbackGiven(key);
-    setDailyFeedbackThanks(true);
-    setTimeout(() => setDailyFeedbackThanks(false), 2000);
     dailyFeedbackMutation.mutate(key);
   }
 
