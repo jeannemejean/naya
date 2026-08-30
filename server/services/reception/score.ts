@@ -130,15 +130,17 @@ export function receivedVsIntentScore(input: ScoreInput): ScoreResult {
   }
   score = clamp01(score);
 
+  // Tournures nominales, volontairement invariables en nombre : "la conversion" (singulier)
+  // et "les partages" (pluriel) doivent passer dans le même gabarit sans faute d'accord.
   const dominant = best ? LABELS[best.key] : "aucun signal";
   const verdict =
     best === null ? "aucun signal exploitable"
-    : best.sub >= 0.6 ? `${dominant} portent bien`
-    : best.sub >= 0.3 ? `${dominant} restent tièdes`
-    : `${dominant} ne suivent pas`;
+    : best.sub >= 0.6 ? `${dominant} : au rendez-vous`
+    : best.sub >= 0.3 ? `${dominant} : en demi-teinte`
+    : `${dominant} : pas au rendez-vous`;
 
   const rationale =
-    `Intention ${intent} : ${verdict}. ` +
+    `Intention ${intent} — ${verdict}. ` +
     (score < 0.4
       ? `Ce contenu n'a pas trouvé son public sur ce qui comptait pour lui.`
       : score < 0.7

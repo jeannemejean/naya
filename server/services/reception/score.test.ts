@@ -86,4 +86,14 @@ describe("receivedVsIntentScore", () => {
     const avec = receivedVsIntentScore({ ...base, intent: "awareness", shares: 15, conversionsInWindow: 50 });
     expect(avec.score).toBe(sans.score);
   });
+
+  // Régression : quand "la conversion" (singulier) est le signal dominant, le verdict ne doit
+  // jamais employer une forme verbale plurale du type "la conversion ne suivent pas" —
+  // c'est la faute d'accord repérée en revue sur le gabarit initial.
+  it("le verdict sur la conversion ne porte aucune forme verbale plurale fautive", () => {
+    const r = receivedVsIntentScore({
+      ...base, intent: "conversion", saves: 40, comments: 15, shares: 12, conversionsInWindow: 0,
+    });
+    expect(r.rationale).not.toMatch(/\b(suivent|portent|restent)\b/);
+  });
 });
