@@ -22,6 +22,8 @@ import { computeDurationCalibration, applyCalibration, formatCalibrationForPromp
 import { sortTasksByDependencies, groupTasksByWorkflow } from './dependency-sort';
 import { summarizeMilestones } from './project-summary';
 import { materializeRituals } from './ritual-materialize';
+import { maxTasksForDay } from './day-sizing';
+import { BUFFER_MIN_CEILING } from './rhythm-buffer';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -354,12 +356,12 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
     prefs?.currentEnergyLevel === 'medium'   ? 0.8 :
     1.0;
 
-  const AVG_TASK_MIN = 45;
   // Une tâche coûte sa durée MOYENNE plus sa respiration : sans ça, on génère une journée
-  // pleine qui déborde dès que le re-tassage insère les tampons.
-  const bufferMin = Math.max(0, prefs?.bufferMin ?? 10);
-  const slotCostMin = AVG_TASK_MIN + bufferMin;
-  const dynamicMaxTotal = Math.max(1, Math.min(8, Math.floor((availableMin * energyFactor) / slotCostMin)));
+  // pleine qui déborde dès que le re-tassage insère les tampons. Bornée par le même
+  // plafond que fixOverlappingTasks pour qu'une valeur corrompue ne fasse pas déborder
+  // toute la journée (BUFFER_MIN_CEILING, voir rhythm-buffer.ts).
+  const bufferMin = Math.min(BUFFER_MIN_CEILING, Math.max(0, prefs?.bufferMin ?? 10));
+  const dynamicMaxTotal = maxTasksForDay({ availableMin, energyFactor, bufferMin });
   const maxTasksPerProject = Math.max(1, Math.floor(dynamicMaxTotal / Math.max(projectsToProcess.length, 1)));
 
   // 9. Slot-collision guard: tâches existantes + pause déjeuner + calendrier Google
