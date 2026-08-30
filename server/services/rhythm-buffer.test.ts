@@ -42,6 +42,12 @@ describe("nextBufferMin", () => {
     expect(nextBufferMin({ current: 10, signals, lastAdjustedAt: ilYA8Jours, now: NOW })).toBe(15);
   });
 
+  it("autorise l'ajustement à exactement 7 jours (le verrou n'est actif que sous 7 jours)", () => {
+    const signals = sig("felt_overloaded", 6);
+    const ilYAExactement7Jours = new Date("2026-08-21T12:00:00Z");
+    expect(nextBufferMin({ current: 10, signals, lastAdjustedAt: ilYAExactement7Jours, now: NOW })).toBe(15);
+  });
+
   it("plafonne à 30", () => {
     expect(nextBufferMin({ current: 30, signals: sig("felt_overloaded", 6), lastAdjustedAt: null, now: NOW })).toBe(30);
   });

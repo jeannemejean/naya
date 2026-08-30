@@ -53,15 +53,16 @@ export async function adjustBufferForUser(userId: string): Promise<void> {
   const prefs = await storage.getUserPreferences(userId);
   const signals = await storage.getRecentRhythmFeedback(userId, WINDOW_DAYS);
 
+  const now = new Date();
   const current = prefs?.bufferMin ?? 10;
   const next = nextBufferMin({
     current,
     signals,
     lastAdjustedAt: prefs?.bufferAdjustedAt ?? null,
-    now: new Date(),
+    now,
   });
 
   if (next === current) return;
-  await storage.setBufferMin(userId, next, new Date());
+  await storage.setBufferMin(userId, next, now);
   console.log(`[RhythmBuffer] user ${userId}: ${current} → ${next} min`);
 }

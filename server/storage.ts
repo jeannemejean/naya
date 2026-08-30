@@ -716,9 +716,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setBufferMin(userId: string, bufferMin: number, adjustedAt: Date): Promise<void> {
-    await db.update(userPreferences)
-      .set({ bufferMin, bufferAdjustedAt: adjustedAt })
-      .where(eq(userPreferences.userId, userId));
+    // upsert plutôt qu'un simple UPDATE : si l'utilisateur n'a pas encore de ligne
+    // userPreferences (cas normal pour un utilisateur qui ne l'a jamais ouverte),
+    // un UPDATE seul ne toucherait aucune ligne et échouerait silencieusement.
+    await this.upsertUserPreferences(userId, { bufferMin, bufferAdjustedAt: adjustedAt });
   }
 
   // Day availability
