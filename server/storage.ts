@@ -188,6 +188,7 @@ export interface IStorage {
   // User preferences operations
   getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
   upsertUserPreferences(userId: string, data: Partial<InsertUserPreferences>): Promise<UserPreferences>;
+  setBufferMin(userId: string, bufferMin: number, adjustedAt: Date): Promise<void>;
 
   // Day availability operations
   getDayAvailability(userId: string, date: string): Promise<DayAvailability | undefined>;
@@ -712,6 +713,12 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return prefs;
+  }
+
+  async setBufferMin(userId: string, bufferMin: number, adjustedAt: Date): Promise<void> {
+    await db.update(userPreferences)
+      .set({ bufferMin, bufferAdjustedAt: adjustedAt })
+      .where(eq(userPreferences.userId, userId));
   }
 
   // Day availability

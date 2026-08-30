@@ -9,6 +9,7 @@ import { scheduleProspectionSender } from "./services/prospection-sender";
 import { scheduleLinkedInSync } from "./services/linkedin-sync";
 import { computeDurationCalibration } from "./services/duration-calibration";
 import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
+import { adjustBufferForUser } from "./services/rhythm-buffer";
 import { storage } from "./storage";
 
 // Prevent unhandled rejections and exceptions from crashing the server
@@ -74,6 +75,7 @@ function scheduleWeeklyIntelligence() {
       try {
         await computeDurationCalibration(userId);
         await analyzeBehaviorPatterns(userId);
+        await adjustBufferForUser(userId);
         console.log(`[WeeklyIntelligence] Updated analytics for user ${userId}`);
       } catch (err: any) {
         console.error(`[WeeklyIntelligence] Error for user ${userId}:`, err.message);
