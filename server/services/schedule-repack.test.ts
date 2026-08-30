@@ -286,13 +286,17 @@ describe("repackDay — respiration entre les tâches", () => {
     expect(r.moves).toEqual([]);
   });
 
-  it("ne décale pas une tâche ancrée avec le tampon", () => {
+  it("une flexible qui suit une ancre démarre pile à sa fin, sans tampon ajouté après elle", () => {
+    // Sans ce test, un bug qui ajouterait bufferMin après skipAnchors() passerait
+    // inaperçu : la tâche 2 chevauche l'ancre et DOIT être repoussée exactement à
+    // sa fin (09:30), jamais à 09:30+10 — le tampon ne s'insère qu'entre deux
+    // tâches flexibles, jamais après une ancre.
     const tasks: RepackTask[] = [
-      { id: 1, startMin: 540, durationMin: 30 },              // 09:00–09:30
-      { id: 2, startMin: 570, durationMin: 30, anchored: true }, // rituel 09:30, intouchable
+      { id: 100, startMin: 9 * 60, durationMin: 30, anchored: true }, // rituel 09:00–09:30
+      { id: 2, startMin: 9 * 60, durationMin: 30 },                    // flexible, chevauche l'ancre
     ];
     const { moves } = repackDay(tasks, { ...opts, bufferMin: 10 });
-    expect(moves.find((m) => m.id === 2)).toBeUndefined();
+    expect(moves.find((m) => m.id === 2)?.newStartMin).toBe(9 * 60 + 30);
   });
 
   it("ne fait pas déborder une tâche qui finit pile à la fin de journée", () => {
@@ -307,5 +311,25 @@ describe("repackDay — respiration entre les tâches", () => {
     ];
     expect(repackDay(tasks, { ...opts, bufferMin: 0 }).moves).toEqual([]);
     expect(repackDay(tasks, opts).moves).toEqual([]);
+  });
+
+  it("le tampon avance le curseur DANS une plage bloquée : la tâche suivante démarre à la fin de la plage", () => {
+    // Tâche A 09:00–09:30 + tampon 10 → curseur à 09:40. Une plage bloquée
+    // 09:35–10:30 (rendez-vous) chevauche ce curseur : la tâche suivante doit
+    // être repoussée à la fin de la plage (10:30), pas à 09:40. Ce cas combine
+    // bufferMin et blockedRanges — absent avant cette revue malgré le fait que
+    // la respiration est posée directement sur la feature blockedRanges.
+    const tasks: RepackTask[] = [
+      { id: 1, startMin: 9 * 60, durationMin: 30 },       // 09:00–09:30
+      { id: 2, startMin: 9 * 60 + 40, durationMin: 30 },  // voudrait 09:40, juste après le tampon
+    ];
+    const { moves, overflow } = repackDay(tasks, {
+      ...opts,
+      bufferMin: 10,
+      blockedRanges: [{ start: 9 * 60 + 35, end: 10 * 60 + 30 }], // 09:35–10:30
+    });
+    expect(overflow).toEqual([]);
+    expect(moves.find((m) => m.id === 1)).toBeUndefined(); // tâche 1 ne bouge pas
+    expect(moves.find((m) => m.id === 2)?.newStartMin).toBe(10 * 60 + 30); // poussée à la fin de la plage
   });
 });
