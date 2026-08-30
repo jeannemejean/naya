@@ -138,6 +138,8 @@ import {
   recurringRituals,
   type RecurringRitual,
   type InsertRecurringRitual,
+  contentReception,
+  competitors,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -2019,6 +2021,11 @@ export class DatabaseStorage implements IStorage {
 
       // ── Phase 5 : content, puis campagnes (content/tasks les référencent) ─────
       console.log(`[reset] phase 5: content + campaigns`);
+      // content_reception.content_id est en ON DELETE CASCADE, mais project_id ne l'est
+      // pas → suppression explicite avant projects (Phase 10).
+      if (projectIds.length > 0) {
+        await tx.delete(contentReception).where(inArray(contentReception.projectId, projectIds));
+      }
       await tx.delete(content).where(eq(content.userId, userId));                 // campaign_id, project_id
       await tx.delete(campaigns).where(eq(campaigns.userId, userId));             // project_id
       await tx.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.userId, userId)); // campaign_id (NOT NULL)
@@ -2055,6 +2062,10 @@ export class DatabaseStorage implements IStorage {
       }
       await tx.delete(clients).where(eq(clients.userId, userId));                 // parent_project_id
       await tx.delete(recurringRituals).where(eq(recurringRituals.userId, userId)); // tasks déjà supprimées (phase 3)
+      // competitor_reception.competitor_id est en ON DELETE CASCADE (géré par Postgres).
+      if (projectIds.length > 0) {
+        await tx.delete(competitors).where(inArray(competitors.projectId, projectIds));
+      }
       await tx.delete(strategyReports).where(eq(strategyReports.userId, userId)); // project_id
       await tx.delete(brandDna).where(eq(brandDna.userId, userId));               // project_id (AVANT projects!)
       await tx.delete(memoryEntries).where(eq(memoryEntries.userId, userId));     // mémoire Naya (reset all data)

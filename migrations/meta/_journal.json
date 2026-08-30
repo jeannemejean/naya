@@ -43,6 +43,13 @@
       "when": 1788123194293,
       "tag": "0005_baseline_ddl_applique_a_la_main",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788123233460,
+      "tag": "0006_tranquil_sally_floyd",
+      "breakpoints": true
     }
   ]
 }
