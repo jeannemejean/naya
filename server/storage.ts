@@ -143,6 +143,7 @@ import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
+import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
 import { blockedRangesByDate } from "./services/task-schedule-fields";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
@@ -2372,7 +2373,7 @@ export class DatabaseStorage implements IStorage {
     const lunchStartMin = parseTime(prefs?.lunchBreakStart || '12:00');
     const lunchEndMin   = parseTime(prefs?.lunchBreakEnd   || '13:00');
     const lunchEnabled  = prefs?.lunchBreakEnabled !== false;
-    const bufferMin = Math.max(0, prefs?.bufferMin ?? 10);
+    const bufferMin = Math.min(BUFFER_MIN_CEILING, Math.max(0, prefs?.bufferMin ?? 10));
 
     // « Maintenant » et « aujourd'hui » en heure de Paris — pour ne JAMAIS
     // replanifier une tâche du jour courant dans le passé.
