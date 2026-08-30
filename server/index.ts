@@ -72,14 +72,25 @@ function scheduleWeeklyIntelligence() {
     console.log('[WeeklyIntelligence] Starting weekly analytics run');
     const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
     for (const userId of userIds) {
+      // Un try/catch par job : une erreur dans le calibrage ou l'analyse de patterns
+      // ne doit JAMAIS empêcher silencieusement l'ajustement du tampon de tourner
+      // cette semaine-là, et inversement (finding MINOR 6 de la revue finale).
       try {
         await computeDurationCalibration(userId);
-        await analyzeBehaviorPatterns(userId);
-        await adjustBufferForUser(userId);
-        console.log(`[WeeklyIntelligence] Updated analytics for user ${userId}`);
       } catch (err: any) {
-        console.error(`[WeeklyIntelligence] Error for user ${userId}:`, err.message);
+        console.error(`[WeeklyIntelligence] computeDurationCalibration error for user ${userId}:`, err.message);
       }
+      try {
+        await analyzeBehaviorPatterns(userId);
+      } catch (err: any) {
+        console.error(`[WeeklyIntelligence] analyzeBehaviorPatterns error for user ${userId}:`, err.message);
+      }
+      try {
+        await adjustBufferForUser(userId);
+      } catch (err: any) {
+        console.error(`[WeeklyIntelligence] adjustBufferForUser error for user ${userId}:`, err.message);
+      }
+      console.log(`[WeeklyIntelligence] Updated analytics for user ${userId}`);
     }
     console.log('[WeeklyIntelligence] Done');
   }, 60 * 60 * 1000); // vérification chaque heure
