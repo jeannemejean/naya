@@ -56,7 +56,7 @@ export const REFERENCE_REACH = 500;
 export const SENTIMENT_INFLUENCE = 0.1;
 
 /** Facteur appliqué à la confiance quand le sentiment est inconnu. RÉVISABLE. */
-const NO_SENTIMENT_CONFIDENCE = 0.9;
+export const NO_SENTIMENT_CONFIDENCE = 0.9;
 
 const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 
@@ -97,7 +97,7 @@ export function receivedVsIntentScore(input: ScoreInput): ScoreResult {
     conversions: input.conversionsInWindow,
   };
 
-  let score = 0;
+  let weightedSum = 0;
   let presentWeight = 0;
   let totalWeight = 0;
   let best: { key: keyof typeof REFERENCE_RATES; sub: number } | null = null;
@@ -108,15 +108,34 @@ export function receivedVsIntentScore(input: ScoreInput): ScoreResult {
     totalWeight += w;
 
     const value = raw[key];
-    if (value === null || value === undefined) continue; // absent ≠ zéro
+    if (value === null || value === undefined) continue; // absent ≠ zéro : exclu, pas compté 0
     presentWeight += w;
 
     const sub = clamp01(value / reach / REFERENCE_RATES[key]);
-    score += w * sub;
+    weightedSum += w * sub;
+    // Départage à poids égal : `>` strict ne remplace jamais `best` déjà posé, donc le premier
+    // signal rencontré dans l'ordre de déclaration d'INTENT_WEIGHTS l'emporte — ordre stable,
+    // jamais laissé au hasard d'Object.keys.
     if (!best || w > weights[best.key]) best = { key, sub };
   }
 
-  const completeness = totalWeight > 0 ? presentWeight / totalWeight : 0;
+  if (presentWeight === 0) {
+    // Juger sur ce qu'on sait : si rien n'a été mesuré pour cette intention, il n'y a rien à
+    // scorer. Ce n'est pas un échec silencieux — c'est une mesure qui n'existe pas encore.
+    return {
+      score: null,
+      confidence: 0,
+      rationale:
+        "Aucun des signaux comptant pour cette intention n'a été mesuré : il n'y a rien à juger, pas un échec.",
+    };
+  }
+
+  // Le score se renormalise sur les seuls signaux présents : un signal manquant retire son
+  // poids du calcul au lieu d'y entrer comme un zéro mesuré. L'incertitude que ça introduit ne
+  // pèse jamais sur le score — elle pèse sur la confiance, via `completeness` ci-dessous.
+  let score = weightedSum / presentWeight;
+
+  const completeness = presentWeight / totalWeight;
   const reachConfidence = clamp01(reach / REFERENCE_REACH);
   const confidence = clamp01(
     reachConfidence * completeness * (sentimentScore === null ? NO_SENTIMENT_CONFIDENCE : 1),
@@ -130,22 +149,33 @@ export function receivedVsIntentScore(input: ScoreInput): ScoreResult {
   }
   score = clamp01(score);
 
-  // Tournures nominales, volontairement invariables en nombre : "la conversion" (singulier)
-  // et "les partages" (pluriel) doivent passer dans le même gabarit sans faute d'accord.
-  const dominant = best ? LABELS[best.key] : "aucun signal";
-  const verdict =
-    best === null ? "aucun signal exploitable"
-    : best.sub >= 0.6 ? `${dominant} : au rendez-vous`
-    : best.sub >= 0.3 ? `${dominant} : en demi-teinte`
-    : `${dominant} : pas au rendez-vous`;
+  if (!best) {
+    // Inatteignable en pratique : presentWeight > 0 (vérifié ci-dessus) garantit qu'au moins un
+    // signal a posé `best` dans la boucle. Conservé pour la sûreté de typage, pas pour un vrai cas.
+    return {
+      score: null,
+      confidence: 0,
+      rationale: "Aucun signal n'a permis de juger ce contenu : la mesure attend encore.",
+    };
+  }
 
-  const rationale =
-    `Intention ${intent} — ${verdict}. ` +
-    (score < 0.4
-      ? `Ce contenu n'a pas trouvé son public sur ce qui comptait pour lui.`
+  // Tournure nominale après "avec", volontairement invariable en genre et en nombre : "la
+  // conversion" (singulier, féminin) et "les partages" (pluriel, masculin) doivent se lire sans
+  // qu'aucun verbe n'ait à s'accorder avec eux.
+  const dominant = LABELS[best.key];
+  const etat =
+    best.sub >= 0.6 ? "au rendez-vous"
+    : best.sub >= 0.3 ? "en demi-teinte"
+    : "pas au rendez-vous";
+
+  const conclusion =
+    score < 0.4
+      ? "il n'a pas trouvé son public sur ce qui comptait pour lui"
       : score < 0.7
-        ? `Réception correcte, sans plus, au regard de ce qu'il visait.`
-        : `Ce contenu a fait ce qu'on attendait de lui.`);
+        ? "sa réception reste correcte, sans plus, au regard de ce qu'il visait"
+        : "il a fait ce qu'on attendait de lui";
+
+  const rationale = `Ce contenu visait une intention ${intent}, avec ${dominant} ${etat} : ${conclusion}.`;
 
   return { score, confidence, rationale };
 }

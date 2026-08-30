@@ -75,10 +75,24 @@ describe("receivedVsIntentScore", () => {
     expect(r.score!).toBeGreaterThanOrEqual(0);
   });
 
-  it("un signal absent (null) n'est pas traité comme un zéro : il baisse la confiance", () => {
+  it("un signal absent (null) n'est pas traité comme un zéro : il baisse la confiance, jamais le score au même titre qu'un zéro mesuré", () => {
     const complet = receivedVsIntentScore({ ...base, intent: "consideration", saves: 20, comments: 10, shares: 5 });
-    const partiel = receivedVsIntentScore({ ...base, intent: "consideration", saves: 20, comments: null, shares: 5 });
-    expect(partiel.confidence).toBeLessThan(complet.confidence);
+    const partielNull = receivedVsIntentScore({ ...base, intent: "consideration", saves: 20, comments: null, shares: 5 });
+    const partielZero = receivedVsIntentScore({ ...base, intent: "consideration", saves: 20, comments: 0, shares: 5 });
+    expect(partielNull.confidence).toBeLessThan(complet.confidence);
+    // LE test qui aurait attrapé le bug : un signal manquant se retire du calcul (le score se
+    // renormalise sur ce qui a été mesuré) — il ne doit jamais produire le même score qu'un
+    // signal réellement mesuré à zéro.
+    expect(partielNull.score).not.toBe(partielZero.score);
+    expect(partielNull.score!).toBeGreaterThan(partielZero.score!);
+  });
+
+  // Second signal comptant : quand aucun signal pondéré n'est mesuré, il n'y a rien à juger —
+  // pas un échec déguisé en zéro.
+  it("tous les signaux pondérés absents → rien à juger : score null, confiance nulle", () => {
+    const r = receivedVsIntentScore({ ...base, intent: "consideration", saves: null, shares: null, comments: null });
+    expect(r.score).toBeNull();
+    expect(r.confidence).toBe(0);
   });
 
   it("la conversion est ignorée pour awareness", () => {
