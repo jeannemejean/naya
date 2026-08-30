@@ -378,6 +378,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  const [workStart, setWorkStart] = useState('09:00');
  const [workEnd, setWorkEnd] = useState('18:00');
  const [planningStartDate, setPlanningStartDate] = useState('');
+ const [bufferMin, setBufferMin] = useState(10);
  useEffect(() => {
  if (schedulePrefs) {
  setWorkDays((schedulePrefs.workDays || 'mon,tue,wed,thu,fri').split(',').filter(Boolean));
@@ -387,6 +388,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  setWorkStart(schedulePrefs.workDayStart || '09:00');
  setWorkEnd(schedulePrefs.workDayEnd || '18:00');
  setPlanningStartDate((schedulePrefs as any).planningStartDate || '');
+ setBufferMin((schedulePrefs as any).bufferMin ?? 10);
  }
  }, [schedulePrefs]);
 
@@ -413,6 +415,10 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  workDayStart: workStart,
  workDayEnd: workEnd,
  planningStartDate: planningStartDate || null,
+ bufferMin,
+ // Réglage manuel : on lève le verrou hebdomadaire pour que l'ajustement
+ // automatique reparte de la valeur choisie.
+ bufferAdjustedAt: null,
  });
  };
 
@@ -649,6 +655,25 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </Select>
  </div>
  )}
+ </div>
+
+ <Separator />
+
+ <div className="space-y-1">
+ <label className="text-sm font-medium">{t('settings.bufferTitle')}</label>
+ <div className="flex items-center gap-2">
+ <Input
+ type="number"
+ min={0}
+ max={30}
+ step={5}
+ value={bufferMin}
+ onChange={(e) => setBufferMin(Math.min(30, Math.max(0, Number(e.target.value) || 0)))}
+ className="w-24"
+ />
+ <span className="text-sm text-muted-foreground">{t('settings.bufferUnit')}</span>
+ </div>
+ <p className="text-xs text-muted-foreground">{t('settings.bufferHelp')}</p>
  </div>
 
  <Button
