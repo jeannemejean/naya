@@ -139,6 +139,8 @@ import {
   type RecurringRitual,
   type InsertRecurringRitual,
   contentReception,
+  type ContentReception,
+  type InsertContentReception,
   competitors,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
@@ -284,6 +286,11 @@ export interface IStorage {
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
   getDueScheduledContent(now: Date): Promise<Content[]>;
   claimContentForPosting(id: number): Promise<boolean>;
+
+  // Réception (Fil 3) — mesure de la réception d'un contenu, triangulée contre son intention.
+  /** Upsert idempotent : rejouer la même mesure écrase, ne double pas. */
+  upsertContentReception(row: InsertContentReception): Promise<void>;
+  getContentReception(contentId: number): Promise<ContentReception[]>;
 
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
@@ -1013,6 +1020,25 @@ export class DatabaseStorage implements IStorage {
       .where(eq(content.id, id))
       .returning();
     return updatedContent;
+  }
+
+  // Réception (Fil 3) — voir IStorage pour la doc.
+  async upsertContentReception(row: InsertContentReception): Promise<void> {
+    await db.insert(contentReception).values(row)
+      .onConflictDoUpdate({
+        target: [contentReception.contentId, contentReception.platform, contentReception.measuredAt],
+        set: {
+          saves: row.saves, shares: row.shares, comments: row.comments, reach: row.reach,
+          sentimentScore: row.sentimentScore, receivedVsIntentScore: row.receivedVsIntentScore,
+          confidence: row.confidence, rationale: row.rationale, source: row.source,
+        },
+      });
+  }
+
+  async getContentReception(contentId: number): Promise<ContentReception[]> {
+    return await db.select().from(contentReception)
+      .where(eq(contentReception.contentId, contentId))
+      .orderBy(desc(contentReception.measuredAt));
   }
 
   async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
