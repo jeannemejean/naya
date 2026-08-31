@@ -45,6 +45,45 @@ describe("parseReceptionCsv", () => {
     expect(r.rows).toEqual([]);
     expect(r.errors).toHaveLength(1);
   });
+
+  it("compte les vraies lignes du fichier source, lignes vides comprises", () => {
+    // Ligne 1 : en-tête. Ligne 2 : donnée valide. Ligne 3 : ligne vide (fréquente dans un
+    // export/CSV édité à la main). Ligne 4 : donnée invalide — l'erreur doit désigner la
+    // ligne 4, pas la ligne 3 (qui serait le résultat d'un comptage naïf ignorant le vide).
+    const r = parseReceptionCsv(
+      "content_id,platform,saves,reach\n42,instagram,10,1000\n\nabc,instagram,5,500",
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0].line).toBe(4);
+  });
+
+  it("laisse sentiment_score à null si la colonne est absente ou la cellule vide", () => {
+    const sansColonne = parseReceptionCsv("content_id,platform,reach\n42,instagram,1000");
+    expect(sansColonne.rows[0].sentimentScore).toBeNull();
+
+    const celluleVide = parseReceptionCsv(
+      "content_id,platform,reach,sentiment_score\n42,instagram,1000,",
+    );
+    expect(celluleVide.rows[0].sentimentScore).toBeNull();
+  });
+
+  it("rejette un sentiment_score hors de l'intervalle -1..1", () => {
+    const r = parseReceptionCsv(
+      "content_id,platform,reach,sentiment_score\n42,instagram,1000,1.5",
+    );
+    expect(r.rows).toEqual([]);
+    expect(r.errors).toHaveLength(1);
+  });
+
+  it("gère les fins de ligne Windows (\\r\\n) sans faire traîner de \\r dans les en-têtes", () => {
+    const r = parseReceptionCsv(
+      "content_id,platform,saves,reach\r\n42,instagram,10,1000\r\n",
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ contentId: 42, platform: "instagram", saves: 10, reach: 1000 });
+  });
 });
 
 describe("adaptateur Instagram", () => {

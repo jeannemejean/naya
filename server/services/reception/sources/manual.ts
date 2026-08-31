@@ -12,10 +12,26 @@ import type { ReceptionSignal, ReceptionSource, CsvRowError } from "../types";
 
 const REQUIRED_COLUMNS = ["content_id", "platform"] as const;
 
-/** Extrait les en-têtes normalisés (trim + minuscules) de la première ligne du CSV. */
-function extractHeaders(text: string): string[] {
-  const firstLine = text.split(/\r?\n/, 1)[0] ?? "";
-  return firstLine.split(",").map((h) => h.trim().toLowerCase());
+/**
+ * Découpe le texte source en lignes PHYSIQUES (celles du fichier tel qu'ouvert dans un
+ * éditeur), \r\n et \n compris. On ne délègue pas ce comptage à `parseCsv` : celui-ci
+ * élimine silencieusement les lignes vides de son tableau de sortie, ce qui désynchronise
+ * tout numéro de ligne calculé depuis l'index de ce tableau dès qu'une ligne vide apparaît
+ * au milieu du fichier — un cas fréquent dans un CSV édité à la main.
+ */
+function splitPhysicalLines(text: string): string[] {
+  const lines = text.split(/\r?\n/);
+  // Un saut de ligne final produit un dernier élément vide qui ne correspond à aucune ligne
+  // réelle du fichier (pas à une ligne vide intentionnelle) : on l'ignore.
+  if (lines.length > 0 && lines[lines.length - 1] === "" && /\r?\n$/.test(text)) {
+    lines.pop();
+  }
+  return lines;
+}
+
+/** Même définition de « ligne vide » que `parseCsv` : toutes ses cellules sont vides. */
+function isBlankCsvLine(line: string): boolean {
+  return line.split(",").every((cell) => cell.trim() === "");
 }
 
 type FieldResult<T> = { value: T } | { error: string };
@@ -68,7 +84,9 @@ export function parseReceptionCsv(text: string): {
   rows: Omit<ReceptionSignal, "source">[];
   errors: CsvRowError[];
 } {
-  const headers = extractHeaders(text);
+  const physicalLines = splitPhysicalLines(text);
+  const headerLine = physicalLines[0] ?? "";
+  const headers = headerLine.split(",").map((h) => h.trim().toLowerCase());
   const missing = REQUIRED_COLUMNS.filter((c) => !headers.includes(c));
   if (missing.length > 0) {
     return {
@@ -77,13 +95,24 @@ export function parseReceptionCsv(text: string): {
     };
   }
 
-  const rawRows = parseCsv(text);
+  // On retire nous-mêmes les lignes vides AVANT `parseCsv`, en gardant trace du numéro de
+  // ligne d'origine de chacune des lignes conservées (l'en-tête compte comme ligne 1, donc
+  // la première ligne de données du fichier est la ligne 2). `parseCsv` ne verra alors plus
+  // aucune ligne vide à sauter en interne : l'ordre de son tableau de sortie correspond
+  // exactement, position par position, à `keptLines`.
+  const dataLines = physicalLines.slice(1);
+  const keptLines: { text: string; line: number }[] = [];
+  dataLines.forEach((lineText, i) => {
+    if (!isBlankCsvLine(lineText)) keptLines.push({ text: lineText, line: i + 2 });
+  });
+
+  const reconstructed = [headerLine, ...keptLines.map((k) => k.text)].join("\n");
+  const rawRows = parseCsv(reconstructed);
   const rows: Omit<ReceptionSignal, "source">[] = [];
   const errors: CsvRowError[] = [];
 
   rawRows.forEach((row, index) => {
-    // L'en-tête compte comme ligne 1 : la première ligne de données (index 0) est la ligne 2.
-    const line = index + 2;
+    const line = keptLines[index]?.line ?? index + 2;
 
     const contentIdRaw = (row["content_id"] ?? "").trim();
     const contentId = Number(contentIdRaw);
