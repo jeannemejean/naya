@@ -84,6 +84,89 @@ describe("parseReceptionCsv", () => {
     expect(r.rows).toHaveLength(1);
     expect(r.rows[0]).toMatchObject({ contentId: 42, platform: "instagram", saves: 10, reach: 1000 });
   });
+
+  it("garde `0` comme zéro MESURÉ pour saves/shares/comments/reach — jamais confondu avec l'absence", () => {
+    // La règle centrale de cette tâche fonctionne dans les deux sens : une cellule vide est
+    // `null` (testé plus haut), une cellule `0` reste `0`. Une implémentation du type
+    // `Number(trimmed) || null` casserait silencieusement CE côté-ci de la règle (0 est
+    // falsy en JS) sans qu'aucun test n'échoue si seul le côté "vide → null" est couvert.
+    const r = parseReceptionCsv(
+      "content_id,platform,saves,shares,comments,reach\n42,instagram,0,0,0,0",
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ saves: 0, shares: 0, comments: 0, reach: 0 });
+  });
+
+  it("accepte un en-tête entre guillemets (export tableur courant)", () => {
+    const r = parseReceptionCsv(
+      '"content_id","platform","saves","reach"\n42,instagram,10,1000',
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ contentId: 42, platform: "instagram", saves: 10, reach: 1000 });
+  });
+
+  it("reconnaît une ligne de champs vides ENTRE GUILLEMETS comme vide, sans désynchroniser la numérotation", () => {
+    // `"","",""`  n'est pas vide pour un split(",") naïf (les jetons sont `""`, deux
+    // guillemets littéraux, pas une chaîne vide) mais L'EST pour le vrai tokeniseur CSV
+    // (guillemets ouverts puis aussitôt fermés = champ vide). Si la détection de ligne vide
+    // ne s'accorde pas avec `parseCsv`, cette ligne occupe une place ici mais pas dans le
+    // tableau de parseCsv : tous les numéros de ligne qui suivent se décalent.
+    const r = parseReceptionCsv(
+      'content_id,platform,saves,reach\n42,instagram,10,1000\n"","",""\nabc,instagram,5,500',
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0].line).toBe(4);
+  });
+
+  it("ignore plusieurs lignes vides consécutives sans décaler la numérotation", () => {
+    const r = parseReceptionCsv(
+      "content_id,platform,saves,reach\n42,instagram,10,1000\n\n\n\nabc,instagram,5,500",
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0].line).toBe(6);
+  });
+
+  it("ignore une ligne vide finale sans produire d'erreur ni de ligne fantôme", () => {
+    const r = parseReceptionCsv(
+      "content_id,platform,saves,reach\n42,instagram,10,1000\n\n",
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows).toHaveLength(1);
+  });
+
+  it("signale clairement une ligne vide AVANT l'en-tête plutôt que de mal l'interpréter", () => {
+    const r = parseReceptionCsv(
+      "\ncontent_id,platform,saves,reach\n42,instagram,10,1000",
+    );
+    expect(r.rows).toEqual([]);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0].line).toBe(1);
+    expect(r.errors[0].message.toLowerCase()).toContain("vide");
+  });
+
+  it("extrait le jour calendaire de measured_at SANS dépendre du fuseau du serveur", () => {
+    // "2026-08-15 01:00:00" (sans décalage explicite) serait lu comme une heure LOCALE par
+    // `new Date(string)` : sur un serveur en UTC+2 (ex. Europe/Paris l'été), 01h locale le
+    // 15 correspond à 23h UTC le 14 — un jour calendaire faux. L'extraction lexicale ne doit
+    // jamais dépendre de ça.
+    const r = parseReceptionCsv(
+      "content_id,platform,reach,measured_at\n42,instagram,1000,2026-08-15 01:00:00",
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows[0].measuredAt.toISOString()).toBe("2026-08-15T00:00:00.000Z");
+  });
+
+  it("rejette un measured_at qui n'est pas une date calendaire valide", () => {
+    const r = parseReceptionCsv(
+      "content_id,platform,reach,measured_at\n42,instagram,1000,2026-13-40",
+    );
+    expect(r.rows).toEqual([]);
+    expect(r.errors).toHaveLength(1);
+  });
 });
 
 describe("adaptateur Instagram", () => {

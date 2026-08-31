@@ -4,8 +4,14 @@
  * En-têtes normalisés (trim + minuscules) pour un mapping tolérant FR/EN.
  */
 
-/** Parse un texte CSV (1re ligne = en-têtes) en tableau d'objets {header: value}. */
-export function parseCsv(text: string): Record<string, string>[] {
+/**
+ * Tokenise un texte CSV en lignes de cellules brutes (guillemets, guillemets doublés,
+ * \r\n gérés). Isolé et exporté pour que d'autres modules puissent juger de la structure
+ * d'une ligne (en-tête, ligne vide) exactement comme `parseCsv` le fait en interne, sans
+ * dupliquer cette tokenisation avec un `split(",")` naïf qui ignorerait les guillemets.
+ * Ne trim PAS les cellules — `parseCsv` s'en charge à l'étape suivante.
+ */
+export function tokenizeCsvRows(text: string): string[][] {
   if (!text || !text.trim()) return [];
 
   const rows: string[][] = [];
@@ -30,6 +36,13 @@ export function parseCsv(text: string): Record<string, string>[] {
   }
   // Dernier champ / dernière ligne
   if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+
+  return rows;
+}
+
+/** Parse un texte CSV (1re ligne = en-têtes) en tableau d'objets {header: value}. */
+export function parseCsv(text: string): Record<string, string>[] {
+  const rows = tokenizeCsvRows(text);
 
   if (rows.length < 2) return [];
   const headers = rows[0].map(h => h.trim().toLowerCase());

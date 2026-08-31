@@ -1,5 +1,5 @@
-import { parseCsv } from "../../csv";
-import type { ReceptionSignal, ReceptionSource, CsvRowError } from "../types";
+import { parseCsv, tokenizeCsvRows } from "../../csv";
+import type { ReceptionSignal, ReceptionSource } from "../types";
 
 /**
  * Adaptateur manuel — l'unique adaptateur de ce lot.
@@ -7,31 +7,24 @@ import type { ReceptionSignal, ReceptionSource, CsvRowError } from "../types";
  * La réception (saves, shares, ...) n'est récupérable sur AUCUN réseau connecté
  * aujourd'hui (voir types.ts). Le Fil 3 doit donc fonctionner dès aujourd'hui avec de la
  * saisie humaine : un import CSV, poussé par la personne qui possède la donnée. Réutilise
- * `parseCsv` de `server/services/csv.ts` — aucune ré-écriture de parseur ici.
+ * `parseCsv`/`tokenizeCsvRows` de `server/services/csv.ts` — aucune ré-écriture de parseur
+ * ici.
  */
+
+/**
+ * Erreur de parsing portant sur une ligne précise du CSV de réception.
+ * Spécifique à cet adaptateur : le port (`types.ts`) n'a pas à connaître ce détail.
+ */
+export interface CsvRowError {
+  line: number;
+  message: string;
+}
 
 const REQUIRED_COLUMNS = ["content_id", "platform"] as const;
 
-/**
- * Découpe le texte source en lignes PHYSIQUES (celles du fichier tel qu'ouvert dans un
- * éditeur), \r\n et \n compris. On ne délègue pas ce comptage à `parseCsv` : celui-ci
- * élimine silencieusement les lignes vides de son tableau de sortie, ce qui désynchronise
- * tout numéro de ligne calculé depuis l'index de ce tableau dès qu'une ligne vide apparaît
- * au milieu du fichier — un cas fréquent dans un CSV édité à la main.
- */
-function splitPhysicalLines(text: string): string[] {
-  const lines = text.split(/\r?\n/);
-  // Un saut de ligne final produit un dernier élément vide qui ne correspond à aucune ligne
-  // réelle du fichier (pas à une ligne vide intentionnelle) : on l'ignore.
-  if (lines.length > 0 && lines[lines.length - 1] === "" && /\r?\n$/.test(text)) {
-    lines.pop();
-  }
-  return lines;
-}
-
 /** Même définition de « ligne vide » que `parseCsv` : toutes ses cellules sont vides. */
-function isBlankCsvLine(line: string): boolean {
-  return line.split(",").every((cell) => cell.trim() === "");
+function isBlankRow(cells: string[]): boolean {
+  return cells.every((c) => c.trim() === "");
 }
 
 type FieldResult<T> = { value: T } | { error: string };
@@ -47,18 +40,36 @@ function parseNonNegativeIntOrNull(raw: string | undefined, field: string): Fiel
   return { value: n };
 }
 
-/** measured_at optionnel, normalisé à minuit UTC ; absent → aujourd'hui à minuit UTC. */
+/**
+ * measured_at optionnel, normalisé à minuit UTC ; absent → aujourd'hui à minuit UTC.
+ *
+ * On extrait la partie calendaire par expression régulière au lieu de passer la valeur à
+ * `new Date(string)` : la normalisation au jour rend l'heure sans intérêt, et `new
+ * Date(string)` interprète en revanche un format sans décalage explicite (ex. "2026-08-15
+ * 13:45:00") comme une heure LOCALE — ce qui peut faire déborder sur la veille ou le
+ * lendemain selon le fuseau du serveur. L'extraction lexicale ne consulte jamais de fuseau,
+ * donc ne dérive jamais.
+ */
 function parseMeasuredAt(raw: string | undefined): FieldResult<Date> {
   const trimmed = (raw ?? "").trim();
   if (trimmed === "") {
     const now = new Date();
     return { value: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) };
   }
-  const d = new Date(trimmed);
-  if (Number.isNaN(d.getTime())) {
-    return { error: `measured_at invalide : "${raw}"` };
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+  if (!match) {
+    return { error: `measured_at invalide : "${raw}" doit commencer par AAAA-MM-JJ` };
   }
-  return { value: new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())) };
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  // `Date.UTC` accepte silencieusement un débordement (ex. jour 30 février → avance en
+  // mars) : on le détecte en recomparant les composantes obtenues à celles demandées.
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return { error: `measured_at invalide : "${raw}" n'est pas une date calendaire valide` };
+  }
+  return { value: date };
 }
 
 /** sentiment_score optionnel, -1..1 ; absent → null (jamais un zéro fabriqué). */
@@ -84,9 +95,35 @@ export function parseReceptionCsv(text: string): {
   rows: Omit<ReceptionSignal, "source">[];
   errors: CsvRowError[];
 } {
-  const physicalLines = splitPhysicalLines(text);
-  const headerLine = physicalLines[0] ?? "";
-  const headers = headerLine.split(",").map((h) => h.trim().toLowerCase());
+  // On tokenise nous-mêmes UNE FOIS avec le même tokeniseur que `parseCsv` (`tokenizeCsvRows`)
+  // pour lire l'en-tête et repérer les lignes vides — jamais avec un `split(",")` maison, qui
+  // ne comprendrait pas les guillemets et désynchroniserait la numérotation ou rejetterait à
+  // tort un en-tête entre guillemets (export tableur courant).
+  const allRows = tokenizeCsvRows(text);
+
+  if (allRows.length === 0) {
+    return {
+      rows: [],
+      errors: [{
+        line: 1,
+        message: `colonne(s) obligatoire(s) manquante(s) : ${REQUIRED_COLUMNS.join(", ")}`,
+      }],
+    };
+  }
+
+  if (isBlankRow(allRows[0])) {
+    return {
+      rows: [],
+      errors: [{
+        line: 1,
+        message:
+          "la première ligne du fichier est vide : elle doit être l'en-tête et contenir " +
+          `au moins les colonnes ${REQUIRED_COLUMNS.join(", ")}`,
+      }],
+    };
+  }
+
+  const headers = allRows[0].map((h) => h.trim().toLowerCase());
   const missing = REQUIRED_COLUMNS.filter((c) => !headers.includes(c));
   if (missing.length > 0) {
     return {
@@ -95,24 +132,23 @@ export function parseReceptionCsv(text: string): {
     };
   }
 
-  // On retire nous-mêmes les lignes vides AVANT `parseCsv`, en gardant trace du numéro de
-  // ligne d'origine de chacune des lignes conservées (l'en-tête compte comme ligne 1, donc
-  // la première ligne de données du fichier est la ligne 2). `parseCsv` ne verra alors plus
-  // aucune ligne vide à sauter en interne : l'ordre de son tableau de sortie correspond
-  // exactement, position par position, à `keptLines`.
-  const dataLines = physicalLines.slice(1);
-  const keptLines: { text: string; line: number }[] = [];
-  dataLines.forEach((lineText, i) => {
-    if (!isBlankCsvLine(lineText)) keptLines.push({ text: lineText, line: i + 2 });
-  });
+  // Numéros de ligne RÉELS des lignes de données non vides, dans l'ordre du fichier (l'en-tête
+  // est la ligne 1, donc la ligne physique d'indice i dans `allRows` est la ligne i + 1). Comme
+  // `isBlankRow` applique exactement la même règle que `parseCsv` sur les mêmes lignes
+  // tokenisées, ce tableau correspond position par position au tableau que `parseCsv(text)`
+  // produit lui-même ci-dessous — aucune resynchronisation à faire, aucune duplication de la
+  // décision « cette ligne est-elle vide ? ».
+  const lineNumbers: number[] = [];
+  for (let i = 1; i < allRows.length; i++) {
+    if (!isBlankRow(allRows[i])) lineNumbers.push(i + 1);
+  }
 
-  const reconstructed = [headerLine, ...keptLines.map((k) => k.text)].join("\n");
-  const rawRows = parseCsv(reconstructed);
+  const rawRows = parseCsv(text);
   const rows: Omit<ReceptionSignal, "source">[] = [];
   const errors: CsvRowError[] = [];
 
   rawRows.forEach((row, index) => {
-    const line = keptLines[index]?.line ?? index + 2;
+    const line = lineNumbers[index] ?? index + 2; // filet de sécurité, ne devrait pas arriver
 
     const contentIdRaw = (row["content_id"] ?? "").trim();
     const contentId = Number(contentIdRaw);

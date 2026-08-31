@@ -25,8 +25,3 @@ export interface ReceptionSource {
   readonly name: string;
   fetchSignals(ref: { contentId: number; platformPostId?: string | null }): Promise<ReceptionSignal[]>;
 }
-
-export interface CsvRowError {
-  line: number;
-  message: string;
-}
