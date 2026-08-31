@@ -11,7 +11,7 @@ import { startOfWeek } from 'date-fns/startOfWeek';
 import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -29,7 +29,8 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { ObjectUploader } from '@/components/ObjectUploader';
 
-import type { Content, SocialAccount, MediaLibrary, TargetPersona, PersonaAnalysisResult, Project } from '@shared/schema';
+import type { Content, ContentReception, SocialAccount, MediaLibrary, TargetPersona, PersonaAnalysisResult, Project } from '@shared/schema';
+import { normalizeReceptionImportErrors, type ReceptionImportRawError } from '@/lib/reception-import-errors';
 import { apiRequest } from '@/lib/queryClient';
 const locales = { 'en-US': enUS };
 
@@ -378,6 +379,75 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  },
  });
 
+ // ---- Réception (Fil 3) ------------------------------------------------------------
+ // Saisie manuelle par contenu + import CSV en masse. Restitution = score contre
+ // l'intention + sa raison, jamais un ré-affichage des compteurs saisis.
+ const [receptionFor, setReceptionFor] = useState<Content | null>(null);
+ const [receptionForm, setReceptionForm] = useState({ saves: '', shares: '', comments: '', reach: '', measuredAt: '' });
+ const [receptionResult, setReceptionResult] = useState<ContentReception | null>(null);
+ const [receptionCsv, setReceptionCsv] = useState('');
+ const [receptionImportResult, setReceptionImportResult] = useState<{ imported: number; errors: ReceptionImportRawError[] } | null>(null);
+
+ const openReceptionDialog = (item: Content) => {
+ setReceptionFor(item);
+ setReceptionForm({ saves: '', shares: '', comments: '', reach: '', measuredAt: format(new Date(), 'yyyy-MM-dd') });
+ setReceptionResult(null);
+ setReceptionCsv('');
+ setReceptionImportResult(null);
+ };
+
+ const receptionMutation = useMutation({
+ // Les champs numériques voyagent tels quels (chaîne, éventuellement vide) : la route
+ // normalise "" en `null`, jamais un zéro fabriqué. Ne JAMAIS faire `Number(x) || 0` ici.
+ mutationFn: async (vars: { contentId: number; platform: string; saves: string; shares: string; comments: string; reach: string; measuredAt: string }) => {
+ const res = await fetch(`/api/content/${vars.contentId}/reception`, {
+ method: 'POST',
+ headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify({
+ platform: vars.platform,
+ saves: vars.saves,
+ shares: vars.shares,
+ comments: vars.comments,
+ reach: vars.reach,
+ measuredAt: vars.measuredAt,
+ }),
+ });
+ const data = await res.json().catch(() => ({}));
+ if (!res.ok) throw new Error(typeof data?.message === 'string' ? data.message : 'reception_failed');
+ return data as ContentReception;
+ },
+ onSuccess: (data) => {
+ setReceptionResult(data);
+ queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ },
+ onError: () => {
+ toast({ title: t('contentCalendar.reception.saveFailed'), variant: 'destructive' });
+ },
+ });
+
+ const receptionImportMutation = useMutation({
+ // La route répond toujours 200 (imported/errors) sauf CSV totalement vide, écarté côté
+ // client par le bouton désactivé — voir bloc JSX.
+ mutationFn: async (csv: string) => {
+ const res = await fetch('/api/content/reception/import', {
+ method: 'POST',
+ headers: { 'Content-Type': 'application/json' },
+ body: JSON.stringify({ csv }),
+ });
+ const data = await res.json().catch(() => ({}));
+ if (!res.ok) throw new Error(typeof data?.message === 'string' ? data.message : 'import_failed');
+ return data as { imported: number; errors: ReceptionImportRawError[] };
+ },
+ onSuccess: (data) => {
+ setReceptionImportResult(data);
+ queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ },
+ onError: () => {
+ toast({ title: t('contentCalendar.reception.saveFailed'), variant: 'destructive' });
+ },
+ });
+ // ---- fin Réception (Fil 3) --------------------------------------------------------
+
  const filteredContent = content.filter((item: Content) => {
  if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
  !item.body.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -666,6 +736,15 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  title={`Move to ${CONTENT_STATUS_LABELS[CONTENT_STATUS_STEPS[statusIdx + 1]]}`}
  >
  <ChevronRight className="w-3.5 h-3.5 text-naya-olive-55" />
+ </button>
+ )}
+ {item.publishedAt && (
+ <button
+ className="w-6 h-6 rounded bg-naya-olive-10 hover:bg-naya-olive-18 flex items-center justify-center"
+ onClick={() => openReceptionDialog(item)}
+ title={t('contentCalendar.reception.open')}
+ >
+ <Target className="w-3.5 h-3.5 text-naya-olive-55" />
  </button>
  )}
  <button
@@ -1118,6 +1197,160 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </div>
  </div>
  <SocialComposer open={showComposer} onClose={() => setShowComposer(false)} projectId={selectedProjectId} />
+
+ <Dialog open={!!receptionFor} onOpenChange={(open) => { if (!open) setReceptionFor(null); }}>
+ {receptionFor && (
+ <DialogContent className="max-w-lg" key={receptionFor.id}>
+ <DialogHeader>
+ <DialogTitle>{t('contentCalendar.reception.title')}</DialogTitle>
+ </DialogHeader>
+ <p className="text-sm text-naya-cream0 line-clamp-1 -mt-2">{receptionFor.title}</p>
+
+ <Tabs defaultValue="manual" className="mt-2">
+ <TabsList>
+ <TabsTrigger value="manual">{t('contentCalendar.reception.manualTab')}</TabsTrigger>
+ <TabsTrigger value="csv">{t('contentCalendar.reception.csvTab')}</TabsTrigger>
+ </TabsList>
+
+ <TabsContent value="manual" className="space-y-4 pt-2">
+ <div className="grid grid-cols-2 gap-4">
+ <div>
+ <Label htmlFor="reception-saves">{t('contentCalendar.reception.saves')}</Label>
+ <Input
+ id="reception-saves"
+ type="number"
+ min={0}
+ value={receptionForm.saves}
+ onChange={(e) => setReceptionForm(prev => ({ ...prev, saves: e.target.value }))}
+ />
+ </div>
+ <div>
+ <Label htmlFor="reception-shares">{t('contentCalendar.reception.shares')}</Label>
+ <Input
+ id="reception-shares"
+ type="number"
+ min={0}
+ value={receptionForm.shares}
+ onChange={(e) => setReceptionForm(prev => ({ ...prev, shares: e.target.value }))}
+ />
+ </div>
+ <div>
+ <Label htmlFor="reception-comments">{t('contentCalendar.reception.comments')}</Label>
+ <Input
+ id="reception-comments"
+ type="number"
+ min={0}
+ value={receptionForm.comments}
+ onChange={(e) => setReceptionForm(prev => ({ ...prev, comments: e.target.value }))}
+ />
+ </div>
+ <div>
+ <Label htmlFor="reception-reach">{t('contentCalendar.reception.reach')}</Label>
+ <Input
+ id="reception-reach"
+ type="number"
+ min={0}
+ value={receptionForm.reach}
+ onChange={(e) => setReceptionForm(prev => ({ ...prev, reach: e.target.value }))}
+ />
+ </div>
+ </div>
+ <div>
+ <Label htmlFor="reception-measured-at">{t('contentCalendar.reception.measuredAt')}</Label>
+ <Input
+ id="reception-measured-at"
+ type="date"
+ value={receptionForm.measuredAt}
+ onChange={(e) => setReceptionForm(prev => ({ ...prev, measuredAt: e.target.value }))}
+ />
+ </div>
+ <div className="flex justify-end">
+ <Button
+ disabled={receptionMutation.isPending}
+ onClick={() => receptionMutation.mutate({
+ contentId: receptionFor.id,
+ platform: receptionFor.platform,
+ saves: receptionForm.saves,
+ shares: receptionForm.shares,
+ comments: receptionForm.comments,
+ reach: receptionForm.reach,
+ measuredAt: receptionForm.measuredAt,
+ })}
+ >
+ {receptionMutation.isPending ? t('contentCalendar.reception.saving') : t('contentCalendar.reception.save')}
+ </Button>
+ </div>
+
+ {/* Restitution : le score contre l'intention + sa raison — jamais un ré-affichage
+ des compteurs saisis. Un score `null` est une sortie légitime (portée manquante,
+ intention absente), rendue avec le même style neutre que le cas noté. */}
+ {receptionResult && (
+ <div className="bg-naya-olive-06 border border-naya-olive-18 rounded-lg p-4 space-y-1.5">
+ <p className="text-sm text-naya-olive-70">{t('contentCalendar.reception.resultTitle')}</p>
+ {receptionResult.receivedVsIntentScore === null ? (
+ <>
+ <p className="text-sm text-naya-olive-55">{t('contentCalendar.reception.noScoreIntro')}</p>
+ <p className="text-sm text-foreground">{receptionResult.rationale}</p>
+ </>
+ ) : (
+ <>
+ <p className="text-sm text-foreground">
+ {t('contentCalendar.reception.scoreLine', { score: Math.round(receptionResult.receivedVsIntentScore * 100) })}
+ </p>
+ <p className="text-sm text-naya-olive-55">{receptionResult.rationale}</p>
+ </>
+ )}
+ </div>
+ )}
+ </TabsContent>
+
+ <TabsContent value="csv" className="space-y-3 pt-2">
+ <div>
+ <Label htmlFor="reception-csv">{t('contentCalendar.reception.importCsvLabel')}</Label>
+ <Textarea
+ id="reception-csv"
+ rows={5}
+ placeholder={t('contentCalendar.reception.importCsvPlaceholder')}
+ value={receptionCsv}
+ onChange={(e) => setReceptionCsv(e.target.value)}
+ className="font-mono text-xs"
+ />
+ </div>
+ <div className="flex justify-end">
+ <Button
+ variant="outline"
+ disabled={!receptionCsv.trim() || receptionImportMutation.isPending}
+ onClick={() => receptionImportMutation.mutate(receptionCsv)}
+ >
+ {receptionImportMutation.isPending ? t('contentCalendar.reception.importing') : t('contentCalendar.reception.importButton')}
+ </Button>
+ </div>
+
+ {receptionImportResult && (
+ <div className="space-y-2">
+ <p className="text-sm text-naya-olive-70">
+ {t('contentCalendar.reception.importedCount', { count: receptionImportResult.imported })}
+ </p>
+ {receptionImportResult.errors.length > 0 && (
+ <div className="bg-[rgba(158,126,135,0.08)] border border-[rgba(158,126,135,0.25)] rounded-lg p-3 space-y-1.5 max-h-40 overflow-y-auto">
+ <p className="text-xs text-naya-mauve">{t('contentCalendar.reception.importErrorsTitle')}</p>
+ {normalizeReceptionImportErrors(receptionImportResult.errors).map(row => (
+ <p key={row.key} className="text-xs text-naya-olive-55">
+ {row.kind === 'line'
+ ? t('contentCalendar.reception.importErrorLine', { line: row.line })
+ : t('contentCalendar.reception.importErrorContent', { contentId: row.contentId, platform: row.platform })}
+ {' — '}{row.message}
+ </p>
+ ))}
+ </div>
+ )}
+ </div>
+ )}
+ </TabsContent>
+ </Tabs>
+ </DialogContent>
+ )}
+ </Dialog>
 
  {projects.length > 0 && (
  <div className="flex items-center gap-2 mt-3 flex-wrap">
