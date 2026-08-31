@@ -91,6 +91,11 @@ import { isValidTimeOfDay, areValidDays } from "./services/rituals";
 import { ingestSignals } from "./services/reception/ingest";
 import { parseReceptionCsv } from "./services/reception/sources/manual";
 import type { ReceptionSignal } from "./services/reception/types";
+import {
+  parseReceptionIntOrNull,
+  parseReceptionSentiment,
+  parseReceptionMeasuredAt,
+} from "./services/reception/validate-input";
 import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
@@ -6352,50 +6357,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   });
 
   // ---- Réception (Fil 3) ------------------------------------------------------------
-  // Un entier ≥ 0 attendu depuis le JSON de la requête, ou `null` explicite — jamais un
-  // zéro fabriqué à partir d'un champ absent. Miroir volontaire (typé JSON, pas texte CSV)
-  // de `parseNonNegativeIntOrNull` de `services/reception/sources/manual.ts`.
-  function parseReceptionIntOrNull(value: unknown, field: string): { value: number | null } | { error: string } {
-    if (value === undefined || value === null) return { value: null };
-    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
-      return { error: `${field} invalide : doit être un entier positif ou null` };
-    }
-    return { value };
-  }
-
-  // sentimentScore optionnel, -1..1 ; absent → null (jamais un zéro fabriqué).
-  function parseReceptionSentiment(value: unknown): { value: number | null } | { error: string } {
-    if (value === undefined || value === null) return { value: null };
-    if (typeof value !== "number" || !Number.isFinite(value) || value < -1 || value > 1) {
-      return { error: "sentimentScore invalide : doit être compris entre -1 et 1" };
-    }
-    return { value };
-  }
-
-  // measuredAt normalisé au jour, minuit UTC ; absent → aujourd'hui à minuit UTC. Extraction
-  // lexicale de la partie calendaire (jamais `new Date(string)` telle quelle) pour ne jamais
-  // dépendre du fuseau du serveur — même précaution que `parseMeasuredAt` côté CSV.
-  function parseReceptionMeasuredAt(value: unknown): { value: Date } | { error: string } {
-    if (value === undefined || value === null || value === "") {
-      const now = new Date();
-      return { value: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) };
-    }
-    if (typeof value !== "string") {
-      return { error: "measuredAt invalide : doit être une chaîne de date AAAA-MM-JJ" };
-    }
-    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
-    if (!match) {
-      return { error: `measuredAt invalide : "${value}" doit commencer par AAAA-MM-JJ` };
-    }
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
-      return { error: `measuredAt invalide : "${value}" n'est pas une date calendaire valide` };
-    }
-    return { value: date };
-  }
+  // Validation du corps JSON extraite et testée dans
+  // `services/reception/validate-input.ts` (parseReceptionIntOrNull,
+  // parseReceptionSentiment, parseReceptionMeasuredAt) : chaîne vide = non renseigné =
+  // null, jamais un zéro fabriqué — voir ce fichier pour la justification complète.
 
   // Saisie d'une mesure de réception pour un contenu. Renvoie la ligne persistée en entier
   // (score, confiance, raison inclus) — jamais un simple accusé de réception muet : la
