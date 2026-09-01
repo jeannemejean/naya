@@ -583,6 +583,44 @@ export type ContentReception = typeof contentReception.$inferSelect;
 export type InsertContentReception = typeof contentReception.$inferInsert;
 
 /**
+ * Conversion par marque — signal LENT (SCHEMA-TRIANGULATION.md §C.3).
+ * Une conversion appartient à une MARQUE, jamais à un post.
+ */
+export const brandConversions = pgTable("brand_conversions", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id),
+  convertedAt: timestamp("converted_at").notNull(),
+  conversionType: text("conversion_type"),      // lead | vente | rdv ...
+  value: doublePrecision("value"),
+  /**
+   * FIGÉE au moment du calcul, copiée depuis projects.attribution_window_days.
+   * Ne JAMAIS relire la valeur du projet pour une conversion passée : changer la fenêtre
+   * d'une marque ne doit rien changer à son historique d'attribution.
+   */
+  attributionWindowDays: integer("attribution_window_days"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type BrandConversion = typeof brandConversions.$inferSelect;
+export type InsertBrandConversion = typeof brandConversions.$inferInsert;
+
+/**
+ * Crédit multi-touch. La somme des poids d'une conversion vaut exactement 1.
+ * JAMAIS de last-touch — voir l'en-tête de server/services/attribution/attribute.ts.
+ */
+export const conversionAttributions = pgTable("conversion_attributions", {
+  id: serial("id").primaryKey(),
+  conversionId: integer("conversion_id").notNull()
+    .references(() => brandConversions.id, { onDelete: "cascade" }),
+  contentId: integer("content_id").notNull()
+    .references(() => content.id, { onDelete: "cascade" }),
+  creditWeight: doublePrecision("credit_weight").notNull(),
+}, (t) => ({
+  // Un contenu ne peut pas être crédité deux fois pour la même conversion.
+  uniqueCredit: unique("conversion_attributions_unique_credit").on(t.conversionId, t.contentId),
+}));
+export type ConversionAttribution = typeof conversionAttributions.$inferSelect;
+
+/**
  * Concurrents — SCHÉMA SEUL (SCHEMA-TRIANGULATION.md bloc C bis).
  * Créés maintenant pour éviter une migration de plus. AUCUNE ingestion dans ce lot.
  */

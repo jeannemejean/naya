@@ -50,6 +50,13 @@
       "when": 1788123233460,
       "tag": "0006_tranquil_sally_floyd",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788280965545,
+      "tag": "0007_lovely_nighthawk",
+      "breakpoints": true
     }
   ]
 }

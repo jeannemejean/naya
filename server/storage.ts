@@ -142,6 +142,7 @@ import {
   type ContentReception,
   type InsertContentReception,
   competitors,
+  brandConversions,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -2120,6 +2121,11 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(strategyReports).where(eq(strategyReports.userId, userId)); // project_id
       await tx.delete(brandDna).where(eq(brandDna.userId, userId));               // project_id (AVANT projects!)
       await tx.delete(memoryEntries).where(eq(memoryEntries.userId, userId));     // mémoire Naya (reset all data)
+      // conversion_attributions.conversion_id est en ON DELETE CASCADE (géré par Postgres),
+      // mais brand_conversions.project_id ne l'est pas → suppression explicite avant projects.
+      if (projectIds.length > 0) {
+        await tx.delete(brandConversions).where(inArray(brandConversions.projectId, projectIds));
+      }
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────
       console.log(`[reset] phase 10: projects`);

@@ -103,6 +103,10 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "strategy_reports", mode: "delete" },
   { table: "brand_dna", mode: "delete" },
   { table: "memory_entries", mode: "delete" },
+  // conversion_attributions.conversion_id est en ON DELETE CASCADE (géré par Postgres),
+  // mais brand_conversions.project_id ne l'est pas → doit être explicitement traitée
+  // avant la suppression de projects (Phase 10).
+  { table: "brand_conversions", mode: "delete" },
 
   // ── Phase 10 : projects ──────────────────────────────────────────────────────
   { table: "projects", mode: "delete" },
