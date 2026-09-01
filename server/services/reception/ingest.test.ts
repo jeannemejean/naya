@@ -15,6 +15,23 @@ vi.mock("../../db", () => ({
   db: { insert: vi.fn(() => ({ values: memoryInsertValues })) },
 }));
 
+/**
+ * Faux `content_reception` fidèle à la contrainte d'unicité réelle
+ * `(content_id, platform, measured_at)` : rejouer la même mesure ÉCRASE la ligne et
+ * signale `inserted: false`. Sert au test d'idempotence : on veut compter des LIGNES
+ * (mesure ET mémoire), pas des appels de mock.
+ */
+function fakeReceptionTable() {
+  const rows = new Map<string, Record<string, unknown>>();
+  const upsert = vi.fn(async (row: any) => {
+    const key = `${row.contentId}|${row.platform}|${new Date(row.measuredAt).toISOString()}`;
+    const inserted = !rows.has(key);
+    rows.set(key, row);
+    return { inserted };
+  });
+  return { rows, upsert };
+}
+
 // L'embedding ne doit jamais partir en réseau depuis un test.
 vi.mock("../memory/embed", () => ({
   embedText: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
@@ -24,6 +41,7 @@ import { storage } from "../../storage";
 import { db } from "../../db";
 import { embedText } from "../memory/embed";
 import { ingestSignals, formatReceptionMemoryPhrase } from "./ingest";
+import { receivedVsIntentScore } from "./score";
 import type { ReceptionSignal } from "./types";
 
 function signal(overrides: Partial<ReceptionSignal> = {}): ReceptionSignal {
@@ -56,7 +74,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   memoryInsertValues.mockClear().mockResolvedValue(undefined);
   (embedText as any).mockResolvedValue([0.1, 0.2, 0.3]);
-  (storage.upsertContentReception as any).mockResolvedValue(undefined);
+  // Par défaut la mesure est une PREMIÈRE écriture : l'entrée mémoire l'accompagne.
+  (storage.upsertContentReception as any).mockResolvedValue({ inserted: true });
 });
 
 describe("formatReceptionMemoryPhrase (pure)", () => {
@@ -116,15 +135,41 @@ describe("ingestSignals", () => {
     );
   });
 
-  it("passe conversionsInWindow: 0 au scoring — LOT 3B le remplira", async () => {
-    (storage.getContentById as any).mockResolvedValue(contentRow());
+  /**
+   * Rien ne mesure la conversion aujourd'hui. Passer `0` fabriquerait une mesure — le zéro
+   * inventé que ce lot proscrit partout ailleurs — et plafonnerait MÉCANIQUEMENT tout
+   * contenu d'intention conversion à 0,30/1 avec une confiance de 0,9. `null` dit la
+   * vérité : « non mesuré », et `score.ts` renormalise sur ce qui l'a été.
+   *
+   * Ce test compare au score de référence produit par un `0` explicite : si quelqu'un
+   * revenait à `conversionsInWindow: 0` dans ingest.ts, les deux vaudraient pareil et le
+   * test échouerait — là où un simple `not.toBeNull()` serait resté vert.
+   */
+  it("passe conversionsInWindow: null (non mesuré), jamais un zéro fabriqué", async () => {
+    (storage.getContentById as any).mockResolvedValue(contentRow({ intent: "conversion" }));
 
     await ingestSignals("u1", [signal()]);
 
     const row = (storage.upsertContentReception as any).mock.calls[0][0];
-    // Le score conversion (intent conversion, sans conversion mesurée) doit être calculé
-    // en excluant le poids conversion — donc rester non-null malgré 0 conversion connue.
-    expect(row.receivedVsIntentScore).not.toBeNull();
+    const s = signal();
+
+    const avecZeroFabrique = receivedVsIntentScore({
+      intent: "conversion", saves: s.saves, shares: s.shares, comments: s.comments,
+      reach: s.reach, sentimentScore: s.sentimentScore, conversionsInWindow: 0,
+    });
+    const avecNonMesure = receivedVsIntentScore({
+      intent: "conversion", saves: s.saves, shares: s.shares, comments: s.comments,
+      reach: s.reach, sentimentScore: s.sentimentScore, conversionsInWindow: null,
+    });
+
+    // L'ingestion produit EXACTEMENT le score du « non mesuré »...
+    expect(row.receivedVsIntentScore).toBe(avecNonMesure.score);
+    expect(row.confidence).toBe(avecNonMesure.confidence);
+    // ...et surtout PAS celui du zéro fabriqué, qui plafonnait le contenu à 0,30.
+    expect(row.receivedVsIntentScore).not.toBe(avecZeroFabrique.score);
+    expect(row.receivedVsIntentScore!).toBeGreaterThan(avecZeroFabrique.score!);
+    // La confiance BAISSE, elle : un signal en moins, c'est moins de certitude, pas un score puni.
+    expect(row.confidence).toBeLessThan(avecZeroFabrique.confidence);
   });
 
   it("reporte une erreur sur le signal si le contenu est introuvable, sans casser les autres", async () => {
@@ -189,7 +234,7 @@ describe("ingestSignals", () => {
     (storage.getContentById as any).mockResolvedValue(contentRow());
     (storage.upsertContentReception as any)
       .mockRejectedValueOnce(new Error("contrainte violée"))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ inserted: true });
 
     const result = await ingestSignals("u1", [
       signal({ contentId: 1 }),
@@ -213,5 +258,64 @@ describe("ingestSignals", () => {
   it("renvoie written: 0 et errors: [] pour une liste de signaux vide", async () => {
     const result = await ingestSignals("u1", []);
     expect(result).toEqual({ written: 0, skipped: 0, errors: [] });
+  });
+});
+
+/**
+ * IDEMPOTENCE — critère d'acceptation §3A.6 n°4 : « rejouer le même fichier ne double pas
+ * les signaux ». Une entrée `signal_reception` EST un signal : la mémoire compte autant que
+ * `content_reception`. Sans ce test, l'upsert idempotent de la mesure masquait une écriture
+ * mémoire, elle, purement additive (3 rejeux = 3 entrées quasi identiques, qui monopolisent
+ * ensuite le top-K par fil de `retrieveMemories` et évincent les autres marques).
+ */
+describe("ingestSignals — idempotence du rejeu", () => {
+  it("rejouer le MÊME signal ne laisse qu'une mesure ET qu'une entrée mémoire", async () => {
+    const table = fakeReceptionTable();
+    (storage.getContentById as any).mockResolvedValue(contentRow());
+    (storage.upsertContentReception as any).mockImplementation(table.upsert);
+
+    const memoryRows: unknown[] = [];
+    memoryInsertValues.mockImplementation(async (row: unknown) => { memoryRows.push(row); });
+
+    await ingestSignals("u1", [signal()]);
+    await ingestSignals("u1", [signal()]);
+    await ingestSignals("u1", [signal()]);
+
+    // La mesure : une seule ligne, trois écritures — c'est le rôle de l'upsert.
+    expect(table.upsert).toHaveBeenCalledTimes(3);
+    expect(table.rows.size).toBe(1);
+    // La mémoire : une seule entrée. C'est LE défaut que ce test verrouille.
+    expect(memoryRows).toHaveLength(1);
+  });
+
+  it("rejouer un fichier entier ne multiplie pas les entrées mémoire (1 par contenu, pas 1 par rejeu)", async () => {
+    const table = fakeReceptionTable();
+    (storage.getContentById as any).mockImplementation(async (id: number) => contentRow({ id }));
+    (storage.upsertContentReception as any).mockImplementation(table.upsert);
+
+    const memoryRows: unknown[] = [];
+    memoryInsertValues.mockImplementation(async (row: unknown) => { memoryRows.push(row); });
+
+    const fichier = [signal({ contentId: 1 }), signal({ contentId: 2 }), signal({ contentId: 3 })];
+    await ingestSignals("u1", fichier);
+    await ingestSignals("u1", fichier);
+
+    expect(table.rows.size).toBe(3);
+    expect(memoryRows).toHaveLength(3);
+  });
+
+  it("une mesure d'un AUTRE jour reste un signal neuf : elle écrit sa propre entrée mémoire", async () => {
+    const table = fakeReceptionTable();
+    (storage.getContentById as any).mockResolvedValue(contentRow());
+    (storage.upsertContentReception as any).mockImplementation(table.upsert);
+
+    const memoryRows: unknown[] = [];
+    memoryInsertValues.mockImplementation(async (row: unknown) => { memoryRows.push(row); });
+
+    await ingestSignals("u1", [signal({ measuredAt: new Date("2026-08-15T00:00:00.000Z") })]);
+    await ingestSignals("u1", [signal({ measuredAt: new Date("2026-08-22T00:00:00.000Z") })]);
+
+    expect(table.rows.size).toBe(2);
+    expect(memoryRows).toHaveLength(2);
   });
 });

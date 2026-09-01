@@ -6414,7 +6414,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // d'une seconde exécution locale qui pourrait diverger. Comparaison au jour près
       // (pas .getTime() strict) pour rester insensible à un éventuel aller-retour de fuseau
       // du driver DB sur les colonnes timestamp.
-      const history = await storage.getContentReception(id);
+      const history = await storage.getContentReception(id, userId);
       const targetDay = measuredAt.value.toISOString().slice(0, 10);
       const saved = history.find(
         (r) => r.platform === platform && new Date(r.measuredAt).toISOString().slice(0, 10) === targetDay,
@@ -6461,7 +6461,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const existing = await storage.getContentById(id, userId);
       if (!existing) return res.status(404).json({ message: "Content not found" });
 
-      const history = await storage.getContentReception(id);
+      const history = await storage.getContentReception(id, userId);
       res.json(history);
     } catch (error) {
       console.error("Error fetching content reception:", error);

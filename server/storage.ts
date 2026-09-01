@@ -288,9 +288,18 @@ export interface IStorage {
   claimContentForPosting(id: number): Promise<boolean>;
 
   // Réception (Fil 3) — mesure de la réception d'un contenu, triangulée contre son intention.
-  /** Upsert idempotent : rejouer la même mesure écrase, ne double pas. */
-  upsertContentReception(row: InsertContentReception): Promise<void>;
-  getContentReception(contentId: number): Promise<ContentReception[]>;
+  /**
+   * Upsert idempotent : rejouer la même mesure écrase, ne double pas.
+   *
+   * Renvoie `inserted` : `true` si la mesure est NEUVE, `false` si elle a écrasé une mesure
+   * déjà présente pour la même clé `(content_id, platform, measured_at)`. L'appelant en a
+   * besoin — les effets de bord ADDITIFS qui accompagnent une mesure (l'écriture mémoire du
+   * fil « reception ») ne sont pas idempotents tout seuls : sans cette information ils se
+   * rejouent à chaque import et empilent des doublons.
+   */
+  upsertContentReception(row: InsertContentReception): Promise<{ inserted: boolean }>;
+  /** Filtré par propriétaire : un contenu d'un autre utilisateur ne renvoie rien. */
+  getContentReception(contentId: number, userId: string): Promise<ContentReception[]>;
 
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
@@ -1023,8 +1032,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Réception (Fil 3) — voir IStorage pour la doc.
-  async upsertContentReception(row: InsertContentReception): Promise<void> {
-    await db.insert(contentReception).values(row)
+  async upsertContentReception(row: InsertContentReception): Promise<{ inserted: boolean }> {
+    // `xmax` est la colonne système qui porte le transaction id ayant VERROUILLÉ/périmé la
+    // version de ligne renvoyée : il vaut 0 pour un tuple fraîchement inséré et la
+    // transaction courante pour un tuple mis à jour par la branche ON CONFLICT. C'est la
+    // seule façon, en un aller-retour, de distinguer une insertion d'une mise à jour —
+    // un SELECT préalable serait à la fois plus lent et sujet à une course.
+    const [result] = await db.insert(contentReception).values(row)
       .onConflictDoUpdate({
         target: [contentReception.contentId, contentReception.platform, contentReception.measuredAt],
         set: {
@@ -1032,13 +1046,21 @@ export class DatabaseStorage implements IStorage {
           sentimentScore: row.sentimentScore, receivedVsIntentScore: row.receivedVsIntentScore,
           confidence: row.confidence, rationale: row.rationale, source: row.source,
         },
-      });
+      })
+      .returning({ inserted: sql<boolean>`(xmax = 0)` });
+    return { inserted: result?.inserted === true };
   }
 
-  async getContentReception(contentId: number): Promise<ContentReception[]> {
-    return await db.select().from(contentReception)
-      .where(eq(contentReception.contentId, contentId))
+  async getContentReception(contentId: number, userId: string): Promise<ContentReception[]> {
+    // Le filtre d'ownership vit ICI, pas seulement chez les appelants : `content_reception`
+    // ne porte pas de `user_id`, il se déduit du contenu. Les deux appelants actuels
+    // vérifient déjà en amont — ce filtre est là pour le troisième, celui qui oubliera.
+    const rows = await db.select({ reception: contentReception })
+      .from(contentReception)
+      .innerJoin(content, eq(contentReception.contentId, content.id))
+      .where(and(eq(contentReception.contentId, contentId), eq(content.userId, userId)))
       .orderBy(desc(contentReception.measuredAt));
+    return rows.map((r) => r.reception);
   }
 
   async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
