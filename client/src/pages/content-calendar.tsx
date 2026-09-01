@@ -406,14 +406,42 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const [receptionResult, setReceptionResult] = useState<ContentReception | null>(null);
  const [receptionCsv, setReceptionCsv] = useState('');
  const [receptionImportResult, setReceptionImportResult] = useState<{ imported: number; errors: ReceptionImportRawError[] } | null>(null);
+ // L'import CSV est GLOBAL : il porte n'importe quel content_id. Il lui faut donc sa propre
+ // porte d'entrée — logé dans la fiche d'un contenu, il n'était atteignable qu'en
+ // sélectionnant un contenu déjà publié, donc pas du tout sur une base où aucun contenu ne
+ // porte publishedAt.
+ const [receptionImportOpen, setReceptionImportOpen] = useState(false);
 
  const openReceptionDialog = (item: Content) => {
  setReceptionFor(item);
  setReceptionForm({ saves: '', shares: '', comments: '', reach: '', measuredAt: format(new Date(), 'yyyy-MM-dd') });
  setReceptionResult(null);
+ // L'onglet CSV de cette fiche partage son état avec l'import global : on repart propre,
+ // sans le résultat d'un import précédent qui n'a rien à voir avec ce contenu.
  setReceptionCsv('');
  setReceptionImportResult(null);
  };
+
+ const openReceptionImport = () => {
+ setReceptionCsv('');
+ setReceptionImportResult(null);
+ setReceptionImportOpen(true);
+ };
+
+ // Ce que Naya a DÉJÀ retenu de ce contenu. Sans cette lecture, rouvrir la fiche d'un
+ // contenu déjà mesuré rendait un formulaire vierge, et le chemin CSV — qui ne passe jamais
+ // par ce formulaire — ne restituait jamais rien de ce qu'il avait appris. La route
+ // GET /api/content/:id/reception existait déjà et n'avait aucun consommateur.
+ const { data: receptionHistory = [] } = useQuery<ContentReception[]>({
+ queryKey: ['/api/content', receptionFor?.id, 'reception'],
+ queryFn: () => fetchJson<ContentReception[]>(`/api/content/${receptionFor!.id}/reception`),
+ enabled: !!receptionFor,
+ });
+
+ // La mesure qu'on vient de saisir prime sur l'historique relu ; sinon la plus récente (la
+ // route les renvoie déjà triées du plus récent au plus ancien). On n'en montre QU'UNE : le
+ // verdict du moment, pas une chronique de compteurs.
+ const receptionVerdict: ContentReception | null = receptionResult ?? receptionHistory[0] ?? null;
 
  const receptionMutation = useMutation({
  // Les champs numériques voyagent tels quels (chaîne, éventuellement vide) : la route
@@ -438,6 +466,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  onSuccess: (data) => {
  setReceptionResult(data);
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content', data.contentId, 'reception'] });
  },
  onError: () => {
  toast({ title: t('contentCalendar.reception.saveFailed'), variant: 'destructive' });
@@ -460,11 +489,90 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  onSuccess: (data) => {
  setReceptionImportResult(data);
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ // Un import peut avoir mesuré le contenu dont la fiche est ouverte : son verdict doit
+ // se rafraîchir, pas rester sur ce qu'il montrait avant.
+ if (receptionFor) queryClient.invalidateQueries({ queryKey: ['/api/content', receptionFor.id, 'reception'] });
  },
  onError: () => {
  toast({ title: t('contentCalendar.reception.saveFailed'), variant: 'destructive' });
  },
  });
+
+ // Le panneau d'import CSV, rendu à DEUX endroits — l'onglet de la fiche d'un contenu et la
+ // porte d'entrée globale de l'en-tête. Un seul bloc, jamais deux copies à faire diverger.
+ const renderReceptionCsvPanel = () => (
+ <>
+ <div>
+ <Label htmlFor="reception-csv">{t('contentCalendar.reception.importCsvLabel')}</Label>
+ <Textarea
+ id="reception-csv"
+ rows={5}
+ placeholder={t('contentCalendar.reception.importCsvPlaceholder')}
+ value={receptionCsv}
+ onChange={(e) => setReceptionCsv(e.target.value)}
+ className="font-mono text-xs"
+ />
+ </div>
+ <div className="flex justify-end">
+ <Button
+ variant="outline"
+ disabled={!receptionCsv.trim() || receptionImportMutation.isPending}
+ onClick={() => receptionImportMutation.mutate(receptionCsv)}
+ >
+ {receptionImportMutation.isPending ? t('contentCalendar.reception.importing') : t('contentCalendar.reception.importButton')}
+ </Button>
+ </div>
+
+ {receptionImportResult && (
+ <div className="space-y-2">
+ <p className="text-sm text-naya-olive-70">
+ {t('contentCalendar.reception.importedCount', { count: receptionImportResult.imported })}
+ </p>
+ {receptionImportResult.errors.length > 0 && (
+ <div className="bg-[rgba(158,126,135,0.08)] border border-[rgba(158,126,135,0.25)] rounded-lg p-3 space-y-1.5 max-h-40 overflow-y-auto">
+ <p className="text-xs text-naya-mauve">{t('contentCalendar.reception.importErrorsTitle')}</p>
+ {normalizeReceptionImportErrors(receptionImportResult.errors).map(row => (
+ <p key={row.key} className="text-xs text-naya-olive-55">
+ {row.kind === 'line'
+ ? t('contentCalendar.reception.importErrorLine', { line: row.line })
+ : t('contentCalendar.reception.importErrorContent', { contentId: row.contentId, platform: row.platform })}
+ {' — '}{row.message}
+ </p>
+ ))}
+ </div>
+ )}
+ </div>
+ )}
+ </>
+ );
+
+ /**
+  * La restitution : le verdict contre l'intention et SA RAISON — jamais un ré-affichage des
+  * compteurs saisis, jamais une comparaison entre contenus. Un score `null` est une sortie
+  * légitime (portée manquante, intention absente ou illisible), rendue avec le même calme
+  * que le cas noté. La raison porte l'emphase dans les DEUX cas : on enseigne, on ne note pas.
+  */
+ const renderReceptionVerdict = (verdict: ContentReception) => (
+ <div className="bg-naya-olive-06 border border-naya-olive-18 rounded-lg p-4 space-y-1.5">
+ <p className="text-sm text-naya-olive-70">{t('contentCalendar.reception.resultTitle')}</p>
+ {verdict.receivedVsIntentScore === null ? (
+ <>
+ <p className="text-sm text-naya-olive-55">{t('contentCalendar.reception.noScoreIntro')}</p>
+ <p className="text-sm text-foreground">{verdict.rationale}</p>
+ </>
+ ) : (
+ <>
+ <p className="text-sm text-naya-olive-55">
+ {t('contentCalendar.reception.scoreLine', { score: Math.round(verdict.receivedVsIntentScore * 100) })}
+ </p>
+ <p className="text-sm text-foreground">{verdict.rationale}</p>
+ </>
+ )}
+ <p className="text-xs text-naya-olive-55 pt-1">
+ {t('contentCalendar.reception.measuredOn', { date: format(new Date(verdict.measuredAt), 'dd/MM/yyyy') })}
+ </p>
+ </div>
+ );
  // ---- fin Réception (Fil 3) --------------------------------------------------------
 
  const filteredContent = content.filter((item: Content) => {
@@ -1223,6 +1331,10 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <Sparkles className="h-4 w-4" />
  Composer multi-réseaux
  </Button>
+ <Button variant="outline" className="flex items-center gap-2" onClick={openReceptionImport}>
+ <Upload className="h-4 w-4" />
+ {t('contentCalendar.reception.openImport')}
+ </Button>
  <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) resetForm(); }}>
  <DialogTrigger asChild>
  <Button variant="outline" className="flex items-center gap-2">
@@ -1319,75 +1431,31 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </Button>
  </div>
 
- {/* Restitution : le score contre l'intention + sa raison — jamais un ré-affichage
- des compteurs saisis. Un score `null` est une sortie légitime (portée manquante,
- intention absente), rendue avec le même style neutre que le cas noté. */}
- {receptionResult && (
- <div className="bg-naya-olive-06 border border-naya-olive-18 rounded-lg p-4 space-y-1.5">
- <p className="text-sm text-naya-olive-70">{t('contentCalendar.reception.resultTitle')}</p>
- {receptionResult.receivedVsIntentScore === null ? (
- <>
- <p className="text-sm text-naya-olive-55">{t('contentCalendar.reception.noScoreIntro')}</p>
- <p className="text-sm text-foreground">{receptionResult.rationale}</p>
- </>
- ) : (
- <>
- <p className="text-sm text-foreground">
- {t('contentCalendar.reception.scoreLine', { score: Math.round(receptionResult.receivedVsIntentScore * 100) })}
- </p>
- <p className="text-sm text-naya-olive-55">{receptionResult.rationale}</p>
- </>
- )}
- </div>
- )}
+ {/* Le verdict : celui qu'on vient de saisir, ou — à la réouverture d'un contenu
+ déjà mesuré, y compris mesuré par import CSV — le dernier connu. */}
+ {receptionVerdict && renderReceptionVerdict(receptionVerdict)}
  </TabsContent>
 
  <TabsContent value="csv" className="space-y-3 pt-2">
- <div>
- <Label htmlFor="reception-csv">{t('contentCalendar.reception.importCsvLabel')}</Label>
- <Textarea
- id="reception-csv"
- rows={5}
- placeholder={t('contentCalendar.reception.importCsvPlaceholder')}
- value={receptionCsv}
- onChange={(e) => setReceptionCsv(e.target.value)}
- className="font-mono text-xs"
- />
- </div>
- <div className="flex justify-end">
- <Button
- variant="outline"
- disabled={!receptionCsv.trim() || receptionImportMutation.isPending}
- onClick={() => receptionImportMutation.mutate(receptionCsv)}
- >
- {receptionImportMutation.isPending ? t('contentCalendar.reception.importing') : t('contentCalendar.reception.importButton')}
- </Button>
- </div>
-
- {receptionImportResult && (
- <div className="space-y-2">
- <p className="text-sm text-naya-olive-70">
- {t('contentCalendar.reception.importedCount', { count: receptionImportResult.imported })}
- </p>
- {receptionImportResult.errors.length > 0 && (
- <div className="bg-[rgba(158,126,135,0.08)] border border-[rgba(158,126,135,0.25)] rounded-lg p-3 space-y-1.5 max-h-40 overflow-y-auto">
- <p className="text-xs text-naya-mauve">{t('contentCalendar.reception.importErrorsTitle')}</p>
- {normalizeReceptionImportErrors(receptionImportResult.errors).map(row => (
- <p key={row.key} className="text-xs text-naya-olive-55">
- {row.kind === 'line'
- ? t('contentCalendar.reception.importErrorLine', { line: row.line })
- : t('contentCalendar.reception.importErrorContent', { contentId: row.contentId, platform: row.platform })}
- {' — '}{row.message}
- </p>
- ))}
- </div>
- )}
- </div>
- )}
+ {renderReceptionCsvPanel()}
  </TabsContent>
  </Tabs>
  </DialogContent>
  )}
+ </Dialog>
+
+ {/* Import CSV GLOBAL — indépendant de toute sélection de contenu. Le CSV porte ses
+ propres content_id : rien ici n'a besoin qu'un contenu publié soit sélectionné. */}
+ <Dialog open={receptionImportOpen} onOpenChange={setReceptionImportOpen}>
+ <DialogContent className="max-w-lg">
+ <DialogHeader>
+ <DialogTitle>{t('contentCalendar.reception.importTitle')}</DialogTitle>
+ </DialogHeader>
+ <p className="text-sm text-naya-olive-55 -mt-2">{t('contentCalendar.reception.importIntro')}</p>
+ <div className="space-y-3 pt-1">
+ {renderReceptionCsvPanel()}
+ </div>
+ </DialogContent>
  </Dialog>
 
  {projects.length > 0 && (

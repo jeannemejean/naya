@@ -1048,7 +1048,10 @@ export class DatabaseStorage implements IStorage {
         },
       })
       .returning({ inserted: sql<boolean>`(xmax = 0)` });
-    return { inserted: result?.inserted === true };
+    // node-postgres décode un `bool` en booléen JS ; la normalisation couvre le cas où un
+    // futur driver renverrait la forme textuelle de Postgres ('t'/'f') plutôt qu'un booléen.
+    const raw = result?.inserted as unknown;
+    return { inserted: raw === true || raw === "t" || raw === "true" };
   }
 
   async getContentReception(contentId: number, userId: string): Promise<ContentReception[]> {
