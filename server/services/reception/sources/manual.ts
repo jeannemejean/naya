@@ -1,4 +1,5 @@
 import { parseCsv, tokenizeCsvRows } from "../../csv";
+import { parseMeasuredAtToUtcMidnight } from "../measured-at";
 import type { ReceptionSignal, ReceptionSource } from "../types";
 
 /**
@@ -42,34 +43,11 @@ function parseNonNegativeIntOrNull(raw: string | undefined, field: string): Fiel
 
 /**
  * measured_at optionnel, normalisé à minuit UTC ; absent → aujourd'hui à minuit UTC.
- *
- * On extrait la partie calendaire par expression régulière au lieu de passer la valeur à
- * `new Date(string)` : la normalisation au jour rend l'heure sans intérêt, et `new
- * Date(string)` interprète en revanche un format sans décalage explicite (ex. "2026-08-15
- * 13:45:00") comme une heure LOCALE — ce qui peut faire déborder sur la veille ou le
- * lendemain selon le fuseau du serveur. L'extraction lexicale ne consulte jamais de fuseau,
- * donc ne dérive jamais.
+ * La normalisation elle-même vit dans `../measured-at.ts` — une SEULE implémentation,
+ * partagée avec le chemin JSON, parce qu'elle produit un tiers de la clé d'idempotence.
  */
 function parseMeasuredAt(raw: string | undefined): FieldResult<Date> {
-  const trimmed = (raw ?? "").trim();
-  if (trimmed === "") {
-    const now = new Date();
-    return { value: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) };
-  }
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
-  if (!match) {
-    return { error: `measured_at invalide : "${raw}" doit commencer par AAAA-MM-JJ` };
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  // `Date.UTC` accepte silencieusement un débordement (ex. jour 30 février → avance en
-  // mars) : on le détecte en recomparant les composantes obtenues à celles demandées.
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
-    return { error: `measured_at invalide : "${raw}" n'est pas une date calendaire valide` };
-  }
-  return { value: date };
+  return parseMeasuredAtToUtcMidnight(raw, "measured_at");
 }
 
 /** sentiment_score optionnel, -1..1 ; absent → null (jamais un zéro fabriqué). */

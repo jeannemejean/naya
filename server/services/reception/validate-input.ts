@@ -10,6 +10,8 @@
  * chaîne vide — jamais un CSV.
  */
 
+import { parseMeasuredAtToUtcMidnight } from "./measured-at";
+
 export type FieldResult<T> = { value: T } | { error: string };
 
 /**
@@ -50,37 +52,17 @@ export function parseReceptionSentiment(raw: unknown): FieldResult<number | null
 /**
  * measuredAt optionnel, normalisé à minuit UTC ; absent/vide → aujourd'hui à minuit UTC.
  *
- * Extraction lexicale de la partie calendaire par expression régulière, jamais
- * `new Date(string)` telle quelle : même précaution anti-fuseau que `parseMeasuredAt` côté
- * CSV (`sources/manual.ts`) — un format sans décalage explicite serait sinon interprété
- * comme une heure LOCALE par le moteur JS, ce qui peut faire déborder sur la veille ou le
- * lendemain selon le fuseau du serveur.
+ * La normalisation est celle de `./measured-at.ts` — la MÊME que celle du chemin CSV, pas
+ * une copie : `measured_at` normalisé au jour est un tiers de la clé d'idempotence
+ * `(content_id, platform, measured_at)`, et deux copies qui divergeraient produiraient
+ * silencieusement deux lignes là où il n'en fallait qu'une.
+ *
+ * Le seul ajout ici est propre au JSON : un corps de requête peut porter n'importe quel
+ * type, là où une cellule CSV est toujours du texte.
  */
 export function parseReceptionMeasuredAt(raw: unknown): FieldResult<Date> {
-  if (raw === undefined || raw === null) {
-    const now = new Date();
-    return { value: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) };
-  }
-  if (typeof raw !== "string") {
+  if (raw !== undefined && raw !== null && typeof raw !== "string") {
     return { error: "measuredAt invalide : doit être une chaîne de date AAAA-MM-JJ" };
   }
-  const trimmed = raw.trim();
-  if (trimmed === "") {
-    const now = new Date();
-    return { value: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())) };
-  }
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
-  if (!match) {
-    return { error: `measuredAt invalide : "${raw}" doit commencer par AAAA-MM-JJ` };
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  // `Date.UTC` accepte silencieusement un débordement (ex. jour 30 février → avance en
-  // mars) : on le détecte en recomparant les composantes obtenues à celles demandées.
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
-    return { error: `measuredAt invalide : "${raw}" n'est pas une date calendaire valide` };
-  }
-  return { value: date };
+  return parseMeasuredAtToUtcMidnight(raw, "measuredAt");
 }
