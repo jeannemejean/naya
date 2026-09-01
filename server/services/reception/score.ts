@@ -13,6 +13,24 @@
 
 export type Intent = "awareness" | "consideration" | "conversion";
 
+/**
+ * LE vocabulaire des intentions — source unique. Typé `readonly Intent[]` : une faute de
+ * frappe ajoutée ici ne compile pas, au lieu de créer une quatrième intention fantôme
+ * qu'aucun poids ne connaît. `validate-generated-intent.ts` s'appuie dessus.
+ */
+export const KNOWN_INTENTS: readonly Intent[] = ["awareness", "consideration", "conversion"];
+
+/**
+ * Garde de vocabulaire. `content.intent` est une colonne `text` LIBRE : `insertContentSchema`
+ * en dérive un `z.string()` qui accepte tout, et `PATCH /api/content/:id` ne blanchit rien.
+ * Une valeur hors vocabulaire atteint donc bel et bien le scoring — un `as Intent` côté
+ * ingestion est un vœu, pas une vérification. D'où cette garde RÉELLE, ici, dans la fonction
+ * pure : c'est le seul endroit qui puisse la rendre totale sur son domaine.
+ */
+export function isIntent(raw: unknown): raw is Intent {
+  return typeof raw === "string" && (KNOWN_INTENTS as readonly string[]).includes(raw);
+}
+
 export interface ScoreInput {
   intent: Intent | null;
   saves: number | null;
@@ -21,8 +39,16 @@ export interface ScoreInput {
   reach: number | null;
   /** -1..1, optionnel. Voir D5 de la spec : aucun calcul automatique dans ce lot. */
   sentimentScore: number | null;
-  /** Reste 0 tant que le LOT 3B (attribution) n'existe pas. */
-  conversionsInWindow: number;
+  /**
+   * `null` = NON MESURÉ (le cas de tout ce lot : rien ne mesure la conversion aujourd'hui,
+   * le LOT 3B s'en chargera). Traité exactement comme n'importe quel autre signal absent :
+   * exclu du calcul, la confiance en paie le prix, jamais le score.
+   *
+   * `0` = MESURÉ À ZÉRO. C'est une information, pas une absence : elle entre dans le calcul
+   * et fait baisser le score. C'est la sémantique du cas littéral de la spec (intention
+   * conversion + enregistrements élevés + zéro conversion → score bas) : elle ne change pas.
+   */
+  conversionsInWindow: number | null;
 }
 
 export interface ScoreResult {
@@ -79,7 +105,25 @@ export function receivedVsIntentScore(input: ScoreInput): ScoreResult {
     };
   }
 
-  if (reach === null || reach === undefined || reach <= 0) {
+  // L'intention peut venir de la base, où la colonne est un `text` libre : on la VÉRIFIE,
+  // on ne la suppose pas. Sans cette garde, `INTENT_WEIGHTS[intent]` vaut `undefined` et la
+  // boucle plus bas jette une TypeError — la mesure serait perdue et rapportée sous un
+  // message technique, au lieu de ce verdict lisible qui est la sortie légitime.
+  if (!isIntent(intent)) {
+    return {
+      score: null,
+      confidence: 0,
+      rationale:
+        `L'intention notée sur ce contenu n'en est pas une que Naya sache lire (attendu : ` +
+        `${KNOWN_INTENTS.join(", ")}) : impossible de juger sa réception contre elle. ` +
+        `Il est exclu du scoring, ce n'est pas un échec — corrige son intention et la mesure repartira.`,
+    };
+  }
+
+  // Deux causes DIFFÉRENTES, deux phrases : répondre « Portée inconnue » à quelqu'un qui
+  // vient de taper 0 lui ment. Le résultat, lui, est le même dans les deux cas — `null`,
+  // parce qu'aucun taux n'est calculable.
+  if (reach === null || reach === undefined) {
     return {
       score: null,
       confidence: 0,
@@ -88,12 +132,24 @@ export function receivedVsIntentScore(input: ScoreInput): ScoreResult {
     };
   }
 
+  if (reach <= 0) {
+    return {
+      score: null,
+      confidence: 0,
+      rationale:
+        "Portée mesurée à zéro : personne n'a vu ce contenu, il n'y a donc aucun taux à en tirer. " +
+        "C'est une histoire de diffusion, pas de réception.",
+    };
+  }
+
   const weights = INTENT_WEIGHTS[intent];
   const raw: Record<keyof typeof REFERENCE_RATES, number | null> = {
     saves: input.saves,
     shares: input.shares,
     comments: input.comments,
-    // La conversion est toujours connue : 0 conversion est une information, pas une absence.
+    // `0` reste une information (une conversion mesurée à zéro fait baisser le score) ;
+    // `null` reste une absence (exclue du calcul comme les autres). Aucun des deux n'est
+    // traduit dans l'autre ici — c'est l'appelant qui dit laquelle des deux il détient.
     conversions: input.conversionsInWindow,
   };
 

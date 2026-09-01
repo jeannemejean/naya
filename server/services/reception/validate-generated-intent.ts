@@ -12,11 +12,14 @@
  * correction silencieuse, pas de repli sur "awareness".
  */
 
-import type { Intent } from "./score";
+import { isIntent, type Intent } from "./score";
 
-const VALID_INTENTS: readonly string[] = ["awareness", "consideration", "conversion"];
-
+/**
+ * Le vocabulaire n'est pas redéclaré ici : il vit dans `score.ts` (`KNOWN_INTENTS`, typé
+ * `readonly Intent[]` — une faute de frappe ne compile pas) et la vérification est la même
+ * fonction `isIntent` que celle qui garde le chemin BASE. Une seule liste, un seul test
+ * d'appartenance : le chemin IA et le chemin base ne peuvent plus diverger.
+ */
 export function validateGeneratedIntent(raw: unknown): Intent | null {
-  if (typeof raw !== "string") return null;
-  return VALID_INTENTS.includes(raw) ? (raw as Intent) : null;
+  return isIntent(raw) ? raw : null;
 }

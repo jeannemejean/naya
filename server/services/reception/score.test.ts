@@ -46,6 +46,19 @@ describe("receivedVsIntentScore", () => {
     expect(receivedVsIntentScore({ ...base, reach: 0, saves: 40 }).score).toBeNull();
   });
 
+  // Une portée SAISIE à 0 est une mesure, pas une absence : lui répondre « Portée inconnue »
+  // ment à qui vient précisément de taper 0. Deux causes, deux phrases.
+  it("distingue une portée inconnue d'une portée mesurée à zéro dans la raison donnée", () => {
+    const inconnue = receivedVsIntentScore({ ...base, reach: null, saves: 40 });
+    const zero = receivedVsIntentScore({ ...base, reach: 0, saves: 40 });
+
+    expect(inconnue.score).toBeNull();
+    expect(zero.score).toBeNull();
+    expect(zero.rationale).not.toBe(inconnue.rationale);
+    expect(inconnue.rationale.toLowerCase()).toContain("inconnue");
+    expect(zero.rationale.toLowerCase()).not.toContain("inconnue");
+  });
+
   it("sans intention, le contenu est exclu du scoring", () => {
     const r = receivedVsIntentScore({ ...base, intent: null, saves: 40 });
     expect(r.score).toBeNull();
@@ -109,5 +122,60 @@ describe("receivedVsIntentScore", () => {
       ...base, intent: "conversion", saves: 40, comments: 15, shares: 12, conversionsInWindow: 0,
     });
     expect(r.rationale).not.toMatch(/\b(suivent|portent|restent)\b/);
+  });
+
+  // La conversion NON MESURÉE (`null`) n'est pas la conversion mesurée à zéro : elle sort du
+  // calcul comme n'importe quel signal absent, au lieu de plafonner le contenu à 0,30.
+  it("une conversion non mesurée (null) est exclue du calcul, pas comptée comme un échec", () => {
+    const signaux = { intent: "conversion" as const, saves: 40, comments: 15, shares: 12 };
+    const zeroMesure = receivedVsIntentScore({ ...base, ...signaux, conversionsInWindow: 0 });
+    const nonMesure = receivedVsIntentScore({ ...base, ...signaux, conversionsInWindow: null });
+
+    expect(nonMesure.score).not.toBeNull();
+    expect(nonMesure.score!).toBeGreaterThan(zeroMesure.score!);
+    // L'incertitude pèse sur la confiance, jamais sur le score.
+    expect(nonMesure.confidence).toBeLessThan(zeroMesure.confidence);
+  });
+
+  it("tous les signaux absents ET la conversion non mesurée → rien à juger", () => {
+    const r = receivedVsIntentScore({
+      ...base, intent: "conversion", saves: null, shares: null, comments: null, conversionsInWindow: null,
+    });
+    expect(r.score).toBeNull();
+    expect(r.confidence).toBe(0);
+  });
+});
+
+/**
+ * TOTALITÉ de la fonction sur son domaine RÉEL. `content.intent` est une colonne `text`
+ * libre : `insertContentSchema` accepte n'importe quelle chaîne et `PATCH /api/content/:id`
+ * ne blanchit rien. Une valeur hors vocabulaire arrivait donc jusqu'ici et faisait
+ * `Object.keys(undefined)` — une TypeError, rattrapée par le best-effort de l'ingestion,
+ * mais qui PERDAIT la mesure et la rapportait sous un message technique illisible.
+ * La sortie légitime est un score `null` avec une raison en français.
+ */
+describe("receivedVsIntentScore — intention hors vocabulaire", () => {
+  it("ne jette jamais sur une valeur inventée : score null et raison lisible", () => {
+    const r = receivedVsIntentScore({ ...base, intent: "engagement" as any, saves: 40, shares: 10 });
+    expect(r.score).toBeNull();
+    expect(r.confidence).toBe(0);
+    expect(r.rationale.toLowerCase()).toContain("intention");
+    // Une raison, pas une trace technique.
+    expect(r.rationale).not.toMatch(/undefined|TypeError|Object\.keys/);
+  });
+
+  it("ne jette jamais sur une variante de casse — jamais de correction silencieuse non plus", () => {
+    const r = receivedVsIntentScore({ ...base, intent: "Awareness" as any, saves: 40, shares: 10 });
+    const bonneCasse = receivedVsIntentScore({ ...base, intent: "awareness", saves: 40, shares: 10 });
+    expect(r.score).toBeNull();
+    expect(bonneCasse.score).not.toBeNull();
+  });
+
+  it("ne jette pas non plus sur un type inattendu venu de la base", () => {
+    for (const valeur of [42, {}, [], true, ""]) {
+      const r = receivedVsIntentScore({ ...base, intent: valeur as any, saves: 40, shares: 10 });
+      expect(r.score).toBeNull();
+      expect(r.confidence).toBe(0);
+    }
   });
 });
