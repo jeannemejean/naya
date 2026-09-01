@@ -55,6 +55,10 @@ interface PostFormData {
  contentType: string;
  pillar: string;
  goal: string;
+ // Intention (Fil 3) : "awareness" | "consideration" | "conversion" | '' (non renseignée
+ // dans le formulaire → envoyée comme `null`, jamais devinée). Ne pas confondre avec `goal`
+ // ci-dessus, qui est un champ libre requis, distinct de l'intention.
+ intent: string;
  contentStatus: string;
  scheduledFor?: Date;
  mediaUrl?: string;
@@ -90,6 +94,15 @@ const GOALS = [
  { value: 'trust', label: 'Trust Building' },
  { value: 'conversion', label: 'Conversion' },
  { value: 'engagement', label: 'Engagement' },
+];
+
+// Intention (Fil 3) : contre quoi la réception de ce contenu sera jugée. `none` est le
+// sentinel UI pour « non renseigné » — jamais envoyé tel quel à l'API (converti en `null`).
+const INTENTS = [
+ { value: 'none', i18nKey: 'contentCalendar.intent.unset' },
+ { value: 'awareness', i18nKey: 'contentCalendar.intent.awareness' },
+ { value: 'consideration', i18nKey: 'contentCalendar.intent.consideration' },
+ { value: 'conversion', i18nKey: 'contentCalendar.intent.conversion' },
 ];
 
 const CONTENT_STATUS_STEPS = ['idea', 'draft', 'ready', 'published'] as const;
@@ -148,6 +161,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  contentType: 'post',
  pillar: '',
  goal: 'engagement',
+ intent: '',
  contentStatus: 'idea',
  });
 
@@ -198,7 +212,9 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  fetch('/api/content', {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ ...data, projectId: selectedProjectId }),
+ // '' (non renseignée dans le formulaire) devient `null` : jamais une chaîne vide en
+ // base, jamais une intention devinée.
+ body: JSON.stringify({ ...data, intent: data.intent || null, projectId: selectedProjectId }),
  }).then(res => res.json()),
  onSuccess: () => {
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
@@ -344,12 +360,15 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  projectId: selectedProjectId,
  }),
  }).then(res => res.json()),
- onSuccess: (data: { title: string; content: string; pillar: string }) => {
+ onSuccess: (data: { title: string; content: string; pillar: string; intent: string | null }) => {
  setFormData(prev => ({
  ...prev,
  title: data.title,
  body: data.content,
  pillar: data.pillar,
+ // Le modèle a pu déduire l'intention du contexte ; `null` (pas déduite) redevient le
+ // sentinel UI '' — jamais une valeur devinée à sa place.
+ intent: data.intent || '',
  }));
  toast({ title: t('contentCalendar.aiContentGenerated') });
  },
@@ -467,7 +486,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const resetForm = () => {
  setFormData({
  title: '', body: '', platform: 'instagram', contentType: 'post',
- pillar: '', goal: 'engagement', contentStatus: 'idea',
+ pillar: '', goal: 'engagement', intent: '', contentStatus: 'idea',
  mediaUrl: undefined, mediaFileName: undefined,
  });
  setSelectedPost(null);
@@ -509,6 +528,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  contentType: event.resource.contentType,
  pillar: event.resource.pillar,
  goal: event.resource.goal,
+ intent: event.resource.intent || '',
  contentStatus: event.resource.contentStatus || 'idea',
  scheduledFor: event.resource.scheduledFor ? new Date(event.resource.scheduledFor) : undefined,
  mediaUrl: event.resource.mediaUrl || undefined,
@@ -648,6 +668,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  contentType: item.contentType,
  pillar: item.pillar,
  goal: item.goal,
+ intent: item.intent || '',
  contentStatus: item.contentStatus || 'idea',
  scheduledFor: item.scheduledFor ? new Date(item.scheduledFor) : undefined,
  mediaUrl: item.mediaUrl || undefined,
@@ -910,6 +931,22 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </div>
 
  <div>
+ <Label htmlFor="intent">{t('contentCalendar.intent.label')}</Label>
+ <Select
+ value={formData.intent || 'none'}
+ onValueChange={(value) => setFormData(prev => ({ ...prev, intent: value === 'none' ? '' : value }))}
+ >
+ <SelectTrigger><SelectValue /></SelectTrigger>
+ <SelectContent>
+ {INTENTS.map(intent => (
+ <SelectItem key={intent.value} value={intent.value}>{t(intent.i18nKey)}</SelectItem>
+ ))}
+ </SelectContent>
+ </Select>
+ <p className="text-xs text-naya-olive-55 mt-1">{t('contentCalendar.intent.help')}</p>
+ </div>
+
+ <div>
  <Label htmlFor="title">{t('contentCalendar.titleCaption')}</Label>
  <Input
  placeholder={t('contentCalendar.titleCaptionPlaceholder')}
@@ -1046,6 +1083,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  contentType: formData.contentType,
  pillar: formData.pillar,
  goal: formData.goal,
+ intent: formData.intent || null,
  contentStatus: formData.contentStatus,
  scheduledFor: formData.scheduledFor,
  mediaUrl: formData.mediaUrl || null,

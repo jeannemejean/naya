@@ -1,6 +1,8 @@
 import { callClaude, callClaudeDetailed, callClaudeWithContext, assertNotTruncated, CLAUDE_MODELS } from "./claude";
 import { storage } from "../storage";
 import { NAYA_SYSTEM_VOICE } from "../naya-voice";
+import { validateGeneratedIntent } from "./reception/validate-generated-intent";
+import type { Intent } from "./reception/score";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -275,6 +277,7 @@ export async function generateContent(request: ContentGenerationRequest): Promis
   body: string;
   cta: string;
   strategicNote: string;
+  intent: Intent | null;
 }> {
   try {
     // Extract projectId from request (it should be added to the request interface if needed)
@@ -298,12 +301,19 @@ ${request.personaContext?.targetPersonaDecisionTriggers?.length
 
 IMPORTANT: Reference specific offers, positioning, voice keywords, and audience pain points from the business context above. Every piece of content should be so specific it could only work for THIS business.
 
+Also deduce this content's INTENT — what the reception (saves, shares, comments) will later be judged against. Choose exactly one of:
+- "awareness": the goal is to be seen/discovered, no expectation of immediate action.
+- "consideration": the goal is to build trust and get saved/shared/discussed before a decision.
+- "conversion": the goal is to drive a concrete action (buy, book, sign up, reply).
+If you are genuinely unsure, return null — never guess and never default to "awareness".
+
 Respond with JSON only:
 {
   "title": "Brief title/hook",
   "body": "Full content text with appropriate platform formatting",
   "cta": "Call-to-action appropriate for the goal mode",
-  "strategicNote": "Why this content works for their specific business, project, and goal"
+  "strategicNote": "Why this content works for their specific business, project, and goal",
+  "intent": "awareness" | "consideration" | "conversion" | null
 }`;
 
     // Use callClaudeWithContext for automatic Brand DNA + project + persona injection
@@ -316,7 +326,10 @@ Respond with JSON only:
       additionalSystemContext: `You are an expert content strategist who creates engaging, on-brand content that drives results for entrepreneurs. You adapt your output based on project type, monetization intent, and active goal mode. RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
     });
 
-    return JSON.parse(stripMarkdownJSON(raw));
+    const parsed = JSON.parse(stripMarkdownJSON(raw));
+    // Jamais une intention devinée : une réponse hors des trois valeurs exactes devient
+    // `null` (voir validate-generated-intent.ts), pas une correction ou un défaut.
+    return { ...parsed, intent: validateGeneratedIntent(parsed?.intent) };
   } catch (error) {
     throw new Error("Failed to generate content: " + (error as Error).message);
   }
