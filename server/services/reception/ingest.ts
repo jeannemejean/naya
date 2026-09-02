@@ -39,6 +39,14 @@ export interface IngestResult {
  * Construit la phrase mémoire décrivant une mesure de réception. PURE — aucune base,
  * aucun réseau — donc testable isolément (voir ingest.test.ts), séparément du
  * branchement DB/embedding qui l'entoure.
+ *
+ * ⚠️ COUPLAGE : `server/scripts/recompute-reception-scores.ts` reconstruit le PRÉFIXE de
+ * cette phrase (tout sauf `rationale`) pour retrouver, à partir d'une ligne
+ * `content_reception`, l'entrée `memory_entries` qu'elle a produite à l'insertion — aucune
+ * clé de liaison n'existe entre les deux tables. Modifier la FORME de la sortie ici
+ * (ordre des champs, ponctuation, le texte fixe autour des `${...}`) casse SILENCIEUSEMENT
+ * cet appariement pour TOUT l'historique en une fois. Si tu changes ce texte, va lire et
+ * mettre à jour ce script en même temps.
  */
 export function formatReceptionMemoryPhrase(input: {
   contentTitle: string;

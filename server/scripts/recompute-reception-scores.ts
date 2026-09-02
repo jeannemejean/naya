@@ -20,9 +20,25 @@
  *
  * Le lien entre une ligne `content_reception` et SON entrée mémoire n'existe nulle part en
  * base (`memory_entries` n'a pas de `content_reception_id`) : on la retrouve en
- * reconstruisant la phrase EXACTE que `formatReceptionMemoryPhrase` aurait écrite pour
- * l'ANCIENNE mesure (même fonction pure qu'à l'insertion) et en cherchant une entrée
- * mémoire non périmée dont le contenu correspond mot pour mot.
+ * reconstruisant le PRÉFIXE STABLE de la phrase que `formatReceptionMemoryPhrase` aurait
+ * écrite pour l'ANCIENNE mesure (titre, plateforme, score, intention — tout ce qui NE
+ * dépend PAS de la rationale), et en cherchant une entrée mémoire non périmée dont le
+ * contenu COMMENCE par ce préfixe. Un appariement sur la phrase ENTIÈRE (rationale
+ * comprise) échouerait silencieusement pour toute ligne historique à `rationale: null`
+ * (la colonne est nullable en base, contrairement à ce que produit `ingest.ts` aujourd'hui)
+ * — et cet échec serait PERMANENT : `existing` resterait introuvable, le score serait
+ * quand même corrigé, la ligne ne serait donc plus jamais "changée", et aucun passage
+ * futur du script ne la reverrait. Un appariement par préfixe est délibérément plus large
+ * (deux mesures distinctes au même score littéral partageraient le même préfixe) : c'est
+ * accepté — périmer l'une ou l'autre de deux entrées jumelles ne change rien d'observable —
+ * alors qu'un appariement qui RATE est irrécupérable.
+ *
+ * ⚠️ COUPLAGE AU LIBELLÉ EXACT : cette reconstruction dépend du texte produit AUJOURD'HUI
+ * par `formatReceptionMemoryPhrase` (voir ingest.ts). Un changement de formulation dans
+ * cette fonction — même sans rapport avec cette tâche — casse SILENCIEUSEMENT
+ * l'appariement de TOUT l'historique en une fois : plus aucune ligne ne retrouvera son
+ * entrée mémoire, et le seul signal en sera l'avertissement `console.warn` émis pour
+ * chaque changement matériel sans entrée retrouvée (voir `recomputeOneRow` ci-dessous).
  *
  *   NODE_ENV=development npx tsx server/scripts/recompute-reception-scores.ts
  */
@@ -57,6 +73,16 @@ export interface ReceptionRow {
   contentUserId: string;
 }
 
+export interface NewMemoryEntry {
+  userId: string;
+  projectId: number;
+  fil: string;
+  entryType: string;
+  content: string;
+  embedding: number[] | null;
+  salience: number;
+}
+
 /**
  * Accès storage injectable — même précédent que `MemoryRepo` dans
  * `server/services/memory/extract.ts` : la vraie DB par défaut, un faux store en mémoire
@@ -69,22 +95,23 @@ export interface RecomputeRepo {
     id: number,
     patch: { receivedVsIntentScore: number | null; confidence: number; rationale: string },
   ): Promise<void>;
+  /** Apparie sur un PRÉFIXE (voir en-tête du fichier), jamais sur l'égalité stricte. */
   findActiveMemoryEntry(args: {
     userId: string;
     fil: string;
     entryType: string;
-    content: string;
+    contentPrefix: string;
   }): Promise<{ id: number } | null>;
-  supersedeMemoryEntry(id: number): Promise<void>;
-  insertMemoryEntry(entry: {
-    userId: string;
-    projectId: number;
-    fil: string;
-    entryType: string;
-    content: string;
-    embedding: number[] | null;
-    salience: number;
-  }): Promise<void>;
+  /**
+   * Périme l'ancienne entrée ET insère la nouvelle DANS LA MÊME TRANSACTION — jamais l'une
+   * sans l'autre. Sans cette atomicité, un crash entre les deux (process tué, connexion DB
+   * perdue) laisserait l'ancienne entrée périmée SANS remplaçante : le fil "reception"
+   * deviendrait alors PERMANENTMENT vide pour ce contenu, sans qu'aucune erreur ne le
+   * signale — le score `content_reception`, lui, ne serait corrigé que dans un second
+   * appel `updateReceptionScore` séparé, donc au rejeu la ligne ne recalculerait plus rien
+   * de "changé" et ne redéclencherait jamais cette branche.
+   */
+  replaceMemoryEntry(oldEntryId: number, newEntry: NewMemoryEntry): Promise<void>;
 }
 
 export const dbRecomputeRepo: RecomputeRepo = {
@@ -116,27 +143,31 @@ export const dbRecomputeRepo: RecomputeRepo = {
   async updateReceptionScore(id, patch) {
     await db.update(contentReception).set(patch).where(eq(contentReception.id, id));
   },
-  async findActiveMemoryEntry({ userId, fil, entryType, content: text }) {
-    const [row] = await db
-      .select({ id: memoryEntries.id })
+  async findActiveMemoryEntry({ userId, fil, entryType, contentPrefix }) {
+    // Filtrage du PRÉFIXE côté application, pas en SQL (`LIKE`) : le préfixe est construit
+    // à partir de texte libre (titre de contenu) qui peut contenir des caractères spéciaux
+    // de motif (`%`, `_`) — les échapper correctement pour un `LIKE` sûr coûterait plus
+    // cher que de filtrer en mémoire un volume de lignes borné par (user, fil) sur un
+    // script hors-ligne, jamais un chemin critique.
+    const rows = await db
+      .select({ id: memoryEntries.id, content: memoryEntries.content })
       .from(memoryEntries)
       .where(
         and(
           eq(memoryEntries.userId, userId),
           eq(memoryEntries.fil, fil),
           eq(memoryEntries.entryType, entryType),
-          eq(memoryEntries.content, text),
           isNull(memoryEntries.supersededAt),
         ),
-      )
-      .limit(1);
-    return row ?? null;
+      );
+    const found = rows.find((r) => r.content.startsWith(contentPrefix));
+    return found ? { id: found.id } : null;
   },
-  async supersedeMemoryEntry(id) {
-    await db.update(memoryEntries).set({ supersededAt: new Date() }).where(eq(memoryEntries.id, id));
-  },
-  async insertMemoryEntry(entry) {
-    await db.insert(memoryEntries).values(entry);
+  async replaceMemoryEntry(oldEntryId, newEntry) {
+    await db.transaction(async (tx) => {
+      await tx.update(memoryEntries).set({ supersededAt: new Date() }).where(eq(memoryEntries.id, oldEntryId));
+      await tx.insert(memoryEntries).values(newEntry);
+    });
   },
 };
 
@@ -219,29 +250,27 @@ async function recomputeOneRow(
 
   let memorySuperseded = false;
   if (isMaterialChange(r.receivedVsIntentScore, newResult.score)) {
-    // Reconstruire la phrase EXACTE que ingest.ts a écrite au moment de CETTE mesure —
-    // seule clé disponible pour retrouver sa ligne mémoire (voir en-tête du fichier).
-    const oldPhrase = formatReceptionMemoryPhrase({
+    // ⚠️ COUPLÉ AU LIBELLÉ EXACT de `formatReceptionMemoryPhrase` (voir avertissement en
+    // en-tête du fichier). `rationale: ""` est délibéré, pas un oubli : on n'apparie QUE
+    // sur le préfixe stable (titre, plateforme, score, intention), jamais sur la
+    // rationale — une ligne historique à `rationale: null` en base doit quand même
+    // retrouver son entrée mémoire.
+    const oldPhrasePrefix = formatReceptionMemoryPhrase({
       contentTitle: r.contentTitle,
       platform: r.platform,
       score: r.receivedVsIntentScore,
       intent: r.contentIntent,
-      rationale: r.rationale ?? "",
+      rationale: "",
     });
 
     const existing = await repo.findActiveMemoryEntry({
       userId: r.contentUserId,
       fil: "reception",
       entryType: "signal_reception",
-      content: oldPhrase,
+      contentPrefix: oldPhrasePrefix,
     });
 
-    // Aucune entrée retrouvée (mesure jamais devenue une entrée mémoire, ex. insertion
-    // suivie d'un échec d'embedding, ou déjà périmée par un passage antérieur du script)
-    // : rien à périmer, on continue quand même la mise à jour de content_reception.
     if (existing) {
-      await repo.supersedeMemoryEntry(existing.id); // bi-temporel : on invalide, on ne supprime pas.
-
       const newPhrase = formatReceptionMemoryPhrase({
         contentTitle: r.contentTitle,
         platform: r.platform,
@@ -250,7 +279,7 @@ async function recomputeOneRow(
         rationale: newResult.rationale,
       });
       const embedding = await embedText(newPhrase).catch(() => null);
-      await repo.insertMemoryEntry({
+      await repo.replaceMemoryEntry(existing.id, {
         userId: r.contentUserId,
         projectId: r.projectId,
         fil: "reception",
@@ -260,6 +289,19 @@ async function recomputeOneRow(
         salience: newResult.confidence > 0 ? newResult.confidence : 0.5,
       });
       memorySuperseded = true;
+    } else {
+      // DISTINCT d'un simple "rien à faire" : un changement MATÉRIEL sans entrée
+      // retrouvée est SUSPECT (mesure jamais devenue mémoire, déjà périmée par un passage
+      // antérieur interrompu, ou — le risque documenté en en-tête — un changement de
+      // libellé dans `formatReceptionMemoryPhrase` qui a cassé l'appariement pour tout
+      // l'historique). Un opérateur doit pouvoir repérer CETTE ligne et vérifier le fil
+      // "reception" à la main : un silence indiscernable rendrait le défaut permanent.
+      console.warn(
+        `[recompute-reception-scores] AUCUNE entrée mémoire active retrouvée pour périmer ` +
+          `malgré un changement matériel de score (contenu ${r.contentId}, ligne ` +
+          `content_reception ${r.id}, ${r.receivedVsIntentScore} → ${newResult.score}). ` +
+          `Le score est corrigé quand même ; vérifier manuellement le fil "reception" pour ce contenu.`,
+      );
     }
   }
 

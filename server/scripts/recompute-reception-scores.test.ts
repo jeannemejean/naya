@@ -5,8 +5,10 @@ vi.mock("../services/memory/embed", () => ({
   embedText: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
 }));
 
-import { recomputeReceptionScores, type RecomputeRepo, type ReceptionRow } from "./recompute-reception-scores";
+import { recomputeReceptionScores, type RecomputeRepo, type ReceptionRow, type NewMemoryEntry } from "./recompute-reception-scores";
 import { receivedVsIntentScore } from "../services/reception/score";
+
+type FakeMemoryRow = { id: number; userId: string; fil: string; entryType: string; content: string; supersededAt: Date | null };
 
 /**
  * Faux store EN MÉMOIRE — pas des mocks vitest sur des appels : le test d'idempotence
@@ -16,22 +18,26 @@ import { receivedVsIntentScore } from "../services/reception/score";
 function fakeRepo(initial: {
   reception: ReceptionRow[];
   creditSums?: Record<number, number>;
-  memory?: Array<{ id: number; userId: string; fil: string; entryType: string; content: string; supersededAt: Date | null }>;
+  memory?: FakeMemoryRow[];
 }): RecomputeRepo & {
   receptionRows: ReceptionRow[];
-  memoryRows: Array<{ id: number; userId: string; fil: string; entryType: string; content: string; supersededAt: Date | null }>;
-  insertedMemory: unknown[];
+  memoryRows: FakeMemoryRow[];
+  insertedMemory: NewMemoryEntry[];
+  /** Fait échouer le PROCHAIN `replaceMemoryEntry` — simule une panne mi-course pour
+   * vérifier l'atomicité (rien n'est appliqué si l'appel échoue). */
+  failNextReplace: boolean;
 } {
   const receptionRows = initial.reception.map((r) => ({ ...r }));
   const creditSums = initial.creditSums ?? {};
   const memoryRows = (initial.memory ?? []).map((m) => ({ ...m }));
-  const insertedMemory: unknown[] = [];
+  const insertedMemory: NewMemoryEntry[] = [];
   let nextMemoryId = memoryRows.reduce((max, m) => Math.max(max, m.id), 0) + 1;
 
-  return {
+  const repo = {
     receptionRows,
     memoryRows,
     insertedMemory,
+    failNextReplace: false,
     async listReceptionRows() {
       // Copie défensive : simule un aller-retour DB, jamais la même référence.
       return receptionRows.map((r) => ({ ...r }));
@@ -39,36 +45,43 @@ function fakeRepo(initial: {
     async getConversionCreditSum(contentId: number) {
       return creditSums[contentId] ?? 0;
     },
-    async updateReceptionScore(id, patch) {
+    async updateReceptionScore(id: number, patch: any) {
       const row = receptionRows.find((r) => r.id === id);
       if (!row) throw new Error(`ligne ${id} introuvable`);
       row.receivedVsIntentScore = patch.receivedVsIntentScore;
       row.confidence = patch.confidence;
       row.rationale = patch.rationale;
     },
-    async findActiveMemoryEntry({ userId, fil, entryType, content }) {
+    async findActiveMemoryEntry({ userId, fil, entryType, contentPrefix }: any) {
       const found = memoryRows.find(
         (m) => m.userId === userId && m.fil === fil && m.entryType === entryType &&
-          m.content === content && m.supersededAt === null,
+          m.supersededAt === null && m.content.startsWith(contentPrefix),
       );
       return found ? { id: found.id } : null;
     },
-    async supersedeMemoryEntry(id: number) {
-      const row = memoryRows.find((m) => m.id === id);
-      if (row) row.supersededAt = new Date();
-    },
-    async insertMemoryEntry(entry) {
-      insertedMemory.push(entry);
+    // Simule l'atomicité d'un `db.transaction()` : soit les DEUX effets (supersède +
+    // insère) sont appliqués, soit AUCUN ne l'est — jamais l'ancienne entrée périmée sans
+    // remplaçante. C'est le CONTRAT que la vraie implémentation DB (dbRecomputeRepo) doit
+    // aussi respecter, elle via `db.transaction`.
+    async replaceMemoryEntry(oldEntryId: number, newEntry: NewMemoryEntry) {
+      if (repo.failNextReplace) {
+        repo.failNextReplace = false;
+        throw new Error("panne DB simulée (replaceMemoryEntry)");
+      }
+      const old = memoryRows.find((m) => m.id === oldEntryId);
+      if (old) old.supersededAt = new Date();
+      insertedMemory.push(newEntry);
       memoryRows.push({
         id: nextMemoryId++,
-        userId: entry.userId,
-        fil: entry.fil,
-        entryType: entry.entryType,
-        content: entry.content,
+        userId: newEntry.userId,
+        fil: newEntry.fil,
+        entryType: newEntry.entryType,
+        content: newEntry.content,
         supersededAt: null,
       });
     },
   };
+  return repo;
 }
 
 function row(overrides: Partial<ReceptionRow> = {}): ReceptionRow {
@@ -90,6 +103,17 @@ function row(overrides: Partial<ReceptionRow> = {}): ReceptionRow {
     contentUserId: "u1",
     ...overrides,
   };
+}
+
+/** Le préfixe STABLE (indépendant de la rationale) de la phrase mémoire produite par
+ * `formatReceptionMemoryPhrase` pour un score non nul — dupliqué ici volontairement pour
+ * construire des fixtures de test, jamais utilisé par le code de production lui-même. */
+function stablePrefix(score: number, intent = "conversion", title = "Post de lancement", platform = "instagram"): string {
+  return (
+    `Réception mesurée du contenu « ${title} » (${platform}) : ` +
+    `score ${(score * 100).toFixed(0)}/100 ` +
+    `contre une intention ${intent}. `
+  );
 }
 
 describe("recomputeReceptionScores", () => {
@@ -125,23 +149,42 @@ describe("recomputeReceptionScores", () => {
     expect(nonCredite.receivedVsIntentScore).toBe(attendu2.score);
   });
 
-  it("est idempotent : un deuxième passage ne met à jour aucune ligne réelle", async () => {
+  it("est idempotent : un deuxième passage ne met à jour aucune ligne réelle, ni la mémoire", async () => {
+    const ancienneMesure = receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: null,
+    });
+    expect(ancienneMesure.score).not.toBeNull();
+    const phraseAncienne = stablePrefix(ancienneMesure.score as number) + ancienneMesure.rationale;
+
     const repo = fakeRepo({
-      reception: [row({ id: 1, contentId: 1, receivedVsIntentScore: null, confidence: 0 })],
+      reception: [row({
+        id: 1, contentId: 1,
+        receivedVsIntentScore: ancienneMesure.score,
+        confidence: ancienneMesure.confidence,
+        rationale: ancienneMesure.rationale,
+      })],
       creditSums: { 1: 0.6 },
+      memory: [{ id: 100, userId: "u1", fil: "reception", entryType: "signal_reception", content: phraseAncienne, supersededAt: null }],
     });
 
     const premierPassage = await recomputeReceptionScores(repo);
     expect(premierPassage.updated).toBeGreaterThan(0);
+    expect(premierPassage.memorySuperseded).toBe(1);
 
-    const etatApresPremierPassage = repo.receptionRows.map((r) => ({ ...r }));
+    const etatReceptionApresPremierPassage = repo.receptionRows.map((r) => ({ ...r }));
+    const etatMemoireApresPremierPassage = repo.memoryRows.map((m) => ({ ...m }));
 
     const deuxiemePassage = await recomputeReceptionScores(repo);
 
     expect(deuxiemePassage.updated).toBe(0);
+    expect(deuxiemePassage.memorySuperseded).toBe(0);
     // Les lignes réelles du store n'ont PAS bougé — pas seulement « la fonction a été
     // appelée moins souvent ».
-    expect(repo.receptionRows).toEqual(etatApresPremierPassage);
+    expect(repo.receptionRows).toEqual(etatReceptionApresPremierPassage);
+    // Ni la mémoire : aucune entrée périmée ou insérée de plus au deuxième passage.
+    expect(repo.memoryRows).toEqual(etatMemoireApresPremierPassage);
+    expect(repo.insertedMemory).toHaveLength(1);
   });
 
   it("supersède l'entrée mémoire et en écrit une nouvelle sur un changement matériel (écart > 0,05)", async () => {
@@ -153,10 +196,7 @@ describe("recomputeReceptionScores", () => {
     // comments restent présents pour l'intention "conversion" : le score n'est PAS null ici
     // (seuls un contenu sans intention, sans portée, ou sans aucun signal mesuré le sont).
     expect(ancienneMesure.score).not.toBeNull();
-    const phraseAncienne =
-      `Réception mesurée du contenu « Post de lancement » (instagram) : ` +
-      `score ${((ancienneMesure.score as number) * 100).toFixed(0)}/100 ` +
-      `contre une intention conversion. ${ancienneMesure.rationale}`;
+    const phraseAncienne = stablePrefix(ancienneMesure.score as number) + ancienneMesure.rationale;
 
     const repo = fakeRepo({
       reception: [row({
@@ -235,5 +275,109 @@ describe("recomputeReceptionScores", () => {
     ]);
     expect(result.updated).toBe(1); // la ligne 2 a quand même été traitée.
     expect(repo.receptionRows.find((r) => r.id === 2)!.receivedVsIntentScore).not.toBeNull();
+  });
+
+  /**
+   * FINDING 1 (review fix round 1) — atomicité supersède+insert. Sans transaction, un
+   * échec entre les deux périmerait l'ancienne entrée SANS remplaçante : le fil
+   * "reception" deviendrait vide pour ce contenu, PERMANENT (le score, lui, ne serait
+   * corrigé que par un appel séparé plus bas, donc la ligne ne serait plus jamais
+   * "changée" au prochain passage). Ce test vérifie le CONTRAT côté appelant : un échec de
+   * `replaceMemoryEntry` laisse l'ancienne entrée ACTIVE (rejouable) et ne corrige PAS non
+   * plus le score — la ligne reste "changée" et sera retentée en entier au prochain run.
+   */
+  it("un échec de replaceMemoryEntry laisse l'ancienne entrée mémoire intacte, jamais orpheline", async () => {
+    const ancienneMesure = receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: null,
+    });
+    const phraseAncienne = stablePrefix(ancienneMesure.score as number) + ancienneMesure.rationale;
+
+    const repo = fakeRepo({
+      reception: [row({
+        id: 1, contentId: 1,
+        receivedVsIntentScore: ancienneMesure.score,
+        confidence: ancienneMesure.confidence,
+        rationale: ancienneMesure.rationale,
+      })],
+      creditSums: { 1: 0.6 },
+      memory: [{ id: 100, userId: "u1", fil: "reception", entryType: "signal_reception", content: phraseAncienne, supersededAt: null }],
+    });
+    repo.failNextReplace = true;
+
+    const result = await recomputeReceptionScores(repo);
+
+    expect(result.errors).toHaveLength(1);
+    const ancienne = repo.memoryRows.find((m) => m.id === 100)!;
+    expect(ancienne.supersededAt).toBeNull(); // TOUJOURS active — pas orpheline.
+    expect(repo.insertedMemory).toHaveLength(0);
+    // Le score n'a PAS non plus été corrigé : la ligne reste "changée" pour un rejeu complet.
+    expect(repo.receptionRows.find((r) => r.id === 1)!.receivedVsIntentScore).toBe(ancienneMesure.score);
+  });
+
+  /**
+   * FINDING 2 (review fix round 1) — une `rationale` nulle en base (colonne nullable,
+   * chemins d'écriture hors `ingest.ts` anticipés par le schéma) ne doit plus empêcher de
+   * retrouver l'entrée mémoire : l'appariement se fait sur le PRÉFIXE stable, jamais sur
+   * la rationale. Contre l'ANCIEN code (égalité stricte avec `r.rationale ?? ""`), ce test
+   * échoue : la phrase reconstruite avec une rationale vide ne correspond jamais à la
+   * phrase réellement stockée (qui porte la VRAIE rationale d'origine).
+   */
+  it("une rationale null en base n'empêche pas de retrouver l'entrée mémoire (appariement par préfixe)", async () => {
+    const ancienneMesure = receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: null,
+    });
+    // La phrase RÉELLEMENT stockée porte une rationale non vide (écrite par ingest.ts à
+    // l'époque) ; seule la colonne `content_reception.rationale` est devenue NULL en base.
+    const phraseReelle = stablePrefix(ancienneMesure.score as number) + "Une rationale d'origine quelconque, perdue depuis.";
+
+    const repo = fakeRepo({
+      reception: [row({
+        id: 1, contentId: 1,
+        receivedVsIntentScore: ancienneMesure.score,
+        confidence: ancienneMesure.confidence,
+        rationale: null, // <-- le cas du Finding 2
+      })],
+      creditSums: { 1: 0.6 },
+      memory: [{ id: 100, userId: "u1", fil: "reception", entryType: "signal_reception", content: phraseReelle, supersededAt: null }],
+    });
+
+    await recomputeReceptionScores(repo);
+
+    const ancienne = repo.memoryRows.find((m) => m.id === 100)!;
+    expect(ancienne.supersededAt).not.toBeNull(); // retrouvée ET périmée malgré rationale: null.
+    expect(repo.insertedMemory).toHaveLength(1);
+  });
+
+  /**
+   * FINDING 2, second volet — quand rien n'est retrouvé malgré un changement matériel,
+   * l'opérateur doit pouvoir le distinguer du cas normal (pas de changement du tout).
+   * Un `console.warn` distinguable, nommant le contenu, est le seul signal disponible.
+   */
+  it("un changement matériel sans entrée mémoire retrouvée émet un avertissement nommant le contenu", async () => {
+    const ancienneMesure = receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: null,
+    });
+    const repo = fakeRepo({
+      reception: [row({
+        id: 7, contentId: 42,
+        receivedVsIntentScore: ancienneMesure.score,
+        confidence: ancienneMesure.confidence,
+        rationale: ancienneMesure.rationale,
+      })],
+      creditSums: { 42: 0.6 },
+      // Aucune entrée mémoire dans le store : rien à retrouver.
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await recomputeReceptionScores(repo);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const message = warnSpy.mock.calls[0][0] as string;
+    expect(message).toContain("42"); // contentId nommé, pour qu'un opérateur puisse agir.
+    expect(message).toContain("AUCUNE"); // distinguable du cas "rien de changé" (silencieux).
+    warnSpy.mockRestore();
   });
 });
