@@ -96,6 +96,7 @@ import {
   parseReceptionSentiment,
   parseReceptionMeasuredAt,
 } from "./services/reception/validate-input";
+import { attributeConversion } from "./services/attribution/attribute-conversion";
 import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
@@ -6469,6 +6470,108 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
   // ---- fin Réception (Fil 3) --------------------------------------------------------
+
+  // ---- Attribution multi-touch (Fil 3, LOT 3B) ---------------------------------------
+  // Le moteur (attributeConversion) et la doctrine complète vivent dans
+  // services/attribution/. Ces routes ne font que : valider l'entrée, figer la fenêtre à
+  // la création (jamais la relire depuis le projet ensuite), et lancer/relancer le calcul.
+
+  // Déclare une conversion pour une marque et lance son attribution. La fenêtre
+  // d'attribution est FIGÉE ici, une fois pour toutes, depuis `projects.attributionWindowDays`
+  // (défaut 30 si non réglée) — voir attribute-conversion.ts pour pourquoi on ne la relit
+  // jamais depuis le projet après coup.
+  app.post('/api/conversions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+
+      const projectId = parseInt(req.body?.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ message: "projectId invalide" });
+
+      const project = await storage.getProject(projectId, userId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      const convertedAt = new Date(req.body?.convertedAt);
+      if (!req.body?.convertedAt || isNaN(convertedAt.getTime())) {
+        return res.status(400).json({ message: "convertedAt requis et doit être une date valide" });
+      }
+
+      let value: number | null = null;
+      const rawValue = req.body?.value;
+      if (rawValue !== undefined && rawValue !== null && rawValue !== '') {
+        // Même garde que parseReceptionIntOrNull : un number ou une chaîne numérique sont
+        // acceptés, mais pas un booléen/objet/tableau qui coercerait silencieusement (ex.
+        // Number(true) === 1).
+        const n = typeof rawValue === "number" ? rawValue : typeof rawValue === "string" ? Number(rawValue.trim()) : NaN;
+        if (!Number.isFinite(n)) return res.status(400).json({ message: "value doit être numérique" });
+        value = n;
+      }
+
+      const conversionType = typeof req.body?.conversionType === "string" && req.body.conversionType.trim()
+        ? req.body.conversionType.trim()
+        : null;
+
+      const conversion = await storage.createBrandConversion({
+        projectId,
+        convertedAt,
+        // Figé une fois pour toutes sur la ligne — jamais relu depuis le projet après coup.
+        attributionWindowDays: project.attributionWindowDays ?? 30,
+        conversionType,
+        value,
+      });
+
+      const attributions = await attributeConversion(conversion.id);
+      // Une fenêtre vide (aucun contenu attribué) est un succès : la conversion existe,
+      // simplement créditée à personne. Ce n'est jamais une erreur.
+      res.json({ ...conversion, attributions });
+    } catch (error) {
+      console.error("Error creating conversion:", error);
+      res.status(500).json({ message: "Failed to create conversion" });
+    }
+  });
+
+  // Liste les conversions d'une marque avec leurs crédits déjà joints.
+  app.get('/api/conversions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+
+      const projectId = parseInt(req.query.projectId as string);
+      if (isNaN(projectId)) return res.status(400).json({ message: "projectId invalide" });
+
+      const project = await storage.getProject(projectId, userId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      const conversions = await storage.getBrandConversionsWithCredits(projectId);
+      res.json(conversions);
+    } catch (error) {
+      console.error("Error fetching conversions:", error);
+      res.status(500).json({ message: "Failed to fetch conversions" });
+    }
+  });
+
+  // Relance l'attribution d'une conversion déjà créée. Idempotent par construction
+  // (replaceConversionAttributions remplace, jamais n'ajoute) — la fenêtre reste celle
+  // figée à la création, jamais recalculée depuis le projet.
+  app.post('/api/conversions/:id/reattribute', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid conversion id" });
+
+      const conversion = await storage.getBrandConversion(id);
+      if (!conversion) return res.status(404).json({ message: "Conversion not found" });
+
+      const project = await storage.getProject(conversion.projectId, userId);
+      if (!project) return res.status(404).json({ message: "Conversion not found" });
+
+      const attributions = await attributeConversion(id);
+      res.json({ ...conversion, attributions });
+    } catch (error) {
+      console.error("Error reattributing conversion:", error);
+      res.status(500).json({ message: "Failed to reattribute conversion" });
+    }
+  });
+  // ---- fin Attribution multi-touch (Fil 3, LOT 3B) -----------------------------------
 
   // Régénère un post de contenu en remplaçant son angle/corps en gardant platform/pillar/format
   app.post('/api/content/:id/regenerate', isAuthenticated, async (req: any, res) => {
