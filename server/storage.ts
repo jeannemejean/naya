@@ -337,6 +337,15 @@ export interface IStorage {
     conversionId: number,
     lines: Array<{ contentId: number; creditWeight: number }>,
   ): Promise<ConversionAttribution[]>;
+  /**
+   * Boucle de retour vers 3A (§4.3) : la somme FRACTIONNAIRE des `creditWeight` de toutes
+   * les lignes d'attribution d'un contenu — jamais un compte entier de conversions (le
+   * §5.3 de la spec interdit « ce post a converti X »). `0` si le contenu n'a jamais été
+   * crédité : c'est une VRAIE MESURE (le contenu est bien passé par des fenêtres
+   * d'attribution, il n'a simplement rien capté), pas une absence — voir
+   * `receivedVsIntentScore` dans score.ts pour la distinction `0`/`null`.
+   */
+  getConversionCreditSumForContent(contentId: number): Promise<number>;
 
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
@@ -1173,6 +1182,16 @@ export class DatabaseStorage implements IStorage {
         lines.map((l) => ({ conversionId, contentId: l.contentId, creditWeight: l.creditWeight })),
       ).returning();
     });
+  }
+
+  // Boucle de retour vers 3A — voir IStorage pour la doc.
+  async getConversionCreditSumForContent(contentId: number): Promise<number> {
+    const [row] = await db.select({
+      sum: sql<number>`coalesce(sum(${conversionAttributions.creditWeight}), 0)`,
+    }).from(conversionAttributions).where(eq(conversionAttributions.contentId, contentId));
+    // `coalesce(sum(...), 0)` garantit une ligne y compris pour zéro crédit : `Number(...)`
+    // normalise un éventuel retour texte du driver (numeric) sans jamais produire `NaN`.
+    return Number(row?.sum ?? 0);
   }
 
   async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
