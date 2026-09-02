@@ -1140,6 +1140,8 @@ const fr = {
  tasksGeneratedDesc: "Retrouve-les dans le planning.",
  generateError: "Erreur lors de la génération",
  generatePlan: "Générer le plan",
+ attributionWindowLabel: "Fenêtre d'attribution (jours)",
+ attributionWindowHelp: "Durée pendant laquelle un contenu publié peut être crédité d'une conversion. Modifier cette valeur ne change rien aux conversions déjà attribuées.",
  },
 
  readingHub: {

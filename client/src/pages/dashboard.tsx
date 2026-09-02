@@ -892,6 +892,7 @@ function ProjectSetupBanner() {
 // La note de statut sert UNIQUEMENT au contexte non tracké par l'app (Naya connaît déjà
 // les tâches faites, contenus, campagnes…). Tout est injecté dans le contexte IA du projet.
 function ProjectStatusNote({ projectId }: { projectId: number }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: project } = useQuery<any>({
@@ -907,6 +908,7 @@ function ProjectStatusNote({ projectId }: { projectId: number }) {
   const [clientName, setClientName] = useState("");
   const [clientContact, setClientContact] = useState("");
   const [clientBrief, setClientBrief] = useState("");
+  const [attributionWindow, setAttributionWindow] = useState("");
 
   useEffect(() => {
     if (!project) return;
@@ -918,12 +920,20 @@ function ProjectStatusNote({ projectId }: { projectId: number }) {
     setClientName(project.clientName ?? "");
     setClientContact(project.clientContact ?? "");
     setClientBrief(project.clientBrief ?? "");
-  }, [project?.id, project?.statusNote, project?.category, project?.dailyTimeBudgetHours, project?.priorityLevel, project?.projectKind, project?.clientName, project?.clientContact, project?.clientBrief]);
+    setAttributionWindow(project.attributionWindowDays != null ? String(project.attributionWindowDays) : "");
+  }, [project?.id, project?.statusNote, project?.category, project?.dailyTimeBudgetHours, project?.priorityLevel, project?.projectKind, project?.clientName, project?.clientContact, project?.clientBrief, project?.attributionWindowDays]);
 
   const save = useMutation({
     mutationFn: async () => {
       const budgetNum = budget.trim() === "" ? null : Math.max(0, parseInt(budget, 10) || 0);
       const isClient = projectKind === "client";
+      // Bornée 1–365 : un champ vidé ou une saisie invalide retombe sur la valeur déjà connue
+      // (ou 30 par défaut) plutôt que d'envoyer null/NaN — la fenêtre n'a pas de sens à zéro.
+      const fallbackWindow = project?.attributionWindowDays ?? 30;
+      const parsedWindow = parseInt(attributionWindow, 10);
+      const attributionWindowNum = Number.isFinite(parsedWindow)
+        ? Math.min(365, Math.max(1, parsedWindow))
+        : fallbackWindow;
       return apiRequest("PATCH", `/api/projects/${projectId}`, {
         statusNote: note,
         category: category || null,
@@ -934,6 +944,7 @@ function ProjectStatusNote({ projectId }: { projectId: number }) {
         clientName: isClient ? (clientName.trim() || null) : null,
         clientContact: isClient ? (clientContact.trim() || null) : null,
         clientBrief: isClient ? (clientBrief.trim() || null) : null,
+        attributionWindowDays: attributionWindowNum,
       });
     },
     onSuccess: () => {
@@ -989,6 +1000,25 @@ function ProjectStatusNote({ projectId }: { projectId: number }) {
               <option value="background">En fond</option>
             </select>
           </div>
+        </div>
+        {/* Fenêtre d'attribution — binaire (contenu dedans ou hors fenêtre), donc bornée
+            1–365 j et jamais laissée vide/absurde (voir clamp dans la mutation ci-dessus). */}
+        <div className="pt-1 border-t border-naya-olive-10">
+          <label className="text-[11px] text-naya-olive-55 block mb-1">
+            {t('projects.attributionWindowLabel')}
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={365}
+            className={fieldCls}
+            value={attributionWindow}
+            onChange={(e) => setAttributionWindow(e.target.value)}
+            placeholder="30"
+          />
+          <p className="text-[11px] text-naya-olive-55 mt-1">
+            {t('projects.attributionWindowHelp')}
+          </p>
         </div>
         {/* Nature du projet : perso vs client + métadonnées client conditionnelles. */}
         <div className="space-y-2 pt-1 border-t border-naya-olive-10">

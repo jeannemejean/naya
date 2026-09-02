@@ -74,6 +74,15 @@ describe("pickAllowedProjectFields — whitelist PATCH /api/projects/:id", () =>
       "name", "icon", "color", "type", "description", "monetizationIntent", "priorityLevel", "projectStatus",
       "category", "dailyTimeBudgetHours", "statusNote",
       "projectKind", "clientName", "clientContact", "clientBrief",
+      "attributionWindowDays",
     ]);
+  });
+
+  it("garde attributionWindowDays (fenêtre d'attribution éditable par projet) — sans cet ajout, l'édition depuis les réglages ne fait silencieusement rien", () => {
+    const out = pickAllowedProjectFields({
+      attributionWindowDays: 60,
+      userId: "evil",
+    });
+    expect(out).toEqual({ attributionWindowDays: 60 });
   });
 });

@@ -18,6 +18,7 @@ export const ALLOWED_PROJECT_PATCH_FIELDS = [
   "clientName",
   "clientContact",
   "clientBrief",
+  "attributionWindowDays",
 ] as const;
 
 export function pickAllowedProjectFields(body: Record<string, any> | null | undefined): Record<string, any> {
