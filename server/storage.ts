@@ -143,6 +143,9 @@ import {
   type InsertContentReception,
   competitors,
   brandConversions,
+  type BrandConversion,
+  conversionAttributions,
+  type ConversionAttribution,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -301,6 +304,39 @@ export interface IStorage {
   upsertContentReception(row: InsertContentReception): Promise<{ inserted: boolean }>;
   /** Filtré par propriétaire : un contenu d'un autre utilisateur ne renvoie rien. */
   getContentReception(contentId: number, userId: string): Promise<ContentReception[]>;
+
+  // Attribution multi-touch (Fil 3, LOT 3B) — voir server/services/attribution/attribute.ts
+  // pour la doctrine (jamais de last-touch, fenêtre figée sur la conversion).
+  /**
+   * `attributionWindowDays` est ici un champ REQUIS (contrairement à la colonne, nullable en
+   * base) : cette méthode est le seul point d'écriture, et une conversion sans fenêtre figée
+   * ne doit jamais pouvoir être créée.
+   */
+  createBrandConversion(conversion: {
+    projectId: number;
+    convertedAt: Date;
+    attributionWindowDays: number;
+    conversionType?: string | null;
+    value?: number | null;
+  }): Promise<BrandConversion>;
+  getBrandConversion(id: number): Promise<BrandConversion | undefined>;
+  /** Une conversion par ligne, avec ses lignes de crédit déjà jointes (peut être `[]`). */
+  getBrandConversionsWithCredits(
+    projectId: number,
+  ): Promise<Array<BrandConversion & { attributions: ConversionAttribution[] }>>;
+  /** Tout le contenu de la marque, filtrage fenêtre/publication laissé aux fonctions pures. */
+  getContentCandidatesForProject(
+    projectId: number,
+  ): Promise<Array<{ id: number; projectId: number; publishedAt: Date | null }>>;
+  /**
+   * REMPLACE les lignes d'attribution d'une conversion : supprime puis insère dans la MÊME
+   * transaction. C'est ce qui rend `attributeConversion` idempotent — un rejeu ne double
+   * jamais les lignes, et un échec ne peut pas laisser un mélange de deux générations.
+   */
+  replaceConversionAttributions(
+    conversionId: number,
+    lines: Array<{ contentId: number; creditWeight: number }>,
+  ): Promise<ConversionAttribution[]>;
 
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
@@ -1065,6 +1101,78 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(contentReception.contentId, contentId), eq(content.userId, userId)))
       .orderBy(desc(contentReception.measuredAt));
     return rows.map((r) => r.reception);
+  }
+
+  // Attribution multi-touch (Fil 3) — voir IStorage pour la doctrine.
+  async createBrandConversion(conversion: {
+    projectId: number;
+    convertedAt: Date;
+    attributionWindowDays: number;
+    conversionType?: string | null;
+    value?: number | null;
+  }): Promise<BrandConversion> {
+    const [row] = await db.insert(brandConversions).values({
+      projectId: conversion.projectId,
+      convertedAt: conversion.convertedAt,
+      attributionWindowDays: conversion.attributionWindowDays,
+      conversionType: conversion.conversionType ?? null,
+      value: conversion.value ?? null,
+    }).returning();
+    return row;
+  }
+
+  async getBrandConversion(id: number): Promise<BrandConversion | undefined> {
+    const [row] = await db.select().from(brandConversions).where(eq(brandConversions.id, id));
+    return row;
+  }
+
+  async getBrandConversionsWithCredits(
+    projectId: number,
+  ): Promise<Array<BrandConversion & { attributions: ConversionAttribution[] }>> {
+    const conversions = await db.select().from(brandConversions)
+      .where(eq(brandConversions.projectId, projectId))
+      .orderBy(desc(brandConversions.convertedAt));
+    if (conversions.length === 0) return [];
+
+    const ids = conversions.map((c) => c.id);
+    const attributions = await db.select().from(conversionAttributions)
+      .where(inArray(conversionAttributions.conversionId, ids));
+
+    const parConversion = new Map<number, ConversionAttribution[]>();
+    for (const a of attributions) {
+      const liste = parConversion.get(a.conversionId) ?? [];
+      liste.push(a);
+      parConversion.set(a.conversionId, liste);
+    }
+    return conversions.map((c) => ({ ...c, attributions: parConversion.get(c.id) ?? [] }));
+  }
+
+  async getContentCandidatesForProject(
+    projectId: number,
+  ): Promise<Array<{ id: number; projectId: number; publishedAt: Date | null }>> {
+    const rows = await db.select({
+      id: content.id,
+      projectId: content.projectId,
+      publishedAt: content.publishedAt,
+    }).from(content).where(eq(content.projectId, projectId));
+    // Le filtre ci-dessus garantit projectId === projectId (jamais null) pour chaque ligne.
+    return rows.map((r) => ({ id: r.id, projectId: r.projectId as number, publishedAt: r.publishedAt }));
+  }
+
+  async replaceConversionAttributions(
+    conversionId: number,
+    lines: Array<{ contentId: number; creditWeight: number }>,
+  ): Promise<ConversionAttribution[]> {
+    // Supprimer puis insérer dans LA MÊME transaction : c'est ce qui rend le rejeu
+    // idempotent (jamais deux générations mélangées) et sûr (jamais zéro ligne en cas
+    // d'échec à mi-chemin — soit tout l'ancien est retiré ET le nouveau posé, soit rien).
+    return await db.transaction(async (tx) => {
+      await tx.delete(conversionAttributions).where(eq(conversionAttributions.conversionId, conversionId));
+      if (lines.length === 0) return [];
+      return await tx.insert(conversionAttributions).values(
+        lines.map((l) => ({ conversionId, contentId: l.contentId, creditWeight: l.creditWeight })),
+      ).returning();
+    });
   }
 
   async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
