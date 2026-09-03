@@ -17,7 +17,7 @@ type FakeMemoryRow = { id: number; userId: string; fil: string; entryType: strin
  */
 function fakeRepo(initial: {
   reception: ReceptionRow[];
-  creditSums?: Record<number, number>;
+  creditSums?: Record<number, number | null>;
   memory?: FakeMemoryRow[];
 }): RecomputeRepo & {
   receptionRows: ReceptionRow[];
@@ -43,7 +43,9 @@ function fakeRepo(initial: {
       return receptionRows.map((r) => ({ ...r }));
     },
     async getConversionCreditSum(contentId: number) {
-      return creditSums[contentId] ?? 0;
+      // Fidèle au contrat réel de `storage.getConversionCreditSumForContent` (C1) : un
+      // contenu SANS aucune ligne d'attribution renvoie `null` (non mesuré), jamais `0`.
+      return creditSums[contentId] ?? null;
     },
     async updateReceptionScore(id: number, patch: any) {
       const row = receptionRows.find((r) => r.id === id);
@@ -147,6 +149,38 @@ describe("recomputeReceptionScores", () => {
     });
     expect(credite.receivedVsIntentScore).toBe(attendu1.score);
     expect(nonCredite.receivedVsIntentScore).toBe(attendu2.score);
+  });
+
+  /**
+   * C1 (revue finale) — un contenu SANS aucune ligne d'attribution est NON MESURÉ, pas
+   * « mesuré à zéro ». Sans ce verrou, tout contenu d'intention conversion d'une marque
+   * n'ayant déclaré aucune conversion se voyait plafonné à 0,30/1 avec une confiance ~0,9,
+   * et ce script gravait ce verdict en mémoire à la salience la plus haute du fil
+   * "reception". On vérifie les DEUX faces : le verdict est bien celui du non-mesuré, et il
+   * n'est PAS celui du zéro mesuré (un simple `not.toBeNull()` ne verrouillerait rien).
+   */
+  it("un contenu sans aucune ligne d'attribution reçoit le verdict NON MESURÉ, jamais l'échec mesuré à zéro", async () => {
+    const repo = fakeRepo({
+      reception: [row({ id: 1, contentId: 1, contentIntent: "conversion" })],
+      creditSums: {}, // aucune ligne d'attribution pour ce contenu
+    });
+
+    await recomputeReceptionScores(repo);
+
+    const ligne = repo.receptionRows.find((r) => r.id === 1)!;
+    const nonMesure = receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: null,
+    });
+    const zeroMesure = receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: 0,
+    });
+
+    expect(ligne.receivedVsIntentScore).toBe(nonMesure.score);
+    expect(ligne.confidence).toBe(nonMesure.confidence);
+    expect(ligne.receivedVsIntentScore).not.toBe(zeroMesure.score);
+    expect(ligne.confidence).not.toBe(zeroMesure.confidence);
   });
 
   it("est idempotent : un deuxième passage ne met à jour aucune ligne réelle, ni la mémoire", async () => {

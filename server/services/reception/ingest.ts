@@ -108,10 +108,16 @@ export async function ingestSignals(userId: string, signals: ReceptionSignal[]):
       // LOT 3B a fermé la boucle : `conversionsInWindow` est désormais la somme
       // FRACTIONNAIRE des `creditWeight` du moteur d'attribution multi-touch pour ce
       // contenu (jamais un compte entier — le §5.3 de la spec interdit « ce post a
-      // converti X »). `0` est ici une VRAIE MESURE, pas une absence : le contenu est bien
-      // passé par des fenêtres d'attribution, il n'a simplement rien capté. Elle entre donc
-      // dans le calcul comme n'importe quel signal mesuré et peut faire baisser le score —
-      // voir score.ts pour la distinction `0`/`null` que ce champ porte.
+      // converti X »).
+      //
+      // `null` (aucune ligne d'attribution) est passé TEL QUEL, jamais converti en `0` :
+      // il veut dire NON MESURÉ — ce contenu n'est jamais passé par une fenêtre de
+      // conversion. Comme `attribute()` donne un poids strictement positif à tout contenu
+      // d'une fenêtre, « était dans des fenêtres, n'a rien capté » n'existe pas ; forcer un
+      // `0` ici plafonnerait à 0,30/1 tout contenu d'intention conversion d'une marque
+      // n'ayant déclaré aucune conversion. Un nombre — 0 compris — est une VRAIE MESURE et
+      // entre dans le calcul. Voir credit-sum.ts pour la démonstration et score.ts pour ce
+      // que chaque canal coûte.
       const conversionsInWindow = await storage.getConversionCreditSumForContent(signal.contentId);
 
       const result = receivedVsIntentScore({

@@ -156,6 +156,7 @@ import { blockedRangesByDate } from "./services/task-schedule-fields";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
+import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 
 export interface IStorage {
   // User operations
@@ -340,12 +341,15 @@ export interface IStorage {
   /**
    * Boucle de retour vers 3A (§4.3) : la somme FRACTIONNAIRE des `creditWeight` de toutes
    * les lignes d'attribution d'un contenu — jamais un compte entier de conversions (le
-   * §5.3 de la spec interdit « ce post a converti X »). `0` si le contenu n'a jamais été
-   * crédité : c'est une VRAIE MESURE (le contenu est bien passé par des fenêtres
-   * d'attribution, il n'a simplement rien capté), pas une absence — voir
-   * `receivedVsIntentScore` dans score.ts pour la distinction `0`/`null`.
+   * §5.3 de la spec interdit « ce post a converti X »).
+   *
+   * `null` = AUCUNE ligne d'attribution, c'est-à-dire NON MESURÉ : ce contenu n'est jamais
+   * passé par une fenêtre de conversion. Ce n'est PAS un zéro mesuré — `attribute()` donne
+   * un poids strictement positif à tout contenu d'une fenêtre, donc « était dans des
+   * fenêtres, n'a rien capté » n'existe pas. Voir `credit-sum.ts` pour la démonstration et
+   * `receivedVsIntentScore` (score.ts) pour ce que les deux canaux coûtent.
    */
-  getConversionCreditSumForContent(contentId: number): Promise<number>;
+  getConversionCreditSumForContent(contentId: number): Promise<number | null>;
 
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
@@ -1185,13 +1189,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Boucle de retour vers 3A — voir IStorage pour la doc.
-  async getConversionCreditSumForContent(contentId: number): Promise<number> {
+  async getConversionCreditSumForContent(contentId: number): Promise<number | null> {
     const [row] = await db.select({
-      sum: sql<number>`coalesce(sum(${conversionAttributions.creditWeight}), 0)`,
+      // `sum()` SANS `coalesce` : sur zéro ligne d'attribution Postgres renvoie NULL, et
+      // c'est exactement ce qu'on veut dire (NON MESURÉ). Un `coalesce(..., 0)` fabriquerait
+      // ici un zéro MESURÉ à partir d'une absence — voir la démonstration complète dans
+      // services/attribution/credit-sum.ts.
+      sum: sql<string | null>`sum(${conversionAttributions.creditWeight})`,
     }).from(conversionAttributions).where(eq(conversionAttributions.contentId, contentId));
-    // `coalesce(sum(...), 0)` garantit une ligne y compris pour zéro crédit : `Number(...)`
-    // normalise un éventuel retour texte du driver (numeric) sans jamais produire `NaN`.
-    return Number(row?.sum ?? 0);
+    return creditSumFromAggregate(row?.sum);
   }
 
   async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {

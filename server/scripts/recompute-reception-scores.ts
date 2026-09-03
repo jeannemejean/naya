@@ -90,7 +90,12 @@ export interface NewMemoryEntry {
  */
 export interface RecomputeRepo {
   listReceptionRows(): Promise<ReceptionRow[]>;
-  getConversionCreditSum(contentId: number): Promise<number>;
+  /**
+   * `null` = AUCUNE ligne d'attribution, donc NON MESURÉ (le contenu n'est jamais passé par
+   * une fenêtre de conversion) — surtout pas `0`, qui veut dire « mesuré à zéro » et fait
+   * chuter le score. Voir services/attribution/credit-sum.ts pour la démonstration.
+   */
+  getConversionCreditSum(contentId: number): Promise<number | null>;
   updateReceptionScore(
     id: number,
     patch: { receivedVsIntentScore: number | null; confidence: number; rationale: string },
@@ -229,6 +234,9 @@ async function recomputeOneRow(
   repo: RecomputeRepo,
   r: ReceptionRow,
 ): Promise<{ updated: boolean; memorySuperseded: boolean }> {
+  // Passé TEL QUEL au score : `null` (aucune ligne d'attribution) veut dire NON MESURÉ, et
+  // le convertir en `0` graverait un échec de conversion mesuré pour tout contenu d'une
+  // marque n'ayant jamais déclaré de conversion — voir credit-sum.ts et score.ts.
   const conversionsInWindow = await repo.getConversionCreditSum(r.contentId);
 
   const newResult = receivedVsIntentScore({
