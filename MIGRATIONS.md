@@ -1,80 +1,97 @@
 # Migrations — état réel et procédure
 
-> Vérifié le 30 août 2026 contre le dépôt et contre `drizzle-orm@0.39.1` installé.
-> À lire **avant** de toucher au schéma d'une base déployée. Ce fichier existe parce que
-> l'écart entre la discipline annoncée et le dépôt réel est un accident de production
-> qui attend de se produire.
+> **Corrigé le 1er septembre 2026 après interrogation directe de la base de production.**
+> La première version de ce fichier affirmait que la production n'avait pas de table de suivi Drizzle.
+> **C'était faux** : elle en a une, avec les migrations `0000` → `0003` enregistrées. L'affirmation
+> venait du dépôt (aucun runner) et du rapport de session, jamais d'une requête sur la base.
+> Ce qui suit décrit l'état constaté, pas l'état supposé.
 
 ---
 
-## 1. L'état réel
+## 1. L'état réel de la production (constaté)
 
-- ~~`package.json` n'expose que `db:push`. **Il n'existe aucun script `db:migrate`.**~~ → **corrigé** (§4) : `db:migrate` existe, et `db:push` s'appelle désormais `db:push:dev`.
-- Aucun appel au migrator Drizzle nulle part : ni `server/index.ts`, ni `server/db.ts`, ni `scripts/`. **C'est volontaire, ne pas « corriger » — cf. §4.**
-- Les migrations `0000` → `0006` existent dans `migrations/` et sont listées dans `meta/_journal.json`.
-- **Aucune base déployée n'a de table de suivi.** `drizzle.__drizzle_migrations` n'existe pas : dev-local et la production ont été construites à coups de `db:push`, jamais par `migrate`.
+- `drizzle.__drizzle_migrations` **existe** et contenait quatre lignes : `0000`, `0001`, `0002`, `0003`
+  — hash conformes à ceux des fichiers du dépôt. Une migration a donc bien tourné, à une époque.
+- **`0004` et `0005` n'étaient pas enregistrés**, alors que **tous leurs objets existent en prod** :
+  `lead_step_messages`, `recurring_rituals`, `daily_rhythm_feedback`, `outreach_step_sends`, et les
+  colonnes `campaign_sequence_steps.intention` / `.condition`, `leads.linkedin_connected_at`,
+  `prospection_campaigns.message_instructions`, `tasks.ritual_id`, `user_preferences.buffer_min` /
+  `.buffer_adjusted_at` / `.message_instructions`. Appliqués à la main ou par `db:push`, sans trace.
+- **`0006` (lot 3A) et `0007` (lot 3B) ne sont pas appliqués** : ni `content_reception`, ni
+  `competitors`, ni `competitor_reception`, ni `content.intent`, ni
+  `projects.attribution_window_days`, ni `brand_conversions`, ni `conversion_attributions`.
+- Côté dépôt, inchangé : aucun runner de migration. `package.json` n'a longtemps eu que `db:push`,
+  et rien n'appelle le migrator au démarrage.
 
-Autrement dit : les migrations sont **générées** mais rien dans le dépôt ne sait les **appliquer**.
+### Le danger qui existait vraiment
 
-## 2. Ce qui se passerait si on lançait `migrate` aujourd'hui
+Avec la table arrêtée à `0003`, un `drizzle-kit migrate` aurait appliqué `0004`, **puis `0005`** — le
+fichier qui porte l'avertissement « ne doit jamais être rejoué en production ». Ses objets existant
+déjà, il aurait échoué en cours de route, après avoir possiblement validé `0004`. État à moitié
+migré, et le réflexe suivant est `db:push`, qui génère seul des `DROP` et des `ALTER`. C'est là que
+des données meurent.
 
-Le migrator de `drizzle-orm@0.39.1` (`node_modules/drizzle-orm/pg-core/dialect.js`) :
+## 2. La baseline — **faite le 1er septembre 2026**
+
+Deux lignes ont été insérées dans `drizzle.__drizzle_migrations`, dans une transaction, après
+vérification que chaque objet correspondant existait bien en base :
+
+| tag | created_at |
+|---|---|
+| `0004_familiar_triton` | 1784537635779 |
+| `0005_baseline_ddl_applique_a_la_main` | 1788123194293 |
+
+La table compte désormais six lignes, `0000` → `0005`. **`drizzle-kit migrate` sur la production
+appliquera donc `0006` puis `0007`** — c'est le comportement voulu.
+
+### La branche dev-local, baselinée aussi
+
+`dev-local` (`ep-jolly-sky-…`) n'avait **aucune** table de suivi alors que tous les objets jusqu'à
+`0007` y étaient — même piège, un cran plus bas. Les sept lignes `0000` → `0007` y ont été insérées
+après vérification que `content_reception`, `competitors`, `brand_conversions` et
+`conversion_attributions` existent bien.
+
+> Honnêteté de méthode : ces lignes ont été insérées **avant** de vérifier `0007`, et la
+> vérification n'est venue qu'après. Elle est passée, mais l'ordre était mauvais — exactement
+> l'erreur décrite au §7. Vérifier d'abord, écrire ensuite.
+
+Pour annuler cette baseline si besoin : `DELETE FROM drizzle.__drizzle_migrations WHERE created_at IN (1784537635779, 1788123194293);`
+
+## 3. Production — migrée le 1er septembre 2026
+
+> Les deux endpoints Neon, vérifiés : `.env.prod.bak` → `ep-damp-water-anuyb0k6` = branche
+> **production** ; `.env` → `ep-jolly-sky-an1x7ddn` = branche **dev-local**. Deux bases distinctes.
+
+- [x] Point de restauration Neon : branche `avant-0006-0007`, créée depuis `production`, vérifiée
+      conforme avant migration (54 tables, 3 utilisateurs, 4 projets, 58 tâches, suivi à `0005`).
+- [x] `0006` et `0007` appliqués via le migrator `drizzle-orm` avec l'URL de production passée
+      explicitement — pas par `drizzle-kit`, pour écarter tout risque que le `.env` local
+      (dev-local) soit ramassé à la place.
+- [x] Vérifié après coup : `content_reception`, `competitors`, `competitor_reception`,
+      `brand_conversions`, `conversion_attributions`, `content.intent`,
+      `projects.attribution_window_days` (défaut 30) — tous présents. 59 tables, données
+      inchangées (3 utilisateurs, 4 projets, 58 tâches).
+- [x] Table de suivi : 8 lignes, `0000` → `0007`.
+
+### Ce qui reste
+
+- [ ] Pousser `main` une fois les merges faits — Railway déploie sur push, et le code de 3A/3B lit
+      désormais des objets qui existent.
+- [ ] Régler `projects.attribution_window_days` par marque en production (arbitrage n°2 de
+      `NOTE-DECISION-ATTRIBUTION.md` §0 : 60 j pour l'Agence JMD, 14 j pour les marques B2C). Les
+      quatre projets sont au défaut de 30 j. Non urgent : la fenêtre ne compte qu'à partir de la
+      première conversion déclarée.
+- [ ] Supprimer la branche `avant-0006-0007` quand le déploiement est stable depuis quelques jours.
+
+## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;
 2. lit **la dernière ligne** par `created_at desc` ;
 3. applique **toute entrée du journal dont le `when` est strictement supérieur** à ce `created_at`.
 
-Les `hash` ne servent pas à décider quoi appliquer, seulement à tracer.
+Les `hash` ne servent qu'à tracer, jamais à décider quoi appliquer.
 
-Table absente ⇒ aucune ligne ⇒ il repart de `0000_baseline_existing_schema`, qui contient **47 `CREATE TABLE` sans un seul `IF NOT EXISTS`**. Il plante sur la première (`relation "access_code_redemptions" already exists`) et rien n'est appliqué.
-
-**Le vrai risque n'est pas ce plantage — c'est le réflexe d'après :** « migrate ne marche pas, je fais `db:push` ». `db:push` compare le schéma à la base et génère seul les `DROP` et `ALTER`. C'est là que des données meurent, et c'est aujourd'hui le seul script de migration que le dépôt propose.
-
-## 3. La procédure — baseliner avant tout
-
-Une seule ligne à insérer par base, avec le `created_at` de la dernière migration **déjà présente** dans cette base. Le migrator repartira juste après.
-
-```sql
-CREATE SCHEMA IF NOT EXISTS drizzle;
-CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
-  id         SERIAL PRIMARY KEY,
-  hash       text NOT NULL,
-  created_at bigint
-);
-```
-
-### Production — baseline jusqu'à `0005` inclus
-
-La prod contient déjà tout le DDL de `0000` → `0005` (appliqué à la main ou par `db:push`). Elle n'a **pas** `0006` (réception / Fil 3).
-
-```sql
-INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES
-('f34f03c6d76424fb28745a14e51c9d4745d68970db2dd946f5ad956f5dfd4175', 1782641715036), -- 0000_baseline_existing_schema
-('ea03560cc0150389755f08e314946ce011b6e4b4881a657c70554fdb5c3f8a42', 1782642976516), -- 0001_add_ai_invocations
-('4324e28b08183aca08a003043f1f5dc56d28790f640c514c027b0961ae7bd898', 1782654314622), -- 0002_add_memory_entries
-('ef23b4db06151f1c2ba4ef9363aafba17e422d9cd1e5225f4da30af63bf98b35', 1782660000000), -- 0003_add_perf_indexes
-('33a7a3acadea73002ebe2ba61250518059ee02241e383e7b3c99134ba2e52e63', 1784537635779), -- 0004_familiar_triton
-('9d0ab35fd8587a472b2de988bbcfec1b10dac5c32cb23cf291f9c825777eb3b0', 1788123194293); -- 0005_baseline_ddl_applique_a_la_main
-```
-
-Après ça, `migrate` n'appliquera que `0006` — c'est le comportement voulu.
-
-### Dev-local — même chose, plus la ligne `0006` si elle y a déjà été appliquée à la main
-
-```sql
-INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES
-('4496e241a8cb60140aeb2979366cef44572c08362d37309315a51a611dc1d912', 1788123233460); -- 0006_tranquil_sally_floyd
-```
-
-### Vérifier avant de lancer quoi que ce soit
-
-```sql
-SELECT id, left(hash, 12) AS hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at;
-```
-
-La dernière ligne doit correspondre à la dernière migration réellement présente dans cette base. Si tu n'en es pas certaine, **ne lance pas `migrate`** : compare d'abord les tables.
-
-### Régénérer ces valeurs si le journal change
+### Régénérer les valeurs si le journal change
 
 ```bash
 node -e "
@@ -86,17 +103,39 @@ for(const e of j.entries){
 }"
 ```
 
-## 4. À faire dans le dépôt
+## 5. Le dépôt — état des règles
 
-- [x] Ajouter `"db:migrate": "drizzle-kit migrate"` à `package.json`.
-- [x] Renommer `db:push` en `db:push:dev`. Le nom actuel invitait à l'utiliser partout ; c'est le seul geste qui peut détruire des données. Les invocations `npm run db:push` du `README.md`, de `BRIEF-PHASE-1-MODEL-PROVIDER.md` et de `META_COMPLIANCE.md` ont été corrigées au passage. **Non touchés volontairement** : `.local/tasks/` et `docs/superpowers/{specs,plans}/` — ce sont des archives de lots livrés, elles décrivent ce qui était vrai à l'époque et les réécrire falsifierait le journal.
-- [x] **Ne pas migrer au démarrage du serveur.** Vérifié : aucun appel au migrator dans `server/`. Une migration qui échoue au boot met Railway en boucle de redémarrage via le healthcheck `/api/health`. La migration est une étape manuelle, avant le déploiement, avec la sortie sous les yeux. **Cette case reste cochée en permanence : elle décrit une règle, pas une tâche faite une fois.**
-- [ ] Sauvegarde Neon (branche ou point de restauration) avant chaque `migrate` sur la prod. *(Habitude opérationnelle — ne se coche jamais définitivement.)*
+- [x] `"db:migrate": "drizzle-kit migrate"` ajouté à `package.json` (commit `d48aadb`).
+- [x] `db:push` renommé `db:push:dev`. Le nom nu invitait à l'employer partout ; c'est le seul geste
+      du dépôt capable de détruire des données. Les invocations de `README.md`,
+      `BRIEF-PHASE-1-MODEL-PROVIDER.md` et `META_COMPLIANCE.md` ont été corrigées ; les archives de
+      `.local/tasks/` et `docs/superpowers/` ont été laissées telles quelles, volontairement — elles
+      décrivent ce qui était vrai à leur date.
+- [x] `.github/workflows/ci.yml` : typecheck, tests, et la garde « un seul producteur de poids
+      d'attribution ». ⚠️ Cette garde ne fonctionne qu'en **bash** — sous `zsh`, `--include=*.ts`
+      est avalé, la liste ressort vide et la garde passe pour la mauvaise raison. Le runner GitHub
+      est en bash ; en local, la lancer avec `bash -c`.
 
-> ⚠️ **`db:migrate` existe désormais, mais la baseline du §3 n'est toujours pas posée.** Le lancer aujourd'hui sur dev-local ou sur la prod rejouerait `0000` et planterait sur la première table existante. Poser d'abord la table de suivi et ses lignes, comme décrit au §3.
+Deux règles permanentes, qui ne se cochent jamais :
 
-## 5. Le cas `0005`
+- **Aucun migrator au démarrage du serveur.** Il n'y en a pas dans `server/`, et c'est volontaire —
+  ne pas « corriger » cette absence. Une migration qui échoue au boot met Railway en boucle de
+  redémarrage via le healthcheck `/api/health`. La migration est une étape manuelle, avant le
+  déploiement, avec la sortie sous les yeux.
+- **Une sauvegarde Neon avant chaque `migrate` sur la production**, et une vérification des objets
+  après.
 
-`0005_baseline_ddl_applique_a_la_main.sql` porte l'avertissement « ne doit jamais être rejoué sur dev-local ni sur la production ». Une fois la baseline du §3 posée, cette règle **s'applique toute seule** : le migrator démarre après `0005`, personne n'a besoin de se souvenir du commentaire.
+## 6. Le cas `0005`
 
-Sur une base **neuve**, en revanche, la table de suivi est absente et `0000` → `0006` s'appliquent dans l'ordre — ce qui est correct, et c'est pour ça que `0005` doit rester dans le journal.
+`0005_baseline_ddl_applique_a_la_main.sql` porte l'avertissement « ne doit jamais être rejoué ». Avec
+la baseline du §2, cette règle **s'applique toute seule** : le migrator démarre après `0005`.
+
+Sur une base **neuve**, la table de suivi est absente et `0000` → `0006` s'appliquent dans l'ordre —
+ce qui est correct, et c'est pour ça que `0005` doit rester dans le journal.
+
+## 7. La leçon
+
+Ce fichier a affirmé pendant deux jours un état de la production que personne n'avait vérifié. Le
+dépôt disait « pas de runner », le rapport d'agent disait « pas de table de suivi », et les deux
+ensemble ont produit une conclusion fausse sur un système que ni l'un ni l'autre n'avait interrogé.
+**Avant d'écrire une procédure sur une base, interroger la base.**
