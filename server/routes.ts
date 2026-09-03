@@ -88,6 +88,14 @@ import { r2Configured, createUploadUrl } from "./services/r2-storage";
 import { analyzeStatusNote } from "./services/ritual-analyze";
 import { materializeRituals } from "./services/ritual-materialize";
 import { isValidTimeOfDay, areValidDays } from "./services/rituals";
+import { ingestSignals } from "./services/reception/ingest";
+import { parseReceptionCsv } from "./services/reception/sources/manual";
+import type { ReceptionSignal } from "./services/reception/types";
+import {
+  parseReceptionIntOrNull,
+  parseReceptionSentiment,
+  parseReceptionMeasuredAt,
+} from "./services/reception/validate-input";
 import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
@@ -6347,6 +6355,120 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       res.status(500).json({ message: "Failed to delete content" });
     }
   });
+
+  // ---- Réception (Fil 3) ------------------------------------------------------------
+  // Validation du corps JSON extraite et testée dans
+  // `services/reception/validate-input.ts` (parseReceptionIntOrNull,
+  // parseReceptionSentiment, parseReceptionMeasuredAt) : chaîne vide = non renseigné =
+  // null, jamais un zéro fabriqué — voir ce fichier pour la justification complète.
+
+  // Saisie d'une mesure de réception pour un contenu. Renvoie la ligne persistée en entier
+  // (score, confiance, raison inclus) — jamais un simple accusé de réception muet : la
+  // réception sans son verdict n'a nulle part où aller.
+  app.post('/api/content/:id/reception', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid content id" });
+
+      const existing = await storage.getContentById(id, userId);
+      if (!existing) return res.status(404).json({ message: "Content not found" });
+
+      const platform = typeof req.body?.platform === "string" ? req.body.platform.trim() : "";
+      if (!platform) return res.status(400).json({ message: "platform requis" });
+
+      const saves = parseReceptionIntOrNull(req.body?.saves, "saves");
+      if ("error" in saves) return res.status(400).json({ message: saves.error });
+      const shares = parseReceptionIntOrNull(req.body?.shares, "shares");
+      if ("error" in shares) return res.status(400).json({ message: shares.error });
+      const comments = parseReceptionIntOrNull(req.body?.comments, "comments");
+      if ("error" in comments) return res.status(400).json({ message: comments.error });
+      const reach = parseReceptionIntOrNull(req.body?.reach, "reach");
+      if ("error" in reach) return res.status(400).json({ message: reach.error });
+      const sentimentScore = parseReceptionSentiment(req.body?.sentimentScore);
+      if ("error" in sentimentScore) return res.status(400).json({ message: sentimentScore.error });
+      const measuredAt = parseReceptionMeasuredAt(req.body?.measuredAt);
+      if ("error" in measuredAt) return res.status(400).json({ message: measuredAt.error });
+
+      const signal: ReceptionSignal = {
+        contentId: id,
+        platform,
+        saves: saves.value,
+        shares: shares.value,
+        comments: comments.value,
+        reach: reach.value,
+        sentimentScore: sentimentScore.value,
+        measuredAt: measuredAt.value,
+        source: "manual",
+      };
+
+      const result = await ingestSignals(userId, [signal]);
+      if (result.errors.length > 0) {
+        // ingestSignals ne jette JAMAIS — un signal en échec reste une réponse contrôlée,
+        // jamais un crash 500.
+        return res.status(422).json({ message: result.errors[0].message, errors: result.errors });
+      }
+
+      // On relit la ligne persistée plutôt que de recalculer le score ici : la vérité du
+      // score/confiance/raison vient de ce qui a été écrit par `ingestSignals`, jamais
+      // d'une seconde exécution locale qui pourrait diverger. Comparaison au jour près
+      // (pas .getTime() strict) pour rester insensible à un éventuel aller-retour de fuseau
+      // du driver DB sur les colonnes timestamp.
+      const history = await storage.getContentReception(id, userId);
+      const targetDay = measuredAt.value.toISOString().slice(0, 10);
+      const saved = history.find(
+        (r) => r.platform === platform && new Date(r.measuredAt).toISOString().slice(0, 10) === targetDay,
+      );
+      if (!saved) {
+        return res.status(500).json({ message: "Mesure ingérée mais introuvable après écriture" });
+      }
+
+      res.json(saved);
+    } catch (error) {
+      console.error("Error ingesting content reception:", error);
+      res.status(500).json({ message: "Failed to ingest content reception" });
+    }
+  });
+
+  // Import CSV en masse de mesures de réception (saisie humaine — voir services/reception).
+  // Best-effort : une ligne malformée ou une ligne qui échoue à l'ingestion ne bloque jamais
+  // les autres. Les erreurs de parsing (par ligne) et les erreurs d'ingestion (par contenu)
+  // sont toutes les deux renvoyées, jamais l'une aux dépens de l'autre.
+  app.post('/api/content/reception/import', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const csv = typeof req.body?.csv === "string" ? req.body.csv : "";
+      if (!csv.trim()) return res.status(400).json({ message: "csv_required" });
+
+      const { rows, errors: parseErrors } = parseReceptionCsv(csv);
+      const signals: ReceptionSignal[] = rows.map((row) => ({ ...row, source: "csv" }));
+      const ingestResult = await ingestSignals(userId, signals);
+
+      res.json({ imported: ingestResult.written, errors: [...parseErrors, ...ingestResult.errors] });
+    } catch (error) {
+      console.error("Error importing content reception CSV:", error);
+      res.status(500).json({ message: "Failed to import content reception CSV" });
+    }
+  });
+
+  // Historique des mesures de réception d'un contenu.
+  app.get('/api/content/:id/reception', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid content id" });
+
+      const existing = await storage.getContentById(id, userId);
+      if (!existing) return res.status(404).json({ message: "Content not found" });
+
+      const history = await storage.getContentReception(id, userId);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching content reception:", error);
+      res.status(500).json({ message: "Failed to fetch content reception" });
+    }
+  });
+  // ---- fin Réception (Fil 3) --------------------------------------------------------
 
   // Régénère un post de contenu en remplaçant son angle/corps en gardant platform/pillar/format
   app.post('/api/content/:id/regenerate', isAuthenticated, async (req: any, res) => {

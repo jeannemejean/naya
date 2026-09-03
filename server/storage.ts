@@ -138,6 +138,10 @@ import {
   recurringRituals,
   type RecurringRitual,
   type InsertRecurringRitual,
+  contentReception,
+  type ContentReception,
+  type InsertContentReception,
+  competitors,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -282,6 +286,20 @@ export interface IStorage {
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
   getDueScheduledContent(now: Date): Promise<Content[]>;
   claimContentForPosting(id: number): Promise<boolean>;
+
+  // Réception (Fil 3) — mesure de la réception d'un contenu, triangulée contre son intention.
+  /**
+   * Upsert idempotent : rejouer la même mesure écrase, ne double pas.
+   *
+   * Renvoie `inserted` : `true` si la mesure est NEUVE, `false` si elle a écrasé une mesure
+   * déjà présente pour la même clé `(content_id, platform, measured_at)`. L'appelant en a
+   * besoin — les effets de bord ADDITIFS qui accompagnent une mesure (l'écriture mémoire du
+   * fil « reception ») ne sont pas idempotents tout seuls : sans cette information ils se
+   * rejouent à chaque import et empilent des doublons.
+   */
+  upsertContentReception(row: InsertContentReception): Promise<{ inserted: boolean }>;
+  /** Filtré par propriétaire : un contenu d'un autre utilisateur ne renvoie rien. */
+  getContentReception(contentId: number, userId: string): Promise<ContentReception[]>;
 
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
@@ -1011,6 +1029,41 @@ export class DatabaseStorage implements IStorage {
       .where(eq(content.id, id))
       .returning();
     return updatedContent;
+  }
+
+  // Réception (Fil 3) — voir IStorage pour la doc.
+  async upsertContentReception(row: InsertContentReception): Promise<{ inserted: boolean }> {
+    // `xmax` est la colonne système qui porte le transaction id ayant VERROUILLÉ/périmé la
+    // version de ligne renvoyée : il vaut 0 pour un tuple fraîchement inséré et la
+    // transaction courante pour un tuple mis à jour par la branche ON CONFLICT. C'est la
+    // seule façon, en un aller-retour, de distinguer une insertion d'une mise à jour —
+    // un SELECT préalable serait à la fois plus lent et sujet à une course.
+    const [result] = await db.insert(contentReception).values(row)
+      .onConflictDoUpdate({
+        target: [contentReception.contentId, contentReception.platform, contentReception.measuredAt],
+        set: {
+          saves: row.saves, shares: row.shares, comments: row.comments, reach: row.reach,
+          sentimentScore: row.sentimentScore, receivedVsIntentScore: row.receivedVsIntentScore,
+          confidence: row.confidence, rationale: row.rationale, source: row.source,
+        },
+      })
+      .returning({ inserted: sql<boolean>`(xmax = 0)` });
+    // node-postgres décode un `bool` en booléen JS ; la normalisation couvre le cas où un
+    // futur driver renverrait la forme textuelle de Postgres ('t'/'f') plutôt qu'un booléen.
+    const raw = result?.inserted as unknown;
+    return { inserted: raw === true || raw === "t" || raw === "true" };
+  }
+
+  async getContentReception(contentId: number, userId: string): Promise<ContentReception[]> {
+    // Le filtre d'ownership vit ICI, pas seulement chez les appelants : `content_reception`
+    // ne porte pas de `user_id`, il se déduit du contenu. Les deux appelants actuels
+    // vérifient déjà en amont — ce filtre est là pour le troisième, celui qui oubliera.
+    const rows = await db.select({ reception: contentReception })
+      .from(contentReception)
+      .innerJoin(content, eq(contentReception.contentId, content.id))
+      .where(and(eq(contentReception.contentId, contentId), eq(content.userId, userId)))
+      .orderBy(desc(contentReception.measuredAt));
+    return rows.map((r) => r.reception);
   }
 
   async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
@@ -2019,6 +2072,11 @@ export class DatabaseStorage implements IStorage {
 
       // ── Phase 5 : content, puis campagnes (content/tasks les référencent) ─────
       console.log(`[reset] phase 5: content + campaigns`);
+      // content_reception.content_id est en ON DELETE CASCADE, mais project_id ne l'est
+      // pas → suppression explicite avant projects (Phase 10).
+      if (projectIds.length > 0) {
+        await tx.delete(contentReception).where(inArray(contentReception.projectId, projectIds));
+      }
       await tx.delete(content).where(eq(content.userId, userId));                 // campaign_id, project_id
       await tx.delete(campaigns).where(eq(campaigns.userId, userId));             // project_id
       await tx.delete(campaignSequenceSteps).where(eq(campaignSequenceSteps.userId, userId)); // campaign_id (NOT NULL)
@@ -2055,6 +2113,10 @@ export class DatabaseStorage implements IStorage {
       }
       await tx.delete(clients).where(eq(clients.userId, userId));                 // parent_project_id
       await tx.delete(recurringRituals).where(eq(recurringRituals.userId, userId)); // tasks déjà supprimées (phase 3)
+      // competitor_reception.competitor_id est en ON DELETE CASCADE (géré par Postgres).
+      if (projectIds.length > 0) {
+        await tx.delete(competitors).where(inArray(competitors.projectId, projectIds));
+      }
       await tx.delete(strategyReports).where(eq(strategyReports.userId, userId)); // project_id
       await tx.delete(brandDna).where(eq(brandDna.userId, userId));               // project_id (AVANT projects!)
       await tx.delete(memoryEntries).where(eq(memoryEntries.userId, userId));     // mémoire Naya (reset all data)

@@ -69,6 +69,10 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "leads", mode: "delete" },
 
   // ── Phase 5 : content, séquences, puis campagnes ────────────────────────────
+  // content_reception.content_id est en ON DELETE CASCADE (géré par Postgres), mais
+  // content_reception.project_id ne l'est pas → doit être explicitement traitée avant
+  // la suppression de projects (Phase 10).
+  { table: "content_reception", mode: "delete" },
   { table: "content", mode: "delete" },
   { table: "campaigns", mode: "delete" },
   { table: "campaign_sequence_steps", mode: "delete" },
@@ -94,6 +98,8 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "clients", mode: "delete" },
   // Les tâches (phase 3) sont déjà supprimées : les rituels peuvent partir.
   { table: "recurring_rituals", mode: "delete" },
+  // competitor_reception.competitor_id est en ON DELETE CASCADE : géré par Postgres.
+  { table: "competitors", mode: "delete" },
   { table: "strategy_reports", mode: "delete" },
   { table: "brand_dna", mode: "delete" },
   { table: "memory_entries", mode: "delete" },

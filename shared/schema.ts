@@ -74,6 +74,9 @@ export const projects = pgTable("projects", {
   dailyTimeBudgetHours: integer("daily_time_budget_hours"), // budget temps/jour → pondère la répartition des tâches
   statusNote: text("status_note"), // « Dis à Naya où tu en es » — contexte NON tracké par l'app
   isPrimary: boolean("is_primary").default(false),
+  // Fenêtre d'attribution PAR MARQUE (décision actée). Créée ici, consommée par le LOT 3B :
+  // une conversion est créditée à la fenêtre de contenus qui l'a précédée, jamais au dernier.
+  attributionWindowDays: integer("attribution_window_days").default(30),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -518,6 +521,11 @@ export const content = pgTable("content", {
   contentType: text("content_type").notNull(),
   pillar: text("pillar").notNull(),
   goal: text("goal").notNull(),
+  // Intention au sens de la triangulation Fil 1 × Fil 3 : "awareness" | "consideration"
+  // | "conversion". NE PAS confondre avec `goal` ci-dessus, champ libre requis qui n'est
+  // pas une intention. `null` = intention inconnue → le contenu est exclu du scoring,
+  // jamais deviné.
+  intent: text("intent"),
   status: text("status").notNull().default("draft"),
   contentStatus: text("content_status").default("idea"),
   scheduledFor: timestamp("scheduled_for"),
@@ -539,6 +547,66 @@ export const content = pgTable("content", {
   lastError: text("last_error"),                         // dernier message d'échec de publication
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/**
+ * Réception par contenu — signaux RAPIDES (SCHEMA-TRIANGULATION.md §C.2).
+ *
+ * RGPD par construction : cette table ne porte QUE des compteurs agrégés et un score.
+ * Aucune identité, aucun texte d'audience, aucun identifiant de commentateur. Un futur
+ * adaptateur réseau peut lire des commentaires pour en dériver un sentiment agrégé, il ne
+ * doit JAMAIS en persister le texte ni l'auteur.
+ *
+ * On ne stocke pas les likes : c'est de la vanité au sens de la spec.
+ */
+export const contentReception = pgTable("content_reception", {
+  id: serial("id").primaryKey(),
+  contentId: integer("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id),
+  platform: text("platform").notNull(),
+  saves: integer("saves"),
+  shares: integer("shares"),
+  comments: integer("comments"),
+  reach: integer("reach"),               // sert à normaliser : sans elle, pas de taux
+  sentimentScore: doublePrecision("sentiment_score"), // -1..1, optionnel
+  receivedVsIntentScore: doublePrecision("received_vs_intent_score"),
+  confidence: doublePrecision("confidence"),
+  rationale: text("rationale"),
+  source: text("source").notNull().default("manual"), // manual | csv | <futur adaptateur>
+  measuredAt: timestamp("measured_at").notNull(),     // normalisé au jour pour l'idempotence
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  // Idempotence de l'ingestion : rejouer le même import écrase, ne double pas.
+  uniqueMeasure: unique("content_reception_unique_measure").on(t.contentId, t.platform, t.measuredAt),
+}));
+export type ContentReception = typeof contentReception.$inferSelect;
+export type InsertContentReception = typeof contentReception.$inferInsert;
+
+/**
+ * Concurrents — SCHÉMA SEUL (SCHEMA-TRIANGULATION.md bloc C bis).
+ * Créés maintenant pour éviter une migration de plus. AUCUNE ingestion dans ce lot.
+ */
+export const competitors = pgTable("competitors", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id),
+  name: text("name").notNull(),
+  handle: text("handle"),
+  platform: text("platform"),
+  isActive: boolean("is_active").default(false), // false = listé, pas encore suivi
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/**
+ * Réception concurrent — taux NORMALISÉS uniquement, jamais de valeurs brutes, jamais
+ * d'auteur. Restitution produit : apprentissage, jamais scoreboard.
+ */
+export const competitorReception = pgTable("competitor_reception", {
+  id: serial("id").primaryKey(),
+  competitorId: integer("competitor_id").notNull().references(() => competitors.id, { onDelete: "cascade" }),
+  postRef: text("post_ref"),
+  engagementRate: doublePrecision("engagement_rate"),
+  sentimentScore: doublePrecision("sentiment_score"),
+  observedAt: timestamp("observed_at").defaultNow(),
 });
 
 // ─── Prospection Campaigns ────────────────────────────────────────────────────
