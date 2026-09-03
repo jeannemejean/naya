@@ -102,7 +102,14 @@ export const useDeactivateRitual = (id: number) =>
 // moment même de l'écriture et calcule les crédits (server/routes.ts, POST /api/conversions).
 // Ce fichier n'ajoute rien à cette logique — deux wrappers fins, mêmes conventions que ci-dessus.
 
-export type ConversionWithCredits = BrandConversion & { attributions: ConversionAttribution[] };
+/**
+ * Le serveur résout lui-même le TITRE de chaque contenu crédité (`contentTitle`, `null` si le
+ * contenu est réellement introuvable) : l'écran n'a plus à lire `/api/content`, dont le
+ * plafond serveur à 50 contenus lui faisait afficher « supprimé depuis » sur des contenus
+ * vivants. Voir server/services/attribution/credits-view.ts.
+ */
+export type CreditedAttribution = ConversionAttribution & { contentTitle: string | null };
+export type ConversionWithCredits = BrandConversion & { attributions: CreditedAttribution[] };
 
 export const useConversions = (id: number) =>
   useQuery<ConversionWithCredits[]>({ queryKey: [`/api/conversions?projectId=${id}`] });

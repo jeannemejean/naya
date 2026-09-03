@@ -21,45 +21,49 @@ describe("formatCreditSharePercent", () => {
 
 describe("buildConversionCreditRows", () => {
   it("renvoie [] quand la conversion n'a crédité personne (fenêtre vide)", () => {
-    expect(buildConversionCreditRows([], new Map(), "Inconnu")).toEqual([]);
+    expect(buildConversionCreditRows([], "Inconnu")).toEqual([]);
   });
 
-  it("résout le titre depuis la table de contenus", () => {
-    const rows = buildConversionCreditRows(
-      [{ contentId: 1, creditWeight: 1 }],
-      new Map([[1, "Post A"]]),
-      "Inconnu",
-    );
+  it("utilise le titre résolu par le serveur", () => {
+    const rows = buildConversionCreditRows([{ contentId: 1, creditWeight: 1, contentTitle: "Post A" }], "Inconnu");
     expect(rows).toEqual([{ contentId: 1, title: "Post A", sharePercent: 100 }]);
   });
 
-  it("retombe sur le titre de repli si le contenu a été supprimé depuis", () => {
-    const rows = buildConversionCreditRows(
-      [{ contentId: 42, creditWeight: 0.5 }],
-      new Map(),
-      "Contenu supprimé",
-    );
-    expect(rows).toEqual([{ contentId: 42, title: "Contenu supprimé", sharePercent: 50 }]);
+  /**
+   * I3 (revue finale) — le repli ne doit plus JAMAIS être un artefact d'affichage. Il n'est
+   * atteint que si le serveur, qui connaît tous les ids crédités, n'a pas retrouvé le
+   * contenu : à ce moment-là seulement, « supprimé depuis » est vrai.
+   */
+  it("retombe sur le titre de repli UNIQUEMENT si le serveur n'a pas retrouvé le contenu", () => {
+    expect(buildConversionCreditRows([{ contentId: 42, creditWeight: 0.5, contentTitle: null }], "Contenu supprimé"))
+      .toEqual([{ contentId: 42, title: "Contenu supprimé", sharePercent: 50 }]);
+    // Même repli si le champ est absent (ancienne réponse en cache) — jamais un titre vide.
+    expect(buildConversionCreditRows([{ contentId: 42, creditWeight: 0.5 }], "Contenu supprimé"))
+      .toEqual([{ contentId: 42, title: "Contenu supprimé", sharePercent: 50 }]);
   });
 
-  it(
-    "ordonne par contentId croissant — JAMAIS par poids : un contenu à petit poids listé en " +
-      "premier ne doit pas remonter en tête (pas de classement)",
-    () => {
-      const rows = buildConversionCreditRows(
-        [
-          { contentId: 30, creditWeight: 0.7 }, // le plus gros poids, mais id le plus grand
-          { contentId: 10, creditWeight: 0.1 }, // le plus petit poids, mais id le plus petit
-          { contentId: 20, creditWeight: 0.2 },
-        ],
-        new Map([
-          [10, "Post 10"],
-          [20, "Post 20"],
-          [30, "Post 30"],
-        ]),
-        "Inconnu",
-      );
-      expect(rows.map((r) => r.contentId)).toEqual([10, 20, 30]);
-    },
-  );
+  /**
+   * ANTI-CLASSEMENT. Les poids sont NON MONOTONES avec les contentId, et l'ordre d'entrée
+   * diffère des trois : c'est ce qui rend le test complet. Des poids croissants avec l'id
+   * (ou décroissants) ne distingueraient l'ordre attendu que d'UN des deux tris par poids —
+   * une implémentation triant dans l'autre sens passerait au vert.
+   *   ordre attendu (par id) : 10, 20, 30
+   *   tri par poids croissant : 30, 10, 20   (0,1 / 0,2 / 0,7)
+   *   tri par poids décroissant : 20, 10, 30
+   *   ordre d'entrée du tableau : 20, 30, 10
+   * Les quatre sont deux à deux différents : seul le tri par contentId croissant passe.
+   */
+  it("ordonne par contentId croissant — JAMAIS par poids, dans un sens ou dans l'autre", () => {
+    const rows = buildConversionCreditRows(
+      [
+        { contentId: 20, creditWeight: 0.7, contentTitle: "Post 20" },
+        { contentId: 30, creditWeight: 0.1, contentTitle: "Post 30" },
+        { contentId: 10, creditWeight: 0.2, contentTitle: "Post 10" },
+      ],
+      "Inconnu",
+    );
+    expect(rows.map((r) => r.contentId)).toEqual([10, 20, 30]);
+    // Et les parts suivent bien leur contenu, elles ne sont pas réattribuées par l'ordre.
+    expect(rows.map((r) => r.sharePercent)).toEqual([20, 70, 10]);
+  });
 });

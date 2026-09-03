@@ -157,6 +157,15 @@ import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
+import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
+
+/**
+ * Un crédit d'attribution ENRICHI du titre du contenu crédité, résolu côté serveur.
+ * `contentTitle: null` = contenu réellement introuvable (supprimé depuis) — jamais
+ * « pas chargé ». Voir services/attribution/credits-view.ts.
+ */
+export type CreditedAttribution = ConversionAttribution & { contentTitle: string | null };
+export type BrandConversionWithCredits = BrandConversion & { attributions: CreditedAttribution[] };
 
 export interface IStorage {
   // User operations
@@ -322,9 +331,13 @@ export interface IStorage {
   }): Promise<BrandConversion>;
   getBrandConversion(id: number): Promise<BrandConversion | undefined>;
   /** Une conversion par ligne, avec ses lignes de crédit déjà jointes (peut être `[]`). */
-  getBrandConversionsWithCredits(
-    projectId: number,
-  ): Promise<Array<BrandConversion & { attributions: ConversionAttribution[] }>>;
+  /**
+   * Les conversions d'une marque avec leurs crédits, chacun portant le TITRE du contenu
+   * crédité — résolu ICI plutôt qu'à l'écran, qui lisait `/api/content` (plafonné aux 50
+   * contenus les plus récents) et annonçait « Contenu supprimé depuis » sur des contenus
+   * vivants. `contentTitle: null` = contenu réellement introuvable.
+   */
+  getBrandConversionsWithCredits(projectId: number): Promise<BrandConversionWithCredits[]>;
   /** Tout le contenu de la marque, filtrage fenêtre/publication laissé aux fonctions pures. */
   getContentCandidatesForProject(
     projectId: number,
@@ -1139,9 +1152,7 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async getBrandConversionsWithCredits(
-    projectId: number,
-  ): Promise<Array<BrandConversion & { attributions: ConversionAttribution[] }>> {
+  async getBrandConversionsWithCredits(projectId: number): Promise<BrandConversionWithCredits[]> {
     const conversions = await db.select().from(brandConversions)
       .where(eq(brandConversions.projectId, projectId))
       .orderBy(desc(brandConversions.convertedAt));
@@ -1151,13 +1162,18 @@ export class DatabaseStorage implements IStorage {
     const attributions = await db.select().from(conversionAttributions)
       .where(inArray(conversionAttributions.conversionId, ids));
 
-    const parConversion = new Map<number, ConversionAttribution[]>();
-    for (const a of attributions) {
-      const liste = parConversion.get(a.conversionId) ?? [];
-      liste.push(a);
-      parConversion.set(a.conversionId, liste);
-    }
-    return conversions.map((c) => ({ ...c, attributions: parConversion.get(c.id) ?? [] }));
+    // Le TITRE des contenus crédités est résolu ICI, pas à l'écran : les ids sont tous
+    // connus, la recherche est donc bornée. L'écran les lisait dans `/api/content`, plafonné
+    // aux 50 contenus les plus récents — et affichait « Contenu supprimé depuis » sur des
+    // contenus bien vivants. Voir services/attribution/credits-view.ts.
+    const contentIds = Array.from(new Set(attributions.map((a) => a.contentId)));
+    const titres = contentIds.length > 0
+      ? await db.select({ id: content.id, title: content.title })
+          .from(content).where(inArray(content.id, contentIds))
+      : [];
+    const titreParContenu = new Map(titres.map((t) => [t.id, t.title]));
+
+    return assembleConversionsWithCredits(conversions, attributions, titreParContenu);
   }
 
   async getContentCandidatesForProject(

@@ -11,6 +11,14 @@
 export interface ConversionCreditInput {
   contentId: number;
   creditWeight: number;
+  /**
+   * Titre du contenu crédité, résolu CÔTÉ SERVEUR (voir
+   * server/services/attribution/credits-view.ts). `null` = contenu réellement introuvable,
+   * et c'est le seul cas où le repli « supprimé depuis » dit la vérité. Cet écran lisait
+   * auparavant les titres dans `/api/content`, plafonné aux 50 contenus les plus récents :
+   * tout contenu crédité au-delà s'affichait comme supprimé alors qu'il était vivant.
+   */
+  contentTitle?: string | null;
 }
 
 export interface ConversionCreditRow {
@@ -28,17 +36,18 @@ export function formatCreditSharePercent(creditWeight: number): number {
 }
 
 /** Construit les lignes de restitution : titre du contenu (ou repli si le contenu a depuis
- * été supprimé) + part de fenêtre, triées par contentId croissant — jamais par poids. */
+ * été supprimé) + part du crédit, triées par contentId croissant — jamais par poids. */
 export function buildConversionCreditRows(
   attributions: ConversionCreditInput[],
-  contentTitleById: Map<number, string>,
   fallbackTitle: string,
 ): ConversionCreditRow[] {
   return [...attributions]
     .sort((a, b) => a.contentId - b.contentId)
     .map((a) => ({
       contentId: a.contentId,
-      title: contentTitleById.get(a.contentId) ?? fallbackTitle,
+      // Le repli n'est utilisé que si le SERVEUR n'a pas trouvé le contenu : à ce
+      // moment-là seulement, « supprimé depuis » est vrai.
+      title: a.contentTitle ?? fallbackTitle,
       sharePercent: formatCreditSharePercent(a.creditWeight),
     }));
 }

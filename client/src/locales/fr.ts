@@ -1158,7 +1158,7 @@ const fr = {
  valueLine: "Valeur : {{value}}",
  resultTitle: "Ce que Naya a compris",
  noCreditIntro: "Aucun contenu publié dans la fenêtre : cette conversion n'a été rattachée à aucun contenu. C'est un résultat normal, pas une erreur.",
- shareLine: "{{percent}} % de la fenêtre",
+ shareLine: "{{percent}} % du crédit de cette conversion",
  unknownContent: "Contenu supprimé depuis",
  windowNote: "Fenêtre utilisée : {{days}} jours, figée au moment de cette conversion. La modifier plus tard dans les réglages ne changera rien à ce résultat.",
  },

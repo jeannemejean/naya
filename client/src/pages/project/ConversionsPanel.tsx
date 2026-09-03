@@ -10,11 +10,13 @@
 // - La fenêtre utilisée est celle FIGÉE au moment de la conversion (attributionWindowDays sur
 //   la ligne, jamais relue sur le projet) : on le dit à l'écran pour que le chiffre reste
 //   digne de confiance même après un changement de réglage.
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { format } from "date-fns/format";
-import { Plus, TrendingUp } from "lucide-react";
+// Icône NEUTRE volontairement : cette section n'est pas un tableau de bord de performance
+// (pas de classement, pas de comparaison). Une flèche de croissance (TrendingUp) y suggérait
+// une progression, y compris dans le cas « aucun contenu crédité » où elle est absurde.
+import { Plus, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -22,7 +24,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import type { Content } from "@shared/schema";
 import { useConversions, useDeclareConversion, type ConversionWithCredits } from "./useProjectPage";
 import { buildConversionCreditRows } from "./conversion-credit";
 
@@ -43,19 +44,15 @@ export default function ConversionsPanel({ projectId }: ConversionsPanelProps) {
   const { toast } = useToast();
 
   const conversions = useConversions(projectId);
-  // Nécessaire pour afficher le TITRE des contenus crédités : la route de conversion ne
-  // renvoie que des content_id. Même endpoint que content-calendar.tsx.
-  const contentList = useQuery<Content[]>({ queryKey: [`/api/content?projectId=${projectId}`] });
+  // Le TITRE des contenus crédités arrive DÉJÀ résolu par le serveur (`contentTitle` sur
+  // chaque crédit). Cet écran lisait auparavant `/api/content?projectId=…` pour le retrouver,
+  // mais cette route est plafonnée par le serveur aux 50 contenus les plus récents : tout
+  // contenu crédité au-delà s'affichait « Contenu supprimé depuis » alors qu'il existait
+  // toujours — un mensonge atteignable en usage ordinaire avec une fenêtre de 60 jours.
   const declareConversion = useDeclareConversion(projectId);
 
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
-
-  const contentTitleById = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const c of contentList.data ?? []) map.set(c.id, c.title);
-    return map;
-  }, [contentList.data]);
 
   const handleDeclare = () => {
     declareConversion.mutate(form, {
@@ -140,11 +137,7 @@ export default function ConversionsPanel({ projectId }: ConversionsPanelProps) {
       ) : (
         <div className="space-y-3">
           {(conversions.data ?? []).map((conversion) => (
-            <ConversionCard
-              key={conversion.id}
-              conversion={conversion}
-              contentTitleById={contentTitleById}
-            />
+            <ConversionCard key={conversion.id} conversion={conversion} />
           ))}
         </div>
       )}
@@ -152,17 +145,10 @@ export default function ConversionsPanel({ projectId }: ConversionsPanelProps) {
   );
 }
 
-function ConversionCard({
-  conversion,
-  contentTitleById,
-}: {
-  conversion: ConversionWithCredits;
-  contentTitleById: Map<number, string>;
-}) {
+function ConversionCard({ conversion }: { conversion: ConversionWithCredits }) {
   const { t } = useTranslation();
   const rows = buildConversionCreditRows(
     conversion.attributions,
-    contentTitleById,
     t("projects.conversions.unknownContent"),
   );
   const windowDays = conversion.attributionWindowDays ?? 30;
@@ -185,7 +171,7 @@ function ConversionCard({
 
       <div className="rounded-lg bg-naya-olive-06 border border-naya-olive-18 p-3 space-y-1.5">
         <div className="flex items-center gap-1.5 text-naya-olive-70">
-          <TrendingUp className="w-3.5 h-3.5" />
+          <Info className="w-3.5 h-3.5" />
           <p className="text-sm">{t("projects.conversions.resultTitle")}</p>
         </div>
 

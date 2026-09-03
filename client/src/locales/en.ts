@@ -1158,7 +1158,7 @@ const en = {
  valueLine: "Value: {{value}}",
  resultTitle: "What Naya understood",
  noCreditIntro: "No content was published within the window: this conversion was not credited to any content. This is a normal outcome, not an error.",
- shareLine: "{{percent}}% of the window",
+ shareLine: "{{percent}}% of this conversion's credit",
  unknownContent: "Content since deleted",
  windowNote: "Window used: {{days}} days, frozen at the time of this conversion. Changing it later in settings will not change this result.",
  },
