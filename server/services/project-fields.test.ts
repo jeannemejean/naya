@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./project-fields";
+import { pickAllowedProjectFields, validateProjectPatchFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./project-fields";
 
 describe("pickAllowedProjectFields — whitelist PATCH /api/projects/:id", () => {
   it("ne garde QUE les champs whitelistés", () => {
@@ -84,5 +84,78 @@ describe("pickAllowedProjectFields — whitelist PATCH /api/projects/:id", () =>
       userId: "evil",
     });
     expect(out).toEqual({ attributionWindowDays: 60 });
+  });
+});
+
+/**
+ * I2 (revue finale) — `attributionWindowDays` est le SEUL champ whitelisté dont une
+ * mauvaise valeur est ensuite recopiée TELLE QUELLE, et pour toujours, dans un historique
+ * append-only que le lot promet de ne jamais réécrire (la fenêtre est figée sur chaque
+ * ligne `brand_conversions` à la déclaration). Le seul garde-fou existant était un clamp
+ * CÔTÉ CLIENT : un `PATCH /api/projects/:id` direct posait `0` (fenêtre de largeur nulle,
+ * qui ne crédite personne), `-5` (début > fin, même effet), ou une valeur non numérique
+ * qui faisait 500 la requête ENTIÈRE — perdant silencieusement les autres champs du même
+ * enregistrement. D'où cette validation serveur : entier, 1–365, refus en 400 NOMMANT le
+ * champ.
+ */
+describe("validateProjectPatchFields — garde serveur sur attributionWindowDays", () => {
+  const erreur = (fields: Record<string, any>) => {
+    const r = validateProjectPatchFields(fields);
+    return r.ok ? null : r;
+  };
+
+  it("laisse passer un patch qui ne touche pas à la fenêtre", () => {
+    const r = validateProjectPatchFields({ statusNote: "coucou", category: "revenue" });
+    expect(r).toEqual({ ok: true, fields: { statusNote: "coucou", category: "revenue" } });
+  });
+
+  it("accepte les bornes 1 et 365", () => {
+    expect(validateProjectPatchFields({ attributionWindowDays: 1 })).toEqual({ ok: true, fields: { attributionWindowDays: 1 } });
+    expect(validateProjectPatchFields({ attributionWindowDays: 365 })).toEqual({ ok: true, fields: { attributionWindowDays: 365 } });
+  });
+
+  it("accepte une valeur courante au milieu de la plage", () => {
+    expect(validateProjectPatchFields({ attributionWindowDays: 60 })).toEqual({ ok: true, fields: { attributionWindowDays: 60 } });
+  });
+
+  it("refuse 0 — une fenêtre de largeur nulle ne crédite personne, et c'est figé pour toujours", () => {
+    expect(erreur({ attributionWindowDays: 0 })?.field).toBe("attributionWindowDays");
+  });
+
+  it("refuse une valeur négative — début > fin, la fenêtre est vide", () => {
+    expect(erreur({ attributionWindowDays: -5 })?.field).toBe("attributionWindowDays");
+  });
+
+  it("refuse au-delà de 365", () => {
+    expect(erreur({ attributionWindowDays: 366 })?.field).toBe("attributionWindowDays");
+  });
+
+  it("refuse un non-entier plutôt que de tronquer en silence", () => {
+    expect(erreur({ attributionWindowDays: 30.5 })?.field).toBe("attributionWindowDays");
+  });
+
+  it("refuse une valeur non numérique SANS faire perdre les autres champs (400, pas 500)", () => {
+    const r = validateProjectPatchFields({ attributionWindowDays: "soixante", statusNote: "à ne pas perdre" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.field).toBe("attributionWindowDays");
+      // Le message NOMME le champ : l'écran peut dire quoi corriger au lieu d'un échec opaque.
+      expect(r.message).toContain("attributionWindowDays");
+    }
+  });
+
+  it("refuse les types qui coerceraient silencieusement (booléen, tableau, objet, null)", () => {
+    for (const mauvais of [true, false, [30], {}, null, NaN, Infinity]) {
+      expect(erreur({ attributionWindowDays: mauvais })?.field).toBe("attributionWindowDays");
+    }
+  });
+
+  it("normalise une chaîne numérique entière en nombre — jamais une chaîne dans une colonne integer", () => {
+    expect(validateProjectPatchFields({ attributionWindowDays: "60" })).toEqual({ ok: true, fields: { attributionWindowDays: 60 } });
+  });
+
+  it("ne modifie jamais les autres champs whitelistés au passage", () => {
+    const r = validateProjectPatchFields({ attributionWindowDays: "14", statusNote: "note", dailyTimeBudgetHours: 4 });
+    expect(r).toEqual({ ok: true, fields: { attributionWindowDays: 14, statusNote: "note", dailyTimeBudgetHours: 4 } });
   });
 });

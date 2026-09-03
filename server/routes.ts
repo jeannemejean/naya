@@ -24,7 +24,7 @@ import {
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
 import { extractToMemory } from "./services/memory/extract";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
-import { pickAllowedProjectFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
+import { pickAllowedProjectFields, validateProjectPatchFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { isValidStage, buildSituationPrompt } from "./services/project-summary";
 import { resolveStrategyWeekKey } from "@shared/strategy-week";
 import { normalizeLanguage } from "@shared/language";
@@ -1776,8 +1776,16 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       const userId = req.userId;
       // Sécurité : seuls les champs whitelistés sont appliqués (pas de userId/id/isPrimary
       // arbitraire). Les champs hors-liste sont ignorés.
-      const updates = pickAllowedProjectFields(req.body);
-      const project = await storage.updateProject(parseInt(req.params.id), userId, updates);
+      const picked = pickAllowedProjectFields(req.body);
+      // Puis validés : une fenêtre d'attribution aberrante est figée POUR TOUJOURS sur les
+      // conversions déclarées ensuite. On refuse en 400 en nommant le champ, plutôt que de
+      // laisser passer une valeur qui ne crédite personne — ou de faire 500 sur une valeur
+      // non numérique, ce qui ferait perdre les AUTRES champs de la même sauvegarde.
+      const validated = validateProjectPatchFields(picked);
+      if (!validated.ok) {
+        return res.status(400).json({ message: validated.message, field: validated.field });
+      }
+      const project = await storage.updateProject(parseInt(req.params.id), userId, validated.fields);
       if (!project) return res.status(404).json({ message: "Project not found" });
       res.json(project);
     } catch (error) {
