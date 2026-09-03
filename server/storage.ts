@@ -338,6 +338,12 @@ export interface IStorage {
    * vivants. `contentTitle: null` = contenu réellement introuvable.
    */
   getBrandConversionsWithCredits(projectId: number): Promise<BrandConversionWithCredits[]>;
+  /**
+   * Les lignes d'attribution d'UNE conversion, telles qu'elles sont AUJOURD'HUI. Sert à
+   * connaître les contenus crédités AVANT une ré-attribution : ceux qui perdent leur crédit
+   * ont, eux aussi, un score de réception à rafraîchir.
+   */
+  getConversionAttributions(conversionId: number): Promise<ConversionAttribution[]>;
   /** Tout le contenu de la marque, filtrage fenêtre/publication laissé aux fonctions pures. */
   getContentCandidatesForProject(
     projectId: number,
@@ -1174,6 +1180,11 @@ export class DatabaseStorage implements IStorage {
     const titreParContenu = new Map(titres.map((t) => [t.id, t.title]));
 
     return assembleConversionsWithCredits(conversions, attributions, titreParContenu);
+  }
+
+  async getConversionAttributions(conversionId: number): Promise<ConversionAttribution[]> {
+    return await db.select().from(conversionAttributions)
+      .where(eq(conversionAttributions.conversionId, conversionId));
   }
 
   async getContentCandidatesForProject(

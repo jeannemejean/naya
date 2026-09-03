@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // L'embedding ne doit jamais partir en réseau depuis un test.
-vi.mock("../services/memory/embed", () => ({
+vi.mock("../memory/embed", () => ({
   embedText: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
 }));
 
-import { recomputeReceptionScores, type RecomputeRepo, type ReceptionRow, type NewMemoryEntry } from "./recompute-reception-scores";
-import { receivedVsIntentScore } from "../services/reception/score";
+import { recomputeReceptionScores, refreshReceptionForContents, type RecomputeRepo, type ReceptionRow, type NewMemoryEntry } from "./recompute";
+import { receivedVsIntentScore } from "./score";
 
 type FakeMemoryRow = {
   id: number; userId: string; fil: string; entryType: string; content: string;
@@ -43,9 +43,13 @@ function fakeRepo(initial: {
     memoryRows,
     insertedMemory,
     failNextReplace: false,
-    async listReceptionRows() {
+    async listReceptionRows(contentIds?: number[]) {
       // Copie défensive : simule un aller-retour DB, jamais la même référence.
-      return receptionRows.map((r) => ({ ...r }));
+      // Une liste vide veut dire « rien », jamais « tout » — comme le vrai repo.
+      const filtrees = contentIds
+        ? receptionRows.filter((r) => contentIds.includes(r.contentId))
+        : receptionRows;
+      return filtrees.map((r) => ({ ...r }));
     },
     async getConversionCreditSum(contentId: number) {
       // Fidèle au contrat réel de `storage.getConversionCreditSumForContent` (C1) : un
@@ -464,5 +468,98 @@ describe("recomputeReceptionScores", () => {
     expect(message).toContain("42"); // contentId nommé, pour qu'un opérateur puisse agir.
     expect(message).toContain("AUCUNE"); // distinguable du cas "rien de changé" (silencieux).
     warnSpy.mockRestore();
+  });
+});
+
+/**
+ * I4 (revue finale) — déclarer une conversion changeait la somme des crédits des contenus
+ * qu'elle venait de créditer SANS toucher à leurs lignes `content_reception` : celles-ci
+ * gardaient le score calculé à l'ingestion, et leurs entrées mémoire continuaient de
+ * l'affirmer à la salience la plus haute du fil "reception" — réinstallant exactement la
+ * dérive que le rattrapage historique corrige une fois à la main.
+ *
+ * Le rafraîchissement rejoue la MÊME logique par ligne, restreinte aux contenus crédités,
+ * et NE LÈVE JAMAIS : la déclaration a déjà réussi quand on arrive ici.
+ */
+describe("refreshReceptionForContents", () => {
+  const ligneCreditee = (id: number, contentId: number) =>
+    row({ id, contentId, contentIntent: "conversion" });
+
+  it("recalcule le score des contenus crédités — c'est l'effet que la déclaration doit produire", async () => {
+    const repo = fakeRepo({
+      reception: [ligneCreditee(1, 1)],
+      creditSums: { 1: 0.6 },
+    });
+    const avant = repo.receptionRows[0].receivedVsIntentScore;
+
+    const result = await refreshReceptionForContents([1], repo);
+
+    expect(result?.updated).toBe(1);
+    const apres = repo.receptionRows[0].receivedVsIntentScore;
+    expect(apres).not.toBe(avant);
+    // Et c'est EXACTEMENT le calcul pur avec la somme des crédits, pas un score approché.
+    expect(apres).toBe(receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: 0.6,
+    }).score);
+  });
+
+  it("ne touche QUE les contenus crédités — jamais tout le corpus au passage", async () => {
+    const repo = fakeRepo({
+      reception: [ligneCreditee(1, 1), ligneCreditee(2, 2)],
+      creditSums: { 1: 0.6, 2: 0.6 },
+    });
+
+    const result = await refreshReceptionForContents([1], repo);
+
+    expect(result?.scanned).toBe(1);
+    expect(repo.receptionRows.find((r) => r.id === 1)!.receivedVsIntentScore).not.toBeNull();
+    // La ligne 2 n'a PAS été scannée : son score d'origine est intact.
+    expect(repo.receptionRows.find((r) => r.id === 2)!.receivedVsIntentScore).toBeNull();
+  });
+
+  it("une conversion créditée à personne ne déclenche AUCUN recalcul (liste vide ≠ tout le corpus)", async () => {
+    const repo = fakeRepo({ reception: [ligneCreditee(1, 1)], creditSums: { 1: 0.6 } });
+
+    expect(await refreshReceptionForContents([], repo)).toBeNull();
+
+    expect(repo.receptionRows[0].receivedVsIntentScore).toBeNull(); // intact
+  });
+
+  it("dédoublonne les contenus crédités par plusieurs conversions", async () => {
+    const repo = fakeRepo({ reception: [ligneCreditee(1, 1)], creditSums: { 1: 0.6 } });
+
+    const result = await refreshReceptionForContents([1, 1, 1], repo);
+
+    expect(result?.scanned).toBe(1);
+  });
+
+  /**
+   * LE point non négociable : la déclaration a DÉJÀ réussi. Si le rafraîchissement pouvait
+   * la faire échouer, l'utilisateur perdrait la trace d'une conversion pourtant enregistrée
+   * et la redéclarerait — alors que le recalcul, lui, est idempotent et sera repris.
+   */
+  it("ne lève JAMAIS, même si le repo explose — la déclaration ne peut pas échouer à cause du rafraîchissement", async () => {
+    const repo = fakeRepo({ reception: [ligneCreditee(1, 1)], creditSums: { 1: 0.6 } });
+    repo.listReceptionRows = async () => { throw new Error("connexion DB perdue"); };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(refreshReceptionForContents([1], repo)).resolves.toBeNull();
+
+    // L'échec est TRACÉ, jamais silencieux : sinon la dérive redeviendrait invisible.
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("une ligne en échec est tracée sans faire échouer le rafraîchissement", async () => {
+    const repo = fakeRepo({ reception: [ligneCreditee(1, 1)], creditSums: { 1: 0.6 } });
+    repo.updateReceptionScore = async () => { throw new Error("panne DB simulée"); };
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await refreshReceptionForContents([1], repo);
+
+    expect(result?.errors).toHaveLength(1);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 });

@@ -97,6 +97,7 @@ import {
   parseReceptionMeasuredAt,
 } from "./services/reception/validate-input";
 import { attributeConversion } from "./services/attribution/attribute-conversion";
+import { refreshReceptionForContents } from "./services/reception/recompute";
 import { randomUUID } from "crypto";
 import {
   ObjectStorageService,
@@ -6528,6 +6529,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       });
 
       const attributions = await attributeConversion(conversion.id);
+
+      // La conversion vient de CHANGER la somme des crédits de ces contenus : leurs lignes
+      // `content_reception` porteraient sinon le score calculé à l'ingestion, et leurs
+      // entrées mémoire continueraient de l'affirmer à la salience la plus haute du fil.
+      // BEST-EFFORT et non attendu comme tel : `refreshReceptionForContents` ne lève jamais
+      // (la déclaration a déjà réussi ici — la faire échouer ferait redéclarer une
+      // conversion pourtant enregistrée), et le recalcul est idempotent.
+      await refreshReceptionForContents(attributions.map((a) => a.contentId));
+
       // Une fenêtre vide (aucun contenu attribué) est un succès : la conversion existe,
       // simplement créditée à personne. Ce n'est jamais une erreur.
       res.json({ ...conversion, attributions });
@@ -6572,7 +6582,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const project = await storage.getProject(conversion.projectId, userId);
       if (!project) return res.status(404).json({ message: "Conversion not found" });
 
+      // Les contenus crédités AVANT le recalcul comptent autant que ceux d'après : un
+      // contenu qui PERD son crédit garderait sinon un score gonflé par une attribution qui
+      // n'existe plus. On rafraîchit donc l'union des deux.
+      const avant = await storage.getConversionAttributions(id);
       const attributions = await attributeConversion(id);
+      await refreshReceptionForContents([
+        ...avant.map((a) => a.contentId),
+        ...attributions.map((a) => a.contentId),
+      ]);
       res.json({ ...conversion, attributions });
     } catch (error) {
       console.error("Error reattributing conversion:", error);
