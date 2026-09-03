@@ -4,7 +4,15 @@
 // apiRequest(method, url, data?) pour les mutations.
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Project, ProjectGoal, ProjectMilestone, ProjectStrategyProfile, RecurringRitual } from "@shared/schema";
+import type {
+  BrandConversion,
+  ConversionAttribution,
+  Project,
+  ProjectGoal,
+  ProjectMilestone,
+  ProjectStrategyProfile,
+  RecurringRitual,
+} from "@shared/schema";
 
 export type ProjectDetail = Project & {
   goals: ProjectGoal[];
@@ -86,5 +94,45 @@ export const useDeactivateRitual = (id: number) =>
     mutationFn: (ritualId: number) => apiRequest("POST", `/api/rituals/${ritualId}/deactivate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${id}/rituals`] });
+    },
+  });
+
+// ─── Conversions (Fil 3, LOT 3B) ────────────────────────────────────────────
+// La marque déclare une conversion ; le serveur fige la fenêtre d'attribution de la marque au
+// moment même de l'écriture et calcule les crédits (server/routes.ts, POST /api/conversions).
+// Ce fichier n'ajoute rien à cette logique — deux wrappers fins, mêmes conventions que ci-dessus.
+
+/**
+ * Le serveur résout lui-même le TITRE de chaque contenu crédité (`contentTitle`, `null` si le
+ * contenu est réellement introuvable) : l'écran n'a plus à lire `/api/content`, dont le
+ * plafond serveur à 50 contenus lui faisait afficher « supprimé depuis » sur des contenus
+ * vivants. Voir server/services/attribution/credits-view.ts.
+ */
+export type CreditedAttribution = ConversionAttribution & { contentTitle: string | null };
+export type ConversionWithCredits = BrandConversion & { attributions: CreditedAttribution[] };
+
+export const useConversions = (id: number) =>
+  useQuery<ConversionWithCredits[]>({ queryKey: [`/api/conversions?projectId=${id}`] });
+
+export interface DeclareConversionInput {
+  /** yyyy-MM-dd, tel que rendu par un <input type="date">. */
+  convertedAt: string;
+  /** Chaîne libre, trim côté appelant ; vide → non envoyé (le serveur stocke `null`). */
+  conversionType: string;
+  /** Chaîne numérique ou vide ; vide → non envoyé (le serveur stocke `null`), jamais un 0 fabriqué. */
+  value: string;
+}
+
+export const useDeclareConversion = (id: number) =>
+  useMutation<ConversionWithCredits, Error, DeclareConversionInput>({
+    mutationFn: (input: DeclareConversionInput) =>
+      apiRequest("POST", `/api/conversions`, {
+        projectId: id,
+        convertedAt: input.convertedAt,
+        conversionType: input.conversionType.trim() || undefined,
+        value: input.value.trim() === "" ? undefined : input.value,
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/conversions?projectId=${id}`] });
     },
   });

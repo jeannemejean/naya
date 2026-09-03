@@ -40,9 +40,11 @@ export interface ScoreInput {
   /** -1..1, optionnel. Voir D5 de la spec : aucun calcul automatique dans ce lot. */
   sentimentScore: number | null;
   /**
-   * `null` = NON MESURÉ (le cas de tout ce lot : rien ne mesure la conversion aujourd'hui,
-   * le LOT 3B s'en chargera). Traité exactement comme n'importe quel autre signal absent :
-   * exclu du calcul, la confiance en paie le prix, jamais le score.
+   * `null` = NON MESURÉ. Traité exactement comme n'importe quel autre signal absent :
+   * exclu du calcul, la confiance en paie le prix, jamais le score. Depuis le LOT 3B, c'est
+   * ce que renvoie `storage.getConversionCreditSumForContent` quand le contenu n'a AUCUNE
+   * ligne d'attribution — c'est-à-dire quand il n'est jamais passé par une fenêtre de
+   * conversion (voir services/attribution/credit-sum.ts pour la démonstration).
    *
    * `0` = MESURÉ À ZÉRO. C'est une information, pas une absence : elle entre dans le calcul
    * et fait baisser le score. C'est la sémantique du cas littéral de la spec (intention

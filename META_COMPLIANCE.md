@@ -98,7 +98,7 @@ demandée doit être réellement exercée dans l'app et démontrée.
 ## 3. Reste à faire (hors code — actions de Jeanne)
 
 ### Bloquants techniques avant soumission
-- [x] ~~Colonne `platform_user_id`~~ → appliquée sur la branche dev. **À refaire en prod** : `npm run db:push` (additive, nullable, non destructive).
+- [x] ~~Colonne `platform_user_id`~~ → appliquée sur la branche dev. **À refaire en prod** : par migration versionnée (`npm run db:migrate`, voir `MIGRATIONS.md`) — additive, nullable, non destructive. `db:push` ne doit jamais viser la prod.
 - [x] ~~Chiffrer les access tokens au repos~~ → fait (AES-256-GCM, cf. lignes 9-10 du tableau).
 - [ ] **En prod (Railway)** : définir la variable `TOKEN_ENCRYPTION_KEY` (générer : `openssl rand -hex 32`).
       ⚠️ La MÊME clé doit rester stable, sinon les jetons chiffrés deviennent illisibles.

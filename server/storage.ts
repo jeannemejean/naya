@@ -142,6 +142,10 @@ import {
   type ContentReception,
   type InsertContentReception,
   competitors,
+  brandConversions,
+  type BrandConversion,
+  conversionAttributions,
+  type ConversionAttribution,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -152,6 +156,16 @@ import { blockedRangesByDate } from "./services/task-schedule-fields";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
+import { creditSumFromAggregate } from "./services/attribution/credit-sum";
+import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
+
+/**
+ * Un crédit d'attribution ENRICHI du titre du contenu crédité, résolu côté serveur.
+ * `contentTitle: null` = contenu réellement introuvable (supprimé depuis) — jamais
+ * « pas chargé ». Voir services/attribution/credits-view.ts.
+ */
+export type CreditedAttribution = ConversionAttribution & { contentTitle: string | null };
+export type BrandConversionWithCredits = BrandConversion & { attributions: CreditedAttribution[] };
 
 export interface IStorage {
   // User operations
@@ -300,6 +314,61 @@ export interface IStorage {
   upsertContentReception(row: InsertContentReception): Promise<{ inserted: boolean }>;
   /** Filtré par propriétaire : un contenu d'un autre utilisateur ne renvoie rien. */
   getContentReception(contentId: number, userId: string): Promise<ContentReception[]>;
+
+  // Attribution multi-touch (Fil 3, LOT 3B) — voir server/services/attribution/attribute.ts
+  // pour la doctrine (jamais de last-touch, fenêtre figée sur la conversion).
+  /**
+   * `attributionWindowDays` est ici un champ REQUIS (contrairement à la colonne, nullable en
+   * base) : cette méthode est le seul point d'écriture, et une conversion sans fenêtre figée
+   * ne doit jamais pouvoir être créée.
+   */
+  createBrandConversion(conversion: {
+    projectId: number;
+    convertedAt: Date;
+    attributionWindowDays: number;
+    conversionType?: string | null;
+    value?: number | null;
+  }): Promise<BrandConversion>;
+  getBrandConversion(id: number): Promise<BrandConversion | undefined>;
+  /** Une conversion par ligne, avec ses lignes de crédit déjà jointes (peut être `[]`). */
+  /**
+   * Les conversions d'une marque avec leurs crédits, chacun portant le TITRE du contenu
+   * crédité — résolu ICI plutôt qu'à l'écran, qui lisait `/api/content` (plafonné aux 50
+   * contenus les plus récents) et annonçait « Contenu supprimé depuis » sur des contenus
+   * vivants. `contentTitle: null` = contenu réellement introuvable.
+   */
+  getBrandConversionsWithCredits(projectId: number): Promise<BrandConversionWithCredits[]>;
+  /**
+   * Les lignes d'attribution d'UNE conversion, telles qu'elles sont AUJOURD'HUI. Sert à
+   * connaître les contenus crédités AVANT une ré-attribution : ceux qui perdent leur crédit
+   * ont, eux aussi, un score de réception à rafraîchir.
+   */
+  getConversionAttributions(conversionId: number): Promise<ConversionAttribution[]>;
+  /** Tout le contenu de la marque, filtrage fenêtre/publication laissé aux fonctions pures. */
+  getContentCandidatesForProject(
+    projectId: number,
+  ): Promise<Array<{ id: number; projectId: number; publishedAt: Date | null }>>;
+  /**
+   * REMPLACE les lignes d'attribution d'une conversion : supprime puis insère dans la MÊME
+   * transaction. C'est ce qui rend `attributeConversion` idempotent — un rejeu ne double
+   * jamais les lignes, et un échec ne peut pas laisser un mélange de deux générations.
+   */
+  replaceConversionAttributions(
+    conversionId: number,
+    lines: Array<{ contentId: number; creditWeight: number }>,
+  ): Promise<ConversionAttribution[]>;
+  /**
+   * Boucle de retour vers 3A (§4.3) : la somme FRACTIONNAIRE des `creditWeight` de toutes
+   * les lignes d'attribution d'un contenu — jamais un compte entier de conversions (le
+   * §5.3 de la spec interdit « ce post a converti X »).
+   *
+   * `null` = AUCUNE ligne d'attribution, c'est-à-dire NON MESURÉ : ce contenu n'est jamais
+   * passé par une fenêtre de conversion. Ce n'est PAS un zéro mesuré — `attribute()` donne
+   * un poids strictement positif à tout contenu d'une fenêtre, donc « était dans des
+   * fenêtres, n'a rien capté » n'existe pas. Voir `credit-sum.ts` pour la démonstration et
+   * `receivedVsIntentScore` (score.ts) pour ce que les deux canaux coûtent.
+   */
+  getConversionCreditSumForContent(contentId: number): Promise<number | null>;
 
   // Prospection Campaign operations
   getProspectionCampaigns(userId: string): Promise<ProspectionCampaign[]>;
@@ -1064,6 +1133,98 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(contentReception.contentId, contentId), eq(content.userId, userId)))
       .orderBy(desc(contentReception.measuredAt));
     return rows.map((r) => r.reception);
+  }
+
+  // Attribution multi-touch (Fil 3) — voir IStorage pour la doctrine.
+  async createBrandConversion(conversion: {
+    projectId: number;
+    convertedAt: Date;
+    attributionWindowDays: number;
+    conversionType?: string | null;
+    value?: number | null;
+  }): Promise<BrandConversion> {
+    const [row] = await db.insert(brandConversions).values({
+      projectId: conversion.projectId,
+      convertedAt: conversion.convertedAt,
+      attributionWindowDays: conversion.attributionWindowDays,
+      conversionType: conversion.conversionType ?? null,
+      value: conversion.value ?? null,
+    }).returning();
+    return row;
+  }
+
+  async getBrandConversion(id: number): Promise<BrandConversion | undefined> {
+    const [row] = await db.select().from(brandConversions).where(eq(brandConversions.id, id));
+    return row;
+  }
+
+  async getBrandConversionsWithCredits(projectId: number): Promise<BrandConversionWithCredits[]> {
+    const conversions = await db.select().from(brandConversions)
+      .where(eq(brandConversions.projectId, projectId))
+      .orderBy(desc(brandConversions.convertedAt));
+    if (conversions.length === 0) return [];
+
+    const ids = conversions.map((c) => c.id);
+    const attributions = await db.select().from(conversionAttributions)
+      .where(inArray(conversionAttributions.conversionId, ids));
+
+    // Le TITRE des contenus crédités est résolu ICI, pas à l'écran : les ids sont tous
+    // connus, la recherche est donc bornée. L'écran les lisait dans `/api/content`, plafonné
+    // aux 50 contenus les plus récents — et affichait « Contenu supprimé depuis » sur des
+    // contenus bien vivants. Voir services/attribution/credits-view.ts.
+    const contentIds = Array.from(new Set(attributions.map((a) => a.contentId)));
+    const titres = contentIds.length > 0
+      ? await db.select({ id: content.id, title: content.title })
+          .from(content).where(inArray(content.id, contentIds))
+      : [];
+    const titreParContenu = new Map(titres.map((t) => [t.id, t.title]));
+
+    return assembleConversionsWithCredits(conversions, attributions, titreParContenu);
+  }
+
+  async getConversionAttributions(conversionId: number): Promise<ConversionAttribution[]> {
+    return await db.select().from(conversionAttributions)
+      .where(eq(conversionAttributions.conversionId, conversionId));
+  }
+
+  async getContentCandidatesForProject(
+    projectId: number,
+  ): Promise<Array<{ id: number; projectId: number; publishedAt: Date | null }>> {
+    const rows = await db.select({
+      id: content.id,
+      projectId: content.projectId,
+      publishedAt: content.publishedAt,
+    }).from(content).where(eq(content.projectId, projectId));
+    // Le filtre ci-dessus garantit projectId === projectId (jamais null) pour chaque ligne.
+    return rows.map((r) => ({ id: r.id, projectId: r.projectId as number, publishedAt: r.publishedAt }));
+  }
+
+  async replaceConversionAttributions(
+    conversionId: number,
+    lines: Array<{ contentId: number; creditWeight: number }>,
+  ): Promise<ConversionAttribution[]> {
+    // Supprimer puis insérer dans LA MÊME transaction : c'est ce qui rend le rejeu
+    // idempotent (jamais deux générations mélangées) et sûr (jamais zéro ligne en cas
+    // d'échec à mi-chemin — soit tout l'ancien est retiré ET le nouveau posé, soit rien).
+    return await db.transaction(async (tx) => {
+      await tx.delete(conversionAttributions).where(eq(conversionAttributions.conversionId, conversionId));
+      if (lines.length === 0) return [];
+      return await tx.insert(conversionAttributions).values(
+        lines.map((l) => ({ conversionId, contentId: l.contentId, creditWeight: l.creditWeight })),
+      ).returning();
+    });
+  }
+
+  // Boucle de retour vers 3A — voir IStorage pour la doc.
+  async getConversionCreditSumForContent(contentId: number): Promise<number | null> {
+    const [row] = await db.select({
+      // `sum()` SANS `coalesce` : sur zéro ligne d'attribution Postgres renvoie NULL, et
+      // c'est exactement ce qu'on veut dire (NON MESURÉ). Un `coalesce(..., 0)` fabriquerait
+      // ici un zéro MESURÉ à partir d'une absence — voir la démonstration complète dans
+      // services/attribution/credit-sum.ts.
+      sum: sql<string | null>`sum(${conversionAttributions.creditWeight})`,
+    }).from(conversionAttributions).where(eq(conversionAttributions.contentId, contentId));
+    return creditSumFromAggregate(row?.sum);
   }
 
   async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
@@ -2120,6 +2281,11 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(strategyReports).where(eq(strategyReports.userId, userId)); // project_id
       await tx.delete(brandDna).where(eq(brandDna.userId, userId));               // project_id (AVANT projects!)
       await tx.delete(memoryEntries).where(eq(memoryEntries.userId, userId));     // mémoire Naya (reset all data)
+      // conversion_attributions.conversion_id est en ON DELETE CASCADE (géré par Postgres),
+      // mais brand_conversions.project_id ne l'est pas → suppression explicite avant projects.
+      if (projectIds.length > 0) {
+        await tx.delete(brandConversions).where(inArray(brandConversions.projectId, projectIds));
+      }
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────
       console.log(`[reset] phase 10: projects`);

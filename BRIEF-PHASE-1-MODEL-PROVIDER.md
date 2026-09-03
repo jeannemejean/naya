@@ -161,7 +161,7 @@ export type AiInvocation = typeof aiInvocations.$inferSelect;
    - `streamClaude(opts)` → reste tel quel pour cette phase (on n'abstrait pas le stream maintenant), mais ajoute la journalisation best-effort du `finalMessage`.
    - `CLAUDE_MODELS` reste exporté, valeurs inchangées.
 6. **Embeddings (décidé) :** implémenter `embed()` sur le **provider OpenAI** avec `text-embedding-3-small` → vecteurs **1536 dim** (c'est une fonction de ~10 lignes, ça débloque la Phase 2). Le provider Anthropic peut garder un `embed()` qui `throw`. ⚠️ La dimension 1536 est figée ici car elle conditionne pgvector côté mémoire — ne pas la changer sans réindexer.
-7. `npm run db:push` pour créer la table.
+7. `npm run db:push:dev` pour créer la table (dev-local uniquement ; en prod, voir `MIGRATIONS.md`).
 8. Lancer les tests existants (`vitest`) — ils doivent tous rester verts.
 
 ---

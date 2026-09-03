@@ -6,6 +6,7 @@ vi.mock("../../storage", () => ({
   storage: {
     getContentById: vi.fn(),
     upsertContentReception: vi.fn(),
+    getConversionCreditSumForContent: vi.fn(),
   },
 }));
 
@@ -76,6 +77,9 @@ beforeEach(() => {
   (embedText as any).mockResolvedValue([0.1, 0.2, 0.3]);
   // Par défaut la mesure est une PREMIÈRE écriture : l'entrée mémoire l'accompagne.
   (storage.upsertContentReception as any).mockResolvedValue({ inserted: true });
+  // Par défaut, AUCUNE ligne d'attribution pour ce contenu : le storage renvoie `null`
+  // (non mesuré), jamais `0` — voir services/attribution/credit-sum.ts.
+  (storage.getConversionCreditSumForContent as any).mockResolvedValue(null);
 });
 
 describe("formatReceptionMemoryPhrase (pure)", () => {
@@ -136,24 +140,48 @@ describe("ingestSignals", () => {
   });
 
   /**
-   * Rien ne mesure la conversion aujourd'hui. Passer `0` fabriquerait une mesure — le zéro
-   * inventé que ce lot proscrit partout ailleurs — et plafonnerait MÉCANIQUEMENT tout
-   * contenu d'intention conversion à 0,30/1 avec une confiance de 0,9. `null` dit la
-   * vérité : « non mesuré », et `score.ts` renormalise sur ce qui l'a été.
-   *
-   * Ce test compare au score de référence produit par un `0` explicite : si quelqu'un
-   * revenait à `conversionsInWindow: 0` dans ingest.ts, les deux vaudraient pareil et le
-   * test échouerait — là où un simple `not.toBeNull()` serait resté vert.
+   * LOT 3B a fermé la boucle : `conversionsInWindow` vient désormais de
+   * `storage.getConversionCreditSumForContent`, jamais d'un `null` câblé en dur. Ce test
+   * fait varier la valeur renvoyée par le storage et vérifie qu'elle atteint bien le score
+   * — si quelqu'un revenait à `conversionsInWindow: null` dans ingest.ts, la valeur du
+   * storage ne changerait plus rien et ce test échouerait.
    */
-  it("passe conversionsInWindow: null (non mesuré), jamais un zéro fabriqué", async () => {
+  it("passe la somme réelle des crédits d'attribution renvoyée par le storage", async () => {
     (storage.getContentById as any).mockResolvedValue(contentRow({ intent: "conversion" }));
+    (storage.getConversionCreditSumForContent as any).mockResolvedValue(0.6);
+
+    await ingestSignals("u1", [signal()]);
+
+    expect(storage.getConversionCreditSumForContent).toHaveBeenCalledWith(1);
+    const row = (storage.upsertContentReception as any).mock.calls[0][0];
+    const s = signal();
+
+    const avecCredit = receivedVsIntentScore({
+      intent: "conversion", saves: s.saves, shares: s.shares, comments: s.comments,
+      reach: s.reach, sentimentScore: s.sentimentScore, conversionsInWindow: 0.6,
+    });
+
+    expect(row.receivedVsIntentScore).toBe(avecCredit.score);
+    expect(row.confidence).toBe(avecCredit.confidence);
+  });
+
+  /**
+   * Zéro crédit est une VRAIE MESURE (le contenu est passé par des fenêtres d'attribution,
+   * il n'a simplement rien capté), pas une absence : il doit produire le même verdict que
+   * `conversionsInWindow: 0` explicite, PAS celui de `null` (qui exclurait le signal du
+   * calcul et gonflerait artificiellement la confiance). Test dédié : un simple
+   * `not.toBeNull()` resterait vert même si ingest.ts régressait vers `null`.
+   */
+  it("zéro crédit produit le verdict du zéro mesuré, jamais celui du non-mesuré", async () => {
+    (storage.getContentById as any).mockResolvedValue(contentRow({ intent: "conversion" }));
+    (storage.getConversionCreditSumForContent as any).mockResolvedValue(0);
 
     await ingestSignals("u1", [signal()]);
 
     const row = (storage.upsertContentReception as any).mock.calls[0][0];
     const s = signal();
 
-    const avecZeroFabrique = receivedVsIntentScore({
+    const avecZeroMesure = receivedVsIntentScore({
       intent: "conversion", saves: s.saves, shares: s.shares, comments: s.comments,
       reach: s.reach, sentimentScore: s.sentimentScore, conversionsInWindow: 0,
     });
@@ -162,14 +190,41 @@ describe("ingestSignals", () => {
       reach: s.reach, sentimentScore: s.sentimentScore, conversionsInWindow: null,
     });
 
-    // L'ingestion produit EXACTEMENT le score du « non mesuré »...
-    expect(row.receivedVsIntentScore).toBe(avecNonMesure.score);
-    expect(row.confidence).toBe(avecNonMesure.confidence);
-    // ...et surtout PAS celui du zéro fabriqué, qui plafonnait le contenu à 0,30.
-    expect(row.receivedVsIntentScore).not.toBe(avecZeroFabrique.score);
-    expect(row.receivedVsIntentScore!).toBeGreaterThan(avecZeroFabrique.score!);
-    // La confiance BAISSE, elle : un signal en moins, c'est moins de certitude, pas un score puni.
-    expect(row.confidence).toBeLessThan(avecZeroFabrique.confidence);
+    expect(row.receivedVsIntentScore).toBe(avecZeroMesure.score);
+    expect(row.confidence).toBe(avecZeroMesure.confidence);
+    expect(row.receivedVsIntentScore).not.toBe(avecNonMesure.score);
+    expect(row.confidence).not.toBe(avecNonMesure.confidence);
+  });
+
+  /**
+   * C1 (revue finale) — l'autre face du test ci-dessus. `null` (aucune ligne
+   * d'attribution) doit traverser l'ingestion TEL QUEL : le contenu n'est jamais passé par
+   * une fenêtre de conversion, ce n'est donc pas un échec mesuré. Un `?? 0` réintroduit ici
+   * ferait replonger tout contenu d'intention conversion d'une marque sans conversion
+   * déclarée à ≤ 0,30/1 avec une confiance ~0,9 — ce test l'interdit.
+   */
+  it("aucune ligne d'attribution (null) produit le verdict NON MESURÉ, jamais celui du zéro mesuré", async () => {
+    (storage.getContentById as any).mockResolvedValue(contentRow({ intent: "conversion" }));
+    (storage.getConversionCreditSumForContent as any).mockResolvedValue(null);
+
+    await ingestSignals("u1", [signal()]);
+
+    const row = (storage.upsertContentReception as any).mock.calls[0][0];
+    const s = signal();
+
+    const nonMesure = receivedVsIntentScore({
+      intent: "conversion", saves: s.saves, shares: s.shares, comments: s.comments,
+      reach: s.reach, sentimentScore: s.sentimentScore, conversionsInWindow: null,
+    });
+    const zeroMesure = receivedVsIntentScore({
+      intent: "conversion", saves: s.saves, shares: s.shares, comments: s.comments,
+      reach: s.reach, sentimentScore: s.sentimentScore, conversionsInWindow: 0,
+    });
+
+    expect(row.receivedVsIntentScore).toBe(nonMesure.score);
+    expect(row.confidence).toBe(nonMesure.confidence);
+    expect(row.receivedVsIntentScore).not.toBe(zeroMesure.score);
+    expect(row.confidence).not.toBe(zeroMesure.confidence);
   });
 
   it("reporte une erreur sur le signal si le contenu est introuvable, sans casser les autres", async () => {

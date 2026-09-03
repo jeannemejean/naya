@@ -39,6 +39,14 @@ export interface IngestResult {
  * Construit la phrase mémoire décrivant une mesure de réception. PURE — aucune base,
  * aucun réseau — donc testable isolément (voir ingest.test.ts), séparément du
  * branchement DB/embedding qui l'entoure.
+ *
+ * ⚠️ COUPLAGE : `server/scripts/recompute-reception-scores.ts` reconstruit le PRÉFIXE de
+ * cette phrase (tout sauf `rationale`) pour retrouver, à partir d'une ligne
+ * `content_reception`, l'entrée `memory_entries` qu'elle a produite à l'insertion — aucune
+ * clé de liaison n'existe entre les deux tables. Modifier la FORME de la sortie ici
+ * (ordre des champs, ponctuation, le texte fixe autour des `${...}`) casse SILENCIEUSEMENT
+ * cet appariement pour TOUT l'historique en une fois. Si tu changes ce texte, va lire et
+ * mettre à jour ce script en même temps.
  */
 export function formatReceptionMemoryPhrase(input: {
   contentTitle: string;
@@ -96,6 +104,22 @@ export async function ingestSignals(userId: string, signals: ReceptionSignal[]):
       }
 
       // 2. Le score — pur, testé isolément dans score.test.ts.
+      //
+      // LOT 3B a fermé la boucle : `conversionsInWindow` est désormais la somme
+      // FRACTIONNAIRE des `creditWeight` du moteur d'attribution multi-touch pour ce
+      // contenu (jamais un compte entier — le §5.3 de la spec interdit « ce post a
+      // converti X »).
+      //
+      // `null` (aucune ligne d'attribution) est passé TEL QUEL, jamais converti en `0` :
+      // il veut dire NON MESURÉ — ce contenu n'est jamais passé par une fenêtre de
+      // conversion. Comme `attribute()` donne un poids strictement positif à tout contenu
+      // d'une fenêtre, « était dans des fenêtres, n'a rien capté » n'existe pas ; forcer un
+      // `0` ici plafonnerait à 0,30/1 tout contenu d'intention conversion d'une marque
+      // n'ayant déclaré aucune conversion. Un nombre — 0 compris — est une VRAIE MESURE et
+      // entre dans le calcul. Voir credit-sum.ts pour la démonstration et score.ts pour ce
+      // que chaque canal coûte.
+      const conversionsInWindow = await storage.getConversionCreditSumForContent(signal.contentId);
+
       const result = receivedVsIntentScore({
         // `content.intent` est une colonne `text` LIBRE : ce n'est pas un `Intent` garanti.
         // On le passe tel quel — `receivedVsIntentScore` porte la garde de vocabulaire et
@@ -106,12 +130,7 @@ export async function ingestSignals(userId: string, signals: ReceptionSignal[]):
         comments: signal.comments,
         reach: signal.reach,
         sentimentScore: signal.sentimentScore,
-        // NON MESURÉ, pas « zéro ». Rien ne mesure la conversion dans ce lot (le LOT 3B s'en
-        // chargera) : envoyer `0` fabriquerait une mesure d'échec et plafonnerait tout
-        // contenu d'intention conversion à 0,30/1 — avec une confiance de 0,9, et ce verdict
-        // gravé en mémoire. `null` dit la vérité ; le score se renormalise sur ce qui a
-        // réellement été mesuré et la confiance baisse d'autant.
-        conversionsInWindow: null,
+        conversionsInWindow,
       });
 
       const row: InsertContentReception = {

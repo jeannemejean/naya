@@ -10,6 +10,7 @@ import { useProjectDetail, useProjectMilestones } from "./useProjectPage";
 import ProjectSummaryBar from "./ProjectSummaryBar";
 import ProjectContextEditor from "./ProjectContextEditor";
 import MilestoneRoadmap from "./MilestoneRoadmap";
+import ConversionsPanel from "./ConversionsPanel";
 
 interface ProjectPageProps {
   id: number;
@@ -85,6 +86,10 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                 Feuille de route (ce qui est fait / à faire)
               </h2>
               <MilestoneRoadmap project={project} />
+            </section>
+
+            <section>
+              <ConversionsPanel projectId={id} />
             </section>
 
             <section>
