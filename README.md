@@ -49,7 +49,8 @@ Champs requis :
 ### 4. Base de données
 
 ```bash
-npm run db:push
+# Applique les migrations versionnées de migrations/ (voir MIGRATIONS.md).
+npm run db:migrate
 ```
 
 ### 5. Lancer en développement
@@ -88,7 +89,8 @@ Scanner le QR code avec **Expo Go** (iOS/Android).
 npm run dev        # développement (web + serveur)
 npm run build      # build production
 npm run start      # lancer le build de prod
-npm run db:push    # appliquer les migrations Drizzle
+npm run db:migrate # appliquer les migrations versionnées (voir MIGRATIONS.md)
+npm run db:push:dev # DEV-LOCAL UNIQUEMENT — diff direct du schéma, peut DROP
 npm run check      # vérification TypeScript
 ```
 
@@ -131,7 +133,7 @@ Dans Railway → ton service → Variables :
 
 ```bash
 # En local, avec le DATABASE_URL de production
-DATABASE_URL=postgresql://... npm run db:push
+DATABASE_URL=postgresql://... npm run db:migrate
 ```
 
 **5. Déployer**

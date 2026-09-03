@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run check
+
+      - name: Tests
+        run: npx vitest run
+
+      # ── Garde structurelle du Lot 3B ────────────────────────────────────────
+      # attribute.ts est le SEUL producteur de poids d'attribution. storage.ts
+      # écrit et relit, ingest.ts ne fait que le citer en commentaire, schema.ts
+      # déclare la colonne. Tout nouveau fichier qui touche `creditWeight` est
+      # un second producteur potentiel — donc un chemin possible vers du
+      # last-touch, ce que tout le lot existe pour empêcher.
+      # Si un ajout est légitime, on l'ajoute ICI, consciemment.
+      - name: Un seul producteur de poids d'attribution
+        run: |
+          allow="server/services/attribution/attribute.ts
+          server/services/reception/ingest.ts
+          server/storage.ts
+          shared/schema.ts"
+          found=$(grep -rl "creditWeight" --include=*.ts server shared \
+            | grep -v "\.test\.ts" | sort)
+          unexpected=$(comm -23 <(echo "$found") <(echo "$allow" | sed 's/^ *//' | sort))
+          if [ -n "$unexpected" ]; then
+            echo "$unexpected"
+            echo "::error::Fichier non autorisé touchant creditWeight — second producteur possible (voir BRIEF-PHASE-3 §4.1)"
+            exit 1
+          fi
