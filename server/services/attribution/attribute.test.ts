@@ -62,8 +62,18 @@ describe("attribute — linéaire uniforme", () => {
     expect(r).toEqual([{ contentId: 1, creditWeight: 1 }]);
   });
 
-  // L'invariant central du brief.
-  it.each([1, 2, 3, 5, 7])("la somme des poids vaut EXACTEMENT 1 sur %i contenus", (n) => {
+  /**
+   * L'invariant central du brief.
+   *
+   * CHOIX DES VALEURS (renforcement de la revue finale) : une implémentation naïve
+   * `Array(n).fill(1/n)` se somme à EXACTEMENT 1 en virgule flottante pour
+   * n = 1, 2, 3, 4, 5, 8, 12 — et n'échoue que pour 6, 7, 9, 10, 11 (vérifié par calcul
+   * direct). Le jeu précédent `[1, 2, 3, 5, 7]` ne contenait donc qu'UNE seule valeur
+   * discriminante : supprimer le 7 au fil d'une édition aurait laissé un test toujours vert
+   * face à une implémentation qui ne fait plus absorber le résidu. 6 et 9 ajoutés : trois
+   * valeurs discriminantes sur six.
+   */
+  it.each([1, 2, 3, 5, 6, 7, 9])("la somme des poids vaut EXACTEMENT 1 sur %i contenus", (n) => {
     const contenus = Array.from({ length: n }, (_, i) => publie(i + 1, n - i));
     const r = attribute(conversion, selectContentsInWindow(conversion, contenus));
     expect(r).toHaveLength(n);
@@ -77,12 +87,28 @@ describe("attribute — linéaire uniforme", () => {
     }
   });
 
-  // ANTI-LAST-TOUCH : le contenu le plus proche ne doit jamais rafler la mise.
-  it("ne crédite jamais 100 % au contenu le plus récent quand la fenêtre en contient plusieurs", () => {
+  /**
+   * ANTI-LAST-TOUCH : le contenu le plus proche ne doit jamais rafler la mise.
+   *
+   * L'assertion est celle de la DOCTRINE, pas un simple garde-fou : le plus récent ne
+   * reçoit PAS PLUS que n'importe quel autre contenu de la fenêtre. Un
+   * `toBeLessThan(0.9)` laissait passer une implémentation qui aurait donné 0,85 au dernier
+   * contenu et des miettes aux quatre autres — c'est-à-dire du last-touch à peine déguisé,
+   * exactement ce que ce lot interdit.
+   */
+  it("le contenu le plus récent ne reçoit jamais plus que les autres, quels qu'ils soient", () => {
     const contenus = [publie(1, 28), publie(2, 21), publie(3, 14), publie(4, 6), publie(5, 2)];
     const r = attribute(conversion, selectContentsInWindow(conversion, contenus));
     const leplusRecent = r.find(l => l.contentId === 5)!;
-    expect(leplusRecent.creditWeight).toBeLessThan(0.9);
+    const lesAutres = r.filter(l => l.contentId !== 5).map(l => l.creditWeight);
+
+    // Tolérance 1e-9 : le dernier absorbe le résidu de l'arithmétique flottante (~1e-16),
+    // ce qui ne doit pas faire échouer une égalité de doctrine.
+    for (const autre of lesAutres) {
+      expect(leplusRecent.creditWeight).toBeLessThanOrEqual(autre + 1e-9);
+    }
+    // Et jamais au-dessus de la part égale : aucune prime de récence, même minime.
+    expect(leplusRecent.creditWeight).toBeLessThanOrEqual(1 / r.length + 1e-9);
     expect(r.every(l => l.creditWeight > 0)).toBe(true);
   });
 
