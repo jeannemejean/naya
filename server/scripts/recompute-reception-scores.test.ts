@@ -8,7 +8,12 @@ vi.mock("../services/memory/embed", () => ({
 import { recomputeReceptionScores, type RecomputeRepo, type ReceptionRow, type NewMemoryEntry } from "./recompute-reception-scores";
 import { receivedVsIntentScore } from "../services/reception/score";
 
-type FakeMemoryRow = { id: number; userId: string; fil: string; entryType: string; content: string; supersededAt: Date | null };
+type FakeMemoryRow = {
+  id: number; userId: string; fil: string; entryType: string; content: string;
+  supersededAt: Date | null;
+  /** Optionnel dans les fixtures ; le faux store le normalise à `null` (colonne nullable). */
+  createdAt?: Date | null;
+};
 
 /**
  * Faux store EN MÉMOIRE — pas des mocks vitest sur des appels : le test d'idempotence
@@ -29,7 +34,7 @@ function fakeRepo(initial: {
 } {
   const receptionRows = initial.reception.map((r) => ({ ...r }));
   const creditSums = initial.creditSums ?? {};
-  const memoryRows = (initial.memory ?? []).map((m) => ({ ...m }));
+  const memoryRows = (initial.memory ?? []).map((m) => ({ createdAt: null, ...m }));
   const insertedMemory: NewMemoryEntry[] = [];
   let nextMemoryId = memoryRows.reduce((max, m) => Math.max(max, m.id), 0) + 1;
 
@@ -59,7 +64,8 @@ function fakeRepo(initial: {
         (m) => m.userId === userId && m.fil === fil && m.entryType === entryType &&
           m.supersededAt === null && m.content.startsWith(contentPrefix),
       );
-      return found ? { id: found.id } : null;
+      // La date d'origine fait partie du contrat : la remplaçante doit la reprendre (I1).
+      return found ? { id: found.id, createdAt: found.createdAt ?? null } : null;
     },
     // Simule l'atomicité d'un `db.transaction()` : soit les DEUX effets (supersède +
     // insère) sont appliqués, soit AUCUN ne l'est — jamais l'ancienne entrée périmée sans
@@ -80,6 +86,9 @@ function fakeRepo(initial: {
         entryType: newEntry.entryType,
         content: newEntry.content,
         supersededAt: null,
+        // La vraie implémentation POSE createdAt explicitement (la colonne a un
+        // `defaultNow()` qui, sinon, redaterait le souvenir à aujourd'hui).
+        createdAt: newEntry.createdAt,
       });
     },
   };
@@ -251,6 +260,48 @@ describe("recomputeReceptionScores", () => {
     const nouvelle = repo.insertedMemory[0] as { content: string };
     expect(nouvelle.content).not.toBe(phraseAncienne);
     expect(nouvelle.content).toContain("Post de lancement");
+  });
+
+  /**
+   * I1 (revue finale) — le remplacement doit REPRENDRE la date d'origine du souvenir
+   * périmé. `memory_entries.created_at` a un `defaultNow()` : ne pas la poser
+   * explicitement redate la remplaçante à aujourd'hui. Or la demi-vie du fil "reception"
+   * est de 10 jours (la plus courte des trois, voir services/memory/retrieve.ts) : une
+   * mesure de trois mois a une fraîcheur de ~0,002, qui deviendrait 1,0 après un passage.
+   * Comme le script traite TOUT l'historique en un run, une seule exécution aplatirait le
+   * signal de fraîcheur de tout le fil et ferait passer les vieilles mesures devant les
+   * récentes dans le top-K de chaque appel IA. Un verdict corrigé sur un fait ancien reste
+   * un fait ancien.
+   */
+  it("préserve la date d'origine du souvenir remplacé — jamais un created_at neuf", async () => {
+    const ancienneMesure = receivedVsIntentScore({
+      intent: "conversion", saves: 20, shares: 5, comments: 3, reach: 1000,
+      sentimentScore: null, conversionsInWindow: null,
+    });
+    const phraseAncienne = stablePrefix(ancienneMesure.score as number) + ancienneMesure.rationale;
+    const dateOrigine = new Date("2026-06-01T09:30:00.000Z"); // ~3 mois avant le run
+
+    const repo = fakeRepo({
+      reception: [row({
+        id: 1, contentId: 1,
+        receivedVsIntentScore: ancienneMesure.score,
+        confidence: ancienneMesure.confidence,
+        rationale: ancienneMesure.rationale,
+      })],
+      creditSums: { 1: 0.6 },
+      memory: [{
+        id: 100, userId: "u1", fil: "reception", entryType: "signal_reception",
+        content: phraseAncienne, supersededAt: null, createdAt: dateOrigine,
+      }],
+    });
+
+    await recomputeReceptionScores(repo);
+
+    expect(repo.insertedMemory).toHaveLength(1);
+    expect(repo.insertedMemory[0].createdAt).toEqual(dateOrigine);
+    // Et la ligne réellement posée dans le store porte bien cette date, pas « maintenant ».
+    const remplacante = repo.memoryRows.find((m) => m.id !== 100)!;
+    expect(remplacante.createdAt).toEqual(dateOrigine);
   });
 
   it("ne touche pas la mémoire sur un changement non matériel (écart <= 0,05)", async () => {

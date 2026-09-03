@@ -81,6 +81,17 @@ export interface NewMemoryEntry {
   content: string;
   embedding: number[] | null;
   salience: number;
+  /**
+   * La date d'origine du souvenir REMPLACÉ, reprise telle quelle (`null` si l'ancienne
+   * ligne n'en avait pas). POSÉE EXPLICITEMENT parce que `memory_entries.created_at` a un
+   * `defaultNow()` : l'omettre redaterait la remplaçante à aujourd'hui. La demi-vie du fil
+   * "reception" est de 10 jours — la plus courte des trois (services/memory/retrieve.ts) —
+   * et ce script traite tout l'historique en un seul run : sans ça, une exécution
+   * ramènerait la fraîcheur de TOUT le corpus à 1,0 d'un coup, et les vieilles mesures
+   * passeraient devant les récentes dans le top-K de chaque appel IA suivant. Un verdict
+   * corrigé sur un fait ancien reste un fait ancien.
+   */
+  createdAt: Date | null;
 }
 
 /**
@@ -100,13 +111,17 @@ export interface RecomputeRepo {
     id: number,
     patch: { receivedVsIntentScore: number | null; confidence: number; rationale: string },
   ): Promise<void>;
-  /** Apparie sur un PRÉFIXE (voir en-tête du fichier), jamais sur l'égalité stricte. */
+  /**
+   * Apparie sur un PRÉFIXE (voir en-tête du fichier), jamais sur l'égalité stricte.
+   * Renvoie aussi la date d'origine : la remplaçante doit la reprendre (voir
+   * `NewMemoryEntry.createdAt`).
+   */
   findActiveMemoryEntry(args: {
     userId: string;
     fil: string;
     entryType: string;
     contentPrefix: string;
-  }): Promise<{ id: number } | null>;
+  }): Promise<{ id: number; createdAt: Date | null } | null>;
   /**
    * Périme l'ancienne entrée ET insère la nouvelle DANS LA MÊME TRANSACTION — jamais l'une
    * sans l'autre. Sans cette atomicité, un crash entre les deux (process tué, connexion DB
@@ -155,7 +170,7 @@ export const dbRecomputeRepo: RecomputeRepo = {
     // cher que de filtrer en mémoire un volume de lignes borné par (user, fil) sur un
     // script hors-ligne, jamais un chemin critique.
     const rows = await db
-      .select({ id: memoryEntries.id, content: memoryEntries.content })
+      .select({ id: memoryEntries.id, content: memoryEntries.content, createdAt: memoryEntries.createdAt })
       .from(memoryEntries)
       .where(
         and(
@@ -166,7 +181,7 @@ export const dbRecomputeRepo: RecomputeRepo = {
         ),
       );
     const found = rows.find((r) => r.content.startsWith(contentPrefix));
-    return found ? { id: found.id } : null;
+    return found ? { id: found.id, createdAt: found.createdAt } : null;
   },
   async replaceMemoryEntry(oldEntryId, newEntry) {
     await db.transaction(async (tx) => {
@@ -295,6 +310,8 @@ async function recomputeOneRow(
         content: newPhrase,
         embedding,
         salience: newResult.confidence > 0 ? newResult.confidence : 0.5,
+        // I1 : la date d'ORIGINE, jamais « maintenant ». Voir NewMemoryEntry.createdAt.
+        createdAt: existing.createdAt,
       });
       memorySuperseded = true;
     } else {
