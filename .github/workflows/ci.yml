@@ -8,6 +8,28 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+
+    # ── DATABASE_URL factice : un PANSEMENT, pas une configuration ─────────────
+    # Plusieurs fichiers de tests importent transitivement `server/db.ts`, qui
+    # LÈVE dès l'import si DATABASE_URL est absent. En local ça passe parce que
+    # le `.env` existe ; sur le runner il n'y a rien, et la suite tombait avant
+    # d'exécuter le moindre test.
+    #
+    # Aucune connexion n'est ouverte : les tests utilisent des faux et des mocks.
+    # Cette valeur ne sert qu'à franchir la garde d'import.
+    #
+    # LE VRAI CORRECTIF est de mocker la couche DB dans les fichiers fautifs
+    # (`memory/retrieve.ts`, `storage.ts`, `usage.ts`, `reception/recompute.ts`),
+    # comme le fait déjà `rollover-stale-tasks.test.ts`. Signalé en revue du
+    # lot 3A, pas encore fait.
+    #
+    # ⚠️ Si un jour un test ouvre RÉELLEMENT une connexion, il échouera sur
+    # 127.0.0.1:5432 avec un message trompeur (« connexion refusée » plutôt que
+    # « ce test ne devrait pas toucher la base »). C'est le signal qu'il faut
+    # arrêter de rustiner et faire le vrai correctif.
+    env:
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/naya_ci_placeholder
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
