@@ -150,7 +150,7 @@ import {
   type TaskPrompt,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
-import { eq, and, desc, gt, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
+import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
@@ -160,6 +160,7 @@ import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
+import { parisDayBoundsUTC } from "./utils/timezone";
 
 /**
  * Un crédit d'attribution ENRICHI du titre du contenu crédité, résolu côté serveur.
@@ -2826,8 +2827,12 @@ export class DatabaseStorage implements IStorage {
     prompts: Array<{ taskId: number; scheduledFor: Date }>,
     now: Date,
   ): Promise<TaskPrompt[]> {
-    const startOfDay = new Date(`${day}T00:00:00`);
-    const endOfDay = new Date(`${day}T23:59:59.999`);
+    // Bornage en heure MURALE DE PARIS, converti en instants UTC — jamais
+    // `new Date(`${day}T00:00:00`)`, qui interprète la borne dans le fuseau du PROCESS
+    // (UTC en prod), pas celui de Paris (décalage de 1h ou 2h selon la saison, voir
+    // server/utils/timezone.ts). `end` est le début du jour suivant, borne EXCLUSIVE
+    // (d'où `lt` et non `lte`).
+    const { start: startOfDay, end: endOfDay } = parisDayBoundsUTC(day);
     return await db.transaction(async (tx) => {
       // Ne remplace QUE les alarmes FUTURES du jour (scheduled_for > now). Une alarme déjà
       // répondue n'est jamais effacée (elle est la trace qu'on garde), et une alarme ÉCHUE
@@ -2844,7 +2849,7 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(taskPrompts).where(and(
         eq(taskPrompts.userId, userId),
         gte(taskPrompts.scheduledFor, startOfDay),
-        lte(taskPrompts.scheduledFor, endOfDay),
+        lt(taskPrompts.scheduledFor, endOfDay),
         gt(taskPrompts.scheduledFor, now),
       ));
       if (prompts.length === 0) return [];

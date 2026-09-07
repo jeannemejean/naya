@@ -76,6 +76,7 @@ import { leadScrapingService } from "./services/lead-scraping";
 import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
+import { parisWallClockToInstant } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
@@ -10422,7 +10423,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const alarms = pending.map((t) => ({
         taskId: t.id,
         title: t.title,
-        scheduledFor: new Date(`${t.scheduledDate}T${t.scheduledEndTime}:00`),
+        // `scheduledEndTime` est une heure murale de Paris (ce que l'utilisatrice voit
+        // dans son planning) — jamais `new Date(`${date}T${time}:00`)`, qui l'interprète
+        // dans le fuseau du PROCESS (UTC en prod), pas celui de Paris.
+        scheduledFor: parisWallClockToInstant(t.scheduledDate!, t.scheduledEndTime!),
       }));
 
       await storage.replaceTaskPromptsForDay(
