@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parisWallClockToInstant, parisDayBoundsUTC } from "./timezone";
+import { parisWallClockToInstant, parisDayBoundsUTC, parisHourOf, parisTodayString } from "./timezone";
 
 // Le process de prod tourne en UTC (pas de TZ configuré, pas de Dockerfile, pas de
 // railway.toml). `scheduledEndTime` est une heure murale de Paris ("HH:MM"), donc toute
@@ -70,5 +70,77 @@ describe("parisDayBoundsUTC — la fenêtre d'une journée murale de Paris, en i
     const { end } = parisDayBoundsUTC("2026-01-15");
     const nextDayStart = parisWallClockToInstant("2026-01-16", "00:00");
     expect(end.getTime()).toBe(nextDayStart.getTime());
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Round 2 : `computeTaskPromptInsight` (server/routes.ts) faisait
+// `p.scheduledFor.getHours()` et `sharedFormatDate(now)` — tous deux lisent l'heure/le
+// jour du PROCESS (UTC en prod), pas celui de Paris. Même défaut que ci-dessus, sens
+// inverse (extraire une heure murale depuis un instant, plutôt que l'inverse).
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("parisHourOf — l'heure murale de Paris d'un instant (jamais celle du process)", () => {
+  it("12:05 UTC un 15 juillet (été, UTC+2) est 14h à Paris — pas 12h", () => {
+    // C'est exactement l'instant que produit parisWallClockToInstant("2026-07-15","14:05").
+    const instant = parisWallClockToInstant("2026-07-15", "14:05");
+    expect(parisHourOf(instant)).toBe(14);
+  });
+
+  it("13:05 UTC un 15 janvier (hiver, UTC+1) est 14h à Paris", () => {
+    const instant = parisWallClockToInstant("2026-01-15", "14:05");
+    expect(parisHourOf(instant)).toBe(14);
+  });
+
+  it("minuit à Paris → heure 0, jamais 24 (le cas hour12:false)", () => {
+    const instant = parisWallClockToInstant("2026-01-15", "00:00");
+    expect(parisHourOf(instant)).toBe(0);
+  });
+
+  it("23h à Paris reste 23, ne bascule pas sur le jour du process", () => {
+    const instant = parisWallClockToInstant("2026-07-15", "23:30");
+    expect(parisHourOf(instant)).toBe(23);
+  });
+
+  it("RÉGRESSION — la classification matin/après-midi de buildImmediateInsight (seuil MIDI=13, voir insight.ts) doit se faire sur l'heure de Paris : une alarme à 14:05 Paris est un après-midi", () => {
+    const MIDI = 13; // seuil documenté dans server/services/result-capture/insight.ts
+    const scheduledFor = parisWallClockToInstant("2026-07-15", "14:05"); // 12:05 UTC
+    // Avec l'ancien code (`scheduledFor.getHours()` sous TZ=UTC, le fuseau de prod),
+    // cette même alarme lirait 12h et basculerait à tort en "matin" — reproduit et
+    // vérifié séparément sous `TZ=UTC node -e ...` avant ce correctif (voir rapport).
+    expect(parisHourOf(scheduledFor) >= MIDI).toBe(true);
+  });
+});
+
+describe("parisTodayString — le jour calendaire de Paris (jamais celui du process)", () => {
+  it("23:30 UTC un 15 janvier (hiver, UTC+1) = 00:30 le 16 à Paris → \"aujourd'hui\" est déjà le 16", () => {
+    const now = new Date("2026-01-15T23:30:00.000Z");
+    expect(parisTodayString(now)).toBe("2026-01-16");
+  });
+
+  it("22:30 UTC un 15 janvier = 23:30 à Paris, encore le 15", () => {
+    const now = new Date("2026-01-15T22:30:00.000Z");
+    expect(parisTodayString(now)).toBe("2026-01-15");
+  });
+
+  it("22:30 UTC un 15 juillet (été, UTC+2) = 00:30 le 16 à Paris → déjà le 16", () => {
+    const now = new Date("2026-07-15T22:30:00.000Z");
+    expect(parisTodayString(now)).toBe("2026-07-16");
+  });
+
+  it("21:30 UTC un 15 juillet = 23:30 à Paris, encore le 15", () => {
+    const now = new Date("2026-07-15T21:30:00.000Z");
+    expect(parisTodayString(now)).toBe("2026-07-15");
+  });
+
+  it("RÉGRESSION — démontre le bug de la route today : à 23:30 UTC, le jour calendaire UTC et le jour calendaire de Paris diffèrent", () => {
+    const now = new Date("2026-01-15T23:30:00.000Z");
+    // Équivalent de l'ancien `sharedFormatDate(now)` SI le process tournait en UTC
+    // (c'est le cas en prod) : `getFullYear/getMonth/getDate` sous TZ=UTC donnent la
+    // même chose que `toISOString().slice(0,10)`, sans dépendre du fuseau du runner.
+    const utcCalendarDay = now.toISOString().slice(0, 10);
+    expect(utcCalendarDay).toBe("2026-01-15");
+    expect(parisTodayString(now)).toBe("2026-01-16");
+    expect(parisTodayString(now)).not.toBe(utcCalendarDay);
   });
 });

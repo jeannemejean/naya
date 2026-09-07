@@ -76,7 +76,7 @@ import { leadScrapingService } from "./services/lead-scraping";
 import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
-import { parisWallClockToInstant } from "./utils/timezone";
+import { parisWallClockToInstant, parisHourOf, parisTodayString } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
@@ -10398,7 +10398,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
     const answers: TaskAnswer[] = answered.map((p) => ({
       category: categoryByTaskId.get(p.taskId) ?? null,
-      scheduledHour: p.scheduledFor.getHours(),
+      // Jamais `.getHours()` : ça lit l'heure du fuseau du PROCESS (UTC en prod), pas
+      // celle de Paris — alors que le seuil matin/après-midi de `buildImmediateInsight`
+      // (MIDI = 13, insight.ts) est pensé en heure de Paris.
+      scheduledHour: parisHourOf(p.scheduledFor),
       done: p.answer === "done",
     }));
 
@@ -10413,7 +10416,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const userId = req.userId;
       const now = new Date();
-      const today = sharedFormatDate(now);
+      // Jour calendaire de PARIS, pas celui du process (UTC en prod) : entre minuit et
+      // 1h/2h du matin heure de Paris selon la saison, `sharedFormatDate(now)` (qui lit
+      // le calendrier du process) renverrait encore la veille.
+      const today = parisTodayString(now);
 
       const todaysTasks = await storage.getTasksInRange(userId, today, today);
       const pending = todaysTasks.filter(

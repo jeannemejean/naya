@@ -84,3 +84,32 @@ export function parisDayBoundsUTC(dateStr: string): { start: Date; end: Date } {
     end: parisWallClockToInstant(nextDateStr(dateStr), "00:00"),
   };
 }
+
+/**
+ * L'heure murale de Paris (0-23) d'un instant — jamais `date.getHours()`, qui lit
+ * l'heure du fuseau du PROCESS (UTC en prod). `hourCycle: 'h23'` (pas `hour12: false`)
+ * pour que minuit rende bien "00" et non "24" selon la version d'ICU du runtime.
+ */
+export function parisHourOf(instant: Date): number {
+  const hour = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    hourCycle: "h23",
+  })
+    .formatToParts(instant)
+    .find((p) => p.type === "hour")!.value;
+  return Number(hour);
+}
+
+/**
+ * Le jour calendaire de Paris ("YYYY-MM-DD") d'un instant — jamais
+ * `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`, qui lit le calendrier du
+ * fuseau du PROCESS (UTC en prod). Entre minuit et 1h/2h du matin heure de Paris
+ * (selon la saison), le jour UTC est encore la veille : lire le jour du process
+ * renverrait le mauvais jour. `now` entre par la signature — fonction pure, aucune
+ * horloge implicite (même convention que `unansweredStreak`, throttle.ts).
+ */
+export function parisTodayString(now: Date): string {
+  // Locale en-CA : le seul format standard dont Intl garantit la sortie en YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(now);
+}
