@@ -486,6 +486,31 @@ export const tasks = pgTable("tasks", {
   uniqueIndex("tasks_ritual_date_uq").on(t.ritualId, t.scheduledDate),
 ]);
 
+/**
+ * Trace des notifications de fin de tâche.
+ *
+ * Elle existe pour une seule raison : distinguer « restée sans réponse » de
+ * « pas fait ». **Absence de réponse ≠ réponse négative** — la même distinction que
+ * « non mesuré ≠ mesuré à zéro », et elle se perdra si personne ne la défend.
+ *
+ * Un compteur dans les préférences aurait suffi à la soupape, mais ne saurait pas dire
+ * QUELLES notifications ont été ignorées — donc aucun diagnostic possible.
+ */
+export const taskPrompts = pgTable("task_prompts", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  answeredAt: timestamp("answered_at"),
+  answer: text("answer"), // done | not_done ; null tant que sans réponse
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  // La reprogrammation des alarmes doit rester idempotente jusqu'en base.
+  uniquePrompt: unique("task_prompts_unique").on(t.taskId, t.scheduledFor),
+}));
+export type TaskPrompt = typeof taskPrompts.$inferSelect;
+export type InsertTaskPrompt = typeof taskPrompts.$inferInsert;
+
 // Clients table - for Agency/Client management
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),

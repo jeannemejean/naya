@@ -146,6 +146,8 @@ import {
   type BrandConversion,
   conversionAttributions,
   type ConversionAttribution,
+  taskPrompts,
+  type TaskPrompt,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
@@ -255,6 +257,37 @@ export interface IStorage {
   deleteTask(taskId: number): Promise<void>;
   deleteIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
   archiveIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
+
+  // Task Prompts — trace des notifications de fin de tâche (voir shared/schema.ts pour le
+  // pourquoi : distinguer « restée sans réponse » de « pas fait »).
+  /**
+   * Crée les alarmes d'UN jour pour un utilisateur, en REMPLAÇANT celles déjà posées pour
+   * ce jour qui n'ont pas encore reçu de réponse — supprime puis insère dans la MÊME
+   * transaction, même discipline que `replaceConversionAttributions`. Les alarmes déjà
+   * répondues ce jour-là ne sont JAMAIS touchées : les effacer perdrait la trace même que
+   * cette table existe pour garder. La contrainte UNIQUE `(task_id, scheduled_for)` est le
+   * filet de sécurité si un appel se rejoue : `onConflictDoNothing` évite qu'une course
+   * double une ligne.
+   */
+  replaceTaskPromptsForDay(
+    userId: string,
+    day: string, // YYYY-MM-DD
+    prompts: Array<{ taskId: number; scheduledFor: Date }>,
+  ): Promise<TaskPrompt[]>;
+  /**
+   * Enregistre la réponse à une alarme. `answeredAt` est fourni par l'appelant (pas
+   * d'horloge implicite ici) et `answer` vaut `"done"` ou `"not_done"` — jamais autre
+   * chose. Filtré par propriétaire : une alarme d'un autre utilisateur ne renvoie rien.
+   */
+  answerTaskPrompt(id: number, userId: string, answer: string, answeredAt: Date): Promise<TaskPrompt | undefined>;
+  /**
+   * Les `limit` dernières alarmes d'un utilisateur, triées de la plus récente à la plus
+   * ancienne — exactement ce que consomme `unansweredStreak` (voir
+   * `services/result-capture/throttle.ts`). Aucun filtre sur l'échéance ici : c'est
+   * `unansweredStreak` qui exclut elle-même les alarmes dont `scheduledFor` n'est pas
+   * encore passé, pour ne jamais dépendre de la discipline de l'appelant.
+   */
+  getRecentTaskPrompts(userId: string, limit: number): Promise<TaskPrompt[]>;
 
   // Task Dependency operations
   getTaskDependencies(taskId: number): Promise<TaskDependency[]>;
@@ -2771,6 +2804,46 @@ export class DatabaseStorage implements IStorage {
       }).where(eq(tasks.id, id));
     }
     return toArchive.length;
+  }
+
+  // Task Prompts — voir IStorage pour la doc.
+  async replaceTaskPromptsForDay(
+    userId: string,
+    day: string,
+    prompts: Array<{ taskId: number; scheduledFor: Date }>,
+  ): Promise<TaskPrompt[]> {
+    const startOfDay = new Date(`${day}T00:00:00`);
+    const endOfDay = new Date(`${day}T23:59:59.999`);
+    return await db.transaction(async (tx) => {
+      // Ne remplace QUE les alarmes sans réponse de ce jour : une alarme déjà répondue
+      // n'est jamais effacée par une reprogrammation.
+      await tx.delete(taskPrompts).where(and(
+        eq(taskPrompts.userId, userId),
+        gte(taskPrompts.scheduledFor, startOfDay),
+        lte(taskPrompts.scheduledFor, endOfDay),
+        isNull(taskPrompts.answeredAt),
+      ));
+      if (prompts.length === 0) return [];
+      return await tx.insert(taskPrompts)
+        .values(prompts.map((p) => ({ taskId: p.taskId, userId, scheduledFor: p.scheduledFor })))
+        .onConflictDoNothing({ target: [taskPrompts.taskId, taskPrompts.scheduledFor] })
+        .returning();
+    });
+  }
+
+  async answerTaskPrompt(id: number, userId: string, answer: string, answeredAt: Date): Promise<TaskPrompt | undefined> {
+    const [updated] = await db.update(taskPrompts)
+      .set({ answer, answeredAt })
+      .where(and(eq(taskPrompts.id, id), eq(taskPrompts.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async getRecentTaskPrompts(userId: string, limit: number): Promise<TaskPrompt[]> {
+    return await db.select().from(taskPrompts)
+      .where(eq(taskPrompts.userId, userId))
+      .orderBy(desc(taskPrompts.scheduledFor))
+      .limit(limit);
   }
 
   async getTaskDependencies(taskId: number): Promise<TaskDependency[]> {
