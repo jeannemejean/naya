@@ -262,24 +262,37 @@ export interface IStorage {
   // pourquoi : distinguer « restée sans réponse » de « pas fait »).
   /**
    * Crée les alarmes d'UN jour pour un utilisateur, en REMPLAÇANT celles déjà posées pour
-   * ce jour qui n'ont pas encore reçu de réponse — supprime puis insère dans la MÊME
-   * transaction, même discipline que `replaceConversionAttributions`. Les alarmes déjà
-   * répondues ce jour-là ne sont JAMAIS touchées : les effacer perdrait la trace même que
-   * cette table existe pour garder. La contrainte UNIQUE `(task_id, scheduled_for)` est le
-   * filet de sécurité si un appel se rejoue : `onConflictDoNothing` évite qu'une course
-   * double une ligne.
+   * ce jour QUI NE SONT PAS ENCORE ÉCHUES — supprime puis insère dans la MÊME transaction,
+   * même discipline que `replaceConversionAttributions`. `now` est fourni par l'appelant
+   * (pas d'horloge implicite ici — même discipline que `unansweredStreak(prompts, now)`).
+   *
+   * Double garde, jamais effacée par une reprogrammation :
+   *  1. une alarme déjà répondue (`answeredAt` non nul) — l'effacer perdrait la trace même
+   *     que cette table existe pour garder ;
+   *  2. une alarme ÉCHUE mais SANS réponse (`scheduledFor <= now`, `answeredAt` nul) — c'est
+   *     précisément une notification IGNORÉE, le signal que la soupape (`throttle.ts`) doit
+   *     voir. La replanification tourne plusieurs fois par jour (repack anti-chevauchement,
+   *     report de fin de journée, drag-and-drop, replanification 15 min) : sans cette garde,
+   *     chaque appel rincerait l'historique des ignorées du jour et `unansweredStreak` ne
+   *     compterait jamais 3 absences consécutives — en silence, exactement le risque que la
+   *     soupape existe pour éviter.
+   *
+   * Seules les alarmes FUTURES (`scheduledFor > now`) sont donc remplacées. La contrainte
+   * UNIQUE `(task_id, scheduled_for)` reste le filet de sécurité si un appel se rejoue :
+   * `onConflictDoNothing` évite qu'une course double une ligne.
    */
   replaceTaskPromptsForDay(
     userId: string,
     day: string, // YYYY-MM-DD
     prompts: Array<{ taskId: number; scheduledFor: Date }>,
+    now: Date,
   ): Promise<TaskPrompt[]>;
   /**
    * Enregistre la réponse à une alarme. `answeredAt` est fourni par l'appelant (pas
-   * d'horloge implicite ici) et `answer` vaut `"done"` ou `"not_done"` — jamais autre
-   * chose. Filtré par propriétaire : une alarme d'un autre utilisateur ne renvoie rien.
+   * d'horloge implicite ici). Filtré par propriétaire : une alarme d'un autre utilisateur
+   * ne renvoie rien.
    */
-  answerTaskPrompt(id: number, userId: string, answer: string, answeredAt: Date): Promise<TaskPrompt | undefined>;
+  answerTaskPrompt(id: number, userId: string, answer: "done" | "not_done", answeredAt: Date): Promise<TaskPrompt | undefined>;
   /**
    * Les `limit` dernières alarmes d'un utilisateur, triées de la plus récente à la plus
    * ancienne — exactement ce que consomme `unansweredStreak` (voir
@@ -2811,17 +2824,22 @@ export class DatabaseStorage implements IStorage {
     userId: string,
     day: string,
     prompts: Array<{ taskId: number; scheduledFor: Date }>,
+    now: Date,
   ): Promise<TaskPrompt[]> {
     const startOfDay = new Date(`${day}T00:00:00`);
     const endOfDay = new Date(`${day}T23:59:59.999`);
     return await db.transaction(async (tx) => {
-      // Ne remplace QUE les alarmes sans réponse de ce jour : une alarme déjà répondue
-      // n'est jamais effacée par une reprogrammation.
+      // Ne remplace QUE les alarmes FUTURES du jour (scheduled_for > now). Une alarme déjà
+      // répondue n'est jamais effacée (elle est la trace qu'on garde), et une alarme ÉCHUE
+      // sans réponse non plus : elle EST une notification ignorée, le signal que la soupape
+      // (unansweredStreak) doit voir. Sans le `gte(scheduledFor, now)` ci-dessous, une
+      // reprogrammation en cours de journée (repack, drag-and-drop, replanification 15 min)
+      // effacerait silencieusement cet historique et la soupape ne se déclencherait jamais.
       await tx.delete(taskPrompts).where(and(
         eq(taskPrompts.userId, userId),
         gte(taskPrompts.scheduledFor, startOfDay),
         lte(taskPrompts.scheduledFor, endOfDay),
-        isNull(taskPrompts.answeredAt),
+        gte(taskPrompts.scheduledFor, now),
       ));
       if (prompts.length === 0) return [];
       return await tx.insert(taskPrompts)
@@ -2831,7 +2849,7 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async answerTaskPrompt(id: number, userId: string, answer: string, answeredAt: Date): Promise<TaskPrompt | undefined> {
+  async answerTaskPrompt(id: number, userId: string, answer: "done" | "not_done", answeredAt: Date): Promise<TaskPrompt | undefined> {
     const [updated] = await db.update(taskPrompts)
       .set({ answer, answeredAt })
       .where(and(eq(taskPrompts.id, id), eq(taskPrompts.userId, userId)))
