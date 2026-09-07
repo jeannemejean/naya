@@ -66,6 +66,58 @@ Si la réponse ne remonte pas quand l'app est fermée, la promesse tombe et il f
 
 Écrire la feature avant de lever ces deux points, c'est risquer de reconstruire la saga des builds **et** de découvrir à la fin que la promesse centrale ne tient pas.
 
+## Réponses aux deux inconnues
+
+Spike du 2026-09-07, branche `capter-le-resultat`, dépôt `mobile/` commits `d3034ad` et `476960a`.
+Harnais jetable, aucun code de feature.
+
+### Question A — l'entitlement : **non, l'usage local n'en est pas exempt**
+
+`expo install expo-notifications` n'ajoute **aucune** entrée dans les `plugins` d'`app.json` —
+vérifié, la liste est inchangée. Le paquet est une dépendance seule, exactement la configuration
+des builds #5 à #9. Cela n'a rien changé : build production `e5fb4117-85c1-4fb9-89f1-0fe72b4f02d6`,
+statut `ERRORED`, code `XCODE_BUILD_ERROR` :
+
+```
+Provisioning profile "*[expo] app.hellonaya.naya AppStore 2026-06-22T18:44:56.383Z"
+  doesn't support the Push Notifications capability.  (in target 'Naya')
+  doesn't include the aps-environment entitlement.    (in target 'Naya')
+```
+
+iOS accorde `aps-environment` au niveau de l'**App ID**. Il ne distingue pas « programmer une
+alarme locale » de « recevoir du push distant » : la présence du module suffit.
+
+Le build **simulateur** (`ddcaee70`), lui, passe, et ses entitlements sont vides — mais ce n'est
+pas une contradiction et pas une preuve : un build simulateur ne passe pas par le provisioning.
+Seul le build signé tranche.
+
+**Ce que la réponse ne remet PAS en cause.** Le design reste intact : notification locale
+programmée, pas de jeton push, pas de worker serveur, pas de configuration APNs, fonctionne hors
+ligne. Le coût est une opération de signature **unique** — activer la capacité Push Notifications
+sur l'App ID puis régénérer le profil (`npx eas-cli credentials` en mode interactif, qui exige une
+authentification Apple). Ce n'est pas le chantier APNs redouté au §« L'inconnue à lever ».
+
+### Question B — la réponse app fermée : **non tranchée**
+
+Le harnais est en place et fonctionne : `lib/spike-notifications.ts` programme une notification
+locale à +60 s avec deux actions marquées `opensAppToForeground: false`, et l'écoute vit dans
+`app/_layout.tsx` — **pas** dans l'écran Profil, qui n'est jamais monté quand iOS relance une app
+fermée pour traiter une action ; y écouter aurait garanti un faux négatif. La trace passe par
+`lib/crash.ts`, dont le motif persiste-puis-rejoue survit à la mort du process pendant le
+lancement en tâche de fond.
+
+Ce qui bloque est matériel, pas technique : répondre à B exige trois gestes dans l'interface
+(autoriser les notifications, fermer l'app, appuyer sur « Fait ») et l'automatisation du clic
+n'est pas disponible sur ce poste — `simctl` n'expose aucune commande d'appui et `osascript` n'a
+pas l'autorisation d'accessibilité.
+
+**Recommandation :** trancher B sur l'**iPhone réel** plutôt que sur le simulateur, une fois la
+capacité Push activée pour A. Le comportement de relance après terminaison est précisément ce qui
+diffère le plus entre simulateur et appareil, et c'est l'appareil qui compte.
+
+**Tant que B n'est pas tranchée, les tâches 6 et 7 du plan restent suspendues.** Si la réponse est
+« non », elles sont à repenser autour d'une file locale vidée à la prochaine ouverture.
+
 ## Architecture
 
 ### §1 — La programmation des alarmes (mobile)
