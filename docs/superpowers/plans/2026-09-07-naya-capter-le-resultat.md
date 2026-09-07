@@ -114,10 +114,21 @@ Retire l'écran de test jetable. **Garde** `expo-notifications` installé si les
 
 - [ ] **Étape 7 : commit**
 
+**⚠️ `mobile/` est un dépôt git AUTONOME** (`git init` séparé, branche `main`), pas un sous-module suivi par le dépôt web. Deux commits, dans deux dépôts :
+
 ```bash
-git add mobile/package.json mobile/package-lock.json mobile/app.json docs/superpowers/specs/2026-09-07-naya-capter-le-resultat-design.md
+# 1) le dépôt mobile
+cd mobile
+git add package.json package-lock.json app.json
+git commit -m "spike(resultat): expo-notifications réinstallé pour lever les inconnues iOS"
+
+# 2) le dépôt web, pour le compte rendu
+cd ..
+git add docs/superpowers/specs/2026-09-07-naya-capter-le-resultat-design.md
 git commit -m "spike(resultat): réponses aux deux inconnues iOS — entitlement et réponse app fermée"
 ```
+
+Cette séparation vaut pour **toutes** les tâches de ce plan : tout ce qui vit sous `mobile/` se commite depuis `mobile/`, jamais depuis la racine. Le `buildNumber` d'`app.json` doit être incrémenté avant chaque soumission TestFlight.
 
 > **PORTE.** Ne commence pas la tâche 2 avant que les deux réponses soient écrites. Si l'une est négative, rapporte à Jeanne : le plan change.
 
