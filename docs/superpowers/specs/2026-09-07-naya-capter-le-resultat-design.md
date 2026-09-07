@@ -97,7 +97,49 @@ ligne. Le coût est une opération de signature **unique** — activer la capaci
 sur l'App ID puis régénérer le profil (`npx eas-cli credentials` en mode interactif, qui exige une
 authentification Apple). Ce n'est pas le chantier APNs redouté au §« L'inconnue à lever ».
 
-### Question B — la réponse app fermée : **non tranchée**
+### Question A — suite : **levée le 2026-09-07 au soir**
+
+`npx eas-cli credentials` en interactif (session Apple de Jeanne, seule à pouvoir la mener) a
+régénéré le profil de provisioning avec la capacité Push. Le build production
+`2064f081-731f-4b3a-9609-70617755a6d7` (buildNumber 23) **passe** — celui qui, deux heures plus
+tôt et sur le même code, échouait sur `aps-environment`. Aucune clé APNs n'a été créée : le menu
+« Push Notifications » d'EAS concerne le push distant, dont ce design n'a pas besoin.
+
+Coût final de l'entitlement : une opération de signature unique. Le chantier APNs redouté
+n'existe pas.
+
+### Question B — la réponse app fermée : **OUI**
+
+Testé sur l'iPhone de Jeanne, build TestFlight 23, app **complètement fermée** (balayée hors du
+sélecteur d'apps, pas seulement en arrière-plan). Appui long sur la notification de l'écran
+verrouillé, bouton « Fait ». L'app n'a pas été ouverte.
+
+Trace relevée sur `/api/mobile-crash` :
+
+```
+at     : 2026-09-07T19:47:31.747Z
+message: [spike-notif] réponse reçue (app fermée, au démarrage)
+stack  : {"action":"spike_fait","at":"2026-09-07T19:47:28.079Z"}
+rejoué : None
+```
+
+Lecture : geste à 19:47:28 ; iOS relance l'app **en tâche de fond**, sans rien afficher ; la
+réponse en attente est lue au démarrage et postée 3,6 s plus tard. `rejoué: None` = envoyée en
+direct, et non rattrapée au lancement suivant par le motif persiste-puis-rejoue.
+
+La branche qui a produit la trace est `getLastNotificationResponseAsync()` — celle du démarrage,
+pas le listener live. C'est la confirmation que le processus était bien **terminé** : c'est
+précisément pourquoi l'écoute avait été placée à la racine et non dans l'écran Profil, qui n'est
+jamais monté dans ce cas.
+
+**Conséquence : le design tient intégralement.** Notification locale programmée, deux actions
+`opensAppToForeground: false`, réponse sans ouvrir l'app, aucune file locale de repli à inventer.
+Les tâches 6 et 7 du plan se font telles qu'écrites.
+
+Réserve honnête : le journal seul ne distingue pas un réveil en tâche de fond d'une ouverture
+manuelle — c'est le témoignage de Jeanne (« je n'ai pas ouvert l'app ») qui ferme ce point.
+
+### Question B — état intermédiaire au moment de la rédaction (conservé pour mémoire)
 
 Le harnais est en place et fonctionne : `lib/spike-notifications.ts` programme une notification
 locale à +60 s avec deux actions marquées `opensAppToForeground: false`, et l'écoute vit dans
