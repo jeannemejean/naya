@@ -150,7 +150,7 @@ import {
   type TaskPrompt,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
-import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
+import { eq, and, desc, gt, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
@@ -2832,14 +2832,20 @@ export class DatabaseStorage implements IStorage {
       // Ne remplace QUE les alarmes FUTURES du jour (scheduled_for > now). Une alarme déjà
       // répondue n'est jamais effacée (elle est la trace qu'on garde), et une alarme ÉCHUE
       // sans réponse non plus : elle EST une notification ignorée, le signal que la soupape
-      // (unansweredStreak) doit voir. Sans le `gte(scheduledFor, now)` ci-dessous, une
+      // (unansweredStreak) doit voir. Sans le `gt(scheduledFor, now)` ci-dessous, une
       // reprogrammation en cours de journée (repack, drag-and-drop, replanification 15 min)
       // effacerait silencieusement cet historique et la soupape ne se déclencherait jamais.
+      //
+      // `gt` et non `gte` : une alarme tombant PILE sur `now` est déjà échue. C'est la
+      // définition que `unansweredStreak` applique de son côté (`scheduledFor <= now`,
+      // bornes inclusives) ; les deux extrémités de la couture doivent trancher le cas
+      // limite pareil, sinon une alarme est à la fois « ignorée » pour la soupape et
+      // « future » pour le remplacement — et elle disparaît avant d'avoir été comptée.
       await tx.delete(taskPrompts).where(and(
         eq(taskPrompts.userId, userId),
         gte(taskPrompts.scheduledFor, startOfDay),
         lte(taskPrompts.scheduledFor, endOfDay),
-        gte(taskPrompts.scheduledFor, now),
+        gt(taskPrompts.scheduledFor, now),
       ));
       if (prompts.length === 0) return [];
       return await tx.insert(taskPrompts)
