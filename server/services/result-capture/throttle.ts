@@ -10,14 +10,19 @@
  * distinction que `task_prompts` existe : `answeredAt IS NULL` = ignorée, et ça n'entre
  * jamais dans les observations du retour immédiat.
  *
- * Hypothèse (non couverte par le brief, notée ici plutôt que devinée en silence) :
- * `PromptRecord` ne porte pas d'heure prévue. La règle « une notification future en
- * attente n'est pas une absence de réponse » est donc portée par l'appelant (tâche 5) :
- * il ne construit `prompts` qu'à partir des notifications dont l'heure prévue est déjà
- * passée. Cette fonction reste pure et ignore la notion de « maintenant ».
+ * `unansweredStreak` GARANTIT elle-même — sans dépendre de la discipline de
+ * l'appelant — qu'une alarme dont l'échéance (`scheduledFor`) n'est pas encore passée
+ * n'est jamais comptée comme une absence de réponse : elle n'existe tout simplement pas
+ * pour ce calcul. C'est nécessaire parce que le stockage lit « les N dernières alarmes,
+ * triées de la plus récente à la plus ancienne » sans filtrer sur l'échéance — si des
+ * alarmes futures (donc forcément sans réponse) se retrouvent en tête de cette liste, la
+ * fonction doit les ignorer elle-même plutôt que de compter sur le fait que personne ne
+ * les lui passera. `now` entre par la signature : aucune horloge implicite.
  */
 
 export interface PromptRecord {
+  /** Heure prévue de l'alarme. */
+  scheduledFor: Date;
   /** `null` = restée sans réponse. */
   answeredAt: Date | null;
 }
@@ -25,10 +30,20 @@ export interface PromptRecord {
 /** Notifications ignorées d'affilée avant que Naya se calme. Décidé avec Jeanne. */
 export const SEUIL_SOUPAPE = 3;
 
-/** Série d'ignorées la plus récente. `prompts` est trié du plus récent au plus ancien. */
-export function unansweredStreak(prompts: PromptRecord[]): number {
+/**
+ * Série d'ignorées la plus récente. `prompts` est trié du plus récent au plus ancien.
+ * `now` est l'instant présent, fourni par l'appelant (fonction pure, pas d'horloge
+ * implicite).
+ *
+ * Une alarme dont `scheduledFor` est encore à venir n'est ni une absence de réponse, ni
+ * un « pas fait » : elle est exclue du calcul, où qu'elle se trouve dans la liste.
+ * Bornes inclusives : une alarme échue pile à `now` compte comme échue (même convention
+ * que la fenêtre d'attribution ailleurs dans ce dépôt, `attribute.ts`).
+ */
+export function unansweredStreak(prompts: PromptRecord[], now: Date): number {
+  const echues = prompts.filter((p) => p.scheduledFor.getTime() <= now.getTime());
   let n = 0;
-  for (const p of prompts) {
+  for (const p of echues) {
     if (p.answeredAt !== null) break;
     n++;
   }
