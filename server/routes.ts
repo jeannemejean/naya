@@ -3,8 +3,8 @@ import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
-import { waitlist } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { waitlist, taskPrompts, tasks } from "@shared/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { 
   generateContent, 
@@ -45,6 +45,8 @@ import { contextualRecommendationsEngine } from "./services/contextual-recommend
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
+import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
+import { buildImmediateInsight, type TaskAnswer } from "./services/result-capture/insight";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -10365,6 +10367,151 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     } catch (error) {
       console.error("Error archiving memory:", error);
       res.status(500).json({ message: "Failed to archive memory" });
+    }
+  });
+
+  // ─── Task Prompts — capter le résultat ─────────────────────────────────────────
+  // Notification locale posée à l'heure de fin de chaque tâche. Règle non négociable,
+  // tenue ici au niveau des routes (cf. commentaire de tête de insight.ts) : une alarme
+  // restée SANS réponse n'entre jamais dans buildImmediateInsight et n'est jamais
+  // convertie en "not_done" — absence de réponse ≠ réponse négative.
+
+  // Fenêtre d'historique pour la soupape ET l'insight. Hypothèse (non couverte par le
+  // brief, cf. commit) : 30 alarmes suffisent à couvrir largement le seuil de la soupape
+  // (3) et le minimum d'observations de l'insight par catégorie/moment (5).
+  const RECENT_TASK_PROMPTS_LOOKBACK = 30;
+
+  async function computeTaskPromptInsight(userId: string): Promise<string | null> {
+    const recent = await storage.getRecentTaskPrompts(userId, RECENT_TASK_PROMPTS_LOOKBACK);
+    // Seules les alarmes RÉPONDUES entrent dans l'insight — jamais une alarme ignorée.
+    const answered = recent.filter(
+      (p) => p.answeredAt !== null && (p.answer === "done" || p.answer === "not_done"),
+    );
+    if (answered.length === 0) return null;
+
+    const taskIds = Array.from(new Set(answered.map((p) => p.taskId)));
+    const relatedTasks = taskIds.length > 0
+      ? await db.select({ id: tasks.id, category: tasks.category }).from(tasks).where(inArray(tasks.id, taskIds))
+      : [];
+    const categoryByTaskId = new Map(relatedTasks.map((t) => [t.id, t.category]));
+
+    const answers: TaskAnswer[] = answered.map((p) => ({
+      category: categoryByTaskId.get(p.taskId) ?? null,
+      scheduledHour: p.scheduledFor.getHours(),
+      done: p.answer === "done",
+    }));
+
+    return buildImmediateInsight(answers);
+  }
+
+  // GET /api/task-prompts/today — les alarmes à poser aujourd'hui : une par tâche non
+  // terminée du jour ayant un scheduledEndTime. Enregistre les lignes task_prompts
+  // correspondantes (idempotent, via replaceTaskPromptsForDay) et indique si la
+  // fréquence des notifications doit se réduire (soupape).
+  app.get('/api/task-prompts/today', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const now = new Date();
+      const today = sharedFormatDate(now);
+
+      const todaysTasks = await storage.getTasksInRange(userId, today, today);
+      const pending = todaysTasks.filter(
+        (t) => !t.completed && typeof t.scheduledEndTime === 'string' && /^\d{2}:\d{2}$/.test(t.scheduledEndTime),
+      );
+
+      const alarms = pending.map((t) => ({
+        taskId: t.id,
+        title: t.title,
+        scheduledFor: new Date(`${t.scheduledDate}T${t.scheduledEndTime}:00`),
+      }));
+
+      await storage.replaceTaskPromptsForDay(
+        userId,
+        today,
+        alarms.map((a) => ({ taskId: a.taskId, scheduledFor: a.scheduledFor })),
+        now,
+      );
+
+      const recent = await storage.getRecentTaskPrompts(userId, RECENT_TASK_PROMPTS_LOOKBACK);
+      const streak = unansweredStreak(
+        recent.map((p) => ({ scheduledFor: p.scheduledFor, answeredAt: p.answeredAt })),
+        now,
+      );
+
+      res.json({
+        prompts: alarms,
+        reduceFrequency: shouldReduceFrequency(streak),
+      });
+    } catch (error) {
+      console.error("Error building today's task prompts:", error);
+      res.status(500).json({ message: "Failed to build today's task prompts" });
+    }
+  });
+
+  // POST /api/task-prompts/:taskId/answer — enregistre la réponse à une alarme.
+  // "done" marque la tâche terminée avec completedAt = maintenant — actualDuration n'est
+  // JAMAIS écrite : répondre "fait" à l'heure de fin ne dit rien de l'heure de début.
+  // "not_done" n'écrit rien de plus qu'une trace de la réponse (la tâche reste non
+  // terminée). Validation stricte : jamais de 500 sur un corps malformé.
+  app.post('/api/task-prompts/:taskId/answer', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const taskId = Number(req.params.taskId);
+      if (!Number.isInteger(taskId)) {
+        return res.status(400).json({ message: "taskId must be an integer" });
+      }
+
+      const { answer, scheduledFor } = req.body ?? {};
+      if (answer !== "done" && answer !== "not_done") {
+        return res.status(400).json({ message: "answer must be 'done' or 'not_done'" });
+      }
+      if (typeof scheduledFor !== "string" && typeof scheduledFor !== "number") {
+        return res.status(400).json({ message: "scheduledFor is required" });
+      }
+      const scheduledForDate = new Date(scheduledFor);
+      if (Number.isNaN(scheduledForDate.getTime())) {
+        return res.status(400).json({ message: "scheduledFor must be a parsable date" });
+      }
+
+      // Appartenance de la tâche — jamais d'écriture pour une tâche d'un autre compte.
+      const task = await storage.getTask(taskId);
+      if (!task || task.userId !== userId) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      const [prompt] = await db.select().from(taskPrompts).where(and(
+        eq(taskPrompts.taskId, taskId),
+        eq(taskPrompts.userId, userId),
+        eq(taskPrompts.scheduledFor, scheduledForDate),
+      ));
+      if (!prompt) {
+        return res.status(404).json({ message: "Task prompt not found" });
+      }
+
+      const now = new Date();
+      await storage.answerTaskPrompt(prompt.id, userId, answer, now);
+
+      if (answer === "done") {
+        await storage.updateTask(taskId, { completed: true, completedAt: now } as any);
+      }
+
+      const insight = await computeTaskPromptInsight(userId);
+      res.json({ insight });
+    } catch (error) {
+      console.error("Error answering task prompt:", error);
+      res.status(500).json({ message: "Failed to answer task prompt" });
+    }
+  });
+
+  // GET /api/task-prompts/insight — le dernier retour, pour que l'app le réaffiche.
+  app.get('/api/task-prompts/insight', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const insight = await computeTaskPromptInsight(userId);
+      res.json({ insight });
+    } catch (error) {
+      console.error("Error fetching task prompt insight:", error);
+      res.status(500).json({ message: "Failed to fetch task prompt insight" });
     }
   });
 
