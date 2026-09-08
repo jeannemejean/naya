@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parisWallClockToInstant, parisDayBoundsUTC, parisHourOf, parisTodayString } from "./timezone";
+import { parisWallClockToInstant, parisDayBoundsUTC, parisHourOf, parisTodayString, localWallClock } from "./timezone";
 
 // Le process de prod tourne en UTC (pas de TZ configuré, pas de Dockerfile, pas de
 // railway.toml). `scheduledEndTime` est une heure murale de Paris ("HH:MM"), donc toute
@@ -238,5 +238,37 @@ describe("parisWallClockToInstant — comportement figé pour l'heure INEXISTANT
   it("2025-03-30 02:30 (n'existe pas) → même choix déterministe une autre année", () => {
     const got = parisWallClockToInstant("2025-03-30", "02:30");
     expect(parisWallClockOf(got)).toBe("03:30");
+  });
+});
+
+describe("localWallClock — heure murale + jour de semaine dans un fuseau IANA arbitraire (jamais celui du process)", () => {
+  it("Europe/Paris, été (UTC+2) : 12:05 UTC un mercredi → 14:05 murale, jour 'wed'", () => {
+    const instant = new Date("2026-07-15T12:05:00.000Z");
+    expect(localWallClock("Europe/Paris", instant)).toEqual({ minuteOfDay: 14 * 60 + 5, dayAbbr: "wed" });
+  });
+
+  it("Europe/Paris, hiver (UTC+1) : 13:05 UTC un jeudi → 14:05 murale, jour 'thu'", () => {
+    const instant = new Date("2026-01-15T13:05:00.000Z");
+    expect(localWallClock("Europe/Paris", instant)).toEqual({ minuteOfDay: 14 * 60 + 5, dayAbbr: "thu" });
+  });
+
+  it("UTC : l'heure murale est l'heure UTC telle quelle", () => {
+    const instant = new Date("2026-08-30T09:15:00.000Z"); // dimanche
+    expect(localWallClock("UTC", instant)).toEqual({ minuteOfDay: 9 * 60 + 15, dayAbbr: "sun" });
+  });
+
+  it("minuit murale → minuteOfDay 0, jamais 24 (même piège hour12 que parisHourOf)", () => {
+    // 23:00 UTC un mercredi de janvier = 00:00 Paris le jeudi (UTC+1).
+    const instant = new Date("2026-01-14T23:00:00.000Z");
+    expect(localWallClock("Europe/Paris", instant)).toEqual({ minuteOfDay: 0, dayAbbr: "thu" });
+  });
+
+  it("indépendant du fuseau du process qui exécute le test : le fuseau vient uniquement du paramètre", () => {
+    // Ce test tourne aussi bien sous TZ=UTC (CI) que TZ=Europe/Paris (poste local) —
+    // le résultat ne doit varier qu'avec le paramètre `timeZone`, jamais avec l'env du runner.
+    const instant = new Date("2026-07-15T12:05:00.000Z");
+    expect(localWallClock("Europe/Paris", instant).dayAbbr).toBe("wed");
+    expect(localWallClock("UTC", instant).dayAbbr).toBe("wed");
+    expect(localWallClock("UTC", instant).minuteOfDay).toBe(12 * 60 + 5);
   });
 });

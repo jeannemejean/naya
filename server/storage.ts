@@ -464,6 +464,13 @@ export interface IStorage {
   getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
   getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
   countOutreachSentSince(userId: string, since: Date, platform?: string): Promise<number>;
+  /**
+   * Instants des envois réussis d'un user depuis `since` (garde de risque LinkedIn —
+   * `prospection-linkedin-guard.ts` a besoin des instants eux-mêmes, pas seulement d'un
+   * compte, pour dériver à la fois le plafond 24h glissant et le plafond 7j glissant
+   * d'un même relevé).
+   */
+  getOutreachSentTimestampsSince(userId: string, since: Date, platform?: string): Promise<Date[]>;
   getCampaignStepAnalytics(campaignId: number): Promise<{
     byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
     byChannel: { channel: string; sent: number; replied: number }[];
@@ -1824,6 +1831,18 @@ export class DatabaseStorage implements IStorage {
         ...(platform ? [eq(outreachMessages.platform, platform)] : []),
       ));
     return rows.length;
+  }
+
+  // Instants des envois réussis (garde de risque LinkedIn) — voir la doc d'interface.
+  async getOutreachSentTimestampsSince(userId: string, since: Date, platform?: string): Promise<Date[]> {
+    const rows = await db.select({ sentAt: outreachMessages.sentAt }).from(outreachMessages)
+      .where(and(
+        eq(outreachMessages.userId, userId),
+        isNotNull(outreachMessages.sentAt),
+        gte(outreachMessages.sentAt, since),
+        ...(platform ? [eq(outreachMessages.platform, platform)] : []),
+      ));
+    return rows.map((r) => r.sentAt as Date);
   }
 
   // Analytics de séquence par étape et par canal (Task 9). Agrégation faite côté TS

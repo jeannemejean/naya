@@ -17,6 +17,8 @@ vi.mock("../storage", () => ({
     getUserPreferences: vi.fn(),
     createOutreachMessage: vi.fn(),
     countOutreachSentSince: vi.fn(),
+    getOutreachSentTimestampsSince: vi.fn(),
+    updateUserPreferences: vi.fn(),
     claimStepSend: vi.fn(),
     markStepSendSent: vi.fn(),
     releaseStepSend: vi.fn(),
@@ -32,10 +34,6 @@ vi.mock("./sequence-message", () => ({
 vi.mock("./linkedin", () => ({
   linkedinConfigured: vi.fn(() => false),
   sendLinkedInStep: vi.fn(),
-  // Recalculé à CHAQUE (ré)invocation de la factory (donc à chaque vi.resetModules())
-  // pour permettre au test « plafond quotidien LinkedIn » de le stubber via l'env,
-  // exactement comme LINKEDIN_DAILY_CAP est calculé dans le vrai module ./linkedin.
-  LINKEDIN_DAILY_CAP: Number(process.env.LINKEDIN_DAILY_CAP) || 25,
 }));
 
 import { planNextStep, withinSendingWindow, daysBetween, runProspectionSender } from "./prospection-sender";
@@ -160,6 +158,12 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     prospectionSenderCountry: null,
     prospectionSendgridApiKey: null,
     linkedinUnipileAccountId: null,
+    // Compte connecté il y a bien plus de 15 jours : palier mature (15/jour) de la garde
+    // de risque LinkedIn par défaut dans ces tests — les scénarios qui veulent tester le
+    // ramp-up ou la garde le surchargent explicitement (voir tests dédiés ci-dessous).
+    linkedinAccountConnectedAt: new Date(Date.now() - 60 * 86400000),
+    linkedinRestrictedAt: null,
+    linkedinRestrictedReason: null,
     ...overrides,
   });
 
@@ -187,6 +191,8 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.updateLeadSequenceState as any).mockResolvedValue(null);
     (storage.createOutreachMessage as any).mockResolvedValue({});
     (storage.countOutreachSentSince as any).mockResolvedValue(0);
+    (storage.getOutreachSentTimestampsSince as any).mockResolvedValue([]);
+    (storage.updateUserPreferences as any).mockResolvedValue(undefined);
     (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Corps du message" });
     (storage.claimStepSend as any).mockResolvedValue(true);
     (storage.markStepSendSent as any).mockResolvedValue(undefined);
@@ -582,56 +588,152 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(advance[1]).toMatchObject({ currentStep: 1 });
     });
 
-    it("plafond quotidien LinkedIn (LINKEDIN_DAILY_CAP) : une étape sautée (déjà réservée) ne consomme pas le plafond", async () => {
-      // Même logique que le test DAILY_CAP email : LINKEDIN_DAILY_CAP est lu UNE
-      // SEULE FOIS au chargement du module ./linkedin. On réinitialise le registre
-      // de modules puis on stubbe l'env AVANT de réimporter dynamiquement, pour que
-      // le worker relu voie bien LINKEDIN_DAILY_CAP=1.
-      vi.resetModules();
-      vi.stubEnv("LINKEDIN_DAILY_CAP", "1");
-      try {
-        const { storage: freshStorage } = await import("../storage");
-        const { generateStepMessage: freshGenerateStepMessage } = await import("./sequence-message");
-        const { linkedinConfigured: freshLinkedinConfigured, sendLinkedInStep: freshSendLinkedInStep } = await import(
-          "./linkedin"
-        );
-        const { runProspectionSender: freshRunProspectionSender } = await import("./prospection-sender");
+    it("plafond hebdomadaire LinkedIn (garde de risque) : une étape sautée (déjà réservée) ne consomme pas le plafond", async () => {
+      // Même invariant que le test DAILY_CAP email, porté sur la garde de risque
+      // LinkedIn : compte mature (cap quotidien 15), 79 envois DÉJÀ dans la fenêtre
+      // glissante de 7 jours mais hors des dernières 24h (donc le plafond quotidien
+      // n'est PAS en cause ici) — il ne reste qu'UNE place sous le plafond
+      // hebdomadaire de 80. Le prospect 1 est sauté (déjà réservé) : s'il consommait
+      // quand même cette place, le prospect 2 serait refusé par la garde.
+      const HOUR = 60 * 60 * 1000;
+      const seventyNineOldSends = Array.from({ length: 79 }, (_, i) => new Date(Date.now() - 72 * HOUR - i * HOUR));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getOutreachSentTimestampsSince as any).mockResolvedValue(seventyNineOldSends);
 
-        const state1 = baseState({ id: 1, leadId: 1 });
-        const state2 = baseState({ id: 2, leadId: 2 });
+      const state1 = baseState({ id: 1, leadId: 1 });
+      const state2 = baseState({ id: 2, leadId: 2 });
+      (storage.getDueEnrollments as any).mockResolvedValue([state1, state2]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        baseLead({ id: 1, linkedinUrl: "https://linkedin.com/in/lead1" }),
+        baseLead({ id: 2, linkedinUrl: "https://linkedin.com/in/lead2" }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (storage.claimStepSend as any)
+        .mockResolvedValueOnce(false) // prospect 1 : déjà réservée → sautée, ne doit PAS consommer le plafond
+        .mockResolvedValueOnce(true); // prospect 2 : doit partir quand même
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
 
-        (freshLinkedinConfigured as any).mockReturnValue(true);
-        (freshSendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
-        (freshStorage.getDueEnrollments as any).mockResolvedValue([state1, state2]);
-        (freshStorage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
-        (freshStorage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
-        (freshStorage.getLeadSignals as any).mockResolvedValue(baseSignals());
-        (freshStorage.getLeads as any).mockResolvedValue([
-          baseLead({ id: 1, linkedinUrl: "https://linkedin.com/in/lead1" }),
-          baseLead({ id: 2, linkedinUrl: "https://linkedin.com/in/lead2" }),
-        ]);
-        (freshStorage.getBrandDna as any).mockResolvedValue(null);
-        (freshStorage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
-        (freshStorage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
-        (freshStorage.countOutreachSentSince as any).mockResolvedValue(0);
-        (freshStorage.updateLeadSequenceState as any).mockResolvedValue(null);
-        (freshStorage.createOutreachMessage as any).mockResolvedValue({});
-        (freshStorage.markStepSendSent as any).mockResolvedValue(undefined);
-        (freshStorage.releaseStepSend as any).mockResolvedValue(undefined);
-        (freshStorage.claimStepSend as any)
-          .mockResolvedValueOnce(false) // prospect 1 : déjà réservée → sautée, ne doit PAS consommer le plafond LinkedIn
-          .mockResolvedValueOnce(true); // prospect 2 : doit partir quand même malgré LINKEDIN_DAILY_CAP=1
-        (freshGenerateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      await runProspectionSender();
 
-        await freshRunProspectionSender();
+      // Un seul prospect a réellement pu réserver (le second) ; s'il n'était pas
+      // parti, ce serait la preuve que le premier (sauté) a quand même consommé
+      // la dernière place sous le plafond hebdomadaire.
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+    });
 
-        // Un seul prospect a réellement pu réserver (le second) ; s'il n'était pas
-        // parti, ce serait la preuve que le premier (sauté) a quand même consommé
-        // le plafond LinkedIn de 1.
-        expect(freshSendLinkedInStep).toHaveBeenCalledTimes(1);
-      } finally {
-        vi.unstubAllEnvs();
-      }
+    it("plafond hebdomadaire LinkedIn atteint (80/80) → refusé par la garde, aucun appel Unipile, aucune réservation", async () => {
+      const HOUR = 60 * 60 * 1000;
+      const eightySends = Array.from({ length: 80 }, (_, i) => new Date(Date.now() - 72 * HOUR - i * HOUR));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getOutreachSentTimestampsSince as any).mockResolvedValue(eightySends);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("compte LinkedIn en restriction persistée → aucune retentative automatique, aucun appel Unipile", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(
+        openPrefs({
+          linkedinUnipileAccountId: "acc1",
+          linkedinRestrictedAt: new Date(Date.now() - 86400000),
+          linkedinRestrictedReason: "chat_401/invite_403 Forbidden",
+        }),
+      );
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("signal de restriction Unipile (401/403) à l'envoi → persiste la restriction pour cet utilisateur", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: false, action: "none", error: "chat_401/invite_403 Forbidden" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.updateUserPreferences).toHaveBeenCalledWith(
+        "u1",
+        expect.objectContaining({ linkedinRestrictedAt: expect.any(Date), linkedinRestrictedReason: "chat_401/invite_403 Forbidden" }),
+      );
+      // Comme tout échec franc : la réservation est libérée, la séquence n'avance pas.
+      expect(storage.releaseStepSend).toHaveBeenCalledTimes(1);
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("échec LinkedIn transitoire (5xx, pas de signal de restriction) → ne persiste RIEN", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: false, action: "none", error: "chat_500/invite_502 Internal Server Error" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.updateUserPreferences).not.toHaveBeenCalled();
+    });
+
+    it("historique des envois LinkedIn illisible (lecture échouée) → la garde refuse, aucun appel Unipile", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getOutreachSentTimestampsSince as any).mockRejectedValue(new Error("DB down"));
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
     });
 
     it("échec d'écriture du journal après envoi Unipile réussi (DB down) : réservation marquée sent, la séquence avance quand même", async () => {

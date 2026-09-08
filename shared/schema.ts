@@ -173,6 +173,16 @@ export const userPreferences = pgTable("user_preferences", {
   aiSpendPeriod: text("ai_spend_period"), // "YYYY-MM" du compteur courant
   // Compte LinkedIn connecté via Unipile (pour l'envoi automatique de messages LinkedIn).
   linkedinUnipileAccountId: text("linkedin_unipile_account_id"),
+  // Instant de connexion du compte LinkedIn Unipile — point de départ de la montée en
+  // charge (cf. prospection-linkedin-guard.ts). Posé au moment du sync (routes.ts),
+  // jamais recalculé ensuite : reconnecter le même compte ne doit pas réinitialiser
+  // le ramp-up (mais un NOUVEAU compte, si jamais reconnecté à un id différent, si).
+  linkedinAccountConnectedAt: timestamp("linkedin_account_connected_at"),
+  // État de restriction LinkedIn (garde de risque). Non-null → le worker de prospection
+  // arrête TOUT envoi LinkedIn pour cet utilisateur, sans retentative automatique.
+  // Levée UNIQUEMENT par une action humaine (endpoint dédié) — jamais automatiquement.
+  linkedinRestrictedAt: timestamp("linkedin_restricted_at"),
+  linkedinRestrictedReason: text("linkedin_restricted_reason"),
   // Consignes de rédaction GLOBALES pour la génération de messages de prospection (toutes campagnes).
   messageInstructions: text("message_instructions"),
   updatedAt: timestamp("updated_at").defaultNow(),

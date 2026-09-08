@@ -64,6 +64,13 @@
       "when": 1788791482122,
       "tag": "0008_gifted_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788877827271,
+      "tag": "0009_lazy_infant_terrible",
+      "breakpoints": true
     }
   ]
 }

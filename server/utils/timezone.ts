@@ -153,3 +153,39 @@ export function parisTodayString(now: Date): string {
   // Locale en-CA : le seul format standard dont Intl garantit la sortie en YYYY-MM-DD.
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(now);
 }
+
+/**
+ * Heure murale (minutes depuis minuit, 0-1439) et jour de semaine abrégé ("mon"…"sun")
+ * d'un instant, dans un fuseau IANA ARBITRAIRE (pas seulement Europe/Paris) — pour les
+ * gardes qui dépendent du fuseau propre à CHAQUE utilisateur (`userPreferences.timezone`),
+ * comme la fenêtre d'envoi LinkedIn (`prospection-linkedin-guard.ts`).
+ *
+ * Contrairement à `parisWallClockToInstant` (heure murale → instant), ce sens de
+ * conversion (instant → heure murale) n'a PAS besoin de la correction DST en deux passes :
+ * `Intl.DateTimeFormat` avec un `timeZone` explicite lit directement le bon régime
+ * (été/hiver, ou équivalent) pour l'instant DONNÉ — il n'y a qu'une seule réponse possible,
+ * jamais d'heure ambiguë ni inexistante dans ce sens-là. `hourCycle: 'h23'` (pas
+ * `hour12: false`) pour que minuit rende bien "00" et non "24" selon l'ICU du runtime —
+ * même piège que `parisHourOf`.
+ *
+ * PUR : aucune horloge implicite, aucun accès base de données. `now`/`timeZone` entrent
+ * par la signature, donc indépendant du fuseau du PROCESS qui exécute l'appelant (UTC en
+ * prod, potentiellement autre chose en local) — vérifié par test sous TZ=UTC et
+ * TZ=Europe/Paris.
+ */
+export function localWallClock(timeZone: string, instant: Date): { minuteOfDay: number; dayAbbr: string } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+
+  const byType: Record<string, string> = {};
+  for (const part of parts) byType[part.type] = part.value;
+
+  const minuteOfDay = Number(byType.hour) * 60 + Number(byType.minute);
+  const dayAbbr = byType.weekday.toLowerCase().slice(0, 3);
+  return { minuteOfDay, dayAbbr };
+}

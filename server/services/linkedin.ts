@@ -6,16 +6,18 @@
  *  - LinkedIn n'a pas d'API officielle d'envoi de DM : on passe par Unipile, qui agit via le
  *    compte LinkedIn PROPRE à chaque utilisateur (connecté côté Unipile). On n'envoie jamais
  *    depuis un autre compte que celui de l'utilisateur (`userPreferences.linkedinUnipileAccountId`).
- *  - Plafond quotidien BAS (LINKEDIN_DAILY_CAP, défaut 25) pour respecter les limites LinkedIn
- *    et éviter toute restriction du compte.
+ *  - Les plafonds, la montée en charge, la fenêtre ouvrée, le délai minimum entre actions et
+ *    la pause automatique sur restriction vivent dans `prospection-linkedin-guard.ts`
+ *    (`decideLinkedInAction`, appelée par `prospection-sender.ts`) — PAS ici. Cette ancienne
+ *    variable `LINKEDIN_DAILY_CAP` a été retirée : un plafond quotidien plat, unique, ne
+ *    protège ni un compte neuf (montée en charge) ni un compte mature sur la durée (plafond
+ *    hebdomadaire glissant).
  *
  * Config requise (env) : UNIPILE_API_KEY + UNIPILE_DSN (ex: https://api49.unipile.com:17967).
  */
 
 const DSN = (process.env.UNIPILE_DSN || "").replace(/\/+$/, "");
 const API_KEY = process.env.UNIPILE_API_KEY || "";
-
-export const LINKEDIN_DAILY_CAP = Number(process.env.LINKEDIN_DAILY_CAP) || 25;
 
 /** Vrai si Unipile est configuré au niveau de l'app (clé + DSN). */
 export function linkedinConfigured(): boolean {

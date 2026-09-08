@@ -7737,7 +7737,28 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       res.json({
         configured: linkedinConfigured(),
         connected: !!(prefs as any)?.linkedinUnipileAccountId,
+        // Garde de risque : compte en pause suite à un signal LinkedIn (auth/restriction/
+        // challenge). Reprise UNIQUEMENT via /clear-restriction (action humaine explicite).
+        restricted: !!(prefs as any)?.linkedinRestrictedAt,
+        restrictedAt: (prefs as any)?.linkedinRestrictedAt ?? null,
+        restrictedReason: (prefs as any)?.linkedinRestrictedReason ?? null,
       });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Action humaine EXPLICITE pour lever une pause de restriction LinkedIn. Jamais
+  // appelé automatiquement par le worker — cf. prospection-linkedin-guard.ts : une
+  // retentative automatique après un refus de LinkedIn est précisément ce qui
+  // transforme une restriction temporaire en permanente.
+  app.post('/api/prospection/linkedin/clear-restriction', isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.updateUserPreferences(req.userId, {
+        linkedinRestrictedAt: null,
+        linkedinRestrictedReason: null,
+      } as any);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -7763,7 +7784,17 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const mine = accounts.find(a => a.name === req.userId)
         || (accounts.length === 1 ? accounts[0] : undefined);
       if (!mine) return res.status(404).json({ message: 'no_linkedin_account_found' });
-      await storage.updateUserPreferences(req.userId, { linkedinUnipileAccountId: mine.id } as any);
+      const prevPrefs = await storage.getUserPreferences(req.userId);
+      const prevAccountId = (prevPrefs as any)?.linkedinUnipileAccountId;
+      // `linkedinAccountConnectedAt` est le point de départ de la montée en charge
+      // (prospection-linkedin-guard.ts) : on ne le pose QUE pour un compte réellement
+      // NOUVEAU (id différent ou jamais connecté). Reconnecter le MÊME compte (ex. après
+      // un renouvellement de session Unipile) ne doit pas réinitialiser le ramp-up.
+      const isNewAccount = prevAccountId !== mine.id;
+      await storage.updateUserPreferences(req.userId, {
+        linkedinUnipileAccountId: mine.id,
+        ...(isNewAccount ? { linkedinAccountConnectedAt: new Date() } : {}),
+      } as any);
       res.json({ connected: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
