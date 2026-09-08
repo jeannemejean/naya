@@ -86,6 +86,17 @@ export function linkedInRampCapForDay(daysSinceConnected: number): number {
 // VOLONTAIREMENT prudent — nettement sous le consensus de 100 — pas une vérité gravée
 // dans le marbre. Révisable à la baisse si un signal de restriction est observé en
 // dessous ; à la hausse seulement avec des données qui le justifient.
+//
+// ⚠️ HONNÊTETÉ SUR SA PORTÉE RÉELLE : en configuration nominale (jours ouvrés lun-ven,
+// plafond quotidien mature à `LINKEDIN_MATURE_DAILY_CAP`=15), AUCUNE fenêtre glissante de
+// 7 jours ne peut dépasser 5 jours ouvrés × 15 = 75 tentatives < 80 — ce plafond ne mord
+// donc JAMAIS dans ce cas, la garde quotidienne l'empêche structurellement d'être atteint
+// en premier. Ce n'est pas pour autant un second rempart décoratif : il redevient actif
+// dès que la configuration s'écarte du nominal — jours ouvrés étendus au 7j/7, plafond
+// quotidien mature relevé un jour, ou tout autre changement qui autoriserait plus de
+// 75 tentatives sur 7 jours. Le laisser à 80 (plutôt que le baisser à ~60 pour le rendre
+// mordant dans le cas nominal) évite de réduire artificiellement le débit d'un compte qui
+// respecte déjà la courbe de montée en charge, prudente par construction.
 export const LINKEDIN_WEEKLY_CAP = 80;
 export const LINKEDIN_WEEKLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 

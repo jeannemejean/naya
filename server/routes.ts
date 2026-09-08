@@ -7791,9 +7791,19 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // NOUVEAU (id différent ou jamais connecté). Reconnecter le MÊME compte (ex. après
       // un renouvellement de session Unipile) ne doit pas réinitialiser le ramp-up.
       const isNewAccount = prevAccountId !== mine.id;
+      // RÉTRO-REMPLISSAGE (revue post-commit 261835e, Important 2) : un compte connecté
+      // AVANT l'introduction de ce champ a `linkedinUnipileAccountId` posé et
+      // `linkedinAccountConnectedAt` NULL pour toujours — la garde refuserait alors
+      // indéfiniment (`account_connection_unknown`), en silence, sans jamais se corriger
+      // d'elle-même. On pose `now()` dès qu'on revoit ce compte au sync, MÊME s'il n'est
+      // pas nouveau, tant que la date manque encore. Choix conservateur assumé : on ne
+      // connaît pas la VRAIE date de connexion d'un compte pré-migration, donc on le
+      // traite comme flambant neuf (ramp-up reparti à zéro) plutôt que de risquer de le
+      // supposer mature à tort — c'est plus lent, jamais plus risqué.
+      const needsConnectedAtRetrofill = !isNewAccount && !(prevPrefs as any)?.linkedinAccountConnectedAt;
       await storage.updateUserPreferences(req.userId, {
         linkedinUnipileAccountId: mine.id,
-        ...(isNewAccount ? { linkedinAccountConnectedAt: new Date() } : {}),
+        ...((isNewAccount || needsConnectedAtRetrofill) ? { linkedinAccountConnectedAt: new Date() } : {}),
       } as any);
       res.json({ connected: true });
     } catch (e: any) {

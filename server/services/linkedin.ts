@@ -66,18 +66,36 @@ export async function listUnipileAccounts(): Promise<Array<{ id: string; type?: 
   return items.map((a: any) => ({ id: a.id, type: a.type || a.provider, name: a.name }));
 }
 
+export interface ProviderIdResolution {
+  providerId: string | null;
+  /**
+   * Code HTTP renvoyé par Unipile quand la résolution échoue à cause d'une réponse en
+   * erreur (401/403/5xx…) — `null` si la requête a réussi (200), que le profil soit
+   * résolu ou non. Distinction volontaire : une réponse 200 sans `provider_id` est un
+   * profil introuvable (rien d'anormal), une réponse 401/403 est potentiellement un
+   * signal de restriction du compte LinkedIn — voir la revue post-commit 261835e,
+   * défaut Critique 3. `sendLinkedInStep` s'appuie sur cette distinction pour composer
+   * `resolve_401`/`resolve_403` (classés par `isLinkedInRestrictionSignal`) au lieu du
+   * générique `profile_not_resolved` qui les rendait indiscernables d'un profil absent.
+   */
+  httpStatus: number | null;
+}
+
 /**
  * Résout le `provider_id` (identifiant interne LinkedIn utilisé par Unipile) d'un prospect
- * à partir de son identifiant public, vu depuis le compte de l'utilisateur.
+ * à partir de son identifiant public, vu depuis le compte de l'utilisateur. Ne JETTE
+ * jamais le code HTTP en cas d'échec (cf. `ProviderIdResolution`) : c'est le PREMIER appel
+ * du parcours d'envoi, donc celui qui reçoit en premier un 401/403 quand LinkedIn
+ * restreint le compte.
  */
-export async function resolveProviderId(accountId: string, publicId: string): Promise<string | null> {
+export async function resolveProviderId(accountId: string, publicId: string): Promise<ProviderIdResolution> {
   const res = await fetch(
     `${DSN}/api/v1/users/${encodeURIComponent(publicId)}?account_id=${encodeURIComponent(accountId)}`,
     { headers: headers() },
   );
-  if (!res.ok) return null;
+  if (!res.ok) return { providerId: null, httpStatus: res.status };
   const data: any = await res.json().catch(() => ({}));
-  return data?.provider_id || data?.id || null;
+  return { providerId: data?.provider_id || data?.id || null, httpStatus: null };
 }
 
 /**
@@ -102,7 +120,8 @@ export async function isConnected(accountId: string, linkedinUrl: string): Promi
   try {
     const publicId = publicIdFromUrl(linkedinUrl);
     if (!publicId) return false;
-    const providerId = await resolveProviderId(accountId, publicId).catch(() => null);
+    const resolution = await resolveProviderId(accountId, publicId).catch(() => null);
+    const providerId = resolution?.providerId;
     if (!providerId) return false;
     const res = await fetch(
       `${DSN}/api/v1/users/${encodeURIComponent(providerId)}?account_id=${encodeURIComponent(accountId)}`,
@@ -128,6 +147,20 @@ export interface LinkedInSendResult {
  * Stratégie : on tente d'abord un message (si déjà en relation). Si LinkedIn refuse parce que
  * les deux comptes ne sont pas connectés, on envoie une invitation (demande de connexion) avec
  * le texte en note (tronqué à 300 caractères, limite LinkedIn).
+ *
+ * ⚠️ COÛT RÉEL EN REQUÊTES : jusqu'à TROIS appels côté LinkedIn par action autorisée par
+ * la garde (`resolveProviderId` + `/chats` + `/invite` si le message échoue faute de
+ * relation). Le "5 actions/jour" d'un compte neuf (`LINKEDIN_RAMP_UP_START_CAP`) vaut
+ * donc jusqu'à 15 requêtes LinkedIn vues côté plateforme, pas 5. Position retenue :
+ * PAS d'ajustement des plafonds pour ce facteur ×3, pour deux raisons — (1)
+ * `resolveProviderId` est une simple consultation de profil (GET), un comportement
+ * organique extrêmement courant (un humain consulte largement plus de profils qu'il
+ * n'envoie de messages), donc la compter au même niveau qu'un message/une invitation
+ * (les actions d'ÉCRITURE, les seules qui engagent réellement le compte) est déjà une
+ * convention prudente, pas laxiste ; (2) même multiplié par 3, le haut de la courbe
+ * (15 actions/jour mature → 45 requêtes/jour) reste très en dessous d'un usage humain
+ * normal. À REVISITER si un signal de restriction survient malgré tout : resserrer
+ * d'abord les plafonds de `prospection-linkedin-guard.ts`, pas ce commentaire.
  */
 export async function sendLinkedInStep(opts: {
   accountId: string;
@@ -138,8 +171,16 @@ export async function sendLinkedInStep(opts: {
   const publicId = publicIdFromUrl(opts.linkedinUrl);
   if (!publicId) return { ok: false, action: "none", error: "no_public_id" };
 
-  const providerId = await resolveProviderId(opts.accountId, publicId);
-  if (!providerId) return { ok: false, action: "none", error: "profile_not_resolved" };
+  const resolution = await resolveProviderId(opts.accountId, publicId);
+  if (!resolution.providerId) {
+    // 200 OK sans provider_id → profil introuvable (rien d'anormal). 401/403/5xx → on le
+    // dit EXPLICITEMENT (`resolve_<status>`) plutôt que le générique `profile_not_resolved`,
+    // pour que `isLinkedInRestrictionSignal` puisse voir un 401/403 qui arrive ICI — c'est
+    // le premier appel du parcours, donc le premier à recevoir la restriction de LinkedIn.
+    const error = resolution.httpStatus != null ? `resolve_${resolution.httpStatus}` : "profile_not_resolved";
+    return { ok: false, action: "none", error };
+  }
+  const providerId = resolution.providerId;
 
   // 1) Tentative de message direct (relation existante).
   const chatForm = new FormData();

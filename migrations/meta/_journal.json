@@ -71,6 +71,13 @@
       "when": 1788877827271,
       "tag": "0009_lazy_infant_terrible",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788880846601,
+      "tag": "0010_amusing_rawhide_kid",
+      "breakpoints": true
     }
   ]
 }

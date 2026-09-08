@@ -77,6 +77,45 @@ const DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80;
 const LINKEDIN_MIN_DELAY_BASE_MS = 3 * 60_000;
 const LINKEDIN_MIN_DELAY_JITTER_MS = 4 * 60_000;
 
+// Recul + abandon sur échec LinkedIn franc, PAR LEAD (pas par compte — le compte est
+// protégé séparément par la garde de risque, qui peut décider indépendamment de mettre
+// TOUT le compte en pause). Sans ceci, un lead dont le profil ne se résout jamais (ex.
+// URL LinkedIn périmée) était retenté à chaque tick du worker, sans borne — revue
+// post-commit 261835e, défaut Critique 2 : 20 leads dans cet état ≈ 86 000 requêtes/jour.
+//
+// Recul EXPONENTIEL, base 5 min : 5, 10, 20, 40 minutes — assez large pour laisser
+// passer un hoquet réseau ou une panne Unipile transitoire de quelques dizaines de
+// minutes sans abandonner prématurément, sans non plus laisser un lead irrésolvable
+// consommer indéfiniment le quota d'un compte humain.
+//
+// ABANDON après 5 échecs consécutifs : au-delà, ce n'est plus un incident, c'est un lead
+// que Naya ne sait pas atteindre par ce canal (URL invalide, profil supprimé, etc.).
+// 5 tentatives (sur plusieurs heures grâce au recul ci-dessus) suffisent à distinguer
+// une panne transitoire d'un problème structurel, pour un coût dérisoire au regard des
+// plafonds quotidiens (5 tentatives ≤ le plafond du jour 0 d'un compte flambant neuf).
+export const LINKEDIN_FAILURE_BACKOFF_BASE_MIN = 5;
+export const LINKEDIN_MAX_CONSECUTIVE_FAILURES = 5;
+
+export interface LinkedInFailureOutcome {
+  abandon: boolean;
+  consecutiveFailures: number;
+  /** `null` quand `abandon` est vrai — plus rien à programmer, la séquence s'arrête pour ce lead. */
+  nextRunAt: Date | null;
+}
+
+/**
+ * Décide la suite après un échec d'envoi LinkedIn franc pour UN lead. Pure & testable :
+ * `now` entre par la signature, aucune horloge implicite.
+ */
+export function nextLinkedInFailureState(previousConsecutiveFailures: number, now: Date): LinkedInFailureOutcome {
+  const consecutiveFailures = previousConsecutiveFailures + 1;
+  if (consecutiveFailures >= LINKEDIN_MAX_CONSECUTIVE_FAILURES) {
+    return { abandon: true, consecutiveFailures, nextRunAt: null };
+  }
+  const backoffMin = LINKEDIN_FAILURE_BACKOFF_BASE_MIN * Math.pow(2, consecutiveFailures - 1);
+  return { abandon: false, consecutiveFailures, nextRunAt: new Date(now.getTime() + backoffMin * 60_000) };
+}
+
 /** Vrai si on est dans la fenêtre d'envoi (jour ouvré + heures de travail). Pure & testable. */
 export function withinSendingWindow(
   nowMin: number,
@@ -102,7 +141,10 @@ const claimStore: ClaimStore = {
 function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
   const tz = timezone || "UTC";
   try {
-    const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+    // hourCycle:'h23' (pas hour12:false seul) : même piège ICU documenté dans
+    // server/utils/timezone.ts (minuit peut rendre "24" au lieu de "00" selon la
+    // version d'ICU du runtime avec hour12:false seul).
+    const hm = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
     const [h, m] = hm.split(":").map(Number);
     const wd = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short" }).format(new Date()).toLowerCase().slice(0, 3);
     return { nowMin: h * 60 + m, dayAbbr: wd };
@@ -112,7 +154,7 @@ function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
   }
 }
 
-function hhmmToMin(hhmm: string | null | undefined, fallback: number): number {
+export function hhmmToMin(hhmm: string | null | undefined, fallback: number): number {
   if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return fallback;
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
@@ -174,13 +216,24 @@ export async function runProspectionSender(): Promise<void> {
 
     const prefsCache = new Map<string, any>();
     const sentCount = new Map<string, number>(); // emails envoyés sur 24h glissantes, par user
-    // Historique des envois LinkedIn réussis sur les 7 derniers jours glissants, par user —
-    // alimente à la fois le plafond quotidien de montée en charge ET le plafond hebdomadaire
-    // de `prospection-linkedin-guard.ts`. `null` = lecture échouée (fail-closed, jamais
-    // traité comme "aucun envoi") ; mis à jour EN DIRECT après chaque envoi réel de ce tick,
-    // pour que le délai minimum et les plafonds s'appliquent aussi entre deux leads du même
-    // passage du worker (pas seulement d'un tick à l'autre).
+    // Historique des TENTATIVES d'envoi LinkedIn (succès ET échecs) sur les 7 derniers
+    // jours glissants, par user — alimente à la fois le plafond quotidien de montée en
+    // charge ET le plafond hebdomadaire de `prospection-linkedin-guard.ts`. Compter les
+    // tentatives et non les seuls succès est délibéré (revue post-commit 261835e, défaut
+    // Critique 2) : LinkedIn voit une REQUÊTE qu'elle réussisse ou échoue. `null` = lecture
+    // échouée (fail-closed, jamais traité comme "aucune tentative") ; mis à jour EN DIRECT
+    // après chaque appel Unipile réel de ce tick, pour que le délai minimum et les
+    // plafonds s'appliquent aussi entre deux leads du même passage du worker.
     const liHistoryCache = new Map<string, Date[] | null>();
+    // Comptes LinkedIn dont la restriction vient d'être détectée PENDANT ce tick.
+    // `prefsCache` fige le même objet `prefs` pour tous les leads d'un user sur toute la
+    // durée du tick : persister la restriction en base (l.~400 plus bas) ne met PAS à
+    // jour cet objet déjà en cache, donc les leads suivants du même user relisent un
+    // `linkedinRestrictedAt` périmé (`null`) et la garde les autoriserait quand même.
+    // Ce Set, consulté AVANT tout appel Unipile, est l'arrêt dur pour le reste du tick —
+    // y compris si la persistance en base échoue (revue post-commit 261835e, défaut
+    // Critique 1 : jusqu'à 99 tentatives supplémentaires observées dans une même passe).
+    const restrictedThisTick = new Set<string>();
     const getPrefs = async (uid: string) => {
       if (!prefsCache.has(uid)) prefsCache.set(uid, await storage.getUserPreferences(uid));
       return prefsCache.get(uid);
@@ -270,6 +323,51 @@ export async function runProspectionSender(): Promise<void> {
           channel: step.channel === "email" ? "email" : "linkedin",
         };
 
+        // Capturés ICI (pas dans la branche LinkedIn plus bas) : la pré-vérification de
+        // la garde de risque doit avoir lieu AVANT le coût DB (brandDna/user/campagne) et
+        // IA (generateStepMessage) — sur un compte restreint avec de nombreux leads dus,
+        // l'ancien code payait cette génération à chaque minute pour un message qui ne
+        // partirait jamais (revue post-commit 261835e, dernier point mineur).
+        const liAccountId = prefs?.linkedinUnipileAccountId?.trim();
+        // Capturé après la garde : le narrowing `lead.linkedinUrl` ne survit pas à la
+        // fermeture `async` de `sendOnce` plus bas (TS le retypera en nullable).
+        const linkedinUrl = lead.linkedinUrl;
+        const willAttemptRealLinkedInSend =
+          step.channel === "linkedin" && linkedinConfigured() && !!liAccountId && !!linkedinUrl;
+
+        if (willAttemptRealLinkedInSend) {
+          if (restrictedThisTick.has(state.userId)) {
+            console.log(
+              `[ProspectionSender] LinkedIn lead ${lead.id} — compte de l'utilisateur ${state.userId} restreint plus tôt dans ce passage : refus immédiat, aucun coût DB/IA, aucun appel Unipile.`,
+            );
+            continue;
+          }
+          if (!liHistoryCache.has(state.userId)) {
+            const since = new Date(now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
+            const ts = await storage.getLinkedInAttemptTimestampsSince(state.userId, since).catch(() => null);
+            liHistoryCache.set(state.userId, ts);
+          }
+          const accountConnectedAt = prefs?.linkedinAccountConnectedAt ? new Date(prefs.linkedinAccountConnectedAt) : null;
+          const restriction = prefs?.linkedinRestrictedAt
+            ? { restrictedAt: new Date(prefs.linkedinRestrictedAt), reason: prefs?.linkedinRestrictedReason ?? undefined }
+            : null;
+          const guardDecision = decideLinkedInAction({
+            now,
+            timezone: prefs?.timezone || "UTC",
+            workDayStartMin, workDayEndMin, workDays: workDaysSet,
+            accountConnectedAt,
+            recentSendTimestamps: liHistoryCache.get(state.userId)!,
+            restriction,
+            minDelayMs: LINKEDIN_MIN_DELAY_BASE_MS + Math.random() * LINKEDIN_MIN_DELAY_JITTER_MS,
+          });
+          if (!guardDecision.allowed) {
+            console.log(
+              `[ProspectionSender] LinkedIn lead ${lead.id} refusé par la garde de risque (${guardDecision.reason}) : ${guardDecision.detail} — avant tout coût DB/IA.`,
+            );
+            continue; // retry plus tard (nextRunAt inchangé)
+          }
+        }
+
         // Texte SUR-MESURE au dernier moment. useCache:true → réutilise EXACTEMENT le message
         // déjà généré/mis en cache par l'aperçu (parité aperçu ↔ envoi). generateStepMessage
         // LÈVE une exception si le corps est vide : le lead reste alors non avancé (retry via le
@@ -287,6 +385,10 @@ export async function runProspectionSender(): Promise<void> {
         });
         const subject = gen.subject || "";
         const body = gen.body;
+
+        // Repeuplé sur un envoi LinkedIn réussi (remet `linkedinConsecutiveFailures` à 0) ;
+        // vide (aucun changement) pour l'email, un skip, ou un brouillon.
+        let linkedinFailurePatch: Record<string, any> = {};
 
         if (step.channel === "email") {
           if (!lead.email) {
@@ -348,47 +450,39 @@ export async function runProspectionSender(): Promise<void> {
           }
         } else {
           // LinkedIn : auto-envoi via Unipile depuis le compte de l'utilisateur, SI configuré.
-          const liAccountId = prefs?.linkedinUnipileAccountId?.trim();
-          // Capturé après la garde : le narrowing `lead.linkedinUrl` ne survit pas à la
-          // fermeture `async` de `sendOnce` ci-dessous (TS le retypera en nullable).
-          const linkedinUrl = lead.linkedinUrl;
-          if (linkedinConfigured() && liAccountId && linkedinUrl) {
-            // Garde de risque LinkedIn (montée en charge, plafond hebdomadaire glissant,
-            // fenêtre ouvrée, délai minimum, restriction persistée) — remplace l'ancien
-            // plafond plat LINKEDIN_DAILY_CAP. Fonction PURE : voir prospection-linkedin-guard.ts.
-            if (!liHistoryCache.has(state.userId)) {
-              const since = new Date(now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
-              const ts = await storage.getOutreachSentTimestampsSince(state.userId, since, "linkedin").catch(() => null);
-              liHistoryCache.set(state.userId, ts);
-            }
-            const accountConnectedAt = prefs?.linkedinAccountConnectedAt ? new Date(prefs.linkedinAccountConnectedAt) : null;
-            const restriction = prefs?.linkedinRestrictedAt
-              ? { restrictedAt: new Date(prefs.linkedinRestrictedAt), reason: prefs?.linkedinRestrictedReason ?? undefined }
-              : null;
-            const guardDecision = decideLinkedInAction({
-              now,
-              timezone: prefs?.timezone || "UTC",
-              workDayStartMin, workDayEndMin, workDays: workDaysSet,
-              accountConnectedAt,
-              recentSendTimestamps: liHistoryCache.get(state.userId)!,
-              restriction,
-              minDelayMs: LINKEDIN_MIN_DELAY_BASE_MS + Math.random() * LINKEDIN_MIN_DELAY_JITTER_MS,
-            });
-            if (!guardDecision.allowed) {
-              console.log(
-                `[ProspectionSender] LinkedIn lead ${lead.id} refusé par la garde de risque (${guardDecision.reason}) : ${guardDecision.detail}`,
-              );
-              continue; // retry plus tard (nextRunAt inchangé)
-            }
+          // La garde de risque (montée en charge, plafond hebdomadaire glissant, fenêtre
+          // ouvrée, délai minimum, restriction) a déjà été évaluée plus haut — AVANT le
+          // coût DB/IA — et a laissé passer ce lead (`willAttemptRealLinkedInSend`) ;
+          // pas de second appel à `decideLinkedInAction` ici, pour ne pas retirer un
+          // second tirage aléatoire de `minDelayMs` incohérent avec le premier.
+          if (willAttemptRealLinkedInSend) {
             const outcome = await sendOnce(claimStore, sendKey, async () => {
-              const result = await sendLinkedInStep({ accountId: liAccountId, linkedinUrl, text: body });
+              const result = await sendLinkedInStep({ accountId: liAccountId!, linkedinUrl: linkedinUrl!, text: body });
+              const attemptAt = new Date();
+              // Journal de TOUTE tentative (succès ou échec) — source de vérité des
+              // plafonds de la garde (revue post-commit 261835e, défaut Critique 2 :
+              // LinkedIn voit une requête qu'elle réussisse ou non). Écrit AVANT toute
+              // autre logique pour ne perdre la trace de rien derrière.
+              try {
+                await storage.recordLinkedInSendAttempt(state.userId, lead.id, result.ok, result.ok ? null : (result.error ?? null));
+              } catch (e: any) {
+                console.error(
+                  `[ProspectionSender] échec d'enregistrement de la tentative LinkedIn (lead ${lead.id}) : ${String(e?.message ?? e)} — la garde risque de sous-compter ce compte pour ce tick.`,
+                );
+              }
+              // Alimente le cache EN DIRECT, même si la persistance ci-dessus a échoué :
+              // au moins CE tick reste correctement borné localement.
+              const hist = liHistoryCache.get(state.userId);
+              if (hist) hist.push(attemptAt);
+
               if (!result.ok) {
                 console.error(`[ProspectionSender] LinkedIn lead ${lead.id} — détail échec : ${result.error}`);
                 if (isLinkedInRestrictionSignal(result.error)) {
-                  // Signal d'authentification/restriction/challenge de sécurité : on arrête
-                  // TOUT pour ce compte. Persisté ; reprise UNIQUEMENT par action humaine
-                  // (POST /api/prospection/linkedin/clear-restriction) — ne JAMAIS retenter
-                  // automatiquement, c'est précisément ce qui rend une restriction permanente.
+                  // Signal d'authentification/restriction/challenge de sécurité : arrêt dur
+                  // IMMÉDIAT pour ce compte, pour le reste de CE tick — indépendant du
+                  // succès de la persistance ci-dessous (revue post-commit 261835e, défaut
+                  // Critique 1).
+                  restrictedThisTick.add(state.userId);
                   try {
                     await storage.updateUserPreferences(state.userId, {
                       linkedinRestrictedAt: new Date(),
@@ -399,7 +493,7 @@ export async function runProspectionSender(): Promise<void> {
                     );
                   } catch (e: any) {
                     console.error(
-                      `[ProspectionSender] échec de persistance de la restriction LinkedIn (user ${state.userId}) : ${String(e?.message ?? e)}`,
+                      `[ProspectionSender] ÉCHEC DE PERSISTANCE de la restriction LinkedIn (user ${state.userId}) — l'arrêt en mémoire reste actif pour ce passage, nouvelle tentative de persistance dès le prochain lead concerné : ${String(e?.message ?? e)}`,
                     );
                   }
                 }
@@ -422,16 +516,33 @@ export async function runProspectionSender(): Promise<void> {
             });
             if (outcome.action === "failed") {
               console.error(`[ProspectionSender] LinkedIn lead ${lead.id} échec — retry au prochain tick`);
-              continue; // on n'avance pas → retry
+              // Recul exponentiel + abandon après N échecs consécutifs POUR CE LEAD (le
+              // compte, lui, est protégé séparément par la garde) — revue post-commit
+              // 261835e, défaut Critique 2 : l'ancien code laissait `nextRunAt` inchangé,
+              // donc retentait sans borne à chaque tick.
+              const backoff = nextLinkedInFailureState(state.linkedinConsecutiveFailures || 0, now);
+              if (backoff.abandon) {
+                console.error(
+                  `[ProspectionSender] LinkedIn lead ${lead.id} — ${backoff.consecutiveFailures} échecs consécutifs : abandon de la séquence pour CE lead.`,
+                );
+                await storage.updateLeadSequenceState(state.leadId, {
+                  status: "failed",
+                  nextRunAt: null,
+                  linkedinConsecutiveFailures: backoff.consecutiveFailures,
+                } as any);
+              } else {
+                await storage.updateLeadSequenceState(state.leadId, {
+                  linkedinConsecutiveFailures: backoff.consecutiveFailures,
+                  nextRunAt: backoff.nextRunAt,
+                } as any);
+              }
+              continue; // on n'avance pas → retry plus tard, borné (ou plus du tout si abandonné)
             }
             if (outcome.action === "skipped") {
               console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} (LinkedIn) — avancement sans envoi`);
             } else {
-              // Alimente en DIRECT l'historique de ce tick : le délai minimum et les
-              // plafonds s'appliquent aussi entre deux leads traités dans le même passage
-              // du worker, pas seulement d'un tick à l'autre.
-              const hist = liHistoryCache.get(state.userId);
-              if (hist) hist.push(new Date());
+              // Envoi réussi : remet à 0 le compteur d'échecs consécutifs de CE lead.
+              linkedinFailurePatch = { linkedinConsecutiveFailures: 0 };
             }
           } else {
             // Non configuré (ou lead sans URL LinkedIn) → brouillon à envoyer manuellement.
@@ -472,6 +583,7 @@ export async function runProspectionSender(): Promise<void> {
           lastStepSentAt: new Date(),
           status: decision.done ? "completed" : "active",
           nextRunAt: decision.done ? null : new Date(Date.now() + (nextDelay || 0) * 86_400_000),
+          ...linkedinFailurePatch,
         });
       } catch (e: any) {
         console.error(`[ProspectionSender] lead ${state.leadId}:`, e.message);

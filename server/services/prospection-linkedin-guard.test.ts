@@ -129,6 +129,44 @@ describe("decideLinkedInAction — week-end", () => {
   });
 });
 
+// Revue post-commit 261835e, mineur relevé : les tests de fenêtre ouvrée existants
+// donnaient le même verdict qu'on lise l'heure de Paris ou l'heure UTC brute (aucun ne
+// discriminait). Ceux-ci vérifient explicitement la conversion : si `decideLinkedInAction`
+// substituait `now.getUTCHours()` à `localWallClock(timezone, now)`, ces tests précis
+// échoueraient alors que ceux du dessus continueraient de passer.
+describe("decideLinkedInAction — la fenêtre ouvrée est bien celle de Paris, jamais l'heure UTC brute", () => {
+  it("17:30 UTC un mardi de janvier = 18:30 à Paris (hors fenêtre 9h-18h) → refusé — lire l'heure UTC brute (17:30) l'aurait autorisé à tort", () => {
+    const now = new Date("2026-01-13T17:30:00.000Z");
+    const got = decideLinkedInAction(baseInput({ now }));
+    expect(got.allowed).toBe(false);
+    if (!got.allowed) expect(got.reason).toBe("outside_business_hours");
+  });
+
+  it("borne exacte : 08:59 à Paris (07:59 UTC) → refusé, juste avant l'ouverture", () => {
+    const now = new Date("2026-01-13T07:59:00.000Z");
+    const got = decideLinkedInAction(baseInput({ now }));
+    expect(got.allowed).toBe(false);
+    if (!got.allowed) expect(got.reason).toBe("outside_business_hours");
+  });
+
+  it("borne exacte : 09:00 à Paris (08:00 UTC) → autorisé, l'ouverture est inclusive", () => {
+    const now = new Date("2026-01-13T08:00:00.000Z");
+    expect(decideLinkedInAction(baseInput({ now }))).toEqual({ allowed: true });
+  });
+
+  it("borne exacte : 17:59 à Paris (16:59 UTC) → autorisé, juste avant la fermeture", () => {
+    const now = new Date("2026-01-13T16:59:00.000Z");
+    expect(decideLinkedInAction(baseInput({ now }))).toEqual({ allowed: true });
+  });
+
+  it("borne exacte : 18:00 à Paris (17:00 UTC) → refusé, la fermeture est exclusive", () => {
+    const now = new Date("2026-01-13T17:00:00.000Z");
+    const got = decideLinkedInAction(baseInput({ now }));
+    expect(got.allowed).toBe(false);
+    if (!got.allowed) expect(got.reason).toBe("outside_business_hours");
+  });
+});
+
 describe("decideLinkedInAction — délai minimum aléatoire entre deux actions", () => {
   it("dernier envoi il y a 1 min, délai minimum 3 min → refusé (évite la rafale du worker chaque minute)", () => {
     const recentSendTimestamps = [new Date(BASE_NOW.getTime() - 1 * 60 * 1000)];
@@ -220,5 +258,16 @@ describe("isLinkedInRestrictionSignal — classification des erreurs Unipile", (
     expect(isLinkedInRestrictionSignal(undefined)).toBe(false);
     expect(isLinkedInRestrictionSignal(null)).toBe(false);
     expect(isLinkedInRestrictionSignal("")).toBe(false);
+  });
+
+  // Revue post-commit 261835e, défaut Critique 3 : `resolveProviderId` (linkedin.ts)
+  // compose désormais `resolve_401`/`resolve_403` quand la résolution du profil (le
+  // PREMIER appel du parcours d'envoi) échoue par erreur HTTP — au lieu du générique
+  // `profile_not_resolved`, qui rendait une vraie restriction indiscernable d'un simple
+  // profil introuvable. Ce classifieur n'a pas eu besoin de changer : le motif
+  // `(?<!\d)(401|403)(?!\d)` couvre déjà cette forme — ce test le fige explicitement.
+  it("resolve_401 / resolve_403 (échec de résolution du profil, linkedin.ts) → signal de restriction", () => {
+    expect(isLinkedInRestrictionSignal("resolve_401")).toBe(true);
+    expect(isLinkedInRestrictionSignal("resolve_403")).toBe(true);
   });
 });

@@ -1590,6 +1590,12 @@ export const leadSequenceState = pgTable("lead_sequence_state", {
   enrolledAt: timestamp("enrolled_at").defaultNow(),
   lastStepSentAt: timestamp("last_step_sent_at"),
   repliedAt: timestamp("replied_at"),
+  // Échecs LinkedIn CONSÉCUTIFS pour CE lead (pas le compte — le compte est protégé
+  // séparément par la garde de risque LinkedIn). Remis à 0 dès qu'un envoi LinkedIn
+  // réussit. Sert le recul exponentiel + l'abandon après N échecs
+  // (`nextLinkedInFailureState` dans prospection-sender.ts) : sans lui, un lead dont le
+  // profil ne se résout jamais serait retenté indéfiniment, toutes les 60 secondes.
+  linkedinConsecutiveFailures: integer("linkedin_consecutive_failures").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1642,6 +1648,29 @@ export const outreachStepSends = pgTable("outreach_step_sends", {
 
 export type OutreachStepSend = typeof outreachStepSends.$inferSelect;
 export type InsertOutreachStepSend = typeof outreachStepSends.$inferInsert;
+
+// Journal de TOUTES les tentatives d'envoi LinkedIn (Unipile), réussies OU non.
+// Distinct d'`outreach_step_sends` (garde d'idempotence, une ligne par étape, supprimée
+// sur échec) et d'`outreach_messages` (une ligne par envoi RÉUSSI, pour l'analytics).
+// Celui-ci est la source de vérité de `prospection-linkedin-guard.ts` pour les plafonds
+// quotidien/hebdomadaire glissants : LinkedIn voit une REQUÊTE qu'elle réussisse ou
+// échoue (résolution de profil, invitation, message) — les plafonds doivent donc compter
+// les tentatives, pas seulement les succès (revue post-commit 261835e, défaut Critique 2 :
+// un lead dont le profil ne se résout jamais consommait 0 du plafond et était retenté
+// sans borne, ~86 000 requêtes/jour pour 20 leads irrésolubles).
+export const linkedinSendAttempts = pgTable("linkedin_send_attempts", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
+  ok: boolean("ok").notNull(),
+  error: text("error"),
+}, (t) => [
+  index("idx_linkedin_send_attempts_user_time").on(t.userId, t.attemptedAt),
+]);
+
+export type LinkedInSendAttempt = typeof linkedinSendAttempts.$inferSelect;
+export type InsertLinkedInSendAttempt = typeof linkedinSendAttempts.$inferInsert;
 
 // ─── Journal des invocations IA (Phase 1 — socle du corpus propriétaire) ────────
 // Chaque appel IA (contexte d'entrée → sortie, modèle, tokens, latence, coût) est
