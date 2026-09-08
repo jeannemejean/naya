@@ -438,6 +438,28 @@ function rebalanceTasksForward(
   return result;
 }
 
+// ─── Task Prompts — deux fenêtres distinctes, exportées et nommées ─────────────────
+// Une seule constante (30) servait autrefois à la fois à la soupape et au retour
+// immédiat — voir revue finale, défaut Important 3. Les deux besoins sont trop
+// différents pour partager une fenêtre : les séparer rend chacune ajustable
+// indépendamment sans devoir re-raisonner sur l'autre.
+
+// La soupape (`unansweredStreak`) ne regarde jamais plus que les `SEUIL_SOUPAPE` (3)
+// alarmes échues les plus récentes — elle s'arrête à la première réponse rencontrée.
+// 10 lignes laissent une marge confortable (plusieurs jours sans réponse, alarmes
+// dédupliquées par jour) sans jamais peser sur la requête. DÉFAUT RÉVISABLE.
+export const SOUPAPE_TASK_PROMPTS_LOOKBACK = 10;
+
+// Le retour immédiat (`buildImmediateInsight`) exige au moins `MIN_OBSERVATIONS` (5)
+// réponses de CHAQUE côté (matin/après-midi), ou par catégorie — donc potentiellement
+// 10+ réponses répondues avant qu'un motif soit même observable. À 7-8 alarmes/jour,
+// l'ancienne fenêtre de 30 lignes (alarmes brutes, répondues ou non) couvrait à peine
+// 4 jours, et les non-répondues occupaient une partie de cette fenêtre : la règle
+// matin/après-midi risquait de n'être jamais atteignable. 200 lignes couvrent environ
+// 3 à 4 semaines même avec beaucoup d'ignorées — largement de quoi accumuler 5
+// réponses de chaque côté une fois l'usage installé. DÉFAUT RÉVISABLE.
+export const INSIGHT_TASK_PROMPTS_LOOKBACK = 200;
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Health check (Railway, monitoring)
   app.get('/api/health', async (_req, res) => {
@@ -10377,13 +10399,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // restée SANS réponse n'entre jamais dans buildImmediateInsight et n'est jamais
   // convertie en "not_done" — absence de réponse ≠ réponse négative.
 
-  // Fenêtre d'historique pour la soupape ET l'insight. Hypothèse (non couverte par le
-  // brief, cf. commit) : 30 alarmes suffisent à couvrir largement le seuil de la soupape
-  // (3) et le minimum d'observations de l'insight par catégorie/moment (5).
-  const RECENT_TASK_PROMPTS_LOOKBACK = 30;
-
   async function computeTaskPromptInsight(userId: string): Promise<string | null> {
-    const recent = await storage.getRecentTaskPrompts(userId, RECENT_TASK_PROMPTS_LOOKBACK);
+    const recent = await storage.getRecentTaskPrompts(userId, INSIGHT_TASK_PROMPTS_LOOKBACK);
     // Seules les alarmes RÉPONDUES entrent dans l'insight — jamais une alarme ignorée.
     const answered = recent.filter(
       (p) => p.answeredAt !== null && (p.answer === "done" || p.answer === "not_done"),
@@ -10412,6 +10429,22 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // terminée du jour ayant un scheduledEndTime. Enregistre les lignes task_prompts
   // correspondantes (idempotent, via replaceTaskPromptsForDay) et indique si la
   // fréquence des notifications doit se réduire (soupape).
+  //
+  // Le SERVEUR tranche seul ce qui a été « posé » — le mobile ne fait plus que
+  // programmer ce qu'on lui renvoie (revue finale, défaut Critique 1) :
+  //   1. Les heures déjà passées sont exclues AVANT toute écriture. Sans ce filtre, ouvrir
+  //      l'app en fin de journée avec des tâches non cochées créait des lignes
+  //      `answeredAt IS NULL` pour des alarmes qui n'ont jamais sonné — indiscernables
+  //      d'alarmes réellement ignorées, et pouvant déclencher la soupape sur du vide.
+  //   2. La soupape (`unansweredStreak`) se calcule sur l'historique EXISTANT, avant
+  //      l'insertion des lignes du jour — sinon les alarmes qu'on est en train de créer
+  //      (jamais répondues puisqu'elles n'ont pas encore sonné) se mesureraient
+  //      elles-mêmes et déclencheraient la soupape dès le premier jour.
+  //   3. Quand `reduceFrequency` est vrai, seule la DERNIÈRE alarme du jour est retenue
+  //      — et c'est CE jeu filtré, pas l'ensemble des candidates, qui est à la fois
+  //      renvoyé au mobile ET persisté. Autrement, les alarmes non transmises au mobile
+  //      ne sonneraient jamais mais existeraient quand même en base, devenant à tort des
+  //      « ignorées » qui referment la soupape plus fort.
   app.get('/api/task-prompts/today', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -10426,7 +10459,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         (t) => !t.completed && typeof t.scheduledEndTime === 'string' && /^\d{2}:\d{2}$/.test(t.scheduledEndTime),
       );
 
-      const alarms = pending.map((t) => ({
+      const candidates = pending.map((t) => ({
         taskId: t.id,
         title: t.title,
         // `scheduledEndTime` est une heure murale de Paris (ce que l'utilisatrice voit
@@ -10434,6 +10467,29 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         // dans le fuseau du PROCESS (UTC en prod), pas celui de Paris.
         scheduledFor: parisWallClockToInstant(t.scheduledDate!, t.scheduledEndTime!),
       }));
+      // Comparaison sur l'INSTANT absolu (scheduledFor vs now), jamais sur l'heure
+      // murale : « pas d'alarme … pour une heure déjà passée » (spec §1). Borne stricte
+      // `>`, cohérente avec celle déjà appliquée par `replaceTaskPromptsForDay` (`gt`)
+      // et par `unansweredStreak` (échue à `<=`).
+      const futureAlarms = candidates.filter((a) => a.scheduledFor.getTime() > now.getTime());
+
+      // Soupape calculée AVANT l'insertion des lignes du jour, sur l'historique déjà en
+      // base — jamais sur un jeu qui inclurait les alarmes qu'on s'apprête à créer.
+      const recentBeforeInsert = await storage.getRecentTaskPrompts(userId, SOUPAPE_TASK_PROMPTS_LOOKBACK);
+      const streak = unansweredStreak(
+        recentBeforeInsert.map((p) => ({ scheduledFor: p.scheduledFor, answeredAt: p.answeredAt })),
+        now,
+      );
+      const reduceFrequency = shouldReduceFrequency(streak);
+
+      // Le jeu FINAL — celui qui part au mobile ET celui qui est persisté sont
+      // strictement le même : jamais d'alarme écrite en base que le mobile n'aura pas
+      // reçue, jamais d'alarme renvoyée au mobile qui n'existerait pas en base.
+      const alarms = !reduceFrequency
+        ? futureAlarms
+        : futureAlarms.length === 0
+          ? []
+          : [futureAlarms.reduce((last, a) => (a.scheduledFor.getTime() > last.scheduledFor.getTime() ? a : last))];
 
       await storage.replaceTaskPromptsForDay(
         userId,
@@ -10442,15 +10498,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         now,
       );
 
-      const recent = await storage.getRecentTaskPrompts(userId, RECENT_TASK_PROMPTS_LOOKBACK);
-      const streak = unansweredStreak(
-        recent.map((p) => ({ scheduledFor: p.scheduledFor, answeredAt: p.answeredAt })),
-        now,
-      );
-
       res.json({
         prompts: alarms,
-        reduceFrequency: shouldReduceFrequency(streak),
+        reduceFrequency,
       });
     } catch (error) {
       console.error("Error building today's task prompts:", error);
