@@ -47,6 +47,8 @@ import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
 import { buildImmediateInsight, type TaskAnswer } from "./services/result-capture/insight";
+import { insightIfChanged } from "./services/result-capture/insight-if-changed";
+import { selectAlarmsToPost } from "./services/result-capture/select-alarms";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -76,7 +78,7 @@ import { leadScrapingService } from "./services/lead-scraping";
 import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
-import { parisWallClockToInstant, parisHourOf, parisTodayString } from "./utils/timezone";
+import { parisHourOf, parisTodayString } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
@@ -10399,13 +10401,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // restée SANS réponse n'entre jamais dans buildImmediateInsight et n'est jamais
   // convertie en "not_done" — absence de réponse ≠ réponse négative.
 
-  async function computeTaskPromptInsight(userId: string): Promise<string | null> {
+  // Fenêtre de réponses récentes, chacune associée à l'id du `task_prompts` dont elle
+  // vient — pour pouvoir, côté appelant, exclure UNE réponse précise et obtenir la
+  // fenêtre "sans elle" (retour immédiat seulement quand l'observation change,
+  // arbitrage de Jeanne 2026-09-08 — sans stockage, sans migration : les deux fenêtres
+  // se recalculent à la volée, rien n'est persisté de plus).
+  async function buildRecentAnsweredTaskAnswers(
+    userId: string,
+  ): Promise<Array<{ promptId: number; taskAnswer: TaskAnswer }>> {
     const recent = await storage.getRecentTaskPrompts(userId, INSIGHT_TASK_PROMPTS_LOOKBACK);
     // Seules les alarmes RÉPONDUES entrent dans l'insight — jamais une alarme ignorée.
     const answered = recent.filter(
       (p) => p.answeredAt !== null && (p.answer === "done" || p.answer === "not_done"),
     );
-    if (answered.length === 0) return null;
+    if (answered.length === 0) return [];
 
     const taskIds = Array.from(new Set(answered.map((p) => p.taskId)));
     const relatedTasks = taskIds.length > 0
@@ -10413,16 +10422,22 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       : [];
     const categoryByTaskId = new Map(relatedTasks.map((t) => [t.id, t.category]));
 
-    const answers: TaskAnswer[] = answered.map((p) => ({
-      category: categoryByTaskId.get(p.taskId) ?? null,
-      // Jamais `.getHours()` : ça lit l'heure du fuseau du PROCESS (UTC en prod), pas
-      // celle de Paris — alors que le seuil matin/après-midi de `buildImmediateInsight`
-      // (MIDI = 13, insight.ts) est pensé en heure de Paris.
-      scheduledHour: parisHourOf(p.scheduledFor),
-      done: p.answer === "done",
+    return answered.map((p) => ({
+      promptId: p.id,
+      taskAnswer: {
+        category: categoryByTaskId.get(p.taskId) ?? null,
+        // Jamais `.getHours()` : ça lit l'heure du fuseau du PROCESS (UTC en prod), pas
+        // celle de Paris — alors que le seuil matin/après-midi de `buildImmediateInsight`
+        // (MIDI = 13, insight.ts) est pensé en heure de Paris.
+        scheduledHour: parisHourOf(p.scheduledFor),
+        done: p.answer === "done",
+      },
     }));
+  }
 
-    return buildImmediateInsight(answers);
+  async function computeTaskPromptInsight(userId: string): Promise<string | null> {
+    const entries = await buildRecentAnsweredTaskAnswers(userId);
+    return buildImmediateInsight(entries.map((e) => e.taskAnswer));
   }
 
   // GET /api/task-prompts/today — les alarmes à poser aujourd'hui : une par tâche non
@@ -10455,23 +10470,6 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const today = parisTodayString(now);
 
       const todaysTasks = await storage.getTasksInRange(userId, today, today);
-      const pending = todaysTasks.filter(
-        (t) => !t.completed && typeof t.scheduledEndTime === 'string' && /^\d{2}:\d{2}$/.test(t.scheduledEndTime),
-      );
-
-      const candidates = pending.map((t) => ({
-        taskId: t.id,
-        title: t.title,
-        // `scheduledEndTime` est une heure murale de Paris (ce que l'utilisatrice voit
-        // dans son planning) — jamais `new Date(`${date}T${time}:00`)`, qui l'interprète
-        // dans le fuseau du PROCESS (UTC en prod), pas celui de Paris.
-        scheduledFor: parisWallClockToInstant(t.scheduledDate!, t.scheduledEndTime!),
-      }));
-      // Comparaison sur l'INSTANT absolu (scheduledFor vs now), jamais sur l'heure
-      // murale : « pas d'alarme … pour une heure déjà passée » (spec §1). Borne stricte
-      // `>`, cohérente avec celle déjà appliquée par `replaceTaskPromptsForDay` (`gt`)
-      // et par `unansweredStreak` (échue à `<=`).
-      const futureAlarms = candidates.filter((a) => a.scheduledFor.getTime() > now.getTime());
 
       // Soupape calculée AVANT l'insertion des lignes du jour, sur l'historique déjà en
       // base — jamais sur un jeu qui inclurait les alarmes qu'on s'apprête à créer.
@@ -10482,14 +10480,11 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       );
       const reduceFrequency = shouldReduceFrequency(streak);
 
-      // Le jeu FINAL — celui qui part au mobile ET celui qui est persisté sont
-      // strictement le même : jamais d'alarme écrite en base que le mobile n'aura pas
-      // reçue, jamais d'alarme renvoyée au mobile qui n'existerait pas en base.
-      const alarms = !reduceFrequency
-        ? futureAlarms
-        : futureAlarms.length === 0
-          ? []
-          : [futureAlarms.reduce((last, a) => (a.scheduledFor.getTime() > last.scheduledFor.getTime() ? a : last))];
+      // Toute la décision — heures passées exclues, tâches terminées exclues, soupape
+      // appliquée — vit dans `selectAlarmsToPost`, fonction pure et testée
+      // (server/services/result-capture/select-alarms.ts). Le jeu FINAL qu'elle renvoie
+      // est à la fois celui envoyé au mobile ET celui persisté ci-dessous.
+      const alarms = selectAlarmsToPost(todaysTasks, now, reduceFrequency);
 
       await storage.replaceTaskPromptsForDay(
         userId,
@@ -10549,13 +10544,29 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       }
 
       const now = new Date();
+      // Enregistre la réponse dans tous les cas — elle a bien eu lieu, même si la tâche
+      // était déjà cochée ailleurs (web).
       await storage.answerTaskPrompt(prompt.id, userId, answer, now);
 
       if (answer === "done") {
-        await storage.updateTask(taskId, { completed: true, completedAt: now } as any);
+        // Ne jamais écraser `completedAt` s'il est déjà renseigné : remplacer l'heure
+        // réelle d'une complétion (posée ailleurs, par ex. côté web) par celle de la
+        // réponse à cette notification remplacerait une mesure vraie par une
+        // approximation. `completed` reste posé à `true`, idempotent si déjà vrai.
+        await storage.updateTask(taskId, {
+          completed: true,
+          ...(task.completedAt ? {} : { completedAt: now }),
+        } as any);
       }
 
-      const insight = await computeTaskPromptInsight(userId);
+      // Le retour immédiat ne parle que quand l'observation vient de changer (arbitrage
+      // de Jeanne, 2026-09-08) : on la calcule avec la réponse qui vient d'arriver, et
+      // sans elle (même fenêtre, moins cette seule réponse) — sans stockage ni nouvelle
+      // migration, juste deux appels de `buildImmediateInsight` via `insightIfChanged`.
+      const entries = await buildRecentAnsweredTaskAnswers(userId);
+      const withLatest = entries.map((e) => e.taskAnswer);
+      const withoutLatest = entries.filter((e) => e.promptId !== prompt.id).map((e) => e.taskAnswer);
+      const insight = insightIfChanged(withLatest, withoutLatest);
       res.json({ insight });
     } catch (error) {
       console.error("Error answering task prompt:", error);
