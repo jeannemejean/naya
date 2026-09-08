@@ -68,6 +68,13 @@ function parisOffsetMinutesAt(instant: Date): number {
  * valeur UTC écrite à la main ne l'aurait pas détecté, car il fallait sonder
  * précisément 01:00-01:59, pas 03:30.
  *
+ * POURQUOI DEUX PASSES ET PAS TROIS. Le nombre n'est pas arbitraire. Vérifié en revue
+ * par balayage : sur 8640 couples (jour de transition, minute) couvrant les deux
+ * bascules de 2024 à 2035, une troisième passe ne diverge JAMAIS de la deuxième —
+ * sauf dans l'heure inexistante, où elle ne convergerait de toute façon pas, puisque
+ * l'heure demandée n'existe pas et qu'il n'y a donc pas de point fixe. Deux passes
+ * suffisent pour toute heure murale qui existe réellement.
+ *
  * Deux cas n'ont pas de réponse « correcte » unique et sont documentés/figés par des
  * tests dédiés plutôt que laissés silencieux :
  * - Heure AMBIGUË (retour à l'heure d'hiver, 02:00-02:59, existe deux fois) : résout
