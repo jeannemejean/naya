@@ -1,8 +1,11 @@
 /**
  * Conversion explicite heure murale de Paris → instant absolu.
  *
- * Le serveur de production tourne en UTC (aucun `TZ` n'est configuré — pas de
- * Dockerfile, pas de railway.toml). `new Date(`${date}T${time}:00`)` interprète donc
+ * Le serveur de production tourne en UTC. Le `Dockerfile` et `railway.toml` existent
+ * bel et bien (contrairement à ce qu'une version antérieure de ce commentaire
+ * affirmait) — mais ni l'un ni l'autre ne pose de variable `TZ` : l'image
+ * `node:22-alpine` du `Dockerfile` tourne donc dans le fuseau par défaut du conteneur,
+ * UTC, faute d'override. `new Date(`${date}T${time}:00`)` interprète donc
  * l'heure murale dans le fuseau du PROCESS (UTC en prod), pas celui de Paris : une
  * tâche finissant à 14:00 (heure que l'utilisatrice voit dans son planning, à Paris)
  * produirait une alarme à 14:00 UTC, soit 16:00 à Paris l'été. Ce module est la seule
