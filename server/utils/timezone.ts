@@ -52,6 +52,29 @@ function parisOffsetMinutesAt(instant: Date): number {
  * Convertit une heure murale de Paris ("YYYY-MM-DD", "HH:MM") en instant absolu.
  * Gère l'heure d'été et l'heure d'hiver — le décalage Europe/Paris est mesuré à
  * l'instant candidat lui-même via `Intl.DateTimeFormat`, sans dépendance externe.
+ *
+ * ⚠️ DÉFAUT CORRIGÉ (revue) : une première version échantillonnait le décalage une
+ * seule fois, à `candidateUTC` (l'heure murale traitée comme si elle était déjà en
+ * UTC), et faisait confiance à ce premier échantillon. Ça cassait silencieusement pour
+ * toute heure murale dans `[01:00, 02:00)` les jours de transition — une heure qui
+ * EXISTE et n'est PAS ambiguë, pas seulement « le trou ». Exemple : le 25/10/2026,
+ * `candidateUTC` pour "01:30" tombe à "2026-10-25T01:30:00Z", DÉJÀ après l'instant de
+ * transition (01:00 UTC) : le premier échantillon lisait donc le régime CET (après
+ * bascule) alors que 01:30 murale, ce jour-là, est encore CEST (avant bascule) — 1h
+ * d'erreur. La correction : recalculer le décalage à l'instant obtenu avec le premier
+ * échantillon, et se fier à CE SECOND échantillon plutôt qu'au premier. Voir
+ * `timezone.test.ts`, describe "zone dangereuse", pour la preuve par aller-retour
+ * (reformater le résultat doit redonner l'heure demandée) — une assertion sur une
+ * valeur UTC écrite à la main ne l'aurait pas détecté, car il fallait sonder
+ * précisément 01:00-01:59, pas 03:30.
+ *
+ * Deux cas n'ont pas de réponse « correcte » unique et sont documentés/figés par des
+ * tests dédiés plutôt que laissés silencieux :
+ * - Heure AMBIGUË (retour à l'heure d'hiver, 02:00-02:59, existe deux fois) : résout
+ *   toujours vers la SECONDE occurrence (après le rétropassage, en CET).
+ * - Heure INEXISTANTE (passage à l'heure d'été, 02:00-02:59, n'existe jamais) : se
+ *   comporte comme si le trou d'une heure était traversé tel quel — le résultat
+ *   reformate en heure de Paris à (heure demandée + 1h).
  */
 export function parisWallClockToInstant(dateStr: string, hhmm: string): Date {
   const [year, month, day] = dateStr.split("-").map(Number);
@@ -59,10 +82,17 @@ export function parisWallClockToInstant(dateStr: string, hhmm: string): Date {
 
   // Instant candidat : l'heure murale traitée comme si elle était déjà en UTC. Il est
   // à au plus ~2h de l'instant réel (le décalage Europe/Paris ne dépasse jamais 2h),
-  // ce qui suffit pour échantillonner le bon régime (CET/CEST) — sauf pendant l'heure
-  // qui n'existe pas (le trou du passage à l'heure d'été), non couvert ici.
+  // ce qui suffit pour un PREMIER échantillon du régime (CET/CEST) — mais ce premier
+  // échantillon peut appartenir au mauvais régime si l'heure murale demandée est juste
+  // avant une transition (voir le commentaire de fonction). D'où la seconde passe.
   const candidateUTC = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
-  const offsetMin = parisOffsetMinutesAt(new Date(candidateUTC));
+  const firstGuessOffsetMin = parisOffsetMinutesAt(new Date(candidateUTC));
+
+  // Seconde passe : on recalcule le décalage à l'instant obtenu avec le premier
+  // échantillon, et c'est CE décalage qu'on retranche — pas le premier. Loin de toute
+  // transition, les deux échantillons sont identiques (aucun changement de résultat).
+  const correctedInstant = candidateUTC - firstGuessOffsetMin * 60_000;
+  const offsetMin = parisOffsetMinutesAt(new Date(correctedInstant));
   return new Date(candidateUTC - offsetMin * 60_000);
 }
 

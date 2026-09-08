@@ -144,3 +144,99 @@ describe("parisTodayString — le jour calendaire de Paris (jamais celui du proc
     expect(parisTodayString(now)).not.toBe(utcCalendarDay);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Round 3 : défaut Critique remonté en revue. `parisWallClockToInstant` échantillonnait
+// le décalage Europe/Paris UNE SEULE FOIS, à `candidateUTC` (l'heure murale traitée
+// comme si elle était déjà en UTC) — jamais à l'instant réel corrigé. Ça casse en
+// silence pour toute heure murale dans [01:00, 02:00) les jours de transition : une
+// heure qui EXISTE et n'est PAS ambiguë (contrairement à ce que le commentaire
+// d'origine, ligne 60-63, laissait entendre en ne parlant que du trou).
+//
+// La bonne assertion est l'ALLER-RETOUR : reformater l'instant produit en heure de
+// Paris doit redonner l'heure murale demandée. Une valeur UTC écrite à la main (comme
+// dans les blocs ci-dessus, à 03:30 — hors zone dangereuse) ne l'aurait pas détecté.
+// `parisWallClockOf` ci-dessous est un reformatage indépendant de l'implémentation
+// testée : il n'appelle ni `parisWallClockToInstant` ni `parisHourOf`.
+// ─────────────────────────────────────────────────────────────────────────
+
+function parisWallClockOf(instant: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Paris",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(instant);
+  const byType: Record<string, string> = {};
+  for (const p of parts) byType[p.type] = p.value;
+  return `${byType.hour}:${byType.minute}`;
+}
+
+describe("parisWallClockToInstant — zone dangereuse [01:00, 02:00) les jours de transition DST", () => {
+  const SPRING = ["2025-03-30", "2026-03-29"]; // passage à l'heure d'été, transition à 01:00 UTC
+  const FALL = ["2025-10-26", "2026-10-25"]; // retour à l'heure d'hiver, transition à 01:00 UTC
+
+  for (const day of [...SPRING, ...FALL]) {
+    it(`${day} 01:30 — aller-retour : reformater le résultat en heure de Paris redonne 01:30`, () => {
+      const got = parisWallClockToInstant(day, "01:30");
+      expect(parisWallClockOf(got)).toBe("01:30");
+    });
+
+    it(`${day} 00:30 — borne juste AVANT la zone dangereuse, aller-retour`, () => {
+      const got = parisWallClockToInstant(day, "00:30");
+      expect(parisWallClockOf(got)).toBe("00:30");
+    });
+
+    it(`${day} 01:59 — borne juste à la fin de la zone dangereuse, aller-retour`, () => {
+      const got = parisWallClockToInstant(day, "01:59");
+      expect(parisWallClockOf(got)).toBe("01:59");
+    });
+  }
+
+  // Valeurs UTC explicites pour 01:30, dérivées indépendamment (décalage de la veille,
+  // bien avant toute transition, jamais ambigu) — ceinture-et-bretelles en plus de
+  // l'aller-retour ci-dessus.
+  it("2026-03-29 01:30 (été à venir, CET encore) → 2026-03-29T00:30:00.000Z", () => {
+    expect(parisWallClockToInstant("2026-03-29", "01:30").toISOString()).toBe("2026-03-29T00:30:00.000Z");
+  });
+
+  it("2026-10-25 01:30 (hiver à venir, CEST encore) → 2026-10-24T23:30:00.000Z", () => {
+    expect(parisWallClockToInstant("2026-10-25", "01:30").toISOString()).toBe("2026-10-24T23:30:00.000Z");
+  });
+});
+
+describe("parisWallClockToInstant — comportement figé pour l'heure AMBIGUË (retour à l'heure d'hiver, 02:00-02:59, existe deux fois)", () => {
+  // Ce cas n'a PAS de réponse unique correcte : 02:30 Paris le jour du retour à l'heure
+  // d'hiver désigne deux instants réels (une fois en CEST, une fois en CET, une heure
+  // plus tard). La fonction résout de façon déterministe vers la SECONDE occurrence
+  // (celle après le rétropassage, en CET) — ce test fige ce choix pour qu'un futur
+  // changement d'algorithme soit visible plutôt que silencieux.
+  it("2026-10-25 02:30 → résout vers la 2e occurrence (CET, après le rétropassage) : 2026-10-25T01:30:00.000Z", () => {
+    const got = parisWallClockToInstant("2026-10-25", "02:30");
+    expect(got.toISOString()).toBe("2026-10-25T01:30:00.000Z");
+    // Vérifie explicitement le régime : offset +1h (CET), pas +2h (CEST) — la 2e passe.
+    expect(parisWallClockOf(got)).toBe("02:30"); // l'aller-retour tient aussi pour ce choix
+  });
+
+  it("2025-10-26 02:30 → même choix déterministe (2e occurrence) une autre année", () => {
+    const got = parisWallClockToInstant("2025-10-26", "02:30");
+    expect(got.toISOString()).toBe("2025-10-26T01:30:00.000Z");
+  });
+});
+
+describe("parisWallClockToInstant — comportement figé pour l'heure INEXISTANTE (passage à l'heure d'été, 02:00-02:59, n'existe jamais)", () => {
+  // 02:30 Paris le jour du passage à l'heure d'été n'existe pas (les horloges sautent de
+  // 02:00 à 03:00). La fonction résout de façon déterministe comme si le trou d'une
+  // heure était traversé tel quel : le résultat reformate en heure de Paris à l'heure
+  // demandée + la taille du trou (1h). Ce test fige ce choix.
+  it("2026-03-29 02:30 (n'existe pas) → se comporte comme 03:30 (heure demandée + 1h de trou)", () => {
+    const got = parisWallClockToInstant("2026-03-29", "02:30");
+    expect(got.toISOString()).toBe("2026-03-29T01:30:00.000Z");
+    expect(parisWallClockOf(got)).toBe("03:30"); // PAS 02:30 — cette heure n'existe pas
+  });
+
+  it("2025-03-30 02:30 (n'existe pas) → même choix déterministe une autre année", () => {
+    const got = parisWallClockToInstant("2025-03-30", "02:30");
+    expect(parisWallClockOf(got)).toBe("03:30");
+  });
+});
