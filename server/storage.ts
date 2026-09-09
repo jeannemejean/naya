@@ -449,7 +449,12 @@ export interface IStorage {
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
-  getLeadsAwaitingInvite(): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]>;
+  /**
+   * Candidats au poller Unipile — BORNÉ par `limit` (revue post-commit f17af17, défaut
+   * Critique : sans limite, un compte avec des centaines de leads en attente ferait
+   * consulter LinkedIn sans aucune borne, à chaque passage du poller).
+   */
+  getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]>;
 
   // Outreach operations
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
@@ -1513,6 +1518,13 @@ export class DatabaseStorage implements IStorage {
       leadId, campaignId, userId,
       status: "active", currentStep: 0, nextRunAt,
       lastStepSentAt: null, repliedAt: null,
+      // Décision explicite (revue post-commit f17af17, mineur) : un enrôlement (y compris
+      // une RELANCE de campagne) est un vrai nouveau départ — currentStep, nextRunAt et
+      // repliedAt sont déjà remis à zéro ci-dessus. Un lead ABANDONNÉ (status:"failed" après
+      // 5 échecs LinkedIn consécutifs) puis ré-enrôlé garderait sinon son compteur d'échecs :
+      // le tout premier échec de la relance déclencherait un abandon IMMÉDIAT (silencieux,
+      // sans nouvelle chance). Remis à 0 pour la même raison que le reste de cette ligne.
+      linkedinConsecutiveFailures: 0,
     };
     if (existing) {
       const [updated] = await db.update(leadSequenceState)
@@ -1709,7 +1721,7 @@ export class DatabaseStorage implements IStorage {
 
   // Leads enrôlés (séquence active) dont l'invitation LinkedIn n'a pas encore été confirmée
   // acceptée — candidats au poller Unipile.
-  async getLeadsAwaitingInvite(): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]> {
+  async getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]> {
     return await db.select({ id: leads.id, userId: leads.userId, linkedinUrl: leads.linkedinUrl })
       .from(leads)
       .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
@@ -1717,7 +1729,8 @@ export class DatabaseStorage implements IStorage {
         eq(leadSequenceState.status, "active"),
         isNull(leads.linkedinConnectedAt),
         isNull(leads.archivedAt),
-      ));
+      ))
+      .limit(limit);
   }
 
   // Outreach operations

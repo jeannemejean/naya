@@ -139,3 +139,95 @@ describe("isConnected — reste fail-closed après le changement de forme de res
     expect(await isConnected("acc1", "https://linkedin.com/in/x")).toBe(false);
   });
 });
+
+// Revue post-commit f17af17, défaut Important : `isConnected` avalait les 401/403 du
+// poller (`linkedin-sync.ts`) — `if (!res.ok) return false;` traitait une restriction
+// LinkedIn comme « pas encore en relation », sans jamais la signaler. Même défaut, même
+// endroit du raisonnement que `resolveProviderId` (Critique 3 de la ronde précédente) :
+// absence de mesure traitée comme mesure. `checkConnection` propage le statut ; `isConnected`
+// (conservé pour ses propres appelants) reste un simple booléen fail-closed dérivé.
+describe("checkConnection — propage le statut HTTP (jamais avalé), même contrat fail-closed que isConnected pour `connected`", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv("UNIPILE_API_KEY", "test-key");
+    vi.stubEnv("UNIPILE_DSN", "https://api.example.test");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("résolution du profil en 401 → ok:false, error:'resolve_401', connected:false", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+    const { checkConnection } = await import("./linkedin");
+    expect(await checkConnection("acc1", "https://linkedin.com/in/x")).toEqual({
+      ok: false, connected: false, error: "resolve_401",
+    });
+  });
+
+  it("résolution du profil en 403 → ok:false, error:'resolve_403'", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403 }));
+    const { checkConnection } = await import("./linkedin");
+    expect(await checkConnection("acc1", "https://linkedin.com/in/x")).toEqual({
+      ok: false, connected: false, error: "resolve_403",
+    });
+  });
+
+  it("profil résolu, mais le GET de statut final échoue en 403 → ok:false, error:'check_403'", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ provider_id: "p1" }) }) // resolveProviderId
+      .mockResolvedValueOnce({ ok: false, status: 403 }); // GET final de statut
+    vi.stubGlobal("fetch", fetchMock);
+    const { checkConnection } = await import("./linkedin");
+    expect(await checkConnection("acc1", "https://linkedin.com/in/x")).toEqual({
+      ok: false, connected: false, error: "check_403",
+    });
+  });
+
+  it("profil résolu, en relation (FIRST_DEGREE) → ok:true, connected:true, error:null", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ provider_id: "p1" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ network_distance: "FIRST_DEGREE" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { checkConnection } = await import("./linkedin");
+    expect(await checkConnection("acc1", "https://linkedin.com/in/x")).toEqual({
+      ok: true, connected: true, error: null,
+    });
+  });
+
+  it("profil résolu, pas encore en relation → ok:true, connected:false, error:null (PAS une restriction)", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ provider_id: "p1" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ network_distance: "SECOND_DEGREE" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { checkConnection } = await import("./linkedin");
+    expect(await checkConnection("acc1", "https://linkedin.com/in/x")).toEqual({
+      ok: true, connected: false, error: null,
+    });
+  });
+
+  it("200 OK mais profil vide (pas d'erreur HTTP) → ok:true, connected:false, error:null", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+    const { checkConnection } = await import("./linkedin");
+    expect(await checkConnection("acc1", "https://linkedin.com/in/x")).toEqual({
+      ok: true, connected: false, error: null,
+    });
+  });
+
+  it("exception réseau → ok:false, connected:false, jamais levée (fail closed)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+    const { checkConnection } = await import("./linkedin");
+    const got = await checkConnection("acc1", "https://linkedin.com/in/x");
+    expect(got.ok).toBe(false);
+    expect(got.connected).toBe(false);
+  });
+
+  it("isConnected reste équivalent à checkConnection(...).connected", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ provider_id: "p1" }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ network_distance: "FIRST_DEGREE" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { isConnected } = await import("./linkedin");
+    expect(await isConnected("acc1", "https://linkedin.com/in/x")).toBe(true);
+  });
+});

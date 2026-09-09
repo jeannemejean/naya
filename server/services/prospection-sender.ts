@@ -60,7 +60,10 @@ export function daysBetween(from: Date, to: Date): number {
 }
 
 // Kill-switch global. L'envoi effectif dépend AUSSI de la config expéditeur de chaque user.
-function masterSendingEnabled(): boolean {
+// Exporté : `linkedin-sync.ts` (poller de lecture) le consulte aussi — revue post-commit
+// f17af17, défaut Critique. « L'envoi reste inerte » ne doit pas laisser le POLLER
+// continuer d'interroger LinkedIn quand la prospection est globalement désactivée.
+export function masterSendingEnabled(): boolean {
   return process.env.PROSPECTION_SENDING_ENABLED === "true";
 }
 
@@ -74,8 +77,11 @@ const DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80;
 // pure et déterministe. Base 3 min + dispersion 0-4 min → délai réel entre 3 et 7 min
 // selon le tirage : assez pour casser tout motif régulier, sans geler tout le débit
 // sur une fenêtre ouvrée de plusieurs heures.
-const LINKEDIN_MIN_DELAY_BASE_MS = 3 * 60_000;
-const LINKEDIN_MIN_DELAY_JITTER_MS = 4 * 60_000;
+// Exportées : `linkedin-sync.ts` tire dans le MÊME budget (voir sa doc de tête) — un seul
+// jeu de constantes pour « à quel point une action LinkedIn répétée a l'air mécanique »,
+// que ce soit un envoi ou une consultation de statut.
+export const LINKEDIN_MIN_DELAY_BASE_MS = 3 * 60_000;
+export const LINKEDIN_MIN_DELAY_JITTER_MS = 4 * 60_000;
 
 // Recul + abandon sur échec LinkedIn franc, PAR LEAD (pas par compte — le compte est
 // protégé séparément par la garde de risque, qui peut décider indépendamment de mettre
@@ -95,6 +101,17 @@ const LINKEDIN_MIN_DELAY_JITTER_MS = 4 * 60_000;
 // plafonds quotidiens (5 tentatives ≤ le plafond du jour 0 d'un compte flambant neuf).
 export const LINKEDIN_FAILURE_BACKOFF_BASE_MIN = 5;
 export const LINKEDIN_MAX_CONSECUTIVE_FAILURES = 5;
+
+// Revue post-commit f17af17, mineur : un lead refusé pour cause de RESTRICTION du compte
+// gardait son `nextRunAt` inchangé → sur un compte restreint avec de nombreux leads dus,
+// jusqu'à 100 lignes de séquence étaient relues (getSequenceSteps/getLeadSignals/
+// getReservedStepOrders/getLeads) à CHAQUE tick (60s), pour toujours — coût base pur,
+// aucun appel Unipile (déjà bloqué), mais inutile pendant potentiellement des heures/jours
+// en attendant une reprise MANUELLE. Une restriction ne se résout jamais toute seule en
+// quelques minutes (contrairement à la fenêtre ouvrée, au délai minimum ou aux plafonds,
+// qui expirent naturellement) : 1h est un compromis délibéré entre « ne pas marteler la
+// base pour rien » et « reprendre vite après une levée manuelle ».
+export const LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS = 60 * 60_000;
 
 export interface LinkedInFailureOutcome {
   abandon: boolean;
@@ -215,7 +232,12 @@ export async function runProspectionSender(): Promise<void> {
     }
 
     const prefsCache = new Map<string, any>();
-    const sentCount = new Map<string, number>(); // emails envoyés sur 24h glissantes, par user
+    // Emails envoyés sur 24h glissantes, par user. `null` = lecture du plafond échouée —
+    // revue post-commit f17af17, mineur : `.catch(() => 0)` traitait un plafond ILLISIBLE
+    // comme "zéro envoi aujourd'hui", donc fail-OPEN (le contraire de la prudence attendue
+    // partout ailleurs dans ce chantier) ; une lecture ratée refuse désormais d'envoyer,
+    // au lieu de l'autoriser à tort.
+    const sentCount = new Map<string, number | null>();
     // Historique des TENTATIVES d'envoi LinkedIn (succès ET échecs) sur les 7 derniers
     // jours glissants, par user — alimente à la fois le plafond quotidien de montée en
     // charge ET le plafond hebdomadaire de `prospection-linkedin-guard.ts`. Compter les
@@ -340,6 +362,12 @@ export async function runProspectionSender(): Promise<void> {
             console.log(
               `[ProspectionSender] LinkedIn lead ${lead.id} — compte de l'utilisateur ${state.userId} restreint plus tôt dans ce passage : refus immédiat, aucun coût DB/IA, aucun appel Unipile.`,
             );
+            // Repousse nextRunAt : voir LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS. `.catch` :
+            // une écriture ratée ici n'a qu'un coût de performance (le lead sera relu au
+            // prochain tick), jamais un risque LinkedIn — ne fait pas tomber le prospect.
+            await storage.updateLeadSequenceState(state.leadId, {
+              nextRunAt: new Date(now.getTime() + LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS),
+            } as any).catch(() => {});
             continue;
           }
           if (!liHistoryCache.has(state.userId)) {
@@ -364,7 +392,15 @@ export async function runProspectionSender(): Promise<void> {
             console.log(
               `[ProspectionSender] LinkedIn lead ${lead.id} refusé par la garde de risque (${guardDecision.reason}) : ${guardDecision.detail} — avant tout coût DB/IA.`,
             );
-            continue; // retry plus tard (nextRunAt inchangé)
+            if (guardDecision.reason === "restricted") {
+              // Contrairement aux autres refus (fenêtre, délai minimum, plafonds — qui se
+              // résolvent seuls en quelques minutes/heures), une restriction ne se lève que
+              // manuellement : voir LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS.
+              await storage.updateLeadSequenceState(state.leadId, {
+                nextRunAt: new Date(now.getTime() + LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS),
+              } as any).catch(() => {});
+            }
+            continue; // retry plus tard (nextRunAt inchangé pour les autres motifs)
           }
         }
 
@@ -406,9 +442,15 @@ export async function runProspectionSender(): Promise<void> {
           }
           // Plafond d'envoi / jour (24h glissantes) pour préserver la délivrabilité.
           if (!sentCount.has(state.userId)) {
-            sentCount.set(state.userId, await storage.countOutreachSentSince(state.userId, new Date(Date.now() - 86400000)).catch(() => 0));
+            const count = await storage.countOutreachSentSince(state.userId, new Date(Date.now() - 86400000)).catch(() => null);
+            sentCount.set(state.userId, count);
           }
-          if ((sentCount.get(state.userId) || 0) >= DAILY_CAP) {
+          const currentSentCount = sentCount.get(state.userId);
+          if (currentSentCount === null || currentSentCount === undefined) {
+            console.log(`[ProspectionSender] plafond email illisible pour l'utilisateur ${state.userId} — refus par prudence (jamais traité comme 0 envoi).`);
+            continue; // lecture ratée : refus par prudence, jamais "0 envoi aujourd'hui"
+          }
+          if (currentSentCount >= DAILY_CAP) {
             continue; // plafond atteint → on réessaiera plus tard (nextRunAt inchangé)
           }
           const footerAddress = [prefs?.prospectionSenderAddress, prefs?.prospectionSenderCity, prefs?.prospectionSenderCountry]

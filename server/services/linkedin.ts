@@ -110,29 +110,72 @@ export function interpretConnectionResponse(data: any): boolean {
   return data?.network_distance === "FIRST_DEGREE" || data?.is_relationship === true;
 }
 
+export interface ConnectionCheckResult {
+  /**
+   * `true` si la vérification s'est déroulée jusqu'au bout SANS erreur HTTP/réseau —
+   * `connected` est alors fiable, qu'il soit `true` ou `false`. `false` si la vérification
+   * elle-même a échoué (401/403/5xx, exception réseau) : `connected` vaut alors `false`
+   * par défaut (fail closed) mais ne doit PAS être lu comme « pas encore en relation ».
+   */
+  ok: boolean;
+  connected: boolean;
+  /**
+   * Raison de l'échec quand `ok` est `false` — même convention que `sendLinkedInStep`
+   * (`resolve_<status>` si la résolution du profil échoue par erreur HTTP, `check_<status>`
+   * si c'est le GET final de statut qui échoue). `null` si `ok` est `true`.
+   */
+  error: string | null;
+}
+
+/**
+ * Vérifie l'état de connexion d'un profil (résolu depuis `linkedinUrl`) vu depuis le
+ * compte Unipile `accountId`. Ne lève JAMAIS : toute erreur réseau/API ou forme de
+ * réponse inconnue → `ok:false, connected:false` (fail closed), pour ne jamais faire
+ * avancer une branche `if_invite_accepted` sur un faux positif.
+ *
+ * ⚠️ Revue post-commit f17af17, défaut Important : l'ancienne forme (booléen seul,
+ * voir `isConnected`) avalait le code HTTP — un 401/403 (restriction du compte) devenait
+ * indiscernable d'un simple « pas encore en relation ». `checkConnection` propage le
+ * statut, même correction que `resolveProviderId` (Critique 3, ronde précédente) : c'est
+ * le chemin de LECTURE du poller (`linkedin-sync.ts`), qui peut recevoir la restriction
+ * en premier lui aussi.
+ */
+export async function checkConnection(accountId: string, linkedinUrl: string): Promise<ConnectionCheckResult> {
+  const publicId = publicIdFromUrl(linkedinUrl);
+  if (!publicId) return { ok: false, connected: false, error: "no_public_id" };
+  try {
+    const resolution = await resolveProviderId(accountId, publicId);
+    if (!resolution.providerId) {
+      // 200 OK sans provider_id → profil introuvable, rien d'anormal. 401/403/5xx → erreur
+      // HTTP explicite, potentiellement une restriction (voir `isLinkedInRestrictionSignal`).
+      if (resolution.httpStatus != null) {
+        return { ok: false, connected: false, error: `resolve_${resolution.httpStatus}` };
+      }
+      return { ok: true, connected: false, error: null };
+    }
+    const res = await fetch(
+      `${DSN}/api/v1/users/${encodeURIComponent(resolution.providerId)}?account_id=${encodeURIComponent(accountId)}`,
+      { headers: headers() },
+    );
+    if (!res.ok) return { ok: false, connected: false, error: `check_${res.status}` };
+    const data: any = await res.json().catch(() => ({}));
+    return { ok: true, connected: interpretConnectionResponse(data), error: null };
+  } catch {
+    // Exception réseau : issue inconnue, PAS un signal de restriction confirmé (même
+    // convention que l'exception de `sendLinkedInStep` dans prospection-sender.ts).
+    return { ok: false, connected: false, error: null };
+  }
+}
+
 /**
  * Vrai si le profil (résolu depuis `linkedinUrl`) est désormais une relation 1er degré du
  * compte Unipile `accountId`, càd que l'invitation de connexion a été acceptée.
- * Ne lève jamais : toute erreur réseau/API ou forme de réponse inconnue → `false` (fail closed),
- * pour ne jamais faire avancer une branche `if_invite_accepted` sur un faux positif.
+ * Ne lève jamais : toute erreur réseau/API ou forme de réponse inconnue → `false` (fail closed).
+ * Conservé pour ses appelants qui n'ont besoin que du booléen ; `linkedin-sync.ts` utilise
+ * `checkConnection` directement pour accéder au détail de l'échec (journal + restriction).
  */
 export async function isConnected(accountId: string, linkedinUrl: string): Promise<boolean> {
-  try {
-    const publicId = publicIdFromUrl(linkedinUrl);
-    if (!publicId) return false;
-    const resolution = await resolveProviderId(accountId, publicId).catch(() => null);
-    const providerId = resolution?.providerId;
-    if (!providerId) return false;
-    const res = await fetch(
-      `${DSN}/api/v1/users/${encodeURIComponent(providerId)}?account_id=${encodeURIComponent(accountId)}`,
-      { headers: headers() },
-    );
-    if (!res.ok) return false;
-    const data: any = await res.json().catch(() => ({}));
-    return interpretConnectionResponse(data);
-  } catch {
-    return false;
-  }
+  return (await checkConnection(accountId, linkedinUrl)).connected;
 }
 
 export interface LinkedInSendResult {

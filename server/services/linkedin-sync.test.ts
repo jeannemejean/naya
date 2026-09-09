@@ -1,140 +1,210 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Revue post-commit 261835e, Important 1 : le poller (toutes les 15 min, 24h/24,
-// week-end compris) appelait `isConnected` (2 requêtes LinkedIn par lead) pour TOUS les
-// leads en attente, SANS jamais lire `linkedinRestrictedAt` ni respecter la fenêtre
-// ouvrée. Après une restriction, le compte continuait d'être interrogé indéfiniment —
-// l'invariant « arrêt total » du reste de ce chantier ne valait que pour l'ENVOI.
+// Revue post-commit f17af17, Critique : le poller (toutes les 15 min, 24h/24) n'avait ni
+// LIMIT ni plafond par compte, et ses appels n'entraient JAMAIS dans `linkedin_send_attempts`
+// — un chemin par lequel le compte pouvait consulter des milliers de profils par jour, deux
+// ordres de grandeur au-dessus de ce que la garde protège côté envoi, sans qu'elle le voie.
+// Décision : le poller tire dans le MÊME budget que les envois (même journal, même garde
+// `decideLinkedInAction`, mêmes plafonds ramp-up/hebdomadaire/délai minimum) — un seul
+// compte LinkedIn a une seule surface de risque de restriction, que la requête soit une
+// lecture ou une écriture. Voir la justification complète dans le rapport de tâche.
 vi.mock("../storage", () => ({
   storage: {
     getLeadsAwaitingInvite: vi.fn(),
     getUserPreferences: vi.fn(),
     setLeadLinkedinConnected: vi.fn(),
+    getLinkedInAttemptTimestampsSince: vi.fn(),
+    recordLinkedInSendAttempt: vi.fn(),
+    updateUserPreferences: vi.fn(),
   },
 }));
 
 vi.mock("./linkedin", () => ({
   linkedinConfigured: vi.fn(() => true),
-  isConnected: vi.fn(),
+  checkConnection: vi.fn(),
 }));
 
-import { syncLinkedInConnections, shouldPollLinkedIn } from "./linkedin-sync";
+import { syncLinkedInConnections, LINKEDIN_SYNC_BATCH_LIMIT } from "./linkedin-sync";
 import { storage } from "../storage";
-import { isConnected } from "./linkedin";
+import { checkConnection } from "./linkedin";
+
+const HOUR = 60 * 60 * 1000;
 
 const openPrefs = (overrides: Record<string, any> = {}) => ({
-  timezone: "Europe/Paris",
-  workDayStart: "09:00",
-  workDayEnd: "18:00",
-  workDays: "mon,tue,wed,thu,fri",
+  timezone: "UTC",
+  workDayStart: "00:00",
+  workDayEnd: "23:59",
+  workDays: "sun,mon,tue,wed,thu,fri,sat",
   linkedinUnipileAccountId: "acc1",
+  linkedinAccountConnectedAt: new Date(Date.now() - 60 * 24 * HOUR), // compte mature
   linkedinRestrictedAt: null,
+  linkedinRestrictedReason: null,
   ...overrides,
 });
 
-// Instant de référence : mardi 13 janvier 2026, 10:00 à Paris (09:00 UTC, hiver UTC+1) —
-// dans la fenêtre 9h-18h, jour ouvré. Même date que prospection-linkedin-guard.test.ts.
-const IN_WINDOW_NOW = new Date("2026-01-13T09:00:00.000Z");
-
-describe("shouldPollLinkedIn — pure, `now` explicite (jamais d'horloge implicite)", () => {
-  it("dans la fenêtre ouvrée, non restreint, compte connecté → true", () => {
-    expect(shouldPollLinkedIn(openPrefs(), IN_WINDOW_NOW)).toBe(true);
-  });
-
-  it("compte restreint → false, même en pleine fenêtre ouvrée", () => {
-    const prefs = openPrefs({ linkedinRestrictedAt: new Date("2026-01-12T00:00:00.000Z") });
-    expect(shouldPollLinkedIn(prefs, IN_WINDOW_NOW)).toBe(false);
-  });
-
-  it("nuit (03:00 à Paris, même mardi) → false", () => {
-    const nightNow = new Date("2026-01-13T02:00:00.000Z"); // 03:00 Paris
-    expect(shouldPollLinkedIn(openPrefs(), nightNow)).toBe(false);
-  });
-
-  it("week-end (samedi 10:00 à Paris) → false même en pleine journée", () => {
-    const saturdayNow = new Date("2026-01-17T09:00:00.000Z"); // 10:00 Paris, samedi
-    expect(shouldPollLinkedIn(openPrefs(), saturdayNow)).toBe(false);
-  });
-
-  it("pas de compte LinkedIn connecté → false", () => {
-    expect(shouldPollLinkedIn(openPrefs({ linkedinUnipileAccountId: null }), IN_WINDOW_NOW)).toBe(false);
-  });
-
-  it("préférences absentes (lecture échouée) → false, refus par prudence", () => {
-    expect(shouldPollLinkedIn(null, IN_WINDOW_NOW)).toBe(false);
-    expect(shouldPollLinkedIn(undefined, IN_WINDOW_NOW)).toBe(false);
-  });
+const baseLead = (overrides: Record<string, any> = {}) => ({
+  id: 1,
+  userId: "u1",
+  linkedinUrl: "https://linkedin.com/in/x",
+  ...overrides,
 });
 
-describe("syncLinkedInConnections — intégration (storage/isConnected mockés)", () => {
-  const baseLead = (overrides: Record<string, any> = {}) => ({
-    id: 1,
-    userId: "u1",
-    linkedinUrl: "https://linkedin.com/in/x",
-    ...overrides,
-  });
-
-  // Fenêtre volontairement large (00:00-23:59, 7j/7) pour que ces tests d'intégration
-  // passent déterministement quel que soit le moment réel d'exécution — la fenêtre
-  // ouvrée elle-même est déjà couverte, de façon déterministe, par `shouldPollLinkedIn`
-  // ci-dessus (qui prend `now` en paramètre).
-  const openWideAllTheTimePrefs = (overrides: Record<string, any> = {}) => ({
-    timezone: "UTC",
-    workDayStart: "00:00",
-    workDayEnd: "23:59",
-    workDays: "sun,mon,tue,wed,thu,fri,sat",
-    linkedinUnipileAccountId: "acc1",
-    linkedinRestrictedAt: null,
-    ...overrides,
-  });
+describe("syncLinkedInConnections", () => {
+  const ORIGINAL_ENABLED = process.env.PROSPECTION_SENDING_ENABLED;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.PROSPECTION_SENDING_ENABLED = "true";
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     (storage.setLeadLinkedinConnected as any).mockResolvedValue(undefined);
+    (storage.getLinkedInAttemptTimestampsSince as any).mockResolvedValue([]);
+    (storage.recordLinkedInSendAttempt as any).mockResolvedValue(undefined);
+    (storage.updateUserPreferences as any).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
+    if (ORIGINAL_ENABLED === undefined) delete process.env.PROSPECTION_SENDING_ENABLED;
+    else process.env.PROSPECTION_SENDING_ENABLED = ORIGINAL_ENABLED;
     vi.restoreAllMocks();
   });
 
-  it("compte restreint → isConnected n'est JAMAIS appelé, même en lecture", async () => {
+  it("interrupteur global désactivé → aucune lecture, aucun appel LinkedIn (défaut Critique)", async () => {
+    delete process.env.PROSPECTION_SENDING_ENABLED;
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+
+    const updated = await syncLinkedInConnections();
+
+    expect(checkConnection).not.toHaveBeenCalled();
+    expect(storage.getLeadsAwaitingInvite).not.toHaveBeenCalled();
+    expect(updated).toBe(0);
+  });
+
+  it("getLeadsAwaitingInvite est appelé avec un LIMIT explicite (défaut Critique : requête non bornée)", async () => {
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([]);
+
+    await syncLinkedInConnections();
+
+    expect(storage.getLeadsAwaitingInvite).toHaveBeenCalledWith(LINKEDIN_SYNC_BATCH_LIMIT);
+    expect(LINKEDIN_SYNC_BATCH_LIMIT).toBeGreaterThan(0);
+  });
+
+  it("compte restreint → checkConnection n'est JAMAIS appelé, même en lecture", async () => {
     (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
     (storage.getUserPreferences as any).mockResolvedValue(
-      openWideAllTheTimePrefs({ linkedinRestrictedAt: new Date(Date.now() - 86400000) }),
+      openPrefs({ linkedinRestrictedAt: new Date(Date.now() - 24 * HOUR) }),
     );
 
     const updated = await syncLinkedInConnections();
 
-    expect(isConnected).not.toHaveBeenCalled();
+    expect(checkConnection).not.toHaveBeenCalled();
     expect(updated).toBe(0);
   });
 
-  // La fenêtre ouvrée elle-même (nuit, week-end) dépend de l'instant réel d'exécution du
-  // test si on ne fige pas `now` — `syncLinkedInConnections` ne le prend pas en
-  // paramètre. Elle est déjà couverte de façon déterministe par les tests
-  // `shouldPollLinkedIn` ci-dessus (qui prennent `now` en paramètre) ; ce test
-  // d'intégration se limite donc à l'invariant qui NE dépend PAS de l'heure : la
-  // restriction.
-
-  it("dans la fenêtre ouvrée, non restreint → isConnected est appelé normalement (comportement préservé)", async () => {
+  it("pas de compte LinkedIn connecté → checkConnection n'est pas appelé", async () => {
     (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
-    (storage.getUserPreferences as any).mockResolvedValue(openWideAllTheTimePrefs());
-    (isConnected as any).mockResolvedValue(true);
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: null }));
 
     const updated = await syncLinkedInConnections();
 
-    expect(isConnected).toHaveBeenCalledWith("acc1", "https://linkedin.com/in/x");
+    expect(checkConnection).not.toHaveBeenCalled();
+    expect(updated).toBe(0);
+  });
+
+  it("budget partagé avec les envois déjà épuisé (80 tentatives sur 7 jours glissants) → refusé par la garde, aucun appel LinkedIn", async () => {
+    const alreadyEighty = Array.from({ length: 80 }, (_, i) => new Date(Date.now() - 72 * HOUR - i * HOUR));
+    (storage.getLinkedInAttemptTimestampsSince as any).mockResolvedValue(alreadyEighty);
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+
+    const updated = await syncLinkedInConnections();
+
+    expect(checkConnection).not.toHaveBeenCalled();
+    expect(updated).toBe(0);
+  });
+
+  it("historique illisible (lecture échouée) → refus par prudence, aucun appel LinkedIn", async () => {
+    (storage.getLinkedInAttemptTimestampsSince as any).mockRejectedValue(new Error("DB down"));
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+
+    const updated = await syncLinkedInConnections();
+
+    expect(checkConnection).not.toHaveBeenCalled();
+    expect(updated).toBe(0);
+  });
+
+  it("dans le budget, non restreint → checkConnection appelé, tentative journalisée, lead marqué connecté si en relation", async () => {
+    (checkConnection as any).mockResolvedValue({ ok: true, connected: true, error: null });
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+
+    const updated = await syncLinkedInConnections();
+
+    expect(checkConnection).toHaveBeenCalledWith("acc1", "https://linkedin.com/in/x");
+    expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, true, null);
     expect(storage.setLeadLinkedinConnected).toHaveBeenCalledWith(1, expect.any(Date));
     expect(updated).toBe(1);
   });
 
-  it("pas de compte LinkedIn connecté → isConnected n'est pas appelé (comportement préservé)", async () => {
+  it("pas encore en relation (vérification réussie) → PAS marqué connecté, PAS une restriction", async () => {
+    (checkConnection as any).mockResolvedValue({ ok: true, connected: false, error: null });
     (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
-    (storage.getUserPreferences as any).mockResolvedValue(openWideAllTheTimePrefs({ linkedinUnipileAccountId: null }));
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
 
     const updated = await syncLinkedInConnections();
 
-    expect(isConnected).not.toHaveBeenCalled();
+    expect(storage.setLeadLinkedinConnected).not.toHaveBeenCalled();
+    expect(storage.updateUserPreferences).not.toHaveBeenCalled();
+    expect(updated).toBe(0);
+  });
+
+  it("signal de restriction (401/403) détecté à la vérification → persiste la restriction, arrête net les leads suivants du même user dans le même passage (même défaut Critique 1 que l'envoi)", async () => {
+    (checkConnection as any).mockResolvedValue({ ok: false, connected: false, error: "resolve_401" });
+    const lead1 = baseLead({ id: 1, userId: "u1" });
+    const lead2 = baseLead({ id: 2, userId: "u1" });
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([lead1, lead2]);
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+
+    await syncLinkedInConnections();
+
+    expect(checkConnection).toHaveBeenCalledTimes(1); // le second lead n'appelle jamais LinkedIn
+    expect(storage.updateUserPreferences).toHaveBeenCalledWith(
+      "u1",
+      expect.objectContaining({ linkedinRestrictedAt: expect.any(Date), linkedinRestrictedReason: "resolve_401" }),
+    );
+  });
+
+  it("échec transitoire (pas un signal de restriction) → tentative journalisée mais rien persisté", async () => {
+    (checkConnection as any).mockResolvedValue({ ok: false, connected: false, error: "check_500" });
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
+    (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+
+    await syncLinkedInConnections();
+
+    expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, false, "check_500");
+    expect(storage.updateUserPreferences).not.toHaveBeenCalled();
+  });
+
+  it("lead sans URL LinkedIn → ignoré sans aucun appel", async () => {
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ linkedinUrl: null })]);
+
+    const updated = await syncLinkedInConnections();
+
+    expect(checkConnection).not.toHaveBeenCalled();
+    expect(storage.getUserPreferences).not.toHaveBeenCalled();
+    expect(updated).toBe(0);
+  });
+
+  it("linkedinConfigured() faux → aucune lecture (comportement préservé)", async () => {
+    const linkedinModule = await import("./linkedin");
+    (linkedinModule.linkedinConfigured as any).mockReturnValue(false);
+    (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead()]);
+
+    const updated = await syncLinkedInConnections();
+
+    expect(storage.getLeadsAwaitingInvite).not.toHaveBeenCalled();
     expect(updated).toBe(0);
   });
 });

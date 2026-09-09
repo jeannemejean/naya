@@ -710,7 +710,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
 
-    it("compte LinkedIn en restriction persistée → aucune retentative automatique, aucun appel Unipile", async () => {
+    it("compte LinkedIn en restriction persistée → aucune retentative automatique, aucun appel Unipile, nextRunAt repoussé (pas relu à chaque minute)", async () => {
       (linkedinConfigured as any).mockReturnValue(true);
       (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
       (storage.getUserPreferences as any).mockResolvedValue(
@@ -732,7 +732,14 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
       expect(sendLinkedInStep).not.toHaveBeenCalled();
       expect(storage.claimStepSend).not.toHaveBeenCalled();
-      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+      // Revue post-commit f17af17, mineur : contrairement aux autres refus, `nextRunAt`
+      // n'est plus laissé inchangé sur une restriction — sinon ce lead (et jusqu'à 99
+      // autres du même compte) seraient relus en base à CHAQUE tick, pour toujours, en
+      // attendant une reprise manuelle. Seul `nextRunAt` bouge (pas currentStep/status).
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledTimes(1);
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { nextRunAt: expect.any(Date) });
+      const pushedNextRunAt = (storage.updateLeadSequenceState as any).mock.calls[0][1].nextRunAt as Date;
+      expect(pushedNextRunAt.getTime()).toBeGreaterThan(Date.now() + 30 * 60_000); // repoussé d'au moins 30 min
     });
 
     it("signal de restriction Unipile (401/403) à l'envoi → persiste la restriction pour cet utilisateur", async () => {
@@ -803,6 +810,80 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, false, "profile_not_resolved");
     });
 
+    it("un échec (même transitoire) alimente EN DIRECT l'historique du tick : le lead suivant du même user est refusé pour délai minimum non écoulé (mineur relevé en revue)", async () => {
+      // Preuve indirecte mais fiable de `hist.push` sur la branche ÉCHEC : si l'échec du
+      // premier lead ne poussait pas son horodatage dans le cache en mémoire, le second
+      // lead (même user, même tick) ne verrait AUCUN envoi récent et serait autorisé.
+      const logSpy = vi.spyOn(console, "log");
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: false, action: "none", error: "profile_not_resolved" });
+      const state1 = baseState({ id: 1, leadId: 1 });
+      const state2 = baseState({ id: 2, leadId: 2 });
+      (storage.getDueEnrollments as any).mockResolvedValue([state1, state2]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        baseLead({ id: 1, linkedinUrl: "https://linkedin.com/in/lead1" }),
+        baseLead({ id: 2, linkedinUrl: "https://linkedin.com/in/lead2" }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1); // le second n'appelle jamais Unipile
+      const logMessages = logSpy.mock.calls.map((c) => String(c[0]));
+      expect(logMessages.some((m) => m.includes("min_delay_not_elapsed"))).toBe(true);
+    });
+
+    it("envoi LinkedIn réussi : remet à 0 le compteur d'échecs consécutifs de ce lead (mineur relevé en revue)", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState({ linkedinConsecutiveFailures: 3 } as any)]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ linkedinConsecutiveFailures: 0 }),
+      );
+    });
+
+    it(`${LINKEDIN_MAX_CONSECUTIVE_FAILURES}e échec LinkedIn consécutif d'un lead → abandon de la séquence (status:"failed"), pas du compte (mineur relevé en revue)`, async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: false, action: "none", error: "profile_not_resolved" });
+      (storage.getDueEnrollments as any).mockResolvedValue([
+        baseState({ linkedinConsecutiveFailures: LINKEDIN_MAX_CONSECUTIVE_FAILURES - 1 } as any),
+      ]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, {
+        status: "failed",
+        nextRunAt: null,
+        linkedinConsecutiveFailures: LINKEDIN_MAX_CONSECUTIVE_FAILURES,
+      });
+    });
+
     it("un plafond quotidien déjà épuisé par des ÉCHECS passés (pas des succès) refuse le lead suivant — la revue post-commit 261835e (défaut Critique 2) exigeait que les TENTATIVES comptent, pas les seuls succès", async () => {
       // Compte flambant neuf (connecté à l'instant), palier de départ à 5/jour. 5
       // tentatives — dont le mock ne dit rien sur leur issue passée, exactement le
@@ -831,12 +912,24 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(generateStepMessage).not.toHaveBeenCalled();
     });
 
-    it("deux leads du même user, le PREMIER déclenche une restriction → le SECOND est refusé sans appeler Unipile, malgré des prefs déjà en cache pour tout le tick (défaut Critique 1)", async () => {
+    it("deux leads du même user, le PREMIER déclenche une restriction → le SECOND est arrêté par restrictedThisTick, PAS par le délai minimum (défaut Critique 1 — preuve par mutation, voir rapport)", async () => {
       // `getUserPreferences` est mocké pour renvoyer TOUJOURS le même objet "non
       // restreint" (comme le ferait un vrai prefsCache qui n'a lu la base qu'une fois
       // au début du tick) : si le second lead n'était protégé QUE par une relecture de
-      // `linkedinRestrictedAt`, ce test échouerait. C'est `restrictedThisTick` qui doit
-      // l'arrêter.
+      // `linkedinRestrictedAt`, ce test échouerait.
+      //
+      // PIÈGE DÉMONTRÉ PAR MUTATION EN REVUE (post-commit f17af17, Important) : le
+      // premier échec pousse un horodatage "maintenant" dans le MÊME historique en
+      // mémoire (`hist.push`) que lit le second lead ; `decideLinkedInAction` refuserait
+      // donc le second lead pour `min_delay_not_elapsed` de toute façon, MÊME si
+      // `restrictedThisTick` ne le bloquait pas — `toHaveBeenCalledTimes(1)` seul passe
+      // pour la MAUVAISE raison. On distingue les deux mécanismes par le contenu du log :
+      // `restrictedThisTick` produit une phrase précise ("restreint plus tôt dans ce
+      // passage"), jamais émise par `decideLinkedInAction` (qui, lui, logue son `reason`,
+      // ex. "min_delay_not_elapsed"). Un test qui ne vérifierait que le compte d'appels
+      // resterait vert si `restrictedThisTick` était neutralisé — celui-ci non (vérifié
+      // manuellement par mutation, voir task-linkedin-guard-report.md).
+      const logSpy = vi.spyOn(console, "log");
       (linkedinConfigured as any).mockReturnValue(true);
       (sendLinkedInStep as any).mockResolvedValue({ ok: false, action: "none", error: "chat_401/invite_403 Forbidden" });
       const state1 = baseState({ id: 1, leadId: 1 });
@@ -861,6 +954,9 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       // correctif (getDueEnrollments va jusqu'à 100 par passage).
       expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
       expect(storage.updateUserPreferences).toHaveBeenCalledTimes(1);
+      const logMessages = logSpy.mock.calls.map((c) => String(c[0]));
+      expect(logMessages.some((m) => m.includes("restreint plus tôt dans ce passage"))).toBe(true);
+      expect(logMessages.some((m) => m.includes("min_delay_not_elapsed"))).toBe(false);
     });
 
     it("historique des envois LinkedIn illisible (lecture échouée) → la garde refuse, aucun appel Unipile", async () => {
