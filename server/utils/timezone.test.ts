@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parisWallClockToInstant, parisDayBoundsUTC, parisHourOf, parisTodayString, localWallClock } from "./timezone";
+import { parisWallClockToInstant, parisDayBoundsUTC, parisHourOf, parisTodayString, localWallClock, wallClockToInstant } from "./timezone";
 
 // Le process de prod tourne en UTC (pas de TZ configuré, pas de Dockerfile, pas de
 // railway.toml). `scheduledEndTime` est une heure murale de Paris ("HH:MM"), donc toute
@@ -270,5 +270,40 @@ describe("localWallClock — heure murale + jour de semaine dans un fuseau IANA 
     expect(localWallClock("Europe/Paris", instant).dayAbbr).toBe("wed");
     expect(localWallClock("UTC", instant).dayAbbr).toBe("wed");
     expect(localWallClock("UTC", instant).minuteOfDay).toBe(12 * 60 + 5);
+  });
+});
+
+describe("wallClockToInstant", () => {
+  it("convertit une heure murale de New York en heure d'été", () => {
+    // 2026-07-15 09:00 EDT = UTC-4 → 13:00 UTC
+    expect(wallClockToInstant("America/New_York", "2026-07-15", "09:00").toISOString())
+      .toBe("2026-07-15T13:00:00.000Z");
+  });
+
+  it("convertit une heure murale de New York en heure d'hiver", () => {
+    // 2026-01-15 09:00 EST = UTC-5 → 14:00 UTC
+    expect(wallClockToInstant("America/New_York", "2026-01-15", "09:00").toISOString())
+      .toBe("2026-01-15T14:00:00.000Z");
+  });
+
+  it("gère un décalage à la demi-heure", () => {
+    // Asia/Kolkata = UTC+5:30, pas de changement d'heure
+    expect(wallClockToInstant("Asia/Kolkata", "2026-07-15", "09:00").toISOString())
+      .toBe("2026-07-15T03:30:00.000Z");
+  });
+
+  it("gère minuit sans produire 24 h", () => {
+    expect(wallClockToInstant("Asia/Hong_Kong", "2026-07-15", "00:00").toISOString())
+      .toBe("2026-07-14T16:00:00.000Z");
+  });
+
+  it("reste correct dans la zone dangereuse d'une bascule non européenne", () => {
+    // Bascule US le 2026-11-01 à 02:00 locale. 01:30 existe et n'est pas ambiguë
+    // côté algorithme : l'aller-retour doit redonner l'heure demandée.
+    const instant = wallClockToInstant("America/New_York", "2026-11-01", "01:30");
+    const relu = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(instant);
+    expect(relu).toBe("01:30");
   });
 });

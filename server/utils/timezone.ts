@@ -17,15 +17,17 @@
  * PUR : aucune horloge implicite, aucun accès base de données.
  */
 
-/** Décalage Europe/Paris (en minutes, Paris = UTC + décalage) à un instant donné. */
-function parisOffsetMinutesAt(instant: Date): number {
+const PARIS_TZ = "Europe/Paris";
+
+/** Décalage d'un fuseau IANA (en minutes, fuseau = UTC + décalage) à un instant donné. */
+function offsetMinutesAt(timeZone: string, instant: Date): number {
   // hourCycle: 'h23' est nécessaire — `hour12: false` seul peut, selon la version
   // d'ICU du runtime, rendre "24" au lieu de "00" pour minuit. Si ce "24" reste dans
   // les parts formatées et qu'on le recompose en chaîne ISO (plutôt qu'en le passant à
   // Date.UTC, qui normalise), `new Date(...)` peut échouer à parser l'heure ou donner
   // un résultat faux : `hourCycle: 'h23'` élimine le problème à la racine.
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Europe/Paris",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -38,9 +40,9 @@ function parisOffsetMinutesAt(instant: Date): number {
   const byType: Record<string, string> = {};
   for (const part of parts) byType[part.type] = part.value;
 
-  // Recompose l'heure murale de Paris à cet instant, comme si elle était en UTC — la
+  // Recompose l'heure murale du fuseau à cet instant, comme si elle était en UTC — la
   // différence avec `instant` (qui, lui, EST en UTC) donne le décalage en minutes.
-  const parisWallClockAsUTC = Date.UTC(
+  const wallClockAsUTC = Date.UTC(
     Number(byType.year),
     Number(byType.month) - 1,
     Number(byType.day),
@@ -48,62 +50,72 @@ function parisOffsetMinutesAt(instant: Date): number {
     Number(byType.minute),
     Number(byType.second),
   );
-  return (parisWallClockAsUTC - instant.getTime()) / 60_000;
+  return (wallClockAsUTC - instant.getTime()) / 60_000;
 }
 
 /**
- * Convertit une heure murale de Paris ("YYYY-MM-DD", "HH:MM") en instant absolu.
- * Gère l'heure d'été et l'heure d'hiver — le décalage Europe/Paris est mesuré à
- * l'instant candidat lui-même via `Intl.DateTimeFormat`, sans dépendance externe.
+ * Convertit une heure murale d'un fuseau IANA quelconque ("YYYY-MM-DD", "HH:MM") en
+ * instant absolu. Gère l'heure d'été et l'heure d'hiver de ce fuseau — le décalage est
+ * mesuré à l'instant candidat lui-même via `Intl.DateTimeFormat`, sans dépendance
+ * externe.
  *
  * ⚠️ DÉFAUT CORRIGÉ (revue) : une première version échantillonnait le décalage une
  * seule fois, à `candidateUTC` (l'heure murale traitée comme si elle était déjà en
  * UTC), et faisait confiance à ce premier échantillon. Ça cassait silencieusement pour
  * toute heure murale dans `[01:00, 02:00)` les jours de transition — une heure qui
- * EXISTE et n'est PAS ambiguë, pas seulement « le trou ». Exemple : le 25/10/2026,
- * `candidateUTC` pour "01:30" tombe à "2026-10-25T01:30:00Z", DÉJÀ après l'instant de
- * transition (01:00 UTC) : le premier échantillon lisait donc le régime CET (après
- * bascule) alors que 01:30 murale, ce jour-là, est encore CEST (avant bascule) — 1h
- * d'erreur. La correction : recalculer le décalage à l'instant obtenu avec le premier
- * échantillon, et se fier à CE SECOND échantillon plutôt qu'au premier. Voir
- * `timezone.test.ts`, describe "zone dangereuse", pour la preuve par aller-retour
- * (reformater le résultat doit redonner l'heure demandée) — une assertion sur une
- * valeur UTC écrite à la main ne l'aurait pas détecté, car il fallait sonder
- * précisément 01:00-01:59, pas 03:30.
+ * EXISTE et n'est PAS ambiguë, pas seulement « le trou ». Exemple, découvert sur
+ * Europe/Paris : le 25/10/2026, `candidateUTC` pour "01:30" tombe à
+ * "2026-10-25T01:30:00Z", DÉJÀ après l'instant de transition (01:00 UTC) : le premier
+ * échantillon lisait donc le régime CET (après bascule) alors que 01:30 murale, ce
+ * jour-là, est encore CEST (avant bascule) — 1h d'erreur. La correction : recalculer
+ * le décalage à l'instant obtenu avec le premier échantillon, et se fier à CE SECOND
+ * échantillon plutôt qu'au premier. Voir `timezone.test.ts`, describe "zone
+ * dangereuse", pour la preuve par aller-retour (reformater le résultat doit redonner
+ * l'heure demandée) — une assertion sur une valeur UTC écrite à la main ne l'aurait
+ * pas détecté, car il fallait sonder précisément 01:00-01:59, pas 03:30.
  *
  * POURQUOI DEUX PASSES ET PAS TROIS. Le nombre n'est pas arbitraire. Vérifié en revue
  * par balayage : sur 8640 couples (jour de transition, minute) couvrant les deux
- * bascules de 2024 à 2035, une troisième passe ne diverge JAMAIS de la deuxième —
- * sauf dans l'heure inexistante, où elle ne convergerait de toute façon pas, puisque
- * l'heure demandée n'existe pas et qu'il n'y a donc pas de point fixe. Deux passes
- * suffisent pour toute heure murale qui existe réellement.
+ * bascules de 2024 à 2035 pour Europe/Paris, une troisième passe ne diverge JAMAIS de
+ * la deuxième — sauf dans l'heure inexistante, où elle ne convergerait de toute façon
+ * pas, puisque l'heure demandée n'existe pas et qu'il n'y a donc pas de point fixe.
+ * Deux passes suffisent pour toute heure murale qui existe réellement. Cette garantie
+ * ne dépend d'aucune propriété particulière à Europe/Paris (juste que le décalage
+ * varie d'au plus quelques heures autour d'une transition) : elle vaut pour tout
+ * fuseau IANA.
  *
  * Deux cas n'ont pas de réponse « correcte » unique et sont documentés/figés par des
  * tests dédiés plutôt que laissés silencieux :
- * - Heure AMBIGUË (retour à l'heure d'hiver, 02:00-02:59, existe deux fois) : résout
- *   toujours vers la SECONDE occurrence (après le rétropassage, en CET).
- * - Heure INEXISTANTE (passage à l'heure d'été, 02:00-02:59, n'existe jamais) : se
- *   comporte comme si le trou d'une heure était traversé tel quel — le résultat
- *   reformate en heure de Paris à (heure demandée + 1h).
+ * - Heure AMBIGUË (retour à l'heure d'hiver, existe deux fois) : résout toujours vers
+ *   la SECONDE occurrence (après le rétropassage).
+ * - Heure INEXISTANTE (passage à l'heure d'été, n'existe jamais) : se comporte comme
+ *   si le trou d'une heure était traversé tel quel — le résultat reformate dans le
+ *   fuseau demandé à (heure demandée + taille du trou).
  */
-export function parisWallClockToInstant(dateStr: string, hhmm: string): Date {
+export function wallClockToInstant(timeZone: string, dateStr: string, hhmm: string): Date {
   const [year, month, day] = dateStr.split("-").map(Number);
   const [hour, minute] = hhmm.split(":").map(Number);
 
   // Instant candidat : l'heure murale traitée comme si elle était déjà en UTC. Il est
-  // à au plus ~2h de l'instant réel (le décalage Europe/Paris ne dépasse jamais 2h),
-  // ce qui suffit pour un PREMIER échantillon du régime (CET/CEST) — mais ce premier
-  // échantillon peut appartenir au mauvais régime si l'heure murale demandée est juste
-  // avant une transition (voir le commentaire de fonction). D'où la seconde passe.
+  // à au plus quelques heures de l'instant réel (le décalage d'un fuseau ne dépasse
+  // jamais ~14h, et varie d'au plus quelques heures autour d'une transition), ce qui
+  // suffit pour un PREMIER échantillon du régime — mais ce premier échantillon peut
+  // appartenir au mauvais régime si l'heure murale demandée est juste avant une
+  // transition (voir le commentaire de fonction). D'où la seconde passe.
   const candidateUTC = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
-  const firstGuessOffsetMin = parisOffsetMinutesAt(new Date(candidateUTC));
+  const firstGuessOffsetMin = offsetMinutesAt(timeZone, new Date(candidateUTC));
 
   // Seconde passe : on recalcule le décalage à l'instant obtenu avec le premier
   // échantillon, et c'est CE décalage qu'on retranche — pas le premier. Loin de toute
   // transition, les deux échantillons sont identiques (aucun changement de résultat).
   const correctedInstant = candidateUTC - firstGuessOffsetMin * 60_000;
-  const offsetMin = parisOffsetMinutesAt(new Date(correctedInstant));
+  const offsetMin = offsetMinutesAt(timeZone, new Date(correctedInstant));
   return new Date(candidateUTC - offsetMin * 60_000);
+}
+
+/** Convertit une heure murale de Paris ("YYYY-MM-DD", "HH:MM") en instant absolu. */
+export function parisWallClockToInstant(dateStr: string, hhmm: string): Date {
+  return wallClockToInstant(PARIS_TZ, dateStr, hhmm);
 }
 
 /** "YYYY-MM-DD" du jour suivant, en arithmétique UTC pure (indépendant du fuseau local). */
