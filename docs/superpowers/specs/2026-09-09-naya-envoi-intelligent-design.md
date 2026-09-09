@@ -59,6 +59,19 @@ Aucun ne peut être contourné par les suivants. L'ordre est une garantie, pas u
 
 **Le rythme** s'applique en dernier, à l'intérieur de ce qui reste.
 
+**Valeurs à poser en constantes exportées, nommées et documentées comme des défauts révisables** — pas en dur au milieu de la logique :
+
+| Réglage | Défaut proposé | Pourquoi |
+| --- | --- | --- |
+| Heures ouvrées d'une cible | 9 h – 18 h locales | Même hypothèse que pour l'utilisatrice, faute de mieux. C'est une convention, pas une mesure. |
+| Jours ouvrés d'une cible | lundi – vendredi | Idem. Le week-end reste exclu des deux côtés. |
+| Sessions par jour | 2 à 3 | Ce que fait un humain qui prospecte : il ouvre, traite, referme. |
+| Durée d'une session | 10 à 20 min | Assez pour deux ou trois actions au délai minimum existant (3 à 7 min), pas assez pour ressembler à une rafale. |
+
+Ces heures sont une **convention par défaut**, pas une connaissance : Naya ne sait pas quand ses cibles travaillent réellement. Le jour où on capte leur activité (voir « ce qu'on ne construit pas »), ces bornes deviennent une mesure. En attendant, elles doivent être nommées pour qu'on sache qu'on les a choisies.
+
+Le nombre d'actions par session n'est pas un réglage supplémentaire : il découle de la durée de session et du délai minimum entre actions déjà porté par la garde. Ne pas introduire un troisième nombre qui pourrait contredire les deux premiers.
+
 ### §2 — Déduire le fuseau d'une cible
 
 `country_code` + `city` → fuseau IANA.
