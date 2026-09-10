@@ -297,13 +297,102 @@ describe("wallClockToInstant", () => {
       .toBe("2026-07-14T16:00:00.000Z");
   });
 
-  it("reste correct dans la zone dangereuse d'une bascule non européenne", () => {
-    // Bascule US le 2026-11-01 à 02:00 locale. 01:30 existe et n'est pas ambiguë
-    // côté algorithme : l'aller-retour doit redonner l'heure demandée.
-    const instant = wallClockToInstant("America/New_York", "2026-11-01", "01:30");
-    const relu = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-    }).format(instant);
-    expect(relu).toBe("01:30");
-  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Ronde de correction 1 (revue) : le test ci-dessus (désormais supprimé), "reste
+// correct dans la zone dangereuse d'une bascule non européenne", ne testait RIEN.
+// Vérifié par calcul direct : pour America/New_York, 2026-11-01, 01:30, la 1ère et la
+// 2e passe donnent le MÊME offset (-240) — aucune divergence entre les deux passes, une
+// implémentation à une seule passe aurait passé ce test à l'identique. Le commentaire
+// du test était en plus factuellement faux : 01:30 ce jour-là est l'heure AMBIGUË
+// (retour à l'heure standard), pas une heure qui "existe et n'est pas ambiguë" — les
+// deux instants plausibles (05:30Z et 06:30Z) reformatent tous deux en "01:30".
+//
+// Remplacé par un BALAYAGE, sur le modèle qui a validé Paris (8640 couples,
+// timezone.ts) : deux fuseaux — un non européen ET non nord-américain
+// (Australia/Sydney, DST inversé hémisphère sud) plus America/New_York — sur les DEUX
+// jours de bascule de DEUX années différentes chacun, de 00:00 à 05:00 par pas de 15
+// minutes, assertion par ALLER-RETOUR (reformater l'instant produit dans le fuseau doit
+// redonner l'heure murale demandée). C'est un test discriminant : la mutation
+// "retrancher firstGuessOffsetMin au lieu du second offsetMin" (= revenir à une seule
+// passe) le fait rougir immédiatement — voir le rapport de tâche pour le détail chiffré
+// de cette mutation.
+//
+// EXCLUSION DOCUMENTÉE : le jour "trou" (passage à l'heure d'été) contient une heure
+// murale locale qui N'EXISTE PAS. Pour America/New_York et Australia/Sydney, les
+// horloges sautent de 02:00 à 03:00 local ce jour-là — donc [02:00, 02:45] est exclu du
+// balayage sur les jours "trou" (vérifié par balayage direct hors-test : ces points ne
+// reformatent PAS en l'heure demandée, quelle que soit l'implémentation à deux passes
+// correcte, car il n'y a pas de point fixe). Ce cas n'a pas de réponse unique correcte ;
+// il est déjà documenté et figé côté Paris ci-dessus (describe "heure INEXISTANTE") et
+// hors périmètre ici — ce balayage ne teste QUE le round-trip pour des heures qui
+// EXISTENT réellement. Le jour "pli" (retour à l'heure standard), lui, ne contient que
+// des heures qui existent (certaines deux fois, résolues vers la 2e occurrence — déjà
+// figé côté Paris) : round-trip attendu sur tout le balayage, sans exclusion.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("wallClockToInstant — balayage anti-régression (2e passe corrige, pas répète, la 1ère)", () => {
+  function wallClockOf(timeZone: string, instant: Date): string {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(instant);
+    const byType: Record<string, string> = {};
+    for (const p of parts) byType[p.type] = p.value;
+    return `${byType.hour}:${byType.minute}`;
+  }
+
+  // "HH:MM" de 00:00 à 05:00 inclus, par pas de 15 minutes.
+  function sweepTimes(): string[] {
+    const times: string[] = [];
+    for (let h = 0; h <= 5; h++) {
+      for (let m = 0; m < 60; m += 15) {
+        if (h === 5 && m > 0) break;
+        times.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+      }
+    }
+    return times;
+  }
+
+  // Heure murale locale non existante sur un jour "trou" pour ces deux fuseaux : les
+  // horloges sautent de 02:00 à 03:00 — [02:00, 03:00) exclue de l'assertion round-trip.
+  const NONEXISTENT_LOCAL_HOUR = new Set(["02:00", "02:15", "02:30", "02:45"]);
+
+  const CASES: { tz: string; gapDays: string[]; foldDays: string[] }[] = [
+    {
+      tz: "America/New_York",
+      gapDays: ["2025-03-09", "2026-03-08"], // passage à l'heure d'été (02:00 → 03:00 local)
+      foldDays: ["2025-11-02", "2026-11-01"], // retour à l'heure standard (03:00 → 02:00 local)
+    },
+    {
+      tz: "Australia/Sydney", // non européen ET non nord-américain — DST hémisphère sud (inversé)
+      gapDays: ["2025-10-05", "2026-10-04"], // passage à l'heure d'été australienne (02:00 → 03:00 local)
+      foldDays: ["2025-04-06", "2026-04-05"], // retour à l'heure standard (03:00 → 02:00 local)
+    },
+  ];
+
+  for (const { tz, gapDays, foldDays } of CASES) {
+    describe(tz, () => {
+      for (const day of gapDays) {
+        for (const hhmm of sweepTimes()) {
+          if (NONEXISTENT_LOCAL_HOUR.has(hhmm)) continue;
+          it(`jour trou ${day} ${hhmm} (heure existante) — l'aller-retour redonne ${hhmm}`, () => {
+            const got = wallClockToInstant(tz, day, hhmm);
+            expect(wallClockOf(tz, got)).toBe(hhmm);
+          });
+        }
+      }
+      for (const day of foldDays) {
+        for (const hhmm of sweepTimes()) {
+          it(`jour pli ${day} ${hhmm} — l'aller-retour redonne ${hhmm}`, () => {
+            const got = wallClockToInstant(tz, day, hhmm);
+            expect(wallClockOf(tz, got)).toBe(hhmm);
+          });
+        }
+      }
+    });
+  }
 });
