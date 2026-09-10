@@ -30,6 +30,7 @@
 | --- | --- |
 | `server/utils/timezone.ts` *(modifié)* | Généralise la conversion heure murale → instant à n'importe quel fuseau. |
 | `server/services/prospection-target-zones.ts` *(créé)* | Table pays → fuseaux IANA. Donnée, pas logique. |
+| `server/services/prospection-target-cities.ts` *(créé)* | Ville → fuseau, pour les pays multi-fuseaux. Donnée. |
 | `server/services/prospection-target-hours.ts` *(créé)* | Fenêtre UTC joignable d'une cible pour une date. Pure. |
 | `server/services/prospection-sessions.ts` *(créé)* | Découpage de la journée en sessions, placées selon les fuseaux en attente. Pure. |
 | `server/services/prospection-sender.ts` *(modifié)* | Branchement. Aucune logique de décision. |
@@ -141,7 +142,7 @@ git commit -m "refactor(timezone): conversion heure murale generalisee a tout fu
 
 De la donnée, pas de la logique. `null` = pays inconnu, qui devra provoquer un refus en aval.
 
-**Décision de périmètre à respecter :** la ville n'est **pas** utilisée. La spec l'autorisait pour lever l'ambiguïté d'un pays multi-fuseaux, mais l'intersection de tous les fuseaux du pays est toujours valable et ne demande aucune table de villes à maintenir. On ne construit pas ce qu'on n'a pas prouvé nécessaire.
+**Décision de périmètre RÉVISÉE le 2026-09-10 :** la ville **est** utilisée, via une tâche dédiée (2bis). Le plan l'avait d'abord écartée comme superflue ; l'implémentation a prouvé le contraire. Une fois la table rendue exhaustive d'après IANA, l'intersection des 29 fuseaux américains tombe à 19 h – 22 h UTC et celle des 23 fuseaux canadiens à 16 h – 20 h 30 UTC — **aucun chevauchement** avec la fenêtre de l'utilisatrice, qui s'arrête à 16 h UTC. Sans la ville, les États-Unis et le Canada sont entièrement injoignables. L'intersection reste le **repli sûr** quand la ville n'est pas reconnue.
 
 - [ ] **Étape 1 : écrire les tests d'abord**
 
@@ -258,6 +259,96 @@ git commit -m "feat(envoi-intelligent): table pays vers fuseaux IANA"
 
 ---
 
+### Task 2bis : la ville, pour les pays multi-fuseaux
+
+**Fichiers :**
+- Créer : `server/services/prospection-target-cities.ts`
+- Test : `server/services/prospection-target-cities.test.ts`
+
+**Interfaces :**
+- Produit : `zoneForCity(countryCode: string, city: string | null): string | null`
+
+`null` = ville inconnue ou absente → l'appelant retombe sur l'intersection du pays, qui est **sûre**. Ne devine jamais.
+
+**Pourquoi cette tâche existe.** Elle a été ajoutée après la tâche 2, sur constat chiffré : la table de fuseaux rendue exhaustive rend les États-Unis et le Canada injoignables (aucun chevauchement avec les heures de l'utilisatrice). La ville est présente sur les 40 profils enrichis en production.
+
+**Périmètre.** Uniquement les pays **multi-fuseaux** — pour un pays mono-fuseau la ville n'apporte rien et la table n'a pas à la porter. Couvre au minimum les grandes villes des États-Unis et du Canada, qui sont les cas qui motivent la tâche.
+
+- [ ] **Étape 1 : écrire les tests d'abord**
+
+```ts
+import { describe, it, expect } from "vitest";
+import { zoneForCity } from "./prospection-target-cities";
+import { zonesForCountry } from "./prospection-target-zones";
+
+describe("zoneForCity", () => {
+  it("resout une grande ville americaine vers son fuseau", () => {
+    expect(zoneForCity("US", "New York")).toBe("America/New_York");
+    expect(zoneForCity("US", "Los Angeles")).toBe("America/Los_Angeles");
+    expect(zoneForCity("US", "Chicago")).toBe("America/Chicago");
+  });
+
+  it("resout une grande ville canadienne", () => {
+    expect(zoneForCity("CA", "Toronto")).toBe("America/Toronto");
+    expect(zoneForCity("CA", "Vancouver")).toBe("America/Vancouver");
+  });
+
+  it("tolere la casse et les espaces", () => {
+    expect(zoneForCity("us", "  new york  ")).toBe("America/New_York");
+  });
+
+  it("tolere le suffixe d'etat frequent dans les profils LinkedIn", () => {
+    // Bright Data rend souvent « New York, NY » ou « San Francisco, California ».
+    expect(zoneForCity("US", "New York, NY")).toBe("America/New_York");
+    expect(zoneForCity("US", "San Francisco, California")).toBe("America/Los_Angeles");
+  });
+
+  it("rend null pour une ville inconnue, jamais un fuseau devine", () => {
+    expect(zoneForCity("US", "Ville Imaginaire")).toBeNull();
+  });
+
+  it("rend null quand la ville est absente", () => {
+    expect(zoneForCity("US", null)).toBeNull();
+    expect(zoneForCity("US", "")).toBeNull();
+    expect(zoneForCity("US", "   ")).toBeNull();
+  });
+
+  it("rend null pour un pays inconnu", () => {
+    expect(zoneForCity("ZZ", "New York")).toBeNull();
+  });
+
+  it("ne declare que des fuseaux appartenant reellement au pays", () => {
+    // Garde-fou : une ville ne doit jamais pointer vers un fuseau d'un autre pays.
+    for (const cc of ["US", "CA"]) {
+      const duPays = new Set(zonesForCountry(cc) ?? []);
+      for (const ville of ["New York", "Los Angeles", "Chicago", "Toronto", "Vancouver"]) {
+        const z = zoneForCity(cc, ville);
+        if (z) expect(duPays.has(z), `${ville} -> ${z} absent de ${cc}`).toBe(true);
+      }
+    }
+  });
+});
+```
+
+- [ ] **Étape 2 : lancer et constater l'échec** — module introuvable.
+
+- [ ] **Étape 3 : implémenter**
+
+Une table `Record<string, Record<string, string>>` indexée par pays puis par ville normalisée. Normalise en minuscules, sans accents, en coupant sur la première virgule pour absorber les suffixes d'État. **N'inclus que des pays multi-fuseaux.**
+
+Chaque fuseau déclaré doit appartenir au pays — le dernier test l'impose, et il doit être exécuté, pas seulement écrit.
+
+- [ ] **Étape 4 : vérifier** sous `TZ=UTC` et `TZ=Pacific/Kiritimati`, plus `npx tsc --noEmit -p tsconfig.json`.
+
+- [ ] **Étape 5 : commit**
+
+```bash
+git add server/services/prospection-target-cities.ts server/services/prospection-target-cities.test.ts
+git commit -m "feat(envoi-intelligent): la ville leve l'ambiguite des pays multi-fuseaux"
+```
+
+---
+
 ### Task 3 : la fenêtre joignable d'une cible
 
 **Fichiers :**
@@ -265,7 +356,9 @@ git commit -m "feat(envoi-intelligent): table pays vers fuseaux IANA"
 - Test : `server/services/prospection-target-hours.test.ts`
 
 **Interfaces :**
-- Consomme : `wallClockToInstant` (Task 1), `zonesForCountry` (Task 2)
+- Consomme : `wallClockToInstant` (Task 1), `zonesForCountry` (Task 2), `zoneForCity` (Task 2bis)
+
+**Résolution des fuseaux, dans cet ordre :** si `zoneForCity` reconnaît la ville, la fenêtre est celle de **ce seul fuseau**. Sinon, l'intersection de **tous** les fuseaux du pays — le repli sûr. Un test doit prouver que « New York » donne une fenêtre **plus large** que l'intersection américaine, sinon la ville ne sert à rien.
 - Produit :
 
 ```ts
@@ -277,8 +370,8 @@ export type TargetWindow =
   | { reachable: true; start: Date; end: Date }
   | { reachable: false; reason: "country_unknown" | "no_common_window" | "not_a_workday" | "outside_window"; detail: string };
 
-export function targetWindowUTC(countryCode: string | null, dateStr: string): TargetWindow;
-export function isTargetReachableAt(countryCode: string | null, now: Date, dateStr: string): TargetWindow;
+export function targetWindowUTC(countryCode: string | null, city: string | null, dateStr: string): TargetWindow;
+export function isTargetReachableAt(countryCode: string | null, city: string | null, now: Date, dateStr: string): TargetWindow;
 ```
 
 La fenêtre est l'**intersection** des créneaux 9 h – 18 h locaux de **tous** les fuseaux du pays : valable où que soit la personne. `end` est exclusif.
