@@ -455,6 +455,13 @@ export interface IStorage {
    * consulter LinkedIn sans aucune borne, à chaque passage du poller).
    */
   getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]>;
+  /**
+   * Trace une raison de non-joignabilité STRUCTURELLE (pays inconnu, aucun créneau
+   * commun) — jamais une raison temporelle (pas un jour ouvré, hors fenêtre du jour),
+   * qui redeviendrait vraie plus tard et écraserait la colonne à tort. `reason: null`
+   * efface la marque quand le lead redevient joignable.
+   */
+  setLeadUnreachable(leadId: number, reason: string | null): Promise<void>;
 
   // Outreach operations
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
@@ -1717,6 +1724,15 @@ export class DatabaseStorage implements IStorage {
   // (branches if_invite_accepted / if_invite_not_accepted). Poller Unipile (Task 7).
   async setLeadLinkedinConnected(leadId: number, at: Date): Promise<void> {
     await db.update(leads).set({ linkedinConnectedAt: at, updatedAt: new Date() }).where(eq(leads.id, leadId));
+  }
+
+  // Marque (ou efface, avec reason: null) la raison structurelle de non-joignabilité d'un
+  // lead. Réservé aux raisons structurelles (country_unknown, no_common_window) — voir le
+  // commentaire de la colonne dans shared/schema.ts.
+  async setLeadUnreachable(leadId: number, reason: string | null): Promise<void> {
+    await db.update(leads)
+      .set({ outreachUnreachableReason: reason, updatedAt: new Date() })
+      .where(eq(leads.id, leadId));
   }
 
   // Leads enrôlés (séquence active) dont l'invitation LinkedIn n'a pas encore été confirmée

@@ -1,0 +1,1 @@
+ALTER TABLE "leads" ADD COLUMN "outreach_unreachable_reason" text;

@@ -746,6 +746,20 @@ export const leads = pgTable("leads", {
   nextFollowUp: timestamp("next_follow_up"),
   enrichedAt: timestamp("enriched_at"),   // date de dernière génération IA
   linkedinConnectedAt: timestamp("linkedin_connected_at"), // invitation LinkedIn acceptée (poller Unipile)
+  /**
+   * Pourquoi ce lead n'est pas joignable par la fenêtre horaire (pays inconnu,
+   * aucun créneau commun). `null` = joignable. JAMAIS un refus silencieux :
+   * cette colonne existe pour qu'un lead écarté soit visible et diagnosticable.
+   *
+   * N'y écrire QUE les raisons structurelles ("country_unknown", "no_common_window") —
+   * le lead ne sera jamais joignable en l'état. Les raisons temporelles
+   * ("not_a_workday", "outside_window") sont vraies la majorité du temps et ne
+   * doivent JAMAIS être persistées ici : elles écraseraient cette colonne à chaque
+   * passage du worker et transformeraient un simple "pas maintenant" en "jamais".
+   * Effacer (repasser à `null`) dès qu'un lead redevient joignable — une raison
+   * périmée est aussi trompeuse qu'une absence de raison.
+   */
+  outreachUnreachableReason: text("outreach_unreachable_reason"),
   archivedAt: timestamp("archived_at"),   // soft-delete (pattern tasks) : non nul = archivé, exclu des vues actives
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
