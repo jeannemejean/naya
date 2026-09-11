@@ -130,6 +130,33 @@ describe("targetWindowUTC", () => {
     }
   });
 
+  it("COUTURE structurel/temporel : intersection vide un jour ouvre ET un week-end rend TOUJOURS no_common_window, jamais not_a_workday", () => {
+    // country_unknown et no_common_window sont STRUCTURELS (la cible ne sera jamais
+    // joignable en l'etat) ; not_a_workday et outside_window sont TEMPORELS (vrais la
+    // majeure partie du temps, ne disent rien sur la cible). Une raison temporelle ne
+    // doit jamais masquer un cas structurel : si l'intersection est vide, le dire,
+    // QUEL QUE SOIT le jour interroge — y compris un week-end, ou le controle
+    // not_a_workday aurait pu repondre en premier et donner une fausse impression
+    // que la cible redeviendrait joignable un jour ouvre.
+    const spy = vi
+      .spyOn(zonesModule, "zonesForCountry")
+      .mockReturnValue(["Pacific/Kiritimati", "Etc/GMT+12"]);
+    try {
+      const jourOuvre = targetWindowUTC("US", null, "2026-07-15"); // mercredi
+      const weekEnd = targetWindowUTC("US", null, "2026-07-18"); // samedi
+
+      expect(jourOuvre.reachable).toBe(false);
+      if (jourOuvre.reachable) return;
+      expect(jourOuvre.reason).toBe("no_common_window");
+
+      expect(weekEnd.reachable).toBe(false);
+      if (weekEnd.reachable) return;
+      expect(weekEnd.reason).toBe("no_common_window");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("refuse le week-end", () => {
     // 2026-07-18 est un samedi
     const w = targetWindowUTC("FR", null, "2026-07-18");

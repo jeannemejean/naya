@@ -76,14 +76,14 @@ export function targetWindowUTC(
     };
   }
 
-  // Jour ouvré évalué en UTC sur la date civile demandée : la date est déjà celle
-  // que l'appelant a choisie, on ne la redécale pas.
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const jour = JOURS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-  if (!TARGET_WORK_DAYS.has(jour)) {
-    return { reachable: false, reason: "not_a_workday", detail: `${dateStr} est un ${jour} chez la cible.` };
-  }
-
+  // STRUCTUREL avant TEMPOREL : l'intersection des fuseaux est calculée et son
+  // vide (no_common_window) signalé AVANT le contrôle du jour ouvré. Sinon, un
+  // pays structurellement injoignable (aucun créneau commun, quel que soit le
+  // jour) serait signalé "not_a_workday" un jour de week-end — une raison
+  // temporelle masquant un cas structurel — alors que la cible ne sera JAMAIS
+  // joignable en l'état. Voir le test "COUTURE structurel/temporel" : intersection
+  // vide interrogée un jour ouvré ET un week-end doit rendre no_common_window
+  // dans les DEUX cas, jamais not_a_workday.
   let start = -Infinity;
   let end = Infinity;
   for (const zone of zones) {
@@ -103,6 +103,15 @@ export function targetWindowUTC(
         `cible signalée, jamais contactée au hasard.`,
     };
   }
+
+  // Jour ouvré évalué en UTC sur la date civile demandée : la date est déjà celle
+  // que l'appelant a choisie, on ne la redécale pas.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const jour = JOURS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  if (!TARGET_WORK_DAYS.has(jour)) {
+    return { reachable: false, reason: "not_a_workday", detail: `${dateStr} est un ${jour} chez la cible.` };
+  }
+
   return { reachable: true, start: new Date(start), end: new Date(end) };
 }
 
