@@ -23,14 +23,15 @@ describe("targetWindowUTC", () => {
     expect(w.end.toISOString()).toBe("2026-07-15T22:00:00.000Z");
   });
 
-  it("une ville reconnue restreint la fenetre a SON seul fuseau, plus large que l'intersection du pays", () => {
+  it("une ville reconnue AVEC discriminant d'Etat restreint la fenetre a SON seul fuseau, plus large que l'intersection du pays", () => {
     // Preuve chiffree que la ville sert a quelque chose : sans ville, l'intersection
-    // US ne fait que 3h (19:00-22:00 UTC). Avec "New York" (America/New_York,
-    // EDT UTC-4 en juillet), la fenetre est le fuseau unique 13:00-22:00 UTC : 9h,
-    // donc strictement plus large. Un bug qui ignorerait la ville (ou qui la
-    // passerait mal a l'intersection) ferait echouer ces valeurs exactes.
+    // US ne fait que 3h (19:00-22:00 UTC). Avec "New York, NY" (America/New_York,
+    // EDT UTC-4 en juillet — le discriminant d'Etat est desormais OBLIGATOIRE, voir
+    // prospection-target-cities.ts), la fenetre est le fuseau unique 13:00-22:00
+    // UTC : 9h, donc strictement plus large. Un bug qui ignorerait la ville (ou qui
+    // la passerait mal a l'intersection) ferait echouer ces valeurs exactes.
     const sansVille = targetWindowUTC("US", null, "2026-07-15");
-    const avecVille = targetWindowUTC("US", "New York", "2026-07-15");
+    const avecVille = targetWindowUTC("US", "New York, NY", "2026-07-15");
     expect(sansVille.reachable).toBe(true);
     expect(avecVille.reachable).toBe(true);
     if (!sansVille.reachable || !avecVille.reachable) return;
@@ -56,6 +57,31 @@ describe("targetWindowUTC", () => {
     if (!sansVille.reachable || !villeAmbigue.reachable) return;
     expect(villeAmbigue.start.toISOString()).toBe(sansVille.start.toISOString());
     expect(villeAmbigue.end.toISOString()).toBe(sansVille.end.toISOString());
+  });
+
+  it("COUTURE avec zoneForCity : une ville SANS Etat ne resout plus JAMAIS, meme archi-connue — repli sur l'intersection du pays", () => {
+    // Depuis la ronde 2 de prospection-target-cities.ts, le discriminant d'Etat est
+    // obligatoire pour TOUTE entree, y compris "new york" qui n'a pourtant pas
+    // d'homonyme dans un autre Etat parmi celles listees ici. zoneForCity("US", "New
+    // York") rend donc null, et targetWindowUTC doit retomber sur l'intersection du
+    // pays (19:00-22:00 UTC, 3h) — PAS sur le fuseau America/New_York seul
+    // (13:00-22:00 UTC, 9h). Si quelqu'un retablissait la resolution d'une ville
+    // seule sans Etat (le bug corrige en amont), ce test tomberait : la fenetre
+    // obtenue collerait a 13:00-22:00 au lieu de 19:00-22:00.
+    const sansVille = targetWindowUTC("US", null, "2026-07-15");
+    const villeSansEtat = targetWindowUTC("US", "New York", "2026-07-15");
+    expect(sansVille.reachable).toBe(true);
+    expect(villeSansEtat.reachable).toBe(true);
+    if (!sansVille.reachable || !villeSansEtat.reachable) return;
+
+    expect(villeSansEtat.start.toISOString()).toBe(sansVille.start.toISOString());
+    expect(villeSansEtat.end.toISOString()).toBe(sansVille.end.toISOString());
+    expect(villeSansEtat.start.toISOString()).toBe("2026-07-15T19:00:00.000Z");
+    expect(villeSansEtat.end.toISOString()).toBe("2026-07-15T22:00:00.000Z");
+
+    // Non la fenetre etroite du seul fuseau America/New_York — preuve que la ville
+    // seule n'a PAS resolu silencieusement vers un fuseau unique.
+    expect(villeSansEtat.start.toISOString()).not.toBe("2026-07-15T13:00:00.000Z");
   });
 
   it("une ville ambigue AVEC discriminant d'Etat resout bien vers un seul fuseau (pas l'intersection)", () => {
@@ -133,13 +159,14 @@ describe("isTargetReachableAt", () => {
     expect(r.reason).toBe("outside_window");
   });
 
-  it("transmet la ville : joignable a 14h UTC via New York, pas via l'intersection pays seule", () => {
+  it("transmet la ville : joignable a 14h UTC via New York, NY, pas via l'intersection pays seule", () => {
     // Preuve que la ville se propage bien jusqu'a isTargetReachableAt, pas seulement
     // a targetWindowUTC : 14:00 UTC est hors de l'intersection US (19:00-22:00) mais
-    // a l'interieur de la fenetre New York seule (13:00-22:00).
+    // a l'interieur de la fenetre New York seule (13:00-22:00). Le discriminant
+    // d'Etat est obligatoire (voir prospection-target-cities.ts, ronde 2).
     const instant = new Date("2026-07-15T14:00:00.000Z");
     const sansVille = isTargetReachableAt("US", null, instant, "2026-07-15");
-    const avecVille = isTargetReachableAt("US", "New York", instant, "2026-07-15");
+    const avecVille = isTargetReachableAt("US", "New York, NY", instant, "2026-07-15");
     expect(sansVille.reachable).toBe(false);
     if (!sansVille.reachable) expect(sansVille.reason).toBe("outside_window");
     expect(avecVille.reachable).toBe(true);
