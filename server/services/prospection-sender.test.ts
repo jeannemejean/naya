@@ -24,6 +24,7 @@ vi.mock("../storage", () => ({
     markStepSendSent: vi.fn(),
     releaseStepSend: vi.fn(),
     getReservedStepOrders: vi.fn(),
+    setLeadUnreachable: vi.fn(),
   },
 }));
 
@@ -186,12 +187,20 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     ...overrides,
   });
 
+  // Pays/ville par défaut : FRANCE, toujours structurellement joignable — les tests
+  // qui ne portent PAS sur la fenêtre cible / les sessions (garde de risque,
+  // idempotence, plafonds…) n'ont pas à s'en soucier. `LINKEDIN_TEST_NOW` (fixé par
+  // fake timers ci-dessous) tombe dans la fenêtre FR ET dans une session réelle
+  // calculée pour userId "u1" à cette date — voir describe "fenêtre cible & sessions"
+  // pour le calcul et la preuve par mutation.
   const baseLead = (overrides: Record<string, any> = {}) => ({
     id: 1,
     userId: "u1",
     email: "lead@example.com",
     name: "Lead Test",
     linkedinUrl: null,
+    outreachUnreachableReason: null,
+    enrichedProfile: { linkedin: { raw: { country_code: "FR", city: null } } },
     ...overrides,
   });
 
@@ -229,8 +238,23 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
   let fetchMock: ReturnType<typeof vi.fn>;
 
+  // "Maintenant" FIGÉ pour toute cette suite. Nécessaire depuis ce lot : la fenêtre
+  // cible (`targetWindowUTC`, 09:00-18:00 dans LE FUSEAU DE LA CIBLE, jour ouvré
+  // compris) et les sessions (`planDailySessions`, aléa SEEDÉ par userId+date) sont
+  // des bornes ABSOLUES, pas relatives à "maintenant" comme le reste de la garde —
+  // les faire dépendre de l'horloge réelle du runner rendrait la suite flaky selon
+  // l'heure/le jour d'exécution. Valeur calculée hors-ligne (voir describe "fenêtre
+  // cible & sessions" plus bas) : le 2026-06-10 (mercredi) est un jour ouvré tant côté
+  // FR que côté workDays par défaut ; 07:26:27.866Z tombe DANS la fenêtre FR
+  // (07:00-16:00Z ce jour-là, France en heure d'été) ET dans la PREMIÈRE session
+  // réelle produite par `planDailySessions` pour userId "u1" à cette date avec un seul
+  // pays en attente (FR) — session [07:24:27.866Z, 07:39:30.747Z).
+  const LINKEDIN_TEST_NOW = new Date("2026-06-10T07:26:27.866Z");
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.setSystemTime(LINKEDIN_TEST_NOW);
     process.env.PROSPECTION_SENDING_ENABLED = "true";
     process.env.SENDGRID_API_KEY = "test-sendgrid-key";
 
@@ -258,6 +282,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.markStepSendSent as any).mockResolvedValue(undefined);
     (storage.releaseStepSend as any).mockResolvedValue(undefined);
     (storage.getReservedStepOrders as any).mockResolvedValue([]);
+    (storage.setLeadUnreachable as any).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -266,6 +291,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     if (ORIGINAL_SENDGRID_KEY === undefined) delete process.env.SENDGRID_API_KEY;
     else process.env.SENDGRID_API_KEY = ORIGINAL_SENDGRID_KEY;
     vi.unstubAllGlobals();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -1121,6 +1147,292 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(storage.claimStepSend).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }));
       expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, expect.objectContaining({ currentStep: 1 }));
+    });
+  });
+
+  // ─── Fenêtre locale de la cible & sessions de prospection (ce lot) ───────────────
+  //
+  // Deux filtres NOUVEAUX, tous deux évalués AVANT `decideLinkedInAction` (jamais
+  // assouplie) : (1) la cible doit être joignable MAINTENANT dans SON fuseau
+  // (`isTargetReachableAt`), (2) on doit être dans une SESSION de prospection
+  // (`isWithinAnySession`/`planDailySessions`). Chaque test isole un SEUL des deux
+  // filtres — voir le commentaire sur `LINKEDIN_TEST_NOW` : cet instant est
+  // reachable=true ET dans une session pour FR/u1/2026-06-10, donc "tout le reste"
+  // passe déjà par défaut ; chaque test ne bouge qu'UNE variable (l'horloge, ou le
+  // pays) pour ne faire échouer QUE le mécanisme visé — jamais un autre garde-fou en
+  // amont (restriction, plafond, fenêtre de l'utilisatrice…).
+  //
+  // PREUVE PAR MUTATION (exigée par le brief : plusieurs tests de ce lot se sont
+  // révélés creux). Procédure appliquée manuellement pour les deux tests marqués
+  // "MUTATION" ci-dessous : commenter l'appel au filtre visé dans
+  // `prospection-sender.ts`, relancer CE seul test, constater qu'il devient rouge,
+  // restaurer. Résultat rapporté dans task-6-report.md.
+  describe("fenêtre cible & sessions de prospection", () => {
+    const linkedinPrefs = () => openPrefs({ linkedinUnipileAccountId: "acc1" });
+    const linkedinStep = () => [baseStep({ channel: "linkedin" })];
+    const linkedinLead = (overrides: Record<string, any> = {}) =>
+      baseLead({ linkedinUrl: "https://linkedin.com/in/x", ...overrides });
+
+    it("cible hors de sa fenêtre locale (outside_window, temporel) : aucun appel Unipile, PAS de signalement, séquence non avancée", async () => {
+      // 03:00Z ce jour-là est bien AVANT la fenêtre FR (07:00-16:00Z) : refus
+      // `outside_window`, TEMPOREL — jamais inscrit en base (voir doc de
+      // `setLeadUnreachable`), sinon "pas maintenant" deviendrait "jamais". NOTE :
+      // parce qu'une session ne peut jamais exister EN DEHORS de la fenêtre de sa
+      // cible (elle en est un sous-ensemble, voir `planDailySessions`), ce cas ne
+      // peut PAS isoler le filtre de fenêtre du filtre de session à lui seul — les
+      // deux bloqueraient de toute façon. C'est le test "MUTATION 1" ci-dessous,
+      // construit avec un lead à pays inconnu dans un lot où un AUTRE lead alimente
+      // une session valide, qui isole réellement le filtre de fenêtre/joignabilité.
+      vi.setSystemTime(new Date("2026-06-10T03:00:00.000Z"));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([linkedinLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      // Refusé AVANT tout coût DB/IA (avant même l'historique LinkedIn et
+      // generateStepMessage) : c'est un des deux nouveaux filtres qui doit arrêter ce lead.
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(storage.setLeadUnreachable).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("MUTATION 1 — pays inconnu (country_unknown) isolé de tout effet de session : dans un lot où un AUTRE lead (FR) alimente une session valide couvrant l'instant, le lead à pays inconnu reste bloqué PAR LA JOIGNABILITÉ, jamais par la session", async () => {
+      // Isolation réelle du filtre `isTargetReachableAt`, indépendamment du filtre
+      // de session : les sessions de ce compte sont calculées à partir des pays de
+      // TOUS les leads dus de l'utilisateur (lead 1, FR, contribue une session qui
+      // couvre LINKEDIN_TEST_NOW — déjà vérifié par le test témoin ci-dessus), alors
+      // que la joignabilité, elle, est évaluée par lead : le lead 2 (pays inconnu)
+      // doit donc être bloqué par sa PROPRE non-joignabilité, même si "une session
+      // existe et couvre l'instant" pour le compte. Le lead 1 est traité en PREMIER
+      // dans `due` et envoie réellement — s'il envoyait APRÈS le lead 2, un
+      // hypothétique envoi du lead 2 pousserait le délai minimum et masquerait la
+      // mutation par un autre garde-fou (piège documenté dans le brief).
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      const stateFr = baseState({ id: 1, leadId: 1 });
+      const stateUnknown = baseState({ id: 2, leadId: 2 });
+      (storage.getDueEnrollments as any).mockResolvedValue([stateFr, stateUnknown]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        linkedinLead({ id: 1, linkedinUrl: "https://linkedin.com/in/lead1" }), // FR, reachable
+        linkedinLead({
+          id: 2,
+          linkedinUrl: "https://linkedin.com/in/lead2",
+          enrichedProfile: { linkedin: { raw: { country_code: null } } }, // pays inconnu
+        }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      // Le lead FR part normalement (preuve que la session couvre bien l'instant
+      // pour ce compte — si ce n'était pas le cas, le test ne discriminerait rien).
+      expect(sendLinkedInStep).toHaveBeenCalledWith(expect.objectContaining({ linkedinUrl: "https://linkedin.com/in/lead1" }));
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+      // Le lead à pays inconnu, lui, est signalé — SANS mutation, seul le filtre de
+      // joignabilité peut expliquer ce signalement (le filtre de session, lui,
+      // laisserait passer : une session existe et couvre l'instant pour ce compte).
+      expect(storage.setLeadUnreachable).toHaveBeenCalledTimes(1);
+      expect(storage.setLeadUnreachable).toHaveBeenCalledWith(2, expect.stringContaining("country_unknown"));
+    });
+
+    it("MUTATION 2 — cible joignable chez elle mais HORS SESSION : aucun appel Unipile, aucun signalement (le lead n'y est pour rien), séquence non avancée", async () => {
+      // 09:00Z ce jour-là est DANS la fenêtre FR (07:00-16:00Z) mais entre les deux
+      // sessions calculées pour u1/2026-06-10/["FR"] : [07:24:27.866Z,07:39:30.747Z)
+      // et [13:06:08.081Z,13:22:19.944Z). Si ce test échouait pour la fenêtre cible
+      // plutôt que pour la session, `storage.setLeadUnreachable` serait quand même
+      // appelé pour un motif structurel — il ne l'est jamais ici, preuve que
+      // c'est bien le filtre de session qui arrête ce lead.
+      vi.setSystemTime(new Date("2026-06-10T09:00:00.000Z"));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([linkedinLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(storage.setLeadUnreachable).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("cible reachable ET en session (LINKEDIN_TEST_NOW) : l'envoi a bien lieu — témoin positif des deux tests MUTATION ci-dessus", async () => {
+      // Sans ce témoin, les deux tests MUTATION pourraient passer pour une mauvaise
+      // raison (ex. un autre garde-fou bloquerait TOUJOURS ce lead, quelle que soit
+      // l'horloge) : ce test prouve qu'au bon instant, le même lead part réellement.
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([linkedinLead()]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+    });
+
+    it("pays inconnu (country_unknown, STRUCTUREL) : signalé via setLeadUnreachable, aucun appel Unipile", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        linkedinLead({ enrichedProfile: { linkedin: { raw: { country_code: null } } } }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.setLeadUnreachable).toHaveBeenCalledTimes(1);
+      expect(storage.setLeadUnreachable).toHaveBeenCalledWith(1, expect.stringContaining("country_unknown"));
+    });
+
+    it("pays non-string dans le profil enrichi (ex. code numérique) : traité comme inconnu, jamais comme joignable", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        linkedinLead({ enrichedProfile: { linkedin: { raw: { country_code: 33 } } } }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.setLeadUnreachable).toHaveBeenCalledWith(1, expect.stringContaining("country_unknown"));
+    });
+
+    it("lecture du profil enrichi impossible (enrichedProfile absent) : refus par prudence, signalé comme pays inconnu", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([linkedinLead({ enrichedProfile: null })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.setLeadUnreachable).toHaveBeenCalledWith(1, expect.stringContaining("country_unknown"));
+    });
+
+    it("lead redevenu joignable (portait une raison) : la raison est effacée UNE FOIS, l'envoi part normalement", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        linkedinLead({ outreachUnreachableReason: "country_unknown: pays absent — refus par prudence." }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.setLeadUnreachable).toHaveBeenCalledTimes(1);
+      expect(storage.setLeadUnreachable).toHaveBeenCalledWith(1, null);
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+    });
+
+    it("lead jamais signalé et toujours joignable : `setLeadUnreachable` n'est JAMAIS appelé (pas d'écriture à chaque tick)", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([linkedinLead()]); // outreachUnreachableReason: null par défaut
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+      expect(storage.setLeadUnreachable).not.toHaveBeenCalled();
+    });
+
+    it("deux leads du même utilisateur, un seul pays en attente (FR ×2) : la pondération par volume ne change pas le créneau retenu — le premier part, le second est arrêté par le délai minimum (PAS par la fenêtre cible ni la session)", async () => {
+      // Non-régression de la pondération par VOLUME (prospection-sessions.ts) :
+      // avec un seul pays distinct présent, le poids (1 vs 2) ne doit rien changer au
+      // créneau choisi ni à la session qui en résulte. Le second lead n'appelle
+      // jamais Unipile ici — mais PAS à cause de nos deux nouveaux filtres (sinon ce
+      // serait un signalement `setLeadUnreachable` ou aucun log de garde) : c'est le
+      // délai minimum entre deux actions LinkedIn du même compte
+      // (LINKEDIN_MIN_DELAY_BASE_MS) qui l'arrête, l'horloge étant figée dans ce test
+      // (même mécanisme que le test "un échec... alimente EN DIRECT" plus haut).
+      const logSpy = vi.spyOn(console, "log");
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      const state1 = baseState({ id: 1, leadId: 1 });
+      const state2 = baseState({ id: 2, leadId: 2 });
+      (storage.getDueEnrollments as any).mockResolvedValue([state1, state2]);
+      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
+      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        linkedinLead({ id: 1, linkedinUrl: "https://linkedin.com/in/lead1" }),
+        linkedinLead({ id: 2, linkedinUrl: "https://linkedin.com/in/lead2" }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+      expect(storage.setLeadUnreachable).not.toHaveBeenCalled();
+      const logMessages = logSpy.mock.calls.map((c) => String(c[0]));
+      expect(logMessages.some((m) => m.includes("min_delay_not_elapsed"))).toBe(true);
     });
   });
 });

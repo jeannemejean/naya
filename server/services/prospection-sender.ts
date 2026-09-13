@@ -26,6 +26,9 @@ import {
   isLinkedInRestrictionSignal,
   LINKEDIN_WEEKLY_WINDOW_MS,
 } from "./prospection-linkedin-guard";
+import { parisTodayString, wallClockToInstant } from "../utils/timezone";
+import { planDailySessions, isWithinAnySession, type Session } from "./prospection-sessions";
+import { isTargetReachableAt } from "./prospection-target-hours";
 
 const POLL_MS = 60_000;
 let running = false;
@@ -177,6 +180,49 @@ export function hhmmToMin(hhmm: string | null | undefined, fallback: number): nu
   return h * 60 + m;
 }
 
+/** Inverse de `hhmmToMin` : minutes depuis minuit → "HH:MM". Pure. */
+function minToHHMM(min: number): string {
+  const h = Math.floor(min / 60).toString().padStart(2, "0");
+  const m = (min % 60).toString().padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+/**
+ * Graine stable sur la journée, différente le lendemain et d'un utilisateur à
+ * l'autre — jamais `Math.random()` (les sessions doivent être reproductibles à
+ * l'intérieur d'un même jour civil pour un même utilisateur, cf. `sessionsDe` ci-dessous).
+ */
+function graineDuJour(userId: string, dateStr: string): number {
+  let h = 2166136261;
+  for (const ch of `${userId}:${dateStr}`) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// Le pays et la ville d'un lead ne sont PAS des colonnes : ils vivent dans le profil
+// enrichi (JSON), sous la forme brute renvoyée par le fournisseur d'enrichissement
+// LinkedIn. Une lecture qui échoue ou qui ne rend pas une chaîne est traitée comme
+// pays/ville inconnu — jamais comme joignable (voir `isTargetReachableAt`, qui refuse
+// et signale un pays `null`).
+function leadCountryCode(lead: any): string | null {
+  try {
+    const cc = lead?.enrichedProfile?.linkedin?.raw?.country_code;
+    return typeof cc === "string" ? cc : null;
+  } catch {
+    return null;
+  }
+}
+function leadCity(lead: any): string | null {
+  try {
+    const city = lead?.enrichedProfile?.linkedin?.raw?.city;
+    return typeof city === "string" ? city : null;
+  } catch {
+    return null;
+  }
+}
+
 // Résout la config d'envoi PROPRE à l'utilisateur (adresse + clé) depuis ses préférences.
 function resolveSenderConfig(prefs: any): { apiKey: string; fromEmail: string; fromName: string } | null {
   const fromEmail = prefs?.prospectionSenderEmail?.trim();
@@ -260,6 +306,56 @@ export async function runProspectionSender(): Promise<void> {
       if (!prefsCache.has(uid)) prefsCache.set(uid, await storage.getUserPreferences(uid));
       return prefsCache.get(uid);
     };
+
+    // ── Fenêtre locale de la cible + sessions de prospection (ce lot) ──────────────
+    //
+    // `todayStr` : UNE SEULE fois par passage (pas par lead) — dérivé de "maintenant"
+    // au moment où le worker se réveille. `planDailySessions` en dépend (via la graine
+    // et `targetWindowUTC`) mais ne dépend PAS de l'instant précis à l'intérieur de la
+    // journée : le calculer une fois ici, avant la boucle, correspond exactement à la
+    // fréquence attendue ("une fois par passage et par utilisateur").
+    const todayStr = parisTodayString(new Date());
+    // Cache des leads par utilisateur : `storage.getLeads` était appelé À CHAQUE LEAD
+    // sans mise en cache (une fois par lead dû, pas une fois par utilisateur) — la
+    // Map ci-dessous sert à la fois à réduire ce coût et à construire, pour un
+    // utilisateur donné, la liste des pays des leads dus (poids de session par VOLUME
+    // de cibles, jamais par pays présent — voir `prospection-sessions.ts`).
+    const leadsCache = new Map<string, Promise<any[]>>();
+    const getUserLeads = (uid: string): Promise<any[]> => {
+      if (!leadsCache.has(uid)) leadsCache.set(uid, storage.getLeads(uid));
+      return leadsCache.get(uid)!;
+    };
+    // Sessions calculées UNE SEULE FOIS par utilisateur pour ce passage — jamais une
+    // fois par lead (le worker tourne chaque minute ; recalculer par lead ferait
+    // dériver la fenêtre choisie entre deux leads du même utilisateur au même tick).
+    const sessionsParUser = new Map<string, Session[]>();
+    const sessionsDe = async (uid: string, prefs: any, workDayStartMin: number, workDayEndMin: number): Promise<Session[]> => {
+      const cached = sessionsParUser.get(uid);
+      if (cached) return cached;
+      // Pays des leads DUS de cet utilisateur, UNE ENTRÉE PAR LEAD (doublons
+      // attendus, jamais dédupliqués) : `planDailySessions` pondère le choix du
+      // créneau par le VOLUME de cibles qu'il dessert, pas par la simple présence
+      // d'un pays.
+      const leads = await getUserLeads(uid).catch(() => [] as any[]);
+      const pendingCountryCodes: string[] = [];
+      for (const s of due) {
+        if (s.userId !== uid) continue;
+        const l = leads.find((x: any) => x.id === s.leadId);
+        const cc = leadCountryCode(l);
+        if (cc) pendingCountryCodes.push(cc);
+      }
+      const tz = prefs?.timezone || "UTC";
+      const plan = planDailySessions({
+        userWindowStart: wallClockToInstant(tz, todayStr, minToHHMM(workDayStartMin)),
+        userWindowEnd: wallClockToInstant(tz, todayStr, minToHHMM(workDayEndMin)),
+        pendingCountryCodes,
+        dateStr: todayStr,
+        seed: graineDuJour(uid, todayStr),
+      });
+      sessionsParUser.set(uid, plan);
+      return plan;
+    };
+
     for (const state of due) {
       try {
         const prefs = await getPrefs(state.userId);
@@ -329,7 +425,7 @@ export async function runProspectionSender(): Promise<void> {
         }
 
         const step = steps[decision.index];
-        const lead = (await storage.getLeads(state.userId)).find((l) => l.id === state.leadId);
+        const lead = (await getUserLeads(state.userId)).find((l) => l.id === state.leadId);
         if (!lead) {
           await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
           continue;
@@ -370,6 +466,46 @@ export async function runProspectionSender(): Promise<void> {
             } as any).catch(() => {});
             continue;
           }
+
+          // ── Fenêtre locale de LA CIBLE (pas celle de l'utilisatrice, déjà vérifiée
+          // plus haut) — pure, aucun coût DB/IA. Évaluée AVANT toute lecture évitable
+          // (historique LinkedIn, brandDna/user/campagne) et avant `decideLinkedInAction`,
+          // que cette vérification ne remplace ni n'assouplit : elle ne peut que
+          // restreindre davantage.
+          const pays = leadCountryCode(lead);
+          const ville = leadCity(lead);
+          const joignable = isTargetReachableAt(pays, ville, now, todayStr);
+          if (!joignable.reachable) {
+            console.log(
+              `[ProspectionSender] LinkedIn lead ${lead.id} refusé : cible non joignable maintenant (${joignable.reason}) : ${joignable.detail}`,
+            );
+            // DISTINCTION ESSENTIELLE (voir doc de `setLeadUnreachable` et
+            // `prospection-target-hours.ts`) : `country_unknown`/`no_common_window`
+            // sont STRUCTURELS (ce lead ne sera jamais joignable en l'état, à signaler) ;
+            // `not_a_workday`/`outside_window` sont TEMPORELS (vrais la majeure partie du
+            // temps, ne disent rien sur le lead) — les inscrire écraserait la base à
+            // chaque tick et transformerait « pas maintenant » en « jamais ».
+            if (joignable.reason === "country_unknown" || joignable.reason === "no_common_window") {
+              await storage.setLeadUnreachable(lead.id, `${joignable.reason}: ${joignable.detail}`)
+                .catch((e: any) => console.error("[ProspectionSender] signalement non joignable échoué", e.message));
+            }
+            continue; // temporel ou structurel : pas d'envoi maintenant, jamais de coût DB/IA au-delà
+          }
+          // Redevenu joignable (ex. pays enrichi depuis) : efface la raison — une seule
+          // fois, seulement s'il en portait une (jamais d'écriture à chaque tick).
+          if ((lead as any).outreachUnreachableReason) {
+            await storage.setLeadUnreachable(lead.id, null)
+              .catch((e: any) => console.error("[ProspectionSender] effacement non joignable échoué", e.message));
+          }
+
+          // ── Sessions de prospection : un humain ouvre LinkedIn, traite quelques
+          // personnes, referme — calculées UNE FOIS par utilisateur pour ce passage
+          // (voir `sessionsDe` plus haut), jamais par lead.
+          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin);
+          if (!isWithinAnySession(sessions, now)) {
+            continue; // hors session : rien à signaler sur le lead, on réessaiera plus tard
+          }
+
           if (!liHistoryCache.has(state.userId)) {
             const since = new Date(now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
             const ts = await storage.getLinkedInAttemptTimestampsSince(state.userId, since).catch(() => null);
