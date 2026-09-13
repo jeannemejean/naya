@@ -1435,4 +1435,117 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(logMessages.some((m) => m.includes("min_delay_not_elapsed"))).toBe(true);
     });
   });
+
+  // ─── Ronde de correction 1 : IMPORTANT 1 — la date civile doit venir du fuseau de
+  // CHAQUE utilisateur, jamais figée sur Paris ───────────────────────────────────
+  describe("todayStr par utilisateur (jamais figé sur Paris)", () => {
+    it("MUTATION — utilisatrice à Pacific/Kiritimati (UTC+14, la première à changer de jour civil sur Terre) : la fenêtre/session couvre son PROPRE présent", async () => {
+      // Fixture calculée hors-ligne (voir task-6-report.md) : au 2025-12-31T21:49:54.873Z,
+      // le jour civil de Kiritimati est déjà "2026-01-01" alors que celui de Paris est
+      // encore "2025-12-31" — les deux jours DIFFÈRENT, condition nécessaire pour que ce
+      // test discrimine quoi que ce soit. Cible NZ (Pacific/Auckland, proche de
+      // Kiritimati) : avec le jour civil de Kiritimati, sa fenêtre et une session réelle
+      // couvrent cet instant ; avec le jour civil de Paris (bug), ni l'une ni l'autre ne
+      // le couvrent (vérifié directement par calcul, voir le script de préparation).
+      vi.setSystemTime(new Date("2025-12-31T21:49:54.873Z"));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(
+        openPrefs({
+          timezone: "Pacific/Kiritimati",
+          workDayStart: "00:00",
+          workDayEnd: "23:59",
+          linkedinUnipileAccountId: "acc1",
+        }),
+      );
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        baseLead({
+          linkedinUrl: "https://linkedin.com/in/x",
+          enrichedProfile: { linkedin: { raw: { country_code: "NZ", city: null } } },
+        }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      // Preuve par mutation appliquée manuellement (voir task-6-report.md pour le
+      // chiffre) : remettre `todayStr` en dur sur `parisTodayString`/Europe-Paris fait
+      // passer cette assertion de vert à rouge — ni la fenêtre NZ ni aucune session ne
+      // couvrent alors cet instant, `sendLinkedInStep` ne serait jamais appelé.
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── Ronde de correction 1 : IMPORTANT 2 — la pondération par VOLUME (pas par pays
+  // présent) doit réellement déplacer le créneau retenu ───────────────────────────
+  describe("pondération des sessions par volume de cibles (pas par pays présent)", () => {
+    it("MUTATION — 20 leads HK contre 1 lead SN (créneaux disjoints [01:00,10:00) / [09:00,18:00) UTC) : le lead SN, minoritaire, n'obtient PAS de session dans sa région exclusive", async () => {
+      // Fixture reprise de prospection-sessions.test.ts (déjà vérifiée en tâche 4) :
+      // HK (Asia/Hong_Kong, UTC+8, pas d'heure d'été) et SN (Africa/Dakar, UTC+0, pas
+      // d'heure d'été) ont des fenêtres disjointes sans ambiguïté à partir de 10:00 UTC
+      // (HK s'arrête à 10:00 ; SN, lui, continue jusqu'à 18:00). `now` = 10:30 UTC est
+      // dans la région "SN seul" (>= 10:00 UTC) — la SEULE façon d'y obtenir une session
+      // est que le créneau SN ait été retenu au moins une fois. Calculé hors-ligne pour
+      // userId "u1" / 2026-07-15 (voir task-6-report.md) : avec la pondération réelle
+      // (20 HK, poids 20, contre 1 SN, poids 1), AUCUNE session n'atteint cette région —
+      // le lead SN, bien que joignable à cet instant (09:00-18:00 UTC), n'a simplement
+      // pas de session pour partir. Avec des pays dédupliqués (poids 1 contre 1, bug),
+      // une session APPARAÎT dans cette région exacte et couvre `now`.
+      vi.setSystemTime(new Date("2026-07-15T10:30:00.000Z"));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+
+      const hkStates = Array.from({ length: 20 }, (_, i) => baseState({ id: i + 1, leadId: i + 1 }));
+      const snState = baseState({ id: 21, leadId: 21 });
+      (storage.getDueEnrollments as any).mockResolvedValue([...hkStates, snState]);
+
+      (storage.getUserPreferences as any).mockResolvedValue(
+        openPrefs({
+          timezone: "Europe/Paris",
+          workDayStart: "09:00",
+          workDayEnd: "18:00",
+          linkedinUnipileAccountId: "acc1",
+        }),
+      );
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      const hkLeads = Array.from({ length: 20 }, (_, i) =>
+        baseLead({
+          id: i + 1,
+          linkedinUrl: `https://linkedin.com/in/hk${i + 1}`,
+          enrichedProfile: { linkedin: { raw: { country_code: "HK", city: null } } },
+        }),
+      );
+      const snLead = baseLead({
+        id: 21,
+        linkedinUrl: "https://linkedin.com/in/sn21",
+        enrichedProfile: { linkedin: { raw: { country_code: "SN", city: null } } },
+      });
+      (storage.getLeads as any).mockResolvedValue([...hkLeads, snLead]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      // Les 20 leads HK sont hors de leur fenêtre locale à 10:30 UTC (fenêtre HK :
+      // 01:00-10:00 UTC) — refus TEMPOREL, jamais signalé. Le lead SN, lui, EST
+      // joignable à cet instant (fenêtre SN : 09:00-18:00 UTC) mais aucune session ne
+      // couvre `now` sous la pondération réelle : aucun appel Unipile, pour personne.
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.setLeadUnreachable).not.toHaveBeenCalled();
+      // Preuve par mutation appliquée manuellement (voir task-6-report.md pour le
+      // chiffre) : dédupliquer `pendingCountryCodes` (`new Set([...])`) avant de
+      // construire les sessions fait passer cette assertion de vert à rouge —
+      // `sendLinkedInStep` serait alors appelé pour le lead SN (session parasite dans
+      // sa région exclusive, causée par l'égalisation artificielle des poids).
+    });
+  });
 });

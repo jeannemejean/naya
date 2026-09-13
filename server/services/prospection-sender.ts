@@ -26,7 +26,7 @@ import {
   isLinkedInRestrictionSignal,
   LINKEDIN_WEEKLY_WINDOW_MS,
 } from "./prospection-linkedin-guard";
-import { parisTodayString, wallClockToInstant } from "../utils/timezone";
+import { wallClockToInstant } from "../utils/timezone";
 import { planDailySessions, isWithinAnySession, type Session } from "./prospection-sessions";
 import { isTargetReachableAt } from "./prospection-target-hours";
 
@@ -201,6 +201,25 @@ function graineDuJour(userId: string, dateStr: string): number {
   return h >>> 0;
 }
 
+/**
+ * "YYYY-MM-DD" du jour civil d'un instant, dans UN FUSEAU ARBITRAIRE — jamais figé
+ * sur Paris. Revue post-commit b97a0b6, défaut Important : la date civile qui nourrit
+ * `targetWindowUTC`/`planDailySessions` était dérivée de `parisTodayString`, quel que
+ * soit le fuseau de l'UTILISATRICE. Pour une utilisatrice loin de Paris (ex.
+ * Pacific/Kiritimati, UTC+14, la première à changer de jour civil sur Terre), le jour
+ * calculé pouvait être celui de la veille ou du lendemain de son propre jour réel : la
+ * fenêtre et les sessions ne recouvraient alors JAMAIS son "maintenant" — la
+ * prospection LinkedIn ne partait plus, en silence, dès le deuxième fuseau non-Paris.
+ * Implémentation calquée sur `parisTodayString` (server/utils/timezone.ts, fichier
+ * validé de ce lot, non modifié) mais paramétrée par fuseau — ce module ne peut
+ * qu'appeler `wallClockToInstant`/les fonctions déjà exportées, pas les dupliquer.
+ */
+function todayStringIn(timeZone: string, now: Date): string {
+  // Locale en-CA : le seul format standard dont Intl garantit la sortie en YYYY-MM-DD
+  // (même choix que `parisTodayString`).
+  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(now);
+}
+
 // Le pays et la ville d'un lead ne sont PAS des colonnes : ils vivent dans le profil
 // enrichi (JSON), sous la forme brute renvoyée par le fournisseur d'enrichissement
 // LinkedIn. Une lecture qui échoue ou qui ne rend pas une chaîne est traitée comme
@@ -309,12 +328,17 @@ export async function runProspectionSender(): Promise<void> {
 
     // ── Fenêtre locale de la cible + sessions de prospection (ce lot) ──────────────
     //
-    // `todayStr` : UNE SEULE fois par passage (pas par lead) — dérivé de "maintenant"
-    // au moment où le worker se réveille. `planDailySessions` en dépend (via la graine
-    // et `targetWindowUTC`) mais ne dépend PAS de l'instant précis à l'intérieur de la
-    // journée : le calculer une fois ici, avant la boucle, correspond exactement à la
-    // fréquence attendue ("une fois par passage et par utilisateur").
-    const todayStr = parisTodayString(new Date());
+    // Revue post-commit b97a0b6, défaut Important : `todayStr` était dérivé de
+    // `parisTodayString`, fixe, quel que soit le fuseau de l'utilisatrice. Pour une
+    // utilisatrice loin de Paris (ex. Pacific/Kiritimati, UTC+14 — la première à
+    // changer de jour civil sur Terre), le jour calculé pouvait être celui de la
+    // veille ou du lendemain de son propre jour réel : la fenêtre et les sessions ne
+    // recouvraient alors JAMAIS son "maintenant" — la prospection LinkedIn ne partait
+    // plus, en silence, dès le deuxième fuseau non-Paris. `todayStr` est donc désormais
+    // calculé PAR UTILISATEUR, à partir de `prefs?.timezone` (repli sur Paris si absent),
+    // au point d'appel dans la boucle (voir plus bas) — jamais ici, en tête de passage,
+    // puisqu'il dépend d'une donnée (prefs) qui varie par utilisateur.
+    //
     // Cache des leads par utilisateur : `storage.getLeads` était appelé À CHAQUE LEAD
     // sans mise en cache (une fois par lead dû, pas une fois par utilisateur) — la
     // Map ci-dessous sert à la fois à réduire ce coût et à construire, pour un
@@ -325,32 +349,51 @@ export async function runProspectionSender(): Promise<void> {
       if (!leadsCache.has(uid)) leadsCache.set(uid, storage.getLeads(uid));
       return leadsCache.get(uid)!;
     };
+    // Cache des étapes de séquence PAR CAMPAGNE — réutilisé pour restreindre
+    // `pendingCountryCodes` (ci-dessous) aux leads réellement candidats à un envoi
+    // LinkedIn. Distinct du chargement (non mis en cache) des étapes de la campagne
+    // du lead COURANT plus bas dans la boucle : celui-ci reste inchangé.
+    const stepsCache = new Map<number, Promise<any[]>>();
+    const getCampaignSteps = (campaignId: number): Promise<any[]> => {
+      if (!stepsCache.has(campaignId)) stepsCache.set(campaignId, storage.getSequenceSteps(campaignId));
+      return stepsCache.get(campaignId)!;
+    };
     // Sessions calculées UNE SEULE FOIS par utilisateur pour ce passage — jamais une
     // fois par lead (le worker tourne chaque minute ; recalculer par lead ferait
     // dériver la fenêtre choisie entre deux leads du même utilisateur au même tick).
     const sessionsParUser = new Map<string, Session[]>();
-    const sessionsDe = async (uid: string, prefs: any, workDayStartMin: number, workDayEndMin: number): Promise<Session[]> => {
+    const sessionsDe = async (uid: string, prefs: any, workDayStartMin: number, workDayEndMin: number, dateStr: string): Promise<Session[]> => {
       const cached = sessionsParUser.get(uid);
       if (cached) return cached;
       // Pays des leads DUS de cet utilisateur, UNE ENTRÉE PAR LEAD (doublons
       // attendus, jamais dédupliqués) : `planDailySessions` pondère le choix du
       // créneau par le VOLUME de cibles qu'il dessert, pas par la simple présence
-      // d'un pays.
+      // d'un pays. Restreint aux leads RÉELLEMENT CANDIDATS à un envoi LinkedIn —
+      // sans quoi un lead sans `linkedinUrl`, ou dont l'étape actuellement due est
+      // de canal email, pondérerait quand même le placement des sessions LinkedIn
+      // (revue post-commit b97a0b6, mineur). Approximation délibérée et peu
+      // coûteuse : `state.currentStep` (déjà en mémoire, aucune lecture
+      // supplémentaire) plutôt que la machinerie complète de décision (skip/condition/
+      // signaux), qui exigerait de lire les signaux de CHAQUE AUTRE lead dû de
+      // l'utilisateur — coût jugé disproportionné pour une simple pondération.
       const leads = await getUserLeads(uid).catch(() => [] as any[]);
       const pendingCountryCodes: string[] = [];
       for (const s of due) {
         if (s.userId !== uid) continue;
         const l = leads.find((x: any) => x.id === s.leadId);
+        if (!l?.linkedinUrl) continue; // jamais un envoi LinkedIn réel sans URL
+        const campaignSteps = await getCampaignSteps(s.campaignId).catch(() => [] as any[]);
+        if (campaignSteps[s.currentStep]?.channel !== "linkedin") continue; // étape due actuellement autre que LinkedIn
         const cc = leadCountryCode(l);
         if (cc) pendingCountryCodes.push(cc);
       }
       const tz = prefs?.timezone || "UTC";
       const plan = planDailySessions({
-        userWindowStart: wallClockToInstant(tz, todayStr, minToHHMM(workDayStartMin)),
-        userWindowEnd: wallClockToInstant(tz, todayStr, minToHHMM(workDayEndMin)),
+        userWindowStart: wallClockToInstant(tz, dateStr, minToHHMM(workDayStartMin)),
+        userWindowEnd: wallClockToInstant(tz, dateStr, minToHHMM(workDayEndMin)),
         pendingCountryCodes,
-        dateStr: todayStr,
-        seed: graineDuJour(uid, todayStr),
+        dateStr,
+        seed: graineDuJour(uid, dateStr),
       });
       sessionsParUser.set(uid, plan);
       return plan;
@@ -472,20 +515,32 @@ export async function runProspectionSender(): Promise<void> {
           // (historique LinkedIn, brandDna/user/campagne) et avant `decideLinkedInAction`,
           // que cette vérification ne remplace ni n'assouplit : elle ne peut que
           // restreindre davantage.
+          //
+          // `todayStr` PAR UTILISATEUR (jamais figé sur Paris — voir `todayStringIn` et
+          // la revue post-commit b97a0b6, défaut Important) : sert à la fois de jour
+          // civil pour la fenêtre de la cible ci-dessous et de `dateStr` des sessions
+          // (`sessionsDe` plus bas) — une seule source de vérité pour "quel jour" dans
+          // ce passage, par utilisateur.
+          const todayStr = todayStringIn(prefs?.timezone || "Europe/Paris", now);
           const pays = leadCountryCode(lead);
           const ville = leadCity(lead);
           const joignable = isTargetReachableAt(pays, ville, now, todayStr);
           if (!joignable.reachable) {
-            console.log(
-              `[ProspectionSender] LinkedIn lead ${lead.id} refusé : cible non joignable maintenant (${joignable.reason}) : ${joignable.detail}`,
-            );
             // DISTINCTION ESSENTIELLE (voir doc de `setLeadUnreachable` et
             // `prospection-target-hours.ts`) : `country_unknown`/`no_common_window`
             // sont STRUCTURELS (ce lead ne sera jamais joignable en l'état, à signaler) ;
             // `not_a_workday`/`outside_window` sont TEMPORELS (vrais la majeure partie du
             // temps, ne disent rien sur le lead) — les inscrire écraserait la base à
-            // chaque tick et transformerait « pas maintenant » en « jamais ».
+            // chaque tick et transformerait « pas maintenant » en « jamais ». Le log est
+            // réservé aux refus STRUCTURELS (revue post-commit b97a0b6, mineur) : un refus
+            // temporel est le cas normal (un lead dû le reste tant qu'on n'est pas dans sa
+            // fenêtre) et se reproduit à chaque minute pour chaque lead — le journaliser
+            // produirait de l'ordre de 20 000 lignes/jour sur une liste réelle, sans rien
+            // apprendre de nouveau.
             if (joignable.reason === "country_unknown" || joignable.reason === "no_common_window") {
+              console.log(
+                `[ProspectionSender] LinkedIn lead ${lead.id} refusé : cible non joignable (${joignable.reason}) : ${joignable.detail}`,
+              );
               await storage.setLeadUnreachable(lead.id, `${joignable.reason}: ${joignable.detail}`)
                 .catch((e: any) => console.error("[ProspectionSender] signalement non joignable échoué", e.message));
             }
@@ -501,7 +556,7 @@ export async function runProspectionSender(): Promise<void> {
           // ── Sessions de prospection : un humain ouvre LinkedIn, traite quelques
           // personnes, referme — calculées UNE FOIS par utilisateur pour ce passage
           // (voir `sessionsDe` plus haut), jamais par lead.
-          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin);
+          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin, todayStr);
           if (!isWithinAnySession(sessions, now)) {
             continue; // hors session : rien à signaler sur le lead, on réessaiera plus tard
           }
