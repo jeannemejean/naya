@@ -439,8 +439,22 @@ export async function runProspectionSender(): Promise<void> {
       // voir task-6-report.md). `todayUserDateStr` ne sert plus ici qu'à borner la
       // fenêtre PROPRE de l'utilisatrice (ci-dessous) et à dériver la graine — plus
       // du tout à évaluer la fenêtre d'un pays.
+      //
+      // CHAQUE cible porte AUSSI SA PROPRE VILLE — revue finale (post-commit
+      // 2916845, défaut Important) : une première version de ce correctif
+      // transmettait `city: null` ici, alors que la vérification par lead
+      // (ci-dessous) utilisait déjà la ville. Pour un lead « New York, NY », la
+      // fenêtre de vérification (avec ville, 13h-22h UTC, 9h) et la fenêtre de
+      // placement (sans ville, intersection des 29 fuseaux US, 19h-22h UTC, 3h)
+      // divergeaient au point que 66,7 % de la fenêtre où le lead est déclaré
+      // joignable tombait structurellement hors de toute session possible —
+      // `planDailySessions` rendait `[]` SYSTÉMATIQUEMENT pour une utilisatrice
+      // Europe/Paris en horaires de bureau visant des leads new-yorkais en
+      // horaires de bureau : le cas d'usage central de l'app. La ville est
+      // désormais résolue une seule fois par lead et réutilisée pour LA date ET
+      // LA fenêtre de CETTE cible (jamais une ville pour l'une, `null` pour l'autre).
       const leads = await getUserLeads(uid).catch(() => [] as any[]);
-      const pendingTargets: { countryCode: string; dateStr: string }[] = [];
+      const pendingTargets: { countryCode: string; city: string | null; dateStr: string }[] = [];
       for (const s of due) {
         if (s.userId !== uid) continue;
         const l = leads.find((x: any) => x.id === s.leadId);
@@ -449,11 +463,8 @@ export async function runProspectionSender(): Promise<void> {
         if (campaignSteps[s.currentStep]?.channel !== "linkedin") continue; // étape due actuellement autre que LinkedIn
         const cc = leadCountryCode(l);
         if (!cc) continue;
-        // `city: null` — même convention documentée dans `planDailySessions` :
-        // résoudre par ville exigerait de faire remonter la ville de CHAQUE cible
-        // en attente jusqu'à la fenêtre elle-même (pas seulement pour la date),
-        // hors périmètre de ce correctif.
-        pendingTargets.push({ countryCode: cc, dateStr: targetDateStrFor(cc, null, now, todayUserDateStr) });
+        const city = leadCity(l);
+        pendingTargets.push({ countryCode: cc, city, dateStr: targetDateStrFor(cc, city, now, todayUserDateStr) });
       }
       const tz = prefs?.timezone || DEFAULT_USER_TIMEZONE;
       const plan = planDailySessions({

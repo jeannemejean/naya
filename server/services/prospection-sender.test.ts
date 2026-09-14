@@ -1685,4 +1685,60 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       );
     });
   });
+
+  // ─── Ronde de correction 4 : IMPORTANT — le PLACEMENT DES SESSIONS doit, lui
+  // aussi, utiliser la VILLE de chaque cible, pas seulement la vérification par
+  // lead (même hypothèse que la ronde 3, sur l'axe ville plutôt que date) ───────
+  describe("placement des sessions : la ville de la cible compte aussi (pas seulement le pays)", () => {
+    it("MUTATION — utilisatrice Europe/Paris en horaires de bureau (9h-18h) visant un lead « New York, NY » en horaires de bureau : des sessions existent et couvrent un instant où le lead est joignable", async () => {
+      // Fixture calculée hors-ligne (voir task-6-report.md), exactement le scénario
+      // reproduit par la revue : fenêtre US AVEC ville reconnue (New York, NY) =
+      // 13h-22h UTC (9h) ; fenêtre US SANS ville (intersection des 29 fuseaux) =
+      // 19h-22h UTC (3h), qui ne recoupe JAMAIS la fenêtre de l'utilisatrice
+      // (07h-16h UTC = 9h-18h Paris). Sans la ville au placement, `planDailySessions`
+      // rendrait `[]` SYSTÉMATIQUEMENT ici — c'est le cas d'usage central de l'app
+      // (fondatrice européenne visant des prospects américains en horaires de bureau
+      // normaux) qui était structurellement inatteignable.
+      // Instant calculé hors-ligne avec la VRAIE graine (`graineDuJour("u1", "2026-07-15")`
+      // = 1388912778) — pas une graine arbitraire : `planDailySessions` place les
+      // sessions par tirage seedé, donc le résultat dépend de la graine réellement
+      // utilisée par le worker pour cet utilisateur/ce jour.
+      vi.setSystemTime(new Date("2026-07-15T13:35:35.957Z"));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(
+        openPrefs({
+          timezone: "Europe/Paris",
+          workDayStart: "09:00",
+          workDayEnd: "18:00",
+          linkedinUnipileAccountId: "acc1",
+        }),
+      );
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        baseLead({
+          linkedinUrl: "https://linkedin.com/in/ny-lead",
+          enrichedProfile: { linkedin: { raw: { country_code: "US", city: "New York, NY" } } },
+        }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      // Preuve par mutation appliquée manuellement (voir task-6-report.md pour le
+      // chiffre) : dans `sessionsDe`, remettre `city: null` dans `pendingTargets`
+      // (au lieu de la ville réelle du lead) fait passer cette assertion de vert à
+      // rouge — `planDailySessions` ne produit alors PLUS AUCUNE session (créneau
+      // sans ville vide, intersection nulle avec la fenêtre de l'utilisatrice),
+      // donc aucun appel Unipile.
+      expect(sendLinkedInStep).toHaveBeenCalledWith(
+        expect.objectContaining({ linkedinUrl: "https://linkedin.com/in/ny-lead" }),
+      );
+    });
+  });
 });

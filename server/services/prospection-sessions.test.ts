@@ -7,13 +7,17 @@ const FENETRE = {
   userWindowEnd: new Date("2026-07-15T16:00:00.000Z"),   // 18h Paris
 };
 
-// Construit `pendingTargets` à partir de simples codes pays, tous sur LE MÊME jour
-// civil `FENETRE_DATE` — le cas courant (et celui de tous les tests préexistants
-// de ce fichier, antérieurs à la revue post-commit 3acac93). `pend2` construit une
-// entrée par (pays, jour) explicite, pour les tests qui portent spécifiquement sur
-// la divergence de jour civil entre cibles.
-const pend = (...countryCodes: string[]) => countryCodes.map((countryCode) => ({ countryCode, dateStr: FENETRE_DATE }));
-const pend2 = (...pairs: [string, string][]) => pairs.map(([countryCode, dateStr]) => ({ countryCode, dateStr }));
+// Construit `pendingTargets` à partir de simples codes pays, tous SANS ville, sur
+// LE MÊME jour civil `FENETRE_DATE` — le cas courant (et celui de tous les tests
+// préexistants de ce fichier, antérieurs aux revues post-commit 3acac93 et
+// 2916845). `pend2` construit une entrée par (pays, jour) explicite, sans ville,
+// pour les tests qui portent spécifiquement sur la divergence de jour civil entre
+// cibles. `pend3` construit une entrée par (pays, ville, jour) explicite, pour les
+// tests qui portent spécifiquement sur la ville.
+const pend = (...countryCodes: string[]) => countryCodes.map((countryCode) => ({ countryCode, city: null, dateStr: FENETRE_DATE }));
+const pend2 = (...pairs: [string, string][]) => pairs.map(([countryCode, dateStr]) => ({ countryCode, city: null, dateStr }));
+const pend3 = (...triples: [string, string | null, string][]) =>
+  triples.map(([countryCode, city, dateStr]) => ({ countryCode, city, dateStr }));
 
 // Fenetres de reference utilisees par plusieurs tests ci-dessous, calculees a
 // partir de targetWindowUTC (voir prospection-target-hours.test.ts pour les
@@ -228,6 +232,54 @@ describe("planDailySessions", () => {
       expect(sess.start.getTime()).toBeGreaterThanOrEqual(Date.parse("2026-07-17T01:00:00.000Z"));
       expect(sess.end.getTime()).toBeLessThanOrEqual(Date.parse("2026-07-17T10:00:00.000Z"));
     }
+  });
+
+  // ─── Revue finale, défaut Important ──────────────────────────────────────────
+  //
+  // La ville doit être transmise au PLACEMENT, pas seulement à la vérification par
+  // lead. Preuve directe, au niveau de cette fonction (pas seulement via le
+  // worker) : un lead « New York, NY » a une fenêtre US 13h-22h UTC (9h) AVEC sa
+  // ville, contre 19h-22h UTC (3h, intersection des 29 fuseaux US) SANS elle.
+  // Intersectée avec FENETRE (07h-16h Paris, soit 07h-16h UTC) : AVEC ville,
+  // l'intersection est [13:00,16:00) UTC (3h, exploitable) ; SANS ville,
+  // l'intersection est VIDE (19h-22h UTC ne recoupe jamais 07h-16h UTC) — aucun
+  // créneau, donc aucune session, quel que soit le seed.
+  it("un lead avec ville reconnue obtient une fenêtre plus large qu'un lead du même pays sans ville — et peut donc obtenir une session là où l'autre n'en obtient aucune", () => {
+    const avecVille = planDailySessions({
+      ...FENETRE,
+      pendingTargets: pend3(["US", "New York, NY", FENETRE_DATE]),
+      seed: 1,
+    });
+    const sansVille = planDailySessions({
+      ...FENETRE,
+      pendingTargets: pend3(["US", null, FENETRE_DATE]),
+      seed: 1,
+    });
+    expect(avecVille.length).toBeGreaterThan(0);
+    expect(sansVille).toEqual([]);
+    for (const sess of avecVille) {
+      expect(sess.start.getTime()).toBeGreaterThanOrEqual(Date.parse("2026-07-15T13:00:00.000Z"));
+      expect(sess.end.getTime()).toBeLessThanOrEqual(Date.parse("2026-07-15T16:00:00.000Z"));
+    }
+  });
+
+  it("deux leads du même pays mais de villes différentes ne sont jamais fondus dans le même créneau (clé composite avec la ville)", () => {
+    // Une seule cible new-yorkaise doit produire EXACTEMENT le même résultat
+    // qu'une file mixte new-yorkaise + une cible sans ville reconnue (celle-ci ne
+    // produisant aucun créneau exploitable, voir le test précédent) — la preuve
+    // que la ville distingue bien deux entrées du même pays plutôt que de les
+    // fusionner sous un poids partagé.
+    const seulNY = planDailySessions({
+      ...FENETRE,
+      pendingTargets: pend3(["US", "New York, NY", FENETRE_DATE]),
+      seed: 1,
+    });
+    const melangeVilles = planDailySessions({
+      ...FENETRE,
+      pendingTargets: pend3(["US", "New York, NY", FENETRE_DATE], ["US", null, FENETRE_DATE]),
+      seed: 1,
+    });
+    expect(melangeVilles.map((s) => s.start.toISOString())).toEqual(seulNY.map((s) => s.start.toISOString()));
   });
 });
 
