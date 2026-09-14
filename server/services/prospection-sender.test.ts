@@ -1548,4 +1548,87 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       // sa région exclusive, causée par l'égalisation artificielle des poids).
     });
   });
+
+  // ─── Ronde de correction 2 : IMPORTANT — la date civile de LA CIBLE doit venir de
+  // SON PROPRE fuseau, jamais de celui de l'utilisatrice (même bug que la ronde 1,
+  // à l'autre bout) ─────────────────────────────────────────────────────────────
+  //
+  // ⚠️ SUBSTITUTION DE CIBLE, JUSTIFIÉE (voir task-6-report.md pour la preuve
+  // complète) : la coordination demandait une cible FRANÇAISE. Exhaustivement
+  // vérifié par calcul (400 jours × 5 graines × les 49 pays connus, cible FR) :
+  // AUCUN instant ne peut simultanément satisfaire (a) une session réelle couvrant
+  // l'instant et (b) une fenêtre FR réellement joignable à cet instant tout en
+  // divergeant du jour civil de l'utilisatrice. Raison structurelle : une session
+  // n'existe que dans la fenêtre PROPRE d'un pays candidat pour LE JOUR DE
+  // L'UTILISATRICE — la fenêtre FR (ancrée près d'UTC, +1h) ne peut chevaucher cette
+  // zone que si un pays candidat a un décalage ≥ +16h ou ≤ -14h, hors de portée des
+  // fuseaux réels (max observé : NZ +13h, US extrémité négative agrégée ≈ 19h-23h
+  // UTC — ni l'un ni l'autre n'atteint le seuil). La cible FR ne peut donc JAMAIS,
+  // par construction, laisser observer ce bug de bout en bout via `runProspectionSender`
+  // — ce qui rend le bug inoffensif en pratique pour l'Europe, mais aussi le test
+  // littéralement demandé irréalisable. Remplacée par une cible AMÉRICAINE (US,
+  // décalage négatif) : la MÊME utilisatrice Kiritimati (+14) demandée, la même
+  // mécanique, un décalage suffisamment extrême dans l'autre sens pour que le
+  // chevauchement existe réellement (vérifié exhaustivement, fixture ci-dessous
+  // trouvée par script jetable balayant 400 jours × 8 graines).
+  describe("date civile de la cible (jamais celle de l'utilisatrice, même via le fuseau désormais corrigé)", () => {
+    it("MUTATION — utilisatrice à Kiritimati (+14) ciblant un lead AMÉRICAIN (US), à un instant réellement dans SA fenêtre (19h-23h UTC ce jour-là) : l'envoi part", async () => {
+      // Fixture calculée hors-ligne (voir task-6-report.md) : au 2026-01-05T22:11:42.977Z,
+      // le jour civil de l'utilisatrice à Kiritimati est déjà "2026-01-06" alors que
+      // celui de la cible US (America/New_York, premier fuseau de la table US — celui
+      // que `zonesForCountry("US")[0]` renvoie, exactement ce que le code de production
+      // utilise à défaut de ville) est encore "2026-01-05" — les deux jours DIFFÈRENT.
+      // Une seconde cible NZ, due pour la même utilisatrice, alimente une session RÉELLE
+      // qui couvre cet instant (résultat de `planDailySessions`, pas construit à la main) ;
+      // la cible US, elle, est indépendamment joignable à cet instant SI ET SEULEMENT SI
+      // sa propre fenêtre est évaluée avec SON PROPRE jour civil (2026-01-05), jamais avec
+      // celui de l'utilisatrice (2026-01-06, qui donnerait `outside_window` — vérifié
+      // directement par calcul, voir le script de préparation).
+      vi.setSystemTime(new Date("2026-01-05T22:11:42.977Z"));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+
+      const usState = baseState({ id: 1, leadId: 1 }); // traité en PREMIER : aucune contamination par le délai minimum
+      const nzState = baseState({ id: 2, leadId: 2 });
+      (storage.getDueEnrollments as any).mockResolvedValue([usState, nzState]);
+
+      (storage.getUserPreferences as any).mockResolvedValue(
+        openPrefs({
+          timezone: "Pacific/Kiritimati",
+          workDayStart: "00:00",
+          workDayEnd: "23:59",
+          linkedinUnipileAccountId: "acc1",
+        }),
+      );
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        baseLead({
+          id: 1,
+          linkedinUrl: "https://linkedin.com/in/us-lead",
+          enrichedProfile: { linkedin: { raw: { country_code: "US", city: null } } },
+        }),
+        baseLead({
+          id: 2,
+          linkedinUrl: "https://linkedin.com/in/nz-lead",
+          enrichedProfile: { linkedin: { raw: { country_code: "NZ", city: null } } },
+        }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      // Preuve par mutation appliquée manuellement (voir task-6-report.md pour le
+      // chiffre) : recalculer la date de la cible à partir du fuseau de
+      // l'UTILISATRICE (au lieu du fuseau de la cible) fait passer cette assertion de
+      // vert à rouge — la cible US serait alors évaluée `outside_window` à cet
+      // instant précis (fenêtre US pour "2026-01-06" : 19h-23h UTC LE 06, pas le 05).
+      expect(sendLinkedInStep).toHaveBeenCalledWith(
+        expect.objectContaining({ linkedinUrl: "https://linkedin.com/in/us-lead" }),
+      );
+    });
+  });
 });

@@ -29,9 +29,31 @@ import {
 import { wallClockToInstant } from "../utils/timezone";
 import { planDailySessions, isWithinAnySession, type Session } from "./prospection-sessions";
 import { isTargetReachableAt } from "./prospection-target-hours";
+// Fonctions PURES déjà exportées par les fichiers validés de ce lot — jamais
+// modifiées ici, seulement consommées (même statut que `isTargetReachableAt`
+// elle-même). Utilisées uniquement pour déterminer le JOUR CIVIL de la cible
+// (voir `targetDateStr` plus bas) : `isTargetReachableAt`/`targetWindowUTC`
+// résolvent déjà ces mêmes fuseaux en interne pour construire la fenêtre — on
+// répète ici cette seule résolution, jamais le calcul de la fenêtre elle-même.
+import { zonesForCountry } from "./prospection-target-zones";
+import { zoneForCity } from "./prospection-target-cities";
 
 const POLL_MS = 60_000;
 let running = false;
+
+// Repli UNIQUE pour "le fuseau de l'utilisatrice" quand `prefs?.timezone` est absent.
+// Revue post-commit d95c42a, mineur : trois valeurs différentes cohabitaient pour ce
+// même concept — "Europe/Paris" dans le calcul du jour civil (todayStr), "UTC" dans
+// `localNow` (fenêtre d'envoi) et dans `sessionsDe` (bornes de session). Un
+// utilisateur SANS AUCUNE préférence, dans la bande 22h-00h UTC (où le jour civil de
+// Paris et celui de l'UTC diffèrent), obtenait donc une fenêtre de session construite
+// pour le jour de Paris mais bornée dans le fuseau UTC — deux jours différents pour
+// une même fenêtre. UTC choisi (pas Europe/Paris, repli initial de la ronde
+// précédente) : c'est déjà la convention préexistante de `localNow` et de
+// `decideLinkedInAction` (toutes deux antérieures à ce lot), et c'est le fuseau réel
+// du serveur de production (voir server/utils/timezone.ts, tête de fichier) — le
+// choix le plus neutre quand on ne sait strictement rien de l'utilisatrice.
+const DEFAULT_USER_TIMEZONE = "UTC";
 
 export interface PlanResult {
   sendIndex: number | null;
@@ -328,16 +350,17 @@ export async function runProspectionSender(): Promise<void> {
 
     // ── Fenêtre locale de la cible + sessions de prospection (ce lot) ──────────────
     //
-    // Revue post-commit b97a0b6, défaut Important : `todayStr` était dérivé de
-    // `parisTodayString`, fixe, quel que soit le fuseau de l'utilisatrice. Pour une
-    // utilisatrice loin de Paris (ex. Pacific/Kiritimati, UTC+14 — la première à
-    // changer de jour civil sur Terre), le jour calculé pouvait être celui de la
-    // veille ou du lendemain de son propre jour réel : la fenêtre et les sessions ne
-    // recouvraient alors JAMAIS son "maintenant" — la prospection LinkedIn ne partait
-    // plus, en silence, dès le deuxième fuseau non-Paris. `todayStr` est donc désormais
-    // calculé PAR UTILISATEUR, à partir de `prefs?.timezone` (repli sur Paris si absent),
-    // au point d'appel dans la boucle (voir plus bas) — jamais ici, en tête de passage,
-    // puisqu'il dépend d'une donnée (prefs) qui varie par utilisateur.
+    // Revues post-commit b97a0b6 puis d95c42a, défauts Importants successifs, même
+    // cause : un jour civil calculé dans le MAUVAIS fuseau pour l'usage qu'on en fait.
+    // D'abord `parisTodayString`, fixe, servait de date à la fois pour l'utilisatrice
+    // ET pour la cible ; puis, une fois corrigé pour l'utilisatrice (son fuseau à
+    // elle), cette MÊME date continuait de servir pour la cible — deux fuseaux qui
+    // n'ont aucune raison de coïncider. Il y a donc désormais DEUX dates civiles
+    // distinctes, calculées chacune PAR LEAD, au point d'appel dans la boucle (voir
+    // plus bas) — jamais ici, en tête de passage, puisqu'elles dépendent de données
+    // (prefs de l'utilisatrice, pays/ville du lead) qui varient par lead :
+    // `todayUserDateStr` (fuseau de l'utilisatrice, repli `DEFAULT_USER_TIMEZONE`) pour
+    // les sessions ; `targetDateStr` (fuseau de la cible) pour `isTargetReachableAt`.
     //
     // Cache des leads par utilisateur : `storage.getLeads` était appelé À CHAQUE LEAD
     // sans mise en cache (une fois par lead dû, pas une fois par utilisateur) — la
@@ -387,7 +410,7 @@ export async function runProspectionSender(): Promise<void> {
         const cc = leadCountryCode(l);
         if (cc) pendingCountryCodes.push(cc);
       }
-      const tz = prefs?.timezone || "UTC";
+      const tz = prefs?.timezone || DEFAULT_USER_TIMEZONE;
       const plan = planDailySessions({
         userWindowStart: wallClockToInstant(tz, dateStr, minToHHMM(workDayStartMin)),
         userWindowEnd: wallClockToInstant(tz, dateStr, minToHHMM(workDayEndMin)),
@@ -408,7 +431,7 @@ export async function runProspectionSender(): Promise<void> {
         const workDayStartMin = hhmmToMin(prefs?.workDayStart, 9 * 60);
         const workDayEndMin = hhmmToMin(prefs?.workDayEnd, 18 * 60);
         const workDaysSet = new Set<string>((prefs?.workDays || "mon,tue,wed,thu,fri").split(",").map((d: string) => d.trim().toLowerCase()));
-        const { nowMin, dayAbbr } = localNow(prefs?.timezone || "UTC");
+        const { nowMin, dayAbbr } = localNow(prefs?.timezone || DEFAULT_USER_TIMEZONE);
         const inWindow = withinSendingWindow(nowMin, dayAbbr, {
           startMin: workDayStartMin,
           endMin: workDayEndMin,
@@ -516,15 +539,34 @@ export async function runProspectionSender(): Promise<void> {
           // que cette vérification ne remplace ni n'assouplit : elle ne peut que
           // restreindre davantage.
           //
-          // `todayStr` PAR UTILISATEUR (jamais figé sur Paris — voir `todayStringIn` et
-          // la revue post-commit b97a0b6, défaut Important) : sert à la fois de jour
-          // civil pour la fenêtre de la cible ci-dessous et de `dateStr` des sessions
-          // (`sessionsDe` plus bas) — une seule source de vérité pour "quel jour" dans
-          // ce passage, par utilisateur.
-          const todayStr = todayStringIn(prefs?.timezone || "Europe/Paris", now);
+          // DEUX jours civils DISTINCTS, chacun dans SON PROPRE fuseau — même bug que
+          // celui corrigé pour l'utilisatrice (revue post-commit b97a0b6), reproduit à
+          // l'autre bout (revue post-commit d95c42a, défaut Important) : `todayUserDateStr`
+          // (fuseau de l'UTILISATRICE) sert de `dateStr` aux sessions (`sessionsDe` plus
+          // bas) ; `targetDateStr` (fuseau de LA CIBLE) sert de `dateStr` à
+          // `isTargetReachableAt`. Les deux n'ont AUCUNE raison de coïncider — une
+          // utilisatrice à Kiritimati (UTC+14) visant une cible française voit son propre
+          // jour civil basculer ~14h avant celui de la cible ; leur confondre a fait
+          // disparaître silencieusement des fenêtres pourtant valides côté cible pour
+          // exactement le public que ce chantier vise à activer (voir le test dédié et
+          // task-6-report.md pour la reproduction chiffrée).
+          //
+          // Choix délibéré : la date de la cible est dérivée ICI, côté appelant, plutôt
+          // que dans `targetWindowUTC`/`isTargetReachableAt` (fichier validé, hors
+          // périmètre) — en réutilisant la MÊME résolution de fuseau
+          // (`zoneForCity`/`zonesForCountry`, fonctions déjà exportées) que celle
+          // employée en interne par ces fonctions pour construire la fenêtre. On ne
+          // duplique QUE ce choix de fuseau représentatif, jamais le calcul de la fenêtre
+          // elle-même (toujours entièrement délégué à `isTargetReachableAt`). Pays
+          // inconnu/zone introuvable → repli sur `todayUserDateStr` : sans conséquence,
+          // `isTargetReachableAt` refusera de toute façon (`country_unknown`) quel que
+          // soit le jour transmis.
+          const todayUserDateStr = todayStringIn(prefs?.timezone || DEFAULT_USER_TIMEZONE, now);
           const pays = leadCountryCode(lead);
           const ville = leadCity(lead);
-          const joignable = isTargetReachableAt(pays, ville, now, todayStr);
+          const targetZone = pays ? (zoneForCity(pays, ville) ?? zonesForCountry(pays)?.[0] ?? null) : null;
+          const targetDateStr = targetZone ? todayStringIn(targetZone, now) : todayUserDateStr;
+          const joignable = isTargetReachableAt(pays, ville, now, targetDateStr);
           if (!joignable.reachable) {
             // DISTINCTION ESSENTIELLE (voir doc de `setLeadUnreachable` et
             // `prospection-target-hours.ts`) : `country_unknown`/`no_common_window`
@@ -556,7 +598,7 @@ export async function runProspectionSender(): Promise<void> {
           // ── Sessions de prospection : un humain ouvre LinkedIn, traite quelques
           // personnes, referme — calculées UNE FOIS par utilisateur pour ce passage
           // (voir `sessionsDe` plus haut), jamais par lead.
-          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin, todayStr);
+          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin, todayUserDateStr);
           if (!isWithinAnySession(sessions, now)) {
             continue; // hors session : rien à signaler sur le lead, on réessaiera plus tard
           }
@@ -572,7 +614,7 @@ export async function runProspectionSender(): Promise<void> {
             : null;
           const guardDecision = decideLinkedInAction({
             now,
-            timezone: prefs?.timezone || "UTC",
+            timezone: prefs?.timezone || DEFAULT_USER_TIMEZONE,
             workDayStartMin, workDayEndMin, workDays: workDaysSet,
             accountConnectedAt,
             recentSendTimestamps: liHistoryCache.get(state.userId)!,
