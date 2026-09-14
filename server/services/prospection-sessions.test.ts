@@ -1,11 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { planDailySessions, isWithinAnySession, SESSIONS_MIN_PER_DAY, SESSIONS_MAX_PER_DAY } from "./prospection-sessions";
 
+const FENETRE_DATE = "2026-07-15";
 const FENETRE = {
   userWindowStart: new Date("2026-07-15T07:00:00.000Z"), // 9h Paris
   userWindowEnd: new Date("2026-07-15T16:00:00.000Z"),   // 18h Paris
-  dateStr: "2026-07-15",
 };
+
+// Construit `pendingTargets` à partir de simples codes pays, tous sur LE MÊME jour
+// civil `FENETRE_DATE` — le cas courant (et celui de tous les tests préexistants
+// de ce fichier, antérieurs à la revue post-commit 3acac93). `pend2` construit une
+// entrée par (pays, jour) explicite, pour les tests qui portent spécifiquement sur
+// la divergence de jour civil entre cibles.
+const pend = (...countryCodes: string[]) => countryCodes.map((countryCode) => ({ countryCode, dateStr: FENETRE_DATE }));
+const pend2 = (...pairs: [string, string][]) => pairs.map(([countryCode, dateStr]) => ({ countryCode, dateStr }));
 
 // Fenetres de reference utilisees par plusieurs tests ci-dessous, calculees a
 // partir de targetWindowUTC (voir prospection-target-hours.test.ts pour les
@@ -22,8 +30,8 @@ const SN_ONLY_APRES = Date.parse("2026-07-15T10:00:00.000Z");
 
 describe("planDailySessions", () => {
   it("est deterministe pour une meme graine", () => {
-    const a = planDailySessions({ ...FENETRE, pendingCountryCodes: ["FR"], seed: 42 });
-    const b = planDailySessions({ ...FENETRE, pendingCountryCodes: ["FR"], seed: 42 });
+    const a = planDailySessions({ ...FENETRE, pendingTargets: pend("FR"), seed: 42 });
+    const b = planDailySessions({ ...FENETRE, pendingTargets: pend("FR"), seed: 42 });
     expect(a.map((s) => s.start.toISOString())).toEqual(b.map((s) => s.start.toISOString()));
   });
 
@@ -33,13 +41,13 @@ describe("planDailySessions", () => {
   // propriété dont dépend "un jour différent" : graine différente => découpage
   // différent.
   it("produit un decoupage different pour une graine differente (la graine encode le jour)", () => {
-    const j1 = planDailySessions({ ...FENETRE, pendingCountryCodes: ["FR"], seed: 1 });
-    const j2 = planDailySessions({ ...FENETRE, pendingCountryCodes: ["FR"], seed: 2 });
+    const j1 = planDailySessions({ ...FENETRE, pendingTargets: pend("FR"), seed: 1 });
+    const j2 = planDailySessions({ ...FENETRE, pendingTargets: pend("FR"), seed: 2 });
     expect(j1.map((s) => s.start.toISOString())).not.toEqual(j2.map((s) => s.start.toISOString()));
   });
 
   it("produit entre 2 et 3 sessions", () => {
-    const s = planDailySessions({ ...FENETRE, pendingCountryCodes: ["FR"], seed: 7 });
+    const s = planDailySessions({ ...FENETRE, pendingTargets: pend("FR"), seed: 7 });
     expect(s.length).toBeGreaterThanOrEqual(2);
     expect(s.length).toBeLessThanOrEqual(3);
   });
@@ -51,7 +59,7 @@ describe("planDailySessions", () => {
     // pays par la fenêtre utilisatrice (Math.max/Math.min) laisserait passer un
     // créneau US brut, entièrement hors bornes — c'est précisément ce que cette
     // assertion ferait tomber.
-    const s = planDailySessions({ ...FENETRE, pendingCountryCodes: ["FR", "US"], seed: 1 });
+    const s = planDailySessions({ ...FENETRE, pendingTargets: pend("FR", "US"), seed: 1 });
     for (const sess of s) {
       expect(sess.start.getTime()).toBeGreaterThanOrEqual(FENETRE.userWindowStart.getTime());
       expect(sess.end.getTime()).toBeLessThanOrEqual(FENETRE.userWindowEnd.getTime());
@@ -90,8 +98,8 @@ describe("planDailySessions", () => {
     // seeds 1 à 50 avec cette implémentation ; la seule façon théorique
     // d'obtenir une égalité serait une coïncidence exacte d'arrondi flottant
     // sur une graine adverse, jamais rencontrée.
-    const fr = planDailySessions({ ...FENETRE, pendingCountryCodes: ["FR"], seed: 5 });
-    const sn = planDailySessions({ ...FENETRE, pendingCountryCodes: ["SN"], seed: 5 });
+    const fr = planDailySessions({ ...FENETRE, pendingTargets: pend("FR"), seed: 5 });
+    const sn = planDailySessions({ ...FENETRE, pendingTargets: pend("SN"), seed: 5 });
     expect(fr.length).toBeGreaterThan(0);
     expect(sn.length).toBeGreaterThan(0);
     const dernierFr = Math.max(...fr.map((s) => s.end.getTime()));
@@ -100,7 +108,7 @@ describe("planDailySessions", () => {
   });
 
   it("ne produit aucune session quand la file est vide", () => {
-    expect(planDailySessions({ ...FENETRE, pendingCountryCodes: [], seed: 9 })).toEqual([]);
+    expect(planDailySessions({ ...FENETRE, pendingTargets: [], seed: 9 })).toEqual([]);
   });
 
   it("ne produit aucune session quand aucune cible n'est joignable dans la fenetre", () => {
@@ -108,11 +116,11 @@ describe("planDailySessions", () => {
     // 9h-18h a Paris (2026-07-15 est un mercredi, donc jour ouvre cote NZ aussi —
     // ce n'est pas le controle "jour ouvre" qui rend [], c'est bien l'absence de
     // recoupement horaire).
-    expect(planDailySessions({ ...FENETRE, pendingCountryCodes: ["NZ"], seed: 4 })).toEqual([]);
+    expect(planDailySessions({ ...FENETRE, pendingTargets: pend("NZ"), seed: 4 })).toEqual([]);
   });
 
   it("ignore un pays inconnu sans planter", () => {
-    const s = planDailySessions({ ...FENETRE, pendingCountryCodes: ["ZZ", "FR"], seed: 6 });
+    const s = planDailySessions({ ...FENETRE, pendingTargets: pend("ZZ", "FR"), seed: 6 });
     expect(s.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -124,7 +132,7 @@ describe("planDailySessions", () => {
   // les constantes en tete de fichier) : c'est le cas qui porte la raison d'etre
   // de la tache ("une file mixte obtient de la matinee ET de la fin d'apres-midi").
   it("une file avec deux pays reellement joignables et des creneaux distincts repartit les sessions entre les deux", () => {
-    const s = planDailySessions({ ...FENETRE, pendingCountryCodes: ["HK", "SN"], seed: 2 });
+    const s = planDailySessions({ ...FENETRE, pendingTargets: pend("HK", "SN"), seed: 2 });
     const avantHK = s.filter((x) => x.start.getTime() < HK_ONLY_AVANT);
     const apresSN = s.filter((x) => x.start.getTime() >= SN_ONLY_APRES);
     // Une session dans chaque region sans ambiguite : la preuve qu'aucune des deux
@@ -146,9 +154,8 @@ describe("planDailySessions", () => {
     const fenetreEtroite = {
       userWindowStart: new Date("2026-07-15T07:00:00.000Z"),
       userWindowEnd: new Date("2026-07-15T07:12:00.000Z"),
-      dateStr: "2026-07-15",
     };
-    const s = planDailySessions({ ...fenetreEtroite, pendingCountryCodes: ["FR"], seed: 1 });
+    const s = planDailySessions({ ...fenetreEtroite, pendingTargets: pend("FR"), seed: 1 });
     expect(s.length).toBeGreaterThanOrEqual(SESSIONS_MIN_PER_DAY);
     expect(s.length).toBeLessThanOrEqual(SESSIONS_MAX_PER_DAY);
     for (const sess of s) {
@@ -163,10 +170,64 @@ describe("planDailySessions", () => {
   // largement le creneau HK : aucune session ne doit atteindre la region SN sans
   // ambiguite (>= 10:00 UTC, inatteignable depuis le creneau HK seul).
   it("pondere le choix du creneau par le volume de cibles : une file tres desequilibree favorise le creneau majoritaire", () => {
-    const fileDesequilibree = Array(20).fill("HK").concat(["SN"]);
-    const s = planDailySessions({ ...FENETRE, pendingCountryCodes: fileDesequilibree, seed: 2 });
+    const fileDesequilibree = pend(...Array(20).fill("HK"), "SN");
+    const s = planDailySessions({ ...FENETRE, pendingTargets: fileDesequilibree, seed: 2 });
     const apresSN = s.filter((x) => x.start.getTime() >= SN_ONLY_APRES);
     expect(apresSN.length).toBe(0);
+  });
+
+  // ─── Revue post-commit 3acac93, défaut Important ────────────────────────────
+  //
+  // Chaque cible de `pendingTargets` doit voir SA PROPRE fenêtre calculée avec SON
+  // PROPRE jour civil (`dateStr`), jamais un jour partagé par toute la file — voir
+  // le commentaire de tête de `planDailySessions`. Preuve directe, au niveau de
+  // cette fonction (pas seulement via le worker) : deux cibles du MÊME pays (HK),
+  // mais avec des jours civils DIFFÉRENTS. HK n'est PAS un jour ouvré le samedi
+  // 2026-07-18 ("not_a_workday") mais EST un jour ouvré le vendredi 2026-07-17 —
+  // si les deux entrées étaient (à tort) évaluées avec le MÊME jour, soit les deux
+  // seraient refusées (jour du samedi appliqué à tort à l'entrée du vendredi), soit
+  // les deux seraient acceptées (jour du vendredi appliqué à tort à l'entrée du
+  // samedi) : dans les deux cas, le nombre de créneaux retenus serait FAUX pour au
+  // moins une des deux entrées. Avec la correction, une seule fenêtre HK doit
+  // apparaître (celle du vendredi, jour réellement ouvré pour cette entrée) — la
+  // fenêtre "samedi" doit être absente (`not_a_workday` refusée), jamais fusionnée
+  // à tort avec celle du vendredi.
+  it("chaque cible voit sa fenêtre calculée avec SON PROPRE jour civil — deux entrées du même pays sur deux jours différents ne sont jamais confondues", () => {
+    const vendredi = "2026-07-17"; // jour ouvré HK
+    const samedi = "2026-07-18"; // week-end HK (not_a_workday)
+    const fenetreLarge = {
+      userWindowStart: new Date("2026-07-17T00:00:00.000Z"),
+      userWindowEnd: new Date("2026-07-19T00:00:00.000Z"), // couvre les deux jours civils
+    };
+    // Témoin : SEULE l'entrée du vendredi (jour réellement ouvré) doit produire un
+    // créneau exploitable — la fenêtre HK vendredi est [2026-07-17T01:00Z,10:00Z).
+    const seulVendredi = planDailySessions({
+      ...fenetreLarge,
+      pendingTargets: pend2(["HK", vendredi]),
+      seed: 3,
+    });
+    expect(seulVendredi.length).toBeGreaterThan(0);
+    for (const sess of seulVendredi) {
+      expect(sess.start.getTime()).toBeGreaterThanOrEqual(Date.parse("2026-07-17T01:00:00.000Z"));
+      expect(sess.end.getTime()).toBeLessThanOrEqual(Date.parse("2026-07-17T10:00:00.000Z"));
+    }
+
+    // Mélange vendredi + samedi pour le MÊME pays : si le jour du samedi écrasait
+    // (ou était écrasé par) celui du vendredi, le nombre de sessions produites ou
+    // leur fenêtre différerait du témoin ci-dessus — ce n'est PAS le cas : les deux
+    // entrées sont traitées comme deux créneaux séparés, celui du samedi étant
+    // simplement absent (not_a_workday, non joignable), celui du vendredi identique
+    // au témoin.
+    const melange = planDailySessions({
+      ...fenetreLarge,
+      pendingTargets: pend2(["HK", vendredi], ["HK", samedi]),
+      seed: 3,
+    });
+    expect(melange.map((s) => s.start.toISOString())).toEqual(seulVendredi.map((s) => s.start.toISOString()));
+    for (const sess of melange) {
+      expect(sess.start.getTime()).toBeGreaterThanOrEqual(Date.parse("2026-07-17T01:00:00.000Z"));
+      expect(sess.end.getTime()).toBeLessThanOrEqual(Date.parse("2026-07-17T10:00:00.000Z"));
+    }
   });
 });
 

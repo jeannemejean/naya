@@ -264,6 +264,30 @@ function leadCity(lead: any): string | null {
   }
 }
 
+/**
+ * Jour civil PROPRE à une cible (pays/ville), résolu dans SON fuseau — jamais celui
+ * de l'utilisatrice, jamais un jour partagé. Réutilisée à DEUX endroits qui doivent
+ * s'accorder sur la même résolution de fuseau (revue post-commit 3acac93, puis
+ * post-commit de cette ronde : la même erreur — réutiliser le jour de
+ * l'utilisatrice pour une cible — s'était déjà glissée une première fois côté
+ * vérification par lead, puis une seconde fois côté placement des sessions ; ce
+ * helper existe pour qu'elle ne puisse plus se reproduire une troisième fois) :
+ * la vérification de joignabilité PAR LEAD (`isTargetReachableAt`) et la
+ * construction de `pendingTargets` pour `planDailySessions` (`sessionsDe`).
+ * `zoneForCity`/`zonesForCountry` : mêmes fonctions, déjà exportées par les
+ * fichiers validés `-cities.ts`/`-zones.ts`, que celles que `targetWindowUTC`
+ * utilise en interne pour construire sa fenêtre — on ne duplique que ce choix de
+ * fuseau représentatif, jamais le calcul de la fenêtre elle-même. Pays inconnu ou
+ * zone introuvable → repli sur `fallbackDateStr` (le jour de l'utilisatrice) :
+ * sans conséquence, `targetWindowUTC`/`isTargetReachableAt` refuseront de toute
+ * façon (`country_unknown`) quel que soit le jour transmis.
+ */
+function targetDateStrFor(countryCode: string | null, city: string | null, now: Date, fallbackDateStr: string): string {
+  if (!countryCode) return fallbackDateStr;
+  const zone = zoneForCity(countryCode, city) ?? zonesForCountry(countryCode)?.[0] ?? null;
+  return zone ? todayStringIn(zone, now) : fallbackDateStr;
+}
+
 // Résout la config d'envoi PROPRE à l'utilisateur (adresse + clé) depuis ses préférences.
 function resolveSenderConfig(prefs: any): { apiKey: string; fromEmail: string; fromName: string } | null {
   const fromEmail = prefs?.prospectionSenderEmail?.trim();
@@ -385,22 +409,38 @@ export async function runProspectionSender(): Promise<void> {
     // fois par lead (le worker tourne chaque minute ; recalculer par lead ferait
     // dériver la fenêtre choisie entre deux leads du même utilisateur au même tick).
     const sessionsParUser = new Map<string, Session[]>();
-    const sessionsDe = async (uid: string, prefs: any, workDayStartMin: number, workDayEndMin: number, dateStr: string): Promise<Session[]> => {
+    const sessionsDe = async (
+      uid: string,
+      prefs: any,
+      workDayStartMin: number,
+      workDayEndMin: number,
+      todayUserDateStr: string,
+      now: Date,
+    ): Promise<Session[]> => {
       const cached = sessionsParUser.get(uid);
       if (cached) return cached;
-      // Pays des leads DUS de cet utilisateur, UNE ENTRÉE PAR LEAD (doublons
-      // attendus, jamais dédupliqués) : `planDailySessions` pondère le choix du
-      // créneau par le VOLUME de cibles qu'il dessert, pas par la simple présence
-      // d'un pays. Restreint aux leads RÉELLEMENT CANDIDATS à un envoi LinkedIn —
-      // sans quoi un lead sans `linkedinUrl`, ou dont l'étape actuellement due est
-      // de canal email, pondérerait quand même le placement des sessions LinkedIn
-      // (revue post-commit b97a0b6, mineur). Approximation délibérée et peu
-      // coûteuse : `state.currentStep` (déjà en mémoire, aucune lecture
-      // supplémentaire) plutôt que la machinerie complète de décision (skip/condition/
-      // signaux), qui exigerait de lire les signaux de CHAQUE AUTRE lead dû de
-      // l'utilisateur — coût jugé disproportionné pour une simple pondération.
+      // Cibles DUES de cet utilisateur, UNE ENTRÉE PAR LEAD (doublons attendus,
+      // jamais dédupliquées) : `planDailySessions` pondère le choix du créneau par
+      // le VOLUME de cibles qu'il dessert, pas par la simple présence d'un pays.
+      // Restreint aux leads RÉELLEMENT CANDIDATS à un envoi LinkedIn — sans quoi un
+      // lead sans `linkedinUrl`, ou dont l'étape actuellement due est de canal
+      // email, pondérerait quand même le placement des sessions LinkedIn (revue
+      // post-commit b97a0b6, mineur). Approximation délibérée et peu coûteuse :
+      // `state.currentStep` (déjà en mémoire, aucune lecture supplémentaire) plutôt
+      // que la machinerie complète de décision (skip/condition/signaux), qui
+      // exigerait de lire les signaux de CHAQUE AUTRE lead dû de l'utilisateur —
+      // coût jugé disproportionné pour une simple pondération.
+      //
+      // CHAQUE cible porte SA PROPRE date civile (`targetDateStrFor`, résolue dans
+      // SON fuseau à elle) — jamais `todayUserDateStr` (revue post-commit 3acac93,
+      // défaut Important : réutiliser le jour de l'utilisatrice pour calculer la
+      // fenêtre de CHAQUE pays de la file masquait 56 % des créneaux pourtant
+      // valides, en silence, pour une utilisatrice très décalée de ses cibles —
+      // voir task-6-report.md). `todayUserDateStr` ne sert plus ici qu'à borner la
+      // fenêtre PROPRE de l'utilisatrice (ci-dessous) et à dériver la graine — plus
+      // du tout à évaluer la fenêtre d'un pays.
       const leads = await getUserLeads(uid).catch(() => [] as any[]);
-      const pendingCountryCodes: string[] = [];
+      const pendingTargets: { countryCode: string; dateStr: string }[] = [];
       for (const s of due) {
         if (s.userId !== uid) continue;
         const l = leads.find((x: any) => x.id === s.leadId);
@@ -408,15 +448,19 @@ export async function runProspectionSender(): Promise<void> {
         const campaignSteps = await getCampaignSteps(s.campaignId).catch(() => [] as any[]);
         if (campaignSteps[s.currentStep]?.channel !== "linkedin") continue; // étape due actuellement autre que LinkedIn
         const cc = leadCountryCode(l);
-        if (cc) pendingCountryCodes.push(cc);
+        if (!cc) continue;
+        // `city: null` — même convention documentée dans `planDailySessions` :
+        // résoudre par ville exigerait de faire remonter la ville de CHAQUE cible
+        // en attente jusqu'à la fenêtre elle-même (pas seulement pour la date),
+        // hors périmètre de ce correctif.
+        pendingTargets.push({ countryCode: cc, dateStr: targetDateStrFor(cc, null, now, todayUserDateStr) });
       }
       const tz = prefs?.timezone || DEFAULT_USER_TIMEZONE;
       const plan = planDailySessions({
-        userWindowStart: wallClockToInstant(tz, dateStr, minToHHMM(workDayStartMin)),
-        userWindowEnd: wallClockToInstant(tz, dateStr, minToHHMM(workDayEndMin)),
-        pendingCountryCodes,
-        dateStr,
-        seed: graineDuJour(uid, dateStr),
+        userWindowStart: wallClockToInstant(tz, todayUserDateStr, minToHHMM(workDayStartMin)),
+        userWindowEnd: wallClockToInstant(tz, todayUserDateStr, minToHHMM(workDayEndMin)),
+        pendingTargets,
+        seed: graineDuJour(uid, todayUserDateStr),
       });
       sessionsParUser.set(uid, plan);
       return plan;
@@ -553,19 +597,18 @@ export async function runProspectionSender(): Promise<void> {
           //
           // Choix délibéré : la date de la cible est dérivée ICI, côté appelant, plutôt
           // que dans `targetWindowUTC`/`isTargetReachableAt` (fichier validé, hors
-          // périmètre) — en réutilisant la MÊME résolution de fuseau
-          // (`zoneForCity`/`zonesForCountry`, fonctions déjà exportées) que celle
-          // employée en interne par ces fonctions pour construire la fenêtre. On ne
-          // duplique QUE ce choix de fuseau représentatif, jamais le calcul de la fenêtre
-          // elle-même (toujours entièrement délégué à `isTargetReachableAt`). Pays
-          // inconnu/zone introuvable → repli sur `todayUserDateStr` : sans conséquence,
-          // `isTargetReachableAt` refusera de toute façon (`country_unknown`) quel que
-          // soit le jour transmis.
+          // périmètre) — via `targetDateStrFor`, qui réutilise la MÊME résolution de
+          // fuseau (`zoneForCity`/`zonesForCountry`, fonctions déjà exportées) que
+          // celle employée en interne par ces fonctions pour construire la fenêtre. On
+          // ne duplique QUE ce choix de fuseau représentatif, jamais le calcul de la
+          // fenêtre elle-même (toujours entièrement délégué à `isTargetReachableAt`) —
+          // et cette MÊME fonction `targetDateStrFor` est réutilisée telle quelle par
+          // `sessionsDe` (voir plus haut) pour que les DEUX endroits qui ont besoin du
+          // jour civil d'une cible s'accordent sur une seule et même résolution.
           const todayUserDateStr = todayStringIn(prefs?.timezone || DEFAULT_USER_TIMEZONE, now);
           const pays = leadCountryCode(lead);
           const ville = leadCity(lead);
-          const targetZone = pays ? (zoneForCity(pays, ville) ?? zonesForCountry(pays)?.[0] ?? null) : null;
-          const targetDateStr = targetZone ? todayStringIn(targetZone, now) : todayUserDateStr;
+          const targetDateStr = targetDateStrFor(pays, ville, now, todayUserDateStr);
           const joignable = isTargetReachableAt(pays, ville, now, targetDateStr);
           if (!joignable.reachable) {
             // DISTINCTION ESSENTIELLE (voir doc de `setLeadUnreachable` et
@@ -598,7 +641,7 @@ export async function runProspectionSender(): Promise<void> {
           // ── Sessions de prospection : un humain ouvre LinkedIn, traite quelques
           // personnes, referme — calculées UNE FOIS par utilisateur pour ce passage
           // (voir `sessionsDe` plus haut), jamais par lead.
-          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin, todayUserDateStr);
+          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin, todayUserDateStr, now);
           if (!isWithinAnySession(sessions, now)) {
             continue; // hors session : rien à signaler sur le lead, on réessaiera plus tard
           }

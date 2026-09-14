@@ -1631,4 +1631,58 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       );
     });
   });
+
+  // ─── Ronde de correction 3 : IMPORTANT — le PLACEMENT DES SESSIONS doit, lui
+  // aussi, utiliser le jour civil DE CHAQUE PAYS, pas celui de l'utilisatrice
+  // (même hypothèse que la ronde 2, à un troisième endroit : prospection-sessions.ts) ───
+  describe("placement des sessions : chaque pays de la file avec SON propre jour civil (prospection-sessions.ts)", () => {
+    it("MUTATION — utilisatrice à Kiritimati (+14) avec des leads AMÉRICAINS (US) dont le jour civil diffère du sien : une session existe et couvre l'instant où ils sont réellement joignables", async () => {
+      // Fixture calculée hors-ligne (voir task-6-report.md) : au 2026-01-05T20:02:09.210Z,
+      // le jour civil de Kiritimati est "2026-01-06" alors que celui des États-Unis
+      // (America/New_York, premier fuseau de la table US) est "2026-01-05" — les
+      // deux jours DIFFÈRENT. Un SEUL lead (US), sans aucun pays "aidant" : la
+      // fenêtre US sur SON PROPRE jour (2026-01-05T19:00-23:00Z) intersecte
+      // entièrement la fenêtre grande ouverte de l'utilisatrice
+      // (2026-01-05T10:00Z-2026-01-06T09:59Z) — une session existe donc et couvre
+      // cet instant. Avec le jour de l'utilisatrice appliqué à tort à cette même
+      // cible (fenêtre US sur "2026-01-06" : 2026-01-06T19:00-23:00Z), l'intersection
+      // avec la fenêtre de l'utilisatrice est VIDE — AUCUNE session ne peut exister,
+      // quel que soit le seed (vérifié directement par calcul).
+      vi.setSystemTime(new Date("2026-01-05T20:02:09.210Z"));
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(
+        openPrefs({
+          timezone: "Pacific/Kiritimati",
+          workDayStart: "00:00",
+          workDayEnd: "23:59",
+          linkedinUnipileAccountId: "acc1",
+        }),
+      );
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([
+        baseLead({
+          linkedinUrl: "https://linkedin.com/in/us-lead-solo",
+          enrichedProfile: { linkedin: { raw: { country_code: "US", city: null } } },
+        }),
+      ]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      // Preuve par mutation appliquée manuellement (voir task-6-report.md pour le
+      // chiffre) : dans `sessionsDe`, remettre le jour de l'UTILISATRICE pour
+      // CHAQUE entrée de `pendingTargets` (au lieu de `targetDateStrFor` par cible)
+      // fait passer cette assertion de vert à rouge — `planDailySessions` ne produit
+      // alors PLUS AUCUNE session (créneau vide), donc aucun appel Unipile.
+      expect(sendLinkedInStep).toHaveBeenCalledWith(
+        expect.objectContaining({ linkedinUrl: "https://linkedin.com/in/us-lead-solo" }),
+      );
+    });
+  });
 });
