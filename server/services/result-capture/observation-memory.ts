@@ -10,10 +10,11 @@
  */
 
 import type { Observation } from "./observations";
+import { MIN_OBSERVATIONS } from "./insight";
 
 /** Nombre d'appuis au-delà duquel la salience est maximale. DÉFAUT RÉVISABLE. */
 export const APPUIS_POUR_SALIENCE_MAX = 20;
-/** Salience d'une observation tout juste au seuil (1 appui — en-deçà, l'observation n'existe pas). DÉFAUT RÉVISABLE. */
+/** Salience d'une observation tout juste au seuil (MIN_OBSERVATIONS appuis, ou moins). DÉFAUT RÉVISABLE. */
 export const SALIENCE_MIN = 0.4;
 /** Salience d'une observation largement étayée. DÉFAUT RÉVISABLE. */
 export const SALIENCE_MAX = 0.9;
@@ -27,18 +28,21 @@ export type DecisionMemoire =
 
 /**
  * Salience croissante avec le nombre de réponses qui fondent l'observation.
- * Une observation ne peut exister qu'à partir de 1 appui : c'est le seuil, et
- * il vaut SALIENCE_MIN pile. Elle atteint SALIENCE_MAX à
+ * Le vrai seuil d'existence d'une observation est MIN_OBSERVATIONS
+ * (importé de "./insight", source unique — voir observations.ts qui l'applique
+ * déjà en amont : `extractObservations` ne produit rien en dessous, donc tout
+ * `appuis` réel vaut au moins MIN_OBSERVATIONS). En dessous de ce seuil —
+ * y compris sur une entrée absurde (0, négative) — la salience est ramenée à
+ * SALIENCE_MIN, jamais en dessous. Elle atteint SALIENCE_MAX à
  * APPUIS_POUR_SALIENCE_MAX appuis et ne va jamais au-delà, même très au-delà.
- * Interpolation linéaire entre ces deux bornes ; entrée absurde (0 ou
- * négative) ramenée au seuil, jamais en dessous.
+ * Interpolation linéaire entre ces deux bornes.
  *
  * PURE, et bornée des deux côtés.
  */
 export function salienceDe(appuis: number): number {
   const n = Math.max(0, appuis);
-  const plage = APPUIS_POUR_SALIENCE_MAX - 1; // distance entre le seuil (1 appui) et le max
-  const t = plage > 0 ? Math.min(1, Math.max(0, (n - 1) / plage)) : 1;
+  const plage = APPUIS_POUR_SALIENCE_MAX - MIN_OBSERVATIONS; // distance entre le seuil réel et le max
+  const t = plage > 0 ? Math.min(1, Math.max(0, (n - MIN_OBSERVATIONS) / plage)) : 1;
   return SALIENCE_MIN + t * (SALIENCE_MAX - SALIENCE_MIN);
 }
 

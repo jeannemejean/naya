@@ -32,6 +32,15 @@ describe("decideMemoire", () => {
     expect(d).toMatchObject({ action: "remplacer", ancienId: 1 });
   });
 
+  it("n'invalide QUE l'identite concernee — meme quand elle n'est pas en premiere position", () => {
+    const vivantes = [
+      { id: 1, prefixe: "A:", contenu: "A: intacte" },
+      { id: 2, prefixe: "B:", contenu: "B: ancienne" },
+    ];
+    const d = decideMemoire(obs("B:", "B: nouvelle"), vivantes);
+    expect(d).toMatchObject({ action: "remplacer", ancienId: 2 });
+  });
+
   it("apparie par PREFIXE, jamais par contenu partiel", () => {
     // Une memoire dont le contenu contient le prefixe ailleurs qu'au debut
     // ne doit pas etre prise pour la meme identite.
