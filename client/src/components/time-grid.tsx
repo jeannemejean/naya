@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useMemo } from "react";
 import { laneGeometry } from "./time-grid-geometry";
+import { taskPaletteFor } from "@/lib/task-palette";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -52,17 +53,8 @@ interface TimeGridProps {
   rangeQueryKey: any[];
 }
 
-// ── Naya brand palette for task slots ──────────────────────────────────────
-// 5 couleurs × 2 intensités = 7 variations (rotation par projectId)
-const NAYA_TASK_PALETTES = [
-  { bg: 'rgba(212,201,122,0.22)', text: '#5a4f0d', border: 'rgba(212,201,122,0.55)' }, // sulphur
-  { bg: 'rgba(125,143,168,0.22)', text: '#354963', border: 'rgba(125,143,168,0.55)' }, // salvia
-  { bg: 'rgba(158,126,135,0.22)', text: '#5c3d45', border: 'rgba(158,126,135,0.55)' }, // mauve
-  { bg: 'rgba(43,45,28,0.10)',    text: '#2B2D1C', border: 'rgba(43,45,28,0.28)'   }, // olive
-  { bg: 'rgba(212,201,122,0.13)', text: '#4a3e08', border: 'rgba(212,201,122,0.38)' }, // sulphur léger
-  { bg: 'rgba(125,143,168,0.13)', text: '#354963', border: 'rgba(125,143,168,0.38)' }, // salvia léger
-  { bg: 'rgba(158,126,135,0.13)', text: '#5c3d45', border: 'rgba(158,126,135,0.38)' }, // mauve léger
-];
+// La palette des tâches vit dans @/lib/task-palette : le dashboard et le planning
+// peignaient les mêmes tâches avec deux jeux de couleurs distincts.
 
 // Palette jalons — statut → couleur Naya
 const MILESTONE_PALETTE: Record<string, { bg: string; border: string; text: string }> = {
@@ -87,8 +79,7 @@ const GCAL_PALETTE = { bg: 'rgba(125,143,168,0.12)', border: '#7D8FA8', text: '#
 const BLOCKED_PALETTE = { bg: 'rgba(43,45,28,0.05)', border: 'rgba(43,45,28,0.15)', text: 'rgba(43,45,28,0.35)' };
 
 function getNayaTaskPalette(task: Task) {
-  const idx = task.projectId ? task.projectId % NAYA_TASK_PALETTES.length : 0;
-  return NAYA_TASK_PALETTES[idx];
+  return taskPaletteFor(task.projectId);
 }
 
 const GRID_START_HOUR = 7;
