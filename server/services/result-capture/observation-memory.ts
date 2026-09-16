@@ -38,21 +38,26 @@ export type DecisionMemoire =
  * semaine calme (peu ou pas de tâches de cette catégorie posées), sans que rien
  * n'ait réellement changé dans le comportement qu'elle décrit.
  *
- * Justification du seuil, au rythme réel documenté dans `routes.ts` (~7-8 réponses/
- * jour, fenêtre de 200 réponses ≈ 3-4 semaines) : une semaine calme représente
- * environ 50-56 passages consécutifs sans motif. `SEUIL_PEREMPTION = 600` (≈ 3
- * fenêtres de 200, ≈ 75-85 jours à ce rythme, environ un trimestre) dépasse ce bruit
- * d'un facteur > 10 — une semaine, voire plusieurs mois isolés sans le motif ne
- * périment rien — tout en finissant par périmer un motif réellement résolu au bout
- * d'un temps suffisamment long pour être digne de confiance à ce niveau (mémoire
- * injectée dans CHAQUE appel IA, fil "founder", TOP_K = 4).
+ * Justification chiffrée du seuil (re-revue du 2026-09-16, ajustement de 600 à 200) :
+ * au rythme DOCUMENTÉ dans `routes.ts` (~7-8 réponses/jour — jamais MESURÉ pour
+ * l'utilisatrice réelle, donc une estimation, pas une vérité), une semaine calme
+ * représente environ 50-56 passages consécutifs sans motif — le bruit à ne pas
+ * confondre avec une résolution réelle. `SEUIL_PEREMPTION = 200` le dépasse d'un
+ * facteur ~4 : une semaine calme, voire plusieurs, ne périment rien. En contrepartie,
+ * une observation devenue fausse ne persiste plus qu'environ 25-29 jours (~1 mois) à
+ * ce rythme avant péremption — contre ~75-86 jours (près d'un trimestre) avec
+ * l'ancienne valeur de 600, jugée trop protectrice d'une affirmation qui a cessé
+ * d'être vraie (mémoire injectée dans CHAQUE appel IA, fil "founder", TOP_K = 4).
+ * Cette durée calendaire est elle-même une estimation : si le rythme réel de
+ * l'utilisatrice diverge notablement de 7-8 réponses/jour, la persistance réelle en
+ * jours divergera dans la même proportion — seul le nombre de PASSAGES est garanti.
  *
  * Valeur dupliquée à dessein plutôt qu'importée depuis `server/routes.ts` : ce
  * module est PUR (aucune dépendance impure), et `routes.ts` importe déjà
  * `observation-writer.ts` — importer dans l'autre sens créerait une dépendance
  * circulaire et ferait dépendre un module pur de l'enregistrement des routes HTTP.
  */
-export const SEUIL_PEREMPTION = 600;
+export const SEUIL_PEREMPTION = 200;
 
 export type DecisionAbsence =
   | { action: "incrementer"; nouveauCompte: number }
