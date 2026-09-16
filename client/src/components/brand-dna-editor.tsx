@@ -72,10 +72,47 @@ export interface ContentPillar {
   frequency: string;
 }
 
+/**
+ * Valeurs ENREGISTRÉES en base (jsonb `contentPillarsDetailed`). Elles ne changent pas avec
+ * la langue : ce sont des identifiants, pas des libellés. Traduire la valeur stockée
+ * casserait les ADN déjà enregistrés et rendrait un pilier créé en français illisible en
+ * anglais. Seul l'affichage est traduit, via FORMAT_KEY.
+ */
 const CONTENT_FORMAT_OPTIONS = [
   'Long-form post', 'Short post', 'Carousel / slides', 'Newsletter article',
   'Video / Reel', 'Story / Ephemeral', 'Case study', 'Thread', 'Podcast episode', 'Infographic',
 ];
+
+const FORMAT_KEY: Record<string, string> = {
+  'Long-form post': 'brandDna.format.longFormPost',
+  'Short post': 'brandDna.format.shortPost',
+  'Carousel / slides': 'brandDna.format.carousel',
+  'Newsletter article': 'brandDna.format.newsletterArticle',
+  'Video / Reel': 'brandDna.format.videoReel',
+  'Story / Ephemeral': 'brandDna.format.story',
+  'Case study': 'brandDna.format.caseStudy',
+  'Thread': 'brandDna.format.thread',
+  'Podcast episode': 'brandDna.format.podcastEpisode',
+  'Infographic': 'brandDna.format.infographic',
+};
+
+const FREQUENCY_KEY: Record<string, string> = {
+  'daily': 'brandDna.frequency.daily',
+  '2-3 per week': 'brandDna.frequency.twoThreePerWeek',
+  'weekly': 'brandDna.frequency.weekly',
+  'biweekly': 'brandDna.frequency.biweekly',
+  'monthly': 'brandDna.frequency.monthly',
+  'as needed': 'brandDna.frequency.asNeeded',
+};
+
+/**
+ * Libellé affiché pour une valeur stockée. Une valeur inconnue — un ADN ancien, ou saisi
+ * avant que la liste ne change — est rendue telle quelle plutôt que masquée.
+ */
+function libelle(t: (k: string) => string, table: Record<string, string>, valeur: string): string {
+  const cle = table[valeur];
+  return cle ? t(cle) : valeur;
+}
 
 export function PillarListEditor({
   pillars,
@@ -84,6 +121,7 @@ export function PillarListEditor({
   pillars: ContentPillar[];
   onChange: (p: ContentPillar[]) => void;
 }) {
+  const { t } = useTranslation();
   const empty: ContentPillar = { name: '', description: '', formats: [], frequency: '' };
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<ContentPillar>(empty);
@@ -129,14 +167,14 @@ export function PillarListEditor({
               {p.description && <p className="text-xs text-naya-olive-55 mt-0.5 line-clamp-2">{p.description}</p>}
               <div className="flex flex-wrap gap-1 mt-1.5">
                 {p.formats.map(f => (
-                  <span key={f} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{f}</span>
+                  <span key={f} className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{libelle(t, FORMAT_KEY, f)}</span>
                 ))}
-                {p.frequency && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-naya-olive-10 text-naya-olive-55">{p.frequency}</span>}
+                {p.frequency && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-naya-olive-10 text-naya-olive-55">{libelle(t, FREQUENCY_KEY, p.frequency)}</span>}
               </div>
             </div>
             <div className="flex gap-1 flex-shrink-0">
-              <button onClick={() => startEdit(i)} className="text-[10px] text-naya-olive-35 hover:text-primary transition-colors px-1">Edit</button>
-              <button onClick={() => removePillar(i)} className="text-[10px] text-naya-olive-35 hover:text-naya-mauve transition-colors px-1">Remove</button>
+              <button onClick={() => startEdit(i)} className="text-[10px] text-naya-olive-35 hover:text-primary transition-colors px-1">{t('brandDna.edit')}</button>
+              <button onClick={() => removePillar(i)} className="text-[10px] text-naya-olive-35 hover:text-naya-mauve transition-colors px-1">{t('brandDna.remove')}</button>
             </div>
           </div>
         </div>
@@ -145,26 +183,26 @@ export function PillarListEditor({
       {adding ? (
         <div className="border border-primary/30 rounded-lg p-3 bg-primary/5 space-y-2.5">
           <div className="space-y-1">
-            <Label className="text-xs">Pillar name *</Label>
+            <Label className="text-xs">{t('brandDna.pillarName')}</Label>
             <input
               value={draft.name}
               onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
-              placeholder="e.g. Founder mindset"
+              placeholder={t('brandDna.eGFounderMindset')}
               className="w-full text-sm border border-naya-olive-18 rounded-lg px-3 py-2 bg-white text-naya-olive-70 outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/50"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">What you explore in this pillar</Label>
+            <Label className="text-xs">{t('brandDna.whatYouExploreInThisPillar')}</Label>
             <textarea
               value={draft.description}
               onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
-              placeholder="What topics, angles, and stories you cover here…"
+              placeholder={t('brandDna.whatTopicsAnglesAndStoriesYou')}
               rows={2}
               className="w-full text-sm border border-naya-olive-18 rounded-lg px-3 py-2 bg-white text-naya-olive-70 outline-none focus:ring-1 focus:ring-primary/30 resize-none"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Formats you use for this pillar</Label>
+            <Label className="text-xs">{t('brandDna.formatsYouUseForThisPillar')}</Label>
             <div className="flex flex-wrap gap-1.5">
               {CONTENT_FORMAT_OPTIONS.map(f => (
                 <button
@@ -177,36 +215,36 @@ export function PillarListEditor({
                       : 'border-naya-olive-18 text-naya-olive-55 hover:border-primary/50'
                   }`}
                 >
-                  {f}
+                  {libelle(t, FORMAT_KEY, f)}
                 </button>
               ))}
             </div>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Publishing frequency</Label>
+            <Label className="text-xs">{t('brandDna.publishingFrequency')}</Label>
             <select
               value={draft.frequency}
               onChange={e => setDraft(d => ({ ...d, frequency: e.target.value }))}
               className="w-full text-sm border border-naya-olive-18 rounded-lg px-3 py-2 bg-white text-naya-olive-70 outline-none focus:ring-1 focus:ring-primary/30"
             >
-              <option value="">Choose frequency…</option>
-              <option value="daily">Daily</option>
-              <option value="2-3 per week">2–3× per week</option>
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Biweekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="as needed">As needed / ad hoc</option>
+              <option value="">{t('brandDna.chooseFrequency')}</option>
+              <option value="daily">{t('brandDna.daily')}</option>
+              <option value="2-3 per week">{t('brandDna.23PerWeek')}</option>
+              <option value="weekly">{t('brandDna.weekly')}</option>
+              <option value="biweekly">{t('brandDna.biweekly')}</option>
+              <option value="monthly">{t('brandDna.monthly')}</option>
+              <option value="as needed">{t('brandDna.asNeededAdHoc')}</option>
             </select>
           </div>
           <div className="flex gap-2 pt-1">
-            <Button size="sm" onClick={saveDraft} disabled={!draft.name.trim()} className="text-xs h-7">{editIdx !== null ? 'Update pillar' : 'Add pillar'}</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setDraft(empty); setEditIdx(null); }} className="text-xs h-7">Cancel</Button>
+            <Button size="sm" onClick={saveDraft} disabled={!draft.name.trim()} className="text-xs h-7">{editIdx !== null ? t('brandDna.updatePillar') : t('brandDna.addPillar')}</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setDraft(empty); setEditIdx(null); }} className="text-xs h-7">{t('brandDna.cancel')}</Button>
           </div>
         </div>
       ) : pillars.length < 5 ? (
-        <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="text-xs w-full">+ Add content pillar</Button>
+        <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="text-xs w-full">{t('brandDna.addContentPillar')}</Button>
       ) : (
-        <p className="text-[11px] text-naya-olive-35 text-center py-1">Maximum 5 pillars reached</p>
+        <p className="text-[11px] text-naya-olive-35 text-center py-1">{t('brandDna.maximum5PillarsReached')}</p>
       )}
     </div>
   );
@@ -219,10 +257,14 @@ export interface Milestone {
   status: 'pending' | 'in-progress' | 'done';
 }
 
-const STATUS_LABELS: Record<Milestone['status'], { label: string; cls: string }> = {
-  pending: { label: 'Pending', cls: 'bg-naya-olive-10 text-naya-cream0 ' },
-  'in-progress': { label: 'In progress', cls: 'bg-[rgba(125,143,168,0.20)] text-[#354963] ' },
-  done: { label: 'Done', cls: 'bg-naya-olive-10 text-naya-olive ' },
+/**
+ * Le statut porte une CLÉ de traduction, plus un libellé figé : cette table vit hors de
+ * tout composant, donc `t` n'y est pas disponible. La traduction se fait au rendu.
+ */
+const STATUS_LABELS: Record<Milestone['status'], { key: string; cls: string }> = {
+  pending: { key: 'brandDna.milestoneStatus.pending', cls: 'bg-naya-olive-10 text-naya-cream0 ' },
+  'in-progress': { key: 'brandDna.milestoneStatus.inProgress', cls: 'bg-[rgba(125,143,168,0.20)] text-[#354963] ' },
+  done: { key: 'brandDna.milestoneStatus.done', cls: 'bg-naya-olive-10 text-naya-olive ' },
 };
 
 export function MilestoneListEditor({
@@ -232,6 +274,7 @@ export function MilestoneListEditor({
   milestones: Milestone[];
   onChange: (m: Milestone[]) => void;
 }) {
+  const { t } = useTranslation();
   const empty: Milestone = { title: '', targetDate: '', status: 'pending' };
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<Milestone>(empty);
@@ -273,13 +316,13 @@ export function MilestoneListEditor({
                 <div className="flex items-center gap-2 mt-1">
                   {m.targetDate && <span className="text-[10px] text-naya-olive-35 ">→ {m.targetDate}</span>}
                   <button onClick={() => cycleStatus(i)} className={`text-[10px] px-1.5 py-0.5 rounded-full ${st.cls} hover:opacity-80 transition-opacity`}>
-                    {st.label}
+                    {t(st.key)}
                   </button>
                 </div>
               </div>
               <div className="flex gap-1 flex-shrink-0">
-                <button onClick={() => startEdit(i)} className="text-[10px] text-naya-olive-35 hover:text-primary transition-colors px-1">Edit</button>
-                <button onClick={() => onChange(milestones.filter((_, j) => j !== i))} className="text-[10px] text-naya-olive-35 hover:text-naya-mauve transition-colors px-1">Remove</button>
+                <button onClick={() => startEdit(i)} className="text-[10px] text-naya-olive-35 hover:text-primary transition-colors px-1">{t('brandDna.edit')}</button>
+                <button onClick={() => onChange(milestones.filter((_, j) => j !== i))} className="text-[10px] text-naya-olive-35 hover:text-naya-mauve transition-colors px-1">{t('brandDna.remove')}</button>
               </div>
             </div>
           </div>
@@ -289,44 +332,44 @@ export function MilestoneListEditor({
       {adding ? (
         <div className="border border-primary/30 rounded-lg p-3 bg-primary/5 space-y-2.5">
           <div className="space-y-1">
-            <Label className="text-xs">Milestone *</Label>
+            <Label className="text-xs">{t('brandDna.milestone')}</Label>
             <input
               value={draft.title}
               onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
-              placeholder="e.g. Launch beta, Hit 1000 subscribers, Sign first retainer…"
+              placeholder={t('brandDna.eGLaunchBetaHit1000')}
               className="w-full text-sm border border-naya-olive-18 rounded-lg px-3 py-2 bg-white text-naya-olive-70 outline-none focus:ring-1 focus:ring-primary/30"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Target date (optional)</Label>
+            <Label className="text-xs">{t('brandDna.targetDateOptional')}</Label>
             <input
               value={draft.targetDate}
               onChange={e => setDraft(d => ({ ...d, targetDate: e.target.value }))}
-              placeholder="e.g. April 2026, Q2 2026, by end of year…"
+              placeholder={t('brandDna.eGApril2026Q22026')}
               className="w-full text-sm border border-naya-olive-18 rounded-lg px-3 py-2 bg-white text-naya-olive-70 outline-none focus:ring-1 focus:ring-primary/30"
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Status</Label>
+            <Label className="text-xs">{t('brandDna.status')}</Label>
             <select
               value={draft.status}
               onChange={e => setDraft(d => ({ ...d, status: e.target.value as Milestone['status'] }))}
               className="w-full text-sm border border-naya-olive-18 rounded-lg px-3 py-2 bg-white text-naya-olive-70 outline-none focus:ring-1 focus:ring-primary/30"
             >
-              <option value="pending">Pending</option>
-              <option value="in-progress">In progress</option>
-              <option value="done">Done</option>
+              <option value="pending">{t('brandDna.pending')}</option>
+              <option value="in-progress">{t('brandDna.inProgress')}</option>
+              <option value="done">{t('brandDna.done')}</option>
             </select>
           </div>
           <div className="flex gap-2 pt-1">
-            <Button size="sm" onClick={saveDraft} disabled={!draft.title.trim()} className="text-xs h-7">{editIdx !== null ? 'Update milestone' : 'Add milestone'}</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setDraft(empty); setEditIdx(null); }} className="text-xs h-7">Cancel</Button>
+            <Button size="sm" onClick={saveDraft} disabled={!draft.title.trim()} className="text-xs h-7">{editIdx !== null ? t('brandDna.updateMilestone') : t('brandDna.addMilestone')}</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setDraft(empty); setEditIdx(null); }} className="text-xs h-7">{t('brandDna.cancel')}</Button>
           </div>
         </div>
       ) : milestones.length < 5 ? (
-        <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="text-xs w-full">+ Add milestone</Button>
+        <Button size="sm" variant="outline" onClick={() => setAdding(true)} className="text-xs w-full">{t('brandDna.addMilestone2')}</Button>
       ) : (
-        <p className="text-[11px] text-naya-olive-35 text-center py-1">Maximum 5 milestones reached</p>
+        <p className="text-[11px] text-naya-olive-35 text-center py-1">{t('brandDna.maximum5MilestonesReached')}</p>
       )}
     </div>
   );
@@ -478,7 +521,7 @@ export function BrandDnaEditor({ projectId, projectName }: { projectId: number |
   if (brandDnaLoading) {
     return (
       <div className="flex items-center justify-center py-8 text-naya-olive-35 ">
-        <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
+        <Loader2 className="h-5 w-5 animate-spin mr-2" /> {t('brandDna.loading')}
       </div>
     );
   }
@@ -489,7 +532,7 @@ export function BrandDnaEditor({ projectId, projectName }: { projectId: number |
         <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-[rgba(125,143,168,0.12)] border border-[rgba(125,143,168,0.35)]">
           <Sparkles className="h-3.5 w-3.5 text-naya-salvia mt-0.5 flex-shrink-0" />
           <p className="text-xs text-[#354963]">
-            On part de ton ADN global comme base. Enregistre pour créer un ADN propre à <strong>{projectName || 'cette marque'}</strong>.
+            {t('brandDna.inheritedFromGlobal')} <strong>{projectName || t('brandDna.thisBrand')}</strong>.
           </p>
         </div>
       )}
@@ -507,43 +550,43 @@ export function BrandDnaEditor({ projectId, projectName }: { projectId: number |
         <TabsContent value="identity" className="space-y-4 pt-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Business / Brand name</Label>
+              <Label className="text-xs">{t('brandDna.businessBrandName')}</Label>
               <Input value={dnaBusinessName} onChange={e => setDnaBusinessName(e.target.value)} className=" " />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Website</Label>
-              <Input value={dnaWebsite} onChange={e => setDnaWebsite(e.target.value)} placeholder="https://" className=" " />
+              <Label className="text-xs">{t('brandDna.website')}</Label>
+              <Input value={dnaWebsite} onChange={e => setDnaWebsite(e.target.value)} placeholder={t('brandDna.https')} className=" " />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">LinkedIn profile</Label>
-              <Input value={dnaLinkedin} onChange={e => setDnaLinkedin(e.target.value)} placeholder="linkedin.com/in/..." className=" " />
+              <Label className="text-xs">{t('brandDna.linkedinProfile')}</Label>
+              <Input value={dnaLinkedin} onChange={e => setDnaLinkedin(e.target.value)} placeholder={t('brandDna.linkedinComIn')} className=" " />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Instagram handle</Label>
-              <Input value={dnaInstagram} onChange={e => setDnaInstagram(e.target.value)} placeholder="@handle" className=" " />
+              <Label className="text-xs">{t('brandDna.instagramHandle')}</Label>
+              <Input value={dnaInstagram} onChange={e => setDnaInstagram(e.target.value)} placeholder={t('brandDna.handle')} className=" " />
             </div>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Business type</Label>
+            <Label className="text-xs">{t('brandDna.businessType')}</Label>
             <Input value={dnaBusinessType} onChange={e => setDnaBusinessType(e.target.value)} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Business model</Label>
-            <Input value={dnaBusinessModel} onChange={e => setDnaBusinessModel(e.target.value)} placeholder="e.g. services, products, SaaS…" className=" " />
+            <Label className="text-xs">{t('brandDna.businessModel')}</Label>
+            <Input value={dnaBusinessModel} onChange={e => setDnaBusinessModel(e.target.value)} placeholder={t('brandDna.eGServicesProductsSaas')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Unique positioning</Label>
+            <Label className="text-xs">{t('brandDna.uniquePositioning')}</Label>
             <Textarea value={dnaUniquePositioning} onChange={e => setDnaUniquePositioning(e.target.value)} rows={2} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Your authority level</Label>
+            <Label className="text-xs">{t('brandDna.yourAuthorityLevel')}</Label>
             <Select value={dnaAuthorityLevel} onValueChange={setDnaAuthorityLevel}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose a level" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.chooseALevel')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="emerging">Emerging — building credibility</SelectItem>
-                <SelectItem value="established">Established — known in my niche</SelectItem>
-                <SelectItem value="authority">Authority — widely recognized</SelectItem>
-                <SelectItem value="thought-leader">Thought leader — industry voice</SelectItem>
+                <SelectItem value="emerging">{t('brandDna.emergingBuildingCredibility')}</SelectItem>
+                <SelectItem value="established">{t('brandDna.establishedKnownInMyNiche')}</SelectItem>
+                <SelectItem value="authority">{t('brandDna.authorityWidelyRecognized')}</SelectItem>
+                <SelectItem value="thought-leader">{t('brandDna.thoughtLeaderIndustryVoice')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -555,44 +598,44 @@ export function BrandDnaEditor({ projectId, projectName }: { projectId: number |
         {/* ── Offers & Market ── */}
         <TabsContent value="offers" className="space-y-4 pt-4">
           <div className="space-y-1">
-            <Label className="text-xs">What do you offer?</Label>
-            <Textarea value={dnaOffers} onChange={e => setDnaOffers(e.target.value)} rows={3} placeholder="Services, products, programs…" className=" " />
+            <Label className="text-xs">{t('brandDna.whatDoYouOffer')}</Label>
+            <Textarea value={dnaOffers} onChange={e => setDnaOffers(e.target.value)} rows={3} placeholder={t('brandDna.servicesProductsPrograms')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Price range</Label>
+            <Label className="text-xs">{t('brandDna.priceRange')}</Label>
             <Select value={dnaPriceRange} onValueChange={setDnaPriceRange}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose a range" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.chooseARange')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="under-500">Under €500 / project</SelectItem>
+                <SelectItem value="under-500">{t('brandDna.under500Project')}</SelectItem>
                 <SelectItem value="500-2000">€500 – €2,000</SelectItem>
                 <SelectItem value="2000-5000">€2,000 – €5,000</SelectItem>
                 <SelectItem value="5000-15000">€5,000 – €15,000</SelectItem>
                 <SelectItem value="15000-plus">€15,000+</SelectItem>
-                <SelectItem value="subscription">Subscription / recurring</SelectItem>
-                <SelectItem value="variable">Variable / depends on scope</SelectItem>
-                <SelectItem value="not-yet-set">Not set yet</SelectItem>
+                <SelectItem value="subscription">{t('brandDna.subscriptionRecurring')}</SelectItem>
+                <SelectItem value="variable">{t('brandDna.variableDependsOnScope')}</SelectItem>
+                <SelectItem value="not-yet-set">{t('brandDna.notSetYet')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Client journey (discovery → purchase)</Label>
-            <Textarea value={dnaClientJourney} onChange={e => setDnaClientJourney(e.target.value)} rows={2} placeholder="How clients find and buy from you…" className=" " />
+            <Label className="text-xs">{t('brandDna.clientJourneyDiscoveryPurchase')}</Label>
+            <Textarea value={dnaClientJourney} onChange={e => setDnaClientJourney(e.target.value)} rows={2} placeholder={t('brandDna.howClientsFindAndBuyFrom')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Competitive landscape</Label>
-            <Textarea value={dnaCompetitorLandscape} onChange={e => setDnaCompetitorLandscape(e.target.value)} rows={2} placeholder="Who you're different from and how…" className=" " />
+            <Label className="text-xs">{t('brandDna.competitiveLandscape')}</Label>
+            <Textarea value={dnaCompetitorLandscape} onChange={e => setDnaCompetitorLandscape(e.target.value)} rows={2} placeholder={t('brandDna.whoYouReDifferentFromAnd')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Target audience</Label>
-            <Textarea value={dnaTargetAudience} onChange={e => setDnaTargetAudience(e.target.value)} rows={2} placeholder="Who you serve — role, context, mindset…" className=" " />
+            <Label className="text-xs">{t('brandDna.targetAudience')}</Label>
+            <Textarea value={dnaTargetAudience} onChange={e => setDnaTargetAudience(e.target.value)} rows={2} placeholder={t('brandDna.whoYouServeRoleContextMindset')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Core audience pain point</Label>
-            <Textarea value={dnaCorePainPoint} onChange={e => setDnaCorePainPoint(e.target.value)} rows={2} placeholder="The #1 frustration or struggle your audience faces…" className=" " />
+            <Label className="text-xs">{t('brandDna.coreAudiencePainPoint')}</Label>
+            <Textarea value={dnaCorePainPoint} onChange={e => setDnaCorePainPoint(e.target.value)} rows={2} placeholder={t('brandDna.the1FrustrationOrStruggleYour')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Audience aspiration</Label>
-            <Textarea value={dnaAudienceAspiration} onChange={e => setDnaAudienceAspiration(e.target.value)} rows={2} placeholder="What your audience most wants to achieve…" className=" " />
+            <Label className="text-xs">{t('brandDna.audienceAspiration')}</Label>
+            <Textarea value={dnaAudienceAspiration} onChange={e => setDnaAudienceAspiration(e.target.value)} rows={2} placeholder={t('brandDna.whatYourAudienceMostWantsTo')} className=" " />
           </div>
           <Button size="sm" onClick={() => patchBrandDna.mutate({ offers: dnaOffers, priceRange: dnaPriceRange, clientJourney: dnaClientJourney, competitorLandscape: dnaCompetitorLandscape, targetAudience: dnaTargetAudience, corePainPoint: dnaCorePainPoint, audienceAspiration: dnaAudienceAspiration })} disabled={patchBrandDna.isPending}>
             {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settings.saving')}</> : t('settings.saveOffersMarket')}
@@ -602,86 +645,86 @@ export function BrandDnaEditor({ projectId, projectName }: { projectId: number |
         {/* ── Content & Platforms ── */}
         <TabsContent value="content" className="space-y-4 pt-4">
           <div className="space-y-1">
-            <Label className="text-xs">Brand voice keywords (up to 6)</Label>
-            <p className="text-[11px] text-naya-olive-35 ">Press Enter or comma to add</p>
-            <KeywordChipInput values={dnaVoiceKw} onChange={setDnaVoiceKw} max={6} placeholder="e.g. direct, warm, precise…" />
+            <Label className="text-xs">{t('brandDna.brandVoiceKeywordsUpTo6')}</Label>
+            <p className="text-[11px] text-naya-olive-35 ">{t('brandDna.pressEnterOrCommaToAdd')}</p>
+            <KeywordChipInput values={dnaVoiceKw} onChange={setDnaVoiceKw} max={6} placeholder={t('brandDna.eGDirectWarmPrecise')} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Words / tones to avoid (up to 4)</Label>
-            <KeywordChipInput values={dnaAntiKw} onChange={setDnaAntiKw} max={4} placeholder="e.g. corporate, salesy, jargon…" />
+            <Label className="text-xs">{t('brandDna.wordsTonesToAvoidUpTo')}</Label>
+            <KeywordChipInput values={dnaAntiKw} onChange={setDnaAntiKw} max={4} placeholder={t('brandDna.eGCorporateSalesyJargon')} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Editorial territory</Label>
-            <Textarea value={dnaEditorialTerritory} onChange={e => setDnaEditorialTerritory(e.target.value)} rows={2} placeholder="The intersection of brand and psychology…" className=" " />
+            <Label className="text-xs">{t('brandDna.editorialTerritory')}</Label>
+            <Textarea value={dnaEditorialTerritory} onChange={e => setDnaEditorialTerritory(e.target.value)} rows={2} placeholder={t('brandDna.theIntersectionOfBrandAndPsychology')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Content pillars</Label>
-            <p className="text-[11px] text-naya-olive-35 ">Define each pillar with its formats and publishing frequency</p>
+            <Label className="text-xs">{t('brandDna.contentPillars')}</Label>
+            <p className="text-[11px] text-naya-olive-35 ">{t('brandDna.defineEachPillarWithItsFormats')}</p>
             <PillarListEditor pillars={dnaContentPillarsDetailed} onChange={setDnaContentPillarsDetailed} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Primary platform</Label>
+            <Label className="text-xs">{t('brandDna.primaryPlatform')}</Label>
             <Select value={dnaPlatformPriority} onValueChange={setDnaPlatformPriority}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose primary platform" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.choosePrimaryPlatform')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="linkedin">LinkedIn</SelectItem>
-                <SelectItem value="instagram">Instagram</SelectItem>
-                <SelectItem value="twitter">X / Twitter</SelectItem>
-                <SelectItem value="newsletter">Newsletter / Email</SelectItem>
-                <SelectItem value="youtube">YouTube</SelectItem>
-                <SelectItem value="tiktok">TikTok</SelectItem>
-                <SelectItem value="podcast">Podcast</SelectItem>
-                <SelectItem value="blog">Blog / SEO</SelectItem>
+                <SelectItem value="linkedin">{t('brandDna.linkedin')}</SelectItem>
+                <SelectItem value="instagram">{t('brandDna.instagram')}</SelectItem>
+                <SelectItem value="twitter">{t('brandDna.xTwitter')}</SelectItem>
+                <SelectItem value="newsletter">{t('brandDna.newsletterEmail')}</SelectItem>
+                <SelectItem value="youtube">{t('brandDna.youtube')}</SelectItem>
+                <SelectItem value="tiktok">{t('brandDna.tiktok')}</SelectItem>
+                <SelectItem value="podcast">{t('brandDna.podcast')}</SelectItem>
+                <SelectItem value="blog">{t('brandDna.blogSeo')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Communication style</Label>
+            <Label className="text-xs">{t('brandDna.communicationStyle')}</Label>
             <Select value={dnaCommunicationStyle} onValueChange={setDnaCommunicationStyle}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose style" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.chooseStyle')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="conversational">Conversational — warm and approachable</SelectItem>
-                <SelectItem value="authoritative">Authoritative — direct and confident</SelectItem>
-                <SelectItem value="educational">Educational — clear and structured</SelectItem>
-                <SelectItem value="inspirational">Inspirational — motivating and visionary</SelectItem>
-                <SelectItem value="provocative">Provocative — challenges assumptions</SelectItem>
-                <SelectItem value="storytelling">Storytelling — narrative-driven</SelectItem>
+                <SelectItem value="conversational">{t('brandDna.conversationalWarmAndApproachable')}</SelectItem>
+                <SelectItem value="authoritative">{t('brandDna.authoritativeDirectAndConfident')}</SelectItem>
+                <SelectItem value="educational">{t('brandDna.educationalClearAndStructured')}</SelectItem>
+                <SelectItem value="inspirational">{t('brandDna.inspirationalMotivatingAndVisionary')}</SelectItem>
+                <SelectItem value="provocative">{t('brandDna.provocativeChallengesAssumptions')}</SelectItem>
+                <SelectItem value="storytelling">{t('brandDna.storytellingNarrativeDriven')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Current online presence</Label>
+            <Label className="text-xs">{t('brandDna.currentOnlinePresence')}</Label>
             <Select value={dnaCurrentPresence} onValueChange={setDnaCurrentPresence}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose presence level" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.choosePresenceLevel')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None — starting from scratch</SelectItem>
-                <SelectItem value="minimal">Minimal — basic profiles only</SelectItem>
-                <SelectItem value="growing">Growing — some followers/readers</SelectItem>
-                <SelectItem value="established">Established — consistent audience</SelectItem>
-                <SelectItem value="strong">Strong — large engaged following</SelectItem>
+                <SelectItem value="none">{t('brandDna.noneStartingFromScratch')}</SelectItem>
+                <SelectItem value="minimal">{t('brandDna.minimalBasicProfilesOnly')}</SelectItem>
+                <SelectItem value="growing">{t('brandDna.growingSomeFollowersReaders')}</SelectItem>
+                <SelectItem value="established">{t('brandDna.establishedConsistentAudience')}</SelectItem>
+                <SelectItem value="strong">{t('brandDna.strongLargeEngagedFollowing')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Content bandwidth</Label>
+            <Label className="text-xs">{t('brandDna.contentBandwidth')}</Label>
             <Select value={dnaContentBandwidth} onValueChange={setDnaContentBandwidth}>
-              <SelectTrigger className=" "><SelectValue placeholder="How much can you publish?" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.howMuchCanYouPublish')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="minimal">Minimal — 1–2 posts/week max</SelectItem>
-                <SelectItem value="moderate">Moderate — 3–5 pieces/week</SelectItem>
-                <SelectItem value="active">Active — daily content</SelectItem>
-                <SelectItem value="high-volume">High volume — multiple per day</SelectItem>
+                <SelectItem value="minimal">{t('brandDna.minimal12PostsWeekMax')}</SelectItem>
+                <SelectItem value="moderate">{t('brandDna.moderate35PiecesWeek')}</SelectItem>
+                <SelectItem value="active">{t('brandDna.activeDailyContent')}</SelectItem>
+                <SelectItem value="high-volume">{t('brandDna.highVolumeMultiplePerDay')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Visual identity notes</Label>
-            <Textarea value={dnaVisualIdentityNotes} onChange={e => setDnaVisualIdentityNotes(e.target.value)} rows={2} placeholder="e.g. minimal, warm tones, no stock photos…" className=" " />
+            <Label className="text-xs">{t('brandDna.visualIdentityNotes')}</Label>
+            <Textarea value={dnaVisualIdentityNotes} onChange={e => setDnaVisualIdentityNotes(e.target.value)} rows={2} placeholder={t('brandDna.eGMinimalWarmTonesNo')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Reference brands (up to 5)</Label>
-            <p className="text-[11px] text-naya-olive-35 ">Brands whose style or approach you admire</p>
-            <KeywordChipInput values={dnaReferenceBrands} onChange={setDnaReferenceBrands} max={5} placeholder="e.g. Notion, Basecamp, Figma…" />
+            <Label className="text-xs">{t('brandDna.referenceBrandsUpTo5')}</Label>
+            <p className="text-[11px] text-naya-olive-35 ">{t('brandDna.brandsWhoseStyleOrApproachYou')}</p>
+            <KeywordChipInput values={dnaReferenceBrands} onChange={setDnaReferenceBrands} max={5} placeholder={t('brandDna.eGNotionBasecampFigma')} />
           </div>
           <Button size="sm" onClick={() => patchBrandDna.mutate({ brandVoiceKeywords: dnaVoiceKw, brandVoiceAntiKeywords: dnaAntiKw, editorialTerritory: dnaEditorialTerritory, contentPillarsDetailed: dnaContentPillarsDetailed, platformPriority: dnaPlatformPriority, communicationStyle: dnaCommunicationStyle, currentPresence: dnaCurrentPresence, contentBandwidth: dnaContentBandwidth, visualIdentityNotes: dnaVisualIdentityNotes, referenceBrands: dnaReferenceBrands })} disabled={patchBrandDna.isPending}>
             {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settings.saving')}</> : t('settings.saveContentPlatforms')}
@@ -691,90 +734,90 @@ export function BrandDnaEditor({ projectId, projectName }: { projectId: number |
         {/* ── Active Priorities ── */}
         <TabsContent value="priorities" className="space-y-4 pt-4">
           <div className="space-y-1">
-            <Label className="text-xs">Active business priority</Label>
-            <Input value={dnaActiveBusinessPriority} onChange={e => setDnaActiveBusinessPriority(e.target.value)} placeholder="e.g. close 2 new clients, launch newsletter…" className=" " />
+            <Label className="text-xs">{t('brandDna.activeBusinessPriority')}</Label>
+            <Input value={dnaActiveBusinessPriority} onChange={e => setDnaActiveBusinessPriority(e.target.value)} placeholder={t('brandDna.eGClose2NewClients')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Current business stage</Label>
+            <Label className="text-xs">{t('brandDna.currentBusinessStage')}</Label>
             <Select value={dnaCurrentBusinessStage} onValueChange={setDnaCurrentBusinessStage}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose a stage" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.chooseAStage')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="idea">Idea / pre-launch</SelectItem>
-                <SelectItem value="launch">Launched / early traction</SelectItem>
-                <SelectItem value="growing">Growing</SelectItem>
-                <SelectItem value="scaling">Scaling</SelectItem>
-                <SelectItem value="established">Established</SelectItem>
+                <SelectItem value="idea">{t('brandDna.ideaPreLaunch')}</SelectItem>
+                <SelectItem value="launch">{t('brandDna.launchedEarlyTraction')}</SelectItem>
+                <SelectItem value="growing">{t('brandDna.growing')}</SelectItem>
+                <SelectItem value="scaling">{t('brandDna.scaling')}</SelectItem>
+                <SelectItem value="established">{t('brandDna.established')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Revenue urgency</Label>
+            <Label className="text-xs">{t('brandDna.revenueUrgency')}</Label>
             <Select value={dnaRevenueUrgency} onValueChange={setDnaRevenueUrgency}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose urgency" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.chooseUrgency')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="revenue-now">Need revenue now — critical</SelectItem>
-                <SelectItem value="3-months">Within 3 months</SelectItem>
-                <SelectItem value="growing-steadily">Growing steadily — not urgent</SelectItem>
-                <SelectItem value="authority-building">Building authority first</SelectItem>
-                <SelectItem value="scale-existing">Scaling what's already working</SelectItem>
+                <SelectItem value="revenue-now">{t('brandDna.needRevenueNowCritical')}</SelectItem>
+                <SelectItem value="3-months">{t('brandDna.within3Months')}</SelectItem>
+                <SelectItem value="growing-steadily">{t('brandDna.growingSteadilyNotUrgent')}</SelectItem>
+                <SelectItem value="authority-building">{t('brandDna.buildingAuthorityFirst')}</SelectItem>
+                <SelectItem value="scale-existing">{t('brandDna.scalingWhatSAlreadyWorking')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Revenue target</Label>
-            <Input value={dnaRevenueTarget} onChange={e => setDnaRevenueTarget(e.target.value)} placeholder="e.g. €5k/month by Q3" className=" " />
+            <Label className="text-xs">{t('brandDna.revenueTarget')}</Label>
+            <Input value={dnaRevenueTarget} onChange={e => setDnaRevenueTarget(e.target.value)} placeholder={t('brandDna.eG5kMonthByQ3')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Key milestones</Label>
-            <p className="text-[11px] text-naya-olive-35 ">Track each milestone with a target date and status</p>
+            <Label className="text-xs">{t('brandDna.keyMilestones')}</Label>
+            <p className="text-[11px] text-naya-olive-35 ">{t('brandDna.trackEachMilestoneWithATarget')}</p>
             <MilestoneListEditor milestones={dnaKeyMilestones} onChange={setDnaKeyMilestones} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Primary goal</Label>
+            <Label className="text-xs">{t('brandDna.primaryGoal')}</Label>
             <Textarea value={dnaPrimaryGoal} onChange={e => setDnaPrimaryGoal(e.target.value)} rows={2} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Success definition</Label>
+            <Label className="text-xs">{t('brandDna.successDefinition')}</Label>
             <Textarea value={dnaSuccessDefinition} onChange={e => setDnaSuccessDefinition(e.target.value)} rows={2} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Current challenges</Label>
+            <Label className="text-xs">{t('brandDna.currentChallenges')}</Label>
             <Textarea value={dnaCurrentChallenges} onChange={e => setDnaCurrentChallenges(e.target.value)} rows={2} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Team structure</Label>
+            <Label className="text-xs">{t('brandDna.teamStructure')}</Label>
             <Select value={dnaTeamStructure} onValueChange={setDnaTeamStructure}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose team structure" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.chooseTeamStructure')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="solo">Solo founder — I work alone</SelectItem>
-                <SelectItem value="solo-contractors">Solo + contractors as needed</SelectItem>
-                <SelectItem value="2-3-person">2–3 person team</SelectItem>
-                <SelectItem value="small-team">Small team (4–10)</SelectItem>
-                <SelectItem value="growing-team">Growing team (10+)</SelectItem>
+                <SelectItem value="solo">{t('brandDna.soloFounderIWorkAlone')}</SelectItem>
+                <SelectItem value="solo-contractors">{t('brandDna.soloContractorsAsNeeded')}</SelectItem>
+                <SelectItem value="2-3-person">{t('brandDna.23PersonTeam')}</SelectItem>
+                <SelectItem value="small-team">{t('brandDna.smallTeam410')}</SelectItem>
+                <SelectItem value="growing-team">{t('brandDna.growingTeam10')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Operational constraints</Label>
-            <Textarea value={dnaOperationalConstraints} onChange={e => setDnaOperationalConstraints(e.target.value)} rows={2} placeholder="e.g. limited time (10h/week), no team support, budget under €500…" className=" " />
+            <Label className="text-xs">{t('brandDna.operationalConstraints')}</Label>
+            <Textarea value={dnaOperationalConstraints} onChange={e => setDnaOperationalConstraints(e.target.value)} rows={2} placeholder={t('brandDna.eGLimitedTime10hWeek')} className=" " />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Geographic focus</Label>
+            <Label className="text-xs">{t('brandDna.geographicFocus')}</Label>
             <Select value={dnaGeographicFocus} onValueChange={setDnaGeographicFocus}>
-              <SelectTrigger className=" "><SelectValue placeholder="Choose geographic focus" /></SelectTrigger>
+              <SelectTrigger className=" "><SelectValue placeholder={t('brandDna.chooseGeographicFocus')} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="local">Local / city</SelectItem>
-                <SelectItem value="national">National</SelectItem>
-                <SelectItem value="europe">Europe</SelectItem>
-                <SelectItem value="english-speaking">English-speaking markets</SelectItem>
-                <SelectItem value="global">Global</SelectItem>
-                <SelectItem value="remote-global">Remote / fully global</SelectItem>
+                <SelectItem value="local">{t('brandDna.localCity')}</SelectItem>
+                <SelectItem value="national">{t('brandDna.national')}</SelectItem>
+                <SelectItem value="europe">{t('brandDna.europe')}</SelectItem>
+                <SelectItem value="english-speaking">{t('brandDna.englishSpeakingMarkets')}</SelectItem>
+                <SelectItem value="global">{t('brandDna.global')}</SelectItem>
+                <SelectItem value="remote-global">{t('brandDna.remoteFullyGlobal')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Language strategy</Label>
-            <Input value={dnaLanguageStrategy} onChange={e => setDnaLanguageStrategy(e.target.value)} placeholder="e.g. English only, bilingual EN/FR…" className=" " />
+            <Label className="text-xs">{t('brandDna.languageStrategy')}</Label>
+            <Input value={dnaLanguageStrategy} onChange={e => setDnaLanguageStrategy(e.target.value)} placeholder={t('brandDna.eGEnglishOnlyBilingualEn')} className=" " />
           </div>
           <Button size="sm" onClick={() => patchBrandDna.mutate({ activeBusinessPriority: dnaActiveBusinessPriority, currentBusinessStage: dnaCurrentBusinessStage, revenueUrgency: dnaRevenueUrgency, revenueTarget: dnaRevenueTarget, keyMilestones: dnaKeyMilestones, primaryGoal: dnaPrimaryGoal, successDefinition: dnaSuccessDefinition, currentChallenges: dnaCurrentChallenges, teamStructure: dnaTeamStructure, operationalConstraints: dnaOperationalConstraints, geographicFocus: dnaGeographicFocus, languageStrategy: dnaLanguageStrategy })} disabled={patchBrandDna.isPending}>
             {patchBrandDna.isPending ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settings.saving')}</> : t('settings.saveActivePriorities')}
@@ -790,7 +833,7 @@ export function BrandDnaEditor({ projectId, projectName }: { projectId: number |
               </p>
               {brandDna?.lastStrategyRefreshAt && (
                 <span className="text-[10px] text-naya-olive-35 ">
-                  Last updated: {new Date(brandDna.lastStrategyRefreshAt).toLocaleDateString()}
+                  {t('brandDna.lastUpdated')} {new Date(brandDna.lastStrategyRefreshAt).toLocaleDateString()}
                 </span>
               )}
             </div>

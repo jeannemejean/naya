@@ -15,7 +15,7 @@ import {
  Sunrise, Sun, Moon, Lock, Flag, AlertCircle, Check, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useProject } from "@/lib/project-context";
-import { useTheme } from "@/contexts/ThemeContext";
+import { taskPaletteFor, NAYA_TASK_PALETTES } from "@/lib/task-palette";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
 import { useTranslation } from "react-i18next";
 import TaskWorkspace from "@/components/task-workspace";
@@ -61,41 +61,21 @@ const TIME_OF_DAY_HINTS: Record<string, { icon: React.ElementType; label: string
  evening: { icon: Moon, label: 'Soir' },
 };
 
-// Card colors — deux palettes (light / dark) pour un résultat propre dans chaque thème
-const TASK_CARD_PALETTES_LIGHT = [
- { bg: '#F5F2FF', text: '#4C3680', border: '#DDD6FE' }, // lavender
- { bg: '#FFFBEB', text: '#78350F', border: '#FDE68A' }, // amber
- { bg: '#F0FDF4', text: '#14532D', border: '#BBF7D0' }, // green
- { bg: '#EFF6FF', text: '#1E3A5F', border: '#BFDBFE' }, // blue
- { bg: '#FFF1F2', text: '#9F1239', border: '#FECDD3' }, // pink
- { bg: '#FFFBEB', text: '#78350F', border: '#FDE68A' }, // orange
- { bg: '#ECFEFF', text: '#164E63', border: '#A5F3FC' }, // cyan
-];
-
-const TASK_CARD_PALETTES_DARK = [
- { bg: 'rgba(139, 127, 168, 0.14)', text: '#C4B8D8', border: 'rgba(139, 127, 168, 0.28)' }, // purple
- { bg: 'rgba(168, 140, 80, 0.14)', text: '#D4C488', border: 'rgba(168, 140, 80, 0.28)' }, // amber
- { bg: 'rgba(92, 122, 107, 0.14)', text: '#8BB8A4', border: 'rgba(92, 122, 107, 0.28)' }, // teal
- { bg: 'rgba(100, 110, 200, 0.14)', text: '#A8B0E0', border: 'rgba(100, 110, 200, 0.28)' }, // indigo
- { bg: 'rgba(168, 100, 120, 0.14)', text: '#D4A8B8', border: 'rgba(168, 100, 120, 0.28)' }, // rose
- { bg: 'rgba(168, 140, 80, 0.14)', text: '#D4C488', border: 'rgba(168, 140, 80, 0.28)' }, // amber
- { bg: 'rgba(92, 170, 180, 0.14)', text: '#8BD0D8', border: 'rgba(92, 170, 180, 0.28)' }, // cyan
-];
-
-function getTaskCardPalette(task: Task, projects: Project[], isDark: boolean) {
+// La palette des tâches vit dans @/lib/task-palette — une seule pour toute l'application.
+//
+// Ce fichier portait deux tableaux locaux, clair et sombre, choisis selon `theme === 'dark'`.
+// Le thème par défaut étant 'dark' alors qu'aucun vrai mode sombre n'existe en CSS, le
+// dashboard peignait des teintes sombres et sourdes sur un fond clair — et surtout des
+// couleurs sans rapport avec celles du planning pour les mêmes tâches.
+function getTaskCardPalette(task: Task, _projects: Project[]) {
  if (task.completed) return null; // completed tasks get muted style
- const palettes = isDark ? TASK_CARD_PALETTES_DARK : TASK_CARD_PALETTES_LIGHT;
- const projectId = task.projectId;
- if (projectId) {
- const idx = projectId % palettes.length;
- return palettes[idx];
- }
- // fallback by energy type
+ if (task.projectId) return taskPaletteFor(task.projectId);
+ // Repli par type d'énergie, dans la MÊME palette : une tâche sans projet reste colorée.
  const energyMap: Record<string, number> = {
  deep_work: 3, creative: 0, admin: 3, social: 2, logistics: 5, execution: 1,
  };
  const eIdx = task.taskEnergyType ? (energyMap[task.taskEnergyType] ?? 0) : 0;
- return palettes[eIdx];
+ return NAYA_TASK_PALETTES[eIdx % NAYA_TASK_PALETTES.length];
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -202,8 +182,6 @@ export default function TodaysTasks() {
  const { toast } = useToast();
  const queryClient = useQueryClient();
  const { activeProjectId } = useProject();
- const { theme } = useTheme();
- const isDark = theme === 'dark';
  const [isGenerating, setIsGenerating] = useState(false);
  // Vue par défaut = planning horaire (pas une to-do liste plate).
  const [viewMode, setViewMode] = useState<TodayView>(DEFAULT_TODAY_VIEW);
@@ -702,7 +680,7 @@ export default function TodaysTasks() {
  const energyBadge = task.taskEnergyType ? ENERGY_BADGES[task.taskEnergyType] : null;
  const todHint = task.recommendedTimeOfDay && task.recommendedTimeOfDay !== 'flexible'
  ? TIME_OF_DAY_HINTS[task.recommendedTimeOfDay] : null;
- const palette = (isBlocked || isMilestoneBlocked) ? null : getTaskCardPalette(task, projects, isDark);
+ const palette = (isBlocked || isMilestoneBlocked) ? null : getTaskCardPalette(task, projects);
  return (
  <div
  key={task.id}

@@ -109,6 +109,36 @@ Pour annuler cette baseline si besoin : `DELETE FROM drizzle.__drizzle_migration
       première conversion déclarée.
 - [ ] Supprimer les branches `avant-0006-0007` et `br-young-union-anrr8hds` quand le déploiement est stable depuis quelques jours.
 
+## 3ter. Production — migrée le 16 septembre 2026 (`0012` → `0013`)
+
+> Endpoint vérifié avant exécution : `ep-damp-water-anuyb0k6` = branche `br-floral-wave-ane2h3l1`
+> = **production**. Vérification faite par l'API Neon (`list_branch_computes`), pas de mémoire.
+
+- [x] Point de restauration Neon : branche **`br-proud-cloud-anu0vcp9`**, forkée de `production`,
+      **vérifiée conforme avant migration** (61 tables, 3 utilisateurs, 4 projets, 58 tâches,
+      120 prospects, suivi à 12 lignes / `0011`). Le nom personnalisé n'est toujours pas accepté
+      par l'outil MCP — la branche porte son identifiant comme nom.
+      ⚠️ Rétention d'historique : **6 heures**. Au-delà, seule cette branche permet un retour.
+- [x] SQL relu avant application, **deux `ADD COLUMN` et rien d'autre** :
+      `content.deduced_fields text[]` (0012) et `content.source_task_id integer` (0013).
+      Toutes deux **nullables, sans valeur par défaut** — donc pas de réécriture de table.
+      La table `content` était par ailleurs **vide** en production.
+- [x] Garde du script **testée à blanc** : lancée sur l'endpoint de développement
+      (`ep-jolly-sky-an1x7ddn`), elle refuse et sort en code 1. Le refus a été constaté, pas supposé.
+- [x] Appliquées via le migrator `drizzle-orm` sous `railway run`.
+- [x] Résultat vérifié : suivi **12 → 14**, les deux colonnes présentes,
+      **données inchangées** (61 tables, 3 utilisateurs, 4 projets, 58 tâches, 120 prospects).
+
+### Pourquoi ces colonnes
+
+`deduced_fields` porte les **noms** des champs que Naya a devinés en routant une tâche vers le
+calendrier de contenu — pas un booléen. Trois états distincts : `null` = question sans objet,
+`[]` = routage effectué sans rien deviner, `[...]` = ces champs sont des suppositions.
+
+`source_task_id` relie le contenu à la tâche qui l'a produit. Sans lui, deux clics sur
+« Enregistrer » créeraient deux brouillons identiques.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;

@@ -45,6 +45,9 @@ import { contextualRecommendationsEngine } from "./services/contextual-recommend
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
+import { destinationPourTache } from "./services/task-destination";
+import { construireContenuDepuisTache } from "./services/task-to-content";
+import { deduireChampsContenu } from "./services/content-deduction";
 import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
 import { buildImmediateInsight, type TaskAnswer } from "./services/result-capture/insight";
 import { insightIfChanged } from "./services/result-capture/insight-if-changed";
@@ -2513,7 +2516,7 @@ RÈGLES D'ÉNERGIE :
 
 TA VOIX :
 - Ne dis jamais "Il semble que...", "Voici un résumé...", "Super !"
-- Parle à la 2e personne ("tu"). TOUJOURS en français.
+- Parle à la 2e personne.
 - Sois directe mais humaine. Pas corporate. Pas robot-cheerful.
 - Si un déclencheur d'évitement est pertinent aujourd'hui, nomme-le doucement.
 - Si persona Builder : valide le passage à l'action, alerte contre les rabbit holes.
@@ -2521,7 +2524,7 @@ TA VOIX :
 - Si persona Créatif : donne la permission de suivre l'énergie, mais ancre sur un livrable.
 - Si persona Analytique : donne une logique claire pour l'ordre des priorités.
 
-IMPÉRATIF : Réponds UNIQUEMENT en français, avec du JSON valide. Aucun texte anglais.`;
+IMPÉRATIF : réponds avec du JSON valide, et rien d'autre.`;
 
       const briefPrompt = `CE QUE TU SAIS D'ELLE :
 - Énergie aujourd'hui : ${energyLevel}
@@ -3999,7 +4002,57 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         source: source ?? "task",
         content: content ?? "",
       });
-      res.json(entry);
+
+      // Routage vers la destination utile (lot D).
+      //
+      // Tout ce bloc est enveloppe : la note est DEJA enregistree a ce stade. Le routage est
+      // un benefice, jamais une condition. Un modele indisponible, un quota depasse ou une
+      // ecriture refusee ne doivent pas transformer un enregistrement reussi en erreur.
+      let routage: { destination: string; contentId?: number } = { destination: "espace_de_travail" };
+      try {
+        const tache = await storage.getTask(taskId);
+        // Verification d'appartenance : le parametre d'URL vient du client.
+        if (tache && (tache as any).userId === userId) {
+          const destination = destinationPourTache((tache as any).type);
+          routage = { destination };
+
+          if (destination === "content") {
+            const deduit = await deduireChampsContenu({
+              userId,
+              projectId: projectId ?? (tache as any).projectId ?? null,
+              titreTache: (tache as any).title ?? "",
+              titreNote: title ?? "",
+              texte: content ?? "",
+            });
+
+            const { ligne } = construireContenuDepuisTache({
+              tache: {
+                id: taskId,
+                projectId: projectId ?? (tache as any).projectId ?? null,
+                type: (tache as any).type ?? null,
+                title: (tache as any).title ?? "",
+              },
+              note: { title: title ?? "", content: content ?? "" },
+              deduit,
+            });
+
+            if (ligne) {
+              // Un contenu existe deja pour cette tache : on le met a jour plutot que d'en
+              // creer un second. Sans cela, chaque clic sur Enregistrer ajouterait un
+              // brouillon identique au calendrier.
+              const existant = await storage.getContentBySourceTask(userId, taskId);
+              const enregistre = existant
+                ? await storage.updateContent(existant.id, ligne as any)
+                : await storage.createContent({ ...ligne, userId } as any);
+              routage = { destination, contentId: enregistre.id };
+            }
+          }
+        }
+      } catch (e: any) {
+        console.error(`[Routage] tache ${taskId} non routee:`, e?.message ?? e);
+      }
+
+      res.json({ ...entry, routage });
     } catch (error) {
       console.error("Error creating workspace entry:", error);
       res.status(500).json({ message: "Failed to create workspace entry" });

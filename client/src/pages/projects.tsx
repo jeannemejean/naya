@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,10 +27,10 @@ import { BrandDnaEditor } from "@/components/brand-dna-editor";
 import MilestoneRoadmap from "@/pages/project/MilestoneRoadmap";
 import type { Project, ProjectGoal, Client, Task } from "@shared/schema";
 
-const createClientSchema = z.object({
- name: z.string().min(1, "Client name is required"),
+const createClientSchema = (t: (k: string) => string) => z.object({
+ name: z.string().min(1, t('projectsPage.validation.clientNameRequired')),
  contactName: z.string().optional(),
- email: z.string().email("Invalid email").optional().or(z.literal("")),
+ email: z.string().email(t('projectsPage.validation.invalidEmail')).optional().or(z.literal("")),
  lifecycleStage: z.string().default("active"),
  urgencyLevel: z.string().default("medium"),
 });
@@ -50,25 +50,26 @@ const PROJECT_TYPE_ICONS: Record<string, string> = {
  "Lifestyle": "◇",
 };
 
-const MONETIZATION_LABELS: Record<string, { label: string; color: string }> = {
- "revenue-now": { label: "Revenue Now", color: "bg-[rgba(158,126,135,0.20)] text-[#5c3d45] " },
- "authority-building": { label: "Authority Building", color: "bg-[rgba(125,143,168,0.20)] text-[#354963] " },
- "exploratory": { label: "Exploratory", color: "bg-[rgba(212,201,122,0.20)] text-[#5a4f0d] " },
- "none": { label: "Non-commercial", color: "bg-naya-olive-10 text-naya-olive " },
+const MONETIZATION_LABELS: Record<string, { labelKey: string; color: string }> = {
+ "revenue-now": { labelKey: "projectsPage.monetization.revenueNow", color: "bg-[rgba(158,126,135,0.20)] text-[#5c3d45] " },
+ "authority-building": { labelKey: "projectsPage.monetization.authorityBuilding", color: "bg-[rgba(125,143,168,0.20)] text-[#354963] " },
+ "exploratory": { labelKey: "projectsPage.monetization.exploratory", color: "bg-[rgba(212,201,122,0.20)] text-[#5a4f0d] " },
+ "none": { labelKey: "projectsPage.monetization.nonCommercial", color: "bg-naya-olive-10 text-naya-olive " },
 };
 
-const SUCCESS_MODE_LABELS: Record<string, string> = {
- "revenue": "◆ Revenue",
- "visibility": "◇ Visibility",
- "consistency": "▶ Consistency",
- "exploration": "▷ Exploration",
- "learning": "— Learning",
- "wellbeing": "◯ Wellbeing",
+/** Clés de traduction : la valeur (`revenue`, `visibility`…) est enregistrée en base. */
+const SUCCESS_MODE_KEYS: Record<string, string> = {
+ "revenue": "projectsPage.successMode.revenue",
+ "visibility": "projectsPage.successMode.visibility",
+ "consistency": "projectsPage.successMode.consistency",
+ "exploration": "projectsPage.successMode.exploration",
+ "learning": "projectsPage.successMode.learning",
+ "wellbeing": "projectsPage.successMode.wellbeing",
 };
 
-const createProjectSchema = z.object({
- name: z.string().min(1, "Project name is required"),
- type: z.string().min(1, "Project type is required"),
+const createProjectSchema = (t: (k: string) => string) => z.object({
+ name: z.string().min(1, t('projectsPage.validation.projectNameRequired')),
+ type: z.string().min(1, t('projectsPage.validation.projectTypeRequired')),
  description: z.string().optional(),
  monetizationIntent: z.string().default("exploratory"),
  priorityLevel: z.string().default("secondary"),
@@ -84,11 +85,11 @@ const createProjectSchema = z.object({
  clientBrief: z.string().optional(),
 }).refine(
  (d) => d.projectKind !== "client" || !!(d.clientName && d.clientName.trim()),
- { message: "Le nom du client est obligatoire pour un projet client", path: ["clientName"] },
+ { message: t('projectsPage.validation.clientNameRequiredForClientProject'), path: ["clientName"] },
 );
 
-const createGoalSchema = z.object({
- title: z.string().min(1, "Goal title is required"),
+const createGoalSchema = (t: (k: string) => string) => z.object({
+ title: z.string().min(1, t('projectsPage.validation.goalTitleRequired')),
  description: z.string().optional(),
  goalType: z.string().default("monthly"),
  successMode: z.string().default("visibility"),
@@ -123,7 +124,7 @@ function ClientsTab({ project }: { project: Project }) {
  });
 
  const createMutation = useMutation({
- mutationFn: (data: z.infer<typeof createClientSchema>) =>
+ mutationFn: (data: z.infer<ReturnType<typeof createClientSchema>>) =>
  apiRequest("POST", "/api/clients", { ...data, parentProjectId: project.id }),
  onSuccess: () => {
  queryClient.invalidateQueries({ queryKey: ["/api/clients", { projectId: project.id }] });
@@ -134,8 +135,9 @@ function ClientsTab({ project }: { project: Project }) {
  onError: () => toast({ title: t('common.error'), variant: "destructive" }),
  });
 
- const form = useForm<z.infer<typeof createClientSchema>>({
- resolver: zodResolver(createClientSchema),
+ const schemaClient = useMemo(() => createClientSchema(t), [t]);
+ const form = useForm<z.infer<ReturnType<typeof createClientSchema>>>({
+ resolver: zodResolver(schemaClient),
  defaultValues: {
  name: "",
  contactName: "",
@@ -169,8 +171,8 @@ function ClientsTab({ project }: { project: Project }) {
  name="name"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Client Name</FormLabel>
- <FormControl><Input placeholder="Company Name" {...field} /></FormControl>
+ <FormLabel>{t('projectsPage.clientName')}</FormLabel>
+ <FormControl><Input placeholder={t('projectsPage.companyName')} {...field} /></FormControl>
  <FormMessage />
  </FormItem>
  )}
@@ -180,8 +182,8 @@ function ClientsTab({ project }: { project: Project }) {
  name="contactName"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Contact Name</FormLabel>
- <FormControl><Input placeholder="John Doe" {...field} /></FormControl>
+ <FormLabel>{t('projectsPage.contactName')}</FormLabel>
+ <FormControl><Input placeholder={t('projectsPage.johnDoe')} {...field} /></FormControl>
  </FormItem>
  )}
  />
@@ -190,8 +192,8 @@ function ClientsTab({ project }: { project: Project }) {
  name="email"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Email</FormLabel>
- <FormControl><Input type="email" placeholder="john@example.com" {...field} /></FormControl>
+ <FormLabel>{t('projectsPage.email')}</FormLabel>
+ <FormControl><Input type="email" placeholder={t('projectsPage.johnExampleCom')} {...field} /></FormControl>
  </FormItem>
  )}
  />
@@ -201,15 +203,15 @@ function ClientsTab({ project }: { project: Project }) {
  name="lifecycleStage"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Lifecycle Stage</FormLabel>
+ <FormLabel>{t('projectsPage.lifecycleStage')}</FormLabel>
  <Select onValueChange={field.onChange} defaultValue={field.value}>
  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
  <SelectContent>
- <SelectItem value="onboarding">Onboarding</SelectItem>
- <SelectItem value="active">Active</SelectItem>
- <SelectItem value="retention">Retention</SelectItem>
- <SelectItem value="campaign">Campaign</SelectItem>
- <SelectItem value="offboarding">Offboarding</SelectItem>
+ <SelectItem value="onboarding">{t('projectsPage.onboarding')}</SelectItem>
+ <SelectItem value="active">{t('projectsPage.active')}</SelectItem>
+ <SelectItem value="retention">{t('projectsPage.retention')}</SelectItem>
+ <SelectItem value="campaign">{t('projectsPage.campaign')}</SelectItem>
+ <SelectItem value="offboarding">{t('projectsPage.offboarding')}</SelectItem>
  </SelectContent>
  </Select>
  </FormItem>
@@ -220,14 +222,14 @@ function ClientsTab({ project }: { project: Project }) {
  name="urgencyLevel"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Urgency</FormLabel>
+ <FormLabel>{t('projectsPage.urgency')}</FormLabel>
  <Select onValueChange={field.onChange} defaultValue={field.value}>
  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
  <SelectContent>
- <SelectItem value="low">Low</SelectItem>
- <SelectItem value="medium">Medium</SelectItem>
- <SelectItem value="high">High</SelectItem>
- <SelectItem value="critical">Critical</SelectItem>
+ <SelectItem value="low">{t('projectsPage.low')}</SelectItem>
+ <SelectItem value="medium">{t('projectsPage.medium')}</SelectItem>
+ <SelectItem value="high">{t('projectsPage.high')}</SelectItem>
+ <SelectItem value="critical">{t('projectsPage.critical')}</SelectItem>
  </SelectContent>
  </Select>
  </FormItem>
@@ -246,7 +248,7 @@ function ClientsTab({ project }: { project: Project }) {
  <div className="grid gap-4">
  {clients.length === 0 ? (
  <div className="text-center py-12 border-2 border-dashed rounded-lg">
- <p className="text-naya-cream0">No clients in this project yet.</p>
+ <p className="text-naya-cream0">{t('projectsPage.noClientsInThisProjectYet')}</p>
  </div>
  ) : (
  clients.map(client => (
@@ -264,6 +266,7 @@ function ClientsTab({ project }: { project: Project }) {
 }
 
 function ClientCard({ client, isExpanded, onToggle }: { client: Client, isExpanded: boolean, onToggle: () => void }) {
+ const { t } = useTranslation();
  const { data: tasks = [], isLoading } = useQuery<Task[]>({
  queryKey: ["/api/clients", client.id, "tasks"],
  queryFn: async () => {
@@ -299,11 +302,11 @@ function ClientCard({ client, isExpanded, onToggle }: { client: Client, isExpand
  {isExpanded && (
  <CardContent className="p-4 pt-0 border-t bg-naya-olive-06/50 ">
  <div className="mt-4">
- <h4 className="text-xs text-naya-olive-35 uppercase tracking-wider mb-3">Client Tasks</h4>
+ <h4 className="text-xs text-naya-olive-35 uppercase tracking-wider mb-3">{t('projectsPage.clientTasks')}</h4>
  {isLoading ? (
  <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
  ) : tasks.length === 0 ? (
- <p className="text-xs text-naya-cream0 italic">No tasks specifically assigned to this client.</p>
+ <p className="text-xs text-naya-cream0 italic">{t('projectsPage.noTasksSpecificallyAssignedToThis')}</p>
  ) : (
  <div className="space-y-2">
  {tasks.map(task => (
@@ -380,7 +383,7 @@ function ProjectTasksPanel({ project }: { project: Project }) {
  if (loading) return <div className="py-4 flex justify-center"><Loader2 className="h-4 w-4 animate-spin text-naya-olive-35" /></div>;
  if (tasks.length === 0) return (
  <div className="py-6 text-center border-2 border-dashed border-naya-olive-18 rounded-lg">
- <p className="text-sm text-naya-olive-55">No tasks yet.</p>
+ <p className="text-sm text-naya-olive-55">{t('projectsPage.noTasksYet')}</p>
  </div>
  );
  return (
@@ -431,9 +434,9 @@ function ProjectTasksPanel({ project }: { project: Project }) {
  </div>
  <Tabs defaultValue="today">
  <TabsList className="h-7 text-xs mb-3">
- <TabsTrigger value="today" className="text-xs px-3 h-6">Today</TabsTrigger>
- <TabsTrigger value="tomorrow" className="text-xs px-3 h-6">Tomorrow</TabsTrigger>
- <TabsTrigger value="upcoming" className="text-xs px-3 h-6">Upcoming</TabsTrigger>
+ <TabsTrigger value="today" className="text-xs px-3 h-6">{t('projectsPage.today')}</TabsTrigger>
+ <TabsTrigger value="tomorrow" className="text-xs px-3 h-6">{t('projectsPage.tomorrow')}</TabsTrigger>
+ <TabsTrigger value="upcoming" className="text-xs px-3 h-6">{t('projectsPage.upcoming')}</TabsTrigger>
  </TabsList>
  <TabsContent value="today"><TaskList tasks={todayTasks} loading={todayLoading} /></TabsContent>
  <TabsContent value="tomorrow"><TaskList tasks={tomorrowTasks} loading={tomorrowLoading} /></TabsContent>
@@ -469,7 +472,7 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
  </div>
  <div className="flex items-center gap-1 flex-wrap justify-end">
  {project.isPrimary && (
- <Badge className="text-[10px] h-5 bg-primary/10 text-primary border-0">Primary</Badge>
+ <Badge className="text-[10px] h-5 bg-primary/10 text-primary border-0">{t('projectsPage.primary')}</Badge>
  )}
  <Badge variant="outline" className="text-[10px] h-5">
  {project.type}
@@ -483,7 +486,7 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
  }}
  >
  <Dna className="h-2.5 w-2.5 mr-0.5" />
- Setup
+ {t('projectsPage.setup')}
  </Badge>
  )}
  </div>
@@ -500,7 +503,7 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
 
  <div className="flex items-center gap-2 mt-3">
  <span className={`text-[10px] px-2 py-0.5 rounded-full ${monetInfo?.color || ''}`}>
- {monetInfo?.label || project.monetizationIntent}
+ {monetInfo ? t(monetInfo.labelKey) : project.monetizationIntent}
  </span>
  <span className={`text-[10px] px-2 py-0.5 rounded-full ${
  project.projectStatus === 'active' ? 'bg-naya-olive-10 text-naya-olive ' :
@@ -522,7 +525,7 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
  className="w-full text-xs text-[hsl(150,20%,45%)] ,20%,60%)] hover:text-[hsl(150,20%,35%)] :text-[hsl(150,20%,70%)] transition-colors flex items-center justify-center gap-1.5 py-1.5 rounded-lg hover:bg-[hsl(150,20%,55%)]/5"
  >
  <Dna className="h-3.5 w-3.5" />
- <span>Configure Brand DNA for targeted planning</span>
+ <span>{t('projectsPage.configureBrandDnaForTargetedPlanning')}</span>
  </button>
  </div>
  )}
@@ -586,7 +589,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  });
 
  const createProjectMutation = useMutation({
- mutationFn: (data: z.infer<typeof createProjectSchema>) =>
+ mutationFn: (data: z.infer<ReturnType<typeof createProjectSchema>>) =>
  apiRequest('POST', '/api/projects', { ...data, color: selectedColor }),
  onSuccess: () => {
  invalidateAllProjects(queryClient);
@@ -617,7 +620,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  });
 
  const createGoalMutation = useMutation({
- mutationFn: async (data: z.infer<typeof createGoalSchema> & { projectId: number }) => {
+ mutationFn: async (data: z.infer<ReturnType<typeof createGoalSchema>> & { projectId: number }) => {
  const { projectId, ...rest } = data;
  const cleaned = Object.fromEntries(
  Object.entries(rest).map(([k, v]) => [k, v === '' ? undefined : v])
@@ -651,8 +654,9 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  onError: () => toast({ title: t('projects.generateError'), variant: "destructive" }),
  });
 
- const createForm = useForm<z.infer<typeof createProjectSchema>>({
- resolver: zodResolver(createProjectSchema),
+ const schemaProjet = useMemo(() => createProjectSchema(t), [t]);
+ const createForm = useForm<z.infer<ReturnType<typeof createProjectSchema>>>({
+ resolver: zodResolver(schemaProjet),
  defaultValues: {
  name: "",
  type: "Business",
@@ -670,8 +674,9 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  },
  });
 
- const goalForm = useForm<z.infer<typeof createGoalSchema>>({
- resolver: zodResolver(createGoalSchema),
+ const schemaObjectif = useMemo(() => createGoalSchema(t), [t]);
+ const goalForm = useForm<z.infer<ReturnType<typeof createGoalSchema>>>({
+ resolver: zodResolver(schemaObjectif),
  defaultValues: {
  title: "",
  description: "",
@@ -682,7 +687,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  },
  });
 
- const onCreateProject = (data: z.infer<typeof createProjectSchema>) => {
+ const onCreateProject = (data: z.infer<ReturnType<typeof createProjectSchema>>) => {
  // kind='personal' : les champs client sont non pertinents → non envoyés (restent null en base).
  const payload = data.projectKind === "client"
  ? data
@@ -690,7 +695,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  createProjectMutation.mutate(payload);
  };
 
- const onCreateGoal = (data: z.infer<typeof createGoalSchema>) => {
+ const onCreateGoal = (data: z.infer<ReturnType<typeof createGoalSchema>>) => {
  if (!selectedProject) return;
  createGoalMutation.mutate({ ...data, projectId: selectedProject.id });
  };
@@ -736,7 +741,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <FormItem>
  <FormLabel>{t('projects.projectName')}</FormLabel>
  <FormControl>
- <Input placeholder="e.g. My Agency, Personal Brand, Passion Project" {...field} />
+ <Input placeholder={t('projectsPage.eGMyAgencyPersonalBrand')} {...field} />
  </FormControl>
  <FormMessage />
  </FormItem>
@@ -749,12 +754,12 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  name="projectKind"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Nature du projet</FormLabel>
+ <FormLabel>{t('projectsPage.natureDuProjet')}</FormLabel>
  <Select onValueChange={field.onChange} value={field.value}>
  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
  <SelectContent>
- <SelectItem value="personal">🙂 Projet personnel</SelectItem>
- <SelectItem value="client">💼 Projet client</SelectItem>
+ <SelectItem value="personal">{t('projectsPage.projetPersonnel')}</SelectItem>
+ <SelectItem value="client">{t('projectsPage.projetClient')}</SelectItem>
  </SelectContent>
  </Select>
  <FormMessage />
@@ -769,8 +774,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  name="clientName"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Nom du client</FormLabel>
- <FormControl><Input placeholder="Ex : Acme SARL" {...field} /></FormControl>
+ <FormLabel>{t('projectsPage.nomDuClient')}</FormLabel>
+ <FormControl><Input placeholder={t('projectsPage.exAcmeSarl')} {...field} /></FormControl>
  <FormMessage />
  </FormItem>
  )}
@@ -780,8 +785,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  name="clientContact"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Contact client <span className="text-naya-olive-35">(optionnel)</span></FormLabel>
- <FormControl><Input placeholder="Nom · email · téléphone" {...field} /></FormControl>
+ <FormLabel>{t('projectsPage.contactClient')} <span className="text-naya-olive-35">{t('projectsPage.optionnel')}</span></FormLabel>
+ <FormControl><Input placeholder={t('projectsPage.nomEmailTelephone')} {...field} /></FormControl>
  </FormItem>
  )}
  />
@@ -790,8 +795,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  name="clientBrief"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Brief client <span className="text-naya-olive-35">(optionnel)</span></FormLabel>
- <FormControl><Textarea placeholder="Contexte, objectifs, contraintes…" rows={2} {...field} /></FormControl>
+ <FormLabel>{t('projectsPage.briefClient')} <span className="text-naya-olive-35">{t('projectsPage.optionnel')}</span></FormLabel>
+ <FormControl><Textarea placeholder={t('projectsPage.contexteObjectifsContraintes')} rows={2} {...field} /></FormControl>
  </FormItem>
  )}
  />
@@ -838,10 +843,10 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </SelectTrigger>
  </FormControl>
  <SelectContent>
- <SelectItem value="revenue-now">Revenue Now</SelectItem>
- <SelectItem value="authority-building">Authority Building</SelectItem>
- <SelectItem value="exploratory">Exploratory</SelectItem>
- <SelectItem value="none">Non-commercial</SelectItem>
+ <SelectItem value="revenue-now">{t('projectsPage.revenueNow')}</SelectItem>
+ <SelectItem value="authority-building">{t('projectsPage.authorityBuilding')}</SelectItem>
+ <SelectItem value="exploratory">{t('projectsPage.exploratory')}</SelectItem>
+ <SelectItem value="none">{t('projectsPage.nonCommercial')}</SelectItem>
  </SelectContent>
  </Select>
  <FormMessage />
@@ -856,12 +861,12 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  name="category"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Catégorie</FormLabel>
+ <FormLabel>{t('projectsPage.categorie')}</FormLabel>
  <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
  <FormControl><SelectTrigger><SelectValue placeholder="—" /></SelectTrigger></FormControl>
  <SelectContent>
- <SelectItem value="revenue">Revenu</SelectItem>
- <SelectItem value="passion">Passion</SelectItem>
+ <SelectItem value="revenue">{t('projectsPage.revenu')}</SelectItem>
+ <SelectItem value="passion">{t('projectsPage.passion')}</SelectItem>
  </SelectContent>
  </Select>
  <FormMessage />
@@ -873,9 +878,9 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  name="dailyTimeBudgetHours"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Heures/jour</FormLabel>
+ <FormLabel>{t('projectsPage.heuresJour')}</FormLabel>
  <FormControl>
- <Input type="number" min={0} max={16} placeholder="ex : 4"
+ <Input type="number" min={0} max={16} placeholder={t('projectsPage.ex4')}
  value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value === "" ? undefined : Number(e.target.value))} />
  </FormControl>
  <FormMessage />
@@ -887,13 +892,13 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  name="priorityLevel"
  render={({ field }) => (
  <FormItem>
- <FormLabel>Priorité</FormLabel>
+ <FormLabel>{t('projectsPage.priorite')}</FormLabel>
  <Select onValueChange={field.onChange} defaultValue={field.value}>
  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
  <SelectContent>
- <SelectItem value="primary">Principale</SelectItem>
- <SelectItem value="secondary">Secondaire</SelectItem>
- <SelectItem value="background">En fond</SelectItem>
+ <SelectItem value="primary">{t('projectsPage.principale')}</SelectItem>
+ <SelectItem value="secondary">{t('projectsPage.secondaire')}</SelectItem>
+ <SelectItem value="background">{t('projectsPage.enFond')}</SelectItem>
  </SelectContent>
  </Select>
  <FormMessage />
@@ -909,7 +914,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <FormItem>
  <FormLabel>{t('projects.description')} ({t('common.optional')})</FormLabel>
  <FormControl>
- <Textarea placeholder="What is this project about?" rows={2} {...field} />
+ <Textarea placeholder={t('projectsPage.whatIsThisProjectAbout')} rows={2} {...field} />
  </FormControl>
  </FormItem>
  )}
@@ -1001,7 +1006,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <div className="flex gap-2 mt-2 flex-wrap">
  <Badge variant="outline">{selectedProject.type}</Badge>
  <Badge className={`border-0 ${MONETIZATION_LABELS[selectedProject.monetizationIntent || 'exploratory']?.color}`}>
- {MONETIZATION_LABELS[selectedProject.monetizationIntent || 'exploratory']?.label}
+ {t(MONETIZATION_LABELS[selectedProject.monetizationIntent || 'exploratory']?.labelKey ?? 'projectsPage.monetization.exploratory')}
  </Badge>
  </div>
  </SheetHeader>
@@ -1051,7 +1056,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <TabsList className="mb-4">
  <TabsTrigger value="tasks">{t('campaigns.tasks')}</TabsTrigger>
  <TabsTrigger value="goals">{t('projects.goals')}</TabsTrigger>
- <TabsTrigger value="roadmap">Roadmap</TabsTrigger>
+ <TabsTrigger value="roadmap">{t('projectsPage.roadmap')}</TabsTrigger>
  <TabsTrigger value="brand-dna">{t('projects.brandDna')}</TabsTrigger>
  {(selectedProject?.type?.toLowerCase().includes("agency") ||
  selectedProject?.type?.toLowerCase().includes("client")) && (
@@ -1080,8 +1085,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </div>
  ) : activeGoals.length === 0 && completedGoals.length === 0 ? (
  <div className="text-center py-6 border-2 border-dashed border-naya-olive-18 rounded-lg">
- <p className="text-sm text-naya-olive-55">No goals yet.</p>
- <p className="text-xs text-naya-olive-35 mt-1">Add a goal to give Naya direction for this project.</p>
+ <p className="text-sm text-naya-olive-55">{t('projectsPage.noGoalsYet')}</p>
+ <p className="text-xs text-naya-olive-35 mt-1">{t('projectsPage.addAGoalToGiveNaya')}</p>
  </div>
  ) : (
  <div className="space-y-3">
@@ -1098,7 +1103,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <p className="text-sm font-medium text-foreground">{goal.title}</p>
  <div className="flex items-center gap-2 mt-1">
  <span className="text-xs text-naya-olive-55">
- {SUCCESS_MODE_LABELS[goal.successMode] || goal.successMode}
+ {SUCCESS_MODE_KEYS[goal.successMode] ? t(SUCCESS_MODE_KEYS[goal.successMode]) : goal.successMode}
  </span>
  {goal.dueDate && (
  <span className="text-xs text-naya-olive-35 ">
@@ -1142,7 +1147,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  {completedGoals.length > 0 && (
  <details className="mt-2">
  <summary className="text-xs text-naya-olive-35 cursor-pointer hover:text-naya-olive-55">
- {completedGoals.length} completed
+ {completedGoals.length} {t('projectsPage.completed')}
  </summary>
  <div className="space-y-2 mt-2">
  {completedGoals.map((goal) => (
@@ -1197,7 +1202,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <FormItem>
  <FormLabel>{t('projects.goalTitle')}</FormLabel>
  <FormControl>
- <Input placeholder="e.g. Sign 2 clients this month" {...field} />
+ <Input placeholder={t('projectsPage.eGSign2ClientsThis')} {...field} />
  </FormControl>
  <FormMessage />
  </FormItem>
@@ -1214,12 +1219,12 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <Select onValueChange={field.onChange} defaultValue={field.value}>
  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
  <SelectContent>
- <SelectItem value="monthly">Monthly</SelectItem>
- <SelectItem value="quarterly">Quarterly</SelectItem>
- <SelectItem value="milestone">Milestone</SelectItem>
- <SelectItem value="revenue">Revenue</SelectItem>
- <SelectItem value="visibility">Visibility</SelectItem>
- <SelectItem value="consistency">Consistency</SelectItem>
+ <SelectItem value="monthly">{t('projectsPage.monthly')}</SelectItem>
+ <SelectItem value="quarterly">{t('projectsPage.quarterly')}</SelectItem>
+ <SelectItem value="milestone">{t('projectsPage.milestone')}</SelectItem>
+ <SelectItem value="revenue">{t('projectsPage.revenue')}</SelectItem>
+ <SelectItem value="visibility">{t('projectsPage.visibility')}</SelectItem>
+ <SelectItem value="consistency">{t('projectsPage.consistency')}</SelectItem>
  </SelectContent>
  </Select>
  </FormItem>
@@ -1235,12 +1240,12 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <Select onValueChange={field.onChange} defaultValue={field.value}>
  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
  <SelectContent>
- <SelectItem value="revenue">◆ Revenue</SelectItem>
- <SelectItem value="visibility">◇ Visibility</SelectItem>
- <SelectItem value="consistency">▶ Consistency</SelectItem>
- <SelectItem value="exploration">▷ Exploration</SelectItem>
- <SelectItem value="learning">— Learning</SelectItem>
- <SelectItem value="wellbeing">◯ Wellbeing</SelectItem>
+ <SelectItem value="revenue">{t('projectsPage.revenue2')}</SelectItem>
+ <SelectItem value="visibility">{t('projectsPage.visibility2')}</SelectItem>
+ <SelectItem value="consistency">{t('projectsPage.consistency2')}</SelectItem>
+ <SelectItem value="exploration">{t('projectsPage.exploration')}</SelectItem>
+ <SelectItem value="learning">{t('projectsPage.learning')}</SelectItem>
+ <SelectItem value="wellbeing">{t('projectsPage.wellbeing')}</SelectItem>
  </SelectContent>
  </Select>
  </FormItem>
@@ -1256,7 +1261,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <FormItem>
  <FormLabel>{t('projects.targetValue')} ({t('common.optional')})</FormLabel>
  <FormControl>
- <Input placeholder="e.g. 2 clients, 10k" {...field} />
+ <Input placeholder={t('projectsPage.eG2Clients10k')} {...field} />
  </FormControl>
  </FormItem>
  )}

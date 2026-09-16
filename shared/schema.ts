@@ -580,6 +580,34 @@ export const content = pgTable("content", {
   videoMeta: jsonb("video_meta"),                        // { durationSec, width, height, thumbnailUrl }
   providerContainerId: text("provider_container_id"),    // conteneur média IG/FB / publish_id TikTok (async)
   lastError: text("last_error"),                         // dernier message d'échec de publication
+  // ── Routage depuis une tâche (lot D) ───────────────────────────────────────
+  //
+  // Noms des champs que NAYA A DÉDUITS au lieu de les recevoir de l'utilisatrice, quand un
+  // contenu est créé depuis l'espace de travail d'une tâche. Par exemple
+  // ["platform", "pillar"] : la plateforme et le pilier ont été devinés, le titre et le
+  // corps viennent du texte écrit.
+  //
+  // Trois états DISTINCTS, et la distinction est le point :
+  //   null  → question sans objet. Contenu créé autrement que par le routage d'une tâche,
+  //           ou antérieur à cette colonne. On ne sait pas, et on ne prétend pas savoir.
+  //   []    → routage effectué, RIEN n'a été déduit : tout vient de l'utilisatrice.
+  //   [...] → ces champs-là sont des suppositions, à vérifier.
+  //
+  // Sans cette colonne, un pilier mal deviné serait indiscernable d'un pilier choisi, et
+  // fausserait les statistiques d'attribution sans que rien ne le signale — le défaut que
+  // ce dépôt corrige partout : une absence de mesure présentée comme une mesure.
+  deducedFields: text("deduced_fields").array(),
+  //
+  // Tâche dont ce contenu est issu. `null` = contenu créé autrement.
+  //
+  // Sert à deux choses, et la seconde est la plus importante : retrouver l'origine d'un
+  // brouillon, et surtout ÉVITER LES DOUBLONS. Sans ce lien, cliquer deux fois sur
+  // Enregistrer créerait deux brouillons identiques dans le calendrier, sans qu'aucun des
+  // deux ne sache que l'autre existe.
+  //
+  // Référence souple (pas de FK) : supprimer une tâche ne doit pas emporter le contenu
+  // rédigé en la réalisant — c'est le travail de l'utilisatrice, pas un sous-produit.
+  sourceTaskId: integer("source_task_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

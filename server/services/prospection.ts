@@ -322,7 +322,7 @@ export async function generateSequence(userId: string, campaignId: number): Prom
     (campaign as any)?.campaignBrief ? `Proposition: ${(campaign as any).campaignBrief}` : "",
   ].filter(Boolean).join("\n");
 
-  const prompt = `Tu es un expert en cold email B2B. Rédige une séquence de prospection de 3 emails, en français, pour ce contexte :
+  const prompt = `Tu es un expert en cold email B2B. Rédige une séquence de prospection de 3 emails pour ce contexte :
 ${ctx || "(contexte minimal — reste générique mais crédible)"}
 
 Règles :

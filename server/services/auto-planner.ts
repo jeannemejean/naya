@@ -19,7 +19,7 @@ import { CLAUDE_MODELS, callClaude } from './claude';
 import { getCalendarBlockedRanges } from './google-calendar';
 import { handleTaskDeferral } from './task-intelligence';
 import { computeDurationCalibration, applyCalibration, formatCalibrationForPrompt } from './duration-calibration';
-import { sortTasksByDependencies, groupTasksByWorkflow } from './dependency-sort';
+import { orderGeneratedTasks, type DeclaredDependency } from './dependency-sort';
 import { summarizeMilestones } from './project-summary';
 import { materializeRituals } from './ritual-materialize';
 import { maxTasksForDay } from './day-sizing';
@@ -446,13 +446,23 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
 
       if (!result || !Array.isArray((result as any).tasks)) continue;
 
-      // Trier par dépendances puis regrouper par workflowGroup
+      // Ordonner sur les dépendances DÉCLARÉES par le modèle, avec le workflowGroup en
+      // départage. On n'appelle plus `sortTasksByDependencies` ici : elle lit les dépendances
+      // en base et ces tâches n'existent pas encore — son garde `taskIds.length === 0` la
+      // faisait sortir sans rien trier, et le `.catch` qui l'entourait protégeait du code mort.
       const rawTasks = (result as any).tasks as any[];
-      const sortedByDeps = await sortTasksByDependencies(rawTasks, userId).catch(() => rawTasks);
-      const orderedTasks = groupTasksByWorkflow(sortedByDeps);
+      const declaredDeps = (result as any).dependencies as DeclaredDependency[] | undefined;
+
+      // L'indice d'origine est posé AVANT tout réordonnancement. C'est la seule clé qui relie
+      // une dépendance déclarée — exprimée par indice dans `rawTasks` — à la tâche réellement
+      // créée. L'ancien code indexait `createdTaskIds`, bâti sur le tableau déjà réordonné et
+      // troué par les `continue` des tâches non plaçables : les dépendances enregistrées
+      // reliaient des paires arbitraires.
+      const indexedTasks = rawTasks.map((t, __srcIndex) => ({ ...t, __srcIndex }));
+      const orderedTasks = orderGeneratedTasks(indexedTasks, declaredDeps);
 
       // Persist tasks with collision-safe slot assignment (respects lunch break)
-      const createdTaskIds: number[] = [];
+      const idParIndexSource = new Map<number, number>();
       for (const taskData of orderedTasks) {
         const category = taskData.category || 'general';
         const rawDuration = taskData.estimatedDuration || 30;
@@ -500,22 +510,29 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
           source: 'auto',
           completed: false,
         } as any);
-        createdTaskIds.push((created as any).id);
+        idParIndexSource.set((taskData as any).__srcIndex, (created as any).id);
       }
 
-      // Créer les dépendances entre tâches nouvellement créées
-      const deps = (result as any).dependencies as Array<{ taskIndex: number; dependsOnIndex: number; relationType: string }> | undefined;
-      if (deps && deps.length > 0) {
-        for (const dep of deps) {
-          const taskId = createdTaskIds[dep.taskIndex];
-          const dependsOnTaskId = createdTaskIds[dep.dependsOnIndex];
-          if (taskId && dependsOnTaskId) {
-            await storage.createTaskDependency({
-              taskId,
-              dependsOnTaskId,
-              relationType: dep.relationType as any,
-            } as any).catch(() => {}); // non-bloquant
-          }
+      // Créer les dépendances entre tâches nouvellement créées.
+      // Une tâche non plaçable n'a pas d'entrée : la dépendance qui la cite est simplement
+      // omise, au lieu de glisser sur sa voisine.
+      for (const dep of declaredDeps ?? []) {
+        const taskId = idParIndexSource.get(dep.taskIndex);
+        const dependsOnTaskId = idParIndexSource.get(dep.dependsOnIndex);
+        if (!taskId || !dependsOnTaskId || taskId === dependsOnTaskId) continue;
+        try {
+          await storage.createTaskDependency({
+            taskId,
+            dependsOnTaskId,
+            relationType: dep.relationType as any,
+          } as any);
+        } catch (e: any) {
+          // Non bloquant pour la génération, mais plus jamais muet : une dépendance perdue
+          // est la raison pour laquelle le planning réordonnait mal sans que rien ne le dise.
+          console.error(
+            `[AutoPlanner] dépendance ${dependsOnTaskId} → ${taskId} non enregistrée:`,
+            e?.message ?? e,
+          );
         }
       }
     } catch (projectError: any) {
