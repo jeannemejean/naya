@@ -49,6 +49,7 @@ import { unansweredStreak, shouldReduceFrequency } from "./services/result-captu
 import { buildImmediateInsight, type TaskAnswer } from "./services/result-capture/insight";
 import { insightIfChanged } from "./services/result-capture/insight-if-changed";
 import { selectAlarmsToPost } from "./services/result-capture/select-alarms";
+import { rememberObservations } from "./services/result-capture/observation-writer";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -10608,6 +10609,17 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const withLatest = entries.map((e) => e.taskAnswer);
       const withoutLatest = entries.filter((e) => e.promptId !== prompt.id).map((e) => e.taskAnswer);
       const insight = insightIfChanged(withLatest, withoutLatest);
+
+      // La mémoire est un bénéfice, pas une condition : si elle échoue, la réponse de
+      // l'utilisatrice reste enregistrée et la requête aboutit. On trace, on ne propage
+      // pas. Ne JAMAIS `await` ici : l'écriture peut appeler un service d'embedding, et
+      // la réponse HTTP ne doit pas dépendre de sa latence. On réutilise `withLatest`
+      // (déjà calculé ci-dessus pour l'insight) plutôt que de relire les réponses
+      // récentes une seconde fois.
+      rememberObservations(userId, withLatest).catch((e) =>
+        console.error("[Memoire] écriture des observations échouée", e?.message),
+      );
+
       res.json({ insight });
     } catch (error) {
       console.error("Error answering task prompt:", error);
