@@ -6,22 +6,14 @@
  * n'a jamais été vue en notification ne soit pas perdue.
  *
  * Mêmes règles, mêmes seuils que buildImmediateInsight — voir ce fichier
- * pour leur justification. `MIN_OBSERVATIONS` y est exporté et réutilisé ici
- * tel quel. `SEUIL_BAS`, `ECART_MIN` et `MIDI` n'y sont PAS exportés (const
- * de module) ; ils sont donc dupliqués ci-dessous avec les mêmes valeurs.
- * Si ces seuils changent dans insight.ts, ils doivent changer ici aussi.
+ * pour leur justification. `MIN_OBSERVATIONS`, `SEUIL_BAS`, `ECART_MIN` et
+ * `MIDI` y sont exportés et réutilisés ici tel quels : source unique, pas
+ * de copie locale à garder synchronisée.
  *
  * PURE : aucune base, aucune horloge, aucun aléa.
  */
 
-import { MIN_OBSERVATIONS, type TaskAnswer } from "./insight";
-
-/** Dupliqué depuis insight.ts (non exporté là-bas) — garder synchronisé. */
-const SEUIL_BAS = 0.25;
-/** Dupliqué depuis insight.ts (non exporté là-bas) — garder synchronisé. */
-const ECART_MIN = 0.4;
-/** Dupliqué depuis insight.ts (non exporté là-bas) — garder synchronisé. */
-const MIDI = 13;
+import { MIN_OBSERVATIONS, SEUIL_BAS, ECART_MIN, MIDI, type TaskAnswer } from "./insight";
 
 export const PREFIXE_CATEGORIE = (categorie: string) => `Les tâches « ${categorie} » :`;
 export const PREFIXE_MOMENT = "Ton rythme dans la journée :";

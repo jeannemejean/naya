@@ -26,11 +26,11 @@ export interface TaskAnswer {
 export const MIN_OBSERVATIONS = 5;
 
 /** Sous ce taux d'achèvement, on considère que la catégorie ne passe pas. RÉVISABLE. */
-const SEUIL_BAS = 0.25;
+export const SEUIL_BAS = 0.25;
 /** Écart minimal entre matin et après-midi pour le mentionner. RÉVISABLE. */
-const ECART_MIN = 0.4;
+export const ECART_MIN = 0.4;
 
-const MIDI = 13;
+export const MIDI = 13;
 
 export function buildImmediateInsight(answers: TaskAnswer[]): string | null {
   if (answers.length < MIN_OBSERVATIONS) return null;
