@@ -1363,6 +1363,10 @@ const en = {
  },
 
  taskWorkspace: {
+ save: "Save",
+ unsaved: "Unsaved",
+ unsavedWarning: "You have unsaved changes.",
+ closeWithoutSaving: "Close without saving",
  defaultTitle: "Task Workspace",
  strategy: "Strategy",
  write: "Write",

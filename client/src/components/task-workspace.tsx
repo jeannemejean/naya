@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
+import { etatSauvegarde, risqueDePerte } from "@/lib/task-workspace-save";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
@@ -124,11 +125,14 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  const [activeType, setActiveType] = useState("strategy");
  const [title, setTitle] = useState("");
  const [content, setContent] = useState("");
- const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
  const [currentEntryId, setCurrentEntryId] = useState<number | null>(null);
  const [expandedEntry, setExpandedEntry] = useState<number | null>(null);
- const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
- const hasUnsavedRef = useRef(false);
+ // Ce qui se trouve REELLEMENT en base, pour savoir a tout instant si du travail
+ // reste non enregistre. L'ancien code posait un drapeau `hasUnsavedRef` qu'il ne
+ // lisait jamais : fermer dans les 800 ms suivant une frappe perdait le texte.
+ const [contenuEnregistre, setContenuEnregistre] = useState<string | null>(null);
+ const [titreEnregistre, setTitreEnregistre] = useState<string | null>(null);
+ const [confirmerFermeture, setConfirmerFermeture] = useState(false);
 
  const { data: entries = [], isLoading: entriesLoading } = useQuery<TaskWorkspaceEntry[]>({
  queryKey: ['/api/tasks', task?.id, 'workspace'],
@@ -154,11 +158,11 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  },
  onSuccess: (entry: TaskWorkspaceEntry) => {
  setCurrentEntryId(entry.id);
- setSaveState("saved");
+ setContenuEnregistre(entry.content ?? "");
+ setTitreEnregistre(entry.title ?? "");
  queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id, 'workspace'] });
  },
  onError: () => {
- setSaveState("idle");
  toast({ title: t('taskWorkspace.error'), description: t('taskWorkspace.failedToSave'), variant: "destructive" });
  },
  });
@@ -168,43 +172,36 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  const res = await apiRequest("PATCH", `/api/tasks/workspace/${currentEntryId}`, data);
  return res.json();
  },
- onSuccess: () => {
- setSaveState("saved");
+ onSuccess: (_data, variables) => {
+ setContenuEnregistre(variables.content);
+ setTitreEnregistre(variables.title);
  queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id, 'workspace'] });
  },
  onError: () => {
- setSaveState("idle");
  toast({ title: t('taskWorkspace.error'), description: t('taskWorkspace.failedToSave'), variant: "destructive" });
  },
  });
 
- const triggerSave = useCallback((c: string, t: string, type: string) => {
- if (!c.trim()) return;
- setSaveState("saving");
- if (currentEntryId) {
- updateMutation.mutate({ content: c, title: t });
- } else {
- createMutation.mutate({ type, title: t, content: c });
- }
- }, [currentEntryId, createMutation, updateMutation]);
+ const enCours = createMutation.isPending || updateMutation.isPending;
+ const etat = etatSauvegarde({ contenu: content, titre: title, contenuEnregistre, titreEnregistre, enCours });
 
- const handleChange = useCallback((newContent: string, newTitle: string) => {
- if (debounceRef.current) clearTimeout(debounceRef.current);
- setSaveState("saving");
- hasUnsavedRef.current = true;
- debounceRef.current = setTimeout(() => {
- triggerSave(newContent, newTitle, activeType);
- }, 800);
- }, [activeType, triggerSave]);
+ const enregistrer = useCallback(() => {
+ if (!content.trim() || enCours) return;
+ if (currentEntryId) {
+ updateMutation.mutate({ content, title });
+ } else {
+ createMutation.mutate({ type: activeType, title, content });
+ }
+ }, [content, title, activeType, currentEntryId, enCours, createMutation, updateMutation]);
 
  useEffect(() => {
  if (!open) {
- if (debounceRef.current) clearTimeout(debounceRef.current);
  setTitle("");
  setContent("");
  setCurrentEntryId(null);
- setSaveState("idle");
- hasUnsavedRef.current = false;
+ setContenuEnregistre(null);
+ setTitreEnregistre(null);
+ setConfirmerFermeture(false);
  }
  }, [open]);
 
@@ -212,14 +209,27 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  setTitle("");
  setContent("");
  setCurrentEntryId(null);
- setSaveState("idle");
- hasUnsavedRef.current = false;
+ setContenuEnregistre(null);
+ setTitreEnregistre(null);
+ setConfirmerFermeture(false);
  }, [activeType]);
 
  const activeTypeConfig = WORKSPACE_TYPES.find(t => t.id === activeType) ?? WORKSPACE_TYPES[0];
 
  return (
- <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+ <Sheet
+ open={open}
+ onOpenChange={(v) => {
+ if (v) return;
+ // Fermer sur du travail non enregistre demande une confirmation. C'est exactement
+ // la fenetre ou l'ancien enregistrement automatique perdait le texte sans rien dire.
+ if (risqueDePerte(etat) && !confirmerFermeture) {
+ setConfirmerFermeture(true);
+ return;
+ }
+ onClose();
+ }}
+ >
  <SheetContent side="right" className="w-full sm:max-w-[580px] flex flex-col p-0 overflow-hidden">
  <SheetHeader className="px-5 pt-5 pb-3 border-b border-naya-olive-18 flex-shrink-0">
  <div className="flex items-start gap-3">
@@ -358,27 +368,54 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  <Input
  placeholder={t('taskWorkspace.optionalTitle')}
  value={title}
- onChange={(e) => {
- setTitle(e.target.value);
- handleChange(content, e.target.value);
- }}
+ onChange={(e) => setTitle(e.target.value)}
  className="mb-2 text-sm h-8 border-naya-olive-18 flex-shrink-0"
  />
  <div className="relative flex-1 min-h-0">
  <Textarea
  placeholder={activeTypeConfig.placeholder}
  value={content}
- onChange={(e) => {
- setContent(e.target.value);
- handleChange(e.target.value, title);
- }}
+ onChange={(e) => setContent(e.target.value)}
  className="h-full resize-none text-sm border-naya-olive-18 focus:ring-1 focus:ring-slate-300"
  style={{ minHeight: '180px' }}
  />
- <div className="absolute bottom-2 right-2 text-[10px] text-naya-olive-35 flex items-center gap-1">
- {saveState === "saving" && <><Loader2 className="h-2.5 w-2.5 animate-spin" /> {t('taskWorkspace.saving')}</>}
- {saveState === "saved" && <><Check className="h-2.5 w-2.5 text-naya-olive-55" /> {t('taskWorkspace.saved')}</>}
  </div>
+
+ {confirmerFermeture && (
+ <div className="mt-2 p-2.5 rounded-lg border border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] flex items-center justify-between gap-3 flex-shrink-0">
+ <span className="text-[11px] text-[#6f6526]">{t('taskWorkspace.unsavedWarning')}</span>
+ <div className="flex items-center gap-2 flex-shrink-0">
+ <button
+ onClick={() => { setConfirmerFermeture(false); onClose(); }}
+ className="text-[11px] text-naya-olive-55 hover:text-naya-olive-70 px-2 py-1"
+ >
+ {t('taskWorkspace.closeWithoutSaving')}
+ </button>
+ <button
+ onClick={() => { setConfirmerFermeture(false); enregistrer(); }}
+ className="text-[11px] px-2.5 py-1 rounded-md bg-naya-olive text-white"
+ >
+ {t('taskWorkspace.save')}
+ </button>
+ </div>
+ </div>
+ )}
+
+ {/* Enregistrement explicite. L'ancien enregistrement automatique perdait le texte
+ quand le panneau se fermait dans les 800 ms suivant la derniere frappe. */}
+ <div className="flex items-center justify-between gap-3 mt-2 flex-shrink-0">
+ <span className="text-[10px] text-naya-olive-35 flex items-center gap-1">
+ {etat === "enregistrement" && (<><Loader2 className="h-2.5 w-2.5 animate-spin" /> {t('taskWorkspace.saving')}</>)}
+ {etat === "enregistre" && (<><Check className="h-2.5 w-2.5 text-naya-olive-55" /> {t('taskWorkspace.saved')}</>)}
+ {etat === "modifie" && t('taskWorkspace.unsaved')}
+ </span>
+ <button
+ onClick={enregistrer}
+ disabled={etat !== "modifie"}
+ className="text-xs px-3 py-1.5 rounded-md bg-naya-olive text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+ >
+ {t('taskWorkspace.save')}
+ </button>
  </div>
  </div>
 

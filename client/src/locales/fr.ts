@@ -1363,6 +1363,10 @@ const fr = {
  },
 
  taskWorkspace: {
+ save: "Enregistrer",
+ unsaved: "Non enregistré",
+ unsavedWarning: "Tu as des modifications non enregistrées.",
+ closeWithoutSaving: "Fermer sans enregistrer",
  defaultTitle: "Espace de travail",
  strategy: "Stratégie",
  write: "Écrire",
