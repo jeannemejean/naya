@@ -522,12 +522,19 @@ git commit -m "feat(memoire): une reponse nourrit la memoire, sans jamais en dep
 
 - [ ] **Étape 1 : suite complète** — `npx tsc --noEmit -p tsconfig.json`, `TZ=UTC npx vitest run`, `TZ=Pacific/Kiritimati npx vitest run`, `npm run build`. Tout vert.
 
-- [ ] **Étape 2 : `buildImmediateInsight` n'a pas été touchée**
+- [ ] **Étape 2 : le COMPORTEMENT de `buildImmediateInsight` n'a pas été touché**
+
+```bash
+git diff <base-du-lot>..HEAD -- server/services/result-capture/insight.test.ts
+```
+Attendu : **vide** — le test est la preuve du comportement.
 
 ```bash
 git diff <base-du-lot>..HEAD -- server/services/result-capture/insight.ts
 ```
-Attendu : **vide**.
+Attendu : **uniquement** l'ajout du mot-clé `export` devant `SEUIL_BAS`, `ECART_MIN` et `MIDI`. Rien d'autre : ni le corps de la fonction, ni ses commentaires.
+
+**Correction du 2026-09-16, contradiction interne de ce plan.** La contrainte globale protège le **comportement** de `buildImmediateInsight` ; cette vérification exigeait à l'origine un diff vide sur **tout le fichier**. Les deux se contredisaient, et la seconde a conduit l'implémenteur à **dupliquer** les trois seuils — or ils sont marqués `RÉVISABLE`, donc destinés à changer. Une divergence future aurait fait dire une chose à la notification et en mémoriser une autre à Naya, **sans qu'aucun test ne casse**. L'intention gouverne : exporter une constante est autorisé.
 
 - [ ] **Étape 3 : aucune migration n'a été créée**
 
