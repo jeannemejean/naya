@@ -1,7 +1,6 @@
 {
   "client/src/App.tsx": 1,
   "client/src/components/auth-dialog.tsx": 19,
-  "client/src/components/brand-dna-editor.tsx": 161,
   "client/src/components/daily-focus-banner.tsx": 1,
   "client/src/components/milestone-chain.tsx": 7,
   "client/src/components/modern-dashboard-layout.tsx": 3,
