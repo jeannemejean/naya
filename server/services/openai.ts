@@ -323,7 +323,7 @@ Respond with JSON only:
       userMessage: prompt,
       model: CLAUDE_MODELS.fast,
       max_tokens: 2000,
-      additionalSystemContext: `You are an expert content strategist who creates engaging, on-brand content that drives results for entrepreneurs. You adapt your output based on project type, monetization intent, and active goal mode. RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
+      additionalSystemContext: `You are an expert content strategist who creates engaging, on-brand content that drives results for entrepreneurs. You adapt your output based on project type, monetization intent, and active goal mode. Always respond with valid JSON only.`,
     });
 
     const parsed = JSON.parse(stripMarkdownJSON(raw));
@@ -595,9 +595,7 @@ You think like a business strategist who knows this founder's business as well a
 
 Naya's voice (apply to all task descriptions): Direct. Warm. Never corporate. Second person. Every sentence earns its place. Never: "It looks like...", "Here's a summary...", "Great!", "Certainly!". Reference the brand's own voice keywords in descriptions.
 
-CRITICAL LANGUAGE RULE — NON-NEGOTIABLE: Generate ALL text in FRENCH. Task titles, descriptions, focus, reasoning, workflow labels, activation prompts — everything must be in French. Never English.
-
-RÈGLE LANGUE : Génère TOUT en français (titres, descriptions, insights, tout). Always respond with valid JSON only. No markdown fences. No preamble.
+Always respond with valid JSON only. No markdown fences. No preamble.
 
 ${profileSection}
 ${profileFramingRules}
@@ -658,7 +656,7 @@ Respond with JSON only:
       userMessage: prompt,
       model: CLAUDE_MODELS.smart,
       max_tokens: 2000,
-      additionalSystemContext: `You are a strategic business advisor who provides actionable insights based on performance data, project context, and goal mode. RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
+      additionalSystemContext: `You are a strategic business advisor who provides actionable insights based on performance data, project context, and goal mode. Always respond with valid JSON only.`,
     });
 
     return JSON.parse(stripMarkdownJSON(raw));
@@ -715,7 +713,7 @@ Respond with JSON:
       userMessage: prompt,
       model: CLAUDE_MODELS.fast,
       max_tokens: 1500,
-      additionalSystemContext: `You are an expert at authentic, relationship-based outreach that uses target persona psychology to craft messages that convert — while always feeling human and genuine. RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
+      additionalSystemContext: `You are an expert at authentic, relationship-based outreach that uses target persona psychology to craft messages that convert — while always feeling human and genuine. Always respond with valid JSON only.`,
     });
 
     return JSON.parse(stripMarkdownJSON(raw));
@@ -895,7 +893,7 @@ Your monthly plans:
 - Generate 15–25 tasks total across the month
 - Every task MUST have a scheduledDate (YYYY-MM-DD) on or after ${todayFloor} in ${monthLabel}
 
-RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
+Always respond with valid JSON only.`,
   });
 
   const result = JSON.parse(stripMarkdownJSON(raw));
@@ -985,7 +983,7 @@ Your priorities in order:
 
 Return rescheduled task IDs with their new date, and any new tasks. All dates must be on or after ${todayFloor}.
 
-RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
+Always respond with valid JSON only.`,
   });
 
   const result = JSON.parse(stripMarkdownJSON(raw));
@@ -1022,14 +1020,14 @@ Respond with JSON:
         userMessage: prompt,
         model: CLAUDE_MODELS.fast,
         max_tokens: 1500,
-        additionalSystemContext: `You are a content performance analyst who helps entrepreneurs optimize their content strategy based on data. RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
+        additionalSystemContext: `You are a content performance analyst who helps entrepreneurs optimize their content strategy based on data. Always respond with valid JSON only.`,
       });
     } else {
       // Fallback for when userId is not provided
       raw = await callClaude({
         model: CLAUDE_MODELS.fast,
         messages: [
-          { role: "system", content: `You are a content performance analyst who helps entrepreneurs optimize their content strategy based on data. RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.` },
+          { role: "system", content: `You are a content performance analyst who helps entrepreneurs optimize their content strategy based on data. Always respond with valid JSON only.` },
           { role: "user", content: prompt },
         ],
         max_tokens: 1500,
@@ -1453,7 +1451,7 @@ Return JSON only:
       userMessage: prompt,
       model: CLAUDE_MODELS.smart,
       max_tokens: 3000,
-      additionalSystemContext: `You are Naya's strategic intelligence layer. You speak like a brilliant strategic advisor who knows the person deeply — their strengths, their tendencies, and their blind spots. You observe patterns in a founder's work and deliver calm, actionable weekly briefings. Never generic — always grounded in the specific data provided. RÈGLE LANGUE : Génère TOUT en français. Always respond with valid JSON only.`,
+      additionalSystemContext: `You are Naya's strategic intelligence layer. You speak like a brilliant strategic advisor who knows the person deeply — their strengths, their tendencies, and their blind spots. You observe patterns in a founder's work and deliver calm, actionable weekly briefings. Never generic — always grounded in the specific data provided. Always respond with valid JSON only.`,
     });
 
     const result = JSON.parse(stripMarkdownJSON(raw));

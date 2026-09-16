@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { languageDirective, resolveLanguage } from "@shared/language";
 import { computeGoalUrgencyScore, formatGoalsWithUrgency } from "./goal-urgency";
 import { formatBehaviorPatternsForContext } from "./behavior-patterns";
 import { retrieveMemories } from "./memory/retrieve";
@@ -199,13 +200,14 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
     }
 
     // Section finale : langue de génération (toujours présente)
-    const language = (energyPrefs as any)?.language || 'fr';
-    sections.push(`## Langue de travail
-Génère TOUT le contenu textuel (titres de tâches, recommandations, messages) en : ${language === 'en' ? 'anglais' : 'français'}.`);
+    const language = resolveLanguage({ account: (energyPrefs as any)?.language });
+    sections.push(languageDirective(language));
 
     if (sections.length === 1) {
-      // Seule la section langue est présente — pas encore d'onboarding
-      return "## Contexte\nPas de Brand DNA ni de projet configuré. L'utilisateur est probablement en onboarding.\n\n## Langue de travail\nGénère TOUT le contenu textuel en : français.";
+      // Seule la section langue est présente — pas encore d'onboarding.
+      // La directive reste celle du compte : un utilisateur anglophone en cours
+      // d'onboarding recevait auparavant du français en dur, exactement comme les autres.
+      return `## Contexte\nPas de Brand DNA ni de projet configuré. L'utilisateur est probablement en onboarding.\n\n${languageDirective(language)}`;
     }
 
     return sections.join('\n\n');

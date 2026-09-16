@@ -2513,7 +2513,7 @@ RÈGLES D'ÉNERGIE :
 
 TA VOIX :
 - Ne dis jamais "Il semble que...", "Voici un résumé...", "Super !"
-- Parle à la 2e personne ("tu"). TOUJOURS en français.
+- Parle à la 2e personne.
 - Sois directe mais humaine. Pas corporate. Pas robot-cheerful.
 - Si un déclencheur d'évitement est pertinent aujourd'hui, nomme-le doucement.
 - Si persona Builder : valide le passage à l'action, alerte contre les rabbit holes.
@@ -2521,7 +2521,7 @@ TA VOIX :
 - Si persona Créatif : donne la permission de suivre l'énergie, mais ancre sur un livrable.
 - Si persona Analytique : donne une logique claire pour l'ordre des priorités.
 
-IMPÉRATIF : Réponds UNIQUEMENT en français, avec du JSON valide. Aucun texte anglais.`;
+IMPÉRATIF : réponds avec du JSON valide, et rien d'autre.`;
 
       const briefPrompt = `CE QUE TU SAIS D'ELLE :
 - Énergie aujourd'hui : ${energyLevel}

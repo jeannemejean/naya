@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { DEFAULT_LANGUAGE, normalizeLanguage, resolveLanguage } from "./language";
+import {
+  DEFAULT_LANGUAGE,
+  normalizeLanguage,
+  resolveLanguage,
+  languageDirective,
+} from "./language";
 
 describe("normalizeLanguage", () => {
   it("accepte les deux langues supportées", () => {
@@ -40,5 +45,43 @@ describe("resolveLanguage", () => {
 
   it("le défaut est le français", () => {
     expect(DEFAULT_LANGUAGE).toBe("fr");
+  });
+});
+
+describe("languageDirective", () => {
+  it("demande l'anglais, et ne mentionne jamais le français comme langue de sortie", () => {
+    // LE bug. `naya-voice.ts` portait « Ne jamais répondre en anglais, quelle que soit la
+    // langue du prompt système », ce qui ordonnait au modèle d'ignorer la préférence de
+    // l'utilisateur. Un compte en anglais recevait du français, toujours.
+    const d = languageDirective("en");
+
+    expect(d).toMatch(/English/i);
+    expect(d).not.toMatch(/\bFrench\b/i);
+    expect(d).not.toMatch(/\bfrançais\b/i);
+  });
+
+  it("demande le français, et ne mentionne jamais l'anglais comme langue de sortie", () => {
+    const d = languageDirective("fr");
+
+    expect(d).toMatch(/français/i);
+    expect(d).not.toMatch(/\banglais\b/i);
+    expect(d).not.toMatch(/\bEnglish\b/i);
+  });
+
+  it("produit deux directives réellement différentes", () => {
+    // Bug visé : une directive constante qui ignorerait son paramètre.
+    expect(languageDirective("fr")).not.toBe(languageDirective("en"));
+  });
+
+  it("couvre les titres de tâches, qui sont le cas rapporté", () => {
+    for (const lang of ["fr", "en"] as const) {
+      expect(languageDirective(lang)).toMatch(/task titles|titres de tâches/i);
+    }
+  });
+
+  it("n'est jamais vide", () => {
+    for (const lang of ["fr", "en"] as const) {
+      expect(languageDirective(lang).trim().length).toBeGreaterThan(20);
+    }
   });
 });
