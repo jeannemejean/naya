@@ -73,6 +73,32 @@ Pour annuler cette baseline si besoin : `DELETE FROM drizzle.__drizzle_migration
       inchangées (3 utilisateurs, 4 projets, 58 tâches).
 - [x] Table de suivi : 8 lignes, `0000` → `0007`.
 
+## 3bis. Production — migrée à nouveau le 16 septembre 2026 (`0008` → `0011`)
+
+> Endpoint vérifié avant exécution : `ep-damp-water-anuyb0k6` = branche `br-floral-wave-ane2h3l1`
+> = **production**. Vérification faite par l'API Neon (`list_branch_computes`), pas de mémoire.
+
+- [x] Point de restauration Neon : branche **`br-young-union-anrr8hds`**, forkée de `production`,
+      **vérifiée conforme avant migration** (59 tables, 3 utilisateurs, 4 projets, 58 tâches,
+      suivi à 8 lignes / `0007`). ⚠️ Le nom personnalisé n'a pas été accepté par l'outil MCP :
+      la branche porte son identifiant comme nom. C'est le point de retour.
+      ⚠️ La rétention d'historique du projet est de **6 heures** — au-delà, seule cette branche
+      permet un retour arrière.
+- [x] SQL des quatre migrations **relu avant application** : purement additif — 2 `CREATE TABLE`
+      (`task_prompts`, `linkedin_send_attempts`), 5 `ADD COLUMN`, 1 index, 4 clés étrangères.
+      **Aucun `DROP`, `TRUNCATE`, `DELETE` ni changement de type.** Le seul point d'attention,
+      `ADD COLUMN ... NOT NULL DEFAULT 0` sur `lead_sequence_state` (0010), est instantané sous
+      PostgreSQL 11+ et la table était vide.
+- [x] Appliquées via le migrator `drizzle-orm` (node-postgres, 0.39.1) sous `railway run`, avec un
+      **garde-fou refusant de s'exécuter** si l'endpoint n'est pas celui de la production.
+- [x] Suivi : **8 → 12 lignes**, dernier `when` = `1789138934486` (`0011_sad_prodigy`).
+- [x] Vérifié après coup : `task_prompts`, `linkedin_send_attempts`, les 3 colonnes de `0009`,
+      `lead_sequence_state.linkedin_consecutive_failures`, `leads.outreach_unreachable_reason` —
+      tous présents. **61 tables**, données **inchangées** (3 utilisateurs, 4 projets, 58 tâches,
+      120 leads). Service `/api/health` OK.
+- Le code déployé en production est encore l'ancien : ces migrations étant **additives**, il n'en
+  est pas affecté. L'ordre voulu est bien migration d'abord, déploiement ensuite.
+
 ### Ce qui reste
 
 - [ ] Pousser `main` une fois les merges faits — Railway déploie sur push, et le code de 3A/3B lit
@@ -81,7 +107,7 @@ Pour annuler cette baseline si besoin : `DELETE FROM drizzle.__drizzle_migration
       `NOTE-DECISION-ATTRIBUTION.md` §0 : 60 j pour l'Agence JMD, 14 j pour les marques B2C). Les
       quatre projets sont au défaut de 30 j. Non urgent : la fenêtre ne compte qu'à partir de la
       première conversion déclarée.
-- [ ] Supprimer la branche `avant-0006-0007` quand le déploiement est stable depuis quelques jours.
+- [ ] Supprimer les branches `avant-0006-0007` et `br-young-union-anrr8hds` quand le déploiement est stable depuis quelques jours.
 
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 

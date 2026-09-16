@@ -3,8 +3,8 @@ import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
-import { waitlist } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { waitlist, taskPrompts, tasks } from "@shared/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { 
   generateContent, 
@@ -45,6 +45,11 @@ import { contextualRecommendationsEngine } from "./services/contextual-recommend
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
+import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
+import { buildImmediateInsight, type TaskAnswer } from "./services/result-capture/insight";
+import { insightIfChanged } from "./services/result-capture/insight-if-changed";
+import { selectAlarmsToPost } from "./services/result-capture/select-alarms";
+import { rememberObservations } from "./services/result-capture/observation-writer";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -74,6 +79,7 @@ import { leadScrapingService } from "./services/lead-scraping";
 import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
+import { parisHourOf, parisTodayString } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
@@ -434,6 +440,28 @@ function rebalanceTasksForward(
   }
   return result;
 }
+
+// ─── Task Prompts — deux fenêtres distinctes, exportées et nommées ─────────────────
+// Une seule constante (30) servait autrefois à la fois à la soupape et au retour
+// immédiat — voir revue finale, défaut Important 3. Les deux besoins sont trop
+// différents pour partager une fenêtre : les séparer rend chacune ajustable
+// indépendamment sans devoir re-raisonner sur l'autre.
+
+// La soupape (`unansweredStreak`) ne regarde jamais plus que les `SEUIL_SOUPAPE` (3)
+// alarmes échues les plus récentes — elle s'arrête à la première réponse rencontrée.
+// 10 lignes laissent une marge confortable (plusieurs jours sans réponse, alarmes
+// dédupliquées par jour) sans jamais peser sur la requête. DÉFAUT RÉVISABLE.
+export const SOUPAPE_TASK_PROMPTS_LOOKBACK = 10;
+
+// Le retour immédiat (`buildImmediateInsight`) exige au moins `MIN_OBSERVATIONS` (5)
+// réponses de CHAQUE côté (matin/après-midi), ou par catégorie — donc potentiellement
+// 10+ réponses répondues avant qu'un motif soit même observable. À 7-8 alarmes/jour,
+// l'ancienne fenêtre de 30 lignes (alarmes brutes, répondues ou non) couvrait à peine
+// 4 jours, et les non-répondues occupaient une partie de cette fenêtre : la règle
+// matin/après-midi risquait de n'être jamais atteignable. 200 lignes couvrent environ
+// 3 à 4 semaines même avec beaucoup d'ignorées — largement de quoi accumuler 5
+// réponses de chaque côté une fois l'usage installé. DÉFAUT RÉVISABLE.
+export const INSIGHT_TASK_PROMPTS_LOOKBACK = 200;
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Health check (Railway, monitoring)
@@ -7710,7 +7738,28 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       res.json({
         configured: linkedinConfigured(),
         connected: !!(prefs as any)?.linkedinUnipileAccountId,
+        // Garde de risque : compte en pause suite à un signal LinkedIn (auth/restriction/
+        // challenge). Reprise UNIQUEMENT via /clear-restriction (action humaine explicite).
+        restricted: !!(prefs as any)?.linkedinRestrictedAt,
+        restrictedAt: (prefs as any)?.linkedinRestrictedAt ?? null,
+        restrictedReason: (prefs as any)?.linkedinRestrictedReason ?? null,
       });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Action humaine EXPLICITE pour lever une pause de restriction LinkedIn. Jamais
+  // appelé automatiquement par le worker — cf. prospection-linkedin-guard.ts : une
+  // retentative automatique après un refus de LinkedIn est précisément ce qui
+  // transforme une restriction temporaire en permanente.
+  app.post('/api/prospection/linkedin/clear-restriction', isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.updateUserPreferences(req.userId, {
+        linkedinRestrictedAt: null,
+        linkedinRestrictedReason: null,
+      } as any);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -7736,7 +7785,27 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const mine = accounts.find(a => a.name === req.userId)
         || (accounts.length === 1 ? accounts[0] : undefined);
       if (!mine) return res.status(404).json({ message: 'no_linkedin_account_found' });
-      await storage.updateUserPreferences(req.userId, { linkedinUnipileAccountId: mine.id } as any);
+      const prevPrefs = await storage.getUserPreferences(req.userId);
+      const prevAccountId = (prevPrefs as any)?.linkedinUnipileAccountId;
+      // `linkedinAccountConnectedAt` est le point de départ de la montée en charge
+      // (prospection-linkedin-guard.ts) : on ne le pose QUE pour un compte réellement
+      // NOUVEAU (id différent ou jamais connecté). Reconnecter le MÊME compte (ex. après
+      // un renouvellement de session Unipile) ne doit pas réinitialiser le ramp-up.
+      const isNewAccount = prevAccountId !== mine.id;
+      // RÉTRO-REMPLISSAGE (revue post-commit 261835e, Important 2) : un compte connecté
+      // AVANT l'introduction de ce champ a `linkedinUnipileAccountId` posé et
+      // `linkedinAccountConnectedAt` NULL pour toujours — la garde refuserait alors
+      // indéfiniment (`account_connection_unknown`), en silence, sans jamais se corriger
+      // d'elle-même. On pose `now()` dès qu'on revoit ce compte au sync, MÊME s'il n'est
+      // pas nouveau, tant que la date manque encore. Choix conservateur assumé : on ne
+      // connaît pas la VRAIE date de connexion d'un compte pré-migration, donc on le
+      // traite comme flambant neuf (ramp-up reparti à zéro) plutôt que de risquer de le
+      // supposer mature à tort — c'est plus lent, jamais plus risqué.
+      const needsConnectedAtRetrofill = !isNewAccount && !(prevPrefs as any)?.linkedinAccountConnectedAt;
+      await storage.updateUserPreferences(req.userId, {
+        linkedinUnipileAccountId: mine.id,
+        ...((isNewAccount || needsConnectedAtRetrofill) ? { linkedinAccountConnectedAt: new Date() } : {}),
+      } as any);
       res.json({ connected: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -10365,6 +10434,208 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     } catch (error) {
       console.error("Error archiving memory:", error);
       res.status(500).json({ message: "Failed to archive memory" });
+    }
+  });
+
+  // ─── Task Prompts — capter le résultat ─────────────────────────────────────────
+  // Notification locale posée à l'heure de fin de chaque tâche. Règle non négociable,
+  // tenue ici au niveau des routes (cf. commentaire de tête de insight.ts) : une alarme
+  // restée SANS réponse n'entre jamais dans buildImmediateInsight et n'est jamais
+  // convertie en "not_done" — absence de réponse ≠ réponse négative.
+
+  // Fenêtre de réponses récentes, chacune associée à l'id du `task_prompts` dont elle
+  // vient — pour pouvoir, côté appelant, exclure UNE réponse précise et obtenir la
+  // fenêtre "sans elle" (retour immédiat seulement quand l'observation change,
+  // arbitrage de Jeanne 2026-09-08 — sans stockage, sans migration : les deux fenêtres
+  // se recalculent à la volée, rien n'est persisté de plus).
+  async function buildRecentAnsweredTaskAnswers(
+    userId: string,
+  ): Promise<Array<{ promptId: number; taskAnswer: TaskAnswer }>> {
+    const recent = await storage.getRecentTaskPrompts(userId, INSIGHT_TASK_PROMPTS_LOOKBACK);
+    // Seules les alarmes RÉPONDUES entrent dans l'insight — jamais une alarme ignorée.
+    const answered = recent.filter(
+      (p) => p.answeredAt !== null && (p.answer === "done" || p.answer === "not_done"),
+    );
+    if (answered.length === 0) return [];
+
+    const taskIds = Array.from(new Set(answered.map((p) => p.taskId)));
+    const relatedTasks = taskIds.length > 0
+      ? await db.select({ id: tasks.id, category: tasks.category }).from(tasks).where(inArray(tasks.id, taskIds))
+      : [];
+    const categoryByTaskId = new Map(relatedTasks.map((t) => [t.id, t.category]));
+
+    return answered.map((p) => ({
+      promptId: p.id,
+      taskAnswer: {
+        category: categoryByTaskId.get(p.taskId) ?? null,
+        // Jamais `.getHours()` : ça lit l'heure du fuseau du PROCESS (UTC en prod), pas
+        // celle de Paris — alors que le seuil matin/après-midi de `buildImmediateInsight`
+        // (MIDI = 13, insight.ts) est pensé en heure de Paris.
+        scheduledHour: parisHourOf(p.scheduledFor),
+        done: p.answer === "done",
+      },
+    }));
+  }
+
+  async function computeTaskPromptInsight(userId: string): Promise<string | null> {
+    const entries = await buildRecentAnsweredTaskAnswers(userId);
+    return buildImmediateInsight(entries.map((e) => e.taskAnswer));
+  }
+
+  // GET /api/task-prompts/today — les alarmes à poser aujourd'hui : une par tâche non
+  // terminée du jour ayant un scheduledEndTime. Enregistre les lignes task_prompts
+  // correspondantes (idempotent, via replaceTaskPromptsForDay) et indique si la
+  // fréquence des notifications doit se réduire (soupape).
+  //
+  // Le SERVEUR tranche seul ce qui a été « posé » — le mobile ne fait plus que
+  // programmer ce qu'on lui renvoie (revue finale, défaut Critique 1) :
+  //   1. Les heures déjà passées sont exclues AVANT toute écriture. Sans ce filtre, ouvrir
+  //      l'app en fin de journée avec des tâches non cochées créait des lignes
+  //      `answeredAt IS NULL` pour des alarmes qui n'ont jamais sonné — indiscernables
+  //      d'alarmes réellement ignorées, et pouvant déclencher la soupape sur du vide.
+  //   2. La soupape (`unansweredStreak`) se calcule sur l'historique EXISTANT, avant
+  //      l'insertion des lignes du jour — sinon les alarmes qu'on est en train de créer
+  //      (jamais répondues puisqu'elles n'ont pas encore sonné) se mesureraient
+  //      elles-mêmes et déclencheraient la soupape dès le premier jour.
+  //   3. Quand `reduceFrequency` est vrai, seule la DERNIÈRE alarme du jour est retenue
+  //      — et c'est CE jeu filtré, pas l'ensemble des candidates, qui est à la fois
+  //      renvoyé au mobile ET persisté. Autrement, les alarmes non transmises au mobile
+  //      ne sonneraient jamais mais existeraient quand même en base, devenant à tort des
+  //      « ignorées » qui referment la soupape plus fort.
+  app.get('/api/task-prompts/today', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const now = new Date();
+      // Jour calendaire de PARIS, pas celui du process (UTC en prod) : entre minuit et
+      // 1h/2h du matin heure de Paris selon la saison, `sharedFormatDate(now)` (qui lit
+      // le calendrier du process) renverrait encore la veille.
+      const today = parisTodayString(now);
+
+      const todaysTasks = await storage.getTasksInRange(userId, today, today);
+
+      // Soupape calculée AVANT l'insertion des lignes du jour, sur l'historique déjà en
+      // base — jamais sur un jeu qui inclurait les alarmes qu'on s'apprête à créer.
+      const recentBeforeInsert = await storage.getRecentTaskPrompts(userId, SOUPAPE_TASK_PROMPTS_LOOKBACK);
+      const streak = unansweredStreak(
+        recentBeforeInsert.map((p) => ({ scheduledFor: p.scheduledFor, answeredAt: p.answeredAt })),
+        now,
+      );
+      const reduceFrequency = shouldReduceFrequency(streak);
+
+      // Toute la décision — heures passées exclues, tâches terminées exclues, soupape
+      // appliquée — vit dans `selectAlarmsToPost`, fonction pure et testée
+      // (server/services/result-capture/select-alarms.ts). Le jeu FINAL qu'elle renvoie
+      // est à la fois celui envoyé au mobile ET celui persisté ci-dessous.
+      const alarms = selectAlarmsToPost(todaysTasks, now, reduceFrequency);
+
+      await storage.replaceTaskPromptsForDay(
+        userId,
+        today,
+        alarms.map((a) => ({ taskId: a.taskId, scheduledFor: a.scheduledFor })),
+        now,
+      );
+
+      res.json({
+        prompts: alarms,
+        reduceFrequency,
+      });
+    } catch (error) {
+      console.error("Error building today's task prompts:", error);
+      res.status(500).json({ message: "Failed to build today's task prompts" });
+    }
+  });
+
+  // POST /api/task-prompts/:taskId/answer — enregistre la réponse à une alarme.
+  // "done" marque la tâche terminée avec completedAt = maintenant — actualDuration n'est
+  // JAMAIS écrite : répondre "fait" à l'heure de fin ne dit rien de l'heure de début.
+  // "not_done" n'écrit rien de plus qu'une trace de la réponse (la tâche reste non
+  // terminée). Validation stricte : jamais de 500 sur un corps malformé.
+  app.post('/api/task-prompts/:taskId/answer', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const taskId = Number(req.params.taskId);
+      if (!Number.isInteger(taskId)) {
+        return res.status(400).json({ message: "taskId must be an integer" });
+      }
+
+      const { answer, scheduledFor } = req.body ?? {};
+      if (answer !== "done" && answer !== "not_done") {
+        return res.status(400).json({ message: "answer must be 'done' or 'not_done'" });
+      }
+      if (typeof scheduledFor !== "string" && typeof scheduledFor !== "number") {
+        return res.status(400).json({ message: "scheduledFor is required" });
+      }
+      const scheduledForDate = new Date(scheduledFor);
+      if (Number.isNaN(scheduledForDate.getTime())) {
+        return res.status(400).json({ message: "scheduledFor must be a parsable date" });
+      }
+
+      // Appartenance de la tâche — jamais d'écriture pour une tâche d'un autre compte.
+      const task = await storage.getTask(taskId);
+      if (!task || task.userId !== userId) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      const [prompt] = await db.select().from(taskPrompts).where(and(
+        eq(taskPrompts.taskId, taskId),
+        eq(taskPrompts.userId, userId),
+        eq(taskPrompts.scheduledFor, scheduledForDate),
+      ));
+      if (!prompt) {
+        return res.status(404).json({ message: "Task prompt not found" });
+      }
+
+      const now = new Date();
+      // Enregistre la réponse dans tous les cas — elle a bien eu lieu, même si la tâche
+      // était déjà cochée ailleurs (web).
+      await storage.answerTaskPrompt(prompt.id, userId, answer, now);
+
+      if (answer === "done") {
+        // Ne jamais écraser `completedAt` s'il est déjà renseigné : remplacer l'heure
+        // réelle d'une complétion (posée ailleurs, par ex. côté web) par celle de la
+        // réponse à cette notification remplacerait une mesure vraie par une
+        // approximation. `completed` reste posé à `true`, idempotent si déjà vrai.
+        await storage.updateTask(taskId, {
+          completed: true,
+          ...(task.completedAt ? {} : { completedAt: now }),
+        } as any);
+      }
+
+      // Le retour immédiat ne parle que quand l'observation vient de changer (arbitrage
+      // de Jeanne, 2026-09-08) : on la calcule avec la réponse qui vient d'arriver, et
+      // sans elle (même fenêtre, moins cette seule réponse) — sans stockage ni nouvelle
+      // migration, juste deux appels de `buildImmediateInsight` via `insightIfChanged`.
+      const entries = await buildRecentAnsweredTaskAnswers(userId);
+      const withLatest = entries.map((e) => e.taskAnswer);
+      const withoutLatest = entries.filter((e) => e.promptId !== prompt.id).map((e) => e.taskAnswer);
+      const insight = insightIfChanged(withLatest, withoutLatest);
+
+      // La mémoire est un bénéfice, pas une condition : si elle échoue, la réponse de
+      // l'utilisatrice reste enregistrée et la requête aboutit. On trace, on ne propage
+      // pas. Ne JAMAIS `await` ici : l'écriture peut appeler un service d'embedding, et
+      // la réponse HTTP ne doit pas dépendre de sa latence. On réutilise `withLatest`
+      // (déjà calculé ci-dessus pour l'insight) plutôt que de relire les réponses
+      // récentes une seconde fois.
+      rememberObservations(userId, withLatest).catch((e) =>
+        console.error("[Memoire] écriture des observations échouée", e?.message),
+      );
+
+      res.json({ insight });
+    } catch (error) {
+      console.error("Error answering task prompt:", error);
+      res.status(500).json({ message: "Failed to answer task prompt" });
+    }
+  });
+
+  // GET /api/task-prompts/insight — le dernier retour, pour que l'app le réaffiche.
+  app.get('/api/task-prompts/insight', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const insight = await computeTaskPromptInsight(userId);
+      res.json({ insight });
+    } catch (error) {
+      console.error("Error fetching task prompt insight:", error);
+      res.status(500).json({ message: "Failed to fetch task prompt insight" });
     }
   });
 

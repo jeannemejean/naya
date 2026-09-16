@@ -173,6 +173,16 @@ export const userPreferences = pgTable("user_preferences", {
   aiSpendPeriod: text("ai_spend_period"), // "YYYY-MM" du compteur courant
   // Compte LinkedIn connecté via Unipile (pour l'envoi automatique de messages LinkedIn).
   linkedinUnipileAccountId: text("linkedin_unipile_account_id"),
+  // Instant de connexion du compte LinkedIn Unipile — point de départ de la montée en
+  // charge (cf. prospection-linkedin-guard.ts). Posé au moment du sync (routes.ts),
+  // jamais recalculé ensuite : reconnecter le même compte ne doit pas réinitialiser
+  // le ramp-up (mais un NOUVEAU compte, si jamais reconnecté à un id différent, si).
+  linkedinAccountConnectedAt: timestamp("linkedin_account_connected_at"),
+  // État de restriction LinkedIn (garde de risque). Non-null → le worker de prospection
+  // arrête TOUT envoi LinkedIn pour cet utilisateur, sans retentative automatique.
+  // Levée UNIQUEMENT par une action humaine (endpoint dédié) — jamais automatiquement.
+  linkedinRestrictedAt: timestamp("linkedin_restricted_at"),
+  linkedinRestrictedReason: text("linkedin_restricted_reason"),
   // Consignes de rédaction GLOBALES pour la génération de messages de prospection (toutes campagnes).
   messageInstructions: text("message_instructions"),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -486,6 +496,31 @@ export const tasks = pgTable("tasks", {
   uniqueIndex("tasks_ritual_date_uq").on(t.ritualId, t.scheduledDate),
 ]);
 
+/**
+ * Trace des notifications de fin de tâche.
+ *
+ * Elle existe pour une seule raison : distinguer « restée sans réponse » de
+ * « pas fait ». **Absence de réponse ≠ réponse négative** — la même distinction que
+ * « non mesuré ≠ mesuré à zéro », et elle se perdra si personne ne la défend.
+ *
+ * Un compteur dans les préférences aurait suffi à la soupape, mais ne saurait pas dire
+ * QUELLES notifications ont été ignorées — donc aucun diagnostic possible.
+ */
+export const taskPrompts = pgTable("task_prompts", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  answeredAt: timestamp("answered_at"),
+  answer: text("answer"), // done | not_done ; null tant que sans réponse
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  // La reprogrammation des alarmes doit rester idempotente jusqu'en base.
+  uniquePrompt: unique("task_prompts_unique").on(t.taskId, t.scheduledFor),
+}));
+export type TaskPrompt = typeof taskPrompts.$inferSelect;
+export type InsertTaskPrompt = typeof taskPrompts.$inferInsert;
+
 // Clients table - for Agency/Client management
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
@@ -711,6 +746,20 @@ export const leads = pgTable("leads", {
   nextFollowUp: timestamp("next_follow_up"),
   enrichedAt: timestamp("enriched_at"),   // date de dernière génération IA
   linkedinConnectedAt: timestamp("linkedin_connected_at"), // invitation LinkedIn acceptée (poller Unipile)
+  /**
+   * Pourquoi ce lead n'est pas joignable par la fenêtre horaire (pays inconnu,
+   * aucun créneau commun). `null` = joignable. JAMAIS un refus silencieux :
+   * cette colonne existe pour qu'un lead écarté soit visible et diagnosticable.
+   *
+   * N'y écrire QUE les raisons structurelles ("country_unknown", "no_common_window") —
+   * le lead ne sera jamais joignable en l'état. Les raisons temporelles
+   * ("not_a_workday", "outside_window") sont vraies la majorité du temps et ne
+   * doivent JAMAIS être persistées ici : elles écraseraient cette colonne à chaque
+   * passage du worker et transformeraient un simple "pas maintenant" en "jamais".
+   * Effacer (repasser à `null`) dès qu'un lead redevient joignable — une raison
+   * périmée est aussi trompeuse qu'une absence de raison.
+   */
+  outreachUnreachableReason: text("outreach_unreachable_reason"),
   archivedAt: timestamp("archived_at"),   // soft-delete (pattern tasks) : non nul = archivé, exclu des vues actives
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -1555,6 +1604,12 @@ export const leadSequenceState = pgTable("lead_sequence_state", {
   enrolledAt: timestamp("enrolled_at").defaultNow(),
   lastStepSentAt: timestamp("last_step_sent_at"),
   repliedAt: timestamp("replied_at"),
+  // Échecs LinkedIn CONSÉCUTIFS pour CE lead (pas le compte — le compte est protégé
+  // séparément par la garde de risque LinkedIn). Remis à 0 dès qu'un envoi LinkedIn
+  // réussit. Sert le recul exponentiel + l'abandon après N échecs
+  // (`nextLinkedInFailureState` dans prospection-sender.ts) : sans lui, un lead dont le
+  // profil ne se résout jamais serait retenté indéfiniment, toutes les 60 secondes.
+  linkedinConsecutiveFailures: integer("linkedin_consecutive_failures").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1607,6 +1662,29 @@ export const outreachStepSends = pgTable("outreach_step_sends", {
 
 export type OutreachStepSend = typeof outreachStepSends.$inferSelect;
 export type InsertOutreachStepSend = typeof outreachStepSends.$inferInsert;
+
+// Journal de TOUTES les tentatives d'envoi LinkedIn (Unipile), réussies OU non.
+// Distinct d'`outreach_step_sends` (garde d'idempotence, une ligne par étape, supprimée
+// sur échec) et d'`outreach_messages` (une ligne par envoi RÉUSSI, pour l'analytics).
+// Celui-ci est la source de vérité de `prospection-linkedin-guard.ts` pour les plafonds
+// quotidien/hebdomadaire glissants : LinkedIn voit une REQUÊTE qu'elle réussisse ou
+// échoue (résolution de profil, invitation, message) — les plafonds doivent donc compter
+// les tentatives, pas seulement les succès (revue post-commit 261835e, défaut Critique 2 :
+// un lead dont le profil ne se résout jamais consommait 0 du plafond et était retenté
+// sans borne, ~86 000 requêtes/jour pour 20 leads irrésolubles).
+export const linkedinSendAttempts = pgTable("linkedin_send_attempts", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  leadId: integer("lead_id").references(() => leads.id),
+  attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
+  ok: boolean("ok").notNull(),
+  error: text("error"),
+}, (t) => [
+  index("idx_linkedin_send_attempts_user_time").on(t.userId, t.attemptedAt),
+]);
+
+export type LinkedInSendAttempt = typeof linkedinSendAttempts.$inferSelect;
+export type InsertLinkedInSendAttempt = typeof linkedinSendAttempts.$inferInsert;
 
 // ─── Journal des invocations IA (Phase 1 — socle du corpus propriétaire) ────────
 // Chaque appel IA (contexte d'entrée → sortie, modèle, tokens, latence, coût) est

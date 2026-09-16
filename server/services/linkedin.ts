@@ -6,16 +6,18 @@
  *  - LinkedIn n'a pas d'API officielle d'envoi de DM : on passe par Unipile, qui agit via le
  *    compte LinkedIn PROPRE à chaque utilisateur (connecté côté Unipile). On n'envoie jamais
  *    depuis un autre compte que celui de l'utilisateur (`userPreferences.linkedinUnipileAccountId`).
- *  - Plafond quotidien BAS (LINKEDIN_DAILY_CAP, défaut 25) pour respecter les limites LinkedIn
- *    et éviter toute restriction du compte.
+ *  - Les plafonds, la montée en charge, la fenêtre ouvrée, le délai minimum entre actions et
+ *    la pause automatique sur restriction vivent dans `prospection-linkedin-guard.ts`
+ *    (`decideLinkedInAction`, appelée par `prospection-sender.ts`) — PAS ici. Cette ancienne
+ *    variable `LINKEDIN_DAILY_CAP` a été retirée : un plafond quotidien plat, unique, ne
+ *    protège ni un compte neuf (montée en charge) ni un compte mature sur la durée (plafond
+ *    hebdomadaire glissant).
  *
  * Config requise (env) : UNIPILE_API_KEY + UNIPILE_DSN (ex: https://api49.unipile.com:17967).
  */
 
 const DSN = (process.env.UNIPILE_DSN || "").replace(/\/+$/, "");
 const API_KEY = process.env.UNIPILE_API_KEY || "";
-
-export const LINKEDIN_DAILY_CAP = Number(process.env.LINKEDIN_DAILY_CAP) || 25;
 
 /** Vrai si Unipile est configuré au niveau de l'app (clé + DSN). */
 export function linkedinConfigured(): boolean {
@@ -64,18 +66,36 @@ export async function listUnipileAccounts(): Promise<Array<{ id: string; type?: 
   return items.map((a: any) => ({ id: a.id, type: a.type || a.provider, name: a.name }));
 }
 
+export interface ProviderIdResolution {
+  providerId: string | null;
+  /**
+   * Code HTTP renvoyé par Unipile quand la résolution échoue à cause d'une réponse en
+   * erreur (401/403/5xx…) — `null` si la requête a réussi (200), que le profil soit
+   * résolu ou non. Distinction volontaire : une réponse 200 sans `provider_id` est un
+   * profil introuvable (rien d'anormal), une réponse 401/403 est potentiellement un
+   * signal de restriction du compte LinkedIn — voir la revue post-commit 261835e,
+   * défaut Critique 3. `sendLinkedInStep` s'appuie sur cette distinction pour composer
+   * `resolve_401`/`resolve_403` (classés par `isLinkedInRestrictionSignal`) au lieu du
+   * générique `profile_not_resolved` qui les rendait indiscernables d'un profil absent.
+   */
+  httpStatus: number | null;
+}
+
 /**
  * Résout le `provider_id` (identifiant interne LinkedIn utilisé par Unipile) d'un prospect
- * à partir de son identifiant public, vu depuis le compte de l'utilisateur.
+ * à partir de son identifiant public, vu depuis le compte de l'utilisateur. Ne JETTE
+ * jamais le code HTTP en cas d'échec (cf. `ProviderIdResolution`) : c'est le PREMIER appel
+ * du parcours d'envoi, donc celui qui reçoit en premier un 401/403 quand LinkedIn
+ * restreint le compte.
  */
-export async function resolveProviderId(accountId: string, publicId: string): Promise<string | null> {
+export async function resolveProviderId(accountId: string, publicId: string): Promise<ProviderIdResolution> {
   const res = await fetch(
     `${DSN}/api/v1/users/${encodeURIComponent(publicId)}?account_id=${encodeURIComponent(accountId)}`,
     { headers: headers() },
   );
-  if (!res.ok) return null;
+  if (!res.ok) return { providerId: null, httpStatus: res.status };
   const data: any = await res.json().catch(() => ({}));
-  return data?.provider_id || data?.id || null;
+  return { providerId: data?.provider_id || data?.id || null, httpStatus: null };
 }
 
 /**
@@ -90,28 +110,72 @@ export function interpretConnectionResponse(data: any): boolean {
   return data?.network_distance === "FIRST_DEGREE" || data?.is_relationship === true;
 }
 
+export interface ConnectionCheckResult {
+  /**
+   * `true` si la vérification s'est déroulée jusqu'au bout SANS erreur HTTP/réseau —
+   * `connected` est alors fiable, qu'il soit `true` ou `false`. `false` si la vérification
+   * elle-même a échoué (401/403/5xx, exception réseau) : `connected` vaut alors `false`
+   * par défaut (fail closed) mais ne doit PAS être lu comme « pas encore en relation ».
+   */
+  ok: boolean;
+  connected: boolean;
+  /**
+   * Raison de l'échec quand `ok` est `false` — même convention que `sendLinkedInStep`
+   * (`resolve_<status>` si la résolution du profil échoue par erreur HTTP, `check_<status>`
+   * si c'est le GET final de statut qui échoue). `null` si `ok` est `true`.
+   */
+  error: string | null;
+}
+
+/**
+ * Vérifie l'état de connexion d'un profil (résolu depuis `linkedinUrl`) vu depuis le
+ * compte Unipile `accountId`. Ne lève JAMAIS : toute erreur réseau/API ou forme de
+ * réponse inconnue → `ok:false, connected:false` (fail closed), pour ne jamais faire
+ * avancer une branche `if_invite_accepted` sur un faux positif.
+ *
+ * ⚠️ Revue post-commit f17af17, défaut Important : l'ancienne forme (booléen seul,
+ * voir `isConnected`) avalait le code HTTP — un 401/403 (restriction du compte) devenait
+ * indiscernable d'un simple « pas encore en relation ». `checkConnection` propage le
+ * statut, même correction que `resolveProviderId` (Critique 3, ronde précédente) : c'est
+ * le chemin de LECTURE du poller (`linkedin-sync.ts`), qui peut recevoir la restriction
+ * en premier lui aussi.
+ */
+export async function checkConnection(accountId: string, linkedinUrl: string): Promise<ConnectionCheckResult> {
+  const publicId = publicIdFromUrl(linkedinUrl);
+  if (!publicId) return { ok: false, connected: false, error: "no_public_id" };
+  try {
+    const resolution = await resolveProviderId(accountId, publicId);
+    if (!resolution.providerId) {
+      // 200 OK sans provider_id → profil introuvable, rien d'anormal. 401/403/5xx → erreur
+      // HTTP explicite, potentiellement une restriction (voir `isLinkedInRestrictionSignal`).
+      if (resolution.httpStatus != null) {
+        return { ok: false, connected: false, error: `resolve_${resolution.httpStatus}` };
+      }
+      return { ok: true, connected: false, error: null };
+    }
+    const res = await fetch(
+      `${DSN}/api/v1/users/${encodeURIComponent(resolution.providerId)}?account_id=${encodeURIComponent(accountId)}`,
+      { headers: headers() },
+    );
+    if (!res.ok) return { ok: false, connected: false, error: `check_${res.status}` };
+    const data: any = await res.json().catch(() => ({}));
+    return { ok: true, connected: interpretConnectionResponse(data), error: null };
+  } catch {
+    // Exception réseau : issue inconnue, PAS un signal de restriction confirmé (même
+    // convention que l'exception de `sendLinkedInStep` dans prospection-sender.ts).
+    return { ok: false, connected: false, error: null };
+  }
+}
+
 /**
  * Vrai si le profil (résolu depuis `linkedinUrl`) est désormais une relation 1er degré du
  * compte Unipile `accountId`, càd que l'invitation de connexion a été acceptée.
- * Ne lève jamais : toute erreur réseau/API ou forme de réponse inconnue → `false` (fail closed),
- * pour ne jamais faire avancer une branche `if_invite_accepted` sur un faux positif.
+ * Ne lève jamais : toute erreur réseau/API ou forme de réponse inconnue → `false` (fail closed).
+ * Conservé pour ses appelants qui n'ont besoin que du booléen ; `linkedin-sync.ts` utilise
+ * `checkConnection` directement pour accéder au détail de l'échec (journal + restriction).
  */
 export async function isConnected(accountId: string, linkedinUrl: string): Promise<boolean> {
-  try {
-    const publicId = publicIdFromUrl(linkedinUrl);
-    if (!publicId) return false;
-    const providerId = await resolveProviderId(accountId, publicId).catch(() => null);
-    if (!providerId) return false;
-    const res = await fetch(
-      `${DSN}/api/v1/users/${encodeURIComponent(providerId)}?account_id=${encodeURIComponent(accountId)}`,
-      { headers: headers() },
-    );
-    if (!res.ok) return false;
-    const data: any = await res.json().catch(() => ({}));
-    return interpretConnectionResponse(data);
-  } catch {
-    return false;
-  }
+  return (await checkConnection(accountId, linkedinUrl)).connected;
 }
 
 export interface LinkedInSendResult {
@@ -126,6 +190,20 @@ export interface LinkedInSendResult {
  * Stratégie : on tente d'abord un message (si déjà en relation). Si LinkedIn refuse parce que
  * les deux comptes ne sont pas connectés, on envoie une invitation (demande de connexion) avec
  * le texte en note (tronqué à 300 caractères, limite LinkedIn).
+ *
+ * ⚠️ COÛT RÉEL EN REQUÊTES : jusqu'à TROIS appels côté LinkedIn par action autorisée par
+ * la garde (`resolveProviderId` + `/chats` + `/invite` si le message échoue faute de
+ * relation). Le "5 actions/jour" d'un compte neuf (`LINKEDIN_RAMP_UP_START_CAP`) vaut
+ * donc jusqu'à 15 requêtes LinkedIn vues côté plateforme, pas 5. Position retenue :
+ * PAS d'ajustement des plafonds pour ce facteur ×3, pour deux raisons — (1)
+ * `resolveProviderId` est une simple consultation de profil (GET), un comportement
+ * organique extrêmement courant (un humain consulte largement plus de profils qu'il
+ * n'envoie de messages), donc la compter au même niveau qu'un message/une invitation
+ * (les actions d'ÉCRITURE, les seules qui engagent réellement le compte) est déjà une
+ * convention prudente, pas laxiste ; (2) même multiplié par 3, le haut de la courbe
+ * (15 actions/jour mature → 45 requêtes/jour) reste très en dessous d'un usage humain
+ * normal. À REVISITER si un signal de restriction survient malgré tout : resserrer
+ * d'abord les plafonds de `prospection-linkedin-guard.ts`, pas ce commentaire.
  */
 export async function sendLinkedInStep(opts: {
   accountId: string;
@@ -136,8 +214,16 @@ export async function sendLinkedInStep(opts: {
   const publicId = publicIdFromUrl(opts.linkedinUrl);
   if (!publicId) return { ok: false, action: "none", error: "no_public_id" };
 
-  const providerId = await resolveProviderId(opts.accountId, publicId);
-  if (!providerId) return { ok: false, action: "none", error: "profile_not_resolved" };
+  const resolution = await resolveProviderId(opts.accountId, publicId);
+  if (!resolution.providerId) {
+    // 200 OK sans provider_id → profil introuvable (rien d'anormal). 401/403/5xx → on le
+    // dit EXPLICITEMENT (`resolve_<status>`) plutôt que le générique `profile_not_resolved`,
+    // pour que `isLinkedInRestrictionSignal` puisse voir un 401/403 qui arrive ICI — c'est
+    // le premier appel du parcours, donc le premier à recevoir la restriction de LinkedIn.
+    const error = resolution.httpStatus != null ? `resolve_${resolution.httpStatus}` : "profile_not_resolved";
+    return { ok: false, action: "none", error };
+  }
+  const providerId = resolution.providerId;
 
   // 1) Tentative de message direct (relation existante).
   const chatForm = new FormData();

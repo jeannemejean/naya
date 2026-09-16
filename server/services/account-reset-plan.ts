@@ -64,6 +64,7 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   // ── Phase 4 : enfants de leads, puis leads ──────────────────────────────────
   { table: "lead_step_messages", mode: "delete", note: "cache de messages sur-mesure" },
   { table: "outreach_step_sends", mode: "delete", note: "réservations d'envoi (garde d'idempotence)" },
+  { table: "linkedin_send_attempts", mode: "delete", note: "journal des tentatives (garde de risque LinkedIn)" },
   { table: "lead_sequence_state", mode: "delete" },
   { table: "outreach_messages", mode: "delete" },
   { table: "leads", mode: "delete" },

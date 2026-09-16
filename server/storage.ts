@@ -132,6 +132,7 @@ import {
   type LeadStepMessage,
   type InsertLeadStepMessage,
   outreachStepSends,
+  linkedinSendAttempts,
   aiInvocations,
   type AiInvocation,
   type InsertAiInvocation,
@@ -146,9 +147,11 @@ import {
   type BrandConversion,
   conversionAttributions,
   type ConversionAttribution,
+  taskPrompts,
+  type TaskPrompt,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
-import { eq, and, desc, gte, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
+import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
@@ -158,6 +161,7 @@ import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
+import { parisDayBoundsUTC } from "./utils/timezone";
 
 /**
  * Un crédit d'attribution ENRICHI du titre du contenu crédité, résolu côté serveur.
@@ -255,6 +259,50 @@ export interface IStorage {
   deleteTask(taskId: number): Promise<void>;
   deleteIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
   archiveIncompleteFutureTasks(userId: string, fromDate: string): Promise<number>;
+
+  // Task Prompts — trace des notifications de fin de tâche (voir shared/schema.ts pour le
+  // pourquoi : distinguer « restée sans réponse » de « pas fait »).
+  /**
+   * Crée les alarmes d'UN jour pour un utilisateur, en REMPLAÇANT celles déjà posées pour
+   * ce jour QUI NE SONT PAS ENCORE ÉCHUES — supprime puis insère dans la MÊME transaction,
+   * même discipline que `replaceConversionAttributions`. `now` est fourni par l'appelant
+   * (pas d'horloge implicite ici — même discipline que `unansweredStreak(prompts, now)`).
+   *
+   * Double garde, jamais effacée par une reprogrammation :
+   *  1. une alarme déjà répondue (`answeredAt` non nul) — l'effacer perdrait la trace même
+   *     que cette table existe pour garder ;
+   *  2. une alarme ÉCHUE mais SANS réponse (`scheduledFor <= now`, `answeredAt` nul) — c'est
+   *     précisément une notification IGNORÉE, le signal que la soupape (`throttle.ts`) doit
+   *     voir. La replanification tourne plusieurs fois par jour (repack anti-chevauchement,
+   *     report de fin de journée, drag-and-drop, replanification 15 min) : sans cette garde,
+   *     chaque appel rincerait l'historique des ignorées du jour et `unansweredStreak` ne
+   *     compterait jamais 3 absences consécutives — en silence, exactement le risque que la
+   *     soupape existe pour éviter.
+   *
+   * Seules les alarmes FUTURES (`scheduledFor > now`) sont donc remplacées. La contrainte
+   * UNIQUE `(task_id, scheduled_for)` reste le filet de sécurité si un appel se rejoue :
+   * `onConflictDoNothing` évite qu'une course double une ligne.
+   */
+  replaceTaskPromptsForDay(
+    userId: string,
+    day: string, // YYYY-MM-DD
+    prompts: Array<{ taskId: number; scheduledFor: Date }>,
+    now: Date,
+  ): Promise<TaskPrompt[]>;
+  /**
+   * Enregistre la réponse à une alarme. `answeredAt` est fourni par l'appelant (pas
+   * d'horloge implicite ici). Filtré par propriétaire : une alarme d'un autre utilisateur
+   * ne renvoie rien.
+   */
+  answerTaskPrompt(id: number, userId: string, answer: "done" | "not_done", answeredAt: Date): Promise<TaskPrompt | undefined>;
+  /**
+   * Les `limit` dernières alarmes d'un utilisateur, triées de la plus récente à la plus
+   * ancienne — exactement ce que consomme `unansweredStreak` (voir
+   * `services/result-capture/throttle.ts`). Aucun filtre sur l'échéance ici : c'est
+   * `unansweredStreak` qui exclut elle-même les alarmes dont `scheduledFor` n'est pas
+   * encore passé, pour ne jamais dépendre de la discipline de l'appelant.
+   */
+  getRecentTaskPrompts(userId: string, limit: number): Promise<TaskPrompt[]>;
 
   // Task Dependency operations
   getTaskDependencies(taskId: number): Promise<TaskDependency[]>;
@@ -401,7 +449,19 @@ export interface IStorage {
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
-  getLeadsAwaitingInvite(): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]>;
+  /**
+   * Candidats au poller Unipile — BORNÉ par `limit` (revue post-commit f17af17, défaut
+   * Critique : sans limite, un compte avec des centaines de leads en attente ferait
+   * consulter LinkedIn sans aucune borne, à chaque passage du poller).
+   */
+  getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]>;
+  /**
+   * Trace une raison de non-joignabilité STRUCTURELLE (pays inconnu, aucun créneau
+   * commun) — jamais une raison temporelle (pas un jour ouvré, hors fenêtre du jour),
+   * qui redeviendrait vraie plus tard et écraserait la colonne à tort. `reason: null`
+   * efface la marque quand le lead redevient joignable.
+   */
+  setLeadUnreachable(leadId: number, reason: string | null): Promise<void>;
 
   // Outreach operations
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
@@ -417,6 +477,14 @@ export interface IStorage {
   getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
   getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
   countOutreachSentSince(userId: string, since: Date, platform?: string): Promise<number>;
+  /**
+   * Journalise UNE tentative d'envoi LinkedIn (réussie ou non). Source de vérité de
+   * `prospection-linkedin-guard.ts` : les plafonds comptent les TENTATIVES (ce que
+   * LinkedIn voit), pas seulement les succès — voir `linkedinSendAttempts` dans le schéma.
+   */
+  recordLinkedInSendAttempt(userId: string, leadId: number | null, ok: boolean, error: string | null): Promise<void>;
+  /** Instants de TOUTES les tentatives d'envoi LinkedIn d'un user depuis `since` (succès ET échecs). */
+  getLinkedInAttemptTimestampsSince(userId: string, since: Date): Promise<Date[]>;
   getCampaignStepAnalytics(campaignId: number): Promise<{
     byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
     byChannel: { channel: string; sent: number; replied: number }[];
@@ -1457,6 +1525,13 @@ export class DatabaseStorage implements IStorage {
       leadId, campaignId, userId,
       status: "active", currentStep: 0, nextRunAt,
       lastStepSentAt: null, repliedAt: null,
+      // Décision explicite (revue post-commit f17af17, mineur) : un enrôlement (y compris
+      // une RELANCE de campagne) est un vrai nouveau départ — currentStep, nextRunAt et
+      // repliedAt sont déjà remis à zéro ci-dessus. Un lead ABANDONNÉ (status:"failed" après
+      // 5 échecs LinkedIn consécutifs) puis ré-enrôlé garderait sinon son compteur d'échecs :
+      // le tout premier échec de la relance déclencherait un abandon IMMÉDIAT (silencieux,
+      // sans nouvelle chance). Remis à 0 pour la même raison que le reste de cette ligne.
+      linkedinConsecutiveFailures: 0,
     };
     if (existing) {
       const [updated] = await db.update(leadSequenceState)
@@ -1651,9 +1726,18 @@ export class DatabaseStorage implements IStorage {
     await db.update(leads).set({ linkedinConnectedAt: at, updatedAt: new Date() }).where(eq(leads.id, leadId));
   }
 
+  // Marque (ou efface, avec reason: null) la raison structurelle de non-joignabilité d'un
+  // lead. Réservé aux raisons structurelles (country_unknown, no_common_window) — voir le
+  // commentaire de la colonne dans shared/schema.ts.
+  async setLeadUnreachable(leadId: number, reason: string | null): Promise<void> {
+    await db.update(leads)
+      .set({ outreachUnreachableReason: reason, updatedAt: new Date() })
+      .where(eq(leads.id, leadId));
+  }
+
   // Leads enrôlés (séquence active) dont l'invitation LinkedIn n'a pas encore été confirmée
   // acceptée — candidats au poller Unipile.
-  async getLeadsAwaitingInvite(): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]> {
+  async getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]> {
     return await db.select({ id: leads.id, userId: leads.userId, linkedinUrl: leads.linkedinUrl })
       .from(leads)
       .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
@@ -1661,7 +1745,8 @@ export class DatabaseStorage implements IStorage {
         eq(leadSequenceState.status, "active"),
         isNull(leads.linkedinConnectedAt),
         isNull(leads.archivedAt),
-      ));
+      ))
+      .limit(limit);
   }
 
   // Outreach operations
@@ -1777,6 +1862,17 @@ export class DatabaseStorage implements IStorage {
         ...(platform ? [eq(outreachMessages.platform, platform)] : []),
       ));
     return rows.length;
+  }
+
+  // Journal de TOUTE tentative d'envoi LinkedIn (garde de risque) — voir la doc d'interface.
+  async recordLinkedInSendAttempt(userId: string, leadId: number | null, ok: boolean, error: string | null): Promise<void> {
+    await db.insert(linkedinSendAttempts).values({ userId, leadId, ok, error });
+  }
+
+  async getLinkedInAttemptTimestampsSince(userId: string, since: Date): Promise<Date[]> {
+    const rows = await db.select({ attemptedAt: linkedinSendAttempts.attemptedAt }).from(linkedinSendAttempts)
+      .where(and(eq(linkedinSendAttempts.userId, userId), gte(linkedinSendAttempts.attemptedAt, since)));
+    return rows.map((r) => r.attemptedAt as Date);
   }
 
   // Analytics de séquence par étape et par canal (Task 9). Agrégation faite côté TS
@@ -2771,6 +2867,61 @@ export class DatabaseStorage implements IStorage {
       }).where(eq(tasks.id, id));
     }
     return toArchive.length;
+  }
+
+  // Task Prompts — voir IStorage pour la doc.
+  async replaceTaskPromptsForDay(
+    userId: string,
+    day: string,
+    prompts: Array<{ taskId: number; scheduledFor: Date }>,
+    now: Date,
+  ): Promise<TaskPrompt[]> {
+    // Bornage en heure MURALE DE PARIS, converti en instants UTC — jamais
+    // `new Date(`${day}T00:00:00`)`, qui interprète la borne dans le fuseau du PROCESS
+    // (UTC en prod), pas celui de Paris (décalage de 1h ou 2h selon la saison, voir
+    // server/utils/timezone.ts). `end` est le début du jour suivant, borne EXCLUSIVE
+    // (d'où `lt` et non `lte`).
+    const { start: startOfDay, end: endOfDay } = parisDayBoundsUTC(day);
+    return await db.transaction(async (tx) => {
+      // Ne remplace QUE les alarmes FUTURES du jour (scheduled_for > now). Une alarme déjà
+      // répondue n'est jamais effacée (elle est la trace qu'on garde), et une alarme ÉCHUE
+      // sans réponse non plus : elle EST une notification ignorée, le signal que la soupape
+      // (unansweredStreak) doit voir. Sans le `gt(scheduledFor, now)` ci-dessous, une
+      // reprogrammation en cours de journée (repack, drag-and-drop, replanification 15 min)
+      // effacerait silencieusement cet historique et la soupape ne se déclencherait jamais.
+      //
+      // `gt` et non `gte` : une alarme tombant PILE sur `now` est déjà échue. C'est la
+      // définition que `unansweredStreak` applique de son côté (`scheduledFor <= now`,
+      // bornes inclusives) ; les deux extrémités de la couture doivent trancher le cas
+      // limite pareil, sinon une alarme est à la fois « ignorée » pour la soupape et
+      // « future » pour le remplacement — et elle disparaît avant d'avoir été comptée.
+      await tx.delete(taskPrompts).where(and(
+        eq(taskPrompts.userId, userId),
+        gte(taskPrompts.scheduledFor, startOfDay),
+        lt(taskPrompts.scheduledFor, endOfDay),
+        gt(taskPrompts.scheduledFor, now),
+      ));
+      if (prompts.length === 0) return [];
+      return await tx.insert(taskPrompts)
+        .values(prompts.map((p) => ({ taskId: p.taskId, userId, scheduledFor: p.scheduledFor })))
+        .onConflictDoNothing({ target: [taskPrompts.taskId, taskPrompts.scheduledFor] })
+        .returning();
+    });
+  }
+
+  async answerTaskPrompt(id: number, userId: string, answer: "done" | "not_done", answeredAt: Date): Promise<TaskPrompt | undefined> {
+    const [updated] = await db.update(taskPrompts)
+      .set({ answer, answeredAt })
+      .where(and(eq(taskPrompts.id, id), eq(taskPrompts.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async getRecentTaskPrompts(userId: string, limit: number): Promise<TaskPrompt[]> {
+    return await db.select().from(taskPrompts)
+      .where(eq(taskPrompts.userId, userId))
+      .orderBy(desc(taskPrompts.scheduledFor))
+      .limit(limit);
   }
 
   async getTaskDependencies(taskId: number): Promise<TaskDependency[]> {
