@@ -552,15 +552,33 @@ STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${work
       "canBeFragmented": false,
       "recommendedTimeOfDay": "morning|afternoon|evening|flexible",
       "scheduledTime": "09:00",
-      "workflowGroup": null,
+      "workflowGroup": "strategy|content|product|client|prospection|admin|general",
       "activationPrompt": "One sentence that gets them started in 30 seconds"
     }
   ],
-  "dependencies": [],
+  "dependencies": [{ "taskIndex": 1, "dependsOnIndex": 0, "relationType": "blocked_by" }],
   "workflowSuggestions": []
 }
 
-RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. No markdown fences in output. goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.`;
+═══ DEPENDENCIES — read this, it is not optional ═══
+
+"dependencies" declares which tasks CANNOT start before another one is done. Both fields are
+ZERO-BASED INDEXES into the "tasks" array you just wrote above — not titles, not ids.
+"taskIndex" is the task that is blocked; "dependsOnIndex" is its prerequisite.
+
+Example: if tasks[0] is "Publish the LinkedIn post" and tasks[1] is "Write the LinkedIn post",
+then publishing depends on writing, so you emit:
+  { "taskIndex": 0, "dependsOnIndex": 1, "relationType": "blocked_by" }
+
+Declare a dependency EVERY time one task produces what another one consumes: write before
+publish, shoot before edit, draft before send, research before decide, quote before invoice.
+An empty array means every task is genuinely independent — say so only when it is true.
+Never make a task depend on itself. Every index must exist in the tasks array.
+
+RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType must be one
+of the 6 exact values. workflowGroup must be one of the 7 exact values listed above — never
+null. No markdown fences in output. goalIndex must be a valid index into the goals list
+(0 to N-1), or 0 if no goals provided.`;
 
     const raw = await callClaudeWithContext({
       userId: request.userId,
