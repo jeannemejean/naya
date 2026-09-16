@@ -26,19 +26,24 @@ interface SettingsProps {
  onSearchClick?: () => void;
 }
 
+/**
+ * `value` est ENREGISTRE en base (userPreferences.avoidanceTriggers) et sert de cle au
+ * serveur pour cadrer les tâches. Il ne se traduit pas. Seul `labelKey` est affiché.
+ */
 const AVOIDANCE_OPTIONS = [
- { value: "visibility", label: "Showing or sharing my work" },
- { value: "selling", label: "Selling or promoting myself" },
- { value: "starting", label: "Starting something new" },
- { value: "admin-tasks", label: "Admin and paperwork" },
- { value: "perfectionism", label: "Finishing when it feels imperfect" },
- { value: "repetitive", label: "Repetitive or routine tasks" },
- { value: "asking-for-help", label: "Asking for help or feedback" },
+ { value: "visibility", labelKey: "settingsPage.avoidance.visibility" },
+ { value: "selling", labelKey: "settingsPage.avoidance.selling" },
+ { value: "starting", labelKey: "settingsPage.avoidance.starting" },
+ { value: "admin-tasks", labelKey: "settingsPage.avoidance.adminTasks" },
+ { value: "perfectionism", labelKey: "settingsPage.avoidance.perfectionism" },
+ { value: "repetitive", labelKey: "settingsPage.avoidance.repetitive" },
+ { value: "asking-for-help", labelKey: "settingsPage.avoidance.askingForHelp" },
 ];
 
 
 
 function GoogleCalendarCard() {
+ const { t } = useTranslation();
  const { toast } = useToast();
  const queryClient = useQueryClient();
 
@@ -53,16 +58,16 @@ function GoogleCalendarCard() {
  const { url } = await res.json();
  window.location.href = url;
  },
- onError: () => toast({ title: 'Erreur', description: 'Impossible de contacter Google.', variant: 'destructive' }),
+ onError: () => toast({ title: t('settingsPage.toast.erreur'), description: t('settingsPage.toast.impossibleDeContacterGoogle'), variant: 'destructive' }),
  });
 
  const disconnectMutation = useMutation({
  mutationFn: () => apiRequest('DELETE', '/api/calendar/disconnect'),
  onSuccess: () => {
  queryClient.invalidateQueries({ queryKey: ['/api/calendar/status'] });
- toast({ title: 'Calendrier déconnecté', description: 'Les événements Google ne seront plus affichés.' });
+ toast({ title: t('settingsPage.toast.calendrierDeconnecte'), description: t('settingsPage.toast.lesEvenementsGoogleNeSeront') });
  },
- onError: () => toast({ title: 'Erreur', description: 'Déconnexion échouée.', variant: 'destructive' }),
+ onError: () => toast({ title: t('settingsPage.toast.erreur'), description: t('settingsPage.toast.deconnexionEchouee'), variant: 'destructive' }),
  });
 
  return (
@@ -70,10 +75,10 @@ function GoogleCalendarCard() {
  <CardHeader className="pb-3">
  <CardTitle className="flex items-center gap-2 text-base">
  <Calendar className="h-4 w-4 text-naya-salvia" />
- Google Calendar
+ {t('settingsPage.googleCalendar')}
  </CardTitle>
  <CardDescription>
- Affiche tes rendez-vous dans le planning et bloque les créneaux pendant les réunions.
+ {t('settingsPage.afficheTesRendezVousDansLe')}
  </CardDescription>
  </CardHeader>
  <CardContent>
@@ -81,7 +86,7 @@ function GoogleCalendarCard() {
  <div className="flex items-center justify-between">
  <div className="flex items-center gap-2 text-sm text-naya-olive ">
  <span className="w-2 h-2 rounded-full bg-naya-olive-060 inline-block" />
- Connecté — événements synchronisés
+ {t('settingsPage.connecteEvenementsSynchronises')}
  </div>
  <Button
  variant="outline"
@@ -90,7 +95,7 @@ function GoogleCalendarCard() {
  disabled={disconnectMutation.isPending}
  className="text-[#5c3d45] border-[rgba(158,126,135,0.35)] hover:bg-[rgba(158,126,135,0.12)] "
  >
- {disconnectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Déconnecter'}
+ {disconnectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : t('settingsPage.disconnect')}
  </Button>
  </div>
  ) : (
@@ -104,7 +109,7 @@ function GoogleCalendarCard() {
  ) : (
  <Calendar className="h-4 w-4" />
  )}
- Connecter Google Calendar
+ {t('settingsPage.connecterGoogleCalendar')}
  </Button>
  )}
  </CardContent>
@@ -118,7 +123,7 @@ const SOCIAL_PLATFORMS = [
  {
  id: 'instagram' as const,
  name: 'Meta',
- description: 'Publie sur Instagram et Facebook, gère tes campagnes.',
+ descriptionKey: 'settingsPage.social.instagram',
  gradient: 'from-blue-600 via-indigo-600 to-blue-800',
  Icon: () => (
  <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -129,7 +134,7 @@ const SOCIAL_PLATFORMS = [
  {
  id: 'linkedin' as const,
  name: 'LinkedIn',
- description: 'Publie sur ton profil et tes pages entreprise.',
+ descriptionKey: 'settingsPage.social.linkedin',
  gradient: 'from-blue-600 to-blue-700',
  Icon: () => (
  <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -140,7 +145,7 @@ const SOCIAL_PLATFORMS = [
  {
  id: 'tiktok' as const,
  name: 'TikTok',
- description: 'Publie tes vidéos courtes sur TikTok.',
+ descriptionKey: 'settingsPage.social.tiktok',
  gradient: 'from-neutral-800 to-black',
  Icon: () => (
  <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5">
@@ -181,10 +186,10 @@ function SocialConnectionsCard() {
  const reason = params.get('reason');
  if (social && st) {
  if (st === 'connected') {
- toast({ title: `${social.charAt(0).toUpperCase() + social.slice(1)} connecté`, description: 'Naya peut maintenant publier sur ce réseau.' });
+ toast({ title: t('settingsPage.toast.reseauConnecte', { reseau: social.charAt(0).toUpperCase() + social.slice(1) }), description: t('settingsPage.toast.nayaPeutMaintenantPublierSur') });
  queryClient.invalidateQueries({ queryKey: ['/api/social/status'] });
  } else if (st === 'error') {
- toast({ title: 'Connexion échouée', description: reason || 'Réessaie.', variant: 'destructive' });
+ toast({ title: t('settingsPage.toast.connexionEchouee'), description: reason || 'Réessaie.', variant: 'destructive' });
  }
  // Nettoyer les query params sans recharger
  const url = new URL(window.location.href);
@@ -219,9 +224,9 @@ function SocialConnectionsCard() {
  },
  onSuccess: () => {
  queryClient.invalidateQueries({ queryKey: ['/api/social/status'] });
- toast({ title: 'Réseau déconnecté' });
+ toast({ title: t('settingsPage.toast.reseauDeconnecte') });
  },
- onError: () => toast({ title: 'Erreur', description: 'Déconnexion échouée.', variant: 'destructive' }),
+ onError: () => toast({ title: t('settingsPage.toast.erreur'), description: t('settingsPage.toast.deconnexionEchouee'), variant: 'destructive' }),
  });
 
  return (
@@ -229,14 +234,14 @@ function SocialConnectionsCard() {
  <CardHeader className="pb-3">
  <CardTitle className="flex items-center gap-2 text-base">
  <Link2Off className="h-4 w-4 text-primary" />
- Réseaux sociaux
+ {t('settingsPage.reseauxSociaux')}
  </CardTitle>
  <CardDescription>
- Connecte tes comptes pour que Naya puisse analyser tes performances et publier du contenu automatiquement.
+ {t('settingsPage.connecteTesComptesPourQueNaya')}
  </CardDescription>
  </CardHeader>
  <CardContent className="space-y-3">
- {SOCIAL_PLATFORMS.map(({ id, name, description, gradient, Icon }) => {
+ {SOCIAL_PLATFORMS.map(({ id, name, descriptionKey, gradient, Icon }) => {
  const info = status[id];
  const isConnected = !!info?.connected;
  const isConfigured = info?.configured !== false;
@@ -258,13 +263,13 @@ function SocialConnectionsCard() {
  {isConnected ? (
  <p className="text-xs text-naya-olive flex items-center gap-1 mt-0.5">
  <CheckCircle2 className="h-3 w-3" />
- {info?.accountName || 'Connecté'}
+ {info?.accountName || t('settingsPage.connected')}
  </p>
  ) : (
- <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+ <p className="text-xs text-muted-foreground mt-0.5">{t(descriptionKey)}</p>
  )}
  {!isConfigured && (
- <p className="text-xs text-naya-sulphur mt-0.5">Variables d'env manquantes</p>
+ <p className="text-xs text-naya-sulphur mt-0.5">{t('settingsPage.variablesDEnvManquantes')}</p>
  )}
  {/* Pages entreprise LinkedIn connectées */}
  {id === 'linkedin' && isConnected && (
@@ -277,7 +282,7 @@ function SocialConnectionsCard() {
  ))}
  </div>
  ) : (
- <p className="text-[11px] text-naya-olive-35 mt-1">Aucune page entreprise détectée — reconnecte LinkedIn en autorisant l'accès à tes Pages.</p>
+ <p className="text-[11px] text-naya-olive-35 mt-1">{t('settingsPage.aucunePageEntrepriseDetecteeReconnecteLinkedin')}</p>
  )
  )}
  </div>
@@ -291,7 +296,7 @@ function SocialConnectionsCard() {
  onClick={() => disconnectMutation.mutate(id)}
  disabled={isPending}
  >
- {disconnectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Déconnecter'}
+ {disconnectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : t('settingsPage.disconnect')}
  </Button>
  ) : (
  <Button
@@ -305,7 +310,7 @@ function SocialConnectionsCard() {
  ) : (
  <ExternalLink className="h-3 w-3" />
  )}
- Connecter
+ {t('settingsPage.connecter')}
  </Button>
  )}
  </div>
@@ -313,7 +318,7 @@ function SocialConnectionsCard() {
  })}
 
  <p className="text-xs text-muted-foreground pt-1">
- Naya utilise OAuth officiel — tes identifiants ne sont jamais stockés en clair.
+ {t('settingsPage.nayaUtiliseOauthOfficielTesIdentifiants')}
  </p>
  </CardContent>
  </Card>
@@ -350,13 +355,13 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  });
 
  const ALL_DAYS = [
- { key: 'mon', label: 'Mon' },
- { key: 'tue', label: 'Tue' },
- { key: 'wed', label: 'Wed' },
- { key: 'thu', label: 'Thu' },
- { key: 'fri', label: 'Fri' },
- { key: 'sat', label: 'Sat' },
- { key: 'sun', label: 'Sun' },
+ { key: 'mon', labelKey: 'settingsPage.day.mon' },
+ { key: 'tue', labelKey: 'settingsPage.day.tue' },
+ { key: 'wed', labelKey: 'settingsPage.day.wed' },
+ { key: 'thu', labelKey: 'settingsPage.day.thu' },
+ { key: 'fri', labelKey: 'settingsPage.day.fri' },
+ { key: 'sat', labelKey: 'settingsPage.day.sat' },
+ { key: 'sun', labelKey: 'settingsPage.day.sun' },
  ];
 
  const TIME_OPTIONS = Array.from({ length: 25 }, (_, i) => {
@@ -404,7 +409,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 
  const handleSaveSchedule = () => {
  if (workDays.length === 0) {
- toast({ title: "Select at least one work day", variant: "destructive" });
+ toast({ title: t('settingsPage.toast.selectAtLeastOneWork'), variant: "destructive" });
  return;
  }
  // Le verrou hebdomadaire ne doit se lever que si le tampon a VRAIMENT changé —
@@ -463,10 +468,10 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  const params = new URLSearchParams(window.location.search);
  const cal = params.get('calendar');
  if (cal === 'connected') {
- toast({ title: 'Google Calendar connecté', description: 'Tes événements apparaîtront maintenant dans le planning.' });
+ toast({ title: t('settingsPage.toast.googleCalendarConnecte'), description: t('settingsPage.toast.tesEvenementsApparaitrontMaintenantDans') });
  window.history.replaceState({}, '', '/settings');
  } else if (cal === 'error') {
- toast({ title: 'Connexion échouée', description: 'Réessaie depuis les paramètres.', variant: 'destructive' });
+ toast({ title: t('settingsPage.toast.connexionEchouee'), description: t('settingsPage.toast.reessaieDepuisLesParametres'), variant: 'destructive' });
  window.history.replaceState({}, '', '/settings');
  }
  }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -526,7 +531,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </div>
  <div>
  <p className="font-medium text-foreground">
- {user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.firstName || user?.email || "User"}
+ {user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : user?.firstName || user?.email || t('settingsPage.anonymousUser')}
  </p>
  <p className="text-sm text-naya-olive-55">{user?.email}</p>
  </div>
@@ -568,9 +573,9 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <CardContent className="space-y-5">
  {/* Date de démarrage de la planification */}
  <div className="space-y-2">
- <Label className="text-sm">Date de démarrage de la planification</Label>
+ <Label className="text-sm">{t('settingsPage.dateDeDemarrageDeLaPlanification')}</Label>
  <p className="text-xs text-naya-olive-55">
- Naya ne génère aucune tâche et ne déplace rien avant cette date. Laisse vide pour démarrer immédiatement.
+ {t('settingsPage.nayaNeGenereAucuneTacheEt')}
  </p>
  <div className="flex items-center gap-2">
  <input
@@ -584,7 +589,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  onClick={() => setPlanningStartDate('')}
  className="text-xs text-naya-olive-35 hover:text-naya-olive-55 :text-naya-olive-18 underline"
  >
- Effacer (démarrer maintenant)
+ {t('settingsPage.effacerDemarrerMaintenant')}
  </button>
  )}
  </div>
@@ -593,7 +598,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <Separator />
 
  <div className="space-y-2">
- <Label className="text-sm">Working days</Label>
+ <Label className="text-sm">{t('settingsPage.workingDays')}</Label>
  <div className="flex gap-1.5">
  {ALL_DAYS.map(d => (
  <button
@@ -605,7 +610,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  : 'bg-naya-olive-10 text-naya-olive-55 border-naya-olive-18 hover:border-naya-olive-18 :border-naya-olive-35'
  }`}
  >
- {d.label}
+ {t(d.labelKey)}
  </button>
  ))}
  </div>
@@ -615,7 +620,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 
  <div className="space-y-3">
  <Label className="text-sm flex items-center gap-2">
- <Clock className="h-3.5 w-3.5" /> Working hours
+ <Clock className="h-3.5 w-3.5" /> {t('settingsPage.workingHours')}
  </Label>
  <div className="flex items-center gap-3">
  <Select value={workStart} onValueChange={setWorkStart}>
@@ -624,7 +629,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  {TIME_OPTIONS.map(time => <SelectItem key={time} value={time}>{time}</SelectItem>)}
  </SelectContent>
  </Select>
- <span className="text-sm text-naya-olive-55">to</span>
+ <span className="text-sm text-naya-olive-55">{t('settingsPage.to')}</span>
  <Select value={workEnd} onValueChange={setWorkEnd}>
  <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
  <SelectContent>
@@ -638,7 +643,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 
  <div className="space-y-3">
  <div className="flex items-center justify-between">
- <Label className="text-sm">Lunch break</Label>
+ <Label className="text-sm">{t('settingsPage.lunchBreak')}</Label>
  <Switch checked={lunchEnabled} onCheckedChange={setLunchEnabled} />
  </div>
  {lunchEnabled && (
@@ -649,7 +654,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  {TIME_OPTIONS.map(time => <SelectItem key={time} value={time}>{time}</SelectItem>)}
  </SelectContent>
  </Select>
- <span className="text-sm text-naya-olive-55">to</span>
+ <span className="text-sm text-naya-olive-55">{t('settingsPage.to')}</span>
  <Select value={lunchEnd} onValueChange={setLunchEnd}>
  <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
  <SelectContent>
@@ -698,7 +703,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <Brain className="h-4 w-4" /> {t('settings.operatingProfile')}
  </CardTitle>
  <CardDescription className="mt-1">
- Your operating profile shapes how Naya frames tasks and generates prompts
+ {t('settingsPage.yourOperatingProfileShapesHowNaya')}
  </CardDescription>
  </div>
  <Button variant="outline" size="sm" onClick={handleOpenProfileEdit}>
@@ -746,11 +751,11 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  ) : (
  <div className="text-center py-4">
  <p className="text-sm text-naya-olive-55 mb-3">
- You haven't set up your operating profile yet. It helps Naya understand how you work best.
+ {t('settingsPage.youHavenTSetUpYour')}
  </p>
  <Button variant="outline" size="sm" onClick={handleOpenProfileEdit}>
  <Zap className="h-3.5 w-3.5 mr-1.5" />
- Set up your profile
+ {t('settingsPage.setUpYourProfile')}
  </Button>
  </div>
  )}
@@ -768,16 +773,16 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <Card className=" ">
    <CardHeader>
      <CardTitle className="flex items-center gap-2 text-base">
-       <Calendar className="h-4 w-4" /> Replanifier depuis zéro
+       <Calendar className="h-4 w-4" /> {t('settingsPage.replanifierDepuisZero')}
      </CardTitle>
      <CardDescription className="text-xs text-naya-olive-55">
-       Archive toutes les tâches futures non complétées et régénère ton planning depuis une nouvelle date.
+       {t('settingsPage.archiveToutesLesTachesFuturesNon')}
      </CardDescription>
    </CardHeader>
    <CardContent className="space-y-3">
      <div className="flex items-end gap-3">
        <div className="flex-1 space-y-1">
-         <Label className="text-xs text-naya-olive-70">Date de démarrage</Label>
+         <Label className="text-xs text-naya-olive-70">{t('settingsPage.dateDeDemarrage')}</Label>
          <Input
            type="date"
            value={replanDate}
@@ -792,7 +797,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
          disabled={!replanDate || replanMutation.isPending}
          onClick={() => setReplanConfirmOpen(true)}
        >
-         Lancer la replanification
+         {t('settingsPage.lancerLaReplanification')}
        </Button>
      </div>
    </CardContent>
@@ -818,7 +823,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  size="sm"
  onClick={() => setResetConfirmOpen(true)}
  >
- Reset
+ {t('settingsPage.reset')}
  </Button>
  </div>
  </CardContent>
@@ -830,12 +835,12 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  {/* Abonnement */}
  <Card className=" ">
  <CardHeader>
- <CardTitle className="text-base">Abonnement</CardTitle>
+ <CardTitle className="text-base">{t('settingsPage.abonnement')}</CardTitle>
  </CardHeader>
  <CardContent>
  <div className="flex items-center justify-between">
  <p className="text-sm text-naya-olive-70">
- Gère ton abonnement, ton moyen de paiement et tes factures.
+ {t('settingsPage.gereTonAbonnementTonMoyenDe')}
  </p>
  <Button
  variant="outline"
@@ -846,16 +851,16 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  const data = await res.json();
  if (data?.url) { window.location.href = data.url; return; }
  if (data?.message === 'no_customer') {
- toast({ title: "Aucun abonnement à gérer", description: "Ton compte est en accès propriétaire/offert — il n'y a pas d'abonnement payant associé." });
+ toast({ title: t('settingsPage.toast.aucunAbonnementAGerer'), description: t('settingsPage.toast.tonCompteEstEnAcces') });
  } else {
- toast({ title: "Indisponible", description: "Impossible d'ouvrir la gestion d'abonnement pour le moment.", variant: "destructive" });
+ toast({ title: t('settingsPage.toast.indisponible'), description: t('settingsPage.toast.impossibleDOuvrirLaGestion'), variant: "destructive" });
  }
  } catch {
- toast({ title: "Erreur", description: "Réessaie dans un instant.", variant: "destructive" });
+ toast({ title: t('settingsPage.toast.erreur'), description: t('settingsPage.toast.reessaieDansUnInstant'), variant: "destructive" });
  }
  }}
  >
- Gérer mon abonnement
+ {t('settingsPage.gererMonAbonnement')}
  </Button>
  </div>
  </CardContent>
@@ -899,15 +904,12 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <DialogDescription asChild>
  <div className="space-y-2">
  <p>
- Remise à zéro complète. Sont <strong>définitivement supprimés</strong> : tes projets, objectifs, tâches, jalons,
- personas, campagnes, <strong>prospects et leur historique</strong>, la mémoire de Naya, tes conversations avec
- le Companion, tes captures rapides, ta médiathèque, tes métriques, tes articles sauvegardés et tes disponibilités.
+ {t('settingsPage.remiseAZeroCompleteSont')} <strong>{t('settingsPage.definitivementSupprimes')}</strong> {t('settingsPage.tesProjetsObjectifsTachesJalonsPersonas')} <strong>{t('settingsPage.prospectsEtLeurHistorique')}</strong>{t('settingsPage.laMemoireDeNayaTesConversations')}
  </p>
  <p>
- Sont <strong>conservés</strong> : ton compte, ton abonnement, tes réglages et tes comptes connectés
- (LinkedIn, Instagram, TikTok, Google Calendar).
+ {t('settingsPage.sont')} <strong>{t('settingsPage.conserves')}</strong> {t('settingsPage.tonCompteTonAbonnementTesReglages')}
  </p>
- <p>Tu repasseras par l'onboarding pour tout reconstruire.</p>
+ <p>{t('settingsPage.tuRepasserasParLOnboardingPour')}</p>
  </div>
  </DialogDescription>
  </DialogHeader>
@@ -930,10 +932,10 @@ export default function Settings({ onSearchClick }: SettingsProps) {
      <DialogHeader>
        <DialogTitle className="flex items-center gap-2">
          <AlertTriangle className="h-5 w-5 text-naya-sulphur" />
-         Confirmer la replanification
+         {t('settingsPage.confirmerLaReplanification')}
        </DialogTitle>
        <DialogDescription>
-         Toutes tes tâches futures non complétées seront archivées (pas supprimées). Naya va ensuite t'aider à reconstruire ton planning depuis le {replanDate}.
+         {t('settingsPage.toutesTesTachesFuturesNonCompletees')} {replanDate}.
        </DialogDescription>
      </DialogHeader>
      <DialogFooter>
@@ -942,7 +944,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
          onClick={() => replanMutation.mutate(replanDate)}
          disabled={replanMutation.isPending}
        >
-         {replanMutation.isPending ? t('common.loading') : 'Replanifier'}
+         {replanMutation.isPending ? t('common.loading') : t('settingsPage.replan')}
        </Button>
      </DialogFooter>
    </DialogContent>
@@ -954,77 +956,77 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <DialogHeader>
  <DialogTitle>{t('settings.operatingProfile')}</DialogTitle>
  <DialogDescription>
- This helps Naya understand your working style and adapt how it frames tasks and support.
+ {t('settingsPage.thisHelpsNayaUnderstandYourWorking')}
  </DialogDescription>
  </DialogHeader>
  <div className="space-y-4 py-2">
  <div className="space-y-1.5">
- <Label>When do you do your best work?</Label>
+ <Label>{t('settingsPage.whenDoYouDoYourBest')}</Label>
  <Select
  value={profileDraft.energyRhythm || ''}
  onValueChange={v => setProfileDraft(p => ({ ...p, energyRhythm: v }))}
  >
- <SelectTrigger><SelectValue placeholder="Choose your energy rhythm" /></SelectTrigger>
+ <SelectTrigger><SelectValue placeholder={t('settingsPage.chooseYourEnergyRhythm')} /></SelectTrigger>
  <SelectContent>
- <SelectItem value="morning-person">Morning — I'm sharpest early</SelectItem>
- <SelectItem value="afternoon-peak">Afternoon — I warm up slowly</SelectItem>
- <SelectItem value="evening-owl">Evening — I come alive later</SelectItem>
- <SelectItem value="variable">It varies — depends on the day</SelectItem>
+ <SelectItem value="morning-person">{t('settingsPage.morningIMSharpestEarly')}</SelectItem>
+ <SelectItem value="afternoon-peak">{t('settingsPage.afternoonIWarmUpSlowly')}</SelectItem>
+ <SelectItem value="evening-owl">{t('settingsPage.eveningIComeAliveLater')}</SelectItem>
+ <SelectItem value="variable">{t('settingsPage.itVariesDependsOnTheDay')}</SelectItem>
  </SelectContent>
  </Select>
  </div>
 
  <div className="space-y-1.5">
- <Label>How do you prefer to plan?</Label>
+ <Label>{t('settingsPage.howDoYouPreferToPlan')}</Label>
  <Select
  value={profileDraft.planningStyle || ''}
  onValueChange={v => setProfileDraft(p => ({ ...p, planningStyle: v }))}
  >
- <SelectTrigger><SelectValue placeholder="Choose your planning style" /></SelectTrigger>
+ <SelectTrigger><SelectValue placeholder={t('settingsPage.chooseYourPlanningStyle')} /></SelectTrigger>
  <SelectContent>
- <SelectItem value="visual">Visual — I need to see it to believe it</SelectItem>
- <SelectItem value="list">List-based — I love a clean checklist</SelectItem>
- <SelectItem value="time-blocked">Time-blocked — I schedule everything</SelectItem>
- <SelectItem value="flexible">Flexible — I loosely plan and adapt</SelectItem>
- <SelectItem value="spontaneous">Spontaneous — I follow my energy</SelectItem>
+ <SelectItem value="visual">{t('settingsPage.visualINeedToSeeIt')}</SelectItem>
+ <SelectItem value="list">{t('settingsPage.listBasedILoveAClean')}</SelectItem>
+ <SelectItem value="time-blocked">{t('settingsPage.timeBlockedIScheduleEverything')}</SelectItem>
+ <SelectItem value="flexible">{t('settingsPage.flexibleILooselyPlanAndAdapt')}</SelectItem>
+ <SelectItem value="spontaneous">{t('settingsPage.spontaneousIFollowMyEnergy')}</SelectItem>
  </SelectContent>
  </Select>
  </div>
 
  <div className="space-y-1.5">
- <Label>What helps you start tasks?</Label>
+ <Label>{t('settingsPage.whatHelpsYouStartTasks')}</Label>
  <Select
  value={profileDraft.activationStyle || ''}
  onValueChange={v => setProfileDraft(p => ({ ...p, activationStyle: v }))}
  >
- <SelectTrigger><SelectValue placeholder="Choose your activation style" /></SelectTrigger>
+ <SelectTrigger><SelectValue placeholder={t('settingsPage.chooseYourActivationStyle')} /></SelectTrigger>
  <SelectContent>
- <SelectItem value="smallest-next-step">Smallest next step — just begin somewhere tiny</SelectItem>
- <SelectItem value="big-picture-first">Big picture first — remind me why it matters</SelectItem>
- <SelectItem value="deadline-pressure">Deadline pressure — urgency helps me focus</SelectItem>
- <SelectItem value="external-accountability">External accountability — I work better with others</SelectItem>
+ <SelectItem value="smallest-next-step">{t('settingsPage.smallestNextStepJustBeginSomewhere')}</SelectItem>
+ <SelectItem value="big-picture-first">{t('settingsPage.bigPictureFirstRemindMeWhy')}</SelectItem>
+ <SelectItem value="deadline-pressure">{t('settingsPage.deadlinePressureUrgencyHelpsMeFocus')}</SelectItem>
+ <SelectItem value="external-accountability">{t('settingsPage.externalAccountabilityIWorkBetterWith')}</SelectItem>
  </SelectContent>
  </Select>
  </div>
 
  <div className="space-y-1.5">
- <Label>What kind of encouragement helps you?</Label>
+ <Label>{t('settingsPage.whatKindOfEncouragementHelpsYou')}</Label>
  <Select
  value={profileDraft.encouragementStyle || ''}
  onValueChange={v => setProfileDraft(p => ({ ...p, encouragementStyle: v }))}
  >
- <SelectTrigger><SelectValue placeholder="Choose your encouragement style" /></SelectTrigger>
+ <SelectTrigger><SelectValue placeholder={t('settingsPage.chooseYourEncouragementStyle')} /></SelectTrigger>
  <SelectContent>
- <SelectItem value="direct-and-brief">Direct and brief — just tell me what to do</SelectItem>
- <SelectItem value="warm-and-supportive">Warm and supportive — I need to feel it's okay</SelectItem>
- <SelectItem value="structured-framework">Structured framework — give me a system</SelectItem>
- <SelectItem value="reframe-and-question">Reframe or question — help me think differently</SelectItem>
+ <SelectItem value="direct-and-brief">{t('settingsPage.directAndBriefJustTellMe')}</SelectItem>
+ <SelectItem value="warm-and-supportive">{t('settingsPage.warmAndSupportiveINeedTo')}</SelectItem>
+ <SelectItem value="structured-framework">{t('settingsPage.structuredFrameworkGiveMeASystem')}</SelectItem>
+ <SelectItem value="reframe-and-question">{t('settingsPage.reframeOrQuestionHelpMeThink')}</SelectItem>
  </SelectContent>
  </Select>
  </div>
 
  <div className="space-y-2">
- <Label>What kinds of tasks do you tend to avoid?</Label>
+ <Label>{t('settingsPage.whatKindsOfTasksDoYou')}</Label>
  <div className="grid grid-cols-1 gap-2">
  {AVOIDANCE_OPTIONS.map(opt => (
  <div
@@ -1045,16 +1047,16 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <span className="text-white text-[10px] leading-none">✓</span>
  )}
  </div>
- {opt.label}
+ {t(opt.labelKey)}
  </div>
  ))}
  </div>
  </div>
 
  <div className="space-y-1.5">
- <Label>Anything else that usually gets in your way? (Optional)</Label>
+ <Label>{t('settingsPage.anythingElseThatUsuallyGetsIn')}</Label>
  <Textarea
- placeholder="e.g. I always overthink the first sentence / I get distracted when I'm not in a specific mood..."
+ placeholder={t('settingsPage.eGIAlwaysOverthinkThe')}
  rows={3}
  value={profileDraft.selfDescribedFriction || ''}
  onChange={e => setProfileDraft(p => ({ ...p, selfDescribedFriction: e.target.value }))}
@@ -1078,6 +1080,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 
 // ─── Carte : email d'envoi de prospection (propre à l'utilisateur) ──────────
 function ProspectionSenderCard() {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data } = useQuery<{
@@ -1110,73 +1113,73 @@ function ProspectionSenderCard() {
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/prospection/sender"] });
       if (res.verificationTriggered) {
-        toast({ title: "📩 Email de vérification envoyé", description: `Clique le lien reçu sur ${email} pour activer l'envoi.` });
+        toast({ title: t('settingsPage.toast.emailDeVerificationEnvoye'), description: t('settingsPage.toast.cliqueLeLienRecu', { email }) });
       } else if (res.verificationStatus === "verified") {
-        toast({ title: "✅ Adresse vérifiée", description: "Tes prospections partiront de cette adresse." });
+        toast({ title: t('settingsPage.toast.adresseVerifiee'), description: t('settingsPage.toast.tesProspectionsPartirontDeCette') });
       } else {
-        toast({ title: "Enregistré", description: "Renseigne l'adresse postale pour lancer la vérification." });
+        toast({ title: t('settingsPage.toast.enregistre'), description: t('settingsPage.toast.renseigneLAdressePostalePour') });
       }
     },
-    onError: () => toast({ title: "Erreur", description: "Enregistrement impossible.", variant: "destructive" }),
+    onError: () => toast({ title: t('settingsPage.toast.erreur'), description: t('settingsPage.toast.enregistrementImpossible'), variant: "destructive" }),
   });
 
   const resend = useMutation({
     mutationFn: () => apiRequest("POST", "/api/prospection/sender/verify").then((r) => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/prospection/sender"] });
-      toast({ title: "📩 Email de vérification renvoyé", description: `Vérifie la boîte ${email}.` });
+      toast({ title: t('settingsPage.toast.emailDeVerificationRenvoye'), description: t('settingsPage.toast.verifieLaBoite', { email }) });
     },
-    onError: () => toast({ title: "Erreur", description: "Renseigne l'adresse postale d'abord.", variant: "destructive" }),
+    onError: () => toast({ title: t('settingsPage.toast.erreur'), description: t('settingsPage.toast.renseigneLAdressePostaleDAbord'), variant: "destructive" }),
   });
 
   const status = data?.verificationStatus;
   const statusBadge =
-    status === "verified" ? { label: "✅ Vérifiée", cls: "bg-naya-olive-10 text-naya-olive" }
-    : status === "pending" ? { label: "📩 En attente de validation", cls: "bg-[rgba(212,201,122,0.20)] text-[#5a4f0d]" }
-    : { label: "⚠️ Non vérifiée", cls: "bg-[rgba(158,126,135,0.15)] text-[#5c3d45]" };
+    status === "verified" ? { labelKey: "settingsPage.senderVerified", cls: "bg-naya-olive-10 text-naya-olive" }
+    : status === "pending" ? { labelKey: "settingsPage.senderPending", cls: "bg-[rgba(212,201,122,0.20)] text-[#5a4f0d]" }
+    : { labelKey: "settingsPage.senderUnverified", cls: "bg-[rgba(158,126,135,0.15)] text-[#5c3d45]" };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
-          Email d'envoi (prospection)
-          {data?.senderEmail && <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusBadge.cls}`}>{statusBadge.label}</span>}
+          {t('settingsPage.emailDEnvoiProspection')}
+          {data?.senderEmail && <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${statusBadge.cls}`}>{t(statusBadge.labelKey)}</span>}
         </CardTitle>
         <CardDescription>
-          Tes campagnes partent de TON adresse. On t'envoie un email de vérification (SendGrid) à valider en 1 clic.
+          {t('settingsPage.tesCampagnesPartentDeTonAdresse')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-1">
-          <Label className="text-xs">Adresse expéditrice</Label>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jeanne@agence-jmd.com" />
+          <Label className="text-xs">{t('settingsPage.adresseExpeditrice')}</Label>
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('settingsPage.jeanneAgenceJmdCom')} />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Nom affiché</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jeanne Méjean" />
+          <Label className="text-xs">{t('settingsPage.nomAffiche')}</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('settingsPage.jeanneMejean')} />
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="space-y-1 col-span-3">
-            <Label className="text-xs">Adresse postale (requise par SendGrid / loi anti-spam)</Label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="12 rue de la République" />
+            <Label className="text-xs">{t('settingsPage.adressePostaleRequiseParSendgridLoi')}</Label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder={t('settingsPage.12RueDeLaRepublique')} />
           </div>
           <div className="space-y-1 col-span-2">
-            <Label className="text-xs">Ville</Label>
-            <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Lyon" />
+            <Label className="text-xs">{t('settingsPage.ville')}</Label>
+            <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder={t('settingsPage.lyon')} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Pays</Label>
-            <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="France" />
+            <Label className="text-xs">{t('settingsPage.pays')}</Label>
+            <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder={t('settingsPage.france')} />
           </div>
         </div>
         <div className="flex justify-between items-center">
           {status === "pending" ? (
             <Button variant="outline" size="sm" disabled={resend.isPending} onClick={() => resend.mutate()}>
-              {resend.isPending ? "…" : "Renvoyer l'email de vérification"}
+              {resend.isPending ? "…" : t('settingsPage.resendVerification')}
             </Button>
           ) : <span />}
           <Button size="sm" disabled={save.isPending || !email.trim()} onClick={() => save.mutate()}>
-            {save.isPending ? "Enregistrement…" : "Enregistrer"}
+            {save.isPending ? t('settingsPage.enregistrement') : t('settingsPage.enregistrer')}
           </Button>
         </div>
       </CardContent>
