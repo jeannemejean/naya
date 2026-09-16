@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from "react";
+import { laneGeometry } from "./time-grid-geometry";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -304,7 +305,6 @@ interface TaskBlockProps {
   task: Task;
   lane: number;
   totalLanes: number;
-  columnWidth: number;
   isBlocked: boolean;
   onTaskClick: (t: Task) => void;
   onToggle: (id: number) => void;
@@ -315,7 +315,7 @@ interface TaskBlockProps {
 }
 
 function TaskBlock({
-  task, lane, totalLanes, columnWidth, isBlocked, onTaskClick, onToggle, onDragStart, onResize, onMilestoneConfirm, fullWidth,
+  task, lane, totalLanes, isBlocked, onTaskClick, onToggle, onDragStart, onResize, onMilestoneConfirm, fullWidth,
 }: TaskBlockProps) {
   const startMin = task.scheduledTime ? timeToMinutes(task.scheduledTime) : GRID_START_HOUR * 60;
   const duration = Math.max(task.estimatedDuration || 30, 15);
@@ -325,10 +325,11 @@ function TaskBlock({
   // Vue Jour (fullWidth) : chaque tâche occupe la PLEINE largeur de la colonne — on ignore le
   // calcul de lanes (chevauchement). Deux tâches qui se chevauchent se superposent visuellement,
   // c'est accepté. Ailleurs (semaine), on garde le placement côte-à-côte par lanes.
-  const laneWidth = fullWidth
-    ? columnWidth - 6
-    : (totalLanes > 0 ? (columnWidth - 6) / totalLanes : columnWidth - 6);
-  const left = fullWidth ? 3 : (3 + lane * laneWidth);
+  //
+  // La géométrie est en CSS relatif, jamais en pixels mesurés : voir time-grid-geometry.ts
+  // pour la raison — une ref lue pendant le rendu vaut null au premier passage, ce qui
+  // peignait les tâches étroites et collées à gauche avant qu'elles ne sautent à leur place.
+  const { left, width } = laneGeometry(lane, totalLanes, Boolean(fullWidth));
 
   const resizing = useRef(false);
   const resizeStartY = useRef(0);
@@ -393,7 +394,7 @@ function TaskBlock({
         top,
         height,
         left,
-        width: laneWidth - 2,
+        width,
         backgroundColor: palette.bg,
         border: `1px solid ${palette.border}`,
         borderLeft: (isMilestone || isGcalEvent)
@@ -923,7 +924,6 @@ export default function TimeGrid({
                       task={task}
                       lane={lane}
                       totalLanes={tl || 1}
-                      columnWidth={gridRefs.current[date]?.clientWidth || 120}
                       fullWidth={singleDay}
                       isBlocked={isBlocked}
                       onTaskClick={onTaskClick}
