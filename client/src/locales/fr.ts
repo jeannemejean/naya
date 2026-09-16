@@ -1363,6 +1363,7 @@ const fr = {
  },
 
  taskWorkspace: {
+ sentToContentCalendar: "Envoyé au calendrier de contenu, en brouillon",
  save: "Enregistrer",
  unsaved: "Non enregistré",
  unsavedWarning: "Tu as des modifications non enregistrées.",

@@ -156,11 +156,17 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  });
  return res.json();
  },
- onSuccess: (entry: TaskWorkspaceEntry) => {
+ onSuccess: (entry: TaskWorkspaceEntry & { routage?: { destination: string } }) => {
  setCurrentEntryId(entry.id);
  setContenuEnregistre(entry.content ?? "");
  setTitreEnregistre(entry.title ?? "");
  queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id, 'workspace'] });
+ // Dire OU le travail est parti. Sans ce retour, le routage serait invisible :
+ // l'utilisatrice n'aurait aucune raison d'aller regarder le calendrier.
+ if (entry.routage?.destination === 'content') {
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
+ toast({ title: t('taskWorkspace.sentToContentCalendar') });
+ }
  },
  onError: () => {
  toast({ title: t('taskWorkspace.error'), description: t('taskWorkspace.failedToSave'), variant: "destructive" });

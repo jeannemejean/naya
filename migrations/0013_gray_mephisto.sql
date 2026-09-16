@@ -1,0 +1,1 @@
+ALTER TABLE "content" ADD COLUMN "source_task_id" integer;

@@ -1363,6 +1363,7 @@ const en = {
  },
 
  taskWorkspace: {
+ sentToContentCalendar: "Sent to the content calendar, as a draft",
  save: "Save",
  unsaved: "Unsaved",
  unsavedWarning: "You have unsaved changes.",

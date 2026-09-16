@@ -341,6 +341,8 @@ export interface IStorage {
   getContent(userId: string, limit?: number, projectId?: number): Promise<Content[]>;
   getContentById(id: number, userId: string): Promise<Content | undefined>;
   createContent(content: InsertContent): Promise<Content>;
+  /** Contenu deja issu de cette tache, s'il existe. Evite de creer un doublon a chaque enregistrement. */
+  getContentBySourceTask(userId: string, taskId: number): Promise<Content | undefined>;
   updateContent(id: number, updates: Partial<Content>): Promise<Content>;
   deleteContent(id: number): Promise<void>;
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
@@ -1158,6 +1160,18 @@ export class DatabaseStorage implements IStorage {
   async createContent(contentData: InsertContent): Promise<Content> {
     const [newContent] = await db.insert(content).values(contentData).returning();
     return newContent;
+  }
+
+  /**
+   * Contenu deja issu de cette tache. Sans cette lecture, cliquer deux fois sur Enregistrer
+   * creerait deux brouillons identiques dans le calendrier, sans qu'aucun ne sache que
+   * l'autre existe.
+   */
+  async getContentBySourceTask(userId: string, taskId: number): Promise<Content | undefined> {
+    const [row] = await db.select().from(content)
+      .where(and(eq(content.userId, userId), eq(content.sourceTaskId, taskId)))
+      .limit(1);
+    return row;
   }
 
   async updateContent(id: number, updates: Partial<Content>): Promise<Content> {

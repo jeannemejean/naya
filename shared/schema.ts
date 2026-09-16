@@ -597,6 +597,17 @@ export const content = pgTable("content", {
   // fausserait les statistiques d'attribution sans que rien ne le signale — le défaut que
   // ce dépôt corrige partout : une absence de mesure présentée comme une mesure.
   deducedFields: text("deduced_fields").array(),
+  //
+  // Tâche dont ce contenu est issu. `null` = contenu créé autrement.
+  //
+  // Sert à deux choses, et la seconde est la plus importante : retrouver l'origine d'un
+  // brouillon, et surtout ÉVITER LES DOUBLONS. Sans ce lien, cliquer deux fois sur
+  // Enregistrer créerait deux brouillons identiques dans le calendrier, sans qu'aucun des
+  // deux ne sache que l'autre existe.
+  //
+  // Référence souple (pas de FK) : supprimer une tâche ne doit pas emporter le contenu
+  // rédigé en la réalisant — c'est le travail de l'utilisatrice, pas un sous-produit.
+  sourceTaskId: integer("source_task_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
