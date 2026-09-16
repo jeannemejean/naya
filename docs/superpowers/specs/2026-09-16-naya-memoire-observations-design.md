@@ -21,6 +21,7 @@ Interrogation du code et de la **production** avant toute décision — la leço
 | `embedText` renvoie `null` en cas d'échec, sans lever | On n'écrit jamais rien de perdu à cause d'un appel d'embedding raté. |
 | `buildNayaContext` injecte déjà cette mémoire dans **chaque** appel IA | Rien à brancher côté lecture : dès que les observations y sont, Naya s'en sert partout. |
 | `buildImmediateInsight` sait faire **deux** observations mais n'en renvoie qu'**une** | Il faut séparer l'observation de sa formulation. |
+| `reception/recompute.ts` identifie déjà une mémoire recalculable par **préfixe de contenu**, et la remplace par `replaceMemoryEntry` en transaction | On suit cette convention. **Aucune migration.** |
 
 **La table contenait déjà, en production, une entrée `founder/observation`.** Le fil existe et fonctionne.
 
@@ -51,7 +52,15 @@ Une nouvelle observation invalide **celle de même identité**, et elle seule. �
 
 Sans cette identité, seules deux conduites sont possibles, et toutes deux sont mauvaises : tout invalider à chaque écriture, ou ne jamais rien invalider — donc énoncer un jour, avec le même aplomb, quelque chose qui a cessé d'être vrai.
 
-**Ça demande une colonne nullable sur `memory_entries`** : la quatrième migration en attente de déploiement. La notion est générale et non un expédient pour cette feature : *cette mémoire vient d'une source recalculable ; une mémoire ultérieure de même identité la remplace*. Aucune mémoire existante n'en porte, aucune n'est affectée — la colonne est nullable et les mémoires issues de captures gardent `null`.
+**Révision du 2026-09-16, découverte en écrivant le plan : aucune migration n'est nécessaire.**
+
+Le dépôt a déjà une convention pour identifier une mémoire recalculable — `server/services/reception/recompute.ts` : l'identité est portée par un **préfixe de contenu** en langage naturel, retrouvé par `findActiveMemoryEntry({ userId, fil, entryType, contentPrefix })`, et le remplacement passe par `replaceMemoryEntry(oldEntryId, newEntry)`, qui invalide et réinsère **dans une transaction**. On suit cette convention plutôt que d'ajouter une colonne : un dépôt tenu par une seule personne gagne plus à la cohérence qu'à la pureté.
+
+**Le piège que cela introduit, et sa parade.** La règle « matin / après-midi » produit **deux formulations** pour un **même** sujet — « le matin se fait, l'après-midi décroche » ou l'inverse. Un préfixe tiré de la phrase ne les rapprocherait pas : basculer de l'une à l'autre créerait un doublon au lieu d'un remplacement, et Naya se souviendrait des deux affirmations contraires.
+
+La parade tient au §1 : le texte **mémorisé** n'a aucune obligation d'être celui de la notification. Chaque sujet reçoit donc un **préfixe stable**, tiré d'une **constante exportée** et non recomposé à la main à chaque appel — « Les tâches « <catégorie> » : … », « Ton rythme dans la journée : … ». Les deux formulations du moment partagent ainsi le même préfixe.
+
+**Limite assumée :** l'identité par préfixe est moins robuste qu'une colonne — une reformulation future qui toucherait le préfixe casserait l'appariement et produirait un doublon au lieu d'une invalidation. D'où l'obligation de la constante, et un test qui vérifie que **toutes** les formulations d'un même sujet la partagent.
 
 ### §3 — L'écriture
 
@@ -100,5 +109,6 @@ Chaque test doit être **discriminant** : pour chacun, nommer le bug qui le fera
 - [ ] Un embedding indisponible n'empêche jamais l'écriture.
 - [ ] Un échec d'écriture n'empêche jamais la réponse de l'utilisatrice d'aboutir.
 - [ ] `buildImmediateInsight` et son test sont inchangés.
-- [ ] La migration est additive, nullable, sans `DROP`, appliquée sur dev-local uniquement.
+- [ ] **Aucune migration** : la feature s'appuie sur la convention de préfixe déjà en place.
+- [ ] Toutes les formulations d'un même sujet partagent le préfixe, tiré d'une constante exportée.
 - [ ] `npx tsc --noEmit -p tsconfig.json` silencieux, `npx vitest run` vert sous deux fuseaux éloignés.
