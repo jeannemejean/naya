@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  decideMemoire, salienceDe,
-  APPUIS_POUR_SALIENCE_MAX, SALIENCE_MIN, SALIENCE_MAX,
+  decideMemoire, salienceDe, decideAbsence,
+  APPUIS_POUR_SALIENCE_MAX, SALIENCE_MIN, SALIENCE_MAX, SEUIL_PEREMPTION,
 } from "./observation-memory";
+import { MIN_OBSERVATIONS } from "./insight";
 
 const obs = (prefixe: string, contenu: string, appuis = 6) => ({ prefixe, contenu, appuis });
 
@@ -50,8 +51,20 @@ describe("decideMemoire", () => {
 });
 
 describe("salienceDe", () => {
-  it("rend la salience minimale au seuil", () => {
+  it("reste a la salience minimale bien en dessous du seuil (appuis = 1)", () => {
     expect(salienceDe(1)).toBeCloseTo(SALIENCE_MIN, 5);
+  });
+
+  it("rend la salience minimale PILE au vrai seuil MIN_OBSERVATIONS (ancrage importe, pas 1)", () => {
+    // Important 4, revue finale du 2026-09-16 : le test precedent testait
+    // salienceDe(1), pas le seuil. Une mutation qui ancre `salienceDe` sur 1 au
+    // lieu de MIN_OBSERVATIONS passait TOUS les tests existants. Ancre sur la
+    // constante IMPORTEE (pas recopiee), comme le reste du lot.
+    expect(salienceDe(MIN_OBSERVATIONS)).toBeCloseTo(SALIENCE_MIN, 5);
+  });
+
+  it("reste a la salience minimale juste EN DESSOUS de MIN_OBSERVATIONS (cas absurde en pratique)", () => {
+    expect(salienceDe(MIN_OBSERVATIONS - 1)).toBeCloseTo(SALIENCE_MIN, 5);
   });
 
   it("rend la salience maximale quand l'observation est largement etayee", () => {
@@ -69,5 +82,26 @@ describe("salienceDe", () => {
   it("reste bornee sur une entree absurde", () => {
     expect(salienceDe(0)).toBeGreaterThanOrEqual(SALIENCE_MIN);
     expect(salienceDe(-5)).toBeGreaterThanOrEqual(SALIENCE_MIN);
+  });
+});
+
+describe("decideAbsence", () => {
+  it("incremente sans perimer sur un premier passage sans motif", () => {
+    expect(decideAbsence(0)).toEqual({ action: "incrementer", nouveauCompte: 1 });
+  });
+
+  it("n'incremente jamais assez pour perimer AVANT SEUIL_PEREMPTION (ancrage importe)", () => {
+    expect(decideAbsence(SEUIL_PEREMPTION - 2)).toEqual({
+      action: "incrementer",
+      nouveauCompte: SEUIL_PEREMPTION - 1,
+    });
+  });
+
+  it("perime PILE au SEUIL_PEREMPTION-ieme passage consecutif", () => {
+    expect(decideAbsence(SEUIL_PEREMPTION - 1)).toEqual({ action: "perimer" });
+  });
+
+  it("reste perime largement au-dela du seuil", () => {
+    expect(decideAbsence(SEUIL_PEREMPTION * 10)).toEqual({ action: "perimer" });
   });
 });

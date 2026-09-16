@@ -27,6 +27,51 @@ export type DecisionMemoire =
   | { action: "remplacer"; ancienId: number; contenu: string; salience: number };
 
 /**
+ * Passages consécutifs de `rememberObservations` (donc de `/answer` répondus, pas de
+ * jours) sans que le motif d'une observation vivante soit reproduit, avant qu'elle
+ * soit périmée (`supersededAt`, jamais supprimée). DÉFAUT RÉVISABLE.
+ *
+ * Décision de la propriétaire du projet, revue finale du 2026-09-16 : une observation
+ * vraie ne doit jamais disparaître à la première fenêtre où son motif n'apparaît pas
+ * — la fenêtre glissante de 200 réponses (`INSIGHT_TASK_PROMPTS_LOOKBACK`,
+ * `server/routes.ts`) suffit à faire disparaître une catégorie entière d'une simple
+ * semaine calme (peu ou pas de tâches de cette catégorie posées), sans que rien
+ * n'ait réellement changé dans le comportement qu'elle décrit.
+ *
+ * Justification du seuil, au rythme réel documenté dans `routes.ts` (~7-8 réponses/
+ * jour, fenêtre de 200 réponses ≈ 3-4 semaines) : une semaine calme représente
+ * environ 50-56 passages consécutifs sans motif. `SEUIL_PEREMPTION = 600` (≈ 3
+ * fenêtres de 200, ≈ 75-85 jours à ce rythme, environ un trimestre) dépasse ce bruit
+ * d'un facteur > 10 — une semaine, voire plusieurs mois isolés sans le motif ne
+ * périment rien — tout en finissant par périmer un motif réellement résolu au bout
+ * d'un temps suffisamment long pour être digne de confiance à ce niveau (mémoire
+ * injectée dans CHAQUE appel IA, fil "founder", TOP_K = 4).
+ *
+ * Valeur dupliquée à dessein plutôt qu'importée depuis `server/routes.ts` : ce
+ * module est PUR (aucune dépendance impure), et `routes.ts` importe déjà
+ * `observation-writer.ts` — importer dans l'autre sens créerait une dépendance
+ * circulaire et ferait dépendre un module pur de l'enregistrement des routes HTTP.
+ */
+export const SEUIL_PEREMPTION = 600;
+
+export type DecisionAbsence =
+  | { action: "incrementer"; nouveauCompte: number }
+  | { action: "perimer" };
+
+/**
+ * Que faire d'une observation vivante dont le motif n'a PAS été reproduit ce
+ * cycle ? `compteActuel` est le nombre de passages consécutifs déjà sans motif
+ * AVANT ce cycle (0 si aucun). Pure, bornée par `SEUIL_PEREMPTION` — jamais de
+ * péremption avant qu'il soit atteint, y compris sur une entrée absurde.
+ *
+ * PURE.
+ */
+export function decideAbsence(compteActuel: number): DecisionAbsence {
+  const nouveauCompte = Math.max(0, compteActuel) + 1;
+  return nouveauCompte >= SEUIL_PEREMPTION ? { action: "perimer" } : { action: "incrementer", nouveauCompte };
+}
+
+/**
  * Salience croissante avec le nombre de réponses qui fondent l'observation.
  * Le vrai seuil d'existence d'une observation est MIN_OBSERVATIONS
  * (importé de "./insight", source unique — voir observations.ts qui l'applique
