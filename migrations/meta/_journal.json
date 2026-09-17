@@ -99,6 +99,13 @@
       "when": 1789593919635,
       "tag": "0013_gray_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789630267217,
+      "tag": "0014_white_talon",
+      "breakpoints": true
     }
   ]
 }

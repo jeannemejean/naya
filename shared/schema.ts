@@ -751,6 +751,20 @@ export const leads = pgTable("leads", {
   linkedinUrl: text("linkedin_url"),   // URL profil LinkedIn
   instagramUrl: text("instagram_url"), // URL compte Instagram
   status: text("status").notNull().default("discovered"),
+  //
+  // Accord EXPLICITE de l'utilisatrice pour contacter ce prospect (lot E).
+  //
+  // Un INSTANT, pas un booleen : savoir qu'une validation a eu lieu sans savoir quand la
+  // rendrait inexploitable le jour ou un message part et qu'il faut comprendre pourquoi.
+  //   null      -> jamais valide. Ce n'est PAS « refuse » : c'est « personne n'a encore
+  //                regarde ». 41 prospects sont exactement dans cet etat aujourd'hui.
+  //   une date  -> l'utilisatrice a approuve, a cet instant.
+  //
+  // La barriere est dans prospection-validation.ts : le passage a `connection_sent` — la
+  // premiere etape qui touche reellement le prospect — l'exige. LinkedIn n'accorde aucun
+  // accord d'automatisation pour les invitations ; un message part parce qu'une personne
+  // l'a voulu, jamais parce qu'un minuteur est arrive a echeance.
+  validatedAt: timestamp("validated_at"),
   // Pipeline prospection complet
   stage: text("stage").default("identified"),
   // identified | messages_ready | connection_sent | connected |

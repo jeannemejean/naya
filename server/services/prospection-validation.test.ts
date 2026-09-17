@@ -1,115 +1,157 @@
 import { describe, it, expect } from "vitest";
 import {
-  ETATS_PROSPECT,
-  type EtatProspect,
+  ETAPES_PROSPECT,
+  ETAPE_EN_ATTENTE_DE_VALIDATION,
+  ETAPE_PREMIER_CONTACT,
+  type EtapeProspect,
   transitionAutorisee,
-  peutEntrerEnCampagne,
+  peutEtreContacte,
+  estValide,
   transitionsHumaines,
-  cheminVersCampagne,
+  cheminsVersPremierContact,
 } from "./prospection-validation";
 
 /**
- * La barrière de validation entre un prospect préparé et son entrée en campagne.
+ * La barrière de validation entre « messages prêts » et « invitation envoyée ».
  *
- * Demande de Jeanne : « la tâche doit être réalisée par Naya en ne demandant qu'une simple
- * validation de l'utilisateur ». Naya prépare le message, l'humaine décide. Cette séparation
- * n'est pas qu'une commodité d'interface : c'est la seule conduite défendable sur LinkedIn,
- * où l'automatisation d'invitations et de messages fait l'objet de poursuites contre les
- * éditeurs, et de restrictions graduées contre les comptes.
+ * Naya prépare, l'humaine décide. En production, 43 prospects sont déjà à `messages_ready`
+ * dont 41 avec un message rédigé : la barrière a des candidats réels dès sa mise en service.
  *
- * C'est aussi la règle permanente de ce dépôt depuis l'incident des 14 posts publiés par
- * erreur : rien qui agit vers l'extérieur ne part sans qu'un humain l'ait voulu.
+ * Le vocabulaire est celui de `leads.stage`, pas un vocabulaire inventé pour l'occasion —
+ * une première version de ce module avait fait l'erreur, et deux vocabulaires concurrents
+ * auraient divergé à la première évolution.
  */
-describe("transitions d'état d'un prospect", () => {
-  it("Naya peut préparer un prospect découvert", () => {
-    expect(transitionAutorisee("discovered", "prepared")).toBe(true);
+describe("peutEtreContacte", () => {
+  const valide = new Date("2026-09-17T10:00:00Z");
+
+  it("un message prêt ET validé peut partir", () => {
+    expect(peutEtreContacte({ stage: "messages_ready", validatedAt: valide })).toBe(true);
   });
 
-  it("l'humaine peut valider ou écarter un prospect préparé", () => {
-    expect(transitionAutorisee("prepared", "validated")).toBe(true);
-    expect(transitionAutorisee("prepared", "rejected")).toBe(true);
+  it("un message prêt mais NON validé ne part pas", () => {
+    // Le cas des 41 prospects qui attendent aujourd'hui en production.
+    expect(peutEtreContacte({ stage: "messages_ready", validatedAt: null })).toBe(false);
+    expect(peutEtreContacte({ stage: "messages_ready", validatedAt: undefined })).toBe(false);
   });
 
-  it("un prospect validé peut entrer en campagne", () => {
-    expect(transitionAutorisee("validated", "enrolled")).toBe(true);
-  });
-
-  it("un prospect écarté peut être repréparé plus tard", () => {
-    // Écarter n'est pas bannir : un message mal tourné aujourd'hui peut être réécrit.
-    expect(transitionAutorisee("rejected", "prepared")).toBe(true);
-  });
-
-  it("AUCUN chemin ne mène en campagne sans passer par la validation", () => {
-    // LE test du lot. Il ne vérifie pas une transition, il vérifie une PROPRIÉTÉ du graphe
-    // entier : quel que soit le point de départ, tout chemin menant à `enrolled` traverse
-    // `validated`. Une transition ajoutée par mégarde plus tard le ferait tomber.
-    for (const depart of ETATS_PROSPECT) {
-      for (const chemin of cheminVersCampagne(depart)) {
-        expect(chemin, `chemin depuis ${depart} : ${chemin.join(" → ")}`).toContain("validated");
-      }
+  it("une validation ne suffit pas si l'étape n'est plus la bonne", () => {
+    // Bug visé : ne regarder que `validatedAt`. Une validation ancienne autoriserait alors
+    // un contact sur un prospect qui a depuis changé d'étape.
+    for (const etape of ETAPES_PROSPECT) {
+      if (etape === ETAPE_EN_ATTENTE_DE_VALIDATION) continue;
+      expect(peutEtreContacte({ stage: etape, validatedAt: valide }), `étape ${etape}`).toBe(false);
     }
   });
 
-  it("rien ne saute la préparation ni la validation", () => {
-    expect(transitionAutorisee("discovered", "enrolled")).toBe(false);
-    expect(transitionAutorisee("discovered", "validated")).toBe(false);
-    expect(transitionAutorisee("prepared", "enrolled")).toBe(false);
-    expect(transitionAutorisee("rejected", "enrolled")).toBe(false);
-    expect(transitionAutorisee("rejected", "validated")).toBe(false);
-  });
-
-  it("un prospect déjà en campagne n'y rentre pas deux fois", () => {
-    for (const vers of ETATS_PROSPECT) {
-      expect(transitionAutorisee("enrolled", vers), `enrolled → ${vers}`).toBe(false);
-    }
-  });
-
-  it("aucun état ne se transitionne vers lui-même", () => {
-    // Bug visé : une boucle sur soi masquerait une absence de progression en la faisant
-    // passer pour un changement d'état réussi.
-    for (const e of ETATS_PROSPECT) {
-      expect(transitionAutorisee(e, e), `${e} → ${e}`).toBe(false);
-    }
-  });
-
-  it("un état inconnu n'autorise rien", () => {
-    // `type` vient de la base : rien ne garantit qu'elle ne contiendra pas une valeur
-    // ancienne ou mal écrite. Dans le doute, on refuse — on n'enrôle pas.
-    for (const inconnu of ["", "valide", "VALIDATED", "constructor", "toString"]) {
-      expect(
-        transitionAutorisee(inconnu as EtatProspect, "enrolled"),
-        `« ${inconnu} » → enrolled`,
-      ).toBe(false);
-      expect(peutEntrerEnCampagne(inconnu as EtatProspect), `« ${inconnu} »`).toBe(false);
+  it("une étape absente ou inconnue ne permet rien", () => {
+    for (const stage of [null, undefined, "", "MESSAGES_READY", "constructor"]) {
+      expect(peutEtreContacte({ stage, validatedAt: valide }), `stage « ${stage} »`).toBe(false);
     }
   });
 });
 
-describe("peutEntrerEnCampagne", () => {
-  it("seul un prospect validé le peut", () => {
-    for (const e of ETATS_PROSPECT) {
-      expect(peutEntrerEnCampagne(e), `état ${e}`).toBe(e === "validated");
+describe("estValide", () => {
+  it("une vraie date vaut validation", () => {
+    expect(estValide(new Date("2026-09-17T10:00:00Z"))).toBe(true);
+  });
+
+  it("l'absence de date n'est pas une validation", () => {
+    expect(estValide(null)).toBe(false);
+    expect(estValide(undefined)).toBe(false);
+  });
+
+  it("une date INVALIDE n'est pas une validation", () => {
+    // Bug visé, et il est sournois : `new Date("n'importe quoi")` est un objet Date
+    // parfaitement réel dont le temps vaut NaN. Un simple test de présence le prendrait
+    // pour une validation, et un message partirait sur une date qui n'existe pas.
+    expect(estValide(new Date("pas une date"))).toBe(false);
+    expect(estValide(new Date(NaN))).toBe(false);
+  });
+});
+
+describe("transitionAutorisee", () => {
+  it("Naya peut préparer les messages sans demander la permission", () => {
+    expect(transitionAutorisee("identified", "messages_ready")).toBe(true);
+  });
+
+  it("le premier contact EXIGE la validation", () => {
+    expect(transitionAutorisee("messages_ready", "connection_sent", { validee: false })).toBe(false);
+    expect(transitionAutorisee("messages_ready", "connection_sent", { validee: true })).toBe(true);
+  });
+
+  it("sans option, la validation est réputée ABSENTE", () => {
+    // Bug visé : un défaut permissif. Oublier de passer l'option autoriserait l'envoi.
+    expect(transitionAutorisee("messages_ready", "connection_sent")).toBe(false);
+  });
+
+  it("la suite du pipeline n'exige AUCUNE validation", () => {
+    // Le reste avance sur des faits observés — la personne a accepté, elle a répondu — pas
+    // sur des décisions. Exiger une validation partout rendrait le dispositif inutilisable
+    // et pousserait à le contourner.
+    expect(transitionAutorisee("connection_sent", "connected")).toBe(true);
+    expect(transitionAutorisee("connected", "followup1_sent")).toBe(true);
+    expect(transitionAutorisee("in_discussion", "proposal_sent")).toBe(true);
+  });
+
+  it("on peut renoncer à un prospect à tout moment, sans validation", () => {
+    for (const etape of ETAPES_PROSPECT) {
+      if (etape === "signed" || etape === "no_follow") continue;
+      expect(transitionAutorisee(etape, "no_follow"), `${etape} → no_follow`).toBe(true);
+    }
+  });
+
+  it("renoncer n'est pas bannir : un prospect écarté peut être repréparé", () => {
+    expect(transitionAutorisee("no_follow", "messages_ready")).toBe(true);
+  });
+
+  it("aucun raccourci ne saute la préparation", () => {
+    expect(transitionAutorisee("identified", "connection_sent", { validee: true })).toBe(false);
+    expect(transitionAutorisee("identified", "connected", { validee: true })).toBe(false);
+  });
+
+  it("AUCUN chemin n'atteint le premier contact sans passer par messages_ready", () => {
+    // LE test du lot. Il vérifie une propriété du graphe entier, pas une transition : quel
+    // que soit le départ, tout chemin menant au premier contact traverse l'étape où la
+    // validation est exigée. Un raccourci ajouté plus tard le ferait tomber.
+    for (const depart of ETAPES_PROSPECT) {
+      for (const chemin of cheminsVersPremierContact(depart)) {
+        expect(chemin, `depuis ${depart} : ${chemin.join(" → ")}`).toContain(
+          ETAPE_EN_ATTENTE_DE_VALIDATION,
+        );
+      }
+    }
+  });
+
+  it("une étape signée est terminale", () => {
+    for (const vers of ETAPES_PROSPECT) {
+      expect(transitionAutorisee("signed", vers, { validee: true }), `signed → ${vers}`).toBe(false);
+    }
+  });
+
+  it("une étape inconnue n'autorise rien", () => {
+    for (const inconnu of ["", "valide", "CONNECTED", "constructor", "toString", "__proto__"]) {
+      expect(
+        transitionAutorisee(inconnu as EtapeProspect, "connection_sent", { validee: true }),
+        `« ${inconnu} » en départ`,
+      ).toBe(false);
+      expect(
+        transitionAutorisee("messages_ready", inconnu as EtapeProspect, { validee: true }),
+        `« ${inconnu} » en arrivée`,
+      ).toBe(false);
     }
   });
 });
 
 describe("transitionsHumaines", () => {
-  it("valider et écarter sont les SEULES décisions réservées à l'humaine", () => {
-    // Ce que Naya n'a pas le droit de faire seule. Si une transition venait à sortir de
-    // cette liste, elle deviendrait automatisable sans que personne ne le remarque.
-    expect(transitionsHumaines()).toEqual(
-      expect.arrayContaining([
-        ["prepared", "validated"],
-        ["prepared", "rejected"],
-      ]),
-    );
-    expect(transitionsHumaines()).toHaveLength(2);
+  it("autoriser le premier contact est la SEULE décision réservée à une personne", () => {
+    expect(transitionsHumaines()).toEqual([
+      [ETAPE_EN_ATTENTE_DE_VALIDATION, ETAPE_PREMIER_CONTACT],
+    ]);
   });
 
-  it("l'entrée en campagne n'est PAS une décision humaine", () => {
-    // Elle découle de la validation : une fois validé, le prospect entre. L'humaine décide
-    // du message, pas de la mécanique.
-    const humaines = transitionsHumaines().map(([de, vers]) => `${de}->${vers}`);
-    expect(humaines).not.toContain("validated->enrolled");
+  it("cette liste n'a qu'une entrée", () => {
+    // La voir grossir signalerait qu'une décision humaine vient d'être automatisée, ou
+    // qu'une décision mécanique a été promue en corvée inutile.
+    expect(transitionsHumaines()).toHaveLength(1);
   });
 });

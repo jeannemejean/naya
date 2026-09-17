@@ -139,6 +139,28 @@ calendrier de contenu — pas un booléen. Trois états distincts : `null` = que
 « Enregistrer » créeraient deux brouillons identiques.
 
 
+## 3quater. Production — migrée le 17 septembre 2026 (`0014`)
+
+> Endpoint vérifié avant exécution : `ep-damp-water-anuyb0k6` = **production**.
+
+- [x] Point de restauration Neon : **`br-royal-lab-an95lmgp`**, vérifiée conforme avant
+      migration (61 tables, 3 utilisateurs, 4 projets, 58 tâches, 120 prospects dont 43 à
+      `messages_ready`, suivi à 14 lignes).
+- [x] SQL relu : un seul `ADD COLUMN` nullable, `leads.validated_at timestamp`.
+- [x] Garde du script **testée à blanc** : refus constaté sur l'endpoint de développement.
+- [x] Résultat : suivi **14 → 15**, colonne présente, **données inchangées**
+      (120 prospects, 43 à `messages_ready`, **120 à `validated_at IS NULL`**).
+
+### Pourquoi un instant et non un booléen
+
+`validated_at` porte l'accord explicite de l'utilisatrice pour contacter un prospect.
+`null` ne veut pas dire « refusé » mais « personne n'a encore regardé » — 120 prospects sont
+exactement dans cet état, dont 41 pour lesquels Naya a déjà rédigé un message.
+
+Savoir qu'une validation a eu lieu sans savoir **quand** serait inexploitable le jour où un
+message part et qu'il faut comprendre pourquoi.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;
