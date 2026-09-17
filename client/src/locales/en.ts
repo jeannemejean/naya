@@ -856,6 +856,7 @@ const en = {
  },
 
  planning: {
+ waitsFor: "waits for:",
  title: "Planning",
  day: "Day",
  week: "Week",

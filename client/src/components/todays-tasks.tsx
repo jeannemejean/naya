@@ -671,9 +671,32 @@ export default function TodaysTasks() {
  </div>
  )}
  {groupTasks.map((task: Task) => {
- const isBlocked = blockedByMap[task.id] !== undefined;
+ // Verrou de sequence, calcule par le SERVEUR (services/task-lock-annotate.ts).
+ //
+ // L'ancien calcul local etait `blockedByMap[task.id] !== undefined` : il verrouillait des
+ // qu'une dependance EXISTAIT, sans jamais regarder si le prerequis etait coche. Tant que
+ // task_dependencies est restee vide, le defaut n'avait aucun effet visible. Il se serait
+ // reveille a la premiere dependance creee, en verrouillant la tache POUR TOUJOURS.
+ //
+ // Le serveur, lui, tient compte de la completion, des prerequis hors de la liste affichee,
+ // et des liens casses. On lui fait confiance ; le calcul local ne sert plus que de repli
+ // quand l'annotation est absente — et il tient compte de la completion, desormais.
+ const verrouServeur = (task as any).verrouillee;
+ const isBlocked = verrouServeur !== undefined
+   ? Boolean(verrouServeur)
+   : (() => {
+       const prereqId = blockedByMap[task.id];
+       if (prereqId === undefined) return false;
+       const prereq = tasks.find((t: Task) => t.id === prereqId);
+       return prereq ? !prereq.completed : false;
+     })();
  const isMilestoneBlocked = !!(task as any).isBlockedByMilestone;
- const blockerTask = isBlocked ? tasks.find((t: Task) => t.id === blockedByMap[task.id]) : null;
+ const bloqueursServeur = ((task as any).bloqueePar ?? []) as { id: number; titre: string }[];
+ const blockerTask = bloqueursServeur.length
+   ? { title: bloqueursServeur.map(b => b.titre).join(', ') }
+   : (blockedByMap[task.id] !== undefined
+       ? tasks.find((t: Task) => t.id === blockedByMap[task.id]) ?? null
+       : null);
  const followsTaskId = followsMap[task.id];
  const followsTask = followsTaskId ? tasks.find((t: Task) => t.id === followsTaskId) : null;
  const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
@@ -697,9 +720,10 @@ export default function TodaysTasks() {
  <div onClick={(e) => e.stopPropagation()} className="mt-0.5">
  <Checkbox
  checked={false}
- onCheckedChange={() => toggleTaskMutation.mutate(task.id)}
- disabled={toggleTaskMutation.isPending}
- className="cursor-pointer"
+ onCheckedChange={() => { if (!isBlocked) toggleTaskMutation.mutate(task.id); }}
+ disabled={toggleTaskMutation.isPending || isBlocked}
+ title={isBlocked && blockerTask ? t('todaysTasks.blockedBy', { title: blockerTask.title }) : undefined}
+ className={isBlocked ? 'cursor-not-allowed' : 'cursor-pointer'}
  style={palette ? { '--checkbox-color': palette.text } as any : undefined}
  />
  </div>

@@ -48,6 +48,7 @@ import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
+import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
 import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
@@ -3686,6 +3687,37 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   });
 
   // Tasks routes
+  /**
+   * Annote une liste de taches avec leur verrou de sequence, pour que l'interface puisse
+   * afficher le cadenas et le nom de ce qui bloque.
+   *
+   * Charge les prerequis ABSENTS de la liste : une chaine s'etale souvent sur plusieurs
+   * jours, et un prerequis de la veille passerait sinon pour introuvable — donc non bloquant.
+   *
+   * Ne leve jamais : si les dependances sont illisibles, les taches sont renvoyees sans
+   * verrou plutot que pas du tout.
+   */
+  async function avecVerrous<T extends { id: number; title?: string | null; completed?: boolean | null }>(
+    taches: T[],
+  ): Promise<any[]> {
+    try {
+      if (!taches.length) return taches as any[];
+      const dependances = await storage.getTaskDependenciesForIds(taches.map(t => t.id)) as any[];
+      if (!dependances.length) {
+        return taches.map(t => ({ ...t, verrouillee: false, bloqueePar: [] }));
+      }
+      const etats = new Map<number, { title: string | null; completed: boolean | null }>();
+      for (const id of prerequisManquants(taches, dependances)) {
+        const p = await storage.getTask(id).catch(() => undefined);
+        if (p) etats.set(id, { title: (p as any).title ?? null, completed: (p as any).completed ?? null });
+      }
+      return annoterVerrous({ taches, dependances, etats });
+    } catch (e: any) {
+      console.error('[Verrou] annotation impossible:', e?.message ?? e);
+      return taches as any[];
+    }
+  }
+
   app.get('/api/tasks', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -3702,17 +3734,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const startStr = (start as string).slice(0, 10);
         const endStr = (end as string).slice(0, 10);
         const tasks = await storage.getTasksInRange(userId, startStr, endStr, pid);
-        return res.json(tasks);
+        return res.json(await avecVerrous(tasks as any[]));
       }
       // Date unique (onglet Aujourd'hui)
       if (date && !cid) {
         const dateStr = (date as string).slice(0, 10);
         const tasks = await storage.getTasksInRange(userId, dateStr, dateStr, pid);
-        return res.json(tasks);
+        return res.json(await avecVerrous(tasks as any[]));
       }
       const dueDate = cid ? undefined : new Date();
       const tasks = await storage.getTasks(userId, dueDate, pid, cid);
-      res.json(tasks);
+      res.json(await avecVerrous(tasks as any[]));
     } catch (error) {
       console.error("Error fetching tasks:", error);
       res.status(500).json({ message: "Failed to fetch tasks" });

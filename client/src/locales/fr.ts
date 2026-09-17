@@ -856,6 +856,7 @@ const fr = {
  },
 
  planning: {
+ waitsFor: "attend :",
  title: "Planification",
  day: "Jour",
  week: "Semaine",

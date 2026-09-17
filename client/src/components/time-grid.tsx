@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { laneGeometry } from "./time-grid-geometry";
 import { taskPaletteFor } from "@/lib/task-palette";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -320,7 +321,14 @@ function TaskBlock({
   // La géométrie est en CSS relatif, jamais en pixels mesurés : voir time-grid-geometry.ts
   // pour la raison — une ref lue pendant le rendu vaut null au premier passage, ce qui
   // peignait les tâches étroites et collées à gauche avant qu'elles ne sautent à leur place.
+  const { t } = useTranslation();
   const { left, width } = laneGeometry(lane, totalLanes, Boolean(fullWidth));
+
+  // Verrou de sequence, calcule par le serveur (services/task-lock-annotate.ts).
+  const verrouillee = Boolean((task as any).verrouillee);
+  const bloqueurs = (((task as any).bloqueePar ?? []) as { titre: string }[])
+    .map(b => b.titre)
+    .join(', ');
 
   const resizing = useRef(false);
   const resizeStartY = useRef(0);
@@ -380,7 +388,7 @@ function TaskBlock({
       onDragStart={(isMilestone || isGcalEvent) ? undefined : (e) => onDragStart(e, task)}
       className={`absolute overflow-hidden select-none transition-shadow hover:shadow-lift ${
         isMilestone || isGcalEvent ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
-      } ${task.completed ? 'opacity-35' : isLockedMilestone ? 'opacity-45' : isBlocked ? 'opacity-50' : ''}`}
+      } ${task.completed ? 'opacity-35' : isLockedMilestone ? 'opacity-45' : isBlocked ? 'opacity-50' : verrouillee ? 'opacity-60' : ''}`}
       style={{
         top,
         height,
@@ -409,12 +417,22 @@ function TaskBlock({
             </span>
           ) : isGcalEvent ? null : (
             <div
-              onClick={(e) => { e.stopPropagation(); onToggle(task.id); }}
-              className="flex-shrink-0 w-2.5 h-2.5 rounded-xs border mt-0.5 cursor-pointer transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                // Verrou de sequence : une etape dont la precedente n'est pas cochee ne se
+                // coche pas. Le serveur refuse deja (409) ; on n'envoie meme pas la requete,
+                // pour que le clic soit sans effet plutot qu'en echec silencieux.
+                if (verrouillee) return;
+                onToggle(task.id);
+              }}
+              title={verrouillee ? `${t('planning.waitsFor')} ${bloqueurs}` : undefined}
+              className={`flex-shrink-0 w-2.5 h-2.5 rounded-xs border mt-0.5 transition-colors ${
+                verrouillee ? 'cursor-not-allowed' : 'cursor-pointer'
+              }`}
               style={{
                 borderColor: task.completed ? palette.text : palette.border,
                 backgroundColor: task.completed ? palette.border : 'transparent',
-                opacity: 0.8,
+                opacity: verrouillee ? 0.35 : 0.8,
               }}
             />
           )}
@@ -428,6 +446,11 @@ function TaskBlock({
             {task.title}
           </p>
         </div>
+        {verrouillee && (
+          <p className="text-[9px] pl-3.5 mt-0.5 font-medium" style={{ color: palette.text, opacity: 0.75 }}>
+            🔒 {t('planning.waitsFor')} {bloqueurs}
+          </p>
+        )}
         {showDuration && task.estimatedDuration && !isMilestone && (
           <p className="text-[9px] pl-3.5 opacity-50 font-mono" style={{ color: palette.text }}>
             {task.estimatedDuration}min
