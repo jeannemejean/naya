@@ -46,6 +46,7 @@ import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
+import { peutEtreContacte } from "./services/prospection-validation";
 import { construireContenuDepuisTache } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
 import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
@@ -7626,10 +7627,55 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // Enrôle un lead dans la séquence de sa campagne
+  // Valide un prospect : accord EXPLICITE de l'utilisatrice pour le contacter.
+  // C'est la seule decision du pipeline reservee a une personne (prospection-validation.ts).
+  app.post('/api/leads/:id/validate', isAuthenticated, async (req: any, res) => {
+    try {
+      const updated = await storage.updateLead(Number(req.params.id), req.userId, {
+        validatedAt: new Date(),
+      } as any);
+      if (!updated) return res.status(404).json({ message: 'not_found' });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Retire la validation. Un message approuve par erreur doit pouvoir etre retenu tant qu'il
+  // n'est pas parti — sans cette route, l'accord serait irrevocable.
+  app.post('/api/leads/:id/unvalidate', isAuthenticated, async (req: any, res) => {
+    try {
+      const updated = await storage.updateLead(Number(req.params.id), req.userId, {
+        validatedAt: null,
+      } as any);
+      if (!updated) return res.status(404).json({ message: 'not_found' });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   app.post('/api/leads/:id/enroll', isAuthenticated, async (req: any, res) => {
     try {
       const lead = (await storage.getLeads(req.userId)).find(l => l.id === Number(req.params.id));
       if (!lead) return res.status(404).json({ message: 'not_found' });
+
+      // LA BARRIERE. L'enrolement est la porte par laquelle un prospect entre en sequence,
+      // donc le dernier point ou l'on peut encore refuser. Elle exige DEUX conditions :
+      // l'etape `messages_ready` (Naya a redige) ET `validatedAt` (une personne a approuve).
+      //
+      // LinkedIn n'accorde aucun accord d'automatisation pour les invitations et les
+      // messages : un contact part parce que quelqu'un l'a voulu, jamais parce qu'un
+      // minuteur est arrive a echeance. C'est aussi la regle de ce depot depuis l'incident
+      // des 14 posts publies par erreur.
+      if (!peutEtreContacte({ stage: (lead as any).stage, validatedAt: (lead as any).validatedAt })) {
+        return res.status(409).json({
+          message: 'not_validated',
+          stage: (lead as any).stage ?? null,
+          validatedAt: (lead as any).validatedAt ?? null,
+        });
+      }
+
       const campaignId = Number(req.body?.campaignId) || lead.prospectionCampaignId;
       if (!campaignId) return res.status(400).json({ message: 'no_campaign' });
       const state = await storage.enrollLead(lead.id, campaignId, req.userId);
