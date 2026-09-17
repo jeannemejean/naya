@@ -24,6 +24,7 @@ import { summarizeMilestones } from './project-summary';
 import { materializeRituals } from './ritual-materialize';
 import { maxTasksForDay } from './day-sizing';
 import { BUFFER_MIN_CEILING } from './rhythm-buffer';
+import { decisionReport, REPORTS_AVANT_QUESTION } from './rollover-decision';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -218,7 +219,36 @@ export async function rolloverStaleTasks(
 
   // Utilise findFirstFreeSlot qui gère automatiquement le débordement sur les jours suivants
   let moved = 0;
+  let questionnees = 0;
   for (const task of incomplete) {
+    // Une tâche reportée deux fois ou plus est remise en question AVANT d'être reportée une
+    // fois de plus. Cette évaluation ne vivait que dans le re-tassage intra-journée, qui est
+    // désormais arrêté — mais sa place est ici : c'est au moment de reporter qu'on peut
+    // encore renoncer.
+    //
+    // Sans elle, « Publier le brouillon LinkedIn de ce matin », créée le 30 juin, continue
+    // d'être reportée indéfiniment en parlant d'un brouillon qui n'existe pas.
+    const reportsPrecedents = task.learnedAdjustmentCount ?? 0;
+    if (reportsPrecedents >= REPORTS_AVANT_QUESTION) {
+      // `null` = évaluation indisponible. decisionReport fait alors reporter : perdre du
+      // travail réel parce qu'un appel réseau a raté serait pire que reporter une fois de plus.
+      const encorePertinente = await evaluateTaskRelevanceFull(task)
+        .then(r => r.stillRelevant)
+        .catch(() => null);
+
+      if (decisionReport({ reportsPrecedents, encorePertinente }) === 'questionner') {
+        console.log(`[Rollover] Tâche ${task.id} "${task.title}" questionnée (${reportsPrecedents} reports)`);
+        storage.saveCompanionMessage({
+          userId,
+          role: 'assistant',
+          content: `Cette tâche a été reportée ${reportsPrecedents} fois : « ${task.title} ». Elle ne semble plus d'actualité. On la reformule, on la garde, ou on l'abandonne ?`,
+          platform: 'web',
+        } as any).catch((e: any) => console.error('[Rollover] message Companion:', e?.message ?? e));
+        questionnees += 1;
+        continue; // Ne PAS reporter : le Companion prend le relais.
+      }
+    }
+
     const duration = task.estimatedDuration || 30;
 
     // findFirstFreeSlot cherche à partir de scheduleDate et avance de jour en jour si nécessaire
@@ -1016,14 +1046,20 @@ async function runIntraDayReschedule(): Promise<void> {
   }
 }
 
+/**
+ * ARRETE le 17 septembre 2026 (arbitrage de Jeanne). N'est plus appele par server/index.ts.
+ *
+ * Ce worker deplacait toutes les 15 minutes chaque tache dont l'heure etait depassee de
+ * 10 min sans etre cochee, et pouvait la pousser au lendemain en pleine journee. Il detruisait
+ * le signal « prevue a 10h, faite a 11h30 » en re-horodatant la tache avant que
+ * l'utilisatrice ait pu la cocher.
+ *
+ * ETAT REEL : `runIntraDayReschedule` n'est desormais appelee de NULLE PART. C'est du code
+ * mort, ~140 lignes qui savent deplacer des taches. Je ne le supprime pas dans ce commit —
+ * une suppression de cette taille merite d'etre relue separement — mais il ne doit pas
+ * rester longtemps : du code mort capable de deplacer des taches est une reactivation
+ * accidentelle qui attend.
+ */
 export function scheduleIntraDayReschedule(): void {
-  const INTERVAL_MS = 15 * 60 * 1000; // every 15 minutes
-  console.log('[IntraDay] Continuous rescheduler started (every 15 min)');
-  setInterval(async () => {
-    try {
-      await runIntraDayReschedule();
-    } catch (err) {
-      console.error('[IntraDay] Unhandled error:', err);
-    }
-  }, INTERVAL_MS);
+  console.log('[IntraDay] Re-tassage automatique DESACTIVE — report unique a 19h Paris.');
 }

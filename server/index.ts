@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
-import { scheduleAutoPlanner, scheduleEndOfDayRollover, scheduleIntraDayReschedule } from "./services/auto-planner";
+import { scheduleAutoPlanner, scheduleEndOfDayRollover } from "./services/auto-planner";
 import { scheduleEndOfDayReflection } from "./services/end-of-day-reflection";
 import { scheduleSocialPublisher } from "./services/social-publisher";
 import { scheduleProspectionSender } from "./services/prospection-sender";
@@ -106,8 +106,20 @@ function scheduleWeeklyIntelligence() {
   scheduleAutoPlanner();
   // End-of-day rollover: moves incomplete tasks to next work day at 17:00 UTC (19:00 Paris)
   scheduleEndOfDayRollover();
-  // Intra-day reschedule: adjusts pending tasks throughout the day
-  scheduleIntraDayReschedule();
+  // Re-tassage intra-journee : ARRETE (arbitrage de Jeanne, 17 septembre 2026).
+  //
+  // Il deplacait toutes les 15 minutes, de 7h a 22h, chaque tache dont l'heure etait depassee
+  // de 10 min sans etre cochee — et pouvait la pousser au lendemain EN PLEINE JOURNEE, avant
+  // que l'utilisatrice ait eu l'occasion de cocher quoi que ce soit.
+  //
+  // Deux degats. Le planning valsait sans raison visible. Et surtout le signal
+  // « prevue a 10h, faite a 11h30 » etait detruit avant d'exister : la tache etait
+  // re-horodatee, donc Naya ne pouvait plus rien apprendre du decalage entre le moment prevu
+  // et le moment reel.
+  //
+  // Une tache reste desormais a son heure toute la journee, meme depassee. Le report a lieu
+  // une fois, a 19h Paris. L'evaluation de pertinence que ce worker portait a ete DEPLACEE
+  // dans rolloverStaleTasks, pas supprimee.
   // End-of-day reflection: comprend pourquoi des tâches ont glissé et prépare une question
   // Companion pour le lendemain (16:45 UTC, avant le rollover).
   scheduleEndOfDayReflection();
