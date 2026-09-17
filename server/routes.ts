@@ -47,6 +47,7 @@ import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
+import { verrouDeTache } from "./services/task-lock";
 import { construireContenuDepuisTache } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
 import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
@@ -4171,9 +4172,36 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  /**
+   * Charge les dependances d'une tache et applique le verrou de sequence.
+   *
+   * Une dependance introuvable ne bloque pas : voir task-lock.ts. Une lecture qui echoue non
+   * plus — on ne verrouille pas le travail de quelqu'un parce qu'une requete a rate.
+   */
+  async function verrouPourTache(taskId: number) {
+    const dependances = await storage.getTaskDependencies(taskId).catch(() => [] as any[]);
+    if (!dependances.length) return { verrouillee: false, bloqueePar: [] as { id: number; titre: string }[] };
+
+    const prerequis = new Map<number, { title: string | null; completed: boolean | null }>();
+    for (const d of dependances as any[]) {
+      const id = d?.dependsOnTaskId;
+      if (typeof id !== 'number') continue;
+      const t = await storage.getTask(id).catch(() => undefined);
+      if (t) prerequis.set(id, { title: (t as any).title ?? null, completed: (t as any).completed ?? null });
+    }
+    return verrouDeTache({ dependances: dependances as any[], prerequis, tacheId: taskId });
+  }
+
   app.post('/api/tasks/:id/complete', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
+
+      // VERROU DE SEQUENCE : on ne coche pas une etape dont la precedente ne l'est pas.
+      const verrou = await verrouPourTache(parseInt(id));
+      if (verrou.verrouillee) {
+        return res.status(409).json({ message: 'task_locked', bloqueePar: verrou.bloqueePar });
+      }
+
       const task = await storage.completeTask(parseInt(id));
       res.json(task);
     } catch (error) {
@@ -4187,6 +4215,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const userId = req.userId;
       const { id } = req.params;
       const taskBefore = await storage.getTask(parseInt(id));
+
+      // VERROU DE SEQUENCE, dans le sens COCHER uniquement. Decocher reste toujours
+      // possible : sans cela, une coche donnee par erreur deviendrait definitive, et
+      // l'utilisatrice se retrouverait a debloquer une suite qu'elle n'a pas faite.
+      if (taskBefore && !(taskBefore as any).completed) {
+        const verrou = await verrouPourTache(parseInt(id));
+        if (verrou.verrouillee) {
+          return res.status(409).json({ message: 'task_locked', bloqueePar: verrou.bloqueePar });
+        }
+      }
+
       const task = await storage.toggleTaskCompletion(parseInt(id));
 
       // Capture completion signal when task flips to completed
