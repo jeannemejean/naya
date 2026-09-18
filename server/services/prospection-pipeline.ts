@@ -5,6 +5,8 @@
  * mapping d'erreur), puis l'orchestration (search / enrich).
  */
 
+import { qualifierProspect } from "./prospection-qualify-call";
+import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qualification";
 import { ProspectionAccessError, LinkedInWeeklyLimitError, assertEnrichmentAccess, logProspectionUsage } from "./prospection-access";
 import { storage } from "../storage";
 import { callClaude, CLAUDE_MODELS } from "./claude";
@@ -311,6 +313,21 @@ export async function enrichProspects(
       const audit = await generateAudit(userId, { projectType, project, campaign, enrichText: text });
       await logProspectionUsage(userId, "claude_audit", { prospectId: lead.id, campaignId: campaign.id });
 
+      // PHASE 4bis — QUALIFICATION. L'audit etait jusqu'ici ecrit, stocke, utilise pour
+      // rediger — jamais juge. Les 120 prospects de la production etaient tous `discovered`.
+      //
+      // Enveloppe : un verdict indisponible vaut « pas qualifie », jamais « ecarte ». Perdre
+      // un prospect parce qu'un appel reseau a rate serait le defaut que ce dispositif
+      // existe pour eviter.
+      const qualification = await qualifierProspect({
+        userId,
+        projectId: (project as any)?.id ?? null,
+        audit,
+        contexteProspect: text,
+      }).catch(() => null);
+
+      const decision = decisionCampagne(qualification);
+
       // PHASE 4 — message (Sonnet)
       const msg = await generateChannelMessage(userId, { channel, founderName, projectName, campaign, lead, audit });
       await logProspectionUsage(userId, "claude_message", { prospectId: lead.id, campaignId: campaign.id });
@@ -333,7 +350,17 @@ export async function enrichProspects(
         strategicNotes: auditJson,
         message1: msg.linkedinMessage ?? (msg.emailMessage ? undefined : undefined),
         message2: msg.emailMessage,
+        // Champs de qualification, calcules par une fonction PURE et testee : le
+        // branchement lui-meme n'etait couvert par aucun test, et une mutation elargissant
+        // le retrait passait les 1278 tests du depot.
+        ...champsMiseAJourQualification(qualification, new Date()),
       } as any);
+
+      if (decision === "retirer") {
+        console.log(`[Qualification] prospect ${lead.id} retire de la campagne ${campaign.id} : ${qualification?.raison}`);
+      } else if (decision === "signaler") {
+        console.log(`[Qualification] prospect ${lead.id} signale (${qualification?.verdict}/${qualification?.confiance}) : ${qualification?.raison}`);
+      }
       enriched++;
     } catch (e: any) {
       console.error("[prospection] enrich prospect", id, e?.message || e);

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   lireQualification,
   decisionCampagne,
+  champsMiseAJourQualification,
   VERDICTS,
   type Verdict,
 } from "./prospection-qualification";
@@ -126,5 +127,54 @@ describe("decisionCampagne", () => {
       }
     }
     expect(retraits).toEqual(["ecarte/haute"]);
+  });
+});
+
+describe("champsMiseAJourQualification", () => {
+  const LE_18 = new Date("2026-09-18T12:00:00Z");
+  const q = (verdict: Verdict, confiance: "haute" | "moyenne" | "basse" = "haute") => ({
+    verdict,
+    raison: "une raison",
+    confiance,
+  });
+
+  it("SEUL un écarté confiant détache de la campagne", () => {
+    // LE test manquant. Le branchement du pipeline n'était couvert par rien : remplacer
+    // `decision === "retirer"` par `decision !== "garder"` — ce qui aurait retiré de la
+    // campagne tous les prospects signalés ET tous les non qualifiés — passait les 1278
+    // tests du dépôt sans en casser un seul.
+    const detachements: string[] = [];
+    for (const v of VERDICTS) {
+      for (const c of ["haute", "moyenne", "basse"] as const) {
+        const champs = champsMiseAJourQualification(q(v, c), LE_18);
+        if ("prospectionCampaignId" in champs) detachements.push(`${v}/${c}`);
+      }
+    }
+    expect(detachements).toEqual(["ecarte/haute"]);
+  });
+
+  it("une qualification absente ne touche à RIEN", () => {
+    expect(champsMiseAJourQualification(null, LE_18)).toEqual({});
+    expect(champsMiseAJourQualification(undefined, LE_18)).toEqual({});
+  });
+
+  it("le verdict est écrit même quand le prospect est retenu", () => {
+    // Savoir qu'un prospect a été jugé et retenu n'est pas la même chose que ne pas l'avoir
+    // jugé. Sans cette écriture, `retenu` serait indiscernable de « jamais qualifié ».
+    const champs = champsMiseAJourQualification(q("retenu"), LE_18);
+
+    expect(champs).toMatchObject({
+      qualificationVerdict: "retenu",
+      qualificationRaison: "une raison",
+      qualificationConfiance: "haute",
+      qualifiedAt: LE_18,
+    });
+    expect(champs).not.toHaveProperty("prospectionCampaignId");
+  });
+
+  it("un signalement conserve le lien à la campagne", () => {
+    const champs = champsMiseAJourQualification(q("attention_particuliere"), LE_18);
+    expect(champs).not.toHaveProperty("prospectionCampaignId");
+    expect(champs.qualificationVerdict).toBe("attention_particuliere");
   });
 });

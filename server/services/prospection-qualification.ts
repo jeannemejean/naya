@@ -93,3 +93,35 @@ export function decisionCampagne(q: Qualification | null | undefined): DecisionC
       return "indecis";
   }
 }
+
+/**
+ * Les champs à écrire sur le prospect après qualification. PURE.
+ *
+ * Extraite du pipeline pour une raison précise : le branchement n'était couvert par AUCUN
+ * test. Remplacer `decision === "retirer"` par `decision !== "garder"` — ce qui aurait retiré
+ * de la campagne tous les prospects signalés ET tous les non qualifiés — passait les 1278
+ * tests du dépôt sans en casser un seul.
+ *
+ * Le verdict est écrit MÊME quand il vaut `retenu` : savoir qu'un prospect a été jugé et
+ * retenu n'est pas la même chose que ne pas l'avoir jugé.
+ */
+export function champsMiseAJourQualification(
+  q: Qualification | null | undefined,
+  maintenant: Date,
+): Record<string, unknown> {
+  const decision = decisionCampagne(q);
+  const champs: Record<string, unknown> = {};
+
+  if (q) {
+    champs.qualificationVerdict = q.verdict;
+    champs.qualificationRaison = q.raison;
+    champs.qualificationConfiance = q.confiance;
+    champs.qualifiedAt = maintenant;
+  }
+
+  // SEUL « retirer » detache de la campagne. `signaler` et `indecis` laissent le prospect
+  // exactement ou il est : c'est a l'utilisatrice de trancher.
+  if (decision === "retirer") champs.prospectionCampaignId = null;
+
+  return champs;
+}
