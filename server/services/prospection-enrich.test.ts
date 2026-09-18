@@ -10,6 +10,18 @@ vi.mock("../storage", () => ({
     getBrandDna: vi.fn(),
     getUser: vi.fn(),
     updateLead: vi.fn(),
+    // Depuis le 18 septembre, la redaction des messages passe par callClaudeWithContext :
+    // le generateur recevait auparavant DEUX lignes d'audit et aucun Brand DNA, d'ou des
+    // messages qui ne disaient jamais ce que propose l'utilisatrice. buildNayaContext
+    // reclame donc ces lectures supplementaires. Elles rendent du vide ici : ce test verifie
+    // l'enrichissement et les couts, pas le contenu du contexte.
+    getActiveGoalsForProject: vi.fn(async () => []),
+    getGoalProgress: vi.fn(async () => null),
+    getLatestPersonaAnalysis: vi.fn(async () => null),
+    getMilestones: vi.fn(async () => []),
+    getProjectStrategyProfile: vi.fn(async () => null),
+    getTargetPersonas: vi.fn(async () => []),
+    getUserPreferences: vi.fn(async () => null),
   },
 }));
 vi.mock("./brightdata-enrich", () => ({
@@ -27,7 +39,11 @@ vi.mock("./brightdata-enrich", () => ({
 }));
 vi.mock("./claude", async (io) => {
   const actual = await io<any>();
-  return { ...actual, callClaude: vi.fn() };
+  // callClaudeWithContext est mocke depuis le 18 septembre : la redaction des messages
+  // passe par lui pour recevoir le Brand DNA, la voix et la langue du compte. Avant, elle
+  // appelait callClaude sans aucun contexte — le generateur ignorait ce que propose
+  // l'utilisatrice, d'ou des messages qui n'en parlaient jamais.
+  return { ...actual, callClaude: vi.fn(), callClaudeWithContext: vi.fn() };
 });
 vi.mock("./prospection-access", async (io) => {
   const actual = await io<any>();
@@ -70,6 +86,19 @@ beforeEach(() => {
     .mockResolvedValueOnce(JSON.stringify({
       linkedinMessage: "Bonjour Marie, votre virage sur les coulisses m'a marquée. Qu'est-ce qui l'a déclenché ? Jeanne",
     }));
+
+  // callClaudeWithContext sert DEUX fois depuis le 18 septembre : la qualification du
+  // prospect (verdict) puis la redaction du message. L'ordre compte — la qualification a
+  // lieu avant la redaction dans le pipeline.
+  (claude.callClaudeWithContext as any)
+    .mockResolvedValueOnce(JSON.stringify({
+      verdict: "retenu",
+      raison: "Maison en rebranding, besoin de coulisses editoriales.",
+      confiance: "haute",
+    }))
+    .mockResolvedValueOnce(JSON.stringify({
+      linkedinMessage: "Bonjour Marie, votre virage sur les coulisses m'a marquée. Jeanne",
+    }));
 });
 
 describe("enrichProspects — condition 3 (données + coûts enregistrés)", () => {
@@ -96,10 +125,20 @@ describe("enrichProspects — condition 3 (données + coûts enregistrés)", () 
     expect(upd.strategicNotes).toBe(upd.auditNotes);
     expect(upd.message1).toBe(upd.linkedinMessage);
 
-    // Signature = PRÉNOM (Jeanne), jamais le nom d'agence dans le prompt de message
-    const messagePrompt = (claude.callClaude as any).mock.calls[1][0].messages[0].content;
+    // Signature = PRÉNOM (Jeanne), jamais le nom d'agence dans le prompt de message.
+    // L'assertion visait `callClaude.mock.calls[1]` ; la redaction passe desormais par
+    // callClaudeWithContext, donc il n'y a plus de second appel a callClaude. L'INTENTION
+    // est inchangee : on verifie toujours le prompt de message, au bon endroit.
+    const appelsMessage = (claude.callClaudeWithContext as any).mock.calls;
+    expect(appelsMessage.length, "le message doit passer par callClaudeWithContext").toBeGreaterThan(0);
+    // [0] = qualification, [1] = redaction du message.
+    const messagePrompt = appelsMessage[1][0].userMessage;
     expect(messagePrompt).toContain("Jeanne");
     expect(messagePrompt).not.toMatch(/Signé du prénom : Agence JMD/);
+
+    // Le prompt recoit desormais l'audit COMPLET, pas deux lignes sur six.
+    expect(messagePrompt).toContain("Positionnement");
+    expect(messagePrompt).toContain("Audience");
   });
 
   it("la garde d'accès bloque en entrée (plan base → throw, aucun scrape)", async () => {

@@ -5,6 +5,7 @@
  * mapping d'erreur), puis l'orchestration (search / enrich).
  */
 
+import { callClaudeWithContext } from "./claude";
 import { qualifierProspect } from "./prospection-qualify-call";
 import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qualification";
 import { ProspectionAccessError, LinkedInWeeklyLimitError, assertEnrichmentAccess, logProspectionUsage } from "./prospection-access";
@@ -164,38 +165,97 @@ Pas d'invention. Réponds UNIQUEMENT avec le JSON.`;
 
 // ─── PHASE 4 : message personnalisé (Claude Sonnet, selon le canal) ───────────
 
+/**
+ * Rédige les messages de prospection.
+ *
+ * Réécrit le 18 septembre 2026 après lecture des 41 messages réellement produits. Trois
+ * défauts venaient du prompt lui-même, pas du modèle :
+ *
+ * 1. Il appelait `callClaude`, donc SANS Brand DNA, sans voix, sans langue. Le générateur ne
+ *    savait pas qui écrit ni ce qu'elle propose — d'où des messages qui ne disent jamais
+ *    rien de l'offre. Il passe désormais par `callClaudeWithContext`.
+ * 2. Il ne recevait que DEUX sections d'audit sur six. Tout ce que l'audit savait de CHANEL
+ *    — maison fondée en 1910, actionnariat privé, communication délibérément en retrait —
+ *    n'atteignait jamais le message.
+ * 3. Il exigeait « une question de curiosité sincère EN FIN ». 31 messages sur 41
+ *    finissaient donc par une question : le modèle obéissait.
+ */
 async function generateChannelMessage(
   userId: string,
-  ctx: { channel: string; founderName: string; projectName: string; campaign: any; lead: any; audit: Record<string, string> },
+  ctx: {
+    channel: string;
+    founderName: string;
+    projectName: string;
+    campaign: any;
+    lead: any;
+    audit: Record<string, string>;
+    projectId?: number | null;
+    qualification?: { verdict: string; raison: string } | null;
+  },
 ): Promise<{ linkedinMessage?: string; emailMessage?: string }> {
   const wantLinkedIn = ctx.channel !== "email";
   const wantEmail = ctx.channel === "email" || ctx.channel === "both";
 
-  const prompt = `Tu es Naya. Rédige ${wantLinkedIn && wantEmail ? "un message LinkedIn ET un email" : wantEmail ? "un email" : "un message LinkedIn"} de prospection pour ce prospect.
+  const attentionParticuliere = ctx.qualification?.verdict === "attention_particuliere";
+
+  const prompt = `Rédige ${wantLinkedIn && wantEmail ? "un message LinkedIn ET un email" : wantEmail ? "un email" : "un message LinkedIn"} de prospection pour ce prospect.
 
 PROSPECT : ${ctx.lead?.name || ""} — ${ctx.lead?.role || ""} @ ${ctx.lead?.company || ""}
-ANGLE PROJET (audit) : ${ctx.audit?.angle || ctx.campaign?.messageAngle || ""}
-ENJEUX : ${ctx.audit?.enjeux || ctx.audit?.observations || ""}
 
-RÈGLES ABSOLUES (tous canaux) :
-- Ton humain, curieux, jamais commercial. Pas de "j'ai vu votre profil". Pas de pitch direct.
-- JAMAIS de tiret long (—).
+CE QUE L'AUDIT A TROUVÉ
+Contexte : ${ctx.audit?.contexteMarque || ctx.audit?.contexte || ""}
+Audience : ${ctx.audit?.audience || ""}
+Contenu : ${ctx.audit?.contenu || ""}
+Positionnement : ${ctx.audit?.positionnement || ""}
+Enjeux : ${ctx.audit?.enjeux || ctx.audit?.observations || ""}
+Angle : ${ctx.audit?.angle || ctx.campaign?.messageAngle || ""}
+${ctx.qualification ? `\nPOURQUOI CE PROSPECT : ${ctx.qualification.raison}` : ""}
+${attentionParticuliere ? `\nATTENTION : ce prospect a été classé « attention particulière ». L'approche standard le desservirait. Écris quelque chose qui ne ressemble pas à une prospection ordinaire : montre par la forme même du message ce que tu sais faire.` : ""}
+
+CE QUI REND UN MESSAGE LU
+
+Le prospect reçoit dix sollicitations par jour. La question n'est pas « comment être poli »
+mais « pourquoi lirait-il celui-ci jusqu'au bout ».
+
+- Appuie-toi sur quelque chose de PRÉCIS trouvé dans l'audit. Pas « votre marque a une vraie
+  voix » : une observation qu'on ne pourrait pas écrire à quelqu'un d'autre.
+- Dis ce que cette observation te fait penser, en tant que personne qui fait ce métier.
+  Une lecture, un point de vue, quelque chose qui a une valeur en soi.
+- Le prospect doit pouvoir répondre en une phrase, ou ne pas répondre. Jamais lui demander
+  d'expliquer son métier : c'est du travail gratuit demandé à un inconnu.
+
+CE QUI EST INTERDIT
+
+- Terminer sur une question ouverte du type « comment gérez-vous... », « quelle est votre
+  plus grande frustration... ». C'est la formule qui fait fermer le message.
+- Le compliment retourné : « vous avez les bons codes, mais rarement un point de vue ».
+  Dire à quelqu'un que son travail est médiocre puis lui demander de se justifier.
+- Tout adjectif qui s'accorde en genre pour te décrire (« curieux », « ravi », « intéressé »).
+  Tourne la phrase autrement : l'expéditrice ne doit pas changer de genre d'un message à
+  l'autre.
+- Les tirets longs (—).
+- « J'ai vu votre profil », « je me permets de vous contacter », « en tant qu'expert ».
 ${wantLinkedIn ? `\nMESSAGE LINKEDIN (note de connexion) :
-- MAXIMUM 200 caractères, strict.
-- Un lien personnel avec la marque/la personne + une question de curiosité sincère en fin.
+- MAXIMUM 200 caractères, strict. C'est très court : une observation précise et une raison
+  d'accepter, rien de plus.
 - Signé du prénom : ${ctx.founderName}.` : ""}
 ${wantEmail ? `\nEMAIL :
 - 5 à 8 phrases.
-- Observation factuelle d'ouverture, gap identifié, angle projet, question ouverte.
+- L'observation précise, ce qu'elle révèle, ce que ${ctx.projectName} sait en faire
+  concrètement. Une ouverture à la fin, pas un interrogatoire.
 - Signé : ${ctx.founderName} — ${ctx.projectName}.` : ""}
 
 Réponds UNIQUEMENT avec ce JSON :
 {${wantLinkedIn ? '"linkedinMessage":"..."' : ""}${wantLinkedIn && wantEmail ? "," : ""}${wantEmail ? '"emailMessage":"..."' : ""}}`;
 
-  const raw = await callClaude({
-    model: CLAUDE_MODELS.smart,
+  // callClaudeWithContext, et non callClaude : le Brand DNA, la voix et la langue du compte
+  // sont injectés. Sans eux, le modèle ignore ce que propose l'utilisatrice — d'où des
+  // messages qui n'en parlent jamais.
+  const raw = await callClaudeWithContext({
     userId,
-    messages: [{ role: "user", content: prompt }],
+    projectId: ctx.projectId ?? null,
+    userMessage: prompt,
+    model: CLAUDE_MODELS.smart,
     max_tokens: 900,
     temperature: 0.6,
   });
@@ -329,7 +389,11 @@ export async function enrichProspects(
       const decision = decisionCampagne(qualification);
 
       // PHASE 4 — message (Sonnet)
-      const msg = await generateChannelMessage(userId, { channel, founderName, projectName, campaign, lead, audit });
+      const msg = await generateChannelMessage(userId, {
+        channel, founderName, projectName, campaign, lead, audit,
+        projectId: (project as any)?.id ?? null,
+        qualification,
+      });
       await logProspectionUsage(userId, "claude_message", { prospectId: lead.id, campaignId: campaign.id });
 
       // PHASE 5 — mise à jour CRM.
