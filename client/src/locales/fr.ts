@@ -1678,6 +1678,8 @@ const fr = {
  },
  },
  settingsPage: {
+ connectionExpired: "Connexion expirée — reconnecte {{compte}}",
+ expiresSoon: "expire bientôt",
  "12RueDeLaRepublique": "12 rue de la République",
  abonnement: "Abonnement",
  adresseExpeditrice: "Adresse expéditrice",

@@ -48,6 +48,7 @@ import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
+import { etatConnexion } from "./services/social-connection-state";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
@@ -887,7 +888,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     try {
       const userId = req.userId;
       const accounts = await storage.getSocialAccounts(userId);
-      const status: Record<string, { connected: boolean; accountName?: string; expiresAt?: Date; configured: boolean }> = {};
+      const status: Record<string, { connected: boolean; etat: string; accountName?: string; expiresAt?: Date; configured: boolean }> = {};
 
       for (const platform of ['instagram', 'linkedin', 'tiktok'] as const) {
         const account = accounts.find(a => a.platform === platform && a.isActive);
@@ -895,9 +896,26 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
         const linkedinPages = platform === 'linkedin'
           ? accounts.filter(a => a.platform.startsWith('linkedin_page_') && a.isActive)
           : [];
+        // ETAT REEL, pas `!!account`.
+        //
+        // `is_active` ne dit pas si la connexion marche : il dit qu'elle n'a pas ete revoquee
+        // depuis l'application. Le 18 septembre, les deux comptes de la production portaient
+        // is_active = true avec des jetons morts depuis 56 et 26 jours, et l'ecran Reglages
+        // affichait « Connecte ». La route renvoyait meme `expiresAt` — que personne ne lisait.
+        const etat = account
+          ? etatConnexion({
+              accessToken: (account as any).accessToken,
+              isActive: account.isActive,
+              expiresAt: (account as any).expiresAt ?? null,
+              now: new Date(),
+            })
+          : 'absente' as const;
+
         status[platform] = {
           configured: isPlatformConfigured(platform),
-          connected: !!account,
+          // `connected` veut dire UTILISABLE. Un jeton expire ne l'est pas.
+          connected: etat === 'connectee' || etat === 'expire_bientot' || etat === 'echeance_inconnue',
+          etat,
           accountName: account?.accountName,
           expiresAt: account?.expiresAt || undefined,
           ...(platform === 'linkedin' && linkedinPages.length > 0 && {

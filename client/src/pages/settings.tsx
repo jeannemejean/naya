@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Sun, Moon, LogOut, RefreshCw, AlertTriangle, User, Zap, Brain, Clock, Calendar, Loader2, CheckCircle2, Link2Off, ExternalLink } from "lucide-react";
+import { Sun, Moon, LogOut, RefreshCw, AlertTriangle, User, Zap, Brain, Clock, Calendar, Loader2, CheckCircle2, Link2Off, ExternalLink , AlertCircle} from "lucide-react";
 import { useLocation } from "wouter";
 import type { UserOperatingProfile, UserPreferences } from "@shared/schema";
 
@@ -244,6 +244,11 @@ function SocialConnectionsCard() {
  {SOCIAL_PLATFORMS.map(({ id, name, descriptionKey, gradient, Icon }) => {
  const info = status[id];
  const isConnected = !!info?.connected;
+ // `expiree` merite d'etre DIT, pas seulement traduit en « non connecte ». Sans ca,
+ // l'utilisatrice reconnecte sans savoir pourquoi — ou pire, ne comprend pas pourquoi
+ // la publication a cesse de marcher il y a deux mois.
+ const estExpiree = (info as any)?.etat === 'expiree';
+ const expireBientot = (info as any)?.etat === 'expire_bientot';
  const isConfigured = info?.configured !== false;
  const isPending = connectMutation.isPending || disconnectMutation.isPending;
 
@@ -260,10 +265,16 @@ function SocialConnectionsCard() {
  {/* Infos */}
  <div className="flex-1 min-w-0">
  <p className="text-sm font-medium text-foreground">{name}</p>
- {isConnected ? (
+ {estExpiree ? (
+ <p className="text-xs text-[#5c3d45] flex items-center gap-1 mt-0.5">
+ <AlertCircle className="h-3 w-3 flex-shrink-0" />
+ {t('settingsPage.connectionExpired', { compte: info?.accountName || name })}
+ </p>
+ ) : isConnected ? (
  <p className="text-xs text-naya-olive flex items-center gap-1 mt-0.5">
  <CheckCircle2 className="h-3 w-3" />
  {info?.accountName || t('settingsPage.connected')}
+ {expireBientot && <span className="text-[#6f6526]"> · {t('settingsPage.expiresSoon')}</span>}
  </p>
  ) : (
  <p className="text-xs text-muted-foreground mt-0.5">{t(descriptionKey)}</p>
