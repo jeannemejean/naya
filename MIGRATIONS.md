@@ -161,6 +161,30 @@ Savoir qu'une validation a eu lieu sans savoir **quand** serait inexploitable le
 message part et qu'il faut comprendre pourquoi.
 
 
+## 3quinquies. Production — migrée le 18 septembre 2026 (`0015`)
+
+> Endpoint vérifié avant exécution : `ep-damp-water-anuyb0k6` = **production**.
+
+- [x] Point de restauration : **`br-plain-pine-anmbsfnu`**, vérifiée conforme avant migration
+      (61 tables, 3 utilisateurs, 58 tâches, 120 prospects dont 40 liés à la campagne,
+      suivi à 15).
+- [x] SQL relu : quatre `ADD COLUMN` nullables sur `leads` — `qualification_verdict`,
+      `qualification_raison`, `qualification_confiance`, `qualified_at`.
+- [x] Garde du script **testée à blanc** : refus constaté sur l'endpoint de développement.
+- [x] Résultat : suivi **15 → 16**, quatre colonnes présentes, **données inchangées**
+      (120 prospects, 40 liés, **120 à `qualification_verdict IS NULL`**).
+
+### Pourquoi ces colonnes, et pourquoi avant le déploiement
+
+Naya juge désormais chaque prospect après l'audit. Le pipeline écrit dans ces colonnes **dès
+le prochain enrichissement** : déployer le code avant la migration ferait échouer
+l'enrichissement sur des colonnes absentes.
+
+`qualification_verdict` à `null` veut dire **jamais qualifié**, pas « écarté ». Les 120
+prospects y sont. La `raison` n'est jamais vide quand un verdict existe : c'est ce qui rend
+un tri automatique contestable.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;
