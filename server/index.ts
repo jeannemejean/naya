@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
 import { scheduleAutoPlanner, scheduleEndOfDayRollover } from "./services/auto-planner";
+import { scheduleTokenRefresh } from "./services/social-token-refresh";
 import { scheduleEndOfDayReflection } from "./services/end-of-day-reflection";
 import { scheduleSocialPublisher } from "./services/social-publisher";
 import { scheduleProspectionSender } from "./services/prospection-sender";
@@ -126,6 +127,13 @@ function scheduleWeeklyIntelligence() {
 
   // ─── Cron hebdomadaire : intelligence analytics (dimanche ~23h UTC) ───────────
   scheduleWeeklyIntelligence();
+
+  // Renouvellement des jetons reseaux sociaux (toutes les 6 h).
+  //
+  // Existe parce que les deux comptes de la production etaient morts depuis 56 et 26 jours
+  // sans que rien ne tente de les renouveler ni ne le signale. Google Calendar avait son
+  // rafraichissement depuis toujours ; les reseaux sociaux, non.
+  scheduleTokenRefresh();
 
   // ─── Worker d'auto-publication des posts programmés (chaque minute) ───────────
   scheduleSocialPublisher();
