@@ -765,6 +765,26 @@ export const leads = pgTable("leads", {
   // accord d'automatisation pour les invitations ; un message part parce qu'une personne
   // l'a voulu, jamais parce qu'un minuteur est arrive a echeance.
   validatedAt: timestamp("validated_at"),
+  //
+  // ── Qualification par l'audit (lot 7) ──────────────────────────────────────
+  //
+  // Verdict de Naya au vu de l'audit : retenu | ecarte | attention_particuliere.
+  // `null` = JAMAIS QUALIFIE. Ce n'est pas « ecarte » : un audit non fait, un appel rate,
+  // ou un prospect anterieur au dispositif laissent cette colonne vide. Les 120 prospects
+  // de la production y sont aujourd'hui.
+  qualificationVerdict: text("qualification_verdict"),
+  //
+  // POURQUOI. Jamais vide quand un verdict existe — c'est ce qui rend un tri automatique
+  // contestable. Un prospect ecarte sans motif est un prospect perdu sans recours.
+  qualificationRaison: text("qualification_raison"),
+  //
+  // haute | moyenne | basse. Un `ecarte` ne retire de la campagne qu'en confiance HAUTE ;
+  // en dessous, le doute remonte a l'utilisatrice au lieu d'agir.
+  qualificationConfiance: text("qualification_confiance"),
+  //
+  // Instant de la qualification, pour savoir si elle precede ou suit une modification de
+  // l'audit. Un booleen ne le dirait pas.
+  qualifiedAt: timestamp("qualified_at"),
   // Pipeline prospection complet
   stage: text("stage").default("identified"),
   // identified | messages_ready | connection_sent | connected |
