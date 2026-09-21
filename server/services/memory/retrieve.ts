@@ -2,14 +2,22 @@ import { db } from "../../db";
 import { sql } from "drizzle-orm";
 import { embedText, toVectorLiteral } from "./embed";
 
-export type Fil = "cap" | "founder" | "reception";
-export const FILS: Fil[] = ["cap", "founder", "reception"];
+export type Fil = "cap" | "founder" | "reception" | "savoir";
+export const FILS: Fil[] = ["cap", "founder", "reception", "savoir"];
 
 // ── Constantes figées (DECISIONS-MEMOIRE-IA.md) ─────────────────────────────────
 // Décision 2 — demi-vie de fraîcheur PAR FIL (jours).
-const HALF_LIFE_DAYS: Record<Fil, number> = { cap: 180, founder: 45, reception: 10 };
+// `savoir` : les dossiers de recherche deposes par l'utilisatrice. Demi-vie longue — une
+// etude sur ce qui fonctionne en digital ne se perime pas au rythme d'une observation sur
+// son energie du jour. Mais elle se perime quand meme : les pratiques changent, et un
+// dossier de l'an dernier doit peser moins qu'un dossier du mois dernier.
+const HALF_LIFE_DAYS: Record<Fil, number> = { cap: 180, founder: 45, reception: 10, savoir: 365 };
 // Décision 6 — Top-K par fil.
-const TOP_K: Record<Fil, number> = { cap: 3, founder: 4, reception: 5 };
+// `savoir` a un top-K VOLONTAIREMENT bas : ses morceaux font jusqu'a 1200 caracteres, contre
+// une phrase pour les autres fils. En injecter cinq alourdirait chaque appel IA de six mille
+// caracteres. Le pre-filtre semantique (ANN) protege deja du hors-sujet : un dossier sur le
+// contenu ne remonte pas dans un appel de planification.
+const TOP_K: Record<Fil, number> = { cap: 3, founder: 4, reception: 5, savoir: 3 };
 // Décision 1 — poids de départ (Stanford / Generative Agents) : tous égaux à 1.0.
 const W_REL = 1.0, W_IMP = 1.0, W_REC = 1.0;
 // Lot de candidats récupérés par ANN avant re-scoring.
@@ -70,8 +78,8 @@ export async function retrieveMemories(
   userId: string,
   projectId?: number | null,
   focusText?: string,
-): Promise<{ cap: ScoredMemory[]; founder: ScoredMemory[]; reception: ScoredMemory[] }> {
-  const out = { cap: [] as ScoredMemory[], founder: [] as ScoredMemory[], reception: [] as ScoredMemory[] };
+): Promise<{ cap: ScoredMemory[]; founder: ScoredMemory[]; reception: ScoredMemory[]; savoir: ScoredMemory[] }> {
+  const out = { cap: [] as ScoredMemory[], founder: [] as ScoredMemory[], reception: [] as ScoredMemory[], savoir: [] as ScoredMemory[] };
   try {
     // Court-circuit perf : si l'utilisateur n'a AUCUNE mémoire, inutile d'embedder
     // (évite un aller-retour OpenAI dans le chemin critique de chaque appel IA).

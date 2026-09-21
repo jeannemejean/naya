@@ -23,7 +23,7 @@ export async function buildNayaContext(
     // Perf : lance la récupération mémoire EN PARALLÈLE des autres requêtes (au lieu de
     // l'attendre séquentiellement en Section 7). On l'await seulement au moment du rendu.
     const memPromise = retrieveMemories(userId, projectId ?? null, focusText)
-      .catch(() => ({ cap: [], founder: [], reception: [] }));
+      .catch(() => ({ cap: [], founder: [], reception: [], savoir: [] }));
 
     const [
       globalBrandDna,
@@ -189,6 +189,9 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
     if (mem.cap.length) memSubs.push(`### Cap — ADN de la marque\n${fmtMem(mem.cap)}`);
     if (mem.founder.length) memSubs.push(`### Fondateur — ta façon de travailler\n${fmtMem(mem.founder)}`);
     if (mem.reception.length) memSubs.push(`### Réception — audience & marché\n${fmtMem(mem.reception)}`);
+    // Dossiers de recherche deposes par l'utilisatrice. Sans cette ligne, ils seraient
+    // stockes et vectorises sans jamais atteindre un seul appel IA.
+    if ((mem as any).savoir?.length) memSubs.push(`### Ce qu'on t'a appris — recherche déposée\n${fmtMem((mem as any).savoir)}`);
     if (memSubs.length > 0) {
       sections.push(`## Mémoire pertinente\n${memSubs.join('\n\n')}`);
     } else if (recentMemories && recentMemories.length > 0) {

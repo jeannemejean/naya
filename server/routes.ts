@@ -49,6 +49,7 @@ import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
+import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossier";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
@@ -1133,6 +1134,52 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     } catch (err: any) {
       console.error("[Billing] redeem error:", err.message);
       res.status(500).json({ message: "redeem_failed" });
+    }
+  });
+
+  // ── Dossiers de recherche (fil `savoir`) — RESERVE AU PROPRIETAIRE ──────────
+  //
+  // Demande de Jeanne : « un endroit ou je pourrais renseigner des dossiers qui
+  // permettraient a Naya de mieux comprendre a quoi ressemble une bonne prospection », et
+  // des dossiers sur ce qui fonctionne en digital pour que sa creation de contenu soit
+  // « plus pointue, moins generique ».
+  //
+  // Le controle de role est le MEME que pour les codes d'acces : `user.role === "owner"`.
+  app.post("/api/savoir/dossiers", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+
+      const { titre, contenu, projectId } = req.body ?? {};
+      if (typeof contenu !== "string" || !contenu.trim()) {
+        return res.status(400).json({ message: "contenu_requis" });
+      }
+
+      const r = await deposerDossier({
+        userId: req.userId,
+        projectId: typeof projectId === "number" ? projectId : null,
+        titre: typeof titre === "string" ? titre : "",
+        contenu,
+      });
+
+      // `morceaux: 0` n'est pas une erreur : c'est un document sans texte exploitable.
+      // On le DIT, au lieu de renvoyer un succes muet.
+      res.json({ ...r, message: r.morceaux === 0 ? "aucun_contenu_exploitable" : "depose" });
+    } catch (e: any) {
+      console.error("[Savoir] depot impossible:", e?.message ?? e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Ce que Naya a appris — pour relire, et pour pouvoir retirer.
+  app.get("/api/savoir/dossiers", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+      const rows = await listerDossiers(req.userId);
+      res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
     }
   });
 
