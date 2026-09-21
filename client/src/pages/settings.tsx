@@ -336,6 +336,105 @@ function SocialConnectionsCard() {
  );
 }
 
+
+// ─── Dossiers de recherche (fil `savoir`) — RESERVE AU PROPRIETAIRE ───────────
+//
+// Demande de Jeanne : « un endroit ou je pourrais renseigner des dossiers qui permettraient
+// a Naya de mieux comprendre a quoi ressemble une bonne prospection », et des dossiers sur
+// ce qui fonctionne en digital pour que sa creation de contenu soit « plus pointue, moins
+// generique ».
+//
+// La carte n'est meme pas rendue pour un compte non proprietaire. Le serveur refuse de son
+// cote (403) : masquer l'interface n'est pas une securite, c'est une commodite.
+function DossiersSavoirCard() {
+ const { t } = useTranslation();
+ const { toast } = useToast();
+ const queryClient = useQueryClient();
+ const [titre, setTitre] = useState("");
+ const [contenu, setContenu] = useState("");
+
+ const { data: dossiers = [] } = useQuery<{ titre: string; morceaux: number; vectorises: number; depose_le: string }[]>({
+ queryKey: ['/api/savoir/dossiers'],
+ });
+
+ const deposer = useMutation({
+ mutationFn: async () => {
+ const res = await apiRequest('POST', '/api/savoir/dossiers', { titre, contenu });
+ return res.json();
+ },
+ onSuccess: (r: any) => {
+ queryClient.invalidateQueries({ queryKey: ['/api/savoir/dossiers'] });
+ // `morceaux: 0` n'est pas un succes : le document ne portait aucun texte exploitable.
+ // Le dire, plutot que d'afficher « depose » sur un depot qui n'a rien depose.
+ if (!r?.morceaux) {
+ toast({ title: t('settingsPage.savoir.empty'), variant: 'destructive' });
+ return;
+ }
+ setTitre("");
+ setContenu("");
+ toast({ title: t('settingsPage.savoir.saved', { count: r.morceaux }) });
+ },
+ onError: () => toast({ title: t('common.error'), variant: 'destructive' }),
+ });
+
+ const pret = contenu.trim().length > 0 && !deposer.isPending;
+
+ return (
+ <Card>
+ <CardHeader className="pb-3">
+ <CardTitle className="flex items-center gap-2 text-base">
+ <Brain className="h-4 w-4 text-naya-salvia" />
+ {t('settingsPage.savoir.title')}
+ </CardTitle>
+ <CardDescription>{t('settingsPage.savoir.description')}</CardDescription>
+ </CardHeader>
+ <CardContent className="space-y-3">
+ <Input
+ placeholder={t('settingsPage.savoir.titlePlaceholder')}
+ value={titre}
+ onChange={(e) => setTitre(e.target.value)}
+ />
+ <Textarea
+ placeholder={t('settingsPage.savoir.contentPlaceholder')}
+ value={contenu}
+ onChange={(e) => setContenu(e.target.value)}
+ rows={8}
+ className="resize-y"
+ />
+ <div className="flex items-center justify-between gap-3">
+ <span className="text-[11px] text-naya-olive-35">
+ {contenu.trim() ? t('settingsPage.savoir.charCount', { count: contenu.trim().length }) : ''}
+ </span>
+ <Button size="sm" onClick={() => deposer.mutate()} disabled={!pret}>
+ {deposer.isPending
+ ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t('settingsPage.savoir.saving')}</>
+ : t('settingsPage.savoir.submit')}
+ </Button>
+ </div>
+
+ {dossiers.length > 0 && (
+ <div className="pt-2 border-t border-naya-olive-18 space-y-1.5">
+ <p className="text-[11px] uppercase tracking-wide text-naya-olive-35">
+ {t('settingsPage.savoir.deposited')}
+ </p>
+ {dossiers.map((d) => (
+ <div key={d.titre} className="flex items-center justify-between gap-3 text-xs">
+ <span className="text-naya-olive-70 truncate">{d.titre}</span>
+ <span className="text-naya-olive-35 flex-shrink-0">
+ {t('settingsPage.savoir.chunks', { count: d.morceaux })}
+ {/* Un morceau non vectorise reste retrouvable, mais moins bien. Le dire
+ plutot que de laisser croire que tout est equivalent. */}
+ {d.vectorises < d.morceaux && ` · ${t('settingsPage.savoir.partial', { count: d.morceaux - d.vectorises })}`}
+ </span>
+ </div>
+ ))}
+ </div>
+ )}
+ </CardContent>
+ </Card>
+ );
+}
+
 export default function Settings({ onSearchClick }: SettingsProps) {
  const { t } = useTranslation();
  const { user, logout } = useAuth();
@@ -842,6 +941,9 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 
  {/* Email d'envoi de prospection */}
  <ProspectionSenderCard />
+
+ {/* Dossiers de recherche — proprietaire uniquement */}
+ {(user as any)?.role === 'owner' && <DossiersSavoirCard />}
 
  {/* Abonnement */}
  <Card className=" ">
