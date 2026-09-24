@@ -222,6 +222,7 @@ function useActionExecutor(activeProject: any, projects: any[]) {
 // ─── Shared hook: chat state + mutation ──────────────────────────────────────
 
 function useCompanionChat() {
+ const queryClient = useQueryClient();
  const [open, setOpen] = useState(false);
  const [input, setInput] = useState("");
  const [messages, setMessages] = useState<Message[]>([]);
@@ -270,14 +271,26 @@ function useCompanionChat() {
  }, [open, history, pendingData, pendingLoaded]);
 
  useEffect(() => {
- const handler = (e: Event) => {
+ const handler = async (e: Event) => {
    setOpen(true);
    const detail = (e as CustomEvent).detail;
-   if (detail?.message) setInput(detail.message);
+
+   // Ce handler faisait `setInput(detail.message)` : il deposait une PAROLE DE NAYA dans le
+   // champ de saisie de l'utilisatrice, a la place de son propre texte. Les paroles de Naya
+   // passent desormais par les messages en attente, cote serveur — comme toutes les autres.
+   //
+   // `reloadPending` demande de relire ces messages. L'ORDRE est essentiel : on relit AVANT
+   // de rouvrir le verrou `pendingLoaded`. Dans l'autre sens, l'effet d'ouverture
+   // s'executerait sur les donnees en cache, refermerait le verrou, et le message tout juste
+   // depose serait perdu jusqu'au prochain rechargement complet.
+   if (detail?.reloadPending) {
+     await queryClient.refetchQueries({ queryKey: ['/api/companion/pending'] }).catch(() => {});
+     setPendingLoaded(false);
+   }
  };
  window.addEventListener('naya:open-companion', handler);
  return () => window.removeEventListener('naya:open-companion', handler);
- }, [setOpen, setInput]);
+ }, [setOpen, queryClient]);
 
  const chatMutation = useMutation({
  mutationFn: async (message: string): Promise<{ message: string; actions?: CompanionAction[]; suggestions?: string[] }> => {

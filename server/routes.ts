@@ -2396,6 +2396,24 @@ Write in clear, direct language. Be specific — reference actual offers, audien
         planningStatus: 'active',
         planningStartDate: fromDate,
       });
+
+      // La question de Naya passe par les MESSAGES EN ATTENTE, comme toutes ses autres
+      // paroles. Elle transitait auparavant par un evenement client dont le contenu
+      // atterrissait dans le champ de saisie : Jeanne voyait la question de Naya a la place
+      // de son propre texte, et elle disparaissait au moindre rechargement.
+      //
+      // Depose APRES l'archivage : proposer d'en parler avant d'avoir fait le travail
+      // ferait parler Naya d'une remise a zero qui n'a pas eu lieu.
+      //
+      // Non bloquant : les taches sont deja archivees a ce stade. Echouer ici laisserait
+      // croire que rien n'a ete fait, et un second clic archiverait une seconde fois.
+      await storage.createPendingMessage({
+        userId,
+        message: "On repart de zéro. Avant de replanifier, dis-moi : est-ce que tes objectifs ou projets ont changé depuis la dernière fois ?",
+        triggerType: 'planning_reset',
+        relatedTaskId: null,
+      }).catch((e: any) => console.error('[PlanningReset] message non depose:', e?.message ?? e));
+
       res.json({ archived, fromDate });
     } catch (error) {
       res.status(500).json({ message: "Failed to reset planning" });

@@ -3260,6 +3260,12 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(tasks.userId, userId),
           eq(tasks.completed, false),
+          // Une tache ARCHIVEE ne revient pas : c'est le sens meme d'une remise a zero.
+          // Elle etait deja exclue, mais PAR ACCIDENT — archiveIncompleteFutureTasks vide
+          // aussi scheduledDate, et le filtre de date ci-dessous rejette les NULL. Rendre
+          // l'intention explicite : si un jour on archive sans vider la date, la carte
+          // « Naya a remarque » ressusciterait des taches que l'utilisatrice a effacees.
+          ne(tasks.source, 'archived'),
           gte(tasks.scheduledDate, sevenDaysAgoStr),
           gte(tasks.learnedAdjustmentCount, 2)
         )

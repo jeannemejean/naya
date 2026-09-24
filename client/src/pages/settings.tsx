@@ -451,13 +451,30 @@ export default function Settings({ onSearchClick }: SettingsProps) {
    mutationFn: (fromDate: string) =>
      apiRequest('POST', '/api/planning/reset', { fromDate }).then(r => r.json()),
    onSuccess: (data: any) => {
-     queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
-     queryClient.invalidateQueries({ queryKey: ['/api/preferences'] });
+     // TOUTES les vues derivees des taches, pas seulement '/api/tasks'.
+     //
+     // Le 24 septembre, la carte « Naya a remarque » affichait encore dix taches
+     // recurrentes APRES une remise a zero. Le serveur n'y etait pour rien — verifie en
+     // production, il renvoyait zero. C'etait le cache : '/api/tasks/stuck' est une CLE
+     // DISTINCTE, que l'invalidation par prefixe de '/api/tasks' ne couvre pas (React Query
+     // compare les elements un a un, et les deux chaines different).
+     for (const cle of [
+       '/api/tasks',
+       '/api/tasks/range',
+       '/api/tasks/stuck',
+       '/api/preferences',
+       '/api/companion/pending',
+     ]) {
+       queryClient.invalidateQueries({ queryKey: [cle] });
+     }
      setReplanConfirmOpen(false);
      setLocation('/');
+     // La question de Naya n'est plus transportee par cet evenement : elle est deposee cote
+     // serveur comme message en attente. On demande seulement au Companion de s'ouvrir et
+     // de relire ses messages.
      setTimeout(() => {
        window.dispatchEvent(new CustomEvent('naya:open-companion', {
-         detail: { message: "On repart de zéro. Avant de replanifier, dis-moi : est-ce que tes objectifs ou projets ont changé depuis la dernière fois ?" }
+         detail: { reloadPending: true }
        }));
      }, 300);
    },
