@@ -399,8 +399,16 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   const blockedRanges = buildBlockedRanges(scheduledForToday, prefs);
   const calBlocked = await getCalendarBlockedRanges(userId, dateStr).catch(() => []);
   blockedRanges.push(...calBlocked);
-  const latestEnd = blockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
-  let curSlot = latestEnd;
+  // Depart au DEBUT de la journee de travail, jamais apres le dernier bloc.
+  //
+  // Le code faisait `reduce((max, r) => Math.max(max, r.end), workDayStart)` : il partait de
+  // la fin la plus TARDIVE de tous les creneaux bloques. Avec une pause dejeuner 12h-14h et
+  // une journee qui commence a 10h, le premier creneau utilise etait 14h — deux heures de
+  // matinee perdues CHAQUE JOUR, alors qu'elles etaient libres.
+  //
+  // `findNextFreeSlot` sait deja sauter par-dessus un bloc : partir du debut lui rend son
+  // travail. Une tache qui ne rentre pas avant midi est reportee apres 14h par elle-meme.
+  let curSlot = hhmmToMin(workDayStart);
 
   // 10. Generate and persist tasks for each project
   for (const project of projectsToProcess) {
@@ -791,7 +799,9 @@ async function runEndOfDayRollover(): Promise<void> {
       const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
       const dayEndMin = hhmmToMin(workDayEnd);
 
-      let curSlot = blockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
+      // Meme correction que dans generateForUser : on part du debut de journee, pas de la
+      // fin du dernier bloc. Une tache reportee le soir doit pouvoir atterrir le matin.
+      let curSlot = hhmmToMin(workDayStart);
 
       let moved = 0;
       // Pre-load the next-next work day as overflow target if scheduleDate fills up
