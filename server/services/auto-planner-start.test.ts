@@ -83,6 +83,32 @@ describe("runDailyAutoPlanner — date de départ future", () => {
     expect(datesGenerees()).not.toContain("2026-09-24");
   });
 
+  it("le scénario de Jeanne : départ le 12 août, on est le 6 — rien avant, tout à partir du 12", async () => {
+    // Enonce mot pour mot : « si je dis a mon planificateur de demarrer le 12 aout et
+    // qu'actuellement on est le 6 aout, jusqu'au 12 aout je n'ai absolument aucune tache,
+    // mais si je vais voir dans le calendrier je vois deja les taches generees pour le
+    // 12 aout et la semaine d'apres ».
+    storageMock.getUserPreferences.mockResolvedValue({
+      planningStatus: "active",
+      planningStartDate: "2026-08-12",
+      workDays: "mon,tue,wed,thu,fri",
+    });
+
+    await runDailyAutoPlanner("2026-08-06");
+
+    const dates = datesGenerees();
+
+    // RIEN entre le 6 et le 11, y compris les jours ouvres (6, 7, 10, 11 aout).
+    for (const avant of ["2026-08-06", "2026-08-07", "2026-08-10", "2026-08-11"]) {
+      expect(dates, `le ${avant} doit rester vide`).not.toContain(avant);
+    }
+
+    // TOUT a partir du 12, et la semaine d'apres — 12 aout 2026 est un mercredi.
+    for (const apres of ["2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18"]) {
+      expect(dates, `le ${apres} doit etre genere`).toContain(apres);
+    }
+  });
+
   it("ne saute plus la planification quand le départ est dans le futur", async () => {
     // L'ancien code faisait `continue` : AUCUN appel n'etait emis pour cet utilisateur.
     storageMock.getUserPreferences.mockResolvedValue({
