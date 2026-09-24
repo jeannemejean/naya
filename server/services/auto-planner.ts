@@ -25,6 +25,7 @@ import { materializeRituals } from './ritual-materialize';
 import { maxTasksForDay } from './day-sizing';
 import { BUFFER_MIN_CEILING } from './rhythm-buffer';
 import { decisionReport, REPORTS_AVANT_QUESTION } from './rollover-decision';
+import { debutEffectifDePlanification } from './planning-start';
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -617,20 +618,31 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
       try {
         const prefs = await storage.getUserPreferences(userId);
 
-        // Skip si la planification n'a pas encore démarré
-        if (prefs?.planningStartDate && prefs.planningStartDate > startDate) {
-          console.log(`[AutoPlanner] Skipping ${userId} — planning starts ${prefs.planningStartDate}`);
-          continue;
+        // Une date de depart FUTURE deplace le point de depart — elle ne fait plus sauter
+        // la planification.
+        //
+        // Avant : `if (planningStartDate > startDate) continue`. « La planification demarre
+        // vendredi » voulait donc dire « ne rien faire jusqu'a vendredi », et Jeanne ouvrait
+        // son planning du vendredi sans rien y voir. Elle ne pouvait le decouvrir que le
+        // vendredi matin, apres le cron de 6 h — impossible de preparer sa semaine.
+        //
+        // Ca veut dire « planifier A PARTIR de vendredi ». Les sept jours ouvres generes
+        // depuis ce point donnent la vision de la semaine, sans autre changement.
+        const debutUtilisateur = debutEffectifDePlanification(startDate, prefs?.planningStartDate);
+        if (debutUtilisateur !== startDate) {
+          console.log(`[AutoPlanner] ${userId} — planification demarree au ${debutUtilisateur}`);
         }
 
-        // 1. Rollover des tâches incomplètes des jours passés
-        await rolloverStaleTasks(userId, startDate).catch(e =>
+        // 1. Rollover des tâches incomplètes des jours passés.
+        //    Vers `debutUtilisateur` : une tache en retard doit atterrir le jour ou la
+        //    planification reprend, pas sur une journee que l'utilisatrice a mise de cote.
+        await rolloverStaleTasks(userId, debutUtilisateur).catch(e =>
           console.error(`[AutoPlanner] Rollover failed for ${userId}:`, e.message)
         );
 
         // 2. Générer les 7 prochains jours de travail
         const workDays = parseWorkDays(prefs?.workDays);
-        const dates = nextWorkingDates(startDate, 7, workDays);
+        const dates = nextWorkingDates(debutUtilisateur, 7, workDays);
 
         for (const date of dates) {
           await generateForUser(userId, date).catch(e =>
