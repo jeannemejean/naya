@@ -1,7 +1,35 @@
 import 'dotenv/config';
+import dns from 'node:dns';
+import net from 'node:net';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
+
+// ── Connexion a Neon depuis Railway : IPv4 d'abord, et un delai d'essai realiste ──────
+//
+// Symptome (24 septembre 2026) : /api/health renvoyait par intermittence
+// { db: "disconnected" }, avec un message d'erreur VIDE. Une requete sur deux passait.
+//
+// La base n'y etait pour rien : interrogee directement au meme instant, elle repondait
+// normalement, et son calcul Neon tourne sans interruption depuis le 18 septembre.
+//
+// Cause, lue dans les logs Railway. L'hote Neon resout SIX adresses — trois IPv6 et trois
+// IPv4 :
+//   connect ENETUNREACH 2600:1f18:700d:420f:... → le conteneur Railway n'a PAS de route IPv6
+//   connect ETIMEDOUT   3.227.221.118:5432      → et l'IPv4 n'aboutit pas a temps
+//
+// Node 22 active « Happy Eyeballs » par defaut (autoSelectFamily) : il essaie les adresses
+// en alternance, avec 250 ms par tentative. Les IPv6 echouent, les IPv4 n'ont pas le temps
+// de terminer leur poignee de main TCP+TLS vers us-east-1, et toutes les adresses
+// s'epuisent. Node leve alors une AggregateError dont le `.message` est VIDE — ce qui
+// explique le `DB connection error:` sans rien apres.
+//
+// L'arithmetique confirme : les echecs duraient 754 a 769 ms, soit trois tentatives de
+// 250 ms. Les requetes reussies, elles, prenaient 256 ms — une seule tentative qui aboutit.
+//
+// Deux reglages, au niveau du processus :
+dns.setDefaultResultOrder('ipv4first');            // ne pas gaspiller d'essais sur l'IPv6 injoignable
+net.setDefaultAutoSelectFamilyAttemptTimeout(2000); // 250 ms ne suffit pas pour un aller-retour inter-region
 
 const { Pool } = pg;
 
