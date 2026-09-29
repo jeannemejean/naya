@@ -10,19 +10,54 @@ import { recordSpend, SERP_COST_EUR } from "./usage";
 
 const SERP_ENDPOINT = "https://api.brightdata.com/request";
 
-export interface SerpResult { link: string; title: string; description?: string }
+export interface SerpResult { link: string; title: string; description?: string; source?: string; publishedAtRaw?: string }
 export interface ExtractedLead { name: string; role: string | null; company: string | null; linkedinUrl: string }
+
+/** Verticale et fenêtre de fraîcheur. Générique : la lecture s'en sert, la prospection non. */
+export interface SerpOptions { vertical?: "web" | "news"; freshness?: "week" }
 
 export function serpConfigured(): boolean {
   return !!process.env.BRIGHT_DATA_API_KEY;
 }
 
-/** Exécute une requête Google via la SERP API et renvoie les résultats organiques. */
-export async function serpSearch(query: string, userId?: string): Promise<SerpResult[]> {
+/**
+ * Construit l'URL Google interrogée via la SERP API. Pur — testé isolément.
+ * Encodage manuel via encodeURIComponent (et non URLSearchParams, qui encode
+ * l'espace en "+" au lieu de "%20" — incompatible avec les opérateurs Google
+ * de type `site:` ou les guillemets d'une requête exacte).
+ */
+export function buildSerpUrl(query: string, opts: SerpOptions = {}): string {
+  const params = [`q=${encodeURIComponent(query)}`];
+  if (opts.vertical === "news") params.push("tbm=nws");
+  if (opts.freshness === "week") params.push(`tbs=${encodeURIComponent("qdr:w")}`);
+  return `https://www.google.com/search?${params.join("&")}`;
+}
+
+/**
+ * Extrait les résultats du corps SERP. Deux formes possibles :
+ * `organic` (recherche web, ce que lit la prospection) et `news` (verticale actualités,
+ * qui porte en plus une date brute — c'est elle qui rend la fraîcheur fiable).
+ * Pur, tolérant : toute forme inattendue rend une liste vide plutôt que de jeter.
+ */
+export function parseSerpBody(body: any): SerpResult[] {
+  const raw: any[] = Array.isArray(body?.news) ? body.news : Array.isArray(body?.organic) ? body.organic : [];
+  return raw
+    .map((o) => ({
+      link: o?.link || o?.url || "",
+      title: o?.title || "",
+      description: o?.description || o?.snippet || undefined,
+      source: o?.source || o?.publisher || undefined,
+      publishedAtRaw: o?.date || o?.published || undefined,
+    }))
+    .filter((r) => r.link);
+}
+
+/** Exécute une requête Google via la SERP API et renvoie les résultats organiques (ou actualités). */
+export async function serpSearch(query: string, userId?: string, opts: SerpOptions = {}): Promise<SerpResult[]> {
   const apiKey = process.env.BRIGHT_DATA_API_KEY;
   if (!apiKey) return [];
   const zone = process.env.BRIGHT_DATA_SERP_ZONE || "naya";
-  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  const url = buildSerpUrl(query, opts);
   try {
     const res = await fetch(SERP_ENDPOINT, {
       method: "POST",
@@ -36,11 +71,7 @@ export async function serpSearch(query: string, userId?: string): Promise<SerpRe
     // La réponse SERP API : { status_code, headers, body } où body est une STRING JSON.
     let body: any = wrapper?.body;
     if (typeof body === "string") { try { body = JSON.parse(body); } catch { return []; } }
-    const organic: any[] = body?.organic || [];
-    if (!Array.isArray(organic)) return [];
-    return organic
-      .map((o) => ({ link: o.link || o.url || "", title: o.title || "", description: o.description || o.snippet || "" }))
-      .filter((r) => r.link);
+    return parseSerpBody(body);
   } catch {
     return [];
   }
