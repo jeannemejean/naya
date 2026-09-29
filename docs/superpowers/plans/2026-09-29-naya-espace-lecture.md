@@ -1190,7 +1190,9 @@ export async function sourcerCandidats(input: {
       }
       budget -= 1;
       try {
-        const res = await serpSearch(requete, input.userId, { vertical: "news", freshness: "week" });
+        // pays/langue épinglés : sans eux, Bright Data sort par un pays aléatoire
+        // (Germany, Croatia, Peru… mesuré) et un appel sur trois ne rend RIEN.
+        const res = await serpSearch(requete, input.userId, { vertical: "news", freshness: "week", pays: "fr", langue: "fr" });
         for (const r of res) {
           out.push({
             url: r.link,
