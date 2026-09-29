@@ -9,3 +9,6 @@ vite.config.ts.*
 !.env.example
 **/.env
 .replit
+
+# Atelier de travail des sous-agents (scratch, jamais commite)
+.superpowers/
