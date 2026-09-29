@@ -1,4 +1,5 @@
 import { canonicalizeUrl, hashUrl, normalizeTitle } from "./url";
+import { callClaude, CLAUDE_MODELS } from "../claude";
 
 // ── Constantes de politique. Aucune n'est un réglage utilisateur. ──────────────
 export const FRAICHEUR_JOURS = 7;
@@ -79,4 +80,99 @@ export function etage1(bruts: CandidatBrut[], opts: { today: Date; urlHashDejaVu
   }
 
   return out;
+}
+
+// ── Étage 2 : le jugement comparatif du modèle, et le seuil hors de sa portée. ─────
+
+export interface Note { url: string; score: number; rationale: string }
+
+export const PROMPT_TRI = `Tu tries une veille pour UNE marque précise.
+
+On te donne le contexte de la marque, puis une liste d'articles d'actualité récents
+(titre, source, date, URL). Tu réponds à UNE SEULE question, pour chacun :
+
+  « Cette personne, avec CETTE marque, a-t-elle quelque chose de NON ÉVIDENT à en dire ? »
+
+Tu ne juges pas si l'article est bon, intéressant en soi, ou bien écrit. Tu juges s'il
+appelle un point de vue que seule cette personne peut donner. Un article que n'importe
+qui commenterait pareil ne vaut rien ici.
+
+Tu notes les articles LES UNS PAR RAPPORT AUX AUTRES : le meilleur du lot n'est pas
+forcément bon. Si aucun ne mérite mieux que 0.5, note-les tous en dessous de 0.5.
+Ne cherche pas à en faire ressortir un.
+
+Réponds UNIQUEMENT par un tableau JSON, sans texte autour :
+[{"url": "...", "score": 0.0 à 1.0, "rationale": "une phrase, en français"}]`;
+
+/** Lit la sortie du modèle. Tolérante au bavardage et aux balises markdown. Pure. */
+export function parseNotes(raw: string): Note[] {
+  if (!raw || !raw.trim()) return [];
+  const debut = raw.indexOf("[");
+  const fin = raw.lastIndexOf("]");
+  if (debut === -1 || fin <= debut) return [];
+  let brut: any;
+  try { brut = JSON.parse(raw.slice(debut, fin + 1)); } catch { return []; }
+  if (!Array.isArray(brut)) return [];
+  return brut
+    .filter((n) => n && typeof n.url === "string" && typeof n.score === "number" && n.score >= 0 && n.score <= 1)
+    .map((n) => ({ url: n.url, score: n.score, rationale: typeof n.rationale === "string" ? n.rationale : "" }));
+}
+
+/**
+ * Applique le seuil et les plafonds. Volontairement HORS du modèle : le nombre de fiches
+ * est ce qui reste après le seuil, jamais un quota à remplir. Aucun chemin de ce code
+ * ne peut abaisser SEUIL_RETENTION pour produire une fiche de plus.
+ */
+export function selectionFinale(
+  candidats: Candidat[],
+  notes: Note[],
+): Array<Candidat & { score: number; rationale: string }> {
+  const parUrl = new Map(candidats.map((c) => [c.url, c]));
+  const retenus = notes
+    .filter((n) => n.score >= SEUIL_RETENTION && parUrl.has(n.url))
+    .sort((a, b) => b.score - a.score)
+    .map((n) => ({ ...(parUrl.get(n.url) as Candidat), score: n.score, rationale: n.rationale }));
+
+  const out: Array<Candidat & { score: number; rationale: string }> = [];
+  const parProjet = new Map<number, number>();
+  for (const r of retenus) {
+    if (out.length >= MAX_FICHES) break;
+    const n = parProjet.get(r.projectId) ?? 0;
+    if (n >= MAX_PAR_PROJET) continue;
+    parProjet.set(r.projectId, n + 1);
+    out.push(r);
+  }
+  return out;
+}
+
+/**
+ * Étage 2 : UN SEUL appel par marque, avec toute la liste. Le modèle voit le champ
+ * entier, donc il distingue « le meilleur d'aujourd'hui » de « bon dans l'absolu » —
+ * ce qu'un jugement article par article ne sait pas faire.
+ */
+export async function noterCandidats(input: {
+  userId: string;
+  projectId: number;
+  contexteMarque: string;
+  candidats: Candidat[];
+}): Promise<Note[]> {
+  if (input.candidats.length === 0) return [];
+  const liste = input.candidats
+    .map((c, i) => `${i + 1}. ${c.title}\n   source: ${c.source ?? "inconnue"} — ${c.publishedAt.toISOString().slice(0, 10)}\n   url: ${c.url}`)
+    .join("\n");
+  try {
+    const raw = await callClaude({
+      model: CLAUDE_MODELS.smart,
+      taskKind: "strategic_reasoning",
+      system: PROMPT_TRI,
+      max_tokens: 2048,
+      userId: input.userId,
+      projectId: input.projectId,
+      messages: [{ role: "user", content: `CONTEXTE DE LA MARQUE\n${input.contexteMarque}\n\nARTICLES DU JOUR\n${liste}` }],
+    });
+    return parseNotes(raw);
+  } catch (err: any) {
+    console.error(`[Lecture] notation projet ${input.projectId} échouée:`, err?.message);
+    return []; // best-effort : pas de note → pas de fiche, jamais d'erreur visible
+  }
 }
