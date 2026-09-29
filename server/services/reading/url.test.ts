@@ -17,8 +17,7 @@ describe("canonicalizeUrl", () => {
   });
 
   it("conserve REF_ID= qui n'est pas un paramètre de suivi", () => {
-    const result = canonicalizeUrl("https://a.fr/x?REF_ID=999");
-    expect(result).toContain("REF_ID=999");
+    expect(canonicalizeUrl("https://a.fr/x?REF_ID=999")).toBe("https://a.fr/x?REF_ID=999");
   });
 
   it("retire ref= et fbclid= qui sont des paramètres de suivi exacts", () => {
