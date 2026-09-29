@@ -877,6 +877,9 @@ export const strategyReports = pgTable("strategy_reports", {
 export const savedArticles = pgTable("saved_articles", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
+  // Multi-marques : seule table qui l'ignorait encore. Nullable — les lignes existantes
+  // ont été créées avant la notion de projet, on ne leur en invente pas une.
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   url: text("url").notNull(),
   description: text("description"),
@@ -893,6 +896,57 @@ export const savedArticles = pgTable("saved_articles", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// L'ESPACE DE LECTURE — la revue du matin.
+// Voir docs/superpowers/specs/2026-09-29-naya-espace-lecture-design.md
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Les requêtes de veille, PAR PROJET. Générées par l'IA, éditables par l'utilisateur.
+// Régénérées au plus une fois par semaine : des requêtes stables font une veille stable.
+export const readingQueries = pgTable("reading_queries", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  query: text("query").notNull(),
+  origin: text("origin").notNull().default("ai"),   // ai | manual
+  isActive: boolean("is_active").notNull().default(true),
+  lastRunAt: timestamp("last_run_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  projIdx: index("reading_query_proj_idx").on(t.userId, t.projectId, t.isActive),
+}));
+
+// Une fiche de lecture. Sert AUSSI de mémoire des URLs déjà vues (index unique) :
+// les lignes expirées et rejetées RESTENT en base, c'est ce qui rend vraie la règle
+// « une URL déjà proposée n'est jamais reproposée ».
+export const readingCards = pgTable("reading_cards", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  urlHash: text("url_hash").notNull(),
+  title: text("title").notNull(),
+  source: text("source"),
+  publishedAt: timestamp("published_at"),
+  relevanceScore: doublePrecision("relevance_score"),
+  relevanceRationale: text("relevance_rationale"),
+  factSummary: text("fact_summary"),
+  whyThisBrand: text("why_this_brand"),
+  angle: text("angle"),
+  question: text("question"),
+  userAnswer: text("user_answer"),
+  answeredAt: timestamp("answered_at"),
+  status: text("status").notNull().default("proposed"), // proposed | answered | kept | expired | rejected
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  seenIdx: uniqueIndex("reading_card_seen_idx").on(t.userId, t.urlHash),
+  dayIdx: index("reading_card_day_idx").on(t.userId, t.status, t.createdAt),
+}));
+
+export type ReadingQuery = typeof readingQueries.$inferSelect;
+export type ReadingCard = typeof readingCards.$inferSelect;
 
 // Social media accounts for posting
 export const socialAccounts = pgTable("social_accounts", {
