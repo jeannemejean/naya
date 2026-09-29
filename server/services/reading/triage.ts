@@ -60,7 +60,11 @@ export function etage1(bruts: CandidatBrut[], opts: { today: Date; urlHashDejaVu
     if (opts.urlHashDejaVus.has(h) || hashDuLot.has(h)) continue;
 
     const titre = normalizeTitle(b.title);
-    if (!titre || titresDuLot.has(titre)) continue;
+    // Un titre qui se normalise en chaîne vide est indiscernable d'un doublon,
+    // mais c'est un candidat invalide : reading_cards.title est NOT NULL.
+    if (!titre) continue;
+    // Un titre déjà vu dans ce lot est un doublon : on garde le premier arrivé.
+    if (titresDuLot.has(titre)) continue;
 
     hashDuLot.add(h);
     titresDuLot.add(titre);

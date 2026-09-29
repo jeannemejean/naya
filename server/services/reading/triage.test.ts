@@ -65,6 +65,16 @@ describe("etage1 — le tri déterministe, avant tout appel modèle", () => {
     expect(etage1([brut({ url: "pas une url" })], { today: TODAY, urlHashDejaVus: new Set() })).toEqual([]);
   });
 
+  it("écarte un titre qui se normalise en chaîne vide", () => {
+    const out = etage1([brut({ title: "!!! --" })], { today: TODAY, urlHashDejaVus: new Set() });
+    expect(out).toEqual([]);
+  });
+
+  it(`conserve un candidat publié il y a exactement ${FRAICHEUR_JOURS} jours`, () => {
+    const out = etage1([brut({ publishedAt: ilYA(FRAICHEUR_JOURS) })], { today: TODAY, urlHashDejaVus: new Set() });
+    expect(out).toHaveLength(1);
+  });
+
   it("ne fait aucun appel réseau ni modèle : la fonction est pure et synchrone", () => {
     expect(etage1([], { today: TODAY, urlHashDejaVus: new Set() })).toEqual([]);
   });

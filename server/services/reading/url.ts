@@ -2,7 +2,14 @@ import { createHash } from "crypto";
 
 // Paramètres de suivi : ils changent d'un partage à l'autre sans changer la page.
 // Les garder ferait passer le même article pour deux articles différents.
-const PARAMS_DE_SUIVI = /^(utm_|fbclid|gclid|mc_cid|mc_eid|igshid|ref|ref_src|spm|xtor|at_medium|at_campaign)/i;
+// Deux catégories : les préfixes (utm_*, at_*) et les noms exacts (fbclid, gclid, etc.).
+const PARAMS_PREFIXES = /^(utm_|at_)/i;
+const PARAMS_EXACTS = /^(fbclid|gclid|mc_cid|mc_eid|igshid|ref|ref_src|spm|xtor)$/i;
+
+/** Vérifie si un nom de paramètre doit être retiré (suivi ou équivalent). */
+function estUnParamDeSuivi(nom: string): boolean {
+  return PARAMS_PREFIXES.test(nom) || PARAMS_EXACTS.test(nom);
+}
 
 /** URL canonique : la clé d'identité d'un article. Pur. */
 export function canonicalizeUrl(raw: string): string | null {
@@ -14,7 +21,7 @@ export function canonicalizeUrl(raw: string): string | null {
     u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
     u.protocol = u.protocol.toLowerCase();
     for (const k of [...u.searchParams.keys()]) {
-      if (PARAMS_DE_SUIVI.test(k)) u.searchParams.delete(k);
+      if (estUnParamDeSuivi(k)) u.searchParams.delete(k);
     }
     u.searchParams.sort();
     let out = u.toString();
@@ -36,7 +43,7 @@ export function hashUrl(canonical: string): string {
 export function normalizeTitle(title: string): string {
   return (title || "")
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")   // retire les accents
+    .replace(/[\u0300-\u036f]/g, "")   // retire les accents
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();

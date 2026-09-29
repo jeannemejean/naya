@@ -12,6 +12,22 @@ describe("canonicalizeUrl", () => {
     expect(a).toBe(b);
   });
 
+  it("conserve reference= qui n'est pas un paramètre de suivi", () => {
+    expect(canonicalizeUrl("https://a.fr/x?reference=42")).toBe("https://a.fr/x?reference=42");
+  });
+
+  it("conserve REF_ID= qui n'est pas un paramètre de suivi", () => {
+    const result = canonicalizeUrl("https://a.fr/x?REF_ID=999");
+    expect(result).toContain("REF_ID=999");
+  });
+
+  it("retire ref= et fbclid= qui sont des paramètres de suivi exacts", () => {
+    const a = canonicalizeUrl("https://a.fr/x?ref=twitter");
+    const b = canonicalizeUrl("https://a.fr/x?FBCLID=abc");
+    expect(a).toBe("https://a.fr/x");
+    expect(b).toBe("https://a.fr/x");
+  });
+
   it("normalise le schéma, la casse de l'hôte, le www et le slash final", () => {
     expect(canonicalizeUrl("HTTP://WWW.A.fr/Article/")).toBe("http://a.fr/Article");
   });
