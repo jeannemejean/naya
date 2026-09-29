@@ -1,6 +1,6 @@
 import { db } from "../../db";
 import { and, eq, desc } from "drizzle-orm";
-import { readingQueries, projects, brandDna } from "@shared/schema";
+import { readingQueries, projects, brandDna, type ReadingQuery } from "@shared/schema";
 import { callClaude, CLAUDE_MODELS } from "../claude";
 import { retrieveMemories } from "../memory/retrieve";
 
@@ -54,18 +54,30 @@ Réponds UNIQUEMENT par un tableau JSON de chaînes, sans texte autour : ["...",
  * déjà (éventuellement rien) plutôt que de casser la revue.
  */
 export async function assurerRequetes(userId: string, projectId: number, today: Date): Promise<string[]> {
-  const existantes = await db
-    .select()
-    .from(readingQueries)
-    .where(and(eq(readingQueries.userId, userId), eq(readingQueries.projectId, projectId), eq(readingQueries.isActive, true)))
-    .orderBy(desc(readingQueries.createdAt));
+  // Lecture protégée : une panne de base ici (connexion, timeout Neon) ne doit jamais
+  // faire remonter d'exception — sans état existant fiable, on ne peut de toute façon
+  // pas décider une régénération en sécurité (on ignorerait quelles requêtes sont
+  // manuelles). On dégrade la revue (liste vide) plutôt que de la casser.
+  let existantes: ReadingQuery[];
+  try {
+    existantes = await db
+      .select()
+      .from(readingQueries)
+      .where(and(eq(readingQueries.userId, userId), eq(readingQueries.projectId, projectId), eq(readingQueries.isActive, true)))
+      .orderBy(desc(readingQueries.createdAt));
+  } catch (err: any) {
+    console.error(`[Lecture] lecture des requêtes projet ${projectId} échouée:`, err?.message);
+    return [];
+  }
 
-  const derniereGeneration = existantes.length
-    ? existantes.reduce<Date | null>((max, q) => {
-        const d = q.createdAt ? new Date(q.createdAt) : null;
-        return d && (!max || d > max) ? d : max;
-      }, null)
-    : null;
+  // La cadence de régénération est pilotée UNIQUEMENT par les requêtes générées par l'IA :
+  // sinon une requête manuelle récente (ajoutée ou éditée par l'utilisatrice) repousserait
+  // indéfiniment la régénération, alors qu'elle ne doit que se préserver, jamais piloter le rythme.
+  const generationsIA = existantes.filter((q) => q.origin === "ai");
+  const derniereGeneration = generationsIA.reduce<Date | null>((max, q) => {
+    const d = q.createdAt ? new Date(q.createdAt) : null;
+    return d && (!max || d > max) ? d : max;
+  }, null);
 
   // Les requêtes écrites à la main ne sont jamais remplacées par la génération.
   const manuelles = existantes.filter((q) => q.origin === "manual").map((q) => q.query);
@@ -102,15 +114,19 @@ export async function assurerRequetes(userId: string, projectId: number, today: 
     const generees = parseRequetes(raw).filter((q) => !manuelles.includes(q));
     if (generees.length === 0) return existantes.map((q) => q.query);
 
-    // Les anciennes générées sortent, les manuelles restent.
-    await db
-      .update(readingQueries)
-      .set({ isActive: false })
-      .where(and(eq(readingQueries.userId, userId), eq(readingQueries.projectId, projectId), eq(readingQueries.origin, "ai")));
+    // Les anciennes générées sortent, les manuelles restent. Transaction : si l'insert
+    // échouait après l'update, le projet se retrouverait avec zéro requête active — le job
+    // du lendemain ne trouverait plus rien à chercher pour cette marque.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(readingQueries)
+        .set({ isActive: false })
+        .where(and(eq(readingQueries.userId, userId), eq(readingQueries.projectId, projectId), eq(readingQueries.origin, "ai")));
 
-    await db.insert(readingQueries).values(
-      generees.map((q) => ({ userId, projectId, query: q, origin: "ai" as const, isActive: true })),
-    );
+      await tx.insert(readingQueries).values(
+        generees.map((q) => ({ userId, projectId, query: q, origin: "ai" as const, isActive: true })),
+      );
+    });
 
     return [...manuelles, ...generees];
   } catch (err: any) {
