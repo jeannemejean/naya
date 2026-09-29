@@ -13,8 +13,11 @@ const SERP_ENDPOINT = "https://api.brightdata.com/request";
 export interface SerpResult { link: string; title: string; description?: string; source?: string; publishedAtRaw?: string }
 export interface ExtractedLead { name: string; role: string | null; company: string | null; linkedinUrl: string }
 
-/** Verticale et fenêtre de fraîcheur. Générique : la lecture s'en sert, la prospection non. */
-export interface SerpOptions { vertical?: "web" | "news"; freshness?: "week" }
+/**
+ * Verticale, fenêtre de fraîcheur et localisation. Générique : la lecture s'en sert
+ * (verticale actualités, France), la prospection non — elle appelle serpSearch sans options.
+ */
+export interface SerpOptions { vertical?: "web" | "news"; freshness?: "week"; pays?: string; langue?: string }
 
 export function serpConfigured(): boolean {
   return !!process.env.BRIGHT_DATA_API_KEY;
@@ -30,6 +33,12 @@ export function buildSerpUrl(query: string, opts: SerpOptions = {}): string {
   const params = [`q=${encodeURIComponent(query)}`];
   if (opts.vertical === "news") params.push("tbm=nws");
   if (opts.freshness === "week") params.push(`tbs=${encodeURIComponent("qdr:w")}`);
+  // Sans gl/hl, Bright Data sort de Google depuis un pays de sortie aléatoire
+  // (constaté : Germany, Croatia, Peru, Brasil, parfois aucun) — résultats non
+  // déterministes (jusqu'à 0 sur 3 appels identiques) et dates en anglais.
+  // Épingler pays + langue corrige ce bug, ce n'est pas une préférence.
+  if (opts.pays) params.push(`gl=${encodeURIComponent(opts.pays)}`);
+  if (opts.langue) params.push(`hl=${encodeURIComponent(opts.langue)}`);
   return `https://www.google.com/search?${params.join("&")}`;
 }
 

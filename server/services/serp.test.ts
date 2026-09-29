@@ -58,6 +58,25 @@ describe("buildSerpUrl — la verticale et la fenêtre de fraîcheur", () => {
       encodeURIComponent('site:lesechos.fr "packaging durable"'),
     );
   });
+
+  it("sans pays/langue : ni gl ni hl dans l'URL (non-régression prospection)", () => {
+    const url = buildSerpUrl("actualité packaging");
+    expect(url).not.toContain("gl=");
+    expect(url).not.toContain("hl=");
+  });
+
+  it("avec pays/langue : gl=fr et hl=fr dans l'URL, sans casser tbm/tbs", () => {
+    const url = buildSerpUrl("actualité packaging", {
+      vertical: "news",
+      freshness: "week",
+      pays: "fr",
+      langue: "fr",
+    });
+    expect(url).toContain("gl=fr");
+    expect(url).toContain("hl=fr");
+    expect(url).toContain("tbm=nws");
+    expect(url).toContain("tbs=qdr%3Aw");
+  });
 });
 
 describe("parseSerpBody — les deux formes de réponse Bright Data", () => {
