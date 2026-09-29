@@ -91,7 +91,7 @@ describe("buildSerpUrl — la verticale et la fenêtre de fraîcheur", () => {
 describe("parseSerpBody — les deux formes de réponse Bright Data", () => {
   it("lit la forme web (organic), comme la prospection aujourd'hui", () => {
     const out = parseSerpBody({ organic: [{ link: "https://a.fr/x", title: "A", description: "desc" }] });
-    expect(out).toEqual([{ link: "https://a.fr/x", title: "A", description: "desc", publishedAtRaw: undefined }]);
+    expect(out).toEqual([{ link: "https://a.fr/x", title: "A", description: "desc", source: undefined, publishedAtRaw: undefined }]);
   });
 
   it("lit la forme actualités (news) et en retient la date brute", () => {
@@ -100,6 +100,7 @@ describe("parseSerpBody — les deux formes de réponse Bright Data", () => {
     });
     expect(out).toHaveLength(1);
     expect(out[0].link).toBe("https://b.fr/y");
+    expect(out[0].source).toBe("Les Echos");   // la source alimente la fiche — sans elle, « source inconnue »
     expect(out[0].publishedAtRaw).toBe("il y a 2 jours");
   });
 
@@ -125,7 +126,7 @@ Expected: FAIL — `buildSerpUrl` et `parseSerpBody` ne sont pas exportés.
 Dans `server/services/serp.ts`, remplacer l'interface `SerpResult` et le corps de `serpSearch` :
 
 ```typescript
-export interface SerpResult { link: string; title: string; description?: string; publishedAtRaw?: string }
+export interface SerpResult { link: string; title: string; description?: string; source?: string; publishedAtRaw?: string }
 
 /** Verticale et fenêtre de fraîcheur. Générique : la lecture s'en sert, la prospection non. */
 export interface SerpOptions { vertical?: "web" | "news"; freshness?: "week" }
@@ -151,6 +152,7 @@ export function parseSerpBody(body: any): SerpResult[] {
       link: o?.link || o?.url || "",
       title: o?.title || "",
       description: o?.description || o?.snippet || undefined,
+      source: o?.source || o?.publisher || undefined,
       publishedAtRaw: o?.date || o?.published || undefined,
     }))
     .filter((r) => r.link);
@@ -637,10 +639,9 @@ Le modèle ne décide pas seul ce qui sort : il note, et une fonction pure appli
 
 - [ ] **Step 1: Écrire les tests**
 
-Ajouter à `server/services/reading/triage.test.ts` :
+Compléter l'import existant de `./triage` en tête de `server/services/reading/triage.test.ts` avec `parseNotes`, `selectionFinale`, `SEUIL_RETENTION`, `MAX_FICHES` et `MAX_PAR_PROJET` — un seul import par module — puis ajouter à la fin du fichier :
 
 ```typescript
-import { parseNotes, selectionFinale, SEUIL_RETENTION, MAX_FICHES, MAX_PAR_PROJET } from "./triage";
 
 const cand = (url: string, projectId = 1) => ({
   url, urlHash: `h-${url}`, title: `titre ${url}`, source: null,
@@ -693,10 +694,13 @@ describe("selectionFinale — le seuil et les plafonds, hors de portée du modè
 
   it(`plafonne à ${MAX_FICHES} fiches, les mieux notées d'abord`, () => {
     const candidats = [1, 2, 3, 4, 5].map((i) => cand(`https://a.fr/${i}`, i));
-    const notes = candidats.map((c, i) => ({ url: c.url, score: 0.71 + i * 0.05, rationale: "r" }));
+    // Scores écrits en littéraux, jamais calculés : 0.71 + 2 * 0.05 vaut 0.8099999999999999
+    // en binaire, et le test échouerait sur une égalité stricte.
+    const scores = [0.72, 0.78, 0.84, 0.9, 0.96];
+    const notes = candidats.map((c, i) => ({ url: c.url, score: scores[i], rationale: "r" }));
     const out = selectionFinale(candidats, notes);
     expect(out).toHaveLength(MAX_FICHES);
-    expect(out.map((o) => o.score)).toEqual([0.91, 0.86, 0.81]);
+    expect(out.map((o) => o.score)).toEqual([0.96, 0.9, 0.84]);
   });
 
   it(`ne donne jamais plus de ${MAX_PAR_PROJET} fiches au même projet`, () => {
@@ -1191,7 +1195,7 @@ export async function sourcerCandidats(input: {
           out.push({
             url: r.link,
             title: r.title,
-            source: (r as any).source ?? null,
+            source: r.source ?? null,
             publishedAt: parseDateRelative(r.publishedAtRaw, input.today),
             projectId,
           });
@@ -1897,7 +1901,7 @@ Dans `server/routes.ts`, ajouter le bloc. Les imports vont en tête de fichier a
   });
 ```
 
-Ajouter aux imports en tête de `server/routes.ts` — vérifier d'abord lesquels sont déjà présents (`db`, `and`, `eq`, `desc`, `or`, `gte`, `inArray`, `content`, `callClaudeWithContext` le sont probablement déjà) :
+Compléter les imports en tête de `server/routes.ts`. **Vérifié le 29/09 : la ligne 7 n'importe que `eq, and, inArray` de `drizzle-orm`** — il faut y ajouter `or`, `gte` et `desc`. Vérifier de même la présence de `db`, `content` et `callClaudeWithContext`, puis ajouter :
 
 ```typescript
 import { readingCards, readingQueries } from "@shared/schema";
