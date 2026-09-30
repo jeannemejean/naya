@@ -24,6 +24,10 @@ export interface DepsLecture {
   // aujourd'hui ne libère pas de place, sinon la remplacer serait exactement le
   // « compléter pour atteindre trois » que le projet interdit.
   compterFichesDuJour: (userId: string, today: Date) => Promise<number>;
+  // L'accès aux données externes (SERP + scrape) est-il configuré ? Un collaborateur
+  // ordinaire, injectable et testable — pas une comparaison d'identité sur depsParDefaut,
+  // qui ne peut jamais être vraie dès qu'un objet deps distinct est injecté en test.
+  accesExterneConfigure: () => boolean;
 }
 
 const debutDuJour = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -75,6 +79,7 @@ const depsParDefaut: DepsLecture = {
       .where(and(eq(readingCards.userId, userId), gte(readingCards.createdAt, debutDuJour(today))));
     return rows.length;
   },
+  accesExterneConfigure: () => serpConfigured() && webScrapeConfigured(),
 };
 
 /**
@@ -94,7 +99,7 @@ export async function runReadingRoom(
     return 0;
   });
 
-  if (deps === depsParDefaut && (!serpConfigured() || !webScrapeConfigured())) {
+  if (!deps.accesExterneConfigure()) {
     console.info("[Lecture] Bright Data non configuré — revue non exécutée");
     return { fichesEcrites: 0 };
   }
@@ -139,9 +144,9 @@ export async function runReadingRoom(
   const retenus = selectionFinale(candidats, notes);
   if (retenus.length === 0) return { fichesEcrites: 0 };
 
-  // Le plafond de ${MAX_FICHES} fiches est JOURNALIER, pas par exécution : sans ce garde,
-  // une deuxième exécution le même jour (endpoint manuel après le cron) pourrait écrire
-  // jusqu'à ${MAX_FICHES} fiches de plus. On compte TOUS les statuts, y compris `rejected`
+  // Le plafond de MAX_FICHES (3) fiches est JOURNALIER, pas par exécution : sans ce
+  // garde, une deuxième exécution le même jour (endpoint manuel après le cron) pourrait
+  // écrire jusqu'à 3 fiches de plus. On compte TOUS les statuts, y compris `rejected`
   // et `expired` — une fiche déjà passée ce matin ne libère pas de place. En cas d'échec
   // du comptage, on suppose le plafond déjà atteint (fail closed) : mieux vaut une revue
   // manquée qu'un dépassement silencieux du plafond que ce garde existe pour tenir.
