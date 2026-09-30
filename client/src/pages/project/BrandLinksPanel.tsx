@@ -28,6 +28,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useEnsembleId } from "@/hooks/use-ensemble-id";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -90,7 +91,16 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
   });
 
   const projets = projetsQuery.data ?? [];
-  const nomAutreMarque = (id: number) => projets.find((p) => p.id === id)?.name ?? "Autre marque";
+  // `project_links` référence `projects` en `onDelete: cascade` (shared/schema.ts) : un lien ne
+  // survit jamais à la marque qu'il désigne. Ce repli ne devrait donc se déclencher qu'après un
+  // échec de lecture de `/api/projects` — jamais parce que la marque aurait disparu sans que son
+  // lien disparaisse avec elle. On le dit tel quel plutôt que d'afficher un nom générique qui
+  // laisserait croire qu'on connaît la marque et qu'elle s'appelle juste « Autre marque ».
+  const nomAutreMarque = (id: number) => {
+    const trouvee = projets.find((p) => p.id === id)?.name;
+    if (trouvee) return trouvee;
+    return projetsQuery.isError ? "Marque non chargée" : "Autre marque";
+  };
   // Une marque ne se lie jamais à elle-même — le serveur le refuse déjà (valideLien), autant ne
   // pas la proposer dans le formulaire d'ajout.
   const autresMarques = projets.filter((p) => p.id !== projectId);
@@ -114,10 +124,18 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
     onError: () => signalerEchec("Non enregistré", "La modification n'a pas été enregistrée : réessaie."),
   });
 
+  // Suivi PAR LIEN de la suppression en cours : la mutation est partagée par toutes les cartes
+  // (une seule instance `useMutation`), donc son `isPending` global désactiverait le bouton de
+  // TOUS les liens dès qu'un seul est en cours de suppression. `useEnsembleId` isole chaque ligne
+  // (même motif que requetes-de-veille.tsx).
+  const [suppressionEnCours, marquerSuppressionEnCours, retirerSuppressionEnCours] = useEnsembleId();
+
   const supprimer = useMutation({
     mutationFn: (id: number) => fetchJson(`/api/project-links/${id}`, { method: "DELETE" }),
+    onMutate: (id: number) => marquerSuppressionEnCours(id),
     onSuccess: invaliderLiens,
     onError: () => signalerEchec("Non supprimé", "Le lien n'a pas été supprimé : réessaie."),
+    onSettled: (_data, _erreur, id: number) => retirerSuppressionEnCours(id),
   });
 
   const [open, setOpen] = useState(false);
@@ -151,7 +169,13 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
   const sortants = liensQuery.data?.sortants ?? [];
   const entrants = liensQuery.data?.entrants ?? [];
   const chargement = liensQuery.isLoading || projetsQuery.isLoading;
-  const aucunLien = !chargement && sortants.length === 0 && entrants.length === 0;
+  // Distingue une liste VRAIMENT vide d'un simple échec de lecture. La phrase d'état vide plus bas
+  // énonce la règle centrale du produit (l'absence de lien vaut interdiction, Naya ne rapprochera
+  // pas cette marque des autres) : elle ne doit JAMAIS s'afficher sur la foi du repli `?? []`
+  // provoqué par une panne de `/api/projects/:id/links`, sous peine de faire mentir Naya sur sa
+  // propre doctrine alors qu'on n'a simplement pas réussi à lire les liens déjà déclarés.
+  const erreurLiens = liensQuery.isError;
+  const aucunLien = !chargement && !erreurLiens && sortants.length === 0 && entrants.length === 0;
 
   return (
     <div className="space-y-3">
@@ -268,6 +292,12 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
 
       {chargement ? (
         <Skeleton className="h-20 w-full" />
+      ) : erreurLiens ? (
+        <Card className="p-4">
+          <p className="text-sm text-naya-olive-55">
+            Les liens de cette marque n'ont pas pu être chargés pour l'instant.
+          </p>
+        </Card>
       ) : aucunLien ? (
         <Card className="p-4">
           <p className="text-sm text-naya-olive-55">
@@ -286,6 +316,7 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
                   phraseSens={`Cette marque nourrit ${nomAutreMarque(lien.toProjectId)}`}
                   onModifier={(patch) => modifier.mutate({ id: lien.id, patch })}
                   onSupprimer={() => supprimer.mutate(lien.id)}
+                  suppressionEnCours={suppressionEnCours.has(lien.id)}
                 />
               ))}
             </div>
@@ -300,6 +331,7 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
                   phraseSens={`${nomAutreMarque(lien.fromProjectId)} nourrit cette marque`}
                   onModifier={(patch) => modifier.mutate({ id: lien.id, patch })}
                   onSupprimer={() => supprimer.mutate(lien.id)}
+                  suppressionEnCours={suppressionEnCours.has(lien.id)}
                 />
               ))}
             </div>
@@ -315,11 +347,13 @@ function LienCard({
   phraseSens,
   onModifier,
   onSupprimer,
+  suppressionEnCours,
 }: {
   lien: ProjectLink;
   phraseSens: string;
   onModifier: (patch: Partial<ChampsLibres> | { audiencesRecoupent: boolean }) => void;
   onSupprimer: () => void;
+  suppressionEnCours: boolean;
 }) {
   // Brouillon local pour les trois textes libres : ils se valident au blur, comme dans
   // requetes-de-veille.tsx, pour ne pas déclencher une écriture à chaque frappe.
@@ -346,7 +380,11 @@ function LienCard({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Annuler</AlertDialogCancel>
-              <AlertDialogAction onClick={onSupprimer} data-testid={`lien-supprimer-confirmer-${lien.id}`}>
+              <AlertDialogAction
+                onClick={onSupprimer}
+                disabled={suppressionEnCours}
+                data-testid={`lien-supprimer-confirmer-${lien.id}`}
+              >
                 Supprimer
               </AlertDialogAction>
             </AlertDialogFooter>

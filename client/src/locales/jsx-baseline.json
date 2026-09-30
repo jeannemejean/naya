@@ -50,7 +50,7 @@
   "client/src/pages/paywall.tsx": 6,
   "client/src/pages/planning.tsx": 19,
   "client/src/pages/privacy.tsx": 46,
-  "client/src/pages/project/BrandLinksPanel.tsx": 26,
+  "client/src/pages/project/BrandLinksPanel.tsx": 27,
   "client/src/pages/project/ProjectContextEditor.tsx": 12,
   "client/src/pages/project/ProjectPage.tsx": 10,
   "client/src/pages/project/ProjectSummaryBar.tsx": 15,
