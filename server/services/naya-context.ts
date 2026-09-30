@@ -209,6 +209,17 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
     // pour que Naya puisse s'appuyer sur l'actualité du marché quand elle parle de la
     // semaine ou du contenu — SANS jamais en faire une tâche. Best-effort : si la
     // lecture échoue, le contexte se passe de cette section.
+    //
+    // `kept` fait partie des statuts retenus. Cette liste était écrite quand `kept` et
+    // `answered` ne pouvaient PAS coexister : répondre à une fiche gardée la faisait
+    // repasser en `answered`, donc elle entrait ici par ce détour. Depuis que le statut
+    // `kept` survit à une réponse, une fiche peut être gardée ET répondue le même jour —
+    // et c'est la plus précieuse de toutes : jugée digne d'être conservée, et porteuse
+    // d'un avis. L'exclure du contexte du jour était une lecture trop littérale du spec :
+    // la règle qui écarte « garder » porte sur le fil de mémoire `savoir`, pas sur
+    // buildNayaContext, dont la Section 8 injecte « les fiches DU JOUR ». Ce n'est pas le
+    // statut qui compte, c'est l'avis. La borne de date ci-dessous suffit à écarter le
+    // rayonnage ancien : seules les fiches gardées AUJOURD'HUI entrent.
     try {
       const debutDuJour = new Date();
       debutDuJour.setUTCHours(0, 0, 0, 0);
@@ -217,7 +228,7 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
         .from(readingCards)
         .where(and(
           eq(readingCards.userId, userId),
-          inArray(readingCards.status, ['proposed', 'answered']),
+          inArray(readingCards.status, ['proposed', 'answered', 'kept']),
           gte(readingCards.createdAt, debutDuJour),
           ...(projectId ? [eq(readingCards.projectId, projectId)] : []),
         ))
