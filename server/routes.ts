@@ -9823,6 +9823,27 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     return { pid, brandDnaInput: campaignBrandDnaInput(brandDna) };
   }
 
+  /**
+   * Résout l'articulation demandée par le client. Le client n'envoie qu'un
+   * identifiant de campagne : on relit l'articulation nous-mêmes et on vérifie
+   * qu'elle figure bien parmi celles proposables pour cette marque.
+   *
+   * Sans ce contrôle, un appelant authentifié pourrait faire injecter dans le
+   * prompt la campagne d'une marque NON liée — ce qui contournerait la règle
+   * centrale : l'absence de lien est une interdiction, pas un silence.
+   */
+  async function resolveArticulation(
+    userId: string, projectId: number | undefined, campaignIdRaw: any,
+  ): Promise<{ articulation?: Articulation } | { error: string; status: number }> {
+    if (!campaignIdRaw || !projectId) return {};
+    const cid = Number(campaignIdRaw);
+    if (!Number.isFinite(cid)) return { error: "articulationCampaignId invalide", status: 400 };
+    const proposables = await articulationsDisponibles(userId, projectId);
+    const trouvee = proposables.find((a) => a.campagne.id === cid);
+    if (!trouvee) return { error: "Cette campagne n'est pas articulable avec cette marque", status: 400 };
+    return { articulation: trouvee };
+  }
+
   // ÉTAPE 1/3 — stratégie + phases + canaux + messaging + KPIs + prospection.
   app.post('/api/campaigns/generate/strategy', isAuthenticated, async (req: any, res) => {
     try {
@@ -9831,6 +9852,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (!objective) return res.status(400).json({ message: "Objective is required" });
       const ctx = await resolveCampaignCtx(userId, projectId);
       if ('error' in ctx) return res.status(ctx.status).json({ message: ctx.error });
+
+      const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
+      if ('error' in art) return res.status(art.status).json({ message: art.error });
 
       const allCampaigns = await storage.getCampaigns(userId, ctx.pid);
       const reviewed = allCampaigns.filter(c => c.reviewedAt && c.reviewContentQuality).slice(0, 5);
@@ -9841,6 +9865,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const strategy = await generateCampaignStrategy({
         userId, projectId: ctx.pid, objective, duration: duration || '3_months',
         brandDna: ctx.brandDnaInput as any, weekContext: (weekContext || '') + pastReviewContext,
+        // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
+        // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
+        ...(art.articulation ? { articulation: art.articulation } : {}),
       });
       res.json({ strategy });
     } catch (error: any) {
@@ -9860,8 +9887,16 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const ctx = await resolveCampaignCtx(userId, projectId);
       if ('error' in ctx) return res.status(ctx.status).json({ message: ctx.error });
 
+      const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
+      if ('error' in art) return res.status(art.status).json({ message: art.error });
+
       const contentPlan = await generateCampaignContent(
-        { userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext },
+        {
+          userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext,
+          // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
+          // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
+          ...(art.articulation ? { articulation: art.articulation } : {}),
+        },
         strategy as CampaignStrategy,
       );
       res.json({ contentPlan });
@@ -9882,6 +9917,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       }
       const ctx = await resolveCampaignCtx(userId, projectId);
       if ('error' in ctx) return res.status(ctx.status).json({ message: ctx.error });
+
+      const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
+      if ('error' in art) return res.status(art.status).json({ message: art.error });
 
       const tasks = await generateCampaignTasks(
         { userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext },
@@ -9912,6 +9950,11 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         phases: generated.phases, messagingFramework: generated.messagingFramework, channels: generated.channels,
         contentPlan: generated.contentPlan, kpis: generated.kpis, audienceSegment: generated.audienceSegment,
         startDate, endDate,
+        articuleAvecCampaignId: art.articulation ? art.articulation.campagne.id : null,
+        // Le booléen n'est vrai que si l'utilisatrice a explicitement choisi l'isolement.
+        // Il distingue « décidé que non » de « pas encore décidé » (les deux sont sinon
+        // un articuleAvecCampaignId nul), pour que Naya ne repose pas la question.
+        articulationIndependante: req.body?.articulationIndependante === true,
       });
 
       let prospectionCampaign = null;

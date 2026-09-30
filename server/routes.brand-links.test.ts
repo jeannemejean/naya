@@ -12,12 +12,27 @@ import express from "express";
 import http from "node:http";
 import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
+import type { Articulation } from "./services/brand-links/links";
 
 const hoisted = vi.hoisted(() => ({
   resultats: [] as any[][],
   wheres: [] as any[],
   sets: [] as any[],
   inserts: [] as any[],
+  // Mocks au niveau route : interceptent les TROIS étapes de génération pour
+  // inspecter l'objet `CampaignGenerationRequest` réellement construit par
+  // routes.ts (présence/absence du champ `articulation`, valeur de `weekContext`)
+  // sans jamais appeler le réseau.
+  generateCampaignStrategy: vi.fn(),
+  generateCampaignContent: vi.fn(),
+  generateCampaignTasks: vi.fn(),
+  // Références vers les VRAIES implémentations (capturées via importOriginal),
+  // pour tester l'assemblage réel du prompt (tests 3 et 4) sans passer par HTTP.
+  generateCampaignStrategyReel: undefined as any,
+  generateCampaignContentReel: undefined as any,
+  // Mock du seul point de sortie réseau : permet d'appeler les VRAIES fonctions
+  // de génération ci-dessus sans jamais contacter un modèle.
+  callClaudeDetailed: vi.fn(),
 }));
 
 vi.mock("./db", () => {
@@ -46,6 +61,28 @@ vi.mock("./db", () => {
   };
 });
 
+vi.mock("./services/openai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./services/openai")>();
+  // On garde les vraies implémentations de côté (pour les tests 3 et 4, qui
+  // appellent directement la fonction réelle) et on remplace seulement les trois
+  // étapes de génération de campagne pour les tests au niveau route.
+  hoisted.generateCampaignStrategyReel = actual.generateCampaignStrategy;
+  hoisted.generateCampaignContentReel = actual.generateCampaignContent;
+  return {
+    ...actual,
+    generateCampaignStrategy: hoisted.generateCampaignStrategy,
+    generateCampaignContent: hoisted.generateCampaignContent,
+    generateCampaignTasks: hoisted.generateCampaignTasks,
+  };
+});
+
+vi.mock("./services/claude", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./services/claude")>();
+  // Seul point de sortie réseau des vraies fonctions de génération : mocké pour
+  // que les tests directs (3 et 4) n'appellent jamais un modèle réel.
+  return { ...actual, callClaudeDetailed: hoisted.callClaudeDetailed };
+});
+
 vi.mock("./auth", () => ({
   setupAuth: vi.fn(async () => {}),
   isAuthenticated: (req: any, _res: any, next: any) => {
@@ -60,6 +97,10 @@ vi.mock("./auth", () => ({
 
 const storageMock = {
   getProject: vi.fn(),
+  getBrandDna: vi.fn(),
+  getBrandDnaForProject: vi.fn(),
+  getCampaigns: vi.fn(),
+  createCampaign: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 
@@ -299,5 +340,222 @@ describe("DELETE /api/project-links/:id — filtre sur (id, userId), 404 si rien
   it("un identifiant non numérique rend 400, pas 500", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/project-links/abc`, { method: "DELETE" });
     expect(res.status).toBe(400);
+  });
+});
+
+// ─── Tâche 5 — l'articulation entre dans la génération de campagne ───────────
+//
+// Deux niveaux de mock, pour deux natures de test différentes :
+// - `hoisted.generateCampaignStrategy/Content/Tasks` (mocks) : testent ce que ROUTES.TS
+//   construit comme `CampaignGenerationRequest` — présence/absence du champ `articulation`,
+//   valeur exacte de `weekContext`. Ces mocks passent par HTTP (comme le reste du fichier).
+// - `hoisted.generateCampaignStrategyReel/ContentReel` (vraies implémentations, capturées
+//   via importOriginal) : testent ce qu'OPENAI.TS assemble RÉELLEMENT dans le prompt envoyé
+//   au modèle (mocké lui, au niveau réseau via `callClaudeDetailed`). Appelées directement,
+//   sans passer par HTTP — nécessaire car un `weekContext` pollué par concaténation produirait
+//   un prompt texte quasi identique à un `articulation` correctement séparé : seule
+//   l'inspection de l'objet `CampaignGenerationRequest` lui-même distingue les deux.
+
+const STRATEGY_STUB: any = {
+  name: "Campagne Stub", campaignType: "visibility", coreMessage: "Message stub",
+  targetAudience: "Audience", audienceSegment: "Segment", insights: [],
+  messagingFramework: { coreMessage: "", proofPoints: [], primaryCTA: "", secondaryCTA: "", toneKeywords: [], thingsToAvoid: [] },
+  phases: [], channels: [], kpis: [], prospection: null,
+};
+
+describe("POST /api/campaigns/generate/strategy — l'articulation dans la requête de génération", () => {
+  beforeEach(() => {
+    storageMock.getBrandDna.mockResolvedValue(undefined);
+    storageMock.getBrandDnaForProject.mockResolvedValue(undefined);
+    storageMock.getCampaigns.mockResolvedValue([]);
+    hoisted.generateCampaignStrategy.mockResolvedValue(STRATEGY_STUB);
+  });
+
+  it("1. sans articulationCampaignId, la requête de génération ne porte PAS de champ `articulation`", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/strategy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objective: "Vendre plus", duration: "1_month" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(hoisted.generateCampaignStrategy).toHaveBeenCalledTimes(1);
+    const requeteEnvoyee = hoisted.generateCampaignStrategy.mock.calls[0][0];
+    // `in` teste la présence de la CLÉ, pas seulement sa valeur : un champ présent
+    // avec la valeur `undefined` romprait déjà ce critère (aucun champ ajouté).
+    expect("articulation" in requeteEnvoyee).toBe(false);
+  });
+
+  it("2. un articulationCampaignId absent des articulations proposables rend 400, et generateCampaignStrategy N'EST PAS appelée", async () => {
+    storageMock.getProject.mockResolvedValue({ id: 1, userId: "user-1", name: "JMD" });
+    hoisted.resultats = [[]]; // aucun lien déclaré pour ce projet → aucune articulation proposable
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/strategy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objective: "Vendre plus", duration: "1_month", projectId: 1, articulationCampaignId: 999 }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.message).toBe("Cette campagne n'est pas articulable avec cette marque");
+    // La garantie centrale du chantier : un identifiant hors des articulations proposables
+    // ne doit JAMAIS atteindre le générateur — sans ce contrôle, n'importe quel appelant
+    // authentifié pourrait faire lire la campagne d'une marque NON liée.
+    expect(hoisted.generateCampaignStrategy).not.toHaveBeenCalled();
+  });
+
+  it("avec un identifiant valide et proposable, `articulation` est passée au générateur avec la bonne campagne", async () => {
+    storageMock.getProject.mockResolvedValue({ id: 1, userId: "user-1", name: "JMD" });
+    const lienObj = { id: 10, userId: "user-1", fromProjectId: 1, toProjectId: 2, roleAmont: null, roleAval: null, nature: null };
+    hoisted.resultats = [
+      [lienObj],                                                                    // liens déclarés pour le projet 1
+      [{ name: "Marque Liée" }],                                                    // projet lié (id 2)
+      [{ id: 42, name: "Campagne Autre", objective: "Obj", coreMessage: "Msg", phases: [] }], // ses campagnes vivantes
+    ];
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/strategy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objective: "Vendre plus", duration: "1_month", projectId: 1, articulationCampaignId: 42 }),
+    });
+
+    expect(res.status).toBe(200);
+    const requeteEnvoyee = hoisted.generateCampaignStrategy.mock.calls[0][0];
+    expect(requeteEnvoyee.articulation.campagne.id).toBe(42);
+    expect(requeteEnvoyee.articulation.campagne.marque).toBe("Marque Liée");
+  });
+
+  it("5. weekContext reçu du client arrive INCHANGÉ dans la requête de génération — l'articulation ne s'y mélange pas", async () => {
+    storageMock.getProject.mockResolvedValue({ id: 1, userId: "user-1", name: "JMD" });
+    const lienObj = { id: 10, userId: "user-1", fromProjectId: 1, toProjectId: 2, roleAmont: null, roleAval: null, nature: null };
+    hoisted.resultats = [
+      [lienObj],
+      [{ name: "Marque Liée" }],
+      [{ id: 42, name: "Campagne Autre", objective: "Obj", coreMessage: "Msg", phases: [] }],
+    ];
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/strategy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        objective: "Vendre plus", duration: "1_month", projectId: 1, articulationCampaignId: 42,
+        weekContext: "Semaine chargée, focus vente",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const requeteEnvoyee = hoisted.generateCampaignStrategy.mock.calls[0][0];
+    // La valeur exacte envoyée par le client, sans aucun texte d'articulation mélangé dedans.
+    expect(requeteEnvoyee.weekContext).toBe("Semaine chargée, focus vente");
+    expect(requeteEnvoyee.weekContext).not.toContain("ARTICULATION");
+    expect(requeteEnvoyee.weekContext).not.toContain("Marque Liée");
+    // L'articulation, elle, est bien passée — mais dans son PROPRE champ dédié.
+    expect(requeteEnvoyee.articulation?.campagne?.marque).toBe("Marque Liée");
+  });
+});
+
+describe("generateCampaignStrategy / generateCampaignContent — assemblage RÉEL du prompt", () => {
+  const articulationTest: Articulation = {
+    lien: { roleAmont: "diffuse", roleAval: "capte", nature: "partenariat" },
+    sens: "nourrit",
+    campagne: {
+      id: 42, marque: "Marque Test Liée", name: "Campagne Autre",
+      objective: "Objectif de l'autre marque", coreMessage: "Message central de l'autre marque",
+      angles: ["angle un"],
+    },
+  };
+
+  const baseRequest: any = {
+    userId: "user-1", projectId: 1, objective: "obj", duration: "1_month",
+    brandDna: {},
+  };
+
+  beforeEach(() => {
+    hoisted.callClaudeDetailed.mockResolvedValue({ text: JSON.stringify(STRATEGY_STUB), stopReason: "end_turn" });
+  });
+
+  it("3. avec une articulation, le bloc assemblé contient le nom de la marque liée (generateCampaignStrategy)", async () => {
+    await hoisted.generateCampaignStrategyReel({ ...baseRequest, articulation: articulationTest });
+    const prompt = hoisted.callClaudeDetailed.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain("Marque Test Liée");
+    expect(prompt).toContain("ARTICULATION AVEC UNE MARQUE LIÉE");
+  });
+
+  it("sans articulation, AUCUN bloc n'est ajouté au prompt réel — génération identique à avant ce chantier", async () => {
+    await hoisted.generateCampaignStrategyReel(baseRequest);
+    const prompt = hoisted.callClaudeDetailed.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).not.toContain("ARTICULATION AVEC UNE MARQUE LIÉE");
+  });
+
+  it("4. le prompt assemblé ne contient AUCUN champ d'ADN de la marque liée — critère d'acceptation central", async () => {
+    await hoisted.generateCampaignStrategyReel({ ...baseRequest, articulation: articulationTest });
+    const prompt = hoisted.callClaudeDetailed.mock.calls[0][0].messages[0].content as string;
+    // Aucun de ces champs n'existe sur `Articulation` / `CampagneLiee` — s'ils apparaissaient
+    // dans le prompt, ce serait la preuve d'une fuite d'ADN de la marque liée. Garde-fou
+    // structurel : ce test casse si `Articulation` est un jour étendu avec un champ d'ADN.
+    for (const champDna of ["uniquePositioning", "brandVoiceKeywords", "editorialTerritory", "revenueTarget", "corePainPoint", "communicationStyle"]) {
+      expect(prompt).not.toContain(champDna);
+    }
+  });
+
+  it("le même bloc s'assemble dans generateCampaignContent", async () => {
+    hoisted.callClaudeDetailed.mockResolvedValue({ text: JSON.stringify({ contentPlan: [] }), stopReason: "end_turn" });
+    await hoisted.generateCampaignContentReel({ ...baseRequest, articulation: articulationTest }, STRATEGY_STUB);
+    const prompt = hoisted.callClaudeDetailed.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain("Marque Test Liée");
+  });
+});
+
+describe("POST /api/campaigns/generate/tasks — persistance du choix d'articulation à la création de la campagne", () => {
+  beforeEach(() => {
+    storageMock.getBrandDna.mockResolvedValue(undefined);
+    storageMock.getBrandDnaForProject.mockResolvedValue(undefined);
+    hoisted.generateCampaignTasks.mockResolvedValue([]);
+  });
+
+  it("persiste articuleAvecCampaignId à l'id de la campagne liée quand une articulation valide a été choisie", async () => {
+    storageMock.getProject.mockResolvedValue({ id: 1, userId: "user-1", name: "JMD" });
+    const lienObj = { id: 10, userId: "user-1", fromProjectId: 1, toProjectId: 2, roleAmont: null, roleAval: null, nature: null };
+    hoisted.resultats = [
+      [lienObj],
+      [{ name: "Marque Liée" }],
+      [{ id: 42, name: "Campagne Autre", objective: "Obj", coreMessage: "Msg", phases: [] }],
+    ];
+    storageMock.createCampaign.mockResolvedValue({ id: 1, name: "Campagne créée" });
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        objective: "Vendre plus", duration: "1_month", projectId: 1, articulationCampaignId: 42,
+        strategy: STRATEGY_STUB,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(storageMock.createCampaign).toHaveBeenCalledTimes(1);
+    const valeursInserees = storageMock.createCampaign.mock.calls[0][0];
+    expect(valeursInserees.articuleAvecCampaignId).toBe(42);
+    expect(valeursInserees.articulationIndependante).toBe(false);
+  });
+
+  it("articulationIndependante n'est vrai QUE si le client l'a explicitement demandé — ni champ ni booléen ne se devinent", async () => {
+    storageMock.getProject.mockResolvedValue({ id: 1, userId: "user-1", name: "JMD" });
+    storageMock.createCampaign.mockResolvedValue({ id: 2, name: "Campagne isolée" });
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        objective: "Vendre plus", duration: "1_month", projectId: 1,
+        articulationIndependante: true, strategy: STRATEGY_STUB,
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const valeursInserees = storageMock.createCampaign.mock.calls[0][0];
+    expect(valeursInserees.articuleAvecCampaignId).toBeNull();
+    expect(valeursInserees.articulationIndependante).toBe(true);
   });
 });

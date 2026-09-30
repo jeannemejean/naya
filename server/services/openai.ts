@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { NAYA_SYSTEM_VOICE } from "../naya-voice";
 import { validateGeneratedIntent } from "./reception/validate-generated-intent";
 import type { Intent } from "./reception/score";
+import { formaterArticulation, type Articulation } from "./brand-links/links";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -1101,6 +1102,12 @@ export interface CampaignGenerationRequest {
     revenueTarget?: string;
   };
   weekContext?: string;
+  /**
+   * L'articulation avec la campagne d'une marque liée, résolue CÔTÉ SERVEUR.
+   * Volontairement pauvre : ni ADN, ni mémoire, ni ton de voix de l'autre marque.
+   * Absente quand la marque n'a pas de lien, ou quand la campagne est voulue isolée.
+   */
+  articulation?: Articulation;
 }
 
 export interface GeneratedCampaignProspection {
@@ -1195,6 +1202,7 @@ CAMPAIGN REQUEST:
 - Objective: ${request.objective}
 - Duration: ${request.duration}
 ${request.weekContext ? `- Context: ${request.weekContext}` : ''}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}
 
 STRATEGIC RULES:
 - Infer the campaign type: lead_generation | authority_building | product_launch | nurturing | visibility | conversion.
@@ -1275,6 +1283,7 @@ ${phasesSummary}
 
 CHANNELS (respect each channel's declared frequency and formats):
 ${channelsSummary}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}
 
 CONTENT RULES:
 - For EACH phase, generate 2-3 representative pieces PER active channel (aim for 10-16 pieces total across the campaign — a representative plan, not every single week).
