@@ -15,6 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
+import { RevueDuMatin } from '@/components/reading/revue-du-matin';
 import type { SavedArticle } from '@shared/schema';
 
 interface ReadingHubProps {
@@ -295,6 +296,8 @@ export default function ReadingHub({ onSearchClick }: ReadingHubProps) {
  </header>
 
  <main className="flex-1 overflow-y-auto p-6">
+ <RevueDuMatin />
+
  {/* Filters and Search */}
  <div className="mb-6 space-y-4">
  <div className="flex items-center gap-4">
