@@ -116,6 +116,62 @@ describe("runReadingRoom", () => {
     expect(deps.ecrire).not.toHaveBeenCalled();
   });
 
+  // ── Le bilan : UNE ligne de journal par passage. Le produit s'interdit tout
+  // compteur et tout message visible, donc une défaillance silencieuse est
+  // indétectable par l'utilisatrice — cette ligne est le seul organe de détection. ──
+
+  const lignesDeBilan = (journal: any) =>
+    journal.mock.calls.map((c: any[]) => String(c[0])).filter((l: string) => l.includes("bilan"));
+
+  it("journalise UNE ligne de bilan en fin de passage, avec le compte de chaque étage", async () => {
+    const journal = vi.spyOn(console, "info").mockImplementation(() => {});
+    await runReadingRoom("u1", TODAY, depsBase() as any);
+    const lignes = lignesDeBilan(journal);
+    journal.mockRestore();
+
+    expect(lignes).toHaveLength(1); // une ligne, pas un pavé
+    expect(lignes[0]).toContain("marques veillées 1");
+    expect(lignes[0]).toContain("requêtes 1");
+    expect(lignes[0]).toContain("candidats bruts 1");
+    expect(lignes[0]).toContain("survivants étage 1 1");
+    expect(lignes[0]).toContain("au-dessus du seuil 1");
+    expect(lignes[0]).toContain("fiches écrites 1");
+    expect(lignes[0]).toContain("lectures en échec 0");
+  });
+
+  it("zéro fiche faute d'articles lisibles → le bilan le dit, là où l'écran ne peut rien dire", async () => {
+    const journal = vi.spyOn(console, "info").mockImplementation(() => {});
+    await runReadingRoom("u1", TODAY, depsBase({ rediger: vi.fn().mockResolvedValue(null) }) as any);
+    const [ligne] = lignesDeBilan(journal);
+    journal.mockRestore();
+
+    expect(ligne).toContain("fiches écrites 0");
+    expect(ligne).toContain("lectures en échec 1");
+  });
+
+  it("zéro fiche faute de candidats → le bilan distingue le sourcing vide de tout le reste", async () => {
+    const journal = vi.spyOn(console, "info").mockImplementation(() => {});
+    await runReadingRoom("u1", TODAY, depsBase({ sourcer: vi.fn().mockResolvedValue([]) }) as any);
+    const [ligne] = lignesDeBilan(journal);
+    journal.mockRestore();
+
+    expect(ligne).toContain("candidats bruts 0");
+    expect(ligne).toContain("au-dessus du seuil 0");
+    expect(ligne).toContain("fiches écrites 0");
+  });
+
+  it("rien au-dessus du seuil → le bilan le montre : des candidats vivants, aucune note retenue", async () => {
+    const journal = vi.spyOn(console, "info").mockImplementation(() => {});
+    const deps = depsBase({ noter: vi.fn().mockResolvedValue([{ url: "https://media.fr/a", score: 0.4, rationale: "r" }]) });
+    await runReadingRoom("u1", TODAY, deps as any);
+    const [ligne] = lignesDeBilan(journal);
+    journal.mockRestore();
+
+    expect(ligne).toContain("survivants étage 1 1");
+    expect(ligne).toContain("au-dessus du seuil 0");
+    expect(ligne).toContain("fiches écrites 0");
+  });
+
   // ── Repêchage : un candidat dont la lecture échoue (presse payante) ne doit pas
   // VOLER une place du plafond. Il n'écrit aucune ligne, donc son URL n'entre pas dans
   // la mémoire « déjà vu » : sans repêchage, il revient prendre la même place chaque
