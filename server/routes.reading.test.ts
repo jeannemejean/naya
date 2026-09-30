@@ -66,6 +66,7 @@ const extractToMemoryMock = vi.fn();
 vi.mock("./services/memory/extract", () => ({ extractToMemory: extractToMemoryMock }));
 
 const { registerRoutes } = await import("./routes");
+const { statutApresReponse } = await import("./services/reading/statut");
 
 const dialecte = new PgDialect();
 const enSql = (clause: any) => dialecte.sqlToQuery(clause);
@@ -132,5 +133,33 @@ describe("GET /api/reading/today — deux listes distinctes (B1)", () => {
     // désormais dans une liste à part, donc plus jamais comptées comme « ce matin ».
     expect(gardees.sql).not.toContain("created_at");
     expect(gardees.params).toEqual(expect.arrayContaining(["kept"]));
+  });
+});
+
+describe("POST /api/reading/cards/:id/answer — une fiche gardée reste gardée (B3)", () => {
+  it("le statut écrit est une expression conditionnelle, jamais la chaîne 'answered'", async () => {
+    hoisted.resultats = [[fiche({ status: "kept", userAnswer: "mon avis" })]];
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/reading/cards/1/answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer: "mon avis" }),
+    });
+    expect(res.status).toBe(200);
+
+    const [set] = hoisted.sets;
+    // Le défaut fermé ici : `status: 'answered'` en dur faisait retomber une fiche
+    // délibérément gardée dans le lot du jour, donc hors de l'écran au minuit suivant.
+    expect(set.status).not.toBe("answered");
+    expect(set.status).toBe(statutApresReponse);
+    // L'avis et sa date sont enregistrés dans les deux cas — c'est tout l'intérêt.
+    expect(set.userAnswer).toBe("mon avis");
+    expect(set.answeredAt).toBeInstanceOf(Date);
+  });
+
+  it("l'expression rend 'kept' pour une fiche gardée et 'answered' pour les autres", () => {
+    const { sql: texte } = enSql(statutApresReponse);
+    // Lu et écrit dans le MÊME update : un « Garder » simultané ne peut pas être écrasé.
+    expect(texte).toBe(`CASE WHEN "reading_cards"."status" = 'kept' THEN 'kept' ELSE 'answered' END`);
   });
 });

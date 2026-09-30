@@ -8,7 +8,7 @@
   "client/src/components/NayaCompanion.tsx": 18,
   "client/src/components/PlanningStartBanner.tsx": 4,
   "client/src/components/reading/requetes-de-veille.tsx": 5,
-  "client/src/components/reading/revue-du-matin.tsx": 12,
+  "client/src/components/reading/revue-du-matin.tsx": 13,
   "client/src/components/sidebar.tsx": 10,
   "client/src/components/SocialComposer.tsx": 16,
   "client/src/components/StuckTasksCard.tsx": 4,

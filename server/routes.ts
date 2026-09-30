@@ -6,6 +6,7 @@ import { pool, db } from "./db";
 import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content } from "@shared/schema";
 import { eq, and, inArray, or, gte, desc, sql } from "drizzle-orm";
 import { runReadingRoom } from "./services/reading/runner";
+import { statutApresReponse } from "./services/reading/statut";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { 
   generateContent, 
@@ -7035,9 +7036,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const answer = typeof req.body?.answer === 'string' ? req.body.answer.trim() : '';
       if (!answer) return res.status(400).json({ message: 'Réponse vide' });
 
+      // Le statut n'est PAS écrit en dur : une fiche `kept` reste `kept` quand on y
+      // répond (voir services/reading/statut.ts pour le défaut que ça ferme). L'avis et
+      // sa date, eux, sont enregistrés dans les deux cas — c'est tout l'intérêt.
       const [card] = await db
         .update(readingCards)
-        .set({ userAnswer: answer, answeredAt: new Date(), status: 'answered' })
+        .set({ userAnswer: answer, answeredAt: new Date(), status: statutApresReponse })
         .where(and(eq(readingCards.id, id), eq(readingCards.userId, userId)))
         .returning();
       if (!card) return res.status(404).json({ message: 'Fiche introuvable' });

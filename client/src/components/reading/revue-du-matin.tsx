@@ -135,20 +135,37 @@ export function RevueDuMatin() {
             <p className="text-sm whitespace-pre-wrap rounded-md bg-muted p-3">{c.userAnswer}</p>
             {/* Le brouillon n'existe qu'APRÈS la réponse, et il part de sa réponse.
                 Après succès, le bouton disparaît : un deuxième clic est impossible. */}
-            {brouillonsCrees.has(c.id) ? (
-              <p className="text-xs text-muted-foreground" data-testid={`reading-post-cree-${c.id}`}>
-                Brouillon créé, il t’attend dans le calendrier éditorial.
-              </p>
-            ) : (
-              <Button
-                size="sm"
-                onClick={() => enFaireUnPost.mutate(c.id)}
-                disabled={envoiEnCours.has(c.id)}
-                data-testid={`reading-en-faire-un-post-${c.id}`}
-              >
-                En faire un post
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {brouillonsCrees.has(c.id) ? (
+                <p className="text-xs text-muted-foreground" data-testid={`reading-post-cree-${c.id}`}>
+                  Brouillon créé, il t’attend dans le calendrier éditorial.
+                </p>
+              ) : (
+                <Button
+                  size="sm"
+                  onClick={() => enFaireUnPost.mutate(c.id)}
+                  disabled={envoiEnCours.has(c.id)}
+                  data-testid={`reading-en-faire-un-post-${c.id}`}
+                >
+                  En faire un post
+                </Button>
+              )}
+              {/* « Garder » reste accessible APRÈS la réponse : sans ça, le cycle
+                  proposed → answered → kept décrit par le spec était inatteignable
+                  depuis l'interface — le bouton n'existait que dans la branche sans
+                  réponse, donc répondre condamnait la fiche au minuit suivant. */}
+              {!options.dejaGardee && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={garderEnCours.has(c.id)}
+                  onClick={() => garder.mutate(c.id)}
+                  data-testid={`reading-garder-${c.id}`}
+                >
+                  Garder
+                </Button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-2">
