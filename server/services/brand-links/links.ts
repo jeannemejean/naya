@@ -67,12 +67,16 @@ export function formaterArticulation(a: Articulation): string {
   if (lien.roleAval) lignes.push(`Rôle de la marque nourrie : ${lien.roleAval}`);
   if (lien.nature) lignes.push(`Nature du lien : ${lien.nature}`);
 
-  lignes.push(
-    "",
-    `Campagne en cours sur « ${campagne.marque} » : ${campagne.name}`,
-    `Son objectif : ${campagne.objective}`,
-  );
-  if (campagne.coreMessage) lignes.push(`Son message central : ${campagne.coreMessage}`);
+  lignes.push("");
+  if (campagne.marque?.trim()) {
+    lignes.push(`Campagne en cours sur « ${campagne.marque.trim()} » : ${campagne.name}`);
+  } else {
+    lignes.push(`Campagne en cours : ${campagne.name}`);
+  }
+  if (campagne.objective?.trim()) {
+    lignes.push(`Son objectif : ${campagne.objective.trim()}`);
+  }
+  if (campagne.coreMessage?.trim()) lignes.push(`Son message central : ${campagne.coreMessage.trim()}`);
   if (campagne.angles.length) lignes.push(`Ses angles par phase : ${campagne.angles.join(" · ")}`);
 
   lignes.push(

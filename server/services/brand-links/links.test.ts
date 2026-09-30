@@ -78,22 +78,56 @@ describe("formaterArticulation — ce qui entre dans le prompt, et ce qui n'y en
     expect(t).toMatch(/jamais.*place de/i);
   });
 
-  it("ne contient AUCUN champ d'identité de la marque liée — c'est la garantie centrale", () => {
-    // Le type CampagneLiee ne porte volontairement ni ADN, ni mémoire, ni ton de voix.
-    // Ce test vérifie que formaterArticulation ne peut rien inventer à partir de ce
-    // qu'on lui donne : il n'a accès qu'aux champs de campagne et aux textes du lien.
+  it("n'expose aucun vocabulaire d'identité dans le cas nominal", () => {
+    // Vérification secondaire : dans ce cas de test contrôlé, l'absence de certains
+    // mots-clés est confirmée. Mais ce test seul ne suffit pas à garantir l'étanchéité.
     const t = formaterArticulation(a);
     expect(t).not.toMatch(/ADN|brand ?dna|mémoire|voix de marque|ton de voix/i);
   });
 
-  it("reste lisible quand les champs libres sont vides", () => {
+  it("refuse strictement les champs d'identité ajoutés à l'objet — étanchéité structurelle", () => {
+    // Test structurel : on enrichit l'articulation avec des champs qui ne devraient jamais
+    // être exposés. Ces champs sont forcés via any pour contourner le typage, simulant
+    // une erreur future d'un appelant peu rigoureux.
+    const enriched = {
+      ...a,
+      campagne: {
+        ...a.campagne,
+        dna: "Notre ADN c'est l'innovation disruptive",
+        memoire: "On a pivot 5 fois cette année",
+        tonDeVoix: "Très casual, beaucoup d'humour",
+        voixDeMarque: "Mémé coolée mais sage",
+        brandDNA: "Nous sommes les rois du SaaS",
+        histoire: "Fondée en 2018 dans un garage",
+      } as any,
+    };
+    const t = formaterArticulation(enriched);
+    // La fonction n'expose que les 6 champs légitimes de CampagneLiee.
+    // Aucune des valeurs enrichies ne doit s'afficher.
+    expect(t).not.toContain("innovation disruptive");
+    expect(t).not.toContain("pivot 5 fois");
+    expect(t).not.toContain("Très casual");
+    expect(t).not.toContain("Mémé coolée");
+    expect(t).not.toContain("rois du SaaS");
+    expect(t).not.toContain("garage");
+  });
+
+  it("reste lisible quand les champs libres ou interpolés sont vides ou blancs", () => {
     const t = formaterArticulation({
       ...a,
       lien: { roleAmont: null, roleAval: null, nature: null },
-      campagne: { ...a.campagne, coreMessage: null, angles: [] },
+      campagne: {
+        ...a.campagne,
+        marque: "   ",  // chaîne vide après trim
+        objective: "",  // totalement vide
+        coreMessage: null,
+        angles: []
+      },
     });
-    expect(t).toContain("Jeanne Méjean");
+    // Sans marque et objective, doit garder la structure lisible
     expect(t).not.toContain("null");
     expect(t).not.toContain("undefined");
+    expect(t).toContain("Campagne en cours");
+    expect(t).not.toContain("Son objectif :");  // ligne omise si objective vide
   });
 });
