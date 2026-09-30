@@ -55,6 +55,7 @@ import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossie
 import { valideLien } from "./services/brand-links/links";
 import type { Articulation } from "./services/brand-links/links";
 import { articulationsDisponibles } from "./services/brand-links/articulation";
+import { detecterCollision } from "./services/brand-links/collision";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache, VALEUR_A_PRECISER, CHAMPS_DEDUCTIBLES } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
@@ -6637,7 +6638,28 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       
       const contentData = insertContentSchema.parse(requestBody);
       const content = await storage.createContent(contentData);
-      res.json(content);
+
+      // Alerte de collision : informative, jamais bloquante. Elle s'exécute APRÈS
+      // l'écriture, pour qu'un échec de jugement ne puisse jamais empêcher la
+      // programmation. `detecterCollision` avale déjà ses propres erreurs et rend
+      // null — mais on ne s'appuie pas QUE là-dessus : le try/catch local garantit
+      // que même si elle levait malgré tout, le contenu déjà écrit est quand même
+      // renvoyé à l'utilisatrice, avec une réponse exploitable par le calendrier.
+      let collision = null;
+      if (content.scheduledFor && content.projectId) {
+        try {
+          collision = await detecterCollision({
+            userId,
+            projectId: content.projectId,
+            titre: content.title,
+            corps: String(content.body ?? ''),
+            quand: new Date(content.scheduledFor),
+          });
+        } catch (collisionError) {
+          console.error("Error detecting collision:", collisionError);
+        }
+      }
+      res.json({ ...content, collision });
     } catch (error) {
       console.error("Error creating content:", error);
       res.status(500).json({ message: "Failed to create content" });
@@ -6699,7 +6721,26 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       }
       
       const content = await storage.updateContent(parseInt(id), updates);
-      res.json(content);
+
+      // Alerte de collision : informative, jamais bloquante — même garantie que sur
+      // la création (voir POST /api/content). On relit l'état final (`content`,
+      // rendu par `updateContent`) plutôt que `updates`, qui peut être partiel (un
+      // simple changement de date n'y porte ni titre ni corps).
+      let collision = null;
+      if (content.scheduledFor && content.projectId) {
+        try {
+          collision = await detecterCollision({
+            userId,
+            projectId: content.projectId,
+            titre: content.title,
+            corps: String(content.body ?? ''),
+            quand: new Date(content.scheduledFor),
+          });
+        } catch (collisionError) {
+          console.error("Error detecting collision:", collisionError);
+        }
+      }
+      res.json({ ...content, collision });
     } catch (error) {
       console.error("Error updating content:", error);
       res.status(500).json({ message: "Failed to update content" });

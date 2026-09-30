@@ -33,6 +33,11 @@ const hoisted = vi.hoisted(() => ({
   // Mock du seul point de sortie réseau : permet d'appeler les VRAIES fonctions
   // de génération ci-dessus sans jamais contacter un modèle.
   callClaudeDetailed: vi.fn(),
+  // Tâche 7 : `detecterCollision` (tâche 6, déjà testée en détail dans
+  // server/services/brand-links/collision.test.ts) est mockée ici comme une boîte
+  // noire. Ce qu'on teste dans CE fichier, ce n'est pas son fonctionnement interne,
+  // c'est ce que routes.ts fait de son résultat — y compris quand elle lève.
+  detecterCollision: vi.fn(),
 }));
 
 vi.mock("./db", () => {
@@ -83,6 +88,10 @@ vi.mock("./services/claude", async (importOriginal) => {
   return { ...actual, callClaudeDetailed: hoisted.callClaudeDetailed };
 });
 
+vi.mock("./services/brand-links/collision", () => ({
+  detecterCollision: hoisted.detecterCollision,
+}));
+
 vi.mock("./auth", () => ({
   setupAuth: vi.fn(async () => {}),
   isAuthenticated: (req: any, _res: any, next: any) => {
@@ -101,6 +110,10 @@ const storageMock = {
   getBrandDnaForProject: vi.fn(),
   getCampaigns: vi.fn(),
   createCampaign: vi.fn(),
+  // Tâche 7 : POST /api/content et PATCH /api/content/:id.
+  createContent: vi.fn(),
+  updateContent: vi.fn(),
+  getContentById: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 
@@ -557,5 +570,195 @@ describe("POST /api/campaigns/generate/tasks — persistance du choix d'articula
     const valeursInserees = storageMock.createCampaign.mock.calls[0][0];
     expect(valeursInserees.articuleAvecCampaignId).toBeNull();
     expect(valeursInserees.articulationIndependante).toBe(true);
+  });
+});
+
+// ─── Tâche 7 — l'alerte de collision se branche sur la programmation d'un contenu ──
+//
+// `detecterCollision` (tâche 6) est mockée ici comme une boîte noire — son
+// fonctionnement interne (filtrage sur audiencesRecoupent, fenêtre de comparaison,
+// appel au modèle, tolérance aux erreurs) est déjà testé en détail dans
+// server/services/brand-links/collision.test.ts. Ce qu'on vérifie ICI, c'est ce que
+// routes.ts fait du résultat : l'appel après écriture, la condition
+// scheduledFor + projectId, et SURTOUT la garantie que son échec — même un rejet,
+// que la vraie fonction n'est jamais censée produire — ne peut jamais empêcher la
+// programmation d'un contenu ni casser la réponse rendue au calendrier éditorial.
+describe("POST /api/content et PATCH /api/content/:id — alerte de collision, informative et non bloquante", () => {
+  const contenuPoste = (over: Record<string, unknown> = {}) => ({
+    title: "Titre du post", body: "Corps du post", platform: "linkedin",
+    contentType: "post", pillar: "expertise", goal: "visibility", ...over,
+  });
+
+  const collisionStub = {
+    contenuId: 77, marque: "Marque Liée", scheduledFor: new Date("2026-10-06T09:00:00.000Z"),
+    pourquoi: "Même angle : les deux posts annoncent la même ouverture.",
+  };
+
+  beforeEach(() => {
+    storageMock.createContent.mockImplementation(async (data: any) => ({
+      id: 101, createdAt: new Date(), updatedAt: new Date(), ...data,
+    }));
+  });
+
+  it("1. une marque sans lien (detecterCollision rend null) : collision: null, un seul appel à detecterCollision avec les bons paramètres", async () => {
+    hoisted.detecterCollision.mockResolvedValue(null);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contenuPoste({ projectId: 1, scheduledFor: "2026-10-05T10:00:00.000Z" })),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.collision).toBeNull();
+    expect(hoisted.detecterCollision).toHaveBeenCalledTimes(1);
+    expect(hoisted.detecterCollision).toHaveBeenCalledWith(expect.objectContaining({
+      userId: "user-1", projectId: 1, titre: "Titre du post", corps: "Corps du post",
+    }));
+  });
+
+  it("2. sans scheduledFor : pas de détection, collision: null", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contenuPoste({ projectId: 1 })),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.collision).toBeNull();
+    expect(hoisted.detecterCollision).not.toHaveBeenCalled();
+  });
+
+  it("3. un lien existe mais audiencesRecoupent est faux (detecterCollision rend null) : pas de collision remontée — le filtrage lui-même est couvert dans collision.test.ts", async () => {
+    hoisted.detecterCollision.mockResolvedValue(null);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contenuPoste({ projectId: 2, scheduledFor: "2026-10-05T10:00:00.000Z" })),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.collision).toBeNull();
+  });
+
+  it("4. detecterCollision rend une collision : elle apparaît dans la réponse ET le contenu est bien créé", async () => {
+    hoisted.detecterCollision.mockResolvedValue(collisionStub);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contenuPoste({ projectId: 1, scheduledFor: "2026-10-05T10:00:00.000Z" })),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.collision).toMatchObject({ contenuId: 77, marque: "Marque Liée" });
+    expect(storageMock.createContent).toHaveBeenCalledTimes(1);
+    expect(body.id).toBe(101); // la ligne réellement créée est bien celle rendue
+  });
+
+  it("5. GARANTIE CENTRALE — quand detecterCollision lève, le contenu est QUAND MÊME créé et la réponse reste exploitable", async () => {
+    hoisted.detecterCollision.mockRejectedValue(new Error("le modèle a refusé la requête"));
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contenuPoste({ projectId: 1, scheduledFor: "2026-10-05T10:00:00.000Z" })),
+    });
+
+    // Ni crash, ni 500 : le rejet de detecterCollision ne doit JAMAIS transformer une
+    // écriture réussie en échec apparent pour l'utilisatrice.
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(storageMock.createContent).toHaveBeenCalledTimes(1);
+    expect(body.title).toBe("Titre du post");
+    expect(body.id).toBe(101);
+    expect(body.collision).toBeNull();
+  });
+
+  it("6. la réponse conserve toutes les clés d'origine du contenu créé, en plus de collision", async () => {
+    hoisted.detecterCollision.mockResolvedValue(null);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contenuPoste({ projectId: 1 })),
+    });
+
+    const body = await res.json();
+    for (const cle of ["id", "title", "body", "platform", "contentType", "pillar", "goal"]) {
+      expect(body).toHaveProperty(cle);
+    }
+    expect(body).toHaveProperty("collision");
+  });
+
+  // ── Même garantie côté PATCH : un simple déplacement de date ne doit jamais casser
+  // la programmation, même si l'alerte échoue. `updateContent` rend l'état FINAL de
+  // la ligne (pas seulement les champs envoyés dans `updates`), donc les tests
+  // portent sur ce résultat final, comme le fait le code de routes.ts lui-même.
+  describe("PATCH /api/content/:id", () => {
+    const contenuExistant = (over: Record<string, unknown> = {}) => ({
+      id: 55, userId: "user-1", projectId: 1, title: "Ancien titre", body: "Ancien corps",
+      platform: "linkedin", contentType: "post", pillar: "expertise", goal: "visibility",
+      status: "draft", contentStatus: "idea", scheduledFor: null, publishedAt: null,
+      createdAt: new Date(), updatedAt: new Date(), ...over,
+    });
+
+    beforeEach(() => {
+      storageMock.getContentById.mockResolvedValue(contenuExistant());
+      storageMock.updateContent.mockImplementation(async (_id: number, updates: any) => ({
+        ...contenuExistant(), ...updates, updatedAt: new Date(),
+      }));
+    });
+
+    it("GARANTIE CENTRALE — quand detecterCollision lève, la mise à jour (et la reprogrammation) est QUAND MÊME appliquée", async () => {
+      hoisted.detecterCollision.mockRejectedValue(new Error("échec simulé"));
+
+      const res = await fetch(`http://127.0.0.1:${port}/api/content/55`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledFor: "2026-10-05T10:00:00.000Z" }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(storageMock.updateContent).toHaveBeenCalledTimes(1);
+      expect(body.collision).toBeNull();
+      expect(body.id).toBe(55);
+    });
+
+    it("une collision détectée apparaît dans la réponse sans rien retirer des clés existantes", async () => {
+      hoisted.detecterCollision.mockResolvedValue(collisionStub);
+
+      const res = await fetch(`http://127.0.0.1:${port}/api/content/55`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduledFor: "2026-10-05T10:00:00.000Z" }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.collision).toMatchObject({ contenuId: 77 });
+      for (const cle of ["id", "title", "body", "projectId"]) {
+        expect(body).toHaveProperty(cle);
+      }
+    });
+
+    it("sans changement de date : pas de détection, collision: null", async () => {
+      const res = await fetch(`http://127.0.0.1:${port}/api/content/55`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Titre corrigé" }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.collision).toBeNull();
+      expect(hoisted.detecterCollision).not.toHaveBeenCalled();
+    });
   });
 });
