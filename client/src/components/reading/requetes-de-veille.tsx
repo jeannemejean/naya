@@ -22,15 +22,24 @@ export function RequetesDeVeille() {
   const [modifierEnCours, marquerModifierEnCours, retirerModifierEnCours] = useEnsembleId();
   const [ajouterEnCours, marquerAjouterEnCours, retirerAjouterEnCours] = useEnsembleId();
 
+  // Panneau best-effort, au même titre que la revue du matin qui l'héberge : la règle
+  // globale du dépôt (client/src/lib/queryClient.ts) ferait remonter un échec ici à
+  // l'unique ErrorBoundary de l'app, qui casserait TOUTE l'application pour un panneau
+  // de réglages secondaire, replié par défaut. `throwOnError: false` désactive ce
+  // comportement localement ; `data`/`projets` restent `undefined` sur erreur, et les
+  // deux replis `?? []` plus bas suffisent à afficher le panneau vide plutôt que de
+  // laisser l'erreur remonter.
   const { data } = useQuery<{ queries: ReadingQuery[] }>({
     queryKey: ['/api/reading/queries'],
     queryFn: () => fetchJson('/api/reading/queries'),
     enabled: ouvert,
+    throwOnError: false,
   });
   const { data: projets } = useQuery<Projet[]>({
     queryKey: ['/api/projects'],
     queryFn: () => fetchJson('/api/projects'),
     enabled: ouvert,
+    throwOnError: false,
   });
 
   const invalider = () => qc.invalidateQueries({ queryKey: ['/api/reading/queries'] });

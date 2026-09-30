@@ -1131,9 +1131,17 @@ function OverdueTasks() {
 // Le déclencheur du matin. Rien ne s'affiche les jours vides : un déclencheur qui parle
 // quand il n'a rien à dire devient du bruit, et un « 0 » serait un compteur de retard.
 function AppelRevue() {
+  // Best-effort, comme le reste de la revue de lecture (voir le même commentaire dans
+  // client/src/components/reading/revue-du-matin.tsx) : son absence est un état normal
+  // du produit, jamais une panne. Sans `throwOnError: false`, un échec sur CETTE requête
+  // (règle globale de client/src/lib/queryClient.ts) ferait basculer tout le dashboard —
+  // et tout le reste de l'app, un seul ErrorBoundary couvrant le routeur entier — sur
+  // l'écran d'erreur plein écran, pour un simple déclencheur secondaire. `data` reste
+  // `undefined` sur erreur, donc `n` retombe à 0 et le composant ne rend déjà rien.
   const { data } = useQuery<{ cards: Array<{ id: number }> }>({
     queryKey: ['/api/reading/today'],
     queryFn: () => fetchJson('/api/reading/today'),
+    throwOnError: false,
   });
   const n = data?.cards?.length ?? 0;
   if (n === 0) return null;

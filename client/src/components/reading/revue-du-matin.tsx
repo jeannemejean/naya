@@ -30,13 +30,26 @@ export function RevueDuMatin() {
   const [envoiEnCours, marquerEnvoiEnCours, retirerEnvoiEnCours] = useEnsembleId();
   const [brouillonsCrees, marquerBrouillonCree] = useEnsembleId();
 
-  const { data, isLoading } = useQuery<{ cards: ReadingCard[] }>({
+  // La revue du matin est BEST-EFFORT par conception : son absence est un état normal du
+  // produit (voir cards.length === 0 plus bas), jamais une panne. La règle globale du
+  // dépôt (client/src/lib/queryClient.ts) fait remonter toute erreur non-401 à l'unique
+  // ErrorBoundary de l'app (client/src/App.tsx), qui couvre TOUT le routeur — un 500 ou
+  // un réseau en panne sur CETTE requête ferait alors disparaître le dashboard, le
+  // planning et le calendrier éditorial derrière un écran plein écran, pour la
+  // fonctionnalité la MOINS critique de l'application. `throwOnError: false` désactive
+  // ce comportement localement ; `isError` est replié sur le même rendu qu'un matin vide.
+  const { data, isLoading, isError } = useQuery<{ cards: ReadingCard[] }>({
     queryKey: ['/api/reading/today'],
     queryFn: () => fetchJson('/api/reading/today'),
+    throwOnError: false,
   });
+  // Même raisonnement : l'étiquette de projet est un confort d'affichage (nomProjet
+  // retombe déjà sur '' si absente), pas une donnée dont l'absence justifie de casser
+  // le reste de l'application.
   const { data: projets } = useQuery<Projet[]>({
     queryKey: ['/api/projects'],
     queryFn: () => fetchJson('/api/projects'),
+    throwOnError: false,
   });
 
   const invalider = () => qc.invalidateQueries({ queryKey: ['/api/reading/today'] });
@@ -88,7 +101,9 @@ export function RevueDuMatin() {
 
   if (isLoading) return null;
 
-  const cards = data?.cards ?? [];
+  // Une erreur se replie EXACTEMENT sur le rendu du matin vide (cards.length === 0
+  // ci-dessous) : silencieux, sans jamais afficher de message d'échec.
+  const cards = isError ? [] : (data?.cards ?? []);
   const nomProjet = (id: number) => projets?.find((p) => p.id === id)?.name ?? '';
 
   // Matin vide : une phrase, et rien d'autre. Pas d'excuse, pas de bouton pour en chercher plus.
