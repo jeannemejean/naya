@@ -118,16 +118,20 @@ describe("formaterArticulation — ce qui entre dans le prompt, et ce qui n'y en
       lien: { roleAmont: null, roleAval: null, nature: null },
       campagne: {
         ...a.campagne,
-        marque: "   ",  // chaîne vide après trim
+        marque: "   ",  // chaîne blanche
+        name: "",       // nom de campagne vide
         objective: "",  // totalement vide
         coreMessage: null,
         angles: []
       },
     });
-    // Sans marque et objective, doit garder la structure lisible
+    // Sans marque, doit utiliser désignation neutre « la marque liée »
+    expect(t).toContain("la marque liée");
+    expect(t).not.toContain("« »");  // pas de guillemets vides
+    // Sans name, doit utiliser fallback « Sans titre »
+    expect(t).toContain("Campagne en cours : Sans titre");
     expect(t).not.toContain("null");
     expect(t).not.toContain("undefined");
-    expect(t).toContain("Campagne en cours");
     expect(t).not.toContain("Son objectif :");  // ligne omise si objective vide
   });
 });

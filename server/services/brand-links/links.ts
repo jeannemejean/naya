@@ -54,10 +54,11 @@ export function anglesDepuisPhases(phases: unknown): string[] {
  */
 export function formaterArticulation(a: Articulation): string {
   const { lien, sens, campagne } = a;
+  const marqueNomee = campagne.marque?.trim() ? `« ${campagne.marque.trim()} »` : "la marque liée";
   const relation =
     sens === "nourrit"
-      ? `La marque pour laquelle tu travailles NOURRIT « ${campagne.marque} ».`
-      : `La marque pour laquelle tu travailles EST NOURRIE par « ${campagne.marque} ».`;
+      ? `La marque pour laquelle tu travailles NOURRIT ${marqueNomee}.`
+      : `La marque pour laquelle tu travailles EST NOURRIE par ${marqueNomee}.`;
 
   const lignes: string[] = [
     "ARTICULATION AVEC UNE MARQUE LIÉE",
@@ -68,10 +69,11 @@ export function formaterArticulation(a: Articulation): string {
   if (lien.nature) lignes.push(`Nature du lien : ${lien.nature}`);
 
   lignes.push("");
+  const campaignName = campagne.name?.trim() || "Sans titre";
   if (campagne.marque?.trim()) {
-    lignes.push(`Campagne en cours sur « ${campagne.marque.trim()} » : ${campagne.name}`);
+    lignes.push(`Campagne en cours sur « ${campagne.marque.trim()} » : ${campaignName}`);
   } else {
-    lignes.push(`Campagne en cours : ${campagne.name}`);
+    lignes.push(`Campagne en cours : ${campaignName}`);
   }
   if (campagne.objective?.trim()) {
     lignes.push(`Son objectif : ${campagne.objective.trim()}`);
