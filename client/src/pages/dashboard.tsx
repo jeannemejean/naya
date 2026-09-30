@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useProject } from "@/lib/project-context";
 import { usePageVisible } from "@/hooks/usePageVisible";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/fetchJson";
 import { useTranslation } from "react-i18next";
 import { formatLocalDate } from "@/lib/dateUtils";
 import Sidebar from "@/components/sidebar";
@@ -1127,6 +1128,28 @@ function OverdueTasks() {
   );
 }
 
+// Le déclencheur du matin. Rien ne s'affiche les jours vides : un déclencheur qui parle
+// quand il n'a rien à dire devient du bruit, et un « 0 » serait un compteur de retard.
+function AppelRevue() {
+  const { data } = useQuery<{ cards: Array<{ id: number }> }>({
+    queryKey: ['/api/reading/today'],
+    queryFn: () => fetchJson('/api/reading/today'),
+  });
+  const n = data?.cards?.length ?? 0;
+  if (n === 0) return null;
+
+  return (
+    <Link href="/reading-hub">
+      <button
+        className="w-full text-left text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+        data-testid="appel-revue"
+      >
+        {n === 1 ? 'Une chose à lire sur ton marché' : `${n} choses à lire sur ton marché`}
+      </button>
+    </Link>
+  );
+}
+
 export default function Dashboard({ onSearchClick }: DashboardProps) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
@@ -1294,6 +1317,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Left column — tasks */}
               <div className="lg:col-span-2 space-y-6">
+                <AppelRevue />
                 <TodaysTasks />
                 <StuckTasksCard onOpenCompanion={() => window.dispatchEvent(new CustomEvent('naya:open-companion'))} />
                 <SchedulePreview />

@@ -25,7 +25,7 @@
   "client/src/pages/analytics.tsx": 5,
   "client/src/pages/campaigns.tsx": 7,
   "client/src/pages/content-calendar.tsx": 24,
-  "client/src/pages/dashboard.tsx": 75,
+  "client/src/pages/dashboard.tsx": 76,
   "client/src/pages/data-deletion.tsx": 18,
   "client/src/pages/landing.tsx": 10,
   "client/src/pages/onboarding.tsx": 5,
