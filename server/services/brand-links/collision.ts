@@ -7,6 +7,15 @@ import { callClaude, CLAUDE_MODELS } from "../claude";
 export const FENETRE_JOURS = 7;
 /** Plafond de contenus envoyés au jugement, pour borner le prompt. */
 export const MAX_CONTENUS_COMPARES = 12;
+// `content.title` est un `text` Postgres SANS longueur maximale : rien n'empêche un
+// titre anormalement long (un corps collé par erreur dans le titre, un bug en amont).
+// Le best-effort absorberait l'incident (aucun crash), mais "le prompt est borné"
+// deviendrait faux en pratique — donc on tronque aussi les titres, pas seulement les
+// corps. 200 caractères : un titre de post tient normalement en une phrase (bien en
+// dessous de ce seuil), donc aucun titre légitime n'est jamais coupé ; la valeur
+// borne seulement le cas pathologique, sans avoir besoin d'être généreuse comme pour
+// un corps de texte.
+export const LONGUEUR_MAX_TITRE = 200;
 
 export interface Collision {
   contenuId: number;
@@ -107,7 +116,7 @@ export async function detecterCollision(input: {
     if (voisins.length === 0) return null;
 
     const liste = voisins
-      .map((v) => `[${v.id}] ${v.title}\n${String(v.body ?? "").slice(0, 400)}`)
+      .map((v) => `[${v.id}] ${v.title.slice(0, LONGUEUR_MAX_TITRE)}\n${String(v.body ?? "").slice(0, 400)}`)
       .join("\n\n");
 
     const raw = await callClaude({
@@ -119,7 +128,7 @@ export async function detecterCollision(input: {
       projectId: input.projectId,
       messages: [{
         role: "user",
-        content: `CONTENU QU'ON PROGRAMME\n${input.titre}\n${input.corps.slice(0, 800)}\n\nDÉJÀ PROGRAMMÉ SUR LA MARQUE LIÉE\n${liste}`,
+        content: `CONTENU QU'ON PROGRAMME\n${input.titre.slice(0, LONGUEUR_MAX_TITRE)}\n${input.corps.slice(0, 800)}\n\nDÉJÀ PROGRAMMÉ SUR LA MARQUE LIÉE\n${liste}`,
       }],
     });
 

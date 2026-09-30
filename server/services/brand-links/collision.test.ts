@@ -76,6 +76,7 @@ const {
   detecterCollision,
   FENETRE_JOURS,
   MAX_CONTENUS_COMPARES,
+  LONGUEUR_MAX_TITRE,
 } = await import("./collision");
 
 const dialecte = new PgDialect();
@@ -170,16 +171,21 @@ describe("detecterCollision", () => {
     expect(claude.callClaude).not.toHaveBeenCalled();
   });
 
-  it("règle 1 — l'absence de lien est une interdiction : un lien existe mais sans recoupement d'audiences n'est jamais lu comme un lien exploitable", async () => {
-    // La requête projectLinks filtre déjà sur audiencesRecoupent=true : un lien sans
-    // recoupement n'apparaît donc jamais dans son résultat. On vérifie ici que la
-    // fonction ne compense pas ailleurs si ce résultat est vide.
-    hoisted.resultats = [[]];
+  it("règle 1 — la requête des liens filtre bien sur l'utilisateur ET sur le recoupement d'audiences, pas seulement sur l'existence d'un lien", async () => {
+    // Un test qui se contente d'un résultat câblé à [] ne prouve RIEN sur la clause
+    // construite — le simulacre rendrait le même résultat que le filtre soit présent
+    // ou non. On inspecte donc le SQL réellement rendu, comme pour la fenêtre de
+    // dates de la requête content (voir plus bas) : c'est le seul moyen de savoir que
+    // retirer `audiencesRecoupent` de la clause ferait échouer ce test.
+    hoisted.resultats = [[]]; // peu importe le résultat rendu ici, seule la clause nous intéresse
 
-    const r = await detecterCollision(ENTREE);
+    await detecterCollision(ENTREE);
 
-    expect(r).toBeNull();
-    expect(claude.callClaude).not.toHaveBeenCalled();
+    const requeteLiens = enSql(hoisted.wheres[0]);
+    expect(requeteLiens.sql).toContain('"project_links"."audiences_recoupent"');
+    expect(requeteLiens.sql).toContain('"project_links"."user_id"');
+    expect(requeteLiens.params).toContain(true);
+    expect(requeteLiens.params).toContain(ENTREE.userId);
   });
 
   it("sans contenu déjà programmé dans la fenêtre sur la marque liée, rend null sans appeler le modèle", async () => {
@@ -283,5 +289,22 @@ describe("detecterCollision", () => {
     const requeteContent = enSql(hoisted.wheres[1]);
     expect(requeteContent.params).toContainEqual(attenduDebut.toISOString());
     expect(requeteContent.params).toContainEqual(attenduFin.toISOString());
+  });
+
+  it("le prompt est borné aussi sur les TITRES, pas seulement sur les corps — `content.title` n'a pas de longueur maximale en base", async () => {
+    const titreEnorme = "X".repeat(10_000);
+    hoisted.resultats = [[LIEN], [voisin({ title: titreEnorme })]];
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ collision: false }));
+
+    await detecterCollision({ ...ENTREE, titre: titreEnorme });
+
+    expect(LONGUEUR_MAX_TITRE).toBe(200);
+    const appel = (claude.callClaude as any).mock.calls[0][0];
+    const promptEnvoye: string = appel.messages[0].content;
+    // Le titre du contenu qu'on programme comme celui du voisin sont tronqués : le
+    // texte intégral de 10 000 caractères ne se retrouve nulle part dans le prompt.
+    expect(promptEnvoye).not.toContain(titreEnorme);
+    expect(promptEnvoye).toContain("X".repeat(LONGUEUR_MAX_TITRE));
+    expect(promptEnvoye).not.toContain("X".repeat(LONGUEUR_MAX_TITRE + 1));
   });
 });
