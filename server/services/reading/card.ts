@@ -10,6 +10,10 @@ export interface Fiche {
 }
 
 const MAX_CARACTERES_ARTICLE = 6000;
+// Bornage de l'extrait journalisé quand le modèle répond mais que parseFiche échoue :
+// assez pour diagnostiquer (accolades absentes, JSON tronqué, champ manquant), jamais
+// la réponse entière dans les logs.
+const EXTRAIT_LOG_MAX = 300;
 
 export const PROMPT_FICHE = `Tu écris une fiche de lecture pour la fondatrice, sur UN article.
 
@@ -65,7 +69,19 @@ export async function redigerFiche(input: {
       additionalSystemContext: PROMPT_FICHE,
       userMessage: `ARTICLE\nTitre : ${c.title}\nSource : ${c.source ?? "inconnue"}\nDate : ${c.publishedAt.toISOString().slice(0, 10)}\nURL : ${c.url}\n\nCONTENU\n${page.content}`,
     });
-    return parseFiche(raw);
+    const fiche = parseFiche(raw);
+    // Best-effort : ceci est le cas le plus fréquent en production — le modèle a répondu,
+    // mais mal (accolades absentes, JSON tronqué, champ manquant). Aucune exception n'est
+    // levée ici, donc sans ce log explicite l'échec serait totalement invisible — cette
+    // fonctionnalité s'interdit volontairement tout compteur et tout message visible,
+    // ce qui fait du journal serveur le seul endroit où une défaillance peut encore se voir.
+    if (!fiche) {
+      console.error(
+        `[Lecture] fiche illisible pour ${c.url} — extrait de la sortie du modèle :`,
+        raw ? raw.slice(0, EXTRAIT_LOG_MAX) : "(vide)",
+      );
+    }
+    return fiche;
   } catch (err: any) {
     console.error(`[Lecture] rédaction de fiche échouée pour ${c.url}:`, err?.message);
     return null;
