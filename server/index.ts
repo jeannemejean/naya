@@ -99,27 +99,53 @@ function scheduleWeeklyIntelligence() {
 }
 
 // La revue du matin : 05:00 UTC, soit 07:00 à Paris — avant l'auto-planner de 06:00,
-// pour qu'elle soit prête au réveil. Même motif que les autres jobs : un setInterval
-// horaire qui teste l'heure UTC, et un try/catch par utilisateur.
+// pour qu'elle soit prête au réveil. Motif repris de scheduleAutoPlanner (et non d'un
+// setInterval horaire comme les autres jobs de ce fichier) : un setTimeout calculé
+// jusqu'au prochain 05:00 UTC, replanifié après chaque exécution. Un setInterval
+// horaire qui teste l'heure fait tourner le worker toutes les heures pour rien, ET
+// peut sauter un jour entier en silence si le process redémarre pendant la fenêtre
+// 05:00–05:59 UTC (un déploiement, par exemple) : le premier contrôle tombe alors
+// après 06:00, l'heure ne correspond plus, et la revue du jour est perdue sans
+// aucune trace. Le setTimeout calculé évite les deux : une seule exécution par jour,
+// et la ligne de journal ci-dessous annonce la prochaine échéance — un déploiement
+// qui fait sauter un matin se voit dans les journaux au lieu d'un silence
+// indistinguable d'un fonctionnement normal.
+//
+// Pas de rattrapage au démarrage : ça relancerait la revue complète (requêtes SERP,
+// appels modèle) à chaque déploiement tombant dans la fenêtre, et le plafond
+// quotidien n'est vérifié qu'à l'écriture — tout le travail serait fait avant
+// d'être jeté. Limite résiduelle assumée : un déploiement pendant 05:00–05:59 UTC
+// coûte la revue du jour, visible dans les journaux.
 function scheduleReadingRoom() {
-  const TARGET_HOUR = 5;
-
-  setInterval(async () => {
+  const scheduleNextRun = () => {
     const now = new Date();
-    if (now.getUTCHours() !== TARGET_HOUR) return;
+    const next5am = new Date(now);
+    next5am.setUTCHours(5, 0, 0, 0);
 
-    console.log('[Lecture] Début de la revue du matin');
-    const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
-    for (const userId of userIds) {
-      try {
-        const { fichesEcrites } = await runReadingRoom(userId, new Date());
-        console.log(`[Lecture] ${userId} : ${fichesEcrites} fiche(s)`);
-      } catch (err: any) {
-        console.error(`[Lecture] revue échouée pour ${userId}:`, err?.message);
-      }
+    if (next5am <= now) {
+      next5am.setDate(next5am.getDate() + 1);
     }
-    console.log('[Lecture] Fin de la revue du matin');
-  }, 60 * 60 * 1000); // vérification chaque heure
+
+    const msUntil5am = next5am.getTime() - now.getTime();
+    console.log(`[Lecture] Prochaine revue à ${next5am.toISOString()} (dans ${Math.round(msUntil5am / 60000)}min)`);
+
+    setTimeout(async () => {
+      console.log('[Lecture] Début de la revue du matin');
+      const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
+      for (const userId of userIds) {
+        try {
+          const { fichesEcrites } = await runReadingRoom(userId, new Date());
+          console.log(`[Lecture] ${userId} : ${fichesEcrites} fiche(s)`);
+        } catch (err: any) {
+          console.error(`[Lecture] revue échouée pour ${userId}:`, err?.message);
+        }
+      }
+      console.log('[Lecture] Fin de la revue du matin');
+      scheduleNextRun();
+    }, msUntil5am);
+  };
+
+  scheduleNextRun();
 }
 
 (async () => {
