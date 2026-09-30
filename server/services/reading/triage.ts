@@ -49,7 +49,11 @@ export function etage1(bruts: CandidatBrut[], opts: { today: Date; urlHashDejaVu
   const out: Candidat[] = [];
 
   for (const b of bruts) {
-    if (!b.publishedAt || b.publishedAt.getTime() < limite) continue;
+    // Une Invalid Date est un objet TRUTHY dont getTime() vaut NaN : ni `!b.publishedAt`
+    // ni `NaN < limite` ne l'écartent seuls, donc sans le garde explicite `!Number.isFinite`,
+    // une date invalide se comporterait comme une date fraîche — l'inverse de la règle.
+    // Point de passage obligé : il doit tenir seul même si l'amont change un jour.
+    if (!b.publishedAt || !Number.isFinite(b.publishedAt.getTime()) || b.publishedAt.getTime() < limite) continue;
 
     const canonique = canonicalizeUrl(b.url);
     if (!canonique) continue;

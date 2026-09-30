@@ -78,6 +78,13 @@ describe("etage1 — le tri déterministe, avant tout appel modèle", () => {
   it("ne fait aucun appel réseau ni modèle : la fonction est pure et synchrone", () => {
     expect(etage1([], { today: TODAY, urlHashDejaVus: new Set() })).toEqual([]);
   });
+
+  it("écarte une Invalid Date comme une absence de date, pas comme une date fraîche", () => {
+    // Une Invalid Date est un objet TRUTHY (`!d` est false) dont getTime() vaut NaN
+    // (`NaN < limite` est aussi false) : sans garde explicite, elle passerait le filtre.
+    const out = etage1([brut({ publishedAt: new Date(NaN) })], { today: TODAY, urlHashDejaVus: new Set() });
+    expect(out).toEqual([]);
+  });
 });
 
 const cand = (url: string, projectId = 1) => ({

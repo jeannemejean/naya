@@ -39,7 +39,13 @@ export function parseDateRelative(raw: string | undefined, today: Date): Date | 
     if (m) {
       const n = parseInt(m[1], 10);
       if (!Number.isFinite(n)) return null;
-      return new Date(today.getTime() - n * jours * 24 * 3600 * 1000);
+      const d = new Date(today.getTime() - n * jours * 24 * 3600 * 1000);
+      // Un nombre démesuré (ex. « il y a 999999999999999999999999999999 jours ») fait
+      // déborder la multiplication vers ±Infinity : new Date(±Infinity) est une Invalid
+      // Date — un objet TRUTHY dont getTime() vaut NaN. À l'étage 1 du tri, ni
+      // `!publishedAt` ni `NaN < limite` ne l'écarteraient seuls : elle se comporterait
+      // comme une date fraîche, l'inverse de la règle. On la traite comme incomprise.
+      return Number.isFinite(d.getTime()) ? d : null;
     }
   }
 
@@ -58,31 +64,42 @@ export async function sourcerCandidats(input: {
   parProjet: Array<{ projectId: number; requetes: string[] }>;
 }): Promise<CandidatBrut[]> {
   const out: CandidatBrut[] = [];
-  let budget = MAX_REQUETES_SERP_PAR_JOUR;
 
+  // Aplati en une seule file (projet, requête) : si le plafond tombe en cours de route,
+  // on sait exactement combien de requêtes et quels projets n'ont pas été servis —
+  // une limite silencieuse se relirait plus tard comme « on a tout couvert ».
+  const file: Array<{ projectId: number; requete: string }> = [];
   for (const { projectId, requetes } of input.parProjet) {
-    for (const requete of requetes) {
-      if (budget <= 0) {
-        console.info(`[Lecture] plafond de ${MAX_REQUETES_SERP_PAR_JOUR} requêtes SERP atteint — sourcing interrompu`);
-        return out;
+    for (const requete of requetes) file.push({ projectId, requete });
+  }
+
+  for (let i = 0; i < file.length; i++) {
+    if (i >= MAX_REQUETES_SERP_PAR_JOUR) {
+      const restantes = file.slice(i);
+      const projetsRestants = Array.from(new Set(restantes.map((r) => r.projectId)));
+      console.info(
+        `[Lecture] plafond de ${MAX_REQUETES_SERP_PAR_JOUR} requêtes SERP atteint — sourcing interrompu : ` +
+          `${restantes.length} requête(s) non exécutée(s), projet(s) concerné(s) [${projetsRestants.join(", ")}]`,
+      );
+      break;
+    }
+
+    const { projectId, requete } = file[i];
+    try {
+      // pays/langue épinglés : sans eux, Bright Data sort par un pays aléatoire
+      // (Germany, Croatia, Peru… mesuré) et un appel sur trois ne rend RIEN.
+      const res = await serpSearch(requete, input.userId, { vertical: "news", freshness: "week", pays: "fr", langue: "fr" });
+      for (const r of res) {
+        out.push({
+          url: r.link,
+          title: r.title,
+          source: r.source ?? null,
+          publishedAt: parseDateRelative(r.publishedAtRaw, input.today),
+          projectId,
+        });
       }
-      budget -= 1;
-      try {
-        // pays/langue épinglés : sans eux, Bright Data sort par un pays aléatoire
-        // (Germany, Croatia, Peru… mesuré) et un appel sur trois ne rend RIEN.
-        const res = await serpSearch(requete, input.userId, { vertical: "news", freshness: "week", pays: "fr", langue: "fr" });
-        for (const r of res) {
-          out.push({
-            url: r.link,
-            title: r.title,
-            source: r.source ?? null,
-            publishedAt: parseDateRelative(r.publishedAtRaw, input.today),
-            projectId,
-          });
-        }
-      } catch (err: any) {
-        console.error(`[Lecture] requête « ${requete} » échouée:`, err?.message);
-      }
+    } catch (err: any) {
+      console.error(`[Lecture] requête « ${requete} » échouée:`, err?.message);
     }
   }
   return out;
