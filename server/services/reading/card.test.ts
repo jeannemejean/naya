@@ -59,11 +59,18 @@ describe("redigerFiche — le scrape est obligatoire", () => {
     const f = await redigerFiche({ userId: "u1", candidat, scrape });
     expect(f).toBeNull();
     expect(scrape).toHaveBeenCalledWith(candidat.url, expect.any(Number));
+    // Ce n'est pas seulement la fiche finale qui doit être nulle : le modèle ne doit JAMAIS
+    // être sollicité sans contenu scrapé. Sans cette assertion, un test de mutation qui
+    // retire le garde `if (!page || ...) return null;` resterait vert par accident (le
+    // TypeError sur `page.content` serait capté par le catch externe, pas par la logique
+    // voulue).
+    expect(callClaudeWithContext).not.toHaveBeenCalled();
   });
 
   it("contenu scrapé vide → AUCUNE fiche", async () => {
     const scrape = vi.fn().mockResolvedValue({ url: candidat.url, content: "   " });
     expect(await redigerFiche({ userId: "u1", candidat, scrape })).toBeNull();
+    expect(callClaudeWithContext).not.toHaveBeenCalled();
   });
 });
 
