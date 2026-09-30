@@ -1,7 +1,13 @@
 import { serpSearch } from "../serp";
 import type { CandidatBrut } from "./triage";
 
-// Plafond dur, par utilisateur et par jour. Le coût SERP est négligeable (~0,0014 €/requête) :
+// Plafond dur, PAR EXÉCUTION de sourcerCandidats — pas un compteur persistant par jour.
+// Rien ici n'empêche plusieurs exécutions le même jour (le cron une fois, mais aussi
+// l'endpoint manuel POST /api/reading/run sans limite de fréquence) : chaque appel
+// repart avec son propre budget de 24. La borne réellement quotidienne vient d'ailleurs :
+// le cron ne tourne qu'une fois par jour, et le solde de fiches déjà écrites aujourd'hui
+// (compté dans runner.ts, tous statuts confondus) limite ce qu'une exécution
+// supplémentaire peut encore produire. Le coût SERP est négligeable (~0,0014 €/requête) :
 // ce plafond borne le BRUIT et le temps d'exécution, pas la dépense.
 export const MAX_REQUETES_SERP_PAR_JOUR = 24;
 

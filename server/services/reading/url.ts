@@ -20,7 +20,7 @@ export function canonicalizeUrl(raw: string): string | null {
     u.hash = "";
     u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
     u.protocol = u.protocol.toLowerCase();
-    for (const k of [...u.searchParams.keys()]) {
+    for (const k of Array.from(u.searchParams.keys())) {
       if (estUnParamDeSuivi(k)) u.searchParams.delete(k);
     }
     u.searchParams.sort();

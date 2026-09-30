@@ -16,6 +16,7 @@ const depsBase = (over: any = {}) => ({
   rediger: vi.fn().mockResolvedValue({ factSummary: "f", whyThisBrand: "p", angle: "a", question: "q" }),
   ecrire: vi.fn().mockResolvedValue(undefined),
   expirer: vi.fn().mockResolvedValue(0),
+  compterFichesDuJour: vi.fn().mockResolvedValue(0),
   ...over,
 });
 
@@ -79,5 +80,29 @@ describe("runReadingRoom", () => {
     const out = await runReadingRoom("u1", TODAY, deps as any);
     expect(out.fichesEcrites).toBe(0);
     expect(deps.noter).not.toHaveBeenCalled();
+  });
+
+  it("le plafond quotidien (tous statuts confondus) borne l'écriture : deux fiches déjà écrites aujourd'hui, trois retenues → une seule est écrite", async () => {
+    const deps = depsBase({
+      projetsActifs: vi.fn().mockResolvedValue([{ id: 1, name: "A" }, { id: 2, name: "B" }]),
+      sourcer: vi.fn().mockResolvedValue([
+        { url: "https://media.fr/a", title: "A", source: "M", publishedAt: hier, projectId: 1 },
+        { url: "https://media.fr/b", title: "B", source: "M", publishedAt: hier, projectId: 1 },
+        { url: "https://media.fr/c", title: "C", source: "M", publishedAt: hier, projectId: 2 },
+      ]),
+      noter: vi.fn().mockImplementation(async (input: any) =>
+        input.candidats.map((c: any) => ({ url: c.url, score: 0.9, rationale: "r" }))),
+      compterFichesDuJour: vi.fn().mockResolvedValue(2),
+    });
+    const out = await runReadingRoom("u1", TODAY, deps as any);
+    expect(out.fichesEcrites).toBe(1);
+    expect(deps.ecrire).toHaveBeenCalledTimes(1);
+  });
+
+  it("le plafond quotidien déjà atteint (trois fiches déjà écrites) → aucune fiche n'est écrite", async () => {
+    const deps = depsBase({ compterFichesDuJour: vi.fn().mockResolvedValue(3) });
+    const out = await runReadingRoom("u1", TODAY, deps as any);
+    expect(out.fichesEcrites).toBe(0);
+    expect(deps.ecrire).not.toHaveBeenCalled();
   });
 });

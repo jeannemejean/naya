@@ -1,7 +1,7 @@
 import { db } from "../../db";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, gte } from "drizzle-orm";
 import { readingCards, projects } from "@shared/schema";
-import { etage1, noterCandidats, selectionFinale } from "./triage";
+import { etage1, noterCandidats, selectionFinale, MAX_FICHES } from "./triage";
 import type { CandidatBrut } from "./triage";
 import { assurerRequetes } from "./queries";
 import { sourcerCandidats } from "./source";
@@ -20,6 +20,10 @@ export interface DepsLecture {
   rediger: typeof redigerFiche;
   ecrire: (ligne: typeof readingCards.$inferInsert) => Promise<void>;
   expirer: (userId: string, today: Date) => Promise<number>;
+  // Tous statuts confondus (y compris `rejected` et `expired`) : une fiche déjà passée
+  // aujourd'hui ne libère pas de place, sinon la remplacer serait exactement le
+  // « compléter pour atteindre trois » que le projet interdit.
+  compterFichesDuJour: (userId: string, today: Date) => Promise<number>;
 }
 
 const debutDuJour = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -64,6 +68,13 @@ const depsParDefaut: DepsLecture = {
   rediger: redigerFiche,
   ecrire: async (ligne) => { await db.insert(readingCards).values(ligne).onConflictDoNothing(); },
   expirer: expirerFichesDeLaVeille,
+  compterFichesDuJour: async (userId, today) => {
+    const rows = await db
+      .select({ id: readingCards.id })
+      .from(readingCards)
+      .where(and(eq(readingCards.userId, userId), gte(readingCards.createdAt, debutDuJour(today))));
+    return rows.length;
+  },
 };
 
 /**
@@ -128,9 +139,26 @@ export async function runReadingRoom(
   const retenus = selectionFinale(candidats, notes);
   if (retenus.length === 0) return { fichesEcrites: 0 };
 
+  // Le plafond de ${MAX_FICHES} fiches est JOURNALIER, pas par exécution : sans ce garde,
+  // une deuxième exécution le même jour (endpoint manuel après le cron) pourrait écrire
+  // jusqu'à ${MAX_FICHES} fiches de plus. On compte TOUS les statuts, y compris `rejected`
+  // et `expired` — une fiche déjà passée ce matin ne libère pas de place. En cas d'échec
+  // du comptage, on suppose le plafond déjà atteint (fail closed) : mieux vaut une revue
+  // manquée qu'un dépassement silencieux du plafond que ce garde existe pour tenir.
+  const dejaEcritesAujourdhui = await deps.compterFichesDuJour(userId, today).catch((err: any) => {
+    console.error(`[Lecture] comptage des fiches du jour échoué pour ${userId}:`, err?.message);
+    return MAX_FICHES;
+  });
+  const solde = Math.max(0, MAX_FICHES - dejaEcritesAujourdhui);
+  if (solde === 0) {
+    console.info(`[Lecture] plafond quotidien de ${MAX_FICHES} fiches déjà atteint pour ${userId} — revue arrêtée sans écriture`);
+    return { fichesEcrites: 0 };
+  }
+  const aEcrire = retenus.slice(0, solde);
+
   const finDeJournee = new Date(debutDuJour(today).getTime() + 24 * 3600 * 1000 - 1);
   let fichesEcrites = 0;
-  for (const r of retenus) {
+  for (const r of aEcrire) {
     try {
       const fiche = await deps.rediger({ userId, candidat: r });
       if (!fiche) continue; // scrape ou rédaction en échec → pas de fiche, jamais de fiche creuse

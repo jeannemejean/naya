@@ -132,7 +132,18 @@ export function selectionFinale(
   notes: Note[],
 ): Array<Candidat & { score: number; rationale: string }> {
   const parUrl = new Map(candidats.map((c) => [c.url, c]));
-  const retenus = notes
+
+  // Le modèle peut noter deux fois la même URL — sa sortie n'est jamais garantie unique.
+  // Sans cette étape, un même article pourrait occuper deux des trois places du plafond ;
+  // l'index unique en base n'est qu'un filet de sécurité, pas la règle. On garde la
+  // meilleure note pour chaque URL avant d'appliquer le seuil.
+  const meilleureNoteParUrl = new Map<string, Note>();
+  for (const n of notes) {
+    const existante = meilleureNoteParUrl.get(n.url);
+    if (!existante || n.score > existante.score) meilleureNoteParUrl.set(n.url, n);
+  }
+
+  const retenus = Array.from(meilleureNoteParUrl.values())
     .filter((n) => n.score >= SEUIL_RETENTION && parUrl.has(n.url))
     .sort((a, b) => b.score - a.score)
     .map((n) => ({ ...(parUrl.get(n.url) as Candidat), score: n.score, rationale: n.rationale }));

@@ -168,4 +168,16 @@ describe("selectionFinale — le seuil et les plafonds, hors de portée du modè
   it("un candidat non noté n'est pas retenu par défaut", () => {
     expect(selectionFinale([cand("https://a.fr/1")], [])).toEqual([]);
   });
+
+  it("deux notes sur la même URL ne donnent qu'une seule fiche, avec le score le plus élevé", () => {
+    const out = selectionFinale(
+      [cand("https://a.fr/1")],
+      [
+        { url: "https://a.fr/1", score: 0.9, rationale: "haute" },
+        { url: "https://a.fr/1", score: 0.75, rationale: "basse" },
+      ],
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].score).toBe(0.9);
+  });
 });
