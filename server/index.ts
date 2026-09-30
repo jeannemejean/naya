@@ -11,6 +11,7 @@ import { scheduleLinkedInSync } from "./services/linkedin-sync";
 import { computeDurationCalibration } from "./services/duration-calibration";
 import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
 import { adjustBufferForUser } from "./services/rhythm-buffer";
+import { runReadingRoom } from "./services/reading/runner";
 import { storage } from "./storage";
 
 // Prevent unhandled rejections and exceptions from crashing the server
@@ -97,6 +98,30 @@ function scheduleWeeklyIntelligence() {
   }, 60 * 60 * 1000); // vérification chaque heure
 }
 
+// La revue du matin : 05:00 UTC, soit 07:00 à Paris — avant l'auto-planner de 06:00,
+// pour qu'elle soit prête au réveil. Même motif que les autres jobs : un setInterval
+// horaire qui teste l'heure UTC, et un try/catch par utilisateur.
+function scheduleReadingRoom() {
+  const TARGET_HOUR = 5;
+
+  setInterval(async () => {
+    const now = new Date();
+    if (now.getUTCHours() !== TARGET_HOUR) return;
+
+    console.log('[Lecture] Début de la revue du matin');
+    const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
+    for (const userId of userIds) {
+      try {
+        const { fichesEcrites } = await runReadingRoom(userId, new Date());
+        console.log(`[Lecture] ${userId} : ${fichesEcrites} fiche(s)`);
+      } catch (err: any) {
+        console.error(`[Lecture] revue échouée pour ${userId}:`, err?.message);
+      }
+    }
+    console.log('[Lecture] Fin de la revue du matin');
+  }, 60 * 60 * 1000); // vérification chaque heure
+}
+
 (async () => {
   const server = await registerRoutes(app);
 
@@ -127,6 +152,9 @@ function scheduleWeeklyIntelligence() {
 
   // ─── Cron hebdomadaire : intelligence analytics (dimanche ~23h UTC) ───────────
   scheduleWeeklyIntelligence();
+
+  // ─── La revue du matin : l'espace de lecture (chaque jour, 05:00 UTC) ─────────
+  scheduleReadingRoom();
 
   // Renouvellement des jetons reseaux sociaux (toutes les 6 h).
   //
