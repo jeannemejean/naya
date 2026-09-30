@@ -59,6 +59,7 @@ const storageMock = {
   getBrandDna: vi.fn(),
   getSavedArticles: vi.fn(),
   createSavedArticle: vi.fn(),
+  updateSavedArticle: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 
@@ -161,5 +162,74 @@ describe("POST /api/reading/cards/:id/answer — une fiche gardée reste gardée
     const { sql: texte } = enSql(statutApresReponse);
     // Lu et écrit dans le MÊME update : un « Garder » simultané ne peut pas être écrasé.
     expect(texte).toBe(`CASE WHEN "reading_cards"."status" = 'kept' THEN 'kept' ELSE 'answered' END`);
+  });
+});
+
+describe("POST /api/saved-articles — appartenance du projectId (B7)", () => {
+  const article = { title: "Un article", url: "https://media.fr/a" };
+
+  it("un projectId qui n'appartient pas à l'utilisatrice → 404, et rien n'est inséré", async () => {
+    // 404 et non 403 : un 403 confirmerait l'existence du projet d'autrui, ce qui
+    // transformerait l'endpoint en oracle d'énumération.
+    storageMock.getProject.mockResolvedValue(undefined);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/saved-articles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...article, projectId: 999 }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(storageMock.getProject).toHaveBeenCalledWith(999, "user-1");
+    expect(storageMock.createSavedArticle).not.toHaveBeenCalled();
+    // Refusé AVANT l'analyse IA : on ne dépense pas pour une requête qu'on rejette.
+    expect(storageMock.getBrandDna).not.toHaveBeenCalled();
+  });
+
+  it("un projectId qui lui appartient → inséré, normalisé en nombre", async () => {
+    storageMock.getProject.mockResolvedValue({ id: 4, userId: "user-1", name: "JMD" });
+    storageMock.getBrandDna.mockResolvedValue(null);
+    storageMock.createSavedArticle.mockResolvedValue({ id: 1 });
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/saved-articles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...article, projectId: "4" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(storageMock.createSavedArticle).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", projectId: 4 }),
+    );
+  });
+
+  it("sans projectId → aucune vérification, aucun projet inventé (la colonne est nullable)", async () => {
+    storageMock.getBrandDna.mockResolvedValue(null);
+    storageMock.createSavedArticle.mockResolvedValue({ id: 1 });
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/saved-articles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(article),
+    });
+
+    expect(res.status).toBe(200);
+    expect(storageMock.getProject).not.toHaveBeenCalled();
+    expect(storageMock.createSavedArticle).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: null }),
+    );
+  });
+
+  it("PUT /api/saved-articles/:id ferme le même trou, par le même chemin", async () => {
+    storageMock.getProject.mockResolvedValue(undefined);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/saved-articles/3`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: 999 }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(storageMock.updateSavedArticle).not.toHaveBeenCalled();
   });
 });

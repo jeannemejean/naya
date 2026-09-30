@@ -7242,7 +7242,24 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/saved-articles', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      
+
+      // Exactement le trou refermé sur POST /api/reading/queries, réouvert ici par un
+      // autre chemin : cette branche a ajouté `projectId` à `savedArticles`, donc au
+      // schéma d'insertion, donc un identifiant de projet arbitraire venu du corps de la
+      // requête s'insère sans qu'on vérifie l'appartenance. Impact nul aujourd'hui (rien
+      // ne lit encore la colonne), mais la ligne casse l'invariant de la table ET fait de
+      // l'endpoint un oracle d'énumération. Vérifié AVANT l'analyse IA plus bas : on ne
+      // dépense pas pour une requête qu'on va refuser. 404 et non 403 — un 403
+      // confirmerait l'existence du projet d'autrui.
+      const projectId = req.body?.projectId === undefined || req.body?.projectId === null
+        ? null
+        : parseInt(req.body.projectId, 10);
+      if (projectId !== null) {
+        if (!Number.isFinite(projectId)) return res.status(400).json({ message: 'projectId invalide' });
+        const project = await storage.getProject(projectId, userId);
+        if (!project) return res.status(404).json({ message: 'Projet introuvable' });
+      }
+
       // Auto-generate AI analysis for the article
       let aiAnalysis = null;
       if (req.body.url && req.body.title) {
@@ -7266,10 +7283,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         }
       }
       
-      const articleData = insertSavedArticleSchema.parse({ 
-        ...req.body, 
+      const articleData = insertSavedArticleSchema.parse({
+        ...req.body,
         userId,
-        aiAnalysis: aiAnalysis || req.body.aiAnalysis 
+        // Le projectId vérifié ci-dessus, normalisé en nombre : pas celui du corps brut,
+        // sinon la vérification porterait sur une valeur et l'insertion sur une autre.
+        projectId,
+        aiAnalysis: aiAnalysis || req.body.aiAnalysis
       });
       
       const article = await storage.createSavedArticle(articleData);
@@ -7285,6 +7305,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const { id } = req.params;
       const userId = req.userId;
       const updates = updateSavedArticleSchema.parse(req.body);
+
+      // Le MÊME trou que sur le POST, par le même chemin : `updateSavedArticleSchema`
+      // dérive du schéma d'insertion, donc il a hérité de `projectId` avec cette branche.
+      // Fermé de la même façon, 404 comprise — corriger l'un sans l'autre laisserait la
+      // moitié de la régression en place.
+      if (updates.projectId !== undefined && updates.projectId !== null) {
+        const project = await storage.getProject(updates.projectId, userId);
+        if (!project) return res.status(404).json({ message: 'Projet introuvable' });
+      }
       
       const article = await storage.updateSavedArticle(parseInt(id), userId, updates);
       if (!article) {
