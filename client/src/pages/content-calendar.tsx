@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { fetchJson } from '@/lib/fetchJson';
 import { useTranslation } from 'react-i18next';
@@ -411,6 +411,16 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  },
  });
 
+ // Porte l'alerte de collision entre la création « créer et publier » (qui la reçoit
+ // dans la réponse de POST /api/content) et publishContentMutation (seul endroit de ce
+ // chemin qui affiche un toast de succès) — TOAST_LIMIT === 1 (client/src/hooks/use-toast.ts)
+ // veut qu'un second toast() REMPLACE le premier plutôt que de s'y ajouter, donc les deux
+ // faits doivent tenir dans le MÊME toast plutôt que dans deux appels successifs.
+ // publishContentMutation n'est mutée que depuis handleCreateAndPublish (vérifié : aucun
+ // autre appel de `.mutate()` sur cette mutation dans ce fichier) : cette variable n'est
+ // donc jamais lue pour une publication qui ne vient pas de ce chemin.
+ const collisionEnAttentePublication = useRef<{ titre: string; description: string } | null>(null);
+
  const publishContentMutation = useMutation({
  mutationFn: async (contentId: number) => {
  const response = await fetch(`/api/content/${contentId}/publish`, {
@@ -424,9 +434,24 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  },
  onSuccess: (data: { platform: string }) => {
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
- toast({ title: t('contentCalendar.contentPublished'), description: t('contentCalendar.postedTo', { platform: data.platform }) });
+ const collision = collisionEnAttentePublication.current;
+ collisionEnAttentePublication.current = null;
+ // Alerte de collision, même formulation qu'ailleurs sur ce fichier, ajoutée au SEUL
+ // toast de ce chemin plutôt que dans un second appel (voir le commentaire sur la ref
+ // ci-dessus) : ne bloque rien (le contenu est déjà publié), ne s'affiche que si
+ // `collision` est réellement présent, n'est pas un reproche.
+ toast({
+ title: t('contentCalendar.contentPublished'),
+ description: collision
+ ? `${t('contentCalendar.postedTo', { platform: data.platform })}. ${collision.description}`
+ : t('contentCalendar.postedTo', { platform: data.platform }),
+ });
  },
  onError: (error: unknown) => {
+ // La publication a échoué : la collision éventuellement détectée à la création ne
+ // concerne plus rien qui vienne d'être publié. On l'efface plutôt que de la laisser
+ // s'attacher par erreur à une publication ultérieure sans rapport.
+ collisionEnAttentePublication.current = null;
  toast({
  title: t('contentCalendar.failedToPublish'),
  description: translateError(t, error, 'content_publish_failed'),
@@ -651,6 +676,14 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  });
  if (!response.ok) throw new Error('Failed to create content');
  const createdContent = await response.json();
+ // Le serveur calcule la collision sur CE chemin aussi (POST /api/content, Tâche 7) —
+ // paie l'appel modèle que `detecterCollision` implique que la réponse soit lue ou non.
+ // C'est le chemin où elle compte le plus : « créer et publier » met le contenu en
+ // ligne immédiatement, donc c'est maintenant qu'il faut savoir qu'un angle proche
+ // sort au même moment sur la marque liée — pas au prochain passage dans le calendrier.
+ // Affichée par publishContentMutation.onSuccess (voir la ref juste au-dessus de sa
+ // définition) : la publication est le seul appel de ce chemin qui montre un toast.
+ collisionEnAttentePublication.current = messageCollision(createdContent?.collision);
  publishContentMutation.mutate(createdContent.id);
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
  setShowCreateDialog(false);
