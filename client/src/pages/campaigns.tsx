@@ -124,6 +124,21 @@ interface GenerateResponse {
  };
 }
 
+/** Juste ce dont l'étape zéro a besoin de GET /api/campaigns/articulation. */
+interface ArticulationCampagne {
+ id: number;
+ marque: string;
+ name: string;
+ objective: string;
+ coreMessage: string | null;
+ angles: string[];
+}
+
+interface Articulation {
+ sens: "nourrit" | "estNourriePar";
+ campagne: ArticulationCampagne;
+}
+
 type RightPanelState = "empty" | "creating" | "generated" | "detail";
 
 const STATUS_BADGES: Record<string, { variant: "outline" | "default" | "secondary" | "destructive"; labelKey: string }> = {
@@ -598,6 +613,11 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  const [reviewSubmitted, setReviewSubmitted] = useState<number | null>(null);
  // Étape courante de la génération de campagne (pilote l'overlay de progression).
  const [genStep, setGenStep] = useState<'strategy' | 'content' | 'tasks' | null>(null);
+ // Étape zéro de l'articulation entre marques liées : Naya propose, l'utilisatrice
+ // tranche. Aucune des deux options n'est présélectionnée — voir le bloc d'affichage
+ // plus bas pour la raison (présélectionner reviendrait à imposer un choix).
+ const [articulationChoisie, setArticulationChoisie] = useState<Articulation | null>(null);
+ const [choixIndependante, setChoixIndependante] = useState(false);
 
  useEffect(() => {
  if (projects.length > 0 && selectedProjectId === null) {
@@ -611,7 +631,24 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  useEffect(() => {
  setSelectedCampaignId(null);
  setPanelState("empty");
+ setArticulationChoisie(null);
+ setChoixIndependante(false);
  }, [selectedProjectId]);
+
+ // Étape zéro de la génération : ce avec quoi cette marque pourrait s'articuler.
+ // throwOnError: false — écart volontaire à la règle globale imposée par
+ // client/src/lib/queryClient.ts (throwOnError: (error) => !is401(error)) : l'unique
+ // ErrorBoundary du routeur (App.tsx) ferait sinon basculer TOUTE l'application sur
+ // l'écran d'erreur plein écran pour la panne d'un seul endpoint secondaire de cet écran.
+ // Sur échec comme sur liste réellement vide, `articulations` retombe sur [] : l'écran
+ // n'affiche alors rien de plus — jamais une affirmation sur la foi d'une panne.
+ const { data: articulationData } = useQuery<{ articulations: Articulation[] }>({
+ queryKey: ["/api/campaigns/articulation", selectedProjectId],
+ queryFn: () => fetchJson(`/api/campaigns/articulation?projectId=${selectedProjectId}`),
+ enabled: !!selectedProjectId,
+ throwOnError: false,
+ });
+ const articulations = articulationData?.articulations ?? [];
 
  const { data: campaignList = [], isLoading: campaignsLoading } = useQuery<Campaign[]>({
  queryKey: ["/api/campaigns", selectedProjectId],
@@ -651,7 +688,15 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  // Génération EN 3 ÉTAPES SÉQUENTIELLES — chaque appel est court et borné en tokens
  // (pas de troncature, pas de timeout à 3 min). L'overlay suit la progression via genStep.
  mutationFn: async () => {
- const base = { objective, duration, projectId: selectedProjectId, weekContext: weekContext || undefined };
+ const base = {
+ objective, duration, projectId: selectedProjectId,
+ weekContext: weekContext || undefined,
+ // On n'envoie QUE l'identifiant : le serveur relit l'articulation et vérifie
+ // qu'elle est bien proposable pour cette marque. Envoyer le bloc lui-même
+ // permettrait d'injecter du texte arbitraire dans le prompt.
+ articulationCampaignId: articulationChoisie?.campagne.id,
+ articulationIndependante: choixIndependante === true,
+ };
  // Timeout PAR APPEL (pas cumulé) : chaque apiRequest crée son propre AbortController + timer
  // (queryClient.ts:25-26), démarré à son lancement et nettoyé en finally. Les 3 étapes ont donc
  // chacune 4 min pleines indépendamment. Mesuré ~50-65 s/étape ; 4 min = large marge prod.
@@ -823,6 +868,8 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  setDuration("3_months");
  setWeekContext("");
  setShowContext(false);
+ setArticulationChoisie(null);
+ setChoixIndependante(false);
  const d = new Date();
  setStartDate(formatLocalDate(d));
  setPanelState("creating");
@@ -1096,6 +1143,59 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  />
  )}
  </div>
+
+ {/* Étape zéro : n'apparaît QUE si l'API rend au moins une articulation
+ proposable. Sur une marque indépendante (liste vide), ce bloc n'existe pas
+ et la génération part exactement comme avant ce chantier — aucune section
+ vide, aucun message. Aucune des deux options n'est présélectionnée : Naya
+ propose, l'utilisatrice tranche. */}
+ {articulations.length > 0 && (
+ <div className="space-y-2">
+ <p className="text-sm text-naya-olive-70">
+ {articulations.length === 1 ? (
+ <>
+ Cette marque est liée à <strong>{articulations[0].campagne.marque}</strong>, dont la campagne{" "}
+ <em>{articulations[0].campagne.name}</em>
+ {articulations[0].campagne.angles[0] ? (
+ <> porte l'angle <em>{articulations[0].campagne.angles[0]}</em></>
+ ) : null}
+ .
+ </>
+ ) : (
+ "Cette marque est liée à plusieurs campagnes en cours :"
+ )}
+ </p>
+ <div className="space-y-1.5">
+ {articulations.map((a) => (
+ <button
+ key={a.campagne.id}
+ type="button"
+ onClick={() => { setArticulationChoisie(a); setChoixIndependante(false); }}
+ data-testid={`button-articuler-${a.campagne.id}`}
+ className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
+ articulationChoisie?.campagne.id === a.campagne.id
+ ? "border-primary bg-primary/10 text-primary"
+ : "border-naya-olive-18 text-naya-olive-70 hover:border-naya-olive-18"
+ }`}
+ >
+ Articuler avec « {a.campagne.marque} » — {a.campagne.name}
+ </button>
+ ))}
+ <button
+ type="button"
+ onClick={() => { setArticulationChoisie(null); setChoixIndependante(true); }}
+ data-testid="button-campagne-independante"
+ className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
+ choixIndependante
+ ? "border-primary bg-primary/10 text-primary"
+ : "border-naya-olive-18 text-naya-olive-70 hover:border-naya-olive-18"
+ }`}
+ >
+ Faire une campagne indépendante
+ </button>
+ </div>
+ </div>
+ )}
 
  <Button
  onClick={() => generateMutation.mutate()}
