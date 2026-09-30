@@ -59,7 +59,15 @@ export async function redigerFiche(input: {
   const c = input.candidat;
   try {
     const page = await scrape(c.url, MAX_CARACTERES_ARTICLE);
-    if (!page || !page.content || !page.content.trim()) return null;
+    // Journalisé avec l'URL : c'est le cas de la presse payante, où le scrape rend une
+    // page vide sans lever d'exception. Sans cette ligne, l'échec n'existe nulle part —
+    // ni exception, ni fiche, ni compteur (le produit s'en interdit) — et le runner ne
+    // peut pas non plus le distinguer d'un modèle qui répond mal. Le journal serveur est
+    // le seul organe de détection de cette fonctionnalité.
+    if (!page || !page.content || !page.content.trim()) {
+      console.error(`[Lecture] article illisible (scrape sans contenu) : ${c.url}`);
+      return null;
+    }
 
     const raw = await callClaudeWithContext({
       userId: input.userId,

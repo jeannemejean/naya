@@ -184,14 +184,29 @@ export async function runReadingRoom(
     console.info(`[Lecture] plafond quotidien de ${MAX_FICHES} fiches déjà atteint pour ${userId} — revue arrêtée sans écriture`);
     return { fichesEcrites: 0 };
   }
-  const aEcrire = retenus.slice(0, solde);
-
   const finDeJournee = new Date(debutDuJour(today).getTime() + 24 * 3600 * 1000 - 1);
   let fichesEcrites = 0;
-  for (const r of aEcrire) {
+
+  // REPÊCHAGE. La version précédente tranchait la liste à `retenus.slice(0, solde)`
+  // AVANT la boucle de rédaction, donc un candidat dont le scrape échoue — cas courant
+  // sur la presse payante — consommait une place du plafond sans écrire la moindre
+  // ligne. Or c'est la ligne écrite qui fait entrer l'URL dans la mémoire « déjà vu » :
+  // l'article revenait donc en tête le lendemain, reprenait la même place, et
+  // recommençait jusqu'à sortir de la fenêtre de sept jours. Trois articles payants en
+  // tête de classement = une semaine de revue vide, en silence. On parcourt maintenant
+  // TOUS les retenus et on ne s'arrête qu'au solde atteint ou aux candidats épuisés.
+  //
+  // Et on n'écrit AUCUNE ligne marqueur pour ces échecs : le comptage du plafond
+  // quotidien porte volontairement sur tous les statuts, donc un marqueur volerait la
+  // place qu'on vient de rendre. Le coût assumé est d'une tentative de scrape par jour
+  // pour un article payant ; ce qu'on refuse, c'est qu'il vole une place.
+  for (const r of retenus) {
+    if (fichesEcrites >= solde) break;
     try {
       const fiche = await deps.rediger({ userId, candidat: r });
-      if (!fiche) continue; // scrape ou rédaction en échec → pas de fiche, jamais de fiche creuse
+      // scrape ou rédaction en échec → pas de fiche, jamais de fiche creuse, et on
+      // passe au candidat suivant plutôt que de renoncer à la place.
+      if (!fiche) continue;
       await deps.ecrire({
         userId,
         projectId: r.projectId,

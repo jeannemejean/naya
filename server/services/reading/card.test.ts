@@ -72,6 +72,17 @@ describe("redigerFiche — le scrape est obligatoire", () => {
     expect(await redigerFiche({ userId: "u1", candidat, scrape })).toBeNull();
     expect(callClaudeWithContext).not.toHaveBeenCalled();
   });
+
+  it("l'échec de scrape est journalisé AVEC son URL : c'est le seul endroit où un article payant se voit", async () => {
+    // Aucune exception, aucune fiche, aucun compteur (le produit s'en interdit) : sans
+    // cette ligne de journal, un article payant qui stérilise la revue est
+    // structurellement indétectable.
+    const journal = vi.spyOn(console, "error").mockImplementation(() => {});
+    const scrape = vi.fn().mockResolvedValue({ url: candidat.url, content: "" });
+    await redigerFiche({ userId: "u1", candidat, scrape });
+    expect(journal).toHaveBeenCalledWith(expect.stringContaining(candidat.url));
+    journal.mockRestore();
+  });
 });
 
 describe("redigerFiche — chemin heureux", () => {

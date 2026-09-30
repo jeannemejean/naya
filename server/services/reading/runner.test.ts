@@ -116,6 +116,58 @@ describe("runReadingRoom", () => {
     expect(deps.ecrire).not.toHaveBeenCalled();
   });
 
+  // ── Repêchage : un candidat dont la lecture échoue (presse payante) ne doit pas
+  // VOLER une place du plafond. Il n'écrit aucune ligne, donc son URL n'entre pas dans
+  // la mémoire « déjà vu » : sans repêchage, il revient prendre la même place chaque
+  // matin jusqu'à sortir de la fenêtre de 7 jours. ─────────────────────────────────────
+
+  it("repêchage : solde de 2, trois retenus, le premier illisible → DEUX fiches écrites (le troisième est repêché)", async () => {
+    // Le solde doit être STRICTEMENT inférieur au nombre de retenus, sinon le test
+    // passerait aussi sans repêchage (trois retenus, un échec, deux écrites par simple
+    // épuisement). Avec solde = 2, seul le repêchage peut produire deux fiches.
+    const deps = depsBase({
+      ...deuxProjetsAvecCandidatsVivants(),
+      compterFichesDuJour: vi.fn().mockResolvedValue(1), // solde = 3 - 1 = 2
+      rediger: vi.fn().mockImplementation(async (input: any) => {
+        if (input.candidat.url === "https://media.fr/a") return null; // article payant
+        return { factSummary: "f", whyThisBrand: "p", angle: "a", question: "q" };
+      }),
+    });
+    const out = await runReadingRoom("u1", TODAY, deps as any);
+    expect(out.fichesEcrites).toBe(2);
+    expect(deps.rediger).toHaveBeenCalledTimes(3); // les trois sont tentés
+    expect((deps.ecrire as any).mock.calls.map((c: any[]) => c[0].url)).toEqual([
+      "https://media.fr/b",
+      "https://media.fr/c",
+    ]);
+  });
+
+  it("le repêchage s'arrête AU SOLDE, jamais au-delà : solde de 1, premier illisible → une fiche, et le troisième n'est même pas tenté", async () => {
+    const deps = depsBase({
+      ...deuxProjetsAvecCandidatsVivants(),
+      compterFichesDuJour: vi.fn().mockResolvedValue(2), // solde = 1
+      rediger: vi.fn().mockImplementation(async (input: any) => {
+        if (input.candidat.url === "https://media.fr/a") return null;
+        return { factSummary: "f", whyThisBrand: "p", angle: "a", question: "q" };
+      }),
+    });
+    const out = await runReadingRoom("u1", TODAY, deps as any);
+    expect(out.fichesEcrites).toBe(1);
+    expect(deps.rediger).toHaveBeenCalledTimes(2); // a (échec) puis b (écrite) — c jamais
+  });
+
+  it("candidats épuisés avant le solde → on écrit ce qu'on a, sans jamais baisser le seuil", async () => {
+    const deps = depsBase({
+      ...deuxProjetsAvecCandidatsVivants(), // 3 retenus, solde = 3
+      rediger: vi.fn().mockImplementation(async (input: any) => {
+        if (input.candidat.url === "https://media.fr/a") return null;
+        return { factSummary: "f", whyThisBrand: "p", angle: "a", question: "q" };
+      }),
+    });
+    const out = await runReadingRoom("u1", TODAY, deps as any);
+    expect(out.fichesEcrites).toBe(2);
+  });
+
   // ── Best-effort : chaque collaborateur peut échouer, aucun ne doit faire remonter
   // d'exception ni empêcher les autres de produire leur travail. ─────────────────────
 
