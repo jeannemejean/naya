@@ -863,7 +863,7 @@ git commit -m "feat(marques): l'articulation entre dans la generation, resolue c
   - `FENETRE_JOURS = 7`, `MAX_CONTENUS_COMPARES = 12`
   - `interface Collision { contenuId: number; marque: string; scheduledFor: Date | null; pourquoi: string }`
   - `parseVerdict(raw: string): { contenuId: number; pourquoi: string } | null` (pure)
-  - `detecterCollision(input: { userId: string; projectId: number; titre: string; corps: string; quand: Date; contenuId?: number }): Promise<Collision | null>`
+  - `detecterCollision(input: { userId: string; projectId: number; titre: string; corps: string; quand: Date }): Promise<Collision | null>`
 
 - [ ] **Step 1: Écrire les tests de la partie pure**
 
@@ -976,7 +976,6 @@ export async function detecterCollision(input: {
   titre: string;
   corps: string;
   quand: Date;
-  contenuId?: number;
 }): Promise<Collision | null> {
   try {
     const liens = await db.select().from(projectLinks).where(and(
@@ -1007,6 +1006,10 @@ export async function detecterCollision(input: {
         gte(content.scheduledFor, debut),
         lte(content.scheduledFor, finFenetre),
       ))
+      // ORDER BY explicite : sans lui, QUELS contenus sont comparés quand le plafond
+      // tombe dépend de l'ordre physique de Postgres, qui peut changer d'un jour à
+      // l'autre — l'alerte deviendrait non déterministe.
+      .orderBy(content.scheduledFor)
       .limit(MAX_CONTENUS_COMPARES);
 
     if (voisins.length === 0) return null;
@@ -1091,7 +1094,6 @@ Dans les deux endpoints, **après** que le contenu a été écrit avec succès, 
           titre: ligne.title,
           corps: String(ligne.body ?? ''),
           quand: new Date(ligne.scheduledFor),
-          contenuId: ligne.id,
         });
       }
       res.json({ ...ligne, collision });
