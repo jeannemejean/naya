@@ -1139,14 +1139,15 @@ function AppelRevue() {
   // et tout le reste de l'app, un seul ErrorBoundary couvrant le routeur entier — sur
   // l'écran d'erreur plein écran, pour un simple déclencheur secondaire. `data` reste
   // `undefined` sur erreur, donc `n` retombe à 0 et le composant ne rend déjà rien.
-  const { data } = useQuery<{ duJour: Array<{ id: number }>; gardees: Array<{ id: number }> }>({
+  const { data } = useQuery<{ duJour: Array<{ id: number; status: string }>; gardees: Array<{ id: number }> }>({
     queryKey: ['/api/reading/today'],
     queryFn: () => fetchJson('/api/reading/today'),
     throwOnError: false,
   });
-  // Ne compte QUE les fiches du jour : une fiche gardée n'est pas un retard, et la
-  // compter ici ferait de cette ligne un compteur de dette qui ne redescend jamais
-  // (voir client/src/lib/appel-revue.ts, où la règle est isolée et testée).
+  // Ne compte que les fiches du jour NON TRAITÉES : une fiche gardée n'est pas un
+  // retard (la compter ici ferait de cette ligne un compteur de dette qui ne redescend
+  // jamais), et une fiche déjà répondue n'est plus à lire. La règle est isolée et
+  // testée dans client/src/lib/appel-revue.ts.
   const libelle = libelleAppelRevue(data);
   if (!libelle) return null;
 
