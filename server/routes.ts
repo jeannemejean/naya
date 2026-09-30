@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
 import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content } from "@shared/schema";
-import { eq, and, inArray, or, gte, desc } from "drizzle-orm";
+import { eq, and, inArray, or, gte, desc, sql } from "drizzle-orm";
 import { runReadingRoom } from "./services/reading/runner";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { 
@@ -6998,7 +6998,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
             ),
           ),
         ))
-        .orderBy(desc(readingCards.relevanceScore));
+        // relevanceScore est nullable ; un tri DESC nu placerait les NULL en tête sous
+        // Postgres, donc une fiche sans score passerait devant les mieux notées.
+        .orderBy(sql`${readingCards.relevanceScore} DESC NULLS LAST`);
       res.json({ cards });
     } catch (error) {
       console.error('[Lecture] GET /api/reading/today:', error);
@@ -7010,6 +7012,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const userId = req.userId;
       const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: 'Identifiant invalide' });
       const answer = typeof req.body?.answer === 'string' ? req.body.answer.trim() : '';
       if (!answer) return res.status(400).json({ message: 'Réponse vide' });
 
@@ -7039,10 +7042,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/reading/cards/:id/keep', isAuthenticated, async (req: any, res) => {
     try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: 'Identifiant invalide' });
       const [card] = await db
         .update(readingCards)
         .set({ status: 'kept' })
-        .where(and(eq(readingCards.id, parseInt(req.params.id, 10)), eq(readingCards.userId, req.userId)))
+        .where(and(eq(readingCards.id, id), eq(readingCards.userId, req.userId)))
         .returning();
       if (!card) return res.status(404).json({ message: 'Fiche introuvable' });
       res.json({ card });
@@ -7054,12 +7059,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/reading/cards/:id/skip', isAuthenticated, async (req: any, res) => {
     try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: 'Identifiant invalide' });
       // « Passer » ne demande aucune justification et n'affiche aucune conséquence.
       // La ligne RESTE en base : c'est elle qui empêche l'URL d'être reproposée.
       await db
         .update(readingCards)
         .set({ status: 'rejected' })
-        .where(and(eq(readingCards.id, parseInt(req.params.id, 10)), eq(readingCards.userId, req.userId)));
+        .where(and(eq(readingCards.id, id), eq(readingCards.userId, req.userId)));
       res.json({ ok: true });
     } catch (error) {
       console.error('[Lecture] POST skip:', error);
@@ -7070,10 +7077,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/reading/cards/:id/to-content', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: 'Identifiant invalide' });
       const [card] = await db
         .select()
         .from(readingCards)
-        .where(and(eq(readingCards.id, parseInt(req.params.id, 10)), eq(readingCards.userId, userId)));
+        .where(and(eq(readingCards.id, id), eq(readingCards.userId, userId)));
       if (!card) return res.status(404).json({ message: 'Fiche introuvable' });
       // Garde-fou du spec : pas de brouillon tant qu'il n'y a pas d'avis. Ce qu'elle
       // publie part de SA réponse, jamais de la fiche seule.
@@ -7138,6 +7147,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const projectId = parseInt(req.body?.projectId, 10);
       const q = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
       if (!Number.isFinite(projectId) || !q) return res.status(400).json({ message: 'projectId et query requis' });
+      // Le projet vient du corps de la requête : sans cette vérification, un identifiant
+      // d'autrui s'insérerait quand même (aucun code ne le lit jamais, mais la ligne
+      // casse l'invariant de la table ET transforme l'endpoint en oracle d'énumération —
+      // une ressource d'autrui est INTROUVABLE ici, jamais « interdite », d'où 404 et non 403.
+      const project = await storage.getProject(projectId, req.userId);
+      if (!project) return res.status(404).json({ message: 'Projet introuvable' });
       const [query] = await db
         .insert(readingQueries)
         .values({ userId: req.userId, projectId, query: q, origin: 'manual', isActive: true })
@@ -7151,6 +7166,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/reading/queries/:id', isAuthenticated, async (req: any, res) => {
     try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: 'Identifiant invalide' });
       const patch: Record<string, unknown> = {};
       if (typeof req.body?.query === 'string' && req.body.query.trim()) patch.query = req.body.query.trim();
       if (typeof req.body?.isActive === 'boolean') patch.isActive = req.body.isActive;
@@ -7158,7 +7175,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const [query] = await db
         .update(readingQueries)
         .set(patch)
-        .where(and(eq(readingQueries.id, parseInt(req.params.id, 10)), eq(readingQueries.userId, req.userId)))
+        .where(and(eq(readingQueries.id, id), eq(readingQueries.userId, req.userId)))
         .returning();
       if (!query) return res.status(404).json({ message: 'Requête introuvable' });
       res.json({ query });
