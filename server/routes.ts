@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
-import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content } from "@shared/schema";
+import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content, projectLinks } from "@shared/schema";
 import { eq, and, inArray, or, gte, desc, sql } from "drizzle-orm";
 import { runReadingRoom } from "./services/reading/runner";
 import { statutApresReponse } from "./services/reading/statut";
@@ -52,6 +52,7 @@ import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossier";
+import { valideLien } from "./services/brand-links/links";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache, VALEUR_A_PRECISER, CHAMPS_DEDUCTIBLES } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
@@ -3109,6 +3110,120 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         message: "Échec de la création de la chaîne de jalons",
         detail: error?.message || String(error),
       });
+    }
+  });
+
+  // ── Les liens entre marques ─────────────────────────────────────────────────
+  // Spec : docs/superpowers/specs/2026-09-30-naya-liens-entre-marques-design.md
+  //
+  // Rappel de la règle centrale : l'ABSENCE de lien est une interdiction. Ces
+  // endpoints ne créent donc jamais de lien implicite, et supprimer un lien ne
+  // touche aucune campagne existante.
+
+  app.get('/api/projects/:id/links', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const projectId = parseInt(req.params.id, 10);
+      if (isNaN(projectId)) return res.status(400).json({ message: "Identifiant de projet invalide" });
+      // Une marque d'autrui est INTROUVABLE, pas interdite : un 403 confirmerait son existence.
+      const project = await storage.getProject(projectId, userId);
+      if (!project) return res.status(404).json({ message: "Projet introuvable" });
+
+      const [sortants, entrants] = await Promise.all([
+        db.select().from(projectLinks)
+          .where(and(eq(projectLinks.userId, userId), eq(projectLinks.fromProjectId, projectId)))
+          .orderBy(desc(projectLinks.createdAt)),
+        db.select().from(projectLinks)
+          .where(and(eq(projectLinks.userId, userId), eq(projectLinks.toProjectId, projectId)))
+          .orderBy(desc(projectLinks.createdAt)),
+      ]);
+      res.json({ sortants, entrants });
+    } catch (error) {
+      console.error('[Liens] GET /api/projects/:id/links:', error);
+      res.status(500).json({ message: "Failed to fetch brand links" });
+    }
+  });
+
+  app.post('/api/projects/:id/links', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const fromProjectId = parseInt(req.params.id, 10);
+      const toProjectId = parseInt(req.body?.toProjectId, 10);
+      if (isNaN(fromProjectId) || isNaN(toProjectId)) {
+        return res.status(400).json({ message: "Identifiants de projet invalides" });
+      }
+
+      const validation = valideLien({ fromProjectId, toProjectId });
+      if (!validation.ok) return res.status(400).json({ message: validation.raison });
+
+      // LES DEUX marques doivent appartenir à l'utilisateur. Sans ce double contrôle,
+      // l'endpoint devient un oracle d'énumération des identifiants de projet.
+      const [depuis, vers] = await Promise.all([
+        storage.getProject(fromProjectId, userId),
+        storage.getProject(toProjectId, userId),
+      ]);
+      if (!depuis || !vers) return res.status(404).json({ message: "Projet introuvable" });
+
+      const [link] = await db.insert(projectLinks).values({
+        userId,
+        fromProjectId,
+        toProjectId,
+        roleAmont: typeof req.body?.roleAmont === 'string' ? req.body.roleAmont.trim() || null : null,
+        roleAval: typeof req.body?.roleAval === 'string' ? req.body.roleAval.trim() || null : null,
+        nature: typeof req.body?.nature === 'string' ? req.body.nature.trim() || null : null,
+        audiencesRecoupent: req.body?.audiencesRecoupent === true,
+      }).returning();
+
+      res.json({ link });
+    } catch (error: any) {
+      // L'index unique (userId, fromProjectId, toProjectId) refuse un lien déjà déclaré.
+      if (error?.code === '23505') {
+        return res.status(409).json({ message: "Ce lien existe déjà dans ce sens" });
+      }
+      console.error('[Liens] POST /api/projects/:id/links:', error);
+      res.status(500).json({ message: "Failed to create brand link" });
+    }
+  });
+
+  app.patch('/api/project-links/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Identifiant invalide" });
+
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      for (const champ of ['roleAmont', 'roleAval', 'nature'] as const) {
+        if (typeof req.body?.[champ] === 'string') patch[champ] = req.body[champ].trim() || null;
+      }
+      if (typeof req.body?.audiencesRecoupent === 'boolean') {
+        patch.audiencesRecoupent = req.body.audiencesRecoupent;
+      }
+      if (Object.keys(patch).length === 1) return res.status(400).json({ message: "Rien à modifier" });
+
+      const [link] = await db.update(projectLinks).set(patch)
+        .where(and(eq(projectLinks.id, id), eq(projectLinks.userId, req.userId)))
+        .returning();
+      if (!link) return res.status(404).json({ message: "Lien introuvable" });
+      res.json({ link });
+    } catch (error) {
+      console.error('[Liens] PATCH /api/project-links/:id:', error);
+      res.status(500).json({ message: "Failed to update brand link" });
+    }
+  });
+
+  app.delete('/api/project-links/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ message: "Identifiant invalide" });
+      // Supprimer un lien ne touche AUCUNE campagne : les articulations déjà décidées
+      // restent telles quelles, l'utilisatrice les a validées à leur création.
+      const [supprime] = await db.delete(projectLinks)
+        .where(and(eq(projectLinks.id, id), eq(projectLinks.userId, req.userId)))
+        .returning({ id: projectLinks.id });
+      if (!supprime) return res.status(404).json({ message: "Lien introuvable" });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('[Liens] DELETE /api/project-links/:id:', error);
+      res.status(500).json({ message: "Failed to delete brand link" });
     }
   });
 
