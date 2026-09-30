@@ -223,10 +223,23 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
         ))
         .orderBy(desc(readingCards.relevanceScore));
 
+      // L'avis de l'utilisatrice n'est borné nulle part côté stockage (seulement un
+      // .trim() à l'écriture) : un texte collé, une note de plusieurs pages, reste
+      // intact en base et continue d'alimenter la mémoire. Mais buildNayaContext est
+      // traversé par TOUS les appels IA de l'application — compagnon, génération de
+      // contenu, recommandations — plusieurs fois par jour. Réinjecter un avis long
+      // en entier ici le multiplierait par autant d'appels. On tronque donc SEULEMENT
+      // à la réinjection dans le prompt, jamais à la source.
+      const LONGUEUR_MAX_AVIS = 600;
+      const tronquer = (texte: string) =>
+        texte.length > LONGUEUR_MAX_AVIS
+          ? `${texte.slice(0, LONGUEUR_MAX_AVIS)}… [avis tronqué pour le contexte, texte complet conservé en base]`
+          : texte;
+
       if (fiches.length > 0) {
         const bloc = fiches
           .map((f) => {
-            const avis = f.userAnswer ? `\n  Son avis : ${f.userAnswer}` : "";
+            const avis = f.userAnswer ? `\n  Son avis : ${tronquer(f.userAnswer)}` : "";
             return `- ${f.title} (${f.source ?? "source inconnue"})\n  Le fait : ${f.factSummary}\n  Angle possible : ${f.angle}${avis}`;
           })
           .join('\n');
