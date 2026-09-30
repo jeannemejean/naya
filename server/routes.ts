@@ -6980,28 +6980,47 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // ── L'espace de lecture — la revue du matin ─────────────────────────────────
   // Spec : docs/superpowers/specs/2026-09-29-naya-espace-lecture-design.md
 
+  // DEUX listes, jamais une seule. La version précédente rendait un unique tableau où
+  // les fiches `kept` (sans aucune borne de date) côtoyaient celles du jour. Prise
+  // isolément la requête était juste ; assemblée avec `cards.length` du dashboard elle
+  // fabriquait exactement ce que le spec interdit : après un mois à garder une fiche par
+  // semaine, « 4 choses à lire sur ton marché » chaque matin, y compris les matins vides,
+  // c'est-à-dire un compteur de dette qui ne redescend jamais — le mode d'échec n°3 de la
+  // spec (« un backlog qui s'accumule »). En séparant les deux listes à la source, aucune
+  // surface ne peut plus les confondre : le jour est borné à minuit UTC, le gardé ne l'est
+  // pas, et c'est l'appelant qui choisit ce qu'il compte (le dashboard : le jour, jamais
+  // le gardé).
   app.get('/api/reading/today', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
       const debutDuJour = new Date();
       debutDuJour.setUTCHours(0, 0, 0, 0);
-      const cards = await db
-        .select()
-        .from(readingCards)
-        .where(and(
-          eq(readingCards.userId, userId),
-          or(
+      // relevanceScore est nullable ; un tri DESC nu placerait les NULL en tête sous
+      // Postgres, donc une fiche sans score passerait devant les mieux notées.
+      const parScore = sql`${readingCards.relevanceScore} DESC NULLS LAST`;
+
+      const [duJour, gardees] = await Promise.all([
+        db
+          .select()
+          .from(readingCards)
+          .where(and(
+            eq(readingCards.userId, userId),
+            inArray(readingCards.status, ['proposed', 'answered']),
+            gte(readingCards.createdAt, debutDuJour),
+          ))
+          .orderBy(parScore),
+        // Les gardées n'ont volontairement pas de borne de date — c'est leur raison
+        // d'être — mais elles ne sont plus jamais « ce matin ».
+        db
+          .select()
+          .from(readingCards)
+          .where(and(
+            eq(readingCards.userId, userId),
             eq(readingCards.status, 'kept'),
-            and(
-              inArray(readingCards.status, ['proposed', 'answered']),
-              gte(readingCards.createdAt, debutDuJour),
-            ),
-          ),
-        ))
-        // relevanceScore est nullable ; un tri DESC nu placerait les NULL en tête sous
-        // Postgres, donc une fiche sans score passerait devant les mieux notées.
-        .orderBy(sql`${readingCards.relevanceScore} DESC NULLS LAST`);
-      res.json({ cards });
+          ))
+          .orderBy(parScore),
+      ]);
+      res.json({ duJour, gardees });
     } catch (error) {
       console.error('[Lecture] GET /api/reading/today:', error);
       res.status(500).json({ message: 'Failed to fetch reading cards' });

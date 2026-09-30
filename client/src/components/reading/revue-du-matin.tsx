@@ -31,14 +31,14 @@ export function RevueDuMatin() {
   const [brouillonsCrees, marquerBrouillonCree] = useEnsembleId();
 
   // La revue du matin est BEST-EFFORT par conception : son absence est un état normal du
-  // produit (voir cards.length === 0 plus bas), jamais une panne. La règle globale du
+  // produit (voir duJour.length === 0 plus bas), jamais une panne. La règle globale du
   // dépôt (client/src/lib/queryClient.ts) fait remonter toute erreur non-401 à l'unique
   // ErrorBoundary de l'app (client/src/App.tsx), qui couvre TOUT le routeur — un 500 ou
   // un réseau en panne sur CETTE requête ferait alors disparaître le dashboard, le
   // planning et le calendrier éditorial derrière un écran plein écran, pour la
   // fonctionnalité la MOINS critique de l'application. `throwOnError: false` désactive
   // ce comportement localement ; `isError` est replié sur le même rendu qu'un matin vide.
-  const { data, isLoading, isError } = useQuery<{ cards: ReadingCard[] }>({
+  const { data, isLoading, isError } = useQuery<{ duJour: ReadingCard[]; gardees: ReadingCard[] }>({
     queryKey: ['/api/reading/today'],
     queryFn: () => fetchJson('/api/reading/today'),
     throwOnError: false,
@@ -101,17 +101,119 @@ export function RevueDuMatin() {
 
   if (isLoading) return null;
 
-  // Une erreur se replie EXACTEMENT sur le rendu du matin vide (cards.length === 0
+  // Une erreur se replie EXACTEMENT sur le rendu du matin vide (duJour.length === 0
   // ci-dessous) : silencieux, sans jamais afficher de message d'échec.
-  const cards = isError ? [] : (data?.cards ?? []);
+  // Les deux listes sont DISTINCTES et le restent jusqu'au rendu : « Ce matin » ne montre
+  // que les fiches du jour. Les mélanger faisait remonter dans « Ce matin » des fiches
+  // gardées trois semaines plus tôt, et transformait la ligne du dashboard en compteur
+  // de dette permanent (voir client/src/lib/appel-revue.ts).
+  const duJour = isError ? [] : (data?.duJour ?? []);
+  const gardees = isError ? [] : (data?.gardees ?? []);
   const nomProjet = (id: number) => projets?.find((p) => p.id === id)?.name ?? '';
 
+  const rendreFiche = (c: ReadingCard, options: { dejaGardee: boolean }) => (
+    <Card key={c.id} data-testid={`reading-card-${c.id}`}>
+      <CardContent className="pt-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <Badge variant="outline" className="text-[10px]">{nomProjet(c.projectId)}</Badge>
+            <a href={c.url} target="_blank" rel="noreferrer" className="block font-medium leading-tight hover:underline">
+              {c.title}
+            </a>
+            {c.source && <p className="text-xs text-muted-foreground">{c.source}</p>}
+          </div>
+        </div>
+
+        <p className="text-sm">{c.factSummary}</p>
+        <p className="text-sm text-muted-foreground">{c.whyThisBrand}</p>
+        <p className="text-sm"><span className="text-muted-foreground">Angle : </span>{c.angle}</p>
+
+        <p className="text-base font-medium pt-1">{c.question}</p>
+
+        {c.userAnswer ? (
+          <div className="space-y-3">
+            <p className="text-sm whitespace-pre-wrap rounded-md bg-muted p-3">{c.userAnswer}</p>
+            {/* Le brouillon n'existe qu'APRÈS la réponse, et il part de sa réponse.
+                Après succès, le bouton disparaît : un deuxième clic est impossible. */}
+            {brouillonsCrees.has(c.id) ? (
+              <p className="text-xs text-muted-foreground" data-testid={`reading-post-cree-${c.id}`}>
+                Brouillon créé, il t’attend dans le calendrier éditorial.
+              </p>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => enFaireUnPost.mutate(c.id)}
+                disabled={envoiEnCours.has(c.id)}
+                data-testid={`reading-en-faire-un-post-${c.id}`}
+              >
+                En faire un post
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Textarea
+              value={reponses[c.id] ?? ''}
+              onChange={(e) => setReponses((r) => ({ ...r, [c.id]: e.target.value }))}
+              placeholder="Ton avis…"
+              aria-label="Ton avis"
+              rows={3}
+              data-testid={`reading-answer-${c.id}`}
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                disabled={!((reponses[c.id] ?? '').trim()) || repondreEnCours.has(c.id)}
+                onClick={() => repondre.mutate({ id: c.id, answer: (reponses[c.id] ?? '').trim() })}
+              >
+                Répondre
+              </Button>
+              {/* Une fiche déjà gardée n'a plus rien à garder : le bouton disparaît au
+                  lieu de rejouer une action sans effet. */}
+              {!options.dejaGardee && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={garderEnCours.has(c.id)}
+                  onClick={() => garder.mutate(c.id)}
+                >
+                  Garder
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={passerEnCours.has(c.id)}
+                onClick={() => passer.mutate(c.id)}
+              >
+                Passer
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  // La section des fiches gardées : sobre, en dessous, SANS compteur, sans badge, sans
+  // nombre affiché — un intitulé, et rien d'autre. Absente quand il n'y a rien à
+  // montrer, jamais vide : une section « tu n'as rien gardé » serait un reproche.
+  const sectionGardees = gardees.length > 0 && (
+    <section className="mt-8" data-testid="fiches-gardees">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Ce que tu as gardé</h2>
+      <div className="space-y-4">
+        {gardees.map((c) => rendreFiche(c, { dejaGardee: true }))}
+      </div>
+    </section>
+  );
+
   // Matin vide : une phrase, et rien d'autre. Pas d'excuse, pas de bouton pour en chercher plus.
-  if (cards.length === 0) {
+  if (duJour.length === 0) {
     return (
       <section className="mb-8">
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Ce matin</h2>
         <p className="text-sm text-muted-foreground">Rien qui mérite ton avis ce matin.</p>
+        {sectionGardees}
         <div className="mt-3">
           <RequetesDeVeille />
         </div>
@@ -123,86 +225,9 @@ export function RevueDuMatin() {
     <section className="mb-8">
       <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Ce matin</h2>
       <div className="space-y-4">
-        {cards.map((c) => (
-          <Card key={c.id} data-testid={`reading-card-${c.id}`}>
-            <CardContent className="pt-5 space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <Badge variant="outline" className="text-[10px]">{nomProjet(c.projectId)}</Badge>
-                  <a href={c.url} target="_blank" rel="noreferrer" className="block font-medium leading-tight hover:underline">
-                    {c.title}
-                  </a>
-                  {c.source && <p className="text-xs text-muted-foreground">{c.source}</p>}
-                </div>
-              </div>
-
-              <p className="text-sm">{c.factSummary}</p>
-              <p className="text-sm text-muted-foreground">{c.whyThisBrand}</p>
-              <p className="text-sm"><span className="text-muted-foreground">Angle : </span>{c.angle}</p>
-
-              <p className="text-base font-medium pt-1">{c.question}</p>
-
-              {c.userAnswer ? (
-                <div className="space-y-3">
-                  <p className="text-sm whitespace-pre-wrap rounded-md bg-muted p-3">{c.userAnswer}</p>
-                  {/* Le brouillon n'existe qu'APRÈS la réponse, et il part de sa réponse.
-                      Après succès, le bouton disparaît : un deuxième clic est impossible. */}
-                  {brouillonsCrees.has(c.id) ? (
-                    <p className="text-xs text-muted-foreground" data-testid={`reading-post-cree-${c.id}`}>
-                      Brouillon créé, il t’attend dans le calendrier éditorial.
-                    </p>
-                  ) : (
-                    <Button
-                      size="sm"
-                      onClick={() => enFaireUnPost.mutate(c.id)}
-                      disabled={envoiEnCours.has(c.id)}
-                      data-testid={`reading-en-faire-un-post-${c.id}`}
-                    >
-                      En faire un post
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Textarea
-                    value={reponses[c.id] ?? ''}
-                    onChange={(e) => setReponses((r) => ({ ...r, [c.id]: e.target.value }))}
-                    placeholder="Ton avis…"
-                    aria-label="Ton avis"
-                    rows={3}
-                    data-testid={`reading-answer-${c.id}`}
-                  />
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      disabled={!((reponses[c.id] ?? '').trim()) || repondreEnCours.has(c.id)}
-                      onClick={() => repondre.mutate({ id: c.id, answer: (reponses[c.id] ?? '').trim() })}
-                    >
-                      Répondre
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={garderEnCours.has(c.id)}
-                      onClick={() => garder.mutate(c.id)}
-                    >
-                      Garder
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={passerEnCours.has(c.id)}
-                      onClick={() => passer.mutate(c.id)}
-                    >
-                      Passer
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+        {duJour.map((c) => rendreFiche(c, { dejaGardee: false }))}
       </div>
+      {sectionGardees}
       <div className="mt-4">
         <RequetesDeVeille />
       </div>
