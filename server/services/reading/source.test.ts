@@ -80,6 +80,48 @@ describe("sourcerCandidats — épinglage, plafond dur, best-effort", () => {
     expect(serpSearch).toHaveBeenCalledTimes(MAX_REQUETES_SERP_PAR_JOUR);
   });
 
+  it("tourniquet : avec vingt marques et six requêtes chacune, le plafond ampute la profondeur — AUCUNE marque n'est privée de veille", async () => {
+    (serpSearch as any).mockResolvedValue([]);
+
+    // 20 marques x 6 requêtes = 120 requêtes pour un plafond de 24. L'aplatissement
+    // projet par projet ne servait que les quatre premières (4 x 6 = 24) et rien aux
+    // seize autres, tous les jours, en silence.
+    const parProjet = Array.from({ length: 20 }, (_, p) => ({
+      projectId: p + 1,
+      requetes: Array.from({ length: 6 }, (_, i) => `p${p + 1}-r${i + 1}`),
+    }));
+
+    await sourcerCandidats({ userId: "u1", today: TODAY, parProjet });
+
+    const executees: string[] = (serpSearch as any).mock.calls.map((c: any[]) => c[0]);
+    expect(executees).toHaveLength(MAX_REQUETES_SERP_PAR_JOUR);
+
+    const marquesServies = new Set(executees.map((r) => r.split("-")[0]));
+    expect(marquesServies.size).toBe(20);
+
+    // Et c'est bien la PROFONDEUR qui est rognée : chaque marque a sa première requête,
+    // les quatre premières en ont une deuxième (24 = 20 + 4), aucune n'en a trois.
+    expect(executees.slice(0, 20)).toEqual(parProjet.map((p) => p.requetes[0]));
+    expect(executees.slice(20)).toEqual(parProjet.slice(0, 4).map((p) => p.requetes[1]));
+  });
+
+  it("tourniquet : des marques aux nombres de requêtes inégaux ne décalent rien — on saute celles qui n'ont plus de requête à ce rang", async () => {
+    (serpSearch as any).mockResolvedValue([]);
+    const parProjet = [
+      { projectId: 1, requetes: ["a1", "a2", "a3"] },
+      { projectId: 2, requetes: ["b1"] },
+      { projectId: 3, requetes: ["c1", "c2"] },
+    ];
+
+    await sourcerCandidats({ userId: "u1", today: TODAY, parProjet });
+
+    expect((serpSearch as any).mock.calls.map((c: any[]) => c[0])).toEqual([
+      "a1", "b1", "c1", // rang 1 : les trois marques
+      "a2", "c2",       // rang 2 : la marque 2 n'a plus rien
+      "a3",             // rang 3 : la marque 1 seule
+    ]);
+  });
+
   it("best-effort : une requête sur deux qui rejette n'empêche pas les autres de rendre leurs résultats, sans exception qui s'échappe", async () => {
     (serpSearch as any).mockImplementation(async (requete: string) => {
       if (requete === "b" || requete === "d") throw new Error("SERP indisponible");

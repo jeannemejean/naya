@@ -52,10 +52,17 @@ export async function expirerFichesDeLaVeille(userId: string, today: Date): Prom
 }
 
 const depsParDefaut: DepsLecture = {
+  // ORDER BY explicite et stable. Sans lui, la file suivait l'ordre physique de
+  // Postgres, qui peut changer d'un jour à l'autre (VACUUM, mise à jour d'une ligne) :
+  // combiné au plafond de requêtes SERP, non seulement certaines marques pouvaient
+  // n'être jamais veillées, mais LESQUELLES était indéterminé — un comportement qu'on
+  // ne peut ni reproduire ni constater. Le tourniquet de sourcerCandidats sert
+  // désormais toutes les marques ; cet ordre rend le reste déterministe.
   projetsActifs: async (userId) =>
     db.select({ id: projects.id, name: projects.name })
       .from(projects)
-      .where(and(eq(projects.userId, userId), eq(projects.projectStatus, "active"))),
+      .where(and(eq(projects.userId, userId), eq(projects.projectStatus, "active")))
+      .orderBy(projects.id),
   requetes: assurerRequetes,
   sourcer: sourcerCandidats,
   hashDejaVus: async (userId) => {

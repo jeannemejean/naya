@@ -71,12 +71,23 @@ export async function sourcerCandidats(input: {
 }): Promise<CandidatBrut[]> {
   const out: CandidatBrut[] = [];
 
-  // Aplati en une seule file (projet, requête) : si le plafond tombe en cours de route,
-  // on sait exactement combien de requêtes et quels projets n'ont pas été servis —
-  // une limite silencieuse se relirait plus tard comme « on a tout couvert ».
+  // File en TOURNIQUET : la 1re requête de chaque projet, puis la 2e de chaque projet,
+  // etc. L'aplatissement projet par projet qu'on avait avant était juste isolément,
+  // mais assemblé avec le plafond de 24 requêtes et les 6 requêtes qu'un projet peut
+  // porter, il servait les quatre premières marques et RIEN aux suivantes : au-delà de
+  // quatre marques actives, les autres n'avaient jamais de veille, tous les jours, sans
+  // que rien ne le signale. En tourniquet, le plafond ampute la PROFONDEUR de chaque
+  // marque au lieu de supprimer entièrement les dernières — vingt marques gardent
+  // chacune sa requête la plus importante (les requêtes sont générées par ordre
+  // d'importance), et une marque n'est jamais sacrifiée à son rang dans la liste.
+  // Le plafond reste journalisé avec les projets non servis : une limite silencieuse se
+  // relirait plus tard comme « on a tout couvert ».
   const file: Array<{ projectId: number; requete: string }> = [];
-  for (const { projectId, requetes } of input.parProjet) {
-    for (const requete of requetes) file.push({ projectId, requete });
+  const profondeurMax = input.parProjet.reduce((m, p) => Math.max(m, p.requetes.length), 0);
+  for (let rang = 0; rang < profondeurMax; rang++) {
+    for (const { projectId, requetes } of input.parProjet) {
+      if (rang < requetes.length) file.push({ projectId, requete: requetes[rang] });
+    }
   }
 
   for (let i = 0; i < file.length; i++) {
