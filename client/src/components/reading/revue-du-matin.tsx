@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useEnsembleId } from '@/hooks/use-ensemble-id';
 import { RequetesDeVeille } from '@/components/reading/requetes-de-veille';
 import type { ReadingCard } from '@shared/schema';
 
@@ -18,12 +19,16 @@ export function RevueDuMatin() {
   const { toast } = useToast();
   const [reponses, setReponses] = useState<Record<number, string>>({});
 
+  const [repondreEnCours, marquerRepondreEnCours, retirerRepondreEnCours] = useEnsembleId();
+  const [garderEnCours, marquerGarderEnCours, retirerGarderEnCours] = useEnsembleId();
+  const [passerEnCours, marquerPasserEnCours, retirerPasserEnCours] = useEnsembleId();
+
   // Garde-fou du double brouillon (traité côté interface, pas par migration) : rien en
   // base ne relie un contenu créé à sa fiche d'origine, donc un deuxième clic créerait
   // un deuxième brouillon identique. Ces deux ensembles vivent uniquement dans ce
   // composant — un aller-retour serveur ne les efface pas, un rechargement de page si.
-  const [envoiEnCours, setEnvoiEnCours] = useState<Set<number>>(new Set());
-  const [brouillonsCrees, setBrouillonsCrees] = useState<Set<number>>(new Set());
+  const [envoiEnCours, marquerEnvoiEnCours, retirerEnvoiEnCours] = useEnsembleId();
+  const [brouillonsCrees, marquerBrouillonCree] = useEnsembleId();
 
   const { data, isLoading } = useQuery<{ cards: ReadingCard[] }>({
     queryKey: ['/api/reading/today'],
@@ -36,6 +41,11 @@ export function RevueDuMatin() {
 
   const invalider = () => qc.invalidateQueries({ queryKey: ['/api/reading/today'] });
 
+  // Message d'échec sobre : factuel, sans excuse ni dramatisation, mais explicite sur ce
+  // qui n'a pas eu lieu — un avis perdu est la seule perte de contenu réelle de cet écran.
+  const signalerEchec = (description: string) =>
+    toast({ title: 'Non enregistré', description, variant: 'destructive' });
+
   const repondre = useMutation({
     mutationFn: ({ id, answer }: { id: number; answer: string }) =>
       fetchJson(`/api/reading/cards/${id}/answer`, {
@@ -43,35 +53,37 @@ export function RevueDuMatin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answer }),
       }),
+    onMutate: ({ id }) => marquerRepondreEnCours(id),
     onSuccess: invalider,
+    onError: () => signalerEchec('Ta réponse n’est pas enregistrée : réessaie avant de changer d’écran.'),
+    onSettled: (_data, _erreur, { id }) => retirerRepondreEnCours(id),
   });
 
   const garder = useMutation({
     mutationFn: (id: number) => fetchJson(`/api/reading/cards/${id}/keep`, { method: 'POST' }),
+    onMutate: (id) => marquerGarderEnCours(id),
     onSuccess: invalider,
+    onError: () => signalerEchec('« Garder » n’a pas abouti : réessaie.'),
+    onSettled: (_data, _erreur, id) => retirerGarderEnCours(id),
   });
 
   const passer = useMutation({
     mutationFn: (id: number) => fetchJson(`/api/reading/cards/${id}/skip`, { method: 'POST' }),
+    onMutate: (id) => marquerPasserEnCours(id),
     onSuccess: invalider,
+    onError: () => signalerEchec('« Passer » n’a pas abouti : réessaie.'),
+    onSettled: (_data, _erreur, id) => retirerPasserEnCours(id),
   });
 
   const enFaireUnPost = useMutation({
     mutationFn: (id: number) => fetchJson<{ contentId: number }>(`/api/reading/cards/${id}/to-content`, { method: 'POST' }),
-    onMutate: (id: number) => {
-      setEnvoiEnCours((s) => new Set(s).add(id));
-    },
+    onMutate: (id: number) => marquerEnvoiEnCours(id),
     onSuccess: (_data, id) => {
-      setBrouillonsCrees((s) => new Set(s).add(id));
+      marquerBrouillonCree(id);
       toast({ title: 'Brouillon créé', description: 'Il t’attend dans le calendrier éditorial.' });
     },
-    onSettled: (_data, _erreur, id) => {
-      setEnvoiEnCours((s) => {
-        const suite = new Set(s);
-        suite.delete(id);
-        return suite;
-      });
-    },
+    onError: () => signalerEchec('Le brouillon n’a pas été créé : réessaie.'),
+    onSettled: (_data, _erreur, id) => retirerEnvoiEnCours(id),
   });
 
   if (isLoading) return null;
@@ -141,19 +153,34 @@ export function RevueDuMatin() {
                     value={reponses[c.id] ?? ''}
                     onChange={(e) => setReponses((r) => ({ ...r, [c.id]: e.target.value }))}
                     placeholder="Ton avis…"
+                    aria-label="Ton avis"
                     rows={3}
                     data-testid={`reading-answer-${c.id}`}
                   />
                   <div className="flex items-center gap-2">
                     <Button
                       size="sm"
-                      disabled={!((reponses[c.id] ?? '').trim()) || repondre.isPending}
+                      disabled={!((reponses[c.id] ?? '').trim()) || repondreEnCours.has(c.id)}
                       onClick={() => repondre.mutate({ id: c.id, answer: (reponses[c.id] ?? '').trim() })}
                     >
                       Répondre
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => garder.mutate(c.id)}>Garder</Button>
-                    <Button size="sm" variant="ghost" onClick={() => passer.mutate(c.id)}>Passer</Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={garderEnCours.has(c.id)}
+                      onClick={() => garder.mutate(c.id)}
+                    >
+                      Garder
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={passerEnCours.has(c.id)}
+                      onClick={() => passer.mutate(c.id)}
+                    >
+                      Passer
+                    </Button>
                   </div>
                 </div>
               )}
