@@ -53,6 +53,8 @@ import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossier";
 import { valideLien } from "./services/brand-links/links";
+import type { Articulation } from "./services/brand-links/links";
+import { articulationsDisponibles } from "./services/brand-links/articulation";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache, VALEUR_A_PRECISER, CHAMPS_DEDUCTIBLES } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
@@ -9665,6 +9667,25 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // ─── Campaign Routes ──────────────────────────────────────────────────────
+
+  // Étape zéro de la génération : ce avec quoi cette campagne pourrait s'articuler.
+  // Réponse vide = aucun lien déclaré → l'interface n'affiche rien et la génération
+  // suit son cours inchangé.
+  app.get('/api/campaigns/articulation', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const projectId = parseInt(req.query?.projectId as string, 10);
+      if (isNaN(projectId)) return res.status(400).json({ message: "projectId requis" });
+      const project = await storage.getProject(projectId, userId);
+      if (!project) return res.status(404).json({ message: "Projet introuvable" });
+
+      const articulations: Articulation[] = await articulationsDisponibles(userId, projectId);
+      res.json({ articulations });
+    } catch (error) {
+      console.error('[Liens] GET /api/campaigns/articulation:', error);
+      res.status(500).json({ message: "Failed to fetch articulation options" });
+    }
+  });
 
   app.get('/api/campaigns', isAuthenticated, async (req: any, res) => {
     try {
