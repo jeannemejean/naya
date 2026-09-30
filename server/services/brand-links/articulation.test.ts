@@ -6,15 +6,18 @@
 // toucher la vraie base (DATABASE_URL de .env pointe vers une base réelle — consigne
 // projet : aucun test n'exécute de requête réelle). Le mock capture la table passée à
 // `.from()` (pour savoir QUELLE table a été interrogée, et surtout laquelle NE L'A PAS
-// été) et les clauses `where` (rendues en SQL avec le dialecte Postgres de drizzle,
-// hors connexion, pour affirmer ce que les requêtes bornent RÉELLEMENT).
+// été), les clauses `where` (rendues en SQL avec le dialecte Postgres de drizzle, hors
+// connexion) et la projection de colonnes passée à `.select()`.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 const hoisted = vi.hoisted(() => ({
   resultats: [] as any[][],
+  selects: [] as any[],
   froms: [] as any[],
   wheres: [] as any[],
+  orderBys: [] as any[],
+  limits: [] as any[],
 }));
 
 vi.mock("../../db", () => {
@@ -32,25 +35,48 @@ vi.mock("../../db", () => {
         hoisted.wheres.push(clause);
         return suite;
       },
+      orderBy: (...args: any[]) => {
+        hoisted.orderBys.push(args);
+        return suite;
+      },
+      limit: (n: any) => {
+        hoisted.limits.push(n);
+        return suite;
+      },
       then: (ok: any, ko: any) => Promise.resolve(hoisted.resultats.shift() ?? []).then(ok, ko),
     };
     return suite;
   };
   return {
-    db: { select: (..._args: any[]) => chaine() },
+    db: {
+      select: (projection?: any) => {
+        hoisted.selects.push(projection);
+        return chaine();
+      },
+    },
   };
 });
 
 const { projectLinks, campaigns, projects } = await import("@shared/schema");
-const { articulationsDisponibles, STATUTS_ARTICULABLES } = await import("./articulation");
+const {
+  articulationsDisponibles,
+  STATUTS_ARTICULABLES,
+  PLAFOND_CAMPAGNES_PAR_LIEN,
+} = await import("./articulation");
 
 const dialecte = new PgDialect();
 const enSql = (clause: any) => dialecte.sqlToQuery(clause);
 
+let infoSpy: ReturnType<typeof vi.spyOn>;
+
 beforeEach(() => {
   hoisted.resultats = [];
+  hoisted.selects = [];
   hoisted.froms = [];
   hoisted.wheres = [];
+  hoisted.orderBys = [];
+  hoisted.limits = [];
+  infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
 });
 
 /** Un lien tel que rendu par `db.select().from(projectLinks)...`. */
@@ -68,16 +94,13 @@ function lienRow(over: Record<string, unknown> = {}) {
   };
 }
 
-/** Une campagne telle que rendue par `db.select().from(campaigns)...`. */
+/** Une campagne telle que rendue par `db.select({...}).from(campaigns)...`. */
 function campagneRow(over: Record<string, unknown> = {}) {
   return {
     id: 42,
-    userId: "user-1",
-    projectId: 9,
     name: "Septembre — la méthode",
     objective: "asseoir l'autorité",
     coreMessage: "on ne vend pas une méthode, on la pratique",
-    status: "active",
     phases: [{ angle: "montrer les coulisses" }],
     ...over,
   };
@@ -164,9 +187,7 @@ describe("articulationsDisponibles", () => {
     hoisted.resultats = [
       [lienRow()],
       [{ name: "Marque B" }],
-      // La ligne brute simule une table qui porterait bien plus de colonnes que ce
-      // que le service doit en extraire.
-      [campagneRow({ targetAudience: "CSP+", insights: { ne: "doit pas fuiter" } })],
+      [campagneRow()],
     ];
 
     const r = await articulationsDisponibles("user-1", 7);
@@ -176,5 +197,93 @@ describe("articulationsDisponibles", () => {
     expect(Object.keys(r[0].campagne).sort()).toEqual(
       ["angles", "coreMessage", "id", "marque", "name", "objective"].sort(),
     );
+  });
+
+  it("projette explicitement les 5 colonnes de campaigns — jamais la ligne entière", async () => {
+    hoisted.resultats = [
+      [lienRow()],
+      [{ name: "Marque B" }],
+      [campagneRow()],
+    ];
+
+    await articulationsDisponibles("user-1", 7);
+
+    // 1er select : projectLinks (pas de projection). 2e : projects (déjà projeté
+    // avant ce correctif). 3e : campaigns — c'est celui-là qui doit être projeté.
+    const projectionCampaigns = hoisted.selects[2];
+    expect(projectionCampaigns).toBeTruthy();
+    expect(Object.keys(projectionCampaigns).sort()).toEqual(
+      ["coreMessage", "id", "name", "objective", "phases"].sort(),
+    );
+  });
+
+  describe("couple réciproque (A→B ET B→A)", () => {
+    // Le schéma autorise volontairement les deux sens à coexister (une relation
+    // peut être mutuelle, avec des rôles différents de chaque côté). Sans
+    // déduplication, la même campagne de la marque liée ressortirait deux fois —
+    // une fois "nourrit", une fois "estNourriePar" — deux affirmations
+    // contradictoires dans le même prompt.
+    const lienSortant = lienRow({ id: 1, fromProjectId: 7, toProjectId: 9 });
+    const lienEntrant = lienRow({ id: 2, fromProjectId: 9, toProjectId: 7 });
+
+    it("ne rend qu'UNE SEULE articulation pour la campagne commune, au sens sortant", async () => {
+      hoisted.resultats = [
+        [lienSortant, lienEntrant],       // la requête projectLinks rend les deux liens
+        [{ name: "Marque B" }],           // projects, pour le 1er lien traité (sortant)
+        [campagneRow({ id: 42 })],        // campaigns, pour le 1er lien traité
+        [{ name: "Marque B" }],           // projects, pour le 2e lien traité (entrant)
+        [campagneRow({ id: 42 })],        // campaigns, pour le 2e lien traité — MÊME campagne
+      ];
+
+      const r = await articulationsDisponibles("user-1", 7);
+
+      // Une seule articulation, pas deux : la campagne n'apparaît plus qu'une fois.
+      expect(r).toHaveLength(1);
+      expect(r[0].campagne.id).toBe(42);
+      // C'est le sens sortant qui est retenu — celui déclaré depuis la page de
+      // CETTE marque, donc celui que l'utilisatrice attend en travaillant dessus.
+      expect(r[0].sens).toBe("nourrit");
+      // Le choix n'est pas silencieux : il perd une information réelle (la
+      // relation était bien réciproque), donc il est journalisé.
+      expect(infoSpy).toHaveBeenCalledWith(expect.stringMatching(/couple réciproque/i));
+    });
+  });
+
+  describe("plafond de campagnes par lien", () => {
+    it("ne rend jamais plus de PLAFOND_CAMPAGNES_PAR_LIEN campagnes pour un même lien, et journalise ce qui est écarté", async () => {
+      expect(PLAFOND_CAMPAGNES_PAR_LIEN).toBeGreaterThan(0);
+
+      // Simule ce qu'une vraie requête bornée par `.limit(PLAFOND + 1)` rendrait
+      // quand la marque liée porte PLUS de campagnes vivantes que le plafond.
+      const enTrop = Array.from({ length: PLAFOND_CAMPAGNES_PAR_LIEN + 1 }, (_, i) =>
+        campagneRow({ id: 100 + i, name: `Campagne ${i}` }),
+      );
+      hoisted.resultats = [
+        [lienRow()],
+        [{ name: "Marque B" }],
+        enTrop,
+      ];
+
+      const r = await articulationsDisponibles("user-1", 7);
+
+      expect(r).toHaveLength(PLAFOND_CAMPAGNES_PAR_LIEN);
+      expect(infoSpy).toHaveBeenCalledWith(expect.stringMatching(/plafond/i));
+    });
+
+    it("demande explicitement PLAFOND + 1 lignes à la requête campaigns (et trie pour un plafond déterministe)", async () => {
+      hoisted.resultats = [
+        [lienRow()],
+        [{ name: "Marque B" }],
+        [campagneRow()],
+      ];
+
+      await articulationsDisponibles("user-1", 7);
+
+      expect(hoisted.limits).toContain(PLAFOND_CAMPAGNES_PAR_LIEN + 1);
+      // Un ORDER BY a bien été appliqué à la requête projectLinks (déterminisme du
+      // sens retenu en cas de couple réciproque) et à celle des campagnes
+      // (déterminisme de ce qui est gardé quand le plafond mord).
+      expect(hoisted.orderBys.length).toBeGreaterThanOrEqual(2);
+    });
   });
 });
