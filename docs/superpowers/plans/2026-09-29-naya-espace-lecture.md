@@ -1134,7 +1134,11 @@ export const MAX_REQUETES_SERP_PAR_JOUR = 24;
 
 const UNITES: Array<[RegExp, number]> = [
   [/(\d+)\s*(minute|min)/i, 1 / (24 * 60)],
-  [/(\d+)\s*(heure|hour|hr|h)\b/i, 1 / 24],
+  // Le `s?` n'est pas cosmétique : sans lui, le `\b` final ne matche jamais le pluriel
+  // (« 3 heures », « 3 hours »), et les articles les plus FRAIS de la journée — ceux
+  // datés en heures — se retrouvent sans date, donc écartés par l'étage 1. Le `\b` reste
+  // nécessaire pour que le `h` isolé ne morde pas sur « 2 hommes ».
+  [/(\d+)\s*(heures?|hours?|hrs?|h)\b/i, 1 / 24],
   [/(\d+)\s*(jour|day)/i, 1],
   [/(\d+)\s*(semaine|week)/i, 7],
   [/(\d+)\s*(mois|month)/i, 30],
