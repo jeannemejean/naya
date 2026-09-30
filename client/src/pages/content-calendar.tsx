@@ -10,6 +10,7 @@ import { parse } from 'date-fns/parse';
 import { startOfWeek } from 'date-fns/startOfWeek';
 import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
+import { fr } from 'date-fns/locale/fr';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
@@ -130,6 +131,30 @@ const formatFileSize = (bytes: number): string => {
  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
+// Le champ `collision` lu ci-dessous vient de POST /api/content et PATCH /api/content/:id
+// (voir server/services/brand-links/collision.ts, `Collision`) : { marque, scheduledFor,
+// pourquoi } — validé champ par champ plus bas plutôt que typé, la valeur venant du réseau.
+/**
+ * Le texte de l'alerte de collision : sobre, factuel, jamais un reproche — elle décrit
+ * ce qui a été trouvé et laisse l'utilisatrice décider, le contenu étant déjà écrit
+ * quand elle s'affiche. Rend `null` sur une forme inattendue (champs absents ou du
+ * mauvais type) : sur une réponse mal formée, on n'affiche rien plutôt que d'afficher
+ * une phrase à moitié vraie, et surtout jamais une affirmation qu'il n'y a pas de collision.
+ */
+function messageCollision(brut: unknown): { titre: string; description: string } | null {
+ if (!brut || typeof brut !== 'object') return null;
+ const { marque, scheduledFor, pourquoi } = brut as Record<string, unknown>;
+ if (typeof marque !== 'string' || !marque.trim()) return null;
+ if (typeof pourquoi !== 'string' || !pourquoi.trim()) return null;
+ const date = typeof scheduledFor === 'string' ? new Date(scheduledFor) : null;
+ const dateLisible = date && !isNaN(date.getTime()) ? format(date, 'd MMMM', { locale: fr }) : null;
+ const lieu = dateLisible ? `le ${dateLisible} sur « ${marque.trim()} »` : `sur « ${marque.trim()} »`;
+ return {
+ titre: 'Angle proche sur une marque liée',
+ description: `Un contenu déjà programmé ${lieu} couvre un angle proche : ${pourquoi.trim()}`,
+ };
+}
+
 interface ContentCalendarProps {
  onSearchClick?: () => void;
 }
@@ -216,11 +241,16 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  // base, jamais une intention devinée.
  body: JSON.stringify({ ...data, intent: data.intent || null, projectId: selectedProjectId }),
  }).then(res => res.json()),
- onSuccess: () => {
+ onSuccess: (data) => {
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
  setShowCreateDialog(false);
  resetForm();
- toast({ title: t('contentCalendar.contentCreated') });
+ // L'alerte de collision (Tâche 7 : POST /api/content peut rendre un champ `collision`)
+ // s'ajoute en description du toast de succès existant — elle ne bloque rien, le
+ // contenu est déjà créé. `messageCollision` rend `null` sans lien ni collision, la
+ // description reste alors absente comme avant ce chantier.
+ const collision = messageCollision((data as any)?.collision);
+ toast({ title: t('contentCalendar.contentCreated'), description: collision?.description });
  },
  onError: () => {
  toast({ title: t('contentCalendar.failedToCreate'), variant: 'destructive' });
@@ -234,8 +264,15 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify(data),
  }).then(res => res.json()),
- onSuccess: () => {
+ onSuccess: (data) => {
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ // Alerte de collision : informative, jamais bloquante — la mise à jour (donc une
+ // reprogrammation éventuelle) est déjà appliquée quand ce toast s'affiche. Rien ne
+ // s'affiche si le serveur n'a rien trouvé, ou si la réponse n'a pas la forme attendue.
+ const collision = messageCollision((data as any)?.collision);
+ if (collision) {
+ toast({ title: collision.titre, description: collision.description, variant: 'info' });
+ }
  },
  });
 
