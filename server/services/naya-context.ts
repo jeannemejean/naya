@@ -1,4 +1,7 @@
 import { storage } from "../storage";
+import { db } from "../db";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
+import { readingCards } from "@shared/schema";
 import { languageDirective, resolveLanguage } from "@shared/language";
 import { computeGoalUrgencyScore, formatGoalsWithUrgency } from "./goal-urgency";
 import { formatBehaviorPatternsForContext } from "./behavior-patterns";
@@ -200,6 +203,41 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
         .map((m: any) => `- [${m.type || 'mémoire'}] ${m.content}`)
         .join('\n');
       sections.push(`## Mémoire business récente\n${memText}`);
+    }
+
+    // Section 8 : la revue du jour (l'espace de lecture). Les fiches d'aujourd'hui,
+    // pour que Naya puisse s'appuyer sur l'actualité du marché quand elle parle de la
+    // semaine ou du contenu — SANS jamais en faire une tâche. Best-effort : si la
+    // lecture échoue, le contexte se passe de cette section.
+    try {
+      const debutDuJour = new Date();
+      debutDuJour.setUTCHours(0, 0, 0, 0);
+      const fiches = await db
+        .select()
+        .from(readingCards)
+        .where(and(
+          eq(readingCards.userId, userId),
+          inArray(readingCards.status, ['proposed', 'answered']),
+          gte(readingCards.createdAt, debutDuJour),
+          ...(projectId ? [eq(readingCards.projectId, projectId)] : []),
+        ))
+        .orderBy(desc(readingCards.relevanceScore));
+
+      if (fiches.length > 0) {
+        const bloc = fiches
+          .map((f) => {
+            const avis = f.userAnswer ? `\n  Son avis : ${f.userAnswer}` : "";
+            return `- ${f.title} (${f.source ?? "source inconnue"})\n  Le fait : ${f.factSummary}\n  Angle possible : ${f.angle}${avis}`;
+          })
+          .join('\n');
+        sections.push(
+          `## La revue du jour — actualité de ses marchés\n${bloc}\n\n` +
+          `Tu peux t'appuyer là-dessus si elle parle de contenu, de sa semaine ou de sa stratégie. ` +
+          `Tu n'en fais jamais une tâche et tu ne lui reproches jamais de ne pas y avoir réagi.`,
+        );
+      }
+    } catch (err: any) {
+      console.error('[Lecture] section contexte échouée:', err?.message);
     }
 
     // Section finale : langue de génération (toujours présente)
