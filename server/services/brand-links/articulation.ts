@@ -74,10 +74,15 @@ export async function articulationsDisponibles(userId: string, projectId: number
 
     const vivantes = brutes.slice(0, PLAFOND_CAMPAGNES_PAR_LIEN);
     if (brutes.length > PLAFOND_CAMPAGNES_PAR_LIEN) {
-      const ecartees = brutes.length - PLAFOND_CAMPAGNES_PAR_LIEN;
+      // La requête est bornée à PLAFOND + 1 : on sait donc qu'il y a AU MOINS une
+      // campagne de plus que le plafond, jamais combien exactement (ce serait une
+      // requête de comptage séparée, pour une ligne de journal — pas justifié).
+      // Le message dit un seuil franchi et le critère de sélection, jamais un
+      // nombre d'écartées : un faux chiffre serait pire qu'aucun journal.
       console.info(
-        `[Liens] articulation: ${ecartees} campagne(s) écartée(s) au-delà du plafond ` +
-        `(${PLAFOND_CAMPAGNES_PAR_LIEN}) pour la marque liée « ${autre.name} ».`
+        `[Liens] articulation: la marque liée « ${autre.name} » a plus de ` +
+        `${PLAFOND_CAMPAGNES_PAR_LIEN} campagnes vivantes — seules les ` +
+        `${PLAFOND_CAMPAGNES_PAR_LIEN} les plus récemment mises à jour sont retenues.`
       );
     }
 
@@ -103,25 +108,39 @@ export async function articulationsDisponibles(userId: string, projectId: number
   // campagne de la marque liée ressortirait deux fois : une fois "nourrit", une
   // fois "estNourriePar" — deux affirmations contradictoires dans le même prompt.
   // On garde le sens SORTANT : c'est celui que l'utilisatrice a déclaré depuis la
-  // page de CETTE marque, donc celui qu'elle attend en travaillant dessus. Ce
-  // choix n'est jamais silencieux : il perd une information réelle (la relation
-  // était bien réciproque), donc on le journalise.
+  // page de CETTE marque, donc celui qu'elle attend en travaillant dessus.
+  //
+  // Une seule ligne de journal PAR COUPLE de marques, pas par campagne : une
+  // relation mutuelle qui partage 4 campagnes vivantes ne doit pas produire 4
+  // lignes quasi identiques. On compte les réductions par nom de marque liée
+  // pendant le passage ci-dessous, et on journalise une fois par marque après coup.
   const parCampagne = new Map<number, Articulation>();
+  const reductionsParMarque = new Map<string, number>();
   for (const a of out) {
     const existante = parCampagne.get(a.campagne.id);
     if (!existante) {
       parCampagne.set(a.campagne.id, a);
     } else if (existante.sens !== a.sens) {
       const sortante = a.sens === "nourrit" ? a : existante;
-      console.info(
-        `[Liens] articulation: couple réciproque réduit au sens sortant pour la campagne ` +
-        `${sortante.campagne.id} (« ${sortante.campagne.marque} ») — le sens "estNourriePar" est écarté.`
-      );
       parCampagne.set(a.campagne.id, sortante);
+      reductionsParMarque.set(
+        sortante.campagne.marque,
+        (reductionsParMarque.get(sortante.campagne.marque) ?? 0) + 1,
+      );
     }
     // sinon : même id, même sens — ne devrait pas se produire vu l'index unique
     // sur (userId, fromProjectId, toProjectId), mais on ne duplique pas non plus.
   }
+
+  // Ce choix n'est jamais silencieux : il perd une information réelle (la
+  // relation était bien réciproque), donc on le journalise — une fois par marque
+  // liée concernée, pas une fois par campagne.
+  reductionsParMarque.forEach((nb, marque) => {
+    console.info(
+      `[Liens] articulation: couple réciproque avec « ${marque} » réduit au sens ` +
+      `sortant pour ${nb} campagne(s) — le sens "estNourriePar" est écarté pour chacune.`
+    );
+  });
 
   return Array.from(parCampagne.values());
 }

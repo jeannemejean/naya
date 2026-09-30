@@ -8,7 +8,7 @@
 // `.from()` (pour savoir QUELLE table a été interrogée, et surtout laquelle NE L'A PAS
 // été), les clauses `where` (rendues en SQL avec le dialecte Postgres de drizzle, hors
 // connexion) et la projection de colonnes passée à `.select()`.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 const hoisted = vi.hoisted(() => ({
@@ -77,6 +77,13 @@ beforeEach(() => {
   hoisted.orderBys = [];
   hoisted.limits = [];
   infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  // Restaure console.info entre chaque test : sans ça, `vi.spyOn` réutilise
+  // l'espion déjà en place et son historique d'appels fuite d'un test à l'autre —
+  // ce qui a fait exactement échouer les 2 tests ci-dessous à l'écriture.
+  infoSpy.mockRestore();
 });
 
 /** Un lien tel que rendu par `db.select().from(projectLinks)...`. */
@@ -247,10 +254,32 @@ describe("articulationsDisponibles", () => {
       // relation était bien réciproque), donc il est journalisé.
       expect(infoSpy).toHaveBeenCalledWith(expect.stringMatching(/couple réciproque/i));
     });
+
+    it("journalise UNE SEULE fois pour le couple, même quand PLUSIEURS campagnes sont réduites", async () => {
+      // Deux campagnes communes (43 et 44) pour le même couple réciproque : sans
+      // regroupement, on aurait 2 lignes de journal quasi identiques. Le spec veut
+      // une ligne par COUPLE, pas une par campagne.
+      hoisted.resultats = [
+        [lienSortant, lienEntrant],
+        [{ name: "Marque B" }],
+        [campagneRow({ id: 43 }), campagneRow({ id: 44 })],
+        [{ name: "Marque B" }],
+        [campagneRow({ id: 43 }), campagneRow({ id: 44 })],
+      ];
+
+      const r = await articulationsDisponibles("user-1", 7);
+
+      expect(r).toHaveLength(2); // les 2 campagnes, chacune une seule fois
+      const appelsCouple = infoSpy.mock.calls.filter(([msg]) => /couple réciproque/i.test(msg));
+      expect(appelsCouple).toHaveLength(1);
+      // Le compte annoncé dans ce message correspond au nombre réel de campagnes
+      // réduites — ici 2 — pas un texte vague.
+      expect(appelsCouple[0][0]).toMatch(/2 campagne/);
+    });
   });
 
   describe("plafond de campagnes par lien", () => {
-    it("ne rend jamais plus de PLAFOND_CAMPAGNES_PAR_LIEN campagnes pour un même lien, et journalise ce qui est écarté", async () => {
+    it("ne rend jamais plus de PLAFOND_CAMPAGNES_PAR_LIEN campagnes pour un même lien", async () => {
       expect(PLAFOND_CAMPAGNES_PAR_LIEN).toBeGreaterThan(0);
 
       // Simule ce qu'une vraie requête bornée par `.limit(PLAFOND + 1)` rendrait
@@ -267,7 +296,35 @@ describe("articulationsDisponibles", () => {
       const r = await articulationsDisponibles("user-1", 7);
 
       expect(r).toHaveLength(PLAFOND_CAMPAGNES_PAR_LIEN);
-      expect(infoSpy).toHaveBeenCalledWith(expect.stringMatching(/plafond/i));
+    });
+
+    it("journalise un seuil franchi — jamais un nombre de campagnes écartées", async () => {
+      // La requête n'est bornée qu'à PLAFOND + 1 : elle ne peut donc JAMAIS révéler
+      // combien de campagnes dépassent réellement le plafond (6 ou 60 rendent la
+      // même chose ici). Un message qui affiche quand même un nombre d'écartées
+      // serait un mensonge déguisé en mesure précise — c'est exactement ce que ce
+      // test interdit.
+      const enTrop = Array.from({ length: PLAFOND_CAMPAGNES_PAR_LIEN + 1 }, (_, i) =>
+        campagneRow({ id: 200 + i, name: `Campagne ${i}` }),
+      );
+      hoisted.resultats = [
+        [lienRow()],
+        [{ name: "Marque B" }],
+        enTrop,
+      ];
+
+      await articulationsDisponibles("user-1", 7);
+
+      const appelsPlafond = infoSpy.mock.calls.filter(([msg]) => /plafond|plus de/i.test(msg));
+      expect(appelsPlafond).toHaveLength(1);
+      const message = appelsPlafond[0][0] as string;
+      // Un seuil franchi : la marque a PLUS de campagnes que le plafond...
+      expect(message).toMatch(new RegExp(`plus de ${PLAFOND_CAMPAGNES_PAR_LIEN} campagnes vivantes`));
+      // ... et le critère de ce qui est retenu.
+      expect(message).toMatch(/récemment mises à jour/);
+      // Jamais un décompte d'écartées : ni "N écartée(s)", ni le mot "écarté"
+      // suivi d'un chiffre, qui laisserait croire à une mesure exacte qu'on n'a pas.
+      expect(message).not.toMatch(/\d+\s*campagne\(?s?\)?\s*écart/i);
     });
 
     it("demande explicitement PLAFOND + 1 lignes à la requête campaigns (et trie pour un plafond déterministe)", async () => {
