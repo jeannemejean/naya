@@ -173,7 +173,7 @@ export async function extractToMemory(input: {
   projectId?: number | null;        // projet ACTIF (UI) — pour audit uniquement, jamais pour taguer
   subjectProjectId?: number | null; // marque-SUJET résolue (named brand) — sert à taguer cap/reception
   sourceText: string;
-  sourceType: "capture" | "companion" | "feedback";
+  sourceType: "capture" | "companion" | "feedback" | "reading";
   sourceCaptureId?: number | null;
 }): Promise<void> {
   try {

@@ -3,8 +3,9 @@ import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
-import { waitlist, taskPrompts, tasks } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content } from "@shared/schema";
+import { eq, and, inArray, or, gte, desc } from "drizzle-orm";
+import { runReadingRoom } from "./services/reading/runner";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { 
   generateContent, 
@@ -51,7 +52,7 @@ import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossier";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
-import { construireContenuDepuisTache } from "./services/task-to-content";
+import { construireContenuDepuisTache, VALEUR_A_PRECISER, CHAMPS_DEDUCTIBLES } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
 import { unansweredStreak, shouldReduceFrequency } from "./services/result-capture/throttle";
 import { buildImmediateInsight, type TaskAnswer } from "./services/result-capture/insight";
@@ -6973,6 +6974,207 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     } catch (error) {
       console.error("Error generating content:", error);
       res.status(500).json({ message: "Failed to generate content" });
+    }
+  });
+
+  // ── L'espace de lecture — la revue du matin ─────────────────────────────────
+  // Spec : docs/superpowers/specs/2026-09-29-naya-espace-lecture-design.md
+
+  app.get('/api/reading/today', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const debutDuJour = new Date();
+      debutDuJour.setUTCHours(0, 0, 0, 0);
+      const cards = await db
+        .select()
+        .from(readingCards)
+        .where(and(
+          eq(readingCards.userId, userId),
+          or(
+            eq(readingCards.status, 'kept'),
+            and(
+              inArray(readingCards.status, ['proposed', 'answered']),
+              gte(readingCards.createdAt, debutDuJour),
+            ),
+          ),
+        ))
+        .orderBy(desc(readingCards.relevanceScore));
+      res.json({ cards });
+    } catch (error) {
+      console.error('[Lecture] GET /api/reading/today:', error);
+      res.status(500).json({ message: 'Failed to fetch reading cards' });
+    }
+  });
+
+  app.post('/api/reading/cards/:id/answer', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id, 10);
+      const answer = typeof req.body?.answer === 'string' ? req.body.answer.trim() : '';
+      if (!answer) return res.status(400).json({ message: 'Réponse vide' });
+
+      const [card] = await db
+        .update(readingCards)
+        .set({ userAnswer: answer, answeredAt: new Date(), status: 'answered' })
+        .where(and(eq(readingCards.id, id), eq(readingCards.userId, userId)))
+        .returning();
+      if (!card) return res.status(404).json({ message: 'Fiche introuvable' });
+
+      // Mémoire best-effort : la marque est CONNUE (celle de la fiche), donc aucune
+      // question de marque n'est posée. Un échec ici ne casse pas la réponse.
+      extractToMemory({
+        userId,
+        projectId: card.projectId,
+        subjectProjectId: card.projectId,
+        sourceType: 'reading',
+        sourceText: `À propos de « ${card.title} » (${card.url}).\nQuestion posée : ${card.question}\nAvis de la fondatrice : ${answer}`,
+      }).catch((e: any) => console.error('[Lecture] extractToMemory:', e?.message));
+
+      res.json({ card });
+    } catch (error) {
+      console.error('[Lecture] POST answer:', error);
+      res.status(500).json({ message: 'Failed to save answer' });
+    }
+  });
+
+  app.post('/api/reading/cards/:id/keep', isAuthenticated, async (req: any, res) => {
+    try {
+      const [card] = await db
+        .update(readingCards)
+        .set({ status: 'kept' })
+        .where(and(eq(readingCards.id, parseInt(req.params.id, 10)), eq(readingCards.userId, req.userId)))
+        .returning();
+      if (!card) return res.status(404).json({ message: 'Fiche introuvable' });
+      res.json({ card });
+    } catch (error) {
+      console.error('[Lecture] POST keep:', error);
+      res.status(500).json({ message: 'Failed to keep card' });
+    }
+  });
+
+  app.post('/api/reading/cards/:id/skip', isAuthenticated, async (req: any, res) => {
+    try {
+      // « Passer » ne demande aucune justification et n'affiche aucune conséquence.
+      // La ligne RESTE en base : c'est elle qui empêche l'URL d'être reproposée.
+      await db
+        .update(readingCards)
+        .set({ status: 'rejected' })
+        .where(and(eq(readingCards.id, parseInt(req.params.id, 10)), eq(readingCards.userId, req.userId)));
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('[Lecture] POST skip:', error);
+      res.status(500).json({ message: 'Failed to skip card' });
+    }
+  });
+
+  app.post('/api/reading/cards/:id/to-content', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const [card] = await db
+        .select()
+        .from(readingCards)
+        .where(and(eq(readingCards.id, parseInt(req.params.id, 10)), eq(readingCards.userId, userId)));
+      if (!card) return res.status(404).json({ message: 'Fiche introuvable' });
+      // Garde-fou du spec : pas de brouillon tant qu'il n'y a pas d'avis. Ce qu'elle
+      // publie part de SA réponse, jamais de la fiche seule.
+      if (!card.userAnswer) return res.status(400).json({ message: "Aucune réponse : pas de brouillon" });
+
+      const brouillon = await callClaudeWithContext({
+        userId,
+        projectId: card.projectId,
+        max_tokens: 1200,
+        additionalSystemContext:
+          "Tu mets en forme l'avis de la fondatrice en post LinkedIn. Tu n'ajoutes AUCUNE opinion " +
+          "qu'elle n'a pas exprimée : tu structures, tu resserres, tu gardes ses mots et son ton. " +
+          "Pas de hashtags, pas d'emoji, pas de formule d'accroche creuse.",
+        userMessage: `FAIT\n${card.factSummary}\n\nSON AVIS\n${card.userAnswer}\n\nSOURCE\n${card.url}`,
+      });
+
+      // contentType/pillar/goal : aucune base pour les déduire depuis une fiche de lecture,
+      // donc VALEUR_A_PRECISER plutôt qu'une valeur plausible qui s'installerait sans bruit
+      // dans les statistiques d'attribution — même arbitrage que task-to-content.ts
+      // (Jeanne, 2026-09-16). platform est fixée par le prompt ci-dessus (on demande
+      // explicitement un post LinkedIn), mais c'est Naya qui l'a choisie, pas
+      // l'utilisatrice : elle est donc marquée déduite au même titre que les trois autres.
+      const [ligne] = await db
+        .insert(content)
+        .values({
+          userId,
+          projectId: card.projectId,
+          title: card.title,
+          body: brouillon,
+          platform: 'linkedin',
+          contentType: VALEUR_A_PRECISER,
+          pillar: VALEUR_A_PRECISER,
+          goal: VALEUR_A_PRECISER,
+          status: 'draft',
+          deducedFields: [...CHAMPS_DEDUCTIBLES],
+        })
+        .returning({ id: content.id });
+
+      res.json({ contentId: ligne.id });
+    } catch (error) {
+      console.error('[Lecture] POST to-content:', error);
+      res.status(500).json({ message: 'Failed to create content' });
+    }
+  });
+
+  app.get('/api/reading/queries', isAuthenticated, async (req: any, res) => {
+    try {
+      const queries = await db
+        .select()
+        .from(readingQueries)
+        .where(eq(readingQueries.userId, req.userId))
+        .orderBy(desc(readingQueries.createdAt));
+      res.json({ queries });
+    } catch (error) {
+      console.error('[Lecture] GET queries:', error);
+      res.status(500).json({ message: 'Failed to fetch queries' });
+    }
+  });
+
+  app.post('/api/reading/queries', isAuthenticated, async (req: any, res) => {
+    try {
+      const projectId = parseInt(req.body?.projectId, 10);
+      const q = typeof req.body?.query === 'string' ? req.body.query.trim() : '';
+      if (!Number.isFinite(projectId) || !q) return res.status(400).json({ message: 'projectId et query requis' });
+      const [query] = await db
+        .insert(readingQueries)
+        .values({ userId: req.userId, projectId, query: q, origin: 'manual', isActive: true })
+        .returning();
+      res.json({ query });
+    } catch (error) {
+      console.error('[Lecture] POST queries:', error);
+      res.status(500).json({ message: 'Failed to create query' });
+    }
+  });
+
+  app.patch('/api/reading/queries/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const patch: Record<string, unknown> = {};
+      if (typeof req.body?.query === 'string' && req.body.query.trim()) patch.query = req.body.query.trim();
+      if (typeof req.body?.isActive === 'boolean') patch.isActive = req.body.isActive;
+      if (Object.keys(patch).length === 0) return res.status(400).json({ message: 'Rien à modifier' });
+      const [query] = await db
+        .update(readingQueries)
+        .set(patch)
+        .where(and(eq(readingQueries.id, parseInt(req.params.id, 10)), eq(readingQueries.userId, req.userId)))
+        .returning();
+      if (!query) return res.status(404).json({ message: 'Requête introuvable' });
+      res.json({ query });
+    } catch (error) {
+      console.error('[Lecture] PATCH queries:', error);
+      res.status(500).json({ message: 'Failed to update query' });
+    }
+  });
+
+  app.post('/api/reading/run', isAuthenticated, async (req: any, res) => {
+    try {
+      const out = await runReadingRoom(req.userId, new Date());
+      res.json(out);
+    } catch (error) {
+      console.error('[Lecture] POST run:', error);
+      res.status(500).json({ message: 'Failed to run reading room' });
     }
   });
 
