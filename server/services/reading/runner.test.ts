@@ -18,6 +18,7 @@ const depsBase = (over: any = {}) => ({
   expirer: vi.fn().mockResolvedValue(0),
   compterFichesDuJour: vi.fn().mockResolvedValue(0),
   accesExterneConfigure: vi.fn().mockReturnValue(true),
+  depenseBloquee: vi.fn().mockResolvedValue(false),
   ...over,
 });
 
@@ -163,6 +164,29 @@ describe("runReadingRoom", () => {
   it("Bright Data configuré → la revue tourne normalement", async () => {
     const deps = depsBase({ accesExterneConfigure: vi.fn().mockReturnValue(true) });
     await expect(runReadingRoom("u1", TODAY, deps as any)).resolves.toEqual({ fichesEcrites: 1 });
+  });
+
+  // ── Le garde-fou de dépense de usage.ts : exigé deux fois par le spec, il n'était
+  // appelé nulle part dans la lecture. Sa place est APRÈS l'expiration. ─────────────
+
+  it("plafond de dépense atteint → revue arrêtée proprement, zéro fiche, et l'expiration a quand même eu lieu", async () => {
+    const deps = depsBase({ depenseBloquee: vi.fn().mockResolvedValue(true) });
+    const out = await runReadingRoom("u1", TODAY, deps as any);
+    expect(out.fichesEcrites).toBe(0);
+    // L'expiration est inconditionnelle : les fiches d'hier ne traînent pas un jour de
+    // plus parce que le plafond de dépense est atteint.
+    expect(deps.expirer).toHaveBeenCalledWith("u1", TODAY);
+    expect(deps.projetsActifs).not.toHaveBeenCalled();
+    expect(deps.sourcer).not.toHaveBeenCalled();
+    expect(deps.noter).not.toHaveBeenCalled();
+    expect(deps.rediger).not.toHaveBeenCalled();
+    expect(deps.ecrire).not.toHaveBeenCalled();
+  });
+
+  it("le garde-fou de dépense lui-même en échec → on suppose bloqué (fail closed), sans exception", async () => {
+    const deps = depsBase({ depenseBloquee: vi.fn().mockRejectedValue(new Error("base indisponible")) });
+    await expect(runReadingRoom("u1", TODAY, deps as any)).resolves.toEqual({ fichesEcrites: 0 });
+    expect(deps.sourcer).not.toHaveBeenCalled();
   });
 
   it("Bright Data non configuré → aucun sourcing, aucun appel modèle, aucune fiche, et l'expiration a quand même eu lieu", async () => {

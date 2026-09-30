@@ -7206,6 +7206,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.post('/api/reading/run', isAuthenticated, async (req: any, res) => {
     try {
+      // Même garde-fou de dépense que les neuf autres appels IA de ce fichier, et même
+      // motif exact. Il manquait ici : cet endpoint déclenche à la demande, sans aucune
+      // limite de fréquence, la seule fonctionnalité qui enchaîne 24 requêtes SERP, un
+      // appel modèle par marque et un appel modèle par fiche. La revue elle-même est
+      // gardée dans runReadingRoom (après l'expiration, qui reste inconditionnelle) ;
+      // ici on refuse avant de dépenser.
+      if (await isAiBlocked(req.userId)) return res.status(429).json({ message: 'ai_monthly_limit_reached' });
       const out = await runReadingRoom(req.userId, new Date());
       res.json(out);
     } catch (error) {

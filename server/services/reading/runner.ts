@@ -9,6 +9,7 @@ import { redigerFiche } from "./card";
 import { retrieveMemories } from "../memory/retrieve";
 import { serpConfigured } from "../serp";
 import { webScrapeConfigured } from "../brightdata-enrich";
+import { isAiBlocked } from "../usage";
 
 export interface DepsLecture {
   projetsActifs: (userId: string) => Promise<Array<{ id: number; name: string }>>;
@@ -28,6 +29,10 @@ export interface DepsLecture {
   // ordinaire, injectable et testable — pas une comparaison d'identité sur depsParDefaut,
   // qui ne peut jamais être vraie dès qu'un objet deps distinct est injecté en test.
   accesExterneConfigure: () => boolean;
+  // Le garde-fou de dépense de usage.ts. Injectable pour la même raison que le
+  // précédent : le vrai isAiBlocked interroge la base, un test qui injecte ses deps
+  // ne doit jamais l'atteindre.
+  depenseBloquee: (userId: string) => Promise<boolean>;
 }
 
 const debutDuJour = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -80,6 +85,7 @@ const depsParDefaut: DepsLecture = {
     return rows.length;
   },
   accesExterneConfigure: () => serpConfigured() && webScrapeConfigured(),
+  depenseBloquee: isAiBlocked,
 };
 
 /**
@@ -98,6 +104,25 @@ export async function runReadingRoom(
     console.error(`[Lecture] expiration échouée pour ${userId}:`, err?.message);
     return 0;
   });
+
+  // Garde-fou de dépense, exigé deux fois par le spec et jusqu'ici appelé NULLE PART
+  // dans la lecture : callClaude comptabilise la dépense mais ne bloque jamais, donc
+  // la revue était la seule consommatrice d'IA capable de dépasser le plafond sans
+  // s'en apercevoir, tous les matins, sans qu'aucune surface ne puisse le montrer.
+  // Sa place est ICI, après l'expiration : l'expiration reste inconditionnelle (les
+  // fiches d'hier disparaissent même un jour où la revue ne tourne pas), le reste
+  // s'arrête proprement. En cas d'échec du test lui-même, on suppose bloqué
+  // (fail closed) — même arbitrage que compterFichesDuJour plus bas : une base qui ne
+  // répond pas ferait de toute façon échouer les écritures, et un plafond de dépense
+  // qu'on franchit sur une erreur de lecture ne protège plus rien.
+  const depenseBloquee = await deps.depenseBloquee(userId).catch((err: any) => {
+    console.error(`[Lecture] garde-fou de dépense illisible pour ${userId} — revue arrêtée par précaution:`, err?.message);
+    return true;
+  });
+  if (depenseBloquee) {
+    console.info(`[Lecture] plafond de dépense IA atteint pour ${userId} — revue arrêtée, zéro fiche`);
+    return { fichesEcrites: 0 };
+  }
 
   if (!deps.accesExterneConfigure()) {
     console.info("[Lecture] Bright Data non configuré — revue non exécutée");
