@@ -120,6 +120,13 @@
       "when": 1790700198008,
       "tag": "0016_sturdy_smasher",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790784430197,
+      "tag": "0017_cuddly_master_chief",
+      "breakpoints": true
     }
   ]
 }

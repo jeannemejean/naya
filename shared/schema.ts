@@ -13,6 +13,7 @@ import {
   doublePrecision,
   vector,
   pgEnum,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -80,6 +81,44 @@ export const projects = pgTable("projects", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// LES LIENS ENTRE MARQUES.
+// Voir docs/superpowers/specs/2026-09-30-naya-liens-entre-marques-design.md
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Un lien ORIENTÉ entre deux marques : `from` nourrit `to`.
+ *
+ * L'ABSENCE de ligne est une INTERDICTION, pas un vide. Sans lien déclaré, Naya ne
+ * rapproche jamais deux marques — elle ne mentionne pas l'une dans le travail de
+ * l'autre et ne s'appuie sur rien de l'autre, même quand le rapprochement lui paraît
+ * évident. C'est la règle que l'utilisatrice a posée deux fois : certaines de ses
+ * marques n'ont aucun rapport, et ça compte autant que celles qui en ont.
+ *
+ * Le sens et le recoupement d'audiences sont STRUCTURÉS parce qu'ils font agir le
+ * code. Les rôles et la nature sont du TEXTE LIBRE, dans les mots de l'utilisatrice :
+ * ce projet dérive ses critères du contexte de chaque utilisateur, il n'universalise
+ * pas une taxonomie de types de liens.
+ */
+export const projectLinks = pgTable("project_links", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  fromProjectId: integer("from_project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  toProjectId: integer("to_project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  roleAmont: text("role_amont"),   // ce que fait la marque qui nourrit
+  roleAval: text("role_aval"),     // ce que fait la marque nourrie
+  nature: text("nature"),          // pourquoi elles sont liées, et les interdits
+  // Conditionne l'alerte de collision : sans recoupement, pas de contrôle.
+  audiencesRecoupent: boolean("audiences_recoupent").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  sensIdx: uniqueIndex("project_link_sens_idx").on(t.userId, t.fromProjectId, t.toProjectId),
+  versIdx: index("project_link_vers_idx").on(t.userId, t.toProjectId),
+}));
+
+export type ProjectLink = typeof projectLinks.$inferSelect;
 
 export const projectGoals = pgTable("project_goals", {
   id: serial("id").primaryKey(),
@@ -1136,6 +1175,17 @@ export const campaigns = pgTable("campaigns", {
   endDate: text("end_date"),
   audienceSegment: text("audience_segment"),
   linkedProspectionCampaignId: integer("linked_prospection_campaign_id"), // FK → prospection_campaigns.id
+  // L'articulation ponctuelle avec la campagne d'une marque liée.
+  //
+  // Les DEUX colonnes sont nécessaires : sans le booléen, on ne distingue pas
+  // « pas encore décidé » de « décidé que non », et Naya reposerait la question
+  // sur une campagne que l'utilisatrice a voulue isolée.
+  //
+  // `campaigns` se référence elle-même : Drizzle exige alors une annotation de
+  // retour explicite, sinon TypeScript échoue sur une inférence circulaire.
+  articuleAvecCampaignId: integer("articule_avec_campaign_id")
+    .references((): AnyPgColumn => campaigns.id, { onDelete: "set null" }),
+  articulationIndependante: boolean("articulation_independante").notNull().default(false),
   pauseNote: text("pause_note"),
   reviewContentQuality: integer("review_content_quality"),
   reviewAudienceResponse: integer("review_audience_response"),
