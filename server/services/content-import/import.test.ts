@@ -360,6 +360,61 @@ describe("importerTexte", () => {
     expect(hoisted.limits).toContain(200);
   });
 
+  it("le journal annonce le nombre de posts ÉCRITS, pas le nombre extrait avant déduplication — sinon un import avec des ignorés annoncerait des posts qui n'ont pas été créés", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue(
+      reponseModele([
+        posteModele({ titre: "Post nouveau" }),
+        posteModele({ titre: "Post déjà existant" }),
+      ]),
+    );
+    // Le second titre existe déjà dans la marque : UN SEUL post est réellement écrit,
+    // l'autre est ignoré — mais extraits.length vaut 2.
+    hoisted.resultats = [[], [{ title: "Post déjà existant" }]];
+    hoisted.resultatsTransaction = [[{ id: 1, title: "Post nouveau", scheduledFor: null }]];
+
+    await importerTexte(INPUT);
+
+    expect(infoSpy).toHaveBeenCalledTimes(1);
+    const message = infoSpy.mock.calls[0][0] as string;
+    expect(message).toContain(`projet ${INPUT.projectId}`);
+    expect(message).toContain("1 post(s) écrit(s)");
+    expect(message).toContain("1 ignoré(s)");
+    // Le piège visé : journaliser extraits.length (2) au lieu de posts.length (1)
+    // annoncerait deux posts écrits alors qu'un seul l'a été.
+    expect(message).not.toContain("2 post(s) écrit(s)");
+  });
+
+  it("le journal mentionne la réécriture quand la couverture dépasse 1,2 (SEUIL_REECRITURE)", async () => {
+    const texte = "x"; // texte minuscule : l'extrait est forcément bien plus long que lui
+    (claude.callClaudeDetailed as any).mockResolvedValue(
+      reponseModele([posteModele({
+        titre: "Un titre nettement plus long que le texte original collé ici",
+        corps: "Et un corps nettement plus long également, de loin, pour dépasser le seuil.",
+      })]),
+    );
+    hoisted.resultats = [[], []];
+    hoisted.resultatsTransaction = [[{ id: 1, title: "t", scheduledFor: null }]];
+
+    await importerTexte({ ...INPUT, texte });
+
+    const message = infoSpy.mock.calls[0][0] as string;
+    expect(message).toContain("le modèle a probablement réécrit au lieu d'extraire");
+  });
+
+  it("le journal ne mentionne PAS la réécriture quand la couverture reste sous 1,2", async () => {
+    const texte = "x".repeat(1000); // texte long : l'extrait court reste largement sous lui
+    (claude.callClaudeDetailed as any).mockResolvedValue(
+      reponseModele([posteModele({ titre: "t", corps: "c" })]),
+    );
+    hoisted.resultats = [[], []];
+    hoisted.resultatsTransaction = [[{ id: 1, title: "t", scheduledFor: null }]];
+
+    await importerTexte({ ...INPUT, texte });
+
+    const message = infoSpy.mock.calls[0][0] as string;
+    expect(message).not.toContain("le modèle a probablement réécrit au lieu d'extraire");
+  });
+
   it("décisions — appelle callClaudeDetailed avec taskKind 'strategic_reasoning' (pas 'extraction') et le modèle smart", async () => {
     (claude.callClaudeDetailed as any).mockResolvedValue(reponseModele([]));
     hoisted.resultats = [[], []];
