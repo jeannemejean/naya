@@ -80,6 +80,36 @@ describe("resoudreDate", () => {
   it("accepte une date un peu dans le passé, qu'on peut légitimement vouloir", () => {
     expect(resoudreDate("2026-09-15", aujourdhui)).toBeInstanceOf(Date);
   });
+
+  it("verrouille les bornes de plausibilité : 365j passé et 730j futur (inclusif)", () => {
+    // Les bornes sont inclusives : le code utilise < et >, pas <= et >=
+    const toLocalDateStr = (d: Date): string => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+
+    // Côté passé : 365 jours avant (dernier jour accepté)
+    const date365DaysAgo = new Date(aujourdhui.getTime() - 365 * 86400000);
+    const str365 = toLocalDateStr(date365DaysAgo);
+    expect(resoudreDate(str365, aujourdhui)).toBeInstanceOf(Date);
+
+    // Côté passé : 366 jours avant (premier jour rejeté)
+    const date366DaysAgo = new Date(aujourdhui.getTime() - 366 * 86400000);
+    const str366 = toLocalDateStr(date366DaysAgo);
+    expect(resoudreDate(str366, aujourdhui)).toBeNull();
+
+    // Côté futur : 730 jours après (dernier jour accepté)
+    const date730DaysLater = new Date(aujourdhui.getTime() + 730 * 86400000);
+    const str730 = toLocalDateStr(date730DaysLater);
+    expect(resoudreDate(str730, aujourdhui)).toBeInstanceOf(Date);
+
+    // Côté futur : 731 jours après (premier jour rejeté)
+    const date731DaysLater = new Date(aujourdhui.getTime() + 731 * 86400000);
+    const str731 = toLocalDateStr(date731DaysLater);
+    expect(resoudreDate(str731, aujourdhui)).toBeNull();
+  });
 });
 
 describe("mesurerCouverture", () => {
