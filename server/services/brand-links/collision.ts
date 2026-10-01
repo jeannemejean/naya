@@ -1,7 +1,7 @@
 import { db } from "../../db";
 import { and, eq, gte, lte, or, inArray } from "drizzle-orm";
 import { projectLinks, content, projects } from "@shared/schema";
-import { callClaude, CLAUDE_MODELS } from "../claude";
+import { callClaude, callClaudeDetailed, CLAUDE_MODELS } from "../claude";
 
 /** Fenêtre de comparaison autour de la date de programmation. */
 export const FENETRE_JOURS = 7;
@@ -352,7 +352,7 @@ export async function detecterCollisionLot(input: {
       .map((v) => `Déjà programmé : ${v.id}\nTitre : ${v.title.slice(0, LONGUEUR_MAX_TITRE)}\n${String(v.body ?? "").slice(0, 400)}`)
       .join("\n\n");
 
-    const raw = await callClaude({
+    const { text: raw, stopReason } = await callClaudeDetailed({
       model: CLAUDE_MODELS.fast,
       taskKind: "classification",
       system: PROMPT_COLLISION_LOT,
@@ -366,6 +366,20 @@ export async function detecterCollisionLot(input: {
         content: `NOUVEAUX CONTENUS\n${listeNouveaux}\n\nDÉJÀ PROGRAMMÉ SUR LA MARQUE LIÉE\n${listeVoisins}`,
       }],
     });
+
+    // DEUX valeurs, pas une : les providers ne nomment pas la troncature de la même
+    // façon ("max_tokens" / "length" — voir `server/services/content-import/import.ts`).
+    // On ne réutilise pas `assertNotTruncated` ici : elle LÈVE, ce qui est incompatible
+    // avec le best-effort de cette fonction. Mais sans ce garde-fou, une réponse coupée
+    // produirait un JSON illisible, `parseVerdictLot` rendrait `[]`, et "aucune
+    // collision" deviendrait un énoncé FAUX présenté comme un résultat, en silence.
+    if (stopReason === "max_tokens" || stopReason === "length") {
+      console.info(
+        `[Liens] détection de collision en lot pour le projet ${input.projectId} : ` +
+        `réponse du modèle tronquée (${stopReason}) — les collisions annoncées après ` +
+        `la coupure sont perdues.`,
+      );
+    }
 
     const couples = parseVerdictLot(raw, idsNouveaux, idsVoisins);
     if (couples.length === 0) return [];

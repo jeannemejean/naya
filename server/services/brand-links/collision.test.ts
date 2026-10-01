@@ -8,7 +8,10 @@
 // `orderBy`/`limit` (pour vérifier le tri et le plafond décrits dans le brief).
 //
 // `../claude` est mocké sur le motif de `server/services/sequence-message.test.ts` :
-// seul `callClaude` est remplacé, le reste du module (CLAUDE_MODELS) reste réel.
+// seuls `callClaude` (chemin singulier, `detecterCollision`) et `callClaudeDetailed`
+// (chemin en lot, `detecterCollisionLot` — qui doit lire `stopReason` pour détecter une
+// réponse tronquée, motif repris de `server/services/content-import/import.test.ts`)
+// sont remplacés ; le reste du module (CLAUDE_MODELS) reste réel.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 
@@ -66,7 +69,7 @@ vi.mock("../../db", () => {
 
 vi.mock("../claude", async (importOriginal) => {
   const actual = await importOriginal<any>();
-  return { ...actual, callClaude: vi.fn() };
+  return { ...actual, callClaude: vi.fn(), callClaudeDetailed: vi.fn() };
 });
 
 const { projectLinks, content, projects } = await import("@shared/schema");
@@ -431,6 +434,16 @@ describe("parseVerdictLot — lire le verdict du modèle pour un LOT de couples"
   });
 });
 
+/**
+ * Ce que rend `callClaudeDetailed` : le texte brut et le `stopReason`. Motif repris de
+ * `server/services/content-import/import.test.ts` — `detecterCollisionLot` doit lire
+ * `stopReason` (et pas seulement le texte, comme `callClaude`) pour détecter une
+ * réponse tronquée au lieu de la confondre avec "aucune collision".
+ */
+function reponseModeleLot(raw: string, stopReason?: string) {
+  return { text: raw, stopReason };
+}
+
 describe("detecterCollisionLot", () => {
   const POSTS = [
     {
@@ -498,7 +511,7 @@ describe("detecterCollisionLot", () => {
     expect(r).toEqual([]);
     expect(hoisted.froms).toEqual([projectLinks]);
     expect(hoisted.froms).not.toContain(content);
-    expect(claude.callClaude).not.toHaveBeenCalled();
+    expect(claude.callClaudeDetailed).not.toHaveBeenCalled();
   });
 
   it("un lot vide rend [] sans interroger quoi que ce soit", async () => {
@@ -506,7 +519,7 @@ describe("detecterCollisionLot", () => {
 
     expect(r).toEqual([]);
     expect(hoisted.froms).toEqual([]);
-    expect(claude.callClaude).not.toHaveBeenCalled();
+    expect(claude.callClaudeDetailed).not.toHaveBeenCalled();
   });
 
   it("sans contenu déjà programmé dans la fenêtre sur la marque liée, rend [] sans appeler le modèle", async () => {
@@ -515,7 +528,7 @@ describe("detecterCollisionLot", () => {
     const r = await detecterCollisionLot(ENTREE_LOT);
 
     expect(r).toEqual([]);
-    expect(claude.callClaude).not.toHaveBeenCalled();
+    expect(claude.callClaudeDetailed).not.toHaveBeenCalled();
   });
 
   it("la fenêtre de comparaison couvre l'AMPLITUDE du lot entier, pas la date d'un seul post", async () => {
@@ -541,11 +554,11 @@ describe("detecterCollisionLot", () => {
       quand: new Date(Date.now() + i * 1000),
     }));
     hoisted.resultats = [[LIEN], [voisin()]];
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ collisions: [] }));
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot(JSON.stringify({ collisions: [] })));
 
     await detecterCollisionLot({ userId: "user-1", projectId: 7, posts: beaucoupDePosts });
 
-    const appel = (claude.callClaude as any).mock.calls[0][0];
+    const appel = (claude.callClaudeDetailed as any).mock.calls[0][0];
     const promptEnvoye: string = appel.messages[0].content;
     for (let i = 0; i < PLAFOND_POSTS_LOT; i++) {
       expect(promptEnvoye).toContain(`Nouveau contenu : ${500 + i}`);
@@ -572,9 +585,9 @@ describe("detecterCollisionLot", () => {
     }));
     const idEcarte = 500 + PLAFOND_POSTS_LOT; // le dernier, au-delà du plafond
     hoisted.resultats = [[LIEN], [voisin({ id: 900 })]];
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot(JSON.stringify({
       collisions: [{ nouveauId: idEcarte, contenuId: 900, pourquoi: "invente un post jamais envoyé" }],
-    }));
+    })));
 
     const r = await detecterCollisionLot({ userId: "user-1", projectId: 7, posts: beaucoupDePosts });
 
@@ -593,7 +606,7 @@ describe("detecterCollisionLot", () => {
 
   it("règle 2 — best-effort absolu : un appel au modèle qui échoue rend [] et journalise, sans jeter", async () => {
     hoisted.resultats = [[LIEN], [voisin()]];
-    (claude.callClaude as any).mockRejectedValue(new Error("délai dépassé"));
+    (claude.callClaudeDetailed as any).mockRejectedValue(new Error("délai dépassé"));
 
     await expect(detecterCollisionLot(ENTREE_LOT)).resolves.toEqual([]);
     expect(errorSpy).toHaveBeenCalled();
@@ -601,7 +614,7 @@ describe("detecterCollisionLot", () => {
 
   it("une réponse du modèle illisible rend [] sans jeter", async () => {
     hoisted.resultats = [[LIEN], [voisin()]];
-    (claude.callClaude as any).mockResolvedValue("je ne sais pas");
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot("je ne sais pas"));
 
     await expect(detecterCollisionLot(ENTREE_LOT)).resolves.toEqual([]);
   });
@@ -612,9 +625,9 @@ describe("detecterCollisionLot", () => {
       [voisin({ id: 900, projectId: 9, scheduledFor: new Date("2026-10-07T09:00:00.000Z") })],
       [{ id: 9, name: "Marque B" }],
     ];
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot(JSON.stringify({
       collisions: [{ nouveauId: 411, contenuId: 900, pourquoi: "les deux annoncent la méthode" }],
-    }));
+    })));
 
     const r = await detecterCollisionLot(ENTREE_LOT);
 
@@ -636,12 +649,12 @@ describe("detecterCollisionLot", () => {
       ],
       [{ id: 9, name: "Marque B" }],
     ];
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot(JSON.stringify({
       collisions: [
         { nouveauId: 410, contenuId: 900, pourquoi: "même angle, premier couple" },
         { nouveauId: 411, contenuId: 901, pourquoi: "même angle, second couple" },
       ],
-    }));
+    })));
 
     const r = await detecterCollisionLot(ENTREE_LOT);
 
@@ -661,9 +674,9 @@ describe("detecterCollisionLot", () => {
 
   it("marque introuvable (cas limite) → rend quand même l'alerte, avec un nom générique plutôt que de la perdre", async () => {
     hoisted.resultats = [[LIEN], [voisin({ id: 900 })], []]; // projects ne rend rien
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot(JSON.stringify({
       collisions: [{ nouveauId: 410, contenuId: 900, pourquoi: "r" }],
-    }));
+    })));
 
     const r = await detecterCollisionLot(ENTREE_LOT);
 
@@ -672,13 +685,50 @@ describe("detecterCollisionLot", () => {
 
   it("aucun couple valide dans le verdict → rend [] sans interroger projects pour le nom de la marque", async () => {
     hoisted.resultats = [[LIEN], [voisin({ id: 900 })]];
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot(JSON.stringify({
       collisions: [{ nouveauId: 999, contenuId: 900, pourquoi: "nouveauId inventé" }],
-    }));
+    })));
 
     const r = await detecterCollisionLot(ENTREE_LOT);
 
     expect(r).toEqual([]);
     expect(hoisted.froms).not.toContain(projects);
+  });
+
+  describe("troncature de la réponse du modèle", () => {
+    // DEUX valeurs, pas une (motif `server/services/content-import/import.test.ts`) :
+    // les providers ne nomment pas la troncature de la même façon. Sans ce garde, une
+    // réponse coupée produit un JSON illisible, `parseVerdictLot` rend `[]`, et "aucune
+    // collision" devient un énoncé FAUX présenté comme un résultat, en silence.
+    it.each(["max_tokens", "length"])(
+      "une réponse tronquée (%s) rend [] mais le journalise EXPLICITEMENT comme une troncature, pas comme une absence de collision",
+      async (stopReason) => {
+        hoisted.resultats = [[LIEN], [voisin({ id: 900 })]];
+        // JSON réellement incomplet : la coupure est au milieu d'une chaîne, sans
+        // accolade fermante — `parseVerdictLot` ne peut pas le lire.
+        (claude.callClaudeDetailed as any).mockResolvedValue(
+          reponseModeleLot('{"collisions": [{"nouveauId": 410, "contenuId": 900, "pourq', stopReason),
+        );
+
+        const r = await detecterCollisionLot(ENTREE_LOT);
+
+        expect(r).toEqual([]);
+        const appelsTroncature = infoSpy.mock.calls.filter(([msg]) => /tronqu/i.test(String(msg)));
+        expect(appelsTroncature).toHaveLength(1);
+        expect(appelsTroncature[0][0]).toContain(stopReason);
+      },
+    );
+
+    it("une réponse complète (stopReason \"end_turn\") ne journalise AUCUNE troncature", async () => {
+      hoisted.resultats = [[LIEN], [voisin()]];
+      (claude.callClaudeDetailed as any).mockResolvedValue(
+        reponseModeleLot(JSON.stringify({ collisions: [] }), "end_turn"),
+      );
+
+      await detecterCollisionLot(ENTREE_LOT);
+
+      const appelsTroncature = infoSpy.mock.calls.filter(([msg]) => /tronqu/i.test(String(msg)));
+      expect(appelsTroncature).toHaveLength(0);
+    });
   });
 });
