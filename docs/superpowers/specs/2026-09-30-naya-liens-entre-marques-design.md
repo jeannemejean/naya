@@ -148,7 +148,7 @@ Ce qui n'entre **pas** : l'ADN de la marque liée, sa mémoire, ses observations
 
 ## L'alerte au placement
 
-**Déclenchement.** Quand un contenu reçoit une valeur de `scheduledFor` — à la création comme à la modification, qu'il vienne d'une génération ou d'une saisie manuelle — et que sa marque porte un lien dont `audiencesRecoupent` est vrai, on rassemble les contenus programmés sur la ou les marques liées dans une fenêtre de **±7 jours** autour de cette date.
+**Déclenchement.** Quand un contenu reçoit une valeur de `scheduledFor` par `POST /api/content` ou son `PATCH` — les deux chemins du calendrier éditorial, saisie manuelle comme contenu généré qu'on y place à la main ; voir « Couverture réelle de l'alerte » pour les trois chemins qui y échappent — et que sa marque porte un lien dont `audiencesRecoupent` est vrai, on rassemble les contenus programmés sur la ou les marques liées dans une fenêtre de **±7 jours** autour de cette date.
 
 **Le jugement.** Un seul appel `CLAUDE_MODELS.fast`, avec le titre et le corps du contenu qu'on programme et ceux des contenus de la fenêtre, et une seule question : servent-ils le même angle ? Sortie : l'identifiant du contenu qui recoupe et une phrase disant en quoi, ou rien.
 
