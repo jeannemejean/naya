@@ -603,7 +603,7 @@ export async function importerTexte(input: {
     .where(and(eq(content.userId, input.userId), eq(content.projectId, input.projectId)));
   const vus = new Set(existants.map((e) => normalizeTitle(e.title)));
 
-  const aEcrire: Array<Record<string, unknown>> = [];
+  const aEcrire: Array<typeof content.$inferInsert> = [];
   let ignores = 0;
   for (const post of extraits) {
     const cle = normalizeTitle(post.titre);
@@ -634,7 +634,7 @@ export async function importerTexte(input: {
   // Une seule transaction pour tout le lot : un échec au dixième post ne laisse pas les
   // neuf premiers dans le calendrier. L'utilisatrice recolle ; elle ne nettoie pas.
   const posts = aEcrire.length === 0 ? [] : await db.transaction(async (tx) => {
-    const lignes = await tx.insert(content).values(aEcrire as any).returning({
+    const lignes = await tx.insert(content).values(aEcrire).returning({
       id: content.id, title: content.title, scheduledFor: content.scheduledFor,
     });
     return lignes;
@@ -650,6 +650,8 @@ export async function importerTexte(input: {
   return { posts, ignores, couverture, tronque };
 }
 ```
+
+**Le type d'insertion.** `Array<typeof content.$inferInsert>` plutôt qu'un `Record<string, unknown>[]` suivi d'un `as any` : le motif `$inferInsert` est déjà utilisé dans `shared/schema.ts:685`. Si ce typage ne compile pas proprement sur ce lot de champs, garder un cast MAIS avec un commentaire disant lequel des champs le compilateur refuse — un cast sans explication est une dette muette.
 
 **Deux pièges à ne pas introduire en écrivant les tests :**
 - Le mock de `./db` doit accepter `transaction` en plus de la chaîne de `select`. Le motif de `collision.test.ts` ne couvre que `select` : l'étendre, en gardant l'existant intact.
