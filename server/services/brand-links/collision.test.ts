@@ -738,4 +738,57 @@ describe("detecterCollisionLot", () => {
       expect(appelsTroncature).toHaveLength(0);
     });
   });
+
+  it("le prompt du lot est borné sur les TITRES et les CORPS, des deux côtés (nouveaux contenus ET voisins) — `content.title` n'a pas de longueur maximale en base", async () => {
+    const titreNouveau = "P".repeat(10_000);
+    const corpsNouveau = "Q".repeat(10_000);
+    const titreVoisin = "R".repeat(10_000);
+    const corpsVoisin = "S".repeat(10_000);
+    const postsEnormes = [
+      { id: 410, titre: titreNouveau, corps: corpsNouveau, quand: new Date("2026-10-06T10:00:00.000Z") },
+    ];
+    hoisted.resultats = [[LIEN], [voisin({ title: titreVoisin, body: corpsVoisin })]];
+    (claude.callClaudeDetailed as any).mockResolvedValue(reponseModeleLot(JSON.stringify({ collisions: [] })));
+
+    await detecterCollisionLot({ userId: "user-1", projectId: 7, posts: postsEnormes });
+
+    expect(LONGUEUR_MAX_TITRE).toBe(200);
+    const appel = (claude.callClaudeDetailed as any).mock.calls[0][0];
+    const promptEnvoye: string = appel.messages[0].content;
+
+    // Côté nouveau contenu : ni le titre ni le corps intégral de 10 000 caractères ne
+    // se retrouvent dans le prompt.
+    expect(promptEnvoye).not.toContain(titreNouveau);
+    expect(promptEnvoye).toContain("P".repeat(LONGUEUR_MAX_TITRE));
+    expect(promptEnvoye).not.toContain("P".repeat(LONGUEUR_MAX_TITRE + 1));
+    expect(promptEnvoye).not.toContain(corpsNouveau);
+    expect(promptEnvoye).toContain("Q".repeat(400));
+    expect(promptEnvoye).not.toContain("Q".repeat(401));
+
+    // Côté voisin déjà programmé : même garantie, indépendamment du premier côté.
+    expect(promptEnvoye).not.toContain(titreVoisin);
+    expect(promptEnvoye).toContain("R".repeat(LONGUEUR_MAX_TITRE));
+    expect(promptEnvoye).not.toContain("R".repeat(LONGUEUR_MAX_TITRE + 1));
+    expect(promptEnvoye).not.toContain(corpsVoisin);
+    expect(promptEnvoye).toContain("S".repeat(400));
+    expect(promptEnvoye).not.toContain("S".repeat(401));
+  });
+
+  it("un lot d'UN SEUL post donne exactement la même fenêtre que `detecterCollision` pour ce post — min et max d'un tableau à un élément sont cet élément lui-même", async () => {
+    const UNIQUE = {
+      id: 777,
+      titre: "Post seul dans le lot",
+      corps: "Un seul post dans ce collage.",
+      quand: new Date("2026-10-06T10:00:00.000Z"), // même date que ENTREE de detecterCollision
+    };
+    hoisted.resultats = [[LIEN], []];
+
+    await detecterCollisionLot({ userId: "user-1", projectId: 7, posts: [UNIQUE] });
+
+    const attenduDebut = new Date(UNIQUE.quand.getTime() - FENETRE_JOURS * 24 * 3600 * 1000);
+    const attenduFin = new Date(UNIQUE.quand.getTime() + FENETRE_JOURS * 24 * 3600 * 1000);
+    const requeteContent = enSql(hoisted.wheres[1]);
+    expect(requeteContent.params).toContainEqual(attenduDebut.toISOString());
+    expect(requeteContent.params).toContainEqual(attenduFin.toISOString());
+  });
 });

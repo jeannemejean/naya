@@ -256,8 +256,8 @@ ou, s'il n'y a aucune collision :
 "nouveauId" est l'identifiant indiqué après "Nouveau contenu : " pour le nouveau
 contenu en collision, et "contenuId" est l'identifiant indiqué après "Déjà
 programmé : " pour le contenu déjà programmé qui lui fait collision. CE SONT DES
-NOMBRES ENTIERS NUS — 1, jamais "1", jamais [1], jamais "Nouveau contenu : 1" : recopie
-le chiffre seul, sans aucune ponctuation autour.`;
+NOMBRES ENTIERS NUS — 1, jamais "1", jamais [1], jamais "Nouveau contenu : 1", jamais
+"Déjà programmé : 1" : recopie le chiffre seul, sans aucune ponctuation autour.`;
 
 /**
  * Lit le verdict du modèle pour un LOT entier. Même double filtre que `parseVerdict`,
