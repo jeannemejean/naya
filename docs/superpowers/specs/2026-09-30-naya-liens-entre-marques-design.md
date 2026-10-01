@@ -42,7 +42,7 @@ Relevé sur le dépôt le 2026-09-30, `main` à `c6c1016`.
 | Contexte déjà transmis à la génération | `objective`, `duration`, `projectId`, `brandDna`, et un texte libre `weekContext` |
 | Colonnes de `campaigns` utiles à l'articulation | `name`, `objective`, `coreMessage`, `phases` (jsonb), `contentPlan` (jsonb), `status` |
 | Page projet | `client/src/pages/project/ProjectPage.tsx`, composée de panneaux : `ProjectContextEditor`, `MilestoneRoadmap`, `ConversionsPanel`, `RitualList` |
-| Programmation d'un contenu | `scheduledFor` sur `content`, écrit par `POST /api/content` et le PATCH (`server/routes.ts:6514`, `:6537`, `:6577`) |
+| Programmation d'un contenu | `scheduledFor` sur `content`, écrit à **cinq** endroits, pas deux : `POST /api/content` (`server/routes.ts:6626`), `PATCH /api/content/:id` (`:6708`), `POST /api/content/cross-post` (`:6670`), et les deux producteurs de masse `POST /api/campaigns/:id/launch` (`:10439`) et `POST /api/campaigns/:id/regenerate-content` (`:10551`) — ces deux derniers matérialisent chacun dix à seize entrées de calendrier datées en un seul appel serveur, à partir du `contentPlan` généré. Aucun des trois derniers n'appelle la détection de collision — voir Décision 5 |
 | Modèles disponibles | `CLAUDE_MODELS.fast` (Haiku) et `.smart` (Sonnet) via `server/services/claude.ts:20` |
 | Embeddings | `embedText`, `embedTexts`, `toVectorLiteral` (`server/services/memory/embed.ts`), pgvector en base |
 
@@ -58,7 +58,13 @@ Cinq arbitrages rendus le 30 septembre.
 
 **4. Naya propose, Jeanne tranche.** À la génération, Naya signale le lien et l'état des campagnes de la marque liée, puis demande. Elle n'articule pas d'office. Le choix est **persisté** sur la campagne : sans quoi la question reviendrait indéfiniment sur une campagne qu'on a voulue isolée.
 
-**5. L'anti-collision se fait au placement, pas à la génération.** Choix de Jeanne, contre la recommandation initiale. Le contrôle s'exécute quand un contenu reçoit une date, ce qui couvre **aussi les posts écrits à la main** — que la contrainte à la génération n'aurait jamais protégés. Conséquence assumée et à connaître : Naya pourra proposer un angle qui recoupe l'autre marque, et c'est l'alerte au placement qui le rattrapera. Si l'usage montre que c'est agaçant, la contrainte en amont s'ajoute en une ligne de prompt.
+**5. L'anti-collision se fait au placement, pas à la génération — les deux moitiés de cet arbitrage comptent.** Choix de Jeanne, contre la recommandation initiale. Le contrôle s'exécute quand un contenu reçoit une date via `POST /api/content` ou son `PATCH`, ce qui couvre **aussi les posts écrits à la main** — que la contrainte à la génération n'aurait jamais protégés. C'est la moitié qui a emporté la décision.
+
+Mais la réciproque est tout aussi vraie, et elle doit se lire avec elle : une contrainte à la génération aurait couvert **exactement** le chemin que le placement, tel qu'il est construit, ne couvre pas. `POST /api/campaigns/:id/launch` et `POST /api/campaigns/:id/regenerate-content` matérialisent chacun dix à seize entrées de calendrier déjà datées en un seul appel serveur, directement via `storage.createContent` — sans passer par `POST /api/content` ni par son `PATCH`, donc sans jamais traverser le contrôle posé là. C'est le producteur **principal** de contenu programmé de l'application, et il échappe entièrement à l'alerte.
+
+Les deux approches sont **complémentaires, pas substituables** : ce document les présentait comme une alternative, ce qu'elles ne sont pas. Conséquence assumée et à connaître : Naya pourra proposer, au lancement d'une campagne, un angle qui recoupe l'autre marque — et rien ne le rattrapera avant la publication, puisque l'alerte au placement ne voit jamais ce chemin. Si l'usage montre que c'est agaçant, la contrainte en amont s'ajoute en une ligne de prompt ; sur le chemin du lancement de campagne, elle ne serait pas un filet de secours redondant avec l'alerte, elle serait le seul filet.
+
+**Couverture réelle de l'alerte, à relire si ce document sert de référence dans six mois :** elle s'exécute sur deux chemins d'écriture de `scheduledFor` sur les cinq qui existent dans ce dépôt — `POST /api/content` et `PATCH /api/content/:id`. Elle ne s'exécute **pas** sur `POST /api/content/cross-post`, `POST /api/campaigns/:id/launch` ni `POST /api/campaigns/:id/regenerate-content` (voir « État constaté » pour les emplacements). Ce n'est pas une anomalie découverte après coup : c'est l'état réel au moment où ce document est écrit, et il n'y a aujourd'hui aucun engagement de date pour l'étendre.
 
 ## Schéma
 
