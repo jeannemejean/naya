@@ -168,7 +168,8 @@ describe("le prompt", () => {
   });
 
   it("exige null plutôt qu'une valeur devinée", () => {
-    expect(PROMPT_EXTRACTION).toContain("null");
+    // Teste la consigne elle-même, pas un jeton qui pourrait venir du squelette JSON d'exemple
+    expect(PROMPT_EXTRACTION).toContain("N'invente JAMAIS une valeur plausible");
   });
 
   it("injecte la date du jour dans le message", () => {
