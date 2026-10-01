@@ -102,13 +102,37 @@ describe("parseVerdict — lire le jugement du modèle sans lui faire confiance"
     expect(parseVerdict("")).toBeNull();
   });
 
-  it("rend null si collision est vraie mais l'identifiant absent ou non numérique — une alerte sans cible ne sert à rien", () => {
+  it("rend null si collision est vraie mais l'identifiant absent ou non interprétable — une alerte sans cible ne sert à rien", () => {
     expect(parseVerdict('{"collision":true,"pourquoi":"r"}')).toBeNull();
+    // "quarante-deux" ne contient AUCUN chiffre : il n'y a rien à en extraire, et on ne
+    // devine pas — c'est différent d'un identifiant juste mal ponctué (voir plus bas).
     expect(parseVerdict('{"collision":true,"contenuId":"quarante-deux","pourquoi":"r"}')).toBeNull();
   });
 
   it("accepte un verdict sans explication, en rendant une raison vide plutôt que rien", () => {
     expect(parseVerdict('{"collision":true,"contenuId":9}')).toEqual({ contenuId: 9, pourquoi: "" });
+  });
+
+  describe("tolère la ponctuation recopiée depuis la présentation qu'on montre au modèle", () => {
+    // Incident réel contre la vraie base et le vrai modèle : la liste des voisins
+    // présentait chaque contenu comme "[1] Titre", et le modèle a recopié la notation
+    // telle quelle dans sa réponse : `"contenuId": "[1]"`. `parseVerdict` l'exigeait
+    // strictement numérique et rejetait donc une collision pourtant correctement
+    // détectée et expliquée — en silence, sans aucune erreur ni test rouge.
+    it('lit un identifiant encadré de crochets, tel que recopié depuis la présentation "[1] Titre"', () => {
+      expect(parseVerdict('{"collision":true,"contenuId":"[1]","pourquoi":"copie exacte"}'))
+        .toEqual({ contenuId: 1, pourquoi: "copie exacte" });
+    });
+
+    it("lit un identifiant donné comme chaîne numérique simple", () => {
+      expect(parseVerdict('{"collision":true,"contenuId":"42","pourquoi":"r"}'))
+        .toEqual({ contenuId: 42, pourquoi: "r" });
+    });
+
+    it("lit un identifiant noyé dans du texte autour du chiffre", () => {
+      expect(parseVerdict('{"collision":true,"contenuId":"Identifiant : 7","pourquoi":"r"}'))
+        .toEqual({ contenuId: 7, pourquoi: "r" });
+    });
   });
 });
 
@@ -217,6 +241,43 @@ describe("detecterCollision", () => {
     expect(r).toBeNull();
     // Sans cible réelle, on ne va même pas chercher le nom de la marque.
     expect(hoisted.froms).not.toContain(projects);
+  });
+
+  it("règle 3 — un identifiant ponctué mais extrait reste rejeté s'il ne correspond à AUCUN voisin réel", async () => {
+    // L'extraction tolérante (parseVerdict) ne remplace pas le filtre final : un
+    // identifiant "[999]" devient bien 999, mais 999 n'est toujours la cible d'aucun
+    // contenu réel de la fenêtre — donc toujours pas d'alerte.
+    hoisted.resultats = [[LIEN], [voisin({ id: 100 })]];
+    (claude.callClaude as any).mockResolvedValue(
+      JSON.stringify({ collision: true, contenuId: "[999]", pourquoi: "invente, et ponctué" }),
+    );
+
+    const r = await detecterCollision(ENTREE);
+
+    expect(r).toBeNull();
+    expect(hoisted.froms).not.toContain(projects);
+  });
+
+  it("régression de l'incident réel : le modèle recopie la présentation (\"[1]\") et la collision est tout de même relayée", async () => {
+    hoisted.resultats = [
+      [LIEN],
+      [voisin({ id: 1, scheduledFor: new Date("2026-10-05T09:00:00.000Z") })],
+      [{ name: "Marque B" }],
+    ];
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+      collision: true,
+      contenuId: "[1]",
+      pourquoi: "Le contenu programmé [1] est une copie exacte du contenu qu'on veut programmer.",
+    }));
+
+    const r = await detecterCollision(ENTREE);
+
+    expect(r).toEqual({
+      contenuId: 1,
+      marque: "Marque B",
+      scheduledFor: new Date("2026-10-05T09:00:00.000Z"),
+      pourquoi: "Le contenu programmé [1] est une copie exacte du contenu qu'on veut programmer.",
+    });
   });
 
   it("pas de collision selon le modèle → null", async () => {

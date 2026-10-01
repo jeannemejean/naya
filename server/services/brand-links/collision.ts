@@ -45,9 +45,36 @@ un abonné qui voit les deux aurait l'impression de lire deux fois la même chos
 Réponds UNIQUEMENT par un objet JSON, sans texte autour :
 {"collision": false}
 ou
-{"collision": true, "contenuId": <identifiant>, "pourquoi": "<une phrase, en français>"}`;
+{"collision": true, "contenuId": 1, "pourquoi": "<une phrase, en français>"}
 
-/** Lit le verdict du modèle. Pure, tolérante. Une alerte sans cible est jetée. */
+"contenuId" est l'identifiant indiqué après "Identifiant : " dans la liste ci-dessous,
+pour le contenu en collision. C'est un NOMBRE ENTIER NU — 1, jamais "1", jamais [1],
+jamais "Identifiant : 1" : recopie le chiffre seul, sans aucune ponctuation autour.`;
+
+// Un identifiant non interprétable (aucun chiffre dedans) n'est jamais une cible : on le
+// rejette sans essayer de deviner. Pur.
+function extraireEntier(v: unknown): number | null {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    // Tolère la ponctuation que le modèle recopie parfois de la présentation qu'on lui a
+    // montrée ("[1]", "Identifiant : 1", "#1"...) : on extrait le premier nombre trouvé,
+    // plutôt que d'exiger une chaîne qui soit DÉJÀ un nombre pur.
+    const m = v.match(/-?\d+/);
+    if (!m) return null;
+    const n = Number(m[0]);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/**
+ * Lit le verdict du modèle. Pure, tolérante à la ponctuation que le modèle recopie
+ * parfois autour de l'identifiant ("[1]", "1", "Identifiant : 1"). Une alerte sans
+ * cible INTERPRÉTABLE est jetée ici ; une alerte dont l'identifiant interprété ne
+ * correspond à AUCUN contenu réel est jetée plus loin, par `detecterCollision` — les
+ * deux filtres sont nécessaires et aucun ne remplace l'autre : celui-ci absorbe le
+ * bavardage de ponctuation, l'autre absorbe l'invention pure et simple d'un identifiant.
+ */
 export function parseVerdict(raw: string): { contenuId: number; pourquoi: string } | null {
   if (!raw) return null;
   const debut = raw.indexOf("{");
@@ -56,8 +83,9 @@ export function parseVerdict(raw: string): { contenuId: number; pourquoi: string
   let o: any;
   try { o = JSON.parse(raw.slice(debut, fin + 1)); } catch { return null; }
   if (o?.collision !== true) return null;
-  if (typeof o.contenuId !== "number" || !Number.isFinite(o.contenuId)) return null;
-  return { contenuId: o.contenuId, pourquoi: typeof o.pourquoi === "string" ? o.pourquoi : "" };
+  const contenuId = extraireEntier(o.contenuId);
+  if (contenuId === null) return null;
+  return { contenuId, pourquoi: typeof o.pourquoi === "string" ? o.pourquoi : "" };
 }
 
 /**
@@ -115,8 +143,13 @@ export async function detecterCollision(input: {
 
     if (voisins.length === 0) return null;
 
+    // Présentation SANS crochets ni autre ponctuation collée à l'identifiant : la forme
+    // "[1] Titre" s'est révélée à l'usage réel reproduite telle quelle par le modèle dans
+    // sa réponse ("contenuId": "[1]"), que `parseVerdict` rejetait avant ce correctif.
+    // "Identifiant : " sur sa propre ligne laisse le chiffre nu, sans rien à recopier
+    // autour de lui.
     const liste = voisins
-      .map((v) => `[${v.id}] ${v.title.slice(0, LONGUEUR_MAX_TITRE)}\n${String(v.body ?? "").slice(0, 400)}`)
+      .map((v) => `Identifiant : ${v.id}\nTitre : ${v.title.slice(0, LONGUEUR_MAX_TITRE)}\n${String(v.body ?? "").slice(0, 400)}`)
       .join("\n\n");
 
     const raw = await callClaude({
