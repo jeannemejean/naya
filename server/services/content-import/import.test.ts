@@ -10,6 +10,7 @@
 // `../claude` est mocké sur le motif de `server/services/sequence-message.test.ts` : seul
 // l'appel (`callClaudeDetailed`) est remplacé, `CLAUDE_MODELS` reste réel.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 const hoisted = vi.hoisted(() => ({
   // Chaîne de select, motif repris tel quel de collision.test.ts.
@@ -103,6 +104,12 @@ const { content } = await import("@shared/schema");
 const claude = await import("../claude");
 const { PLATEFORME_PAR_DEFAUT } = await import("./parse");
 const { importerTexte, ReponseIllisible } = await import("./import");
+
+// Motif de collision.test.ts : rendre une clause en SQL réel pour affirmer un tri ou un
+// filtre à la lettre, plutôt que de faire confiance à ce que le simulacre a bien voulu
+// transmettre.
+const dialecte = new PgDialect();
+const enSql = (clause: any) => dialecte.sqlToQuery(clause);
 
 /** Un post tel que rendu par le modèle (forme `PostExtrait`). */
 function posteModele(over: Record<string, unknown> = {}) {
@@ -330,6 +337,27 @@ describe("importerTexte", () => {
 
     expect(hoisted.lignesInserees[0][0].platform).toBe(PLATEFORME_PAR_DEFAUT);
     expect(PLATEFORME_PAR_DEFAUT).toBe("linkedin");
+  });
+
+  it("la requête de plateforme majoritaire trie par date de création décroissante et plafonne à 200 — sans ça, le résultat dépendrait de l'ordre physique rendu par Postgres, et deux imports du même texte combleraient différemment", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue(
+      reponseModele([posteModele({ titre: "Post quelconque", plateforme: null })]),
+    );
+    hoisted.resultats = [[], []];
+    hoisted.resultatsTransaction = [[{ id: 1, title: "Post quelconque", scheduledFor: null }]];
+
+    await importerTexte(INPUT);
+
+    // Un seul `orderBy` est posé dans tout l'appel : celui de la requête des
+    // plateformes récentes. L'autre select (les titres existants) n'en pose pas.
+    expect(hoisted.orderBys).toHaveLength(1);
+    const tri = enSql(hoisted.orderBys[0][0]);
+    expect(tri.sql).toContain('"content"."created_at"');
+    expect(tri.sql.toLowerCase()).toContain("desc");
+
+    // 200 = CONTENUS_CONSULTES_PLATEFORME dans import.ts — constante interne, non
+    // exportée (le brief ne la fait pas sortir du module).
+    expect(hoisted.limits).toContain(200);
   });
 
   it("décisions — appelle callClaudeDetailed avec taskKind 'strategic_reasoning' (pas 'extraction') et le modèle smart", async () => {
