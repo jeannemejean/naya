@@ -110,6 +110,34 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
   const signalerEchec = (titre: string, description: string) =>
     toast({ title: titre, description, variant: "destructive" });
 
+  // Un échec HTTP arrive ici sous la forme posée par `throwIfResNotOk`
+  // (client/src/lib/queryClient.ts) : `new Error(`${status}: ${corpsBrut}`)`. `fetchJson` ne
+  // fait rien d'autre que relayer cette erreur. Pour certains statuts, la bonne réponse n'est
+  // PAS « réessaie » : réessayer produit déterministiquement le même échec, parce que la cause
+  // n'est pas transitoire. Deux cas dans cette doctrine, tous les deux via `project_links` :
+  // - 409 sur l'ajout : l'index unique (userId, from, to) refuse un doublon (server/routes.ts,
+  //   POST /api/projects/:id/links) — le lien dans ce sens existe déjà, rien ne le fera
+  //   disparaître en réessayant la même requête ;
+  // - 404 sur la modification ou la suppression : le lien visé a déjà disparu (PATCH et DELETE
+  //   /api/project-links/:id) — `project_links` est en cascade sur `projects` (shared/schema.ts),
+  //   la ligne ne revient jamais, et réessayer la même requête échouera toujours pareil.
+  // Dans ces deux cas on affiche ce que le serveur a dit — un message pensé pour l'utilisatrice,
+  // pas un texte de debug — plutôt que d'inventer une invite à réessayer qui mentirait. Même
+  // lecture d'erreur qu'ailleurs dans ce dépôt (client/src/pages/outreach/PipelineBoard.tsx,
+  // LeadDetail.tsx) : extraire le JSON embarqué dans le message, lire son `message`.
+  const messageDefinitif = (error: unknown, statuts: readonly number[]): string | null => {
+    if (!(error instanceof Error)) return null;
+    if (!statuts.some((s) => error.message.startsWith(`${s}:`))) return null;
+    const corps = error.message.match(/\{[\s\S]*\}/);
+    if (!corps) return null;
+    try {
+      const { message } = JSON.parse(corps[0]);
+      return typeof message === "string" ? message : null;
+    } catch {
+      return null;
+    }
+  };
+
   const modifier = useMutation({
     mutationFn: ({ id, patch }: { id: number; patch: Partial<ChampsLibres> | { audiencesRecoupent: boolean } }) =>
       fetchJson(`/api/project-links/${id}`, {
@@ -121,7 +149,11 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
     // Une déclaration perdue en silence est une déclaration que l'utilisatrice croira faite :
     // sans ce toast, un champ modifié à l'écran mais jamais enregistré côté serveur redeviendrait
     // muettement faux au prochain rechargement, sans qu'elle sache pourquoi.
-    onError: () => signalerEchec("Non enregistré", "La modification n'a pas été enregistrée : réessaie."),
+    onError: (error: unknown) =>
+      signalerEchec(
+        "Non enregistré",
+        messageDefinitif(error, [404]) ?? "La modification n'a pas été enregistrée : réessaie.",
+      ),
   });
 
   // Suivi PAR LIEN de la suppression en cours : la mutation est partagée par toutes les cartes
@@ -134,7 +166,11 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
     mutationFn: (id: number) => fetchJson(`/api/project-links/${id}`, { method: "DELETE" }),
     onMutate: (id: number) => marquerSuppressionEnCours(id),
     onSuccess: invaliderLiens,
-    onError: () => signalerEchec("Non supprimé", "Le lien n'a pas été supprimé : réessaie."),
+    onError: (error: unknown) =>
+      signalerEchec(
+        "Non supprimé",
+        messageDefinitif(error, [404]) ?? "Le lien n'a pas été supprimé : réessaie.",
+      ),
     onSettled: (_data, _erreur, id: number) => retirerSuppressionEnCours(id),
   });
 
@@ -163,7 +199,15 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
       setOpen(false);
       setForm(formeVide());
     },
-    onError: () => signalerEchec("Non enregistré", "Le lien n'a pas été déclaré : réessaie."),
+    // Le 409 (lien déjà déclaré dans ce sens) n'est pas un aléa : réessayer la même déclaration
+    // échoue toujours pareil. C'est le seul geste délibéré de cet écran — le mentir ici coûte
+    // plus cher qu'ailleurs sur ce panneau. On affiche donc le message précis du serveur plutôt
+    // que l'invite à réessayer, qui serait fausse dans ce cas précis.
+    onError: (error: unknown) =>
+      signalerEchec(
+        "Non enregistré",
+        messageDefinitif(error, [409]) ?? "Le lien n'a pas été déclaré : réessaie.",
+      ),
   });
 
   const sortants = liensQuery.data?.sortants ?? [];
