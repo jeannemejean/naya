@@ -416,8 +416,15 @@ describe("parseVerdictLot — lire le verdict du modèle pour un LOT de couples"
     expect(parseVerdictLot("", idsNouveaux, idsVoisins)).toEqual([]);
   });
 
-  it("rend [] si le champ \"collisions\" n'est pas un tableau", () => {
+  it("rend [] si le champ \"collisions\" n'est pas un tableau (ni une chaîne, ni null)", () => {
     expect(parseVerdictLot(JSON.stringify({ collisions: "pas un tableau" }), idsNouveaux, idsVoisins)).toEqual([]);
+    // `null` est le cas qui mord vraiment : une CHAÎNE est itérable caractère par
+    // caractère dans un `for...of`, donc retombe sur `[]` même SANS le garde
+    // `Array.isArray` (chaque caractère n'a pas de `nouveauId`/`contenuId`, donc est
+    // ignoré — le test passerait par accident). `null` n'est PAS itérable : sans le
+    // garde, `for (const item of o.collisions)` lève une `TypeError` au lieu de rendre
+    // `[]`. C'est ce second cas qui prouve que le garde existe et fait son travail.
+    expect(parseVerdictLot(JSON.stringify({ collisions: null }), idsNouveaux, idsVoisins)).toEqual([]);
   });
 
   it("un couple dont l'un des deux identifiants est inventé est écarté EN ENTIER — la tolérance de ponctuation ne remplace pas la vérification d'existence", () => {
