@@ -179,6 +179,13 @@ describe("importerTexte", () => {
       expect(ligne.status).toBe("draft");
       expect(ligne.contentStatus).toBe("idea");
     }
+    // title et body bien mappés chacun sur son propre champ (titre → title, corps →
+    // body) : les intervertir laisserait passer ce test si seuls projectId/status/
+    // contentStatus étaient vérifiés.
+    expect(lignes[0].title).toBe("Premier post");
+    expect(lignes[0].body).toBe("Corps par défaut, assez long pour ressembler à un vrai post collé ici.");
+    expect(lignes[1].title).toBe("Second post");
+    expect(lignes[1].body).toBe("Corps par défaut, assez long pour ressembler à un vrai post collé ici.");
   });
 
   it("cas 2 — un post sans plateforme reçoit la plateforme majoritaire de la marque, et deducedFields contient platform", async () => {
@@ -318,12 +325,18 @@ describe("importerTexte", () => {
       reponseModele([posteModele({ titre: "Post transactionnel" })]),
     );
     hoisted.resultats = [[], []];
-    hoisted.resultatsTransaction = [[{ id: 1, title: "Post transactionnel", scheduledFor: null }]];
+    // Capturé avant l'appel : `resultatsTransaction` est consommé par `.shift()`.
+    const lignesRendues = [{ id: 1, title: "Post transactionnel", scheduledFor: null }];
+    hoisted.resultatsTransaction = [lignesRendues];
 
-    await importerTexte(INPUT);
+    const r = await importerTexte(INPUT);
 
     expect(hoisted.transactionAppelee).toBe(true);
     expect(hoisted.tablesInserees[0]).toBe(content);
+    // Ce que rend `importerTexte` est bien ce que la transaction a rendu — sans cette
+    // assertion, ce test ne verrait pas un retour de transaction ignoré ; il ne dépend
+    // plus des cas 1/9a/9b pour le garantir.
+    expect(r.posts).toEqual(lignesRendues);
   });
 
   it("cas 11 — une marque sans aucun contenu existant donne linkedin comme plateforme par défaut", async () => {
