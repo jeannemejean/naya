@@ -77,6 +77,9 @@ const {
   FENETRE_JOURS,
   MAX_CONTENUS_COMPARES,
   LONGUEUR_MAX_TITRE,
+  parseVerdictLot,
+  detecterCollisionLot,
+  PLAFOND_POSTS_LOT,
 } = await import("./collision");
 
 const dialecte = new PgDialect();
@@ -367,5 +370,315 @@ describe("detecterCollision", () => {
     expect(promptEnvoye).not.toContain(titreEnorme);
     expect(promptEnvoye).toContain("X".repeat(LONGUEUR_MAX_TITRE));
     expect(promptEnvoye).not.toContain("X".repeat(LONGUEUR_MAX_TITRE + 1));
+  });
+});
+
+describe("parseVerdictLot — lire le verdict du modèle pour un LOT de couples", () => {
+  const idsNouveaux = new Set([410, 411, 412]);
+  const idsVoisins = new Set([900, 901]);
+
+  it("lit un tableau de collisions et rend les couples valides", () => {
+    const raw = JSON.stringify({
+      collisions: [
+        { nouveauId: 410, contenuId: 900, pourquoi: "même angle" },
+        { nouveauId: 412, contenuId: 901, pourquoi: "autre angle" },
+      ],
+    });
+    expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([
+      { nouveauId: 410, contenuId: 900, pourquoi: "même angle" },
+      { nouveauId: 412, contenuId: 901, pourquoi: "autre angle" },
+    ]);
+  });
+
+  it("écarte un couple dont nouveauId n'appartient pas aux nouveaux contenus envoyés", () => {
+    const raw = JSON.stringify({ collisions: [{ nouveauId: 999, contenuId: 900, pourquoi: "invente" }] });
+    expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([]);
+  });
+
+  it("écarte un couple dont contenuId n'appartient pas aux voisins réels", () => {
+    const raw = JSON.stringify({ collisions: [{ nouveauId: 410, contenuId: 999, pourquoi: "invente" }] });
+    expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([]);
+  });
+
+  it('tolère la ponctuation recopiée depuis la présentation, "[412]" est accepté comme 412', () => {
+    const raw = JSON.stringify({ collisions: [{ nouveauId: "[412]", contenuId: 900, pourquoi: "copie exacte" }] });
+    expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([
+      { nouveauId: 412, contenuId: 900, pourquoi: "copie exacte" },
+    ]);
+  });
+
+  it("rend [] pour un lot sans collision, et pour une sortie illisible, sans jeter", () => {
+    expect(parseVerdictLot(JSON.stringify({ collisions: [] }), idsNouveaux, idsVoisins)).toEqual([]);
+    expect(parseVerdictLot("je ne sais pas", idsNouveaux, idsVoisins)).toEqual([]);
+    expect(parseVerdictLot("", idsNouveaux, idsVoisins)).toEqual([]);
+  });
+
+  it("rend [] si le champ \"collisions\" n'est pas un tableau", () => {
+    expect(parseVerdictLot(JSON.stringify({ collisions: "pas un tableau" }), idsNouveaux, idsVoisins)).toEqual([]);
+  });
+
+  it("un couple dont l'un des deux identifiants est inventé est écarté EN ENTIER — la tolérance de ponctuation ne remplace pas la vérification d'existence", () => {
+    const raw = JSON.stringify({
+      collisions: [
+        { nouveauId: 410, contenuId: 900, pourquoi: "valide" },
+        { nouveauId: 410, contenuId: 999, pourquoi: "contenuId inventé" },
+        { nouveauId: 999, contenuId: 900, pourquoi: "nouveauId inventé" },
+      ],
+    });
+    expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([
+      { nouveauId: 410, contenuId: 900, pourquoi: "valide" },
+    ]);
+  });
+});
+
+describe("detecterCollisionLot", () => {
+  const POSTS = [
+    {
+      id: 410,
+      titre: "On lance la méthode",
+      corps: "Le premier contenu du lot qu'on programme.",
+      quand: new Date("2026-10-06T10:00:00.000Z"),
+    },
+    {
+      id: 411,
+      titre: "Un deuxième post du lot",
+      corps: "Le second contenu du lot qu'on programme.",
+      quand: new Date("2026-10-08T10:00:00.000Z"),
+    },
+  ];
+
+  const ENTREE_LOT = { userId: "user-1", projectId: 7, posts: POSTS };
+
+  const LIEN = {
+    id: 1,
+    userId: "user-1",
+    fromProjectId: 7,
+    toProjectId: 9,
+    audiencesRecoupent: true,
+  };
+
+  function voisin(over: Record<string, unknown> = {}) {
+    return {
+      id: 900,
+      title: "On ouvre les portes",
+      body: "Le contenu déjà programmé sur la marque liée.",
+      projectId: 9,
+      scheduledFor: new Date("2026-10-07T09:00:00.000Z"),
+      ...over,
+    };
+  }
+
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let infoSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    hoisted.resultats = [];
+    hoisted.selects = [];
+    hoisted.froms = [];
+    hoisted.wheres = [];
+    hoisted.orderBys = [];
+    hoisted.limits = [];
+    vi.clearAllMocks();
+    // Restaurés dans afterEach — même piège que pour `detecterCollision` : un spy qui
+    // fuit d'un test à l'autre produit des échecs trompeurs qui accusent le code à tort.
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+
+  it("règle 1 — sans aucun lien aux audiences recoupées, rend [] SANS interroger content ni le modèle", async () => {
+    hoisted.resultats = [[]]; // la requête projectLinks ne rend rien
+
+    const r = await detecterCollisionLot(ENTREE_LOT);
+
+    expect(r).toEqual([]);
+    expect(hoisted.froms).toEqual([projectLinks]);
+    expect(hoisted.froms).not.toContain(content);
+    expect(claude.callClaude).not.toHaveBeenCalled();
+  });
+
+  it("un lot vide rend [] sans interroger quoi que ce soit", async () => {
+    const r = await detecterCollisionLot({ userId: "user-1", projectId: 7, posts: [] });
+
+    expect(r).toEqual([]);
+    expect(hoisted.froms).toEqual([]);
+    expect(claude.callClaude).not.toHaveBeenCalled();
+  });
+
+  it("sans contenu déjà programmé dans la fenêtre sur la marque liée, rend [] sans appeler le modèle", async () => {
+    hoisted.resultats = [[LIEN], []]; // liens, puis aucun contenu voisin
+
+    const r = await detecterCollisionLot(ENTREE_LOT);
+
+    expect(r).toEqual([]);
+    expect(claude.callClaude).not.toHaveBeenCalled();
+  });
+
+  it("la fenêtre de comparaison couvre l'AMPLITUDE du lot entier, pas la date d'un seul post", async () => {
+    hoisted.resultats = [[LIEN], []];
+
+    await detecterCollisionLot(ENTREE_LOT);
+
+    // POSTS[0] est le plus ancien, POSTS[1] le plus récent : la fenêtre doit encadrer
+    // les DEUX bornes du lot, chacune élargie de FENETRE_JOURS.
+    const attenduDebut = new Date(POSTS[0].quand.getTime() - FENETRE_JOURS * 24 * 3600 * 1000);
+    const attenduFin = new Date(POSTS[1].quand.getTime() + FENETRE_JOURS * 24 * 3600 * 1000);
+    const requeteContent = enSql(hoisted.wheres[1]);
+    expect(requeteContent.params).toContainEqual(attenduDebut.toISOString());
+    expect(requeteContent.params).toContainEqual(attenduFin.toISOString());
+  });
+
+  it("au-delà de PLAFOND_POSTS_LOT, les posts envoyés au modèle sont bornés et le journal dit le nombre RÉEL écarté", async () => {
+    const nombreTotal = PLAFOND_POSTS_LOT + 3;
+    const beaucoupDePosts = Array.from({ length: nombreTotal }, (_, i) => ({
+      id: 500 + i,
+      titre: `Post ${i}`,
+      corps: `Corps ${i}`,
+      quand: new Date(Date.now() + i * 1000),
+    }));
+    hoisted.resultats = [[LIEN], [voisin()]];
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ collisions: [] }));
+
+    await detecterCollisionLot({ userId: "user-1", projectId: 7, posts: beaucoupDePosts });
+
+    const appel = (claude.callClaude as any).mock.calls[0][0];
+    const promptEnvoye: string = appel.messages[0].content;
+    for (let i = 0; i < PLAFOND_POSTS_LOT; i++) {
+      expect(promptEnvoye).toContain(`Nouveau contenu : ${500 + i}`);
+    }
+    for (let i = PLAFOND_POSTS_LOT; i < nombreTotal; i++) {
+      expect(promptEnvoye).not.toContain(`Nouveau contenu : ${500 + i}`);
+    }
+
+    const appelsPlafond = infoSpy.mock.calls.filter(([msg]) => /écarté/i.test(String(msg)));
+    expect(appelsPlafond).toHaveLength(1);
+    // Le compte est RÉEL (3), pas une approximation — `beaucoupDePosts` est un tableau
+    // en mémoire dont la longueur exacte est connue, contrairement à une requête
+    // bornée par un simple LIMIT.
+    expect(appelsPlafond[0][0]).toContain(`${nombreTotal - PLAFOND_POSTS_LOT} post(s) écarté(s)`);
+  });
+
+  it("un couple dont le nouveauId appartient à un post ÉCARTÉ par le plafond (jamais envoyé) est rejeté", async () => {
+    const nombreTotal = PLAFOND_POSTS_LOT + 1;
+    const beaucoupDePosts = Array.from({ length: nombreTotal }, (_, i) => ({
+      id: 500 + i,
+      titre: `Post ${i}`,
+      corps: `Corps ${i}`,
+      quand: new Date(Date.now() + i * 1000),
+    }));
+    const idEcarte = 500 + PLAFOND_POSTS_LOT; // le dernier, au-delà du plafond
+    hoisted.resultats = [[LIEN], [voisin({ id: 900 })]];
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+      collisions: [{ nouveauId: idEcarte, contenuId: 900, pourquoi: "invente un post jamais envoyé" }],
+    }));
+
+    const r = await detecterCollisionLot({ userId: "user-1", projectId: 7, posts: beaucoupDePosts });
+
+    expect(r).toEqual([]);
+  });
+
+  it("règle 2 — best-effort absolu : une base qui tombe en panne rend [] et journalise, sans jeter", async () => {
+    hoisted.resultats = [new Error("connexion perdue")];
+
+    await expect(detecterCollisionLot(ENTREE_LOT)).resolves.toEqual([]);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("détection de collision en lot échouée"),
+      expect.anything(),
+    );
+  });
+
+  it("règle 2 — best-effort absolu : un appel au modèle qui échoue rend [] et journalise, sans jeter", async () => {
+    hoisted.resultats = [[LIEN], [voisin()]];
+    (claude.callClaude as any).mockRejectedValue(new Error("délai dépassé"));
+
+    await expect(detecterCollisionLot(ENTREE_LOT)).resolves.toEqual([]);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it("une réponse du modèle illisible rend [] sans jeter", async () => {
+    hoisted.resultats = [[LIEN], [voisin()]];
+    (claude.callClaude as any).mockResolvedValue("je ne sais pas");
+
+    await expect(detecterCollisionLot(ENTREE_LOT)).resolves.toEqual([]);
+  });
+
+  it("collision confirmée sur un couple réel → rend le CollisionLot complet, avec les VRAIS identifiants des deux côtés", async () => {
+    hoisted.resultats = [
+      [LIEN],
+      [voisin({ id: 900, projectId: 9, scheduledFor: new Date("2026-10-07T09:00:00.000Z") })],
+      [{ id: 9, name: "Marque B" }],
+    ];
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+      collisions: [{ nouveauId: 411, contenuId: 900, pourquoi: "les deux annoncent la méthode" }],
+    }));
+
+    const r = await detecterCollisionLot(ENTREE_LOT);
+
+    expect(r).toEqual([{
+      nouveauId: 411,
+      contenuId: 900,
+      marque: "Marque B",
+      scheduledFor: new Date("2026-10-07T09:00:00.000Z"),
+      pourquoi: "les deux annoncent la méthode",
+    }]);
+  });
+
+  it("plusieurs collisions dans le même lot sont toutes rendues, chacune avec ses propres identifiants réels", async () => {
+    hoisted.resultats = [
+      [LIEN],
+      [
+        voisin({ id: 900, projectId: 9, scheduledFor: new Date("2026-10-05T09:00:00.000Z") }),
+        voisin({ id: 901, title: "La formation ouvre ses portes", projectId: 9, scheduledFor: new Date("2026-10-09T09:00:00.000Z") }),
+      ],
+      [{ id: 9, name: "Marque B" }],
+    ];
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+      collisions: [
+        { nouveauId: 410, contenuId: 900, pourquoi: "même angle, premier couple" },
+        { nouveauId: 411, contenuId: 901, pourquoi: "même angle, second couple" },
+      ],
+    }));
+
+    const r = await detecterCollisionLot(ENTREE_LOT);
+
+    expect(r).toEqual([
+      {
+        nouveauId: 410, contenuId: 900, marque: "Marque B",
+        scheduledFor: new Date("2026-10-05T09:00:00.000Z"),
+        pourquoi: "même angle, premier couple",
+      },
+      {
+        nouveauId: 411, contenuId: 901, marque: "Marque B",
+        scheduledFor: new Date("2026-10-09T09:00:00.000Z"),
+        pourquoi: "même angle, second couple",
+      },
+    ]);
+  });
+
+  it("marque introuvable (cas limite) → rend quand même l'alerte, avec un nom générique plutôt que de la perdre", async () => {
+    hoisted.resultats = [[LIEN], [voisin({ id: 900 })], []]; // projects ne rend rien
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+      collisions: [{ nouveauId: 410, contenuId: 900, pourquoi: "r" }],
+    }));
+
+    const r = await detecterCollisionLot(ENTREE_LOT);
+
+    expect(r[0]?.marque).toBe("une marque liée");
+  });
+
+  it("aucun couple valide dans le verdict → rend [] sans interroger projects pour le nom de la marque", async () => {
+    hoisted.resultats = [[LIEN], [voisin({ id: 900 })]];
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({
+      collisions: [{ nouveauId: 999, contenuId: 900, pourquoi: "nouveauId inventé" }],
+    }));
+
+    const r = await detecterCollisionLot(ENTREE_LOT);
+
+    expect(r).toEqual([]);
+    expect(hoisted.froms).not.toContain(projects);
   });
 });
