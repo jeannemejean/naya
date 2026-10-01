@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { fetchJson } from '@/lib/fetchJson';
+import { tenterUneFois } from '@/lib/one-shot-guard';
 import { useTranslation } from 'react-i18next';
 import { throwApiError, translateError } from '@/lib/api-error';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
@@ -667,7 +668,20 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  createContentMutation.mutate(formData);
  };
 
- const handleCreateAndPublish = async () => {
+ // Garde contre le double clic : handleCreateAndPublish ne passe par AUCUNE des deux
+ // mutations existantes pour sa création (fetch brut), donc ni createContentMutation.isPending
+ // ni publishContentMutation.isPending ne couvrent cette phase — le bouton restait cliquable
+ // pendant elle. Deux clics rapprochés lançaient deux créations concurrentes qui écrivaient
+ // toutes deux dans collisionEnAttentePublication (un seul emplacement) : la seconde pouvait
+ // écraser la première avant que son onSuccess ne l'ait lue, associant la collision du premier
+ // contenu à la notification du second, ou la perdant. `creationEtPublicationVerrou` (une ref,
+ // voir `@/lib/one-shot-guard`, testé isolément) ferme la fenêtre ; `creationEtPublicationEnCours`
+ // (un state) ne sert qu'à désactiver visuellement le bouton pendant ce temps.
+ const creationEtPublicationVerrou = useRef(false);
+ const [creationEtPublicationEnCours, setCreationEtPublicationEnCours] = useState(false);
+
+ const handleCreateAndPublish = () => {
+ const tache = tenterUneFois(creationEtPublicationVerrou, async () => {
  try {
  const response = await fetch('/api/content', {
  method: 'POST',
@@ -690,6 +704,13 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  resetForm();
  } catch {
  toast({ title: t('contentCalendar.failedToCreateAndPublish'), variant: 'destructive' });
+ }
+ });
+ // `tache` est `null` quand un passage est déjà en cours (verrou déjà posé) : second clic
+ // ignoré silencieusement, rien de plus à faire — le premier passage est seul maître.
+ if (tache) {
+ setCreationEtPublicationEnCours(true);
+ tache.finally(() => setCreationEtPublicationEnCours(false));
  }
  };
 
@@ -1282,7 +1303,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </Button>
  <Button
  onClick={handleCreateAndPublish}
- disabled={createContentMutation.isPending || publishContentMutation.isPending}
+ disabled={createContentMutation.isPending || publishContentMutation.isPending || creationEtPublicationEnCours}
  className="bg-naya-olive hover:opacity-90"
  >
  {publishContentMutation.isPending ? t('contentCalendar.publishing') : t('contentCalendar.publishNow')}
