@@ -126,6 +126,13 @@ describe("resoudreDate", () => {
     expect(resoudreDate("2026-13-01", aujourdhui)).toBeNull();
   });
 
+  it("vérifie un vrai calendrier, années bissextiles comprises", () => {
+    // 2028 est bissextile, 2027 ne l'est pas. Ce couple prouve que le garde consulte un
+    // calendrier réel et ne se contente pas de borner les composants.
+    expect(resoudreDate("2028-02-29", new Date("2027-06-01T00:00:00"))).toBeInstanceOf(Date);
+    expect(resoudreDate("2027-02-29", new Date("2027-01-01T00:00:00"))).toBeNull();
+  });
+
   it("rend null sur une date hors des bornes plausibles", () => {
     expect(resoudreDate("1970-01-01", aujourdhui)).toBeNull();
     expect(resoudreDate("2199-01-01", aujourdhui)).toBeNull();
@@ -340,12 +347,18 @@ export function parsePostsExtraits(raw: string): PostExtrait[] | null {
  */
 export function resoudreDate(brut: string | null, aujourdhui: Date): Date | null {
   if (!brut || !/^\d{4}-\d{2}-\d{2}$/.test(brut)) return null;
-  const d = new Date(`${brut}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
+  const [annee, mois, jour] = brut.split("-").map(Number);
+  const d = new Date(annee, mois - 1, jour);
   // Un mois ou un jour hors bornes se « reporte » silencieusement en JavaScript
-  // (2026-02-30 devient le 2 mars) : on recompare la date obtenue à la chaîne reçue
+  // (2026-02-30 devient le 2 mars) : on recompare les composants OBTENUS à ceux reçus
   // pour rejeter ce report au lieu de l'accepter comme une date valide.
-  if (d.toISOString().slice(0, 10) !== brut) return null;
+  //
+  // La comparaison se fait sur les composants LOCAUX, jamais via `toISOString()` :
+  // vérifié, à Paris (UTC+2) `new Date("2026-10-06T00:00:00").toISOString()` rend
+  // "2026-10-05" — un garde écrit sur l'ISO rejetterait TOUTES les dates valides du
+  // fuseau. Le minuit local est aussi ce que veut `scheduledFor`, et c'est le motif
+  // déjà utilisé dans `server/routes.ts` pour les dates de campagne.
+  if (d.getFullYear() !== annee || d.getMonth() !== mois - 1 || d.getDate() !== jour) return null;
   const minimum = aujourdhui.getTime() - JOURS_PASSE_TOLERES * 86400000;
   const maximum = aujourdhui.getTime() + JOURS_FUTUR_TOLERES * 86400000;
   if (d.getTime() < minimum || d.getTime() > maximum) return null;
@@ -431,7 +444,7 @@ Attendu : tous verts.
 
 - [ ] **Step 5 : vérifier la mutation d'un test au moins**
 
-Retirer la ligne `if (d.toISOString().slice(0, 10) !== brut) return null;` et relancer. Attendu : le test « rend null sur un jour qui n'existe pas » échoue, et lui seul. Remettre la ligne, relancer, puis `git diff` doit être vide avant le commit.
+Retirer la ligne de comparaison des composants (`if (d.getFullYear() !== annee || …) return null;`) et relancer. Attendu : le test « rend null sur un jour qui n'existe pas » échoue, et lui seul. Remettre la ligne, relancer, puis `git diff` doit être vide avant le commit.
 
 - [ ] **Step 6 : commit**
 
