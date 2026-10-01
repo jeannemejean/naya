@@ -619,12 +619,13 @@ export const content = pgTable("content", {
   videoMeta: jsonb("video_meta"),                        // { durationSec, width, height, thumbnailUrl }
   providerContainerId: text("provider_container_id"),    // conteneur média IG/FB / publish_id TikTok (async)
   lastError: text("last_error"),                         // dernier message d'échec de publication
-  // ── Routage depuis une tâche (lot D) ───────────────────────────────────────
+  // ── Routage depuis une tâche (lot D), et import d'un texte collé ───────────
   //
-  // Noms des champs que NAYA A DÉDUITS au lieu de les recevoir de l'utilisatrice, quand un
-  // contenu est créé depuis l'espace de travail d'une tâche. Par exemple
-  // ["platform", "pillar"] : la plateforme et le pilier ont été devinés, le titre et le
-  // corps viennent du texte écrit.
+  // Noms des champs que NAYA A DÉDUITS au lieu de les recevoir de l'utilisatrice, quelle
+  // que soit l'origine du contenu. Par exemple ["platform", "pillar"] : la plateforme et
+  // le pilier ont été devinés, le titre et le corps viennent du texte écrit. Origines
+  // actuelles : le routage depuis l'espace de travail d'une tâche, et l'import d'un
+  // texte libre collé par l'utilisatrice (calendrier de contenu écrit ailleurs).
   //
   // Trois états DISTINCTS, et la distinction est le point :
   //   null  → question sans objet. Contenu créé autrement que par le routage d'une tâche,
