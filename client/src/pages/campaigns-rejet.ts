@@ -23,12 +23,24 @@ export interface ApercuRejet {
   tachesGardees: number;
   tachesPartantes: number;
   articulationsRompues: ArticulationRompue[];
+  /** Campagnes de prospection emportées par ce rejet (volet serveur de ce chantier) —
+   *  leur mécanique de séquence s'arrête. Les prospects eux-mêmes ne disparaissent pas,
+   *  voir `prospectsAArchiver`. */
+  prospectionLiee: ProspectionLiee[];
+  /** Nombre de prospects ARCHIVÉS par ce rejet, jamais supprimés — réversible. Un total à
+   *  travers toutes les `prospectionLiee`, pas une décomposition par campagne. */
+  prospectsAArchiver: number;
 }
 
 export interface ArticulationRompue {
   campagneId: number;
   campagneNom: string;
   marque: string;
+}
+
+export interface ProspectionLiee {
+  id: number;
+  name: string;
 }
 
 /** Forme du 200 de `POST /api/campaigns/:id/reject`. */
@@ -154,6 +166,46 @@ function ligneArticulation(a: ArticulationRompue): string {
   return `La campagne « ${a.campagneNom.trim()} »${sur} est articulée avec celle-ci — en la rejetant, cette articulation disparaît.`;
 }
 
+// ─── Prospection liée ───────────────────────────────────────────────────────────────
+//
+// Le volet serveur de ce chantier a rétabli la cascade : rejeter une campagne marketing
+// emporte sa ou ses campagnes de prospection liées. Les prospects ne sont PAS supprimés —
+// ils sont ARCHIVÉS, un état réversible — seule la mécanique de séquence part avec la
+// campagne de prospection. Les deux mots comptent : ne jamais écrire « supprimés » pour
+// les prospects, ce serait un énoncé faux, précisément le genre que ce chantier traque.
+
+function ligneProspection(p: ProspectionLiee): string {
+  const nom = p.name.trim();
+  return `La campagne de prospection « ${nom} » liée à celle-ci sera elle aussi rejetée : sa mécanique de séquence s'arrête.`;
+}
+
+/** Une ligne par campagne de prospection liée, plafonnée comme les articulations
+ *  (`PLAFOND_LIGNES_ARTICULATION`) — même motif, même plafond : au-delà, une ligne de
+ *  compte réel restant, jamais le silence sur ce qui dépasse. */
+function lignesProspection(prospectionLiee: ProspectionLiee[]): string[] {
+  const lignes: string[] = [];
+  const affichees = prospectionLiee.slice(0, PLAFOND_LIGNES_ARTICULATION);
+  for (const p of affichees) lignes.push(ligneProspection(p));
+
+  const restant = prospectionLiee.length - affichees.length;
+  if (restant > 0) {
+    lignes.push(
+      `Et ${restant} ${accorder(restant, "autre campagne de prospection liée", "autres campagnes de prospection liées")} à celle-ci.`,
+    );
+  }
+  return lignes;
+}
+
+/** Les prospects des campagnes de prospection emportées : ARCHIVÉS, jamais supprimés —
+ *  c'est le mot qui doit apparaître ici, pas un synonyme qui suggérerait une perte
+ *  définitive. `null` si aucun prospect n'est concerné (aucune ligne à zéro). */
+function ligneProspectsArchives(prospectsAArchiver: number): string | null {
+  const clause = clauseNombre(prospectsAArchiver, "prospect", "prospects");
+  if (!clause) return null;
+  const verbe = prospectsAArchiver === 1 ? "sera archivé." : "seront archivés.";
+  return `${clause} ${verbe}`;
+}
+
 /**
  * Construit le texte de la confirmation de rejet, une ligne par fait, dans l'ordre
  * d'affichage. AUCUNE ligne à zéro : un fait dont le compte est nul n'est pas un fait
@@ -189,6 +241,11 @@ export function construireTexteConfirmation(apercu: ApercuRejet): string[] {
       `Et ${restant} ${accorder(restant, "autre campagne articulée", "autres campagnes articulées")} avec celle-ci.`,
     );
   }
+
+  for (const ligne of lignesProspection(apercu.prospectionLiee)) lignes.push(ligne);
+
+  const archives = ligneProspectsArchives(apercu.prospectsAArchiver);
+  if (archives) lignes.push(archives);
 
   return lignes;
 }

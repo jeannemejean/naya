@@ -16,6 +16,8 @@ function apercu(partial: Partial<ApercuRejet>): ApercuRejet {
     tachesGardees: 0,
     tachesPartantes: 0,
     articulationsRompues: [],
+    prospectionLiee: [],
+    prospectsAArchiver: 0,
     ...partial,
   };
 }
@@ -160,6 +162,98 @@ describe("construireTexteConfirmation — articulations rompues", () => {
     );
     expect(lignes).toEqual([
       "La campagne « Solo » est articulée avec celle-ci — en la rejetant, cette articulation disparaît.",
+    ]);
+  });
+});
+
+describe("construireTexteConfirmation — prospection liée (volet serveur : la cascade)", () => {
+  const prospection = (i: number) => ({ id: i, name: `Prospection ${i}` });
+
+  it("aucune ligne quand il n'y a aucune prospection liée ni prospect à archiver", () => {
+    const lignes = construireTexteConfirmation(apercu({ contenusGardes: 1 }));
+    expect(lignes.some((l) => l.includes("prospection") || l.includes("archiv"))).toBe(false);
+  });
+
+  it("une ligne par campagne de prospection liée, « archivés » et jamais « supprimés » pour les prospects", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({ prospectionLiee: [prospection(1)], prospectsAArchiver: 7 }),
+    );
+    expect(lignes).toEqual([
+      "La campagne de prospection « Prospection 1 » liée à celle-ci sera elle aussi rejetée : sa mécanique de séquence s'arrête.",
+      "7 prospects seront archivés.",
+    ]);
+  });
+
+  it("accord singulier pour un seul prospect archivé", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({ prospectionLiee: [prospection(1)], prospectsAArchiver: 1 }),
+    );
+    expect(lignes).toEqual([
+      "La campagne de prospection « Prospection 1 » liée à celle-ci sera elle aussi rejetée : sa mécanique de séquence s'arrête.",
+      "1 prospect sera archivé.",
+    ]);
+  });
+
+  it("ne mentionne jamais « supprimé » pour les prospects, quel que soit le nombre", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({ prospectionLiee: [prospection(1)], prospectsAArchiver: 12 }),
+    );
+    expect(lignes.join("\n")).not.toMatch(/supprim/);
+  });
+
+  it("omet la ligne des prospects archivés quand le compte est à zéro, même avec une prospection liée", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({ prospectionLiee: [prospection(1)], prospectsAArchiver: 0 }),
+    );
+    expect(lignes.join("\n")).not.toMatch(/archiv/);
+  });
+
+  it("une ligne par prospection jusqu'à trois, sans ligne de compte restant", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({ prospectionLiee: [prospection(1), prospection(2), prospection(3)] }),
+    );
+    expect(lignes).toEqual([
+      "La campagne de prospection « Prospection 1 » liée à celle-ci sera elle aussi rejetée : sa mécanique de séquence s'arrête.",
+      "La campagne de prospection « Prospection 2 » liée à celle-ci sera elle aussi rejetée : sa mécanique de séquence s'arrête.",
+      "La campagne de prospection « Prospection 3 » liée à celle-ci sera elle aussi rejetée : sa mécanique de séquence s'arrête.",
+    ]);
+  });
+
+  it("plafonne à trois lignes détaillées et ajoute le compte réel restant (singulier)", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({ prospectionLiee: [prospection(1), prospection(2), prospection(3), prospection(4)] }),
+    );
+    expect(lignes).toHaveLength(4);
+    expect(lignes[3]).toBe("Et 1 autre campagne de prospection liée à celle-ci.");
+  });
+
+  it("plafonne à trois lignes détaillées et ajoute le compte réel restant (pluriel)", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({
+        prospectionLiee: [
+          prospection(1),
+          prospection(2),
+          prospection(3),
+          prospection(4),
+          prospection(5),
+        ],
+      }),
+    );
+    expect(lignes[3]).toBe("Et 2 autres campagnes de prospection liées à celle-ci.");
+  });
+
+  it("les lignes de prospection viennent après celles des articulations, dans l'ordre d'affichage", () => {
+    const lignes = construireTexteConfirmation(
+      apercu({
+        articulationsRompues: [{ campagneId: 1, campagneNom: "Marketing liée", marque: "Marque" }],
+        prospectionLiee: [prospection(1)],
+        prospectsAArchiver: 2,
+      }),
+    );
+    expect(lignes).toEqual([
+      "La campagne « Marketing liée » sur Marque est articulée avec celle-ci — en la rejetant, cette articulation disparaît.",
+      "La campagne de prospection « Prospection 1 » liée à celle-ci sera elle aussi rejetée : sa mécanique de séquence s'arrête.",
+      "2 prospects seront archivés.",
     ]);
   });
 });
