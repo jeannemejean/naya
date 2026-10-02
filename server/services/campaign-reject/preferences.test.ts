@@ -244,6 +244,19 @@ describe("formaterPreferences — PURE, n'expose que content", () => {
     expect(lignesRendues).toContain("- B.");
   });
 
+  it("verrouille la DIRECTION : l'en-tête annonce lui-même que ce qui suit est à ÉVITER, indépendamment du phrasé du contenu", () => {
+    // `content` ici ne porte AUCUN marqueur de rejet ("Ce qui n'allait pas…") — une
+    // phrase nue, comme arriverait une préférence saisie à la main ou importée. Si la
+    // direction ne tenait qu'au phrasé habituel de `construirePreference` (rejeter.ts),
+    // ce cas la perdrait : le modèle lirait "ton plus corporate" comme une consigne à
+    // suivre, l'inverse exact de l'intention. Ce test tombe si l'en-tête redevient
+    // neutre (ex. "PRÉFÉRENCES EXPRIMÉES PAR L'UTILISATRICE SUR CETTE MARQUE").
+    const sortie = formaterPreferences([ligne({ content: "ton plus corporate" })]);
+    const premiereLigne = sortie.split("\n")[0];
+    expect(premiereLigne).toContain("À ÉVITER");
+    expect(premiereLigne).not.toBe("PRÉFÉRENCES EXPRIMÉES PAR L'UTILISATRICE SUR CETTE MARQUE");
+  });
+
   it("ne s'étale jamais et ne sérialise jamais tout l'objet : un champ ajouté demain à Preference ne peut pas fuiter", () => {
     // Un objet dont content est une propriété normale, mais qui porte aussi un champ
     // qu'on n'a jamais voulu envoyer. formaterPreferences n'y accède que par nom :

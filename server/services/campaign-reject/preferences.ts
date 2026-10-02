@@ -90,13 +90,27 @@ export async function preferencesDeLaMarque(userId: string, projectId: number): 
  * qu'on n'a pas voulu envoyer : ni identifiant, ni salience, ni date de création ne
  * peuvent se retrouver dans la sortie, même si `Preference` gagnait un champ demain.
  *
+ * L'EN-TÊTE PORTE LA DIRECTION LUI-MÊME ("à éviter"), PAS LE CONTENU — c'est
+ * délibéré. Aujourd'hui, `content` ne vient que de `construirePreference`
+ * (`rejeter.ts`), qui termine toujours par « Ce qui n'allait pas, dans les mots de
+ * l'utilisatrice : … » : la direction est donc *actuellement* portée par la phrase,
+ * pas par ce module. Mais `preferencesDeLaMarque` lit `memory_entries` sans savoir
+ * qui a écrit la ligne : une préférence saisie à la main, importée, ou écrite par un
+ * autre chantier demain pourrait arriver comme une phrase nue ("ton plus corporate"),
+ * sans cette formule. Sous un en-tête neutre, le modèle la lirait comme une consigne
+ * à SUIVRE — l'inverse exact de ce que la fonctionnalité existe pour garantir. En
+ * portant la direction dans l'en-tête, ce module reste correct même si son unique
+ * producteur actuel change de phrasé. Ne raccourcis pas cet en-tête à un simple
+ * titre neutre en le jugeant verbeux : c'est précisément la garantie qu'il porte.
+ *
  * Rend une chaîne vide sans préférences, pour que l'appelant n'injecte alors rien
  * (motif `articulation` : `request.preferences?.length ? ... : ''`).
  */
 export function formaterPreferences(ps: Preference[]): string {
   if (ps.length === 0) return "";
   const lignes: string[] = [
-    "PRÉFÉRENCES EXPRIMÉES PAR L'UTILISATRICE SUR CETTE MARQUE",
+    "PRÉFÉRENCES DE CETTE MARQUE — À ÉVITER, PAS À REPRODUIRE",
+    "Ce qui suit a été explicitement rejeté par l'utilisatrice pour cette marque : ne le reproduis pas, ne t'en inspire pas.",
     ...ps.map((p) => `- ${p.content}`),
   ];
   return lignes.join("\n");
