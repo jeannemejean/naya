@@ -461,4 +461,33 @@ describe("Les préférences de la marque atteignent la génération de campagne 
     const requeteEnvoyee = hoisted.generateCampaignStrategy.mock.calls[0][0];
     expect(requeteEnvoyee.preferences).toEqual([]);
   });
+
+  // DÉCISION DÉLIBÉRÉE, pas un oubli : `resolvePreferences` (routes.ts) n'a
+  // AUCUN try/catch. Si la lecture des préférences échoue (panne base,
+  // timeout...), toute la génération échoue en 500 — elle ne continue JAMAIS
+  // silencieusement sans elles.
+  //
+  // L'alternative (avaler l'erreur, générer quand même) semblerait plus
+  // tolérante, mais serait en réalité plus dangereuse : une génération qui
+  // continue sans les préférences après une panne pourrait reproduire EXACTEMENT
+  // ce que l'utilisatrice a rejeté, sans aucun signal pour elle ni pour nous.
+  // Échouer franc vaut mieux qu'échouer en silence sur CE chemin précis.
+  //
+  // Si quelqu'un ajoute un try/catch autour de `resolvePreferences` en le jugeant
+  // fragile, ce test tombe — c'est voulu : il protège la décision, pas juste le
+  // code actuel.
+  it("GARANTIE DÉLIBÉRÉE — si preferencesDeLaMarque lève, la génération échoue en 500, jamais une génération silencieuse sans préférences", async () => {
+    hoisted.preferencesDeLaMarque.mockRejectedValue(new Error("panne base simulée"));
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/strategy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objective: "Vendre plus", duration: "1_month", projectId: 1 }),
+    });
+
+    expect(res.status).toBe(500);
+    // Pas de génération « de secours » sans préférences : le modèle n'est jamais
+    // appelé quand leur lecture a échoué.
+    expect(hoisted.generateCampaignStrategy).not.toHaveBeenCalled();
+  });
 });
