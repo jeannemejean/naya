@@ -283,19 +283,28 @@ export async function rejeterCampagne(input: {
     }));
 
     // 1. Détacher les gardés.
+    //
+    // `eq(content.userId, userId)` / `eq(tasks.userId, userId)` : les identifiants
+    // viennent de lectures déjà filtrées par userId juste au-dessus (pas une fuite),
+    // mais c'est exactement l'exception relevée et fermée au round précédent pour la
+    // lecture des articulations (`userId` ajouté « par discipline », voir plus haut) —
+    // laissée ouverte ici (Mineur, revue finale du 2026-10-02). Défense en profondeur :
+    // chaque écriture porte sur SON PROPRE userId, jamais seulement sur l'id.
     if (triContenus.gardes.length > 0) {
-      await tx.update(content).set({ campaignId: null }).where(inArray(content.id, triContenus.gardes));
+      await tx.update(content).set({ campaignId: null })
+        .where(and(eq(content.userId, userId), inArray(content.id, triContenus.gardes)));
     }
     if (triTaches.gardes.length > 0) {
-      await tx.update(tasks).set({ campaignId: null }).where(inArray(tasks.id, triTaches.gardes));
+      await tx.update(tasks).set({ campaignId: null })
+        .where(and(eq(tasks.userId, userId), inArray(tasks.id, triTaches.gardes)));
     }
 
-    // 2. Supprimer les partants.
+    // 2. Supprimer les partants — même discipline.
     if (triContenus.partants.length > 0) {
-      await tx.delete(content).where(inArray(content.id, triContenus.partants));
+      await tx.delete(content).where(and(eq(content.userId, userId), inArray(content.id, triContenus.partants)));
     }
     if (triTaches.partants.length > 0) {
-      await tx.delete(tasks).where(inArray(tasks.id, triTaches.partants));
+      await tx.delete(tasks).where(and(eq(tasks.userId, userId), inArray(tasks.id, triTaches.partants)));
     }
 
     // 3. Écrire la préférence — jamais sans raison (Décision 4 du spec).

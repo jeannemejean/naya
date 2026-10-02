@@ -703,6 +703,50 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     ]);
   });
 
+  // Mineur (revue finale du 2026-10-02) : les QUATRE écritures sur `content`/`tasks`
+  // (détacher les gardés, supprimer les partants) portaient sur `inArray(id, …)` SEUL
+  // — pas une fuite (les identifiants viennent de lectures déjà filtrées par userId
+  // juste au-dessus), mais exactement l'exception relevée et fermée au round
+  // précédent pour la lecture des articulations, laissée ouverte ici. Chaque clause
+  // doit porter sur SON PROPRE userId, en plus de l'id — défense en profondeur.
+  it("cas 12b — les QUATRE écritures sur content/tasks (détacher, supprimer) portent chacune aussi sur userId, pas seulement sur l'id", async () => {
+    hoisted.resultats = [
+      [CAMPAGNE_LIGNE],
+      [
+        { id: 600, publishedAt: new Date("2026-09-01"), postStatus: null, contentStatus: null }, // gardé
+        { id: 601, publishedAt: null, postStatus: "draft", contentStatus: "idea" },               // partant
+      ],
+      [
+        { id: 700, completed: true },  // gardée
+        { id: 701, completed: false }, // partante
+      ],
+    ];
+    hoisted.resultatsArticulations = [[]];
+
+    await rejeterCampagne(INPUT);
+
+    const detacheContenu = hoisted.updates.find((u) => u.table === content);
+    const detacheTache = hoisted.updates.find((u) => u.table === tasks);
+    const supprimeContenu = hoisted.deletes.find((d) => d.table === content);
+    const supprimeTache = hoisted.deletes.find((d) => d.table === tasks);
+
+    const clauseDetacheContenu = enSql(detacheContenu.where);
+    expect(clauseDetacheContenu.sql).toContain('"content"."user_id"');
+    expect(clauseDetacheContenu.params).toEqual(expect.arrayContaining([INPUT.userId, 600]));
+
+    const clauseDetacheTache = enSql(detacheTache.where);
+    expect(clauseDetacheTache.sql).toContain('"tasks"."user_id"');
+    expect(clauseDetacheTache.params).toEqual(expect.arrayContaining([INPUT.userId, 700]));
+
+    const clauseSupprimeContenu = enSql(supprimeContenu.where);
+    expect(clauseSupprimeContenu.sql).toContain('"content"."user_id"');
+    expect(clauseSupprimeContenu.params).toEqual(expect.arrayContaining([INPUT.userId, 601]));
+
+    const clauseSupprimeTache = enSql(supprimeTache.where);
+    expect(clauseSupprimeTache.sql).toContain('"tasks"."user_id"');
+    expect(clauseSupprimeTache.params).toEqual(expect.arrayContaining([INPUT.userId, 701]));
+  });
+
   it("cas 13 — une campagne qui n'appartient pas à l'utilisatrice n'est jamais touchée : la clause porte sur userId ET id", async () => {
     hoisted.resultats = [[CAMPAGNE_LIGNE], [], []];
     hoisted.resultatsArticulations = [[]];
