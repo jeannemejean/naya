@@ -3,6 +3,7 @@ import {
   construireTexteConfirmation,
   construireMessageSucces,
   texteAvertissementRaisonVide,
+  doitReinitialiserRaisonRejet,
   messageEchecRejet,
   messageEchecApercu,
   type ApercuRejet,
@@ -273,6 +274,28 @@ describe("texteAvertissementRaisonVide — Décision 4 du spec : jamais de demi-
 
   it("ne dit rien quand une raison a été saisie", () => {
     expect(texteAvertissementRaisonVide("le ton ne correspondait pas à la marque")).toBeNull();
+  });
+});
+
+describe("doitReinitialiserRaisonRejet — la raison appartient à LA campagne pour laquelle elle a été écrite", () => {
+  it("retry après échec sur la MÊME campagne : ne réinitialise pas (le texte doit survivre)", () => {
+    expect(doitReinitialiserRaisonRejet(42, 42)).toBe(false);
+  });
+
+  it("ouverture sur une campagne DIFFÉRENTE : réinitialise — jamais la phrase de Jeanne pré-remplie sur la campagne de l'Agence JMD", () => {
+    expect(doitReinitialiserRaisonRejet(1, 2)).toBe(true);
+  });
+
+  it("première ouverture jamais (aucune raison rattachée à une campagne) : réinitialise", () => {
+    expect(doitReinitialiserRaisonRejet(null, 7)).toBe(true);
+  });
+
+  it("deux ouvertures consécutives sans aucune campagne sélectionnée : ne réinitialise pas (rien à perdre)", () => {
+    expect(doitReinitialiserRaisonRejet(null, null)).toBe(false);
+  });
+
+  it("la campagne se désélectionne (cas dégénéré, sécurité) : réinitialise plutôt que de laisser une raison orpheline", () => {
+    expect(doitReinitialiserRaisonRejet(5, null)).toBe(true);
   });
 });
 

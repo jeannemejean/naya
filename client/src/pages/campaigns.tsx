@@ -28,6 +28,7 @@ import {
   construireTexteConfirmation,
   construireMessageSucces,
   texteAvertissementRaisonVide,
+  doitReinitialiserRaisonRejet,
   messageEchecRejet,
   messageEchecApercu,
   LIBELLE_BOUTON_REJETER,
@@ -815,6 +816,16 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  // sans détacher les posts/tâches déjà réels ni apprendre de la raison du rejet.
  const [rejetOuvert, setRejetOuvert] = useState(false);
  const [raisonRejet, setRaisonRejet] = useState("");
+ // Campagne à laquelle `raisonRejet` se rattache — PAS celle juste affichée à l'écran.
+ // La raison appartient à la campagne pour laquelle elle a été écrite, jamais à « la
+ // dernière campagne ouverte » : sans cette distinction, conserver la raison à travers un
+ // échec (correctif du commentaire de `ouvrirRejet`) la laisserait aussi traverser un
+ // changement de campagne — elle taperait une raison pour la campagne de Jeanne, annulerait,
+ // ouvrirait le rejet de la campagne de l'Agence JMD, et la retrouverait pré-remplie avec
+ // la phrase de Jeanne. Si elle ne le remarque pas et confirme, cette phrase devient une
+ // préférence PERMANENTE dans la mémoire de la MAUVAISE marque — une corruption silencieuse
+ // que rien ne signale jamais, pire que perdre un texte qu'elle devra retaper.
+ const [raisonPourCampagneId, setRaisonPourCampagneId] = useState<number | null>(null);
  // Verrou anti-double-clic : une `useRef`, pas un `useState` — voir le commentaire de
  // `tenterUneFois` (@/lib/one-shot-guard). Un double clic sur « Rejeter » enverrait deux
  // requêtes, et la seconde rendrait 404 sur une campagne déjà supprimée par la première.
@@ -869,6 +880,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
  setRejetOuvert(false);
  setRaisonRejet("");
+ setRaisonPourCampagneId(null);
  setSelectedCampaignId(null);
  setPanelState("empty");
  const lignes = construireMessageSucces(resultat, vars.raison.trim() !== "");
@@ -880,15 +892,27 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  toast({ title: TITRE_REJET_ECHEC, description: messageEchecRejet(error), variant: "destructive" }),
  });
 
- // `raisonRejet` n'est PLUS remise à zéro ici : `AlertDialogAction` (Radix) ferme le
- // dialogue au clic AVANT de connaître l'issue de la mutation (fermeture synchrone,
- // `onOpenChange(false)`) — si cette fonction l'effaçait à l'ouverture, un rejet en échec
- // (500) l'aurait déjà perdue au moment où le prochain clic sur « Rejeter la campagne »
- // rouvre le dialogue, l'obligeant à retaper un texte qu'elle a peut-être mis du temps à
- // formuler. Même précaution que `import-calendrier.tsx:148` (« ne jamais perdre un texte
- // qu'elle vient peut-être de coller »). La seule remise à zéro reste dans
- // `rejectMutation.onSuccess` : la raison ne disparaît que quand le rejet a RÉUSSI.
+ // `raisonRejet` n'est PLUS systématiquement remise à zéro ici : `AlertDialogAction`
+ // (Radix) ferme le dialogue au clic AVANT de connaître l'issue de la mutation (fermeture
+ // synchrone, `onOpenChange(false)`) — si cette fonction l'effaçait inconditionnellement à
+ // l'ouverture, un rejet en échec (500) l'aurait déjà perdue au moment où le prochain clic
+ // sur « Rejeter la campagne » rouvre le dialogue, l'obligeant à retaper un texte qu'elle a
+ // peut-être mis du temps à formuler. Même précaution que `import-calendrier.tsx:148`
+ // (« ne jamais perdre un texte qu'elle vient peut-être de coller »).
+ //
+ // MAIS la raison appartient à UNE campagne précise — `doitReinitialiserRaisonRejet`
+ // (module pur, testé) ne la conserve qu'à la réouverture sur CETTE MÊME campagne (retry
+ // après échec) ; dès que `selectedCampaignId` a changé depuis la dernière fois qu'une
+ // raison a été écrite, c'est une ouverture fraîche sur une AUTRE campagne — la raison
+ // précédente ne doit jamais s'y retrouver pré-remplie, sous peine de devenir, si elle
+ // confirme sans la relire, une préférence permanente écrite sur la mauvaise marque. La
+ // seule autre remise à zéro reste dans `rejectMutation.onSuccess` : la raison ne
+ // disparaît aussi que quand le rejet a RÉUSSI.
  const ouvrirRejet = () => {
+ if (doitReinitialiserRaisonRejet(raisonPourCampagneId, selectedCampaignId)) {
+ setRaisonRejet("");
+ setRaisonPourCampagneId(selectedCampaignId);
+ }
  setRejetOuvert(true);
  };
 

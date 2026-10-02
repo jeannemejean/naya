@@ -81,6 +81,30 @@ export function texteAvertissementRaisonVide(raison: string): string | null {
   return "Sans raison, Naya ne pourra pas l'éviter la prochaine fois.";
 }
 
+/**
+ * La raison appartient à LA CAMPAGNE pour laquelle elle a été écrite, jamais à « la
+ * dernière campagne dont le dialogue était ouvert ». `campagnes.tsx` conserve désormais la
+ * raison à travers un échec de rejet (pour ne jamais lui faire retaper un texte qu'elle a
+ * peut-être mis du temps à formuler) — mais SANS cette fonction, cette conservation
+ * traverserait aussi un changement de campagne : elle taperait une raison pour la campagne
+ * de Jeanne, annulerait, ouvrirait le rejet de la campagne de l'Agence JMD, et la
+ * retrouverait pré-remplie avec la phrase de Jeanne. Si elle confirme sans la relire, cette
+ * phrase devient une préférence PERMANENTE écrite dans la mémoire de la MAUVAISE marque —
+ * une corruption silencieuse que rien ne signale jamais, pire que perdre un texte qu'elle
+ * devra retaper.
+ *
+ * Vrai si le dialogue s'ouvre sur une campagne différente de celle à laquelle la raison
+ * actuellement tapée est rattachée (`raisonPourCampagneId`) — l'appelant doit alors remettre
+ * la raison à zéro avant affichage. Faux quand c'est la MÊME campagne (retry après échec) :
+ * c'est précisément le cas que la conservation doit continuer à couvrir.
+ */
+export function doitReinitialiserRaisonRejet(
+  raisonPourCampagneId: number | null,
+  campagneOuverteId: number | null,
+): boolean {
+  return raisonPourCampagneId !== campagneOuverteId;
+}
+
 // ─── Accord singulier/pluriel ───────────────────────────────────────────────────────
 
 function accorder(n: number, singulier: string, pluriel: string): string {
