@@ -159,11 +159,20 @@ const RESULTAT_REJET_STUB = {
 // ─── GET /api/campaigns/:id/reject-preview ──────────────────────────────────
 
 describe("GET /api/campaigns/:id/reject-preview", () => {
-  it("une campagne d'autrui ou inexistante → 404, jamais 403", async () => {
+  it("une campagne d'autrui ou inexistante → 404, jamais 403, et AUCUNE opération base n'est émise", async () => {
     storageMock.getCampaign.mockResolvedValue(undefined);
     const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/999/reject-preview`);
     expect(res.status).toBe(404);
     expect(res.status).not.toBe(403);
+    // Symétrique au test POST équivalent (qui affirme `rejeterCampagne` jamais
+    // appelé) : la vérification de propriété doit précéder TOUT accès base, pas
+    // seulement produire le bon code HTTP. Verrou contre un futur déplacement du
+    // `return` après une des lectures (content/tasks/articulations).
+    expect(hoisted.dbSelect).not.toHaveBeenCalled();
+    expect(hoisted.dbUpdate).not.toHaveBeenCalled();
+    expect(hoisted.dbInsert).not.toHaveBeenCalled();
+    expect(hoisted.dbDelete).not.toHaveBeenCalled();
+    expect(hoisted.dbTransaction).not.toHaveBeenCalled();
   });
 
   it("calcule les gardés/partants (contenus et tâches) et les articulations rompues", async () => {
@@ -222,7 +231,15 @@ describe("GET /api/campaigns/:id/reject-preview", () => {
     expect(hoisted.dbTransaction).not.toHaveBeenCalled();
   });
 
-  it("un identifiant non numérique ne fait pas planter l'endpoint (404, pas 500)", async () => {
+  // Nommé pour ce qu'il prouve RÉELLEMENT, pas plus : `storage.getCampaign` est
+  // mocké et rend `undefined` quels que soient ses arguments — ce test exerce
+  // seulement le ROUTAGE Express d'un segment non numérique jusqu'à ce handler et
+  // la branche « campagne introuvable » qui suit. Il ne prouve RIEN sur ce que
+  // `parseInt("abc")` (→ NaN) produirait réellement face à une colonne `integer`
+  // en SQL — ça n'est pas mocké ici, et ce chantier ne l'introduit pas : les
+  // endpoints voisins (`DELETE`/`PATCH /api/campaigns/:id`) ne le gardent pas
+  // davantage.
+  it("un segment d'URL non numérique route bien vers ce handler et rend 404 quand storage.getCampaign ne trouve rien (ne teste PAS le comportement réel d'un NaN en SQL)", async () => {
     storageMock.getCampaign.mockResolvedValue(undefined);
     const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/abc/reject-preview`);
     expect(res.status).toBe(404);
@@ -343,7 +360,10 @@ describe("POST /api/campaigns/:id/reject", () => {
     expect(res.status).toBe(500);
   });
 
-  it("un identifiant non numérique ne fait pas planter l'endpoint (404, pas 500) et n'appelle pas le service", async () => {
+  // Même remarque que son jumeau côté GET : nommé pour ce qu'il prouve
+  // réellement (routage + branche « introuvable »), pas pour un comportement de
+  // NaN en SQL que `storage.getCampaign` mocké ne peut pas exercer.
+  it("un segment d'URL non numérique route bien vers ce handler, rend 404 et n'appelle pas le service (ne teste PAS le comportement réel d'un NaN en SQL)", async () => {
     storageMock.getCampaign.mockResolvedValue(undefined);
     const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/abc/reject`, {
       method: "POST",
