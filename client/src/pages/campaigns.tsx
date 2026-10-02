@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { fetchJson } from "@/lib/fetchJson";
+import { tenterUneFois } from "@/lib/one-shot-guard";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import Sidebar from "@/components/sidebar";
@@ -11,6 +12,34 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  type ApercuRejet,
+  type ResultatRejet,
+  construireTexteConfirmation,
+  construireMessageSucces,
+  texteAvertissementRaisonVide,
+  messageEchecRejet,
+  messageEchecApercu,
+  LIBELLE_BOUTON_REJETER,
+  TITRE_DIALOGUE_REJET,
+  LABEL_CHAMP_RAISON,
+  PLACEHOLDER_CHAMP_RAISON,
+  LIBELLE_ANNULER,
+  LIBELLE_CONFIRMER_REJET,
+  TITRE_REJET_REUSSI,
+  TITRE_REJET_ECHEC,
+  TITRE_APERCU_ECHEC,
+} from "./campaigns-rejet";
 import {
  Rocket, Plus, Loader2, CheckCircle2, Pause, Trash2, Edit2, X,
  Clock, Zap, Brain, Users, Settings, Lightbulb, Target,
@@ -780,16 +809,63 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  onError: () => toast({ title: t('campaigns.failedToSaveReview'), variant: "destructive" }),
  });
 
- const deleteMutation = useMutation({
- mutationFn: async (id: number) => {
- await apiRequest("DELETE", `/api/campaigns/${id}`);
- },
- onSuccess: () => {
- queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedProjectId] });
+ // ─── Rejet d'une campagne (chantier « rejeter une campagne ») ─────────────────────
+ // Disponible depuis TOUT état de la campagne (brouillon généré ou déjà lancée) —
+ // remplace l'ancien `deleteMutation`/`handleDiscard`, qui ne faisait qu'un DELETE brut
+ // sans détacher les posts/tâches déjà réels ni apprendre de la raison du rejet.
+ const [rejetOuvert, setRejetOuvert] = useState(false);
+ const [raisonRejet, setRaisonRejet] = useState("");
+ // Verrou anti-double-clic : une `useRef`, pas un `useState` — voir le commentaire de
+ // `tenterUneFois` (@/lib/one-shot-guard). Un double clic sur « Rejeter » enverrait deux
+ // requêtes, et la seconde rendrait 404 sur une campagne déjà supprimée par la première.
+ const rejetVerrou = useRef(false);
+
+ // Lecture seule de ce que le rejet va faire, affichée AVANT confirmation — c'est le
+ // contrat de `GET /api/campaigns/:id/reject-preview` (tâche 4). `throwOnError: false` :
+ // un échec ici ne doit jamais faire basculer toute l'application sur l'ErrorBoundary
+ // racine pour la panne d'un seul panneau de confirmation (même motif que
+ // `BrandLinksPanel.tsx` et `articulationData` plus haut dans ce fichier).
+ const apercuRejetQuery = useQuery<ApercuRejet>({
+ queryKey: ["/api/campaigns", selectedCampaignId, "reject-preview"],
+ queryFn: () => fetchJson(`/api/campaigns/${selectedCampaignId}/reject-preview`),
+ enabled: rejetOuvert && !!selectedCampaignId,
+ throwOnError: false,
+ });
+
+ const rejectMutation = useMutation({
+ mutationFn: ({ id, raison }: { id: number; raison: string }) =>
+ fetchJson<ResultatRejet>(`/api/campaigns/${id}/reject`, {
+ method: "POST",
+ headers: { "Content-Type": "application/json" },
+ body: JSON.stringify({ raison }),
+ }),
+ onSuccess: (resultat, vars) => {
+ // Les deux ont changé : le contenu (détaché ou supprimé) et les campagnes
+ // (celle-ci a disparu, une articulée a pu perdre son articulation).
+ queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+ queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+ setRejetOuvert(false);
+ setRaisonRejet("");
  setSelectedCampaignId(null);
  setPanelState("empty");
+ const lignes = construireMessageSucces(resultat, vars.raison.trim() !== "");
+ toast({ title: TITRE_REJET_REUSSI, description: lignes.length > 0 ? lignes.join(" ") : undefined });
  },
+ // Un 404 ici signifie que la campagne a déjà disparu (cas des deux onglets) : le
+ // message vient de `messageEchecRejet`, jamais une invite à réessayer dans ce cas.
+ onError: (error: unknown) =>
+ toast({ title: TITRE_REJET_ECHEC, description: messageEchecRejet(error), variant: "destructive" }),
  });
+
+ const ouvrirRejet = () => {
+ setRaisonRejet("");
+ setRejetOuvert(true);
+ };
+
+ const confirmerRejet = () => {
+ if (!selectedCampaignId) return;
+ tenterUneFois(rejetVerrou, () => rejectMutation.mutateAsync({ id: selectedCampaignId, raison: raisonRejet }));
+ };
 
  const pauseMutation = useMutation({
  mutationFn: async ({ id, note }: { id: number; note: string }) => {
@@ -873,13 +949,6 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  const d = new Date();
  setStartDate(formatLocalDate(d));
  setPanelState("creating");
- };
-
- const handleDiscard = () => {
- if (selectedCampaignId) {
- deleteMutation.mutate(selectedCampaignId);
- }
- setPanelState("empty");
  };
 
  const handleSaveName = () => {
@@ -1333,9 +1402,9 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{t('campaigns.launching')}</span>
  ) : t('campaigns.launchCampaign')}
  </Button>
- <Button variant="ghost" onClick={handleDiscard} disabled={deleteMutation.isPending}>
+ <Button variant="ghost" onClick={ouvrirRejet} data-testid="button-rejeter-campagne">
  <Trash2 className="h-4 w-4 mr-1" />
- {t('campaigns.discard')}
+ {LIBELLE_BOUTON_REJETER}
  </Button>
  </div>
  </div>
@@ -1371,6 +1440,13 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  </div>
  )}
  </div>
+ {/* Le rejet est disponible depuis TOUT état de la campagne (chantier « rejeter
+ une campagne »), pas seulement depuis le panneau de brouillon ci-dessus. */}
+ <div className="flex flex-col items-end gap-2">
+ <Button size="sm" variant="ghost" onClick={ouvrirRejet} data-testid="button-rejeter-campagne-detail">
+ <Trash2 className="h-3.5 w-3.5 mr-1" />
+ {LIBELLE_BOUTON_REJETER}
+ </Button>
  {selectedCampaign.startDate && (
  <div className="bg-naya-olive-06/50 rounded-lg px-4 py-3 text-xs text-naya-olive-55 space-y-1">
  <div className="flex items-center gap-2">
@@ -1390,6 +1466,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  )}
  </div>
  )}
+ </div>
  <div className="flex flex-col gap-2">
  {selectedCampaign.status === "active" && !showPauseDialog && (
  <div className="flex gap-2">
@@ -1578,6 +1655,56 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  </div>
  </main>
  </div>
+
+ {/* Rejet d'une campagne — disponible depuis tout état (brouillon généré ou
+ lancée), déclenché par les deux boutons « Rejeter la campagne » ci-dessus.
+ Action DESTRUCTRICE ET IRRÉVERSIBLE : ce qui est annoncé ici doit être
+ exactement ce que `POST /api/campaigns/:id/reject` va faire — les lignes
+ viennent de `construireTexteConfirmation`, qui ne fait que LIRE les comptes
+ déjà calculés par le serveur (`GET .../reject-preview`), jamais les
+ recalculer. */}
+ <AlertDialog open={rejetOuvert} onOpenChange={(next) => { setRejetOuvert(next); if (!next) setRaisonRejet(""); }}>
+ <AlertDialogContent>
+ <AlertDialogHeader>
+ <AlertDialogTitle>{TITRE_DIALOGUE_REJET}</AlertDialogTitle>
+ </AlertDialogHeader>
+ <div className="space-y-1.5">
+ {apercuRejetQuery.isLoading && (
+ <p className="text-sm text-naya-olive-55">…</p>
+ )}
+ {apercuRejetQuery.isError && (
+ <div>
+ <p className="text-sm text-foreground">{TITRE_APERCU_ECHEC}</p>
+ <p className="text-sm text-naya-olive-55">{messageEchecApercu(apercuRejetQuery.error)}</p>
+ </div>
+ )}
+ {apercuRejetQuery.data &&
+ construireTexteConfirmation(apercuRejetQuery.data).map((ligne, i) => (
+ <p key={i} className="text-sm text-naya-olive-70">{ligne}</p>
+ ))}
+ </div>
+ <div>
+ <Label htmlFor="rejet-raison">{LABEL_CHAMP_RAISON}</Label>
+ <Textarea
+ id="rejet-raison"
+ value={raisonRejet}
+ onChange={(e) => setRaisonRejet(e.target.value)}
+ placeholder={PLACEHOLDER_CHAMP_RAISON}
+ className="mt-1 min-h-[70px] resize-none text-sm"
+ data-testid="rejet-raison"
+ />
+ {texteAvertissementRaisonVide(raisonRejet) && (
+ <p className="text-xs text-naya-olive-35 mt-1">{texteAvertissementRaisonVide(raisonRejet)}</p>
+ )}
+ </div>
+ <AlertDialogFooter>
+ <AlertDialogCancel>{LIBELLE_ANNULER}</AlertDialogCancel>
+ <AlertDialogAction onClick={confirmerRejet} data-testid="rejet-confirmer">
+ {LIBELLE_CONFIRMER_REJET}
+ </AlertDialogAction>
+ </AlertDialogFooter>
+ </AlertDialogContent>
+ </AlertDialog>
  </div>
  );
 }
