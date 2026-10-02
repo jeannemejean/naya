@@ -303,7 +303,7 @@ const tasks = TABLE_TASKS;
 const campaigns = TABLE_CAMPAIGNS;
 const memoryEntries = TABLE_MEMORY;
 const embedModule = await import("../memory/embed");
-const { rejeterCampagne, SALIENCE_REJET: SALIENCE_REJET_ORCH } = await import("./rejeter");
+const { rejeterCampagne, CampagneIntrouvable, SALIENCE_REJET: SALIENCE_REJET_ORCH } = await import("./rejeter");
 
 const dialecte = new PgDialect();
 const enSql = (clause: any) => dialecte.sqlToQuery(clause);
@@ -612,11 +612,21 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(clauseSuppression.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId]));
   });
 
-  it("une campagne introuvable (mauvais id ou mauvais userId) fait échouer le rejet sans toucher à quoi que ce soit", async () => {
+  // Une classe dédiée, pas une `Error` nue : motif de `ReponseIllisible`
+  // (content-import/import.ts), reconnue par `instanceof` côté route pour un code
+  // HTTP précis, sans jamais dépendre du message (qui est en français et peut changer).
+  it("une campagne introuvable (mauvais id ou mauvais userId) lève CampagneIntrouvable, sans toucher à quoi que ce soit", async () => {
     hoisted.resultats = [[]]; // la lecture de la campagne ne rend rien
 
-    await expect(rejeterCampagne(INPUT)).rejects.toThrow(/introuvable/);
+    let erreur: unknown;
+    try {
+      await rejeterCampagne(INPUT);
+    } catch (e) {
+      erreur = e;
+    }
 
+    expect(erreur).toBeInstanceOf(CampagneIntrouvable);
+    expect((erreur as Error).message).toMatch(/introuvable/);
     expect(hoisted.transactionAppelee).toBe(false);
     expect(embedModule.embedText).not.toHaveBeenCalled();
   });

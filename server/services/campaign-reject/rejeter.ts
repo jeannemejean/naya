@@ -108,6 +108,25 @@ import { content, tasks, campaigns, projects, memoryEntries } from "@shared/sche
 import { db } from "../../db";
 import { embedText } from "../memory/embed";
 
+/**
+ * Levée quand la campagne n'existe pas, ou n'appartient pas à l'utilisatrice — les
+ * deux cas sont indiscernables depuis l'extérieur, et c'est volontaire (règle 13 du
+ * brief : jamais même vue). Motif repris de `ReponseIllisible`
+ * (`server/services/content-import/import.ts`), reconnue par `instanceof` dans
+ * `server/routes.ts` pour rendre un code HTTP précis — jamais en lisant son message.
+ *
+ * Sans classe dédiée, l'appelant devrait reconnaître un message français pour
+ * distinguer un 404 d'un 500 : une reformulation future casserait alors ce mapping
+ * en silence. Cas concret : l'utilisatrice ouvre la campagne dans deux onglets, la
+ * supprime depuis le premier, puis clique « rejeter » depuis le second — elle doit
+ * lire que la campagne n'existe déjà plus, pas une erreur qui ressemble à une panne.
+ */
+export class CampagneIntrouvable extends Error {
+  constructor(campaignId: number) {
+    super(`Campagne ${campaignId} introuvable pour cet utilisateur`);
+  }
+}
+
 export interface ResultatRejet {
   contenusDetaches: number;
   contenusSupprimes: number;
@@ -165,7 +184,7 @@ export async function rejeterCampagne(input: {
     .where(and(eq(campaigns.userId, userId), eq(campaigns.id, campaignId)));
 
   if (!campagne) {
-    throw new Error(`Campagne ${campaignId} introuvable pour cet utilisateur`);
+    throw new CampagneIntrouvable(campaignId);
   }
 
   // Lectures seules, hors transaction : elles ne décident que du tri, ne mutent rien.
