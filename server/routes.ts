@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
-import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content, projectLinks } from "@shared/schema";
+import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content, projectLinks, campaigns, projects } from "@shared/schema";
 import { eq, and, inArray, or, gte, desc, sql } from "drizzle-orm";
 import { runReadingRoom } from "./services/reading/runner";
 import { statutApresReponse } from "./services/reading/statut";
@@ -58,6 +58,8 @@ import { articulationsDisponibles } from "./services/brand-links/articulation";
 import { detecterCollision, detecterCollisionLot } from "./services/brand-links/collision";
 import type { CollisionLot } from "./services/brand-links/collision";
 import { importerTexte, ReponseIllisible } from "./services/content-import/import";
+import { rejeterCampagne, CampagneIntrouvable, trierContenus, trierTaches } from "./services/campaign-reject/rejeter";
+import { preferencesDeLaMarque, type Preference } from "./services/campaign-reject/preferences";
 import { MAX_CARACTERES } from "./services/content-import/parse";
 import { LIMITE_CONTENUS_MAX } from "./services/content-limit";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
@@ -9935,6 +9937,95 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
+  // GET /api/campaigns/:id/reject-preview — ce que la confirmation de rejet
+  // annonce (tâche 5) avant que l'utilisatrice ne confirme. LECTURE SEULE : aucune
+  // table n'est modifiée. Les comptages réutilisent les fonctions pures de
+  // `campaign-reject/rejeter.ts` (`trierContenus`/`trierTaches`, verrouillées tâche
+  // 1), appliquées à une lecture directe — jamais à `rejeterCampagne`, qui écrit.
+  app.get('/api/campaigns/:id/reject-preview', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      // 404, jamais 403 : la propriété se valide par (id, userId) — motif du
+      // dépôt, ne pas révéler l'existence d'une campagne d'autrui.
+      const campaign = await storage.getCampaign(id, userId);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+      const contenus = await db
+        .select({
+          id: content.id,
+          publishedAt: content.publishedAt,
+          postStatus: content.postStatus,
+          contentStatus: content.contentStatus,
+        })
+        .from(content)
+        .where(and(eq(content.userId, userId), eq(content.campaignId, id)));
+
+      const tachesBrutes = await db
+        .select({ id: tasks.id, completed: tasks.completed })
+        .from(tasks)
+        .where(and(eq(tasks.userId, userId), eq(tasks.campaignId, id)));
+
+      const triContenus = trierContenus(contenus);
+      const triTaches = trierTaches(tachesBrutes);
+
+      // Même requête que celle lue dans la transaction de `rejeterCampagne` — ici en
+      // lecture simple, puisque rien ne va être supprimé.
+      const articulations = await db
+        .select({ campagneId: campaigns.id, campagneNom: campaigns.name, marque: projects.name })
+        .from(campaigns)
+        .leftJoin(projects, eq(campaigns.projectId, projects.id))
+        .where(and(eq(campaigns.userId, userId), eq(campaigns.articuleAvecCampaignId, id)));
+
+      res.json({
+        contenusGardes: triContenus.gardes.length,
+        contenusPartants: triContenus.partants.length,
+        tachesGardees: triTaches.gardes.length,
+        tachesPartantes: triTaches.partants.length,
+        articulationsRompues: articulations.map((a) => ({
+          campagneId: a.campagneId,
+          campagneNom: a.campagneNom,
+          marque: a.marque ?? "",
+        })),
+      });
+    } catch (error) {
+      console.error("Error previewing campaign rejection:", error);
+      res.status(500).json({ message: "Failed to preview campaign rejection" });
+    }
+  });
+
+  // POST /api/campaigns/:id/reject — écarte une campagne générée (chantier « rejeter
+  // une campagne »). `raison` est FACULTATIVE (Décision 4 du spec) : absente ou
+  // blanche, le rejet se fait quand même et `preferenceEcrite` revient à faux —
+  // c'est l'écran (tâche 5) qui en informe l'utilisatrice, pas cet endpoint.
+  app.post('/api/campaigns/:id/reject', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      // 404, jamais 403 — même motif que ci-dessus. La propriété est vérifiée ICI,
+      // avant d'appeler le service : une campagne d'autrui n'est jamais même passée
+      // à `rejeterCampagne`.
+      const existing = await storage.getCampaign(id, userId);
+      if (!existing) return res.status(404).json({ message: "Campaign not found" });
+
+      const raison = typeof req.body?.raison === "string" ? req.body.raison : "";
+      const resultat = await rejeterCampagne({ userId, campaignId: id, raison });
+      res.json(resultat);
+    } catch (error) {
+      // `CampagneIntrouvable` reconnue par `instanceof`, JAMAIS par son message —
+      // motif repris de `ReponseIllisible` (voir plus haut dans ce fichier). Cas
+      // concret : l'utilisatrice ouvre la campagne dans deux onglets, la supprime
+      // depuis le premier, puis clique « rejeter » depuis le second — entre la
+      // vérification ci-dessus et l'exécution du service, la campagne a disparu.
+      // Elle doit lire que la campagne n'existe déjà plus, pas une erreur qui
+      // ressemble à une panne.
+      if (error instanceof CampagneIntrouvable) {
+        return res.status(404).json({ message: "Campaign not found" });
+      }
+      console.error("Error rejecting campaign:", error);
+      res.status(500).json({ message: "Failed to reject campaign" });
+    }
+  });
 
   // ─── Génération de campagne EN 3 ÉTAPES (anti-troncature + anti-timeout 3 min) ───
   // Le client appelle ces endpoints en séquence en affichant la progression. Chaque étape est
@@ -10003,6 +10094,23 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     return { articulation: trouvee };
   }
 
+  /**
+   * Les préférences actives de CETTE marque (chantier « rejeter une campagne »,
+   * Décision 2), pour injection dans le prompt de génération — même motif que
+   * `resolveArticulation` juste au-dessus : résolu CÔTÉ SERVEUR, jamais fourni
+   * par le client.
+   *
+   * Rend un tableau VIDE sans marque sélectionnée : `preferencesDeLaMarque` exige
+   * un `projectId`, et sans marque il n'y a rien à préférer ou éviter. Un tableau
+   * vide se comporte comme un champ absent dans le prompt assemblé par
+   * `openai.ts` (`request.preferences?.length ? ... : ''`), donc aucune
+   * régression sur une génération sans marque.
+   */
+  async function resolvePreferences(userId: string, projectId: number | undefined): Promise<Preference[]> {
+    if (!projectId) return [];
+    return preferencesDeLaMarque(userId, projectId);
+  }
+
   // ÉTAPE 1/3 — stratégie + phases + canaux + messaging + KPIs + prospection.
   app.post('/api/campaigns/generate/strategy', isAuthenticated, async (req: any, res) => {
     try {
@@ -10021,9 +10129,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         ? `\n\nPAST CAMPAIGN REVIEWS (adjust pacing/strategy):\n${reviewed.map(c => `- "${c.name}" (${c.campaignType || 'general'}): content ${c.reviewContentQuality}/5, audience ${c.reviewAudienceResponse}/5, execution ${c.reviewTaskExecution}/5`).join('\n')}`
         : '';
 
+      // Les préférences de cette marque (chantier « rejeter une campagne ») : cette
+      // fonction DÉCIDE de l'angle, elle doit donc éviter ce qui a été rejeté.
+      const preferences = await resolvePreferences(userId, ctx.pid);
+
       const strategy = await generateCampaignStrategy({
         userId, projectId: ctx.pid, objective, duration: duration || '3_months',
         brandDna: ctx.brandDnaInput as any, weekContext: (weekContext || '') + pastReviewContext,
+        preferences,
         // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
         // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
         ...(art.articulation ? { articulation: art.articulation } : {}),
@@ -10049,9 +10162,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
       if ('error' in art) return res.status(art.status).json({ message: art.error });
 
+      // Même raison qu'à l'étape 1 : le plan de contenu décide des angles, donc il
+      // reçoit lui aussi les préférences de la marque.
+      const preferences = await resolvePreferences(userId, ctx.pid);
+
       const contentPlan = await generateCampaignContent(
         {
           userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext,
+          preferences,
           // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
           // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
           ...(art.articulation ? { articulation: art.articulation } : {}),
