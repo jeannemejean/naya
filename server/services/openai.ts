@@ -4,6 +4,7 @@ import { NAYA_SYSTEM_VOICE } from "../naya-voice";
 import { validateGeneratedIntent } from "./reception/validate-generated-intent";
 import type { Intent } from "./reception/score";
 import { formaterArticulation, type Articulation } from "./brand-links/links";
+import { formaterPreferences, type Preference } from "./campaign-reject/preferences";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -1108,6 +1109,15 @@ export interface CampaignGenerationRequest {
    * Absente quand la marque n'a pas de lien, ou quand la campagne est voulue isolée.
    */
   articulation?: Articulation;
+  /**
+   * Les préférences actives de CETTE marque, issues du rejet de campagnes passées.
+   * Volontairement pauvre : ni ADN, ni mémoire founder/reception, ni ton de voix
+   * d'une AUTRE marque — seulement ce que l'utilisatrice a explicitement rejeté pour
+   * celle-ci. Résolue côté serveur (`preferencesDeLaMarque`, `campaign-reject/preferences.ts`).
+   * Absente quand l'appelant ne l'a pas résolue, ou quand la marque n'a aucune
+   * préférence active — dans les deux cas le prompt reste identique à aujourd'hui.
+   */
+  preferences?: Preference[];
 }
 
 export interface GeneratedCampaignProspection {
@@ -1202,7 +1212,7 @@ CAMPAIGN REQUEST:
 - Objective: ${request.objective}
 - Duration: ${request.duration}
 ${request.weekContext ? `- Context: ${request.weekContext}` : ''}
-${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}
 
 STRATEGIC RULES:
 - Infer the campaign type: lead_generation | authority_building | product_launch | nurturing | visibility | conversion.
@@ -1283,7 +1293,7 @@ ${phasesSummary}
 
 CHANNELS (respect each channel's declared frequency and formats):
 ${channelsSummary}
-${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}
 
 CONTENT RULES:
 - For EACH phase, generate 2-3 representative pieces PER active channel (aim for 10-16 pieces total across the campaign — a representative plan, not every single week).
