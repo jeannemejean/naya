@@ -268,6 +268,12 @@ NOMBRES ENTIERS NUS — 1, jamais "1", jamais [1], jamais "Nouveau contenu : 1",
  * écarté EN ENTIER : on ne garde jamais la moitié valide d'un couple. Les deux filtres
  * sont nécessaires et aucun ne remplace l'autre — le premier absorbe le bavardage de
  * ponctuation, le second absorbe l'invention pure et simple d'un identifiant.
+ *
+ * DÉDOUBLONNE ensuite par `nouveauId` : le reçu compte `collisions.length` comme « N
+ * posts recoupent » (voir import-calendrier-recu.ts), donc deux couples valides pour le
+ * MÊME nouveau post compteraient ce post deux fois. On garde le PREMIER couple rendu
+ * par le modèle pour chaque `nouveauId` et on écarte les suivants — la réduction est
+ * journalisée avec le compte RÉEL de couples écartés, jamais une approximation.
  */
 export function parseVerdictLot(
   raw: string,
@@ -282,13 +288,23 @@ export function parseVerdictLot(
   try { o = JSON.parse(raw.slice(debut, fin + 1)); } catch { return []; }
   if (!Array.isArray(o?.collisions)) return [];
 
+  const nouveauxDejaVus = new Set<number>();
   const resultat: Array<{ nouveauId: number; contenuId: number; pourquoi: string }> = [];
+  let doublons = 0;
   for (const item of o.collisions) {
     const nouveauId = extraireEntier(item?.nouveauId);
     const contenuId = extraireEntier(item?.contenuId);
     if (nouveauId === null || contenuId === null) continue;
     if (!idsNouveaux.has(nouveauId) || !idsVoisins.has(contenuId)) continue;
+    if (nouveauxDejaVus.has(nouveauId)) { doublons += 1; continue; }
+    nouveauxDejaVus.add(nouveauId);
     resultat.push({ nouveauId, contenuId, pourquoi: typeof item?.pourquoi === "string" ? item.pourquoi : "" });
+  }
+  if (doublons > 0) {
+    console.info(
+      `[Liens] parseVerdictLot : ${doublons} couple(s) écarté(s) comme doublon(s) d'un ` +
+      `nouveauId déjà retenu — un post ne compte qu'une fois dans le reçu.`,
+    );
   }
   return resultat;
 }

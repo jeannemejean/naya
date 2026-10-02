@@ -380,6 +380,10 @@ describe("parseVerdictLot — lire le verdict du modèle pour un LOT de couples"
   const idsNouveaux = new Set([410, 411, 412]);
   const idsVoisins = new Set([900, 901]);
 
+  let infoSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { infoSpy = vi.spyOn(console, "info").mockImplementation(() => {}); });
+  afterEach(() => { infoSpy.mockRestore(); });
+
   it("lit un tableau de collisions et rend les couples valides", () => {
     const raw = JSON.stringify({
       collisions: [
@@ -438,6 +442,59 @@ describe("parseVerdictLot — lire le verdict du modèle pour un LOT de couples"
     expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([
       { nouveauId: 410, contenuId: 900, pourquoi: "valide" },
     ]);
+  });
+
+  // Régression : deux voisins en collision avec le MÊME nouveau post donnaient deux
+  // couples pour ce seul post — le reçu affichait "2 recoupent" là où un seul post est
+  // réellement en collision (voir import-calendrier-recu.ts, qui compte `collisions.length`).
+  describe("dédoublonnage par nouveauId — un post ne recoupe qu'UNE fois dans le reçu", () => {
+    it("garde le PREMIER couple d'un nouveauId qui apparaît deux fois, écarte le second", () => {
+      const raw = JSON.stringify({
+        collisions: [
+          { nouveauId: 410, contenuId: 900, pourquoi: "premier voisin" },
+          { nouveauId: 410, contenuId: 901, pourquoi: "second voisin, même nouveau post" },
+        ],
+      });
+      expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([
+        { nouveauId: 410, contenuId: 900, pourquoi: "premier voisin" },
+      ]);
+    });
+
+    it("journalise la réduction avec le COMPTE RÉEL de doublons écartés, jamais approximé", () => {
+      const raw = JSON.stringify({
+        collisions: [
+          { nouveauId: 410, contenuId: 900, pourquoi: "a" },
+          { nouveauId: 410, contenuId: 901, pourquoi: "b — doublon 1" },
+          { nouveauId: 412, contenuId: 900, pourquoi: "c" },
+          { nouveauId: 412, contenuId: 901, pourquoi: "d — doublon 2" },
+        ],
+      });
+      parseVerdictLot(raw, idsNouveaux, idsVoisins);
+      const appels = infoSpy.mock.calls.filter(([msg]) => /doublon/i.test(String(msg)));
+      expect(appels).toHaveLength(1);
+      expect(String(appels[0][0])).toContain("2");
+    });
+
+    it("ne journalise rien quand aucun doublon n'est écarté", () => {
+      const raw = JSON.stringify({
+        collisions: [{ nouveauId: 410, contenuId: 900, pourquoi: "a" }],
+      });
+      parseVerdictLot(raw, idsNouveaux, idsVoisins);
+      expect(infoSpy).not.toHaveBeenCalled();
+    });
+
+    it("n'affecte pas deux couples valides pour deux nouveauId DIFFÉRENTS", () => {
+      const raw = JSON.stringify({
+        collisions: [
+          { nouveauId: 410, contenuId: 900, pourquoi: "premier post" },
+          { nouveauId: 411, contenuId: 901, pourquoi: "deuxième post" },
+        ],
+      });
+      expect(parseVerdictLot(raw, idsNouveaux, idsVoisins)).toEqual([
+        { nouveauId: 410, contenuId: 900, pourquoi: "premier post" },
+        { nouveauId: 411, contenuId: 901, pourquoi: "deuxième post" },
+      ]);
+    });
   });
 });
 
