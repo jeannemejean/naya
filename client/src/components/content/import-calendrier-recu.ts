@@ -3,11 +3,15 @@
 // PUR — aucun accès réseau, aucun JSX — pour rester testable en environnement `node` sans
 // jsdom (ce dépôt n'en a pas, voir le commentaire de `@/lib/one-shot-guard`). Le composant
 // `import-calendrier.tsx` ne fait qu'appeler `construireRecu` et afficher les lignes.
+// `date-fns/format` et sa locale `fr` sont des fonctions PURES (pas de DOM) : les importer
+// ici ne casse pas cette garantie.
 //
 // Le reçu est un CONSTAT ponctuel, jamais un compteur ni une série : chaque ligne décrit ce
 // qui vient de se passer pour CE collage, rien de cumulatif. Aucune ligne à zéro — « 0 post
 // ignoré » est du bruit — sauf les deux premières, qui restent la tête du reçu même à zéro
 // (un import qui n'a rien trouvé reste un résultat qu'il faut pouvoir lire).
+import { format } from "date-fns/format";
+import { fr } from "date-fns/locale/fr";
 
 /** Forme du 200 de `POST /api/content/import`, réduite à ce que le reçu affiche. */
 export interface ReponseImportCalendrier {
@@ -17,7 +21,10 @@ export interface ReponseImportCalendrier {
   /** `true` quand le modèle a probablement réécrit le texte au lieu de l'extraire. */
   reecrit: boolean;
   tronque: boolean;
-  collisions: Array<{ marque: string }>;
+  // Forme EXACTE de `CollisionLot` (server/services/brand-links/collision.ts), réduite à
+  // ce que le reçu affiche : `nouveauId`/`contenuId` ne servent à rien ici, le reçu ne
+  // désigne pas un post par son identifiant technique.
+  collisions: Array<{ marque: string; scheduledFor: string | Date | null; pourquoi: string }>;
 }
 
 /** Accord simple singulier/pluriel sur un compte — ce dépôt n'a pas de pluriel i18n ici
@@ -27,12 +34,21 @@ function accorder(n: number, singulier: string, pluriel: string): string {
   return n === 1 ? singulier : pluriel;
 }
 
-/** "Agence JMD", "Agence JMD et Studio X", "Agence JMD, Studio X et Autre" — jamais de
- * virgule finale avant le dernier élément. */
-function enumerer(noms: string[]): string {
-  const uniques = [...new Set(noms)];
-  if (uniques.length <= 1) return uniques[0] ?? "";
-  return `${uniques.slice(0, -1).join(", ")} et ${uniques[uniques.length - 1]}`;
+/** Plafond de lignes de détail des recoupements affichées dans le reçu — le reste se
+ * résume en une ligne de compte, jamais en silence. */
+const PLAFOND_LIGNES_COLLISION = 3;
+
+/**
+ * Une ligne de détail pour UN recoupement, alignée mot pour mot sur `messageCollision`
+ * (client/src/pages/content-calendar.tsx) : même gabarit de phrase, pour que le chemin
+ * mono-post (programmation d'un seul contenu) et le chemin en lot (cet import) disent la
+ * même chose de la même façon.
+ */
+function ligneCollision(c: { marque: string; scheduledFor: string | Date | null; pourquoi: string }): string {
+  const d = c.scheduledFor ? new Date(c.scheduledFor) : null;
+  const dateLisible = d && !isNaN(d.getTime()) ? format(d, "d MMMM", { locale: fr }) : null;
+  const lieu = dateLisible ? `le ${dateLisible} sur « ${c.marque.trim()} »` : `sur « ${c.marque.trim()} »`;
+  return `Un contenu déjà programmé ${lieu} couvre un angle proche : ${c.pourquoi.trim()}`;
 }
 
 /**
@@ -73,11 +89,22 @@ export function construireRecu(reponse: ReponseImportCalendrier): string[] {
     );
   }
 
-  if (reponse.collisions.length > 0) {
-    const marques = enumerer(reponse.collisions.map((c) => c.marque));
-    lignes.push(
-      `${reponse.collisions.length} ${accorder(reponse.collisions.length, "recoupe", "recoupent")} du contenu déjà programmé sur ${marques}.`,
-    );
+  // Comme `messageCollision` (chemin mono-post) : un recoupement dont le `pourquoi` est
+  // vide n'est JAMAIS affiché — une phrase à moitié vraie ("ça recoupe quelque chose,
+  // mais on ne sait pas quoi") est pire que son absence. Le filtre s'applique AVANT le
+  // plafond ET avant le compte restant, pour qu'un recoupement invisible ne soit jamais
+  // compté dans "et N autres".
+  const collisionsAffichables = reponse.collisions.filter((c) => c.pourquoi.trim().length > 0);
+  if (collisionsAffichables.length > 0) {
+    const affichees = collisionsAffichables.slice(0, PLAFOND_LIGNES_COLLISION);
+    for (const c of affichees) lignes.push(ligneCollision(c));
+
+    const restant = collisionsAffichables.length - affichees.length;
+    if (restant > 0) {
+      lignes.push(
+        `Et ${restant} ${accorder(restant, "autre recoupement du même type", "autres recoupements du même type")}.`,
+      );
+    }
   }
 
   if (reponse.reecrit) {
