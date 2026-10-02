@@ -301,16 +301,35 @@ export async function rejeterCampagne(input: {
     // 3. Écrire la préférence — jamais sans raison (Décision 4 du spec).
     let preferenceEcrite = false;
     if (texte) {
-      await tx.insert(memoryEntries).values({
-        userId,
-        projectId: campagne.projectId,
-        fil: "cap",
-        entryType: "préférence",
-        content: texte,
-        embedding,
-        salience: SALIENCE_REJET,
-      });
+      const [ligne] = await tx
+        .insert(memoryEntries)
+        .values({
+          userId,
+          projectId: campagne.projectId,
+          fil: "cap",
+          entryType: "préférence",
+          content: texte,
+          embedding,
+          salience: SALIENCE_REJET,
+        })
+        .returning({ id: memoryEntries.id });
       preferenceEcrite = true;
+
+      // Décision 7 du spec : « la limite de l'embedding est énoncée, pas cachée ».
+      // Sans CE log, elle l'était quand même en exploitation — `preferenceSansEmbedding`
+      // n'était renvoyé qu'à l'appelant HTTP, jamais journalisé, et `embedTexts`
+      // (services/memory/embed.ts) dégrade en silence (`catch { return null }`). Une
+      // préférence écrite sans vecteur est invisible à `buildNayaContext` POUR
+      // TOUJOURS (`backfillBusinessMemory` n'est appelé de nulle part) — et sans le
+      // `projectId` ET l'id de la ligne, « une préférence quelque part n'est pas
+      // vectorisée » n'est pas actionnable : rien ne permettrait de la retrouver pour
+      // la rattraper manuellement.
+      if (preferenceSansEmbedding) {
+        console.warn(
+          `[Rejet] préférence écrite SANS embedding — invisible à la récupération sémantique ` +
+            `(projectId=${campagne.projectId}, memoryEntries.id=${ligne?.id}).`,
+        );
+      }
     }
 
     // 4. Supprimer la ou les campagnes de prospection liées, cascade complète incluse

@@ -316,7 +316,24 @@ vi.mock("../../db", () => {
           insert: (table: any) => ({
             values: (vals: any) => {
               hoisted.inserts.push({ table, values: vals });
-              return operation(etiquette(table, "preference"));
+              // `.returning({ id: ... })` — nécessaire depuis que `rejeterCampagne`
+              // récupère l'id de la ligne insérée pour le journaliser (Important 2,
+              // revue finale du 2026-10-02). Défaut `[{ id: undefined }]` quand le
+              // test ne fournit rien dans `resultatsOps` : destructurable sans jeter,
+              // comme avant pour tout test qui ne s'intéresse pas à cet id.
+              return {
+                returning: (_cols?: any) => ({
+                  then: (ok: any, ko: any) =>
+                    Promise.resolve()
+                      .then(() => {
+                        hoisted.ordre.push(etiquette(table, "preference"));
+                        const r = hoisted.resultatsOps.shift();
+                        if (r instanceof Error) throw r;
+                        return r ?? [{ id: undefined }];
+                      })
+                      .then(ok, ko),
+                }),
+              };
             },
           }),
         };
@@ -528,6 +545,42 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(r.preferenceSansEmbedding).toBe(true);
     const insertion = hoisted.inserts.find((i) => i.table === memoryEntries);
     expect(insertion.values.embedding).toBeNull();
+  });
+
+  // Important 2 (revue finale du 2026-10-02) : « la limite de l'embedding est
+  // énoncée, pas cachée » (Décision 7 du spec) — avant ce point, `preferenceSansEmbedding`
+  // n'était renvoyé qu'à l'appelant HTTP, JAMAIS journalisé (aucun `console.*` dans
+  // tout `rejeter.ts`, et `embedTexts` dégrade en silence). Une préférence sans
+  // vecteur devenait alors invisible à `buildNayaContext` POUR TOUJOURS, et personne
+  // ne pouvait savoir laquelle. Sans le `projectId` ET l'id précis de la ligne,
+  // l'alerte ne serait pas actionnable — ce test verrouille les DEUX dans le message.
+  it("cas 7b — preferenceSansEmbedding vrai : un console.warn nomme le projectId ET l'id de la ligne insérée", async () => {
+    const avertir = vi.spyOn(console, "warn").mockImplementation(() => {});
+    (embedModule.embedText as any).mockResolvedValue(null);
+    hoisted.resultats = [[CAMPAGNE_LIGNE], [], []];
+    hoisted.resultatsArticulations = [[]];
+    hoisted.resultatsOps = [[{ id: 999 }]]; // ce que renvoie `.returning({ id })` sur l'insertion
+
+    await rejeterCampagne(INPUT);
+
+    expect(avertir).toHaveBeenCalledTimes(1);
+    const message = avertir.mock.calls[0].join(" ");
+    expect(message).toContain(String(CAMPAGNE_LIGNE.projectId));
+    expect(message).toContain("999");
+    avertir.mockRestore();
+  });
+
+  it("cas 7c — preferenceEcrite vrai MAIS embedding présent : AUCUN console.warn n'est émis — l'alerte ne porte que sur l'absence réelle du vecteur", async () => {
+    const avertir = vi.spyOn(console, "warn").mockImplementation(() => {});
+    hoisted.resultats = [[CAMPAGNE_LIGNE], [], []];
+    hoisted.resultatsArticulations = [[]];
+    // embedText (mocké par `reset()`) rend un vecteur non-null par défaut.
+
+    const r = await rejeterCampagne(INPUT);
+
+    expect(r.preferenceSansEmbedding).toBe(false);
+    expect(avertir).not.toHaveBeenCalled();
+    avertir.mockRestore();
   });
 
   it("cas 8 — embedText qui lève : même comportement que null (best-effort), le rejet réussit", async () => {
