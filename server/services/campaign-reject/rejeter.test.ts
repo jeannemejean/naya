@@ -526,7 +526,12 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(hoisted.transactionCount).toBe(1);
   });
 
-  it("cas 10 — un échec en cours de transaction (suppression du contenu) ne laisse rien validé : ni préférence, ni suppression de la campagne", async () => {
+  // Nommé précisément : ce test prouve que l'EXÉCUTION s'arrête après l'échec (rien
+  // après l'étape qui a raté n'est même tenté) — pas que Postgres annule physiquement
+  // ce qui a déjà été écrit. Cette seconde garantie (rollback réel) vient de
+  // `db.transaction` de Drizzle et n'est pas testable sans vraie base, ce qui est
+  // précisément ce que ce dépôt interdit en test.
+  it("cas 10 — un échec en cours de transaction (suppression du contenu) arrête l'exécution avant la préférence et la suppression de la campagne", async () => {
     hoisted.resultats = [
       [CAMPAGNE_LIGNE],
       [{ id: 500, publishedAt: null, postStatus: "draft", contentStatus: "idea" }], // un partant
@@ -623,6 +628,32 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(clauseSuppression.sql).toContain('"campaigns"."user_id"');
     expect(clauseSuppression.sql).toContain('"campaigns"."id"');
     expect(clauseSuppression.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId]));
+  });
+
+  // Verrouille l'intention, pas la chance : sans ce test, retirer
+  // `eq(content.userId, userId)` (ou son équivalent sur `tasks`) du code laissait les
+  // 34 tests verts — la clause était supposée, jamais affirmée. Chaque lecture doit
+  // porter sur SON PROPRE userId ET sur campaignId, pas seulement sur campaignId
+  // (qui suffirait si on faisait confiance à l'étanchéité déjà garantie par la
+  // lecture de la campagne elle-même — défense en profondeur quand même).
+  it("cas 13b — les lectures de content et de tasks portent chacune sur userId ET campaignId", async () => {
+    hoisted.resultats = [[CAMPAGNE_LIGNE], [], []];
+    hoisted.resultatsArticulations = [[]];
+
+    await rejeterCampagne(INPUT);
+
+    // hoisted.wheres : [0] = lecture de la campagne, [1] = lecture de content, [2] = lecture de tasks.
+    expect(hoisted.wheres).toHaveLength(3);
+
+    const clauseContenus = enSql(hoisted.wheres[1]);
+    expect(clauseContenus.sql).toContain('"content"."user_id"');
+    expect(clauseContenus.sql).toContain('"content"."campaign_id"');
+    expect(clauseContenus.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId]));
+
+    const clauseTaches = enSql(hoisted.wheres[2]);
+    expect(clauseTaches.sql).toContain('"tasks"."user_id"');
+    expect(clauseTaches.sql).toContain('"tasks"."campaign_id"');
+    expect(clauseTaches.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId]));
   });
 
   // Une classe dédiée, pas une `Error` nue : motif de `ReponseIllisible`
