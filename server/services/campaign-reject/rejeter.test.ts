@@ -565,6 +565,19 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(idxLecture).toBeLessThan(idxSuppression);
   });
 
+  it("cas 11b — la lecture des articulations rompues porte aussi sur userId, par défense en profondeur (pas seulement articuleAvecCampaignId)", async () => {
+    hoisted.resultats = [[CAMPAGNE_LIGNE], [], []];
+    hoisted.resultatsArticulations = [[]];
+
+    await rejeterCampagne(INPUT);
+
+    expect(hoisted.txWheres).toHaveLength(1);
+    const clause = enSql(hoisted.txWheres[0]);
+    expect(clause.sql).toContain('"campaigns"."user_id"');
+    expect(clause.sql).toContain('"campaigns"."articule_avec_campaign_id"');
+    expect(clause.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId]));
+  });
+
   it("cas 12 — l'ordre des opérations est détachement → suppression → préférence → campagne", async () => {
     hoisted.resultats = [
       [CAMPAGNE_LIGNE],

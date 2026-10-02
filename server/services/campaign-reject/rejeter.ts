@@ -231,7 +231,12 @@ export async function rejeterCampagne(input: {
       })
       .from(campaigns)
       .leftJoin(projects, eq(campaigns.projectId, projects.id))
-      .where(eq(campaigns.articuleAvecCampaignId, campaignId));
+      // `userId` ici aussi, par discipline : rien ne garantit en base qu'une
+      // campagne ne puisse être articulée qu'avec celles du même compte, c'est
+      // `articulationsDisponibles` (brand-links/articulation.ts) qui tient cet
+      // invariant en amont, pas une contrainte. Défense en profondeur, pas une
+      // fuite corrigée.
+      .where(and(eq(campaigns.userId, userId), eq(campaigns.articuleAvecCampaignId, campaignId)));
 
     const articulationsRompues = articulations.map((a) => ({
       campagneId: a.campagneId,
