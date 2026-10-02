@@ -55,7 +55,10 @@ import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossie
 import { valideLien } from "./services/brand-links/links";
 import type { Articulation } from "./services/brand-links/links";
 import { articulationsDisponibles } from "./services/brand-links/articulation";
-import { detecterCollision } from "./services/brand-links/collision";
+import { detecterCollision, detecterCollisionLot } from "./services/brand-links/collision";
+import type { CollisionLot } from "./services/brand-links/collision";
+import { importerTexte, ReponseIllisible } from "./services/content-import/import";
+import { MAX_CARACTERES } from "./services/content-import/parse";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache, VALEUR_A_PRECISER, CHAMPS_DEDUCTIBLES } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
@@ -6833,6 +6836,91 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     } catch (error) {
       console.error("Error ingesting content reception:", error);
       res.status(500).json({ message: "Failed to ingest content reception" });
+    }
+  });
+
+  // Import d'un texte collé (calendrier de contenu écrit ailleurs) en posts du
+  // calendrier éditorial. Le découpage pur vit dans services/content-import/parse.ts,
+  // l'orchestration (modèle + écriture transactionnelle) dans
+  // services/content-import/import.ts : cette route ne fait que valider l'entrée,
+  // traduire les pannes connues, et borner `couverture` pour l'affichage.
+  app.post('/api/content/import', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const projectId = Number(req.body?.projectId);
+      if (!Number.isFinite(projectId) || projectId <= 0) {
+        return res.status(400).json({ message: "projectId invalide" });
+      }
+
+      const texte = typeof req.body?.text === "string" ? req.body.text : "";
+      if (!texte.trim()) {
+        return res.status(400).json({ message: "text requis" });
+      }
+      // Le message nomme les DEUX nombres — la limite et ce qui a été reçu — pour que
+      // l'utilisatrice sache de combien couper, plutôt qu'un refus opaque.
+      if (texte.length > MAX_CARACTERES) {
+        return res.status(400).json({
+          message: `Texte trop long : ${texte.length} caractères reçus, la limite est de ${MAX_CARACTERES}.`,
+        });
+      }
+
+      // 404, jamais 403 : motif retenu dans tout ce dépôt pour ne pas révéler
+      // l'existence d'un projet d'autrui (voir POST /api/projects/:id/links).
+      const project = await storage.getProject(projectId, userId);
+      if (!project) return res.status(404).json({ message: "Project not found" });
+
+      if (await isAiBlocked(userId)) {
+        return res.status(429).json({ message: "ai_monthly_limit_reached" });
+      }
+
+      let resultat;
+      try {
+        resultat = await importerTexte({ userId, projectId, texte });
+      } catch (error) {
+        if (error instanceof ReponseIllisible) {
+          return res.status(502).json({ message: "Le modèle a répondu quelque chose d'illisible" });
+        }
+        throw error;
+      }
+
+      // `couverture` est un rapport BRUT non borné (peut dépasser 1, voir le
+      // commentaire de ResultatImport) : on le borne à 100 ici, pour l'affichage. Le
+      // rapport brut reste dans le journal écrit par `importerTexte`.
+      const couverture = Math.max(0, Math.min(100, Math.round(resultat.couverture * 100)));
+
+      // Détection de collision du LOT : s'exécute APRÈS que les posts ont été écrits
+      // et commités. Enveloppée dans un try/catch LOCAL — exactement le motif retenu
+      // sur POST /api/content (ligne ~6651) : une exception ici ne doit JAMAIS
+      // produire un 500 sur un import qui a réussi. `detecterCollisionLot` avale déjà
+      // ses propres erreurs et rend `[]`, mais on ne s'appuie pas QUE là-dessus.
+      let collisions: CollisionLot[] = [];
+      const postesAvecDate = resultat.posts.filter(
+        (p): p is typeof p & { scheduledFor: Date } => p.scheduledFor !== null,
+      );
+      if (postesAvecDate.length > 0) {
+        try {
+          collisions = await detecterCollisionLot({
+            userId,
+            projectId,
+            // `ResultatImport.posts` ne rend que { id, title, scheduledFor } — pas le
+            // corps : le titre sert de corps pour cette comparaison, faute de mieux.
+            posts: postesAvecDate.map((p) => ({ id: p.id, titre: p.title, corps: p.title, quand: p.scheduledFor })),
+          });
+        } catch (collisionError) {
+          console.error("Error detecting batch collision:", collisionError);
+        }
+      }
+
+      res.json({
+        posts: resultat.posts,
+        ignores: resultat.ignores,
+        couverture,
+        tronque: resultat.tronque,
+        collisions,
+      });
+    } catch (error) {
+      console.error("Error importing content text:", error);
+      res.status(500).json({ message: "Failed to import content" });
     }
   });
 
