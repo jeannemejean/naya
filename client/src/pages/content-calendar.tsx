@@ -19,6 +19,7 @@ import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
 import Sidebar from '@/components/sidebar';
 import { SocialComposer } from '@/components/SocialComposer';
+import { ImportCalendrier } from '@/components/content/import-calendrier';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1434,6 +1435,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <Upload className="h-4 w-4" />
  {t('contentCalendar.reception.openImport')}
  </Button>
+ <ImportCalendrier projectId={selectedProjectId} />
  <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) resetForm(); }}>
  <DialogTrigger asChild>
  <Button variant="outline" className="flex items-center gap-2">

@@ -854,6 +854,14 @@ const en = {
  importErrorLine: "Line {{line}}",
  importErrorContent: "Content #{{contentId}} ({{platform}})",
  },
+ importCalendrier: {
+ openImport: "Import a calendar",
+ title: "Import a content calendar",
+ placeholder: "Paste here the content calendar you wrote elsewhere.",
+ submit: "Import",
+ submitting: "Importing…",
+ close: "Close",
+ },
  },
 
  planning: {
