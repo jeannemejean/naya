@@ -825,10 +825,26 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  // un échec ici ne doit jamais faire basculer toute l'application sur l'ErrorBoundary
  // racine pour la panne d'un seul panneau de confirmation (même motif que
  // `BrandLinksPanel.tsx` et `articulationData` plus haut dans ce fichier).
+ //
+ // `staleTime: 0` — contrairement au défaut global (`staleTime: Infinity`,
+ // `client/src/lib/queryClient.ts`) — PAR-DESSUS `enabled`, pas à sa place : cette donnée
+ // doit TOUJOURS repartir chercher l'état courant à chaque ouverture du dialogue, jamais
+ // resservir ce qui a été vu la dernière fois. Sans ce `staleTime`, la clé
+ // `["/api/campaigns", selectedCampaignId, "reject-preview"]` reste writes-once : une
+ // campagne ouverte vide (0 post, 0 tâche) puis relancée (posts/tâches créés) rouvrirait
+ // sur ce même cache à vie — aucune des invalidations de cette page ne cible cette clé,
+ // qui n'est écrite que par `rejectMutation.onSuccess`. Mais `staleTime: 0` seul ne suffit
+ // PAS : il relance la requête, il ne cache pas la valeur PÉRIMÉE que `.data` continue de
+ // porter pendant que ce nouveau fetch est en vol (`isFetching`). C'est le JSX plus bas
+ // (gardé sur `isFetching`, jamais sur `isLoading`) qui ferme cette seconde moitié : il
+ // n'affiche NI les anciens chiffres NI le bouton de confirmation tant qu'un fetch — initial
+ // ou de fond — est en cours. Les deux moitiés sont nécessaires ensemble ; l'une sans
+ // l'autre laisse une fenêtre où l'écran montre un fait qui n'est déjà plus vrai.
  const apercuRejetQuery = useQuery<ApercuRejet>({
  queryKey: ["/api/campaigns", selectedCampaignId, "reject-preview"],
  queryFn: () => fetchJson(`/api/campaigns/${selectedCampaignId}/reject-preview`),
  enabled: rejetOuvert && !!selectedCampaignId,
+ staleTime: 0,
  throwOnError: false,
  });
 
@@ -1676,16 +1692,23 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  <AlertDialogTitle>{TITRE_DIALOGUE_REJET}</AlertDialogTitle>
  </AlertDialogHeader>
  <div className="space-y-1.5">
- {apercuRejetQuery.isLoading && (
+ {/* Gardé sur `isFetching`, jamais sur `isLoading` : `isLoading` ne vaut vrai que lors du
+ TOUT premier chargement (pas de données en cache) — un refetch de fond déclenché par
+ `staleTime: 0` a déjà des données (périmées) et `isLoading` resterait faux pendant
+ tout le vol. `isFetching` couvre les deux. Tant qu'il est vrai, ni les anciens
+ chiffres ni une erreur périmée ne s'affichent : seul « … » est montré, et le bouton de
+ confirmation (plus bas) reste désactivé — aucun instant où le dialogue présente une
+ donnée qui n'est pas celle de l'état courant. */}
+ {apercuRejetQuery.isFetching && (
  <p className="text-sm text-naya-olive-55">…</p>
  )}
- {apercuRejetQuery.isError && (
+ {!apercuRejetQuery.isFetching && apercuRejetQuery.isError && (
  <div>
  <p className="text-sm text-foreground">{TITRE_APERCU_ECHEC}</p>
  <p className="text-sm text-naya-olive-55">{messageEchecApercu(apercuRejetQuery.error)}</p>
  </div>
  )}
- {apercuRejetQuery.data &&
+ {!apercuRejetQuery.isFetching && !apercuRejetQuery.isError && apercuRejetQuery.data &&
  construireTexteConfirmation(apercuRejetQuery.data).map((ligne, i) => (
  <p key={i} className="text-sm text-naya-olive-70">{ligne}</p>
  ))}
@@ -1706,7 +1729,23 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  </div>
  <AlertDialogFooter>
  <AlertDialogCancel>{LIBELLE_ANNULER}</AlertDialogCancel>
- <AlertDialogAction onClick={confirmerRejet} data-testid="rejet-confirmer">
+ {/* Désactivé tant que l'annonce affichée ci-dessus n'est pas un fait établi : en
+ vol (`isFetching`), en échec (`isError` — « Aperçu indisponible » n'est pas une
+ confirmation), ou sans donnée encore reçue. La seule protection de ce geste
+ destructeur est que son annonce soit vraie ; si l'annonce n'a pas eu lieu, le
+ bouton qui l'exécute ne doit pas être actionnable. `rejectMutation.isPending`
+ est redondant avec `tenterUneFois` (qui empêche déjà un second appel réseau)
+ mais reflète aussi l'état dans le JSX, par cohérence avec le reste du dépôt. */}
+ <AlertDialogAction
+ onClick={confirmerRejet}
+ disabled={
+ apercuRejetQuery.isFetching ||
+ apercuRejetQuery.isError ||
+ !apercuRejetQuery.data ||
+ rejectMutation.isPending
+ }
+ data-testid="rejet-confirmer"
+ >
  {LIBELLE_CONFIRMER_REJET}
  </AlertDialogAction>
  </AlertDialogFooter>
