@@ -41,8 +41,8 @@ export interface Tri {
  */
 export function contenuEstPublie(c: ContenuCandidat): boolean {
   if (c.publishedAt !== null && c.publishedAt !== undefined) return true;
-  if (c.postStatus === "posted") return true;
-  if (c.contentStatus === "published") return true;
+  if ((c.postStatus || "").trim().toLowerCase() === "posted") return true;
+  if ((c.contentStatus || "").trim().toLowerCase() === "published") return true;
   return false;
 }
 
@@ -92,6 +92,7 @@ export function construirePreference(input: {
   if (obj) lignes.push(`Son objectif était : ${obj}.`);
   const msg = (coreMessage || "").trim();
   if (msg) lignes.push(`Son message central était : ${msg}.`);
-  lignes.push(`Ce qui n'allait pas, dans les mots de l'utilisatrice : ${raison}`);
+  const raisonAvecPoint = raison.endsWith(".") ? raison : raison + ".";
+  lignes.push(`Ce qui n'allait pas, dans les mots de l'utilisatrice : ${raisonAvecPoint}`);
   return lignes.join(" ");
 }
