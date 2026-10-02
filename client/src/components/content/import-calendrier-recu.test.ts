@@ -20,9 +20,10 @@ const reponseExemple: ReponseImportCalendrier = {
 };
 
 describe("construireRecu — l'exemple complet du brief, mot pour mot", () => {
-  it("rend exactement les cinq lignes attendues, dans l'ordre", () => {
+  it("rend exactement les six lignes attendues, dans l'ordre", () => {
     expect(construireRecu(reponseExemple)).toEqual([
-      "14 posts créés, couvrant environ 85 % de ton texte.",
+      "14 posts créés.",
+      "Ton texte a été repris à environ 85 %.",
       "9 sont datés, 5 sont en réserve.",
       "2 posts étaient déjà présents, ignorés.",
       "2 recoupent du contenu déjà programmé sur Agence JMD.",
@@ -53,11 +54,36 @@ describe("construireRecu — aucune ligne à zéro", () => {
     expect(construireRecu(sansRien).join("\n")).not.toMatch(/trop long/);
   });
 
-  it("ne rend que les deux premières lignes dans ce cas", () => {
+  it("ne rend que les trois premières lignes dans ce cas", () => {
     expect(construireRecu(sansRien)).toEqual([
-      "14 posts créés, couvrant environ 85 % de ton texte.",
+      "14 posts créés.",
+      "Ton texte a été repris à environ 85 %.",
       "9 sont datés, 5 sont en réserve.",
     ]);
+  });
+});
+
+describe("construireRecu — couverture et posts créés sont DEUX faits, jamais soudés", () => {
+  it("une couverture élevée du texte lu n'implique pas que les posts créés en couvrent autant — cas où la plupart des posts extraits sont des doublons ignorés", () => {
+    // 16 posts lus par le modèle (couverture mesurée sur le texte LU), dont 14 étaient
+    // déjà présents et ignorés : seuls 2 posts sont réellement créés. Souder les deux
+    // faits en une phrase laisserait croire que les 2 posts créés couvrent 95 % du
+    // texte collé, ce qui serait faux.
+    const reponse: ReponseImportCalendrier = {
+      posts: posts(2, 0),
+      ignores: 14,
+      couverture: 95,
+      reecrit: false,
+      tronque: false,
+      collisions: [],
+    };
+    const lignes = construireRecu(reponse);
+    expect(lignes[0]).toBe("2 posts créés.");
+    expect(lignes[1]).toBe("Ton texte a été repris à environ 95 %.");
+    // Aucune LIGNE (prise isolément) ne doit affirmer que les posts CRÉÉS couvrent
+    // 95 % de quoi que ce soit — les deux faits ne sont jamais soudés dans une même
+    // phrase, même si les deux lignes se suivent dans l'affichage.
+    expect(lignes.some((l) => /créés/.test(l) && /%/.test(l))).toBe(false);
   });
 });
 
@@ -71,7 +97,8 @@ describe("construireRecu — accords singulier/pluriel", () => {
       tronque: false,
       collisions: [],
     };
-    expect(construireRecu(reponse)[0]).toBe("1 post créé, couvrant environ 100 % de ton texte.");
+    expect(construireRecu(reponse)[0]).toBe("1 post créé.");
+    expect(construireRecu(reponse)[1]).toBe("Ton texte a été repris à environ 100 %.");
   });
 
   it("1 est daté, 1 est en réserve (singulier des deux côtés)", () => {
@@ -83,7 +110,7 @@ describe("construireRecu — accords singulier/pluriel", () => {
       tronque: false,
       collisions: [],
     };
-    expect(construireRecu(reponse)[1]).toBe("1 est daté, 1 est en réserve.");
+    expect(construireRecu(reponse)[2]).toBe("1 est daté, 1 est en réserve.");
   });
 
   it("1 post était déjà présent, ignoré (singulier)", () => {
@@ -132,7 +159,7 @@ describe("construireRecu — plusieurs marques distinctes dans les collisions", 
 });
 
 describe("construireRecu — aucun post trouvé", () => {
-  it("affiche la première ligne à zéro (ce n'est pas une ligne conditionnelle) mais omet la répartition datés/réserve", () => {
+  it("affiche les deux premières lignes à zéro (ce ne sont pas des lignes conditionnelles) mais omet la répartition datés/réserve", () => {
     const reponse: ReponseImportCalendrier = {
       posts: [],
       ignores: 0,
@@ -142,7 +169,8 @@ describe("construireRecu — aucun post trouvé", () => {
       collisions: [],
     };
     expect(construireRecu(reponse)).toEqual([
-      "0 posts créés, couvrant environ 0 % de ton texte.",
+      "0 posts créés.",
+      "Ton texte a été repris à environ 0 %.",
     ]);
   });
 });

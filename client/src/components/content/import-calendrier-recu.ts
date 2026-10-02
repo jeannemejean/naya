@@ -46,11 +46,17 @@ export function construireRecu(reponse: ReponseImportCalendrier): string[] {
 
   const lignes: string[] = [];
 
-  lignes.push(
-    `${total} ${accorder(total, "post créé", "posts créés")}, couvrant environ ${reponse.couverture} % de ton texte.`,
-  );
+  // DEUX lignes, jamais soudées en une seule : le nombre de posts CRÉÉS et la
+  // couverture du texte LU sont deux faits indépendants. `couverture` mesure ce qui a
+  // été repris du texte collé, AVANT que les doublons soient ignorés — si 14 posts sur
+  // 16 ont été ignorés comme déjà présents, les 2 posts créés ne couvrent pas 95 % de
+  // quoi que ce soit ; c'est le texte LU, dans son ensemble, qui l'est. Les souder («
+  // 2 posts créés, couvrant environ 95 % de ton texte ») laisserait croire que les 2
+  // posts créés représentent 95 % du texte collé, ce qui serait faux dans ce cas.
+  lignes.push(`${total} ${accorder(total, "post créé", "posts créés")}.`);
+  lignes.push(`Ton texte a été repris à environ ${reponse.couverture} %.`);
 
-  // Décompose la première ligne : n'a de sens que s'il y a au moins un post à répartir.
+  // Décompose plus loin : n'a de sens que s'il y a au moins un post à répartir.
   if (total > 0) {
     lignes.push(
       `${dates} ${accorder(dates, "est daté", "sont datés")}, ${enReserve} ${accorder(enReserve, "est en réserve", "sont en réserve")}.`,
