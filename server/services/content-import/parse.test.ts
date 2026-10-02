@@ -201,14 +201,38 @@ describe("comblerChamps", () => {
     expect(r.deduits).not.toContain("goal");
   });
 
-  it("ne déclare rien quand le texte a tout dit", () => {
+  it("ne déclare rien quand le texte a tout dit, avec des valeurs CONNUES de l'interface", () => {
     const r = comblerChamps(
-      { titre: "T", corps: "C", plateforme: "linkedin", type: "carousel", pilier: "coulisses", objectif: "engagement", date: null },
+      { titre: "T", corps: "C", plateforme: "linkedin", type: "article", pilier: "coulisses", objectif: "engagement", date: null },
       "instagram",
     );
     expect(r.deduits).toEqual([]);
     expect(r.valeurs.platform).toBe("linkedin");
     expect(r.valeurs.pillar).toBe("coulisses");
+  });
+
+  // Régression : le prompt d'extraction (parse.ts) propose à la plateforme "tiktok",
+  // "youtube", "newsletter", et au type "carousel", "reel", "video" — que l'interface
+  // (client/src/pages/content-calendar-platforms.ts) ne sait pas toutes afficher.
+  // `getPlatformInfo` y replie silencieusement sur PLATFORMS[0] (Instagram) faute de
+  // correspondance : un post TikTok s'affichait "Instagram", avec son point de couleur
+  // et sa limite de caractères, sans que rien ne le signale.
+  it("une plateforme rendue par le modèle mais INCONNUE de l'interface est traitée comme absente, et déclarée déduite", () => {
+    const r = comblerChamps({ ...nu, plateforme: "tiktok" }, "instagram");
+    expect(r.valeurs.platform).toBe("instagram"); // le défaut, pas "tiktok"
+    expect(r.deduits).toContain("platform");
+  });
+
+  it("un type de contenu rendu par le modèle mais INCONNU de l'interface est traité comme absent, et déclaré déduit", () => {
+    const r = comblerChamps({ ...nu, type: "carousel" }, "instagram");
+    expect(r.valeurs.contentType).toBe("post"); // le défaut, pas "carousel"
+    expect(r.deduits).toContain("contentType");
+  });
+
+  it("une plateforme CONNUE de l'interface n'est jamais remplacée ni déclarée déduite", () => {
+    const r = comblerChamps({ ...nu, plateforme: "linkedin" }, "instagram");
+    expect(r.valeurs.platform).toBe("linkedin");
+    expect(r.deduits).not.toContain("platform");
   });
 });
 

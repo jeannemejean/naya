@@ -3,7 +3,9 @@
 //
 // TOUT CE FICHIER EST PUR : aucun accès base, aucun appel modèle. Ce qui juge est ici
 // et se teste sans infrastructure ; l'orchestration est dans `import.ts` et ne décide
-// rien.
+// rien. Le seul import, `@shared/content-platforms`, est lui-même pur (voir son
+// commentaire de tête) : il ne casse pas la garantie ci-dessus.
+import { estPlateformeConnue, estTypeContenuConnu } from "@shared/content-platforms";
 
 /** Longueur maximale d'un texte collé. Au-delà, l'import refuse en nommant la limite. */
 export const MAX_CARACTERES = 40000;
@@ -260,12 +262,23 @@ export interface ChampsCombles {
  * un pilier vide ne s'affiche pas (`content-calendar.tsx:900`) et n'empêche pas
  * l'enregistrement — la seule exigence de non-vide porte sur le bouton de génération
  * assistée (`:758`).
+ *
+ * `platform` et `contentType` sont validés contre les listes CONNUES DE L'INTERFACE
+ * (`@shared/content-platforms`) avant d'être retenus : le prompt d'extraction propose
+ * des valeurs que l'interface ne sait pas toutes afficher ("tiktok", "youtube",
+ * "newsletter" pour la plateforme ; "carousel", "reel", "video" pour le type).
+ * `getPlatformInfo` (content-calendar.tsx) replie silencieusement sur PLATFORMS[0]
+ * (Instagram) faute de correspondance — un post TikTok s'afficherait donc
+ * « Instagram », avec son point de couleur et sa limite de caractères, sans que rien
+ * ne le signale. Une valeur non reconnue est donc traitée EXACTEMENT comme une
+ * valeur absente : comblée par le défaut, et déclarée dans `deduits` — ce qui est
+ * exact, puisque la valeur écrite ne vient alors plus du texte.
  */
 export function comblerChamps(post: PostExtrait, plateformeParDefaut: string): ChampsCombles {
   const deduits: string[] = [];
-  let platform = post.plateforme;
+  let platform: string | null = post.plateforme && estPlateformeConnue(post.plateforme) ? post.plateforme : null;
   if (!platform) { platform = plateformeParDefaut; deduits.push("platform"); }
-  let contentType = post.type;
+  let contentType: string | null = post.type && estTypeContenuConnu(post.type) ? post.type : null;
   if (!contentType) { contentType = "post"; deduits.push("contentType"); }
   return {
     valeurs: { platform, contentType, pillar: post.pilier ?? "", goal: post.objectif ?? "" },

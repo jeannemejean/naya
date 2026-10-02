@@ -33,6 +33,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ObjectUploader } from '@/components/ObjectUploader';
 
 import type { Content, ContentReception, SocialAccount, MediaLibrary, TargetPersona, PersonaAnalysisResult, Project } from '@shared/schema';
+import { PLATFORMS, CONTENT_TYPES } from './content-calendar-platforms';
 import { normalizeReceptionImportErrors, type ReceptionImportRawError } from '@/lib/reception-import-errors';
 import { apiRequest } from '@/lib/queryClient';
 import { LIMITE_CONTENUS_PAGE, plafondAtteint } from './content-calendar-limit';
@@ -76,22 +77,6 @@ type StrategyReportResponse = {
  recommendations: string[];
  nextWeekPlan: Record<string, string>;
 };
-
-const PLATFORMS = [
- { value: 'instagram', label: 'Instagram', color: 'bg-gradient-to-r from-purple-500 to-pink-500', dotColor: '#a855f7', charLimit: 2200 },
- { value: 'linkedin', label: 'LinkedIn', color: 'bg-naya-salvia', dotColor: '#2563eb', charLimit: 3000 },
- { value: 'twitter', label: 'Twitter', color: 'bg-naya-olive-70', dotColor: '#2B2D1C', charLimit: 280 },
- { value: 'facebook', label: 'Facebook', color: 'bg-naya-salvia', dotColor: '#1d4ed8', charLimit: 63206 },
- { value: 'email', label: 'Email', color: 'bg-naya-olive', dotColor: '#16a34a', charLimit: 10000 },
- { value: 'blog', label: 'Blog', color: 'bg-naya-olive-70', dotColor: '#374151', charLimit: 50000 },
-];
-
-const CONTENT_TYPES = [
- { value: 'post', label: 'Social Post' },
- { value: 'story', label: 'Story' },
- { value: 'email', label: 'Email' },
- { value: 'article', label: 'Article' },
-];
 
 const GOALS = [
  { value: 'visibility', label: 'Visibility' },

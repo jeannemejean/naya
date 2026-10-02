@@ -205,9 +205,9 @@ describe("importerTexte", () => {
     expect(ligne.deducedFields).toContain("platform");
   });
 
-  it("cas 3 — un post dont le modèle a tout donné a deducedFields égal à [] (pas null)", async () => {
+  it("cas 3 — un post dont le modèle a tout donné, avec des valeurs CONNUES de l'interface, a deducedFields égal à [] (pas null)", async () => {
     (claude.callClaudeDetailed as any).mockResolvedValue(
-      reponseModele([posteModele({ titre: "Post complet", plateforme: "tiktok", type: "reel" })]),
+      reponseModele([posteModele({ titre: "Post complet", plateforme: "linkedin", type: "article" })]),
     );
     hoisted.resultats = [[], []];
     hoisted.resultatsTransaction = [[{ id: 1, title: "Post complet", scheduledFor: null }]];
@@ -215,6 +215,25 @@ describe("importerTexte", () => {
     await importerTexte(INPUT);
 
     expect(hoisted.lignesInserees[0][0].deducedFields).toEqual([]);
+  });
+
+  // Régression : "tiktok"/"reel" sont des valeurs que le prompt d'extraction PROPOSE
+  // (parse.ts) mais que l'interface ne sait pas afficher (content-calendar-platforms.ts) —
+  // avant ce correctif, elles étaient écrites telles quelles, et `getPlatformInfo`
+  // repliait silencieusement sur Instagram à l'affichage, sans que rien ne le signale.
+  it("une plateforme/un type rendus par le modèle mais INCONNUS de l'interface sont écrits comme une absence, et déclarés déduits", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue(
+      reponseModele([posteModele({ titre: "Post TikTok", plateforme: "tiktok", type: "reel" })]),
+    );
+    hoisted.resultats = [[], []]; // aucune plateforme récente : le défaut est linkedin
+    hoisted.resultatsTransaction = [[{ id: 1, title: "Post TikTok", scheduledFor: null }]];
+
+    await importerTexte(INPUT);
+
+    const ligne = hoisted.lignesInserees[0][0];
+    expect(ligne.platform).toBe(PLATEFORME_PAR_DEFAUT); // jamais "tiktok"
+    expect(ligne.contentType).toBe("post"); // jamais "reel"
+    expect(ligne.deducedFields).toEqual(expect.arrayContaining(["platform", "contentType"]));
   });
 
   it("cas 4 — un post sans date est écrit avec scheduledFor à null", async () => {
