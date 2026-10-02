@@ -96,3 +96,172 @@ export function construirePreference(input: {
   lignes.push(`Ce qui n'allait pas, dans les mots de l'utilisatrice : ${raisonAvecPoint}`);
   return lignes.join(" ");
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ORCHESTRATION — tout ce qui suit DÉCIDE d'écrire en base. Rien au-dessus de cette
+// ligne n'est touché : les fonctions pures ci-dessus sont verrouillées (tâche 1,
+// relues et renforcées par mutation).
+// ════════════════════════════════════════════════════════════════════════════════
+
+import { and, eq, inArray } from "drizzle-orm";
+import { content, tasks, campaigns, projects, memoryEntries } from "@shared/schema";
+import { db } from "../../db";
+import { embedText } from "../memory/embed";
+
+export interface ResultatRejet {
+  contenusDetaches: number;
+  contenusSupprimes: number;
+  tachesDetachees: number;
+  tachesSupprimees: number;
+  preferenceEcrite: boolean;
+  /** La préférence est écrite mais NON vectorisée : invisible à la récupération
+   *  sémantique, et rien ne la rattrapera. Voir Décision 7 du spec. */
+  preferenceSansEmbedding: boolean;
+  articulationsRompues: Array<{ campagneId: number; campagneNom: string; marque: string }>;
+}
+
+/**
+ * Exécute le rejet d'une campagne générée, en base.
+ *
+ * L'ORDRE N'EST PAS ARBITRAIRE (voir le brief de ce chantier) :
+ *
+ *   1. détacher les contenus/tâches GARDÉS (campaignId → null)
+ *   2. supprimer les contenus/tâches PARTANTS
+ *   3. écrire la préférence (si une raison a été donnée)
+ *   4. supprimer la campagne
+ *
+ * `content.campaign_id` et `tasks.campaign_id` sont en `NO ACTION` : supprimer la
+ * campagne tant qu'une seule ligne la référence encore échoue. Dans cet ordre précis,
+ * plus aucune ligne ne référence la campagne au moment où elle est supprimée.
+ *
+ * L'embedding de la préférence est calculé AVANT d'ouvrir la transaction : tenir une
+ * transaction ouverte pendant un appel réseau verrouillerait des lignes pendant des
+ * secondes. `embedText` est best-effort — `null` ou une levée produisent le même
+ * résultat (`preferenceSansEmbedding: true`), jamais un rejet en échec.
+ *
+ * Les quatre opérations ci-dessus (plus la lecture des articulations rompues, qui doit
+ * précéder la suppression pour ne pas perdre l'information) vivent dans UNE SEULE
+ * `db.transaction` : si quoi que ce soit échoue en cours de route, rien n'est validé —
+ * ni détachement, ni suppression, ni préférence.
+ */
+export async function rejeterCampagne(input: {
+  userId: string;
+  campaignId: number;
+  raison: string;
+}): Promise<ResultatRejet> {
+  const { userId, campaignId, raison } = input;
+
+  // La clause porte sur userId ET id : une campagne qui n'appartient pas à
+  // l'utilisatrice n'est jamais touchée, jamais même vue.
+  const [campagne] = await db
+    .select({
+      id: campaigns.id,
+      name: campaigns.name,
+      objective: campaigns.objective,
+      coreMessage: campaigns.coreMessage,
+      projectId: campaigns.projectId,
+    })
+    .from(campaigns)
+    .where(and(eq(campaigns.userId, userId), eq(campaigns.id, campaignId)));
+
+  if (!campagne) {
+    throw new Error(`Campagne ${campaignId} introuvable pour cet utilisateur`);
+  }
+
+  // Lectures seules, hors transaction : elles ne décident que du tri, ne mutent rien.
+  const contenus = await db
+    .select({
+      id: content.id,
+      publishedAt: content.publishedAt,
+      postStatus: content.postStatus,
+      contentStatus: content.contentStatus,
+    })
+    .from(content)
+    .where(and(eq(content.userId, userId), eq(content.campaignId, campaignId)));
+
+  const tachesBrutes = await db
+    .select({ id: tasks.id, completed: tasks.completed })
+    .from(tasks)
+    .where(and(eq(tasks.userId, userId), eq(tasks.campaignId, campaignId)));
+
+  const triContenus = trierContenus(contenus);
+  const triTaches = trierTaches(tachesBrutes);
+
+  // Préférence : construite (pure), puis vectorisée AVANT la transaction.
+  const texte = construirePreference({ campagne, raison });
+  let embedding: number[] | null = null;
+  let preferenceSansEmbedding = false;
+  if (texte) {
+    try {
+      embedding = await embedText(texte);
+    } catch {
+      embedding = null;
+    }
+    if (!embedding) preferenceSansEmbedding = true;
+  }
+
+  return db.transaction(async (tx) => {
+    // Relevées AVANT la suppression de la campagne : la contrainte est en SET NULL
+    // (rien ne casse), mais l'information disparaît si on ne la lit pas maintenant —
+    // l'écran de confirmation en a besoin.
+    const articulations = await tx
+      .select({
+        campagneId: campaigns.id,
+        campagneNom: campaigns.name,
+        marque: projects.name,
+      })
+      .from(campaigns)
+      .leftJoin(projects, eq(campaigns.projectId, projects.id))
+      .where(eq(campaigns.articuleAvecCampaignId, campaignId));
+
+    const articulationsRompues = articulations.map((a) => ({
+      campagneId: a.campagneId,
+      campagneNom: a.campagneNom,
+      marque: a.marque ?? "",
+    }));
+
+    // 1. Détacher les gardés.
+    if (triContenus.gardes.length > 0) {
+      await tx.update(content).set({ campaignId: null }).where(inArray(content.id, triContenus.gardes));
+    }
+    if (triTaches.gardes.length > 0) {
+      await tx.update(tasks).set({ campaignId: null }).where(inArray(tasks.id, triTaches.gardes));
+    }
+
+    // 2. Supprimer les partants.
+    if (triContenus.partants.length > 0) {
+      await tx.delete(content).where(inArray(content.id, triContenus.partants));
+    }
+    if (triTaches.partants.length > 0) {
+      await tx.delete(tasks).where(inArray(tasks.id, triTaches.partants));
+    }
+
+    // 3. Écrire la préférence — jamais sans raison (Décision 4 du spec).
+    let preferenceEcrite = false;
+    if (texte) {
+      await tx.insert(memoryEntries).values({
+        userId,
+        projectId: campagne.projectId,
+        fil: "cap",
+        entryType: "préférence",
+        content: texte,
+        embedding,
+        salience: SALIENCE_REJET,
+      });
+      preferenceEcrite = true;
+    }
+
+    // 4. Supprimer la campagne — plus aucune ligne ne la référence à cet instant.
+    await tx.delete(campaigns).where(and(eq(campaigns.userId, userId), eq(campaigns.id, campaignId)));
+
+    return {
+      contenusDetaches: triContenus.gardes.length,
+      contenusSupprimes: triContenus.partants.length,
+      tachesDetachees: triTaches.gardes.length,
+      tachesSupprimees: triTaches.partants.length,
+      preferenceEcrite,
+      preferenceSansEmbedding,
+      articulationsRompues,
+    };
+  });
+}
