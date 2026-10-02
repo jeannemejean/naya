@@ -282,25 +282,35 @@ describe("importerTexte", () => {
     expect(hoisted.transactionAppelee).toBe(false);
   });
 
-  it("cas 9a — stopReason 'max_tokens' met tronque à true sans empêcher l'écriture des posts obtenus", async () => {
-    (claude.callClaudeDetailed as any).mockResolvedValue(
-      reponseModele([posteModele({ titre: "Post malgré troncature" })], "max_tokens"),
-    );
+  // Une réponse RÉELLEMENT tronquée (coupée à max_tokens) n'a jamais de "]" fermant :
+  // elle s'arrête en plein milieu d'un objet, comme ici après "Post coupé". Un
+  // `JSON.stringify([...])` complet avec un stopReason de troncature (l'ancienne forme
+  // de ce test) est une combinaison que le modèle ne peut PAS produire — il passerait
+  // même si `parsePostsExtraits` ne savait pas du tout salvager un tableau tronqué.
+  const texteTronque =
+    '[{"titre":"Post complet","corps":"Corps complet, recopié en entier avant la coupure.",' +
+    '"plateforme":null,"type":null,"pilier":null,"objectif":null,"date":null},' +
+    '{"titre":"Post coupé par la troncature","corps":"Ce corps est interrompu en pl';
+
+  it("cas 9a — stopReason 'max_tokens' sur une réponse réellement tronquée : tronque à true, et le post COMPLET avant la coupure est quand même écrit", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({ text: texteTronque, stopReason: "max_tokens" });
     hoisted.resultats = [[], []];
-    hoisted.resultatsTransaction = [[{ id: 1, title: "Post malgré troncature", scheduledFor: null }]];
+    hoisted.resultatsTransaction = [[{ id: 1, title: "Post complet", scheduledFor: null }]];
 
     const r = await importerTexte(INPUT);
 
     expect(r.tronque).toBe(true);
+    // Seul le post complet avant la coupure survit : celui coupé en plein milieu n'a
+    // jamais existé pour l'appelante — jamais un objet à moitié lu.
     expect(r.posts).toHaveLength(1);
+    expect(hoisted.lignesInserees[0]).toHaveLength(1);
+    expect(hoisted.lignesInserees[0][0].title).toBe("Post complet");
   });
 
-  it("cas 9b — stopReason 'length' (convention OpenAI) met AUSSI tronque à true : deux valeurs, pas une", async () => {
-    (claude.callClaudeDetailed as any).mockResolvedValue(
-      reponseModele([posteModele({ titre: "Post malgré troncature OpenAI" })], "length"),
-    );
+  it("cas 9b — stopReason 'length' (convention OpenAI) sur la même réponse tronquée : tronque à true aussi — deux valeurs, pas une", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({ text: texteTronque, stopReason: "length" });
     hoisted.resultats = [[], []];
-    hoisted.resultatsTransaction = [[{ id: 1, title: "Post malgré troncature OpenAI", scheduledFor: null }]];
+    hoisted.resultatsTransaction = [[{ id: 1, title: "Post complet", scheduledFor: null }]];
 
     const r = await importerTexte(INPUT);
 

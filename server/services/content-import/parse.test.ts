@@ -40,6 +40,47 @@ Fin.`;
   });
 });
 
+describe("parsePostsExtraits — réponse tronquée (pas de \"]\" fermant)", () => {
+  it("récupère les objets COMPLETS avant la coupure, et ignore celui coupé en plein milieu", () => {
+    const raw =
+      '[{"titre":"Premier","corps":"Corps du premier, complet.","plateforme":null,"type":null,"pilier":null,"objectif":null,"date":null},' +
+      '{"titre":"Deuxième","corps":"Corps du deuxième, complet aussi.","plateforme":null,"type":null,"pilier":null,"objectif":null,"date":null},' +
+      '{"titre":"Troisième coupé","corps":"Ce corps est interrompu en pl';
+    const posts = parsePostsExtraits(raw);
+    expect(posts).not.toBeNull();
+    expect(posts!.map((p) => p.titre)).toEqual(["Premier", "Deuxième"]);
+  });
+
+  it("rend null quand la coupure survient DANS le tout premier objet — rien n'est récupérable", () => {
+    expect(parsePostsExtraits(`[{"titre":`)).toBeNull();
+    expect(parsePostsExtraits(`[{"titre":"A","corps":"un corps qui se fait coup`)).toBeNull();
+  });
+
+  it("rend null sur un tableau tronqué juste après l'ouverture, sans aucun objet", () => {
+    expect(parsePostsExtraits("[")).toBeNull();
+  });
+
+  it("une accolade ou une guillemet échappée À L'INTÉRIEUR d'une chaîne ne perturbe pas le comptage de profondeur", () => {
+    const raw =
+      '[{"titre":"Avec accolade","corps":"Un corps qui mentionne { ceci } et une guillemet \\" échappée, complet.","plateforme":null,"type":null,"pilier":null,"objectif":null,"date":null},' +
+      '{"titre":"Coupé ensuite","corps":"interrom';
+    const posts = parsePostsExtraits(raw);
+    expect(posts).not.toBeNull();
+    expect(posts).toHaveLength(1);
+    expect(posts![0].corps).toContain("{ ceci }");
+    expect(posts![0].corps).toContain('"');
+  });
+
+  it("salvage un objet complet même sans aucun objet AVANT lui coupé en second", () => {
+    // Un seul post dans la réponse, entier, puis la coupure arrive juste après —
+    // aucune virgule, aucun second objet amorcé.
+    const raw = '[{"titre":"Seul post","corps":"Corps entier.","plateforme":null,"type":null,"pilier":null,"objectif":null,"date":null}';
+    const posts = parsePostsExtraits(raw);
+    expect(posts).toHaveLength(1);
+    expect(posts![0].titre).toBe("Seul post");
+  });
+});
+
 describe("resoudreDate", () => {
   const aujourdhui = new Date("2026-10-01T00:00:00");
 

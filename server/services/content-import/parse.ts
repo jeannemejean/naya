@@ -56,20 +56,92 @@ export function construireMessageExtraction(texte: string, aujourdhui: Date): st
 }
 
 /**
+ * Récupère, dans l'ordre, les objets `{…}` COMPLETS d'un tableau JSON qui n'a pas pu
+ * être lu intégralement — typiquement une réponse coupée à `max_tokens` en plein
+ * milieu d'un objet (pas de `]` fermant, voir `parsePostsExtraits`). S'arrête au
+ * premier objet non refermé, ou à la fin du texte : jamais un objet partiel renvoyé.
+ *
+ * `debutTableau` pointe sur le `[` d'ouverture du tableau. Pure, et consciente des
+ * chaînes JSON (une accolade à l'intérieur d'une chaîne, ou une guillemet échappée,
+ * ne doit pas perturber le comptage de profondeur).
+ */
+function extraireObjetsComplets(raw: string, debutTableau: number): string[] {
+  const objets: string[] = [];
+  const n = raw.length;
+  let i = debutTableau + 1;
+  while (i < n) {
+    while (i < n && /[\s,]/.test(raw[i])) i++;
+    if (i >= n || raw[i] === "]") break; // fin propre du tableau : rien de plus à lire
+    if (raw[i] !== "{") break; // jeton inattendu : on s'arrête plutôt que de deviner
+
+    let profondeur = 0;
+    let dansChaine = false;
+    let echappe = false;
+    let j = i;
+    let ferme = false;
+    for (; j < n; j++) {
+      const c = raw[j];
+      if (dansChaine) {
+        if (echappe) echappe = false;
+        else if (c === "\\") echappe = true;
+        else if (c === '"') dansChaine = false;
+      } else if (c === '"') {
+        dansChaine = true;
+      } else if (c === "{") {
+        profondeur++;
+      } else if (c === "}") {
+        profondeur--;
+        if (profondeur === 0) { ferme = true; j++; break; }
+      }
+    }
+    if (!ferme) break; // objet coupé par la troncature : on n'en garde rien
+    objets.push(raw.slice(i, j));
+    i = j;
+  }
+  return objets;
+}
+
+/**
  * Lit la sortie du modèle. Pure. Tolère du bavardage autour du tableau JSON, et écarte
  * les entrées sans titre ou sans corps — un post sans corps n'est pas un post.
  *
  * `null` (réponse illisible) et `[]` (le modèle n'a rien trouvé) sont DEUX réponses
  * différentes : la première est une panne, la seconde est un résultat.
+ *
+ * Une réponse coupée à `max_tokens` (ou `length`) n'a pas de `]` fermant : le tableau
+ * entier échoue à `JSON.parse`. Plutôt que de jeter toute la réponse, on récupère les
+ * objets COMPLETS qu'elle contient déjà (`extraireObjetsComplets`) — une réponse
+ * tronquée doit livrer les posts qu'elle a produits, pas tout perdre (voir le
+ * commentaire de `tronque` dans `import.ts`). Seul un salvage qui ne récupère RIEN
+ * (zéro objet complet) reste une panne (`null`).
  */
 export function parsePostsExtraits(raw: string): PostExtrait[] | null {
   if (!raw) return null;
   const debut = raw.indexOf("[");
+  if (debut === -1) return null;
   const fin = raw.lastIndexOf("]");
-  if (debut === -1 || fin <= debut) return null;
-  let brut: unknown;
-  try { brut = JSON.parse(raw.slice(debut, fin + 1)); } catch { return null; }
-  if (!Array.isArray(brut)) return null;
+
+  let brut: unknown[] | null = null;
+  if (fin > debut) {
+    try {
+      const parsed = JSON.parse(raw.slice(debut, fin + 1));
+      if (Array.isArray(parsed)) brut = parsed;
+    } catch {
+      // Tombe au salvage ci-dessous plutôt que de rendre null immédiatement : un
+      // tableau syntaxiquement invalide peut quand même contenir des objets complets
+      // et lisibles (voir le commentaire de la fonction).
+    }
+  }
+
+  if (brut === null) {
+    const objets = extraireObjetsComplets(raw, debut);
+    if (objets.length === 0) return null;
+    brut = [];
+    for (const s of objets) {
+      try { brut.push(JSON.parse(s)); } catch { /* objet corrompu malgré des accolades équilibrées : ignoré */ }
+    }
+    if (brut.length === 0) return null;
+  }
 
   const texte = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v : null);
 
