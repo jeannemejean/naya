@@ -34,6 +34,16 @@ describe("contenuEstPublie — on garde dès qu'UN signal est allumé", () => {
       expect(contenuEstPublie({ ...nu, contentStatus: s })).toBe(false);
     }
   });
+
+  it("normalise la casse et les espaces avant de comparer", () => {
+    // Variantes de casse qui devraient être reconnues comme publication
+    expect(contenuEstPublie({ ...nu, postStatus: "Posted" })).toBe(true);
+    expect(contenuEstPublie({ ...nu, postStatus: "POSTED" })).toBe(true);
+    expect(contenuEstPublie({ ...nu, postStatus: " posted " })).toBe(true);
+    expect(contenuEstPublie({ ...nu, contentStatus: "Published" })).toBe(true);
+    expect(contenuEstPublie({ ...nu, contentStatus: "PUBLISHED" })).toBe(true);
+    expect(contenuEstPublie({ ...nu, contentStatus: " published " })).toBe(true);
+  });
 });
 
 describe("tacheEstFaite", () => {
@@ -82,6 +92,9 @@ describe("construirePreference", () => {
     const p = construirePreference({ campagne, raison: "trop centré sur moi, pas assez sur les clientes" });
     expect(p).toContain("De Stratège à Scène");
     expect(p).toContain("trop centré sur moi, pas assez sur les clientes");
+    // Vérifier la structure : guillemets autour du nom, phrases de liaison
+    expect(p).toContain("« De Stratège à Scène »");
+    expect(p).toContain("Ce qui n'allait pas");
     expect(p.length).toBeGreaterThan(40);
   });
 
@@ -89,6 +102,18 @@ describe("construirePreference", () => {
     const p = construirePreference({ campagne, raison: "non" });
     expect(p).toContain("asseoir l'autorité");
     expect(p).toContain("la stratège monte sur scène");
+    // Vérifier que ces éléments sont dans des phrases structurées, pas une concaténation brute
+    expect(p).toContain("Son objectif était : asseoir l'autorité");
+    expect(p).toContain("Son message central était : la stratège monte sur scène");
+  });
+
+  it("finit toujours par un point, même si la raison n'en porte pas", () => {
+    const sans = construirePreference({ campagne, raison: "pas assez de détails" });
+    expect(sans).not.toBeNull();
+    expect(sans!.endsWith(".")).toBe(true);
+    const avec = construirePreference({ campagne, raison: "trop court." });
+    expect(avec).not.toBeNull();
+    expect(avec!.endsWith("court.")).toBe(true);
   });
 
   it("rend null sur une raison vide ou blanche — pas de préférence sans raison", () => {
