@@ -59,6 +59,7 @@ import { detecterCollision, detecterCollisionLot } from "./services/brand-links/
 import type { CollisionLot } from "./services/brand-links/collision";
 import { importerTexte, ReponseIllisible } from "./services/content-import/import";
 import { MAX_CARACTERES } from "./services/content-import/parse";
+import { LIMITE_CONTENUS_MAX } from "./services/content-limit";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
 import { construireContenuDepuisTache, VALEUR_A_PRECISER, CHAMPS_DEDUCTIBLES } from "./services/task-to-content";
 import { deduireChampsContenu } from "./services/content-deduction";
@@ -6604,7 +6605,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // pour les semaines à venir — sans que la page ne le laisse voir. Le client
   // demande désormais `limit=LIMITE_CONTENUS_PAGE` (voir content-calendar.tsx) et
   // s'annonce quand la réponse en rend exactement autant.
-  const LIMITE_CONTENUS_MAX = 200;
+  //
+  // `LIMITE_CONTENUS_MAX` vit dans `./services/content-limit` (importé en tête de
+  // fichier) plutôt qu'en constante locale ici : un test affirme son égalité avec
+  // `LIMITE_CONTENUS_PAGE` côté client — voir le commentaire de ce module sur
+  // pourquoi cette paire-ci est la dangereuse des trois duplications du chantier.
   app.get('/api/content', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;

@@ -14,8 +14,12 @@ export const MAX_CARACTERES = 40000;
 const JOURS_PASSE_TOLERES = 365;
 const JOURS_FUTUR_TOLERES = 730;
 
-/** Longueur maximale d'un titre conservé, alignée sur `brand-links/collision.ts`. */
-const LONGUEUR_MAX_TITRE = 200;
+/**
+ * Longueur maximale d'un titre conservé, alignée sur `brand-links/collision.ts`. Exportée
+ * pour qu'un test (`server/content-duplicated-constants.test.ts`) affirme cette égalité
+ * plutôt que le seul commentaire ci-dessus — rien d'autre ne les lie.
+ */
+export const LONGUEUR_MAX_TITRE = 200;
 
 /**
  * Un post tel que le MODÈLE le rend. Chaque champ optionnel vaut `null` quand le texte
