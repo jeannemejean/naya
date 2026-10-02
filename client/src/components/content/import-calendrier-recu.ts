@@ -14,6 +14,8 @@ export interface ReponseImportCalendrier {
   posts: Array<{ scheduledFor: string | Date | null }>;
   ignores: number;
   couverture: number; // entier 0-100, déjà borné côté serveur
+  /** `true` quand le modèle a probablement réécrit le texte au lieu de l'extraire. */
+  reecrit: boolean;
   tronque: boolean;
   collisions: Array<{ marque: string }>;
 }
@@ -70,6 +72,10 @@ export function construireRecu(reponse: ReponseImportCalendrier): string[] {
     lignes.push(
       `${reponse.collisions.length} ${accorder(reponse.collisions.length, "recoupe", "recoupent")} du contenu déjà programmé sur ${marques}.`,
     );
+  }
+
+  if (reponse.reecrit) {
+    lignes.push("Naya a probablement reformulé ton texte au lieu de le recopier : vérifie quelques posts.");
   }
 
   if (reponse.tronque) {

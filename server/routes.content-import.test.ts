@@ -109,6 +109,7 @@ const resultatNominal = (over: Record<string, unknown> = {}) => ({
   posts: [{ id: 10, title: "Un titre", body: "Un corps bien différent du titre.", scheduledFor: new Date("2026-10-10") }],
   ignores: 1,
   couverture: 0.5,
+  reecrit: false,
   tronque: false,
   ...over,
 });
@@ -172,8 +173,19 @@ describe("POST /api/content/import", () => {
     expect(body.couverture).toBe(50);
     expect(body.posts).toHaveLength(1);
     expect(body.ignores).toBe(1);
+    expect(body.reecrit).toBe(false);
     expect(body.tronque).toBe(false);
     expect(body.collisions).toEqual([]);
+  });
+
+  it("9. reecrit est transmis tel quel depuis importerTexte", async () => {
+    hoisted.importerTexte.mockResolvedValue(resultatNominal({ reecrit: true }));
+
+    const res = await poster({ projectId: 1, text: "Un texte à découper." });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.reecrit).toBe(true);
   });
 
   it("6. une couverture brute de 1,4 est rendue comme 100, jamais 140", async () => {

@@ -122,11 +122,20 @@ export function resoudreDate(brut: string | null, aujourdhui: Date): Date | null
 }
 
 /**
- * Rapport entre la longueur du texte extrait et celle du texte collé.
+ * Rapport entre la longueur du texte REPRIS et celle du texte collé.
  *
  * C'est la contrepartie de l'absence de validation : un découpage qui rate quatre posts
  * sur dix-huit ne produit AUCUNE erreur, seulement un résultat appauvri. Cette mesure
  * est la seule chose qui le rend visible.
+ *
+ * Le numérateur ne compte QUE les corps, jamais les titres : le titre n'existe presque
+ * jamais tel quel dans le texte collé, le modèle le SYNTHÉTISE (voir le prompt
+ * d'extraction, qui ne demande pas de recopier un titre). L'additionner au corps gonfle
+ * artificiellement la couverture — vérifié contre le vrai modèle : une extraction fidèle
+ * de dix posts sur dix donnait un rapport de 1,085 avec titre+corps, borné à 100 % à
+ * l'affichage, donc indiscernable d'une réécriture complète (rapport 1,4). Le corps,
+ * lui, est ce que le prompt demande de recopier mot pour mot : c'est lui, et seulement
+ * lui, qui mesure la fidélité de l'extraction.
  *
  * Peut dépasser 1 : cela signifie que le modèle a réécrit au lieu d'extraire, ce que
  * l'appelant journalise.
@@ -134,7 +143,7 @@ export function resoudreDate(brut: string | null, aujourdhui: Date): Date | null
 export function mesurerCouverture(posts: PostExtrait[], texte: string): number {
   const longueur = texte.length;
   if (longueur === 0) return 0;
-  const extrait = posts.reduce((n, p) => n + p.titre.length + p.corps.length, 0);
+  const extrait = posts.reduce((n, p) => n + p.corps.length, 0);
   return extrait / longueur;
 }
 

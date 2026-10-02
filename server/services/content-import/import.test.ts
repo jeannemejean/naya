@@ -427,10 +427,11 @@ describe("importerTexte", () => {
     hoisted.resultats = [[], []];
     hoisted.resultatsTransaction = [[{ id: 1, title: "t", scheduledFor: null }]];
 
-    await importerTexte({ ...INPUT, texte });
+    const r = await importerTexte({ ...INPUT, texte });
 
     const message = infoSpy.mock.calls[0][0] as string;
     expect(message).toContain("le modèle a probablement réécrit au lieu d'extraire");
+    expect(r.reecrit).toBe(true);
   });
 
   it("le journal ne mentionne PAS la réécriture quand la couverture reste sous 1,2", async () => {
@@ -441,10 +442,27 @@ describe("importerTexte", () => {
     hoisted.resultats = [[], []];
     hoisted.resultatsTransaction = [[{ id: 1, title: "t", scheduledFor: null }]];
 
-    await importerTexte({ ...INPUT, texte });
+    const r = await importerTexte({ ...INPUT, texte });
 
     const message = infoSpy.mock.calls[0][0] as string;
     expect(message).not.toContain("le modèle a probablement réécrit au lieu d'extraire");
+    expect(r.reecrit).toBe(false);
+  });
+
+  it("mesurerCouverture ne compte que le CORPS, pas le titre — un titre synthétisé énorme ne doit pas masquer un corps peu fidèle", async () => {
+    const texte = "z".repeat(500);
+    (claude.callClaudeDetailed as any).mockResolvedValue(
+      reponseModele([posteModele({ titre: "x".repeat(500), corps: "y".repeat(5) })]),
+    );
+    hoisted.resultats = [[], []];
+    hoisted.resultatsTransaction = [[{ id: 1, title: "t", scheduledFor: null }]];
+
+    const r = await importerTexte({ ...INPUT, texte });
+
+    // Si le titre comptait, couverture serait ~1 (500+5)/500 ; en ne comptant que le
+    // corps, elle doit être proche de 5/500 = 0.01.
+    expect(r.couverture).toBeCloseTo(0.01, 2);
+    expect(r.reecrit).toBe(false);
   });
 
   it("décisions — appelle callClaudeDetailed avec taskKind 'strategic_reasoning' (pas 'extraction') et le modèle smart", async () => {

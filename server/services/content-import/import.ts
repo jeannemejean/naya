@@ -42,6 +42,13 @@ export interface ResultatImport {
   ignores: number;
   /** Rapport brut, NON borné : peut dépasser 1. L'endpoint le borne pour l'affichage. */
   couverture: number;
+  /**
+   * `true` quand `couverture` dépasse `SEUIL_REECRITURE` : le modèle a probablement
+   * réécrit le texte au lieu de l'extraire. Calculé ici plutôt que relaissé à l'endpoint
+   * ou au reçu, pour qu'un seul seuil fasse foi — pas une recopie du nombre magique à
+   * deux endroits qui pourrait diverger.
+   */
+  reecrit: boolean;
   /** La réponse du modèle a été coupée (`max_tokens` ou `length` selon le provider). */
   tronque: boolean;
 }
@@ -83,6 +90,7 @@ export async function importerTexte(input: {
   // tronquée doit livrer les posts qu'elle a produits, en le disant, pas tout perdre.
   const tronque = stopReason === "max_tokens" || stopReason === "length";
   const couverture = mesurerCouverture(extraits, input.texte);
+  const reecrit = couverture > SEUIL_REECRITURE;
 
   // Plateformes récentes de la marque, pour combler les posts dont le texte ne la dit
   // pas. Un `select` ordinaire plus un calcul pur, pas un GROUP BY (voir
@@ -145,8 +153,8 @@ export async function importerTexte(input: {
     `[Import] projet ${input.projectId} : ${posts.length} post(s) écrit(s), ` +
     `${ignores} ignoré(s), couverture ${couverture.toFixed(2)}` +
     (tronque ? ", RÉPONSE TRONQUÉE" : "") +
-    (couverture > SEUIL_REECRITURE ? ", le modèle a probablement réécrit au lieu d'extraire" : ""),
+    (reecrit ? ", le modèle a probablement réécrit au lieu d'extraire" : ""),
   );
 
-  return { posts, ignores, couverture, tronque };
+  return { posts, ignores, couverture, reecrit, tronque };
 }

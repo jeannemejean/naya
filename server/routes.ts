@@ -6939,6 +6939,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         posts: resultat.posts,
         ignores: resultat.ignores,
         couverture,
+        reecrit: resultat.reecrit,
         tronque: resultat.tronque,
         collisions,
       });

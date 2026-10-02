@@ -113,11 +113,21 @@ describe("resoudreDate", () => {
 });
 
 describe("mesurerCouverture", () => {
-  it("rend le rapport entre le texte extrait et le texte collé", () => {
+  it("rend le rapport entre le CORPS extrait et le texte collé", () => {
     const posts = [
       { titre: "ab", corps: "cdef", plateforme: null, type: null, pilier: null, objectif: null, date: null },
     ];
-    expect(mesurerCouverture(posts, "a".repeat(12))).toBeCloseTo(0.5, 5);
+    expect(mesurerCouverture(posts, "a".repeat(8))).toBeCloseTo(0.5, 5);
+  });
+
+  it("ignore le titre — il est SYNTHÉTISÉ par le modèle, pas recopié du texte, donc il ne doit jamais gonfler la mesure", () => {
+    const posts = [
+      // Un titre énorme à côté d'un corps minuscule : si le titre entrait dans le
+      // calcul, la couverture serait proche de 1 ; en ne comptant que le corps, elle
+      // doit rester proche de 0.
+      { titre: "x".repeat(500), corps: "y".repeat(5), plateforme: null, type: null, pilier: null, objectif: null, date: null },
+    ];
+    expect(mesurerCouverture(posts, "z".repeat(500))).toBeCloseTo(0.01, 5);
   });
 
   it("rend 0 sur un texte vide, sans division par zéro", () => {

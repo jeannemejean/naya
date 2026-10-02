@@ -11,6 +11,7 @@ const reponseExemple: ReponseImportCalendrier = {
   posts: posts(9, 5),
   ignores: 2,
   couverture: 85,
+  reecrit: false,
   tronque: true,
   collisions: [
     { marque: "Agence JMD" },
@@ -35,6 +36,7 @@ describe("construireRecu — aucune ligne à zéro", () => {
     posts: posts(9, 5),
     ignores: 0,
     couverture: 85,
+    reecrit: false,
     tronque: false,
     collisions: [],
   };
@@ -65,6 +67,7 @@ describe("construireRecu — accords singulier/pluriel", () => {
       posts: posts(1, 0),
       ignores: 0,
       couverture: 100,
+      reecrit: false,
       tronque: false,
       collisions: [],
     };
@@ -76,6 +79,7 @@ describe("construireRecu — accords singulier/pluriel", () => {
       posts: posts(1, 1),
       ignores: 0,
       couverture: 50,
+      reecrit: false,
       tronque: false,
       collisions: [],
     };
@@ -87,6 +91,7 @@ describe("construireRecu — accords singulier/pluriel", () => {
       posts: posts(1, 0),
       ignores: 1,
       couverture: 100,
+      reecrit: false,
       tronque: false,
       collisions: [],
     };
@@ -98,6 +103,7 @@ describe("construireRecu — accords singulier/pluriel", () => {
       posts: posts(1, 0),
       ignores: 0,
       couverture: 100,
+      reecrit: false,
       tronque: false,
       collisions: [{ marque: "Agence JMD" }],
     };
@@ -111,6 +117,7 @@ describe("construireRecu — plusieurs marques distinctes dans les collisions", 
       posts: posts(2, 0),
       ignores: 0,
       couverture: 100,
+      reecrit: false,
       tronque: false,
       collisions: [
         { marque: "Agence JMD" },
@@ -130,11 +137,48 @@ describe("construireRecu — aucun post trouvé", () => {
       posts: [],
       ignores: 0,
       couverture: 0,
+      reecrit: false,
       tronque: false,
       collisions: [],
     };
     expect(construireRecu(reponse)).toEqual([
       "0 posts créés, couvrant environ 0 % de ton texte.",
     ]);
+  });
+});
+
+describe("construireRecu — signal de réécriture", () => {
+  it("affiche la ligne de réécriture quand reecrit est vrai, avant la ligne de troncature", () => {
+    const reponse: ReponseImportCalendrier = {
+      posts: posts(1, 0),
+      ignores: 0,
+      couverture: 100,
+      reecrit: true,
+      tronque: true,
+      collisions: [],
+    };
+    const lignes = construireRecu(reponse);
+    expect(lignes).toContain(
+      "Naya a probablement reformulé ton texte au lieu de le recopier : vérifie quelques posts.",
+    );
+    const iReecrit = lignes.indexOf(
+      "Naya a probablement reformulé ton texte au lieu de le recopier : vérifie quelques posts.",
+    );
+    const iTronque = lignes.indexOf(
+      "Ton texte était trop long pour un seul passage : une partie n'a pas été lue.",
+    );
+    expect(iReecrit).toBeLessThan(iTronque);
+  });
+
+  it("omet la ligne de réécriture quand reecrit est faux", () => {
+    const reponse: ReponseImportCalendrier = {
+      posts: posts(1, 0),
+      ignores: 0,
+      couverture: 100,
+      reecrit: false,
+      tronque: false,
+      collisions: [],
+    };
+    expect(construireRecu(reponse).join("\n")).not.toMatch(/reformulé/);
   });
 });
