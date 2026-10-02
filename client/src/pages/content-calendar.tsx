@@ -34,6 +34,7 @@ import { ObjectUploader } from '@/components/ObjectUploader';
 import type { Content, ContentReception, SocialAccount, MediaLibrary, TargetPersona, PersonaAnalysisResult, Project } from '@shared/schema';
 import { normalizeReceptionImportErrors, type ReceptionImportRawError } from '@/lib/reception-import-errors';
 import { apiRequest } from '@/lib/queryClient';
+import { LIMITE_CONTENUS_PAGE, plafondAtteint } from './content-calendar-limit';
 const locales = { 'en-US': enUS };
 
 const localizer = dateFnsLocalizer({
@@ -217,10 +218,17 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const params = new URLSearchParams();
  if (selectedProjectId) params.set('projectId', String(selectedProjectId));
  if (campaignFilter) params.set('campaignId', String(campaignFilter));
+ // Le plafond serveur est maintenant explicite (voir server/routes.ts) : on
+ // demande ce qu'il accepte au maximum, plutôt que le défaut silencieux de 50.
+ params.set('limit', String(LIMITE_CONTENUS_PAGE));
  return fetchJson(`/api/content?${params}`);
  },
  enabled: !!selectedProjectId,
  });
+
+ // `true` seulement quand la réponse rend EXACTEMENT le plafond demandé — signe
+ // qu'il a mordu, pas une estimation. Voir content-calendar-limit.ts.
+ const plafondContenuAtteint = plafondAtteint(content.length);
 
  const { data: strategyReport } = useQuery<StrategyReportResponse | null>({
  queryKey: ['/api/strategy/report', selectedProjectId, currentWeek],
@@ -1582,6 +1590,11 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
 
  <div className="flex-1 flex flex-col overflow-hidden">
  <div className="bg-white border-b border-naya-olive-18 px-6 py-3">
+ {plafondContenuAtteint && (
+ <p className="text-xs text-naya-cream0 mb-2" data-testid="content-limit-warning">
+ {t('contentCalendar.limitReachedWarning', { n: LIMITE_CONTENUS_PAGE })}
+ </p>
+ )}
  <div className="flex items-center justify-between">
  <div className="flex items-center gap-4">
  <div className="flex items-center gap-2">

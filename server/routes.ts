@@ -6595,6 +6595,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   });
 
   // Content routes
+  //
+  // Plafond de `limit` : `getContent` ne rend jamais plus de `LIMITE_CONTENUS_MAX`
+  // lignes, et ce plafond est EXPLICITE ici — jamais deviné depuis l'entrée. Avant
+  // ce chantier, `getContent` rendait au plus 50 lignes (les plus récemment créées)
+  // sans que rien ne le dise à l'appelante : coller 20 posts dans une marque qui en
+  // compte 40 faisait disparaître 20 posts anciens de la vue — certains programmés
+  // pour les semaines à venir — sans que la page ne le laisse voir. Le client
+  // demande désormais `limit=LIMITE_CONTENUS_PAGE` (voir content-calendar.tsx) et
+  // s'annonce quand la réponse en rend exactement autant.
+  const LIMITE_CONTENUS_MAX = 200;
   app.get('/api/content', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -6612,11 +6622,23 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         if (!Number.isFinite(campaignId) || campaignId <= 0) return res.status(400).json({ message: "Invalid campaignId" });
       }
 
+      // `limit` hors de [1, LIMITE_CONTENUS_MAX] est un 400, pas une valeur
+      // silencieusement recadrée : un appelant qui en redemande au-delà du plafond
+      // accepté doit le voir, pas se croire servi.
+      let limiteContenus = 50;
+      if (limit !== undefined) {
+        const n = Number(limit);
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > LIMITE_CONTENUS_MAX) {
+          return res.status(400).json({ message: `limit invalide : entier entre 1 et ${LIMITE_CONTENUS_MAX}` });
+        }
+        limiteContenus = n;
+      }
+
       let content;
       if (status) {
         content = await storage.getContentByStatus(userId, status as string, projectId);
       } else {
-        content = await storage.getContent(userId, limit ? parseInt(limit as string) : 50, projectId, campaignId);
+        content = await storage.getContent(userId, limiteContenus, projectId, campaignId);
       }
 
       res.json(content);

@@ -688,6 +688,11 @@ const fr = {
  contentCalendar: {
  title: "Calendrier de contenu",
  subtitle: "Planifie, crée et programme ton contenu sur toutes les plateformes",
+ // Tâche 5 (saisie manuelle) : le plafond de chargement s'annonce quand il mord,
+ // plutôt que de faire disparaître des contenus anciens de la vue en silence.
+ // Texte factuel, sans point d'exclamation, sans injonction — voir
+ // content-calendar-limit.ts.
+ limitReachedWarning: "{{n}} contenus affichés ; cette marque en a peut-être davantage.",
  pipeline: "Pipeline",
  calendar: "Calendrier",
  accounts: "Comptes",

@@ -688,6 +688,7 @@ const en = {
  contentCalendar: {
  title: "Content Calendar",
  subtitle: "Plan, create, and schedule your content across all platforms",
+ limitReachedWarning: "{{n}} items shown; this brand may have more.",
  pipeline: "Pipeline",
  calendar: "Calendar",
  accounts: "Accounts",
