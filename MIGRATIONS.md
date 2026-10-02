@@ -185,6 +185,79 @@ prospects y sont. La `raison` n'est jamais vide quand un verdict existe : c'est 
 un tri automatique contestable.
 
 
+## 3sexies. Production — migrée le 2 octobre 2026 (`0016` → `0017`)
+
+> Endpoint vérifié **par l'API Neon avant exécution**, pas de mémoire :
+> `list_branch_computes` sur `br-floral-wave-ane2h3l1` (= branche `production`) rend
+> `ep-damp-water-anuyb0k6`. Le projet actif est `Nayanew` (`dawn-waterfall-68860472`).
+
+- [x] Point de restauration : branche **`avant-0016-0017`** (`br-silent-grass-ansfaqp9`),
+      forkée de `production` au LSN `0/15330688`. Le nom personnalisé **a été accepté**
+      cette fois — contrairement à ce que notent les sections précédentes.
+      **Vérifiée conforme avant migration** : 61 tables, 3 utilisateurs, 4 projets,
+      105 tâches, 120 prospects, 2 campagnes, 0 contenu, suivi à 16 lignes, dernier
+      `when` = `1789719402887`. Chiffres identiques à la production au même instant.
+      ⚠️ Créée sans compute d'abord : une branche sans endpoint **ne peut pas être
+      interrogée** (`endpoint not found`), donc pas vérifiée. Un endpoint lui a été
+      ajouté (`ep-shy-haze-anh3nx6d`, 0.25–1 CU, suspension à 300 s) pour la vérifier.
+      Une sauvegarde non vérifiée n'est pas une sauvegarde.
+      ⚠️ Rétention d'historique du projet : **6 heures**. Au-delà, cette branche est le
+      seul retour arrière.
+- [x] SQL relu intégralement avant application — **les 61 lignes des deux fichiers**,
+      instruction par instruction. Purement additif : 3 `CREATE TABLE` (`reading_cards`,
+      `reading_queries`, `project_links`), 3 `ADD COLUMN`, 5 `CREATE INDEX`, 8
+      `ADD CONSTRAINT`. **Aucun `DROP`, `TRUNCATE`, `DELETE`, changement de type,
+      `RENAME` ni `SET NOT NULL` sur une colonne existante.**
+      Seul point d'attention : `campaigns.articulation_independante boolean NOT NULL
+      DEFAULT false` — avec une valeur par défaut, l'ajout est une opération de
+      métadonnées sous PostgreSQL 11+, sans réécriture de table.
+- [x] Appliquées par **`scripts/migrate-prod.ts`** (migrator `drizzle-orm/node-postgres`),
+      avec l'URL passée explicitement dans `MIGRATION_DATABASE_URL` et une garde refusant
+      de s'exécuter si l'URL ne désigne pas `ep-damp-water-anuyb0k6`.
+- [x] Garde **testée à blanc, deux refus constatés** : URL absente, et URL de la branche
+      de sauvegarde. Les deux sortent en code 1 sans rien appliquer.
+      ⚠️ Un premier essai à blanc a « refusé » avec le code 1 pour une **autre raison** —
+      `import { Pool } from "pg"` échoue sous ESM, `pg` étant CommonJS. Compter ce refus
+      comme une preuve aurait laissé la garde non testée. Corrigé en `import pg from "pg"`,
+      puis les deux refus ont été re-constatés pour de bon.
+- [x] **La garde a servi avant même d'avoir servi** : lancée avec l'URL de `.env`, elle a
+      refusé — révélant que `.env` → `ep-jolly-sky-an1x7ddn` (**dev**, comme documenté au
+      §3), et que l'alerte « `.env` pointe sur la production » soulevée en session était
+      **fausse**. Elle venait d'un `grep -o … | head -1` qui avait ramassé le premier
+      endpoint mentionné n'importe où dans le fichier, pas celui de `DATABASE_URL`.
+      L'URL de production vient de `.env.prod.bak`.
+- [x] Résultat vérifié après coup : **61 → 64 tables**, les 3 nouvelles tables présentes,
+      les 2 colonnes de `campaigns` et `saved_articles.project_id` présentes, **5 index
+      sur 5** créés, suivi **16 → 18** (dernier `when` = `1790784430197`, celui de
+      `0017_cuddly_master_chief`). **Données inchangées** : 3 utilisateurs, 4 projets,
+      105 tâches, 120 prospects, 2 campagnes.
+
+### Pourquoi ces objets
+
+`reading_cards` et `reading_queries` portent la revue du matin. L'index unique
+`reading_card_seen_idx (user_id, url_hash)` **est** la garantie « jamais re-proposé » :
+les lignes ne sont jamais supprimées, seulement re-statuées.
+
+`project_links` porte les liens entre marques, et **l'absence de ligne y est une
+interdiction, pas un vide** : sans lien déclaré, Naya traite deux marques comme
+indépendantes et ne les rapproche jamais, pas même pour les comparer.
+
+`campaigns.articule_avec_campaign_id` et `.articulation_independante` sont nécessaires
+**toutes les deux** : sans le booléen, « pas encore décidé » et « décidé que non » sont
+tous deux un identifiant nul, et Naya reposerait la question sur une campagne voulue
+isolée.
+
+### Ce qui reste
+
+- [ ] Pousser `main` — Railway déploie sur push. La migration est faite, donc l'ordre
+      voulu (migration d'abord, déploiement ensuite) est respecté.
+- [ ] Supprimer la branche `avant-0016-0017` et son endpoint quand le déploiement est
+      stable depuis quelques jours.
+- [ ] La branche `dev-local` (`br-divine-base-anmsv1nj`) est **archivée** depuis le
+      2 octobre 2026 07:36. Son endpoint `ep-jolly-sky-an1x7ddn` est celui du `.env` :
+      à réactiver avant de relancer un serveur de développement.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;
