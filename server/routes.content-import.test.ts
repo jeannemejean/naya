@@ -104,7 +104,9 @@ const poster = (body: unknown) =>
   });
 
 const resultatNominal = (over: Record<string, unknown> = {}) => ({
-  posts: [{ id: 10, title: "Un post", scheduledFor: new Date("2026-10-10") }],
+  // `title` et `body` DÉLIBÉRÉMENT distincts : un test plus bas prouve que c'est le
+  // corps, pas le titre, qui est transmis à `detecterCollisionLot` comme `corps`.
+  posts: [{ id: 10, title: "Un titre", body: "Un corps bien différent du titre.", scheduledFor: new Date("2026-10-10") }],
   ignores: 1,
   couverture: 0.5,
   tronque: false,
@@ -195,6 +197,18 @@ describe("POST /api/content/import", () => {
     expect(body.collisions).toEqual([]);
     // Les posts déjà écrits sont bien rendus malgré l'échec de la détection.
     expect(body.posts).toHaveLength(1);
+  });
+
+  it("la détection de collision du lot reçoit le CORPS du post, pas son titre — l'angle vit dans le corps (régression : le titre y était recopié faute de mieux)", async () => {
+    hoisted.importerTexte.mockResolvedValue(resultatNominal());
+
+    await poster({ projectId: 1, text: "Un texte à découper." });
+
+    expect(hoisted.detecterCollisionLot).toHaveBeenCalledTimes(1);
+    const appel = hoisted.detecterCollisionLot.mock.calls[0][0];
+    expect(appel.posts).toHaveLength(1);
+    expect(appel.posts[0].corps).toBe("Un corps bien différent du titre.");
+    expect(appel.posts[0].corps).not.toBe("Un titre");
   });
 
   it("8. importerTexte qui lève une ReponseIllisible → 502, et aucun post rendu", async () => {

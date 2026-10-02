@@ -6924,9 +6924,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           collisions = await detecterCollisionLot({
             userId,
             projectId,
-            // `ResultatImport.posts` ne rend que { id, title, scheduledFor } — pas le
-            // corps : le titre sert de corps pour cette comparaison, faute de mieux.
-            posts: postesAvecDate.map((p) => ({ id: p.id, titre: p.title, corps: p.title, quand: p.scheduledFor })),
+            // Le CORPS, pas le titre : la détection cherche une collision d'ANGLE, et
+            // l'angle vit dans le corps (voir le commentaire de `detecterCollision`
+            // dans services/brand-links/collision.ts). Un titre nu comparé aux
+            // titres ET corps des voisins manquerait des collisions, en silence.
+            posts: postesAvecDate.map((p) => ({ id: p.id, titre: p.title, corps: p.body, quand: p.scheduledFor })),
           });
         } catch (collisionError) {
           console.error("Error detecting batch collision:", collisionError);

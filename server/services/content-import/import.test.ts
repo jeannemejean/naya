@@ -339,6 +339,25 @@ describe("importerTexte", () => {
     expect(r.posts).toEqual(lignesRendues);
   });
 
+  it("la projection du retour inclut `body` : la détection de collision du lot (routes.ts) compare des ANGLES, qui vivent dans le corps, pas le titre", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue(
+      reponseModele([posteModele({ titre: "Un titre", corps: "Le corps réel du post, distinct du titre." })]),
+    );
+    hoisted.resultats = [[], []];
+    hoisted.resultatsTransaction = [[
+      { id: 1, title: "Un titre", body: "Le corps réel du post, distinct du titre.", scheduledFor: null },
+    ]];
+
+    const r = await importerTexte(INPUT);
+
+    // La projection ENVOYÉE à `.returning()` demande `body` — sans elle, le corps ne
+    // remonterait jamais jusqu'à l'appelante, qui ne pourrait alors comparer que des
+    // titres pour juger une collision d'angle (voir le commentaire de
+    // `detecterCollision` dans services/brand-links/collision.ts).
+    expect(hoisted.projectionsRetournees[0]).toHaveProperty("body");
+    expect(r.posts[0].body).toBe("Le corps réel du post, distinct du titre.");
+  });
+
   it("cas 11 — une marque sans aucun contenu existant donne linkedin comme plateforme par défaut", async () => {
     (claude.callClaudeDetailed as any).mockResolvedValue(
       reponseModele([posteModele({ titre: "Post sans historique", plateforme: null })]),

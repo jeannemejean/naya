@@ -32,7 +32,12 @@ export class ReponseIllisible extends Error {
 }
 
 export interface ResultatImport {
-  posts: Array<{ id: number; title: string; scheduledFor: Date | null }>;
+  // `body` est nécessaire à la détection de collision du LOT (routes.ts) : la
+  // collision cherche une collision d'ANGLE, et l'angle vit dans le corps, pas le
+  // titre — voir le commentaire de `detecterCollision` dans
+  // `services/brand-links/collision.ts` sur pourquoi un appel modèle compare des
+  // CORPS plutôt que des titres ou des embeddings.
+  posts: Array<{ id: number; title: string; body: string; scheduledFor: Date | null }>;
   /** Posts écartés parce que leur titre existait déjà dans cette marque, ou en double dans le lot. */
   ignores: number;
   /** Rapport brut, NON borné : peut dépasser 1. L'endpoint le borne pour l'affichage. */
@@ -131,7 +136,7 @@ export async function importerTexte(input: {
   // neuf premiers dans le calendrier. L'utilisatrice recolle ; elle ne nettoie pas.
   const posts = aEcrire.length === 0 ? [] : await db.transaction(async (tx) => {
     const lignes = await tx.insert(content).values(aEcrire).returning({
-      id: content.id, title: content.title, scheduledFor: content.scheduledFor,
+      id: content.id, title: content.title, body: content.body, scheduledFor: content.scheduledFor,
     });
     return lignes;
   });
