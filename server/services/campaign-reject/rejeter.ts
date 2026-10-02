@@ -103,10 +103,11 @@ export function construirePreference(input: {
 // relues et renforcées par mutation).
 // ════════════════════════════════════════════════════════════════════════════════
 
-import { and, eq, inArray } from "drizzle-orm";
-import { content, tasks, campaigns, projects, memoryEntries } from "@shared/schema";
+import { and, eq, inArray, or } from "drizzle-orm";
+import { content, tasks, campaigns, projects, memoryEntries, prospectionCampaigns } from "@shared/schema";
 import { db } from "../../db";
 import { embedText } from "../memory/embed";
+import { storage } from "../../storage";
 
 /**
  * Levée quand la campagne n'existe pas, ou n'appartient pas à l'utilisatrice — les
@@ -137,6 +138,11 @@ export interface ResultatRejet {
    *  sémantique, et rien ne la rattrapera. Voir Décision 7 du spec. */
   preferenceSansEmbedding: boolean;
   articulationsRompues: Array<{ campagneId: number; campagneNom: string; marque: string }>;
+  /** Campagne(s) de prospection emportées par ce rejet — même cascade complète que
+   *  `storage.deleteCampaign` (séquences supprimées, prospects archivés). Le lien se
+   *  lit dans les deux sens : `campaigns.linkedProspectionCampaignId` ET
+   *  `prospectionCampaigns.linkedCampaignId`. */
+  prospectionSupprimee: Array<{ id: number; name: string }>;
 }
 
 /**
@@ -147,21 +153,37 @@ export interface ResultatRejet {
  *   1. détacher les contenus/tâches GARDÉS (campaignId → null)
  *   2. supprimer les contenus/tâches PARTANTS
  *   3. écrire la préférence (si une raison a été donnée)
- *   4. supprimer la campagne
+ *   4. supprimer la (ou les) campagne(s) de prospection liée(s), avec LEUR propre
+ *      cascade (prospects archivés, séquences supprimées) — voir
+ *      `storage.deleteProspectionCampaign`
+ *   5. supprimer la campagne
  *
  * `content.campaign_id` et `tasks.campaign_id` sont en `NO ACTION` : supprimer la
  * campagne tant qu'une seule ligne la référence encore échoue. Dans cet ordre précis,
  * plus aucune ligne ne référence la campagne au moment où elle est supprimée.
+ *
+ * L'ancien bouton Supprimer cascadait vers la prospection liée (`storage.deleteCampaign`
+ * → `storage.deleteProspectionCampaign`) ; rejeter une campagne doit faire pareil — une
+ * campagne de prospection vivante, avec ses séquences, pointant vers une campagne
+ * marketing supprimée serait une incohérence que plus rien ne rattraperait. L'appel se
+ * fait avec `tx` : `deleteProspectionCampaign` ouvre normalement SA PROPRE
+ * `db.transaction`, ce qui imbriquerait deux transactions si on l'appelait tel quel
+ * depuis l'intérieur de celle-ci. Passer `tx` comme exécuteur lui fait exécuter sa
+ * cascade DANS la transaction déjà ouverte, sans en ouvrir une seconde — même motif que
+ * `jaEnTransaction` dans `services/result-capture/observation-writer.ts`. Les appelants
+ * qui ne passent pas d'exécuteur (dont `storage.deleteCampaign`) ne sont pas affectés :
+ * `deleteProspectionCampaign` ouvre alors sa transaction comme avant.
  *
  * L'embedding de la préférence est calculé AVANT d'ouvrir la transaction : tenir une
  * transaction ouverte pendant un appel réseau verrouillerait des lignes pendant des
  * secondes. `embedText` est best-effort — `null` ou une levée produisent le même
  * résultat (`preferenceSansEmbedding: true`), jamais un rejet en échec.
  *
- * Les quatre opérations ci-dessus (plus la lecture des articulations rompues, qui doit
+ * Les opérations ci-dessus (plus la lecture des articulations rompues, qui doit
  * précéder la suppression pour ne pas perdre l'information) vivent dans UNE SEULE
- * `db.transaction` : si quoi que ce soit échoue en cours de route, rien n'est validé —
- * ni détachement, ni suppression, ni préférence.
+ * `db.transaction` : si quoi que ce soit échoue en cours de route — y compris dans la
+ * cascade de prospection — rien n'est validé : ni détachement, ni suppression, ni
+ * préférence, ni cascade de prospection.
  */
 export async function rejeterCampagne(input: {
   userId: string;
@@ -179,6 +201,7 @@ export async function rejeterCampagne(input: {
       objective: campaigns.objective,
       coreMessage: campaigns.coreMessage,
       projectId: campaigns.projectId,
+      linkedProspectionCampaignId: campaigns.linkedProspectionCampaignId,
     })
     .from(campaigns)
     .where(and(eq(campaigns.userId, userId), eq(campaigns.id, campaignId)));
@@ -202,6 +225,21 @@ export async function rejeterCampagne(input: {
     .select({ id: tasks.id, completed: tasks.completed })
     .from(tasks)
     .where(and(eq(tasks.userId, userId), eq(tasks.campaignId, campaignId)));
+
+  // Campagne(s) de prospection liée(s) — DANS LES DEUX SENS, même motif que
+  // `storage.deleteCampaign` : `campaigns.linkedProspectionCampaignId` (le lien direct,
+  // porté par CETTE campagne) OU `prospectionCampaigns.linkedCampaignId` (le lien
+  // inverse, porté par la campagne de prospection). Une seule requête couvre les deux :
+  // la condition sur l'id direct n'est ajoutée que si `campagne.linkedProspectionCampaignId`
+  // est renseigné — sinon seul le lien inverse est interrogé.
+  const conditionsProspection = [eq(prospectionCampaigns.linkedCampaignId, campaignId)];
+  if (campagne.linkedProspectionCampaignId) {
+    conditionsProspection.push(eq(prospectionCampaigns.id, campagne.linkedProspectionCampaignId));
+  }
+  const prospectionLiee = await db
+    .select({ id: prospectionCampaigns.id, name: prospectionCampaigns.name })
+    .from(prospectionCampaigns)
+    .where(and(eq(prospectionCampaigns.userId, userId), or(...conditionsProspection)));
 
   const triContenus = trierContenus(contenus);
   const triTaches = trierTaches(tachesBrutes);
@@ -275,7 +313,14 @@ export async function rejeterCampagne(input: {
       preferenceEcrite = true;
     }
 
-    // 4. Supprimer la campagne — plus aucune ligne ne la référence à cet instant.
+    // 4. Supprimer la ou les campagnes de prospection liées, cascade complète incluse
+    //    (prospects archivés, séquences supprimées) — DANS cette même transaction (`tx`
+    //    en exécuteur : pas de transaction imbriquée, voir le commentaire au-dessus).
+    for (const p of prospectionLiee) {
+      await storage.deleteProspectionCampaign(p.id, userId, tx);
+    }
+
+    // 5. Supprimer la campagne — plus aucune ligne ne la référence à cet instant.
     await tx.delete(campaigns).where(and(eq(campaigns.userId, userId), eq(campaigns.id, campaignId)));
 
     return {
@@ -286,6 +331,7 @@ export async function rejeterCampagne(input: {
       preferenceEcrite,
       preferenceSansEmbedding,
       articulationsRompues,
+      prospectionSupprimee: prospectionLiee.map((p) => ({ id: p.id, name: p.name })),
     };
   });
 }

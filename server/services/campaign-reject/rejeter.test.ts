@@ -158,7 +158,16 @@ import { PgDialect } from "drizzle-orm/pg-core";
 // import statique, donc disponible en dehors de toute temporalité de hoisting — la
 // fabrique de `vi.mock("../../db", ...)` plus bas peut s'y référer en toute sécurité
 // pour étiqueter les opérations par table visée.
-import { content as TABLE_CONTENT, tasks as TABLE_TASKS, campaigns as TABLE_CAMPAIGNS, memoryEntries as TABLE_MEMORY } from "@shared/schema";
+import {
+  content as TABLE_CONTENT, tasks as TABLE_TASKS, campaigns as TABLE_CAMPAIGNS, memoryEntries as TABLE_MEMORY,
+  // Tables de la cascade de prospection (Important 1, revue finale du 2026-10-02) :
+  // `storage.deleteProspectionCampaign`, appelée depuis `rejeter.ts` AVEC `tx` comme
+  // exécuteur (pas de transaction imbriquée — voir les tests dédiés plus bas), touche
+  // ces tables. Non mockées (même motif que les tables ci-dessus) : import statique.
+  prospectionCampaigns as TABLE_PROSPECTION, leads as TABLE_LEADS, leadSequenceState as TABLE_LEAD_SEQ_STATE,
+  outreachStepSends as TABLE_OUTREACH_SENDS, leadStepMessages as TABLE_LEAD_STEP_MSGS,
+  campaignSequenceSteps as TABLE_SEQ_STEPS, prospectionUsage as TABLE_PROSPECTION_USAGE,
+} from "@shared/schema";
 
 const hoisted = vi.hoisted(() => ({
   // Lectures hors transaction (campagne, contenus, tâches) — une file FIFO unique,
@@ -217,8 +226,21 @@ vi.mock("../../db", () => {
   function etiquette(table: any, verbe: "detacher" | "supprimer" | "preference"): string {
     if (table === TABLE_CONTENT) return verbe === "detacher" ? "detacher-contenu" : "supprimer-contenu";
     if (table === TABLE_TASKS) return verbe === "detacher" ? "detacher-tache" : "supprimer-tache";
-    if (table === TABLE_CAMPAIGNS) return "supprimer-campagne";
+    // `campaigns` est à la fois UPDATE (délier le lien de prospection, cascade) et
+    // DELETE (suppression finale, étape 5) — deux étiquettes distinctes, sinon les
+    // tests de la cascade de prospection ne pourraient pas affirmer que l'une précède
+    // l'autre.
+    if (table === TABLE_CAMPAIGNS) return verbe === "detacher" ? "delier-prospection-sur-campagne" : "supprimer-campagne";
     if (table === TABLE_MEMORY) return "preference";
+    // Tables touchées par la cascade de prospection (`storage.deleteProspectionCampaign`,
+    // appelée avec `tx`) — chacune une étiquette propre, par le même motif.
+    if (table === TABLE_LEADS) return "archiver-leads-prospection";
+    if (table === TABLE_LEAD_SEQ_STATE) return "supprimer-lead-sequence-state";
+    if (table === TABLE_OUTREACH_SENDS) return "supprimer-outreach-step-sends";
+    if (table === TABLE_LEAD_STEP_MSGS) return "supprimer-lead-step-messages";
+    if (table === TABLE_SEQ_STEPS) return "supprimer-campaign-sequence-steps";
+    if (table === TABLE_PROSPECTION_USAGE) return "delier-prospection-usage";
+    if (table === TABLE_PROSPECTION) return "supprimer-prospection-campaign";
     return `?${String(table)}`;
   }
 
@@ -249,13 +271,25 @@ vi.mock("../../db", () => {
         const tx: any = {
           select: (projection?: any) => {
             const suite = chaine(hoisted.resultatsArticulations, hoisted.txFroms, hoisted.txWheres);
-            // Capture l'ordre au moment où la lecture des articulations est RÉSOLUE —
-            // elle doit précéder toute écriture.
+            // Capture l'ordre au moment où CHAQUE lecture dans la transaction est
+            // RÉSOLUE — l'étiquette dépend de la table interrogée (`.from(...)`,
+            // déjà poussée dans `txFroms` au moment de construire la chaîne, donc
+            // disponible ici) : la lecture des articulations (`campaigns`) doit
+            // précéder toute écriture, comme avant ; les deux lectures internes de
+            // `storage.deleteProspectionCampaign` (vérification de propriété sur
+            // `prospectionCampaigns`, puis `campaignSequenceSteps` pour les messages à
+            // purger) portent leur propre étiquette — SANS CECI, elles seraient
+            // indiscernables de la lecture des articulations dans `ordre`.
+            const table = hoisted.txFroms[hoisted.txFroms.length - 1];
+            const label =
+              table === TABLE_PROSPECTION ? "prospection-ownership-lue"
+              : table === TABLE_SEQ_STEPS ? "prospection-stepids-lus"
+              : "articulations-lues";
             const origThen = suite.then;
             suite.then = (ok: any, ko: any) =>
               origThen(
                 (r: any) => {
-                  hoisted.ordre.push("articulations-lues");
+                  hoisted.ordre.push(label);
                   return ok(r);
                 },
                 ko,
@@ -302,6 +336,8 @@ const content = TABLE_CONTENT;
 const tasks = TABLE_TASKS;
 const campaigns = TABLE_CAMPAIGNS;
 const memoryEntries = TABLE_MEMORY;
+const prospectionCampaigns = TABLE_PROSPECTION;
+const leads = TABLE_LEADS;
 const embedModule = await import("../memory/embed");
 const { rejeterCampagne, CampagneIntrouvable, SALIENCE_REJET: SALIENCE_REJET_ORCH } = await import("./rejeter");
 
@@ -314,6 +350,7 @@ const CAMPAGNE_LIGNE = {
   objective: "asseoir l'autorité",
   coreMessage: "la stratège monte sur scène",
   projectId: 7,
+  linkedProspectionCampaignId: null,
 };
 
 const INPUT = { userId: "user-1", campaignId: 42, raison: "trop centré sur moi" };
@@ -356,6 +393,9 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(r.contenusSupprimes).toBe(0);
     expect(r.tachesDetachees).toBe(0);
     expect(r.tachesSupprimees).toBe(0);
+    // Pas de prospection liée (le 4e tableau de `hoisted.resultats`, consommé par
+    // défaut à `[]` quand la file est courte) : aucune cascade de prospection.
+    expect(r.prospectionSupprimee).toEqual([]);
   });
 
   it("cas 2 — un contenu publié (publishedAt) est détaché et non supprimé — clause SET et identifiants vérifiés", async () => {
@@ -642,8 +682,9 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
 
     await rejeterCampagne(INPUT);
 
-    // hoisted.wheres : [0] = lecture de la campagne, [1] = lecture de content, [2] = lecture de tasks.
-    expect(hoisted.wheres).toHaveLength(3);
+    // hoisted.wheres : [0] = campagne, [1] = content, [2] = tasks, [3] = prospection
+    // liée (voir cas 14 pour cette dernière).
+    expect(hoisted.wheres).toHaveLength(4);
 
     const clauseContenus = enSql(hoisted.wheres[1]);
     expect(clauseContenus.sql).toContain('"content"."user_id"');
@@ -654,6 +695,42 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(clauseTaches.sql).toContain('"tasks"."user_id"');
     expect(clauseTaches.sql).toContain('"tasks"."campaign_id"');
     expect(clauseTaches.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId]));
+  });
+
+  // Important 1 (revue finale du 2026-10-02) : la cascade de prospection perdue est
+  // revenue — l'ancien bouton Supprimer cascadait vers la campagne de prospection
+  // liée, `rejeterCampagne` doit faire pareil. Le relevé du lien se lit dans LES DEUX
+  // SENS : `campaigns.linkedProspectionCampaignId` (direct) ET
+  // `prospectionCampaigns.linkedCampaignId` (inverse) — même motif que
+  // `storage.deleteCampaign`.
+  it("cas 14 — la lecture de la prospection liée porte sur le lien INVERSE seul quand la campagne n'a pas de lien direct, et sur userId", async () => {
+    hoisted.resultats = [[CAMPAGNE_LIGNE], [], [], []]; // pas de linkedProspectionCampaignId
+    hoisted.resultatsArticulations = [[]];
+
+    await rejeterCampagne(INPUT);
+
+    expect(hoisted.wheres).toHaveLength(4);
+    const clauseProspection = enSql(hoisted.wheres[3]);
+    expect(clauseProspection.sql).toContain('"prospection_campaigns"."user_id"');
+    expect(clauseProspection.sql).toContain('"prospection_campaigns"."linked_campaign_id"');
+    // Pas de lien direct sur la campagne ⇒ pas de condition sur l'id de la prospection.
+    expect(clauseProspection.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId]));
+  });
+
+  it("cas 14b — la lecture de la prospection liée porte AUSSI sur le lien DIRECT quand la campagne en a un", async () => {
+    const campagneAvecLienDirect = { ...CAMPAGNE_LIGNE, linkedProspectionCampaignId: 55 };
+    hoisted.resultats = [[campagneAvecLienDirect], [], [], []];
+    hoisted.resultatsArticulations = [[]];
+
+    await rejeterCampagne(INPUT);
+
+    const clauseProspection = enSql(hoisted.wheres[3]);
+    expect(clauseProspection.sql).toContain('"prospection_campaigns"."user_id"');
+    expect(clauseProspection.sql).toContain('"prospection_campaigns"."linked_campaign_id"');
+    // Le lien direct (par id) est AUSSI interrogé — « les deux sens » n'est pas
+    // seulement un énoncé, c'est une condition SQL vérifiable.
+    expect(clauseProspection.sql).toContain('"prospection_campaigns"."id"');
+    expect(clauseProspection.params).toEqual(expect.arrayContaining([INPUT.userId, INPUT.campaignId, 55]));
   });
 
   // Une classe dédiée, pas une `Error` nue : motif de `ReponseIllisible`
@@ -673,5 +750,100 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect((erreur as Error).message).toMatch(/introuvable/);
     expect(hoisted.transactionAppelee).toBe(false);
     expect(embedModule.embedText).not.toHaveBeenCalled();
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Important 1 (revue finale du 2026-10-02) — la cascade de prospection, perdue par le
+// passage à `tx.delete(campaigns)` direct, revient : rejeter une campagne doit
+// cascader vers sa prospection liée exactement comme le faisait l'ancien bouton
+// Supprimer (`storage.deleteCampaign` → `storage.deleteProspectionCampaign`).
+//
+// `../../storage` n'est PAS mocké ICI (contrairement à `../../db`) : c'est le VRAI
+// `storage.deleteProspectionCampaign` qui s'exécute, contre le même faux `tx` que le
+// reste de ce fichier. C'est délibéré, pas un oubli — c'est ce qui permet au test de
+// vérifier la propriété centrale du point 1 directement sur l'implémentation réelle :
+// appelée avec un exécuteur (`tx`), elle ne doit PAS ouvrir sa propre transaction
+// (sans quoi `hoisted.transactionCount` vaudrait 2, pas 1).
+describe("rejeterCampagne — cascade vers la prospection liée", () => {
+  beforeEach(() => {
+    reset();
+  });
+
+  it("une prospection liée (lien direct) est cascadée DANS LA MÊME transaction — prospects archivés (jamais supprimés), séquences supprimées, lien délié des deux côtés, la prospection elle-même supprimée, tout AVANT la suppression de la campagne marketing", async () => {
+    const campagneAvecLienDirect = { ...CAMPAGNE_LIGNE, linkedProspectionCampaignId: 55 };
+    hoisted.resultats = [
+      [campagneAvecLienDirect], // campagne
+      [], // contenus
+      [], // tâches
+      [{ id: 55, name: "Prospection vignerons bio" }], // prospection liée (hors transaction)
+    ];
+    hoisted.resultatsArticulations = [
+      [], // articulations-lues
+      [{ id: 55 }], // vérification de propriété, dans deleteProspectionCampaign (exécuteur = tx)
+      [], // stepIds vide → pas de purge de leadStepMessages
+    ];
+
+    // Raison vide : pas de préférence à écrire, pour ne pas allonger inutilement la
+    // file d'opérations que ce test doit suivre.
+    const r = await rejeterCampagne({ ...INPUT, raison: "" });
+
+    // LE POINT CENTRAL du point 1 : une seule transaction, malgré la cascade de
+    // prospection. Si `deleteProspectionCampaign` avait ouvert sa propre
+    // `db.transaction` au lieu d'utiliser `tx`, ce compteur vaudrait 2.
+    expect(hoisted.transactionCount).toBe(1);
+
+    expect(r.prospectionSupprimee).toEqual([{ id: 55, name: "Prospection vignerons bio" }]);
+
+    // Prospects ARCHIVÉS, jamais supprimés — le mot compte (brief, point 1).
+    const archivage = hoisted.updates.find((u) => u.table === leads);
+    expect(archivage).toBeDefined();
+    expect(archivage!.set.archivedAt).toBeInstanceOf(Date);
+    expect(archivage!.set.prospectionCampaignId).toBeNull();
+    expect(hoisted.deletes.some((d) => d.table === leads)).toBe(false);
+
+    // Séquences supprimées.
+    expect(hoisted.deletes.some((d) => d.table === TABLE_LEAD_SEQ_STATE)).toBe(true);
+    expect(hoisted.deletes.some((d) => d.table === TABLE_OUTREACH_SENDS)).toBe(true);
+    expect(hoisted.deletes.some((d) => d.table === TABLE_SEQ_STEPS)).toBe(true);
+
+    // Lien délié des deux côtés.
+    const delierUsage = hoisted.updates.find((u) => u.table === TABLE_PROSPECTION_USAGE);
+    expect(delierUsage?.set).toEqual({ campaignId: null });
+    const delierLien = hoisted.updates.find((u) => u.table === campaigns && u.set && "linkedProspectionCampaignId" in u.set);
+    expect(delierLien?.set).toEqual({ linkedProspectionCampaignId: null });
+
+    // La campagne de prospection elle-même est supprimée.
+    expect(hoisted.deletes.some((d) => d.table === prospectionCampaigns)).toBe(true);
+
+    // Tout ceci précède la suppression FINALE de la campagne marketing.
+    const idxDelier = hoisted.ordre.indexOf("delier-prospection-sur-campagne");
+    const idxSuppressionProspection = hoisted.ordre.indexOf("supprimer-prospection-campaign");
+    const idxSuppressionCampagne = hoisted.ordre.lastIndexOf("supprimer-campagne");
+    expect(idxDelier).toBeGreaterThanOrEqual(0);
+    expect(idxSuppressionProspection).toBeGreaterThan(idxDelier);
+    expect(idxSuppressionCampagne).toBeGreaterThan(idxSuppressionProspection);
+  });
+
+  it("un échec PENDANT la cascade de prospection arrête tout — ni le reste de la cascade, ni la suppression de la campagne marketing ne sont atteints (atomicité du rejet)", async () => {
+    const campagneAvecLienDirect = { ...CAMPAGNE_LIGNE, linkedProspectionCampaignId: 55 };
+    hoisted.resultats = [
+      [campagneAvecLienDirect], [], [],
+      [{ id: 55, name: "Prospection vignerons bio" }],
+    ];
+    hoisted.resultatsArticulations = [
+      [], // articulations-lues
+      new Error("panne pendant la vérification de propriété de la prospection"), // la cascade échoue ICI
+    ];
+
+    await expect(rejeterCampagne({ ...INPUT, raison: "" })).rejects.toThrow(
+      /panne pendant la vérification/,
+    );
+
+    // Rien après l'échec n'a été atteint — ni la suite de la cascade de prospection,
+    // ni la suppression de la campagne marketing elle-même.
+    expect(hoisted.updates.some((u) => u.table === leads)).toBe(false);
+    expect(hoisted.deletes.some((d) => d.table === prospectionCampaigns)).toBe(false);
+    expect(hoisted.deletes.some((d) => d.table === campaigns)).toBe(false);
   });
 });

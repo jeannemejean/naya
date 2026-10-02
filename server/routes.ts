@@ -3,8 +3,8 @@ import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
 import { pool, db } from "./db";
-import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content, projectLinks, campaigns, projects } from "@shared/schema";
-import { eq, and, inArray, or, gte, desc, sql } from "drizzle-orm";
+import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content, projectLinks, campaigns, projects, prospectionCampaigns, leads } from "@shared/schema";
+import { eq, and, inArray, or, gte, desc, sql, count, isNull } from "drizzle-orm";
 import { runReadingRoom } from "./services/reading/runner";
 import { statutApresReponse } from "./services/reading/statut";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
@@ -9977,6 +9977,34 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         .leftJoin(projects, eq(campaigns.projectId, projects.id))
         .where(and(eq(campaigns.userId, userId), eq(campaigns.articuleAvecCampaignId, id)));
 
+      // Campagne(s) de prospection liée(s), dans les deux sens (même requête que
+      // `rejeterCampagne`) : l'écran de confirmation doit annoncer ce qui part avec le
+      // rejet côté prospection — jamais une surprise après coup. LECTURE SEULE ici.
+      const conditionsProspection = [eq(prospectionCampaigns.linkedCampaignId, id)];
+      if ((campaign as any).linkedProspectionCampaignId) {
+        conditionsProspection.push(eq(prospectionCampaigns.id, (campaign as any).linkedProspectionCampaignId));
+      }
+      const prospectionLiee = await db
+        .select({ id: prospectionCampaigns.id, name: prospectionCampaigns.name })
+        .from(prospectionCampaigns)
+        .where(and(eq(prospectionCampaigns.userId, userId), or(...conditionsProspection)));
+
+      // Les prospects ne sont jamais supprimés par cette cascade, seulement ARCHIVÉS
+      // (réversible) — `storage.deleteProspectionCampaign`. Ceux déjà archivés ne
+      // comptent pas : ils ne changent pas d'état avec ce rejet.
+      let prospectsAArchiver = 0;
+      if (prospectionLiee.length > 0) {
+        const [ligneProspects] = await db
+          .select({ total: count() })
+          .from(leads)
+          .where(and(
+            eq(leads.userId, userId),
+            inArray(leads.prospectionCampaignId, prospectionLiee.map((p) => p.id)),
+            isNull(leads.archivedAt),
+          ));
+        prospectsAArchiver = ligneProspects?.total ?? 0;
+      }
+
       res.json({
         contenusGardes: triContenus.gardes.length,
         contenusPartants: triContenus.partants.length,
@@ -9987,6 +10015,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           campagneNom: a.campagneNom,
           marque: a.marque ?? "",
         })),
+        prospectionLiee: prospectionLiee.map((p) => ({ id: p.id, name: p.name })),
+        prospectsAArchiver,
       });
     } catch (error) {
       console.error("Error previewing campaign rejection:", error);

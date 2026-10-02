@@ -154,6 +154,7 @@ const campagne = (over: Record<string, unknown> = {}) => ({
 const RESULTAT_REJET_STUB = {
   contenusDetaches: 2, contenusSupprimes: 1, tachesDetachees: 0, tachesSupprimees: 3,
   preferenceEcrite: true, preferenceSansEmbedding: false, articulationsRompues: [],
+  prospectionSupprimee: [],
 };
 
 // ─── GET /api/campaigns/:id/reject-preview ──────────────────────────────────
@@ -201,7 +202,60 @@ describe("GET /api/campaigns/:id/reject-preview", () => {
       tachesGardees: 1,
       tachesPartantes: 1,
       articulationsRompues: [{ campagneId: 7, campagneNom: "Autre campagne", marque: "Marque Liée" }],
+      prospectionLiee: [],
+      prospectsAArchiver: 0,
     });
+  });
+
+  // Point 1 (revue finale, volet serveur) : l'ancien bouton Supprimer cascadait vers
+  // la prospection liée ; le rejet doit le dire D'AVANCE, pas le faire en silence.
+  // Au minimum le(s) nom(s) de la prospection concernée et le nombre de prospects qui
+  // seraient ARCHIVÉS (jamais supprimés — le mot compte, c'est lui que lit l'écran).
+  it("annonce la prospection liée (lien direct campaigns.linkedProspectionCampaignId) et le nombre de prospects qui seraient archivés", async () => {
+    storageMock.getCampaign.mockResolvedValue(campagne({ linkedProspectionCampaignId: 55 }));
+    hoisted.resultats = [
+      [], // contenus
+      [], // tâches
+      [], // articulations rompues
+      [{ id: 55, name: "Prospection vignerons bio" }], // prospection liée (lien direct)
+      [{ total: 7 }], // prospects pas encore archivés, dans cette prospection
+    ];
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/1/reject-preview`);
+    const body = await res.json();
+
+    expect(body.prospectionLiee).toEqual([{ id: 55, name: "Prospection vignerons bio" }]);
+    expect(body.prospectsAArchiver).toBe(7);
+  });
+
+  // Le lien INVERSE (prospectionCampaigns.linkedCampaignId) doit être lu lui aussi —
+  // c'est la deuxième moitié de « les deux sens », sans laquelle une campagne de
+  // prospection créée APRÈS la campagne marketing (lien posé seulement côté
+  // prospection) resterait invisible à cet aperçu.
+  it("annonce aussi la prospection liée par le lien INVERSE (prospectionCampaigns.linkedCampaignId), sans lien direct sur la campagne", async () => {
+    storageMock.getCampaign.mockResolvedValue(campagne()); // pas de linkedProspectionCampaignId
+    hoisted.resultats = [
+      [], [], [],
+      [{ id: 56, name: "Prospection liée en retour" }],
+      [{ total: 0 }],
+    ];
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/1/reject-preview`);
+    const body = await res.json();
+
+    expect(body.prospectionLiee).toEqual([{ id: 56, name: "Prospection liée en retour" }]);
+    expect(body.prospectsAArchiver).toBe(0);
+  });
+
+  it("aucune prospection liée : prospectionLiee est vide et prospectsAArchiver vaut 0, sans requête de comptage superflue", async () => {
+    storageMock.getCampaign.mockResolvedValue(campagne());
+    hoisted.resultats = [[], [], [], []]; // pas de ligne de prospection liée
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/1/reject-preview`);
+    const body = await res.json();
+
+    expect(body.prospectionLiee).toEqual([]);
+    expect(body.prospectsAArchiver).toBe(0);
   });
 
   it("une marque introuvable pour l'articulation rend une chaîne vide, jamais null/undefined", async () => {

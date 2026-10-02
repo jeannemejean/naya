@@ -425,7 +425,7 @@ export interface IStorage {
   getProspectionCampaign(id: number): Promise<ProspectionCampaign | null>;
   createProspectionCampaign(campaign: InsertProspectionCampaign): Promise<ProspectionCampaign>;
   updateProspectionCampaign(id: number, userId: string, updates: Partial<ProspectionCampaign>): Promise<ProspectionCampaign | null>;
-  deleteProspectionCampaign(id: number, userId: string): Promise<void>;
+  deleteProspectionCampaign(id: number, userId: string, executor?: DbExecutor): Promise<void>;
 
   // Séquences de prospection
   getSequenceSteps(campaignId: number): Promise<CampaignSequenceStep[]>;
@@ -1415,12 +1415,25 @@ export class DatabaseStorage implements IStorage {
   // - tracking de coûts : campaign_id remis à NULL (historique préservé)
   // - campagne marketing liée : lien remis à NULL
   // Le tout dans une transaction pour rester cohérent.
-  async deleteProspectionCampaign(id: number, userId: string): Promise<void> {
-    const [owned] = await db.select({ id: prospectionCampaigns.id }).from(prospectionCampaigns)
+  //
+  // `executor` : optionnel, pour l'appelant qui tient DÉJÀ une transaction ouverte
+  // (ex. `rejeterCampagne`, `server/services/campaign-reject/rejeter.ts`, qui doit
+  // supprimer la campagne de prospection liée DANS LA MÊME transaction que le reste
+  // du rejet — sinon une panne à mi-chemin laisserait l'un validé sans l'autre).
+  // Ouvrir ICI une seconde `db.transaction` imbriquerait deux transactions, ce que le
+  // pool de connexions ne gère pas comme l'atomicité voulue. Même motif que
+  // `jaEnTransaction` dans `services/result-capture/observation-writer.ts` : quand un
+  // exécuteur est fourni, le corps de la cascade s'exécute dedans, sans rien ouvrir de
+  // nouveau ; sans exécuteur (tous les appelants existants, dont `deleteCampaign`
+  // ci-dessous), le comportement est EXACTEMENT celui d'avant — une transaction
+  // dédiée, ouverte ici.
+  async deleteProspectionCampaign(id: number, userId: string, executor?: DbExecutor): Promise<void> {
+    const lecteur = executor ?? db;
+    const [owned] = await lecteur.select({ id: prospectionCampaigns.id }).from(prospectionCampaigns)
       .where(and(eq(prospectionCampaigns.id, id), eq(prospectionCampaigns.userId, userId)));
     if (!owned) return; // inexistante ou pas au user → no-op
 
-    await db.transaction(async (tx) => {
+    const cascade = async (tx: DbExecutor) => {
       // Prospects : archiver (réversible) + détacher pour lever la FK
       await tx.update(leads)
         .set({ archivedAt: new Date(), prospectionCampaignId: null, updatedAt: new Date() })
@@ -1448,7 +1461,13 @@ export class DatabaseStorage implements IStorage {
       // Enfin, la campagne elle-même
       await tx.delete(prospectionCampaigns)
         .where(and(eq(prospectionCampaigns.id, id), eq(prospectionCampaigns.userId, userId)));
-    });
+    };
+
+    if (executor) {
+      await cascade(executor);
+    } else {
+      await db.transaction(cascade);
+    }
   }
 
   // ─── Séquences de prospection ──────────────────────────────────────────────
