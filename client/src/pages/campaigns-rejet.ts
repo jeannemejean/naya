@@ -295,12 +295,24 @@ function phraseSupprimes(contenusSupprimes: number, tachesSupprimees: number): s
  * `POST /api/campaigns/:id/reject` — même discipline que `construireTexteConfirmation` :
  * aucun recompte, aucune ligne à zéro.
  *
- * `raisonDonnee` est ce que CE client a envoyé (pas une relecture du serveur) : c'est
- * la seule façon de distinguer les deux raisons pour lesquelles `preferenceEcrite` peut
- * valoir faux — une raison vide (le cas normal, déjà annoncé par
- * `texteAvertissementRaisonVide` avant confirmation) et une raison fournie dont
- * l'écriture a échoué (une panne, à dire explicitement : jamais de demi-mesure
- * silencieuse, Décision 4 du spec).
+ * `raisonDonnee` est ce que CE client a envoyé (pas une relecture du serveur) : c'est ce
+ * qui distingue une raison vide (le cas normal, déjà annoncé par
+ * `texteAvertissementRaisonVide` avant confirmation, et pour lequel `preferenceEcrite`
+ * vaut légitimement faux) d'une raison fournie.
+ *
+ * Avec l'architecture serveur actuelle (`server/services/campaign-reject/rejeter.ts`),
+ * une raison fournie et `preferenceEcrite: false` ne peuvent PAS coexister dans un 200 :
+ * l'écriture de la préférence se fait DANS la même `db.transaction` que le reste du
+ * rejet — si elle échoue, toute la transaction est annulée et la requête répond 500, pas
+ * 200 avec `preferenceEcrite: false`. La branche ci-dessous est donc morte aujourd'hui.
+ *
+ * Elle reste volontairement : ce module est PUR et découplé du serveur — son seul contrat
+ * est la forme JSON de `ResultatRejet`, où `preferenceEcrite` est un simple `boolean`,
+ * sans que le type lui-même encode l'invariant qui le rend toujours vrai ici. Si ce
+ * couplage serveur change un jour (préférence écrite hors transaction, en best-effort),
+ * ce cas redevient réel — et le silence serait alors exactement la demi-mesure que ce
+ * chantier entier existe pour interdire (Décision 4 du spec). Mieux vaut une ligne morte
+ * et honnêtement documentée qu'un re-silence accidentel le jour où l'invariant casse.
  *
  * `resultat.preferenceSansEmbedding` n'apparaît JAMAIS ici : c'est une information
  * d'exploitation (la préférence existe mais est invisible à la récupération

@@ -305,7 +305,12 @@ describe("construireMessageSucces", () => {
     expect(construireMessageSucces(resultat({}), false)).toEqual([]);
   });
 
-  it("signale l'échec d'écriture quand une raison a été donnée mais preferenceEcrite est faux", () => {
+  // Avec l'architecture serveur actuelle, une raison fournie et `preferenceEcrite: false`
+  // ne peuvent pas coexister dans un 200 (l'écriture est DANS la même transaction que le
+  // reste du rejet — un échec y fait échouer toute la requête en 500). Ce test verrouille
+  // donc une défense pour un contrat serveur qui n'existe pas encore, pas un cas vécu
+  // aujourd'hui — voir le commentaire de `construireMessageSucces`.
+  it("défense : si le serveur rendait un jour preferenceEcrite=false malgré une raison fournie, le dit explicitement plutôt que de se taire", () => {
     const lignes = construireMessageSucces(resultat({ preferenceEcrite: false }), true);
     expect(lignes).toEqual(["La raison n'a pas pu être enregistrée."]);
   });

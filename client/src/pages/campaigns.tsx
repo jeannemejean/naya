@@ -880,14 +880,26 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  toast({ title: TITRE_REJET_ECHEC, description: messageEchecRejet(error), variant: "destructive" }),
  });
 
+ // `raisonRejet` n'est PLUS remise à zéro ici : `AlertDialogAction` (Radix) ferme le
+ // dialogue au clic AVANT de connaître l'issue de la mutation (fermeture synchrone,
+ // `onOpenChange(false)`) — si cette fonction l'effaçait à l'ouverture, un rejet en échec
+ // (500) l'aurait déjà perdue au moment où le prochain clic sur « Rejeter la campagne »
+ // rouvre le dialogue, l'obligeant à retaper un texte qu'elle a peut-être mis du temps à
+ // formuler. Même précaution que `import-calendrier.tsx:148` (« ne jamais perdre un texte
+ // qu'elle vient peut-être de coller »). La seule remise à zéro reste dans
+ // `rejectMutation.onSuccess` : la raison ne disparaît que quand le rejet a RÉUSSI.
  const ouvrirRejet = () => {
- setRaisonRejet("");
  setRejetOuvert(true);
  };
 
  const confirmerRejet = () => {
  if (!selectedCampaignId) return;
- tenterUneFois(rejetVerrou, () => rejectMutation.mutateAsync({ id: selectedCampaignId, raison: raisonRejet }));
+ // `.catch(() => {})` : `mutateAsync` rejette EN PLUS d'appeler `onError` — sans ce
+ // `.catch`, ce rejet non observé logue un avertissement navigateur alors que l'échec
+ // est déjà annoncé par le toast d'`onError`. Même motif que `import-calendrier.tsx:140`.
+ tenterUneFois(rejetVerrou, () =>
+ rejectMutation.mutateAsync({ id: selectedCampaignId, raison: raisonRejet }).catch(() => {}),
+ );
  };
 
  const pauseMutation = useMutation({
@@ -1686,7 +1698,10 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  viennent de `construireTexteConfirmation`, qui ne fait que LIRE les comptes
  déjà calculés par le serveur (`GET .../reject-preview`), jamais les
  recalculer. */}
- <AlertDialog open={rejetOuvert} onOpenChange={(next) => { setRejetOuvert(next); if (!next) setRaisonRejet(""); }}>
+ {/* `onOpenChange` ne remet PLUS `raisonRejet` à "" à la fermeture — voir le
+ commentaire de `ouvrirRejet` : la fermeture (Radix) précède l'issue de la mutation,
+ et cette remise à zéro effaçait une raison qu'un 500 n'avait pas pu enregistrer. */}
+ <AlertDialog open={rejetOuvert} onOpenChange={setRejetOuvert}>
  <AlertDialogContent>
  <AlertDialogHeader>
  <AlertDialogTitle>{TITRE_DIALOGUE_REJET}</AlertDialogTitle>
