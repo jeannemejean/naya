@@ -840,10 +840,17 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  body: JSON.stringify({ raison }),
  }),
  onSuccess: (resultat, vars) => {
- // Les deux ont changé : le contenu (détaché ou supprimé) et les campagnes
- // (celle-ci a disparu, une articulée a pu perdre son articulation).
+ // Les TROIS ont changé : les campagnes (celle-ci a disparu, une articulée a pu
+ // perdre son articulation), le contenu et les tâches (détachés ou supprimés).
+ //
+ // Les tâches sont faciles à oublier parce qu'elles ne sont pas sur cet écran —
+ // elles vivent dans le planning. Sans cette ligne, la confirmation annonce
+ // « 3 tâches seront supprimées », le rejet les supprime, et le planning
+ // continuerait de les afficher : l'écran montrerait du travail qui n'existe
+ // plus, juste après avoir dit qu'il allait disparaître.
  queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
  queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+ queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
  setRejetOuvert(false);
  setRaisonRejet("");
  setSelectedCampaignId(null);
