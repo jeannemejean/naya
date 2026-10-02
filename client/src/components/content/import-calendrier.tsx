@@ -10,9 +10,10 @@
 //   écraserait un second appel, et le reçu porte plusieurs faits à la fois. Le reçu REMPLACE
 //   le champ de collage dans le dialogue, qui reste ouvert — pas affiché à côté, pour qu'on
 //   ne puisse pas recoller par réflexe sur un texte déjà traité.
-// - Le texte collé n'est JAMAIS perdu sur un échec : `texte` n'est effacé qu'après un SUCCÈS
-//   affiché et refermé (voir `fermer`) — jamais sur une erreur, y compris après avoir fermé
-//   puis rouvert le dialogue pendant qu'une erreur est affichée.
+// - Le texte collé n'est JAMAIS perdu sur un échec : `texte` n'est effacé qu'après un import
+//   qui a créé AU MOINS un post, affiché et refermé (voir `changerOuverture`) — jamais sur
+//   une erreur HTTP, et jamais non plus sur un import à 0 post (fonctionnellement un échec :
+//   rien n'a été ajouté à son calendrier, même si le serveur a répondu 200).
 // - Un 400/404 est un échec DÉFINITIF (réessayer à l'identique produit la même erreur) : on
 //   affiche le message du serveur, jamais une invite générique à réessayer qui mentirait.
 //   Motif repris de `client/src/pages/project/BrandLinksPanel.tsx` (`messageDefinitif`).
@@ -88,6 +89,11 @@ export function ImportCalendrier({ projectId }: ImportCalendrierProps) {
   const [texte, setTexte] = useState("");
   const [erreur, setErreur] = useState<string | null>(null);
   const [recu, setRecu] = useState<string[] | null>(null);
+  // `true` dès qu'un import réussi a créé AU MOINS un post. Distingue un import à 0
+  // post (fonctionnellement un échec — voir `changerOuverture`) d'un import qui a
+  // réellement écrit quelque chose : `recu` seul ne permet pas cette distinction, il
+  // contient les LIGNES affichées, pas le compte de posts.
+  const [posteCree, setPosteCree] = useState(false);
   const queryClient = useQueryClient();
 
   // Verrou anti-double-clic : une `useRef`, pas un `state` — un double clic déclenché avant
@@ -106,6 +112,7 @@ export function ImportCalendrier({ projectId }: ImportCalendrierProps) {
     onSuccess: (data) => {
       setErreur(null);
       setRecu(construireRecu(data));
+      setPosteCree(data.posts.length > 0);
       if (projectId !== null) {
         // Préfixe partagé avec la requête de lecture (`['/api/content', selectedProjectId,
         // campaignFilter]` dans content-calendar.tsx) : invalider ce préfixe suffit, react-query
@@ -138,15 +145,22 @@ export function ImportCalendrier({ projectId }: ImportCalendrierProps) {
     );
   };
 
-  // Fermeture du dialogue : le texte et l'erreur ne sont remis à zéro que si un reçu est
-  // affiché (import réussi, lu et fermé) — jamais après un échec, pour ne jamais perdre un
-  // texte qu'elle vient peut-être de coller depuis un endroit déjà fermé.
+  // Fermeture du dialogue : l'erreur et le reçu ne sont remis à zéro que si un reçu est
+  // affiché (import terminé, lu et fermé) — jamais après un échec réseau/serveur, pour ne
+  // jamais perdre un texte qu'elle vient peut-être de coller depuis un endroit déjà fermé.
+  //
+  // Le TEXTE, lui, n'est effacé que si l'import a réellement créé au moins un post
+  // (`posteCree`). Un import à 0 post pose quand même un reçu (ce n'est pas une erreur
+  // HTTP), mais c'est fonctionnellement un échec pour elle : rien n'a été ajouté à son
+  // calendrier. L'effacer ici romprait la promesse de tête de fichier — le texte collé
+  // n'est jamais perdu sur un échec.
   const changerOuverture = (ouvert: boolean) => {
     setOpen(ouvert);
     if (!ouvert && recu) {
-      setTexte("");
+      if (posteCree) setTexte("");
       setErreur(null);
       setRecu(null);
+      setPosteCree(false);
     }
   };
 
@@ -182,7 +196,13 @@ export function ImportCalendrier({ projectId }: ImportCalendrierProps) {
           <div className="space-y-3">
             <Textarea
               value={texte}
-              onChange={(e) => setTexte(e.target.value)}
+              // L'erreur affichée (ex. "Texte trop long : 45000 caractères reçus") décrit
+              // le texte AU MOMENT du dernier envoi. Si elle ne persiste qu'elle coupe son
+              // texte, "45000" resterait affiché sous un compteur qui montre déjà "39000" —
+              // deux énoncés contradictoires à l'écran. Toute frappe efface l'erreur : elle
+              // redevient exacte dès le prochain essai, plutôt que de rester figée sur un
+              // état du texte qui n'existe plus.
+              onChange={(e) => { setTexte(e.target.value); setErreur(null); }}
               placeholder={t("contentCalendar.importCalendrier.placeholder")}
               className="min-h-[240px]"
               disabled={importMutation.isPending}
