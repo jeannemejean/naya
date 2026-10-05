@@ -37,6 +37,7 @@ import {
   PLACEHOLDER_CHAMP_RAISON,
   LIBELLE_ANNULER,
   LIBELLE_CONFIRMER_REJET,
+  LIBELLE_REJET_EN_COURS,
   TITRE_REJET_REUSSI,
   TITRE_REJET_ECHEC,
   TITRE_APERCU_ECHEC,
@@ -916,7 +917,21 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  setRejetOuvert(true);
  };
 
- const confirmerRejet = () => {
+ const confirmerRejet = (evenement: React.MouseEvent) => {
+ // `AlertDialogAction` est `DialogClose` : son onClick est
+ // `composeEventHandlers(props.onClick, () => onOpenChange(false))`, et
+ // `composeEventHandlers` n'execute la fermeture QUE si `preventDefault` n'a pas ete
+ // appele (verifie dans @radix-ui/react-dialog 1.1.7 et @radix-ui/primitive).
+ //
+ // Sans cette ligne, la fenetre disparaissait dans le MEME evenement que le clic :
+ // le `disabled={… || rejectMutation.isPending}` du bouton n'etait donc JAMAIS visible,
+ // et le rejet s'executait pendant plusieurs secondes — lectures, detachements,
+ // suppressions, cascade de prospection, appel reseau pour l'embedding — sans aucun
+ // retour a l'ecran. Exactement le defaut signale sur la reinitialisation de compte.
+ //
+ // On garde donc la main : `onSuccess` ferme (il le faisait deja), et `onError` NE
+ // ferme PAS, ce qui laisse la raison intacte pour une nouvelle tentative.
+ evenement.preventDefault();
  if (!selectedCampaignId) return;
  // `.catch(() => {})` : `mutateAsync` rejette EN PLUS d'appeler `onError` — sans ce
  // `.catch`, ce rejet non observé logue un avertissement navigateur alors que l'échec
@@ -1767,7 +1782,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  )}
  </div>
  <AlertDialogFooter>
- <AlertDialogCancel>{LIBELLE_ANNULER}</AlertDialogCancel>
+ <AlertDialogCancel disabled={rejectMutation.isPending}>{LIBELLE_ANNULER}</AlertDialogCancel>
  {/* Désactivé tant que l'annonce affichée ci-dessus n'est pas un fait établi : en
  vol (`isFetching`), en échec (`isError` — « Aperçu indisponible » n'est pas une
  confirmation), ou sans donnée encore reçue. La seule protection de ce geste
@@ -1785,7 +1800,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  }
  data-testid="rejet-confirmer"
  >
- {LIBELLE_CONFIRMER_REJET}
+ {rejectMutation.isPending ? LIBELLE_REJET_EN_COURS : LIBELLE_CONFIRMER_REJET}
  </AlertDialogAction>
  </AlertDialogFooter>
  </AlertDialogContent>

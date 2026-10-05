@@ -66,6 +66,13 @@ export const LABEL_CHAMP_RAISON = "Raison (facultative)";
 export const PLACEHOLDER_CHAMP_RAISON = "Ce qui n'allait pas, pour que Naya en tienne compte la prochaine fois";
 export const LIBELLE_ANNULER = "Annuler";
 export const LIBELLE_CONFIRMER_REJET = "Rejeter";
+// Affiche pendant que le rejet s'execute. Radix ferme `AlertDialogAction` dans le MEME
+// evenement que le clic (`composeEventHandlers(props.onClick, () => onOpenChange(false))`,
+// verifie dans @radix-ui/react-dialog 1.1.7) : sans `preventDefault`, la fenetre
+// disparaissait aussitot et le `disabled` du bouton n'etait jamais visible. Le rejet dure
+// plusieurs secondes — lectures, detachements, suppressions, cascade de prospection, appel
+// reseau pour l'embedding — pendant lesquelles il ne se passait visiblement RIEN.
+export const LIBELLE_REJET_EN_COURS = "Rejet en cours…";
 export const TITRE_REJET_REUSSI = "Campagne rejetée";
 export const TITRE_REJET_ECHEC = "Rejet impossible";
 export const TITRE_APERCU_ECHEC = "Aperçu indisponible";
