@@ -12,3 +12,6 @@ vite.config.ts.*
 
 # Atelier de travail des sous-agents (scratch, jamais commite)
 .superpowers/
+
+# Journal des échecs de tests (rapporteur scripts/rapporteur-echecs.ts) — local, jamais commité
+.vitest-echecs.log
