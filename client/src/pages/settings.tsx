@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/contexts/ThemeContext";
 import { apiRequest } from "@/lib/queryClient";
+import { oublierMarqueStockee } from "@/lib/marque-active-stockee";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { throwApiError, translateError, ApiError } from "@/lib/api-error";
@@ -580,13 +581,27 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  });
 
  const resetOnboardingMutation = useMutation({
+ // Le navigateur oublie la marque active AVANT l'envoi, pas dans `onSuccess`.
+ //
+ // Le 5 octobre 2026, l'effacement vivait dans `onSuccess` et n'a jamais eu lieu : la
+ // reinitialisation vide des dizaines de tables, les requetes en cours ont commence a
+ // echouer a mesure que les lignes disparaissaient, l'`ErrorBoundary` a remplace tout
+ // l'arbre — et un `onSuccess` ne s'execute pas sur un composant demonte. L'ancien
+ // identifiant restait, et chaque rechargement retombait sur l'ecran d'erreur.
+ //
+ // Dans `onMutate`, c'est fait avant que quoi que ce soit puisse echouer. Le cout si
+ // la reinitialisation echoue : la selection de marque est perdue, et le serveur la
+ // renvoie au prochain chargement. Sans commune mesure avec une application bloquee.
+ onMutate: () => { oublierMarqueStockee(localStorage); },
  mutationFn: () => apiRequest('DELETE', '/api/me/onboarding-reset'),
  onSuccess: () => {
  toast({ title: t('settings.dataReset') });
- localStorage.removeItem('naya_active_project_id');
  setTimeout(() => { window.location.href = "/"; }, 1500);
  },
- onError: () => toast({ title: t('common.error'), description: t('settings.failedToSave'), variant: "destructive" }),
+ onError: () => {
+ setResetConfirmOpen(false);
+ toast({ title: t('common.error'), description: t('settings.failedToSave'), variant: "destructive" });
+ },
  });
 
 
@@ -1047,7 +1062,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <Button variant="outline" onClick={() => setResetConfirmOpen(false)}>{t('common.cancel')}</Button>
  <Button
  variant="destructive"
- onClick={() => { setResetConfirmOpen(false); resetOnboardingMutation.mutate(); }}
+ onClick={() => resetOnboardingMutation.mutate()}
  disabled={resetOnboardingMutation.isPending}
  >
  {resetOnboardingMutation.isPending ? t('common.loading') : t('settings.confirmReset')}
@@ -1055,6 +1070,43 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </DialogFooter>
  </DialogContent>
  </Dialog>
+
+ {/* Voile bloquant pendant la reinitialisation.
+
+     Sans lui, la fenetre de confirmation se fermait et il ne se passait
+
+     visiblement RIEN pendant plusieurs secondes : impossible de savoir si le
+
+     clic avait ete pris. Il bloque aussi les interactions, car l'application
+
+     se vide sous les pieds de l'utilisatrice pendant ce temps.
+
+     Pas de barre de progression : on ne sait pas combien de temps la
+
+     transaction prend, et une progression inventee serait un mensonge. */}
+
+ {resetOnboardingMutation.isPending && (
+
+   <div
+
+     role="status"
+
+     aria-live="polite"
+
+     className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-background/95 px-6 text-center"
+
+   >
+
+     <Loader2 className="h-6 w-6 animate-spin text-foreground/70" />
+
+     <p className="text-base text-foreground">{t('settings.resetEnCoursTitre')}</p>
+
+     <p className="max-w-sm text-sm text-foreground/60">{t('settings.resetEnCoursCorps')}</p>
+
+   </div>
+
+ )}
+
 
  {/* Replan confirmation dialog */}
  <Dialog open={replanConfirmOpen} onOpenChange={setReplanConfirmOpen}>

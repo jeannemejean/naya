@@ -1234,6 +1234,8 @@ const en = {
  resetDataDescription: "This will permanently delete all your data. This action cannot be undone.",
  confirmReset: "Are you sure you want to reset all data?",
  dataReset: "Data has been reset",
+ resetEnCoursTitre: "Reset in progress…",
+ resetEnCoursCorps: "Naya is erasing your data. Don't close this page — it will reload on its own.",
  logOut: "Log Out",
  socialConnectFailedTitle: "Connection failed",
  tabs: {

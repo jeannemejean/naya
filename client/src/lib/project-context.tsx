@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { lireMarqueStockee, oublierMarqueStockee, CLE_MARQUE_ACTIVE } from "@/lib/marque-active-stockee";
 
 interface ProjectContextValue {
  activeProjectId: number | null;
@@ -23,9 +24,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
  });
 
  const [activeProjectId, setLocalProjectId] = useState<number | null>(() => {
- // Fallback to localStorage while server loads
- const stored = localStorage.getItem('naya_active_project_id');
- return stored ? parseInt(stored) : null;
+ // Repli sur le navigateur pendant que le serveur charge. `lireMarqueStockee` rejette
+ // tout ce qui n'est pas un entier positif : la version precedente faisait
+ // `parseInt(stored)` sans garde, donc un stockage corrompu propageait `NaN` dans
+ // toutes les requetes (`projectId=NaN`), que le serveur refuse en 400.
+ return lireMarqueStockee(localStorage);
  });
 
  // Sync from server once loaded
@@ -34,9 +37,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
  const serverId = preferences?.activeProjectId ?? null;
  setLocalProjectId(serverId);
  if (serverId !== null) {
- localStorage.setItem('naya_active_project_id', String(serverId));
+ localStorage.setItem(CLE_MARQUE_ACTIVE, String(serverId));
  } else {
- localStorage.removeItem('naya_active_project_id');
+ oublierMarqueStockee(localStorage);
  }
  }
  }, [preferences]);
@@ -52,9 +55,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
  const setActiveProjectId = (id: number | null) => {
  setLocalProjectId(id);
  if (id !== null) {
- localStorage.setItem('naya_active_project_id', String(id));
+ localStorage.setItem(CLE_MARQUE_ACTIVE, String(id));
  } else {
- localStorage.removeItem('naya_active_project_id');
+ oublierMarqueStockee(localStorage);
  }
  updatePreference.mutate(id);
  };

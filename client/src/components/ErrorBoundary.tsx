@@ -1,4 +1,5 @@
 import { Component, createElement as h, type ReactNode, type CSSProperties } from "react";
+import { oublierMarqueStockee } from "@/lib/marque-active-stockee";
 
 // Écran affiché quand une erreur non gérée remonte (crash de rendu, ou erreur de query
 // propagée). Jamais de page blanche / crash brut. Écrit en createElement (pas de JSX)
@@ -37,6 +38,20 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
   }
 
   handleRetry = () => {
+    // « Réessayer » doit CHANGER quelque chose, sinon c'est un bouton qui ne peut pas
+    // réussir — et on a déjà corrigé ce défaut ailleurs dans ce dépôt.
+    //
+    // Le 5 octobre 2026, après une réinitialisation de compte, le navigateur gardait
+    // l'identifiant d'une marque supprimée. Au rechargement il était relu avant que le
+    // serveur ait pu dire la vérité, les requêtes partaient sur une marque inexistante,
+    // l'erreur remontait ici, et « Réessayer » rechargeait dans le MÊME état. Boucle
+    // parfaite, dont on ne sortait qu'en vidant le stockage à la main.
+    //
+    // On oublie donc la marque active avant de recharger. Le coût est nul : le serveur
+    // la renvoie au chargement suivant si elle existe encore. Et c'est volontairement
+    // indépendant de l'erreur rencontrée — on ne sait pas laquelle a échoué, et le
+    // geste doit marcher quelle que soit la cause.
+    oublierMarqueStockee(window.localStorage);
     this.setState({ hasError: false });
     window.location.reload();
   };

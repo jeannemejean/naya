@@ -1238,6 +1238,8 @@ const fr = {
  resetDataDescription: "Cela supprimera définitivement toutes tes données. Cette action est irréversible.",
  confirmReset: "Es-tu sûr de vouloir réinitialiser toutes les données ?",
  dataReset: "Les données ont été réinitialisées",
+ resetEnCoursTitre: "Réinitialisation en cours…",
+ resetEnCoursCorps: "Naya efface tes données. Ne ferme pas cette page : elle se rechargera toute seule.",
  logOut: "Se déconnecter",
  socialConnectFailedTitle: "Connexion impossible",
  tabs: {
