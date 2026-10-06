@@ -15,6 +15,19 @@ export interface TacheRefusable {
   scheduledTime: string | null;
   estimatedDuration: number | null;
   learnedAdjustmentCount: number | null;
+  completed?: boolean | null;
+  goalId?: number | null;
+  milestoneId?: number | null;
+  workflowGroup?: string | null;
+  priority?: number | null;
+}
+
+// Heure de fin HH:MM = début + durée, plafonnée à 23:59 ; null si le début est invalide.
+export function heureDeFin(debut: string | null, dureeMin: number): string | null {
+  if (!debut || !/^\d{2}:\d{2}$/.test(debut)) return null;
+  const [h, m] = debut.split(":").map(Number);
+  const fin = Math.min(h * 60 + m + dureeMin, 23 * 60 + 59);
+  return `${String(Math.floor(fin / 60)).padStart(2, "0")}:${String(fin % 60).padStart(2, "0")}`;
 }
 
 export interface RetourRefus {
@@ -42,6 +55,11 @@ export interface NouvelleTacheRemplacement {
   activationPrompt: string | null;
   scheduledDate: string | null;
   scheduledTime: string | null;
+  scheduledEndTime: string | null;
+  goalId: number | null;
+  milestoneId: number | null;
+  workflowGroup: string | null;
+  priority?: number;
   source: "replacement";
 }
 
@@ -55,12 +73,14 @@ export interface RefusDeps {
   creerTache(row: NouvelleTacheRemplacement): Promise<{ id: number } & Record<string, unknown>>;
   ajouterDependance(userId: string, taskId: number, dependsOnTaskId: number): Promise<boolean>;
   supprimerTache(id: number): Promise<void>;
+  restaurerCreneau(userId: string, id: number, creneau: { scheduledDate: string; scheduledTime: string; scheduledEndTime: string | null }): Promise<void>;
   retasser(userId: string, fromDate: string): Promise<void>;
   aujourdhui(): string;
 }
 
 export type ResultatRefus =
   | { statut: "introuvable" }
+  | { statut: "deja_terminee" }
   | { statut: "refusee"; remplacement: Record<string, unknown> | null; raison?: "generation_failed" };
 
 // Exécute une étape best-effort : journalise et rend `fallback` en cas d'échec.
@@ -83,6 +103,8 @@ export async function refuserTache(
   // 1. Lecture + contrôle de propriété : une tâche d'un autre compte est « introuvable ».
   const tache = await deps.lireTache(taskId);
   if (!tache || tache.userId !== userId) return { statut: "introuvable" };
+  // Une tâche terminée ne se refuse pas : aucune écriture.
+  if (tache.completed) return { statut: "deja_terminee" };
 
   // 2. Le retour est l'étape qui fait réussir le refus ; les suivantes sont best-effort.
   await deps.enregistrerRetour({
@@ -149,6 +171,11 @@ export async function refuserTache(
         activationPrompt: rempl.activationPrompt ?? null,
         scheduledDate: tache.scheduledDate ?? null,
         scheduledTime: tache.scheduledTime ?? null,
+        scheduledEndTime: heureDeFin(tache.scheduledTime ?? null, rempl.estimatedDuration),
+        goalId: tache.goalId ?? null,
+        milestoneId: tache.milestoneId ?? null,
+        workflowGroup: tache.workflowGroup ?? null,
+        ...(tache.priority != null ? { priority: tache.priority } : {}),
         source: "replacement",
       }),
     null,
@@ -163,9 +190,25 @@ export async function refuserTache(
     await sansLever("dépendance (dépendant)", () => deps.ajouterDependance(userId, d, cree.id), false);
   }
 
-  // 8-9. Suppression de la refusée puis re-tassage.
+  // 8. Suppression de la refusée. Si elle échoue après la création, les deux tâches
+  // subsistent : l'utilisatrice peut simplement refuser à nouveau (rien n'est perdu).
   await sansLever("suppression", () => deps.supprimerTache(tache.id), undefined);
-  await retasser();
 
-  return { statut: "refusee", remplacement: cree };
+  // Le garde de collision de createTask a pu décaler le remplacement, la refusée
+  // occupant encore son créneau : on le restaure maintenant qu'elle a disparu.
+  if (tache.scheduledDate && tache.scheduledTime) {
+    const { scheduledDate, scheduledTime } = tache;
+    await sansLever("restauration du créneau", () =>
+      deps.restaurerCreneau(userId, cree.id, {
+        scheduledDate,
+        scheduledTime,
+        scheduledEndTime: heureDeFin(scheduledTime, rempl.estimatedDuration),
+      }), undefined);
+  }
+
+  // 9. Re-tassage, puis relecture : on rend la ligne après tassage.
+  await retasser();
+  const finale = await sansLever<Record<string, unknown> | undefined>("relecture", () => deps.lireTache(cree.id) as Promise<any>, undefined);
+
+  return { statut: "refusee", remplacement: finale ?? cree };
 }

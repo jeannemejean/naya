@@ -1,6 +1,6 @@
 // Implémentation réelle des dépendances du refus (base, mémoire, génération).
-import { eq } from "drizzle-orm";
-import { memoryEntries, taskDependencies } from "@shared/schema";
+import { and, eq } from "drizzle-orm";
+import { memoryEntries, taskDependencies, tasks } from "@shared/schema";
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { embedText } from "../memory/embed";
@@ -14,7 +14,7 @@ const SALIENCE_REFUS = 0.8;
 const TYPES_NEGATIFS = ["deleted", "dismissed", "deferred", "refused"];
 
 export const refusDeps: RefusDeps = {
-  lireTache: async (id) => (await storage.getTask(id)) as any,
+  lireTache: (id) => storage.getTask(id),
 
   enregistrerRetour: async (row) => {
     await storage.createTaskFeedback(row);
@@ -61,11 +61,15 @@ export const refusDeps: RefusDeps = {
 
   generer: (input) => genererRemplacement(input),
 
-  creerTache: async (row) => (await storage.createTask(row as any)) as any,
+  creerTache: (row) => storage.createTask(row),
 
   ajouterDependance: (userId, taskId, dependsOnTaskId) => ajouterDependance(userId, taskId, dependsOnTaskId),
 
   supprimerTache: (id) => storage.deleteTask(id),
+
+  restaurerCreneau: async (userId, id, creneau) => {
+    await db.update(tasks).set(creneau).where(and(eq(tasks.id, id), eq(tasks.userId, userId)));
+  },
 
   retasser: async (userId, fromDate) => {
     await storage.fixOverlappingTasks(userId, fromDate);

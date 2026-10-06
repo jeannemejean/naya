@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { refuserTache, type RefusDeps, type TacheRefusable } from "./service";
+import { refuserTache, type RefusDeps, type TacheRefusable, heureDeFin } from "./service";
 
 const tache = (o: Partial<TacheRefusable> = {}): TacheRefusable => ({
   id: 10, userId: "u1", title: "Poster sur Instagram", description: "d", type: "content", category: "trust",
@@ -12,15 +12,18 @@ function faire(over: Partial<RefusDeps> = {}, t: TacheRefusable | null = tache()
   const j: string[] = [];
   const d: any = {
     j,
-    lireTache: async () => t ?? undefined,
+    lireTache: async (id: number) => (id === 99 ? d.cree : t ?? undefined),
     enregistrerRetour: async (r: any) => { j.push("retour"); d.retour = r; },
     ecrireSouvenir: async (i: any) => { j.push("souvenir"); d.souvenir = i; },
     lireDependances: async () => { j.push("deps"); return { prerequis: [], dependants: [] }; },
     refusRecents: async () => { j.push("recents"); return ["- x"]; },
     generer: async (i: any) => { j.push("generer"); d.genInput = i; return remp; },
-    creerTache: async (r: any) => { j.push("creer"); d.cree = r; return { id: 99, ...r }; },
+    refuseePresente: true,
+    // Modélise le garde de collision : la refusée occupe son créneau, le remplaçant est décalé.
+    creerTache: async (r: any) => { j.push("creer"); d.creeEnvoye = r; d.cree = { id: 99, ...r, ...(d.refuseePresente && r.scheduledTime ? { scheduledTime: "10:45" } : {}) }; return d.cree; },
     ajouterDependance: async (u: string, a: number, b: number) => { j.push(`dep:${a}<-${b}`); return true; },
-    supprimerTache: async (id: number) => { j.push(`suppr:${id}`); },
+    supprimerTache: async (id: number) => { j.push(`suppr:${id}`); d.refuseePresente = false; },
+    restaurerCreneau: async (_u: string, id: number, c: any) => { j.push(`restaure:${id}`); d.creneau = c; d.cree = { ...d.cree, ...c }; },
     retasser: async (u: string, f: string) => { j.push(`retasse:${f}`); d.retasseDepuis = f; },
     aujourdhui: () => "2026-10-06",
     ...over,
@@ -43,13 +46,40 @@ describe("refuserTache", () => {
   it("ordre exact et remplacement au même créneau/projet/source", async () => {
     const d = faire();
     const r: any = await refuserTache(d, entree);
-    expect(d.j).toEqual(["retour", "souvenir", "deps", "recents", "generer", "creer", "suppr:10", "retasse:2026-10-08"]);
+    expect(d.j).toEqual(["retour", "souvenir", "deps", "recents", "generer", "creer", "suppr:10", "restaure:99", "retasse:2026-10-08"]);
     expect(r.statut).toBe("refusee");
     expect(r.remplacement.id).toBe(99);
-    expect(d.cree).toMatchObject({ userId: "u1", projectId: 5, scheduledDate: "2026-10-08", scheduledTime: "10:00", source: "replacement", title: remp.title, estimatedDuration: 30 });
+    expect(d.creeEnvoye).toMatchObject({ userId: "u1", projectId: 5, scheduledDate: "2026-10-08", scheduledTime: "10:00", source: "replacement", title: remp.title, estimatedDuration: 30 });
     expect(d.retour).toMatchObject({ feedbackType: "refused", reason: "not_useful", freeText: "Je préfère LinkedIn", timesRescheduled: 2, taskId: 10, projectId: 5 });
     expect(d.souvenir.projectId).toBe(5);
     expect(d.souvenir.texte).toContain("Je préfère LinkedIn");
+  });
+  it("le remplacement retrouve le créneau exact de la refusée malgré le garde de collision", async () => {
+    const d = faire();
+    const r: any = await refuserTache(d, entree);
+    expect(d.creeEnvoye.scheduledTime).toBe("10:00");
+    expect(r.remplacement.scheduledDate).toBe("2026-10-08");
+    expect(r.remplacement.scheduledTime).toBe("10:00");
+    expect(r.remplacement.scheduledEndTime).toBe("10:30");
+  });
+  it("heureDeFin plafonne à 23:59", () => {
+    expect(heureDeFin("23:30", 60)).toBe("23:59");
+    expect(heureDeFin(null, 30)).toBeNull();
+  });
+  it("tâche terminée: deja_terminee sans écriture", async () => {
+    const d = faire({}, tache({ completed: true }));
+    expect(await refuserTache(d, entree)).toEqual({ statut: "deja_terminee" });
+    expect(d.j).toEqual([]);
+  });
+  it("reprend goalId, milestoneId, workflowGroup, priority", async () => {
+    const d = faire({}, tache({ goalId: 7, milestoneId: 8, workflowGroup: "g", priority: 3 }));
+    await refuserTache(d, entree);
+    expect(d.creeEnvoye).toMatchObject({ goalId: 7, milestoneId: 8, workflowGroup: "g", priority: 3 });
+  });
+  it("pas de restauration sans heure", async () => {
+    const d = faire({}, tache({ scheduledTime: null }));
+    await refuserTache(d, entree);
+    expect(d.j).not.toContain("restaure:99");
   });
   it("pas de souvenir sans texte", async () => {
     const d = faire();
@@ -91,14 +121,14 @@ describe("refuserTache", () => {
     const d = faire({}, tache({ projectId: null }));
     await refuserTache(d, entree);
     expect(d.souvenir.projectId).toBeNull();
-    expect(d.cree.projectId).toBeNull();
+    expect(d.creeEnvoye.projectId).toBeNull();
     expect(d.retour.projectId).toBeNull();
   });
   it("tâche sans date: remplacement sans date, retassage depuis aujourd'hui", async () => {
     const d = faire({}, tache({ scheduledDate: null, scheduledTime: null }));
     await refuserTache(d, entree);
-    expect(d.cree.scheduledDate).toBeNull();
-    expect(d.cree.scheduledTime).toBeNull();
+    expect(d.creeEnvoye.scheduledDate).toBeNull();
+    expect(d.creeEnvoye.scheduledTime).toBeNull();
     expect(d.retasseDepuis).toBe("2026-10-06");
   });
   it("tâche passée: retassage depuis aujourd'hui", async () => {
