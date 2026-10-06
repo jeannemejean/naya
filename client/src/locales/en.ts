@@ -1997,6 +1997,7 @@ const en = {
  whatIsThisProjectAbout: "What is this project about?",
  },
  refusPost: {
+ quoted: "“{{title}}”",
  refuse: "Decline",
  title: "Decline this post",
  reasons: {

@@ -1,5 +1,5 @@
 // Implémentation réelle des dépendances du refus de post (base, mémoire, génération).
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, notInArray, or } from "drizzle-orm";
 import { content, memoryEntries, type InsertContent } from "@shared/schema";
 import { db } from "../../db";
 import { storage } from "../../storage";
@@ -24,6 +24,7 @@ export const refusPostDeps: RefusPostDeps = {
     } catch {
       embedding = null;
     }
+    if (!embedding) console.warn(`[refus-post] préférence sans embedding (userId=${userId}, projectId=${projectId})`);
     await db.insert(memoryEntries).values({
       userId,
       projectId,
@@ -40,7 +41,13 @@ export const refusPostDeps: RefusPostDeps = {
   creerPost: (row) => storage.createContent(row satisfies InsertContent),
 
   neutraliserPost: async (userId, id) => {
-    await db.update(content).set({ autoPost: false }).where(and(eq(content.id, id), eq(content.userId, userId)));
+    const rows = await db.update(content).set({ autoPost: false }).where(and(
+      eq(content.id, id),
+      eq(content.userId, userId),
+      isNull(content.publishedAt),
+      or(isNull(content.postStatus), notInArray(content.postStatus, ["uploading", "processing", "posting", "posted"])),
+    )).returning({ id: content.id });
+    return rows.length > 0;
   },
 
   supprimerPost: (id) => storage.deleteContent(id),

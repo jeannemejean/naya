@@ -2001,6 +2001,7 @@ const fr = {
  whatIsThisProjectAbout: "De quoi parle ce projet ?",
  },
  refusPost: {
+ quoted: "« {{title}} »",
  refuse: "Refuser",
  title: "Refuser ce post",
  reasons: {

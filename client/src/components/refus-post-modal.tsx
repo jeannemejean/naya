@@ -42,7 +42,7 @@ export default function RefusPostModal({ post, open, onClose, onConfirm, isPendi
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-base">{t("refusPost.title")}</DialogTitle>
-          {post && <p className="text-xs text-naya-cream0 mt-1 line-clamp-2">"{post.title}"</p>}
+          {post && <p className="text-xs text-naya-cream0 mt-1 line-clamp-2">{t("refusPost.quoted", { title: post.title })}</p>}
         </DialogHeader>
 
         <div className="space-y-4 pt-1">

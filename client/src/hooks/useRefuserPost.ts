@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { refuserPostApi } from "@/lib/refus-post-api";
 
 // Logique du refus d'un post du calendrier.
-export function useRefuserPost(onSuccess?: () => void) {
+export function useRefuserPost(onSuccess?: (postId: number) => void) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -25,9 +25,18 @@ export function useRefuserPost(onSuccess?: () => void) {
           return typeof k === "string" && (k.startsWith("/api/content") || k.startsWith("/api/campaigns"));
         },
       });
-      onSuccess?.();
+      onSuccess?.(v.postId);
     },
     onError: (err: unknown) => {
+      // 404 : le post n'existe plus (carte périmée) ; on rafraîchit le calendrier.
+      if (err instanceof Error && /^404\b/.test(err.message)) {
+        queryClient.invalidateQueries({
+          predicate: (q) => {
+            const k = q.queryKey[0];
+            return typeof k === "string" && k.startsWith("/api/content");
+          },
+        });
+      }
       const dejaPublie = err instanceof Error && /^409\b/.test(err.message);
       toast({
         title: t(dejaPublie ? "refusPost.alreadyPublished" : "refusPost.failed"),

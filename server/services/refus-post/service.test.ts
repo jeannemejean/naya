@@ -18,7 +18,7 @@ function faire(over: Partial<RefusPostDeps> = {}, p: PostRefusable | null = post
     generer: async (i: any) => { j.push("generer"); d.genInput = i; return remp; },
     creerPost: async (r: any) => { j.push("creer"); d.cree = r; return { id: 99, ...r }; },
     supprimerPost: async (id: number) => { j.push(`suppr:${id}`); },
-    neutraliserPost: async (u: string, id: number) => { j.push(`neutralise:${id}`); },
+    neutraliserPost: async (u: string, id: number) => { j.push(`neutralise:${id}`); return true; },
     ...over,
   };
   return d;
@@ -156,6 +156,11 @@ describe("refuserPost", () => {
     await refuserPost(b, entree);
     expect(a.j).toEqual([]);
     expect(b.j).toEqual([]);
+  });
+  it("neutralisation rend false → deja_publie, ni souvenir ni génération ni suppression", async () => {
+    const d = faire({ neutraliserPost: async (_u: string, id: number) => { d.j.push(`neutralise:${id}`); return false; } });
+    expect(await refuserPost(d, entree)).toEqual({ statut: "deja_publie" });
+    expect(d.j).toEqual(["neutralise:10"]);
   });
   it("échec de neutralisation non bloquant", async () => {
     const d = faire({ neutraliserPost: async () => { throw new Error("x"); } });

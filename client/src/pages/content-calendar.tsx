@@ -463,7 +463,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  // l'intention + sa raison, jamais un ré-affichage des compteurs saisis.
  const [receptionFor, setReceptionFor] = useState<Content | null>(null);
  const [refusFor, setRefusFor] = useState<Content | null>(null);
- const refuserPost = useRefuserPost(() => setRefusFor(null));
+ const refuserPost = useRefuserPost((postId) => setRefusFor(cur => (cur && cur.id === postId ? null : cur)));
  const [receptionForm, setReceptionForm] = useState({ saves: '', shares: '', comments: '', reach: '', measuredAt: '' });
  const [receptionResult, setReceptionResult] = useState<ContentReception | null>(null);
  const [receptionCsv, setReceptionCsv] = useState('');
@@ -938,7 +938,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </div>
  )}
 
- <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1" onClick={e => e.stopPropagation()}>
+ <div className="absolute top-2 right-2 flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex group-focus-within:flex items-center gap-1" onClick={e => e.stopPropagation()}>
  {canMoveLeft && (
  <button
  className="w-6 h-6 rounded bg-naya-olive-10 hover:bg-naya-olive-18 flex items-center justify-center"
