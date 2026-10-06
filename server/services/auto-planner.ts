@@ -13,6 +13,7 @@
  */
 
 import { storage } from '../storage';
+import { ajouterDependance } from './dependances';
 import { generateDailyTasks } from './openai';
 import { buildNayaContext } from './naya-context';
 import { CLAUDE_MODELS, callClaude } from './claude';
@@ -26,6 +27,7 @@ import { maxTasksForDay } from './day-sizing';
 import { BUFFER_MIN_CEILING } from './rhythm-buffer';
 import { decisionReport, REPORTS_AVANT_QUESTION } from './rollover-decision';
 import { debutEffectifDePlanification } from './planning-start';
+import { remplacerReferencesNumerotees } from "./references-taches";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -502,6 +504,9 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
 
       // Persist tasks with collision-safe slot assignment (respects lunch break)
       const idParIndexSource = new Map<number, number>();
+      // Titres dans l'ordre d'origine de la sortie IA (avant réordonnancement) pour le filet
+      // contre les « Task N » numérotés en prose.
+      const titresLot: string[] = rawTasks.map((t: any) => t?.title ?? '');
       for (const taskData of orderedTasks) {
         const category = taskData.category || 'general';
         const rawDuration = taskData.estimatedDuration || 30;
@@ -532,7 +537,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
             return activeGoals[idx]?.id ?? activeGoals[0]?.id ?? undefined;
           })(),
           title: taskData.title,
-          description: taskData.description || '',
+          description: remplacerReferencesNumerotees(taskData.description || '', titresLot),
           type: taskData.type || 'planning',
           category,
           priority: taskData.priority || 3,
@@ -544,7 +549,9 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
           setupCost: taskData.setupCost || 'low',
           canBeFragmented: taskData.canBeFragmented ?? false,
           recommendedTimeOfDay: taskData.recommendedTimeOfDay || 'morning',
-          activationPrompt: taskData.activationPrompt || null,
+          activationPrompt: taskData.activationPrompt
+            ? remplacerReferencesNumerotees(taskData.activationPrompt, titresLot)
+            : null,
           workflowGroup: taskData.workflowGroup || null,
           source: 'auto',
           completed: false,
@@ -560,11 +567,8 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         const dependsOnTaskId = idParIndexSource.get(dep.dependsOnIndex);
         if (!taskId || !dependsOnTaskId || taskId === dependsOnTaskId) continue;
         try {
-          await storage.createTaskDependency({
-            taskId,
-            dependsOnTaskId,
-            relationType: dep.relationType as any,
-          } as any);
+          const ok = await ajouterDependance(userId, taskId, dependsOnTaskId, dep.relationType as any);
+          if (!ok) console.error(`[AutoPlanner] dépendance ${dependsOnTaskId} → ${taskId} refusée (invalide)`);
         } catch (e: any) {
           // Non bloquant pour la génération, mais plus jamais muet : une dépendance perdue
           // est la raison pour laquelle le planning réordonnait mal sans que rien ne le dise.

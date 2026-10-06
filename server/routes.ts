@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { pool, db } from "./db";
 import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content, projectLinks, campaigns, projects, prospectionCampaigns, leads } from "@shared/schema";
 import { eq, and, inArray, or, gte, desc, sql, count, isNull } from "drizzle-orm";
+import { remplacerReferencesNumerotees } from "./services/references-taches";
 import { runReadingRoom } from "./services/reading/runner";
 import { statutApresReponse } from "./services/reading/statut";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
@@ -38,6 +39,8 @@ import { evaluateProjectOvercommit } from "./services/overcommit";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
+import { ajouterDependance } from "./services/dependances";
+import { dateDeRetassage } from "./services/repack-from";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions } from "./services/sequence-message";
@@ -4343,8 +4346,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       // If updating schedule-related fields, apply slot-safe logic
       const touchesSchedule = !!(updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration);
+      let ancienneDate: string | null = null;
       if (touchesSchedule) {
         const currentTask = await storage.getTask(taskId);
+        ancienneDate = currentTask?.scheduledDate ?? null;
         if (!currentTask) return res.status(404).json({ message: "Task not found" });
 
         const merged = { ...currentTask, ...updates, userId };
@@ -4406,8 +4411,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // idempotent. Cette route ne le faisait pas — déplacer ou redimensionner une carte
       // pouvait donc laisser la journée en chevauchement jusqu'au prochain passage d'un
       // worker (toutes les 15 min), voire durablement si aucun worker ne tournait.
-      if (touchesSchedule && task?.scheduledDate) {
-        await storage.fixOverlappingTasks(userId, task.scheduledDate).catch((e: any) =>
+      // On repart du MIN(ancienne, nouvelle date) : un prérequis déplacé de mardi à jeudi
+      // doit recharger le mercredi, sinon son dépendant reste devant lui.
+      const depuis = touchesSchedule ? dateDeRetassage(ancienneDate, task?.scheduledDate) : null;
+      if (depuis) {
+        await storage.fixOverlappingTasks(userId, depuis).catch((e: any) =>
           console.error('[tasks:patch] fixOverlappingTasks:', e?.message),
         );
       }
@@ -4597,8 +4605,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       const replanPrefs = await storage.getUserPreferences(userId);
       const replanWorkDays = parseWorkDays(replanPrefs?.workDays);
-      const finalTasks = rebalanceTasksForward(aiResult.tasks, floor, monthEnd, 5, undefined, 0, replanWorkDays)
-        .filter((t: any) => !t._unschedulable);
+      // Les dépendances de l'IA sont exprimées par index dans `aiResult.tasks`. On pose cet
+      // index d'origine (`__srcIndex`) AVANT le rééquilibrage et le filtre `_unschedulable` :
+      // le filtre retire des tâches et décale tous les index suivants, donc `savedTasks[i]`
+      // relierait des paires arbitraires. Même technique que l'auto-planner.
+      const finalTasks = rebalanceTasksForward(
+        aiResult.tasks.map((t: any, __srcIndex: number) => ({ ...t, __srcIndex })),
+        floor, monthEnd, 5, undefined, 0, replanWorkDays,
+      ).filter((t: any) => !t._unschedulable);
 
       // Group rebalanced tasks by date for realism validation
       const tasksByDate = new Map<string, any[]>();
@@ -4627,11 +4641,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       // Save tasks
       const savedTasks: any[] = [];
+      // index d'origine (dans la sortie IA) → id de la tâche réellement créée
+      const idParIndexSource = new Map<number, number>();
+      // Titres dans l'ordre d'origine de la sortie IA (avant filtre/rééquilibrage) : « Task 2 »
+      // dans une description vise l'index 1 de cette liste, pas de `finalTasks`.
+      const titresLotMensuel: string[] = (aiResult.tasks || []).map((t: any) => t?.title ?? '');
       for (const taskData of finalTasks) {
         const task = await storage.createTask({
           userId,
           title: taskData.title,
-          description: taskData.description,
+          description: remplacerReferencesNumerotees(taskData.description, titresLotMensuel),
           type: taskData.type,
           category: taskData.category,
           priority: taskData.priority,
@@ -4644,22 +4663,33 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           canBeFragmented: taskData.canBeFragmented !== false,
           recommendedTimeOfDay: taskData.recommendedTimeOfDay || null,
           workflowGroup: taskData.workflowGroup || null,
-          activationPrompt: taskData.activationPrompt || null,
+          activationPrompt: taskData.activationPrompt
+            ? remplacerReferencesNumerotees(taskData.activationPrompt, titresLotMensuel)
+            : null,
           ...(projectIdFromBody ? { projectId: projectIdFromBody } : {}),
         } as any);
         savedTasks.push(task);
+        idParIndexSource.set(taskData.__srcIndex, task.id);
       }
 
-      // Save dependency links
+      // Save dependency links : une tâche écartée (non plaçable) n'a pas d'entrée dans la Map,
+      // la dépendance qui la cite est omise au lieu de glisser sur sa voisine.
       for (const dep of aiResult.dependencies || []) {
         try {
-          const fromTask = savedTasks[dep.taskIndex];
-          const toTask = savedTasks[dep.dependsOnIndex];
-          if (fromTask && toTask) {
-            await storage.createTaskDependency({ taskId: fromTask.id, dependsOnTaskId: toTask.id, relationType: dep.relationType || 'blocked_by' });
+          const fromId = idParIndexSource.get(dep.taskIndex);
+          const toId = idParIndexSource.get(dep.dependsOnIndex);
+          if (fromId && toId) {
+            const ok = await ajouterDependance(userId, fromId, toId, dep.relationType || 'blocked_by');
+            if (ok === false) console.warn(`[generate-monthly] dépendance refusée ${fromId} -> ${toId}`);
           }
         } catch { /* non-fatal */ }
       }
+
+      // Après la pose des dépendances (elles viennent d'être créées) : précédences + anti-chevauchement
+      // dès le plancher de génération (aujourd'hui côté client, ou début de mois).
+      await storage.fixOverlappingTasks(userId, floor).catch((e: any) =>
+        console.error('[generate-monthly] retassage:', e?.message),
+      );
 
       res.json({ tasks: savedTasks, realismReports, monthlyRationale: aiResult.monthlyRationale });
     } catch (error) {
@@ -4805,6 +4835,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         : (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
 
       const result = await runPlaceToday(userId, today, nowMin);
+      // Précédences + anti-chevauchement à partir d'aujourd'hui, après le placement.
+      await storage.fixOverlappingTasks(userId, today).catch((e: any) =>
+        console.error('[place-today] retassage:', e?.message),
+      );
       res.json(result);
     } catch (error: any) {
       console.error("Error placing today's tasks:", error?.message);
@@ -4847,6 +4881,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // Sur aujourd'hui, sans heure, puis placement dans les créneaux libres à partir de maintenant.
       await storage.updateTask(id, { scheduledDate: today, scheduledTime: null, scheduledEndTime: null } as any);
       const placement = await runPlaceToday(userId, today, nowMin);
+      await storage.fixOverlappingTasks(userId, today).catch((e: any) =>
+        console.error('[defer-to-today] retassage:', e?.message),
+      );
       const updated = await storage.getTask(id);
       res.json({ task: updated, placement });
     } catch (error: any) {
@@ -5701,10 +5738,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             ? minutesToHHMM(hhmmToMinutes(scheduledTimeVal) + duration)
             : null;
 
+          // Titres du lot IA du projet dans l'ordre d'origine (avant tri/cap) : filet contre
+          // les « Task N » numérotés en prose par le modèle.
+          const titresLot: string[] = ((pending.aiResponseAny?.tasks as any[]) || []).map((t: any) => t?.title ?? '');
           const task = await storage.createTask({
             userId,
             title: taskData.title,
-            description: taskData.description,
+            description: remplacerReferencesNumerotees(taskData.description, titresLot),
             type: taskData.type,
             category: taskData.category,
             priority: taskData.priority,
@@ -5717,7 +5757,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             canBeFragmented: taskData.canBeFragmented !== false,
             recommendedTimeOfDay: taskData.recommendedTimeOfDay || null,
             workflowGroup: taskData.workflowGroup ? taskData.workflowGroup.replace(/^[^:]*::/, '') : null,
-            activationPrompt: taskData.activationPrompt || null,
+            activationPrompt: taskData.activationPrompt
+              ? remplacerReferencesNumerotees(taskData.activationPrompt, titresLot)
+              : null,
             scheduledTime: scheduledTimeVal,
             scheduledEndTime: scheduledEndTimeVal,
             ...(pending.projId ? { projectId: pending.projId } : {}),
@@ -5743,22 +5785,24 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         if (!aiResponseAny?.dependencies?.length) continue;
 
         const deps = aiResponseAny.dependencies;
-        const blockedIndexes = new Set(deps.map((d: any) => d.taskIndex));
-        const fractionBlocked = batchSaved.length > 0 ? blockedIndexes.size / batchSaved.length : 1;
-        if (fractionBlocked < 0.6) {
-          for (const dep of deps) {
-            try {
-              const fromEntry = batchSaved.find(e => e.taskIndex === dep.taskIndex);
-              const toEntry = batchSaved.find(e => e.taskIndex === dep.dependsOnIndex);
-              if (fromEntry?.task && toEntry?.task) {
-                await storage.createTaskDependency({
-                  taskId: fromEntry.task.id,
-                  dependsOnTaskId: toEntry.task.id,
-                  relationType: dep.relationType || 'blocked_by',
-                });
+        // Pas de seuil « trop de tâches bloquées » : ajouterDependance refuse les cycles,
+        // donc une chaîne a toujours une première étape libre — filtrer cassait les chaînes ≥ 3.
+        for (const dep of deps) {
+          try {
+            const fromEntry = batchSaved.find(e => e.taskIndex === dep.taskIndex);
+            const toEntry = batchSaved.find(e => e.taskIndex === dep.dependsOnIndex);
+            if (fromEntry?.task && toEntry?.task) {
+              const ok = await ajouterDependance(
+                userId,
+                fromEntry.task.id,
+                toEntry.task.id,
+                dep.relationType || 'blocked_by',
+              );
+              if (ok === false) {
+                console.warn(`[generate-daily] dépendance refusée ${fromEntry.task.id} -> ${toEntry.task.id}`);
               }
-            } catch { /* non-fatal */ }
-          }
+            }
+          } catch { /* non-fatal */ }
         }
       }
 
@@ -5916,8 +5960,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     try {
       const taskId = parseInt(req.params.id);
       const { dependsOnTaskId, relationType = 'blocked_by' } = req.body;
-      const dep = await storage.createTaskDependency({ taskId, dependsOnTaskId, relationType });
-      res.json(dep);
+      // Point d'entrée unique : refuse auto-référence, tâche d'un autre compte, cycle, doublon.
+      const ok = await ajouterDependance(req.userId, taskId, Number(dependsOnTaskId), relationType);
+      if (!ok) return res.status(400).json({ message: "invalid_dependency" });
+      // On relit la ligne créée pour garder la forme de réponse historique (la ligne).
+      let lignes: any[] = [];
+      try { lignes = (await storage.getTaskDependencies(taskId)) || []; } catch { /* la création a réussi */ }
+      const dep = lignes.find((d: any) => d.dependsOnTaskId === Number(dependsOnTaskId));
+      res.status(201).json(dep ?? { taskId, dependsOnTaskId: Number(dependsOnTaskId), relationType });
     } catch (error) {
       console.error("Error creating dependency:", error);
       res.status(500).json({ message: "Failed to create dependency" });
@@ -6475,6 +6525,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         });
       }
 
+      // Précédences + anti-chevauchement après les écritures. Départ = max(début de semaine,
+      // aujourd'hui) : on ne re-tasse jamais des jours déjà passés.
+      await storage.fixOverlappingTasks(userId, weekStart > todayStr ? weekStart : todayStr).catch((e: any) =>
+        console.error('[rebalance-week] retassage:', e?.message),
+      );
+
       res.json({ moved, days });
     } catch (error) {
       console.error("Error rebalancing week:", error);
@@ -6638,6 +6694,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           ...(projectId ? { projectId } : {}),
         });
         created.push(task);
+      }
+      // Précédences + anti-chevauchement dès la date des tâches créées.
+      if (created.length > 0) {
+        await storage.fixOverlappingTasks(userId, targetDate).catch((e: any) =>
+          console.error('[replan/apply] retassage:', e?.message),
+        );
       }
       res.json({ created, count: created.length });
     } catch (error) {
