@@ -71,4 +71,31 @@ describe("respecterPrecedences", () => {
     const r = run([t(2, "2026-10-06", "09:00", 30), t(1, "2026-10-06", "17:30", 90)], [[2, 1]]);
     expect(r).toEqual([{ id: 2, scheduledDate: "2026-10-07", scheduledTime: "09:00" }]);
   });
+  it("deux prérequis, le plus tardif le jour travaillé suivant → après le plus tardif", () => {
+    const r = run(
+      [t(1, "2026-10-08", "10:00", 60), t(2, "2026-10-09", "10:00", 60), t(3, "2026-10-12", "14:00", 60)],
+      [[1, 2], [1, 3]],
+    );
+    expect(r).toEqual([{ id: 1, scheduledDate: "2026-10-12", scheduledTime: "15:10" }]);
+  });
+
+  it("dépendant un jour plus tard mais à une heure plus matinale → aucun déplacement", () => {
+    expect(run([t(2, "2026-10-07", "09:00", 60), t(1, "2026-10-06", "16:00", 60)], [[2, 1]])).toEqual([]);
+  });
+
+  it("dépendant plus long que la journée → poussé une seule fois à l'ouverture du jour suivant, sans boucle", () => {
+    const r = run([t(2, "2026-10-06", "09:00", 600), t(1, "2026-10-06", "10:00", 60)], [[2, 1]]);
+    expect(r).toEqual([{ id: 2, scheduledDate: "2026-10-07", scheduledTime: "09:00" }]);
+  });
+
+  it("cascade dont le second saut déborde sur le jour travaillé suivant", () => {
+    const r = run(
+      [t(1, "2026-10-06", "15:00", 60), t(2, "2026-10-06", "09:00", 60), t(3, "2026-10-06", "10:00", 60)],
+      [[2, 1], [3, 2]],
+    );
+    expect(r).toEqual([
+      { id: 2, scheduledDate: "2026-10-06", scheduledTime: "16:10" },
+      { id: 3, scheduledDate: "2026-10-07", scheduledTime: "09:00" },
+    ]);
+  });
 });
