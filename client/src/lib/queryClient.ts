@@ -55,7 +55,12 @@ export const getQueryFn: <T>(options: {
  }
 
  await throwIfResNotOk(res);
- return await res.json();
+ // Un 200 au corps vide (ex. `res.json(undefined)` côté Express quand la ressource
+ // n'existe pas) veut dire « rien » : `res.json()` lèverait « Unexpected end of JSON
+ // input » et renverrait toute l'app sur l'ErrorBoundary. Un JSON invalide non vide,
+ // lui, reste une vraie anomalie et lève.
+ const text = await res.text();
+ return text.trim() === "" ? null : JSON.parse(text);
  };
 
 export const queryClient = new QueryClient({

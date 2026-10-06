@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { throwIfResNotOk, is401, apiRequest } from "./queryClient";
+import { throwIfResNotOk, is401, apiRequest, getQueryFn } from "./queryClient";
 import { isUnauthorizedError } from "./authUtils";
 
 describe("apiRequest — timeout optionnel (génération de campagne)", () => {
@@ -55,5 +55,31 @@ describe("Exclusion 401 cohérente (throwIfResNotOk + is401)", () => {
 
   it("réponse OK → ne throw pas", async () => {
     await expect(throwIfResNotOk(mockRes(200, "ok", true))).resolves.toBeUndefined();
+  });
+});
+
+describe("getQueryFn — corps de réponse vide", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // Le 6 octobre 2026, après une réinitialisation, /api/brand-dna répondait 200 avec un
+  // corps VIDE (res.json(undefined) côté Express). `res.json()` levait « Unexpected end
+  // of JSON input », l'erreur remontait à l'ErrorBoundary, et l'app était inaccessible
+  // sur tous les navigateurs. Un 200 vide veut dire « rien », pas « crash ».
+  const run = (body: string) => {
+    vi.stubGlobal("fetch", async () => mockRes(200, body, true));
+    const fn = getQueryFn<unknown>({ on401: "throw" });
+    return fn({ queryKey: ["/api/brand-dna"] } as any);
+  };
+
+  it("200 avec un corps vide → null, pas d'exception", async () => {
+    await expect(run("")).resolves.toBeNull();
+  });
+
+  it("200 avec du JSON → l'objet parsé, comme avant", async () => {
+    await expect(run('{"id":1}')).resolves.toEqual({ id: 1 });
+  });
+
+  it("200 avec du JSON invalide non vide → lève toujours (vraie anomalie)", async () => {
+    await expect(run("<html>")).rejects.toThrow();
   });
 });

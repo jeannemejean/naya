@@ -1220,7 +1220,9 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     try {
       const userId = req.userId;
       const brandDna = await storage.getBrandDna(userId);
-      res.json(brandDna);
+      // `?? null` : res.json(undefined) envoie un 200 au corps VIDE, que le client ne
+      // sait pas parser (écran d'erreur pour tout compte sans ADN, ex. après réinit).
+      res.json(brandDna ?? null);
     } catch (error) {
       console.error("Error fetching brand DNA:", error);
       res.status(500).json({ message: "Failed to fetch brand DNA" });
