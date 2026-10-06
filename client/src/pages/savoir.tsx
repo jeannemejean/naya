@@ -16,7 +16,7 @@ interface SavoirProps {
 }
 
 type Dossier = { titre: string; morceaux: number; vectorises: number; depose_le: string };
-type Statut = "depose" | "pas_de_texte" | "illisible" | "pas_un_pdf" | "trop_lourd" | "deja_depose";
+type Statut = "depose" | "pas_de_texte" | "illisible" | "pas_un_pdf" | "trop_lourd" | "deja_depose" | "trop_de_pages";
 type ResultatPdf = { fichier: string; titre: string; statut: Statut; morceaux?: number };
 
 const QUERY_KEY = ["/api/savoir/dossiers"];
@@ -25,7 +25,7 @@ const MAX_OCTETS = 10 * 1024 * 1024;
 
 export default function Savoir({ onSearchClick }: SavoirProps) {
  const { t, i18n } = useTranslation();
- const { user } = useAuth();
+ const { user, isLoading: authEnCours } = useAuth();
  const { toast } = useToast();
  const queryClient = useQueryClient();
  const estOwner = (user as any)?.role === "owner";
@@ -80,6 +80,9 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  setResultats(locaux);
  return;
  }
+ // Si le serveur rejette tout le lot (toast d'erreur), les « trop lourd » calculés ici
+ // restent affichés : ils sont déjà connus et ne dépendent pas du serveur.
+ setResultats(locaux);
  envoyerPdf.mutate(aEnvoyer, { onSuccess: (r) => setResultats([...locaux, ...r]) });
  };
 
@@ -115,7 +118,12 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  queryClient.invalidateQueries({ queryKey: QUERY_KEY });
  toast({ title: t("savoirPage.removed") });
  },
- onError: () => toast({ title: t("savoirPage.removeFailed"), variant: "destructive" }),
+ onError: () => {
+ // Y compris 404 (déjà retiré ailleurs) : on rafraîchit la liste pour refléter la réalité.
+ setARetirer(null);
+ queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+ toast({ title: t("savoirPage.removeFailed"), variant: "destructive" });
+ },
  });
 
  const pret = contenu.trim().length > 0 && !deposer.isPending;
@@ -141,7 +149,11 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  </header>
 
  <main className="flex-1 overflow-y-auto p-6">
- {!estOwner ? (
+ {authEnCours ? (
+ <div className="flex justify-center py-8" data-testid="savoir-loading">
+ <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+ </div>
+ ) : !estOwner ? (
  <p className="max-w-2xl mx-auto text-sm text-muted-foreground">{t("savoirPage.reserved")}</p>
  ) : (
  <div className="max-w-2xl mx-auto space-y-6">

@@ -876,8 +876,6 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  {/* Email d'envoi de prospection */}
  <ProspectionSenderCard />
 
- {/* Dossiers de recherche — proprietaire uniquement */}
-
  {/* Abonnement */}
  <Card className=" ">
  <CardHeader>
