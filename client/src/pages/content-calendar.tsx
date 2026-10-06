@@ -1277,7 +1277,24 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  />
  </div>
 
- <div className="flex justify-end gap-2 pt-4">
+ <div className="flex flex-wrap justify-end gap-2 pt-4">
+ {/* Refuser depuis la fenêtre d'édition : c'est là qu'on arrive en cliquant sur un post
+     (la barre d'actions de la carte n'apparaît qu'au survol). */}
+ {selectedPost && postRefusable(selectedPost) && (
+ <Button
+ variant="outline"
+ className="mr-auto gap-1.5"
+ onClick={() => {
+ const post = selectedPost;
+ setShowCreateDialog(false);
+ resetForm();
+ setRefusFor(post);
+ }}
+ >
+ <ThumbsDown className="w-3.5 h-3.5" />
+ {t('refusPost.title')}
+ </Button>
+ )}
  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>{t('common.cancel')}</Button>
  {selectedPost ? (
  <Button
