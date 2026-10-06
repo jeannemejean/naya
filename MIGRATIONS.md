@@ -258,6 +258,37 @@ isolée.
       à réactiver avant de relancer un serveur de développement.
 
 
+## 3septies. Production — migrée le 6 octobre 2026 (`0018`)
+
+Livrables de tâche, étape 1 (spec `docs/superpowers/specs/2026-10-06-naya-livrables-design.md`).
+
+- [x] État lu avant toute écriture : suivi **18 lignes**, dernier `created_at` =
+      `1790784430197` (`0017`), donc `0018_adorable_drax` (`when` `1791280221076`) seule en
+      attente ; 64 tables ; `livrables` absente ; `media_library.project_id` absente.
+- [x] Sauvegarde : branche `sauvegarde-avant-livrables-2026-10-06`
+      (`br-billowing-sky-and313zl`, parent `production` `br-floral-wave-ane2h3l1`, 12:19 UTC).
+      **Vérifiée** via un endpoint ajouté pour l'occasion (`ep-bitter-snow-anid97h4`) :
+      mêmes 18 lignes de suivi, 3 utilisateurs, 4 projets, 35 tâches, 0 média.
+- [x] SQL relu intégralement : 1 `CREATE TABLE "livrables"`, 1 `ADD COLUMN`
+      (`media_library.project_id integer`, nullable), 5 `ADD CONSTRAINT` (tâche, projet,
+      média en `ON DELETE SET NULL` ; utilisateur en `NO ACTION`). **Aucun `DROP`,
+      `TRUNCATE`, `DELETE`, changement de type ni `SET NOT NULL` sur l'existant.**
+- [x] Garde de `scripts/migrate-prod.ts` re-testée à blanc : refus avec l'URL de la
+      sauvegarde, refus sans URL (code 1 les deux fois). Puis appliquée avec l'URL de
+      `.env.prod.bak`.
+- [x] Résultat vérifié : suivi **18 → 19** (dernier `created_at` = `1791280221076`),
+      **64 → 65 tables**, `livrables` à 16 colonnes, `media_library.project_id` présent,
+      les 5 contraintes présentes. **Données inchangées** : 3 utilisateurs, 4 projets,
+      35 tâches, 0 média.
+
+### Ce qui reste
+
+- [ ] Pousser `main` — la migration est faite avant le déploiement, l'ordre est respecté.
+      Le code déjà en ligne ignore la nouvelle colonne et la nouvelle table (purement additif).
+- [ ] Supprimer la branche `sauvegarde-avant-livrables-2026-10-06` et son endpoint
+      `ep-bitter-snow-anid97h4` quand le déploiement est stable.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;

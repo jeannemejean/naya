@@ -1024,7 +1024,32 @@ export const mediaLibrary = pgTable("media_library", {
   alt: text("alt"),
   tags: jsonb("tags").default([]),
   folder: text("folder").default("general"),
+  // Livrables (6 oct. 2026) : une photo déposée sur une tâche reste reconnaissable par projet.
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   isPublic: boolean("is_public").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Livrables de tâche — ce que l'utilisatrice produit quand Naya le lui demande.
+// Spec : docs/superpowers/specs/2026-10-06-naya-livrables-design.md
+export const livrables = pgTable("livrables", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  // SET NULL : un livrable survit à sa tâche et reste rangé dans le projet.
+  taskId: integer("task_id").references(() => tasks.id, { onDelete: "set null" }),
+  // Instantané du titre : la tâche peut disparaître, le souvenir doit encore dire d'où il vient.
+  taskTitle: text("task_title"),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  kind: text("kind").notNull(), // texte | media | fichier | lien
+  content: text("content"),
+  url: text("url"), // URL du lien, URL publique du média, ou clé privée du fichier
+  mediaId: integer("media_id").references(() => mediaLibrary.id, { onDelete: "set null" }),
+  fileName: text("file_name"),
+  mimeType: text("mime_type"),
+  size: integer("size"),
+  memoryEntryIds: jsonb("memory_entry_ids").$type<number[]>().default([]),
+  memoirePending: boolean("memoire_pending").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1492,6 +1517,12 @@ export const updateSocialAccountSchema = insertSocialAccountSchema.partial().omi
   userId: true,
 });
 
+export const insertLivrableSchema = createInsertSchema(livrables).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const updateMediaLibrarySchema = insertMediaLibrarySchema.partial().omit({
   userId: true,
 });
@@ -1548,6 +1579,8 @@ export type InsertSocialAccount = z.infer<typeof insertSocialAccountSchema>;
 export type SocialAccount = typeof socialAccounts.$inferSelect;
 export type InsertMediaLibrary = z.infer<typeof insertMediaLibrarySchema>;
 export type MediaLibrary = typeof mediaLibrary.$inferSelect;
+export type InsertLivrable = z.infer<typeof insertLivrableSchema>;
+export type Livrable = typeof livrables.$inferSelect;
 
 export type SafeSocialAccount = Omit<SocialAccount, 'accessToken' | 'refreshToken'>;
 export type SafeMediaLibrary = MediaLibrary;

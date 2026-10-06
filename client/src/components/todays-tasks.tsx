@@ -19,6 +19,7 @@ import { taskPaletteFor, NAYA_TASK_PALETTES } from "@/lib/task-palette";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
 import { useTranslation } from "react-i18next";
 import TaskWorkspace from "@/components/task-workspace";
+import { useCocherAvecLivrable } from "@/hooks/useCocherAvecLivrable";
 import GeneratingOverlay from "@/components/GeneratingOverlay";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
 import type { Project } from "@shared/schema";
@@ -188,6 +189,7 @@ export default function TodaysTasks() {
  // Jour affiché dans le planning : 0 = aujourd'hui, 1 = demain (bascule via flèche latérale).
  const [plannerDay, setPlannerDay] = useState<0 | 1>(0);
  const [openPopover, setOpenPopover] = useState<number | null>(null);
+ const [focusLivrables, setFocusLivrables] = useState(false);
  const [workspaceTask, setWorkspaceTask] = useState<Task | null>(null);
  const { triggerAutoRebalance } = useAutoRebalance();
  const [feedbackTask, setFeedbackTask] = useState<Task | null>(null);
@@ -354,6 +356,12 @@ export default function TodaysTasks() {
  }
  toast({ title: t('common.error'), description: t('todaysTasks.failedUpdateTask'), variant: "destructive" });
  },
+ });
+
+ // Cocher une tâche de production sans livrable ouvre le dépôt (sans bloquer).
+ const cocherAvecLivrable = useCocherAvecLivrable({
+ cocher: (id) => toggleTaskMutation.mutate(id),
+ ouvrirDepot: (task) => { setOpenPopover(null); setFocusLivrables(true); setWorkspaceTask(task as any); },
  });
 
  const generateTasksMutation = useMutation({
@@ -624,7 +632,7 @@ export default function TodaysTasks() {
  >
  <Checkbox
  checked={true}
- onCheckedChange={() => toggleTaskMutation.mutate(task.id)}
+ onCheckedChange={() => { void cocherAvecLivrable(task); }}
  disabled={toggleTaskMutation.isPending}
  className="mt-0.5 cursor-pointer"
  />
@@ -720,14 +728,14 @@ export default function TodaysTasks() {
  <div onClick={(e) => e.stopPropagation()} className="mt-0.5">
  <Checkbox
  checked={false}
- onCheckedChange={() => { if (!isBlocked) toggleTaskMutation.mutate(task.id); }}
+ onCheckedChange={() => { if (!isBlocked) void cocherAvecLivrable(task); }}
  disabled={toggleTaskMutation.isPending || isBlocked}
  title={isBlocked && blockerTask ? t('todaysTasks.blockedBy', { title: blockerTask.title }) : undefined}
  className={isBlocked ? 'cursor-not-allowed' : 'cursor-pointer'}
  style={palette ? { '--checkbox-color': palette.text } as any : undefined}
  />
  </div>
- <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setWorkspaceTask(task)}>
+ <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setFocusLivrables(false); setWorkspaceTask(task); }}>
  <div className="flex items-start justify-between gap-2">
  <div className="flex items-center gap-1.5 min-w-0">
  {isMilestoneBlocked && <Flag className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/60" aria-label="Bloqué par un jalon" />}
@@ -926,7 +934,7 @@ export default function TodaysTasks() {
  <PlannerTaskPopover
  task={task}
  projects={projects}
- onToggle={(t) => toggleTaskMutation.mutate(t.id)}
+ onToggle={(t) => { void cocherAvecLivrable(t); }}
  isToggling={toggleTaskMutation.isPending}
  />
  </Popover>
@@ -965,7 +973,7 @@ export default function TodaysTasks() {
  <PlannerTaskPopover
  task={task}
  projects={projects}
- onToggle={(t) => toggleTaskMutation.mutate(t.id)}
+ onToggle={(t) => { void cocherAvecLivrable(t); }}
  isToggling={toggleTaskMutation.isPending}
  />
  </Popover>
@@ -983,7 +991,13 @@ export default function TodaysTasks() {
  task={workspaceTask as any}
  project={workspaceTask?.projectId ? (projects.find(p => p.id === workspaceTask.projectId) ?? null) : null}
  open={!!workspaceTask}
- onClose={() => setWorkspaceTask(null)}
+ onClose={() => { setFocusLivrables(false); setWorkspaceTask(null); }}
+ focusLivrables={focusLivrables}
+ onFaitHorsNaya={() => {
+ if (workspaceTask) toggleTaskMutation.mutate(workspaceTask.id);
+ setFocusLivrables(false);
+ setWorkspaceTask(null);
+ }}
  />
 
  <TaskFeedbackModal
