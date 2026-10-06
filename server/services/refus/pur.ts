@@ -28,10 +28,15 @@ function tronquer(s: string, max: number): string {
 }
 
 // Souvenir mémoire : uniquement si l'utilisateur a expliqué son refus.
-export function texteSouvenirRefus(titre: string, raison: RaisonRefus, freeText: string | null | undefined): string | null {
+// Le souvenir est transverse (fil founder, sans projet) : la marque est donc portée par le texte.
+export function texteSouvenirRefus(
+  titre: string, raison: RaisonRefus, freeText: string | null | undefined, nomProjet?: string | null,
+): string | null {
   const texte = (freeText ?? "").trim();
   if (!texte) return null;
-  return `A refusé la tâche « ${titre} » (${libelleRaison(raison)}) : ${tronquer(texte, 1500)}`;
+  const projet = (nomProjet ?? "").trim();
+  const contexte = projet ? `projet « ${projet} », ${libelleRaison(raison)}` : libelleRaison(raison);
+  return `A refusé la tâche « ${titre} » (${contexte}) : ${tronquer(texte, 1500)}`;
 }
 
 // Ligne du contexte « tâches rejetées » du générateur (format historique + explication).

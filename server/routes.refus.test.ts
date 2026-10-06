@@ -88,6 +88,13 @@ describe("POST /api/tasks/:id/refuser", () => {
     expect((await res.json()).message).toBe("task_already_completed");
   });
 
+  it("400 agenda_event pour un événement Google Agenda", async () => {
+    refuserTache.mockResolvedValue({ statut: "evenement_agenda" });
+    const res = await post("5", { reason: "other" });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toBe("agenda_event");
+  });
+
   it("200 avec remplacement, freeText nettoyé", async () => {
     refuserTache.mockResolvedValue({ statut: "refusee", remplacement: { id: 9, title: "Autre" } });
     const res = await post("5", { reason: "too_vague", freeText: "  trop flou  " });

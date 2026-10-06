@@ -149,7 +149,7 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
  disabled={!reason || isPending}
  className="flex-1"
  >
- {isPending ? t('common.loading') : confirmLabel}
+ {isPending ? (refuser ? t('taskFeedback.refusing') : t('common.loading')) : confirmLabel}
  </Button>
  </div>
  </div>

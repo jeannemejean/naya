@@ -14,6 +14,7 @@ function faire(over: Partial<RefusDeps> = {}, t: TacheRefusable | null = tache()
     j,
     lireTache: async (id: number) => (id === 99 ? d.cree : t ?? undefined),
     enregistrerRetour: async (r: any) => { j.push("retour"); d.retour = r; },
+    nomProjet: async () => "Marque X",
     ecrireSouvenir: async (i: any) => { j.push("souvenir"); d.souvenir = i; },
     lireDependances: async () => { j.push("deps"); return { prerequis: [], dependants: [] }; },
     refusRecents: async () => { j.push("recents"); return ["- x"]; },
@@ -51,7 +52,8 @@ describe("refuserTache", () => {
     expect(r.remplacement.id).toBe(99);
     expect(d.creeEnvoye).toMatchObject({ userId: "u1", projectId: 5, scheduledDate: "2026-10-08", scheduledTime: "10:00", source: "replacement", title: remp.title, estimatedDuration: 30 });
     expect(d.retour).toMatchObject({ feedbackType: "refused", reason: "not_useful", freeText: "Je préfère LinkedIn", timesRescheduled: 2, taskId: 10, projectId: 5 });
-    expect(d.souvenir.projectId).toBe(5);
+    expect(d.souvenir.projectId).toBeUndefined();
+    expect(d.souvenir.texte).toContain("projet « Marque X »");
     expect(d.souvenir.texte).toContain("Je préfère LinkedIn");
   });
   it("le remplacement retrouve le créneau exact de la refusée malgré le garde de collision", async () => {
@@ -120,7 +122,7 @@ describe("refuserTache", () => {
   it("tâche sans projet", async () => {
     const d = faire({}, tache({ projectId: null }));
     await refuserTache(d, entree);
-    expect(d.souvenir.projectId).toBeNull();
+    expect(d.souvenir.texte).not.toContain("projet «");
     expect(d.creeEnvoye.projectId).toBeNull();
     expect(d.retour.projectId).toBeNull();
   });
@@ -135,5 +137,21 @@ describe("refuserTache", () => {
     const d = faire({}, tache({ scheduledDate: "2026-09-01" }));
     await refuserTache(d, entree);
     expect(d.retasseDepuis).toBe("2026-10-06");
+  });
+  it("souvenir transverse : pas de projectId, nom du projet dans le texte", async () => {
+    const d = faire();
+    await refuserTache(d, entree);
+    expect(d.souvenir).not.toHaveProperty("projectId");
+    expect(d.souvenir.texte).toBe("A refusé la tâche « Poster sur Instagram » (projet « Marque X », pas utile) : Je préfère LinkedIn");
+  });
+  it("nom du projet indisponible : souvenir sans mention du projet", async () => {
+    const d = faire({ nomProjet: async () => { throw new Error("x"); } });
+    await refuserTache(d, entree);
+    expect(d.souvenir.texte).not.toContain("projet «");
+  });
+  it("événement Google Agenda : refusé sans aucune écriture", async () => {
+    const d = faire({}, tache({ source: "gcal" }));
+    expect(await refuserTache(d, entree)).toEqual({ statut: "evenement_agenda" });
+    expect(d.j).toEqual([]);
   });
 });

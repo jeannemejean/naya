@@ -1479,6 +1479,8 @@ const fr = {
  replacedBy: "Remplacée par « {{title}} »",
  refusedNoReplacement: "Tâche refusée. Naya n'a pas pu proposer de remplacement pour l'instant.",
  refuseFailed: "Le refus a échoué. Réessaie.",
+ alreadyCompleted: "Cette tâche est déjà terminée.",
+ refusing: "Naya cherche un remplacement…",
  },
 
  weeklyProgress: {

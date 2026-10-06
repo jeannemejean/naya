@@ -1475,6 +1475,8 @@ const en = {
  replacedBy: "Replaced by “{{title}}”",
  refusedNoReplacement: "Task declined. Naya couldn't suggest a replacement right now.",
  refuseFailed: "Declining failed. Try again.",
+ alreadyCompleted: "This task is already done.",
+ refusing: "Naya is finding a replacement…",
  },
 
  weeklyProgress: {

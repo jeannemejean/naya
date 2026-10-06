@@ -23,6 +23,11 @@ describe("texteSouvenirRefus", () => {
       "A refusé la tâche « Appeler X » (mauvais moment) : pas cette semaine",
     );
   });
+  it("mentionne le projet", () => {
+    expect(texteSouvenirRefus("Appeler X", "wrong_timing", "non", "Marque Y")).toBe(
+      "A refusé la tâche « Appeler X » (projet « Marque Y », mauvais moment) : non",
+    );
+  });
   it("tronque à 1500", () => {
     const t = texteSouvenirRefus("T", "other", "a".repeat(2000))!;
     expect(t.endsWith("…")).toBe(true);

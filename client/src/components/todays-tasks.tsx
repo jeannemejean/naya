@@ -174,7 +174,7 @@ function PlannerTaskPopover({ task, projects, onToggle, onOpen, onRefuse, isTogg
  </Button>
  )}
 
- {!estEvenementAgenda(task as any) && (
+ {!estEvenementAgenda(task as any) && !task.completed && (
  <Button
  size="sm"
  variant="outline"

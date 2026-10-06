@@ -21,10 +21,15 @@ export function useRefuserTache(onSuccess?: () => void) {
       queryClient.invalidateQueries({
         predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith("/api/tasks"),
       });
+      queryClient.invalidateQueries({ queryKey: ['/api/dashboard/schedule-preview'] });
       onSuccess?.();
     },
-    onError: () => {
-      toast({ title: t("taskFeedback.refuseFailed"), variant: "destructive" });
+    onError: (err: unknown) => {
+      const dejaTerminee = err instanceof Error && /^409\b/.test(err.message);
+      toast({
+        title: t(dejaTerminee ? "taskFeedback.alreadyCompleted" : "taskFeedback.refuseFailed"),
+        variant: "destructive",
+      });
     },
   });
 

@@ -66,7 +66,8 @@ export interface NouvelleTacheRemplacement {
 export interface RefusDeps {
   lireTache(id: number): Promise<TacheRefusable | undefined>;
   enregistrerRetour(row: RetourRefus): Promise<void>;
-  ecrireSouvenir(input: { userId: string; projectId: number | null; texte: string }): Promise<void>;
+  ecrireSouvenir(input: { userId: string; texte: string }): Promise<void>;
+  nomProjet(userId: string, projectId: number): Promise<string | null>;
   lireDependances(taskId: number): Promise<{ prerequis: number[]; dependants: number[] }>;
   refusRecents(userId: string): Promise<string[]>;
   generer(input: Parameters<typeof genererRemplacement>[0]): Promise<Remplacement | null>;
@@ -81,6 +82,7 @@ export interface RefusDeps {
 export type ResultatRefus =
   | { statut: "introuvable" }
   | { statut: "deja_terminee" }
+  | { statut: "evenement_agenda" }
   | { statut: "refusee"; remplacement: Record<string, unknown> | null; raison?: "generation_failed" };
 
 // Exécute une étape best-effort : journalise et rend `fallback` en cas d'échec.
@@ -105,6 +107,8 @@ export async function refuserTache(
   if (!tache || tache.userId !== userId) return { statut: "introuvable" };
   // Une tâche terminée ne se refuse pas : aucune écriture.
   if (tache.completed) return { statut: "deja_terminee" };
+  // Un événement Google Agenda n'est pas une tâche Naya : on ne le refuse pas.
+  if (tache.source === "gcal") return { statut: "evenement_agenda" };
 
   // 2. Le retour est l'étape qui fait réussir le refus ; les suivantes sont best-effort.
   await deps.enregistrerRetour({
@@ -122,10 +126,14 @@ export async function refuserTache(
   });
 
   // 3. Souvenir, seulement si une explication a été donnée.
-  const texte = texteSouvenirRefus(tache.title, raison, freeText);
-  if (texte !== null) {
-    await sansLever("souvenir", () => deps.ecrireSouvenir({ userId, projectId: tache.projectId ?? null, texte }), undefined);
-  }
+  // Écrit au fil founder SANS projet (seule portée relue par la récupération) ; la marque reste dans le texte.
+  await sansLever("souvenir", async () => {
+    const nomProjet = tache.projectId != null
+      ? await sansLever("nom du projet", () => deps.nomProjet(userId, tache.projectId as number), null as string | null)
+      : null;
+    const texte = texteSouvenirRefus(tache.title, raison, freeText, nomProjet);
+    if (texte !== null) await deps.ecrireSouvenir({ userId, texte });
+  }, undefined);
 
   // 4. Dépendances lues AVANT suppression (elles cascadent avec la tâche).
   const { prerequis, dependants } = await sansLever("lecture des dépendances", () => deps.lireDependances(tache.id), {

@@ -4926,6 +4926,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       const r = await refuserTache(refusDeps, { userId, taskId, raison: reason, freeText });
       if (r.statut === 'introuvable') return res.status(404).json({ message: 'Task not found' });
+      if (r.statut === 'evenement_agenda') return res.status(400).json({ message: 'agenda_event' });
       if (r.statut === 'deja_terminee') return res.status(409).json({ message: 'task_already_completed' });
       res.json({ refusee: true, remplacement: r.remplacement, ...(r.raison ? { raison: r.raison } : {}) });
     } catch (error: any) {

@@ -271,7 +271,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  {/* Actions rapides */}
  <div className="flex items-center gap-1 flex-shrink-0">
- {!estEvenementAgenda((task ?? {}) as any) && (
+ {!estEvenementAgenda((task ?? {}) as any) && !(task as any)?.completed && (
  <button
  onClick={() => setRefusOuvert(true)}
  disabled={refuserMutation.isPending}

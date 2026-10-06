@@ -20,7 +20,9 @@ export const refusDeps: RefusDeps = {
     await storage.createTaskFeedback(row);
   },
 
-  ecrireSouvenir: async ({ userId, projectId, texte }) => {
+  nomProjet: async (userId, projectId) => (await storage.getProject(projectId, userId))?.name ?? null,
+
+  ecrireSouvenir: async ({ userId, texte }) => {
     // Embedding best-effort : sans vecteur, le souvenir est écrit quand même.
     let embedding: number[] | null = null;
     try {
@@ -30,7 +32,7 @@ export const refusDeps: RefusDeps = {
     }
     await db.insert(memoryEntries).values({
       userId,
-      projectId,
+      projectId: null, // founder = transverse : seul project_id NULL est relu (memory/retrieve.ts)
       fil: "founder",
       entryType: "préférence",
       content: texte,
