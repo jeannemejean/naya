@@ -5,6 +5,10 @@ import type { Livrable } from "@shared/schema";
 export type LivrableClient = Omit<Livrable, "createdAt" | "updatedAt"> & { createdAt: string; updatedAt: string };
 
 export const cleLivrablesTache = (taskId: number) => [`/api/tasks/${taskId}/livrables`] as const;
+/** Toute liste de livrables (tâche ou projet) : sert à l'invalidation après dépôt/modification/suppression. */
+export const estCleListeLivrables = (key: readonly unknown[]) =>
+  typeof key[0] === "string" && key[0].endsWith("/livrables");
+
 export const cleLivrablesProjet = (projectId: number) => [`/api/projects/${projectId}/livrables`] as const;
 
 /** Upload direct vers R2 via URL présignée. Vérifie taille et type AVANT d'envoyer. */

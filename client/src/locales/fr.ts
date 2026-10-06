@@ -1411,6 +1411,10 @@ const fr = {
  err_generic: "Le dépôt a échoué. Réessaie.",
  err_update: "La modification n'a pas été enregistrée. Réessaie.",
  err_delete: "La suppression a échoué. Réessaie.",
+ err_load: "Impossible de charger les livrables pour l'instant.",
+ finishTask: "Terminer la tâche",
+ confirmDelete: "Supprimer définitivement",
+ cancel: "Annuler",
  },
 
  taskWorkspace: {

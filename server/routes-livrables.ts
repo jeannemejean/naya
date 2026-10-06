@@ -139,6 +139,11 @@ export function registerLivrablesRoutes(app: Express): void {
       const { content } = req.body ?? {};
       const id = idPositif(req.params.id);
       if (id == null) return res.status(404).json({ message: "not_found" });
+      const existant = await livrablesDeps.lire(id, req.userId);
+      if (!existant) return res.status(404).json({ message: "not_found" });
+      if (existant.kind === "texte" && !(typeof content === "string" && content.trim())) {
+        return res.status(400).json({ message: "content_required" });
+      }
       const l = await modifierLivrable(livrablesDeps, id, req.userId,
         typeof content === "string" ? content : null);
       if (!l) return res.status(404).json({ message: "not_found" });

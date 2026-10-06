@@ -64,7 +64,7 @@ describe("creerLivrable", () => {
       mimeType: "image/jpeg", originalName: "a.jpg", size: 1000,
     }));
     expect(deps.deposerMemoire).toHaveBeenCalledWith({
-      userId: "u1", projectId: 3, titre: "Livrable — Photographier 3 détails", contenu: "Lumière du matin",
+      userId: "u1", projectId: 3, titre: "Livrable : Photographier 3 détails", contenu: "Lumière du matin",
     });
     expect(l.mediaId).toBe(42);
     expect(l.memoryEntryIds).toEqual([100]);
@@ -172,7 +172,7 @@ describe("rattraperMemoire", () => {
     const orphelin = { ...l, taskId: null } as Livrable;
     deps.deposerMemoire = vi.fn(async () => ({ morceaux: 1, ids: [555] }));
     await rattraperMemoire(deps, [orphelin]);
-    expect(deps.deposerMemoire).toHaveBeenCalledWith(expect.objectContaining({ titre: "Livrable — Photographier 3 détails" }));
+    expect(deps.deposerMemoire).toHaveBeenCalledWith(expect.objectContaining({ titre: "Livrable : Photographier 3 détails" }));
     expect(deps.maj).toHaveBeenLastCalledWith(l.id, "u1", { memoryEntryIds: [555], memoirePending: false });
   });
 

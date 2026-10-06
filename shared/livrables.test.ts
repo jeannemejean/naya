@@ -101,7 +101,7 @@ describe("planDeRangement", () => {
 
 describe("titreMemoire", () => {
   it("dit de quelle tâche vient le souvenir", () => {
-    expect(titreMemoire("Photographier 3 détails")).toBe("Livrable — Photographier 3 détails");
+    expect(titreMemoire("Photographier 3 détails")).toBe("Livrable : Photographier 3 détails");
   });
   it("a un repli sans tâche", () => {
     expect(titreMemoire(null)).toBe("Livrable déposé");

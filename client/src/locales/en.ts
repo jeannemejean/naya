@@ -1407,6 +1407,10 @@ const en = {
  err_generic: "Submission failed. Try again.",
  err_update: "Your change wasn't saved. Try again.",
  err_delete: "Delete failed. Try again.",
+ err_load: "Couldn't load deliverables right now.",
+ finishTask: "Complete task",
+ confirmDelete: "Delete permanently",
+ cancel: "Cancel",
  },
 
  taskWorkspace: {

@@ -79,5 +79,5 @@ export function planDeRangement(input: {
 
 export function titreMemoire(taskTitle: string | null | undefined): string {
   const t = (taskTitle ?? "").trim();
-  return t ? `Livrable — ${t}` : "Livrable déposé";
+  return t ? `Livrable : ${t}` : "Livrable déposé";
 }

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ACCEPT_FICHIER, lienValide } from "@shared/livrables";
 import {
-  cleLivrablesTache, creerLivrableApi, modifierLivrableApi, supprimerLivrableApi, televerser,
+  cleLivrablesTache, estCleListeLivrables, creerLivrableApi, modifierLivrableApi, supprimerLivrableApi, televerser,
   type LivrableClient,
 } from "@/lib/livrables-api";
 import { LivrableCarte } from "./LivrableCarte";
@@ -42,10 +42,14 @@ export default function LivrablesSection({
     setBrouillons((bs) => bs.filter((x) => x.id !== b.id));
   };
 
-  const { data: livrables = [] } = useQuery<LivrableClient[]>({ queryKey: cleLivrablesTache(taskId) });
-  const { data: config } = useQuery<{ fichiers: boolean; medias: boolean }>({ queryKey: ["/api/livrables/config"] });
+  const { data: livrables = [], isError } = useQuery<LivrableClient[]>({ queryKey: cleLivrablesTache(taskId), throwOnError: false });
+  const { data: config } = useQuery<{ fichiers: boolean; medias: boolean }>({ queryKey: ["/api/livrables/config"], throwOnError: false });
 
-  const invalider = () => qc.invalidateQueries({ queryKey: cleLivrablesTache(taskId) });
+  const invalider = () => Promise.all([
+    qc.invalidateQueries({ queryKey: cleLivrablesTache(taskId) }),
+    qc.invalidateQueries({ predicate: (q) => estCleListeLivrables(q.queryKey) }),
+    qc.invalidateQueries({ queryKey: ["/api/media-library"] }),
+  ]);
   const maj = (id: string, patch: Partial<Brouillon>) =>
     setBrouillons((bs) => bs.map((b) => (b.id === id ? ({ ...b, ...patch } as Brouillon) : b)));
   const nouvelId = () => Math.random().toString(36).slice(2);
@@ -102,7 +106,7 @@ export default function LivrablesSection({
     <section className={`space-y-3 rounded-lg p-3 ${focus ? "ring-2 ring-naya-sulphur/60 bg-naya-sulphur/5" : ""}`}>
       <h3 className="text-sm font-semibold text-foreground">{t("livrables.title")}</h3>
 
-      {focus && livrables.length === 0 && (
+      {focus && !isError && livrables.length === 0 && (
         <div className="text-sm space-y-2">
           <p className="font-medium">{t("livrables.askTitle")}</p>
           <p className="text-muted-foreground">{t("livrables.askBody")}</p>
@@ -111,6 +115,12 @@ export default function LivrablesSection({
           )}
         </div>
       )}
+
+      {focus && !isError && livrables.length > 0 && onFaitHorsNaya && (
+        <Button size="sm" onClick={onFaitHorsNaya}>{t("livrables.finishTask")}</Button>
+      )}
+
+      {isError && <p className="text-xs text-muted-foreground">{t("livrables.err_load")}</p>}
 
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={() =>
@@ -149,7 +159,7 @@ export default function LivrablesSection({
           />
           {b.erreur && <p className="text-xs text-naya-mauve">{b.erreur}</p>}
           <div className="flex gap-2">
-            <Button size="sm" disabled={b.envoi} onClick={() => deposer(b)}>
+            <Button size="sm" disabled={b.envoi || (b.kind === "texte" && !b.content.trim()) || (b.kind === "lien" && !b.url.trim())} onClick={() => deposer(b)}>
               {b.envoi ? t("livrables.saving") : b.erreur ? t("livrables.retry") : t("livrables.save")}
             </Button>
             <Button size="sm" variant="ghost" disabled={b.envoi} onClick={() => retirer(b)}>
@@ -159,7 +169,7 @@ export default function LivrablesSection({
         </div>
       ))}
 
-      {livrables.length === 0 && brouillons.length === 0 && !focus && (
+      {!isError && livrables.length === 0 && brouillons.length === 0 && !focus && (
         <p className="text-xs text-muted-foreground">{t("livrables.empty")}</p>
       )}
       {livrables.map((l) => (

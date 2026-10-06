@@ -5,12 +5,14 @@ import { cleLivrablesProjet, type LivrableClient } from "@/lib/livrables-api";
 
 export default function LivrablesPanel({ projectId }: { projectId: number }) {
   const { t } = useTranslation();
-  const { data: livrables = [] } = useQuery<LivrableClient[]>({ queryKey: cleLivrablesProjet(projectId) });
+  const { data: livrables = [], isError } = useQuery<LivrableClient[]>({ queryKey: cleLivrablesProjet(projectId), throwOnError: false });
 
   return (
     <div>
       <h2 className="text-sm font-semibold text-foreground mb-2">{t("livrables.projectTitle")}</h2>
-      {livrables.length === 0 ? (
+      {isError ? (
+        <p className="text-sm text-muted-foreground">{t("livrables.err_load")}</p>
+      ) : livrables.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t("livrables.projectEmpty")}</p>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">

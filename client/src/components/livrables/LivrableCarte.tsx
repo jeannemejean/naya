@@ -16,6 +16,7 @@ export function LivrableCarte({
   const { t } = useTranslation();
   const [edition, setEdition] = useState(false);
   const [texte, setTexte] = useState(livrable.content ?? "");
+  const [confirmer, setConfirmer] = useState(false);
 
   return (
     <div className="rounded-md border border-naya-olive-10 bg-white p-3 space-y-2">
@@ -42,9 +43,18 @@ export function LivrableCarte({
           <Button size="icon" variant="ghost" aria-label={t("livrables.edit")} onClick={() => setEdition(true)} disabled={enCours}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
-          <Button size="icon" variant="ghost" aria-label={t("livrables.remove")} onClick={onSupprimer} disabled={enCours}>
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          {confirmer ? (
+            <>
+              <Button size="sm" variant="destructive" disabled={enCours} onClick={() => { setConfirmer(false); onSupprimer(); }}>
+                {t("livrables.confirmDelete")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmer(false)}>{t("livrables.cancel")}</Button>
+            </>
+          ) : (
+            <Button size="icon" variant="ghost" aria-label={t("livrables.remove")} onClick={() => setConfirmer(true)} disabled={enCours}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </div>
       {edition && (
@@ -55,6 +65,9 @@ export function LivrableCarte({
  try { await onModifier(texte.trim() || null); setEdition(false); } catch { /* le parent affiche l'erreur */ }
  }}>
             {t("livrables.save")}
+          </Button>
+          <Button size="sm" variant="ghost" disabled={enCours} onClick={() => { setTexte(livrable.content ?? ""); setEdition(false); }}>
+            {t("livrables.cancel")}
           </Button>
         </div>
       )}
