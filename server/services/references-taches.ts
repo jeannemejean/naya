@@ -4,7 +4,7 @@
 
 // Article français optionnel absorbé (« la Tâche 1 » → « Titre », pas « la « Titre » »).
 // Le lookbehind évite de toucher « subtask 2 » ou « multitâche 2 ».
-const MENTION = /(?<!\p{L})(?:la\s+)?(?:Task|Tâche)\s*#?\s*(\d+)(?!\d)/giu;
+const MENTION = /(?<!\p{L})(?:la\s+)?(?:Task|Tâche)\s*#?\s*(\d{1,2})(?!\d)/giu;
 
 /**
  * `titres[i]` = titre de la tâche d'index 0-based `i` dans la sortie IA. Le numéro écrit

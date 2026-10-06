@@ -40,6 +40,7 @@ import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
+import { dateDeRetassage } from "./services/repack-from";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions } from "./services/sequence-message";
@@ -4345,8 +4346,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       // If updating schedule-related fields, apply slot-safe logic
       const touchesSchedule = !!(updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration);
+      let ancienneDate: string | null = null;
       if (touchesSchedule) {
         const currentTask = await storage.getTask(taskId);
+        ancienneDate = currentTask?.scheduledDate ?? null;
         if (!currentTask) return res.status(404).json({ message: "Task not found" });
 
         const merged = { ...currentTask, ...updates, userId };
@@ -4408,8 +4411,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // idempotent. Cette route ne le faisait pas — déplacer ou redimensionner une carte
       // pouvait donc laisser la journée en chevauchement jusqu'au prochain passage d'un
       // worker (toutes les 15 min), voire durablement si aucun worker ne tournait.
-      if (touchesSchedule && task?.scheduledDate) {
-        await storage.fixOverlappingTasks(userId, task.scheduledDate).catch((e: any) =>
+      // On repart du MIN(ancienne, nouvelle date) : un prérequis déplacé de mardi à jeudi
+      // doit recharger le mercredi, sinon son dépendant reste devant lui.
+      const depuis = touchesSchedule ? dateDeRetassage(ancienneDate, task?.scheduledDate) : null;
+      if (depuis) {
+        await storage.fixOverlappingTasks(userId, depuis).catch((e: any) =>
           console.error('[tasks:patch] fixOverlappingTasks:', e?.message),
         );
       }
@@ -4673,7 +4679,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           const fromId = idParIndexSource.get(dep.taskIndex);
           const toId = idParIndexSource.get(dep.dependsOnIndex);
           if (fromId && toId) {
-            await ajouterDependance(userId, fromId, toId, dep.relationType || 'blocked_by');
+            const ok = await ajouterDependance(userId, fromId, toId, dep.relationType || 'blocked_by');
+            if (ok === false) console.warn(`[generate-monthly] dépendance refusée ${fromId} -> ${toId}`);
           }
         } catch { /* non-fatal */ }
       }
@@ -4874,6 +4881,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // Sur aujourd'hui, sans heure, puis placement dans les créneaux libres à partir de maintenant.
       await storage.updateTask(id, { scheduledDate: today, scheduledTime: null, scheduledEndTime: null } as any);
       const placement = await runPlaceToday(userId, today, nowMin);
+      await storage.fixOverlappingTasks(userId, today).catch((e: any) =>
+        console.error('[defer-to-today] retassage:', e?.message),
+      );
       const updated = await storage.getTask(id);
       res.json({ task: updated, placement });
     } catch (error: any) {
@@ -5775,23 +5785,24 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         if (!aiResponseAny?.dependencies?.length) continue;
 
         const deps = aiResponseAny.dependencies;
-        const blockedIndexes = new Set(deps.map((d: any) => d.taskIndex));
-        const fractionBlocked = batchSaved.length > 0 ? blockedIndexes.size / batchSaved.length : 1;
-        if (fractionBlocked < 0.6) {
-          for (const dep of deps) {
-            try {
-              const fromEntry = batchSaved.find(e => e.taskIndex === dep.taskIndex);
-              const toEntry = batchSaved.find(e => e.taskIndex === dep.dependsOnIndex);
-              if (fromEntry?.task && toEntry?.task) {
-                await ajouterDependance(
-                  userId,
-                  fromEntry.task.id,
-                  toEntry.task.id,
-                  dep.relationType || 'blocked_by',
-                );
+        // Pas de seuil « trop de tâches bloquées » : ajouterDependance refuse les cycles,
+        // donc une chaîne a toujours une première étape libre — filtrer cassait les chaînes ≥ 3.
+        for (const dep of deps) {
+          try {
+            const fromEntry = batchSaved.find(e => e.taskIndex === dep.taskIndex);
+            const toEntry = batchSaved.find(e => e.taskIndex === dep.dependsOnIndex);
+            if (fromEntry?.task && toEntry?.task) {
+              const ok = await ajouterDependance(
+                userId,
+                fromEntry.task.id,
+                toEntry.task.id,
+                dep.relationType || 'blocked_by',
+              );
+              if (ok === false) {
+                console.warn(`[generate-daily] dépendance refusée ${fromEntry.task.id} -> ${toEntry.task.id}`);
               }
-            } catch { /* non-fatal */ }
-          }
+            }
+          } catch { /* non-fatal */ }
         }
       }
 

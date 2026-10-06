@@ -12,6 +12,8 @@ describe("remplacerReferencesNumerotees", () => {
   });
   it("index inconnu → « la tâche précédente »", () => expect(r("from Task 9", titres)).toBe("from la tâche précédente"));
   it("aucune mention → inchangé", () => expect(r("Rien à voir, 3 DMs", titres)).toBe("Rien à voir, 3 DMs"));
+  it("« Task 2026 » (une année) reste inchangé", () =>
+    expect(r("Task 2026 roadmap", titres)).toBe("Task 2026 roadmap"));
   it("texte vide ou nul → inchangé", () => {
     expect(r("", titres)).toBe("");
     expect(r(null as any, titres)).toBe(null);
