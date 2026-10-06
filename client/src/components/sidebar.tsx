@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutGrid, Calendar, MessageSquare, BarChart3, Lightbulb,
   Settings, BookOpen, CalendarDays, Rocket, FolderKanban, Layers, Search,
-  Sun, Moon
+  Sun, Moon, Library
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -36,6 +36,9 @@ const NAV_ITEMS = [
   // Masqué temporairement — pas utilisé pour le moment (réactiver en décommentant)
   // { key: 'knowledgeHub',    href: "/reading-hub",      icon: BookOpen     },
 ] as const;
+
+// Réservé au propriétaire (le serveur refuse aussi : 403).
+const SAVOIR_ITEM = { key: 'savoirNaya', href: "/savoir", icon: Library } as const;
 
 export default function Sidebar({ onSearchClick }: SidebarProps) {
   const { t } = useTranslation();
@@ -99,7 +102,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2 px-2.5 flex flex-col gap-0.5">
-        {NAV_ITEMS.map((item) => {
+        {[...NAV_ITEMS, ...((user as any)?.role === 'owner' ? [SAVOIR_ITEM] : [])].map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
 
