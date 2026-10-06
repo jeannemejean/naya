@@ -18,6 +18,7 @@ function faire(over: Partial<RefusPostDeps> = {}, p: PostRefusable | null = post
     generer: async (i: any) => { j.push("generer"); d.genInput = i; return remp; },
     creerPost: async (r: any) => { j.push("creer"); d.cree = r; return { id: 99, ...r }; },
     supprimerPost: async (id: number) => { j.push(`suppr:${id}`); },
+    neutraliserPost: async (u: string, id: number) => { j.push(`neutralise:${id}`); },
     ...over,
   };
   return d;
@@ -52,7 +53,7 @@ describe("refuserPost", () => {
   it("ordre exact : souvenir, génération, création, suppression", async () => {
     const d = faire();
     const r: any = await refuserPost(d, entree);
-    expect(d.j).toEqual(["souvenir", "generer", "creer", "suppr:10"]);
+    expect(d.j).toEqual(["neutralise:10", "souvenir", "generer", "creer", "suppr:10"]);
     expect(r.statut).toBe("refuse");
     expect(r.remplacement.id).toBe(99);
     expect(r.raison).toBeUndefined();
@@ -94,13 +95,13 @@ describe("refuserPost", () => {
   it("remplacer=false : aucun appel IA, ni création, suppression faite", async () => {
     const d = faire();
     const r = await refuserPost(d, { ...entree, remplacer: false });
-    expect(d.j).toEqual(["souvenir", "suppr:10"]);
+    expect(d.j).toEqual(["neutralise:10", "souvenir", "suppr:10"]);
     expect(r).toEqual({ statut: "refuse", remplacement: null });
   });
   it("échec génération : suppression + generation_failed", async () => {
     const d = faire({ generer: async () => null });
     expect(await refuserPost(d, entree)).toEqual({ statut: "refuse", remplacement: null, raison: "generation_failed" });
-    expect(d.j).toEqual(["souvenir", "suppr:10"]);
+    expect(d.j).toEqual(["neutralise:10", "souvenir", "suppr:10"]);
   });
   it("génération qui lève : suppression + generation_failed", async () => {
     const d = faire({ generer: async () => { throw new Error("x"); } });
@@ -141,5 +142,24 @@ describe("refuserPost", () => {
     expect(d.souvenir.projectId).toBeNull();
     expect(d.cree.projectId).toBeNull();
     expect(d.cree.campaignId).toBeNull();
+  });
+  it("neutralisation avant génération et avant suppression", async () => {
+    const d = faire();
+    await refuserPost(d, entree);
+    expect(d.j.indexOf("neutralise:10")).toBeLessThan(d.j.indexOf("generer"));
+    expect(d.j.indexOf("neutralise:10")).toBeLessThan(d.j.indexOf("suppr:10"));
+  });
+  it("pas de neutralisation si introuvable ou déjà publié", async () => {
+    const a = faire({}, null);
+    await refuserPost(a, entree);
+    const b = faire({}, post({ postStatus: "processing" }));
+    await refuserPost(b, entree);
+    expect(a.j).toEqual([]);
+    expect(b.j).toEqual([]);
+  });
+  it("échec de neutralisation non bloquant", async () => {
+    const d = faire({ neutraliserPost: async () => { throw new Error("x"); } });
+    const r: any = await refuserPost(d, entree);
+    expect(r.remplacement.id).toBe(99);
   });
 });

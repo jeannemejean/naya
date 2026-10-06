@@ -1,6 +1,6 @@
 // Implémentation réelle des dépendances du refus de post (base, mémoire, génération).
-import { eq } from "drizzle-orm";
-import { content, memoryEntries } from "@shared/schema";
+import { and, eq } from "drizzle-orm";
+import { content, memoryEntries, type InsertContent } from "@shared/schema";
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { embedText } from "../memory/embed";
@@ -37,7 +37,11 @@ export const refusPostDeps: RefusPostDeps = {
 
   generer: (input) => genererPostRemplacement(input),
 
-  creerPost: (row) => storage.createContent(row as any),
+  creerPost: (row) => storage.createContent(row satisfies InsertContent),
+
+  neutraliserPost: async (userId, id) => {
+    await db.update(content).set({ autoPost: false }).where(and(eq(content.id, id), eq(content.userId, userId)));
+  },
 
   supprimerPost: (id) => storage.deleteContent(id),
 };

@@ -50,6 +50,8 @@ export interface RefusPostDeps {
   generer(input: Parameters<typeof genererPostRemplacement>[0]): Promise<PostRemplacement | null>;
   creerPost(row: NouveauPost): Promise<{ id: number } & Record<string, unknown>>;
   supprimerPost(id: number): Promise<void>;
+  // Désactive l'auto-publication du post refusé (le publieur pourrait sinon le publier).
+  neutraliserPost(userId: string, id: number): Promise<void>;
 }
 
 export type ResultatRefusPost =
@@ -79,6 +81,14 @@ export async function refuserPost(
   if (!post || post.userId !== userId) return { statut: "introuvable" };
   // 2. Publié ou en cours de publication : aucune écriture.
   if (estPublieOuEnCours(post)) return { statut: "deja_publie" };
+
+  // 2 bis. Neutralisation : pendant la génération (secondes) ou si la suppression échoue,
+  // le publieur ne doit jamais publier un post que l'utilisatrice vient de refuser.
+  try {
+    await deps.neutraliserPost(userId, post.id);
+  } catch (e) {
+    console.error(`[refus-post] ALERTE : neutralisation (autoPost=false) du post ${post.id} a échoué, risque de publication :`, e);
+  }
 
   // 3. Souvenir, seulement s'il y a quelque chose à apprendre.
   await sansLever("souvenir", async () => {
