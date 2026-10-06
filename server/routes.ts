@@ -27,6 +27,9 @@ import {
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
 import { extractToMemory } from "./services/memory/extract";
+import { refuserTache } from "./services/refus/service";
+import { refusDeps } from "./services/refus/deps";
+import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, validateProjectPatchFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { isValidStage, buildSituationPrompt } from "./services/project-summary";
@@ -4910,6 +4913,27 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // Refuser une tâche : raison + explication libre → retour, souvenir, remplacement.
+  app.post('/api/tasks/:id/refuser', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!/^\d+$/.test(String(req.params.id))) return res.status(400).json({ message: 'invalid_task_id' });
+      const taskId = parseInt(req.params.id, 10);
+      const { reason, freeText: brut } = req.body ?? {};
+      if (!estRaisonRefus(reason)) return res.status(400).json({ message: 'invalid_reason' });
+      if (brut != null && typeof brut !== 'string') return res.status(400).json({ message: 'invalid_free_text' });
+      const freeText = typeof brut === 'string' && brut.trim() ? brut.trim() : null;
+
+      const r = await refuserTache(refusDeps, { userId, taskId, raison: reason, freeText });
+      if (r.statut === 'introuvable') return res.status(404).json({ message: 'Task not found' });
+      if (r.statut === 'deja_terminee') return res.status(409).json({ message: 'task_already_completed' });
+      res.json({ refusee: true, remplacement: r.remplacement, ...(r.raison ? { raison: r.raison } : {}) });
+    } catch (error: any) {
+      console.error('POST /api/tasks/:id/refuser error:', error?.message);
+      res.status(500).json({ message: 'refus_failed' });
+    }
+  });
+
   // Ignorer / archiver une tâche en retard (soft — ne supprime pas, la sort juste de la surface).
   app.post('/api/tasks/:id/archive', isAuthenticated, async (req: any, res) => {
     try {
@@ -5088,9 +5112,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         : '';
 
       // Build rejected tasks context (exclude "completed" positive signals)
-      const negativeSignals = recentFeedback.filter((f: any) => ['deleted', 'dismissed', 'deferred'].includes(f.feedbackType));
+      const negativeSignals = recentFeedback.filter((f: any) => ['deleted', 'dismissed', 'deferred', 'refused'].includes(f.feedbackType));
       const rejectedTasksContext = negativeSignals.length > 0
-        ? negativeSignals.slice(0, 15).map((f: any) => `- ${f.taskTitle} (${f.taskType || ''}/${f.taskCategory || ''}, source: ${f.taskSource || 'unknown'}) — ${f.feedbackType}, reason: ${f.reason}`).join('\n')
+        ? negativeSignals.slice(0, 15).map((f: any) => ligneContexteRefus(f)).join('\n')
         : '';
 
       // Build positive effectiveness context from completion signals
@@ -6634,8 +6658,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         signalParts.push(`REPEATEDLY DEFERRED (user keeps pushing these — ${repeatedlyDeferred.length} task(s)): ${repeatedlyDeferred.map((t: any) => `${t.title} (moved ${deferralCounts[t.id]}x)`).join(', ')}`);
       }
       if (recentFeedback.length > 0) {
-        const feedbackStr = recentFeedback.map(f => `${f.taskTitle} (${f.taskType}/${f.taskCategory}, source: ${f.taskSource || 'unknown'}) — ${f.feedbackType}, reason: ${f.reason}`).join('\n- ');
-        signalParts.push(`REJECTED FEEDBACK:\n- ${feedbackStr}`);
+        const feedbackStr = recentFeedback.map(f => ligneContexteRefus(f as any)).join('\n');
+        signalParts.push(`REJECTED FEEDBACK:\n${feedbackStr}`);
       }
       if (workspaceEntries.length > 0) {
         const notesStr = workspaceEntries.slice(0, 10).map(e => e.title ? `${e.title}: ${e.content.slice(0, 120)}` : e.content.slice(0, 120)).join('\n- ');
