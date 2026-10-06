@@ -37,7 +37,7 @@ export async function embedText(text: string): Promise<number[] | null> {
 
 const EMBED_TIMEOUT_MS = 2500; // borne le pire cas (réseau OpenAI) dans le chemin critique
 
-export async function embedTexts(texts: string[]): Promise<number[][] | null> {
+export async function embedTexts(texts: string[], timeoutMs: number = EMBED_TIMEOUT_MS): Promise<number[][] | null> {
   try {
     const { provider, model } = route("embedding");
     const p = registry.get(provider); // throw si openai indisponible → catché ci-dessous
@@ -45,12 +45,33 @@ export async function embedTexts(texts: string[]): Promise<number[][] | null> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const res = await Promise.race([
       p.embed({ texts }, model),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("embed timeout")), EMBED_TIMEOUT_MS); }),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("embed timeout")), timeoutMs); }),
     ]).finally(() => clearTimeout(timer));
     return (res as { vectors: number[][] }).vectors;
   } catch {
     return null; // dégradation silencieuse (timeout, pas de clé, erreur réseau)
   }
+}
+
+/**
+ * Embedding d'un gros lot (dépôt d'un dossier : 100–400 morceaux). Le délai de 2,5 s d'`embedTexts`
+ * est prévu pour UNE requête de recherche : ici on découpe en lots séquentiels, chacun avec son
+ * propre délai. Best-effort : un lot en échec donne des `null` pour ses textes seulement.
+ * Renvoie toujours un tableau de la même longueur et dans le même ordre que `textes`.
+ */
+export async function embedTextsParLots(
+  textes: string[],
+  opts: { taille?: number; timeoutMs?: number } = {},
+): Promise<(number[] | null)[]> {
+  const taille = Math.max(1, opts.taille ?? 64);
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const out: (number[] | null)[] = [];
+  for (let i = 0; i < textes.length; i += taille) {
+    const lot = textes.slice(i, i + taille);
+    const vecs = await embedTexts(lot, timeoutMs);
+    for (let j = 0; j < lot.length; j += 1) out.push(vecs?.[j] ?? null);
+  }
+  return out;
 }
 
 // Sérialise un vecteur pour pgvector (littéral SQL "[a,b,c]").

@@ -29,9 +29,9 @@ describe("extraireTextePdf : bornes et destroy", () => {
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
-  it("501 pages : illisible, sans extraction, détruit", async () => {
+  it("501 pages : trop_de_pages, sans extraction, détruit", async () => {
     getDocumentProxy.mockResolvedValue({ numPages: 501, loadingTask: { destroy } });
-    expect((await extraireTextePdf(pdf)).statut).toBe("illisible");
+    expect((await extraireTextePdf(pdf)).statut).toBe("trop_de_pages");
     expect(extractText).not.toHaveBeenCalled();
     expect(destroy).toHaveBeenCalledTimes(1);
   });

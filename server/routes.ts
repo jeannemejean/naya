@@ -63,7 +63,7 @@ import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
-import { extraireTextePdf, titreDepuisNomFichier } from "./services/memory/extraire-pdf";
+import { extraireTextePdf, titreDepuisNomFichier, normaliserTitre, titreParDefaut } from "./services/memory/extraire-pdf";
 import { valideLien } from "./services/brand-links/links";
 import type { Articulation } from "./services/brand-links/links";
 import { articulationsDisponibles } from "./services/brand-links/articulation";
@@ -1177,8 +1177,9 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
 
       const { contenu, projectId } = req.body ?? {};
-      // " — " sépare le titre du morceau en mémoire : on l'évite dans le titre.
-      const titre = typeof req.body?.titre === "string" ? req.body.titre.replace(/ — /g, " - ") : "";
+      // " — " sépare le titre du morceau en mémoire : on l'évite dans le titre. Sans titre :
+      // horodatage, pour que deux collages anonymes ne se télescopent pas.
+      const titre = normaliserTitre(typeof req.body?.titre === "string" ? req.body.titre : "") || titreParDefaut();
       if (typeof contenu !== "string" || !contenu.trim()) {
         return res.status(400).json({ message: "contenu_requis" });
       }
@@ -1246,7 +1247,8 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
           const fin = (statut: string, morceaux?: number) =>
             resultats.push({ fichier: nom, titre, statut, ...(morceaux !== undefined ? { morceaux } : {}) });
           try {
-            if (f.mimetype !== "application/pdf") { fin("pas_un_pdf"); continue; }
+            // Certains navigateurs/OS envoient octet-stream ou rien : la signature %PDF- tranche.
+            if (!["application/pdf", "application/octet-stream", ""].includes(f.mimetype)) { fin("pas_un_pdf"); continue; }
             if (f.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") { fin("pas_un_pdf"); continue; }
             // Doublon refusé AVANT d'analyser le fichier.
             if (await dossierExiste(req.userId, titre)) { fin("deja_depose"); continue; }

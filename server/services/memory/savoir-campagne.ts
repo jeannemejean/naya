@@ -20,7 +20,7 @@ export async function savoirPourCampagne(
 ): Promise<string | undefined> {
   try {
     const focusText = [focus.objective, focus.name].filter(Boolean).join(" — ");
-    const mem = await retrieveMemories(userId, projectId ?? null, focusText || undefined);
+    const mem = await retrieveMemories(userId, projectId ?? null, focusText || undefined, ["savoir"]);
     return formaterSavoirCampagne(mem.savoir ?? []);
   } catch {
     return undefined;

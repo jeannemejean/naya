@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extraireTextePdf, titreDepuisNomFichier } from "./extraire-pdf";
+import { extraireTextePdf, titreDepuisNomFichier, normaliserTitre, titreParDefaut } from "./extraire-pdf";
 
 /** PDF minimal écrit à la main (xref recalculée par pdf.js si besoin). */
 function pdfAvecTexte(lignes: string[]): Buffer {
@@ -60,5 +60,24 @@ describe("titreDepuisNomFichier", () => {
   });
   it("tronque à 200", () => {
     expect(titreDepuisNomFichier("a".repeat(300) + ".pdf").length).toBe(200);
+  });
+});
+
+describe("normaliserTitre", () => {
+  it("remplace un tiret cadratin collé à un espace ou en bout de titre", () => {
+    expect(normaliserTitre("A —")).toBe("A -");
+    expect(normaliserTitre("— A")).toBe("- A");
+    expect(normaliserTitre("A — B")).toBe("A - B");
+    expect(normaliserTitre("  A—B  ")).toBe("A—B");
+  });
+  it("s'applique aussi aux titres de PDF", () => {
+    expect(titreDepuisNomFichier("Rapport —.pdf")).toBe("Rapport -");
+  });
+});
+
+describe("titreParDefaut", () => {
+  it("Dossier du AAAA-MM-JJ HH:MM, heure de Paris", () => {
+    expect(titreParDefaut(new Date("2026-10-06T12:30:00Z"))).toBe("Dossier du 2026-10-06 14:30");
+    expect(titreParDefaut(new Date("2026-01-06T12:30:00Z"))).toBe("Dossier du 2026-01-06 13:30");
   });
 });

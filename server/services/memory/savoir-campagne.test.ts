@@ -19,7 +19,7 @@ describe("savoirPourCampagne", () => {
     h.state.impl = async () => ({ savoir: [{ content: "A" }, { content: "B" }] });
     const r = await savoirPourCampagne("u", 3, { objective: "Vendre", name: "Camp" });
     expect(r).toBe("- A\n- B");
-    expect(h.state.calls).toEqual([["u", 3, "Vendre — Camp"]]);
+    expect(h.state.calls).toEqual([["u", 3, "Vendre — Camp", ["savoir"]]]);
   });
   it("sans savoir → undefined", async () => {
     h.state.impl = async () => ({ savoir: [] });

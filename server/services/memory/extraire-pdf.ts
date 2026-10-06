@@ -7,7 +7,7 @@ import { extractText, getDocumentProxy } from "unpdf";
  */
 export type ResultatExtraction =
   | { statut: "ok"; texte: string }
-  | { statut: "pas_un_pdf" | "illisible" | "pas_de_texte" };
+  | { statut: "pas_un_pdf" | "illisible" | "pas_de_texte" | "trop_de_pages" };
 
 export const SEUIL_TEXTE = 200;
 
@@ -23,7 +23,7 @@ export async function extraireTextePdf(buffer: Buffer): Promise<ResultatExtracti
   let minuteur: ReturnType<typeof setTimeout> | undefined;
   try {
     pdf = await getDocumentProxy(new Uint8Array(buffer));
-    if (pdf.numPages > MAX_PAGES) return { statut: "illisible" };
+    if (pdf.numPages > MAX_PAGES) return { statut: "trop_de_pages" };
     const doc = pdf;
     const delai = new Promise<never>((_, rej) => {
       minuteur = setTimeout(() => rej(new Error("delai_extraction")), DELAI_EXTRACTION_MS);
@@ -45,5 +45,22 @@ export async function extraireTextePdf(buffer: Buffer): Promise<ResultatExtracti
 export function titreDepuisNomFichier(nom: string): string {
   const base = (nom ?? "").split(/[\\/]/).pop() ?? "";
   // " — " sépare le titre du morceau dans la mémoire : un titre qui le contient casserait le regroupement.
-  return base.replace(/\.pdf$/i, "").replace(/ — /g, " - ").trim().slice(0, 200).trim();
+  return normaliserTitre(base.replace(/\.pdf$/i, "")).slice(0, 200).trim();
+}
+
+/**
+ * Trim, puis tout tiret cadratin « — » collé à un espace ou en bout de titre devient « - ».
+ * « — » entouré d'espaces sépare le titre du morceau dans la mémoire : un titre qui le contient
+ * casserait le regroupement.
+ */
+export function normaliserTitre(titre: string): string {
+  return (titre ?? "").trim().replace(/(?<=\s|^)—|—(?=\s|$)/g, "-").trim();
+}
+
+/** Titre par défaut d'un texte collé sans titre : `Dossier du 2026-10-06 14:30` (Europe/Paris). */
+export function titreParDefaut(now: Date = new Date()): string {
+  const d = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).format(now);
+  return `Dossier du ${d}`;
 }

@@ -78,6 +78,7 @@ export async function retrieveMemories(
   userId: string,
   projectId?: number | null,
   focusText?: string,
+  fils: Fil[] = FILS,
 ): Promise<{ cap: ScoredMemory[]; founder: ScoredMemory[]; reception: ScoredMemory[]; savoir: ScoredMemory[] }> {
   const out = { cap: [] as ScoredMemory[], founder: [] as ScoredMemory[], reception: [] as ScoredMemory[], savoir: [] as ScoredMemory[] };
   try {
@@ -89,7 +90,7 @@ export async function retrieveMemories(
     // Embedde le focus (sujet de la décision en cours). Best-effort : null = fallback fraîcheur.
     const focusVec = focusText ? await embedText(focusText) : null;
     const vecLit = focusVec ? toVectorLiteral(focusVec) : null;
-    for (const fil of FILS) {
+    for (const fil of fils) {
       const cands = await fetchCandidates(userId, projectId ?? null, fil, vecLit);
       out[fil] = scoreCandidates(cands, fil);
     }

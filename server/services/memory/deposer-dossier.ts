@@ -1,7 +1,8 @@
 import { db } from "../../db";
 import { sql, and, eq, inArray, isNull } from "drizzle-orm";
 import { memoryEntries } from "@shared/schema";
-import { embedTexts } from "./embed";
+import { embedTextsParLots } from "./embed";
+import { normaliserTitre, titreParDefaut } from "./extraire-pdf";
 import { decouperDocument } from "./decoupe-document";
 
 /**
@@ -38,14 +39,15 @@ export async function deposerDossier(input: {
   const morceaux = decouperDocument(input.contenu);
   if (morceaux.length === 0) return { morceaux: 0, vectorises: 0, ids: [] };
 
-  const titre = input.titre.trim() || "Dossier sans titre";
+  const titre = normaliserTitre(input.titre) || titreParDefaut();
 
   // Le titre préfixe chaque morceau : isolé, un morceau du milieu d'un dossier ne dit pas
   // de quoi il parle, et son embedding non plus.
   const textes = morceaux.map((m) => `${titre} — ${m}`);
 
-  // Best-effort, en un seul appel : `null` si le service est indisponible.
-  const vecteurs = await embedTexts(textes).catch(() => null);
+  // Best-effort, par lots de 64 (délai propre à chaque lot) : un lot en échec = des `null`
+  // pour ses morceaux seulement.
+  const vecteurs = await embedTextsParLots(textes, { taille: 64, timeoutMs: 30_000 }).catch(() => null);
 
   const ids: number[] = [];
   let vectorises = 0;
@@ -124,7 +126,7 @@ export async function perimerSouvenirs(userId: string, ids: number[]): Promise<v
 
 /** Préfixe commun des morceaux d'un dossier : `"<titre> — "`. */
 function prefixeDossier(titre: string): string {
-  return `${titre.trim() || "Dossier sans titre"} — `;
+  return `${normaliserTitre(titre) || titreParDefaut()} — `;
 }
 
 /**

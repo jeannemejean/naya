@@ -92,6 +92,35 @@ describe("routes savoir", () => {
     expect(extraction.extraireTextePdf).not.toHaveBeenCalled();
   });
 
+  it("octet-stream ou mimetype vide : la signature %PDF- décide", async () => {
+    const ok = await post(form([{ name: "a.pdf", type: "application/octet-stream" }]));
+    expect((await ok.json()).resultats[0].statut).toBe("depose");
+    const ko = await post(form([{ name: "b.pdf", type: "application/octet-stream", content: "pas un pdf" }]));
+    expect((await ko.json()).resultats[0].statut).toBe("pas_un_pdf");
+    expect(extraction.extraireTextePdf).toHaveBeenCalledTimes(1);
+  });
+
+  it("trop_de_pages remonté de l'extraction", async () => {
+    extraction.extraireTextePdf.mockResolvedValue({ statut: "trop_de_pages" });
+    const res = await post(form([{ name: "a.pdf" }]));
+    expect((await res.json()).resultats[0].statut).toBe("trop_de_pages");
+    expect(depot.deposerDossier).not.toHaveBeenCalled();
+  });
+
+  it("texte collé sans titre : « Dossier du AAAA-MM-JJ HH:MM »", async () => {
+    await fetch(`${base}/api/savoir/dossiers`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ titre: "  ", contenu: "texte" }),
+    });
+    expect(depot.deposerDossier).toHaveBeenLastCalledWith(expect.objectContaining({ titre: expect.stringMatching(/^Dossier du \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/) }));
+  });
+
+  it("titre terminé par un tiret cadratin : normalisé", async () => {
+    await fetch(`${base}/api/savoir/dossiers`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ titre: "A —", contenu: "texte" }),
+    });
+    expect(depot.deposerDossier).toHaveBeenLastCalledWith(expect.objectContaining({ titre: "A -" }));
+  });
+
   it("signature invalide : statut remonté de l'extraction", async () => {
     extraction.extraireTextePdf.mockResolvedValue({ statut: "pas_un_pdf" });
     const res = await post(form([{ name: "a.pdf", content: "pas un pdf" }]));
