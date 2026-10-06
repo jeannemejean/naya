@@ -1996,6 +1996,29 @@ const en = {
  wellbeing: "◯ Wellbeing",
  whatIsThisProjectAbout: "What is this project about?",
  },
+ refusPost: {
+ refuse: "Decline",
+ title: "Decline this post",
+ reasons: {
+ wrong_tone: "wrong tone",
+ wrong_angle: "wrong angle",
+ not_for_brand: "not for this brand",
+ too_many: "too many posts",
+ inaccurate: "inaccurate",
+ other: "other",
+ },
+ explainLabel: "Tell Naya why",
+ explainPlaceholder: "e.g. too corporate, I talk more directly to my clients.",
+ replace: "Replace it with another post",
+ confirm: "Decline",
+ confirmReplace: "Decline and replace",
+ pending: "Naya is writing another post…",
+ refused: "Post declined.",
+ replacedBy: "Replaced by “{{title}}”",
+ noReplacement: "Post declined. Naya couldn't suggest another one right now.",
+ alreadyPublished: "This post is already published.",
+ failed: "Declining failed. Try again.",
+ },
 };
 
 export default en;
