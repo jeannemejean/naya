@@ -700,7 +700,7 @@ export default function Planning({ onSearchClick }: Props) {
                 onTaskClick={(task) => {
                   if (task._virtual || task.id < 0 || task.type === 'milestone') { setMilestoneConfirmTarget(task); return; }
                   setFocusLivrables(false);
-                  setFocusLivrables(false); setWorkspaceTask(task);
+                  setWorkspaceTask(task);
                 }}
                 onToggle={cocherParId}
                 onMilestoneConfirm={(mid) => confirmMilestoneMutation.mutate(mid)}
@@ -750,7 +750,7 @@ export default function Planning({ onSearchClick }: Props) {
                   onTaskClick={(task) => {
                     if (task._virtual || task.id < 0 || task.type === 'milestone') { setMilestoneConfirmTarget(task); return; }
                     setFocusLivrables(false);
-                    setFocusLivrables(false); setWorkspaceTask(task);
+                    setWorkspaceTask(task);
                   }}
                   onToggle={cocherParId}
                   onMilestoneConfirm={(mid) => confirmMilestoneMutation.mutate(mid)}
