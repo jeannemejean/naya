@@ -289,6 +289,28 @@ Livrables de tâche, étape 1 (spec `docs/superpowers/specs/2026-10-06-naya-livr
       `ep-bitter-snow-anid97h4` quand le déploiement est stable.
 
 
+## 3octies. Production — migrée le 6 octobre 2026 (`0019`)
+
+Événements Google Agenda marqués « faits » dans Naya (commit `ea6b002`).
+
+- [x] État lu avant : suivi **19 lignes** (dernier `1791280221076`, `0018`), donc
+      `0019_true_shard` (`when` `1791297687653`) seule en attente ; 65 tables ;
+      `evenements_agenda_faits` absente.
+- [x] Sauvegarde `sauvegarde-avant-agenda-faits-2026-10-06` (`br-restless-shape-ancslkpl`,
+      endpoint `ep-billowing-poetry-anf1rebr`, 15:02 UTC), **vérifiée** identique à la prod :
+      19 lignes de suivi, 65 tables, 3 utilisateurs, 4 projets, 35 tâches, 3 livrables, 3 médias.
+- [x] SQL relu : 1 `CREATE TABLE`, 1 `ADD CONSTRAINT` (FK utilisateur), 1 `CREATE UNIQUE INDEX`
+      (`user_id`, `event_id`). Aucune opération sur une table existante.
+- [x] Garde re-testée à blanc (refus sur l'URL de la sauvegarde), puis appliquée.
+- [x] Résultat : suivi **19 → 20**, **65 → 66 tables**, colonnes `id, user_id, event_id, date,
+      fait_at`, index unique et FK présents. **Données inchangées.**
+
+### Ce qui reste
+
+- [ ] Supprimer `sauvegarde-avant-agenda-faits-2026-10-06` (et `sauvegarde-avant-livrables-2026-10-06`)
+      avec leurs endpoints quand le déploiement est stable.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;
