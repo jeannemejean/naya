@@ -44,6 +44,9 @@ describe("extraireTextePdf", () => {
 });
 
 describe("titreDepuisNomFichier", () => {
+  it("remplace ' — ' (séparateur de mémoire) par ' - '", () => {
+    expect(titreDepuisNomFichier("Étude — été.pdf")).toBe("Étude - été");
+  });
   it("retire .pdf, quelle que soit la casse", () => {
     expect(titreDepuisNomFichier("Étude.PDF")).toBe("Étude");
     expect(titreDepuisNomFichier("a.b.pdf")).toBe("a.b");

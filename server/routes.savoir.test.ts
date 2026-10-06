@@ -1,7 +1,7 @@
 // Routes du Savoir de Naya : dépôt PDF, retrait, refus des doublons.
 import express from "express";
 import http from "node:http";
-import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("./db", () => ({
   db: { select: vi.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })) },
@@ -46,7 +46,12 @@ describe("routes savoir", () => {
     await new Promise<void>((r) => server.listen(0, r));
     base = `http://127.0.0.1:${(server.address() as any).port}`;
   });
-  afterAll(async () => { await new Promise<void>((r) => server?.close(() => r())); });
+  // Un serveur par test, fermé après chaque test (connexions keep-alive coupées) : pas de fuite
+  // de port ni de course entre deux tests.
+  afterEach(async () => {
+    (server as any)?.closeAllConnections?.();
+    await new Promise<void>((r) => server?.close(() => r()));
+  });
 
   function form(files: { name: string; type?: string; content?: string | Buffer }[]) {
     const fd = new FormData();
@@ -99,6 +104,7 @@ describe("routes savoir", () => {
     const res = await post(form([{ name: "a.pdf" }]));
     expect((await res.json()).resultats[0].statut).toBe("deja_depose");
     expect(depot.deposerDossier).not.toHaveBeenCalled();
+    expect(extraction.extraireTextePdf).not.toHaveBeenCalled(); // pas d'analyse d'un doublon
   });
 
   it("un fichier en échec au milieu du lot n'empêche pas les autres", async () => {
@@ -125,6 +131,27 @@ describe("routes savoir", () => {
     const res = await post(form(Array.from({ length: 11 }, (_, i) => ({ name: `f${i}.pdf` }))));
     expect(res.status).toBe(400);
     expect((await res.json()).message).toBe("trop_de_fichiers");
+  });
+
+  it("titre contenant ' — ' : remplacé par ' - ' (PDF et texte collé)", async () => {
+    const res = await post(form([{ name: "A — B.pdf" }]));
+    expect((await res.json()).resultats[0].titre).toBe("A - B");
+    await fetch(`${base}/api/savoir/dossiers`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ titre: "X — Y", contenu: "texte" }),
+    });
+    expect(depot.dossierExiste).toHaveBeenLastCalledWith("user-1", "X - Y");
+    expect(depot.deposerDossier).toHaveBeenLastCalledWith(expect.objectContaining({ titre: "X - Y" }));
+  });
+
+  it("projectId : entier positif sinon null", async () => {
+    const avec = (v: string) => { const fd = form([{ name: "a.pdf" }]); fd.append("projectId", v); return post(fd); };
+    await avec("7");
+    expect(depot.deposerDossier).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 7 }));
+    for (const v of ["0", "-3", "abc", "1.5"]) {
+      await avec(v);
+      expect(depot.deposerDossier).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: null }));
+    }
   });
 
   it("retrait : titre vide 400, inconnu 404, ok → retires", async () => {

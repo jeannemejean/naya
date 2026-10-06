@@ -1176,20 +1176,22 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const user = await storage.getUser(req.userId);
       if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
 
-      const { titre, contenu, projectId } = req.body ?? {};
+      const { contenu, projectId } = req.body ?? {};
+      // " — " sépare le titre du morceau en mémoire : on l'évite dans le titre.
+      const titre = typeof req.body?.titre === "string" ? req.body.titre.replace(/ — /g, " - ") : "";
       if (typeof contenu !== "string" || !contenu.trim()) {
         return res.status(400).json({ message: "contenu_requis" });
       }
 
       // Même titre qu'un dossier non retiré : on refuse (retirer d'abord, puis redéposer).
-      if (await dossierExiste(req.userId, typeof titre === "string" ? titre : "")) {
+      if (await dossierExiste(req.userId, titre)) {
         return res.status(409).json({ message: "deja_depose" });
       }
 
       const r = await deposerDossier({
         userId: req.userId,
-        projectId: typeof projectId === "number" ? projectId : null,
-        titre: typeof titre === "string" ? titre : "",
+        projectId: typeof projectId === "number" && Number.isInteger(projectId) && projectId > 0 ? projectId : null,
+        titre,
         contenu,
       });
 
@@ -1234,7 +1236,8 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       try {
         const fichiers = (req.files as Express.Multer.File[] | undefined) ?? [];
         if (fichiers.length === 0) return res.status(400).json({ message: "aucun_fichier" });
-        const projectId = Number(req.body?.projectId);
+        const pid = Number(req.body?.projectId);
+        const projectId = Number.isInteger(pid) && pid > 0 ? pid : null;
         const resultats: { fichier: string; titre: string; statut: string; morceaux?: number }[] = [];
         for (const f of fichiers) {
           // multer décode les noms en latin1 : on rétablit l'UTF-8 (accents).
@@ -1244,12 +1247,14 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
             resultats.push({ fichier: nom, titre, statut, ...(morceaux !== undefined ? { morceaux } : {}) });
           try {
             if (f.mimetype !== "application/pdf") { fin("pas_un_pdf"); continue; }
+            if (f.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") { fin("pas_un_pdf"); continue; }
+            // Doublon refusé AVANT d'analyser le fichier.
+            if (await dossierExiste(req.userId, titre)) { fin("deja_depose"); continue; }
             const ex = await extraireTextePdf(f.buffer);
             if (ex.statut !== "ok") { fin(ex.statut); continue; }
-            if (await dossierExiste(req.userId, titre)) { fin("deja_depose"); continue; }
             const r = await deposerDossier({
               userId: req.userId,
-              projectId: Number.isInteger(projectId) ? projectId : null,
+              projectId,
               titre,
               contenu: ex.texte,
             });
