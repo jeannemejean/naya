@@ -63,6 +63,7 @@ import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
+import { indexerManquants, depsReelles, sonderEmbeddings, compterManquants, invaliderSonde } from "./services/memory/indexer-manquants";
 import { extraireTextePdf, titreDepuisNomFichier, normaliserTitre, titreParDefaut } from "./services/memory/extraire-pdf";
 import { valideLien } from "./services/brand-links/links";
 import type { Articulation } from "./services/brand-links/links";
@@ -1273,6 +1274,33 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
         res.status(500).json({ message: e.message });
       }
     });
+  });
+
+  // État de l'indexation (sonde fournisseur mise en cache 5 min + nombre de souvenirs sans vecteur).
+  app.get("/api/savoir/index", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+      const [sonde, manquants] = await Promise.all([sonderEmbeddings({ forcer: req.query?.forcer === "1" }), compterManquants(req.userId)]);
+      res.json({ ...sonde, manquants });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Rattrape les souvenirs sans vecteur.
+  app.post("/api/savoir/index", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+      const r = await indexerManquants(depsReelles, req.userId);
+      res.json(r);
+    } catch (e: any) {
+      console.error("[Savoir] indexation impossible:", e?.message ?? e);
+      res.status(500).json({ message: e.message });
+    } finally {
+      invaliderSonde();
+    }
   });
 
   // Retrait d'un dossier : invalidation (superseded_at), jamais de suppression.

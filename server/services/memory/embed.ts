@@ -37,19 +37,81 @@ export async function embedText(text: string): Promise<number[] | null> {
 
 const EMBED_TIMEOUT_MS = 2500; // borne le pire cas (réseau OpenAI) dans le chemin critique
 
+// ── Observabilité ───────────────────────────────────────────────────────────────
+// Avant : `catch { return null }` avalait tout, et un compte OpenAI à court de crédit a
+// laissé TOUTE la mémoire sans vecteur sans qu'aucun journal n'en parle.
+export interface EtatEmbeddings {
+  dernierSucces?: Date;
+  dernierEchec?: { a: Date; raison: string };
+}
+const etatEmbeddings: EtatEmbeddings = {};
+const DERNIER_LOG = new Map<string, number>();
+const LOG_THROTTLE_MS = 60_000;
+
+export function lireEtatEmbeddings(): EtatEmbeddings {
+  return {
+    ...(etatEmbeddings.dernierSucces ? { dernierSucces: etatEmbeddings.dernierSucces } : {}),
+    ...(etatEmbeddings.dernierEchec ? { dernierEchec: { ...etatEmbeddings.dernierEchec } } : {}),
+  };
+}
+
+/** Test uniquement : remet l'état et le throttle à zéro. */
+export function _reinitialiserEtatEmbeddings(): void {
+  delete etatEmbeddings.dernierSucces;
+  delete etatEmbeddings.dernierEchec;
+  DERNIER_LOG.clear();
+}
+
+const MOT_SUR = /^[A-Za-z0-9_.\-]{1,60}$/;
+
+/** Raison courte et sûre. Ne lit que status / code / type : jamais le message ni la requête. */
+export function raisonEchec(err: unknown): string {
+  const e = err as any;
+  if (e?.name === "EmbedIndisponible") return "indisponible";
+  if (e?.name === "EmbedTimeout") return "timeout";
+  if (typeof e?.code === "string" && MOT_SUR.test(e.code)) return e.code;
+  if (typeof e?.type === "string" && MOT_SUR.test(e.type)) return e.type;
+  if (typeof e?.status === "number") return `http_${e.status}`;
+  if (typeof e?.code === "string" && /^(ETIMEDOUT|ECONNABORTED)$/.test(e.code)) return "timeout";
+  return "erreur";
+}
+
+function noterEchec(raison: string): void {
+  const maintenant = Date.now();
+  etatEmbeddings.dernierEchec = { a: new Date(maintenant), raison };
+  const dernier = DERNIER_LOG.get(raison);
+  if (dernier === undefined || maintenant - dernier >= LOG_THROTTLE_MS) {
+    DERNIER_LOG.set(raison, maintenant);
+    console.error("[embed] échec :", raison);
+  }
+}
+
+function erreurNommee(name: string): Error {
+  const e = new Error(name);
+  e.name = name;
+  return e;
+}
+
 export async function embedTexts(texts: string[], timeoutMs: number = EMBED_TIMEOUT_MS): Promise<number[][] | null> {
   try {
     const { provider, model } = route("embedding");
-    const p = registry.get(provider); // throw si openai indisponible → catché ci-dessous
-    if (!p.embed) return null;
+    let p;
+    try {
+      p = registry.get(provider); // throw si openai indisponible
+    } catch {
+      throw erreurNommee("EmbedIndisponible");
+    }
+    if (!p.embed) throw erreurNommee("EmbedIndisponible");
     let timer: ReturnType<typeof setTimeout> | undefined;
     const res = await Promise.race([
       p.embed({ texts }, model),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("embed timeout")), timeoutMs); }),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(erreurNommee("EmbedTimeout")), timeoutMs); }),
     ]).finally(() => clearTimeout(timer));
+    etatEmbeddings.dernierSucces = new Date();
     return (res as { vectors: number[][] }).vectors;
-  } catch {
-    return null; // dégradation silencieuse (timeout, pas de clé, erreur réseau)
+  } catch (err) {
+    noterEchec(raisonEchec(err));
+    return null; // dégradation silencieuse pour l'appelant (timeout, pas de clé, quota, réseau)
   }
 }
 
