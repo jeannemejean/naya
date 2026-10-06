@@ -20,6 +20,7 @@ import Welcome from "@/pages/welcome";
 import Dashboard from "@/pages/dashboard";
 import NayaCompanion from "@/components/NayaCompanion";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import NouvelleVersionBanner from "@/components/NouvelleVersionBanner";
 
 // Écran de chargement neutre — affiché tant que l'auth se résout (jamais Landing ni 404).
 function LoadingScreen({ label = "Naya" }: { label?: string }) {
@@ -151,6 +152,7 @@ function App() {
  <ErrorBoundary>
  <LanguageGate>
  <Router />
+ <NouvelleVersionBanner />
  </LanguageGate>
  </ErrorBoundary>
  </TooltipProvider>

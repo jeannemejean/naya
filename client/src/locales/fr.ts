@@ -1,5 +1,7 @@
 const fr = {
  common: {
+ newVersion: "Nouvelle version de Naya disponible.",
+ reloadApp: "Recharger",
  search: "Rechercher...",
  save: "Enregistrer",
  cancel: "Annuler",
@@ -1266,6 +1268,8 @@ const fr = {
  },
 
  todaysTasks: {
+ realizeTask: "Réaliser la tâche",
+ openTask: "Ouvrir la tâche",
  title: "Tâches du jour",
  noTasks: "Aucune tâche pour aujourd'hui.",
  noTasksShort: "Aucune tâche pour aujourd'hui",

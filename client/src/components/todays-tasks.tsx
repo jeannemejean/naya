@@ -20,6 +20,7 @@ import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
 import { useTranslation } from "react-i18next";
 import TaskWorkspace from "@/components/task-workspace";
 import { useCocherAvecLivrable } from "@/hooks/useCocherAvecLivrable";
+import { estTacheDeProduction } from "@shared/livrables";
 import GeneratingOverlay from "@/components/GeneratingOverlay";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
 import type { Project } from "@shared/schema";
@@ -107,10 +108,11 @@ function getProjectColor(projectId: number | undefined, projects: Project[]): st
  return p?.color || '#6366f1';
 }
 
-function PlannerTaskPopover({ task, projects, onToggle, isToggling }: {
+function PlannerTaskPopover({ task, projects, onToggle, onOpen, isToggling }: {
  task: Task;
  projects: Project[];
  onToggle: (task: Task) => void;
+ onOpen: (task: Task) => void;
  isToggling: boolean;
 }) {
  const { t } = useTranslation();
@@ -157,6 +159,15 @@ function PlannerTaskPopover({ task, projects, onToggle, isToggling }: {
  </p>
  </div>
  )}
+
+ <Button
+ size="sm"
+ variant="outline"
+ className="w-full h-8 text-xs"
+ onClick={() => onOpen(task)}
+ >
+ {estTacheDeProduction(task.title) && !task.completed ? t('todaysTasks.realizeTask') : t('todaysTasks.openTask')}
+ </Button>
 
  <Button
  size="sm"
@@ -364,6 +375,14 @@ export default function TodaysTasks() {
  ouvrirDepot: (task) => { setOpenPopover(null); setFocusLivrables(true); setWorkspaceTask(task as any); },
  });
 
+ // « Ouvrir / Réaliser la tâche » depuis la bulle du planning : ouvre le panneau complet.
+ // Pour une tâche de production non terminée, on arrive directement sur le dépôt.
+ const ouvrirTache = (task: Task) => {
+   setOpenPopover(null);
+   setFocusLivrables(estTacheDeProduction(task.title) && !task.completed);
+   setWorkspaceTask(task);
+ };
+
  const generateTasksMutation = useMutation({
  mutationFn: async () => {
  setIsGenerating(true);
@@ -463,8 +482,19 @@ export default function TodaysTasks() {
  const tomorrowScheduled = tomorrowPending.filter((t: Task) => (t as any).scheduledTime);
  const tomorrowUnscheduled = tomorrowPending.filter((t: Task) => !(t as any).scheduledTime);
  // Jeu de tâches rendu par le planning selon le jour sélectionné.
- const plannerScheduled = tasksForPlannerDay(plannerDay, scheduledTasks, tomorrowScheduled);
- const plannerUnscheduled = tasksForPlannerDay(plannerDay, unscheduledTasks, tomorrowUnscheduled);
+ // Les tâches TERMINÉES restent visibles dans le planning du jour, barrées, pour pouvoir
+ // annuler une erreur (demande de Jeanne, 6 oct. 2026 : « je veux qu'elle reste dans mon
+ // planning mais barrée, et pouvoir la débarrer »). Elles ne servent pas à l'auto-placement.
+ const plannerScheduled = tasksForPlannerDay(
+   plannerDay,
+   [...scheduledTasks, ...completedTasks.filter((t: Task) => (t as any).scheduledTime)],
+   tomorrowScheduled,
+ );
+ const plannerUnscheduled = tasksForPlannerDay(
+   plannerDay,
+   [...unscheduledTasks, ...completedTasks.filter((t: Task) => !(t as any).scheduledTime)],
+   tomorrowUnscheduled,
+ );
 
  // Auto-placement (une seule fois) : si des tâches du JOUR sont restées sans heure — typiquement
  // générées tardivement la veille et jamais re-placées — on les place dans les créneaux libres
@@ -913,13 +943,13 @@ export default function TodaysTasks() {
  <PopoverTrigger asChild>
  <div
  data-task-title={task.title}
- className="absolute left-12 right-0 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity select-none"
+ className={`absolute left-12 right-0 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity select-none ${task.completed ? 'opacity-50' : ''}`}
  style={{ top, height, backgroundColor: `${projColor}15`, borderLeft: `3px solid ${projColor}` }}
  >
  <div className="p-2">
  <div className="flex items-center gap-1.5">
  <TypeIcon type={task.type} className="h-3 w-3 opacity-70 flex-shrink-0" />
- <p className="text-xs text-foreground truncate">{task.title}</p>
+ <p className={`text-xs text-foreground truncate ${task.completed ? 'line-through' : ''}`}>{task.title}</p>
  </div>
  {task.estimatedDuration && height > 50 && (
  <p className="text-[10px] text-naya-cream0 mt-0.5 flex items-center gap-0.5">
@@ -935,6 +965,7 @@ export default function TodaysTasks() {
  task={task}
  projects={projects}
  onToggle={(t) => { void cocherAvecLivrable(t); }}
+ onOpen={ouvrirTache}
  isToggling={toggleTaskMutation.isPending}
  />
  </Popover>
@@ -958,10 +989,10 @@ export default function TodaysTasks() {
  <PopoverTrigger asChild>
  <div
  data-task-title={task.title}
- className="p-2.5 rounded-lg border bg-naya-olive-06 border-naya-olive-18 cursor-pointer hover:border-primary/40 transition-colors select-none"
+ className={`p-2.5 rounded-lg border bg-naya-olive-06 border-naya-olive-18 cursor-pointer hover:border-primary/40 transition-colors select-none ${task.completed ? 'opacity-50' : ''}`}
  style={{ borderLeftWidth: 2, borderLeftColor: projColor }}
  >
- <p className="text-xs text-foreground line-clamp-2">{task.title}</p>
+ <p className={`text-xs text-foreground line-clamp-2 ${task.completed ? 'line-through' : ''}`}>{task.title}</p>
  <div className="flex items-center gap-1 mt-1">
  <TypeIcon type={task.type} className="h-3 w-3 opacity-60 flex-shrink-0" />
  {task.estimatedDuration && (
@@ -974,6 +1005,7 @@ export default function TodaysTasks() {
  task={task}
  projects={projects}
  onToggle={(t) => { void cocherAvecLivrable(t); }}
+ onOpen={ouvrirTache}
  isToggling={toggleTaskMutation.isPending}
  />
  </Popover>
