@@ -6,6 +6,7 @@
 import { nayaIntelligence } from './naya-intelligence';
 import { companyResearchService } from './company-research';
 import { storage } from '../storage';
+import { imposerLangueDuCompte } from './garde-langue';
 import type { BrandDnaInput } from './openai';
 
 export class TaskPreGenerationService {
@@ -53,6 +54,9 @@ export class TaskPreGenerationService {
         ...this.generateQuickWinTasks(brandDna)
       ];
       
+      // Les modèles ci-dessous sont écrits en anglais : on les remet dans la langue du compte.
+      await imposerLangueDuCompte(welcomeTasks, userId);
+
       // Save tasks to database
       for (const task of welcomeTasks) {
         await storage.createTask({

@@ -51,3 +51,52 @@ This is the account's chosen language. It takes precedence over the language of 
 Génère TOUT le contenu textuel en français : titres de tâches, descriptions, insights, recommandations, briefings, messages, résumés.
 C'est la langue choisie sur le compte. Elle prime sur la langue des instructions que tu reçois.`;
 }
+
+// ── Garde de sortie ──────────────────────────────────────────────────────────
+//
+// Le 6 octobre 2026, un compte en français a reçu des tâches en anglais (« Send the 3
+// personalized DMs… »), mêlées à des tâches en français. La consigne était bien là, mais
+// les prompts de génération sont rédigés en anglais, exemples compris, et le modèle rapide
+// imite la langue des instructions sur une partie des sorties. Une consigne ne garantit
+// rien : on vérifie donc ce qui sort.
+
+const MOTS_FR = new Set([
+  "le", "la", "les", "de", "des", "du", "et", "ton", "ta", "tes", "tu", "toi", "pour", "avec",
+  "une", "un", "sur", "dans", "chaque", "à", "au", "aux", "ce", "cette", "ces", "qui", "que",
+  "est", "en", "par", "ou", "ne", "pas", "plus", "son", "sa", "ses", "d", "l", "qu", "j",
+]);
+
+const MOTS_EN = new Set([
+  "the", "and", "your", "you", "with", "for", "from", "of", "to", "in", "into", "about",
+  "based", "this", "that", "these", "each", "one", "set", "send", "create", "write", "share",
+  "review", "build", "draft", "update", "reach", "follow", "daily", "weekly", "week", "day",
+  "today", "at", "by", "is", "are", "it", "its", "their", "them", "up",
+]);
+
+/**
+ * Vrai si `texte` semble rédigé dans une AUTRE langue que `langue`. PURE.
+ *
+ * Volontairement prudent : il faut au moins deux mots outils de l'autre langue, et plus
+ * que de mots outils de la langue attendue. Un nom propre, un titre court ou un anglicisme
+ * isolé (« Ostéopathes Mr Darcy », « carrousel LinkedIn ») ne déclenchent rien.
+ */
+export function ecritDansUneAutreLangue(texte: string, langue: Language): boolean {
+  const mots = texte.toLowerCase().match(/[a-zà-ÿœæ]+/g) ?? [];
+  let fr = 0;
+  let en = 0;
+  for (const m of mots) {
+    if (MOTS_FR.has(m)) fr++;
+    if (MOTS_EN.has(m)) en++;
+  }
+  return langue === "fr" ? en >= 2 && en > fr : fr >= 2 && fr > en;
+}
+
+/** La consigne donnée au modèle pour remettre des textes dans la langue du compte. */
+export function consigneDeTraduction(langue: Language): string {
+  const cible = langue === "en" ? "anglais" : "français";
+  return `Tu reçois un tableau JSON de textes destinés à un utilisateur dont la langue est le ${cible}.
+Rends le MÊME tableau, même longueur, même ordre, chaque texte rendu en ${cible} naturel.
+Garde le sens, le ton direct, le tutoiement en français, les chiffres, les noms propres et les noms de plateformes.
+Un texte déjà en ${cible} est rendu tel quel.
+Réponds uniquement avec le tableau JSON, sans balises ni commentaire.`;
+}

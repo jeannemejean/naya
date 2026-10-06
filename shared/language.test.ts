@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_LANGUAGE,
+  ecritDansUneAutreLangue,
   normalizeLanguage,
   resolveLanguage,
   languageDirective,
@@ -83,5 +84,31 @@ describe("languageDirective", () => {
     for (const lang of ["fr", "en"] as const) {
       expect(languageDirective(lang).trim().length).toBeGreaterThan(20);
     }
+  });
+});
+
+
+describe("ecritDansUneAutreLangue — garde de sortie (6 octobre 2026)", () => {
+  // Les titres exacts reçus par un compte en français.
+  it("repère les tâches anglaises reçues par un compte français", () => {
+    expect(ecritDansUneAutreLangue("Send the 3 personalized DMs (based on outreach template) + document responses", "fr")).toBe(true);
+    expect(ecritDansUneAutreLangue("Set a 5-minute daily ritual: respond to comments and share one Stories moment from your week", "fr")).toBe(true);
+  });
+
+  it("laisse passer le français, y compris avec des anglicismes", () => {
+    expect(ecritDansUneAutreLangue("Photographier 3 détails de ton environnement créatif + annoter chacun avec une observation", "fr")).toBe(false);
+    expect(ecritDansUneAutreLangue("Rédiger le carrousel LinkedIn sur ton offre", "fr")).toBe(false);
+    expect(ecritDansUneAutreLangue("Envoyer les DMs d'outreach préparés", "fr")).toBe(false);
+  });
+
+  it("ne déclenche rien sur un nom propre ou un titre court", () => {
+    expect(ecritDansUneAutreLangue("Ostéopathes Mr Darcy", "fr")).toBe(false);
+    expect(ecritDansUneAutreLangue("", "fr")).toBe(false);
+    expect(ecritDansUneAutreLangue("LinkedIn", "fr")).toBe(false);
+  });
+
+  it("marche dans l'autre sens pour un compte anglais", () => {
+    expect(ecritDansUneAutreLangue("Envoyer les 3 messages à tes prospects de la semaine", "en")).toBe(true);
+    expect(ecritDansUneAutreLangue("Send the 3 messages to your prospects", "en")).toBe(false);
   });
 });

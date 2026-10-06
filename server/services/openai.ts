@@ -5,6 +5,7 @@ import { validateGeneratedIntent } from "./reception/validate-generated-intent";
 import type { Intent } from "./reception/score";
 import { formaterArticulation, type Articulation } from "./brand-links/links";
 import { formaterPreferences, type Preference } from "./campaign-reject/preferences";
+import { imposerLangueDuCompte } from "./garde-langue";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -604,7 +605,10 @@ ${profileFramingRules}
 ${urgencyInstruction}`,
     });
 
-    return JSON.parse(stripMarkdownJSON(raw));
+    const parsed = JSON.parse(stripMarkdownJSON(raw));
+    // Garde de sortie : le prompt est en anglais et le modèle rapide l'imite parfois.
+    await imposerLangueDuCompte(parsed?.tasks, request.userId);
+    return parsed;
   } catch (error) {
     throw new Error("Failed to generate daily tasks: " + (error as Error).message);
   }
@@ -1362,7 +1366,9 @@ Return ONLY this JSON object:
   assertNotTruncated(stopReason, "tâches");
   try {
     const parsed = JSON.parse(stripMarkdownJSON(text));
-    return (Array.isArray(parsed) ? parsed : parsed.tasks || []) as GeneratedCampaign["tasks"];
+    const tasks = (Array.isArray(parsed) ? parsed : parsed.tasks || []) as GeneratedCampaign["tasks"];
+    await imposerLangueDuCompte(tasks as any[], request.userId);
+    return tasks;
   } catch (e) {
     throw new Error("Failed to parse campaign tasks JSON: " + (e as Error).message);
   }
