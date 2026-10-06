@@ -15,6 +15,7 @@ import { useProject } from "@/lib/project-context";
 import { ChevronLeft, ChevronRight, Clock, Loader2, Brain } from "lucide-react";
 import TaskWorkspace from "@/components/task-workspace";
 import { useCocherAvecLivrable } from "@/hooks/useCocherAvecLivrable";
+import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import { PlanningRestartButton } from "@/components/planning-restart-button";
 import Sidebar from "@/components/sidebar";
 import TimeGrid from "@/components/time-grid";
@@ -283,9 +284,17 @@ export default function Planning({ onSearchClick }: Props) {
     ouvrirDepot: (task) => { setFocusLivrables(true); setWorkspaceTask(task as any); },
   });
   // Les enfants ne transmettent que l'id : on retrouve la tâche dans la liste chargée.
+  // Un événement Google Agenda se coche dans Naya seulement (voir lib/agenda-api.ts).
+  const agendaMutation = useMutation({
+    mutationFn: (task: Task) => basculerEvenementAgenda(task as any),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] }),
+    onError: () => toast({ title: t('common.error'), description: t('todaysTasks.failedUpdateTask'), variant: "destructive" }),
+  });
+
   const cocherParId = (taskId: number) => {
     const task = rangeTasks.find(x => x.id === taskId);
-    if (task && taskId >= 0) void cocherAvecLivrable(task);
+    if (task && estEvenementAgenda(task as any)) agendaMutation.mutate(task);
+    else if (task && taskId >= 0) void cocherAvecLivrable(task);
     else toggleMutation.mutate(taskId);
   };
 

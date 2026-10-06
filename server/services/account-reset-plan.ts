@@ -51,6 +51,7 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "saved_articles", mode: "delete" },
   { table: "metrics", mode: "delete" },
   { table: "day_availability", mode: "delete" },
+  { table: "evenements_agenda_faits", mode: "delete", note: "Google Agenda lui-même n'est pas touché" },
   { table: "livrables", mode: "delete", note: "⚠️ les objets R2 (médias et fichiers privés) ne sont pas supprimés" },
   { table: "media_library", mode: "delete", note: "⚠️ les fichiers R2 eux-mêmes ne sont pas supprimés" },
   { table: "prospection_usage", mode: "delete", note: "remet aussi le compteur LinkedIn hebdo à zéro" },

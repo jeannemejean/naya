@@ -158,6 +158,7 @@ import {
 import { articleAnalysisService } from "./services/article-analysis";
 import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner";
 import { preferencesDeFinOnboarding } from "./services/planning-start";
+import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import {
   getAuthUrl,
@@ -4456,11 +4457,43 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     }
   });
 
+  // Événements Google Agenda marqués « faits » dans Naya (voir server/services/agenda/faits.ts).
+  app.post('/api/agenda/evenements/:eventId/fait', isAuthenticated, async (req: any, res) => {
+    try {
+      const { eventId } = req.params;
+      if (!idEvenementValide(eventId)) return res.status(400).json({ message: 'invalid_event_id' });
+      const date = typeof req.body?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date) ? req.body.date : null;
+      await marquerFait(req.userId, eventId, date);
+      res.json({ eventId, fait: true });
+    } catch (error: any) {
+      console.error('[agenda] marquer fait:', error?.message);
+      res.status(500).json({ message: 'agenda_update_failed' });
+    }
+  });
+
+  app.delete('/api/agenda/evenements/:eventId/fait', isAuthenticated, async (req: any, res) => {
+    try {
+      const { eventId } = req.params;
+      if (!idEvenementValide(eventId)) return res.status(400).json({ message: 'invalid_event_id' });
+      await retirerFait(req.userId, eventId);
+      res.json({ eventId, fait: false });
+    } catch (error: any) {
+      console.error('[agenda] retirer fait:', error?.message);
+      res.status(500).json({ message: 'agenda_update_failed' });
+    }
+  });
+
   app.post('/api/tasks/:id/toggle', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
       const { id } = req.params;
+      // Un identifiant fictif (événement d'agenda injecté, jalon virtuel) ou une tâche d'un
+      // autre compte n'est pas une tâche à cocher ici : 404 propre, jamais 500.
+      if (!/^\d+$/.test(String(id))) return res.status(404).json({ message: 'task_not_found' });
       const taskBefore = await storage.getTask(parseInt(id));
+      if (!taskBefore || (taskBefore as any).userId !== userId) {
+        return res.status(404).json({ message: 'task_not_found' });
+      }
 
       // VERROU DE SEQUENCE, dans le sens COCHER uniquement. Decocher reste toujours
       // possible : sans cela, une coche donnee par erreur deviendrait definitive, et
@@ -6007,6 +6040,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           const calEvents = await getCalendarEvents(userId, start as string, end as string);
           console.log(`[tasks/range] GCal: userId=${userId} start=${start} end=${end} events=${calEvents.length}`);
           let gcalIdCounter = -1000;
+          const evenementsAgenda: any[] = [];
           for (const ev of calEvents) {
             if (ev.allDay) continue;
             const durationMin = (() => {
@@ -6014,8 +6048,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               const [eh, em] = ev.endTime.split(':').map(Number);
               return (eh * 60 + em) - (sh * 60 + sm);
             })();
-            finalTasks.push({
+            evenementsAgenda.push({
               id: gcalIdCounter--,
+              gcalEventId: ev.id, // stable : sert à retrouver l'état « fait » (Naya seulement)
               userId,
               title: ev.title,
               type: 'gcal_event',
@@ -6031,6 +6066,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               description: ev.location ? `📍 ${ev.location}` : null,
             } as any);
           }
+          // État « fait » dans Naya (l'agenda n'est jamais modifié). Lecture best-effort :
+          // en cas d'échec, les événements s'affichent simplement non cochés.
+          let idsFaits = new Set<string>();
+          try {
+            idsFaits = await lireFaits(userId, evenementsAgenda.map((e) => e.gcalEventId).filter(Boolean));
+          } catch (e: any) {
+            console.error('[tasks/range] état fait agenda non lu:', e?.message);
+          }
+          finalTasks.push(...appliquerEtatFait(evenementsAgenda, idsFaits));
         } catch (calErr: any) {
           // Non-fatal — calendar errors must never break the planning page
           console.error('[tasks/range] Calendar injection error:', calErr.message);

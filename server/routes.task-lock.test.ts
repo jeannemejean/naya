@@ -68,8 +68,8 @@ describe("le verrou de séquence tient sur les DEUX portes", () => {
     storageMock.getTaskDependencies.mockResolvedValue([{ dependsOnTaskId: REDIGER }]);
     storageMock.getTask.mockImplementation(async (id: number) =>
       id === REDIGER
-        ? { id: REDIGER, title: "Rédiger le post LinkedIn", completed: false }
-        : { id: PUBLIER, title: "Publier le brouillon", completed: false },
+        ? { id: REDIGER, userId: "user-1", title: "Rédiger le post LinkedIn", completed: false }
+        : { id: PUBLIER, userId: "user-1", title: "Publier le brouillon", completed: false },
     );
   }
 
@@ -104,8 +104,8 @@ describe("le verrou de séquence tient sur les DEUX portes", () => {
     storageMock.getTaskDependencies.mockResolvedValue([{ dependsOnTaskId: REDIGER }]);
     storageMock.getTask.mockImplementation(async (id: number) =>
       id === REDIGER
-        ? { id: REDIGER, title: "Rédiger", completed: false }
-        : { id: PUBLIER, title: "Publier", completed: true }, // déjà cochée
+        ? { id: REDIGER, userId: "user-1", title: "Rédiger", completed: false }
+        : { id: PUBLIER, userId: "user-1", title: "Publier", completed: true }, // déjà cochée
     );
     storageMock.toggleTaskCompletion.mockResolvedValue({ id: PUBLIER, completed: false });
 
@@ -117,12 +117,26 @@ describe("le verrou de séquence tient sur les DEUX portes", () => {
     expect(storageMock.toggleTaskCompletion).toHaveBeenCalled();
   });
 
+  it("/toggle d'un identifiant fictif (événement d'agenda) → 404, jamais 500", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/tasks/-1000/toggle`, { method: "POST" });
+    expect(res.status).toBe(404);
+    expect(storageMock.toggleTaskCompletion).not.toHaveBeenCalled();
+  });
+
+  it("/toggle de la tâche d'un autre compte → 404, et rien n'est coché", async () => {
+    storageMock.getTaskDependencies.mockResolvedValue([]);
+    storageMock.getTask.mockResolvedValue({ id: PUBLIER, userId: "quelqu-un-d-autre", title: "Publier", completed: false });
+    const res = await fetch(`http://127.0.0.1:${port}/api/tasks/${PUBLIER}/toggle`, { method: "POST" });
+    expect(res.status).toBe(404);
+    expect(storageMock.toggleTaskCompletion).not.toHaveBeenCalled();
+  });
+
   it("une fois le prérequis coché, la tâche se coche", async () => {
     storageMock.getTaskDependencies.mockResolvedValue([{ dependsOnTaskId: REDIGER }]);
     storageMock.getTask.mockImplementation(async (id: number) =>
       id === REDIGER
-        ? { id: REDIGER, title: "Rédiger", completed: true }
-        : { id: PUBLIER, title: "Publier", completed: false },
+        ? { id: REDIGER, userId: "user-1", title: "Rédiger", completed: true }
+        : { id: PUBLIER, userId: "user-1", title: "Publier", completed: false },
     );
 
     const res = await fetch(`http://127.0.0.1:${port}/api/tasks/${PUBLIER}/complete`, {
@@ -136,7 +150,7 @@ describe("le verrou de séquence tient sur les DEUX portes", () => {
   it("une tâche sans dépendance n'est jamais verrouillée", async () => {
     // Le cas des 58 tâches actuelles : task_dependencies est vide.
     storageMock.getTaskDependencies.mockResolvedValue([]);
-    storageMock.getTask.mockResolvedValue({ id: PUBLIER, title: "Publier", completed: false });
+    storageMock.getTask.mockResolvedValue({ id: PUBLIER, userId: "user-1", title: "Publier", completed: false });
 
     const res = await fetch(`http://127.0.0.1:${port}/api/tasks/${PUBLIER}/complete`, {
       method: "POST",
@@ -149,7 +163,7 @@ describe("le verrou de séquence tient sur les DEUX portes", () => {
     // On ne bloque pas le travail de quelqu'un parce qu'une requête a raté. Le verrou est une
     // aide à la séquence, pas un péage.
     storageMock.getTaskDependencies.mockRejectedValue(new Error("base indisponible"));
-    storageMock.getTask.mockResolvedValue({ id: PUBLIER, title: "Publier", completed: false });
+    storageMock.getTask.mockResolvedValue({ id: PUBLIER, userId: "user-1", title: "Publier", completed: false });
 
     const res = await fetch(`http://127.0.0.1:${port}/api/tasks/${PUBLIER}/complete`, {
       method: "POST",

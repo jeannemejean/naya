@@ -1033,6 +1033,22 @@ export const mediaLibrary = pgTable("media_library", {
 
 // Livrables de tâche — ce que l'utilisatrice produit quand Naya le lui demande.
 // Spec : docs/superpowers/specs/2026-10-06-naya-livrables-design.md
+// Événements Google Agenda marqués « faits » dans Naya — Naya seulement, l'agenda n'est
+// jamais modifié. Les événements sont injectés en lecture seule dans le planning
+// (/api/tasks/range) ; cette table est la seule trace de leur état. `eventId` est
+// l'identifiant Google de l'OCCURRENCE (singleEvents: true), stable d'un chargement à l'autre.
+export const evenementsAgendaFaits = pgTable("evenements_agenda_faits", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  eventId: text("event_id").notNull(),
+  date: text("date"), // YYYY-MM-DD de l'occurrence, pour lecture humaine
+  faitAt: timestamp("fait_at").defaultNow(),
+}, (t) => ({
+  unicite: uniqueIndex("evenement_agenda_fait_unique_idx").on(t.userId, t.eventId),
+}));
+
+export type EvenementAgendaFait = typeof evenementsAgendaFaits.$inferSelect;
+
 export const livrables = pgTable("livrables", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),

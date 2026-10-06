@@ -21,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import TaskWorkspace from "@/components/task-workspace";
 import { useCocherAvecLivrable } from "@/hooks/useCocherAvecLivrable";
 import { estTacheDeProduction } from "@shared/livrables";
+import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import GeneratingOverlay from "@/components/GeneratingOverlay";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
 import type { Project } from "@shared/schema";
@@ -160,6 +161,7 @@ function PlannerTaskPopover({ task, projects, onToggle, onOpen, isToggling }: {
  </div>
  )}
 
+ {!estEvenementAgenda(task as any) && (
  <Button
  size="sm"
  variant="outline"
@@ -168,6 +170,7 @@ function PlannerTaskPopover({ task, projects, onToggle, onOpen, isToggling }: {
  >
  {estTacheDeProduction(task.title) && !task.completed ? t('todaysTasks.realizeTask') : t('todaysTasks.openTask')}
  </Button>
+ )}
 
  <Button
  size="sm"
@@ -381,6 +384,24 @@ export default function TodaysTasks() {
    setOpenPopover(null);
    setFocusLivrables(estTacheDeProduction(task.title) && !task.completed);
    setWorkspaceTask(task);
+ };
+
+ // Un événement Google Agenda se coche dans Naya seulement (jamais dans l'agenda), sans
+ // dépôt de livrable ni rééquilibrage de la semaine. Les vraies tâches passent par le dépôt.
+ const agendaMutation = useMutation({
+   mutationFn: (task: Task) => basculerEvenementAgenda(task as any),
+   onSuccess: () => {
+     setOpenPopover(null);
+     queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
+     queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
+   },
+   onError: () => {
+     toast({ title: t('common.error'), description: t('todaysTasks.failedUpdateTask'), variant: "destructive" });
+   },
+ });
+ const cocherTache = (task: Task) => {
+   if (estEvenementAgenda(task as any)) agendaMutation.mutate(task);
+   else void cocherAvecLivrable(task);
  };
 
  const generateTasksMutation = useMutation({
@@ -662,7 +683,7 @@ export default function TodaysTasks() {
  >
  <Checkbox
  checked={true}
- onCheckedChange={() => { void cocherAvecLivrable(task); }}
+ onCheckedChange={() => cocherTache(task)}
  disabled={toggleTaskMutation.isPending}
  className="mt-0.5 cursor-pointer"
  />
@@ -758,14 +779,14 @@ export default function TodaysTasks() {
  <div onClick={(e) => e.stopPropagation()} className="mt-0.5">
  <Checkbox
  checked={false}
- onCheckedChange={() => { if (!isBlocked) void cocherAvecLivrable(task); }}
+ onCheckedChange={() => { if (!isBlocked) cocherTache(task); }}
  disabled={toggleTaskMutation.isPending || isBlocked}
  title={isBlocked && blockerTask ? t('todaysTasks.blockedBy', { title: blockerTask.title }) : undefined}
  className={isBlocked ? 'cursor-not-allowed' : 'cursor-pointer'}
  style={palette ? { '--checkbox-color': palette.text } as any : undefined}
  />
  </div>
- <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setFocusLivrables(false); setWorkspaceTask(task); }}>
+ <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { if (estEvenementAgenda(task as any)) return; setFocusLivrables(false); setWorkspaceTask(task); }}>
  <div className="flex items-start justify-between gap-2">
  <div className="flex items-center gap-1.5 min-w-0">
  {isMilestoneBlocked && <Flag className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/60" aria-label="Bloqué par un jalon" />}
@@ -964,9 +985,9 @@ export default function TodaysTasks() {
  <PlannerTaskPopover
  task={task}
  projects={projects}
- onToggle={(t) => { void cocherAvecLivrable(t); }}
+ onToggle={cocherTache}
  onOpen={ouvrirTache}
- isToggling={toggleTaskMutation.isPending}
+ isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
  />
  </Popover>
  );
@@ -1004,9 +1025,9 @@ export default function TodaysTasks() {
  <PlannerTaskPopover
  task={task}
  projects={projects}
- onToggle={(t) => { void cocherAvecLivrable(t); }}
+ onToggle={cocherTache}
  onOpen={ouvrirTache}
- isToggling={toggleTaskMutation.isPending}
+ isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
  />
  </Popover>
  );

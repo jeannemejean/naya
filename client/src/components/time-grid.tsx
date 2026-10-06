@@ -415,7 +415,7 @@ function TaskBlock({
             <span className="flex-shrink-0 text-[10px] mt-px font-mono" style={{ color: palette.text }}>
               {mStatus === 'completed' ? '✓' : mStatus === 'locked' ? '○' : '◈'}
             </span>
-          ) : isGcalEvent ? null : (
+          ) : (
             <div
               onClick={(e) => {
                 e.stopPropagation();
