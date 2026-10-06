@@ -1,5 +1,5 @@
 import { db } from "../../db";
-import { sql } from "drizzle-orm";
+import { sql, and, eq, inArray, isNull } from "drizzle-orm";
 import { memoryEntries } from "@shared/schema";
 import { embedTexts } from "./embed";
 import { decouperDocument } from "./decoupe-document";
@@ -25,6 +25,8 @@ import { decouperDocument } from "./decoupe-document";
 export interface ResultatDepot {
   morceaux: number;
   vectorises: number;
+  /** Ids des souvenirs effectivement écrits — pour pouvoir les périmer ensuite. */
+  ids: number[];
 }
 
 export async function deposerDossier(input: {
@@ -34,7 +36,7 @@ export async function deposerDossier(input: {
   contenu: string;
 }): Promise<ResultatDepot> {
   const morceaux = decouperDocument(input.contenu);
-  if (morceaux.length === 0) return { morceaux: 0, vectorises: 0 };
+  if (morceaux.length === 0) return { morceaux: 0, vectorises: 0, ids: [] };
 
   const titre = input.titre.trim() || "Dossier sans titre";
 
@@ -45,11 +47,12 @@ export async function deposerDossier(input: {
   // Best-effort, en un seul appel : `null` si le service est indisponible.
   const vecteurs = await embedTexts(textes).catch(() => null);
 
+  const ids: number[] = [];
   let vectorises = 0;
   for (let i = 0; i < morceaux.length; i += 1) {
     const vecteur = vecteurs?.[i] ?? null;
     try {
-      await db.insert(memoryEntries).values({
+      const [ecrit] = await db.insert(memoryEntries).values({
         userId: input.userId,
         projectId: input.projectId,
         fil: "savoir",
@@ -63,7 +66,8 @@ export async function deposerDossier(input: {
         // observation que Naya déduit. Ce que Jeanne prend la peine d'apporter pèse plus
         // lourd que ce que Naya devine.
         salience: 0.8,
-      } as any);
+      } as any).returning({ id: memoryEntries.id });
+      if (ecrit) ids.push(ecrit.id);
       if (vecteur) vectorises += 1;
     } catch (e: any) {
       // Un morceau qui échoue ne doit pas emporter les autres : un dossier à moitié déposé
@@ -72,7 +76,7 @@ export async function deposerDossier(input: {
     }
   }
 
-  return { morceaux: morceaux.length, vectorises };
+  return { morceaux: morceaux.length, vectorises, ids };
 }
 
 /**
@@ -101,4 +105,19 @@ export async function listerDossiers(userId: string): Promise<
     ORDER BY min(created_at) DESC
   `);
   return (r.rows ?? []) as any[];
+}
+
+/**
+ * Marque des souvenirs comme périmés (bi-temporel : invalidés, jamais supprimés).
+ * Filtré par utilisateur : on ne périme jamais la mémoire d'un autre compte.
+ */
+export async function perimerSouvenirs(userId: string, ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db.update(memoryEntries)
+    .set({ supersededAt: new Date() } as any)
+    .where(and(
+      eq(memoryEntries.userId, userId),
+      inArray(memoryEntries.id, ids),
+      isNull(memoryEntries.supersededAt),
+    ));
 }
