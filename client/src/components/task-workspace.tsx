@@ -10,6 +10,7 @@ import { etatSauvegarde, risqueDePerte } from "@/lib/task-workspace-save";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown } from "lucide-react";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
+import { estEvenementAgenda } from "@/lib/agenda-api";
 import { useRefuserTache } from "@/hooks/useRefuserTache";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
@@ -270,7 +271,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  {/* Actions rapides */}
  <div className="flex items-center gap-1 flex-shrink-0">
- {(task as any)?.source !== "gcal" && (
+ {!estEvenementAgenda((task ?? {}) as any) && (
  <button
  onClick={() => setRefusOuvert(true)}
  disabled={refuserMutation.isPending}

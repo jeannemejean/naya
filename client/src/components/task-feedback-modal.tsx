@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -40,22 +40,26 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
  { id: "other", label: t('taskFeedback.other') },
  ];
 
+ const refuser = mode === "refuser";
+
+ // Remise à zéro à la fermeture seulement : en cas d'échec, l'explication reste saisie.
+ useEffect(() => {
+ if (!open) {
+ setFeedbackType("deleted");
+ setReason("");
+ setFreeText("");
+ }
+ }, [open]);
+
  function handleConfirm() {
  if (!reason) return;
  onConfirm(refuser ? "refused" : feedbackType, reason, freeText || undefined);
- setFeedbackType("deleted");
- setReason("");
- setFreeText("");
  }
 
  function handleClose() {
- setFeedbackType("deleted");
- setReason("");
- setFreeText("");
  onClose();
  }
 
- const refuser = mode === "refuser";
  const confirmLabel = refuser ? t('taskFeedback.refuseAndReplace') : feedbackType === "deleted" ? t('taskFeedback.removeTask') : feedbackType === "deferred" ? t('taskFeedback.deferTask') : t('taskFeedback.dismissForNow');
 
  return (
