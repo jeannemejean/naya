@@ -12,6 +12,7 @@ import ProjectContextEditor from "./ProjectContextEditor";
 import MilestoneRoadmap from "./MilestoneRoadmap";
 import ConversionsPanel from "./ConversionsPanel";
 import BrandLinksPanel from "./BrandLinksPanel";
+import LivrablesPanel from "./LivrablesPanel";
 
 interface ProjectPageProps {
   id: number;
@@ -95,6 +96,10 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
 
             <section>
               <BrandLinksPanel projectId={id} />
+            </section>
+
+            <section>
+              <LivrablesPanel projectId={id} />
             </section>
 
             <section>
