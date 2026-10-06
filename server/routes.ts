@@ -30,6 +30,9 @@ import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
+import { refuserPost } from "./services/refus-post/service";
+import { refusPostDeps } from "./services/refus-post/deps";
+import { estRaisonRefusPost } from "./services/refus-post/pur";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, validateProjectPatchFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { isValidStage, buildSituationPrompt } from "./services/project-summary";
@@ -4931,6 +4934,29 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       res.json({ refusee: true, remplacement: r.remplacement, ...(r.raison ? { raison: r.raison } : {}) });
     } catch (error: any) {
       console.error('POST /api/tasks/:id/refuser error:', error?.message);
+      res.status(500).json({ message: 'refus_failed' });
+    }
+  });
+
+  // Refuser un post : raison + explication libre → souvenir, remplacement au choix, suppression.
+  app.post('/api/content/:id/refuser', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      if (!/^\d+$/.test(String(req.params.id))) return res.status(400).json({ message: 'invalid_content_id' });
+      const contentId = parseInt(req.params.id, 10);
+      const { reason, freeText: brut, remplacer: brutRemplacer } = req.body ?? {};
+      if (!estRaisonRefusPost(reason)) return res.status(400).json({ message: 'invalid_reason' });
+      if (brut != null && typeof brut !== 'string') return res.status(400).json({ message: 'invalid_free_text' });
+      if (brutRemplacer !== undefined && typeof brutRemplacer !== 'boolean') return res.status(400).json({ message: 'invalid_replace' });
+      const explication = typeof brut === 'string' && brut.trim() ? brut.trim() : null;
+      const remplacer = brutRemplacer === undefined ? true : brutRemplacer;
+
+      const r = await refuserPost(refusPostDeps, { userId, contentId, raison: reason, explication, remplacer });
+      if (r.statut === 'introuvable') return res.status(404).json({ message: 'Content not found' });
+      if (r.statut === 'deja_publie') return res.status(409).json({ message: 'already_published' });
+      res.json({ refuse: true, remplacement: r.remplacement, ...(r.raison ? { raison: r.raison } : {}) });
+    } catch (error: any) {
+      console.error('POST /api/content/:id/refuser error:', error?.message);
       res.status(500).json({ message: 'refus_failed' });
     }
   });
