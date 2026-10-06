@@ -1,3 +1,4 @@
+import { savoirPourCampagne } from "./services/memory/savoir-campagne";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "node:crypto";
@@ -10329,10 +10330,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // fonction DÉCIDE de l'angle, elle doit donc éviter ce qui a été rejeté.
       const preferences = await resolvePreferences(userId, ctx.pid);
 
+      const savoir = await savoirPourCampagne(userId, ctx.pid, { objective });
+
       const strategy = await generateCampaignStrategy({
         userId, projectId: ctx.pid, objective, duration: duration || '3_months',
         brandDna: ctx.brandDnaInput as any, weekContext: (weekContext || '') + pastReviewContext,
         preferences,
+        ...(savoir ? { savoir } : {}),
         // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
         // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
         ...(art.articulation ? { articulation: art.articulation } : {}),
@@ -10362,10 +10366,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // reçoit lui aussi les préférences de la marque.
       const preferences = await resolvePreferences(userId, ctx.pid);
 
+      const savoir = await savoirPourCampagne(userId, ctx.pid, { objective, name: (strategy as any).name });
+
       const contentPlan = await generateCampaignContent(
         {
           userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext,
           preferences,
+          ...(savoir ? { savoir } : {}),
           // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
           // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
           ...(art.articulation ? { articulation: art.articulation } : {}),
