@@ -4298,7 +4298,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               const existant = await storage.getContentBySourceTask(userId, taskId);
               const enregistre = existant
                 ? await storage.updateContent(existant.id, ligne as any)
-                : await storage.createContent({ ...ligne, userId } as any);
+                : await storage.createContent({ ...ligne, userId, autoPost: false } as any); // brouillon issu d'une tâche : jamais publié seul
               routage = { destination, contentId: enregistre.id };
             }
           }
@@ -6804,6 +6804,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         requestBody.publishedAt = new Date(requestBody.publishedAt);
       }
       
+      // La publication automatique n'est activée que sur demande EXPLICITE : la colonne
+      // vaut « oui » par défaut, et un contenu créé sans y penser partirait seul à sa date.
+      requestBody.autoPost = requestBody.autoPost === true;
       const contentData = insertContentSchema.parse(requestBody);
       const content = await storage.createContent(contentData);
 
@@ -7554,6 +7557,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           pillar: VALEUR_A_PRECISER,
           goal: VALEUR_A_PRECISER,
           status: 'draft',
+          autoPost: false, // brouillon : jamais publié seul
           deducedFields: [...CHAMPS_DEDUCTIBLES],
         })
         .returning({ id: content.id });
@@ -10851,6 +10855,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
             status: 'draft',
             contentStatus: 'idea',
             scheduledFor: pieceDate,
+            // JAMAIS de publication automatique pour un post de campagne : son texte est
+            // une consigne de rédaction, pas un post. Le 6 oct. 2026, 19 posts ainsi créés
+            // étaient prêts à partir seuls sur Instagram et LinkedIn (défaut de la colonne).
+            autoPost: false,
           });
           contentCreated++;
         }
@@ -10963,6 +10971,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
             status: 'draft',
             contentStatus: 'idea',
             scheduledFor: pieceDate,
+            // JAMAIS de publication automatique pour un post de campagne : son texte est
+            // une consigne de rédaction, pas un post. Le 6 oct. 2026, 19 posts ainsi créés
+            // étaient prêts à partir seuls sur Instagram et LinkedIn (défaut de la colonne).
+            autoPost: false,
           });
           contentCreated++;
         }

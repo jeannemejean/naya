@@ -133,6 +133,9 @@ export async function importerTexte(input: {
       status: "draft",
       contentStatus: "idea",
       scheduledFor: resoudreDate(post.date, aujourdhui),
+      // Un post importé n'est jamais publié seul : la colonne `autoPost` vaut « oui » par
+      // défaut, et une date suffirait à le faire partir (incident évité le 6 oct. 2026).
+      autoPost: false,
       // `[]` et non `null` : le contenu est bien passé par un relevé de déductions, et
       // ce relevé est vide. `null` signifierait « question sans objet » (voir le
       // commentaire de la colonne dans shared/schema.ts).
