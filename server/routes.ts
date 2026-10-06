@@ -4678,6 +4678,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         } catch { /* non-fatal */ }
       }
 
+      // Après la pose des dépendances (elles viennent d'être créées) : précédences + anti-chevauchement
+      // dès le plancher de génération (aujourd'hui côté client, ou début de mois).
+      await storage.fixOverlappingTasks(userId, floor).catch((e: any) =>
+        console.error('[generate-monthly] retassage:', e?.message),
+      );
+
       res.json({ tasks: savedTasks, realismReports, monthlyRationale: aiResult.monthlyRationale });
     } catch (error) {
       console.error("Error generating monthly plan:", error);
@@ -4822,6 +4828,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         : (() => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); })();
 
       const result = await runPlaceToday(userId, today, nowMin);
+      // Précédences + anti-chevauchement à partir d'aujourd'hui, après le placement.
+      await storage.fixOverlappingTasks(userId, today).catch((e: any) =>
+        console.error('[place-today] retassage:', e?.message),
+      );
       res.json(result);
     } catch (error: any) {
       console.error("Error placing today's tasks:", error?.message);
@@ -6504,6 +6514,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         });
       }
 
+      // Précédences + anti-chevauchement après les écritures. Départ = max(début de semaine,
+      // aujourd'hui) : on ne re-tasse jamais des jours déjà passés.
+      await storage.fixOverlappingTasks(userId, weekStart > todayStr ? weekStart : todayStr).catch((e: any) =>
+        console.error('[rebalance-week] retassage:', e?.message),
+      );
+
       res.json({ moved, days });
     } catch (error) {
       console.error("Error rebalancing week:", error);
@@ -6667,6 +6683,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           ...(projectId ? { projectId } : {}),
         });
         created.push(task);
+      }
+      // Précédences + anti-chevauchement dès la date des tâches créées.
+      if (created.length > 0) {
+        await storage.fixOverlappingTasks(userId, targetDate).catch((e: any) =>
+          console.error('[replan/apply] retassage:', e?.message),
+        );
       }
       res.json({ created, count: created.length });
     } catch (error) {

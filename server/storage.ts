@@ -2728,9 +2728,14 @@ export class DatabaseStorage implements IStorage {
   async fixOverlappingTasks(userId: string, fromDate: string): Promise<number> {
     // Durées des tâches du dernier calcul, pour recalculer l'heure de fin à l'application.
     let durees = new Map<number, number>();
+    // Optimisation : une fois qu'un calcul a constaté qu'aucune tâche chargée n'a de dépendance,
+    // les calculs suivants (vérifications après re-tassage) n'interrogent plus la base —
+    // le re-tassage ne crée ni tâche ni dépendance, la situation ne peut pas changer.
+    let sansDependance = false;
 
     const { retasses, deplaces, stable, tours } = await stabiliserPlanning({
       calculerDeplacements: async () => {
+        if (sansDependance) return [];
         // Même périmètre que le re-tassage : tâches visibles (non archivées) à partir de
         // fromDate. Une tâche archivée n'est pas chargée, donc ne contraint jamais.
         const [visibles, prefs] = await Promise.all([
@@ -2741,7 +2746,7 @@ export class DatabaseStorage implements IStorage {
           )),
           this.getUserPreferences(userId),
         ]);
-        if (visibles.length === 0) return [];
+        if (visibles.length === 0) { sansDependance = true; return []; }
         const ids = visibles.map((t) => t.id);
         const idsSet = new Set(ids);
         // Les deux bouts doivent appartenir à ces tâches (donc au même compte).
@@ -2750,7 +2755,7 @@ export class DatabaseStorage implements IStorage {
           dependsOnTaskId: taskDependencies.dependsOnTaskId,
         }).from(taskDependencies).where(inArray(taskDependencies.taskId, ids)))
           .filter((d) => idsSet.has(d.dependsOnTaskId));
-        if (dependances.length === 0) return [];
+        if (dependances.length === 0) { sansDependance = true; return []; }
 
         durees = new Map(visibles.map((t) => [t.id, t.estimatedDuration || 30]));
         const proposes = respecterPrecedences({
