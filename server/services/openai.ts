@@ -5,6 +5,7 @@ import { validateGeneratedIntent } from "./reception/validate-generated-intent";
 import type { Intent } from "./reception/score";
 import { formaterArticulation, type Articulation } from "./brand-links/links";
 import { formaterPreferences, type Preference } from "./campaign-reject/preferences";
+import { TITRE_SAVOIR } from "./memory/savoir-campagne";
 import { imposerLangueDuCompte } from "./garde-langue";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
@@ -1129,6 +1130,11 @@ export interface CampaignGenerationRequest {
    * préférence active — dans les deux cas le prompt reste identique à aujourd'hui.
    */
   preferences?: Preference[];
+  /**
+   * Le savoir que l'utilisatrice a déposé (dossiers de recherche), déjà formaté en lignes
+   * à puces, résolu côté serveur. Absent → le prompt reste identique à avant.
+   */
+  savoir?: string;
 }
 
 export interface GeneratedCampaignProspection {
@@ -1223,7 +1229,7 @@ CAMPAIGN REQUEST:
 - Objective: ${request.objective}
 - Duration: ${request.duration}
 ${request.weekContext ? `- Context: ${request.weekContext}` : ''}
-${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}${request.savoir ? `\n${TITRE_SAVOIR}:\n${request.savoir}\n` : ''}
 
 STRATEGIC RULES:
 - Infer the campaign type: lead_generation | authority_building | product_launch | nurturing | visibility | conversion.
@@ -1304,7 +1310,7 @@ ${phasesSummary}
 
 CHANNELS (respect each channel's declared frequency and formats):
 ${channelsSummary}
-${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}${request.savoir ? `\n${TITRE_SAVOIR}:\n${request.savoir}\n` : ''}
 
 CONTENT RULES:
 - For EACH phase, generate 2-3 representative pieces PER active channel (aim for 10-16 pieces total across the campaign — a representative plan, not every single week).

@@ -30,6 +30,11 @@ function resoudre(dictionnaire: unknown, cle: string): unknown {
   return cle.split(".").reduce<any>((o, p) => (o == null ? undefined : o[p]), dictionnaire);
 }
 
+/** Une clé pluralisée (`x_one` / `x_other`, i18next) est présente si sa forme `_other` l'est. */
+function existe(dictionnaire: unknown, cle: string): boolean {
+  return typeof resoudre(dictionnaire, cle) === "string" || typeof resoudre(dictionnaire, `${cle}_other`) === "string";
+}
+
 function clesUtilisees(): Map<string, string[]> {
   const parCle = new Map<string, string[]>();
   for (const fichier of fichiersTsx(join(RACINE, "client/src"))) {
@@ -56,7 +61,7 @@ describe("toute clé t() existe dans les deux dictionnaires", () => {
   it("aucune clé utilisée ne manque au français", () => {
     const manquantes: string[] = [];
     for (const [cle, fichiers] of clesUtilisees()) {
-      if (typeof resoudre(fr, cle) !== "string") manquantes.push(`${cle} — ${fichiers[0]}`);
+      if (!existe(fr, cle)) manquantes.push(`${cle} — ${fichiers[0]}`);
     }
     expect(manquantes, `\n${manquantes.join("\n")}\n`).toEqual([]);
   });
@@ -64,7 +69,7 @@ describe("toute clé t() existe dans les deux dictionnaires", () => {
   it("aucune clé utilisée ne manque à l'anglais", () => {
     const manquantes: string[] = [];
     for (const [cle, fichiers] of clesUtilisees()) {
-      if (typeof resoudre(en, cle) !== "string") manquantes.push(`${cle} — ${fichiers[0]}`);
+      if (!existe(en, cle)) manquantes.push(`${cle} — ${fichiers[0]}`);
     }
     expect(manquantes, `\n${manquantes.join("\n")}\n`).toEqual([]);
   });

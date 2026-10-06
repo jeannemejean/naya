@@ -1,3 +1,4 @@
+import { savoirPourCampagne } from "./services/memory/savoir-campagne";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "node:crypto";
@@ -61,7 +62,8 @@ import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
-import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossier";
+import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
+import { extraireTextePdf, titreDepuisNomFichier, normaliserTitre, titreParDefaut } from "./services/memory/extraire-pdf";
 import { valideLien } from "./services/brand-links/links";
 import type { Articulation } from "./services/brand-links/links";
 import { articulationsDisponibles } from "./services/brand-links/articulation";
@@ -1174,15 +1176,23 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const user = await storage.getUser(req.userId);
       if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
 
-      const { titre, contenu, projectId } = req.body ?? {};
+      const { contenu, projectId } = req.body ?? {};
+      // " — " sépare le titre du morceau en mémoire : on l'évite dans le titre. Sans titre :
+      // horodatage, pour que deux collages anonymes ne se télescopent pas.
+      const titre = normaliserTitre(typeof req.body?.titre === "string" ? req.body.titre : "") || titreParDefaut();
       if (typeof contenu !== "string" || !contenu.trim()) {
         return res.status(400).json({ message: "contenu_requis" });
       }
 
+      // Même titre qu'un dossier non retiré : on refuse (retirer d'abord, puis redéposer).
+      if (await dossierExiste(req.userId, titre)) {
+        return res.status(409).json({ message: "deja_depose" });
+      }
+
       const r = await deposerDossier({
         userId: req.userId,
-        projectId: typeof projectId === "number" ? projectId : null,
-        titre: typeof titre === "string" ? titre : "",
+        projectId: typeof projectId === "number" && Number.isInteger(projectId) && projectId > 0 ? projectId : null,
+        titre,
         contenu,
       });
 
@@ -1202,6 +1212,79 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
       const rows = await listerDossiers(req.userId);
       res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Dépôt de PDF (1 à 10 fichiers, 10 Mo chacun — limite appliquée par multer AVANT toute
+  // extraction). Un fichier en échec n'empêche pas les autres d'être déposés.
+  app.post("/api/savoir/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+    } catch (e: any) {
+      return res.status(500).json({ message: e.message });
+    }
+    upload.array("fichiers", 10)(req, res, async (err: any) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") return res.status(400).json({ message: "fichier_trop_lourd" });
+        if (err.code === "LIMIT_UNEXPECTED_FILE" || err.code === "LIMIT_FILE_COUNT") {
+          return res.status(400).json({ message: "trop_de_fichiers" });
+        }
+        return res.status(400).json({ message: "envoi_invalide" });
+      }
+      try {
+        const fichiers = (req.files as Express.Multer.File[] | undefined) ?? [];
+        if (fichiers.length === 0) return res.status(400).json({ message: "aucun_fichier" });
+        const pid = Number(req.body?.projectId);
+        const projectId = Number.isInteger(pid) && pid > 0 ? pid : null;
+        const resultats: { fichier: string; titre: string; statut: string; morceaux?: number }[] = [];
+        for (const f of fichiers) {
+          // multer décode les noms en latin1 : on rétablit l'UTF-8 (accents).
+          const nom = Buffer.from(f.originalname, "latin1").toString("utf8");
+          const titre = titreDepuisNomFichier(nom);
+          const fin = (statut: string, morceaux?: number) =>
+            resultats.push({ fichier: nom, titre, statut, ...(morceaux !== undefined ? { morceaux } : {}) });
+          try {
+            // Certains navigateurs/OS envoient octet-stream ou rien : la signature %PDF- tranche.
+            if (!["application/pdf", "application/octet-stream", ""].includes(f.mimetype)) { fin("pas_un_pdf"); continue; }
+            if (f.buffer.subarray(0, 5).toString("latin1") !== "%PDF-") { fin("pas_un_pdf"); continue; }
+            // Doublon refusé AVANT d'analyser le fichier.
+            if (await dossierExiste(req.userId, titre)) { fin("deja_depose"); continue; }
+            const ex = await extraireTextePdf(f.buffer);
+            if (ex.statut !== "ok") { fin(ex.statut); continue; }
+            const r = await deposerDossier({
+              userId: req.userId,
+              projectId,
+              titre,
+              contenu: ex.texte,
+            });
+            if (r.morceaux === 0) { fin("pas_de_texte"); continue; }
+            fin("depose", r.morceaux);
+          } catch (e: any) {
+            console.error("[Savoir] pdf en échec:", e?.message ?? e);
+            fin("illisible");
+          }
+        }
+        res.json({ resultats });
+      } catch (e: any) {
+        console.error("[Savoir] depot pdf impossible:", e?.message ?? e);
+        res.status(500).json({ message: e.message });
+      }
+    });
+  });
+
+  // Retrait d'un dossier : invalidation (superseded_at), jamais de suppression.
+  app.delete("/api/savoir/dossiers", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+      const titre = req.body?.titre;
+      if (typeof titre !== "string" || !titre.trim()) return res.status(400).json({ message: "titre_requis" });
+      const retires = await retirerDossier(req.userId, titre);
+      if (retires === 0) return res.status(404).json({ message: "introuvable" });
+      res.json({ retires });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -10329,10 +10412,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // fonction DÉCIDE de l'angle, elle doit donc éviter ce qui a été rejeté.
       const preferences = await resolvePreferences(userId, ctx.pid);
 
+      const savoir = await savoirPourCampagne(userId, ctx.pid, { objective });
+
       const strategy = await generateCampaignStrategy({
         userId, projectId: ctx.pid, objective, duration: duration || '3_months',
         brandDna: ctx.brandDnaInput as any, weekContext: (weekContext || '') + pastReviewContext,
         preferences,
+        ...(savoir ? { savoir } : {}),
         // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
         // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
         ...(art.articulation ? { articulation: art.articulation } : {}),
@@ -10362,10 +10448,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // reçoit lui aussi les préférences de la marque.
       const preferences = await resolvePreferences(userId, ctx.pid);
 
+      const savoir = await savoirPourCampagne(userId, ctx.pid, { objective, name: (strategy as any).name });
+
       const contentPlan = await generateCampaignContent(
         {
           userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext,
           preferences,
+          ...(savoir ? { savoir } : {}),
           // N'ajoute PAS le champ `articulation` quand aucune campagne n'a été choisie :
           // la génération doit rester identique à avant ce chantier (voir brief tâche 5).
           ...(art.articulation ? { articulation: art.articulation } : {}),

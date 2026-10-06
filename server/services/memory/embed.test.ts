@@ -46,3 +46,29 @@ describe("embedText — cache par hash de contenu", () => {
     expect(embedSpy).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("embedTextsParLots", () => {
+  const textes = Array.from({ length: 150 }, (_, i) => `t${i}`);
+  const vecteurDe = (t: string) => [Number(t.slice(1))];
+  beforeEach(() => {
+    embedSpy.mockReset();
+    embedSpy.mockImplementation(async ({ texts }: { texts: string[] }) => ({ vectors: texts.map(vecteurDe) }));
+  });
+
+  it("150 textes : 3 appels séquentiels de 64 / 64 / 22, ordre conservé", async () => {
+    const { embedTextsParLots } = await import("./embed");
+    const r = await embedTextsParLots(textes, { taille: 64, timeoutMs: 30000 });
+    expect(embedSpy.mock.calls.map((c) => c[0].texts.length)).toEqual([64, 64, 22]);
+    expect(r).toEqual(textes.map(vecteurDe));
+  });
+  it("un lot du milieu en échec : seuls ses textes restent null", async () => {
+    const { embedTextsParLots } = await import("./embed");
+    embedSpy.mockImplementationOnce(async ({ texts }: any) => ({ vectors: texts.map(vecteurDe) }));
+    embedSpy.mockImplementationOnce(async () => { throw new Error("boom"); });
+    const r = await embedTextsParLots(textes, { taille: 64 });
+    expect(r).toHaveLength(150);
+    expect(r.slice(0, 64)).toEqual(textes.slice(0, 64).map(vecteurDe));
+    expect(r.slice(64, 128).every((v) => v === null)).toBe(true);
+    expect(r.slice(128)).toEqual(textes.slice(128).map(vecteurDe));
+  });
+});

@@ -1,7 +1,8 @@
 import { db } from "../../db";
 import { sql, and, eq, inArray, isNull } from "drizzle-orm";
 import { memoryEntries } from "@shared/schema";
-import { embedTexts } from "./embed";
+import { embedTextsParLots } from "./embed";
+import { normaliserTitre, titreParDefaut } from "./extraire-pdf";
 import { decouperDocument } from "./decoupe-document";
 
 /**
@@ -38,14 +39,15 @@ export async function deposerDossier(input: {
   const morceaux = decouperDocument(input.contenu);
   if (morceaux.length === 0) return { morceaux: 0, vectorises: 0, ids: [] };
 
-  const titre = input.titre.trim() || "Dossier sans titre";
+  const titre = normaliserTitre(input.titre) || titreParDefaut();
 
   // Le titre préfixe chaque morceau : isolé, un morceau du milieu d'un dossier ne dit pas
   // de quoi il parle, et son embedding non plus.
   const textes = morceaux.map((m) => `${titre} — ${m}`);
 
-  // Best-effort, en un seul appel : `null` si le service est indisponible.
-  const vecteurs = await embedTexts(textes).catch(() => null);
+  // Best-effort, par lots de 64 (délai propre à chaque lot) : un lot en échec = des `null`
+  // pour ses morceaux seulement.
+  const vecteurs = await embedTextsParLots(textes, { taille: 64, timeoutMs: 30_000 }).catch(() => null);
 
   const ids: number[] = [];
   let vectorises = 0;
@@ -120,4 +122,43 @@ export async function perimerSouvenirs(userId: string, ids: number[]): Promise<v
       inArray(memoryEntries.id, ids),
       isNull(memoryEntries.supersededAt),
     ));
+}
+
+/** Préfixe commun des morceaux d'un dossier : `"<titre> — "`. */
+function prefixeDossier(titre: string): string {
+  return `${normaliserTitre(titre) || titreParDefaut()} — `;
+}
+
+/**
+ * Un dossier non retiré porte-t-il déjà ce titre ? (comparaison par début de contenu,
+ * via left() : aucun caractère du titre n'est interprété comme un joker LIKE.)
+ */
+export async function dossierExiste(userId: string, titre: string): Promise<boolean> {
+  const prefixe = prefixeDossier(titre);
+  const r = await db.execute(sql`
+    SELECT 1 FROM memory_entries
+    WHERE user_id = ${userId}
+      AND fil = 'savoir'
+      AND superseded_at IS NULL
+      AND left(content, char_length(${prefixe}::text)) = ${prefixe}::text
+    LIMIT 1
+  `);
+  return (r.rows ?? []).length > 0;
+}
+
+/**
+ * Retire un dossier : ses morceaux sont invalidés (`superseded_at`), jamais supprimés.
+ * Rend le nombre de morceaux retirés.
+ */
+export async function retirerDossier(userId: string, titre: string): Promise<number> {
+  const prefixe = prefixeDossier(titre);
+  const r = await db.execute(sql`
+    UPDATE memory_entries
+    SET superseded_at = now()
+    WHERE user_id = ${userId}
+      AND fil = 'savoir'
+      AND superseded_at IS NULL
+      AND left(content, char_length(${prefixe}::text)) = ${prefixe}::text
+  `);
+  return (r as any).rowCount ?? 0;
 }

@@ -544,4 +544,17 @@ describe("Les préférences de la marque atteignent la génération de campagne 
     // appelé quand leur lecture a échoué.
     expect(hoisted.generateCampaignStrategy).not.toHaveBeenCalled();
   });
+
+  it("savoir : la récupération échoue (db sans execute) → la génération a quand même lieu, sans champ savoir", async () => {
+    for (const etape of ["strategy", "content"]) {
+      const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/${etape}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objective: "Vendre plus", duration: "1_month", projectId: 1, strategy: STRATEGY_STUB }),
+      });
+      expect(res.status).toBe(200);
+    }
+    expect(hoisted.generateCampaignStrategy.mock.calls[0][0].savoir).toBeUndefined();
+    expect(hoisted.generateCampaignContent.mock.calls[0][0].savoir).toBeUndefined();
+  });
 });
