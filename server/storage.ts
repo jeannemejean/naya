@@ -156,6 +156,8 @@ import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
+import { respecterPrecedences } from "./services/precedence";
+import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
 import { blockedRangesByDate } from "./services/task-schedule-fields";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
@@ -164,6 +166,20 @@ import type { StepSendKey } from "./services/prospection-idempotence";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC } from "./utils/timezone";
+
+/**
+ * « Aujourd'hui » (YYYY-MM-DD) et « maintenant » (minutes depuis minuit) en heure de Paris —
+ * pour ne JAMAIS replanifier une tâche du jour courant dans le passé.
+ */
+function maintenantParis(): { aujourdhui: string; maintenantMin: number } {
+  const aujourdhui = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  const [h, m] = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date()).split(':').map(Number);
+  return { aujourdhui, maintenantMin: h * 60 + (m || 0) };
+}
 
 /**
  * Un crédit d'attribution ENRICHI du titre du contenu crédité, résolu côté serveur.
@@ -2702,7 +2718,83 @@ export class DatabaseStorage implements IStorage {
     return { date: fromDate, time: formatMin(DAY_START) };
   }
 
+  /**
+   * Re-tassage commun, désormais « précédences puis re-tassage » en boucle bornée (≤ 5 tours,
+   * cf. services/stabiliser-planning.ts) : une tâche ne commence plus avant la fin (+ tampon)
+   * de ses prérequis non terminés. Sans aucune dépendance, le comportement est exactement
+   * celui d'avant (un seul re-tassage). Renvoie le nombre de tâches touchées
+   * (re-tassées + déplacées par la règle).
+   */
   async fixOverlappingTasks(userId: string, fromDate: string): Promise<number> {
+    // Durées des tâches du dernier calcul, pour recalculer l'heure de fin à l'application.
+    let durees = new Map<number, number>();
+
+    const { retasses, deplaces, stable, tours } = await stabiliserPlanning({
+      calculerDeplacements: async () => {
+        // Même périmètre que le re-tassage : tâches visibles (non archivées) à partir de
+        // fromDate. Une tâche archivée n'est pas chargée, donc ne contraint jamais.
+        const [visibles, prefs] = await Promise.all([
+          db.select().from(tasks).where(and(
+            eq(tasks.userId, userId),
+            isNull(tasks.archivedAt),
+            gte(tasks.scheduledDate, fromDate),
+          )),
+          this.getUserPreferences(userId),
+        ]);
+        if (visibles.length === 0) return [];
+        const ids = visibles.map((t) => t.id);
+        const idsSet = new Set(ids);
+        // Les deux bouts doivent appartenir à ces tâches (donc au même compte).
+        const dependances = (await db.select({
+          taskId: taskDependencies.taskId,
+          dependsOnTaskId: taskDependencies.dependsOnTaskId,
+        }).from(taskDependencies).where(inArray(taskDependencies.taskId, ids)))
+          .filter((d) => idsSet.has(d.dependsOnTaskId));
+        if (dependances.length === 0) return [];
+
+        durees = new Map(visibles.map((t) => [t.id, t.estimatedDuration || 30]));
+        const proposes = respecterPrecedences({
+          taches: visibles.map((t) => ({
+            id: t.id,
+            scheduledDate: t.scheduledDate,
+            scheduledTime: t.scheduledTime,
+            estimatedDuration: t.estimatedDuration,
+            completed: t.completed,
+          })),
+          dependances,
+          calendrier: calendrierDepuisPreferences(prefs, BUFFER_MIN_CEILING),
+        });
+        const { aujourdhui, maintenantMin } = maintenantParis();
+        return deplacementsAdmissibles(proposes, {
+          aujourdhui,
+          maintenantMin,
+          idsFixes: new Set(visibles.filter((t) => t.schedulingMode === 'fixed').map((t) => t.id)),
+        });
+      },
+      appliquerDeplacements: async (d) => {
+        for (const mv of d) {
+          const [h, m] = mv.scheduledTime.split(':').map(Number);
+          const fin = Math.min(24 * 60 - 1, h * 60 + m + (durees.get(mv.id) ?? 30));
+          await db.update(tasks)
+            .set({
+              scheduledDate: mv.scheduledDate,
+              scheduledTime: mv.scheduledTime,
+              scheduledEndTime: `${String(Math.floor(fin / 60)).padStart(2, '0')}:${String(fin % 60).padStart(2, '0')}`,
+            })
+            .where(and(eq(tasks.id, mv.id), eq(tasks.userId, userId)));
+        }
+      },
+      retasser: () => this.retasserJours(userId, fromDate),
+    });
+
+    if (deplaces > 0) {
+      console.log(`[precedence] ${deplaces} déplacement(s), stable=${stable} (${tours} tour(s)) user=${userId}`);
+    }
+    return retasses + deplaces;
+  }
+
+  /** Re-tassage jour par jour (corps historique de fixOverlappingTasks, inchangé). */
+  private async retasserJours(userId: string, fromDate: string): Promise<number> {
     // Le re-tassage doit voir EXACTEMENT ce que la grille affiche, sinon il réattribue
     // des créneaux qui semblent occupés à l'utilisateur :
     //  - les tâches ARCHIVÉES sont exclues (la grille ne les montre pas — cf. getTasksInRange) ;
@@ -2738,12 +2830,7 @@ export class DatabaseStorage implements IStorage {
 
     // « Maintenant » et « aujourd'hui » en heure de Paris — pour ne JAMAIS
     // replanifier une tâche du jour courant dans le passé.
-    const parisToday = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date());
-    const parisNowMin = parseTime(new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false,
-    }).format(new Date()));
+    const { aujourdhui: parisToday, maintenantMin: parisNowMin } = maintenantParis();
 
     // Jours ouvrés, pour reporter le débordement au bon jour.
     const workDaySet = new Set(
