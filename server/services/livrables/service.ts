@@ -19,8 +19,8 @@ export interface LivrablesDeps {
   mediaReferenceParUnContenu(userId: string, mediaId: number, url: string | null): Promise<boolean>;
   deposerMemoire(input: { userId: string; projectId: number | null; titre: string; contenu: string }): Promise<{ morceaux: number; ids: number[] }>;
   perimerMemoire(userId: string, ids: number[]): Promise<void>;
-  supprimerObjetPublic(url: string): Promise<void>;
-  supprimerObjetPrive(key: string): Promise<void>;
+  supprimerObjetPublic(userId: string, url: string): Promise<void>;
+  supprimerObjetPrive(userId: string, key: string): Promise<void>;
 }
 
 export interface NouveauLivrable {
@@ -134,11 +134,11 @@ export async function supprimerLivrable(deps: LivrablesDeps, id: number, userId:
     const utilise = await deps.mediaReferenceParUnContenu(userId, actuel.mediaId, actuel.url);
     if (!utilise) {
       await deps.supprimerMedia(actuel.mediaId, userId);
-      if (actuel.url) await deps.supprimerObjetPublic(actuel.url).catch(() => {});
+      if (actuel.url) await deps.supprimerObjetPublic(userId, actuel.url).catch(() => {});
     }
   }
   if (actuel.kind === "fichier" && actuel.url) {
-    await deps.supprimerObjetPrive(actuel.url).catch(() => {});
+    await deps.supprimerObjetPrive(userId, actuel.url).catch(() => {});
   }
 
   return deps.supprimer(id, userId);

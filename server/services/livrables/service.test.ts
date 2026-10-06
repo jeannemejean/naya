@@ -139,7 +139,7 @@ describe("supprimerLivrable", () => {
     expect(await supprimerLivrable(deps, l.id, "u1")).toBe(true);
     expect(deps.perimerMemoire).toHaveBeenCalledWith("u1", [100]);
     expect(deps.supprimerMedia).toHaveBeenCalledWith(42, "u1");
-    expect(deps.supprimerObjetPublic).toHaveBeenCalledWith("https://m/a.jpg");
+    expect(deps.supprimerObjetPublic).toHaveBeenCalledWith("u1", "https://m/a.jpg");
   });
 
   it("garde le média et l'objet s'ils sont utilisés par un post", async () => {
@@ -154,7 +154,7 @@ describe("supprimerLivrable", () => {
     const { deps } = fakeDeps();
     const l = await creerLivrable(deps, { ...base, kind: "fichier", url: "livrables/u1/k.pdf", content: null, fileName: "d.pdf", mimeType: "application/pdf", size: 1 });
     await supprimerLivrable(deps, l.id, "u1");
-    expect(deps.supprimerObjetPrive).toHaveBeenCalledWith("livrables/u1/k.pdf");
+    expect(deps.supprimerObjetPrive).toHaveBeenCalledWith("u1", "livrables/u1/k.pdf");
   });
 
   it("livrable d'un autre compte → false, rien supprimé", async () => {

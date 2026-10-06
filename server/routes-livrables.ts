@@ -9,6 +9,7 @@ import {
   privateStorageConfigured, r2Configured,
 } from "./services/r2-storage";
 import { creerLivrable, modifierLivrable, supprimerLivrable, rattraperMemoire } from "./services/livrables/service";
+import { estCleFichierDe, estUrlMediaDe } from "./services/livrables/urls";
 import { livrablesDeps, listerLivrables } from "./services/livrables/deps";
 
 const KINDS: LivrableKind[] = ["texte", "media", "fichier", "lien"];
@@ -78,8 +79,8 @@ export function registerLivrablesRoutes(app: Express): void {
     try {
       const userId = req.userId;
       const { taskId, kind, content, url: urlBrute, fileName, mimeType, size } = req.body ?? {};
-      // Le lien est nettoyé avant validation et stockage.
-      const url = kind === "lien" && typeof urlBrute === "string" ? urlBrute.trim() : urlBrute;
+      // L'URL est nettoyée avant validation et stockage.
+      const url = typeof urlBrute === "string" ? urlBrute.trim() : urlBrute;
       if (taskId != null && idPositif(taskId) == null) return res.status(400).json({ message: "invalid_task_id" });
       if (!KINDS.includes(kind)) return res.status(400).json({ message: "invalid_kind" });
       if (kind === "lien" && !(typeof url === "string" && lienValide(url))) {
@@ -91,8 +92,12 @@ export function registerLivrablesRoutes(app: Express): void {
       if ((kind === "media" || kind === "fichier") && !(typeof url === "string" && url)) {
         return res.status(400).json({ message: "url_required" });
       }
-      if (kind === "fichier" && !url.startsWith(`livrables/${userId}/`)) {
-        return res.status(400).json({ message: "invalid_url" }); // jamais la clé d'un autre compte
+      // Forme exacte des URL/clés que nous avons produites : jamais l'objet d'un autre compte.
+      if (kind === "media" && !estUrlMediaDe(userId, url)) {
+        return res.status(400).json({ message: "invalid_url" });
+      }
+      if (kind === "fichier" && !estCleFichierDe(userId, url)) {
+        return res.status(400).json({ message: "invalid_url" });
       }
 
       // getTask ne filtre pas par utilisateur : la tâche d'un autre compte est traitée comme introuvable.
@@ -106,6 +111,9 @@ export function registerLivrablesRoutes(app: Express): void {
         const prefs = await storage.getUserPreferences(userId);
         projectId = (prefs as any)?.activeProjectId ?? null;
       }
+
+      // Le projet doit appartenir à l'utilisateur, sinon on l'ignore.
+      if (projectId != null && !(await storage.getProject(projectId, userId))) projectId = null;
 
       const l = await creerLivrable(livrablesDeps, {
         userId,

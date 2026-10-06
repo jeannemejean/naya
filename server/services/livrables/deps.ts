@@ -5,6 +5,7 @@ import { content, livrables, mediaLibrary } from "@shared/schema";
 import { deposerDossier, perimerSouvenirs } from "../memory/deposer-dossier";
 import { deleteObject, deletePrivateObject, keyFromPublicUrl } from "../r2-storage";
 import type { LivrablesDeps } from "./service";
+import { estCleFichierDe, estUrlMediaDe } from "./urls";
 
 export const livrablesDeps: LivrablesDeps = {
   async inserer(row) {
@@ -51,11 +52,16 @@ export const livrablesDeps: LivrablesDeps = {
     return { morceaux: r.morceaux, ids: r.ids };
   },
   perimerMemoire: perimerSouvenirs,
-  async supprimerObjetPublic(url) {
+  async supprimerObjetPublic(userId, url) {
+    // Défense en profondeur : jamais l'objet d'un autre compte.
+    if (!estUrlMediaDe(userId, url)) return;
     const key = keyFromPublicUrl(url);
     if (key) await deleteObject(key);
   },
-  supprimerObjetPrive: deletePrivateObject,
+  async supprimerObjetPrive(userId, key) {
+    if (!estCleFichierDe(userId, key)) return;
+    await deletePrivateObject(key);
+  },
 };
 
 /** Livrables d'une tâche ou d'un projet, récents d'abord, filtrés par propriétaire. */
