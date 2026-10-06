@@ -43,3 +43,30 @@ export function debutEffectifDePlanification(
   if (!dateValide(dateDeDepart)) return aujourdhui;
   return dateDeDepart > aujourdhui ? dateDeDepart : aujourdhui;
 }
+
+/**
+ * Les préférences à écrire quand l'onboarding se termine. PURE.
+ *
+ * Demande de Jeanne (6 octobre 2026) : « au moment où on répond à toutes les questions,
+ * Naya génère automatiquement le premier planning ». Après une réinitialisation, elle
+ * voyait à la place « Planification en pause ».
+ *
+ * Cause : la réinitialisation conserve `user_preferences` (décision produit — les
+ * réglages survivent), donc un planning mis en pause, ou une date de démarrage future,
+ * survivait aussi. Le planificateur du matin et le brief du jour sautaient le compte.
+ *
+ * Terminer l'onboarding, c'est démarrer : on repart actif, sans date de démarrage
+ * (= aujourd'hui), et le brief d'un ancien compte ne doit pas s'afficher sur le nouveau.
+ * Les vrais réglages (horaires, jours travaillés…) ne sont pas touchés.
+ */
+export function preferencesDeFinOnboarding(activeProjectId: number) {
+  return {
+    activeProjectId,
+    planningStatus: "active" as const,
+    planningPausedAt: null,
+    planningStartDate: null,
+    dailyBriefDate: null,
+    dailyBriefContent: null,
+    dailyBriefDismissed: false,
+  };
+}

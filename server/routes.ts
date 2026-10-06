@@ -156,6 +156,7 @@ import {
 } from "@shared/schema";
 import { articleAnalysisService } from "./services/article-analysis";
 import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner";
+import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import {
   getAuthUrl,
@@ -1590,8 +1591,9 @@ Write in clear, direct language. Be specific — reference actual offers, audien
         });
       }
 
-      // 6. Set active project in preferences
-      await storage.upsertUserPreferences(userId, { activeProjectId: primaryProjectRecord.id });
+      // 6. Marque active + planning démarré (lève une pause ou une date future héritée
+      //    d'avant une réinitialisation — voir preferencesDeFinOnboarding).
+      await storage.upsertUserPreferences(userId, preferencesDeFinOnboarding(primaryProjectRecord.id));
 
       // 7. Persona detection for primary project
       try {
