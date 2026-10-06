@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Library, Upload, Loader2, Trash2 } from "lucide-react";
+import { Library, Upload, Loader2, Trash2, AlertTriangle } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +20,9 @@ type Statut = "depose" | "pas_de_texte" | "illisible" | "pas_un_pdf" | "trop_lou
 type ResultatPdf = { fichier: string; titre: string; statut: Statut; morceaux?: number };
 
 const QUERY_KEY = ["/api/savoir/dossiers"];
+const INDEX_KEY = ["/api/savoir/index"];
+type EtatIndex = { disponible: boolean; raison?: string; manquants: number };
+type ResultatIndex = { traites: number; indexes: number; echecs: number; raison?: string };
 const MAX_FICHIERS = 10;
 const MAX_OCTETS = 10 * 1024 * 1024;
 
@@ -40,6 +43,41 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  const { data: dossiers = [] } = useQuery<Dossier[]>({
  queryKey: QUERY_KEY,
  enabled: estOwner,
+ });
+
+ const { data: etatIndex } = useQuery<EtatIndex>({
+ queryKey: INDEX_KEY,
+ enabled: estOwner,
+ staleTime: 5 * 60 * 1000,
+ });
+
+ const libelleRaison = (raison?: string) => {
+ if (!raison) return t("savoirPage.reasons.indisponible");
+ const cle = `savoirPage.reasons.${raison}`;
+ return i18n.exists(cle) ? t(cle) : raison;
+ };
+
+ const indexer = useMutation({
+ mutationFn: async (): Promise<ResultatIndex> => {
+ const res = await apiRequest("POST", "/api/savoir/index", {});
+ return res.json();
+ },
+ onSuccess: (r) => {
+ queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+ queryClient.invalidateQueries({ queryKey: INDEX_KEY });
+ if (r.echecs > 0) {
+ toast({
+ title: t("savoirPage.indexPartial", { indexes: r.indexes, echecs: r.echecs, raison: libelleRaison(r.raison) }),
+ variant: "destructive",
+ });
+ } else {
+ toast({ title: t("savoirPage.indexDone", { indexes: r.indexes }) });
+ }
+ },
+ onError: () => {
+ queryClient.invalidateQueries({ queryKey: INDEX_KEY });
+ toast({ title: t("savoirPage.indexFailed"), variant: "destructive" });
+ },
  });
 
  const envoyerPdf = useMutation({
@@ -157,6 +195,33 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  <p className="max-w-2xl mx-auto text-sm text-muted-foreground">{t("savoirPage.reserved")}</p>
  ) : (
  <div className="max-w-2xl mx-auto space-y-6">
+ {etatIndex && !etatIndex.disponible && (
+ <div
+ role="alert"
+ data-testid="savoir-index-warning"
+ className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-foreground"
+ >
+ <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-destructive" />
+ <span>{t("savoirPage.indexDown", { raison: libelleRaison(etatIndex.raison) })}</span>
+ </div>
+ )}
+ {etatIndex && etatIndex.manquants > 0 && (
+ <div className="flex justify-end">
+ <Button
+ size="sm"
+ variant="outline"
+ data-testid="savoir-index-button"
+ disabled={indexer.isPending || !etatIndex.disponible}
+ onClick={() => indexer.mutate()}
+ >
+ {indexer.isPending ? (
+ <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />{t("savoirPage.indexing")}</>
+ ) : (
+ t("savoirPage.indexMissing", { count: etatIndex.manquants })
+ )}
+ </Button>
+ </div>
+ )}
  <Card>
  <CardHeader className="pb-3">
  <CardTitle className="text-base">{t("savoirPage.pdfTitle")}</CardTitle>

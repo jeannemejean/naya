@@ -1789,6 +1789,18 @@ const en = {
  removing: "Removing…",
  removed: "Dossier removed",
  removeFailed: "Removal failed. Try again.",
+ indexDown: "Naya can't index her memories right now ({{raison}}). They stay saved, but she can't find them by topic.",
+ indexMissing: "Index the missing chunks ({{count}})",
+ indexing: "Indexing…",
+ indexDone: "{{indexes}} chunks indexed.",
+ indexPartial: "{{indexes}} indexed, {{echecs}} failed ({{raison}}).",
+ indexFailed: "Indexing failed. Try again.",
+ reasons: {
+ credit_balance_exhausted: "OpenAI credit exhausted",
+ insufficient_quota: "OpenAI credit exhausted",
+ timeout: "timed out",
+ indisponible: "indexing service unavailable",
+ },
  },
  settingsPage: {
  connectionExpired: "Connection expired — reconnect {{compte}}",
