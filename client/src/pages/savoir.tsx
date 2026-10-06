@@ -45,11 +45,23 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  enabled: estOwner,
  });
 
- const { data: etatIndex } = useQuery<EtatIndex>({
+ const { data: etatIndex, refetch: rafraichirIndex, isFetching: verification } = useQuery<EtatIndex>({
  queryKey: INDEX_KEY,
  enabled: estOwner,
- staleTime: 5 * 60 * 1000,
+ staleTime: 30 * 1000,
+ refetchOnWindowFocus: true,
  });
+
+ // « Revérifier » : contourne le cache serveur (?forcer=1) puis met à jour la requête.
+ const reverifier = async () => {
+ try {
+ const res = await fetch("/api/savoir/index?forcer=1", { credentials: "include" });
+ if (res.ok) queryClient.setQueryData(INDEX_KEY, await res.json());
+ else await rafraichirIndex();
+ } catch {
+ await rafraichirIndex();
+ }
+ };
 
  const libelleRaison = (raison?: string) => {
  if (!raison) return t("savoirPage.reasons.indisponible");
@@ -202,7 +214,16 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-foreground"
  >
  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-destructive" />
- <span>{t("savoirPage.indexDown", { raison: libelleRaison(etatIndex.raison) })}</span>
+ <span className="flex-1">{t("savoirPage.indexDown", { raison: libelleRaison(etatIndex.raison) })}</span>
+ <button
+ type="button"
+ data-testid="savoir-index-recheck"
+ disabled={verification}
+ onClick={reverifier}
+ className="flex-shrink-0 underline text-xs disabled:opacity-50"
+ >
+ {t("savoirPage.recheck")}
+ </button>
  </div>
  )}
  {etatIndex && etatIndex.manquants > 0 && (

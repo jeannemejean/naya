@@ -1791,6 +1791,7 @@ const en = {
  removeFailed: "Removal failed. Try again.",
  indexDown: "Naya can't index her memories right now ({{raison}}). They stay saved, but she can't find them by topic.",
  indexMissing: "Index the missing chunks ({{count}})",
+ recheck: "Check again",
  indexing: "Indexing…",
  indexDone: "{{indexes}} chunks indexed.",
  indexPartial: "{{indexes}} indexed, {{echecs}} failed ({{raison}}).",

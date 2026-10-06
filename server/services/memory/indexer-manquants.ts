@@ -90,23 +90,38 @@ export interface EtatIndex {
   raison?: string;
   manquants: number;
 }
-const SONDE_TTL_MS = 5 * 60 * 1000;
+const SONDE_TTL_OK_MS = 5 * 60 * 1000;
+// Un échec n'est mémorisé que 30 s : après une recharge de crédit, la bannière doit vite partir.
+const SONDE_TTL_ECHEC_MS = 30 * 1000;
 let sondeCache: { a: number; disponible: boolean; raison?: string } | null = null;
+let sondeEnCours: Promise<{ disponible: boolean; raison?: string }> | null = null;
 
 export function invaliderSonde(): void {
   sondeCache = null;
 }
 
-/** Sonde réelle (hors cache d'embedText) : un vrai appel fournisseur, mémorisé 5 min. */
-export async function sonderEmbeddings(): Promise<{ disponible: boolean; raison?: string }> {
-  if (sondeCache && Date.now() - sondeCache.a < SONDE_TTL_MS) {
-    return { disponible: sondeCache.disponible, ...(sondeCache.raison ? { raison: sondeCache.raison } : {}) };
+/** Sonde réelle (hors cache d'embedText) : succès mémorisé 5 min, échec 30 s ; `forcer` ignore le cache. */
+export async function sonderEmbeddings(opts: { forcer?: boolean } = {}): Promise<{ disponible: boolean; raison?: string }> {
+  if (!opts.forcer && sondeCache) {
+    const ttl = sondeCache.disponible ? SONDE_TTL_OK_MS : SONDE_TTL_ECHEC_MS;
+    if (Date.now() - sondeCache.a < ttl) {
+      return { disponible: sondeCache.disponible, ...(sondeCache.raison ? { raison: sondeCache.raison } : {}) };
+    }
   }
-  const vecs = await embedTexts(["ping"], 5000);
-  const ok = !!vecs?.[0];
-  const raison = ok ? undefined : lireEtatEmbeddings().dernierEchec?.raison ?? "erreur";
-  sondeCache = { a: Date.now(), disponible: ok, raison };
-  return { disponible: ok, ...(raison ? { raison } : {}) };
+  // Appels concurrents à froid : une seule sonde partagée.
+  if (sondeEnCours) return sondeEnCours;
+  sondeEnCours = (async () => {
+    try {
+      const vecs = await embedTexts(["ping"], 5000);
+      const ok = !!vecs?.[0];
+      const raison = ok ? undefined : lireEtatEmbeddings().dernierEchec?.raison ?? "erreur";
+      sondeCache = { a: Date.now(), disponible: ok, raison };
+      return { disponible: ok, ...(raison ? { raison } : {}) };
+    } finally {
+      sondeEnCours = null;
+    }
+  })();
+  return sondeEnCours;
 }
 
 export async function compterManquants(userId: string): Promise<number> {

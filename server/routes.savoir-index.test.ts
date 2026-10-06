@@ -59,6 +59,22 @@ describe("/api/savoir/index", () => {
     expect(indexMock.compterManquants).toHaveBeenCalledWith("user-1");
   });
 
+  it("GET : ?forcer=1 est transmis à la sonde, sinon non", async () => {
+    indexMock.sonderEmbeddings.mockResolvedValue({ disponible: true });
+    indexMock.compterManquants.mockResolvedValue(0);
+    await fetch(url());
+    expect(indexMock.sonderEmbeddings).toHaveBeenLastCalledWith({ forcer: false });
+    await fetch(url() + "?forcer=1");
+    expect(indexMock.sonderEmbeddings).toHaveBeenLastCalledWith({ forcer: true });
+  });
+
+  it("POST : la sonde est invalidée même si l'indexation lève", async () => {
+    indexMock.indexerManquants.mockRejectedValue(new Error("boom"));
+    const res = await fetch(url(), { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(indexMock.invaliderSonde).toHaveBeenCalled();
+  });
+
   it("POST : lance l'indexation pour l'utilisateur et invalide la sonde", async () => {
     indexMock.indexerManquants.mockResolvedValue({ traites: 3, indexes: 3, echecs: 0 });
     const res = await fetch(url(), { method: "POST" });

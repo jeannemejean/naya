@@ -1795,6 +1795,7 @@ const fr = {
  removeFailed: "Le retrait a échoué. Réessaie.",
  indexDown: "Naya ne peut pas indexer ses souvenirs pour l'instant ({{raison}}). Ils restent enregistrés mais elle ne peut pas les retrouver par sujet.",
  indexMissing: "Indexer les morceaux manquants ({{count}})",
+ recheck: "Revérifier",
  indexing: "Indexation…",
  indexDone: "{{indexes}} morceaux indexés.",
  indexPartial: "{{indexes}} indexés, {{echecs}} en échec ({{raison}}).",

@@ -1281,7 +1281,7 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     try {
       const user = await storage.getUser(req.userId);
       if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
-      const [sonde, manquants] = await Promise.all([sonderEmbeddings(), compterManquants(req.userId)]);
+      const [sonde, manquants] = await Promise.all([sonderEmbeddings({ forcer: req.query?.forcer === "1" }), compterManquants(req.userId)]);
       res.json({ ...sonde, manquants });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -1294,11 +1294,12 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       const user = await storage.getUser(req.userId);
       if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
       const r = await indexerManquants(depsReelles, req.userId);
-      invaliderSonde();
       res.json(r);
     } catch (e: any) {
       console.error("[Savoir] indexation impossible:", e?.message ?? e);
       res.status(500).json({ message: e.message });
+    } finally {
+      invaliderSonde();
     }
   });
 
