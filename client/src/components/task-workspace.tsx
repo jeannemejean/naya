@@ -380,7 +380,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  </div>
 
- <div className="flex-1 flex flex-col px-5 pt-3 pb-3 min-h-0">
+ <div className="flex-1 flex flex-col px-5 pt-3 pb-3 min-h-[120px]">
  <Input
  placeholder={t('taskWorkspace.optionalTitle')}
  value={title}
@@ -436,7 +436,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
 
  {task && (
- <div id="livrables-section" className="flex-shrink-0 border-t border-naya-olive-18 max-h-72 overflow-y-auto px-5 py-3">
+ <div id="livrables-section" className="flex-shrink-0 border-t border-naya-olive-18 max-h-[35vh] overflow-y-auto px-5 py-3">
  <LivrablesSection taskId={task.id} focus={focusLivrables} onFaitHorsNaya={onFaitHorsNaya} />
  </div>
  )}

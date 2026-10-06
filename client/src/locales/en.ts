@@ -1405,6 +1405,8 @@ const en = {
  err_invalid_url: "This link isn't valid (it must start with http:// or https://).",
  err_upload_failed: "Upload failed. Your description is kept, try again.",
  err_generic: "Submission failed. Try again.",
+ err_update: "Your change wasn't saved. Try again.",
+ err_delete: "Delete failed. Try again.",
  },
 
  taskWorkspace: {

@@ -1409,6 +1409,8 @@ const fr = {
  err_invalid_url: "Ce lien n'est pas valide (il doit commencer par http:// ou https://).",
  err_upload_failed: "L'envoi a échoué. Ta description est gardée, réessaie.",
  err_generic: "Le dépôt a échoué. Réessaie.",
+ err_update: "La modification n'a pas été enregistrée. Réessaie.",
+ err_delete: "La suppression a échoué. Réessaie.",
  },
 
  taskWorkspace: {

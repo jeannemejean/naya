@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,7 +13,7 @@ import {
 import { LivrableCarte } from "./LivrableCarte";
 
 type Brouillon =
-  | { id: string; kind: "media" | "fichier"; file: File; apercu: string | null; content: string; erreur: string | null; envoi: boolean }
+  | { id: string; kind: "media" | "fichier"; file: File; apercu: string | null; urlEnvoyee?: string; content: string; erreur: string | null; envoi: boolean }
   | { id: string; kind: "texte" | "lien"; url: string; content: string; erreur: string | null; envoi: boolean };
 
 export default function LivrablesSection({
@@ -26,7 +27,20 @@ export default function LivrablesSection({
   const qc = useQueryClient();
   const media = useRef<HTMLInputElement>(null);
   const fichier = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
   const [brouillons, setBrouillons] = useState<Brouillon[]>([]);
+
+  // Aperçus (object URLs) à libérer au démontage.
+  const brouillonsRef = useRef<Brouillon[]>([]);
+  brouillonsRef.current = brouillons;
+  useEffect(() => () => {
+    brouillonsRef.current.forEach((b) => { if ("apercu" in b && b.apercu) URL.revokeObjectURL(b.apercu); });
+  }, []);
+
+  const retirer = (b: Brouillon) => {
+    if ("apercu" in b && b.apercu) URL.revokeObjectURL(b.apercu);
+    setBrouillons((bs) => bs.filter((x) => x.id !== b.id));
+  };
 
   const { data: livrables = [] } = useQuery<LivrableClient[]>({ queryKey: cleLivrablesTache(taskId) });
   const { data: config } = useQuery<{ fichiers: boolean; medias: boolean }>({ queryKey: ["/api/livrables/config"] });
@@ -49,7 +63,12 @@ export default function LivrablesSection({
     maj(b.id, { envoi: true, erreur: null });
     try {
       if (b.kind === "media" || b.kind === "fichier") {
-        const { url } = await televerser(b.kind, b.file);
+        // Un envoi déjà réussi n'est pas refait lors d'une nouvelle tentative.
+        let url = b.urlEnvoyee;
+        if (!url) {
+          url = (await televerser(b.kind, b.file)).url;
+          maj(b.id, { urlEnvoyee: url });
+        }
         await creerLivrableApi({
           taskId, kind: b.kind, url, content: b.content || null,
           fileName: b.file.name, mimeType: b.file.type, size: b.file.size,
@@ -71,10 +90,12 @@ export default function LivrablesSection({
   const modifier = useMutation({
     mutationFn: ({ id, content }: { id: number; content: string | null }) => modifierLivrableApi(id, content),
     onSuccess: invalider,
+    onError: () => toast({ description: t("livrables.err_update"), variant: "destructive" }),
   });
   const supprimer = useMutation({
     mutationFn: (id: number) => supprimerLivrableApi(id),
     onSuccess: invalider,
+    onError: () => toast({ description: t("livrables.err_delete"), variant: "destructive" }),
   });
 
   return (
@@ -131,7 +152,7 @@ export default function LivrablesSection({
             <Button size="sm" disabled={b.envoi} onClick={() => deposer(b)}>
               {b.envoi ? t("livrables.saving") : b.erreur ? t("livrables.retry") : t("livrables.save")}
             </Button>
-            <Button size="sm" variant="ghost" disabled={b.envoi} onClick={() => setBrouillons((bs) => bs.filter((x) => x.id !== b.id))}>
+            <Button size="sm" variant="ghost" disabled={b.envoi} onClick={() => retirer(b)}>
               {t("livrables.remove")}
             </Button>
           </div>
@@ -143,7 +164,7 @@ export default function LivrablesSection({
       )}
       {livrables.map((l) => (
         <LivrableCarte key={l.id} livrable={l} enCours={modifier.isPending || supprimer.isPending}
-          onModifier={(content) => modifier.mutate({ id: l.id, content })}
+          onModifier={(content) => modifier.mutateAsync({ id: l.id, content }).then(() => undefined)}
           onSupprimer={() => supprimer.mutate(l.id)} />
       ))}
     </section>

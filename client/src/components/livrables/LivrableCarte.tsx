@@ -9,7 +9,7 @@ export function LivrableCarte({
   livrable, onModifier, onSupprimer, enCours,
 }: {
   livrable: LivrableClient;
-  onModifier: (content: string | null) => void;
+  onModifier: (content: string | null) => Promise<void>;
   onSupprimer: () => void;
   enCours: boolean;
 }) {
@@ -50,7 +50,10 @@ export function LivrableCarte({
       {edition && (
         <div className="space-y-2">
           <Textarea value={texte} onChange={(e) => setTexte(e.target.value)} rows={3} />
-          <Button size="sm" disabled={enCours} onClick={() => { onModifier(texte.trim() || null); setEdition(false); }}>
+          <Button size="sm" disabled={enCours} onClick={async () => {
+ // On ne ferme qu'après succès : le texte tapé survit à un échec.
+ try { await onModifier(texte.trim() || null); setEdition(false); } catch { /* le parent affiche l'erreur */ }
+ }}>
             {t("livrables.save")}
           </Button>
         </div>
