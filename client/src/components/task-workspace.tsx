@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
+import LivrablesSection from "@/components/livrables/LivrablesSection";
 import type { Task, Project, TaskWorkspaceEntry } from "@shared/schema";
 
 interface TaskWorkspaceProps {
@@ -19,6 +20,8 @@ interface TaskWorkspaceProps {
  open: boolean;
  onClose: () => void;
  onDeleted?: () => void;
+ focusLivrables?: boolean;
+ onFaitHorsNaya?: () => void;
 }
 
 function formatRelative(date: string | Date) {
@@ -52,7 +55,7 @@ function inferWorkspaceModule(task: Task | null): string {
   return "strategy";
 }
 
-export default function TaskWorkspace({ task, project, open, onClose, onDeleted }: TaskWorkspaceProps) {
+export default function TaskWorkspace({ task, project, open, onClose, onDeleted, focusLivrables = false, onFaitHorsNaya }: TaskWorkspaceProps) {
  const { t } = useTranslation();
  const queryClient = useQueryClient();
  const { toast } = useToast();
@@ -219,6 +222,13 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  setTitreEnregistre(null);
  setConfirmerFermeture(false);
  }, [activeType]);
+
+ // Quand on arrive pour déposer un livrable, on amène la section à l'écran.
+ useEffect(() => {
+ if (open && focusLivrables) {
+ document.getElementById("livrables-section")?.scrollIntoView({ block: "start" });
+ }
+ }, [open, focusLivrables]);
 
  const activeTypeConfig = WORKSPACE_TYPES.find(t => t.id === activeType) ?? WORKSPACE_TYPES[0];
 
@@ -424,6 +434,12 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted 
  </button>
  </div>
  </div>
+
+ {task && (
+ <div id="livrables-section" className="flex-shrink-0 border-t border-naya-olive-18 max-h-72 overflow-y-auto px-5 py-3">
+ <LivrablesSection taskId={task.id} focus={focusLivrables} onFaitHorsNaya={onFaitHorsNaya} />
+ </div>
+ )}
 
  <div className="flex-shrink-0 border-t border-naya-olive-18 max-h-60 overflow-y-auto">
  <div className="px-5 py-2.5">
