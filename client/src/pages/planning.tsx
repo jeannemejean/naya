@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useProject } from "@/lib/project-context";
 import { ChevronLeft, ChevronRight, Clock, Loader2, Brain } from "lucide-react";
 import TaskWorkspace from "@/components/task-workspace";
+import { useCocherAvecLivrable } from "@/hooks/useCocherAvecLivrable";
 import { PlanningRestartButton } from "@/components/planning-restart-button";
 import Sidebar from "@/components/sidebar";
 import TimeGrid from "@/components/time-grid";
@@ -151,6 +152,7 @@ export default function Planning({ onSearchClick }: Props) {
     return new Date();
   });
   const [workspaceTask, setWorkspaceTask] = useState<Task | null>(null);
+  const [focusLivrables, setFocusLivrables] = useState(false);
   const [milestoneConfirmTarget, setMilestoneConfirmTarget] = useState<Task | null>(null);
   const [strategyExpanded, setStrategyExpanded] = useState(false);
   const [lastStrategySignal, setLastStrategySignal] = useState<{
@@ -275,6 +277,17 @@ export default function Planning({ onSearchClick }: Props) {
     },
   });
 
+  // Cocher une tâche de production sans livrable ouvre le dépôt (sans bloquer).
+  const cocherAvecLivrable = useCocherAvecLivrable({
+    cocher: (id) => toggleMutation.mutate(id),
+    ouvrirDepot: (task) => { setFocusLivrables(true); setWorkspaceTask(task as any); },
+  });
+  // Les enfants ne transmettent que l'id : on retrouve la tâche dans la liste chargée.
+  const cocherParId = (taskId: number) => {
+    const task = rangeTasks.find(x => x.id === taskId);
+    if (task && taskId >= 0) void cocherAvecLivrable(task);
+    else toggleMutation.mutate(taskId);
+  };
 
   const pauseMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/planning/pause").then(r => r.json()),
@@ -384,7 +397,7 @@ export default function Planning({ onSearchClick }: Props) {
         <div
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] cursor-pointer hover:opacity-80 transition-opacity ${task.completed ? 'opacity-40 line-through' : ''} ${isBlocked ? 'opacity-50' : ''}`}
           style={{ backgroundColor: `${projColor}15`, borderLeft: `2px solid ${projColor}` }}
-          onClick={() => setWorkspaceTask(task)}
+          onClick={() => { setFocusLivrables(false); setWorkspaceTask(task); }}
         >
           {energyBadge && (
             <span className={`flex-shrink-0 inline-flex items-center gap-0.5 px-1 rounded text-[8px] ${energyBadge.cls}`}>
@@ -418,12 +431,12 @@ export default function Planning({ onSearchClick }: Props) {
           : 'border-transparent'
         }`}
         style={palette ? { backgroundColor: palette.bg, borderColor: palette.border } : undefined}
-        onClick={() => setWorkspaceTask(task)}
+        onClick={() => { setFocusLivrables(false); setWorkspaceTask(task); }}
       >
         <div onClick={e => e.stopPropagation()} className="flex-shrink-0 pt-0.5">
           <Checkbox
             checked={task.completed}
-            onCheckedChange={() => toggleMutation.mutate(task.id)}
+            onCheckedChange={() => { void cocherAvecLivrable(task); }}
             disabled={toggleMutation.isPending}
             className="cursor-pointer"
           />
@@ -629,7 +642,7 @@ export default function Planning({ onSearchClick }: Props) {
                               key={task.id}
                               className="flex items-center gap-1 px-1.5 py-0.5 rounded-xs text-[9px] truncate"
                               style={{ backgroundColor: pal.bg, color: pal.text }}
-                              onClick={e => { e.stopPropagation(); setWorkspaceTask(task); }}
+                              onClick={e => { e.stopPropagation(); setFocusLivrables(false); setWorkspaceTask(task); }}
                             >
                               <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: pal.text, opacity: 0.5 }} />
                               <span className="truncate">{task.title}</span>
@@ -686,9 +699,10 @@ export default function Planning({ onSearchClick }: Props) {
                 today={today}
                 onTaskClick={(task) => {
                   if (task._virtual || task.id < 0 || task.type === 'milestone') { setMilestoneConfirmTarget(task); return; }
-                  setWorkspaceTask(task);
+                  setFocusLivrables(false);
+                  setFocusLivrables(false); setWorkspaceTask(task);
                 }}
-                onToggle={(taskId) => toggleMutation.mutate(taskId)}
+                onToggle={cocherParId}
                 onMilestoneConfirm={(mid) => confirmMilestoneMutation.mutate(mid)}
                 rangeQueryKey={rangeQueryKey}
               />
@@ -735,9 +749,10 @@ export default function Planning({ onSearchClick }: Props) {
                   today={today}
                   onTaskClick={(task) => {
                     if (task._virtual || task.id < 0 || task.type === 'milestone') { setMilestoneConfirmTarget(task); return; }
-                    setWorkspaceTask(task);
+                    setFocusLivrables(false);
+                    setFocusLivrables(false); setWorkspaceTask(task);
                   }}
-                  onToggle={(taskId) => toggleMutation.mutate(taskId)}
+                  onToggle={cocherParId}
                   onMilestoneConfirm={(mid) => confirmMilestoneMutation.mutate(mid)}
                   rangeQueryKey={rangeQueryKey}
                 />
@@ -859,7 +874,13 @@ export default function Planning({ onSearchClick }: Props) {
             task={workspaceTask as any}
             project={workspaceTask?.projectId ? (projects.find(p => p.id === workspaceTask.projectId) ?? null) : null}
             open={!!workspaceTask}
-            onClose={() => setWorkspaceTask(null)}
+            onClose={() => { setFocusLivrables(false); setWorkspaceTask(null); }}
+            focusLivrables={focusLivrables}
+            onFaitHorsNaya={() => {
+              if (workspaceTask) toggleMutation.mutate(workspaceTask.id);
+              setFocusLivrables(false);
+              setWorkspaceTask(null);
+            }}
           />
 
           {/* Dialog de confirmation de jalon */}
