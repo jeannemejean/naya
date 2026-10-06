@@ -10,6 +10,7 @@ import {
   savedArticles,
   socialAccounts,
   mediaLibrary,
+  livrables,
   projects,
   projectGoals,
   projectStrategyProfiles,
@@ -2337,6 +2338,7 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(metrics).where(eq(metrics.userId, userId));
       await tx.delete(dayAvailability).where(eq(dayAvailability.userId, userId));
       // ⚠️ les objets R2 correspondants ne sont pas supprimés (seules les lignes le sont)
+      await tx.delete(livrables).where(eq(livrables.userId, userId));                   // task_id/project_id/media_id
       await tx.delete(mediaLibrary).where(eq(mediaLibrary.userId, userId));
       // Ledger de coûts prospection : remet aussi le compteur LinkedIn hebdo à zéro.
       await tx.delete(prospectionUsage).where(eq(prospectionUsage.userId, userId));

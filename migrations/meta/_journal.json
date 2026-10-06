@@ -127,6 +127,13 @@
       "when": 1790784430197,
       "tag": "0017_cuddly_master_chief",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791280221076,
+      "tag": "0018_adorable_drax",
+      "breakpoints": true
     }
   ]
 }
