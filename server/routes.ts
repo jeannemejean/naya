@@ -8,6 +8,7 @@ import { eq, and, inArray, or, gte, desc, sql, count, isNull } from "drizzle-orm
 import { runReadingRoom } from "./services/reading/runner";
 import { statutApresReponse } from "./services/reading/statut";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
+import { registerLivrablesRoutes } from "./routes-livrables";
 import { 
   generateContent, 
   generateDailyTasks, 
@@ -11659,6 +11660,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       res.status(500).json({ message: "Failed to fetch task prompt insight" });
     }
   });
+
+  registerLivrablesRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;
