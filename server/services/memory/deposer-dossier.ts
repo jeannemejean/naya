@@ -121,3 +121,42 @@ export async function perimerSouvenirs(userId: string, ids: number[]): Promise<v
       isNull(memoryEntries.supersededAt),
     ));
 }
+
+/** Préfixe commun des morceaux d'un dossier : `"<titre> — "`. */
+function prefixeDossier(titre: string): string {
+  return `${titre.trim() || "Dossier sans titre"} — `;
+}
+
+/**
+ * Un dossier non retiré porte-t-il déjà ce titre ? (comparaison par début de contenu,
+ * via left() : aucun caractère du titre n'est interprété comme un joker LIKE.)
+ */
+export async function dossierExiste(userId: string, titre: string): Promise<boolean> {
+  const prefixe = prefixeDossier(titre);
+  const r = await db.execute(sql`
+    SELECT 1 FROM memory_entries
+    WHERE user_id = ${userId}
+      AND fil = 'savoir'
+      AND superseded_at IS NULL
+      AND left(content, char_length(${prefixe}::text)) = ${prefixe}::text
+    LIMIT 1
+  `);
+  return (r.rows ?? []).length > 0;
+}
+
+/**
+ * Retire un dossier : ses morceaux sont invalidés (`superseded_at`), jamais supprimés.
+ * Rend le nombre de morceaux retirés.
+ */
+export async function retirerDossier(userId: string, titre: string): Promise<number> {
+  const prefixe = prefixeDossier(titre);
+  const r = await db.execute(sql`
+    UPDATE memory_entries
+    SET superseded_at = now()
+    WHERE user_id = ${userId}
+      AND fil = 'savoir'
+      AND superseded_at IS NULL
+      AND left(content, char_length(${prefixe}::text)) = ${prefixe}::text
+  `);
+  return (r as any).rowCount ?? 0;
+}

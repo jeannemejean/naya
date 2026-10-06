@@ -62,7 +62,8 @@ import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
-import { deposerDossier, listerDossiers } from "./services/memory/deposer-dossier";
+import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
+import { extraireTextePdf, titreDepuisNomFichier } from "./services/memory/extraire-pdf";
 import { valideLien } from "./services/brand-links/links";
 import type { Articulation } from "./services/brand-links/links";
 import { articulationsDisponibles } from "./services/brand-links/articulation";
@@ -1180,6 +1181,11 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
         return res.status(400).json({ message: "contenu_requis" });
       }
 
+      // Même titre qu'un dossier non retiré : on refuse (retirer d'abord, puis redéposer).
+      if (await dossierExiste(req.userId, typeof titre === "string" ? titre : "")) {
+        return res.status(409).json({ message: "deja_depose" });
+      }
+
       const r = await deposerDossier({
         userId: req.userId,
         projectId: typeof projectId === "number" ? projectId : null,
@@ -1203,6 +1209,75 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
       if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
       const rows = await listerDossiers(req.userId);
       res.json(rows);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Dépôt de PDF (1 à 10 fichiers, 10 Mo chacun — limite appliquée par multer AVANT toute
+  // extraction). Un fichier en échec n'empêche pas les autres d'être déposés.
+  app.post("/api/savoir/pdf", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+    } catch (e: any) {
+      return res.status(500).json({ message: e.message });
+    }
+    upload.array("fichiers", 10)(req, res, async (err: any) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") return res.status(400).json({ message: "fichier_trop_lourd" });
+        if (err.code === "LIMIT_UNEXPECTED_FILE" || err.code === "LIMIT_FILE_COUNT") {
+          return res.status(400).json({ message: "trop_de_fichiers" });
+        }
+        return res.status(400).json({ message: "envoi_invalide" });
+      }
+      try {
+        const fichiers = (req.files as Express.Multer.File[] | undefined) ?? [];
+        if (fichiers.length === 0) return res.status(400).json({ message: "aucun_fichier" });
+        const projectId = Number(req.body?.projectId);
+        const resultats: { fichier: string; titre: string; statut: string; morceaux?: number }[] = [];
+        for (const f of fichiers) {
+          // multer décode les noms en latin1 : on rétablit l'UTF-8 (accents).
+          const nom = Buffer.from(f.originalname, "latin1").toString("utf8");
+          const titre = titreDepuisNomFichier(nom);
+          const fin = (statut: string, morceaux?: number) =>
+            resultats.push({ fichier: nom, titre, statut, ...(morceaux !== undefined ? { morceaux } : {}) });
+          try {
+            if (f.mimetype !== "application/pdf") { fin("pas_un_pdf"); continue; }
+            const ex = await extraireTextePdf(f.buffer);
+            if (ex.statut !== "ok") { fin(ex.statut); continue; }
+            if (await dossierExiste(req.userId, titre)) { fin("deja_depose"); continue; }
+            const r = await deposerDossier({
+              userId: req.userId,
+              projectId: Number.isInteger(projectId) ? projectId : null,
+              titre,
+              contenu: ex.texte,
+            });
+            if (r.morceaux === 0) { fin("pas_de_texte"); continue; }
+            fin("depose", r.morceaux);
+          } catch (e: any) {
+            console.error("[Savoir] pdf en échec:", e?.message ?? e);
+            fin("illisible");
+          }
+        }
+        res.json({ resultats });
+      } catch (e: any) {
+        console.error("[Savoir] depot pdf impossible:", e?.message ?? e);
+        res.status(500).json({ message: e.message });
+      }
+    });
+  });
+
+  // Retrait d'un dossier : invalidation (superseded_at), jamais de suppression.
+  app.delete("/api/savoir/dossiers", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (user?.role !== "owner") return res.status(403).json({ message: "forbidden" });
+      const titre = req.body?.titre;
+      if (typeof titre !== "string" || !titre.trim()) return res.status(400).json({ message: "titre_requis" });
+      const retires = await retirerDossier(req.userId, titre);
+      if (retires === 0) return res.status(404).json({ message: "introuvable" });
+      res.json({ retires });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
