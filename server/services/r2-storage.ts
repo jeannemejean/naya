@@ -6,8 +6,9 @@
  * (supporte les gros fichiers vidéo) → le média est servi via l'URL publique R2.
  *
  * Env requis : R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE_URL.
+ * Env facultatif : R2_PRIVATE_BUCKET (pour les livrables de type fichier).
  */
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "crypto";
 
@@ -16,6 +17,11 @@ const ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID || "";
 const SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY || "";
 const BUCKET = process.env.R2_BUCKET || "naya-media";
 const PUBLIC_BASE = (process.env.R2_PUBLIC_BASE_URL || "").replace(/\/+$/, "");
+
+// Bucket PRIVÉ (livrables de type fichier) : aucun domaine public. Lecture uniquement par
+// URL présignée courte, après vérification de propriété côté route. Sans ce bucket, les
+// fichiers sont refusés plutôt que rangés dans le bucket public.
+const PRIVATE_BUCKET = process.env.R2_PRIVATE_BUCKET || "";
 
 const client =
   ACCOUNT_ID && ACCESS_KEY_ID && SECRET_ACCESS_KEY
@@ -78,4 +84,43 @@ export function keyFromPublicUrl(url: string): string | null {
 export async function deleteObject(key: string): Promise<void> {
   if (!client) return;
   await client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+}
+
+export function privateStorageConfigured(): boolean {
+  return !!client && !!PRIVATE_BUCKET;
+}
+
+export async function createPrivateUploadUrl(opts: {
+  userId: string;
+  filename: string;
+  contentType: string;
+}): Promise<{ uploadUrl: string; key: string }> {
+  if (!client || !PRIVATE_BUCKET) throw new Error("private_storage_not_configured");
+  const ext = safeExt(opts.filename);
+  const key = `livrables/${opts.userId}/${randomUUID()}${ext ? "." + ext : ""}`;
+  const uploadUrl = await getSignedUrl(
+    client,
+    new PutObjectCommand({ Bucket: PRIVATE_BUCKET, Key: key, ContentType: opts.contentType }),
+    { expiresIn: 3600 },
+  );
+  return { uploadUrl, key };
+}
+
+export async function createPrivateDownloadUrl(key: string, fileName: string): Promise<string> {
+  if (!client || !PRIVATE_BUCKET) throw new Error("private_storage_not_configured");
+  const nom = fileName.replace(/["\r\n]/g, "");
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({
+      Bucket: PRIVATE_BUCKET,
+      Key: key,
+      ResponseContentDisposition: `inline; filename="${nom}"`,
+    }),
+    { expiresIn: 300 }, // 5 min
+  );
+}
+
+export async function deletePrivateObject(key: string): Promise<void> {
+  if (!client || !PRIVATE_BUCKET) return;
+  await client.send(new DeleteObjectCommand({ Bucket: PRIVATE_BUCKET, Key: key }));
 }
