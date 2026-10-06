@@ -1471,6 +1471,14 @@ const fr = {
  tellUsMorePlaceholder: "Contexte supplémentaire...",
  removeTask: "Supprimer la tâche",
  deferTask: "Reporter la tâche",
+ refuse: "Refuser",
+ refuseTitle: "Refuser cette tâche",
+ explainLabel: "Explique à Naya pourquoi",
+ explainPlaceholder: "Ex. : je ne fais pas de DM Instagram, je préfère LinkedIn.",
+ refuseAndReplace: "Refuser et remplacer",
+ replacedBy: "Remplacée par « {{title}} »",
+ refusedNoReplacement: "Tâche refusée. Naya n'a pas pu proposer de remplacement pour l'instant.",
+ refuseFailed: "Le refus a échoué. Réessaie.",
  },
 
  weeklyProgress: {

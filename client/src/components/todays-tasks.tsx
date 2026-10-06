@@ -24,6 +24,7 @@ import { estTacheDeProduction } from "@shared/livrables";
 import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import GeneratingOverlay from "@/components/GeneratingOverlay";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
+import { useRefuserTache } from "@/hooks/useRefuserTache";
 import type { Project } from "@shared/schema";
 
 interface Task {
@@ -109,11 +110,12 @@ function getProjectColor(projectId: number | undefined, projects: Project[]): st
  return p?.color || '#6366f1';
 }
 
-function PlannerTaskPopover({ task, projects, onToggle, onOpen, isToggling }: {
+function PlannerTaskPopover({ task, projects, onToggle, onOpen, onRefuse, isToggling }: {
  task: Task;
  projects: Project[];
  onToggle: (task: Task) => void;
  onOpen: (task: Task) => void;
+ onRefuse: (task: Task) => void;
  isToggling: boolean;
 }) {
  const { t } = useTranslation();
@@ -172,6 +174,17 @@ function PlannerTaskPopover({ task, projects, onToggle, onOpen, isToggling }: {
  </Button>
  )}
 
+ {!estEvenementAgenda(task as any) && (
+ <Button
+ size="sm"
+ variant="outline"
+ className="w-full h-8 text-xs"
+ onClick={() => onRefuse(task)}
+ >
+ {t('taskFeedback.refuse')}
+ </Button>
+ )}
+
  <Button
  size="sm"
  variant={task.completed ? "outline" : "default"}
@@ -207,6 +220,8 @@ export default function TodaysTasks() {
  const [workspaceTask, setWorkspaceTask] = useState<Task | null>(null);
  const { triggerAutoRebalance } = useAutoRebalance();
  const [feedbackTask, setFeedbackTask] = useState<Task | null>(null);
+ const [refusTask, setRefusTask] = useState<Task | null>(null);
+ const refuserMutation = useRefuserTache(() => setRefusTask(null));
  const [replanOpen, setReplanOpen] = useState(false);
  const [replanPreview, setReplanPreview] = useState<any>(null);
  const [replanLoading, setReplanLoading] = useState(false);
@@ -987,6 +1002,7 @@ export default function TodaysTasks() {
  projects={projects}
  onToggle={cocherTache}
  onOpen={ouvrirTache}
+ onRefuse={(tk) => { setOpenPopover(null); setRefusTask(tk); }}
  isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
  />
  </Popover>
@@ -1027,6 +1043,7 @@ export default function TodaysTasks() {
  projects={projects}
  onToggle={cocherTache}
  onOpen={ouvrirTache}
+ onRefuse={(tk) => { setOpenPopover(null); setRefusTask(tk); }}
  isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
  />
  </Popover>
@@ -1062,6 +1079,18 @@ export default function TodaysTasks() {
  deleteFeedbackMutation.mutate({ taskId: feedbackTask.id, feedbackType, reason, freeText });
  }}
  isPending={deleteFeedbackMutation.isPending}
+ />
+
+ <TaskFeedbackModal
+ mode="refuser"
+ task={refusTask}
+ open={!!refusTask}
+ onClose={() => setRefusTask(null)}
+ onConfirm={(_type, reason, freeText) => {
+ if (!refusTask) return;
+ refuserMutation.mutate({ taskId: refusTask.id, reason, freeText });
+ }}
+ isPending={refuserMutation.isPending}
  />
 
  <Dialog open={replanOpen} onOpenChange={(v) => { if (!v) { setReplanOpen(false); setReplanPreview(null); } }}>

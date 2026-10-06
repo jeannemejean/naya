@@ -1467,6 +1467,14 @@ const en = {
  tellUsMorePlaceholder: "Any additional context...",
  removeTask: "Remove Task",
  deferTask: "Defer Task",
+ refuse: "Decline",
+ refuseTitle: "Decline this task",
+ explainLabel: "Tell Naya why",
+ explainPlaceholder: "e.g. I don't do Instagram DMs, I prefer LinkedIn.",
+ refuseAndReplace: "Decline and replace",
+ replacedBy: "Replaced by “{{title}}”",
+ refusedNoReplacement: "Task declined. Naya couldn't suggest a replacement right now.",
+ refuseFailed: "Declining failed. Try again.",
  },
 
  weeklyProgress: {

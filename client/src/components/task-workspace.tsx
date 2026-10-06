@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { etatSauvegarde, risqueDePerte } from "@/lib/task-workspace-save";
 import { useToast } from "@/hooks/use-toast";
-import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink } from "lucide-react";
+import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown } from "lucide-react";
+import TaskFeedbackModal from "@/components/task-feedback-modal";
+import { useRefuserTache } from "@/hooks/useRefuserTache";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import LivrablesSection from "@/components/livrables/LivrablesSection";
@@ -60,6 +62,8 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  const queryClient = useQueryClient();
  const { toast } = useToast();
 
+ const [refusOuvert, setRefusOuvert] = useState(false);
+ const refuserMutation = useRefuserTache(() => { setRefusOuvert(false); onClose(); });
  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
  const [showReschedule, setShowReschedule] = useState(false);
  const [rescheduleDate, setRescheduleDate] = useState("");
@@ -233,6 +237,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  const activeTypeConfig = WORKSPACE_TYPES.find(t => t.id === activeType) ?? WORKSPACE_TYPES[0];
 
  return (
+ <>
  <Sheet
  open={open}
  onOpenChange={(v) => {
@@ -265,6 +270,17 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  {/* Actions rapides */}
  <div className="flex items-center gap-1 flex-shrink-0">
+ {(task as any)?.source !== "gcal" && (
+ <button
+ onClick={() => setRefusOuvert(true)}
+ disabled={refuserMutation.isPending}
+ aria-label={t('taskFeedback.refuse')}
+ title={t('taskFeedback.refuse')}
+ className="p-1.5 rounded-md text-naya-olive-35 hover:text-[#5c3d45] hover:bg-[rgba(158,126,135,0.12)] transition-colors disabled:opacity-50"
+ >
+ <ThumbsDown className="h-4 w-4" />
+ </button>
+ )}
  <button
  onClick={() => { setShowReschedule(v => !v); setShowDeleteConfirm(false); }}
  className="p-1.5 rounded-md text-naya-olive-35 hover:text-[#354963] hover:bg-naya-olive-06 transition-colors"
@@ -497,5 +513,17 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  </SheetContent>
  </Sheet>
+ <TaskFeedbackModal
+ mode="refuser"
+ task={task}
+ open={refusOuvert}
+ onClose={() => setRefusOuvert(false)}
+ onConfirm={(_type, reason, freeText) => {
+ if (!task) return;
+ refuserMutation.mutate({ taskId: task.id, reason, freeText });
+ }}
+ isPending={refuserMutation.isPending}
+ />
+ </>
  );
 }

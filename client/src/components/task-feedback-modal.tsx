@@ -15,9 +15,10 @@ interface TaskFeedbackModalProps {
  onClose: () => void;
  onConfirm: (feedbackType: string, reason: string, freeText?: string) => void;
  isPending?: boolean;
+ mode?: "retirer" | "refuser";
 }
 
-export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPending }: TaskFeedbackModalProps) {
+export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPending, mode = "retirer" }: TaskFeedbackModalProps) {
  const { t } = useTranslation();
  const [feedbackType, setFeedbackType] = useState("deleted");
  const [reason, setReason] = useState("");
@@ -41,7 +42,7 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
 
  function handleConfirm() {
  if (!reason) return;
- onConfirm(feedbackType, reason, freeText || undefined);
+ onConfirm(refuser ? "refused" : feedbackType, reason, freeText || undefined);
  setFeedbackType("deleted");
  setReason("");
  setFreeText("");
@@ -54,13 +55,14 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
  onClose();
  }
 
- const confirmLabel = feedbackType === "deleted" ? t('taskFeedback.removeTask') : feedbackType === "deferred" ? t('taskFeedback.deferTask') : t('taskFeedback.dismissForNow');
+ const refuser = mode === "refuser";
+ const confirmLabel = refuser ? t('taskFeedback.refuseAndReplace') : feedbackType === "deleted" ? t('taskFeedback.removeTask') : feedbackType === "deferred" ? t('taskFeedback.deferTask') : t('taskFeedback.dismissForNow');
 
  return (
  <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
  <DialogContent className="max-w-md">
  <DialogHeader>
- <DialogTitle className="text-base">{t('taskFeedback.title')}</DialogTitle>
+ <DialogTitle className="text-base">{refuser ? t('taskFeedback.refuseTitle') : t('taskFeedback.title')}</DialogTitle>
  {task && (
  <p className="text-xs text-naya-cream0 mt-1 line-clamp-2">
  "{task.title}"
@@ -69,7 +71,7 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
  </DialogHeader>
 
  <div className="space-y-4 pt-1">
- <div>
+ {!refuser && <div>
  <p className="text-xs text-naya-olive-55 mb-2">{t('taskFeedback.action')}</p>
  <div className="flex gap-1.5 flex-wrap">
  {FEEDBACK_TYPES.map(ft => (
@@ -86,7 +88,7 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
  </button>
  ))}
  </div>
- </div>
+ </div>}
 
  <div>
  <p className="text-xs text-naya-olive-55 mb-2">{t('taskFeedback.reason')}</p>
@@ -108,6 +110,19 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
  </div>
 
  <div>
+ {refuser ? (
+ <>
+ <p className="text-sm font-medium text-foreground mb-1.5">{t('taskFeedback.explainLabel')}</p>
+ <Textarea
+ value={freeText}
+ onChange={(e) => setFreeText(e.target.value)}
+ placeholder={t('taskFeedback.explainPlaceholder')}
+ rows={4}
+ className="text-sm resize-none border-naya-olive-35"
+ />
+ </>
+ ) : (
+ <>
  <p className="text-xs text-naya-olive-55 mb-1.5">{t('taskFeedback.tellUsMore')}</p>
  <Textarea
  value={freeText}
@@ -116,6 +131,8 @@ export default function TaskFeedbackModal({ task, open, onClose, onConfirm, isPe
  rows={2}
  className="text-sm resize-none"
  />
+ </>
+ )}
  </div>
 
  <div className="flex gap-2 pt-1">
