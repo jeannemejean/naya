@@ -13,6 +13,7 @@
  */
 
 import { storage } from '../storage';
+import { ajouterDependance } from './dependances';
 import { generateDailyTasks } from './openai';
 import { buildNayaContext } from './naya-context';
 import { CLAUDE_MODELS, callClaude } from './claude';
@@ -560,11 +561,8 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
         const dependsOnTaskId = idParIndexSource.get(dep.dependsOnIndex);
         if (!taskId || !dependsOnTaskId || taskId === dependsOnTaskId) continue;
         try {
-          await storage.createTaskDependency({
-            taskId,
-            dependsOnTaskId,
-            relationType: dep.relationType as any,
-          } as any);
+          const ok = await ajouterDependance(userId, taskId, dependsOnTaskId, dep.relationType as any);
+          if (!ok) console.error(`[AutoPlanner] dépendance ${dependsOnTaskId} → ${taskId} refusée (invalide)`);
         } catch (e: any) {
           // Non bloquant pour la génération, mais plus jamais muet : une dépendance perdue
           // est la raison pour laquelle le planning réordonnait mal sans que rien ne le dise.

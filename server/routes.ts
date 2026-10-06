@@ -38,6 +38,7 @@ import { evaluateProjectOvercommit } from "./services/overcommit";
 import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, fetchSubscription } from "./services/stripe";
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
+import { ajouterDependance } from "./services/dependances";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions } from "./services/sequence-message";
@@ -4597,8 +4598,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       const replanPrefs = await storage.getUserPreferences(userId);
       const replanWorkDays = parseWorkDays(replanPrefs?.workDays);
-      const finalTasks = rebalanceTasksForward(aiResult.tasks, floor, monthEnd, 5, undefined, 0, replanWorkDays)
-        .filter((t: any) => !t._unschedulable);
+      // Les dépendances de l'IA sont exprimées par index dans `aiResult.tasks`. On pose cet
+      // index d'origine (`__srcIndex`) AVANT le rééquilibrage et le filtre `_unschedulable` :
+      // le filtre retire des tâches et décale tous les index suivants, donc `savedTasks[i]`
+      // relierait des paires arbitraires. Même technique que l'auto-planner.
+      const finalTasks = rebalanceTasksForward(
+        aiResult.tasks.map((t: any, __srcIndex: number) => ({ ...t, __srcIndex })),
+        floor, monthEnd, 5, undefined, 0, replanWorkDays,
+      ).filter((t: any) => !t._unschedulable);
 
       // Group rebalanced tasks by date for realism validation
       const tasksByDate = new Map<string, any[]>();
@@ -4627,6 +4634,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       // Save tasks
       const savedTasks: any[] = [];
+      // index d'origine (dans la sortie IA) → id de la tâche réellement créée
+      const idParIndexSource = new Map<number, number>();
       for (const taskData of finalTasks) {
         const task = await storage.createTask({
           userId,
@@ -4648,15 +4657,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           ...(projectIdFromBody ? { projectId: projectIdFromBody } : {}),
         } as any);
         savedTasks.push(task);
+        idParIndexSource.set(taskData.__srcIndex, task.id);
       }
 
-      // Save dependency links
+      // Save dependency links : une tâche écartée (non plaçable) n'a pas d'entrée dans la Map,
+      // la dépendance qui la cite est omise au lieu de glisser sur sa voisine.
       for (const dep of aiResult.dependencies || []) {
         try {
-          const fromTask = savedTasks[dep.taskIndex];
-          const toTask = savedTasks[dep.dependsOnIndex];
-          if (fromTask && toTask) {
-            await storage.createTaskDependency({ taskId: fromTask.id, dependsOnTaskId: toTask.id, relationType: dep.relationType || 'blocked_by' });
+          const fromId = idParIndexSource.get(dep.taskIndex);
+          const toId = idParIndexSource.get(dep.dependsOnIndex);
+          if (fromId && toId) {
+            await ajouterDependance(userId, fromId, toId, dep.relationType || 'blocked_by');
           }
         } catch { /* non-fatal */ }
       }
@@ -5751,11 +5762,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               const fromEntry = batchSaved.find(e => e.taskIndex === dep.taskIndex);
               const toEntry = batchSaved.find(e => e.taskIndex === dep.dependsOnIndex);
               if (fromEntry?.task && toEntry?.task) {
-                await storage.createTaskDependency({
-                  taskId: fromEntry.task.id,
-                  dependsOnTaskId: toEntry.task.id,
-                  relationType: dep.relationType || 'blocked_by',
-                });
+                await ajouterDependance(
+                  userId,
+                  fromEntry.task.id,
+                  toEntry.task.id,
+                  dep.relationType || 'blocked_by',
+                );
               }
             } catch { /* non-fatal */ }
           }
@@ -5916,8 +5928,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     try {
       const taskId = parseInt(req.params.id);
       const { dependsOnTaskId, relationType = 'blocked_by' } = req.body;
-      const dep = await storage.createTaskDependency({ taskId, dependsOnTaskId, relationType });
-      res.json(dep);
+      // Point d'entrée unique : refuse auto-référence, tâche d'un autre compte, cycle, doublon.
+      const ok = await ajouterDependance(req.userId, taskId, Number(dependsOnTaskId), relationType);
+      if (!ok) return res.status(400).json({ message: "invalid_dependency" });
+      // On relit la ligne créée pour garder la forme de réponse historique (la ligne).
+      let lignes: any[] = [];
+      try { lignes = (await storage.getTaskDependencies(taskId)) || []; } catch { /* la création a réussi */ }
+      const dep = lignes.find((d: any) => d.dependsOnTaskId === Number(dependsOnTaskId));
+      res.status(201).json(dep ?? { taskId, dependsOnTaskId: Number(dependsOnTaskId), relationType });
     } catch (error) {
       console.error("Error creating dependency:", error);
       res.status(500).json({ message: "Failed to create dependency" });
