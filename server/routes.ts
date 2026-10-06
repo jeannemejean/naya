@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { pool, db } from "./db";
 import { waitlist, taskPrompts, tasks, readingCards, readingQueries, content, projectLinks, campaigns, projects, prospectionCampaigns, leads } from "@shared/schema";
 import { eq, and, inArray, or, gte, desc, sql, count, isNull } from "drizzle-orm";
+import { remplacerReferencesNumerotees } from "./services/references-taches";
 import { runReadingRoom } from "./services/reading/runner";
 import { statutApresReponse } from "./services/reading/statut";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
@@ -4636,11 +4637,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const savedTasks: any[] = [];
       // index d'origine (dans la sortie IA) → id de la tâche réellement créée
       const idParIndexSource = new Map<number, number>();
+      // Titres dans l'ordre d'origine de la sortie IA (avant filtre/rééquilibrage) : « Task 2 »
+      // dans une description vise l'index 1 de cette liste, pas de `finalTasks`.
+      const titresLotMensuel: string[] = (aiResult.tasks || []).map((t: any) => t?.title ?? '');
       for (const taskData of finalTasks) {
         const task = await storage.createTask({
           userId,
           title: taskData.title,
-          description: taskData.description,
+          description: remplacerReferencesNumerotees(taskData.description, titresLotMensuel),
           type: taskData.type,
           category: taskData.category,
           priority: taskData.priority,
@@ -4653,7 +4657,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           canBeFragmented: taskData.canBeFragmented !== false,
           recommendedTimeOfDay: taskData.recommendedTimeOfDay || null,
           workflowGroup: taskData.workflowGroup || null,
-          activationPrompt: taskData.activationPrompt || null,
+          activationPrompt: taskData.activationPrompt
+            ? remplacerReferencesNumerotees(taskData.activationPrompt, titresLotMensuel)
+            : null,
           ...(projectIdFromBody ? { projectId: projectIdFromBody } : {}),
         } as any);
         savedTasks.push(task);
@@ -5712,10 +5718,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             ? minutesToHHMM(hhmmToMinutes(scheduledTimeVal) + duration)
             : null;
 
+          // Titres du lot IA du projet dans l'ordre d'origine (avant tri/cap) : filet contre
+          // les « Task N » numérotés en prose par le modèle.
+          const titresLot: string[] = ((pending.aiResponseAny?.tasks as any[]) || []).map((t: any) => t?.title ?? '');
           const task = await storage.createTask({
             userId,
             title: taskData.title,
-            description: taskData.description,
+            description: remplacerReferencesNumerotees(taskData.description, titresLot),
             type: taskData.type,
             category: taskData.category,
             priority: taskData.priority,
@@ -5728,7 +5737,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             canBeFragmented: taskData.canBeFragmented !== false,
             recommendedTimeOfDay: taskData.recommendedTimeOfDay || null,
             workflowGroup: taskData.workflowGroup ? taskData.workflowGroup.replace(/^[^:]*::/, '') : null,
-            activationPrompt: taskData.activationPrompt || null,
+            activationPrompt: taskData.activationPrompt
+              ? remplacerReferencesNumerotees(taskData.activationPrompt, titresLot)
+              : null,
             scheduledTime: scheduledTimeVal,
             scheduledEndTime: scheduledEndTimeVal,
             ...(pending.projId ? { projectId: pending.projId } : {}),

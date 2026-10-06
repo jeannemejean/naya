@@ -578,6 +578,11 @@ publish, shoot before edit, draft before send, research before decide, quote bef
 An empty array means every task is genuinely independent — say so only when it is true.
 Never make a task depend on itself. Every index must exist in the tasks array.
 
+Each description must be understandable on its own. Never refer to another task by number
+("Task 2", "task #1"); if you refer to another task, quote its exact title.
+A prerequisite (dependsOnIndex) must have an EARLIER scheduledDate/scheduledTime than the task
+that depends on it.
+
 RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType must be one
 of the 6 exact values. workflowGroup must be one of the 7 exact values listed above — never
 null. No markdown fences in output. goalIndex must be a valid index into the goals list
@@ -870,6 +875,8 @@ Group 2–4 tasks that form a natural production chain into workflowSuggestions 
 
 DEPENDENCIES:
 Create dependency pairs for tasks that must follow others. Keep to max 5 dependency links.
+A prerequisite (dependsOnIndex) must have an EARLIER scheduledDate/scheduledTime than the task that depends on it.
+Each description must be understandable on its own. Never refer to another task by number ("Task 2", "task #1"); if you refer to another task, quote its exact title.
 
 Return JSON:
 {
