@@ -2000,6 +2000,30 @@ const fr = {
  wellbeing: "◯ Bien-être",
  whatIsThisProjectAbout: "De quoi parle ce projet ?",
  },
+ refusPost: {
+ quoted: "« {{title}} »",
+ refuse: "Refuser",
+ title: "Refuser ce post",
+ reasons: {
+ wrong_tone: "pas le bon ton",
+ wrong_angle: "mauvais angle",
+ not_for_brand: "pas pour cette marque",
+ too_many: "trop de posts",
+ inaccurate: "inexact",
+ other: "autre",
+ },
+ explainLabel: "Explique à Naya pourquoi",
+ explainPlaceholder: "Ex. : trop institutionnel, je parle plus directement à mes clientes.",
+ replace: "Remplace-le par un autre post",
+ confirm: "Refuser",
+ confirmReplace: "Refuser et remplacer",
+ pending: "Naya rédige un autre post…",
+ refused: "Post refusé.",
+ replacedBy: "Remplacé par « {{title}} »",
+ noReplacement: "Post refusé. Naya n'a pas pu en proposer un autre pour l'instant.",
+ alreadyPublished: "Ce post est déjà publié.",
+ failed: "Le refus a échoué. Réessaie.",
+ },
 };
 
 export default fr;

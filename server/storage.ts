@@ -1377,10 +1377,12 @@ export class DatabaseStorage implements IStorage {
 
   // Claim atomique : passe pending → posting une seule fois. Renvoie false si
   // un autre passage du worker a déjà pris ce contenu (anti double-publication).
+  // autoPost=true est revérifié ici : si l'utilisatrice refuse un post après la lecture
+  // des contenus échus mais avant le claim, le refus (autoPost=false) doit gagner la course.
   async claimContentForPosting(id: number): Promise<boolean> {
     const claimed = await db.update(content)
       .set({ postStatus: 'posting', updatedAt: new Date() })
-      .where(and(eq(content.id, id), eq(content.postStatus, 'pending')))
+      .where(and(eq(content.id, id), eq(content.postStatus, 'pending'), eq(content.autoPost, true)))
       .returning({ id: content.id });
     return claimed.length > 0;
   }

@@ -13,7 +13,7 @@ import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { fr } from 'date-fns/locale/fr';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -36,6 +36,9 @@ import type { Content, ContentReception, SocialAccount, MediaLibrary, TargetPers
 import { PLATFORMS, CONTENT_TYPES } from './content-calendar-platforms';
 import { normalizeReceptionImportErrors, type ReceptionImportRawError } from '@/lib/reception-import-errors';
 import { apiRequest } from '@/lib/queryClient';
+import RefusPostModal from '@/components/refus-post-modal';
+import { useRefuserPost } from '@/hooks/useRefuserPost';
+import { postRefusable } from '@/lib/refus-post';
 import { LIMITE_CONTENUS_PAGE, plafondAtteint } from './content-calendar-limit';
 const locales = { 'en-US': enUS };
 
@@ -459,6 +462,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  // Saisie manuelle par contenu + import CSV en masse. Restitution = score contre
  // l'intention + sa raison, jamais un ré-affichage des compteurs saisis.
  const [receptionFor, setReceptionFor] = useState<Content | null>(null);
+ const [refusFor, setRefusFor] = useState<Content | null>(null);
+ const refuserPost = useRefuserPost((postId) => setRefusFor(cur => (cur && cur.id === postId ? null : cur)));
  const [receptionForm, setReceptionForm] = useState({ saves: '', shares: '', comments: '', reach: '', measuredAt: '' });
  const [receptionResult, setReceptionResult] = useState<ContentReception | null>(null);
  const [receptionCsv, setReceptionCsv] = useState('');
@@ -933,7 +938,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </div>
  )}
 
- <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1" onClick={e => e.stopPropagation()}>
+ <div className="absolute top-2 right-2 flex [@media(hover:hover)]:hidden [@media(hover:hover)]:group-hover:flex group-focus-within:flex items-center gap-1" onClick={e => e.stopPropagation()}>
  {canMoveLeft && (
  <button
  className="w-6 h-6 rounded bg-naya-olive-10 hover:bg-naya-olive-18 flex items-center justify-center"
@@ -959,6 +964,16 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  title={t('contentCalendar.reception.open')}
  >
  <Target className="w-3.5 h-3.5 text-naya-olive-55" />
+ </button>
+ )}
+ {postRefusable(item) && (
+ <button
+ className="w-6 h-6 rounded bg-naya-olive-10 hover:bg-naya-olive-18 flex items-center justify-center"
+ onClick={() => setRefusFor(item)}
+ aria-label={t('refusPost.refuse')}
+ title={t('refusPost.refuse')}
+ >
+ <ThumbsDown className="w-3.5 h-3.5 text-naya-olive-55" />
  </button>
  )}
  <button
@@ -1434,6 +1449,13 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </div>
  <SocialComposer open={showComposer} onClose={() => setShowComposer(false)} projectId={selectedProjectId} />
 
+ <RefusPostModal
+ post={refusFor}
+ open={!!refusFor}
+ onClose={() => setRefusFor(null)}
+ isPending={refuserPost.isPending}
+ onConfirm={(reason, freeText, remplacer) => refusFor && refuserPost.mutate({ postId: refusFor.id, reason, freeText, remplacer })}
+ />
  <Dialog open={!!receptionFor} onOpenChange={(open) => { if (!open) setReceptionFor(null); }}>
  {receptionFor && (
  <DialogContent className="max-w-lg" key={receptionFor.id}>
