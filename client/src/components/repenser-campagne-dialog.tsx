@@ -21,6 +21,8 @@ import {
   doitReprendreSuivi,
   suiviPerdu,
   clePlacementApercu,
+  progressionRepenser,
+  dureeEcoulee,
 } from "@/lib/repenser-campagne";
 
 interface Props {
@@ -157,6 +159,20 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
   }
 
   const attente = suivi || envoi;
+
+  // Horloge d'affichage (1 s) pendant l'attente : la barre et le chrono avancent entre deux
+  // relectures de l'état.
+  const [maintenant, setMaintenant] = useState(() => Date.now());
+  useEffect(() => {
+    if (!attente) return;
+    const id = setInterval(() => setMaintenant(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [attente]);
+  const etatCourant = etatQuery.data?.etat === "en_cours" ? etatQuery.data : undefined;
+  const depuisEtape = etatCourant?.etapeDepuis ? Date.parse(etatCourant.etapeDepuis) : undefined;
+  const depuisDebut = etatCourant?.debut ? Date.parse(etatCourant.debut) : (debutSuivi.current || undefined);
+  const progression = progressionRepenser(etatCourant?.etape, depuisEtape, maintenant);
+  const ecoule = dureeEcoulee(depuisDebut, maintenant);
   const apercu = apercuQuery.data;
 
   return (
@@ -167,9 +183,32 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
         </DialogHeader>
 
         {attente ? (
-          <div className="py-6 flex flex-col items-center gap-3 text-center" role="status" aria-live="polite" data-testid="repenser-attente">
+          <div className="py-6 flex flex-col items-center gap-3 text-center" data-testid="repenser-attente">
             <Loader2 className="h-6 w-6 animate-spin text-naya-olive-55" />
             <p className="text-sm font-medium text-foreground">{t("campaigns.repenser.waiting")}</p>
+            <div className="w-full space-y-1.5" role="status" aria-live="polite">
+              <div
+                className="h-2 w-full rounded-full bg-naya-olive-10 overflow-hidden"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progression.pourcent}
+                aria-label={t("campaigns.repenser.progressLabel")}
+              >
+                <div
+                  className="h-full rounded-full bg-naya-salvia transition-[width] duration-1000 ease-linear animate-pulse"
+                  style={{ width: `${progression.pourcent}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-naya-olive-55">
+                <span>
+                  {t("campaigns.repenser.stepOf", { n: progression.index + 1, total: progression.total })}
+                  {" · "}
+                  {t(`campaigns.repenser.steps.${etatCourant?.etape ?? "contexte"}`)}
+                </span>
+                <span>{t("campaigns.repenser.elapsed", { min: ecoule.min, s: ecoule.s })}</span>
+              </div>
+            </div>
             <p className="text-xs text-naya-olive-55">{t("campaigns.repenser.waitingHint")}</p>
           </div>
         ) : (

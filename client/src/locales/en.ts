@@ -1077,6 +1077,17 @@ const en = {
  regenerateCalendar: "Regenerate calendar",
  inYourCalendar: "In your calendar",
  repenser: {
+  progressLabel: "Progress",
+  stepOf: "Step {{n}} of {{total}}",
+  elapsed: "{{min}} min {{s}} s",
+  steps: {
+    contexte: "Naya is reading your knowledge and brand",
+    strategie: "New strategy",
+    contenu: "Post plan",
+    taches: "Campaign tasks",
+    enregistrement: "Saving",
+    placement: "Placing in your calendar",
+  },
   title: "Rethink the campaign",
   button: "Rethink the campaign",
   intro: "Naya redoes the strategy, content and tasks of this campaign. The frame (name, objective, duration, dates) stays. Anything already published or done stays attached to the campaign.",

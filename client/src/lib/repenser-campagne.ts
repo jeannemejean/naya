@@ -24,9 +24,13 @@ export interface ResultatRepenser {
 
 export type ErreurRepenser = { code: string; [k: string]: unknown };
 
+export type EtapeRepenser = "contexte" | "strategie" | "contenu" | "taches" | "enregistrement" | "placement";
+
 export interface EtatRepenser {
   etat: "aucun" | "en_cours" | "termine" | "echec";
   debut?: string;
+  etape?: EtapeRepenser;
+  etapeDepuis?: string;
   fin?: string;
   resultat?: ResultatRepenser;
   erreur?: ErreurRepenser;
@@ -131,4 +135,40 @@ export function clePlacementApercu(placement: ApercuRepenser["placement"]): stri
     case "reprise": return "previewPlacementReprise";
     default: return null;
   }
+}
+
+// ─── Progression ─────────────────────────────────────────────────────────────
+// L'étape vient du serveur (vraie progression) ; À L'INTÉRIEUR d'une étape, la barre
+// avance doucement selon la durée habituelle de l'étape, sans jamais atteindre l'étape
+// suivante (plafond 90 % du segment) — elle bouge donc toujours, sans mentir.
+
+export const ETAPES_REPENSER: { etape: EtapeRepenser; poids: number; dureeTypiqueS: number }[] = [
+  { etape: "contexte", poids: 5, dureeTypiqueS: 5 },
+  { etape: "strategie", poids: 30, dureeTypiqueS: 60 },
+  { etape: "contenu", poids: 35, dureeTypiqueS: 70 },
+  { etape: "taches", poids: 20, dureeTypiqueS: 50 },
+  { etape: "enregistrement", poids: 4, dureeTypiqueS: 5 },
+  { etape: "placement", poids: 6, dureeTypiqueS: 15 },
+];
+
+export function progressionRepenser(
+  etape: EtapeRepenser | undefined,
+  etapeDepuisMs: number | undefined,
+  maintenantMs: number,
+): { pourcent: number; index: number; total: number } {
+  const total = ETAPES_REPENSER.length;
+  const idx = Math.max(0, ETAPES_REPENSER.findIndex((e) => e.etape === (etape ?? "contexte")));
+  const somme = ETAPES_REPENSER.reduce((a, e) => a + e.poids, 0);
+  const avant = ETAPES_REPENSER.slice(0, idx).reduce((a, e) => a + e.poids, 0);
+  const courante = ETAPES_REPENSER[idx];
+  const ecouleS = etapeDepuisMs !== undefined ? Math.max(0, (maintenantMs - etapeDepuisMs) / 1000) : 0;
+  const fraction = Math.min(0.9, 1 - Math.exp(-ecouleS / courante.dureeTypiqueS));
+  const pourcent = Math.round(((avant + courante.poids * fraction) / somme) * 100);
+  return { pourcent: Math.min(99, Math.max(1, pourcent)), index: idx, total };
+}
+
+/** « 45 s », « 2 min 05 s ». */
+export function dureeEcoulee(depuisMs: number | undefined, maintenantMs: number): { min: number; s: string } {
+  const total = depuisMs !== undefined ? Math.max(0, Math.floor((maintenantMs - depuisMs) / 1000)) : 0;
+  return { min: Math.floor(total / 60), s: String(total % 60).padStart(2, "0") };
 }

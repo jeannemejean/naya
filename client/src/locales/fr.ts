@@ -1081,6 +1081,17 @@ const fr = {
  regenerateCalendar: "Régénérer le calendrier",
  inYourCalendar: "Dans ton calendrier",
  repenser: {
+  progressLabel: "Avancement",
+  stepOf: "Étape {{n}} sur {{total}}",
+  elapsed: "{{min}} min {{s}} s",
+  steps: {
+    contexte: "Naya relit ton savoir et ta marque",
+    strategie: "Nouvelle stratégie",
+    contenu: "Plan des posts",
+    taches: "Tâches de la campagne",
+    enregistrement: "Enregistrement",
+    placement: "Placement dans ton calendrier",
+  },
   title: "Repenser la campagne",
   button: "Repenser la campagne",
   intro: "Naya refait la stratégie, le contenu et les tâches de cette campagne. Le cadre (nom, objectif, durée, dates) ne bouge pas. Ce qui est déjà publié ou fait reste rattaché à la campagne.",
