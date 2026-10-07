@@ -163,9 +163,17 @@ export interface CampagnePlacable {
   contentPlan?: unknown;
 }
 
-function requis<T>(f: T | undefined, nom: string): T {
-  if (!f) throw new Error(`PlacementDeps.${nom} manquant`);
-  return f;
+/**
+ * Rend la méthode `nom` de `deps` LIÉE à `deps`. En production, `deps` est l'objet
+ * `storage` (une instance de classe) : une méthode extraite sans `bind` perd son `this`
+ * et plante au premier appel interne (`this.…`) — c'est ce qui a vidé deux campagnes
+ * repensées le 7 oct. 2026 (« Cannot read properties of undefined (reading
+ * 'checkSlotAvailability') »).
+ */
+function requis<K extends keyof PlacementDeps>(deps: PlacementDeps, nom: K): NonNullable<PlacementDeps[K]> {
+  const f = deps[nom];
+  if (typeof f !== "function") throw new Error(`PlacementDeps.${String(nom)} manquant`);
+  return (f as Function).bind(deps) as NonNullable<PlacementDeps[K]>;
 }
 
 async function joursTravailles(deps: PlacementDeps, userId: string, debutStr: string, finStr: string) {
@@ -208,7 +216,7 @@ export async function placerTachesCampagne(
   const startStr = campaignDateToStr(startDate);
   const endDateStr = campaignDateToStr(fin);
 
-  const existingTasks = await requis(deps.getTasksInRange, 'getTasksInRange')(userId, startStr, endDateStr);
+  const existingTasks = await requis(deps, 'getTasksInRange')(userId, startStr, endDateStr);
   const { prefs, isWorkDay } = await joursTravailles(deps, userId, startStr, endDateStr);
 
   // Heures de travail de l'utilisateur
@@ -365,7 +373,7 @@ export async function placerTachesCampagne(
         let scheduledTime = inMemoryTime;
         if (controleCreneaux) {
           // On vérifie en base (lancements concurrents) après le créneau calculé en mémoire
-          const slotCheck = await requis(deps.checkSlotAvailability, 'checkSlotAvailability')(
+          const slotCheck = await requis(deps, 'checkSlotAvailability')(
             userId, scheduledDateStr, inMemoryTime, sub.estimatedDuration
           );
           scheduledTime = (!slotCheck.available && slotCheck.nextAvailableTime)
@@ -379,7 +387,7 @@ export async function placerTachesCampagne(
         }
         const scheduledEndTime = minToHHMM(hhmmToMin(scheduledTime) + sub.estimatedDuration);
 
-        await requis(deps.createTask, 'createTask')({
+        await requis(deps, 'createTask')({
           userId,
           projectId: campaign.projectId ?? undefined,
           campaignId: campaign.id,
@@ -464,7 +472,7 @@ export async function placerPostsCampagne(
       const pieceDate = new Date(dayStr + 'T00:00:00');
       pieceDate.setHours(hour, 0, 0, 0);
 
-      await requis(deps.createContent, 'createContent')({
+      await requis(deps, 'createContent')({
         userId,
         projectId: campaign.projectId ?? undefined,
         campaignId: campaign.id,
