@@ -109,6 +109,19 @@ describe("repenser-db", () => {
     expect(h.clearTaskReferences).not.toHaveBeenCalled();
   });
 
+  it("la campagne est relue FOR UPDATE dans la transaction, scopée userId + id", async () => {
+    h.resultats = [[{ id: 7, status: "paused" }]];
+    let lue: any;
+    await transactionRepenser(async (ops) => { lue = await ops.verrouillerCampagne("u1", 7); });
+    expect(lue).toEqual({ id: 7, status: "paused" });
+    const sel = h.appels.find((a) => a.op === "tx:select" && a.table === "campaigns")!;
+    expect(sel.for).toBe("update");
+    expect(params(sel.where)).toEqual(["u1", 7]);
+    h.resultats = [[]];
+    await transactionRepenser(async (ops) => { lue = await ops.verrouillerCampagne("u1", 8); });
+    expect(lue).toBeUndefined();
+  });
+
   it("listes vides : aucune requête", async () => {
     await transactionRepenser(async (ops) => {
       expect(await ops.supprimerTaches("u1", 7, [])).toBe(0);

@@ -4,8 +4,9 @@
 //
 // Ordre (spec 2026-10-07) :
 //   verrou → contrôles (404 / 409) → génération (3 étapes, 240 s chacune, HORS transaction)
-//   → validation → UNE transaction (mise à jour de la campagne, suppression des posts non
-//   publiés et non en cours, suppression des tâches non faites) → placement si active/paused
+//   → validation → UNE transaction (campagne relue FOR UPDATE et statut revérifié, mise à
+//   jour, suppression des posts non publiés et non en cours, suppression des tâches non
+//   faites) → placement si active (pas si paused : /resume placera)
 //   → fixOverlappingTasks → relâche du verrou (finally).
 //
 // Rien n'est écrit tant que les trois générations n'ont pas réussi. Les posts publiés (ou en
@@ -50,6 +51,27 @@ export class PlacementEchoue extends Error {
 // ─── Types et dépendances ────────────────────────────────────────────────────
 
 export const STATUTS_REPENSABLES = ["draft", "active", "paused"] as const;
+
+export function statutRepensable(statut: string | null | undefined): boolean {
+  return (STATUTS_REPENSABLES as readonly string[]).includes(statut ?? "draft");
+}
+
+/**
+ * Où vont les nouveaux posts et tâches selon le statut :
+ * - `lancement` (brouillon) : rien n'est placé, `/launch` placera ;
+ * - `reprise` (en pause) : rien n'est placé — exactement l'état que laisse `/pause`
+ *   (tâches non faites et posts à venir retirés) ; `/resume` placera les tâches du nouveau
+ *   plan (`generatedTasks`), une seule fois. Comme après tout `/pause`, `/resume` ne recrée
+ *   pas de posts : « Régénérer le contenu » les place depuis le nouveau `contentPlan` ;
+ * - `maintenant` (active) : placement sur la fenêtre restante.
+ */
+export type PlacementRepenser = "lancement" | "reprise" | "maintenant";
+export function placementPourStatut(statut: string | null | undefined): PlacementRepenser {
+  const s = statut ?? "draft";
+  if (s === "paused") return "reprise";
+  if (s === "active") return "maintenant";
+  return "lancement";
+}
 export const CONSIGNE_MAX = 1000;
 export const DELAI_GENERATION_MS = 240_000;
 
@@ -112,6 +134,8 @@ export interface ChampsRepenses {
 
 /** Opérations disponibles DANS la transaction ; toutes scopées userId + campaignId. */
 export interface OperationsTransaction {
+  /** Relit la campagne `FOR UPDATE` (scopée userId + id) ; undefined si elle n'existe plus. */
+  verrouillerCampagne(userId: string, campaignId: number): Promise<CampagneRepensable | undefined>;
   lireContenus(userId: string, campaignId: number): Promise<ContenuLu[]>;
   lireTaches(userId: string, campaignId: number): Promise<TacheLue[]>;
   /** Rend faux si la campagne n'existe plus (aucune ligne mise à jour). */
@@ -197,6 +221,7 @@ export async function apercuRepenser(deps: RepenserDeps, userId: string, campaig
     postsConserves: tri.contenusGardes.length,
     tachesRemplacees: tri.tachesPartantes.length,
     tachesConservees: tri.tachesGardees.length,
+    placement: placementPourStatut(campaign.status),
   };
 }
 
@@ -217,8 +242,7 @@ export interface ResultatRepenser {
 async function controler(deps: RepenserDeps, userId: string, campaignId: number): Promise<CampagneRepensable> {
   const campaign = await deps.getCampaign(campaignId, userId);
   if (!campaign) throw new CampagneIntrouvable(campaignId);
-  const statut = campaign.status ?? "draft";
-  if (!(STATUTS_REPENSABLES as readonly string[]).includes(statut)) throw new StatutIncompatible(campaign.status ?? null);
+  if (!statutRepensable(campaign.status)) throw new StatutIncompatible(campaign.status ?? null);
   return campaign;
 }
 
@@ -247,8 +271,6 @@ async function executer(
   campaign: CampagneRepensable,
   opts: { consigne?: string },
 ): Promise<ResultatRepenser> {
-  const statut = campaign.status ?? "draft";
-
   // 2. Génération — rien n'est écrit avant qu'elle ait entièrement réussi.
   const delai = deps.delaiGenerationMs ?? DELAI_GENERATION_MS;
   const consigne = normaliserConsigne(opts.consigne);
@@ -319,7 +341,14 @@ async function executer(
 
   // 3. Une transaction : mise à jour + suppressions. Le tri est relu ICI, pas avant la
   //    génération : un post publié ou une tâche cochée pendant ces minutes est gardé.
-  const { postsSupprimes, tachesSupprimees } = await deps.transaction(async (ops) => {
+  //    La campagne est relue FOR UPDATE : le travail a pu durer ~12 min, pendant lesquelles
+  //    elle a pu être lancée, mise en pause, reprise, terminée… La décision (brouillon /
+  //    placement, fenêtre) part de cette ligne fraîche, pas de celle lue avant la génération.
+  const { postsSupprimes, tachesSupprimees, fraiche } = await deps.transaction(async (ops) => {
+    const fraiche = await ops.verrouillerCampagne(userId, campaignId);
+    if (!fraiche) throw new CampagneIntrouvable(campaignId);
+    // Lève avant toute écriture : la transaction est annulée, rien n'est modifié.
+    if (!statutRepensable(fraiche.status)) throw new StatutIncompatible(fraiche.status ?? null);
     const ok = await ops.mettreAJourCampagne(userId, campaignId, champs);
     if (!ok) throw new CampagneIntrouvable(campaignId);
     const tri = trierPourRepenser(
@@ -331,19 +360,22 @@ async function executer(
       ? await ops.supprimerTaches(userId, campaignId, tri.tachesPartantes) : 0;
     const postsSupprimes = tri.contenusPartants.length
       ? await ops.supprimerContenus(userId, campaignId, tri.contenusPartants) : 0;
-    return { postsSupprimes, tachesSupprimees };
+    return { postsSupprimes, tachesSupprimees, fraiche };
   });
 
-  // 4. Brouillon : seul le plan change, le lancement placera.
-  if (statut === "draft") return { postsCrees: 0, tachesCreees: 0, postsSupprimes, tachesSupprimees };
+  // 4. Brouillon : seul le plan change, le lancement placera. En pause : l'état que laisse
+  //    /pause (rien de placé) ; /resume placera les tâches du nouveau plan, une seule fois.
+  if (placementPourStatut(fraiche.status) !== "maintenant") {
+    return { postsCrees: 0, tachesCreees: 0, postsSupprimes, tachesSupprimees };
+  }
 
-  // 5. Active / en pause : placement sur la fenêtre restante, jamais au-delà de endDate.
-  const fenetre = fenetrePlacement(campaign, deps.aujourdhuiParis());
+  // 5. Active : placement sur la fenêtre restante, jamais au-delà de endDate.
+  const fenetre = fenetrePlacement(fraiche, deps.aujourdhuiParis());
   if (fenetre.vide) return { postsCrees: 0, tachesCreees: 0, postsSupprimes, tachesSupprimees };
 
   const debut = new Date(fenetre.debut + "T00:00:00");
   const fin = new Date(fenetre.fin + "T00:00:00");
-  const campagneRepensee = { ...campaign, ...champs };
+  const campagneRepensee = { ...fraiche, ...champs };
   let tachesCreees: number;
   let postsCrees: number;
   try {
@@ -370,7 +402,7 @@ async function executer(
 // qui a fait découper l'assistant de création : la route répond 202 après les contrôles,
 // le travail continue ici, et l'écran interroge l'état.
 
-export type CodeErreurRepenser = "generation_echouee" | "placement_echoue" | "erreur";
+export type CodeErreurRepenser = "generation_echouee" | "placement_echoue" | "statut_incompatible" | "erreur";
 
 export interface EtatRepenser {
   etat: "en_cours" | "termine" | "echec";
@@ -458,9 +490,22 @@ export class RegistreRepenser {
 
 export const registreRepenser = new RegistreRepenser();
 
+/**
+ * Un travail « repenser » tient-il cette campagne ? Les routes qui placent ou retirent
+ * des tâches et des posts (/launch, /pause, /resume, /redeploy, /regenerate-content)
+ * répondent alors 409 `deja_en_cours` : sinon elles écriraient pendant que le nouveau plan
+ * se prépare, et la transaction de repenser partirait d'un état qu'elle n'a pas vu.
+ */
+export function repenserEnCours(userId: string, campaignId: number, registre: RegistreRepenser = registreRepenser): boolean {
+  const cle = `${userId}:${campaignId}`;
+  return registre.enCours(cle) || verrous.has(cle);
+}
+
 export function erreurPublique(e: unknown): NonNullable<EtatRepenser["erreur"]> {
   if (e instanceof GenerationEchouee) return { code: "generation_echouee", etape: e.etape };
   if (e instanceof PlacementEchoue) return { code: "placement_echoue", ...e.partiel };
+  // Statut changé pendant la génération (ex. campagne terminée) : rien n'a été écrit.
+  if (e instanceof StatutIncompatible) return { code: "statut_incompatible" };
   return { code: "erreur" };
 }
 

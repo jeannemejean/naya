@@ -1,14 +1,30 @@
 import { describe, it, expect } from "vitest";
 import {
-  cleErreurEtat, cleErreurPost, codeErreurPost, campagneRepensable,
+  cleErreurEtat, cleErreurPost, codeErreurPost, campagneRepensable, suiviPerdu, clePlacementApercu,
   delaiDepasse, intervalleRelecture, resultatAcceptable, intervalleSuivi, doitReprendreSuivi, REPENSER_TOLERANCE_HORLOGE_MS, REPENSER_DELAI_MAX_MS, REPENSER_POLL_MS,
 } from "./repenser-campagne";
 
 describe("repenser-campagne", () => {
+  it("suivi perdu : « aucun » pendant le suivi (redémarrage du serveur) — et seulement là", () => {
+    expect(suiviPerdu(true, "aucun")).toBe(true);
+    expect(suiviPerdu(true, "en_cours")).toBe(false);
+    expect(suiviPerdu(true, "termine")).toBe(false);
+    expect(suiviPerdu(true, undefined)).toBe(false);
+    expect(suiviPerdu(false, "aucun")).toBe(false);
+  });
+
+  it("ligne d'aperçu selon le placement", () => {
+    expect(clePlacementApercu("lancement")).toBe("previewPlacementLancement");
+    expect(clePlacementApercu("reprise")).toBe("previewPlacementReprise");
+    expect(clePlacementApercu("maintenant")).toBeNull();
+    expect(clePlacementApercu(undefined)).toBeNull();
+  });
+
   it("mappe les codes d'échec d'état", () => {
     expect(cleErreurEtat({ code: "generation_echouee" })).toBe("generation_echouee");
     expect(cleErreurEtat({ code: "placement_echoue" })).toBe("placement_echoue");
     expect(cleErreurEtat({ code: "deja_en_cours" })).toBe("deja_en_cours");
+    expect(cleErreurEtat({ code: "statut_incompatible" })).toBe("statut_incompatible");
     expect(cleErreurEtat({ code: "erreur" })).toBe("generique");
     expect(cleErreurEtat(undefined)).toBe("generique");
   });

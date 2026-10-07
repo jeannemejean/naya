@@ -50,7 +50,7 @@ import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
 import { dateDeRetassage, aujourdhuiParis } from "./services/repack-from";
 import {
-  apercuRepenser, lancerRepenser, registreRepenser, StatutIncompatible, DejaEnCours,
+  apercuRepenser, lancerRepenser, registreRepenser, repenserEnCours, StatutIncompatible, DejaEnCours,
   CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
 } from "./services/campagne/repenser";
 import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
@@ -10724,6 +10724,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
       if (campaign.status === 'active') return res.status(400).json({ message: "Campaign already launched" });
 
       const rawStart = req.body.startDate || campaign.startDate;
@@ -10772,6 +10773,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
 
       const contentPlan = (campaign.contentPlan || []) as Array<{
         phase: number; week: string; platform: string; format: string;
@@ -10812,6 +10814,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const { pauseNote } = req.body as { pauseNote?: string };
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
       if (campaign.status !== 'active') return res.status(400).json({ message: "Campaign is not active" });
       const today = new Date().toISOString().slice(0, 10);
       const deleted = await storage.deleteCampaignFutureTasks(id, today);
@@ -10833,6 +10836,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
       if (campaign.status !== 'paused') return res.status(400).json({ message: "Campaign is not paused" });
 
       if (campaign.pauseNote) {
@@ -11075,6 +11079,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
 
       const tasksRemoved = await storage.deleteAllIncompleteCampaignTasks(id);
 

@@ -19,6 +19,8 @@ import {
   intervalleSuivi,
   resultatAcceptable,
   doitReprendreSuivi,
+  suiviPerdu,
+  clePlacementApercu,
 } from "@/lib/repenser-campagne";
 
 interface Props {
@@ -76,6 +78,18 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
   useEffect(() => {
     if (!suivi || !etatQuery.data) return;
     const d = etatQuery.data;
+    // Le registre est en mémoire : un redémarrage du serveur l'efface. « aucun » pendant le
+    // suivi = travail perdu → on arrête de suivre et on prévient.
+    if (suiviPerdu(suivi, d.etat)) {
+      setSuivi(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/campaigns"] });
+      toast({
+        title: t("campaigns.repenser.failTitle"),
+        description: t("campaigns.repenser.erreurs.interrompu"),
+        variant: "destructive",
+      });
+      return;
+    }
     if ((d.etat === "termine" || d.etat === "echec") && !resultatAcceptable(d, debutSuivi.current)) return;
     if (d.etat === "termine") {
       setSuivi(false);
@@ -172,6 +186,9 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
                 <li>{t("campaigns.repenser.previewPostsKept", { count: apercu.postsConserves })}</li>
                 <li>{t("campaigns.repenser.previewTasksReplaced", { count: apercu.tachesRemplacees })}</li>
                 <li>{t("campaigns.repenser.previewTasksKept", { count: apercu.tachesConservees })}</li>
+                {clePlacementApercu(apercu.placement) && (
+                  <li className="text-xs text-naya-olive-55 pt-1">{t(`campaigns.repenser.${clePlacementApercu(apercu.placement)}`)}</li>
+                )}
               </ul>
             )}
 

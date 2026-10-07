@@ -9,6 +9,10 @@ export interface ApercuRepenser {
   postsConserves: number;
   tachesRemplacees: number;
   tachesConservees: number;
+  /** Où iront les nouveaux posts et tâches : `lancement` (brouillon : au lancement),
+   *  `reprise` (en pause : rien n'est placé, la reprise placera les tâches), `maintenant`
+   *  (active). Indicatif : le serveur décide sur l'état de la campagne au moment d'écrire. */
+  placement?: "lancement" | "reprise" | "maintenant";
 }
 
 export interface ResultatRepenser {
@@ -40,6 +44,7 @@ export function cleErreurEtat(erreur: { code?: string } | null | undefined): str
     case "generation_echouee":
     case "placement_echoue":
     case "deja_en_cours":
+    case "statut_incompatible":
       return erreur.code;
     default:
       return "generique";
@@ -108,4 +113,22 @@ export function doitReprendreSuivi(p: {
   open: boolean; suivi: boolean; abandonne: boolean; etat: EtatRepenser["etat"] | undefined; enVol: boolean;
 }): boolean {
   return p.open && !p.suivi && !p.abandonne && p.etat === "en_cours" && !p.enVol;
+}
+
+/**
+ * Pendant le suivi, `aucun` veut dire que le travail a été perdu : le registre est en
+ * mémoire et un redémarrage du serveur l'efface (le POST a répondu 202, l'entrée
+ * `en_cours` existait donc). Le suivi s'arrête et on prévient.
+ */
+export function suiviPerdu(suivi: boolean, etat: EtatRepenser["etat"] | undefined): boolean {
+  return suivi && etat === "aucun";
+}
+
+/** Clé i18n (sous `campaigns.repenser.`) de la ligne d'aperçu qui dit où iront les nouveautés. */
+export function clePlacementApercu(placement: ApercuRepenser["placement"]): string | null {
+  switch (placement) {
+    case "lancement": return "previewPlacementLancement";
+    case "reprise": return "previewPlacementReprise";
+    default: return null;
+  }
 }

@@ -1,33 +1,24 @@
 // Accès base de « repenser la campagne » : lectures et transaction. Chaque requête porte
 // sur userId ET campaignId — jamais seulement sur un identifiant de ligne.
-import { and, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
+import { contenuSupprimable, tacheSupprimable } from "./gardes-sql";
 import { campaigns, content, tasks } from "@shared/schema";
 import { db, type DbExecutor } from "../../db";
 import { storage } from "../../storage";
 import type { ChampsRepenses, ContenuLu, OperationsTransaction, TacheLue } from "./repenser";
 
-/**
- * Les conditions de garde, REDITES dans le DELETE : entre la lecture et la suppression, le
- * publieur (`claimContentForPosting` → `posting`) peut prendre un post, ou une tâche être
- * cochée. Mêmes signaux que `contenuEstPublie` + `estPublieOuEnCours`, insensibles à la
- * casse et aux espaces comme eux, et sûrs face à NULL.
- */
-export const STATUTS_POST_GARDES = ["posted", "uploading", "processing", "posting"] as const;
-
-export function contenuSupprimable(): SQL {
-  return and(
-    isNull(content.publishedAt),
-    sql`lower(trim(coalesce(${content.postStatus}, ''))) not in (${sql.join(STATUTS_POST_GARDES.map((v) => sql`${v}`), sql`, `)})`,
-    sql`lower(trim(coalesce(${content.contentStatus}, ''))) <> 'published'`,
-  )!;
-}
-
-export function tacheSupprimable(): SQL {
-  return sql`${tasks.completed} is not true`;
-}
+export { STATUTS_POST_GARDES, contenuSupprimable, tacheSupprimable } from "./gardes-sql";
 
 function operations(x: DbExecutor): OperationsTransaction {
   return {
+    async verrouillerCampagne(userId, campaignId) {
+      // Relue FOR UPDATE : un /pause, /resume, /launch… concurrent attend la fin de la
+      // transaction, et la décision (brouillon / placement, fenêtre) part de cette ligne.
+      const [ligne] = await x.select().from(campaigns)
+        .where(and(eq(campaigns.userId, userId), eq(campaigns.id, campaignId)))
+        .for("update");
+      return ligne as any;
+    },
     async lireContenus(userId, campaignId): Promise<ContenuLu[]> {
       return x
         .select({

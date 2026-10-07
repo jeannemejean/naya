@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   lireTaches: vi.fn(),
   transaction: vi.fn(),
   ops: {
+    verrouillerCampagne: vi.fn(),
     lireContenus: vi.fn(),
     lireTaches: vi.fn(),
     mettreAJourCampagne: vi.fn(),
@@ -80,6 +81,12 @@ const storageMock = {
   checkSlotAvailability: vi.fn(),
   createTask: vi.fn(),
   createContent: vi.fn(),
+  deleteCampaignFutureTasks: vi.fn(),
+  deleteCampaignFutureContent: vi.fn(),
+  deleteAllIncompleteCampaignTasks: vi.fn(),
+  deleteCampaignContentItems: vi.fn(),
+  getContent: vi.fn(),
+  updateCampaign: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 
@@ -126,6 +133,7 @@ beforeEach(async () => {
     { id: 2, publishedAt: null, postStatus: "pending", contentStatus: "idea" },
   ]);
   h.lireTaches.mockResolvedValue([{ id: 8, completed: true }, { id: 9, completed: false }]);
+  h.ops.verrouillerCampagne.mockImplementation((userId: string, id: number) => storageMock.getCampaign(id, userId));
   h.ops.lireContenus.mockImplementation(() => h.lireContenus());
   h.ops.lireTaches.mockImplementation(() => h.lireTaches());
   h.ops.mettreAJourCampagne.mockResolvedValue(true);
@@ -179,7 +187,7 @@ describe("GET /api/campaigns/:id/repenser-apercu", () => {
   it("rend les quatre comptes", async () => {
     const res = await fetch(url(5, "repenser-apercu"));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ postsRemplaces: 1, postsConserves: 1, tachesRemplacees: 1, tachesConservees: 1 });
+    expect(await res.json()).toEqual({ postsRemplaces: 1, postsConserves: 1, tachesRemplacees: 1, tachesConservees: 1, placement: "maintenant" });
     expect(h.lireContenus).toHaveBeenCalledWith("user-1", 5);
   });
 
@@ -308,5 +316,58 @@ describe("POST /api/campaigns/:id/repenser", () => {
     expect(e.resultat).toEqual({ postsCrees: 0, tachesCreees: 0, postsSupprimes: 1, tachesSupprimees: 1 });
     expect(storageMock.createTask).not.toHaveBeenCalled();
     expect(storageMock.fixOverlappingTasks).not.toHaveBeenCalled();
+  });
+});
+
+describe("campagne relue au moment d'écrire", () => {
+  it("campagne terminée pendant la génération → echec statut_incompatible, rien n'est écrit", async () => {
+    h.ops.verrouillerCampagne.mockResolvedValue(campagne({ status: "completed" }));
+    const e = await lancerEtAttendre({});
+    expect(e).toMatchObject({ etat: "echec", erreur: { code: "statut_incompatible" } });
+    expect(h.ops.mettreAJourCampagne).not.toHaveBeenCalled();
+    expect(h.ops.supprimerContenus).not.toHaveBeenCalled();
+    expect(h.ops.supprimerTaches).not.toHaveBeenCalled();
+    expect(storageMock.createTask).not.toHaveBeenCalled();
+    expect(storageMock.createContent).not.toHaveBeenCalled();
+  });
+
+  it("en pause → aucun placement (la reprise placera) ; l'aperçu le dit", async () => {
+    storageMock.getCampaign.mockResolvedValue(campagne({ status: "paused" }));
+    const apercu = await (await fetch(url(5, "repenser-apercu"))).json();
+    expect(apercu.placement).toBe("reprise");
+    const e = await lancerEtAttendre({});
+    expect(e.resultat).toEqual({ postsCrees: 0, tachesCreees: 0, postsSupprimes: 1, tachesSupprimees: 1 });
+    expect(storageMock.createTask).not.toHaveBeenCalled();
+    expect(storageMock.createContent).not.toHaveBeenCalled();
+  });
+});
+
+describe("routes de placement pendant un « repenser » en cours → 409 deja_en_cours", () => {
+  it("/launch, /pause, /resume, /redeploy, /regenerate-content refusées, rien n'est touché ; libres après", async () => {
+    let relacher!: () => void;
+    h.generateCampaignStrategy.mockImplementation(() => new Promise((r) => { relacher = () => r(strategie); }));
+    expect((await post(5, {})).status).toBe(202);
+    await vi.waitFor(() => expect(h.generateCampaignStrategy).toHaveBeenCalled());
+    for (const route of ["launch", "pause", "resume", "redeploy", "regenerate-content"]) {
+      const res = await fetch(url(5, route), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      expect(res.status, route).toBe(409);
+      expect(await res.json(), route).toEqual({ message: "deja_en_cours" });
+    }
+    // Une campagne d'autrui reste un 404, pas un 409.
+    const autrui = await fetch(url(999, "pause"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    expect(autrui.status).toBe(404);
+    for (const f of [
+      storageMock.deleteCampaignFutureTasks, storageMock.deleteCampaignFutureContent,
+      storageMock.deleteAllIncompleteCampaignTasks, storageMock.deleteCampaignContentItems,
+      storageMock.updateCampaign, storageMock.createTask, storageMock.createContent,
+    ]) expect(f).not.toHaveBeenCalled();
+    relacher();
+    await vi.waitFor(async () => expect((await etat()).body.etat).toBe("termine"));
+    // Après : /pause n'est plus bloquée (campagne active).
+    storageMock.deleteCampaignFutureTasks.mockResolvedValue(0);
+    storageMock.deleteCampaignFutureContent.mockResolvedValue(0);
+    storageMock.updateCampaign.mockResolvedValue(campagne({ status: "paused" }));
+    const pause = await fetch(url(5, "pause"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    expect(pause.status).toBe(200);
   });
 });

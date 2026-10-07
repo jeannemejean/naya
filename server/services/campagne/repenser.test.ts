@@ -1,9 +1,10 @@
 // « Repenser la campagne » : orchestration testée avec des fakes (aucune base, aucun modèle).
 import { describe, it, expect, vi } from "vitest";
+import { placerTachesCampagne } from "./placement";
 import {
   apercuRepenser, repenserCampagne, fenetrePlacement, normaliserConsigne,
   CampagneIntrouvable, StatutIncompatible, GenerationEchouee, DejaEnCours, PlacementEchoue,
-  lancerRepenser, RegistreRepenser, erreurPublique,
+  lancerRepenser, RegistreRepenser, erreurPublique, repenserEnCours, placementPourStatut,
   type RepenserDeps, type OperationsTransaction,
 } from "./repenser";
 
@@ -48,9 +49,16 @@ const taches = [
   { id: 12, completed: false },
 ];
 
-function fabrique(over: Partial<RepenserDeps> & { campaign?: any } = {}) {
+function fabrique(over: Partial<RepenserDeps> & { campaign?: any; fraiche?: any } = {}) {
   const journal: string[] = [];
+  const { campaign, fraiche, ...reste } = over;
   const ops: OperationsTransaction = {
+    // Par défaut la ligne relue FOR UPDATE est celle lue avant la génération.
+    verrouillerCampagne: vi.fn(async (userId: string, id: number) => {
+      journal.push("verrou");
+      if (fraiche !== undefined) return fraiche;
+      return userId === "u1" && id === 7 ? (campaign ?? campagne()) : undefined;
+    }),
     lireContenus: vi.fn(async () => contenus),
     lireTaches: vi.fn(async () => taches),
     mettreAJourCampagne: vi.fn(async () => { journal.push("maj"); return true; }),
@@ -65,7 +73,6 @@ function fabrique(over: Partial<RepenserDeps> & { campaign?: any } = {}) {
     createTask: vi.fn(async (t: any) => { journal.push("createTask"); return t; }),
     createContent: vi.fn(async (c: any) => { journal.push("createContent"); return c; }),
   };
-  const { campaign, ...reste } = over;
   const deps = {
     getCampaign: vi.fn(async (id: number, userId: string) =>
       userId === "u1" && id === 7 ? (campaign ?? campagne()) : undefined),
@@ -93,8 +100,15 @@ describe("apercuRepenser", () => {
   it("compte publiés (ou en cours) / non publiés, faites / non faites", async () => {
     const { deps } = fabrique();
     expect(await apercuRepenser(deps, "u1", 7)).toEqual({
-      postsRemplaces: 2, postsConserves: 2, tachesRemplacees: 2, tachesConservees: 1,
+      postsRemplaces: 2, postsConserves: 2, tachesRemplacees: 2, tachesConservees: 1, placement: "maintenant",
     });
+  });
+
+  it("dit où iront les nouveautés : en pause → à la reprise ; brouillon → au lancement", async () => {
+    expect((await apercuRepenser(fabrique({ campaign: campagne({ status: "paused" }) }).deps, "u1", 7)).placement)
+      .toBe("reprise");
+    expect((await apercuRepenser(fabrique({ campaign: campagne({ status: "draft" }) }).deps, "u1", 7)).placement)
+      .toBe("lancement");
   });
 
   it("campagne d'un autre utilisateur → CampagneIntrouvable, rien n'est lu", async () => {
@@ -275,11 +289,61 @@ describe("repenserCampagne — écritures", () => {
     expect(deps.fixOverlappingTasks).toHaveBeenCalledWith("u1", "2026-10-07");
   });
 
-  it("paused → placement aussi, statut jamais écrit", async () => {
+  it("paused → l'état que laisse /pause : rien n'est placé, statut jamais écrit", async () => {
     const { deps, placement, ops } = fabrique({ campaign: campagne({ status: "paused" }) });
-    await repenserCampagne(deps, "u1", 7);
-    expect(placement.createContent).toHaveBeenCalled();
+    const r = await repenserCampagne(deps, "u1", 7);
+    expect(r).toEqual({ postsCrees: 0, tachesCreees: 0, postsSupprimes: 2, tachesSupprimees: 2 });
+    expect(placement.createTask).not.toHaveBeenCalled();
+    expect(placement.createContent).not.toHaveBeenCalled();
+    expect(deps.fixOverlappingTasks).not.toHaveBeenCalled();
     expect((ops.mettreAJourCampagne as any).mock.calls[0][2]).not.toHaveProperty("status");
+  });
+
+  it("paused puis reprise → un seul jeu de tâches, celui du nouveau plan (pas de doublon)", async () => {
+    // Base factice à état : les tâches vivent ici ; la reprise est modélisée comme /resume,
+    // qui place les `generatedTasks` de la campagne relue, sans rien retirer.
+    const base = {
+      campagne: campagne({ status: "paused", generatedTasks: [{ title: "Ancienne", phase: 1 }] }) as any,
+      taches: [
+        { id: 10, campaignId: 7, title: "Faite", completed: true },
+        { id: 11, campaignId: 7, title: "Ancienne", completed: false }, // passée, non faite : /pause la laisse
+      ] as any[],
+    };
+    let prochainId = 100;
+    const { deps, ops, placement } = fabrique({ campaign: base.campagne });
+    (ops.verrouillerCampagne as any).mockImplementation(async () => base.campagne);
+    (ops.lireContenus as any).mockResolvedValue([]);
+    (ops.lireTaches as any).mockImplementation(async () => base.taches.map((t) => ({ id: t.id, completed: t.completed })));
+    (ops.mettreAJourCampagne as any).mockImplementation(async (_u: string, _c: number, champs: any) => {
+      base.campagne = { ...base.campagne, ...champs };
+      return true;
+    });
+    (ops.supprimerTaches as any).mockImplementation(async (_u: string, _c: number, ids: number[]) => {
+      const avant = base.taches.length;
+      base.taches = base.taches.filter((t) => !ids.includes(t.id));
+      return avant - base.taches.length;
+    });
+    placement.createTask.mockImplementation(async (t: any) => {
+      const ligne = { ...t, id: prochainId++ };
+      base.taches.push(ligne);
+      return ligne;
+    });
+
+    await repenserCampagne(deps, "u1", 7);
+    expect(base.taches.map((t) => t.title)).toEqual(["Faite"]); // l'état de /pause, plan neuf
+
+    // Reprise : la campagne repasse active et ses `generatedTasks` sont placées.
+    base.campagne = { ...base.campagne, status: "active" };
+    const { creees } = await placerTachesCampagne(placement as any, {
+      userId: "u1", campaign: base.campagne,
+      debut: new Date("2026-10-07T00:00:00"), fin: new Date("2026-10-31T00:00:00"),
+    });
+    expect(creees).toBeGreaterThan(0);
+    const nonFaites = base.taches.filter((t) => !t.completed);
+    expect(nonFaites).toHaveLength(creees); // un seul jeu
+    expect(nonFaites.some((t) => t.title === "Ancienne")).toBe(false);
+    const titres = nonFaites.map((t) => t.title);
+    expect(new Set(titres).size).toBe(titres.length); // aucun doublon
   });
 
   it("aucun post ni tâche n'est placé après endDate (fenêtre courte)", async () => {
@@ -323,6 +387,88 @@ describe("repenserCampagne — écritures", () => {
   it("échec de fixOverlappingTasks → l'opération réussit quand même", async () => {
     const { deps } = fabrique({ fixOverlappingTasks: vi.fn(async () => { throw new Error("gcal"); }) });
     await expect(repenserCampagne(deps, "u1", 7)).resolves.toMatchObject({ postsCrees: 2 });
+  });
+});
+
+describe("repenserCampagne — campagne relue dans la transaction", () => {
+  it("la campagne est relue FOR UPDATE avant toute écriture", async () => {
+    const { deps, ops, journal } = fabrique();
+    await repenserCampagne(deps, "u1", 7);
+    expect(ops.verrouillerCampagne).toHaveBeenCalledWith("u1", 7);
+    expect(journal.indexOf("verrou")).toBeGreaterThan(journal.indexOf("tx-debut"));
+    expect(journal.indexOf("verrou")).toBeLessThan(journal.indexOf("maj"));
+  });
+
+  for (const status of ["completed", "archived"]) {
+    it(`statut devenu ${status} pendant la génération → StatutIncompatible, rien n'est écrit`, async () => {
+      const { deps, ops, placement } = fabrique({ fraiche: campagne({ status }) });
+      const err = await repenserCampagne(deps, "u1", 7).catch((e) => e);
+      expect(err).toBeInstanceOf(StatutIncompatible);
+      expect(erreurPublique(err)).toEqual({ code: "statut_incompatible" });
+      expect(ops.mettreAJourCampagne).not.toHaveBeenCalled();
+      expect(ops.supprimerContenus).not.toHaveBeenCalled();
+      expect(ops.supprimerTaches).not.toHaveBeenCalled();
+      expect(placement.createTask).not.toHaveBeenCalled();
+      expect(placement.createContent).not.toHaveBeenCalled();
+    });
+  }
+
+  it("arrière-plan : statut changé → echec statut_incompatible", async () => {
+    const reg = new RegistreRepenser();
+    const { deps } = fabrique({ fraiche: campagne({ status: "completed" }) });
+    await (await lancerRepenser(deps, "u1", 7, {}, reg)).termine;
+    expect(reg.lire("u1:7")).toMatchObject({ etat: "echec", erreur: { code: "statut_incompatible" } });
+  });
+
+  it("campagne supprimée pendant la génération → CampagneIntrouvable, rien n'est écrit", async () => {
+    const { deps, ops } = fabrique({ fraiche: null });
+    await expect(repenserCampagne(deps, "u1", 7)).rejects.toBeInstanceOf(CampagneIntrouvable);
+    expect(ops.mettreAJourCampagne).not.toHaveBeenCalled();
+  });
+
+  it("brouillon lancé pendant la génération → placement sur la fenêtre de la ligne fraîche", async () => {
+    const { deps, placement } = fabrique({
+      campaign: campagne({ status: "draft", startDate: null, endDate: null }),
+      fraiche: campagne({ status: "active", startDate: "2026-10-10", endDate: "2026-10-20" }),
+    });
+    const r = await repenserCampagne(deps, "u1", 7);
+    expect(r.tachesCreees).toBeGreaterThan(0);
+    for (const [t] of placement.createTask.mock.calls as any[]) {
+      expect(t.scheduledDate >= "2026-10-10" && t.scheduledDate <= "2026-10-20").toBe(true);
+    }
+    for (const [c] of placement.createContent.mock.calls as any[]) {
+      expect(c.scheduledFor < new Date("2026-10-21T00:00:00")).toBe(true);
+    }
+    expect(deps.fixOverlappingTasks).toHaveBeenCalledWith("u1", "2026-10-10");
+  });
+
+  it("active mise en pause pendant la génération → rien n'est placé", async () => {
+    const { deps, placement } = fabrique({ fraiche: campagne({ status: "paused" }) });
+    const r = await repenserCampagne(deps, "u1", 7);
+    expect(r.tachesCreees).toBe(0);
+    expect(placement.createTask).not.toHaveBeenCalled();
+    expect(placement.createContent).not.toHaveBeenCalled();
+  });
+
+  it("placementPourStatut : brouillon / pause / active", () => {
+    expect(placementPourStatut("draft")).toBe("lancement");
+    expect(placementPourStatut(null)).toBe("lancement");
+    expect(placementPourStatut("paused")).toBe("reprise");
+    expect(placementPourStatut("active")).toBe("maintenant");
+  });
+
+  it("repenserEnCours : vrai pendant le travail (par utilisatrice), faux après", async () => {
+    const reg = new RegistreRepenser();
+    let relacher!: () => void;
+    const attente = new Promise<void>((r) => { relacher = r; });
+    const { deps } = fabrique({ genererStrategie: vi.fn(async () => { await attente; return strategie() as any; }) });
+    const { termine } = await lancerRepenser(deps, "u1", 7, {}, reg);
+    expect(repenserEnCours("u1", 7, reg)).toBe(true);
+    expect(repenserEnCours("u2", 7, reg)).toBe(false);
+    expect(repenserEnCours("u1", 8, reg)).toBe(false);
+    relacher();
+    await termine;
+    expect(repenserEnCours("u1", 7, reg)).toBe(false);
   });
 });
 
