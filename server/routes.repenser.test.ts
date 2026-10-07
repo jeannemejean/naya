@@ -150,6 +150,23 @@ const url = (id: number | string, suffixe: string) => `http://127.0.0.1:${port}/
 const post = (id: number | string, body: unknown) =>
   fetch(url(id, "repenser"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
+async function etat(id: number | string = 5) {
+  const res = await fetch(url(id, "repenser-etat"));
+  return { status: res.status, body: await res.json() };
+}
+/** POST puis attend la fin du travail en arrière-plan (interrogation de l'état). */
+async function lancerEtAttendre(body: unknown, id = 5) {
+  const res = await post(id, body);
+  expect(res.status).toBe(202);
+  expect(await res.json()).toEqual({ etat: "en_cours" });
+  for (let i = 0; i < 200; i++) {
+    const e = await etat(id);
+    if (e.body.etat !== "en_cours") return e.body;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error("le travail ne s'est pas terminé");
+}
+
 const rienEcrit = () => {
   expect(h.transaction).not.toHaveBeenCalled();
   expect(storageMock.createTask).not.toHaveBeenCalled();
@@ -175,9 +192,10 @@ describe("GET /api/campaigns/:id/repenser-apercu", () => {
 
 describe("POST /api/campaigns/:id/repenser", () => {
   it("succès : comptes rendus, savoir + préférences + marque + consigne transmis aux trois générateurs", async () => {
-    const res = await post(5, { consigne: "  Moins de promo, plus de coulisses  " });
-    expect(res.status).toBe(200);
-    const body = await res.json();
+    const e = await lancerEtAttendre({ consigne: "  Moins de promo, plus de coulisses  " });
+    expect(e.etat).toBe("termine");
+    expect(typeof e.debut).toBe("string");
+    const body = e.resultat;
     expect(body).toMatchObject({ postsSupprimes: 1, tachesSupprimees: 1, postsCrees: 1 });
     expect(Object.keys(body).sort()).toEqual(["postsCrees", "postsSupprimes", "tachesCreees", "tachesSupprimees"]);
     for (const f of [h.generateCampaignStrategy, h.generateCampaignContent, h.generateCampaignTasks]) {
@@ -201,8 +219,7 @@ describe("POST /api/campaigns/:id/repenser", () => {
   });
 
   it("consigne faite d'espaces → absente des requêtes", async () => {
-    const res = await post(5, { consigne: "    " });
-    expect(res.status).toBe(200);
+    expect((await lancerEtAttendre({ consigne: "    " })).etat).toBe("termine");
     expect("consigne" in h.generateCampaignStrategy.mock.calls[0][0]).toBe(false);
   });
 
@@ -214,8 +231,7 @@ describe("POST /api/campaigns/:id/repenser", () => {
   });
 
   it("1000 caractères après trim → accepté", async () => {
-    const res = await post(5, { consigne: "  " + "x".repeat(1000) + "  " });
-    expect(res.status).toBe(200);
+    expect((await lancerEtAttendre({ consigne: "  " + "x".repeat(1000) + "  " })).etat).toBe("termine");
   });
 
   it("consigne non textuelle → 400", async () => {
@@ -238,53 +254,58 @@ describe("POST /api/campaigns/:id/repenser", () => {
     rienEcrit();
   });
 
-  it("échec du modèle → 502 generation_echouee, zéro écriture", async () => {
-    h.generateCampaignTasks.mockRejectedValue(new Error("overloaded"));
-    const res = await post(5, {});
-    expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({ message: "generation_echouee", etape: "taches" });
+  it("échec du modèle → état echec generation_echouee, zéro écriture, pas de détails internes", async () => {
+    h.generateCampaignTasks.mockRejectedValue(new Error("overloaded at /srv/x.ts:12"));
+    const e = await lancerEtAttendre({});
+    expect(e).toMatchObject({ etat: "echec", erreur: { code: "generation_echouee", etape: "taches" } });
+    expect(JSON.stringify(e)).not.toContain("overloaded");
+    expect(e).not.toHaveProperty("resultat");
     rienEcrit();
   });
 
-  it("plan de contenu vide → 502 generation_echouee, zéro écriture", async () => {
+  it("plan de contenu vide → echec generation_echouee, zéro écriture", async () => {
     h.generateCampaignContent.mockResolvedValue([]);
-    const res = await post(5, {});
-    expect(res.status).toBe(502);
-    expect((await res.json()).message).toBe("generation_echouee");
+    const e = await lancerEtAttendre({});
+    expect(e.erreur).toEqual({ code: "generation_echouee", etape: "contenu" });
     rienEcrit();
   });
 
   it("savoir indisponible → la génération continue sans savoir", async () => {
     h.retrieve.mockRejectedValue(new Error("mémoire indisponible"));
-    const res = await post(5, {});
-    expect(res.status).toBe(200);
+    expect((await lancerEtAttendre({})).etat).toBe("termine");
     expect("savoir" in h.generateCampaignStrategy.mock.calls[0][0]).toBe(false);
   });
 
-  it("second appel concurrent → 409 deja_en_cours ; le premier aboutit", async () => {
+  it("pendant le travail : état en_cours, second appel → 409 deja_en_cours ; puis termine", async () => {
     let relacher!: () => void;
     h.generateCampaignStrategy.mockImplementation(() => new Promise((r) => { relacher = () => r(strategie); }));
-    const premier = post(5, {});
+    const premier = await post(5, {});
+    expect(premier.status).toBe(202);
     await vi.waitFor(() => expect(h.generateCampaignStrategy).toHaveBeenCalled());
+    expect((await etat()).body.etat).toBe("en_cours");
     const second = await post(5, {});
     expect(second.status).toBe(409);
     expect((await second.json()).message).toBe("deja_en_cours");
     relacher();
-    expect((await premier).status).toBe(200);
+    await vi.waitFor(async () => expect((await etat()).body.etat).toBe("termine"));
   });
 
-  it("échec du placement → 500 placement_echoue avec les suppressions faites", async () => {
+  it("état d'une campagne d'autrui → 404 ; campagne jamais repensée → aucun", async () => {
+    expect((await etat(999)).status).toBe(404);
+    storageMock.getCampaign.mockImplementation(async (id: number) => (id === 6 ? campagne({ id: 6 }) : undefined));
+    expect(await etat(6)).toEqual({ status: 200, body: { etat: "aucun" } });
+  });
+
+  it("échec du placement → echec placement_echoue avec les suppressions faites", async () => {
     storageMock.createTask.mockRejectedValue(new Error("db"));
-    const res = await post(5, {});
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ message: "placement_echoue", postsSupprimes: 1, tachesSupprimees: 1 });
+    const e = await lancerEtAttendre({});
+    expect(e).toMatchObject({ etat: "echec", erreur: { code: "placement_echoue", postsSupprimes: 1, tachesSupprimees: 1 } });
   });
 
   it("brouillon → aucun placement", async () => {
     storageMock.getCampaign.mockResolvedValue(campagne({ status: "draft", startDate: null, endDate: null }));
-    const res = await post(5, {});
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ postsCrees: 0, tachesCreees: 0, postsSupprimes: 1, tachesSupprimees: 1 });
+    const e = await lancerEtAttendre({});
+    expect(e.resultat).toEqual({ postsCrees: 0, tachesCreees: 0, postsSupprimes: 1, tachesSupprimees: 1 });
     expect(storageMock.createTask).not.toHaveBeenCalled();
     expect(storageMock.fixOverlappingTasks).not.toHaveBeenCalled();
   });

@@ -50,7 +50,7 @@ import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
 import { dateDeRetassage, aujourdhuiParis } from "./services/repack-from";
 import {
-  apercuRepenser, repenserCampagne, StatutIncompatible, GenerationEchouee, DejaEnCours, PlacementEchoue,
+  apercuRepenser, lancerRepenser, registreRepenser, StatutIncompatible, DejaEnCours,
   CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
 } from "./services/campagne/repenser";
 import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
@@ -10420,8 +10420,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
-  // POST /api/campaigns/:id/repenser { consigne?: string } →
-  // { postsCrees, tachesCreees, postsSupprimes, tachesSupprimees }.
+  // POST /api/campaigns/:id/repenser { consigne?: string } → 202 { etat: "en_cours" }.
+  // Les contrôles (404, 409, 400) sont synchrones ; la génération (jusqu'à 3 × 240 s)
+  // continue en arrière-plan — l'écran suit `GET …/repenser-etat`.
   app.post('/api/campaigns/:id/repenser', isAuthenticated, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -10434,24 +10435,32 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (consigne.length > CONSIGNE_REPENSER_MAX) {
         return res.status(400).json({ message: "consigne_trop_longue", max: CONSIGNE_REPENSER_MAX });
       }
-      const resultat = await repenserCampagne(depsRepenser, req.userId, id, consigne ? { consigne } : {});
-      res.json(resultat);
+      await lancerRepenser(depsRepenser, req.userId, id, consigne ? { consigne } : {});
+      res.status(202).json({ etat: "en_cours" });
     } catch (error) {
       if (error instanceof CampagneIntrouvable) return res.status(404).json({ message: "Campaign not found" });
       if (error instanceof DejaEnCours) return res.status(409).json({ message: "deja_en_cours" });
       if (error instanceof StatutIncompatible) {
         return res.status(409).json({ message: "statut_incompatible", statut: error.statut });
       }
-      if (error instanceof GenerationEchouee) {
-        console.error(`[repenser] génération échouée (${error.etape}):`, (error.cause as any)?.message ?? error.cause ?? '');
-        return res.status(502).json({ message: "generation_echouee", etape: error.etape });
-      }
-      if (error instanceof PlacementEchoue) {
-        console.error("[repenser] placement échoué:", (error.cause as any)?.message ?? error.cause);
-        return res.status(500).json({ message: "placement_echoue", ...error.partiel });
-      }
       console.error("Error rethinking campaign:", error);
       res.status(500).json({ message: "Failed to rethink campaign" });
+    }
+  });
+
+  // GET /api/campaigns/:id/repenser-etat → { etat: "aucun" } ou l'entrée du registre
+  // ({ etat, debut, fin?, resultat?, erreur? }). 404 si la campagne n'est pas à elle.
+  app.get('/api/campaigns/:id/repenser-etat', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(404).json({ message: "Campaign not found" });
+      const campaign = await storage.getCampaign(id, userId);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      res.json(registreRepenser.lire(`${userId}:${id}`) ?? { etat: "aucun" });
+    } catch (error) {
+      console.error("Error reading campaign rethink state:", error);
+      res.status(500).json({ message: "Failed to read campaign rethink state" });
     }
   });
 

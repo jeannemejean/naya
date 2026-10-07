@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   apercuRepenser, repenserCampagne, fenetrePlacement, normaliserConsigne,
   CampagneIntrouvable, StatutIncompatible, GenerationEchouee, DejaEnCours, PlacementEchoue,
+  lancerRepenser, RegistreRepenser, erreurPublique,
   type RepenserDeps, type OperationsTransaction,
 } from "./repenser";
 
@@ -370,5 +371,106 @@ describe("repenserCampagne — contrôles et verrou", () => {
     await expect(repenserCampagne(deps, "u2", 7)).rejects.toBeInstanceOf(CampagneIntrouvable);
     relacher();
     await premier;
+  });
+});
+
+describe("lancerRepenser (arrière-plan) et registre", () => {
+  it("contrôles synchrones puis en_cours → termine avec le résultat", async () => {
+    const reg = new RegistreRepenser();
+    const { deps } = fabrique();
+    const { termine } = await lancerRepenser(deps, "u1", 7, {}, reg);
+    expect(reg.lire("u1:7")?.etat).toBe("en_cours");
+    await termine;
+    const e = reg.lire("u1:7")!;
+    expect(e.etat).toBe("termine");
+    expect(e.resultat).toMatchObject({ postsSupprimes: 2, tachesSupprimees: 2, postsCrees: 2 });
+    expect(typeof e.debut).toBe("string");
+    expect(typeof e.fin).toBe("string");
+  });
+
+  it("échec de génération → echec avec code, sans détails internes ; le processus ne plante pas", async () => {
+    const reg = new RegistreRepenser();
+    const { deps } = fabrique({ genererContenu: vi.fn(async () => { throw new Error("secret interne"); }) });
+    const { termine } = await lancerRepenser(deps, "u1", 7, {}, reg);
+    await expect(termine).resolves.toBeUndefined();
+    const e = reg.lire("u1:7")!;
+    expect(e).toMatchObject({ etat: "echec", erreur: { code: "generation_echouee", etape: "contenu" } });
+    expect(JSON.stringify(e)).not.toContain("secret interne");
+  });
+
+  it("échec de placement → code placement_echoue avec les suppressions ; autre erreur → code erreur", async () => {
+    const reg = new RegistreRepenser();
+    const a = fabrique();
+    a.placement.createTask.mockRejectedValue(new Error("db"));
+    await (await lancerRepenser(a.deps, "u1", 7, {}, reg)).termine;
+    expect(reg.lire("u1:7")?.erreur).toEqual({ code: "placement_echoue", postsSupprimes: 2, tachesSupprimees: 2 });
+    expect(erreurPublique(new Error("x"))).toEqual({ code: "erreur" });
+    expect(erreurPublique(new CampagneIntrouvable(1))).toEqual({ code: "erreur" });
+  });
+
+  it("deja_en_cours pendant l'exécution, puis relançable après", async () => {
+    const reg = new RegistreRepenser();
+    let relacher!: () => void;
+    const attente = new Promise<void>((r) => { relacher = r; });
+    const { deps } = fabrique({ genererStrategie: vi.fn(async () => { await attente; return strategie() as any; }) });
+    const { termine } = await lancerRepenser(deps, "u1", 7, {}, reg);
+    await expect(lancerRepenser(deps, "u1", 7, {}, reg)).rejects.toBeInstanceOf(DejaEnCours);
+    await expect(repenserCampagne(deps, "u1", 7)).rejects.toBeInstanceOf(DejaEnCours);
+    relacher();
+    await termine;
+    const second = await lancerRepenser(deps, "u1", 7, {}, reg);
+    await second.termine;
+    expect(reg.lire("u1:7")?.etat).toBe("termine");
+  });
+
+  it("contrôle en échec (404 / 409) → l'erreur remonte et l'état précédent est restauré", async () => {
+    const reg = new RegistreRepenser();
+    const ok = fabrique();
+    await (await lancerRepenser(ok.deps, "u1", 7, {}, reg)).termine;
+    const fini = reg.lire("u1:7");
+    const ko = fabrique({ campaign: campagne({ status: "completed" }) });
+    await expect(lancerRepenser(ko.deps, "u1", 7, {}, reg)).rejects.toBeInstanceOf(StatutIncompatible);
+    expect(reg.lire("u1:7")).toEqual(fini);
+    await expect(lancerRepenser(ok.deps, "u2", 7, {}, reg)).rejects.toBeInstanceOf(CampagneIntrouvable);
+    expect(reg.lire("u2:7")).toBeUndefined();
+    expect(ko.deps.genererStrategie).not.toHaveBeenCalled();
+  });
+
+  it("entrées terminées oubliées après 15 min ; jamais une entrée en cours", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-07T10:00:00Z"));
+      const reg = new RegistreRepenser();
+      reg.reserver("a"); reg.finir("a", { etat: "termine" });
+      reg.reserver("b");
+      vi.advanceTimersByTime(15 * 60_000 - 1);
+      expect(reg.lire("a")?.etat).toBe("termine");
+      vi.advanceTimersByTime(1);
+      expect(reg.lire("a")).toBeUndefined();
+      vi.advanceTimersByTime(60 * 60_000);
+      expect(reg.lire("b")?.etat).toBe("en_cours");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("plafond : au-delà, les plus anciennes terminées partent, les en cours restent", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-10-07T10:00:00Z"));
+      const reg = new RegistreRepenser(() => Date.now(), 15 * 60_000, 3);
+      reg.reserver("enCours");
+      for (const k of ["t1", "t2", "t3", "t4"]) {
+        reg.reserver(k); reg.finir(k, { etat: "termine" });
+        vi.advanceTimersByTime(1000);
+      }
+      expect(reg.taille()).toBe(3);
+      expect(reg.lire("enCours")?.etat).toBe("en_cours");
+      expect(reg.lire("t1")).toBeUndefined();
+      expect(reg.lire("t2")).toBeUndefined();
+      expect(reg.lire("t4")?.etat).toBe("termine");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
