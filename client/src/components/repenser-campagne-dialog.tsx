@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -15,7 +16,9 @@ import {
   cleErreurEtat,
   cleErreurPost,
   delaiDepasse,
-  intervalleRelecture,
+  intervalleSuivi,
+  resultatAcceptable,
+  doitReprendreSuivi,
 } from "@/lib/repenser-campagne";
 
 interface Props {
@@ -33,6 +36,7 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
   const [consigne, setConsigne] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [suivi, setSuivi] = useState(false);
+  const [abandonne, setAbandonne] = useState(false);
   const debutSuivi = useRef(0);
 
   const cleEtat = ["/api/campaigns", campaignId, "repenser-etat"];
@@ -43,7 +47,7 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
     enabled: open || suivi,
     staleTime: 0,
     throwOnError: false,
-    refetchInterval: (q) => (suivi || open ? intervalleRelecture(q.state.data?.etat) : false),
+    refetchInterval: (q) => (suivi || open ? intervalleSuivi(q.state.data?.etat, abandonne) : false),
   });
   const etat = etatQuery.data?.etat;
 
@@ -57,16 +61,22 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
 
   // Réouverture pendant qu'un travail tourne : l'état « en cours » est repris.
   useEffect(() => {
-    if (open && !suivi && etat === "en_cours" && !etatQuery.isFetching) {
+    if (doitReprendreSuivi({ open, suivi, abandonne, etat, enVol: etatQuery.isFetching })) {
       debutSuivi.current = Date.now();
       setSuivi(true);
     }
-  }, [open, suivi, etat, etatQuery.isFetching]);
+  }, [open, suivi, abandonne, etat, etatQuery.isFetching]);
+
+  // Un abandon (délai dépassé) ne vaut que pour cette ouverture.
+  useEffect(() => {
+    if (!open) setAbandonne(false);
+  }, [open]);
 
   // Résultat du travail suivi.
   useEffect(() => {
     if (!suivi || !etatQuery.data) return;
     const d = etatQuery.data;
+    if ((d.etat === "termine" || d.etat === "echec") && !resultatAcceptable(d, debutSuivi.current)) return;
     if (d.etat === "termine") {
       setSuivi(false);
       setConsigne("");
@@ -94,6 +104,7 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
       }
     } else if (d.etat === "en_cours" && delaiDepasse(debutSuivi.current, Date.now())) {
       setSuivi(false);
+      setAbandonne(true);
       toast({
         title: t("campaigns.repenser.failTitle"),
         description: t("campaigns.repenser.erreurs.delai"),
@@ -105,11 +116,16 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
   async function lancer() {
     if (envoi || suivi) return;
     setEnvoi(true);
+    setAbandonne(false);
+    const lanceMs = Date.now();
     try {
       await apiRequest("POST", `/api/campaigns/${campaignId}/repenser`, { consigne: consigne.trim() });
+      // Une lecture d'état encore en vol (peut-être un ancien « terminé ») ne doit pas
+      // écraser l'état posé ci-dessous ni déclencher un faux toast de succès.
+      await queryClient.cancelQueries({ queryKey: cleEtat });
       // Écrase un éventuel « terminé » ancien pour ne pas le prendre pour le résultat de ce travail.
       queryClient.setQueryData<EtatRepenser>(cleEtat, { etat: "en_cours" });
-      debutSuivi.current = Date.now();
+      debutSuivi.current = lanceMs;
       setSuivi(true);
     } catch (err) {
       const cle = cleErreurPost(err);
@@ -137,7 +153,7 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
         </DialogHeader>
 
         {attente ? (
-          <div className="py-6 flex flex-col items-center gap-3 text-center" data-testid="repenser-attente">
+          <div className="py-6 flex flex-col items-center gap-3 text-center" role="status" aria-live="polite" data-testid="repenser-attente">
             <Loader2 className="h-6 w-6 animate-spin text-naya-olive-55" />
             <p className="text-sm font-medium text-foreground">{t("campaigns.repenser.waiting")}</p>
             <p className="text-xs text-naya-olive-55">{t("campaigns.repenser.waitingHint")}</p>
@@ -146,7 +162,7 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
           <div className="space-y-4 pt-1">
             <p className="text-sm text-naya-olive-55">{t("campaigns.repenser.intro")}</p>
 
-            {apercuQuery.isFetching && <p className="text-sm text-naya-olive-55">…</p>}
+            {apercuQuery.isFetching && <p className="text-sm text-naya-olive-55">{t("campaigns.repenser.previewLoading")}</p>}
             {!apercuQuery.isFetching && apercuQuery.isError && (
               <p className="text-xs text-naya-olive-55">{t("campaigns.repenser.previewError")}</p>
             )}
@@ -160,8 +176,10 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
             )}
 
             <div>
-              <p className="text-sm font-medium text-foreground mb-1.5">{t("campaigns.repenser.consigneLabel")}</p>
+              <Label htmlFor="repenser-consigne" className="text-sm font-medium text-foreground mb-1.5 block">{t("campaigns.repenser.consigneLabel")}</Label>
               <Textarea
+                id="repenser-consigne"
+                aria-describedby="repenser-consigne-compteur"
                 value={consigne}
                 onChange={(e) => setConsigne(e.target.value.slice(0, REPENSER_CONSIGNE_MAX))}
                 placeholder={t("campaigns.repenser.consignePlaceholder")}
@@ -169,7 +187,7 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
                 maxLength={REPENSER_CONSIGNE_MAX}
                 className="text-sm resize-none border-naya-olive-35"
               />
-              <p className="text-[10px] text-naya-olive-35 text-right mt-1">
+              <p id="repenser-consigne-compteur" className="text-[10px] text-naya-olive-35 text-right mt-1">
                 {consigne.length}/{REPENSER_CONSIGNE_MAX}
               </p>
             </div>
@@ -177,8 +195,8 @@ export default function RepenserCampagneDialog({ campaignId, open, onClose }: Pr
         )}
 
         <div className="flex gap-2 pt-1">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={attente} className="flex-1">
-            {t("common.cancel")}
+          <Button variant="outline" size="sm" onClick={onClose} className="flex-1">
+            {attente ? t("campaigns.repenser.close") : t("common.cancel")}
           </Button>
           <Button size="sm" onClick={lancer} disabled={attente} className="flex-1" data-testid="button-repenser-confirmer">
             {attente ? t("campaigns.repenser.waiting") : t("campaigns.repenser.confirm")}

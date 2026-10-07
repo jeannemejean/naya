@@ -80,3 +80,32 @@ export function delaiDepasse(debutMs: number, maintenantMs: number): boolean {
 export function intervalleRelecture(etat: EtatRepenser["etat"] | undefined): number | false {
   return etat === "en_cours" ? REPENSER_POLL_MS : false;
 }
+
+/** Tolérance d'écart d'horloge entre le navigateur et le serveur. */
+export const REPENSER_TOLERANCE_HORLOGE_MS = 60 * 1000;
+
+/**
+ * Un résultat `termine`/`echec` n'est celui du travail lancé que si son `debut` n'est pas
+ * antérieur au lancement (aux écarts d'horloge près). Sans `debut`, on l'accepte.
+ */
+export function resultatAcceptable(etat: Pick<EtatRepenser, "debut">, lanceMs: number): boolean {
+  if (!etat.debut) return true;
+  const debut = Date.parse(etat.debut);
+  if (Number.isNaN(debut)) return true;
+  return debut >= lanceMs - REPENSER_TOLERANCE_HORLOGE_MS;
+}
+
+/** Relecture : seulement si le suivi n'est pas abandonné et que le travail est en cours. */
+export function intervalleSuivi(
+  etat: EtatRepenser["etat"] | undefined,
+  abandonne: boolean,
+): number | false {
+  return abandonne ? false : intervalleRelecture(etat);
+}
+
+/** Faut-il (re)prendre le suivi à l'ouverture ? Jamais après abandon. */
+export function doitReprendreSuivi(p: {
+  open: boolean; suivi: boolean; abandonne: boolean; etat: EtatRepenser["etat"] | undefined; enVol: boolean;
+}): boolean {
+  return p.open && !p.suivi && !p.abandonne && p.etat === "en_cours" && !p.enVol;
+}

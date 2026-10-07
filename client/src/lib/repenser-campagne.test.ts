@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   cleErreurEtat, cleErreurPost, codeErreurPost, campagneRepensable,
-  delaiDepasse, intervalleRelecture, REPENSER_DELAI_MAX_MS, REPENSER_POLL_MS,
+  delaiDepasse, intervalleRelecture, resultatAcceptable, intervalleSuivi, doitReprendreSuivi, REPENSER_TOLERANCE_HORLOGE_MS, REPENSER_DELAI_MAX_MS, REPENSER_POLL_MS,
 } from "./repenser-campagne";
 
 describe("repenser-campagne", () => {
@@ -39,5 +39,25 @@ describe("repenser-campagne", () => {
     expect(intervalleRelecture("termine")).toBe(false);
     expect(intervalleRelecture("echec")).toBe(false);
     expect(intervalleRelecture(undefined)).toBe(false);
+  });
+
+  it("n'accepte qu'un résultat issu du travail lancé", () => {
+    const lance = Date.parse("2026-10-07T10:00:00Z");
+    expect(resultatAcceptable({}, lance)).toBe(true);
+    expect(resultatAcceptable({ debut: "2026-10-07T10:00:01Z" }, lance)).toBe(true);
+    expect(resultatAcceptable({ debut: new Date(lance - REPENSER_TOLERANCE_HORLOGE_MS + 1000).toISOString() }, lance)).toBe(true);
+    expect(resultatAcceptable({ debut: "2026-10-07T09:50:00Z" }, lance)).toBe(false);
+    expect(resultatAcceptable({ debut: "n'importe quoi" }, lance)).toBe(true);
+  });
+
+  it("arrête le polling et bloque la reprise après abandon", () => {
+    expect(intervalleSuivi("en_cours", false)).toBe(REPENSER_POLL_MS);
+    expect(intervalleSuivi("en_cours", true)).toBe(false);
+    const base = { open: true, suivi: false, abandonne: false, etat: "en_cours" as const, enVol: false };
+    expect(doitReprendreSuivi(base)).toBe(true);
+    expect(doitReprendreSuivi({ ...base, abandonne: true })).toBe(false);
+    expect(doitReprendreSuivi({ ...base, suivi: true })).toBe(false);
+    expect(doitReprendreSuivi({ ...base, enVol: true })).toBe(false);
+    expect(doitReprendreSuivi({ ...base, open: false })).toBe(false);
   });
 });

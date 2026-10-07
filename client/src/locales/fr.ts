@@ -1088,6 +1088,8 @@ const fr = {
   previewError: "Impossible de calculer ce qui sera remplacé pour le moment.",
   consigneLabel: "Qu'est-ce qui doit changer ? (facultatif)",
   consignePlaceholder: "ex. Un ton plus direct, moins de posts théoriques, plus d'exemples clients...",
+  previewLoading: "Calcul en cours…",
+  close: "Fermer",
   confirm: "Repenser",
   waiting: "Naya repense ta campagne…",
   waitingHint: "Cela peut prendre quelques minutes. Tu peux fermer cette fenêtre, Naya continue.",

@@ -1084,6 +1084,8 @@ const en = {
   previewError: "Can't work out what will be replaced right now.",
   consigneLabel: "What should change? (optional)",
   consignePlaceholder: "e.g. A more direct tone, fewer theoretical posts, more client examples...",
+  previewLoading: "Calculating…",
+  close: "Close",
   confirm: "Rethink",
   waiting: "Naya is rethinking your campaign…",
   waitingHint: "This can take a few minutes. You can close this window, Naya keeps going.",
