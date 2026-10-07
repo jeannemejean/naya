@@ -488,7 +488,7 @@ describe("Les préférences de la marque atteignent la génération de campagne 
     expect(requeteEnvoyee.preferences).toBe(PREFS_STUB);
   });
 
-  it("generate/tasks : AUCUNE préférence n'est demandée ni transmise — exécution opérationnelle, pas décision d'angle", async () => {
+  it("generate/tasks : les préférences de la marque sont transmises (les tâches honorent aussi ce qui a été rejeté)", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -496,11 +496,9 @@ describe("Les préférences de la marque atteignent la génération de campagne 
     });
 
     expect(res.status).toBe(200);
-    expect(hoisted.preferencesDeLaMarque).not.toHaveBeenCalled();
+    expect(hoisted.preferencesDeLaMarque).toHaveBeenCalled();
     const requeteEnvoyee = hoisted.generateCampaignTasks.mock.calls[0][0];
-    // `in` teste la présence de la CLÉ : un champ présent avec `undefined` romprait
-    // déjà ce critère (aucun champ ajouté), comme pour `articulation` au chantier précédent.
-    expect('preferences' in requeteEnvoyee).toBe(false);
+    expect(requeteEnvoyee.preferences).toBe(PREFS_STUB);
   });
 
   it("sans projectId (pas de marque sélectionnée) : preferencesDeLaMarque n'est pas appelée, et la requête de génération porte un tableau vide", async () => {

@@ -1135,6 +1135,18 @@ export interface CampaignGenerationRequest {
    * à puces, résolu côté serveur. Absent → le prompt reste identique à avant.
    */
   savoir?: string;
+  /**
+   * Ce que l'utilisatrice veut voir changer (« repenser la campagne »). Injecté sous
+   * `CE QUI DOIT CHANGER` quand non vide (espaces seuls = absent).
+   */
+  consigne?: string;
+}
+
+export const TITRE_CONSIGNE = "CE QUI DOIT CHANGER";
+
+function sectionConsigne(consigne?: string): string {
+  const c = consigne?.trim();
+  return c ? `\n${TITRE_CONSIGNE}:\n${c}\n` : '';
 }
 
 export interface GeneratedCampaignProspection {
@@ -1229,7 +1241,7 @@ CAMPAIGN REQUEST:
 - Objective: ${request.objective}
 - Duration: ${request.duration}
 ${request.weekContext ? `- Context: ${request.weekContext}` : ''}
-${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}${request.savoir ? `\n${TITRE_SAVOIR}:\n${request.savoir}\n` : ''}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}${request.savoir ? `\n${TITRE_SAVOIR}:\n${request.savoir}\n` : ''}${sectionConsigne(request.consigne)}
 
 STRATEGIC RULES:
 - Infer the campaign type: lead_generation | authority_building | product_launch | nurturing | visibility | conversion.
@@ -1310,7 +1322,7 @@ ${phasesSummary}
 
 CHANNELS (respect each channel's declared frequency and formats):
 ${channelsSummary}
-${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}${request.savoir ? `\n${TITRE_SAVOIR}:\n${request.savoir}\n` : ''}
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}${request.savoir ? `\n${TITRE_SAVOIR}:\n${request.savoir}\n` : ''}${sectionConsigne(request.consigne)}
 
 CONTENT RULES:
 - For EACH phase, generate 2-3 representative pieces PER active channel (aim for 10-16 pieces total across the campaign — a representative plan, not every single week).
@@ -1356,7 +1368,7 @@ Core message: ${strategy.coreMessage}
 
 PHASES:
 ${phasesSummary}
-
+${request.articulation ? `\n${formaterArticulation(request.articulation)}\n` : ''}${request.preferences?.length ? `\n${formaterPreferences(request.preferences)}\n` : ''}${request.savoir ? `\n${TITRE_SAVOIR}:\n${request.savoir}\n` : ''}${sectionConsigne(request.consigne)}
 TASK RULES:
 - Generate 8-15 concrete, executable tasks distributed across the phases (use the phase "number" in each task).
 - Executable by a founder working alone or with a small team. No vague "create content" tasks.

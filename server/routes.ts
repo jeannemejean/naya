@@ -10537,8 +10537,16 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
       if ('error' in art) return res.status(art.status).json({ message: art.error });
 
+      const preferences = await resolvePreferences(userId, ctx.pid);
+      // savoirPourCampagne n'échoue jamais (undefined) : la génération continue sans savoir.
+      const savoir = await savoirPourCampagne(userId, ctx.pid, { objective, name: (strategy as any).name });
+
       const tasks = await generateCampaignTasks(
-        { userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext },
+        {
+          userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext,
+          preferences,
+          ...(savoir ? { savoir } : {}),
+        },
         strategy as CampaignStrategy,
       );
 
