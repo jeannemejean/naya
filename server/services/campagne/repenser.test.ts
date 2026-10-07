@@ -413,6 +413,32 @@ describe("repenserCampagne — campagne relue dans la transaction", () => {
     });
   }
 
+  it("arrière-plan : l'étape en cours est visible dans le registre pendant le travail", async () => {
+    const reg = new RegistreRepenser();
+    const { deps } = fabrique({});
+    const vues: Array<string | undefined> = [];
+    const orig = { s: deps.genererStrategie, c: deps.genererContenu, t: deps.genererTaches };
+    deps.genererStrategie = (...a: any[]) => { vues.push(reg.lire("u1:7")?.etape); return (orig.s as any)(...a); };
+    deps.genererContenu = (...a: any[]) => { vues.push(reg.lire("u1:7")?.etape); return (orig.c as any)(...a); };
+    deps.genererTaches = (...a: any[]) => { vues.push(reg.lire("u1:7")?.etape); return (orig.t as any)(...a); };
+    await (await lancerRepenser(deps, "u1", 7, {}, reg)).termine;
+    expect(vues).toEqual(["strategie", "contenu", "taches"]);
+    expect(reg.lire("u1:7")).toMatchObject({ etat: "termine" });
+  });
+
+  it("registre : avancer n'a d'effet que sur un travail en cours", () => {
+    const reg = new RegistreRepenser();
+    reg.avancer("u1:7", "contenu");
+    expect(reg.lire("u1:7")).toBeUndefined();
+    reg.reserver("u1:7");
+    reg.avancer("u1:7", "contenu");
+    expect(reg.lire("u1:7")).toMatchObject({ etat: "en_cours", etape: "contenu" });
+    expect(typeof reg.lire("u1:7")?.etapeDepuis).toBe("string");
+    reg.finir("u1:7", { etat: "termine" });
+    reg.avancer("u1:7", "placement");
+    expect(reg.lire("u1:7")?.etape).toBeUndefined();
+  });
+
   it("arrière-plan : statut changé → echec statut_incompatible", async () => {
     const reg = new RegistreRepenser();
     const { deps } = fabrique({ fraiche: campagne({ status: "completed" }) });

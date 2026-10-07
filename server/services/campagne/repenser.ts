@@ -269,13 +269,15 @@ async function executer(
   userId: string,
   campaignId: number,
   campaign: CampagneRepensable,
-  opts: { consigne?: string },
+  opts: { consigne?: string; surEtape?: (etape: EtapeRepenser) => void },
 ): Promise<ResultatRepenser> {
+  const etape = (e: EtapeRepenser) => { try { opts.surEtape?.(e); } catch { /* affichage seulement */ } };
   // 2. Génération — rien n'est écrit avant qu'elle ait entièrement réussi.
   const delai = deps.delaiGenerationMs ?? DELAI_GENERATION_MS;
   const consigne = normaliserConsigne(opts.consigne);
 
   let ctx: ContexteGeneration;
+  etape("contexte");
   try {
     ctx = await deps.contexteGeneration(userId, campaign);
   } catch (e) {
@@ -294,6 +296,7 @@ async function executer(
   };
 
   let strategy: CampaignStrategy;
+  etape("strategie");
   try {
     strategy = await avecDelai(
       deps.genererStrategie({ ...base, ...(ctx.revuesPassees ? { weekContext: ctx.revuesPassees } : {}) }),
@@ -309,6 +312,7 @@ async function executer(
   const strategieCadree: CampaignStrategy = { ...strategy, name: campaign.name };
 
   let contentPlan: GeneratedCampaign["contentPlan"];
+  etape("contenu");
   try {
     contentPlan = await avecDelai(deps.genererContenu(base, strategieCadree), delai);
   } catch (e) {
@@ -317,6 +321,7 @@ async function executer(
   if (!Array.isArray(contentPlan) || contentPlan.length === 0) throw new GenerationEchouee("contenu");
 
   let generatedTasks: GeneratedCampaign["tasks"];
+  etape("taches");
   try {
     generatedTasks = await avecDelai(deps.genererTaches(base, strategieCadree), delai);
   } catch (e) {
@@ -344,6 +349,7 @@ async function executer(
   //    La campagne est relue FOR UPDATE : le travail a pu durer ~12 min, pendant lesquelles
   //    elle a pu être lancée, mise en pause, reprise, terminée… La décision (brouillon /
   //    placement, fenêtre) part de cette ligne fraîche, pas de celle lue avant la génération.
+  etape("enregistrement");
   const { postsSupprimes, tachesSupprimees, fraiche } = await deps.transaction(async (ops) => {
     const fraiche = await ops.verrouillerCampagne(userId, campaignId);
     if (!fraiche) throw new CampagneIntrouvable(campaignId);
@@ -378,6 +384,7 @@ async function executer(
   const campagneRepensee = { ...fraiche, ...champs };
   let tachesCreees: number;
   let postsCrees: number;
+  etape("placement");
   try {
     ({ creees: tachesCreees } = await placerTachesCampagne(deps.placement, {
       userId, campaign: campagneRepensee, debut, fin, bornerA: fin,
@@ -404,9 +411,15 @@ async function executer(
 
 export type CodeErreurRepenser = "generation_echouee" | "placement_echoue" | "statut_incompatible" | "erreur";
 
+/** Étapes visibles par l'écran pendant le travail (barre de progression). */
+export type EtapeRepenser = "contexte" | "strategie" | "contenu" | "taches" | "enregistrement" | "placement";
+
 export interface EtatRepenser {
   etat: "en_cours" | "termine" | "echec";
   debut: string;
+  /** Étape en cours (seulement `en_cours`) et depuis quand. */
+  etape?: EtapeRepenser;
+  etapeDepuis?: string;
   fin?: string;
   resultat?: ResultatRepenser;
   erreur?: {
@@ -469,6 +482,13 @@ export class RegistreRepenser {
   restaurer(cle: string, avant: (EtatRepenser & { finMs?: number }) | undefined) {
     if (avant) this.entrees.set(cle, avant);
     else this.entrees.delete(cle);
+  }
+
+  /** Note l'étape en cours d'un travail `en_cours` (sans effet sinon). */
+  avancer(cle: string, etape: EtapeRepenser) {
+    const e = this.entrees.get(cle);
+    if (!e || e.etat !== "en_cours") return;
+    this.entrees.set(cle, { ...e, etape, etapeDepuis: new Date(this.now()).toISOString() });
   }
 
   finir(cle: string, maj: Pick<EtatRepenser, "etat" | "resultat" | "erreur">) {
@@ -536,7 +556,7 @@ export async function lancerRepenser(
   }
   const termine = (async () => {
     try {
-      const resultat = await executer(deps, userId, campaignId, campaign, opts);
+      const resultat = await executer(deps, userId, campaignId, campaign, { ...opts, surEtape: (e) => registre.avancer(cle, e) });
       registre.finir(cle, { etat: "termine", resultat });
     } catch (e: any) {
       console.error(`[repenser] campagne ${campaignId} :`, e?.message ?? e);

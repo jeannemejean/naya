@@ -77,3 +77,36 @@ describe("repenser-campagne", () => {
     expect(doitReprendreSuivi({ ...base, open: false })).toBe(false);
   });
 });
+
+import { progressionRepenser, dureeEcoulee, ETAPES_REPENSER } from "./repenser-campagne";
+
+describe("progression de « Repenser »", () => {
+  const T0 = 1_000_000;
+  it("avance avec le temps à l'intérieur d'une étape, sans atteindre l'étape suivante", () => {
+    const a = progressionRepenser("strategie", T0, T0 + 1_000).pourcent;
+    const b = progressionRepenser("strategie", T0, T0 + 60_000).pourcent;
+    const c = progressionRepenser("strategie", T0, T0 + 3_600_000).pourcent;
+    const suivante = progressionRepenser("contenu", T0, T0).pourcent;
+    expect(b).toBeGreaterThan(a);
+    expect(c).toBeGreaterThanOrEqual(b);
+    expect(c).toBeLessThanOrEqual(suivante);
+  });
+  it("chaque étape suivante part plus loin que la précédente ; jamais 0 ni 100", () => {
+    let precedent = 0;
+    ETAPES_REPENSER.forEach(({ etape }, i) => {
+      const p = progressionRepenser(etape, T0, T0);
+      expect(p.index).toBe(i);
+      expect(p.pourcent).toBeGreaterThanOrEqual(precedent);
+      expect(p.pourcent).toBeGreaterThanOrEqual(1);
+      expect(p.pourcent).toBeLessThanOrEqual(99);
+      precedent = p.pourcent;
+    });
+  });
+  it("sans étape connue : première étape", () => {
+    expect(progressionRepenser(undefined, undefined, T0)).toMatchObject({ index: 0, total: ETAPES_REPENSER.length });
+  });
+  it("chrono lisible", () => {
+    expect(dureeEcoulee(T0, T0 + 125_000)).toEqual({ min: 2, s: "05" });
+    expect(dureeEcoulee(undefined, T0)).toEqual({ min: 0, s: "00" });
+  });
+});
