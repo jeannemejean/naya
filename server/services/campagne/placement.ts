@@ -189,13 +189,20 @@ async function joursTravailles(deps: PlacementDeps, userId: string, debutStr: st
  *
  * `controleCreneaux` (défaut : oui) vérifie chaque créneau en base avant d'écrire
  * (`checkSlotAvailability`) ; `/redeploy` ne le faisait pas et continue de s'en passer.
+ *
+ * `bornerA` (défaut : aucune borne, comportement historique de launch/redeploy) : aucune
+ * tâche n'est créée après ce jour. Sans elle, la recherche de créneau (jusqu'à 30 jours)
+ * peut déborder après `fin`. Une tâche de contenu dont la publication ne tient pas avant
+ * la borne est sautée en entier, comme quand aucun créneau n'est trouvé.
  */
 export async function placerTachesCampagne(
   deps: PlacementDeps,
-  { userId, campaign, debut, fin, controleCreneaux = true }: {
-    userId: string; campaign: CampagnePlacable; debut: Date; fin: Date; controleCreneaux?: boolean;
+  { userId, campaign, debut, fin, controleCreneaux = true, bornerA }: {
+    userId: string; campaign: CampagnePlacable; debut: Date; fin: Date; controleCreneaux?: boolean; bornerA?: Date;
   },
 ): Promise<{ creees: number }> {
+  const borneStr = bornerA ? campaignDateToStr(bornerA) : null;
+  const apresBorne = (ds: string): boolean => borneStr !== null && ds > borneStr;
   const startDate = debut;
   const campaignDays = Math.round((fin.getTime() - debut.getTime()) / 86400000);
   const startStr = campaignDateToStr(startDate);
@@ -291,6 +298,7 @@ export async function placerTachesCampagne(
         let foundPubSlot = false;
         while (safety < 30) {
           const ds = campaignDateToStr(pubDate);
+          if (apresBorne(ds)) break;
           if (isWorkDay(ds) && campaignDayAvailable(ds, subTasks[pubTaskIndex].estimatedDuration)) {
             foundPubSlot = true;
             break;
@@ -332,6 +340,7 @@ export async function placerTachesCampagne(
         let foundSlot = false;
         while (safety < 30) {
           const ds = campaignDateToStr(scheduledDate);
+          if (apresBorne(ds)) break;
           if (isWorkDay(ds) && campaignDayAvailable(ds, sub.estimatedDuration)) { foundSlot = true; break; }
 
           if (lockedPublicationDate && subIdx !== pubTaskIndex && scheduledDate >= lockedPublicationDate) {
@@ -398,12 +407,15 @@ export async function placerTachesCampagne(
 /**
  * Crée les posts du plan de contenu, répartis sur les jours travaillés de chaque semaine à
  * partir de `debut`. `fin` borne seulement la lecture des indisponibilités (défaut : un an).
+ * `bornerA` (défaut : aucune borne, comportement historique) : un post dont le jour calculé
+ * tombe après ce jour n'est pas créé.
  * Jamais de publication automatique : le texte d'un post de campagne est une consigne.
  */
 export async function placerPostsCampagne(
   deps: PlacementDeps,
-  { userId, campaign, debut, fin }: { userId: string; campaign: CampagnePlacable; debut: Date; fin?: Date },
+  { userId, campaign, debut, fin, bornerA }: { userId: string; campaign: CampagnePlacable; debut: Date; fin?: Date; bornerA?: Date },
 ): Promise<{ crees: number }> {
+  const borneStr = bornerA ? campaignDateToStr(bornerA) : null;
   const startDate = debut;
   const finFenetre = fin ?? campaignAddDays(startDate, 365);
   const { isWorkDay } = await joursTravailles(deps, userId, campaignDateToStr(startDate), campaignDateToStr(finFenetre));
@@ -444,6 +456,7 @@ export async function placerPostsCampagne(
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i];
       const dayStr = workDaysInWeek[i % workDaysInWeek.length];
+      if (borneStr !== null && dayStr > borneStr) continue;
       const usageCount = dayUsageCounts.get(dayStr) || 0;
       dayUsageCounts.set(dayStr, usageCount + 1);
       const hour = HOURS[usageCount % HOURS.length];

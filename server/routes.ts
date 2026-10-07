@@ -48,7 +48,12 @@ import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
-import { dateDeRetassage } from "./services/repack-from";
+import { dateDeRetassage, aujourdhuiParis } from "./services/repack-from";
+import {
+  apercuRepenser, repenserCampagne, StatutIncompatible, GenerationEchouee, DejaEnCours, PlacementEchoue,
+  CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
+} from "./services/campagne/repenser";
+import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions } from "./services/sequence-message";
@@ -10360,6 +10365,96 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
+  // ─── « Repenser la campagne » (spec 2026-10-07) ─────────────────────────────
+  // Même préparation que les trois étapes de création (/generate/strategy, /content,
+  // /tasks) : marque, préférences, savoir, articulation existante, revues passées. Rien
+  // n'est créé : ni nouvelle campagne, ni prospection.
+  const depsRepenser: RepenserDeps = {
+    getCampaign: (id, userId) => storage.getCampaign(id, userId) as any,
+    lireContenus: lecturesRepenser.lireContenus,
+    lireTaches: lecturesRepenser.lireTaches,
+    async contexteGeneration(userId, campaign) {
+      const ctx = await resolveCampaignCtx(userId, campaign.projectId ?? undefined);
+      if ('error' in ctx) throw new Error(ctx.error);
+      // L'articulation est relue et revérifiée comme à la création ; si elle n'est plus
+      // proposable (lien de marques retiré), on repense sans elle plutôt que d'échouer.
+      let articulation: Articulation | undefined;
+      if (campaign.articuleAvecCampaignId && !campaign.articulationIndependante) {
+        const art = await resolveArticulation(userId, ctx.pid, campaign.articuleAvecCampaignId);
+        if ('error' in art) console.warn(`[repenser] articulation ignorée (campagne ${campaign.id}) : ${art.error}`);
+        else articulation = art.articulation;
+      }
+      const [preferences, savoir, revuesPassees] = await Promise.all([
+        resolvePreferences(userId, ctx.pid),
+        savoirPourCampagne(userId, ctx.pid, { objective: campaign.objective, name: campaign.name }),
+        revuesCampagnesPassees(userId, ctx.pid),
+      ]);
+      return {
+        brandDna: ctx.brandDnaInput as any,
+        preferences,
+        ...(savoir ? { savoir } : {}),
+        ...(articulation ? { articulation } : {}),
+        ...(revuesPassees ? { revuesPassees } : {}),
+      };
+    },
+    genererStrategie: (req) => generateCampaignStrategy(req),
+    genererContenu: (req, strategy) => generateCampaignContent(req, strategy),
+    genererTaches: (req, strategy) => generateCampaignTasks(req, strategy),
+    transaction: transactionRepenser,
+    placement: storage,
+    fixOverlappingTasks: (userId, fromDate) => storage.fixOverlappingTasks(userId, fromDate),
+    aujourdhuiParis: () => aujourdhuiParis(),
+  };
+
+  // GET /api/campaigns/:id/repenser-apercu → { postsRemplaces, postsConserves,
+  // tachesRemplacees, tachesConservees }. 404 si la campagne n'est pas à l'utilisatrice.
+  app.get('/api/campaigns/:id/repenser-apercu', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(404).json({ message: "Campaign not found" });
+      res.json(await apercuRepenser(depsRepenser, req.userId, id));
+    } catch (error) {
+      if (error instanceof CampagneIntrouvable) return res.status(404).json({ message: "Campaign not found" });
+      console.error("Error previewing campaign rethink:", error);
+      res.status(500).json({ message: "Failed to preview campaign rethink" });
+    }
+  });
+
+  // POST /api/campaigns/:id/repenser { consigne?: string } →
+  // { postsCrees, tachesCreees, postsSupprimes, tachesSupprimees }.
+  app.post('/api/campaigns/:id/repenser', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(404).json({ message: "Campaign not found" });
+      const brute = req.body?.consigne;
+      if (brute !== undefined && brute !== null && typeof brute !== 'string') {
+        return res.status(400).json({ message: "consigne_invalide" });
+      }
+      const consigne = typeof brute === 'string' ? brute.trim() : '';
+      if (consigne.length > CONSIGNE_REPENSER_MAX) {
+        return res.status(400).json({ message: "consigne_trop_longue", max: CONSIGNE_REPENSER_MAX });
+      }
+      const resultat = await repenserCampagne(depsRepenser, req.userId, id, consigne ? { consigne } : {});
+      res.json(resultat);
+    } catch (error) {
+      if (error instanceof CampagneIntrouvable) return res.status(404).json({ message: "Campaign not found" });
+      if (error instanceof DejaEnCours) return res.status(409).json({ message: "deja_en_cours" });
+      if (error instanceof StatutIncompatible) {
+        return res.status(409).json({ message: "statut_incompatible", statut: error.statut });
+      }
+      if (error instanceof GenerationEchouee) {
+        console.error(`[repenser] génération échouée (${error.etape}):`, (error.cause as any)?.message ?? error.cause ?? '');
+        return res.status(502).json({ message: "generation_echouee", etape: error.etape });
+      }
+      if (error instanceof PlacementEchoue) {
+        console.error("[repenser] placement échoué:", (error.cause as any)?.message ?? error.cause);
+        return res.status(500).json({ message: "placement_echoue", ...error.partiel });
+      }
+      console.error("Error rethinking campaign:", error);
+      res.status(500).json({ message: "Failed to rethink campaign" });
+    }
+  });
+
   // ─── Génération de campagne EN 3 ÉTAPES (anti-troncature + anti-timeout 3 min) ───
   // Le client appelle ces endpoints en séquence en affichant la progression. Chaque étape est
   // un appel Claude borné (2500/3000/2000 tokens) → jamais tronqué, chacune courte (~20-50s).
@@ -10444,6 +10539,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     return preferencesDeLaMarque(userId, projectId);
   }
 
+  // Les revues des campagnes passées de la marque, ajoutées au contexte de la stratégie.
+  async function revuesCampagnesPassees(userId: string, projectId: number | undefined): Promise<string> {
+    const allCampaigns = await storage.getCampaigns(userId, projectId);
+    const reviewed = allCampaigns.filter(c => c.reviewedAt && c.reviewContentQuality).slice(0, 5);
+    return reviewed.length
+      ? `\n\nPAST CAMPAIGN REVIEWS (adjust pacing/strategy):\n${reviewed.map(c => `- "${c.name}" (${c.campaignType || 'general'}): content ${c.reviewContentQuality}/5, audience ${c.reviewAudienceResponse}/5, execution ${c.reviewTaskExecution}/5`).join('\n')}`
+      : '';
+  }
+
   // ÉTAPE 1/3 — stratégie + phases + canaux + messaging + KPIs + prospection.
   app.post('/api/campaigns/generate/strategy', isAuthenticated, async (req: any, res) => {
     try {
@@ -10456,11 +10560,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
       if ('error' in art) return res.status(art.status).json({ message: art.error });
 
-      const allCampaigns = await storage.getCampaigns(userId, ctx.pid);
-      const reviewed = allCampaigns.filter(c => c.reviewedAt && c.reviewContentQuality).slice(0, 5);
-      const pastReviewContext = reviewed.length
-        ? `\n\nPAST CAMPAIGN REVIEWS (adjust pacing/strategy):\n${reviewed.map(c => `- "${c.name}" (${c.campaignType || 'general'}): content ${c.reviewContentQuality}/5, audience ${c.reviewAudienceResponse}/5, execution ${c.reviewTaskExecution}/5`).join('\n')}`
-        : '';
+      const pastReviewContext = await revuesCampagnesPassees(userId, ctx.pid);
 
       // Les préférences de cette marque (chantier « rejeter une campagne ») : cette
       // fonction DÉCIDE de l'angle, elle doit donc éviter ce qui a été rejeté.

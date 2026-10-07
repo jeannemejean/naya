@@ -2579,7 +2579,7 @@ export class DatabaseStorage implements IStorage {
    * En oublier une = erreur 23503 et échec de la suppression. Tout chemin qui
    * supprime des tâches DOIT passer par ici, dans une transaction.
    */
-  private async clearTaskReferences(tx: DbExecutor, taskIds: number[]): Promise<void> {
+  async clearTaskReferences(tx: DbExecutor, taskIds: number[]): Promise<void> {
     if (taskIds.length === 0) return;
     // Références qu'on GARDE en détachant (captures et messages du Companion survivent)
     await tx.update(quickCaptureEntries)

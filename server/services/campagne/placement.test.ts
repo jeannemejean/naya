@@ -125,3 +125,45 @@ describe("placerPostsCampagne", () => {
     expect(local((deps.createContent.mock.calls[0] as any[])[0].scheduledFor)).toBe("2026-10-14 09:00");
   });
 });
+
+describe("borne de fin (option bornerA, utilisée par « repenser »)", () => {
+  it("sans borne, la recherche de créneau peut déborder après fin (comportement historique)", async () => {
+    const deps = fabrique();
+    await placerTachesCampagne(deps, { userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-10-16") });
+    const dates = deps.createTask.mock.calls.map(([t]: any[]) => t.scheduledDate as string);
+    expect(dates.some((x: string) => x > "2026-10-16")).toBe(true);
+  });
+
+  it("avec bornerA, aucune tâche n'est créée après la borne", async () => {
+    const deps = fabrique();
+    const r = await placerTachesCampagne(deps, {
+      userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-10-16"), bornerA: d("2026-10-16"),
+    });
+    const dates = deps.createTask.mock.calls.map(([t]: any[]) => t.scheduledDate as string);
+    expect(dates.length).toBe(r.creees);
+    expect(dates.every((x: string) => x >= "2026-10-12" && x <= "2026-10-16")).toBe(true);
+  });
+
+  it("avec bornerA, aucun post n'est créé après la borne ; sans, ils le sont", async () => {
+    const sans = fabrique();
+    const r0 = await placerPostsCampagne(sans, { userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-10-16") });
+    expect(r0.crees).toBe(6);
+
+    const avec = fabrique();
+    const r = await placerPostsCampagne(avec, {
+      userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-10-16"), bornerA: d("2026-10-16"),
+    });
+    const jours = avec.createContent.mock.calls.map(([c]: any[]) => local(c.scheduledFor).slice(0, 10));
+    expect(r.crees).toBe(4);
+    expect(jours.every((x: string) => x <= "2026-10-16")).toBe(true);
+    expect(avec.createContent.mock.calls.every(([c]: any[]) => c.autoPost === false)).toBe(true);
+  });
+
+  it("fenêtre vide (borne avant le début) : rien n'est créé, sans erreur", async () => {
+    const deps = fabrique();
+    const t = await placerTachesCampagne(deps, { userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-10-05"), bornerA: d("2026-10-05") });
+    const p = await placerPostsCampagne(deps, { userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-10-05"), bornerA: d("2026-10-05") });
+    expect(t.creees).toBe(0);
+    expect(p.crees).toBe(0);
+  });
+});
