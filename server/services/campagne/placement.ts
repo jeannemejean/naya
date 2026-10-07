@@ -7,7 +7,7 @@
 import { formatDate as campaignDateToStr, addDays as campaignAddDays } from "../../utils/dateUtils";
 
 export const DAY_ABBRS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const DEFAULT_WORK_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
+export const DEFAULT_WORK_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
 
 export function parseWorkDays(csv: string | null | undefined): Set<string> {
   if (csv === null || csv === undefined) return DEFAULT_WORK_DAYS;

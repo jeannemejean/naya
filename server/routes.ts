@@ -116,7 +116,7 @@ import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./util
 import { contenuEstPublie } from "./services/campaign-reject/rejeter";
 import {
   DAY_ABBRS, parseWorkDays, hhmmToMin, minToHHMM, computePhaseRanges, assignPublicationDates,
-  decomposeContentTask, mapFormatToContentType, placerTachesCampagne, placerPostsCampagne,
+  decomposeContentTask, DEFAULT_WORK_DAYS, placerTachesCampagne, placerPostsCampagne,
 } from "./services/campagne/placement";
 import { parisHourOf, parisTodayString } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
@@ -379,8 +379,6 @@ function parseClientToday(body: any): string {
 
   return sharedFormatDate(candidateDate);
 }
-
-const DEFAULT_WORK_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
 
 // After AI generates tasks (some may have past dates), redistribute them forward
 // so no day exceeds dailyCap and no task lands before floor.
