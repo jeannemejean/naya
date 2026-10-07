@@ -8,6 +8,8 @@ import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import Sidebar from "@/components/sidebar";
 import GeneratingOverlay from "@/components/GeneratingOverlay";
+import RepenserCampagneDialog from "@/components/repenser-campagne-dialog";
+import { campagneRepensable } from "@/lib/repenser-campagne";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -816,6 +818,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  // remplace l'ancien `deleteMutation`/`handleDiscard`, qui ne faisait qu'un DELETE brut
  // sans détacher les posts/tâches déjà réels ni apprendre de la raison du rejet.
  const [rejetOuvert, setRejetOuvert] = useState(false);
+ const [repenserOuvert, setRepenserOuvert] = useState(false);
  const [raisonRejet, setRaisonRejet] = useState("");
  // Campagne à laquelle `raisonRejet` se rattache — PAS celle juste affichée à l'écran.
  // La raison appartient à la campagne pour laquelle elle a été écrite, jamais à « la
@@ -1517,6 +1520,12 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  {/* Le rejet est disponible depuis TOUT état de la campagne (chantier « rejeter
  une campagne »), pas seulement depuis le panneau de brouillon ci-dessus. */}
  <div className="flex flex-col items-end gap-2">
+ {campagneRepensable(selectedCampaign.status) && (
+ <Button size="sm" variant="ghost" onClick={() => setRepenserOuvert(true)} data-testid="button-repenser-campagne">
+ <RefreshCw className="h-3.5 w-3.5 mr-1" />
+ {t('campaigns.repenser.button')}
+ </Button>
+ )}
  <Button size="sm" variant="ghost" onClick={ouvrirRejet} data-testid="button-rejeter-campagne-detail">
  <Trash2 className="h-3.5 w-3.5 mr-1" />
  {LIBELLE_BOUTON_REJETER}
@@ -1729,6 +1738,15 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  </div>
  </main>
  </div>
+
+ {selectedCampaignId && (
+ <RepenserCampagneDialog
+ key={selectedCampaignId}
+ campaignId={selectedCampaignId}
+ open={repenserOuvert}
+ onClose={() => setRepenserOuvert(false)}
+ />
+ )}
 
  {/* Rejet d'une campagne — disponible depuis tout état (brouillon généré ou
  lancée), déclenché par les deux boutons « Rejeter la campagne » ci-dessus.

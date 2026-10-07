@@ -166,6 +166,7 @@ import type { StepSendKey } from "./services/prospection-idempotence";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC } from "./utils/timezone";
+import { contenuSupprimable } from "./services/campagne/gardes-sql";
 
 /**
  * « Aujourd'hui » (YYYY-MM-DD) et « maintenant » (minutes depuis minuit) en heure de Paris —
@@ -365,6 +366,7 @@ export interface IStorage {
   deleteContent(id: number): Promise<void>;
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
+  deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number>;
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
   getDueScheduledContent(now: Date): Promise<Content[]>;
   claimContentForPosting(id: number): Promise<boolean>;
@@ -1402,6 +1404,35 @@ export class DatabaseStorage implements IStorage {
       eq((content as any).campaignId, campaignId)
     ).returning({ id: content.id });
     return deleted.length;
+  }
+
+  // Supprime ces seuls contenus, et seulement s'ils appartiennent bien à la campagne (et à
+  // l'utilisatrice si fournie). Les conditions de garde (publié / en cours de publication)
+  // sont REDITES en SQL — mêmes que « repenser » (`contenuSupprimable`) : entre la lecture
+  // de la route et ici, le publieur a pu prendre un post. Les posts partants sont
+  // verrouillés, les tâches qui y pointent détachées (`tasks.content_id` en NO ACTION),
+  // puis supprimés, en une transaction. Rend le nombre réellement supprimé.
+  async deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number> {
+    if (ids.length === 0) return 0;
+    return db.transaction(async (tx) => {
+      const portee = and(
+        eq(content.campaignId, campaignId),
+        ...(userId ? [eq(content.userId, userId)] : []),
+        inArray(content.id, ids),
+        contenuSupprimable(),
+      );
+      const partants = await tx.select({ id: content.id }).from(content).where(portee).for("update");
+      if (partants.length === 0) return 0;
+      const idsPartants = partants.map((c) => c.id);
+      await tx.update(tasks).set({ contentId: null }).where(inArray(tasks.contentId, idsPartants));
+      const deleted = await tx.delete(content).where(and(
+        eq(content.campaignId, campaignId),
+        ...(userId ? [eq(content.userId, userId)] : []),
+        inArray(content.id, idsPartants),
+        contenuSupprimable(),
+      )).returning({ id: content.id });
+      return deleted.length;
+    });
   }
 
   // ─── Prospection Campaign operations ─────────────────────────────────────────
@@ -2568,7 +2599,7 @@ export class DatabaseStorage implements IStorage {
    * En oublier une = erreur 23503 et échec de la suppression. Tout chemin qui
    * supprime des tâches DOIT passer par ici, dans une transaction.
    */
-  private async clearTaskReferences(tx: DbExecutor, taskIds: number[]): Promise<void> {
+  async clearTaskReferences(tx: DbExecutor, taskIds: number[]): Promise<void> {
     if (taskIds.length === 0) return;
     // Références qu'on GARDE en détachant (captures et messages du Companion survivent)
     await tx.update(quickCaptureEntries)

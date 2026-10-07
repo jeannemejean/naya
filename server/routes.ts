@@ -27,13 +27,14 @@ import {
   getMemoryContext,
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
+import { imposerLangueDuCompte } from "./services/garde-langue";
 import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
 import { refuserPost } from "./services/refus-post/service";
 import { refusPostDeps } from "./services/refus-post/deps";
-import { estRaisonRefusPost } from "./services/refus-post/pur";
+import { estRaisonRefusPost, estPublieOuEnCours } from "./services/refus-post/pur";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, validateProjectPatchFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { isValidStage, buildSituationPrompt } from "./services/project-summary";
@@ -47,7 +48,12 @@ import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
-import { dateDeRetassage } from "./services/repack-from";
+import { dateDeRetassage, aujourdhuiParis } from "./services/repack-from";
+import {
+  apercuRepenser, lancerRepenser, registreRepenser, repenserEnCours, StatutIncompatible, DejaEnCours,
+  CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
+} from "./services/campagne/repenser";
+import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions } from "./services/sequence-message";
@@ -72,7 +78,7 @@ import { detecterCollision, detecterCollisionLot } from "./services/brand-links/
 import type { CollisionLot } from "./services/brand-links/collision";
 import { importerTexte, ReponseIllisible } from "./services/content-import/import";
 import { rejeterCampagne, CampagneIntrouvable, trierContenus, trierTaches } from "./services/campaign-reject/rejeter";
-import { preferencesDeLaMarque, type Preference } from "./services/campaign-reject/preferences";
+import { preferencesDeLaMarque, formaterPreferences, type Preference } from "./services/campaign-reject/preferences";
 import { MAX_CARACTERES } from "./services/content-import/parse";
 import { LIMITE_CONTENUS_MAX } from "./services/content-limit";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
@@ -112,6 +118,11 @@ import { leadScrapingService } from "./services/lead-scraping";
 import { emailMarketingService } from "./services/email-marketing";
 import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milestone-intelligence";
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
+import { contenuEstPublie } from "./services/campaign-reject/rejeter";
+import {
+  DAY_ABBRS, parseWorkDays, hhmmToMin, minToHHMM, computePhaseRanges, assignPublicationDates,
+  decomposeContentTask, DEFAULT_WORK_DAYS, placerTachesCampagne, placerPostsCampagne,
+} from "./services/campagne/placement";
 import { parisHourOf, parisTodayString } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
@@ -376,15 +387,6 @@ function parseClientToday(body: any): string {
 
 // After AI generates tasks (some may have past dates), redistribute them forward
 // so no day exceeds dailyCap and no task lands before floor.
-const DAY_ABBRS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const DEFAULT_WORK_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
-
-function parseWorkDays(csv: string | null | undefined): Set<string> {
-  if (csv === null || csv === undefined) return DEFAULT_WORK_DAYS;
-  if (csv.trim() === '') return new Set<string>();
-  const days = csv.split(',').map(d => d.trim().toLowerCase()).filter(d => DAY_ABBRS.includes(d));
-  return new Set(days);
-}
 
 function rebalanceTasksForward(
   tasks: any[],
@@ -7400,9 +7402,24 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       const existing = await storage.getContentById(id, userId);
       if (!existing) return res.status(404).json({ message: "Contenu introuvable" });
+      // Un post publié ou en cours de publication ne se réécrit pas (il est déjà parti).
+      if (estPublieOuEnCours(existing as any)) {
+        return res.status(409).json({ message: "already_published" });
+      }
 
       const brandDna = await storage.getBrandDna(userId);
       const bd: any = brandDna || {};
+
+      // Préférences apprises pour CETTE marque (refus de campagnes, de posts) — à éviter.
+      let blocPreferences = "";
+      if (existing.projectId) {
+        try {
+          const prefs = await preferencesDeLaMarque(userId, existing.projectId);
+          blocPreferences = formaterPreferences(prefs);
+        } catch (e: any) {
+          console.error("[content/regenerate] préférences non lues:", e?.message);
+        }
+      }
 
       const systemPrompt = `Tu es Naya, spécialiste en stratégie de contenu pour entrepreneurs indépendants.
 Tu génères un post de remplacement pour le content calendar. Le post DOIT:
@@ -7430,17 +7447,22 @@ CONTEXTE MARQUE:
 - Territoire éditorial: ${bd.editorialTerritory || ''}
 - Keywords marque: ${(bd.brandVoiceKeywords || []).join(', ')}
 - Anti-keywords: ${(bd.brandVoiceAntiKeywords || []).join(', ')}
-
+${blocPreferences ? `\n${blocPreferences}\n` : ''}
 Génère un post de remplacement en JSON:
 {"title": "Nouvel angle (accroche)", "body": "Contenu du post / directions créatives (2-3 phrases)"}
 
 Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout en restant sur la même plateforme (${existing.platform}) et le même pilier (${existing.pillar}).`;
 
-      const raw = await callClaude({
+      // Passe par la mémoire de Naya (buildNayaContext) : savoir déposé, préférences, marque.
+      // Avant le 7 oct. 2026, cet appel ne voyait que l'ADN de marque — les dossiers et PDF
+      // déposés par l'utilisatrice n'y entraient jamais.
+      const raw = await callClaudeWithContext({
+        userId,
+        projectId: existing.projectId ?? null,
+        userMessage: userPrompt,
         model: CLAUDE_MODELS.smart,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-        max_tokens: 500,
+        max_tokens: 800,
+        additionalSystemContext: systemPrompt,
       });
 
       let replacement: { title: string; body: string };
@@ -7450,11 +7472,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         return res.status(500).json({ message: "Impossible de générer une alternative. Réessaie." });
       }
 
+      if (typeof replacement?.title !== 'string' || typeof replacement?.body !== 'string' || !replacement.title.trim() || !replacement.body.trim()) {
+        return res.status(500).json({ message: "Impossible de générer une alternative. Réessaie." });
+      }
+      // Garde de langue : le prompt est rédigé en français mais le compte peut être en anglais.
+      const pourLangue: any = { title: replacement.title, description: replacement.body };
+      await imposerLangueDuCompte([pourLangue], userId).catch(() => {});
+
       const updated = await storage.updateContent(id, {
-        title: replacement.title,
-        body: replacement.body,
+        title: String(pourLangue.title).slice(0, 200),
+        body: String(pourLangue.description).slice(0, 5000),
         contentStatus: 'idea',
-      });
+        // Un texte réécrit n'a pas été relu : il ne part jamais seul.
+        autoPost: false,
+      } as any);
 
       res.json(updated);
     } catch (error: any) {
@@ -10334,6 +10365,105 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
+  // ─── « Repenser la campagne » (spec 2026-10-07) ─────────────────────────────
+  // Même préparation que les trois étapes de création (/generate/strategy, /content,
+  // /tasks) : marque, préférences, savoir, articulation existante, revues passées. Rien
+  // n'est créé : ni nouvelle campagne, ni prospection.
+  const depsRepenser: RepenserDeps = {
+    getCampaign: (id, userId) => storage.getCampaign(id, userId) as any,
+    lireContenus: lecturesRepenser.lireContenus,
+    lireTaches: lecturesRepenser.lireTaches,
+    async contexteGeneration(userId, campaign) {
+      const ctx = await resolveCampaignCtx(userId, campaign.projectId ?? undefined);
+      if ('error' in ctx) throw new Error(ctx.error);
+      // L'articulation est relue et revérifiée comme à la création ; si elle n'est plus
+      // proposable (lien de marques retiré), on repense sans elle plutôt que d'échouer.
+      let articulation: Articulation | undefined;
+      if (campaign.articuleAvecCampaignId && !campaign.articulationIndependante) {
+        const art = await resolveArticulation(userId, ctx.pid, campaign.articuleAvecCampaignId);
+        if ('error' in art) console.warn(`[repenser] articulation ignorée (campagne ${campaign.id}) : ${art.error}`);
+        else articulation = art.articulation;
+      }
+      const [preferences, savoir, revuesPassees] = await Promise.all([
+        resolvePreferences(userId, ctx.pid),
+        savoirPourCampagne(userId, ctx.pid, { objective: campaign.objective, name: campaign.name }),
+        revuesCampagnesPassees(userId, ctx.pid),
+      ]);
+      return {
+        brandDna: ctx.brandDnaInput as any,
+        preferences,
+        ...(savoir ? { savoir } : {}),
+        ...(articulation ? { articulation } : {}),
+        ...(revuesPassees ? { revuesPassees } : {}),
+      };
+    },
+    genererStrategie: (req) => generateCampaignStrategy(req),
+    genererContenu: (req, strategy) => generateCampaignContent(req, strategy),
+    genererTaches: (req, strategy) => generateCampaignTasks(req, strategy),
+    transaction: transactionRepenser,
+    placement: storage,
+    fixOverlappingTasks: (userId, fromDate) => storage.fixOverlappingTasks(userId, fromDate),
+    aujourdhuiParis: () => aujourdhuiParis(),
+  };
+
+  // GET /api/campaigns/:id/repenser-apercu → { postsRemplaces, postsConserves,
+  // tachesRemplacees, tachesConservees }. 404 si la campagne n'est pas à l'utilisatrice.
+  app.get('/api/campaigns/:id/repenser-apercu', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(404).json({ message: "Campaign not found" });
+      res.json(await apercuRepenser(depsRepenser, req.userId, id));
+    } catch (error) {
+      if (error instanceof CampagneIntrouvable) return res.status(404).json({ message: "Campaign not found" });
+      console.error("Error previewing campaign rethink:", error);
+      res.status(500).json({ message: "Failed to preview campaign rethink" });
+    }
+  });
+
+  // POST /api/campaigns/:id/repenser { consigne?: string } → 202 { etat: "en_cours" }.
+  // Les contrôles (404, 409, 400) sont synchrones ; la génération (jusqu'à 3 × 240 s)
+  // continue en arrière-plan — l'écran suit `GET …/repenser-etat`.
+  app.post('/api/campaigns/:id/repenser', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(404).json({ message: "Campaign not found" });
+      const brute = req.body?.consigne;
+      if (brute !== undefined && brute !== null && typeof brute !== 'string') {
+        return res.status(400).json({ message: "consigne_invalide" });
+      }
+      const consigne = typeof brute === 'string' ? brute.trim() : '';
+      if (consigne.length > CONSIGNE_REPENSER_MAX) {
+        return res.status(400).json({ message: "consigne_trop_longue", max: CONSIGNE_REPENSER_MAX });
+      }
+      await lancerRepenser(depsRepenser, req.userId, id, consigne ? { consigne } : {});
+      res.status(202).json({ etat: "en_cours" });
+    } catch (error) {
+      if (error instanceof CampagneIntrouvable) return res.status(404).json({ message: "Campaign not found" });
+      if (error instanceof DejaEnCours) return res.status(409).json({ message: "deja_en_cours" });
+      if (error instanceof StatutIncompatible) {
+        return res.status(409).json({ message: "statut_incompatible", statut: error.statut });
+      }
+      console.error("Error rethinking campaign:", error);
+      res.status(500).json({ message: "Failed to rethink campaign" });
+    }
+  });
+
+  // GET /api/campaigns/:id/repenser-etat → { etat: "aucun" } ou l'entrée du registre
+  // ({ etat, debut, fin?, resultat?, erreur? }). 404 si la campagne n'est pas à elle.
+  app.get('/api/campaigns/:id/repenser-etat', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) return res.status(404).json({ message: "Campaign not found" });
+      const campaign = await storage.getCampaign(id, userId);
+      if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      res.json(registreRepenser.lire(`${userId}:${id}`) ?? { etat: "aucun" });
+    } catch (error) {
+      console.error("Error reading campaign rethink state:", error);
+      res.status(500).json({ message: "Failed to read campaign rethink state" });
+    }
+  });
+
   // ─── Génération de campagne EN 3 ÉTAPES (anti-troncature + anti-timeout 3 min) ───
   // Le client appelle ces endpoints en séquence en affichant la progression. Chaque étape est
   // un appel Claude borné (2500/3000/2000 tokens) → jamais tronqué, chacune courte (~20-50s).
@@ -10418,6 +10548,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     return preferencesDeLaMarque(userId, projectId);
   }
 
+  // Les revues des campagnes passées de la marque, ajoutées au contexte de la stratégie.
+  async function revuesCampagnesPassees(userId: string, projectId: number | undefined): Promise<string> {
+    const allCampaigns = await storage.getCampaigns(userId, projectId);
+    const reviewed = allCampaigns.filter(c => c.reviewedAt && c.reviewContentQuality).slice(0, 5);
+    return reviewed.length
+      ? `\n\nPAST CAMPAIGN REVIEWS (adjust pacing/strategy):\n${reviewed.map(c => `- "${c.name}" (${c.campaignType || 'general'}): content ${c.reviewContentQuality}/5, audience ${c.reviewAudienceResponse}/5, execution ${c.reviewTaskExecution}/5`).join('\n')}`
+      : '';
+  }
+
   // ÉTAPE 1/3 — stratégie + phases + canaux + messaging + KPIs + prospection.
   app.post('/api/campaigns/generate/strategy', isAuthenticated, async (req: any, res) => {
     try {
@@ -10430,11 +10569,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
       if ('error' in art) return res.status(art.status).json({ message: art.error });
 
-      const allCampaigns = await storage.getCampaigns(userId, ctx.pid);
-      const reviewed = allCampaigns.filter(c => c.reviewedAt && c.reviewContentQuality).slice(0, 5);
-      const pastReviewContext = reviewed.length
-        ? `\n\nPAST CAMPAIGN REVIEWS (adjust pacing/strategy):\n${reviewed.map(c => `- "${c.name}" (${c.campaignType || 'general'}): content ${c.reviewContentQuality}/5, audience ${c.reviewAudienceResponse}/5, execution ${c.reviewTaskExecution}/5`).join('\n')}`
-        : '';
+      const pastReviewContext = await revuesCampagnesPassees(userId, ctx.pid);
 
       // Les préférences de cette marque (chantier « rejeter une campagne ») : cette
       // fonction DÉCIDE de l'angle, elle doit donc éviter ce qui a été rejeté.
@@ -10511,8 +10646,16 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const art = await resolveArticulation(userId, ctx.pid, req.body?.articulationCampaignId);
       if ('error' in art) return res.status(art.status).json({ message: art.error });
 
+      const preferences = await resolvePreferences(userId, ctx.pid);
+      // savoirPourCampagne n'échoue jamais (undefined) : la génération continue sans savoir.
+      const savoir = await savoirPourCampagne(userId, ctx.pid, { objective, name: (strategy as any).name });
+
       const tasks = await generateCampaignTasks(
-        { userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext },
+        {
+          userId, projectId: ctx.pid, objective, duration: duration || '3_months', brandDna: ctx.brandDnaInput as any, weekContext,
+          preferences,
+          ...(savoir ? { savoir } : {}),
+        },
         strategy as CampaignStrategy,
       );
 
@@ -10572,137 +10715,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
-  function hhmmToMin(hhmm: string): number {
-    const [h, m] = hhmm.split(':').map(Number);
-    return h * 60 + (m || 0);
-  }
-  function minToHHMM(mins: number): string {
-    return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-  }
-
   const campaignDateToStr = sharedFormatDate;
   const campaignAddDays = sharedAddDays;
-  function campaignAddWeeks(d: Date, weeks: number): Date {
-    return sharedAddDays(d, weeks * 7);
-  }
-
-  function computePhaseRanges(
-    phases: Array<{ number: number }>,
-    startDate: Date,
-    campaignDurationDays: number
-  ): Record<number, { start: Date; end: Date }> {
-    const sorted = [...phases].sort((a, b) => a.number - b.number);
-    const totalPhases = sorted.length;
-    if (totalPhases === 0) return {};
-    const daysPerPhase = Math.max(1, Math.floor(campaignDurationDays / totalPhases));
-    const result: Record<number, { start: Date; end: Date }> = {};
-
-    sorted.forEach((phase, idx) => {
-      const phaseStartDay = idx * daysPerPhase;
-      const isLast = idx === totalPhases - 1;
-      const phaseEndDay = isLast ? campaignDurationDays - 1 : (idx + 1) * daysPerPhase - 1;
-
-      result[phase.number] = {
-        start: campaignAddDays(startDate, phaseStartDay),
-        end: campaignAddDays(startDate, phaseEndDay),
-      };
-    });
-
-    return result;
-  }
-
-  function assignPublicationDates(
-    phaseTasks: Array<any>,
-    phaseStart: Date,
-    phaseEnd: Date,
-    isWorkDayFn: (d: string) => boolean
-  ): Date[] {
-    const n = phaseTasks.length;
-    const phaseDays = Math.max(1, Math.round((phaseEnd.getTime() - phaseStart.getTime()) / 86400000));
-    return phaseTasks.map((_, idx) => {
-      const targetDayOffset = Math.round((idx + 1) * phaseDays / (n + 1));
-      let pubDate = campaignAddDays(phaseStart, targetDayOffset);
-      if (pubDate > phaseEnd) pubDate = new Date(phaseEnd);
-      if (pubDate < phaseStart) pubDate = new Date(phaseStart);
-      for (let tries = 0; tries < 14; tries++) {
-        if (isWorkDayFn(campaignDateToStr(pubDate))) break;
-        pubDate = campaignAddDays(pubDate, 1);
-      }
-      return pubDate;
-    });
-  }
-
-  function mapFormatToContentType(format: string): string {
-    const f = format.toLowerCase();
-    if (f.includes('email') || f.includes('newsletter')) return 'email';
-    if (f.includes('article') || f.includes('blog')) return 'article';
-    if (f.includes('story') || f.includes('reel') || f.includes('video')) return 'story';
-    if (f.includes('carousel')) return 'carousel';
-    return 'post';
-  }
-
-  interface SubTask {
-    title: string;
-    description: string;
-    type: string;
-    taskEnergyType: string;
-    estimatedDuration: number;
-    daysBeforePublication: number;
-  }
-
-  function decomposeContentTask(task: {
-    title: string; description: string; type: string;
-    taskEnergyType: string; estimatedDuration: number; phase?: number;
-  }): SubTask[] {
-    const t = task.title.toLowerCase();
-    const isContentTask =
-      t.includes('publish') || t.includes('post') || t.includes('write') ||
-      t.includes('create') || t.includes('carousel') || t.includes('reel') ||
-      t.includes('article') || t.includes('newsletter') || t.includes('email') ||
-      t.includes('caption') || t.includes('content') || t.includes('video') ||
-      task.type === 'content';
-
-    if (!isContentTask) {
-      return [{ ...task, daysBeforePublication: 0 }];
-    }
-
-    const isVideo = t.includes('video') || t.includes('reel') || t.includes('reels');
-    const isNewsletter = t.includes('newsletter') || t.includes('email');
-    const isArticle = t.includes('article') || t.includes('blog');
-    const isCarousel = t.includes('carousel') || t.includes('slides');
-
-    if (isVideo) {
-      return [
-        { title: `Script — ${task.title}`, description: `Write the script and structure the narrative. ${task.description}`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 45, daysBeforePublication: -5 },
-        { title: `Shoot/record — ${task.title}`, description: `Film or record the video content.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 90, daysBeforePublication: -3 },
-        { title: `Edit & caption — ${task.title}`, description: `Edit the video, add captions and music/sound.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 60, daysBeforePublication: -1 },
-        { title: `Schedule & publish — ${task.title}`, description: `Program the video with final caption copy and hashtags.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 20, daysBeforePublication: 0 },
-      ];
-    }
-
-    if (isNewsletter || isArticle) {
-      return [
-        { title: `Outline — ${task.title}`, description: `Structure the key arguments and sections. ${task.description}`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 30, daysBeforePublication: -4 },
-        { title: `Write — ${task.title}`, description: `Write the full draft.`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 90, daysBeforePublication: -2 },
-        { title: `Edit & format — ${task.title}`, description: `Proofread, format, add visuals or links.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 30, daysBeforePublication: -1 },
-        { title: `Schedule — ${task.title}`, description: `Send or schedule with final subject line/caption.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 15, daysBeforePublication: 0 },
-      ];
-    }
-
-    if (isCarousel) {
-      return [
-        { title: `Angle & structure — ${task.title}`, description: `Define the hook, slide structure and key message. ${task.description}`, type: 'content', taskEnergyType: 'deep_work', estimatedDuration: 30, daysBeforePublication: -3 },
-        { title: `Write copy — ${task.title}`, description: `Write the copy for each slide.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 45, daysBeforePublication: -2 },
-        { title: `Design slides — ${task.title}`, description: `Create the visual design for all slides.`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 60, daysBeforePublication: -1 },
-        { title: `Schedule — ${task.title}`, description: `Post or schedule with caption and hashtags.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 15, daysBeforePublication: 0 },
-      ];
-    }
-
-    return [
-      { title: `Write copy — ${task.title}`, description: `Write and refine the post copy. ${task.description}`, type: 'content', taskEnergyType: 'creative', estimatedDuration: 30, daysBeforePublication: -1 },
-      { title: `Publish — ${task.title}`, description: `Post with final copy, visuals, and hashtags.`, type: 'content', taskEnergyType: 'execution', estimatedDuration: 15, daysBeforePublication: 0 },
-    ];
-  }
 
   app.post('/api/campaigns/:id/launch', isAuthenticated, async (req: any, res) => {
     try {
@@ -10710,6 +10724,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
       if (campaign.status === 'active') return res.status(400).json({ message: "Campaign already launched" });
 
       const rawStart = req.body.startDate || campaign.startDate;
@@ -10723,289 +10738,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const endDate = campaignAddDays(startDate, campaignDays);
       const endDateStr = campaignDateToStr(endDate);
 
-      const existingTasks = await storage.getTasksInRange(userId, campaignDateToStr(startDate), endDateStr);
+      const { creees: tasksCreated } = await placerTachesCampagne(storage, {
+        userId, campaign, debut: startDate, fin: endDate,
+      });
+      const { crees: contentCreated } = await placerPostsCampagne(storage, {
+        userId, campaign, debut: startDate, fin: endDate,
+      });
 
-      const prefs = await storage.getUserPreferences(userId);
-      const campaignWorkDaySet = parseWorkDays(prefs?.workDays);
-      const campaignAvailability = await storage.getDayAvailabilityRange(userId, campaignDateToStr(startDate), endDateStr);
-      const campaignOffDates = new Set<string>(
-        campaignAvailability.filter((a: any) => a.dayType === 'off').map((a: any) => a.date as string)
-      );
-
-      // Use user's working hours preferences
-      const workDayStart = prefs?.workDayStart || '09:00';
-      const workDayEnd = prefs?.workDayEnd || '18:00';
-      const lunchStart = prefs?.lunchBreakStart || '12:00';
-      const lunchEnd = prefs?.lunchBreakEnd || '13:00';
-
-      const DAY_START = hhmmToMin(workDayStart);
-      const DAY_END = hhmmToMin(workDayEnd);
-      const LUNCH_START = hhmmToMin(lunchStart);
-      const LUNCH_END = hhmmToMin(lunchEnd);
-      const BUFFER = 15;
-
-      const dayNextSlot = new Map<string, number>();
-
-      for (const t of existingTasks) {
-        if (!t.scheduledDate) continue;
-        const existing = dayNextSlot.get(t.scheduledDate) ?? DAY_START;
-        if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
-          const startMin = hhmmToMin(t.scheduledTime);
-          const endMin = startMin + (t.estimatedDuration || 30) + BUFFER;
-          if (endMin > existing) dayNextSlot.set(t.scheduledDate, endMin);
-        }
-      }
-
-      const dayHasCapacity = (dateStr: string, durationMin: number): boolean => {
-        const slot = dayNextSlot.get(dateStr) ?? DAY_START;
-        const adjusted = (slot < LUNCH_END && slot + durationMin > LUNCH_START) ? LUNCH_END : slot;
-        return adjusted + durationMin <= DAY_END;
-      }
-
-      const assignSlot = (dateStr: string, durationMin: number): string => {
-        let slot = dayNextSlot.get(dateStr) ?? DAY_START;
-        if (slot < LUNCH_END && slot + durationMin > LUNCH_START) {
-          slot = LUNCH_END;
-        }
-        dayNextSlot.set(dateStr, slot + durationMin + BUFFER);
-        return minToHHMM(slot);
-      }
-
-      const isWorkDay = (dateStr: string): boolean => {
-        if (campaignOffDates.has(dateStr)) return false;
-        const dow = new Date(dateStr + 'T00:00:00').getDay();
-        return campaignWorkDaySet.has(DAY_ABBRS[dow]);
-      }
-
-      const phases = (campaign.phases || []) as Array<{ number: number; name: string; duration: string }>;
-      const phaseRanges = computePhaseRanges(phases, startDate, campaignDays);
-
-      const generatedTasks = (campaign.generatedTasks || []) as Array<{
-        title: string; description: string; type: string; category: string;
-        priority: number; estimatedDuration: number; taskEnergyType: string; phase?: number;
-      }>;
-
-      const tasksByPhase: Record<number, typeof generatedTasks> = {};
-      for (const t of generatedTasks) {
-        const p = parseInt(String(t.phase), 10) || 1;
-        if (!tasksByPhase[p]) tasksByPhase[p] = [];
-        tasksByPhase[p].push(t);
-      }
-
-      let tasksCreated = 0;
-      const CAMPAIGN_DAY_CAP = 3;
-      const campaignDayCounts = new Map<string, number>();
-      for (const t of existingTasks) {
-        if (!t.scheduledDate) continue;
-        campaignDayCounts.set(t.scheduledDate, (campaignDayCounts.get(t.scheduledDate) || 0) + 1);
-      }
-
-      const campaignDayAvailable = (dateStr: string, durationMin: number): boolean => {
-        return (campaignDayCounts.get(dateStr) || 0) < CAMPAIGN_DAY_CAP
-          && dayHasCapacity(dateStr, durationMin);
-      }
-
-      const sortedPhaseNums = Object.keys(tasksByPhase).map(Number).sort((a, b) => a - b);
-
-      for (const phaseNum of sortedPhaseNums) {
-        const phaseTasks = tasksByPhase[phaseNum];
-        const phaseRange = phaseRanges[phaseNum] || { start: startDate, end: campaignAddDays(startDate, 7) };
-
-        const publicationDates = assignPublicationDates(phaseTasks, phaseRange.start, phaseRange.end, isWorkDay);
-
-        for (let taskIdx = 0; taskIdx < phaseTasks.length; taskIdx++) {
-          const originalTask = phaseTasks[taskIdx];
-          const publicationDate = publicationDates[taskIdx];
-          const subTasks = decomposeContentTask(originalTask);
-
-          // BACKWARD SCHEDULING FIX: Lock the publication date first (offset 0)
-          // Find the publication task (the one with offset 0)
-          const pubTaskIndex = subTasks.findIndex(st => (st.daysBeforePublication || 0) === 0);
-          let lockedPublicationDate: Date | null = null;
-
-          if (pubTaskIndex !== -1) {
-            // Lock the publication date by finding a valid work day slot
-            let pubDate = new Date(publicationDate);
-            if (pubDate < phaseRange.start) pubDate = new Date(phaseRange.start);
-            if (pubDate < startDate) pubDate = new Date(startDate);
-
-            let safety = 0;
-            let foundPubSlot = false;
-            while (safety < 30) {
-              const ds = campaignDateToStr(pubDate);
-              if (isWorkDay(ds) && campaignDayAvailable(ds, subTasks[pubTaskIndex].estimatedDuration)) {
-                foundPubSlot = true;
-                break;
-              }
-              pubDate = campaignAddDays(pubDate, 1);
-              safety++;
-            }
-
-            if (foundPubSlot) {
-              lockedPublicationDate = pubDate;
-            } else {
-              console.warn(`Campaign ${campaign.id}: could not find publication slot for "${originalTask.title}" within 30-day search`);
-              continue; // Skip this entire content task if we can't lock publication date
-            }
-          }
-
-          // Now schedule all subtasks in order, using the locked publication date as anchor
-          let lastSubtaskDate: Date | null = null;
-          for (let subIdx = 0; subIdx < subTasks.length; subIdx++) {
-            const sub = subTasks[subIdx];
-            const offset = typeof sub.daysBeforePublication === 'number' ? sub.daysBeforePublication : 0;
-
-            // If this is the publication task and we have a locked date, use it
-            let scheduledDate: Date;
-            if (subIdx === pubTaskIndex && lockedPublicationDate) {
-              scheduledDate = lockedPublicationDate;
-            } else if (lockedPublicationDate) {
-              // Calculate from the LOCKED publication date, not the original one
-              scheduledDate = campaignAddDays(lockedPublicationDate, offset);
-            } else {
-              // Fallback to original logic if no locked date
-              scheduledDate = campaignAddDays(publicationDate, offset);
-            }
-
-            if (scheduledDate < phaseRange.start) scheduledDate = new Date(phaseRange.start);
-            if (scheduledDate < startDate) scheduledDate = new Date(startDate);
-            if (lastSubtaskDate && scheduledDate <= lastSubtaskDate) {
-              scheduledDate = campaignAddDays(lastSubtaskDate, 1);
-            }
-
-            // For backward scheduling: only search forward if we're NOT past the publication date
-            let safety = 0;
-            let foundSlot = false;
-            while (safety < 30) {
-              const ds = campaignDateToStr(scheduledDate);
-              if (isWorkDay(ds) && campaignDayAvailable(ds, sub.estimatedDuration)) { foundSlot = true; break; }
-
-              // BACKWARD SCHEDULING FIX: If this task would be scheduled after the locked publication date, warn and skip
-              if (lockedPublicationDate && subIdx !== pubTaskIndex && scheduledDate >= lockedPublicationDate) {
-                console.warn(`Campaign ${campaign.id}: subtask "${sub.title}" would be scheduled on or after publication date. Skipping.`);
-                break;
-              }
-
-              scheduledDate = campaignAddDays(scheduledDate, 1);
-              safety++;
-            }
-
-            if (!foundSlot) {
-              console.warn(`Campaign ${campaign.id}: could not find valid slot for sub-task "${sub.title}" within 30-day search`);
-              continue;
-            }
-
-            lastSubtaskDate = scheduledDate;
-            const scheduledDateStr = campaignDateToStr(scheduledDate);
-            campaignDayCounts.set(scheduledDateStr, (campaignDayCounts.get(scheduledDateStr) || 0) + 1);
-
-            // In-memory slot from the map, then verify against DB (handles concurrent launches)
-            const inMemoryTime = assignSlot(scheduledDateStr, sub.estimatedDuration);
-            const slotCheck = await storage.checkSlotAvailability(
-              userId, scheduledDateStr, inMemoryTime, sub.estimatedDuration
-            );
-            const scheduledTime = (!slotCheck.available && slotCheck.nextAvailableTime)
-              ? slotCheck.nextAvailableTime
-              : inMemoryTime;
-            // Keep in-memory map consistent with what was actually written
-            if (scheduledTime !== inMemoryTime) {
-              const [sh, sm] = scheduledTime.split(':').map(Number);
-              dayNextSlot.set(scheduledDateStr, sh * 60 + sm + sub.estimatedDuration + BUFFER);
-            }
-            const scheduledEndTime = minToHHMM(hhmmToMin(scheduledTime) + sub.estimatedDuration);
-
-            await storage.createTask({
-              userId,
-              projectId: campaign.projectId ?? undefined,
-              campaignId: campaign.id,
-              title: sub.title,
-              description: sub.description,
-              type: sub.type || 'content',
-              category: originalTask.category || 'planning',
-              priority: originalTask.priority || 2,
-              estimatedDuration: sub.estimatedDuration,
-              taskEnergyType: sub.taskEnergyType,
-              source: 'campaign',
-              scheduledDate: scheduledDateStr,
-              scheduledTime,
-              scheduledEndTime,
-              completed: false,
-            });
-            tasksCreated++;
-          }
-        }
-      }
-
-      const contentPlan = (campaign.contentPlan || []) as Array<{
-        phase: number; week: string; platform: string; format: string;
-        angle: string; pillar: string; goal: string; copyDirections: string;
-      }>;
-
-      // Group content plan items by week number
-      const contentByWeek = new Map<number, typeof contentPlan>();
-      for (const piece of contentPlan) {
-        let weekNum = 1;
-        const wMatch = piece.week.match(/[Ww]eek\s*(\d+)/);
-        const mMatch = piece.week.match(/[Mm]onth\s*(\d+)/);
-        if (wMatch) weekNum = parseInt(wMatch[1]);
-        else if (mMatch) weekNum = (parseInt(mMatch[1]) - 1) * 4 + 1;
-        if (!contentByWeek.has(weekNum)) contentByWeek.set(weekNum, []);
-        contentByWeek.get(weekNum)!.push(piece);
-      }
-
-      let contentCreated = 0;
-      // Spread posts across work days within each week
-      for (const [weekNum, pieces] of Array.from(contentByWeek.entries())) {
-        const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);
-        // Collect work days in this week
-        const workDaysInWeek: string[] = [];
-        for (let d = 0; d < 7; d++) {
-          const day = campaignAddDays(weekStart, d);
-          const dateStr = campaignDateToStr(day);
-          if (isWorkDay(dateStr)) workDaysInWeek.push(dateStr);
-        }
-        if (workDaysInWeek.length === 0) {
-          // Fallback: use Wed of the week
-          const fallback = campaignAddDays(weekStart, 2);
-          workDaysInWeek.push(campaignDateToStr(fallback));
-        }
-
-        // Assign pieces to different days, cycling through work days
-        // Hours vary to avoid exact duplicates: 9h, 11h, 14h, 16h
-        const HOURS = [9, 11, 14, 16];
-        const dayUsageCounts = new Map<string, number>();
-
-        for (let i = 0; i < pieces.length; i++) {
-          const piece = pieces[i];
-          const dayStr = workDaysInWeek[i % workDaysInWeek.length];
-          const usageCount = dayUsageCounts.get(dayStr) || 0;
-          dayUsageCounts.set(dayStr, usageCount + 1);
-          const hour = HOURS[usageCount % HOURS.length];
-
-          const pieceDate = new Date(dayStr + 'T00:00:00');
-          pieceDate.setHours(hour, 0, 0, 0);
-
-          await storage.createContent({
-            userId,
-            projectId: campaign.projectId ?? undefined,
-            campaignId: campaign.id,
-            title: piece.angle,
-            body: piece.copyDirections,
-            platform: piece.platform,
-            contentType: mapFormatToContentType(piece.format),
-            pillar: piece.pillar,
-            goal: piece.goal,
-            status: 'draft',
-            contentStatus: 'idea',
-            scheduledFor: pieceDate,
-            // JAMAIS de publication automatique pour un post de campagne : son texte est
-            // une consigne de rédaction, pas un post. Le 6 oct. 2026, 19 posts ainsi créés
-            // étaient prêts à partir seuls sur Instagram et LinkedIn (défaut de la colonne).
-            autoPost: false,
-          });
-          contentCreated++;
-        }
-      }
 
       const updated = await storage.updateCampaign(id, userId, {
         tasksGenerated: true,
@@ -11034,6 +10773,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
 
       const contentPlan = (campaign.contentPlan || []) as Array<{
         phase: number; week: string; platform: string; format: string;
@@ -11044,84 +10784,21 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         return res.status(400).json({ message: "Aucun plan de contenu trouvé — relance la campagne d'abord." });
       }
 
-      // Delete all existing content items for this campaign
-      const deleted = await storage.deleteAllCampaignContent(id);
+      // Supprime les posts de la campagne SAUF ceux déjà publiés ou en cours de publication :
+      // les effacer falsifierait l'historique de l'utilisatrice.
+      const existants = await storage.getContent(userId, 100000, undefined, id);
+      const aSupprimer = existants.filter((c: any) => !estPublieOuEnCours(c) && !contenuEstPublie(c));
+      const deleted = aSupprimer.length > 0
+        ? await storage.deleteCampaignContentItems(id, aSupprimer.map((c: any) => c.id))
+        : 0;
 
       const rawStart = campaign.startDate || new Date().toISOString().slice(0, 10);
       const startDate = new Date(rawStart + 'T00:00:00');
+      const { crees: contentCreated } = await placerPostsCampagne(storage, {
+        userId, campaign, debut: startDate,
+        fin: campaign.endDate ? new Date(campaign.endDate + 'T00:00:00') : campaignAddDays(startDate, 365),
+      });
 
-      const prefs = await storage.getUserPreferences(userId);
-      const campaignWorkDaySet = parseWorkDays(prefs?.workDays);
-      const campaignAvailability = await storage.getDayAvailabilityRange(userId, rawStart,
-        campaign.endDate || campaignDateToStr(campaignAddDays(startDate, 365)));
-      const campaignOffDates = new Set<string>(
-        campaignAvailability.filter((a: any) => a.dayType === 'off').map((a: any) => a.date as string)
-      );
-
-      const isWorkDayLocal = (dateStr: string): boolean => {
-        if (campaignOffDates.has(dateStr)) return false;
-        const dow = new Date(dateStr + 'T00:00:00').getDay();
-        return campaignWorkDaySet.has(DAY_ABBRS[dow]);
-      };
-
-      // Group by week
-      const contentByWeek = new Map<number, typeof contentPlan>();
-      for (const piece of contentPlan) {
-        let weekNum = 1;
-        const wMatch = piece.week.match(/[Ww]eek\s*(\d+)/);
-        const mMatch = piece.week.match(/[Mm]onth\s*(\d+)/);
-        if (wMatch) weekNum = parseInt(wMatch[1]);
-        else if (mMatch) weekNum = (parseInt(mMatch[1]) - 1) * 4 + 1;
-        if (!contentByWeek.has(weekNum)) contentByWeek.set(weekNum, []);
-        contentByWeek.get(weekNum)!.push(piece);
-      }
-
-      let contentCreated = 0;
-      const HOURS = [9, 11, 14, 16];
-
-      for (const [weekNum, pieces] of Array.from(contentByWeek.entries())) {
-        const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);
-        const workDaysInWeek: string[] = [];
-        for (let d = 0; d < 7; d++) {
-          const day = campaignAddDays(weekStart, d);
-          const dateStr = campaignDateToStr(day);
-          if (isWorkDayLocal(dateStr)) workDaysInWeek.push(dateStr);
-        }
-        if (workDaysInWeek.length === 0) {
-          workDaysInWeek.push(campaignDateToStr(campaignAddDays(weekStart, 2)));
-        }
-
-        const dayUsageCounts = new Map<string, number>();
-        for (let i = 0; i < pieces.length; i++) {
-          const piece = pieces[i];
-          const dayStr = workDaysInWeek[i % workDaysInWeek.length];
-          const usageCount = dayUsageCounts.get(dayStr) || 0;
-          dayUsageCounts.set(dayStr, usageCount + 1);
-          const hour = HOURS[usageCount % HOURS.length];
-          const pieceDate = new Date(dayStr + 'T00:00:00');
-          pieceDate.setHours(hour, 0, 0, 0);
-
-          await storage.createContent({
-            userId,
-            projectId: campaign.projectId ?? undefined,
-            campaignId: campaign.id,
-            title: piece.angle,
-            body: piece.copyDirections,
-            platform: piece.platform,
-            contentType: mapFormatToContentType(piece.format),
-            pillar: piece.pillar,
-            goal: piece.goal,
-            status: 'draft',
-            contentStatus: 'idea',
-            scheduledFor: pieceDate,
-            // JAMAIS de publication automatique pour un post de campagne : son texte est
-            // une consigne de rédaction, pas un post. Le 6 oct. 2026, 19 posts ainsi créés
-            // étaient prêts à partir seuls sur Instagram et LinkedIn (défaut de la colonne).
-            autoPost: false,
-          });
-          contentCreated++;
-        }
-      }
 
       res.json({ deleted, contentCreated });
     } catch (error) {
@@ -11137,6 +10814,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const { pauseNote } = req.body as { pauseNote?: string };
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
       if (campaign.status !== 'active') return res.status(400).json({ message: "Campaign is not active" });
       const today = new Date().toISOString().slice(0, 10);
       const deleted = await storage.deleteCampaignFutureTasks(id, today);
@@ -11158,6 +10836,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
       if (campaign.status !== 'paused') return res.status(400).json({ message: "Campaign is not paused" });
 
       if (campaign.pauseNote) {
@@ -11400,6 +11079,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const id = parseInt(req.params.id);
       const campaign = await storage.getCampaign(id, userId);
       if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+      if (repenserEnCours(userId, id)) return res.status(409).json({ message: "deja_en_cours" });
 
       const tasksRemoved = await storage.deleteAllIncompleteCampaignTasks(id);
 
@@ -11421,184 +11101,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         endDate: rdEndDateStr,
       });
 
-      const rdExistingTasks = await storage.getTasksInRange(userId, rdStartDateStr, rdEndDateStr);
-      const rdPrefs = await storage.getUserPreferences(userId);
-      const rdWorkDaySet = parseWorkDays(rdPrefs?.workDays);
-      const rdAvailability = await storage.getDayAvailabilityRange(userId, rdStartDateStr, rdEndDateStr);
-      const rdOffDates = new Set<string>(
-        rdAvailability.filter((a: any) => a.dayType === 'off').map((a: any) => a.date as string)
-      );
+      const { creees: rdTasksCreated } = await placerTachesCampagne(storage, {
+        userId, campaign, debut: rdStartDate, fin: rdEndDate,
+        // /redeploy n'a jamais contrôlé les créneaux en base : on garde ce comportement.
+        controleCreneaux: false,
+      });
 
-      // Use user's working hours preferences
-      const rdWorkDayStart = rdPrefs?.workDayStart || '09:00';
-      const rdWorkDayEnd = rdPrefs?.workDayEnd || '18:00';
-      const rdLunchStart = rdPrefs?.lunchBreakStart || '12:00';
-      const rdLunchEnd = rdPrefs?.lunchBreakEnd || '13:00';
-
-      const RD_DAY_START = hhmmToMin(rdWorkDayStart);
-      const RD_DAY_END = hhmmToMin(rdWorkDayEnd);
-      const RD_LUNCH_START = hhmmToMin(rdLunchStart);
-      const RD_LUNCH_END = hhmmToMin(rdLunchEnd);
-      const RD_BUFFER = 15;
-
-      const rdDayNextSlot = new Map<string, number>();
-      for (const t of rdExistingTasks) {
-        if (!t.scheduledDate) continue;
-        const existing = rdDayNextSlot.get(t.scheduledDate) ?? RD_DAY_START;
-        if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
-          const startMin = hhmmToMin(t.scheduledTime);
-          const endMin = startMin + (t.estimatedDuration || 30) + RD_BUFFER;
-          if (endMin > existing) rdDayNextSlot.set(t.scheduledDate, endMin);
-        }
-      }
-
-      const rdDayHasCapacity = (dateStr: string, durationMin: number): boolean => {
-        const slot = rdDayNextSlot.get(dateStr) ?? RD_DAY_START;
-        const adjusted = (slot < RD_LUNCH_END && slot + durationMin > RD_LUNCH_START) ? RD_LUNCH_END : slot;
-        return adjusted + durationMin <= RD_DAY_END;
-      }
-
-      const rdAssignSlot = (dateStr: string, durationMin: number): string => {
-        let slot = rdDayNextSlot.get(dateStr) ?? RD_DAY_START;
-        if (slot < RD_LUNCH_END && slot + durationMin > RD_LUNCH_START) {
-          slot = RD_LUNCH_END;
-        }
-        rdDayNextSlot.set(dateStr, slot + durationMin + RD_BUFFER);
-        return minToHHMM(slot);
-      }
-
-      const rdIsWorkDay = (dateStr: string): boolean => {
-        if (rdOffDates.has(dateStr)) return false;
-        const dow = new Date(dateStr + 'T00:00:00').getDay();
-        return rdWorkDaySet.has(DAY_ABBRS[dow]);
-      }
-
-      const rdPhases = (campaign.phases || []) as Array<{ number: number; name: string; duration: string }>;
-      const rdPhaseRanges = computePhaseRanges(rdPhases, rdStartDate, rdDays);
-
-      const rdGeneratedTasks = (campaign.generatedTasks || []) as Array<{
-        title: string; description: string; type: string; category: string;
-        priority: number; estimatedDuration: number; taskEnergyType: string; phase?: number;
-      }>;
-
-      const rdTasksByPhase: Record<number, typeof rdGeneratedTasks> = {};
-      for (const t of rdGeneratedTasks) {
-        const p = parseInt(String(t.phase), 10) || 1;
-        if (!rdTasksByPhase[p]) rdTasksByPhase[p] = [];
-        rdTasksByPhase[p].push(t);
-      }
-
-      let rdTasksCreated = 0;
-      const RD_CAMPAIGN_DAY_CAP = 3;
-      const rdCampaignDayCounts = new Map<string, number>();
-      for (const t of rdExistingTasks) {
-        if (!t.scheduledDate) continue;
-        rdCampaignDayCounts.set(t.scheduledDate, (rdCampaignDayCounts.get(t.scheduledDate) || 0) + 1);
-      }
-
-      const rdCampaignDayAvailable = (dateStr: string, durationMin: number): boolean => {
-        return (rdCampaignDayCounts.get(dateStr) || 0) < RD_CAMPAIGN_DAY_CAP
-          && rdDayHasCapacity(dateStr, durationMin);
-      }
-
-      const rdSortedPhaseNums = Object.keys(rdTasksByPhase).map(Number).sort((a, b) => a - b);
-
-      for (const phaseNum of rdSortedPhaseNums) {
-        const phaseTasks = rdTasksByPhase[phaseNum];
-        const phaseRange = rdPhaseRanges[phaseNum] || { start: rdStartDate, end: campaignAddDays(rdStartDate, 7) };
-        const publicationDates = assignPublicationDates(phaseTasks, phaseRange.start, phaseRange.end, rdIsWorkDay);
-
-        for (let taskIdx = 0; taskIdx < phaseTasks.length; taskIdx++) {
-          const originalTask = phaseTasks[taskIdx];
-          const publicationDate = publicationDates[taskIdx];
-          const subTasks = decomposeContentTask(originalTask);
-
-          // Bug 3 fix: lock publication date anchor, then backward-schedule preparatory subtasks
-          const rdPubTaskIndex = subTasks.findIndex(st => (st.daysBeforePublication || 0) === 0);
-          let rdLockedPublicationDate: Date | null = null;
-
-          if (rdPubTaskIndex !== -1) {
-            let rdPubDate = new Date(publicationDate);
-            if (rdPubDate < phaseRange.start) rdPubDate = new Date(phaseRange.start);
-            if (rdPubDate < rdStartDate) rdPubDate = new Date(rdStartDate);
-            let rdPubSafety = 0;
-            while (rdPubSafety < 30) {
-              const ds = campaignDateToStr(rdPubDate);
-              if (rdIsWorkDay(ds) && rdCampaignDayAvailable(ds, subTasks[rdPubTaskIndex].estimatedDuration)) {
-                rdLockedPublicationDate = rdPubDate;
-                break;
-              }
-              rdPubDate = campaignAddDays(rdPubDate, 1);
-              rdPubSafety++;
-            }
-            if (!rdLockedPublicationDate) continue;
-          }
-
-          let lastSubtaskDate: Date | null = null;
-          for (let subIdx = 0; subIdx < subTasks.length; subIdx++) {
-            const sub = subTasks[subIdx];
-            const offset = typeof sub.daysBeforePublication === 'number' ? sub.daysBeforePublication : 0;
-
-            let scheduledDate: Date;
-            if (subIdx === rdPubTaskIndex && rdLockedPublicationDate) {
-              scheduledDate = rdLockedPublicationDate;
-            } else if (rdLockedPublicationDate) {
-              scheduledDate = campaignAddDays(rdLockedPublicationDate, offset);
-            } else {
-              scheduledDate = campaignAddDays(publicationDate, offset);
-            }
-
-            if (scheduledDate < phaseRange.start) scheduledDate = new Date(phaseRange.start);
-            if (scheduledDate < rdStartDate) scheduledDate = new Date(rdStartDate);
-            if (lastSubtaskDate && scheduledDate <= lastSubtaskDate) {
-              scheduledDate = campaignAddDays(lastSubtaskDate, 1);
-            }
-
-            let safety = 0;
-            let foundSlot = false;
-            while (safety < 30) {
-              const ds = campaignDateToStr(scheduledDate);
-              if (rdIsWorkDay(ds) && rdCampaignDayAvailable(ds, sub.estimatedDuration)) { foundSlot = true; break; }
-              if (rdLockedPublicationDate && subIdx !== rdPubTaskIndex && scheduledDate >= rdLockedPublicationDate) {
-                console.warn(`Redeploy campaign ${campaign.id}: subtask "${sub.title}" would fall after publication date. Skipping.`);
-                break;
-              }
-              scheduledDate = campaignAddDays(scheduledDate, 1);
-              safety++;
-            }
-
-            if (!foundSlot) {
-              console.warn(`Redeploy campaign ${campaign.id}: could not find valid slot for sub-task "${sub.title}"`);
-              continue;
-            }
-
-            lastSubtaskDate = scheduledDate;
-            const scheduledDateStr = campaignDateToStr(scheduledDate);
-            rdCampaignDayCounts.set(scheduledDateStr, (rdCampaignDayCounts.get(scheduledDateStr) || 0) + 1);
-            const scheduledTime = rdAssignSlot(scheduledDateStr, sub.estimatedDuration);
-            const scheduledEndTime = minToHHMM(hhmmToMin(scheduledTime) + sub.estimatedDuration);
-
-            await storage.createTask({
-              userId,
-              projectId: campaign.projectId ?? undefined,
-              campaignId: campaign.id,
-              title: sub.title,
-              description: sub.description,
-              type: sub.type || 'content',
-              category: originalTask.category || 'planning',
-              priority: originalTask.priority || 2,
-              estimatedDuration: sub.estimatedDuration,
-              taskEnergyType: sub.taskEnergyType,
-              source: 'campaign',
-              scheduledDate: scheduledDateStr,
-              scheduledTime,
-              scheduledEndTime,
-              completed: false,
-            });
-            rdTasksCreated++;
-          }
-        }
-      }
 
       await storage.updateCampaign(id, userId, { tasksGenerated: true });
       const updatedCampaign = await storage.getCampaign(id, userId);

@@ -1,0 +1,62 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`placement de campagne : caractérisation des routes > launch : tâches et posts placés, campagne activée > launch posts 1`] = `
+[
+  "2026-10-12 09:00 a1 carousel auto=false",
+  "2026-10-13 09:00 a2 carousel auto=false",
+  "2026-10-15 09:00 a3 carousel auto=false",
+  "2026-10-16 09:00 a4 carousel auto=false",
+  "2026-10-19 09:00 b1 carousel auto=false",
+  "2026-11-09 09:00 b2 carousel auto=false",
+]
+`;
+
+exports[`placement de campagne : caractérisation des routes > launch : tâches et posts placés, campagne activée > launch tâches 1`] = `
+[
+  "2026-10-19 09:00-09:30 Write copy — Write post one [campaign/3/9]",
+  "2026-10-20 09:00-09:15 Publish — Write post one [campaign/3/9]",
+  "2026-10-21 09:00-09:30 Plan review [campaign/3/9]",
+  "2026-10-28 09:00-09:45 Script — Publish video two [campaign/3/9]",
+  "2026-10-30 09:00-10:30 Shoot/record — Publish video two [campaign/3/9]",
+  "2026-11-02 09:00-10:00 Edit & caption — Publish video two [campaign/3/9]",
+  "2026-11-03 09:00-09:20 Schedule & publish — Publish video two [campaign/3/9]",
+  "2026-11-05 09:00-09:30 Wrap up [campaign/3/9]",
+]
+`;
+
+exports[`placement de campagne : caractérisation des routes > launch : un créneau pris en base décale l'heure de la tâche > launch créneau pris 1`] = `
+[
+  "2026-10-19 10:30-11:00 Write copy — Write post one [campaign/3/9]",
+  "2026-10-20 10:30-10:45 Publish — Write post one [campaign/3/9]",
+  "2026-10-21 10:30-11:00 Plan review [campaign/3/9]",
+  "2026-10-28 10:30-11:15 Script — Publish video two [campaign/3/9]",
+  "2026-10-30 10:30-12:00 Shoot/record — Publish video two [campaign/3/9]",
+  "2026-11-02 10:30-11:30 Edit & caption — Publish video two [campaign/3/9]",
+  "2026-11-03 10:30-10:50 Schedule & publish — Publish video two [campaign/3/9]",
+  "2026-11-05 10:30-11:00 Wrap up [campaign/3/9]",
+]
+`;
+
+exports[`placement de campagne : caractérisation des routes > redeploy : tâches replacées depuis aujourd'hui, sans contrôle de créneau en base > redeploy tâches 1`] = `
+[
+  "2026-10-19 09:00-09:30 Write copy — Write post one [campaign/3/9]",
+  "2026-10-20 09:00-09:15 Publish — Write post one [campaign/3/9]",
+  "2026-10-21 09:00-09:30 Plan review [campaign/3/9]",
+  "2026-10-28 09:00-09:45 Script — Publish video two [campaign/3/9]",
+  "2026-10-30 09:00-10:30 Shoot/record — Publish video two [campaign/3/9]",
+  "2026-11-02 09:00-10:00 Edit & caption — Publish video two [campaign/3/9]",
+  "2026-11-03 09:00-09:20 Schedule & publish — Publish video two [campaign/3/9]",
+  "2026-11-05 09:00-09:30 Wrap up [campaign/3/9]",
+]
+`;
+
+exports[`placement de campagne : caractérisation des routes > regenerate-content : supprime tout puis recrée les posts depuis la date de début > regenerate posts 1`] = `
+[
+  "2026-10-12 09:00 a1 carousel auto=false",
+  "2026-10-13 09:00 a2 carousel auto=false",
+  "2026-10-15 09:00 a3 carousel auto=false",
+  "2026-10-16 09:00 a4 carousel auto=false",
+  "2026-10-19 09:00 b1 carousel auto=false",
+  "2026-11-09 09:00 b2 carousel auto=false",
+]
+`;

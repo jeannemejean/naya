@@ -118,6 +118,9 @@ const storageMock = {
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 
+const retrieveCtl = vi.hoisted(() => ({ impl: (async () => ({ savoir: [] })) as (...a: any[]) => any }));
+vi.mock("./services/memory/retrieve", () => ({ retrieveMemories: (...a: any[]) => retrieveCtl.impl(...a) }));
+
 const extractToMemoryMock = vi.fn();
 vi.mock("./services/memory/extract", () => ({ extractToMemory: extractToMemoryMock }));
 
@@ -488,7 +491,7 @@ describe("Les préférences de la marque atteignent la génération de campagne 
     expect(requeteEnvoyee.preferences).toBe(PREFS_STUB);
   });
 
-  it("generate/tasks : AUCUNE préférence n'est demandée ni transmise — exécution opérationnelle, pas décision d'angle", async () => {
+  it("generate/tasks : les préférences de la marque sont transmises (les tâches honorent aussi ce qui a été rejeté)", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -496,11 +499,25 @@ describe("Les préférences de la marque atteignent la génération de campagne 
     });
 
     expect(res.status).toBe(200);
-    expect(hoisted.preferencesDeLaMarque).not.toHaveBeenCalled();
+    expect(hoisted.preferencesDeLaMarque).toHaveBeenCalled();
     const requeteEnvoyee = hoisted.generateCampaignTasks.mock.calls[0][0];
-    // `in` teste la présence de la CLÉ : un champ présent avec `undefined` romprait
-    // déjà ce critère (aucun champ ajouté), comme pour `articulation` au chantier précédent.
-    expect('preferences' in requeteEnvoyee).toBe(false);
+    expect(requeteEnvoyee.preferences).toBe(PREFS_STUB);
+  });
+
+  it("generate/tasks : l'échec de récupération du savoir ne bloque pas la génération (200)", async () => {
+    retrieveCtl.impl = async () => { throw new Error("mémoire indisponible"); };
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/generate/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ objective: "Vendre plus", duration: "1_month", projectId: 1, strategy: STRATEGY_STUB }),
+      });
+      expect(res.status).toBe(200);
+      const requeteEnvoyee = hoisted.generateCampaignTasks.mock.calls[0][0];
+      expect('savoir' in requeteEnvoyee).toBe(false);
+    } finally {
+      retrieveCtl.impl = async () => ({ savoir: [] });
+    }
   });
 
   it("sans projectId (pas de marque sélectionnée) : preferencesDeLaMarque n'est pas appelée, et la requête de génération porte un tableau vide", async () => {
