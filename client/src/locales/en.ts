@@ -1073,6 +1073,9 @@ const en = {
  duration3Months: "3 months",
  duration6Months: "6 months",
  duration12Months: "12 months",
+ moreActions: "More actions",
+ regenerateCalendar: "Regenerate calendar",
+ inYourCalendar: "In your calendar",
  repenser: {
   title: "Rethink the campaign",
   button: "Rethink the campaign",

@@ -23,7 +23,7 @@
   "client/src/components/ui/sheet.tsx": 1,
   "client/src/components/ui/sidebar.tsx": 5,
   "client/src/pages/analytics.tsx": 5,
-  "client/src/pages/campaigns.tsx": 13,
+  "client/src/pages/campaigns.tsx": 11,
   "client/src/pages/content-calendar.tsx": 24,
   "client/src/pages/dashboard.tsx": 75,
   "client/src/pages/data-deletion.tsx": 18,

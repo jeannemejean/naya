@@ -1077,6 +1077,9 @@ const fr = {
  duration3Months: "3 mois",
  duration6Months: "6 mois",
  duration12Months: "12 mois",
+ moreActions: "Plus d'actions",
+ regenerateCalendar: "Régénérer le calendrier",
+ inYourCalendar: "Dans ton calendrier",
  repenser: {
   title: "Repenser la campagne",
   button: "Repenser la campagne",

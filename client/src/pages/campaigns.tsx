@@ -47,8 +47,11 @@ import {
 import {
  Rocket, Plus, Loader2, CheckCircle2, Pause, Trash2, Edit2, X,
  Clock, Zap, Brain, Users, Settings, Lightbulb, Target,
- ChevronUp, ChevronDown, AlertTriangle, CalendarDays, RotateCcw, ArrowRight, RefreshCw
+ ChevronUp, ChevronDown, AlertTriangle, CalendarDays, RotateCcw, ArrowRight, RefreshCw, MoreHorizontal
 } from "lucide-react";
+import {
+ DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Project, Task } from "@shared/schema";
 import { formatLocalDate } from "@/lib/dateUtils";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
@@ -208,6 +211,13 @@ const DURATION_OPTIONS = [
  { value: "6_months", labelKey: "campaigns.duration6Months" },
  { value: "12_months", labelKey: "campaigns.duration12Months" },
 ];
+
+/** « 2026-10-08 » → « 8 oct. 2026 » (ou « Oct 8, 2026 ») ; valeur brute si illisible. */
+function formaterDateCampagne(iso: string, langue: string): string {
+ const d = new Date(`${iso}T12:00:00`);
+ if (Number.isNaN(d.getTime())) return iso;
+ return new Intl.DateTimeFormat(langue || "fr", { day: "numeric", month: "short", year: "numeric" }).format(d);
+}
 
 const UNDER_3_MONTHS = new Set(["1_week", "2_weeks", "3_weeks", "1_month", "2_months"]);
 const UNDER_2_MONTHS = new Set(["1_week", "2_weeks", "3_weeks", "1_month"]);
@@ -617,7 +627,7 @@ interface CampaignsProps {
 }
 
 export default function Campaigns({ onSearchClick }: CampaignsProps) {
- const { t } = useTranslation();
+ const { t, i18n } = useTranslation();
  const queryClient = useQueryClient();
  const { toast } = useToast();
  const { triggerAutoRebalance } = useAutoRebalance();
@@ -1489,95 +1499,85 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
 
  {panelState === "detail" && selectedCampaign && (
  <div className="space-y-5">
- <div className="flex items-start justify-between">
- <div>
- <h2 className="text-xl text-foreground">{selectedCampaign.name}</h2>
- <div className="flex items-center gap-2 mt-1">
+ {/* En-tête : titre seul sur sa ligne, une ligne d'infos, puis UNE action visible
+ (Repenser) et toutes les autres dans un menu « … » — l'ancienne version empilait
+ jusqu'à sept boutons et un encart qui débordaient sur les écrans moyens. */}
+ <div className="space-y-3">
+ <div className="flex items-start justify-between gap-3">
+ <h2 className="text-xl text-foreground min-w-0 break-words">{selectedCampaign.name}</h2>
+ <div className="flex items-center gap-2 shrink-0">
+ {campagneRepensable(selectedCampaign.status) && (
+ <Button size="sm" variant="outline" onClick={() => setRepenserOuvert(true)} data-testid="button-repenser-campagne">
+ <RefreshCw className="h-3.5 w-3.5 mr-1" />
+ {t('campaigns.repenser.button')}
+ </Button>
+ )}
+ <DropdownMenu>
+ <DropdownMenuTrigger asChild>
+ <Button size="sm" variant="ghost" aria-label={t('campaigns.moreActions')} data-testid="button-actions-campagne">
+ <MoreHorizontal className="h-4 w-4" />
+ </Button>
+ </DropdownMenuTrigger>
+ <DropdownMenuContent align="end" className="w-60">
+ {selectedCampaign.status === "active" && (
+ <>
+ <DropdownMenuItem onSelect={() => { setShowPauseDialog(true); setPauseNoteInput(""); }}>
+ <Pause className="h-3.5 w-3.5 mr-2" />{t('campaigns.pause')}
+ </DropdownMenuItem>
+ {selectedCampaign.tasksGenerated && (
+ <DropdownMenuItem disabled={redeployMutation.isPending} onSelect={() => redeployMutation.mutate(selectedCampaign.id)}>
+ <RotateCcw className="h-3.5 w-3.5 mr-2" />{t('campaigns.redeploy')}
+ </DropdownMenuItem>
+ )}
+ <DropdownMenuItem disabled={regenerateContentMutation.isPending} onSelect={() => regenerateContentMutation.mutate(selectedCampaign.id)}>
+ <CalendarDays className="h-3.5 w-3.5 mr-2" />{t('campaigns.regenerateCalendar')}
+ </DropdownMenuItem>
+ <DropdownMenuItem onSelect={() => { updateMutation.mutate({ id: selectedCampaign.id, data: { status: "completed" } }); toast({ title: t('campaigns.campaignMarkedComplete') }); }}>
+ <CheckCircle2 className="h-3.5 w-3.5 mr-2" />{t('campaigns.markComplete')}
+ </DropdownMenuItem>
+ <DropdownMenuSeparator />
+ </>
+ )}
+ {/* Le rejet est disponible depuis TOUT état de la campagne. */}
+ <DropdownMenuItem onSelect={ouvrirRejet} className="text-destructive focus:text-destructive" data-testid="button-rejeter-campagne-detail">
+ <Trash2 className="h-3.5 w-3.5 mr-2" />{LIBELLE_BOUTON_REJETER}
+ </DropdownMenuItem>
+ </DropdownMenuContent>
+ </DropdownMenu>
+ </div>
+ </div>
+ <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-naya-olive-55">
  <Badge variant={STATUS_BADGES[selectedCampaign.status || "draft"].variant}>
  {t(STATUS_BADGES[selectedCampaign.status || "draft"].labelKey)}
  </Badge>
- {selectedCampaign.campaignType && (
- <span className="text-[10px] text-naya-olive-35 capitalize">{selectedCampaign.campaignType.replace("_", " ")}</span>
+ {selectedCampaign.duration && DURATION_OPTIONS.some((d) => d.value === selectedCampaign.duration) && (
+ <span>{t(DURATION_OPTIONS.find((d) => d.value === selectedCampaign.duration)!.labelKey)}</span>
  )}
- {selectedCampaign.duration && (
- <span className="text-xs text-naya-olive-35 ">
- {selectedCampaign.duration.replace("_", " ")}
+ {selectedCampaign.startDate && (
+ <span className="inline-flex items-center gap-1">
+ <CalendarDays className="h-3.5 w-3.5" />
+ {formaterDateCampagne(selectedCampaign.startDate, i18n.language)}
+ {selectedCampaign.endDate && <> → {formaterDateCampagne(selectedCampaign.endDate, i18n.language)}</>}
  </span>
  )}
- {selectedCampaign.startDate && selectedCampaign.endDate && (
- <span className="text-[10px] text-naya-olive-35 ">
- {selectedCampaign.startDate} → {selectedCampaign.endDate}
+ {selectedCampaign.tasksGenerated && (
+ <span className="inline-flex items-center gap-1">
+ <CheckCircle2 className="h-3.5 w-3.5" />
+ {t('campaigns.inYourCalendar')}
  </span>
+ )}
+ {(regenerateContentMutation.isPending || redeployMutation.isPending) && (
+ <Loader2 className="h-3.5 w-3.5 animate-spin" />
  )}
  </div>
  {selectedCampaign.objective && selectedCampaign.duration && getDurationWarning(selectedCampaign.objective, selectedCampaign.duration) && (
- <div className="flex items-center gap-2 mt-2 p-2.5 bg-[rgba(212,201,122,0.12)] border border-[rgba(212,201,122,0.35)] rounded-lg">
+ <div className="flex items-center gap-2 p-2.5 bg-[rgba(212,201,122,0.12)] border border-[rgba(212,201,122,0.35)] rounded-lg">
  <AlertTriangle className="h-4 w-4 text-naya-sulphur flex-shrink-0" />
  <p className="text-xs text-[#5a4f0d] ">{getDurationWarning(selectedCampaign.objective, selectedCampaign.duration)}</p>
  </div>
  )}
  </div>
- {/* Le rejet est disponible depuis TOUT état de la campagne (chantier « rejeter
- une campagne »), pas seulement depuis le panneau de brouillon ci-dessus. */}
- <div className="flex flex-col items-end gap-2">
- {campagneRepensable(selectedCampaign.status) && (
- <Button size="sm" variant="ghost" onClick={() => setRepenserOuvert(true)} data-testid="button-repenser-campagne">
- <RefreshCw className="h-3.5 w-3.5 mr-1" />
- {t('campaigns.repenser.button')}
- </Button>
- )}
- <Button size="sm" variant="ghost" onClick={ouvrirRejet} data-testid="button-rejeter-campagne-detail">
- <Trash2 className="h-3.5 w-3.5 mr-1" />
- {LIBELLE_BOUTON_REJETER}
- </Button>
- {selectedCampaign.startDate && (
- <div className="bg-naya-olive-06/50 rounded-lg px-4 py-3 text-xs text-naya-olive-55 space-y-1">
- <div className="flex items-center gap-2">
- <CalendarDays className="h-3.5 w-3.5 flex-shrink-0" />
- <span>
- {t('campaigns.starts')} <strong className="text-naya-olive-70">{selectedCampaign.startDate}</strong>
- {selectedCampaign.endDate && (
- <> → {t('campaigns.ends')} <strong className="text-naya-olive-70">{selectedCampaign.endDate}</strong></>
- )}
- </span>
- </div>
- {selectedCampaign.tasksGenerated && (
- <div className="flex items-center gap-2">
- <CheckCircle2 className="h-3.5 w-3.5 text-naya-olive-55 flex-shrink-0" />
- <span>{t('campaigns.tasksDeployedToCalendar')}</span>
- </div>
- )}
- </div>
- )}
- </div>
  <div className="flex flex-col gap-2">
- {selectedCampaign.status === "active" && !showPauseDialog && (
- <div className="flex gap-2">
- <Button size="sm" variant="outline" onClick={() => { setShowPauseDialog(true); setPauseNoteInput(""); }}>
- <Pause className="h-3.5 w-3.5 mr-1" />
- {t('campaigns.pause')}
- </Button>
- {selectedCampaign.tasksGenerated && (
- <Button size="sm" variant="outline"
- onClick={() => redeployMutation.mutate(selectedCampaign.id)}
- disabled={redeployMutation.isPending}>
- {redeployMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5 mr-1" />}
- {t('campaigns.redeploy')}
- </Button>
- )}
- <Button size="sm" variant="outline" className="text-[#354963] border-naya-olive-18 hover:bg-naya-olive-06"
- onClick={() => regenerateContentMutation.mutate(selectedCampaign.id)}
- disabled={regenerateContentMutation.isPending}
- title="Supprime les posts du calendrier et les recrée depuis le plan de contenu, répartis sur toute la semaine">
- {regenerateContentMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5 mr-1" />}
- Régénérer le calendrier
- </Button>
- <Button size="sm" onClick={() => { updateMutation.mutate({ id: selectedCampaign.id, data: { status: "completed" } }); toast({ title: t('campaigns.campaignMarkedComplete') }); }}>
- <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
- {t('campaigns.markComplete')}
- </Button>
- </div>
- )}
  {selectedCampaign.status === "active" && showPauseDialog && (
  <div className="rounded-lg border border-[rgba(212,201,122,0.35)] bg-[rgba(212,201,122,0.12)] p-3 space-y-2">
  <p className="text-xs text-[#5a4f0d] ">{t('campaigns.pauseThisCampaign')}</p>
@@ -1673,7 +1673,6 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  ))}
  </div>
  )}
- </div>
  </div>
 
  {/* Core Message */}
