@@ -167,3 +167,33 @@ describe("borne de fin (option bornerA, utilisée par « repenser »)", () => {
     expect(p.crees).toBe(0);
   });
 });
+
+// Régression du 7 oct. 2026 : en production, `deps` est l'instance `storage` (une classe
+// dont les méthodes s'appellent entre elles via `this`). Une méthode extraite sans `bind`
+// perdait son `this` → « Cannot read properties of undefined (reading
+// 'checkSlotAvailability') » → aucune tâche placée, campagnes repensées vides.
+describe("dépendances portées par une instance de classe (comme `storage`)", () => {
+  class FauxStockage {
+    private journal: string[] = [];
+    async getUserPreferences() { return { workDays: "mon,tue,wed,thu,fri" }; }
+    async getDayAvailabilityRange() { return []; }
+    async getTasksInRange(userId: string) { this.journal.push("range"); return this.taches(userId); }
+    private taches(_u: string) { return [] as any[]; }
+    async checkSlotAvailability() { return this.libre(); }
+    private libre() { return { available: true }; }
+    async createTask(t: any) { this.journal.push("task"); return this.copie(t); }
+    async createContent(c: any) { this.journal.push("content"); return this.copie(c); }
+    private copie<T>(x: T): T { return x; }
+    get appels() { return this.journal; }
+  }
+
+  it("place tâches et posts sans perdre `this` (contrôle de créneaux actif)", async () => {
+    const s = new FauxStockage();
+    const r1 = await placerTachesCampagne(s as any, { userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-11-11") });
+    const r2 = await placerPostsCampagne(s as any, { userId: "u", campaign, debut: d("2026-10-12") });
+    expect(r1.creees).toBe(8);
+    expect(r2.crees).toBeGreaterThan(0);
+    expect(s.appels).toContain("task");
+    expect(s.appels).toContain("content");
+  });
+});
