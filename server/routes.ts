@@ -27,13 +27,14 @@ import {
   getMemoryContext,
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
+import { imposerLangueDuCompte } from "./services/garde-langue";
 import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
 import { refuserPost } from "./services/refus-post/service";
 import { refusPostDeps } from "./services/refus-post/deps";
-import { estRaisonRefusPost } from "./services/refus-post/pur";
+import { estRaisonRefusPost, estPublieOuEnCours } from "./services/refus-post/pur";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
 import { pickAllowedProjectFields, validateProjectPatchFields, ALLOWED_PROJECT_PATCH_FIELDS } from "./services/project-fields";
 import { isValidStage, buildSituationPrompt } from "./services/project-summary";
@@ -72,7 +73,7 @@ import { detecterCollision, detecterCollisionLot } from "./services/brand-links/
 import type { CollisionLot } from "./services/brand-links/collision";
 import { importerTexte, ReponseIllisible } from "./services/content-import/import";
 import { rejeterCampagne, CampagneIntrouvable, trierContenus, trierTaches } from "./services/campaign-reject/rejeter";
-import { preferencesDeLaMarque, type Preference } from "./services/campaign-reject/preferences";
+import { preferencesDeLaMarque, formaterPreferences, type Preference } from "./services/campaign-reject/preferences";
 import { MAX_CARACTERES } from "./services/content-import/parse";
 import { LIMITE_CONTENUS_MAX } from "./services/content-limit";
 import { annoterVerrous, prerequisManquants } from "./services/task-lock-annotate";
@@ -7400,9 +7401,24 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       const existing = await storage.getContentById(id, userId);
       if (!existing) return res.status(404).json({ message: "Contenu introuvable" });
+      // Un post publié ou en cours de publication ne se réécrit pas (il est déjà parti).
+      if (estPublieOuEnCours(existing as any)) {
+        return res.status(409).json({ message: "already_published" });
+      }
 
       const brandDna = await storage.getBrandDna(userId);
       const bd: any = brandDna || {};
+
+      // Préférences apprises pour CETTE marque (refus de campagnes, de posts) — à éviter.
+      let blocPreferences = "";
+      if (existing.projectId) {
+        try {
+          const prefs = await preferencesDeLaMarque(userId, existing.projectId);
+          blocPreferences = formaterPreferences(prefs);
+        } catch (e: any) {
+          console.error("[content/regenerate] préférences non lues:", e?.message);
+        }
+      }
 
       const systemPrompt = `Tu es Naya, spécialiste en stratégie de contenu pour entrepreneurs indépendants.
 Tu génères un post de remplacement pour le content calendar. Le post DOIT:
@@ -7430,17 +7446,22 @@ CONTEXTE MARQUE:
 - Territoire éditorial: ${bd.editorialTerritory || ''}
 - Keywords marque: ${(bd.brandVoiceKeywords || []).join(', ')}
 - Anti-keywords: ${(bd.brandVoiceAntiKeywords || []).join(', ')}
-
+${blocPreferences ? `\n${blocPreferences}\n` : ''}
 Génère un post de remplacement en JSON:
 {"title": "Nouvel angle (accroche)", "body": "Contenu du post / directions créatives (2-3 phrases)"}
 
 Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout en restant sur la même plateforme (${existing.platform}) et le même pilier (${existing.pillar}).`;
 
-      const raw = await callClaude({
+      // Passe par la mémoire de Naya (buildNayaContext) : savoir déposé, préférences, marque.
+      // Avant le 7 oct. 2026, cet appel ne voyait que l'ADN de marque — les dossiers et PDF
+      // déposés par l'utilisatrice n'y entraient jamais.
+      const raw = await callClaudeWithContext({
+        userId,
+        projectId: existing.projectId ?? null,
+        userMessage: userPrompt,
         model: CLAUDE_MODELS.smart,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
-        max_tokens: 500,
+        max_tokens: 800,
+        additionalSystemContext: systemPrompt,
       });
 
       let replacement: { title: string; body: string };
@@ -7450,11 +7471,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         return res.status(500).json({ message: "Impossible de générer une alternative. Réessaie." });
       }
 
+      if (typeof replacement?.title !== 'string' || typeof replacement?.body !== 'string' || !replacement.title.trim() || !replacement.body.trim()) {
+        return res.status(500).json({ message: "Impossible de générer une alternative. Réessaie." });
+      }
+      // Garde de langue : le prompt est rédigé en français mais le compte peut être en anglais.
+      const pourLangue: any = { title: replacement.title, description: replacement.body };
+      await imposerLangueDuCompte([pourLangue], userId).catch(() => {});
+
       const updated = await storage.updateContent(id, {
-        title: replacement.title,
-        body: replacement.body,
+        title: String(pourLangue.title).slice(0, 200),
+        body: String(pourLangue.description).slice(0, 5000),
         contentStatus: 'idea',
-      });
+        // Un texte réécrit n'a pas été relu : il ne part jamais seul.
+        autoPost: false,
+      } as any);
 
       res.json(updated);
     } catch (error: any) {
