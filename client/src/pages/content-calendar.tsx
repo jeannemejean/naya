@@ -1029,6 +1029,20 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </DialogHeader>
  <div className="grid grid-cols-2 gap-6 h-full">
  <div className="space-y-4">
+ {/* Le titre (l'accroche du post) en tête : c'est ce qui dit de quoi parle le post.
+ Sur plusieurs lignes — les accroches générées sont longues et l'ancien champ
+ d'une ligne les coupait. */}
+ <div>
+ <Label htmlFor="title">{t('contentCalendar.titleCaption')}</Label>
+ <Textarea
+ id="title"
+ placeholder={t('contentCalendar.titleCaptionPlaceholder')}
+ value={formData.title}
+ onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+ rows={3}
+ className="mt-1.5 text-base font-medium leading-snug resize-y"
+ />
+ </div>
  <div>
  <Label>{t('contentCalendar.editorialStatus')}</Label>
  <div className="flex gap-2 mt-1.5">
@@ -1152,15 +1166,6 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </SelectContent>
  </Select>
  <p className="text-xs text-naya-olive-55 mt-1">{t('contentCalendar.intent.help')}</p>
- </div>
-
- <div>
- <Label htmlFor="title">{t('contentCalendar.titleCaption')}</Label>
- <Input
- placeholder={t('contentCalendar.titleCaptionPlaceholder')}
- value={formData.title}
- onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
- />
  </div>
 
  {(() => {
