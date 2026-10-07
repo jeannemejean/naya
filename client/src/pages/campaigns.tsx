@@ -1015,6 +1015,38 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  onError: () => toast({ title: "Impossible de régénérer le calendrier", variant: "destructive" }),
  });
 
+ // « Déployer dans le calendrier » : un clic = les tâches du plan (redeploy) PUIS ses posts
+ // (regenerate-content). Les posts publiés et les tâches faites restent ; les posts créés
+ // ne partent jamais seuls (autoPost false côté serveur).
+ const deployerMutation = useMutation({
+ mutationFn: async (id: number) => {
+ const r1 = await apiRequest("POST", `/api/campaigns/${id}/redeploy`, {});
+ const taches = await r1.json() as { tasksCreated: number };
+ let posts: number | null = null;
+ try {
+ const r2 = await apiRequest("POST", `/api/campaigns/${id}/regenerate-content`, {});
+ posts = (await r2.json() as { contentCreated: number }).contentCreated;
+ } catch { /* plan de contenu absent ou erreur : les tâches restent déployées */ }
+ return { taches: taches.tasksCreated, posts };
+ },
+ onSuccess: (data) => {
+ queryClient.invalidateQueries({ queryKey: ["/api/campaigns", selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+ queryClient.invalidateQueries({ queryKey: ["/api/content"] });
+ toast({
+ title: t('campaigns.deployed'),
+ description: data.posts === null
+ ? t('campaigns.deployedTasksOnly', { tasks: data.taches })
+ : t('campaigns.deployedDescription', { tasks: data.taches, posts: data.posts }),
+ });
+ triggerAutoRebalance();
+ },
+ onError: (e: any) => toast({
+ title: String(e?.message ?? "").includes("deja_en_cours") ? t('campaigns.repenser.erreurs.deja_en_cours') : t('campaigns.deployFailed'),
+ variant: "destructive",
+ }),
+ });
+
  const handleSelectCampaign = (c: Campaign) => {
  setSelectedCampaignId(c.id);
  if (c.status === "draft" && c.generatedTasks) {
@@ -1506,6 +1538,13 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  <div className="flex items-start justify-between gap-3">
  <h2 className="text-xl text-foreground min-w-0 break-words">{selectedCampaign.name}</h2>
  <div className="flex items-center gap-2 shrink-0">
+ {selectedCampaign.status === "active" && (
+ <Button size="sm" onClick={() => deployerMutation.mutate(selectedCampaign.id)}
+ disabled={deployerMutation.isPending} data-testid="button-deployer-campagne">
+ {deployerMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <CalendarDays className="h-3.5 w-3.5 mr-1" />}
+ {t('campaigns.deployToCalendar')}
+ </Button>
+ )}
  {campagneRepensable(selectedCampaign.status) && (
  <Button size="sm" variant="outline" onClick={() => setRepenserOuvert(true)} data-testid="button-repenser-campagne">
  <RefreshCw className="h-3.5 w-3.5 mr-1" />
