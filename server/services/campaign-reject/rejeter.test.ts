@@ -167,6 +167,9 @@ import {
   prospectionCampaigns as TABLE_PROSPECTION, leads as TABLE_LEADS, leadSequenceState as TABLE_LEAD_SEQ_STATE,
   outreachStepSends as TABLE_OUTREACH_SENDS, leadStepMessages as TABLE_LEAD_STEP_MSGS,
   campaignSequenceSteps as TABLE_SEQ_STEPS, prospectionUsage as TABLE_PROSPECTION_USAGE,
+  // Références des tâches partantes (`storage.clearTaskReferences`, appelée avec `tx`).
+  quickCaptureEntries as TABLE_QUICK_CAPTURE, companionPendingMessages as TABLE_COMPANION_MSGS,
+  taskScheduleEvents as TABLE_TASK_SCHEDULE, taskWorkspaceEntries as TABLE_TASK_WORKSPACE,
 } from "@shared/schema";
 
 const hoisted = vi.hoisted(() => ({
@@ -234,6 +237,10 @@ vi.mock("../../db", () => {
     if (table === TABLE_MEMORY) return "preference";
     // Tables touchées par la cascade de prospection (`storage.deleteProspectionCampaign`,
     // appelée avec `tx`) — chacune une étiquette propre, par le même motif.
+    if (table === TABLE_QUICK_CAPTURE) return "delier-captures-tache";
+    if (table === TABLE_COMPANION_MSGS) return "delier-messages-companion-tache";
+    if (table === TABLE_TASK_SCHEDULE) return "supprimer-creneaux-tache";
+    if (table === TABLE_TASK_WORKSPACE) return "supprimer-espace-travail-tache";
     if (table === TABLE_LEADS) return "archiver-leads-prospection";
     if (table === TABLE_LEAD_SEQ_STATE) return "supprimer-lead-sequence-state";
     if (table === TABLE_OUTREACH_SENDS) return "supprimer-outreach-step-sends";
@@ -631,16 +638,17 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
       [],
     ];
     hoisted.resultatsArticulations = [[]];
-    // La file d'opérations d'écriture est consommée dans l'ORDRE : ici, la seule
-    // opération avant la suppression de la campagne est la suppression du contenu
-    // partant (pas de détachement, pas de tâche) — on la fait échouer.
-    hoisted.resultatsOps = [new Error("contrainte violée")];
+    // La file d'opérations d'écriture est consommée dans l'ORDRE : ici (pas de
+    // détachement, pas de tâche), viennent le détachement `tasks.content_id` des tâches
+    // qui pointeraient vers le post partant, puis la suppression du post — on fait
+    // échouer cette dernière.
+    hoisted.resultatsOps = [undefined, new Error("contrainte violée")];
 
     await expect(rejeterCampagne(INPUT)).rejects.toThrow("contrainte violée");
 
     // La panne a eu lieu à l'étape "supprimer-contenu" : rien après elle n'a été
     // atteint — ni l'écriture de la préférence, ni la suppression de la campagne.
-    expect(hoisted.ordre).toEqual(["articulations-lues", "supprimer-contenu"]);
+    expect(hoisted.ordre).toEqual(["articulations-lues", "detacher-tache", "supprimer-contenu"]);
     expect(hoisted.ordre).not.toContain("preference");
     expect(hoisted.ordre).not.toContain("supprimer-campagne");
   });
@@ -692,12 +700,20 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
 
     await rejeterCampagne(INPUT);
 
+    // Tâches partantes d'abord (leurs références, puis elles), puis les tâches qui
+    // pointent encore vers un post partant sont détachées de lui, puis les posts :
+    // sans cet ordre, les clés étrangères sans ON DELETE lèvent une erreur 23503.
     expect(hoisted.ordre).toEqual([
       "articulations-lues",
       "detacher-contenu",
       "detacher-tache",
-      "supprimer-contenu",
+      "delier-captures-tache",
+      "delier-messages-companion-tache",
+      "supprimer-creneaux-tache",
+      "supprimer-espace-travail-tache",
       "supprimer-tache",
+      "detacher-tache",
+      "supprimer-contenu",
       "preference",
       "supprimer-campagne",
     ]);

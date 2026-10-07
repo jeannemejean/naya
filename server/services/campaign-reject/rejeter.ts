@@ -300,11 +300,22 @@ export async function rejeterCampagne(input: {
     }
 
     // 2. Supprimer les partants — même discipline.
-    if (triContenus.partants.length > 0) {
-      await tx.delete(content).where(and(eq(content.userId, userId), inArray(content.id, triContenus.partants)));
-    }
+    //
+    // Ordre imposé par les clés étrangères sans ON DELETE (erreur 23503 sinon) :
+    //  a. les tâches partantes perdent leurs références (créneaux, notes d'espace de
+    //     travail supprimés ; captures et messages du Companion détachés) ;
+    //  b. les tâches partantes sont supprimées ;
+    //  c. toute tâche restante (gardée, ou d'une autre campagne) qui pointe vers un post
+    //     partant est détachée de ce post (`tasks.content_id`) ;
+    //  d. les posts partants sont supprimés.
     if (triTaches.partants.length > 0) {
+      await storage.clearTaskReferences(tx, triTaches.partants);
       await tx.delete(tasks).where(and(eq(tasks.userId, userId), inArray(tasks.id, triTaches.partants)));
+    }
+    if (triContenus.partants.length > 0) {
+      await tx.update(tasks).set({ contentId: null })
+        .where(and(eq(tasks.userId, userId), inArray(tasks.contentId, triContenus.partants)));
+      await tx.delete(content).where(and(eq(content.userId, userId), inArray(content.id, triContenus.partants)));
     }
 
     // 3. Écrire la préférence — jamais sans raison (Décision 4 du spec).
