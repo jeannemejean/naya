@@ -365,6 +365,7 @@ export interface IStorage {
   deleteContent(id: number): Promise<void>;
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
+  deleteCampaignContentItems(campaignId: number, ids: number[]): Promise<number>;
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
   getDueScheduledContent(now: Date): Promise<Content[]>;
   claimContentForPosting(id: number): Promise<boolean>;
@@ -1401,6 +1402,16 @@ export class DatabaseStorage implements IStorage {
     const deleted = await db.delete(content).where(
       eq((content as any).campaignId, campaignId)
     ).returning({ id: content.id });
+    return deleted.length;
+  }
+
+  // Supprime ces seuls contenus, et seulement s'ils appartiennent bien à la campagne.
+  async deleteCampaignContentItems(campaignId: number, ids: number[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const deleted = await db.delete(content).where(and(
+      eq((content as any).campaignId, campaignId),
+      inArray(content.id, ids),
+    )).returning({ id: content.id });
     return deleted.length;
   }
 

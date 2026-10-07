@@ -124,6 +124,24 @@ describe("placement de campagne : caractérisation des routes", () => {
     expect(storageMock.getDayAvailabilityRange).toHaveBeenCalledWith("user-1", "2026-10-12", "2026-11-11");
   });
 
+  it("regenerate-content : un post publié ou en cours de publication survit, `deleted` = le nombre réellement supprimé", async () => {
+    storageMock.getCampaign.mockResolvedValue(campagne({ status: "active" }));
+    storageMock.getContent.mockResolvedValue([
+      { id: 1, postStatus: "pending", contentStatus: "idea", publishedAt: null },
+      { id: 2, postStatus: "posted", contentStatus: "idea", publishedAt: null },
+      { id: 3, postStatus: "pending", contentStatus: "published", publishedAt: null },
+      { id: 4, postStatus: "pending", contentStatus: "idea", publishedAt: new Date() },
+      { id: 5, postStatus: "posting", contentStatus: "idea", publishedAt: null },
+      { id: 6, postStatus: null, contentStatus: "idea", publishedAt: null },
+    ] as any);
+    const res = await call("regenerate-content");
+    const json: any = await res.json();
+    expect(res.status).toBe(200);
+    expect(storageMock.deleteCampaignContentItems).toHaveBeenCalledWith(3, [1, 6]);
+    expect(storageMock.deleteAllCampaignContent).not.toHaveBeenCalled();
+    expect(json).toEqual({ deleted: 2, contentCreated: 6 });
+  });
+
   it("regenerate-content : sans date de fin, disponibilités sur 365 jours", async () => {
     storageMock.getCampaign.mockResolvedValue(campagne({ status: "active", endDate: null }));
     await call("regenerate-content");
