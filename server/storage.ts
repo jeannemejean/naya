@@ -155,7 +155,8 @@ import {
 import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
-import { repackDay } from "./services/schedule-repack";
+import { repackDayAvecEcheances } from "./services/schedule-repack";
+import { jourDuPost } from "./services/campagne/production";
 import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
@@ -2945,7 +2946,17 @@ export class DatabaseStorage implements IStorage {
     // repackDay garde alors leur créneau tel quel (promesse UI « rien ne sera
     // planifié par-dessus »). Une tâche fixed sans heure n'a pas de sens à ancrer
     // (rien à préserver) : seul le cas horodaté est marqué.
-    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean; anchored?: boolean }>>();
+    // Échéances : une tâche de production liée à un post ne doit jamais être reportée
+    // après le jour de publication de ce post.
+    const idsPosts = Array.from(new Set(toFix.map((t) => t.contentId).filter((id): id is number => id != null)));
+    const jourParPost = new Map<number, string>();
+    if (idsPosts.length > 0) {
+      const posts = await db.select({ id: content.id, scheduledFor: content.scheduledFor })
+        .from(content).where(inArray(content.id, idsPosts));
+      for (const p of posts) if (p.scheduledFor) jourParPost.set(p.id, jourDuPost(p.scheduledFor));
+    }
+
+    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean; anchored?: boolean; echeance?: string | null }>>();
     for (const t of toFix) {
       if (!t.scheduledDate) continue;
       const hasTime = t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime);
@@ -2956,6 +2967,7 @@ export class DatabaseStorage implements IStorage {
         durationMin: t.estimatedDuration || 30,
         ...(hasTime ? {} : { unplaced: true as const }),
         ...(hasTime && t.schedulingMode === 'fixed' ? { anchored: true as const } : {}),
+        echeance: t.contentId != null ? jourParPost.get(t.contentId) ?? null : null,
       });
     }
 
@@ -3010,12 +3022,15 @@ export class DatabaseStorage implements IStorage {
       const dayTasks = byDate.get(date)!;
       if (dayTasks.length === 0) continue;
 
-      const { moves, overflow } = repackDay(dayTasks, {
+      const { moves, overflow, forcees } = repackDayAvecEcheances(dayTasks, {
         dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,
         floorMin: date === parisToday ? parisNowMin : undefined,
         blockedRanges: blockedByDate.get(date) ?? [],
         bufferMin,
-      });
+      }, date, nextWorkDay(date));
+      if (forcees.length > 0) {
+        console.warn(`[fixOverlappingTasks] ${forcees.length} tâche(s) à échéance gardée(s) le ${date} malgré une journée pleine user=${userId}`);
+      }
 
       for (const mv of moves) {
         await db.update(tasks)

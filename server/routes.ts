@@ -202,6 +202,7 @@ import {
   TARGET_PERSONA_LIBRARY
 } from "./services/persona-intelligence";
 import multer from "multer";
+import { tachesARebalancer } from "./services/schedule-repack";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Helper: fetch project + persona context for AI generation
@@ -6495,7 +6496,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       })();
 
       const allTasks = await storage.getTasksInRange(userId, weekStart, weekEnd);
-      const pending = allTasks.filter((t: any) => !t.completed);
+      // Les tâches liées à un post restent en place (et comptent dans la charge du jour).
+      const pending = tachesARebalancer(allTasks);
 
       if (!pending.length) {
         return res.json({ moved: 0, days: {} });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { repackDay, type RepackTask } from "./schedule-repack";
+import { repackDay, repackDayAvecEcheances, tachesARebalancer, type RepackTask } from "./schedule-repack";
 
 const opts = {
   dayStartMin: 9 * 60,    // 09:00
@@ -331,5 +331,51 @@ describe("repackDay — respiration entre les tâches", () => {
     expect(overflow).toEqual([]);
     expect(moves.find((m) => m.id === 1)).toBeUndefined(); // tâche 1 ne bouge pas
     expect(moves.find((m) => m.id === 2)?.newStartMin).toBe(10 * 60 + 30); // poussée à la fin de la plage
+  });
+});
+
+describe("repackDayAvecEcheances", () => {
+  // Journée pleine : 9h-18h moins 1h de déjeuner = 480 min.
+  const plein = (n: number, base = 0): RepackTask[] =>
+    Array.from({ length: n }, (_, i) => ({ id: base + i + 1, startMin: 9 * 60 + i * 60, durationMin: 60 }));
+
+  it("sans échéance, se comporte comme repackDay", () => {
+    const tasks = plein(9);
+    expect(repackDayAvecEcheances(tasks, opts, "2026-10-16")).toEqual({ ...repackDay(tasks, opts), forcees: [] });
+  });
+
+  it("une tâche dont l'échéance tombe avant le jour suivant ne déborde pas : une autre part à sa place", () => {
+    // 8 tâches d'1h tiennent ; la 9e (préparation d'un post publié le 16) déborderait.
+    const tasks = [...plein(8), { id: 99, startMin: 17 * 60 + 30, durationMin: 60, echeance: "2026-10-16" }];
+    const r = repackDayAvecEcheances(tasks, opts, "2026-10-16", "2026-10-19");
+    expect(r.overflow).not.toContain(99);
+    expect(r.overflow).toHaveLength(1);
+    expect(r.forcees).toEqual([]);
+    assertNoOverlap(apply(tasks, r.moves, r.overflow));
+  });
+
+  it("une échéance postérieure au jour suivant peut déborder normalement", () => {
+    const tasks = [...plein(8), { id: 99, startMin: 17 * 60 + 30, durationMin: 60, echeance: "2026-10-20" }];
+    const r = repackDayAvecEcheances(tasks, opts, "2026-10-16", "2026-10-19");
+    expect(r.overflow).toContain(99);
+  });
+
+  it("si même les tâches à échéance ne tiennent pas, elles restent sur le jour (forcées), jamais reportées après le post", () => {
+    const tasks = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, startMin: 9 * 60, durationMin: 60, echeance: "2026-10-16" }));
+    const r = repackDayAvecEcheances(tasks, opts, "2026-10-16", "2026-10-19");
+    expect(r.overflow).toEqual([]);
+    expect(r.forcees).toHaveLength(2);
+  });
+});
+
+describe("tachesARebalancer", () => {
+  it("écarte les tâches faites et celles liées à un post (tenues par sa date de publication)", () => {
+    const r = tachesARebalancer([
+      { id: 1, completed: false, contentId: null },
+      { id: 2, completed: true, contentId: null },
+      { id: 3, completed: false, contentId: 216 },
+      { id: 4, completed: false },
+    ]);
+    expect(r.map((t) => t.id)).toEqual([1, 4]);
   });
 });

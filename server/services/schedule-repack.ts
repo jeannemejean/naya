@@ -24,6 +24,12 @@ export interface RepackTask {
    */
   unplaced?: boolean;
   /**
+   * Tâche tenue par une échéance (ex. préparation d'un post) qui ne peut pas être
+   * reportée au jour suivant : elle est coulée AVANT les autres tâches flexibles,
+   * pour que ce soient ces dernières qui débordent.
+   */
+  prioritaire?: boolean;
+  /**
    * Tâche « rituel » à créneau fixe (`schedulingMode === 'fixed'`). Le repack ne
    * la déplace JAMAIS : elle garde [startMin, startMin+durationMin] tel quel. Les
    * tâches flexibles s'organisent autour d'elle sans jamais la chevaucher. Seule
@@ -139,6 +145,7 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
   // celles sans créneau viennent se glisser derrière, dans l'ordre reçu.
   const flexible = tasks.filter((t) => !t.anchored);
   const sorted = [...flexible].sort((a, b) => {
+    if (!!a.prioritaire !== !!b.prioritaire) return a.prioritaire ? -1 : 1;
     if (!!a.unplaced !== !!b.unplaced) return a.unplaced ? 1 : -1;
     if (a.unplaced && b.unplaced) return 0;
     return a.startMin - b.startMin;
@@ -148,7 +155,8 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
 
   for (const task of sorted) {
     // Une tâche sans créneau démarre au curseur : son startMin ne veut rien dire.
-    let start = task.unplaced ? cursor : Math.max(task.startMin, cursor);
+    // Une tâche prioritaire passe devant : elle prend le curseur, pas son ancienne heure.
+    let start = task.unplaced || task.prioritaire ? cursor : Math.max(task.startMin, cursor);
 
     // On alterne pause déjeuner / blocs ancrés jusqu'à stabilisation : sauter l'un
     // peut faire retomber sur l'autre (ex. juste après l'ancre = dans la pause).
@@ -174,4 +182,50 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
   }
 
   return { moves, overflow };
+}
+
+export interface RepackTaskEcheance extends RepackTask {
+  /** Dernier jour (YYYY-MM-DD) où la tâche peut être faite — ex. le jour de publication du post. */
+  echeance?: string | null;
+}
+
+export interface RepackResultEcheances extends RepackResult {
+  /**
+   * Tâches à échéance qui ne tiennent pas dans la journée même en passant en priorité.
+   * Elles ne sont NI déplacées NI reportées : les reporter les ferait tomber après le post.
+   */
+  forcees: number[];
+}
+
+/**
+ * `repackDay` qui respecte les échéances : une tâche qui déborderait vers `jourSuivant`
+ * alors que son échéance tombe avant ne part pas — elle passe devant, et ce sont les
+ * tâches sans échéance (ou à échéance plus lointaine) qui débordent à sa place.
+ */
+export function repackDayAvecEcheances(
+  tasks: RepackTaskEcheance[],
+  opts: RepackOptions,
+  _date?: string,
+  jourSuivant?: string,
+): RepackResultEcheances {
+  const premier = repackDay(tasks, opts);
+  if (!jourSuivant) return { ...premier, forcees: [] };
+  const bloquee = (t: RepackTaskEcheance) => !!t.echeance && t.echeance < jourSuivant;
+  const debordeTrop = new Set(premier.overflow);
+  if (!tasks.some((t) => debordeTrop.has(t.id) && bloquee(t))) return { ...premier, forcees: [] };
+
+  const second = repackDay(tasks.map((t) => (bloquee(t) ? { ...t, prioritaire: true } : t)), opts);
+  const parId = new Map(tasks.map((t) => [t.id, t]));
+  const forcees = second.overflow.filter((id) => bloquee(parId.get(id)!));
+  const forceesSet = new Set(forcees);
+  return { moves: second.moves, overflow: second.overflow.filter((id) => !forceesSet.has(id)), forcees };
+}
+
+/**
+ * Tâches qu'un rééquilibrage de semaine a le droit de déplacer : non faites, et non liées
+ * à un post — une tâche de production est tenue par la date de publication de son post,
+ * un plafond de charge ne doit jamais la pousser après.
+ */
+export function tachesARebalancer<T extends { completed?: boolean | null; contentId?: number | null }>(taches: T[]): T[] {
+  return taches.filter((t) => !t.completed && t.contentId == null);
 }
