@@ -1129,6 +1129,7 @@ const en = {
  outreach: {
  title: "Outreach / CRM",
  subtitle: "Manage your leads and outreach pipeline",
+ previewTropProche: "Too close to an earlier message to this lead: it will not be sent as is. Regenerate it.",
  addLead: "Add Lead",
  searchLeads: "Search leads...",
  filterByScore: "Filter by score",

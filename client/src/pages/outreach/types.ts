@@ -22,6 +22,8 @@ export type PreviewStep = {
   subject: string | null;
   body: string | null;
   error: boolean;
+  /** Texte resté trop proche d'un message antérieur à ce prospect : non mis en cache, pas envoyé tel quel. */
+  tropProche?: boolean;
 };
 
 export type PreviewResponse = {
