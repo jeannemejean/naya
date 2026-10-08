@@ -289,6 +289,29 @@ describe("repenserCampagne — écritures", () => {
     expect(deps.fixOverlappingTasks).toHaveBeenCalledWith("u1", "2026-10-07");
   });
 
+  it("active → chaque nouveau post a ses tâches de production, reliées et avant sa publication", async () => {
+    const { deps, placement } = fabrique();
+    let id = 500;
+    placement.createContent.mockImplementation(async (c: any) => ({ id: ++id, ...c }));
+    const r = await repenserCampagne(deps, "u1", 7);
+    const posts = placement.createContent.mock.calls.map(([c]: any[], i: number) => ({ id: 501 + i, jour: c.scheduledFor }));
+    const taches = placement.createTask.mock.calls.map(([t]: any[]) => t);
+    expect(r.tachesCreees).toBe(taches.length);
+    for (const p of posts) {
+      const liees = taches.filter((t: any) => t.contentId === p.id);
+      expect(liees.map((t: any) => t.title.split(" — ")[0])).toEqual([
+        "Rédiger le texte", "Préparer le visuel", "Relire et valider le post", "Publier",
+      ]);
+      const jourPost = `${p.jour.getFullYear()}-${String(p.jour.getMonth() + 1).padStart(2, "0")}-${String(p.jour.getDate()).padStart(2, "0")}`;
+      for (const t of liees) {
+        expect(t.scheduledDate >= "2026-10-07" && t.scheduledDate <= jourPost).toBe(true);
+        expect(t).toMatchObject({ campaignId: 7, projectId: 3 });
+      }
+    }
+    // Les tâches générées hors contenu restent, une fois chacune.
+    expect(taches.filter((t: any) => t.title === "Plan review")).toHaveLength(1);
+  });
+
   it("paused → l'état que laisse /pause : rien n'est placé, statut jamais écrit", async () => {
     const { deps, placement, ops } = fabrique({ campaign: campagne({ status: "paused" }) });
     const r = await repenserCampagne(deps, "u1", 7);

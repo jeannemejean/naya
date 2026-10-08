@@ -122,8 +122,8 @@ import { parseMilestoneTrigger, checkMilestoneTriggers } from "./services/milest
 import { formatDate as sharedFormatDate, addDays as sharedAddDays } from "./utils/dateUtils";
 import { contenuEstPublie } from "./services/campaign-reject/rejeter";
 import {
-  DAY_ABBRS, parseWorkDays, hhmmToMin, minToHHMM, computePhaseRanges, assignPublicationDates,
-  decomposeContentTask, DEFAULT_WORK_DAYS, placerTachesCampagne, placerPostsCampagne,
+  DAY_ABBRS, parseWorkDays, hhmmToMin,
+  DEFAULT_WORK_DAYS, placerTachesCampagne, placerPostsCampagne, placerTachesProductionPourCampagne,
 } from "./services/campagne/placement";
 import { parisHourOf, parisTodayString } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
@@ -10767,12 +10767,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const endDate = campaignAddDays(startDate, campaignDays);
       const endDateStr = campaignDateToStr(endDate);
 
-      const { creees: tasksCreated } = await placerTachesCampagne(storage, {
+      // Les posts d'abord, avec leurs tâches de production (elles ont une échéance), puis
+      // les autres tâches du plan, qui se rangent autour.
+      const { crees: contentCreated, tachesProduction } = await placerPostsCampagne(storage, {
         userId, campaign, debut: startDate, fin: endDate,
       });
-      const { crees: contentCreated } = await placerPostsCampagne(storage, {
+      const { creees: autresTaches } = await placerTachesCampagne(storage, {
         userId, campaign, debut: startDate, fin: endDate,
       });
+      const tasksCreated = tachesProduction + autresTaches;
 
 
       const updated = await storage.updateCampaign(id, userId, {
@@ -10795,7 +10798,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
-  // Regenerate content calendar for an existing campaign (keeps tasks intact)
+  // Regenerate content calendar for an existing campaign. Les tâches de production non
+  // faites des posts supprimés partent avec eux ; les nouveaux posts arrivent avec les leurs.
+  // Les autres tâches de la campagne ne bougent pas.
   app.post('/api/campaigns/:id/regenerate-content', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -10823,13 +10828,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
       const rawStart = campaign.startDate || new Date().toISOString().slice(0, 10);
       const startDate = new Date(rawStart + 'T00:00:00');
-      const { crees: contentCreated } = await placerPostsCampagne(storage, {
+      const { crees: contentCreated, tachesProduction } = await placerPostsCampagne(storage, {
         userId, campaign, debut: startDate,
         fin: campaign.endDate ? new Date(campaign.endDate + 'T00:00:00') : campaignAddDays(startDate, 365),
       });
+      await storage.fixOverlappingTasks(userId, campaignDateToStr(new Date())).catch(() => {});
 
-
-      res.json({ deleted, contentCreated });
+      res.json({ deleted, contentCreated, tasksCreated: tachesProduction });
     } catch (error) {
       console.error("Error regenerating campaign content:", error);
       res.status(500).json({ message: "Failed to regenerate content" });
@@ -10902,197 +10907,17 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const refreshedCampaign = await storage.getCampaign(id, userId);
       if (!refreshedCampaign) return res.status(500).json({ message: "Campaign lost after resume" });
 
-      const rawStart = resumeStartDate;
-      const rStartDate = new Date(rawStart + 'T00:00:00');
-
-      const durationDaysMap: Record<string, number> = {
-        '1_week': 7, '2_weeks': 14, '3_weeks': 21, '1_month': 30,
-        '2_months': 60, '3_months': 90, '6_months': 180, '12_months': 365,
-      };
-      const rCampaignDays = durationDaysMap[refreshedCampaign.duration || '3_months'] || 90;
-      const rEndDate = campaignAddDays(rStartDate, rCampaignDays);
-      const rEndDateStr = campaignDateToStr(rEndDate);
-
-      const rExistingTasks = await storage.getTasksInRange(userId, campaignDateToStr(rStartDate), rEndDateStr);
-
-      const rPrefs = await storage.getUserPreferences(userId);
-      const rWorkDaySet = parseWorkDays(rPrefs?.workDays);
-      const rAvailability = await storage.getDayAvailabilityRange(userId, campaignDateToStr(rStartDate), rEndDateStr);
-      const rOffDates = new Set<string>(
-        rAvailability.filter((a: any) => a.dayType === 'off').map((a: any) => a.date as string)
-      );
-
-      // Use user's working hours preferences
-      const rWorkDayStart = rPrefs?.workDayStart || '09:00';
-      const rWorkDayEnd = rPrefs?.workDayEnd || '18:00';
-      const rLunchStart = rPrefs?.lunchBreakStart || '12:00';
-      const rLunchEnd = rPrefs?.lunchBreakEnd || '13:00';
-
-      const R_DAY_START = hhmmToMin(rWorkDayStart);
-      const R_DAY_END = hhmmToMin(rWorkDayEnd);
-      const R_LUNCH_START = hhmmToMin(rLunchStart);
-      const R_LUNCH_END = hhmmToMin(rLunchEnd);
-      const R_BUFFER = 15;
-
-      const rDayNextSlot = new Map<string, number>();
-      for (const t of rExistingTasks) {
-        if (!t.scheduledDate) continue;
-        const existing = rDayNextSlot.get(t.scheduledDate) ?? R_DAY_START;
-        if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
-          const startMin = hhmmToMin(t.scheduledTime);
-          const endMin = startMin + (t.estimatedDuration || 30) + R_BUFFER;
-          if (endMin > existing) rDayNextSlot.set(t.scheduledDate, endMin);
-        }
-      }
-
-      const rDayHasCapacity = (dateStr: string, durationMin: number): boolean => {
-        const slot = rDayNextSlot.get(dateStr) ?? R_DAY_START;
-        const adjusted = (slot < R_LUNCH_END && slot + durationMin > R_LUNCH_START) ? R_LUNCH_END : slot;
-        return adjusted + durationMin <= R_DAY_END;
-      }
-
-      const rAssignSlot = (dateStr: string, durationMin: number): string => {
-        let slot = rDayNextSlot.get(dateStr) ?? R_DAY_START;
-        if (slot < R_LUNCH_END && slot + durationMin > R_LUNCH_START) {
-          slot = R_LUNCH_END;
-        }
-        rDayNextSlot.set(dateStr, slot + durationMin + R_BUFFER);
-        return minToHHMM(slot);
-      }
-
-      const rIsWorkDay = (dateStr: string): boolean => {
-        if (rOffDates.has(dateStr)) return false;
-        const dow = new Date(dateStr + 'T00:00:00').getDay();
-        return rWorkDaySet.has(DAY_ABBRS[dow]);
-      }
-
-      const rPhases = (refreshedCampaign.phases || []) as Array<{ number: number; name: string; duration: string }>;
-      const rPhaseRanges = computePhaseRanges(rPhases, rStartDate, rCampaignDays);
-
-      const rGeneratedTasks = (refreshedCampaign.generatedTasks || []) as Array<{
-        title: string; description: string; type: string; category: string;
-        priority: number; estimatedDuration: number; taskEnergyType: string; phase?: number;
-      }>;
-
-      const rTasksByPhase: Record<number, typeof rGeneratedTasks> = {};
-      for (const t of rGeneratedTasks) {
-        const p = parseInt(String(t.phase), 10) || 1;
-        if (!rTasksByPhase[p]) rTasksByPhase[p] = [];
-        rTasksByPhase[p].push(t);
-      }
-
-      let rTasksCreated = 0;
-      const R_CAMPAIGN_DAY_CAP = 3;
-      const rCampaignDayCounts = new Map<string, number>();
-      for (const t of rExistingTasks) {
-        if (!t.scheduledDate) continue;
-        rCampaignDayCounts.set(t.scheduledDate, (rCampaignDayCounts.get(t.scheduledDate) || 0) + 1);
-      }
-
-      const rCampaignDayAvailable = (dateStr: string, durationMin: number): boolean => {
-        return (rCampaignDayCounts.get(dateStr) || 0) < R_CAMPAIGN_DAY_CAP
-          && rDayHasCapacity(dateStr, durationMin);
-      }
-
-      const rSortedPhaseNums = Object.keys(rTasksByPhase).map(Number).sort((a, b) => a - b);
-
-      for (const phaseNum of rSortedPhaseNums) {
-        const phaseTasks = rTasksByPhase[phaseNum];
-        const phaseRange = rPhaseRanges[phaseNum] || { start: rStartDate, end: campaignAddDays(rStartDate, 7) };
-
-        const publicationDates = assignPublicationDates(phaseTasks, phaseRange.start, phaseRange.end, rIsWorkDay);
-
-        for (let taskIdx = 0; taskIdx < phaseTasks.length; taskIdx++) {
-          const originalTask = phaseTasks[taskIdx];
-          const publicationDate = publicationDates[taskIdx];
-          const subTasks = decomposeContentTask(originalTask);
-
-          // Bug 3 fix: lock publication date first, then backward-schedule preparatory tasks
-          const rPubTaskIndex = subTasks.findIndex(st => (st.daysBeforePublication || 0) === 0);
-          let rLockedPublicationDate: Date | null = null;
-
-          if (rPubTaskIndex !== -1) {
-            let rPubDate = new Date(publicationDate);
-            if (rPubDate < phaseRange.start) rPubDate = new Date(phaseRange.start);
-            if (rPubDate < rStartDate) rPubDate = new Date(rStartDate);
-            let rPubSafety = 0;
-            while (rPubSafety < 30) {
-              const ds = campaignDateToStr(rPubDate);
-              if (rIsWorkDay(ds) && rCampaignDayAvailable(ds, subTasks[rPubTaskIndex].estimatedDuration)) {
-                rLockedPublicationDate = rPubDate;
-                break;
-              }
-              rPubDate = campaignAddDays(rPubDate, 1);
-              rPubSafety++;
-            }
-            if (!rLockedPublicationDate) continue;
-          }
-
-          let rLastSubtaskDate: Date | null = null;
-          for (let subIdx = 0; subIdx < subTasks.length; subIdx++) {
-            const sub = subTasks[subIdx];
-            const offset = typeof sub.daysBeforePublication === 'number' ? sub.daysBeforePublication : 0;
-
-            let scheduledDate: Date;
-            if (subIdx === rPubTaskIndex && rLockedPublicationDate) {
-              scheduledDate = rLockedPublicationDate;
-            } else if (rLockedPublicationDate) {
-              scheduledDate = campaignAddDays(rLockedPublicationDate, offset);
-            } else {
-              scheduledDate = campaignAddDays(publicationDate, offset);
-            }
-
-            if (scheduledDate < phaseRange.start) scheduledDate = new Date(phaseRange.start);
-            if (scheduledDate < rStartDate) scheduledDate = new Date(rStartDate);
-            if (rLastSubtaskDate && scheduledDate <= rLastSubtaskDate) {
-              scheduledDate = campaignAddDays(rLastSubtaskDate, 1);
-            }
-
-            let safety = 0;
-            let foundSlot = false;
-            while (safety < 30) {
-              const ds = campaignDateToStr(scheduledDate);
-              if (rIsWorkDay(ds) && rCampaignDayAvailable(ds, sub.estimatedDuration)) { foundSlot = true; break; }
-              if (rLockedPublicationDate && subIdx !== rPubTaskIndex && scheduledDate >= rLockedPublicationDate) {
-                console.warn(`Resume campaign ${refreshedCampaign.id}: subtask "${sub.title}" would fall after publication date. Skipping.`);
-                break;
-              }
-              scheduledDate = campaignAddDays(scheduledDate, 1);
-              safety++;
-            }
-
-            if (!foundSlot) {
-              console.warn(`Resume campaign ${refreshedCampaign.id}: could not find valid slot for sub-task "${sub.title}"`);
-              continue;
-            }
-
-            rLastSubtaskDate = scheduledDate;
-            const scheduledDateStr = campaignDateToStr(scheduledDate);
-            rCampaignDayCounts.set(scheduledDateStr, (rCampaignDayCounts.get(scheduledDateStr) || 0) + 1);
-            const scheduledTime = rAssignSlot(scheduledDateStr, sub.estimatedDuration);
-            const scheduledEndTime = minToHHMM(hhmmToMin(scheduledTime) + sub.estimatedDuration);
-
-            await storage.createTask({
-              userId,
-              projectId: refreshedCampaign.projectId ?? undefined,
-              campaignId: refreshedCampaign.id,
-              title: sub.title,
-              description: sub.description,
-              type: sub.type || 'content',
-              category: originalTask.category || 'planning',
-              priority: originalTask.priority || 2,
-              estimatedDuration: sub.estimatedDuration,
-              taskEnergyType: sub.taskEnergyType,
-              source: 'campaign',
-              scheduledDate: scheduledDateStr,
-              scheduledTime,
-              scheduledEndTime,
-              completed: false,
-            });
-            rTasksCreated++;
-          }
-        }
-      }
+      // Les posts restants (ceux que /pause n'a pas retirés, ou recréés depuis) retrouvent
+      // leurs tâches de production manquantes ; puis les autres tâches du plan sont placées
+      // sur la nouvelle fenêtre. Comme après tout /pause, aucun post n'est recréé ici :
+      // « Régénérer le contenu » s'en charge (avec leurs tâches).
+      const rStartDate = new Date(resumeStartDate + 'T00:00:00');
+      const { creees: rProduction } = await placerTachesProductionPourCampagne(storage, { userId, campaignId: id });
+      const { creees: rAutres } = await placerTachesCampagne(storage, {
+        userId, campaign: refreshedCampaign, debut: rStartDate, fin: computedEndDate,
+      });
+      const rTasksCreated = rProduction + rAutres;
+      await storage.fixOverlappingTasks(userId, resumeStartDate).catch(() => {});
 
       const updated = await storage.getCampaign(id, userId);
       res.json({ campaign: updated, tasksCreated: rTasksCreated });
@@ -11130,11 +10955,17 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         endDate: rdEndDateStr,
       });
 
-      const { creees: rdTasksCreated } = await placerTachesCampagne(storage, {
+      // Les tâches non faites viennent d'être retirées, production comprise : les posts à
+      // venir retrouvent leurs tâches de production, puis les autres tâches sont replacées.
+      // /redeploy n'a jamais contrôlé les créneaux en base : on garde ce comportement.
+      const { creees: rdProduction } = await placerTachesProductionPourCampagne(storage, {
+        userId, campaignId: id, controleCreneaux: false,
+      });
+      const { creees: rdAutres } = await placerTachesCampagne(storage, {
         userId, campaign, debut: rdStartDate, fin: rdEndDate,
-        // /redeploy n'a jamais contrôlé les créneaux en base : on garde ce comportement.
         controleCreneaux: false,
       });
+      const rdTasksCreated = rdProduction + rdAutres;
 
 
       await storage.updateCampaign(id, userId, { tasksGenerated: true });

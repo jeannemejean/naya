@@ -5,6 +5,7 @@ import { db } from "../../db";
 import { storage } from "../../storage";
 import { embedText } from "../memory/embed";
 import { genererPostRemplacement } from "./remplacement";
+import { placerTachesProductionPosts } from "../campagne/placement";
 import type { RefusPostDeps } from "./service";
 
 const SALIENCE_REFUS_POST = 0.8;
@@ -38,7 +39,16 @@ export const refusPostDeps: RefusPostDeps = {
 
   generer: (input) => genererPostRemplacement(input),
 
-  creerPost: (row) => storage.createContent(row satisfies InsertContent),
+  // Un remplaçant de post de campagne arrive avec ses tâches de production (le refusé
+  // emporte les siennes à sa suppression). Leur placement ne fait jamais échouer le refus.
+  creerPost: async (row) => {
+    const cree = await storage.createContent(row satisfies InsertContent);
+    if (cree.campaignId) {
+      await placerTachesProductionPosts(storage, { userId: row.userId, posts: [cree] })
+        .catch((e: any) => console.error("[refus-post] tâches de production du remplaçant :", e?.message ?? e));
+    }
+    return cree;
+  },
 
   neutraliserPost: async (userId, id) => {
     const rows = await db.update(content).set({ autoPost: false }).where(and(
