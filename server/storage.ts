@@ -156,7 +156,7 @@ import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
-import { jourDuPost } from "./services/campagne/production";
+import { jourDuPost, echeanceTache } from "./services/campagne/production";
 import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
@@ -2967,7 +2967,7 @@ export class DatabaseStorage implements IStorage {
         durationMin: t.estimatedDuration || 30,
         ...(hasTime ? {} : { unplaced: true as const }),
         ...(hasTime && t.schedulingMode === 'fixed' ? { anchored: true as const } : {}),
-        echeance: t.contentId != null ? jourParPost.get(t.contentId) ?? null : null,
+        echeance: t.contentId != null ? echeanceTache(t.title, jourParPost.get(t.contentId)) : null,
       });
     }
 

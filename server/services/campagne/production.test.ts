@@ -2,7 +2,7 @@
 // tâches générées par le modèle filtrées (plus de sous-tâches de contenu, plus de prospection).
 import { describe, it, expect } from "vitest";
 import {
-  etapesProductionPourPost, genreProduction, jourDeProduction,
+  etapesProductionPourPost, genreProduction, jourDeProduction, echeanceTache,
   estTacheContenuGeneree, estTacheProspection, postAProduire, mapFormatToPostFormat,
   ANCIENS_PREFIXES_PRODUCTION, estAncienneSousTacheContenu,
 } from "./production";
@@ -191,5 +191,18 @@ describe("anciennes sous-tâches anglaises (migration)", () => {
     expect(estAncienneSousTacheContenu("Rédiger le texte — X")).toBe(false);
     expect(estAncienneSousTacheContenu("Publier — X")).toBe(false);
     expect(estAncienneSousTacheContenu("Plan review")).toBe(false);
+  });
+});
+
+describe("echeanceTache (dernier jour où une étape peut être faite)", () => {
+  it("« Publier » : le jour même du post", () => {
+    expect(echeanceTache("Publier — Mon post", "2026-10-14")).toBe("2026-10-14");
+  });
+  it("toute autre étape : la veille du post (sinon elle tomberait après l'heure de publication)", () => {
+    expect(echeanceTache("Designer les slides — Mon post", "2026-10-14")).toBe("2026-10-13");
+    expect(echeanceTache("Relire et valider le post — Mon post", "2026-10-12")).toBe("2026-10-11");
+  });
+  it("sans jour de post : pas d'échéance", () => {
+    expect(echeanceTache("Publier — x", null)).toBeNull();
   });
 });

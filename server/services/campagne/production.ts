@@ -198,3 +198,15 @@ export function estAncienneSousTacheContenu(titre: string | null | undefined): b
   const t = titre || "";
   return ANCIENS_PREFIXES_PRODUCTION.some((p) => t.startsWith(p));
 }
+
+/**
+ * Dernier jour où une étape de production peut être faite : le jour du post pour
+ * « Publier », la veille pour toutes les autres (le jour même, elles risqueraient de
+ * tomber après l'heure de publication).
+ */
+export function echeanceTache(titre: string | null | undefined, jourPost: string | null | undefined): string | null {
+  if (!jourPost) return null;
+  if ((titre ?? "").startsWith("Publier —")) return jourPost;
+  const [y, m, d] = jourPost.split("-").map(Number);
+  return formatDate(addDays(new Date(y, m - 1, d), -1));
+}
