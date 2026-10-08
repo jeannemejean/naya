@@ -8,6 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Lead } from "@shared/schema";
 import type { SequenceStepDTO, PreviewResponse, StepAnalytics, EnrollmentDTO } from "./types";
 import type { ProspectionStatusDTO } from "@/lib/prospection-widget";
+import type { ReponseEnrolement } from "./enrolement-message";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
 
@@ -90,7 +91,7 @@ export const useSaveSequence = (id: number) =>
   });
 
 export const useLaunchCampaign = (id: number) =>
-  useMutation<{ enrolled: number; skipped: number; total: number }, Error, void>({
+  useMutation<ReponseEnrolement, Error, void>({
     mutationFn: () => apiRequest("POST", `/api/prospection/campaigns/${id}/launch`).then((r) => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
@@ -100,7 +101,7 @@ export const useLaunchCampaign = (id: number) =>
 // Enrôlement manuel groupé (sélection du owner) — contrairement à useLaunchCampaign (tous les
 // prospects), n'enrôle que les ids passés. Invalide les leads (badge "Prêt") + le statut groupé.
 export const useBulkEnroll = (id: number) =>
-  useMutation<{ enrolled: number; skipped: number }, Error, number[]>({
+  useMutation<ReponseEnrolement, Error, number[]>({
     mutationFn: (leadIds) =>
       apiRequest("POST", `/api/prospection/campaigns/${id}/enroll`, { leadIds }).then((r) => r.json()),
     onSuccess: () => {

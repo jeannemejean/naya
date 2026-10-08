@@ -68,6 +68,7 @@ import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
+import { enrolerEnMasse } from "./services/prospection-enrolement";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
@@ -9009,21 +9010,22 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const leadIds: number[] = Array.isArray(req.body?.leadIds)
         ? req.body.leadIds.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n))
         : [];
-      const campaignLeadIds = new Set(
+      const campaignLeads = new Map(
         (await storage.getLeads(req.userId))
           .filter(l => (l as any).prospectionCampaignId === campaign.id)
-          .map(l => l.id),
+          .map(l => [l.id, l] as const),
       );
+      // Un id qui n'appartient pas à cette campagne est ignoré (compté dans `skipped`).
+      const choisis = leadIds.map(id => campaignLeads.get(id)).filter((l): l is NonNullable<typeof l> => !!l);
+      const horsCampagne = leadIds.length - choisis.length;
 
-      let enrolled = 0, skipped = 0;
-      for (const leadId of leadIds) {
-        if (!campaignLeadIds.has(leadId)) { skipped++; continue; } // n'appartient pas à cette campagne
-        const existing = await storage.getLeadSequenceState(leadId);
-        if (existing && ['active', 'stopped_replied', 'completed'].includes(existing.status)) { skipped++; continue; }
-        const st = await storage.enrollLead(leadId, campaign.id, req.userId);
-        if (st) enrolled++; else skipped++;
-      }
-      res.json({ enrolled, skipped });
+      // Même barrière que /api/leads/:id/enroll : seuls les messages validés partent.
+      const r = await enrolerEnMasse({
+        leads: choisis.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt })),
+        getState: (leadId) => storage.getLeadSequenceState(leadId),
+        enroll: (leadId) => storage.enrollLead(leadId, campaign.id, req.userId),
+      });
+      res.json({ enrolled: r.enrolled, skipped: r.skipped + horsCampagne, skippedNotValidated: r.skippedNotValidated });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -9038,14 +9040,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (steps.length === 0) return res.status(400).json({ message: 'no_sequence_defined' });
 
       const campaignLeads = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id);
-      let enrolled = 0, skipped = 0;
-      for (const lead of campaignLeads) {
-        const existing = await storage.getLeadSequenceState(lead.id);
-        if (existing && ['active', 'stopped_replied', 'completed'].includes(existing.status)) { skipped++; continue; }
-        const st = await storage.enrollLead(lead.id, campaign.id, req.userId);
-        if (st) enrolled++; else skipped++;
-      }
-      res.json({ enrolled, skipped, total: campaignLeads.length });
+      // Même barrière que /api/leads/:id/enroll : un prospect dont personne n'a validé
+      // les messages n'entre pas en séquence, même via « Lancer ».
+      const r = await enrolerEnMasse({
+        leads: campaignLeads.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt })),
+        getState: (leadId) => storage.getLeadSequenceState(leadId),
+        enroll: (leadId) => storage.enrollLead(leadId, campaign.id, req.userId),
+      });
+      res.json(r);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

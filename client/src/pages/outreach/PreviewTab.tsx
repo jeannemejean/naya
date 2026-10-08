@@ -35,6 +35,7 @@ import { useLeads, usePreview, useLaunchCampaign } from './useOutreach';
 import { channelMeta } from './channels';
 import SequenceTreeLayout from './SequenceTreeLayout';
 import { type PreviewStep } from './types';
+import { resumeEnrolement } from './enrolement-message';
 
 interface PreviewTabProps {
   campaignId: number;
@@ -113,7 +114,7 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
       onSuccess: (data) => {
         toast({
           title: 'Campagne lancée',
-          description: `${data.enrolled} prospect${data.enrolled > 1 ? 's' : ''} enrôlé${data.enrolled > 1 ? 's' : ''}.`,
+          description: resumeEnrolement(data),
         });
       },
       onError: () =>
