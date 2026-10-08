@@ -25,6 +25,7 @@ vi.mock("../storage", () => ({
     releaseStepSend: vi.fn(),
     getReservedStepOrders: vi.fn(),
     setLeadUnreachable: vi.fn(),
+    setLeadSequenceGuard: vi.fn(),
   },
 }));
 
@@ -283,6 +284,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.releaseStepSend as any).mockResolvedValue(undefined);
     (storage.getReservedStepOrders as any).mockResolvedValue([]);
     (storage.setLeadUnreachable as any).mockResolvedValue(undefined);
+    (storage.setLeadSequenceGuard as any).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -376,6 +378,90 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     expect(storage.createOutreachMessage).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(sendLinkedInStep).not.toHaveBeenCalled();
+  });
+
+  it("message trop proche (tropProche) : AUCUN envoi, étape non avancée, recul de nextRunAt, log sans contenu", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Texte secret du prospect", tropProche: true });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await runProspectionSender();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sendLinkedInStep).not.toHaveBeenCalled();
+    expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+    expect(storage.claimStepSend).not.toHaveBeenCalled();
+    for (const call of (storage.updateLeadSequenceState as any).mock.calls) {
+      expect(call[1]).not.toHaveProperty("currentStep");
+      expect(call[1]).toHaveProperty("nextRunAt");
+    }
+    expect(storage.updateLeadSequenceState).toHaveBeenCalledTimes(1);
+    const logs = warn.mock.calls.map((c) => String(c[0]));
+    const ligne = logs.find((l) => l.includes("[prospection] message trop proche"));
+    expect(ligne).toBeDefined();
+    expect(ligne).toContain("lead 1");
+    expect(ligne).toContain("étape 100");
+    expect(logs.join("\n")).not.toContain("Texte secret du prospect");
+  });
+
+  it("trop proche : incrémente le compteur de blocages consécutifs du prospect", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    (storage.getLeads as any).mockResolvedValue([baseLead({ enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 1, stepId: 100, attention: null } } })]);
+    (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "x", tropProche: true });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await runProspectionSender();
+
+    expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, { tropProcheConsecutifs: 2, stepId: 100, attention: null });
+    expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { nextRunAt: expect.any(Date) });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("trop proche au 3e blocage consécutif : séquence en pause, raison visible, plus de nouvel essai", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    (storage.getLeads as any).mockResolvedValue([baseLead({ enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 2, stepId: 100, attention: null } } })]);
+    (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "x", tropProche: true });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await runProspectionSender();
+
+    expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, {
+      tropProcheConsecutifs: 3, stepId: 100,
+      attention: "Naya n'arrive pas à écrire un message assez différent du précédent — à rédiger à la main.",
+    });
+    expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+    expect(storage.updateLeadSequenceState).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain("séquence mise en pause");
+  });
+
+  it("envoi réussi : remet à zéro la garde « trop proche » du prospect", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    (storage.getLeads as any).mockResolvedValue([baseLead({ enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 2, stepId: 100, attention: null } } })]);
+
+    await runProspectionSender();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, null);
+  });
+
+  it("envoi réussi sans garde existante : aucune écriture de garde", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+    await runProspectionSender();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(storage.setLeadSequenceGuard).not.toHaveBeenCalled();
+  });
+
+  it("transmet toute la séquence à generateStepMessage (rôle LinkedIn + textes antérieurs)", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+    await runProspectionSender();
+
+    const opts = (generateStepMessage as any).mock.calls[0][1];
+    expect(opts.steps).toEqual([expect.objectContaining({ id: 100, channel: expect.any(String), condition: expect.any(String) })]);
+    expect(opts.step).toEqual(expect.objectContaining({ id: 100 }));
   });
 
   describe("garde d'idempotence", () => {

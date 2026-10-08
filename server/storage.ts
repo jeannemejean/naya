@@ -163,6 +163,7 @@ import { blockedRangesByDate } from "./services/task-schedule-fields";
 import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
+import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC } from "./utils/timezone";
@@ -484,6 +485,12 @@ export interface IStorage {
    * efface la marque quand le lead redevient joignable.
    */
   setLeadUnreachable(leadId: number, reason: string | null): Promise<void>;
+  /**
+   * Garde « message trop proche » du moteur de séquence, rangée dans
+   * `leads.enriched_profile -> 'nayaSequence'` (aucune migration). `null` l'efface.
+   * Fusion jsonb atomique : ne touche jamais aux données d'enrichissement voisines.
+   */
+  setLeadSequenceGuard(leadId: number, guard: LeadSequenceGuard | null): Promise<void>;
 
   // Outreach operations
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
@@ -1605,6 +1612,8 @@ export class DatabaseStorage implements IStorage {
     const nextRunAt = new Date(Date.now() + firstDelayDays * 86400000);
 
     const existing = await this.getLeadSequenceState(leadId);
+    // Nouveau départ : le compteur « message trop proche » et sa raison d'arrêt aussi.
+    await this.setLeadSequenceGuard(leadId, null);
     const values = {
       leadId, campaignId, userId,
       status: "active", currentStep: 0, nextRunAt,
@@ -1813,6 +1822,15 @@ export class DatabaseStorage implements IStorage {
   // Marque (ou efface, avec reason: null) la raison structurelle de non-joignabilité d'un
   // lead. Réservé aux raisons structurelles (country_unknown, no_common_window) — voir le
   // commentaire de la colonne dans shared/schema.ts.
+  async setLeadSequenceGuard(leadId: number, guard: LeadSequenceGuard | null): Promise<void> {
+    const expr = guard
+      ? sql`coalesce(${leads.enrichedProfile}, '{}'::jsonb) || jsonb_build_object('nayaSequence', ${JSON.stringify(guard)}::jsonb)`
+      : sql`coalesce(${leads.enrichedProfile}, '{}'::jsonb) - 'nayaSequence'`;
+    await db.update(leads)
+      .set({ enrichedProfile: expr as any, updatedAt: new Date() })
+      .where(eq(leads.id, leadId));
+  }
+
   async setLeadUnreachable(leadId: number, reason: string | null): Promise<void> {
     await db.update(leads)
       .set({ outreachUnreachableReason: reason, updatedAt: new Date() })

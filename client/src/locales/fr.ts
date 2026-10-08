@@ -1133,6 +1133,9 @@ const fr = {
  outreach: {
  title: "Prospection / CRM",
  subtitle: "Gère tes leads et ton pipeline de prospection",
+ previewSequencePaused: "Séquence en pause pour ce prospect",
+ previewStepBlocked: "Étape bloquée : à rédiger et envoyer à la main.",
+ previewTropProche: "Trop proche d'un message précédent pour ce prospect : il ne partira pas tel quel. Régénère-le.",
  addLead: "Ajouter un lead",
  searchLeads: "Rechercher des leads...",
  filterByScore: "Filtrer par score",

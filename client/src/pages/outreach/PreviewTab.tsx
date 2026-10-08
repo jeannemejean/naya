@@ -10,6 +10,7 @@
 // En bas, la CTA de lancement (enrôle TOUS les prospects, pas seulement celui prévisualisé), gardée
 // par une AlertDialog de confirmation.
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Search, Shuffle, Copy, RefreshCw, Clock, Rocket, Loader2, Inbox } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -58,6 +59,7 @@ function initials(name: string) {
 }
 
 export default function PreviewTab({ campaignId }: PreviewTabProps) {
+  const { t } = useTranslation();
   const { data: allLeads } = useLeads();
   const launchCampaign = useLaunchCampaign(campaignId);
   const { toast } = useToast();
@@ -220,6 +222,13 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
                     </Button>
                   </div>
 
+                  {preview.attention && (
+                    <div className="mb-4 rounded-md bg-naya-olive-10 border-l-2 border-naya-sulphur px-3 py-2.5 text-sm text-foreground">
+                      <p className="font-semibold">{t('outreach.previewSequencePaused')}</p>
+                      <p>{preview.attention}</p>
+                    </div>
+                  )}
+
                   {preview.steps.length === 0 ? (
                     <p className="text-sm text-naya-olive-55">
                       Cette campagne n'a pas encore de séquence — configure l'onglet Séquence d'abord.
@@ -326,6 +335,7 @@ interface PreviewMessageCardProps {
 // et le label de condition sont rendus par SequenceTreeLayout autour). D'où l'absence de badge de
 // condition et de pastille de positionnement ici : le layout les fournit déjà.
 function PreviewMessageCard({ step, onCopy, onRegenerate }: PreviewMessageCardProps) {
+  const { t } = useTranslation();
   const meta = channelMeta(step.channel);
   const Icon = meta.Icon;
   const isUnavailable = step.error || !step.body;
@@ -372,6 +382,12 @@ function PreviewMessageCard({ step, onCopy, onRegenerate }: PreviewMessageCardPr
             <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed rounded-md bg-naya-olive-06 px-3 py-2.5">
               {step.body}
             </p>
+            {step.bloqueParMoteur && (
+              <p className="text-xs font-semibold text-naya-olive-70">{t('outreach.previewStepBlocked')}</p>
+            )}
+            {step.tropProche && (
+              <p className="text-xs text-naya-olive-70">{t('outreach.previewTropProche')}</p>
+            )}
             <div className="flex items-center gap-1">
               <Button
                 type="button"

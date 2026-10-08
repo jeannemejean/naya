@@ -22,10 +22,16 @@ export type PreviewStep = {
   subject: string | null;
   body: string | null;
   error: boolean;
+  /** Texte resté trop proche d'un message antérieur à ce prospect : non mis en cache, pas envoyé tel quel. */
+  tropProche?: boolean;
+  /** Étape sur laquelle le moteur a renoncé (trop de messages trop proches d'affilée). */
+  bloqueParMoteur?: boolean;
 };
 
 export type PreviewResponse = {
   lead: { id: number; name: string; company: string };
+  /** Raison pour laquelle le moteur a mis la séquence de ce prospect en pause (sinon null). */
+  attention?: string | null;
   steps: PreviewStep[];
 };
 
