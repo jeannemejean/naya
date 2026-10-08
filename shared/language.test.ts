@@ -112,3 +112,53 @@ describe("ecritDansUneAutreLangue — garde de sortie (6 octobre 2026)", () => {
     expect(ecritDansUneAutreLangue("Send the 3 messages to your prospects", "en")).toBe(false);
   });
 });
+
+describe("ecritDansUneAutreLangue — titres courts (8-9 octobre 2026)", () => {
+  // Titres réels reçus par un compte en français, passés sous le radar de l'ancien détecteur
+  // (il fallait deux mots outils anglais ; ces titres n'en ont qu'un, ou aucun).
+  const ANGLAIS_REELS = [
+    "Draft DM outreach template targeting 3 indie mode/beauty founders on Instagram",
+    "Send the 3 personalized DMs (based on outreach template) + document responses",
+    "Draft 3-part carousel: 'What changed when we stopped making content…'",
+    "Create Reel script: '3 signs your brand universe isn't working'",
+    "Identify 3 mode/beauty/lifestyle founders or CMOs…",
+    "Write LinkedIn post about the Q4 launch",
+    "Review client brief",
+    "Publish the case study",
+    "Share one moment from your week with the community",
+  ];
+
+  it.each(ANGLAIS_REELS)("repère « %s » pour un compte français", (titre) => {
+    expect(ecritDansUneAutreLangue(titre, "fr")).toBe(true);
+  });
+
+  const FRANCAIS = [
+    "Rédiger une note 'Brain' : ce que la marque refuse",
+    "Définir ta signature visuelle pour la rentrée",
+    "Préparer le post LinkedIn de jeudi",
+    "Relire le carrousel « What changed when we stopped making content »",
+    "Relire le carrousel 'Why your brand isn't working'",
+    "Tourner le reel coulisses de l'atelier",
+    "Répondre aux DM de la semaine",
+    "Brief Canva pour le shooting",
+    "Point mensuel avec Mr Darcy",
+    "Faire le review du site avec Paul",
+    "Envoyer le devis à Encore Merci",
+    "Valider les messages préparés",
+    "Ostéopathes Mr Darcy",
+    "Newsletter",
+    "Post LinkedIn",
+    "Brainstorm offre Q4",
+    "Plan média Q4",
+    "Design landing Encore Merci",
+  ];
+
+  it.each(FRANCAIS)("ne signale pas « %s » (français, anglicismes compris)", (titre) => {
+    expect(ecritDansUneAutreLangue(titre, "fr")).toBe(false);
+  });
+
+  it("un compte anglais ne voit pas ses titres courts signalés", () => {
+    expect(ecritDansUneAutreLangue("Draft DM outreach template targeting 3 founders", "en")).toBe(false);
+    expect(ecritDansUneAutreLangue("Café meetup with Paul", "en")).toBe(false);
+  });
+});

@@ -12,6 +12,8 @@
 
 import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
 import { storage } from "../storage";
+import { imposerLangueDuCompte, langueDuCompte } from "./garde-langue";
+import { consignesGenerateur } from "./consignes-generateur";
 
 export interface GeneratedTask {
   title: string;
@@ -55,6 +57,7 @@ export async function generateGoalTasks(
   // 3. Calculer la date cible
   const dueDate = goal.dueDate ? new Date(goal.dueDate).toISOString().slice(0, 10) : null;
   const today = new Date().toISOString().slice(0, 10);
+  const langue = await langueDuCompte(userId);
 
   const prompt = `Tu es Naya, un OS IA pour entrepreneurs. Tu dois générer un plan d'action concret et actionnable pour atteindre l'objectif suivant.
 
@@ -76,23 +79,18 @@ Projet : ${project?.name || ""}
 RÈGLES DE GÉNÉRATION :
 1. Génère entre 6 et 12 tâches concrètes qui permettent d'atteindre l'objectif.
 2. Pour chaque tâche, choisis le bon taskType parmi :
-   - "linkedin_message" : si la tâche consiste à envoyer un message de prospection sur LinkedIn (inclure le message rédigé dans actionData.message, nom du prospect dans actionData.leadName, platform: "linkedin")
-   - "post_publish" : si la tâche consiste à publier un post/contenu (inclure le contenu rédigé dans actionData.postContent, la plateforme dans actionData.platform: "linkedin"|"instagram"|"newsletter")
-   - "canva_task" : si la tâche consiste à créer un visuel (inclure le brief détaillé dans actionData.canvaBrief, lien Canva dans actionData.externalUrl: "https://www.canva.com/design/new")
-   - "email" : si la tâche consiste à envoyer un email (inclure objet dans actionData.subject, contenu dans actionData.message)
-   - "outreach_action" : si la tâche est liée à la prospection (identifier prospects, créer campagne, enrichir leads)
-   - "generic" : pour toutes les autres tâches (réunion, analyse, configuration, etc.)
+   - "email" : si la tâche consiste à envoyer un email à un client, un partenaire ou un fournisseur déjà en relation (inclure objet dans actionData.subject, contenu dans actionData.message)
+   - "call" : si la tâche est un appel avec un client ou un partenaire existant
+   - "generic" : pour toutes les autres tâches (offre, tarifs, process de vente, livraison client, réunion, analyse, configuration, etc.)
 
-3. Pour les objectifs de type "signer X clients" :
-   - Inclure des tâches de contenu (2-3 posts LinkedIn de prospection indirecte)
-   - Inclure des tâches de prospection outreach (identifier prospects, créer campagne, enrichir)
-   - Inclure des tâches de contact direct (messages LinkedIn, emails)
-   - Inclure des tâches de suivi (relances, appels de découverte)
-   - Un visuel Canva si pertinent (bannière LinkedIn, carousel)
+3. Le contenu (posts, carrousels, visuels, newsletters) et la prospection (identifier des prospects, messages, relances) ne font PAS partie de ce plan : ils viennent du calendrier éditorial et du pipeline de prospection. Pour un objectif de type "signer X clients", concentre-toi sur ce qui les fait signer une fois en contact :
+   - clarifier et chiffrer l'offre, préparer la proposition commerciale et le devis type
+   - préparer les appels découverte (trame, objections, cas clients)
+   - organiser l'onboarding et la livraison des clients signés
 
-4. Chaque tâche doit être IMMÉDIATEMENT EXÉCUTABLE depuis l'application (pas de "définir la stratégie", mais "Envoyer ce message LinkedIn à [nom]").
+4. Chaque tâche doit être IMMÉDIATEMENT EXÉCUTABLE (pas "définir la stratégie", mais "Chiffrer les 3 formules de [offre] et fixer le prix plancher").
 
-5. Pour les messages et contenus : les rédiger complètement, prêts à copier-coller.
+5. Pour les emails : les rédiger complètement, prêts à copier-coller.
 
 6. Suggère une date de réalisation (scheduledDate) pour chaque tâche en commençant dès aujourd'hui (${today}), réparties sur les prochaines semaines selon la deadline ${dueDate || "(à définir)"}.
 
@@ -102,25 +100,23 @@ Réponds UNIQUEMENT en JSON avec ce format :
     {
       "title": "Titre court et actionnable",
       "description": "Contexte/détail optionnel",
-      "taskType": "linkedin_message|post_publish|canva_task|email|outreach_action|generic",
+      "taskType": "email|call|generic",
       "actionData": {
-        "message": "Texte rédigé si linkedin_message ou email",
-        "postContent": "Contenu complet si post_publish",
-        "canvaBrief": "Brief détaillé si canva_task",
+        "message": "Texte rédigé si email",
         "subject": "Objet si email",
-        "externalUrl": "URL si canva ou lien externe",
-        "platform": "linkedin|instagram|newsletter si pertinent",
-        "leadName": "Nom du prospect si linkedin_message"
+        "externalUrl": "Lien externe si pertinent"
       },
       "estimatedDuration": 30,
       "taskEnergyType": "deep_work|creative|admin|social|logistics|execution",
       "scheduledDate": "YYYY-MM-DD",
       "priority": 1,
-      "type": "outreach|content|admin|planning",
+      "type": "admin|planning|execution",
       "category": "conversion|trust|engagement|planning"
     }
   ]
-}`;
+}
+
+${consignesGenerateur(langue)}`;
 
   const raw = await callClaudeWithContext({
     userId,
@@ -134,7 +130,10 @@ Réponds UNIQUEMENT en JSON avec ce format :
   try {
     const json = raw.match(/\{[\s\S]*\}/)?.[0] || raw;
     const parsed = JSON.parse(json);
-    return parsed.tasks || [];
+    const tasks: GeneratedTask[] = parsed.tasks || [];
+    // Garde de sortie : titres et descriptions dans la langue du compte.
+    await imposerLangueDuCompte(tasks as any[], userId);
+    return tasks;
   } catch {
     return [];
   }

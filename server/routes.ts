@@ -27,7 +27,7 @@ import {
   getMemoryContext,
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
-import { imposerLangueDuCompte } from "./services/garde-langue";
+import { imposerLangueDuCompte, imposerLangue, langueDuCompte, traducteurClaude } from "./services/garde-langue";
 import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
@@ -185,6 +185,8 @@ import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner
 import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
+import { filtrerTachesGenerees } from "./services/filtre-taches-generees";
+import { entrelacerParProjet } from "./services/repartition-projets";
 import {
   getAuthUrl,
   exchangeCodeForTokens,
@@ -387,6 +389,26 @@ function parseClientToday(body: any): string {
   return sharedFormatDate(candidateDate);
 }
 
+/** Clé projet d'une tâche en attente (generate-daily) ou déjà en base. */
+const cleProjetTache = (t: any): string =>
+  String(t?.projectBatchKey ?? t?.projId ?? t?.projectId ?? 'general');
+
+/**
+ * Sur une liste DÉJÀ triée par date : entrelace les projets à l'intérieur de chaque date,
+ * sans toucher à l'ordre des dates ni à l'ordre interne de chaque projet.
+ */
+function entrelacerParDateEtProjet(triees: any[]): any[] {
+  const sortie: any[] = [];
+  let debut = 0;
+  for (let i = 1; i <= triees.length; i++) {
+    if (i === triees.length || triees[i].scheduledDate !== triees[debut].scheduledDate) {
+      sortie.push(...entrelacerParProjet(triees.slice(debut, i), cleProjetTache));
+      debut = i;
+    }
+  }
+  return sortie;
+}
+
 // After AI generates tasks (some may have past dates), redistribute them forward
 // so no day exceeds dailyCap and no task lands before floor.
 
@@ -444,7 +466,11 @@ function rebalanceTasksForward(
   const slotUsage = new Map<string, number>();
   for (const d of orderedDates) slotUsage.set(d, existingDayCounts?.get(d) || 0);
 
-  const sorted = [...clamped].sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
+  // Tri par date, puis entrelacement des projets AU SEIN de chaque date : sans lui, les
+  // jours se remplissaient projet par projet (aujourd'hui = projet 1, demain = projet 2).
+  const sorted = entrelacerParDateEtProjet(
+    [...clamped].sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || '')),
+  );
 
   const result: any[] = [];
   const clampToWorkDay = (dateStr: string): string => {
@@ -2204,7 +2230,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
       const generatedTasks = await generateGoalTasks(userId, goalId);
       const saved: any[] = [];
-      for (const t of generatedTasks) {
+      for (const t of filtrerTachesGenerees(generatedTasks, `objectif ${goalId}`)) {
         const task = await storage.createTask({
           userId,
           projectId: goal.projectId,
@@ -3113,7 +3139,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       if (!rawCondition || typeof rawCondition !== 'string') {
         return res.status(400).json({ message: "rawCondition is required" });
       }
-      const parsed = await parseMilestoneTrigger(rawCondition, { projectName });
+      const parsed = await parseMilestoneTrigger(rawCondition, { projectName }, req.userId);
       res.json(parsed);
     } catch (error) {
       console.error("Error previewing milestone trigger:", error);
@@ -3703,7 +3729,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               routedTo: `milestone:${trigger.id}`,
               aiSummary: entry.content.substring(0, 100),
             });
-            const parsed = await parseMilestoneTrigger(entry.content);
+            const parsed = await parseMilestoneTrigger(entry.content, undefined, userId);
             await storage.updateMilestoneTrigger(trigger.id, {
               conditionType: parsed.conditionType,
               conditionSummary: parsed.conditionSummary,
@@ -3725,7 +3751,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       (async () => {
         try {
           const { classifyCapture, generateActivationPrompt } = await import('./services/openai.js');
-          const result = await classifyCapture(entry.content);
+          const langueCapture = await langueDuCompte(userId);
+          const result = await classifyCapture(entry.content, langueCapture);
           const updates: Record<string, any> = {
             classifiedType: result.type,
             aiSummary: result.summary,
@@ -3741,9 +3768,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               activationPrompt = await generateActivationPrompt(
                 result.summary || entry.content.substring(0, 100),
                 profile.activationStyle || undefined,
-                profile.avoidanceTriggers || undefined
+                profile.avoidanceTriggers || undefined,
+                langueCapture,
               );
             }
+            // Garde de sortie : le résumé devient le titre de la tâche.
+            const pourLangueCapture = { title: result.summary, activationPrompt };
+            await imposerLangue([pourLangueCapture], langueCapture, traducteurClaude(userId)).catch(() => 0);
+            result.summary = pourLangueCapture.title || result.summary;
+            activationPrompt = pourLangueCapture.activationPrompt ?? activationPrompt;
+            updates.aiSummary = result.summary;
             const newTask = await storage.createTask({
               title: result.summary || entry.content.substring(0, 100),
               description: entry.content,
@@ -4740,8 +4774,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // index d'origine (`__srcIndex`) AVANT le rééquilibrage et le filtre `_unschedulable` :
       // le filtre retire des tâches et décale tous les index suivants, donc `savedTasks[i]`
       // relierait des paires arbitraires. Même technique que l'auto-planner.
+      // Contenu et prospection écartés APRÈS la pose de `__srcIndex` (dépendances intactes).
       const finalTasks = rebalanceTasksForward(
-        aiResult.tasks.map((t: any, __srcIndex: number) => ({ ...t, __srcIndex })),
+        filtrerTachesGenerees(aiResult.tasks.map((t: any, __srcIndex: number) => ({ ...t, __srcIndex })), 'generate-monthly'),
         floor, monthEnd, 5, undefined, 0, replanWorkDays,
       ).filter((t: any) => !t._unschedulable);
 
@@ -4917,7 +4952,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       // Create new fill-in tasks
       const newTasksSaved: any[] = [];
-      for (const taskData of (aiResult.newTasks || []).slice(0, 3)) {
+      for (const taskData of filtrerTachesGenerees((aiResult.newTasks || []).slice(0, 3), 'weekly-refinement')) {
         try {
           const safeDate = clampToFloor(taskData.scheduledDate || weekStart, floor);
           const task = await storage.createTask({
@@ -5504,14 +5539,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           }
         }
 
-        const pending: PendingTask[] = rawTasksToCreate.map((rt: any, i: number) => ({
+        // Filtre APRÈS l'indexation : `taskIndex` reste l'indice d'origine dans la sortie IA,
+        // seule clé qui relie les dépendances déclarées aux tâches réellement créées.
+        // Contenu et prospection viennent du calendrier éditorial et du pipeline, pas d'ici.
+        const pending: PendingTask[] = filtrerTachesGenerees(rawTasksToCreate.map((rt: any, i: number) => ({
           taskData: normaliseTaskData(rt),
           scheduledDate: todayStr,
           projId: proj.id,
           aiResponseAny,
           taskIndex: i,
           projectBatchKey,
-        }));
+        })), `generate-daily projet ${proj.id ?? 'général'}`, (p: PendingTask) => p.taskData);
 
         return {
           pending,
@@ -5527,13 +5565,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       for (const r of projResults) {
         if (r.skipped) skippedProjects.push(r.skipped);
         if (r.created?.length) allCreatedTasks.push(...r.created);
-        if (r.pending.length) allPendingTasks.push(...r.pending);
         if (r.workflowSugs.length) allWorkflowSugs.push(...r.workflowSugs);
         if (r.focus) lastFocus = r.focus;
         if (r.reasoning) lastReasoning = r.reasoning;
         if (r.bottleneck) lastBottleneck = r.bottleneck;
         if (r.suggestedNextMove) lastSuggestedNextMove = r.suggestedNextMove;
       }
+      // Projets entrelacés à tour de rôle (A1, B1, C1, A2…) : chaque jour mêle les projets
+      // au lieu d'être rempli par le premier. L'ordre interne de chaque projet est gardé.
+      allPendingTasks.push(...entrelacerParProjet(projResults.flatMap((r) => r.pending), (p) => p.projectBatchKey));
 
       // ── Milestone trigger check — inject unlocked tasks into pending ──────
       let milestoneNotes: string[] = [];
@@ -5566,6 +5606,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           });
           milestoneNotes.push(`Milestone triggered: "${triggered.trigger.conditionSummary}" (${triggered.confidence}% confidence, matched: ${triggered.matchedKeywords.join(', ')})`);
 
+          const debloquees: PendingTask[] = [];
           for (let i = 0; i < tasksToUnlock.length; i++) {
             const t = tasksToUnlock[i];
             const taskData = normaliseTaskData({
@@ -5580,7 +5621,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               canBeFragmented: true,
               recommendedTimeOfDay: 'flexible',
             });
-            allPendingTasks.push({
+            debloquees.push({
               taskData: { ...taskData, source: 'milestone_trigger', milestoneTriggerId: triggered.trigger.id },
               scheduledDate: todayStr,
               projId: triggered.trigger.projectId,
@@ -5589,6 +5630,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               projectBatchKey: triggered.trigger.projectId?.toString() || 'general',
             });
           }
+          const debloqueesGardees = filtrerTachesGenerees(debloquees, `jalon déclenché ${triggered.trigger.id}`, (p: PendingTask) => p.taskData);
+          // Tâches enregistrées au moment où la règle a été écrite, parfois en anglais.
+          await imposerLangueDuCompte(debloqueesGardees.map((p) => p.taskData), userId);
+          allPendingTasks.push(...debloqueesGardees);
         }
       } catch (milestoneErr) {
         console.error("Milestone trigger check failed (non-fatal):", milestoneErr);
@@ -6837,7 +6882,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       });
 
       res.json({
-        suggestedTasks: aiResult.tasks,
+        suggestedTasks: filtrerTachesGenerees(aiResult.tasks, 'replan'),
         reasoning: aiResult.reasoning,
         blockedCount: blockedTaskIds.size,
         deferredCount: repeatedlyDeferred.length,

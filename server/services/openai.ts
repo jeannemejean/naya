@@ -6,7 +6,9 @@ import type { Intent } from "./reception/score";
 import { formaterArticulation, type Articulation } from "./brand-links/links";
 import { formaterPreferences, type Preference } from "./campaign-reject/preferences";
 import { TITRE_SAVOIR } from "./memory/savoir-campagne";
-import { imposerLangueDuCompte } from "./garde-langue";
+import { imposerLangueDuCompte, langueDuCompte } from "./garde-langue";
+import { consignesGenerateur, exemplesTitres } from "./consignes-generateur";
+import { languageDirective, type Language } from "@shared/language";
 
 function stripMarkdownJSON(raw: string | null | undefined): string {
   if (!raw) return '{}';
@@ -375,6 +377,7 @@ export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
     const projectId = (request as any).projectId || request.projectContext?.projectId || null;
     const successMode = request.projectContext?.activeGoalSuccessMode;
     const monetizationIntent = request.projectContext?.monetizationIntent;
+    const langue = await langueDuCompte(request.userId);
 
     const workspaceSection = request.recentWorkspaceNotes
       ? `\nRECENT THINKING NOTES (use for continuity):\n${request.recentWorkspaceNotes}\n`
@@ -395,7 +398,9 @@ export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
       const rules: string[] = [];
       if (summary.includes('morning')) rules.push('- Schedule deep_work tasks as morning, admin/social tasks as afternoon');
       if (summary.includes('smallest next step') || summary.includes('activation style: smallest')) {
-        rules.push('- Write task titles as the first specific physical action, not the outcome (e.g. "Open doc and write first 3 sentences" not "Write blog post")');
+        rules.push(langue === 'en'
+          ? '- Write task titles as the first specific physical action, not the outcome (e.g. "Open the offer doc and list the 3 promises" not "Work on the offer")'
+          : '- Write task titles as the first specific physical action, not the outcome (e.g. "Ouvrir le doc de l\'offre et lister les 3 promesses" not "Travailler l\'offre")');
       }
       if (summary.includes('avoid') && summary.includes('visibility')) {
         rules.push('- Avoid suggesting public-facing tasks unless strategically critical. If included, frame as low-stakes: "draft only, no publish required"');
@@ -417,11 +422,11 @@ export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
 
     const urgencyInstruction = (() => {
       if (monetizationIntent === 'revenue-now' && successMode === 'revenue') {
-        return 'GOAL MODE: Revenue-generating. Prioritize conversion, outreach, and commercial execution tasks.';
+        return 'GOAL MODE: Revenue-generating. Prioritize offer, pricing, sales-process and client-delivery tasks (prospecting itself runs in the prospecting pipeline).';
       } else if (monetizationIntent === 'none' || successMode === 'exploration') {
         return 'GOAL MODE: Exploratory. Use curiosity-driven language. No sales pressure. Focus on creating and experimenting.';
       } else if (successMode === 'visibility') {
-        return 'GOAL MODE: Visibility. Prioritize publishing, engagement, and reach-building activities.';
+        return 'GOAL MODE: Visibility. Prioritize positioning, editorial strategy and partnership decisions (content production itself comes from the content calendar).';
       } else if (successMode === 'consistency') {
         return 'GOAL MODE: Consistency. Prioritize sustainable habits and showing up regularly over big leaps.';
       } else if (successMode === 'learning') {
@@ -483,9 +488,9 @@ ${emotionalNote}${griefBlock}`,
       const mode = request.operatingMode?.toLowerCase();
       if (!mode) return '';
       const mixes: Record<string, string> = {
-        create:   'Task mix for CREATE mode: 40% deep creation (writing, building, designing), 30% strategy & planning, 30% research. Minimize outreach and admin this week.',
-        build:    'Task mix for BUILD mode: 50% execution (implementing, producing, delivering), 30% planning & coordination, 20% selective outreach to early adopters. Ship things.',
-        grow:     'Task mix for GROW mode: 50% direct outreach & relationship building, 30% visibility content, 20% offer refinement. Zero exploration or major new features.',
+        create:   'Task mix for CREATE mode: 40% deep creation (building, designing the offer or product), 30% strategy & planning, 30% research. Minimize admin this week.',
+        build:    'Task mix for BUILD mode: 60% execution (implementing, producing, delivering), 40% planning & coordination. Ship things.',
+        grow:     'Task mix for GROW mode: 40% offer & sales-process refinement, 30% client relationships and delivery, 30% partnerships and growth strategy. Zero exploration or major new features.',
         explore:  'Task mix for EXPLORE mode: 40% research & discovery, 40% small experiments & prototypes, 20% documentation. No premature execution of unvalidated ideas.',
         maintain: 'Task mix for MAINTAIN mode: 50% client & customer relationships, 30% operational & admin, 20% selective visibility content. No major new initiatives.',
       };
@@ -496,7 +501,7 @@ ${emotionalNote}${griefBlock}`,
 
     const prompt = `Your job is NOT to generate a generic to-do list. Your job is to identify the highest-leverage moves for this specific business for THE WEEK AHEAD — expressed as concrete, executable actions that reference the founder's actual offers, audience, voice, and positioning.
 
-IMPORTANT: Generate DIVERSE tasks that will be distributed across the week (Monday-Friday). Each task should be unique and different. DO NOT repeat similar tasks. Ensure variety in types of actions (content creation, outreach, admin, planning, etc.) and platforms.
+IMPORTANT: Generate DIVERSE tasks that will be distributed across the week (Monday-Friday). Each task should be unique and different. DO NOT repeat similar tasks. Ensure variety in types of actions (strategy, offer, product, client delivery, planning, admin, etc.).
 
 Every task must be so specific it could only apply to THIS person. If a task could apply to any business, it is wrong.
 
@@ -517,25 +522,19 @@ Before generating tasks, work through each step:
 
 STEP 1 — GOAL ANCHOR: Review the active goals indexed below.${goalsBlock}For each task, decide which goal index [0–N] it primarily advances. Tasks that don't advance any listed goal are NOT acceptable. What does a winning week look like for each goal?
 
-STEP 2 — HIGHEST LEVERAGE: Given this business's offers, audience pain point, and platform, what action categories move the needle most THIS WEEK? Ensure variety across: authority content | direct outreach | offer refinement | platform presence | relationship nurturing | operational | strategy.${operatingModeBlock}
+STEP 2 — HIGHEST LEVERAGE: Given this business's offers, audience pain point, and platform, what action categories move the needle most THIS WEEK? Ensure variety across: offer refinement | product | client delivery | relationship nurturing with existing clients and partners | operational | strategy.${operatingModeBlock}
 
-STEP 3 — TASK SELECTION: Pick exactly ${maxTasks} DIVERSE tasks that will be spread across the week. Each task must: (a) directly advance the goal, (b) reference the actual offer or positioning, (c) target the actual audience, (d) be on the right platform, (e) be DIFFERENT from other tasks. Ensure variety in task types and approaches. If any answer is no — rewrite.
+STEP 3 — TASK SELECTION: Pick up to ${maxTasks} DIVERSE tasks that will be spread across the week. Each task must: (a) directly advance the goal, (b) reference the actual offer or positioning, (c) serve the actual audience or clients, (d) be DIFFERENT from other tasks, (e) be neither content creation nor prospecting (see scope below). Ensure variety in task types and approaches. If any answer is no — rewrite.
 
-STEP 4 — SPECIFICITY CHECK: Every task title must name WHAT specifically (not "write content" — write what, about what angle, for which audience, on which platform). Tasks that could apply to any business fail this check.
+STEP 4 — SPECIFICITY CHECK: Every task title must name WHAT specifically (which offer, which client, which decision, which deliverable). Tasks that could apply to any business fail this check.
 
 STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${workDayEnd}. Deep work first (morning). Each task starts exactly when the previous ends (scheduledTime + estimatedDuration). Zero overlaps.
 
 ═══ WHAT NOT TO GENERATE ═══
 
-❌ "Create content about your business"
-❌ "Do outreach to potential clients"
-❌ "Prepare a strategy document"
-❌ "Review your week"
-❌ "Update your LinkedIn profile"
-
-✅ "Write 200-word LinkedIn post: angle — [specific editorial territory angle]. Open with [audience pain point] moment. Close with soft CTA to [offer]. Save as draft."
-✅ "DM 5 [platform] followers who engaged with your last post — acknowledge their comment, share one insight about [audience aspiration], zero pitch. List their names in the task."
-✅ "Draft the first 3 bullet points of [offer] sales page — transformation from [pain point] → [aspiration], in [brand voice] tone."
+${exemplesTitres(langue)}
+❌ Any content-creation task (post, carousel, reel, script, newsletter, visual) — the content calendar handles it.
+❌ Any prospecting task (identify prospects, DMs, outreach messages, follow-ups) — the prospecting pipeline handles it.
 
 ═══ OUTPUT FORMAT — JSON only ═══
 
@@ -547,7 +546,7 @@ STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${work
       "goalIndex": 0,
       "title": "Specific first-physical-action (not the outcome)",
       "description": "Step-by-step. Must reference the actual business: offer, audience pain point, platform, brand voice. Specific enough to execute without thinking.",
-      "type": "content|outreach|admin|planning",
+      "type": "admin|planning|execution",
       "category": "trust|conversion|engagement|planning|visibility",
       "priority": 1,
       "estimatedDuration": 45,
@@ -556,7 +555,7 @@ STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${work
       "canBeFragmented": false,
       "recommendedTimeOfDay": "morning|afternoon|evening|flexible",
       "scheduledTime": "09:00",
-      "workflowGroup": "strategy|content|product|client|prospection|admin|general",
+      "workflowGroup": "strategy|product|client|admin|general",
       "activationPrompt": "One sentence that gets them started in 30 seconds"
     }
   ],
@@ -570,12 +569,12 @@ STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${work
 ZERO-BASED INDEXES into the "tasks" array you just wrote above — not titles, not ids.
 "taskIndex" is the task that is blocked; "dependsOnIndex" is its prerequisite.
 
-Example: if tasks[0] is "Publish the LinkedIn post" and tasks[1] is "Write the LinkedIn post",
-then publishing depends on writing, so you emit:
+Example: if tasks[0] is "Send the proposal" and tasks[1] is "Price the proposal",
+then sending depends on pricing, so you emit:
   { "taskIndex": 0, "dependsOnIndex": 1, "relationType": "blocked_by" }
 
-Declare a dependency EVERY time one task produces what another one consumes: write before
-publish, shoot before edit, draft before send, research before decide, quote before invoice.
+Declare a dependency EVERY time one task produces what another one consumes: draft before
+send, research before decide, quote before invoice, deliver before invoice.
 An empty array means every task is genuinely independent — say so only when it is true.
 Never make a task depend on itself. Every index must exist in the tasks array.
 
@@ -584,10 +583,12 @@ Each description must be understandable on its own. Never refer to another task 
 A prerequisite (dependsOnIndex) must have an EARLIER scheduledDate/scheduledTime than the task
 that depends on it.
 
-RULES: Exactly ${maxTasks} tasks. scheduledTime must not overlap. taskEnergyType must be one
-of the 6 exact values. workflowGroup must be one of the 7 exact values listed above — never
-null. No markdown fences in output. goalIndex must be a valid index into the goals list
-(0 to N-1), or 0 if no goals provided.`;
+RULES: At most ${maxTasks} tasks — fewer is fine when the scope leaves less to do; never pad.
+scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. workflowGroup
+must be one of the 5 exact values listed above — never null. No markdown fences in output.
+goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.
+
+${consignesGenerateur(langue)}`;
 
     const raw = await callClaudeWithContext({
       userId: request.userId,
@@ -735,7 +736,7 @@ Respond with JSON:
 }
 
 // Classify a quick capture entry — includes emotional signals and behavioral insights
-export async function classifyCapture(text: string): Promise<{
+export async function classifyCapture(text: string, langue?: Language): Promise<{
   type: 'task' | 'idea' | 'note' | 'reminder' | 'emotional_signal' | 'behavioral_insight' | 'unknown';
   summary: string;
   isActionable: boolean;
@@ -747,7 +748,8 @@ export async function classifyCapture(text: string): Promise<{
       messages: [
         {
           role: "system",
-          content: "You are a behavioral intelligence classifier for an independent builder productivity tool. Classify user input and return valid JSON only.",
+          content: "You are a behavioral intelligence classifier for an independent builder productivity tool. Classify user input and return valid JSON only."
+            + (langue ? `\n\n${languageDirective(langue)}\nThe \"summary\" becomes the task title: keep it in the language of the account, close to the user's own words.` : ''),
         },
         {
           role: "user",
@@ -783,7 +785,7 @@ export async function classifyCapture(text: string): Promise<{
 }
 
 // Generate an activation prompt for a task given user operating profile
-export async function generateActivationPrompt(taskTitle: string, activationStyle?: string, avoidanceTriggers?: string[]): Promise<string | null> {
+export async function generateActivationPrompt(taskTitle: string, activationStyle?: string, avoidanceTriggers?: string[], langue?: Language): Promise<string | null> {
   try {
     const triggerContext = avoidanceTriggers?.length ? `User tends to avoid: ${avoidanceTriggers.join(', ')}.` : '';
     const styleContext = activationStyle ? `User's preferred activation style: ${activationStyle}.` : '';
@@ -792,7 +794,8 @@ export async function generateActivationPrompt(taskTitle: string, activationStyl
       messages: [
         {
           role: "system",
-          content: "You generate gentle, practical activation prompts for independent builders. Be brief, warm, and human. Max 120 chars.",
+          content: "You generate gentle, practical activation prompts for independent builders. Be brief, warm, and human. Max 120 chars."
+            + (langue ? `\n\n${languageDirective(langue)}` : ''),
         },
         {
           role: "user",
@@ -847,8 +850,11 @@ export interface MonthlyPlanResult {
 export async function generateMonthlyPlan(request: MonthlyPlanRequest): Promise<MonthlyPlanResult> {
   const { brandDna, projectContext, goals, existingTaskCount, operatingProfileSummary, targetMonth, todayFloor } = request;
   const projectId = projectContext?.projectId || null;
+  const langue = await langueDuCompte(request.userId);
+  // Libellé du mois dans la langue du compte : « octobre 2026 » glissé dans un prompt
+  // anglais suffisait à tirer la sortie vers l'anglais.
   const monthLabel = new Date(targetMonth.year, targetMonth.month - 1, 1)
-    .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    .toLocaleDateString(langue === 'en' ? 'en-US' : 'fr-FR', { month: 'long', year: 'numeric' });
 
   const goalsText = goals.length > 0
     ? goals.map(g => `- ${g.title} (${g.goalType} / ${g.successMode}${g.dueDate ? `, due ${g.dueDate}` : ''}): ${g.description || ''}`).join('\n')
@@ -868,7 +874,7 @@ ${brandDna.contentBandwidth ? `Content bandwidth: ${brandDna.contentBandwidth}` 
 EXISTING TASK COUNT FOR MONTH: ${existingTaskCount} tasks already exist this month. Generate additional tasks if < 15 total, or generate an enhanced plan.
 
 TASK REQUIREMENTS:
-Each task needs: title, description, type (content/outreach/admin/planning/execution), category, priority (1=highest, 5=lowest), estimatedDuration (minutes), taskEnergyType, setupCost (low/medium/high), canBeFragmented (boolean), recommendedTimeOfDay (morning/afternoon/evening/flexible), scheduledDate (YYYY-MM-DD), optionally workflowGroup and activationPrompt.
+Each task needs: title, description, type (admin/planning/execution), category, priority (1=highest, 5=lowest), estimatedDuration (minutes), taskEnergyType, setupCost (low/medium/high), canBeFragmented (boolean), recommendedTimeOfDay (morning/afternoon/evening/flexible), scheduledDate (YYYY-MM-DD), optionally workflowGroup and activationPrompt.
 IMPORTANT: Every task MUST include "taskEnergyType" set to exactly one of: deep_work, creative, admin, social, logistics, execution. Leaving it null or omitting it is NOT allowed.
 
 WORKFLOW BUNDLING:
@@ -885,7 +891,9 @@ Return JSON:
   "dependencies": [{ "taskIndex": N, "dependsOnIndex": M, "relationType": "blocked_by" }],
   "workflowSuggestions": [{ "label": "...", "taskIndexes": [...], "recommendedBlockMinutes": N }],
   "monthlyRationale": "2–3 sentence summary of the month's strategic focus and distribution logic"
-}`;
+}
+
+${consignesGenerateur(langue)}`;
 
   const raw = await callClaudeWithContext({
     userId: request.userId,
@@ -899,18 +907,20 @@ CRITICAL SCHEDULING RULE: Today is ${todayFloor}. You MUST NOT schedule any task
 
 Your monthly plans:
 - Distribute work realistically across working days (Mon–Fri), leaving weekends light
-- Respect workflow momentum — phases progress logically (research → draft → production → distribution)
+- Respect workflow momentum — phases progress logically (research → decision → build → delivery)
 - Spread tasks evenly across the remaining days of the month starting from ${todayFloor}; do not front-load onto a single day
 - Limit deep_work tasks to max 1–2 per calendar day
 - Limit total tasks per day to max 4–5 to avoid overloading any single day
 - Build dependency chains for multi-step workflows — prerequisites must have earlier scheduledDate than dependents
-- Generate 15–25 tasks total across the month
+- Generate up to 15–25 tasks across the month — fewer if the scope leaves less to do; never pad
 - Every task MUST have a scheduledDate (YYYY-MM-DD) on or after ${todayFloor} in ${monthLabel}
 
 Always respond with valid JSON only.`,
   });
 
   const result = JSON.parse(stripMarkdownJSON(raw));
+  // Garde de sortie : le prompt est en anglais, le modèle l'imite sur une partie des titres.
+  await imposerLangueDuCompte(result.tasks, request.userId);
   return {
     tasks: result.tasks || [],
     dependencies: result.dependencies || [],
@@ -944,6 +954,7 @@ export interface WeeklyRefinementResult {
 export async function generateWeeklyRefinement(request: WeeklyRefinementRequest): Promise<WeeklyRefinementResult> {
   const { brandDna, projectContext, goals, completedThisWeek, incompleteThisWeek, blockedChains, operatingProfileSummary, weekStart, weekEnd, todayFloor } = request;
   const projectId = projectContext?.projectId || null;
+  const langue = await langueDuCompte(request.userId);
 
   const completionRate = completedThisWeek.length / Math.max(completedThisWeek.length + incompleteThisWeek.length, 1);
   const nextWeekStart = new Date(weekStart);
@@ -976,7 +987,9 @@ Return JSON:
   "reschedules": [{ "taskId": N, "newDate": "YYYY-MM-DD" }],
   "newTasks": [...up to 3 tasks with all required fields including scheduledDate and taskEnergyType (must be one of: deep_work, creative, admin, social, logistics, execution)...],
   "weeklyRationale": "1–2 sentence summary of refinement decisions"
-}`;
+}
+
+${consignesGenerateur(langue)}`;
 
   const raw = await callClaudeWithContext({
     userId: request.userId,
@@ -1001,6 +1014,7 @@ Always respond with valid JSON only.`,
   });
 
   const result = JSON.parse(stripMarkdownJSON(raw));
+  await imposerLangueDuCompte(result.newTasks, request.userId);
   return {
     reschedules: result.reschedules || [],
     newTasks: result.newTasks || [],
