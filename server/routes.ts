@@ -27,7 +27,7 @@ import {
   getMemoryContext,
 } from "./services/openai";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "./services/claude";
-import { imposerLangueDuCompte } from "./services/garde-langue";
+import { imposerLangueDuCompte, imposerLangue, langueDuCompte, traducteurClaude } from "./services/garde-langue";
 import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
@@ -185,6 +185,7 @@ import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner
 import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
+import { filtrerTachesGenerees } from "./services/filtre-taches-generees";
 import {
   getAuthUrl,
   exchangeCodeForTokens,
@@ -2204,7 +2205,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
       const generatedTasks = await generateGoalTasks(userId, goalId);
       const saved: any[] = [];
-      for (const t of generatedTasks) {
+      for (const t of filtrerTachesGenerees(generatedTasks, `objectif ${goalId}`)) {
         const task = await storage.createTask({
           userId,
           projectId: goal.projectId,
@@ -3113,7 +3114,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       if (!rawCondition || typeof rawCondition !== 'string') {
         return res.status(400).json({ message: "rawCondition is required" });
       }
-      const parsed = await parseMilestoneTrigger(rawCondition, { projectName });
+      const parsed = await parseMilestoneTrigger(rawCondition, { projectName }, req.userId);
       res.json(parsed);
     } catch (error) {
       console.error("Error previewing milestone trigger:", error);
@@ -3703,7 +3704,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               routedTo: `milestone:${trigger.id}`,
               aiSummary: entry.content.substring(0, 100),
             });
-            const parsed = await parseMilestoneTrigger(entry.content);
+            const parsed = await parseMilestoneTrigger(entry.content, undefined, userId);
             await storage.updateMilestoneTrigger(trigger.id, {
               conditionType: parsed.conditionType,
               conditionSummary: parsed.conditionSummary,
@@ -3725,7 +3726,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       (async () => {
         try {
           const { classifyCapture, generateActivationPrompt } = await import('./services/openai.js');
-          const result = await classifyCapture(entry.content);
+          const langueCapture = await langueDuCompte(userId);
+          const result = await classifyCapture(entry.content, langueCapture);
           const updates: Record<string, any> = {
             classifiedType: result.type,
             aiSummary: result.summary,
@@ -3741,9 +3743,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               activationPrompt = await generateActivationPrompt(
                 result.summary || entry.content.substring(0, 100),
                 profile.activationStyle || undefined,
-                profile.avoidanceTriggers || undefined
+                profile.avoidanceTriggers || undefined,
+                langueCapture,
               );
             }
+            // Garde de sortie : le résumé devient le titre de la tâche.
+            const pourLangueCapture = { title: result.summary, activationPrompt };
+            await imposerLangue([pourLangueCapture], langueCapture, traducteurClaude(userId)).catch(() => 0);
+            result.summary = pourLangueCapture.title || result.summary;
+            activationPrompt = pourLangueCapture.activationPrompt ?? activationPrompt;
+            updates.aiSummary = result.summary;
             const newTask = await storage.createTask({
               title: result.summary || entry.content.substring(0, 100),
               description: entry.content,
@@ -4740,8 +4749,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // index d'origine (`__srcIndex`) AVANT le rééquilibrage et le filtre `_unschedulable` :
       // le filtre retire des tâches et décale tous les index suivants, donc `savedTasks[i]`
       // relierait des paires arbitraires. Même technique que l'auto-planner.
+      // Contenu et prospection écartés APRÈS la pose de `__srcIndex` (dépendances intactes).
       const finalTasks = rebalanceTasksForward(
-        aiResult.tasks.map((t: any, __srcIndex: number) => ({ ...t, __srcIndex })),
+        filtrerTachesGenerees(aiResult.tasks.map((t: any, __srcIndex: number) => ({ ...t, __srcIndex })), 'generate-monthly'),
         floor, monthEnd, 5, undefined, 0, replanWorkDays,
       ).filter((t: any) => !t._unschedulable);
 
@@ -4917,7 +4927,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       // Create new fill-in tasks
       const newTasksSaved: any[] = [];
-      for (const taskData of (aiResult.newTasks || []).slice(0, 3)) {
+      for (const taskData of filtrerTachesGenerees((aiResult.newTasks || []).slice(0, 3), 'weekly-refinement')) {
         try {
           const safeDate = clampToFloor(taskData.scheduledDate || weekStart, floor);
           const task = await storage.createTask({
@@ -5504,14 +5514,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           }
         }
 
-        const pending: PendingTask[] = rawTasksToCreate.map((rt: any, i: number) => ({
+        // Filtre APRÈS l'indexation : `taskIndex` reste l'indice d'origine dans la sortie IA,
+        // seule clé qui relie les dépendances déclarées aux tâches réellement créées.
+        // Contenu et prospection viennent du calendrier éditorial et du pipeline, pas d'ici.
+        const pending: PendingTask[] = filtrerTachesGenerees(rawTasksToCreate.map((rt: any, i: number) => ({
           taskData: normaliseTaskData(rt),
           scheduledDate: todayStr,
           projId: proj.id,
           aiResponseAny,
           taskIndex: i,
           projectBatchKey,
-        }));
+        })), `generate-daily projet ${proj.id ?? 'général'}`, (p: PendingTask) => p.taskData);
 
         return {
           pending,
@@ -5566,6 +5579,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           });
           milestoneNotes.push(`Milestone triggered: "${triggered.trigger.conditionSummary}" (${triggered.confidence}% confidence, matched: ${triggered.matchedKeywords.join(', ')})`);
 
+          const debloquees: PendingTask[] = [];
           for (let i = 0; i < tasksToUnlock.length; i++) {
             const t = tasksToUnlock[i];
             const taskData = normaliseTaskData({
@@ -5580,7 +5594,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               canBeFragmented: true,
               recommendedTimeOfDay: 'flexible',
             });
-            allPendingTasks.push({
+            debloquees.push({
               taskData: { ...taskData, source: 'milestone_trigger', milestoneTriggerId: triggered.trigger.id },
               scheduledDate: todayStr,
               projId: triggered.trigger.projectId,
@@ -5589,6 +5603,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               projectBatchKey: triggered.trigger.projectId?.toString() || 'general',
             });
           }
+          const debloqueesGardees = filtrerTachesGenerees(debloquees, `jalon déclenché ${triggered.trigger.id}`, (p: PendingTask) => p.taskData);
+          // Tâches enregistrées au moment où la règle a été écrite, parfois en anglais.
+          await imposerLangueDuCompte(debloqueesGardees.map((p) => p.taskData), userId);
+          allPendingTasks.push(...debloqueesGardees);
         }
       } catch (milestoneErr) {
         console.error("Milestone trigger check failed (non-fatal):", milestoneErr);
@@ -6837,7 +6855,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       });
 
       res.json({
-        suggestedTasks: aiResult.tasks,
+        suggestedTasks: filtrerTachesGenerees(aiResult.tasks, 'replan'),
         reasoning: aiResult.reasoning,
         blockedCount: blockedTaskIds.size,
         deferredCount: repeatedlyDeferred.length,

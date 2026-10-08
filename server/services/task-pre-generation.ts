@@ -7,6 +7,7 @@ import { nayaIntelligence } from './naya-intelligence';
 import { companyResearchService } from './company-research';
 import { storage } from '../storage';
 import { imposerLangueDuCompte } from './garde-langue';
+import { filtrerTachesGenerees } from './filtre-taches-generees';
 import type { BrandDnaInput } from './openai';
 
 export class TaskPreGenerationService {
@@ -47,14 +48,16 @@ export class TaskPreGenerationService {
         inspiration: brandDna.inspiration,
       }, []);
       
-      // Create strategic welcome tasks based on analysis
-      const welcomeTasks = [
+      // Create strategic welcome tasks based on analysis. Contenu et prospection écartés :
+      // ils viennent du calendrier éditorial et du pipeline de prospection.
+      const welcomeTasks = filtrerTachesGenerees([
         ...taskResponse.tasks,
         ...this.generateOnboardingTasks(brandDna, companyProfile),
         ...this.generateQuickWinTasks(brandDna)
-      ];
-      
-      // Les modèles ci-dessous sont écrits en anglais : on les remet dans la langue du compte.
+      ], 'bienvenue');
+
+      // Modèles écrits en français (langue par défaut) : la garde les remet dans la langue
+      // du compte, y compris les tâches de naya-intelligence, rédigées en anglais.
       await imposerLangueDuCompte(welcomeTasks, userId);
 
       // Save tasks to database
@@ -89,8 +92,8 @@ export class TaskPreGenerationService {
     // Profile optimization tasks
     if (companyProfile?.onlinePresence.gaps?.length > 0) {
       tasks.push({
-        title: "Complete your online presence audit",
-        description: `Based on analysis, focus on: ${companyProfile.onlinePresence.gaps.slice(0, 2).join(', ')}. This will strengthen your professional credibility.`,
+        title: "Terminer l'audit de ta présence en ligne",
+        description: `D'après l'analyse, concentre-toi sur : ${companyProfile.onlinePresence.gaps.slice(0, 2).join(', ')}. C'est ce qui renforcera ta crédibilité professionnelle.`,
         type: "optimization",
         category: "foundation",
         priority: 4
@@ -100,8 +103,8 @@ export class TaskPreGenerationService {
     // Platform-specific setup
     if (!brandDna.linkedinProfile && brandDna.businessModel?.includes('B2B')) {
       tasks.push({
-        title: "Set up professional LinkedIn presence",
-        description: `For ${brandDna.businessType} targeting ${brandDna.targetAudience}, LinkedIn is essential for credibility and lead generation.`,
+        title: "Mettre en place ton profil LinkedIn professionnel",
+        description: `Pour ${brandDna.businessType} qui s'adresse à ${brandDna.targetAudience}, LinkedIn est essentiel pour ta crédibilité.`,
         type: "setup",
         category: "platform",
         priority: 3
@@ -110,8 +113,8 @@ export class TaskPreGenerationService {
     
     if (!brandDna.instagramHandle && brandDna.businessType?.includes('creative')) {
       tasks.push({
-        title: "Create Instagram business account",
-        description: `Visual storytelling on Instagram can help showcase your ${brandDna.uniquePositioning} to ${brandDna.targetAudience}.`,
+        title: "Ouvrir ton compte Instagram professionnel",
+        description: `Instagram t'aidera à montrer en images ${brandDna.uniquePositioning} à ${brandDna.targetAudience}.`,
         type: "setup", 
         category: "platform",
         priority: 2
@@ -120,8 +123,8 @@ export class TaskPreGenerationService {
     
     // Strategic foundation tasks
     tasks.push({
-      title: "Define your content calendar structure",
-      description: `Plan weekly content themes around your core message: ${brandDna.uniquePositioning}. This ensures consistent authority building.`,
+      title: "Définir la structure de ton calendrier éditorial",
+      description: `Pose les thèmes de la semaine autour de ton message central : ${brandDna.uniquePositioning}. C'est ce qui rend ta prise de parole régulière.`,
       type: "planning",
       category: "content",
       priority: 3
@@ -130,25 +133,19 @@ export class TaskPreGenerationService {
     return tasks;
   }
   
+  // Ni prospection ni contenu ici : ils viennent du pipeline et du calendrier éditorial.
   private generateQuickWinTasks(brandDna: any) {
     return [
       {
-        title: "Engage with 5 ideal prospects today",
-        description: `Find ${brandDna.targetAudience} discussing ${brandDna.corePainPoint} and provide valuable insights. Build relationships before pitching.`,
-        type: "outreach",
-        category: "engagement",
-        priority: 4
-      },
-      {
-        title: "Create your signature story",
-        description: `Craft a 2-minute story about how you discovered ${brandDna.uniquePositioning}. This becomes your authority-building foundation.`,
-        type: "content",
+        title: "Formuler ton histoire fondatrice en 5 phrases",
+        description: `Note en 5 phrases comment tu en es venue à ${brandDna.uniquePositioning}. Elle servira de socle à ton positionnement et à ton offre.`,
+        type: "planning",
         category: "messaging",
         priority: 3
       },
       {
-        title: "Set up basic lead tracking system",
-        description: `Create a simple system to track conversations with potential clients. Consistent follow-up drives 60% of conversions.`,
+        title: "Mettre en place un suivi simple de tes échanges clients",
+        description: `Un tableau simple pour suivre tes conversations avec tes clients et futurs clients : qui, où vous en êtes, prochaine étape.`,
         type: "optimization",
         category: "systems",
         priority: 2
@@ -159,36 +156,32 @@ export class TaskPreGenerationService {
   private async generateFallbackTasks(userId: string, brandDna: any) {
     console.log('Generating fallback welcome tasks...');
     
+    // Modèles en français (langue par défaut), remis dans la langue du compte par la garde.
+    // Ni prospection ni création de contenu : pipeline et calendrier éditorial s'en chargent.
     const fallbackTasks = [
       {
-        title: "Welcome to Naya! Start with your content strategy",
-        description: `Create your first piece of content addressing ${brandDna.corePainPoint} for ${brandDna.targetAudience}. Focus on providing immediate value.`,
-        type: "content",
+        title: "Bienvenue dans Naya ! Clarifie ce que tu résous pour ton audience",
+        description: `Écris en une phrase le problème que tu règles (${brandDna.corePainPoint}) et pour qui (${brandDna.targetAudience}). Tout le reste de Naya s'appuiera dessus.`,
+        type: "planning",
         category: "foundation",
         priority: 5
       },
       {
-        title: "Identify 10 ideal prospects to connect with",
-        description: `Research ${brandDna.targetAudience} on ${brandDna.platformPriority}. Look for those discussing challenges related to ${brandDna.corePainPoint}.`,
-        type: "outreach", 
-        category: "prospecting",
-        priority: 4
-      },
-      {
-        title: "Optimize your bio/profile for conversions", 
-        description: `Update your ${brandDna.platformPriority} profile to clearly communicate how you help ${brandDna.targetAudience} achieve ${brandDna.audienceAspiration}.`,
+        title: "Revoir ta bio pour dire clairement qui tu aides",
+        description: `Mets à jour ton profil ${brandDna.platformPriority} pour dire clairement comment tu aides ${brandDna.targetAudience} à atteindre ${brandDna.audienceAspiration}.`,
         type: "optimization",
         category: "profile",
         priority: 3
       },
       {
-        title: "Plan your week's content themes",
-        description: `Map out 3-4 content themes that demonstrate your ${brandDna.uniquePositioning} and build trust with your audience.`,
+        title: "Choisir 3 ou 4 thèmes éditoriaux pour ton calendrier",
+        description: `Choisis 3 ou 4 thèmes qui montrent ${brandDna.uniquePositioning} et installent la confiance avec ton audience.`,
         type: "planning",
-        category: "content",
+        category: "strategy",
         priority: 2
       }
     ];
+    await imposerLangueDuCompte(fallbackTasks, userId);
     
     for (const task of fallbackTasks) {
       await storage.createTask({

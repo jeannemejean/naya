@@ -87,3 +87,39 @@ describe("une seule source de vérité pour la langue de génération", () => {
     expect(infractions, `\n${infractions.join("\n")}\n`).toEqual([]);
   });
 });
+
+/**
+ * Chaque générateur qui écrit des titres de tâches passe par la garde de sortie.
+ *
+ * 9 octobre 2026 : la garde n'était appelée que par deux générateurs. Le plan du mois, le
+ * réajustement de la semaine, le plan d'un objectif, les tâches d'un jalon et la capture
+ * écrivaient leurs titres en anglais sans contrôle (« Draft DM outreach template… »).
+ */
+const GENERATEURS_GARDES: { fichier: string; fonction: string }[] = [
+  { fichier: "server/services/openai.ts", fonction: "generateDailyTasks" },
+  { fichier: "server/services/openai.ts", fonction: "generateMonthlyPlan" },
+  { fichier: "server/services/openai.ts", fonction: "generateWeeklyRefinement" },
+  { fichier: "server/services/goal-tasks.ts", fonction: "generateGoalTasks" },
+  { fichier: "server/services/milestone-intelligence.ts", fonction: "parseMilestoneTrigger" },
+];
+
+function corpsDeFonction(contenu: string, fonction: string): string {
+  const debut = contenu.indexOf(`export async function ${fonction}(`);
+  if (debut === -1) throw new Error(`${fonction} introuvable`);
+  const suivante = contenu.indexOf("\nexport ", debut + 1);
+  return contenu.slice(debut, suivante === -1 ? undefined : suivante);
+}
+
+describe("garde de sortie appliquée à chaque générateur de tâches", () => {
+  it.each(GENERATEURS_GARDES)("$fonction passe par imposerLangueDuCompte", ({ fichier, fonction }) => {
+    const corps = corpsDeFonction(readFileSync(join(RACINE, fichier), "utf8"), fonction);
+    expect(corps).toMatch(/imposerLangueDuCompte\(/);
+  });
+
+  it("la capture convertie en tâche passe par la garde", () => {
+    const routes = readFileSync(join(RACINE, "server/routes.ts"), "utf8");
+    const debut = routes.indexOf("const result = await classifyCapture(");
+    expect(debut).toBeGreaterThan(-1);
+    expect(routes.slice(debut, debut + 3000)).toMatch(/imposerLangue(?:DuCompte)?\(/);
+  });
+});
