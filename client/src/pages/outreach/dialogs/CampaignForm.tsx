@@ -1,6 +1,7 @@
 // Formulaire de création (et édition) de campagne de prospection — repris quasi-verbatim de
 // l'ancien client/src/pages/outreach.tsx (CampaignForm, ~lignes 1308-1421). POSTe directement
 // sur /api/prospection/campaigns et invalide le cache campagnes au succès.
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
@@ -19,6 +20,7 @@ interface CampaignFormProps {
 
 export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
     name: initial?.name || '',
@@ -27,7 +29,8 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
     digitalLevel: initial?.digitalLevel || 'tous',
     channel: initial?.channel || 'linkedin',
     offer: initial?.offer || '',
-    prospectsPerDay: String(initial?.prospectsPerDay || '3'),
+    // Vide = Naya le calcule à partir des objectifs du projet (server: prospectsParJourDerive).
+    prospectsPerDay: initial?.prospectsPerDay ? String(initial.prospectsPerDay) : '',
     buyingSignals: initial?.buyingSignals || '',
     campaignBrief: initial?.campaignBrief || '',
     messageAngle: initial?.messageAngle || '',
@@ -46,7 +49,8 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    createCampaign.mutate({ ...form, prospectsPerDay: Number(form.prospectsPerDay) });
+    const ppd = Number(form.prospectsPerDay);
+    createCampaign.mutate({ ...form, prospectsPerDay: Number.isFinite(ppd) && ppd > 0 ? ppd : null });
   };
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -107,6 +111,7 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
             min="1"
             max="20"
             value={form.prospectsPerDay}
+            placeholder={t('outreach.prospectsPerDayAuto')}
             onChange={(e) => set('prospectsPerDay', e.target.value)}
             className="h-8 text-sm"
           />

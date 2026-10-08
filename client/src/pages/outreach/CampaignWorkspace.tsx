@@ -11,6 +11,9 @@ import SequenceTab from './SequenceTab';
 import ProspectsTab from './ProspectsTab';
 import PreviewTab from './PreviewTab';
 import ResultsTab from './ResultsTab';
+import { ongletDepuisRecherche } from '@/lib/lien-tache';
+
+const ONGLETS = ['sequence', 'prospects', 'preview', 'results'] as const;
 
 interface CampaignWorkspaceProps {
   id: number;
@@ -80,7 +83,11 @@ export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspa
         </header>
 
         <div className="flex-1 overflow-hidden flex flex-col">
-          <Tabs defaultValue="sequence" className="flex-1 overflow-hidden flex flex-col">
+          {/* ?onglet=prospects : ouvert depuis la tâche « Valider les messages préparés par Naya ». */}
+          <Tabs
+            defaultValue={ongletDepuisRecherche(typeof window !== 'undefined' ? window.location.search : '', ONGLETS, 'sequence')}
+            className="flex-1 overflow-hidden flex flex-col"
+          >
             <div className="border-b border-border bg-white px-6 flex-shrink-0">
               <TabsList className="bg-transparent h-auto p-0 gap-1">
                 <TabsTrigger

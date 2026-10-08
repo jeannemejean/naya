@@ -71,7 +71,13 @@ describe("POINT 1 — contexte : bon Brand DNA + champs ressuscités + prompt de
     const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
     expect(prompt).toContain("CIBLAGE (impératif)");
     expect(prompt).toContain("ACHÈTENT ou PROGRAMMENT");
-    expect(prompt).toContain('PAS "responsable réseaux sociaux"');
+  });
+
+  it("aucun exemple d'agence codé en dur dans le prompt (Naya est sur mesure)", async () => {
+    await generateLeadCriteria("u1", 3);
+    const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
+    expect(prompt).not.toMatch(/speaker événements digitaux/);
+    expect(prompt).not.toMatch(/responsable réseaux sociaux/);
   });
 
   it("fallback sur le DNA global si le projet n'a pas de DNA propre", async () => {
@@ -168,5 +174,55 @@ describe("prompt de génération — bloc EXCLUSIONS OBLIGATOIRES (concurrents d
     expect(prompt).toContain("Inclure : les entreprises qui ACHÈTENT ces services");
     expect(prompt).toContain("Type de prestation VENDUE par le projet");
     expect(prompt).toContain("agence social media pour marques");
+  });
+});
+
+describe("VOLUME — le prompt demande assez de requêtes, variées, pour une cible chiffrée", () => {
+  it("demande 8 à 12 requêtes Google X-ray, de la plus large à la plus précise", async () => {
+    await generateLeadCriteria("u1", 3);
+    const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toMatch(/entre 8 et 12 requêtes Google/i);
+    expect(prompt).toMatch(/de la plus LARGE à la plus PRÉCISE/);
+  });
+
+  it("interdit la syntaxe Sales Navigator dans les requêtes Google", async () => {
+    await generateLeadCriteria("u1", 3);
+    const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain("jamais AND ni NOT");
+  });
+
+  it("transmet la cible de volume au modèle", async () => {
+    await generateLeadCriteria("u1", 3, { cible: 80, raisonCible: "8 prospects par jour × 10 jours ouvrés" });
+    const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain("OBJECTIF DE VOLUME : 80 nouveaux prospects");
+    expect(prompt).toContain("8 prospects par jour × 10 jours ouvrés");
+  });
+
+  it("transmet les requêtes déjà utilisées pour obtenir des angles NOUVEAUX", async () => {
+    await generateLeadCriteria("u1", 3, { requetesDejaUtilisees: ['site:linkedin.com/in "directeur de conférence"'] });
+    const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain("REQUÊTES DÉJÀ UTILISÉES");
+    expect(prompt).toContain('site:linkedin.com/in "directeur de conférence"');
+  });
+
+  it("demande le marché de recherche (pays ISO + langue) et le renvoie s'il est valide", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({ ...JSON.parse(VALID_JSON), searchCountry: "BE", searchLanguage: "fr" }),
+      stopReason: "end_turn",
+    });
+    const icp = await generateLeadCriteria("u1", 3);
+    const prompt = (claude.callClaudeDetailed as any).mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain('"searchCountry"');
+    expect(icp.searchCountry).toBe("BE");
+    expect(icp.searchLanguage).toBe("fr");
+  });
+
+  it("ignore un pays de recherche illisible", async () => {
+    (claude.callClaudeDetailed as any).mockResolvedValue({
+      text: JSON.stringify({ ...JSON.parse(VALID_JSON), searchCountry: "Belgique" }),
+      stopReason: "end_turn",
+    });
+    const icp = await generateLeadCriteria("u1", 3);
+    expect(icp.searchCountry).toBeUndefined();
   });
 });

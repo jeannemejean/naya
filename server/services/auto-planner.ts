@@ -32,6 +32,7 @@ import { debutEffectifDePlanification } from './planning-start';
 import { remplacerReferencesNumerotees } from "./references-taches";
 import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
+import { synchroniserValidationsProspection } from "./prospection-verification";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -713,6 +714,7 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
             console.error(`[AutoPlanner] Generate failed for ${userId} on ${date}:`, e.message)
           );
         }
+        await synchroniserValidationsProspection(userId, dates[0] ?? debutUtilisateur).catch(e => console.error(`[AutoPlanner] Validation prospection failed for ${userId}:`, e.message));
 
         processed++;
       } catch (err: any) {

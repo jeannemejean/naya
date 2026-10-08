@@ -35,6 +35,7 @@ import LeadDetail from './LeadDetail';
 import AddLeadForm from './dialogs/AddLeadForm';
 import LeadFinderDialog from './dialogs/LeadFinderDialog';
 import type { Lead } from '@shared/schema';
+import { resumeEnrolement } from './enrolement-message';
 
 interface ProspectsTabProps {
   campaignId: number;
@@ -106,8 +107,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
         clearSelection();
         toast({
           title: 'Séquence',
-          description: `${res.enrolled} prospect${res.enrolled > 1 ? 's' : ''} enrôlé${res.enrolled > 1 ? 's' : ''}`
-            + (res.skipped ? `, ${res.skipped} déjà en cours ou hors campagne.` : '.'),
+          description: resumeEnrolement(res),
         });
       },
       onError: () => toast({ title: 'Erreur', description: "Impossible d'enrôler la sélection.", variant: 'destructive' }),
@@ -132,7 +132,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
       onSuccess: (data) => {
         toast({
           title: 'Campagne lancée',
-          description: `${data.enrolled} prospect${data.enrolled > 1 ? 's' : ''} enrôlé${data.enrolled > 1 ? 's' : ''}.`,
+          description: resumeEnrolement(data),
         });
       },
       onError: () => toast({ title: 'Erreur', description: 'Impossible de lancer la campagne.', variant: 'destructive' }),

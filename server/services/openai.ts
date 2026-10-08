@@ -1180,7 +1180,8 @@ export interface GeneratedCampaignProspection {
   campaignBrief: string;     // proposition en une phrase
   messageAngle: string;      // angle aligné avec le coreMessage de la campagne
   buyingSignals: string;     // critères pour identifier un prospect prêt
-  prospectsPerDay: number;   // 1-5 recommandé
+  /** Ignoré : le rythme est dérivé des objectifs du projet (prospection-volume.ts). */
+  prospectsPerDay?: number;
   offer: string;             // offre concrète à proposer
 }
 
@@ -1304,7 +1305,7 @@ Return ONLY this JSON object (no preamble, no markdown, no contentPlan, no tasks
 
 Generate the right number of phases for the duration (see guidance). Generate 3-5 KPIs.
 The "prospection" field: null if the objective is purely content/visibility/authority; otherwise an inline object:
-{"needed": true, "rationale": "...", "targetSector": "...", "channel": "linkedin|email|both", "digitalLevel": "fort|faible|tous", "campaignBrief": "...", "messageAngle": "...", "buyingSignals": "...", "prospectsPerDay": 3, "offer": "..."}`;
+{"needed": true, "rationale": "...", "targetSector": "...", "channel": "linkedin|email|both", "digitalLevel": "fort|faible|tous", "campaignBrief": "...", "messageAngle": "...", "buyingSignals": "...", "offer": "..."}`;
 
   const { text, stopReason } = await callClaudeDetailed({
     model: CLAUDE_MODELS.smart,
