@@ -138,6 +138,19 @@ export const LINKEDIN_MAX_CONSECUTIVE_FAILURES = 5;
 // base pour rien » et « reprendre vite après une levée manuelle ».
 export const LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS = 60 * 60_000;
 
+// Délai avant de retenter une étape dont le message généré reste TROP PROCHE d'un message
+// antérieur au même prospect (generateStepMessage → `tropProche: true`, après une
+// régénération ratée). L'étape n'est PAS envoyée et reste en attente ; sans ce recul, le
+// moteur paierait deux appels IA à chaque minute pour le même lead.
+export const TROP_PROCHE_RETRY_BACKOFF_MS = 60 * 60_000;
+
+function stepForMessage(s: any) {
+  return {
+    id: s.id, channel: s.channel, intention: s.intention ?? null,
+    condition: s.condition ?? "always", bodyTemplate: s.bodyTemplate ?? null,
+  };
+}
+
 export interface LinkedInFailureOutcome {
   abandon: boolean;
   consecutiveFailures: number;
@@ -703,9 +716,22 @@ export async function runProspectionSender(): Promise<void> {
         const gen = await generateStepMessage(state.userId, {
           lead,
           campaign: { ...campaign, founderName },
-          step: { id: step.id, channel: step.channel, intention: (step as any).intention ?? null },
+          step: stepForMessage(step),
+          steps: steps.map(stepForMessage),
           useCache: true, instructions,
         });
+        if (gen.tropProche) {
+          // Message trop proche d'un message déjà rédigé/envoyé à ce prospect (même après une
+          // régénération) : on n'envoie RIEN, l'étape reste en attente (currentStep inchangé)
+          // et sera retentée après TROP_PROCHE_RETRY_BACKOFF_MS. Jamais le contenu dans les logs.
+          console.warn(
+            `[prospection] message trop proche d'un message antérieur — lead ${lead.id}, étape ${step.id} : non envoyé, nouvel essai dans ${TROP_PROCHE_RETRY_BACKOFF_MS / 60_000} min`,
+          );
+          await storage.updateLeadSequenceState(state.leadId, {
+            nextRunAt: new Date(now.getTime() + TROP_PROCHE_RETRY_BACKOFF_MS),
+          } as any).catch(() => {});
+          continue;
+        }
         const subject = gen.subject || "";
         const body = gen.body;
 

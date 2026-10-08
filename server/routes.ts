@@ -8453,17 +8453,25 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const instructions = combineInstructions((prefs as any)?.messageInstructions, (campaign as any)?.messageInstructions);
 
       const rendered: any[] = [];
-      for (const step of steps) {
+      const allSteps = steps.map((s) => ({
+        id: s.id, channel: s.channel, intention: s.intention ?? null,
+        condition: s.condition ?? "always", bodyTemplate: (s as any).bodyTemplate ?? null,
+      }));
+      // Textes produits plus haut dans CET aperçu (y compris ceux signalés trop proches,
+      // qui ne sont pas en cache) : l'étape suivante doit s'en distinguer aussi.
+      const produits: string[] = [];
+      for (const [i, step] of steps.entries()) {
         try {
           const msg = await generateStepMessage(userId, {
             lead, campaign: campaignWithFounder,
-            step: { id: step.id, channel: step.channel, intention: step.intention ?? null },
+            step: allSteps[i], steps: allSteps, previousTexts: [...produits],
             useCache: !force, instructions,
           });
+          produits.push(msg.body);
           rendered.push({
             stepOrder: step.stepOrder, channel: step.channel, delayDays: step.delayDays,
             intention: step.intention ?? null, condition: step.condition ?? "always",
-            subject: msg.subject, body: msg.body, error: false,
+            subject: msg.subject, body: msg.body, error: false, tropProche: !!msg.tropProche,
           });
         } catch (stepError: any) {
           // Une étape ratée (sortie IA vide/imparsable — non mise en cache) ne doit pas faire

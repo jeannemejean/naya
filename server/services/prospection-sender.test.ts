@@ -378,6 +378,40 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     expect(sendLinkedInStep).not.toHaveBeenCalled();
   });
 
+  it("message trop proche (tropProche) : AUCUN envoi, étape non avancée, recul de nextRunAt, log sans contenu", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Texte secret du prospect", tropProche: true });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await runProspectionSender();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sendLinkedInStep).not.toHaveBeenCalled();
+    expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+    expect(storage.claimStepSend).not.toHaveBeenCalled();
+    for (const call of (storage.updateLeadSequenceState as any).mock.calls) {
+      expect(call[1]).not.toHaveProperty("currentStep");
+      expect(call[1]).toHaveProperty("nextRunAt");
+    }
+    expect(storage.updateLeadSequenceState).toHaveBeenCalledTimes(1);
+    const logs = warn.mock.calls.map((c) => String(c[0]));
+    const ligne = logs.find((l) => l.includes("[prospection] message trop proche"));
+    expect(ligne).toBeDefined();
+    expect(ligne).toContain("lead 1");
+    expect(ligne).toContain("étape 100");
+    expect(logs.join("\n")).not.toContain("Texte secret du prospect");
+  });
+
+  it("transmet toute la séquence à generateStepMessage (rôle LinkedIn + textes antérieurs)", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+    await runProspectionSender();
+
+    const opts = (generateStepMessage as any).mock.calls[0][1];
+    expect(opts.steps).toEqual([expect.objectContaining({ id: 100, channel: expect.any(String), condition: expect.any(String) })]);
+    expect(opts.step).toEqual(expect.objectContaining({ id: 100 }));
+  });
+
   describe("garde d'idempotence", () => {
     it("étape déjà réservée : n'envoie RIEN mais fait avancer la séquence", async () => {
       (storage.claimStepSend as any).mockResolvedValue(false);
