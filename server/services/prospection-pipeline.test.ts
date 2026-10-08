@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  classifySector,
-  searchMethodForSector,
-  buildSearchStrategy,
-} from "./prospection-strategy";
+import { buildSearchStrategy } from "./prospection-strategy";
 import {
   classifyProjectType,
   auditSectionsForProjectType,
@@ -38,43 +34,43 @@ const ICP = {
   googleQueries: ['site:linkedin.com/in "directeur marketing" mode'],
 };
 
-// ─── PHASE 1 : stratégie de recherche adaptive ────────────────────────────────
-describe("classifySector / searchMethodForSector", () => {
-  it("mode/beauté/luxe → creative_lifestyle → linkedin_people_search", () => {
-    expect(classifySector("Mode & Beauté")).toBe("creative_lifestyle");
-    expect(classifySector("cosmétique lifestyle")).toBe("creative_lifestyle");
-    expect(searchMethodForSector("luxe")).toBe("linkedin_people_search");
-  });
-  it("vignoble/oenotourisme/agriculture → agriculture_terroir → search_engine", () => {
-    expect(classifySector("Vignoble & Oenotourisme")).toBe("agriculture_terroir");
-    expect(searchMethodForSector("viticulture")).toBe("search_engine");
-  });
-  it("secteur inconnu → default → serp_xray", () => {
-    expect(classifySector("logiciel B2B")).toBe("default");
-    expect(searchMethodForSector("")).toBe("serp_xray");
-  });
-});
-
+// ─── PHASE 1 : stratégie de recherche — dérivée de l'ICP, jamais du secteur ────
 describe("buildSearchStrategy", () => {
   const dna = { offers: "stratégie de marque", businessType: "Agence créative" };
 
-  it("dérive la méthode du secteur + géo France par défaut + signal d'exclusion", () => {
-    const s = buildSearchStrategy({ targetSector: "Mode & Beauté" }, dna, ICP);
-    expect(s.method).toBe("linkedin_people_search");
-    expect(s.icp.geographies).toEqual(["France"]); // défaut quand ICP vide
-    expect(s.icp.jobTitles).toEqual(ICP.jobTitles);
-    expect(s.exclusionSignal.toLowerCase()).toContain("stratégie de marque");
+  it("aucune table secteur → méthode : la mode passe par le X-ray Google comme le reste", () => {
+    for (const secteur of ["Mode & Beauté", "Vignoble & Oenotourisme", "SaaS", ""]) {
+      expect(buildSearchStrategy({ targetSector: secteur }, dna, ICP).method, secteur).toBe("serp_xray");
+    }
   });
 
-  it("méthode serp_xray → requêtes = googleQueries", () => {
+  it("requêtes = googleQueries de l'ICP, en syntaxe X-ray", () => {
     const s = buildSearchStrategy({ targetSector: "SaaS" }, dna, ICP);
-    expect(s.method).toBe("serp_xray");
     expect(s.queries).toEqual(ICP.googleQueries);
   });
 
-  it("méthode linkedin_people_search → requêtes = linkedinQueries", () => {
-    const s = buildSearchStrategy({ targetSector: "beauté" }, dna, ICP);
-    expect(s.queries).toEqual(ICP.linkedinQueries);
+  it("n'envoie JAMAIS une requête Sales Navigator brute à Google", () => {
+    const s = buildSearchStrategy({ targetSector: "Mode" }, dna, {
+      ...ICP,
+      googleQueries: ['"directeur marketing" AND mode NOT agence'],
+    });
+    expect(s.queries).toEqual(['site:linkedin.com/in "directeur marketing" mode -agence']);
+    for (const q of s.queries) {
+      expect(q).not.toMatch(/\bAND\b|\bNOT\b/);
+      expect(q).toContain("site:linkedin.com/in");
+    }
+  });
+
+  it("sans googleQueries, se rabat sur les requêtes LinkedIn traduites en X-ray", () => {
+    const s = buildSearchStrategy({ targetSector: "beauté" }, dna, { ...ICP, googleQueries: [] });
+    expect(s.queries).toEqual(['site:linkedin.com/in "directeur marketing" mode']);
+  });
+
+  it("garde le signal d'exclusion et l'ICP tel quel (pas de France par défaut)", () => {
+    const s = buildSearchStrategy({ targetSector: "SaaS" }, dna, ICP);
+    expect(s.icp.geographies).toEqual([]);
+    expect(s.icp.jobTitles).toEqual(ICP.jobTitles);
+    expect(s.exclusionSignal.toLowerCase()).toContain("stratégie de marque");
   });
 
   it("respecte une géographie déjà fournie par l'ICP", () => {

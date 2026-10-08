@@ -56,7 +56,7 @@ import {
 } from "./services/campagne/repenser";
 import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
-import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
+import { runCampaignSearch, sourcerCampagne, cibleDeCampagne, prospectsParJourDerive, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions } from "./services/sequence-message";
 import { etatGardeApercu } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
@@ -133,7 +133,7 @@ import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./
 import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
-import { serpConfigured, sourceLeadsFromQueries } from "./services/serp";
+import { serpConfigured } from "./services/serp";
 import { isAiBlocked } from "./services/usage";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
 import { deriveMilestoneDate } from "./services/milestone-dates";
@@ -8374,7 +8374,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/prospection/campaigns', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const campaign = await storage.createProspectionCampaign({ ...req.body, userId });
+      // Rythme non choisi par l'utilisatrice → dérivé de ses objectifs, jamais un défaut fixe.
+      const ppd = Number(req.body?.prospectsPerDay);
+      const prospectsPerDay = Number.isFinite(ppd) && ppd > 0
+        ? Math.round(ppd)
+        : await prospectsParJourDerive(userId, req.body?.projectId ?? null);
+      const campaign = await storage.createProspectionCampaign({ ...req.body, prospectsPerDay, userId });
       res.json(campaign);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -8522,8 +8527,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
       // generateLeadCriteria lève après 2 tentatives ratées → capturé plus bas en 500 explicite.
-      const icp = await generateLeadCriteria(req.userId, campaign.id);
-      res.json({ icp, providerConfigured: serpConfigured() });
+      // La cible (objectifs du projet, rythme de la campagne) calibre le nombre de requêtes.
+      const { cible, besoin, reserve } = await cibleDeCampagne(req.userId, campaign);
+      const icp = await generateLeadCriteria(req.userId, campaign.id, {
+        cible: Math.max(besoin, 1),
+        raisonCible: cible.detail,
+      });
+      res.json({ icp, providerConfigured: serpConfigured(), cible: cible.cible, reserve, raisonCible: cible.detail });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -8538,39 +8548,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
 
-      let queries: string[] = Array.isArray(req.body?.queries) ? req.body.queries.filter((q: any) => typeof q === 'string' && q.trim()) : [];
-      if (queries.length === 0) {
-        const icp = await generateLeadCriteria(req.userId, campaign.id);
-        queries = icp?.googleQueries || [];
-      }
-      if (queries.length === 0) return res.status(400).json({ message: 'no_queries' });
-
-      const found = await sourceLeadsFromQueries(queries, req.userId);
-
-      // Déduplication contre les leads existants (par URL LinkedIn).
-      const existing = await storage.getLeads(req.userId);
-      const existingUrls = new Set(existing.map(l => ((l as any).linkedinUrl || '').toLowerCase().split('?')[0]).filter(Boolean));
-      const projectId = (campaign as any).projectId ?? null;
-
-      let imported = 0, skipped = 0;
-      for (const f of found) {
-        const key = f.linkedinUrl.toLowerCase();
-        if (existingUrls.has(key)) { skipped++; continue; }
-        existingUrls.add(key);
-        await storage.createLead({
-          userId: req.userId,
-          projectId: projectId ?? undefined,
-          prospectionCampaignId: campaign.id,
-          name: f.name,
-          role: f.role ?? undefined,
-          company: f.company ?? undefined,
-          linkedinUrl: f.linkedinUrl,
-          stage: 'identified',
-          status: 'discovered',
-        } as any);
-        imported++;
-      }
-      res.json({ found: found.length, imported, skipped });
+      // Requêtes relues dans l'écran (facultatives) + marché de l'ICP affiché → gl/hl.
+      // Sans requêtes, sourcerCampagne les génère pour la cible de la campagne.
+      const queries: string[] = Array.isArray(req.body?.queries)
+        ? req.body.queries.filter((q: any) => typeof q === 'string' && q.trim())
+        : [];
+      const icp = req.body?.icp && typeof req.body.icp === 'object' ? req.body.icp : null;
+      const r = await sourcerCampagne(req.userId, campaign, { queries, icp });
+      res.json(r);
     } catch (e: any) {
       console.error('[source-leads]', e.message);
       res.status(500).json({ message: e.message });
@@ -10730,7 +10715,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
             targetSector: p.targetSector || generated.targetAudience, channel: p.channel || 'linkedin',
             digitalLevel: p.digitalLevel || 'tous', campaignBrief: p.campaignBrief || generated.coreMessage,
             messageAngle: p.messageAngle || generated.coreMessage, buyingSignals: p.buyingSignals || null,
-            prospectsPerDay: p.prospectsPerDay || 3, offer: p.offer || null, linkedCampaignId: campaign.id,
+            // Rythme dérivé des objectifs du projet (prospection-volume.ts), plus de « 3 » fixe.
+            prospectsPerDay: await prospectsParJourDerive(userId, ctx.pid), offer: p.offer || null, linkedCampaignId: campaign.id,
           } as any);
           await storage.updateCampaign(campaign.id, userId, { linkedProspectionCampaignId: prospectionCampaign.id } as any);
           (campaign as any).linkedProspectionCampaignId = prospectionCampaign.id;

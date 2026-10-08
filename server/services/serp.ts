@@ -14,10 +14,17 @@ export interface SerpResult { link: string; title: string; description?: string;
 export interface ExtractedLead { name: string; role: string | null; company: string | null; linkedinUrl: string }
 
 /**
- * Verticale, fenêtre de fraîcheur et localisation. Générique : la lecture s'en sert
- * (verticale actualités, France), la prospection non — elle appelle serpSearch sans options.
+ * Verticale, fenêtre de fraîcheur, localisation et page. Générique : la lecture s'en sert
+ * (verticale actualités, France), la prospection aussi (gl/hl du marché + pagination).
  */
-export interface SerpOptions { vertical?: "web" | "news"; freshness?: "week"; pays?: string; langue?: string }
+export interface SerpOptions {
+  vertical?: "web" | "news";
+  freshness?: "week";
+  pays?: string;
+  langue?: string;
+  /** Page de résultats, 0 = première. Google pagine par 10 (`start=`). */
+  page?: number;
+}
 
 export function serpConfigured(): boolean {
   return !!process.env.BRIGHT_DATA_API_KEY;
@@ -39,6 +46,7 @@ export function buildSerpUrl(query: string, opts: SerpOptions = {}): string {
   // Épingler pays + langue corrige ce bug, ce n'est pas une préférence.
   if (opts.pays) params.push(`gl=${encodeURIComponent(opts.pays)}`);
   if (opts.langue) params.push(`hl=${encodeURIComponent(opts.langue)}`);
+  if (opts.page && opts.page > 0) params.push(`start=${Math.floor(opts.page) * 10}`);
   return `https://www.google.com/search?${params.join("&")}`;
 }
 
@@ -106,20 +114,5 @@ export function extractLinkedInLead(result: SerpResult): ExtractedLead | null {
   return { name, role, company, linkedinUrl };
 }
 
-/** Lance plusieurs requêtes X-ray, agrège et déduplique les profils trouvés (par URL). */
-export async function sourceLeadsFromQueries(queries: string[], userId?: string, maxQueries = 4): Promise<ExtractedLead[]> {
-  const seen = new Set<string>();
-  const out: ExtractedLead[] = [];
-  for (const q of queries.slice(0, maxQueries)) {
-    const results = await serpSearch(q, userId);
-    for (const r of results) {
-      const lead = extractLinkedInLead(r);
-      if (!lead) continue;
-      const key = lead.linkedinUrl.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(lead);
-    }
-  }
-  return out;
-}
+// Le sourcing de prospects (pagination, cible, plafond d'appels, gl/hl) vit dans
+// prospection-sourcing.ts → sourcerJusquaCible, appelé par prospection-pipeline.ts.

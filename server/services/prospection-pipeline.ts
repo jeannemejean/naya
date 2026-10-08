@@ -26,7 +26,11 @@ import {
 // bespoke du message d'étape) les consomme depuis ce module d'orchestration —
 // comportement strictement inchangé (simple forward des mêmes fonctions).
 export { sanitizeMessage, enforceLinkedInLimit, resolveFounderName };
-import { sourceLeadsFromQueries } from "./serp";
+import { serpSearch } from "./serp";
+import { sourcerJusquaCible, marcheDeRecherche, normaliserRequeteGoogle } from "./prospection-sourcing";
+import { calculerCibleProspects, panierMoyenDepuis, tauxConversionObserve } from "./prospection-volume";
+import { resolveLanguage } from "@shared/language";
+import type { IdealCustomerProfile } from "./prospection";
 import {
   scrapeLinkedInProfile,
   scrapeInstagramProfile,
@@ -274,32 +278,138 @@ Réponds UNIQUEMENT avec ce JSON :
 
 export interface SearchResult { found: number; imported: number; skipped_duplicates: number; method: string }
 
-export async function runCampaignSearch(userId: string, campaign: any): Promise<SearchResult> {
-  const dna = await projectDnaFor(userId, campaign);
-  const icp = await generateLeadCriteria(userId, campaign.id);
-  const strategy = buildSearchStrategy(campaign, dna, icp);
-  const queries = strategy.queries.length > 0 ? strategy.queries : icp.googleQueries;
+/** Étapes où un prospect de la campagne attend encore d'être contacté : la « réserve ». */
+const ETAPES_RESERVE = new Set(["identified", "messages_ready"]);
 
-  // Le provider réel disponible est la SERP API (X-ray). Les autres méthodes s'y ramènent.
-  const executed = Math.min(queries.length, 4);
-  const found = await sourceLeadsFromQueries(queries, userId);
-  // PHASE 1 : chaque lot de recherche est loggé (operation 'search').
-  for (let i = 0; i < executed; i++) {
-    await logProspectionUsage(userId, "bright_data_search", { campaignId: campaign.id });
+export interface ResultatSourcingCampagne {
+  /** Profils LinkedIn distincts vus pendant ce passage (nouveaux + déjà connus). */
+  found: number;
+  imported: number;
+  /** Profils écartés car déjà présents chez l'utilisatrice. */
+  skipped: number;
+  /** Cible de la campagne sur les deux prochaines semaines (prospection-volume.ts). */
+  cible: number;
+  /** D'où vient la cible, en français. */
+  raisonCible: string;
+  /** Prospects de la campagne encore en réserve (pas encore contactés) au départ. */
+  reserve: number;
+  /** La réserve couvrait déjà la cible : rien n'a été recherché. */
+  reserveSuffisante: boolean;
+  appels: number;
+  requetes: string[];
+  cibleAtteinte: boolean;
+  method: string;
+}
+
+/**
+ * Cible d'une campagne et ce qu'il reste à trouver, à partir du contexte de l'utilisatrice
+ * (objectifs du projet, panier moyen du Brand DNA, historique de conversion, jours de
+ * travail, rythme de la campagne). Voir la formule dans prospection-volume.ts.
+ */
+export async function cibleDeCampagne(userId: string, campaign: any) {
+  const projectId = campaign.projectId ?? null;
+  const [existing, objectifs, prefs, dna] = await Promise.all([
+    storage.getLeads(userId),
+    projectId ? storage.getActiveGoalsForProject(projectId) : Promise.resolve([]),
+    storage.getUserPreferences(userId),
+    projectDnaFor(userId, campaign),
+  ]);
+  const cible = calculerCibleProspects({
+    prospectsParJour: campaign.prospectsPerDay ?? null,
+    objectifs: (objectifs || []) as any[],
+    panierMoyen: panierMoyenDepuis((dna as any)?.priceRange),
+    tauxConversion: tauxConversionObserve(existing as any[]),
+    workDays: (prefs as any)?.workDays ?? null,
+    aujourdHui: new Date(),
+  });
+  const reserve = (existing as any[]).filter(
+    (l) => l.prospectionCampaignId === campaign.id && ETAPES_RESERVE.has(l.stage),
+  ).length;
+  return { cible, reserve, besoin: Math.max(0, cible.cible - reserve), existing, prefs, dna };
+}
+
+/**
+ * Rythme quotidien d'une NOUVELLE campagne, dérivé des objectifs du projet (même formule
+ * que la cible, sans rythme imposé). Remplace l'ancien « 3 » codé en dur.
+ */
+export async function prospectsParJourDerive(userId: string, projectId: number | null | undefined): Promise<number> {
+  const { cible } = await cibleDeCampagne(userId, { id: -1, projectId: projectId ?? null, prospectsPerDay: null });
+  return cible.prospectsParJour;
+}
+
+/**
+ * Sourcing d'une campagne jusqu'à sa cible. Point d'entrée commun de
+ * `/source-leads` (écran « Trouver des prospects ») et `/search` (runCampaignSearch).
+ *
+ *   besoin = cible (dérivée des objectifs / du rythme) − réserve déjà importée
+ *   → requêtes générées pour CE besoin (ou fournies par l'écran), gl/hl épinglés,
+ *     pagination, renouvellement des requêtes, plafond dur d'appels SERP, chaque appel
+ *     journalisé dans prospection_usage.
+ */
+export async function sourcerCampagne(
+  userId: string,
+  campaign: any,
+  opts: { queries?: string[]; icp?: Partial<IdealCustomerProfile> | null } = {},
+): Promise<ResultatSourcingCampagne> {
+  const projectId = campaign.projectId ?? null;
+  const { cible, reserve, besoin, existing, prefs, dna } = await cibleDeCampagne(userId, campaign);
+
+  const base = {
+    cible: cible.cible,
+    raisonCible: cible.detail,
+    reserve,
+    method: "serp_xray",
+  };
+  if (besoin === 0) {
+    return { ...base, found: 0, imported: 0, skipped: 0, reserveSuffisante: true, appels: 0, requetes: [], cibleAtteinte: true };
   }
 
-  const existing = await storage.getLeads(userId);
-  const { fresh, skipped } = dedupeAgainstExisting(
-    found.map((f) => ({ ...f, linkedinUrl: f.linkedinUrl })),
-    existing.map((l: any) => ({ linkedinUrl: l.linkedinUrl, email: l.email })),
+  // Requêtes : celles de l'écran (déjà relues par l'utilisatrice) ou générées pour ce besoin.
+  let icp: Partial<IdealCustomerProfile> = opts.icp ?? {};
+  let requetes: string[];
+  const fournies = (opts.queries || []).map((q) => normaliserRequeteGoogle(q)).filter((q): q is string => !!q);
+  if (fournies.length > 0) {
+    requetes = fournies;
+  } else {
+    const genere = await generateLeadCriteria(userId, campaign.id, { cible: besoin, raisonCible: cible.detail });
+    icp = genere;
+    requetes = buildSearchStrategy(campaign, dna, genere).queries;
+  }
+
+  const marche = marcheDeRecherche({
+    searchCountry: icp.searchCountry,
+    searchLanguage: icp.searchLanguage,
+    geographies: icp.geographies,
+    langueCompte: resolveLanguage({ account: (prefs as any)?.language }),
+  });
+
+  const connus = new Set(
+    (existing as any[])
+      .map((l) => String(l.linkedinUrl || "").toLowerCase().split("?")[0].replace(/\/+$/, ""))
+      .filter(Boolean),
   );
 
-  const projectId = campaign.projectId ?? undefined;
+  const r = await sourcerJusquaCible({
+    requetes,
+    cible: besoin,
+    search: (q, page) => serpSearch(q, userId, { pays: marche.pays, langue: marche.langue, page }),
+    estConnu: (url) => connus.has(url),
+    nouvellesRequetes: async (deja) => {
+      const neuf = await generateLeadCriteria(userId, campaign.id, {
+        cible: besoin,
+        raisonCible: cible.detail,
+        requetesDejaUtilisees: deja,
+      });
+      return buildSearchStrategy(campaign, dna, neuf).queries;
+    },
+    surAppel: () => logProspectionUsage(userId, "bright_data_search", { campaignId: campaign.id }),
+  });
+
   let imported = 0;
-  for (const f of fresh) {
+  for (const f of r.leads) {
     await storage.createLead({
       userId,
-      projectId,
+      projectId: projectId ?? undefined,
       prospectionCampaignId: campaign.id,
       name: f.name,
       role: f.role ?? undefined,
@@ -311,7 +421,22 @@ export async function runCampaignSearch(userId: string, campaign: any): Promise<
     } as any);
     imported++;
   }
-  return { found: found.length, imported, skipped_duplicates: skipped, method: strategy.method };
+
+  return {
+    ...base,
+    found: r.leads.length + r.dejaConnus,
+    imported,
+    skipped: r.dejaConnus,
+    reserveSuffisante: false,
+    appels: r.appels,
+    requetes: r.requetesUtilisees,
+    cibleAtteinte: r.cibleAtteinte,
+  };
+}
+
+export async function runCampaignSearch(userId: string, campaign: any): Promise<SearchResult & ResultatSourcingCampagne> {
+  const r = await sourcerCampagne(userId, campaign);
+  return { ...r, skipped_duplicates: r.skipped };
 }
 
 // ─── PHASES 3+4+5 : enrichissement + audit + message + CRM (plan enrichissement)

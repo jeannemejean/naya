@@ -370,8 +370,22 @@ export interface IdealCustomerProfile {
   geographies: string[];
   keywords: string[];
   exclusions: string[];
-  linkedinQueries: string[]; // recherches booléennes (Sales Navigator / LinkedIn)
-  googleQueries: string[];   // recherches X-ray Google
+  linkedinQueries: string[]; // recherches booléennes (Sales Navigator / LinkedIn) — à copier, JAMAIS envoyées à Google
+  googleQueries: string[];   // recherches X-ray Google (site:linkedin.com/in …)
+  /** Pays de recherche (ISO 3166-1 alpha-2) → `gl` de la SERP. Absent si illisible. */
+  searchCountry?: string;
+  /** Langue de recherche (ISO 639-1) → `hl` de la SERP. Absent si illisible. */
+  searchLanguage?: string;
+}
+
+/** Options de volume pour generateLeadCriteria (toutes facultatives). */
+export interface OptionsCriteres {
+  /** Nombre de NOUVEAUX prospects recherchés (prospection-volume.ts). */
+  cible?: number;
+  /** D'où vient ce nombre, en une phrase — aide le modèle à calibrer la largeur. */
+  raisonCible?: string;
+  /** Requêtes déjà passées : le modèle doit en proposer d'AUTRES. */
+  requetesDejaUtilisees?: string[];
 }
 
 // Nature CONCISE de la prestation VENDUE par le projet (offers > positionnement > type d'activité).
@@ -406,7 +420,29 @@ export function buildProspectionContext(brandDna: any, campaign: any): string {
   ].filter(Boolean).join("\n");
 }
 
-export async function generateLeadCriteria(userId: string, campaignId: number): Promise<IdealCustomerProfile> {
+/** Bloc VOLUME du prompt de critères (vide sans option). Pur. */
+export function blocVolumeCriteres(options: OptionsCriteres): string {
+  const lignes: string[] = [];
+  if (options.cible && options.cible > 0) {
+    lignes.push(
+      `\nOBJECTIF DE VOLUME : ${options.cible} nouveaux prospects à trouver${options.raisonCible ? ` (${options.raisonCible})` : ""}. ` +
+      `Chaque requête Google rend au mieux une trentaine de profils sur trois pages : calibre la largeur des requêtes pour que l'ensemble puisse réellement atteindre ce volume sans sortir du CIBLAGE.`,
+    );
+  }
+  const deja = (options.requetesDejaUtilisees || []).filter((q) => typeof q === "string" && q.trim()).slice(0, 30);
+  if (deja.length > 0) {
+    lignes.push(
+      `\nREQUÊTES DÉJÀ UTILISÉES (leurs résultats sont déjà importés) — ne les répète pas, ni sous une forme quasi identique ; propose des angles NOUVEAUX :\n${deja.map((q) => `- ${q}`).join("\n")}`,
+    );
+  }
+  return lignes.join("\n");
+}
+
+export async function generateLeadCriteria(
+  userId: string,
+  campaignId: number,
+  options: OptionsCriteres = {},
+): Promise<IdealCustomerProfile> {
   const campaign = await storage.getProspectionCampaign(campaignId);
   // Brand DNA du PROJET de la campagne (pas le DNA global = « Agence JMD »), avec fallback global.
   const projectId = (campaign as any)?.projectId ?? null;
@@ -415,25 +451,28 @@ export async function generateLeadCriteria(userId: string, campaignId: number): 
     (await storage.getBrandDna(userId));
 
   const ctx = buildProspectionContext(brandDna, campaign);
+  const blocVolume = blocVolumeCriteres(options);
 
   const prompt = `Tu es un expert en ciblage B2B (ICP - Ideal Customer Profile). À partir de la marque et de l'objectif de campagne ci-dessous, définis le PROFIL DE PROSPECT IDÉAL à contacter, puis génère des requêtes de recherche concrètes.
 
 CONTEXTE :
 ${ctx || "(contexte minimal — propose un ICP plausible et généraliste)"}
 
-CIBLAGE (impératif) : Génère des requêtes ciblant les personnes qui ACHÈTENT ou PROGRAMMENT ce type de service (décideurs, acheteurs, organisateurs) — PAS les personnes qui travaillent dans le secteur mentionné. Exemple : pour "speaker événements digitaux", cibler "directeur de conférence", "responsable programmation événementielle", "producteur d'événement B2B" — PAS "responsable réseaux sociaux" ni "directeur artistique".
-
+CIBLAGE (impératif) : Génère des requêtes ciblant les personnes qui ACHÈTENT ou PROGRAMMENT ce type de service (décideurs, acheteurs, organisateurs) — PAS les personnes qui travaillent dans le secteur mentionné. Déduis ces rôles de l'offre et de l'audience décrites dans le CONTEXTE, pas d'un modèle générique : celui qui signe ou programme l'achat de CETTE offre, pas celui qui exerce le même métier.
+${blocVolume}
 EXCLUSIONS OBLIGATOIRES : n'inclus jamais dans les requêtes des entreprises ou personnes qui VENDENT les mêmes services que le projet ci-dessus (prestataires concurrents directs). Exclure : les agences, studios, freelances ou consultants dont l'offre principale est identique ou substituable à celle du projet. Inclure : les entreprises qui ACHÈTENT ces services (marques, directions marketing, porteurs de projets).
 
 Donne :
 - Les intitulés de poste à cibler : uniquement des DÉCIDEURS / ACHETEURS / ORGANISATEURS qui achètent ou programment cette offre (jamais des profils qui exercent le même métier ou travaillent simplement dans le secteur).
 - La séniorité, les secteurs, la taille d'entreprise typique, les zones géographiques.
 - Des mots-clés / signaux qui indiquent un bon prospect, et des exclusions (qui éviter).
-- Des requêtes LinkedIn booléennes (style Sales Navigator) ET des requêtes Google X-ray (site:linkedin.com/in …) prêtes à copier-coller, cohérentes avec le CIBLAGE ci-dessus.
+- Des requêtes LinkedIn booléennes (style Sales Navigator) prêtes à copier-coller, cohérentes avec le CIBLAGE ci-dessus.
+- Entre 8 et 12 requêtes Google X-ray, ordonnées de la plus LARGE à la plus PRÉCISE, chacune commençant par site:linkedin.com/in. Varie vraiment les angles : intitulés de poste différents (et leurs variantes FR/EN), secteurs acheteurs différents, zones géographiques différentes, signaux différents. Syntaxe Google uniquement : guillemets pour une expression exacte, OR entre alternatives, -mot pour exclure — jamais AND ni NOT (syntaxe Sales Navigator que Google ignore et qui fait tomber les résultats à zéro). Évite d'empiler plus de 3 contraintes dans une même requête : trop étroite, elle ne rend rien.
+- Le marché de recherche : "searchCountry" = code pays ISO 3166-1 alpha-2 du marché principal visé (ex. FR, BE, CA), "searchLanguage" = code langue ISO 639-1 dans laquelle ces prospects rédigent leur profil.
 - Une courte justification du ciblage.
 
 Réponds UNIQUEMENT avec ce JSON :
-{"rationale":"...","jobTitles":["..."],"seniority":["..."],"sectors":["..."],"companySize":"...","geographies":["..."],"keywords":["..."],"exclusions":["..."],"linkedinQueries":["..."],"googleQueries":["..."]}`;
+{"rationale":"...","jobTitles":["..."],"seniority":["..."],"sectors":["..."],"companySize":"...","geographies":["..."],"keywords":["..."],"exclusions":["..."],"linkedinQueries":["..."],"googleQueries":["..."],"searchCountry":"..","searchLanguage":".."}`;
 
   // Ciblage = critique → modèle strategic (Sonnet). max_tokens relevé à 2500 (l'ICP + 2 listes
   // de requêtes dépassait 1400 → JSON tronqué). Anti-troncature + retry (2 tentatives) au lieu
@@ -464,6 +503,10 @@ Réponds UNIQUEMENT avec ce JSON :
         exclusions: arr(p.exclusions),
         linkedinQueries: arr(p.linkedinQueries),
         googleQueries: arr(p.googleQueries),
+        ...(typeof p.searchCountry === "string" && /^[A-Za-z]{2}$/.test(p.searchCountry.trim())
+          ? { searchCountry: p.searchCountry.trim().toUpperCase() } : {}),
+        ...(typeof p.searchLanguage === "string" && /^[A-Za-z]{2}$/.test(p.searchLanguage.trim())
+          ? { searchLanguage: p.searchLanguage.trim().toLowerCase() } : {}),
       };
     } catch (e: any) {
       lastErr = e;

@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Copy, Loader2, Sparkles } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from 'react-i18next';
+import { resumeSourcing } from '../sourcing-message';
 
 interface LeadFinderDialogProps {
   campaign: any;
@@ -18,22 +20,32 @@ interface LeadFinderDialogProps {
 
 export default function LeadFinderDialog({ campaign, onClose }: LeadFinderDialogProps) {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [icp, setIcp] = useState<any | null>(null);
   const [providerConfigured, setProviderConfigured] = useState(false);
+  const [cible, setCible] = useState<{ cible: number; reserve: number; raisonCible: string } | null>(null);
   const fired = useRef(false);
 
   const find = useMutation({
     mutationFn: () => apiRequest('POST', `/api/prospection/campaigns/${campaign.id}/find-leads`).then((r) => r.json()),
-    onSuccess: (res: any) => { setIcp(res.icp); setProviderConfigured(!!res.providerConfigured); },
+    onSuccess: (res: any) => {
+      setIcp(res.icp);
+      setProviderConfigured(!!res.providerConfigured);
+      if (typeof res.cible === 'number') setCible({ cible: res.cible, reserve: res.reserve ?? 0, raisonCible: res.raisonCible ?? '' });
+    },
     onError: () => toast({ title: 'Erreur', description: 'Génération impossible — réessaie.', variant: 'destructive' }),
   });
 
   const source = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/prospection/campaigns/${campaign.id}/source-leads`, { queries: icp?.googleQueries || [] }).then((r) => r.json()),
+    mutationFn: () => apiRequest('POST', `/api/prospection/campaigns/${campaign.id}/source-leads`, {
+      queries: icp?.googleQueries || [],
+      // Le marché lu par Naya (pays, langue, zones) épingle gl/hl côté serveur.
+      icp: icp ? { searchCountry: icp.searchCountry, searchLanguage: icp.searchLanguage, geographies: icp.geographies } : null,
+    }).then((r) => r.json()),
     onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
-      toast({ title: `${res.imported} prospect(s) importé(s)`, description: `${res.found} trouvé(s)${res.skipped ? `, ${res.skipped} déjà présent(s)` : ''}.` });
+      toast(resumeSourcing(res));
     },
     onError: () => toast({ title: 'Erreur', description: 'Sourcing impossible — réessaie.', variant: 'destructive' }),
   });
@@ -91,6 +103,13 @@ export default function LeadFinderDialog({ campaign, onClose }: LeadFinderDialog
         {icp && (
           <div className="space-y-4">
             {icp.rationale && <p className="text-xs text-foreground/80 italic bg-muted/40 rounded-lg px-3 py-2">{icp.rationale}</p>}
+            {cible && (
+              <p className="text-xs text-foreground/80">
+                {t('outreach.leadFinderTarget', { count: cible.cible })}
+                {cible.raisonCible ? ` ${t('outreach.leadFinderTargetReason', { reason: cible.raisonCible })}` : ''}
+                {cible.reserve > 0 ? t('outreach.leadFinderTargetReserve', { count: cible.reserve }) : '.'}
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Intitulés de poste"><Chips items={icp.jobTitles} /></Field>
               <Field label="Séniorité"><Chips items={icp.seniority} /></Field>
