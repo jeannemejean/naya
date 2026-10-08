@@ -57,6 +57,7 @@ import { lecturesRepenser, transactionRepenser } from "./services/campagne/repen
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions } from "./services/sequence-message";
+import { etatGardeApercu } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
 import { processCompanionMessage } from "./services/companion";
@@ -8465,6 +8466,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           const msg = await generateStepMessage(userId, {
             lead, campaign: campaignWithFounder,
             step: allSteps[i], steps: allSteps, previousTexts: [...produits],
+            senderLastName: (user as any)?.lastName ?? null,
             useCache: !force, instructions,
           });
           produits.push(msg.body);
@@ -8484,7 +8486,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           });
         }
       }
-      res.json({ lead: { id: lead.id, name: lead.name, company: lead.company }, steps: rendered });
+      // Garde « message trop proche » du moteur : quand il a renoncé, la raison est montrée
+      // en tête de l'aperçu et l'étape bloquée est marquée.
+      const garde = etatGardeApercu(lead, steps.map((s) => s.id));
+      if (garde.indexBloque >= 0 && rendered[garde.indexBloque]) rendered[garde.indexBloque].bloqueParMoteur = true;
+      res.json({
+        lead: { id: lead.id, name: lead.name, company: lead.company },
+        attention: garde.attention,
+        steps: rendered,
+      });
     } catch (e: any) {
       console.error('[prospection/preview]', e.message);
       res.status(500).json({ message: e.message });

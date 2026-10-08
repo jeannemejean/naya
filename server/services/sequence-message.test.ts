@@ -14,7 +14,7 @@ vi.mock("./claude", async (io) => {
   return { ...actual, callClaude: vi.fn() };
 });
 
-import { buildStepPrompt, generateStepMessage, combineInstructions, contexteProspect } from "./sequence-message";
+import { buildStepPrompt, generateStepMessage, combineInstructions, contexteProspect, neutresDuProspect } from "./sequence-message";
 import { storage } from "../storage";
 import * as claude from "./claude";
 
@@ -276,11 +276,49 @@ describe("generateStepMessage — messages distincts", () => {
     expect(prompt).toContain("NOTE D'INVITATION");
   });
 
+  it("branche opposée exclue : l'étape if_invite_not_accepted ne se compare pas au message if_invite_accepted", async () => {
+    const branches = [
+      { id: 1, channel: "linkedin", intention: "Invitation", condition: "always" },
+      { id: 2, channel: "linkedin", intention: null, condition: "if_invite_accepted" },
+      { id: 3, channel: "email", intention: "Email si pas accepté", condition: "if_invite_not_accepted" },
+    ];
+    (storage.getLeadStepMessage as any).mockImplementation(async (_l: number, stepId: number) =>
+      stepId === 1 ? { body: invitation, edited: false } : stepId === 2 ? { body: "TEXTE BRANCHE ACCEPTEE", edited: false } : undefined);
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ subject: "Objet", body: distinct }));
+    await generateStepMessage("u1", { lead, campaign, step: branches[2], steps: branches });
+    const prompt = (claude.callClaude as any).mock.calls[0][0].messages[0].content;
+    expect(prompt).toContain(invitation);
+    expect(prompt).not.toContain("TEXTE BRANCHE ACCEPTEE");
+  });
+
+  it("deux messages courts qui ne partagent que noms/entreprise/signature ne sont pas bloqués", async () => {
+    const leadM = { id: 43, name: "Marie Dupont", role: "Gérante", company: "Lumen Concept Store",
+      enrichedProfile: { linkedin: { location: "Lyon" } } };
+    (storage.getLeadStepMessage as any).mockImplementation(async (_l: number, stepId: number) =>
+      stepId === 1 ? { body: "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Méjean", edited: false } : undefined);
+    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Méjean" }));
+    const r = await generateStepMessage("u1", { lead: leadM, campaign, step: steps[1], steps, senderLastName: "Méjean" });
+    expect(r.tropProche).toBeUndefined();
+    expect(claude.callClaude).toHaveBeenCalledTimes(1);
+    expect(storage.upsertLeadStepMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("textes antérieurs fournis par l'appelant (aperçu) pris en compte", async () => {
     (storage.getLeadStepMessage as any).mockResolvedValue(undefined);
     (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: invitation }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps, previousTexts: [invitation] });
     expect(r.tropProche).toBe(true);
     expect(storage.upsertLeadStepMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("neutresDuProspect", () => {
+  it("nom complet et ses parties, entreprise, ville, expéditrice", () => {
+    const n = neutresDuProspect(
+      { name: "Marie Dupont", company: "Lumen Concept Store", enrichedProfile: { linkedin: { location: "Lyon, Auvergne-Rhône-Alpes" } } },
+      ["Jeanne", "Méjean", null],
+    );
+    expect(n).toEqual(expect.arrayContaining(["Marie Dupont", "Marie", "Dupont", "Lumen Concept Store", "Lyon", "Jeanne", "Méjean"]));
+    expect(n).not.toContain("");
   });
 });

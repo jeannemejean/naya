@@ -13,7 +13,7 @@
 import { storage } from "../storage";
 import { callClaude, CLAUDE_MODELS } from "./claude";
 import { sanitizeMessage, enforceLinkedInLimit, parseJsonObject } from "./prospection-pipeline";
-import { roleEtapeLinkedin, premierConflit, normaliserTexte, type RoleEtapeLinkedin } from "./sequence-distinct";
+import { roleEtapeLinkedin, premierConflit, normaliserTexte, branchesExclusives, type RoleEtapeLinkedin } from "./sequence-distinct";
 
 /** Limite LinkedIn d'une note d'invitation (caractères). */
 export const LIMITE_NOTE_INVITATION = 300;
@@ -199,6 +199,7 @@ function dedoublonner(textes: string[]): string[] {
  *    le moteur envoie) ;
  *  - outreach_messages réellement partis (sentAt non nul) de ce prospect, hors l'étape
  *    courante elle-même (messageType `step_N` / `step_N_…`).
+ * Les étapes de la branche conditionnelle opposée sont exclues (`branchesExclusives`).
  * Une lecture ratée n'empêche pas la génération : on fait au mieux avec ce qui existe.
  */
 async function chargerTextesAnterieurs(
@@ -207,6 +208,9 @@ async function chargerTextesAnterieurs(
   const textes: string[] = [];
   if (steps && index > 0) {
     for (let i = 0; i < index; i++) {
+      // Branche opposée (ex. if_invite_accepted vs if_invite_not_accepted) : son texte ne
+      // partira jamais avec celui-ci, inutile de s'en distinguer (faux positifs évités).
+      if (branchesExclusives(steps[i].condition, steps[index].condition)) continue;
       try {
         const row = await storage.getLeadStepMessage(leadId, steps[i].id);
         if (row?.body) textes.push(row.body);
@@ -227,6 +231,22 @@ async function chargerTextesAnterieurs(
   return textes;
 }
 
+/**
+ * Noms propres communs à tous les messages pour ce prospect (nom, entreprise, ville,
+ * expéditrice) : retirés avant la comparaison `tropProche`, sinon deux messages courts
+ * différents se ressemblent par leurs seuls noms propres. Pure.
+ */
+export function neutresDuProspect(lead: any, expeditrice: Array<string | null | undefined> = []): string[] {
+  const li = lead?.enrichedProfile?.linkedin;
+  const ville = li?.raw?.city || li?.location;
+  const out = [
+    lead?.name, ...(String(lead?.name || "").split(/\s+/)),
+    lead?.company, ville, ...(typeof ville === "string" ? ville.split(",") : []),
+    ...expeditrice,
+  ];
+  return out.map((x) => (typeof x === "string" ? x.trim() : "")).filter((x) => x.length >= 2);
+}
+
 export async function generateStepMessage(
   userId: string,
   opts: {
@@ -235,6 +255,8 @@ export async function generateStepMessage(
     steps?: StepForMessage[];
     /** Textes antérieurs déjà connus de l'appelant (ex. générés plus haut dans le même aperçu). */
     previousTexts?: string[];
+    /** Nom de famille de l'expéditrice (le prénom vient de founderName) — neutralisé pour la comparaison. */
+    senderLastName?: string | null;
   },
 ): Promise<StepMessageResult> {
   const steps = opts.steps;
@@ -245,15 +267,17 @@ export async function generateStepMessage(
     ...(opts.previousTexts || []),
   ]);
 
+  const founderName = opts.lead?.founderName || opts.campaign?.founderName || "";
+  const ctx = { neutres: neutresDuProspect(opts.lead, [founderName, opts.senderLastName]) };
+
   if (opts.useCache !== false) {
     const cached = await storage.getLeadStepMessage(opts.lead.id, opts.step.id);
     // Un texte édité à la main par l'utilisatrice est toujours respecté. Un texte généré
     // (y compris avant ce correctif) trop proche d'un message antérieur est régénéré.
-    if (cached && (cached.edited || !premierConflit(cached.body, anterieurs))) {
+    if (cached && (cached.edited || !premierConflit(cached.body, anterieurs, ctx))) {
       return { subject: cached.subject ?? null, body: cached.body };
     }
   }
-  const founderName = opts.lead?.founderName || opts.campaign?.founderName || "";
   const projectName = opts.campaign?.name || "";
   const audit = safeAudit(opts.lead?.auditNotes);
   const isLi = opts.step.channel === "linkedin";
@@ -278,10 +302,10 @@ export async function generateStepMessage(
   };
 
   let res = await generer(null);
-  let conflit = premierConflit(res.body, anterieurs);
+  let conflit = premierConflit(res.body, anterieurs, ctx);
   if (conflit) {
     res = await generer(conflit);
-    conflit = premierConflit(res.body, anterieurs);
+    conflit = premierConflit(res.body, anterieurs, ctx);
     if (conflit) {
       // Jamais en cache : le prochain passage régénérera au lieu de resservir un doublon.
       return { subject: res.subject, body: res.body, tropProche: true };

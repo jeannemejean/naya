@@ -18,6 +18,7 @@ import { storage } from "../storage";
 import { decryptToken } from "./token-crypto";
 import { linkedinConfigured, sendLinkedInStep } from "./linkedin";
 import { decideNextStep } from "./sequence-engine";
+import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
 import { generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
 import { sendOnce, type ClaimStore, type StepSendKey } from "./prospection-idempotence";
@@ -718,18 +719,35 @@ export async function runProspectionSender(): Promise<void> {
           campaign: { ...campaign, founderName },
           step: stepForMessage(step),
           steps: steps.map(stepForMessage),
+          senderLastName: (user as any)?.lastName ?? null,
           useCache: true, instructions,
         });
+        const garde = lireGarde(lead);
         if (gen.tropProche) {
           // Message trop proche d'un message déjà rédigé/envoyé à ce prospect (même après une
-          // régénération) : on n'envoie RIEN, l'étape reste en attente (currentStep inchangé)
-          // et sera retentée après TROP_PROCHE_RETRY_BACKOFF_MS. Jamais le contenu dans les logs.
-          console.warn(
-            `[prospection] message trop proche d'un message antérieur — lead ${lead.id}, étape ${step.id} : non envoyé, nouvel essai dans ${TROP_PROCHE_RETRY_BACKOFF_MS / 60_000} min`,
-          );
-          await storage.updateLeadSequenceState(state.leadId, {
-            nextRunAt: new Date(now.getTime() + TROP_PROCHE_RETRY_BACKOFF_MS),
-          } as any).catch(() => {});
+          // régénération) : on n'envoie RIEN, l'étape reste en attente (currentStep inchangé).
+          // Compteur de blocages CONSÉCUTIFS par prospect (même logique que
+          // linkedinConsecutiveFailures) : après MAX_TROP_PROCHE_CONSECUTIFS, le moteur renonce
+          // (séquence en pause, raison visible dans l'aperçu) au lieu de réessayer sans fin
+          // en silence. Jamais le contenu du message dans les logs.
+          const suite = nextTropProcheState(garde?.tropProcheConsecutifs ?? 0, now, TROP_PROCHE_RETRY_BACKOFF_MS);
+          await storage.setLeadSequenceGuard(lead.id, {
+            tropProcheConsecutifs: suite.consecutifs,
+            stepId: step.id,
+            attention: suite.abandon ? RAISON_TROP_PROCHE : null,
+          }).catch((e: any) => console.error("[ProspectionSender] écriture garde trop proche échouée", e.message));
+          if (suite.abandon) {
+            console.warn(
+              `[prospection] message trop proche d'un message antérieur — lead ${lead.id}, étape ${step.id} : ${suite.consecutifs} blocages consécutifs (max ${MAX_TROP_PROCHE_CONSECUTIFS}), séquence mise en pause, à rédiger à la main`,
+            );
+            await storage.updateLeadSequenceState(state.leadId, { status: "paused", nextRunAt: null } as any)
+              .catch((e: any) => console.error("[ProspectionSender] mise en pause échouée", e.message));
+          } else {
+            console.warn(
+              `[prospection] message trop proche d'un message antérieur — lead ${lead.id}, étape ${step.id} : non envoyé (blocage ${suite.consecutifs}/${MAX_TROP_PROCHE_CONSECUTIFS}), nouvel essai dans ${TROP_PROCHE_RETRY_BACKOFF_MS / 60_000} min`,
+            );
+            await storage.updateLeadSequenceState(state.leadId, { nextRunAt: suite.nextRunAt } as any).catch(() => {});
+          }
           continue;
         }
         const subject = gen.subject || "";
@@ -940,6 +958,11 @@ export async function runProspectionSender(): Promise<void> {
           nextRunAt: decision.done ? null : new Date(Date.now() + (nextDelay || 0) * 86_400_000),
           ...linkedinFailurePatch,
         });
+        // Étape traitée (envoyée, brouillon ou déjà partie) : remet à zéro la garde « trop proche ».
+        if (garde) {
+          await storage.setLeadSequenceGuard(lead.id, null)
+            .catch((e: any) => console.error("[ProspectionSender] remise à zéro garde trop proche échouée", e.message));
+        }
       } catch (e: any) {
         console.error(`[ProspectionSender] lead ${state.leadId}:`, e.message);
       }

@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { roleEtapeLinkedin, tropProche, normaliserTexte, intentionDitInvitation } from "./sequence-distinct";
+import {
+  roleEtapeLinkedin, tropProche, normaliserTexte, intentionDitInvitation, texteSignifiant,
+  branchesExclusives, nextTropProcheState, lireGarde, etatGardeApercu, MAX_TROP_PROCHE_CONSECUTIFS, RAISON_TROP_PROCHE,
+} from "./sequence-distinct";
 
 const li = (condition = "always", intention: string | null = null) => ({ channel: "linkedin", condition, intention });
 const em = (condition = "always") => ({ channel: "email", condition, intention: null });
@@ -76,5 +79,74 @@ describe("tropProche", () => {
   });
   it("texte vide → false", () => {
     expect(tropProche("", invitation)).toBe(false);
+  });
+});
+
+describe("tropProche — noms propres et formules neutralisés (fix round 1)", () => {
+  const neutres = ["Marie Dupont", "Marie", "Dupont", "Lumen Concept Store", "Lyon", "Jeanne", "Méjean"];
+  it("paire du relecteur : deux messages courts qui ne partagent que noms, entreprise, ville et signature → PAS trop proches", () => {
+    const a = "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Méjean";
+    const b = "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Méjean";
+    expect(tropProche(a, b, { neutres })).toBe(false);
+  });
+  it("une vraie paraphrase reste signalée malgré les noms retirés", () => {
+    const a = "Bonjour Marie, votre façon de mettre en scène les créateurs locaux dans la vitrine de Lumen Concept Store donne envie d'entrer. J'aimerais suivre vos prochaines sélections. Jeanne";
+    const b = "Marie, la façon dont Lumen Concept Store met en scène les créateurs locaux dans sa vitrine donne vraiment envie d'entrer. J'aimerais suivre vos sélections. Belle journée, Jeanne";
+    expect(tropProche(a, b, { neutres })).toBe(true);
+  });
+  it("textes courts (< 6 mots porteurs) : seule l'égalité quasi exacte compte", () => {
+    expect(tropProche("Bonjour Marie, ravie de vous lire. Jeanne", "Merci Marie, ravie de vous lire ! Jeanne Méjean", { neutres })).toBe(true);
+    expect(tropProche("Marie, votre vitrine m'a arrêtée.", "Marie, votre vitrine change souvent ?", { neutres })).toBe(false);
+  });
+  it("texteSignifiant retire noms (expression et mots), formules de politesse, mais garde le fond", () => {
+    expect(texteSignifiant("Bonjour Marie Dupont, votre boutique Lumen Concept Store m'intrigue. Bien à vous, Jeanne", { neutres }))
+      .toBe("votre boutique m intrigue");
+  });
+});
+
+describe("branchesExclusives", () => {
+  it("paires opposées", () => {
+    expect(branchesExclusives("if_invite_accepted", "if_invite_not_accepted")).toBe(true);
+    expect(branchesExclusives("if_not_opened", "if_opened")).toBe(true);
+    expect(branchesExclusives("if_clicked", "if_not_opened")).toBe(true);
+  });
+  it("branches compatibles", () => {
+    expect(branchesExclusives("always", "if_invite_accepted")).toBe(false);
+    expect(branchesExclusives("if_opened", "if_clicked")).toBe(false);
+    expect(branchesExclusives(null, undefined)).toBe(false);
+  });
+});
+
+describe("nextTropProcheState / lireGarde", () => {
+  const now = new Date("2026-10-08T10:00:00Z");
+  it("compte les blocages consécutifs et recule tant que le plafond n'est pas atteint", () => {
+    const r = nextTropProcheState(0, now, 3_600_000);
+    expect(r).toEqual({ abandon: false, consecutifs: 1, nextRunAt: new Date("2026-10-08T11:00:00Z") });
+    expect(nextTropProcheState(1, now, 3_600_000).abandon).toBe(false);
+  });
+  it(`abandonne au ${MAX_TROP_PROCHE_CONSECUTIFS}e blocage consécutif`, () => {
+    expect(MAX_TROP_PROCHE_CONSECUTIFS).toBe(3);
+    expect(nextTropProcheState(2, now, 3_600_000)).toEqual({ abandon: true, consecutifs: 3, nextRunAt: null });
+  });
+  it("lireGarde tolère l'absence et les valeurs malformées", () => {
+    expect(lireGarde({})).toBeNull();
+    expect(lireGarde({ enrichedProfile: { linkedin: {} } })).toBeNull();
+    expect(lireGarde({ enrichedProfile: { nayaSequence: { tropProcheConsecutifs: "2", stepId: 7, attention: RAISON_TROP_PROCHE } } }))
+      .toEqual({ tropProcheConsecutifs: 2, stepId: 7, attention: RAISON_TROP_PROCHE });
+  });
+  it("raison visible conforme", () => {
+    expect(RAISON_TROP_PROCHE).toBe("Naya n'arrive pas à écrire un message assez différent du précédent — à rédiger à la main.");
+  });
+});
+
+describe("etatGardeApercu", () => {
+  it("expose la raison et l'étape bloquée quand le moteur a renoncé", () => {
+    const lead = { enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 3, stepId: 12, attention: RAISON_TROP_PROCHE } } };
+    expect(etatGardeApercu(lead, [11, 12, 13])).toEqual({ attention: RAISON_TROP_PROCHE, indexBloque: 1 });
+  });
+  it("rien à montrer tant que le moteur réessaie (compteur sans raison) ou sans garde", () => {
+    expect(etatGardeApercu({ enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 1, stepId: 12, attention: null } } }, [12]))
+      .toEqual({ attention: null, indexBloque: -1 });
+    expect(etatGardeApercu({}, [12])).toEqual({ attention: null, indexBloque: -1 });
   });
 });
