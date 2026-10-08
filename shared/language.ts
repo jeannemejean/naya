@@ -60,35 +60,98 @@ C'est la langue choisie sur le compte. Elle prime sur la langue des instructions
 // imite la langue des instructions sur une partie des sorties. Une consigne ne garantit
 // rien : on vérifie donc ce qui sort.
 
-const MOTS_FR = new Set([
+// Mots outils français.
+const MOTS_OUTILS_FR = new Set([
   "le", "la", "les", "de", "des", "du", "et", "ton", "ta", "tes", "tu", "toi", "pour", "avec",
   "une", "un", "sur", "dans", "chaque", "à", "au", "aux", "ce", "cette", "ces", "qui", "que",
   "est", "en", "par", "ou", "ne", "pas", "plus", "son", "sa", "ses", "d", "l", "qu", "j",
+  "vos", "votre", "nos", "notre", "mon", "ma", "mes", "leur", "leurs", "sont", "il", "elle",
+  "ils", "elles", "nous", "vous", "je", "se", "si", "où", "comme", "mais", "sans", "sous",
+  "chez", "entre", "après", "avant", "puis", "aussi", "très", "tout", "tous", "toute", "toutes",
 ]);
 
-const MOTS_EN = new Set([
+// Verbes d'action français qui ouvrent un titre de tâche. Utilisés seulement pour le compte
+// français (pour un compte anglais, la règle historique reste celle des mots outils).
+const VERBES_FR = new Set([
+  "rédiger", "définir", "préparer", "envoyer", "créer", "écrire", "publier", "identifier",
+  "relancer", "lister", "choisir", "appeler", "organiser", "mettre", "planifier", "analyser",
+  "finaliser", "valider", "contacter", "répondre", "revoir", "relire", "construire", "faire",
+  "tourner", "monter", "filmer", "photographier", "programmer", "caler", "noter", "trier",
+  "vérifier", "compléter", "structurer", "clarifier", "fixer", "bloquer", "facturer", "payer",
+]);
+
+const MOTS_OUTILS_EN = new Set([
   "the", "and", "your", "you", "with", "for", "from", "of", "to", "in", "into", "about",
   "based", "this", "that", "these", "each", "one", "set", "send", "create", "write", "share",
   "review", "build", "draft", "update", "reach", "follow", "daily", "weekly", "week", "day",
   "today", "at", "by", "is", "are", "it", "its", "their", "them", "up",
 ]);
 
+// Marqueurs anglais supplémentaires pour repérer un titre COURT : verbes d'action qui
+// ouvrent les tâches générées, et mots outils sans homographe français. Volontairement
+// sans les anglicismes courants en français (post, DM, reel, brief, call, check, test,
+// email, pitch, brainstorm, shooting…) : un titre français qui en contient ne bascule pas.
+const MARQUEURS_EN = new Set([
+  ...Array.from(MOTS_OUTILS_EN),
+  "identify", "publish", "prepare", "schedule", "outline", "define", "finalize",
+  "research", "list", "pick", "choose", "track", "engage", "compile", "collect", "gather",
+  "launch", "write", "find", "make", "shoot",
+  "what", "when", "why", "how", "who", "which", "we", "our", "my", "isn", "aren", "don",
+  "doesn", "will", "not", "has", "have", "than", "then", "after", "before", "next",
+  "personalized", "targeting", "responses", "signs", "changed", "stopped", "making", "working",
+]);
+
+const MOT = /[a-zà-ÿœæ]+/g;
+const ACCENT_FR = /[éèêëàâçùûüîïôœ]/;
+
+/**
+ * Retire les passages cités (« … », “…”, "…", '…') : une accroche en anglais citée dans
+ * un titre français (« Relire le carrousel 'What changed…' ») ne dit rien de la langue du
+ * titre. L'apostrophe d'élision (l'atelier, d'un) n'ouvre jamais une citation : il faut
+ * un début de texte, une espace, une parenthèse ou deux-points juste avant.
+ */
+function sansCitations(texte: string): string {
+  return texte
+    .replace(/«[^»]*»/g, " ")
+    .replace(/“[^”]*”/g, " ")
+    .replace(/"[^"]*"/g, " ")
+    .replace(/(^|[\s(:])['‘](?:[^'’‘\n]|['’](?=[a-zà-ÿ]))+['’](?=$|[\s).,:;!?…])/gi, "$1 ");
+}
+
+function compter(texte: string): { fr: number; en: number; outilsFr: number; outilsEn: number } {
+  const mots = texte.toLowerCase().match(MOT) ?? [];
+  let fr = 0, en = 0, outilsFr = 0, outilsEn = 0;
+  for (const m of mots) {
+    if (MOTS_OUTILS_FR.has(m)) { outilsFr++; fr++; }
+    else if (VERBES_FR.has(m) || ACCENT_FR.test(m)) fr++;
+    if (MOTS_OUTILS_EN.has(m)) outilsEn++;
+    if (MARQUEURS_EN.has(m)) en++;
+  }
+  return { fr, en, outilsFr, outilsEn };
+}
+
 /**
  * Vrai si `texte` semble rédigé dans une AUTRE langue que `langue`. PURE.
  *
- * Volontairement prudent : il faut au moins deux mots outils de l'autre langue, et plus
- * que de mots outils de la langue attendue. Un nom propre, un titre court ou un anglicisme
- * isolé (« Ostéopathes Mr Darcy », « carrousel LinkedIn ») ne déclenchent rien.
+ * Compte français : on compare les marqueurs anglais (mots outils + verbes d'action qui
+ * ouvrent les tâches) aux marqueurs français (mots outils, verbes, mots accentués), hors
+ * passages cités. Un seul marqueur anglais suffit si rien de français ne le contredit :
+ * « Draft DM outreach template… » ou « Identify 3 founders… » passaient sous l'ancien
+ * seuil de deux mots outils (9 octobre 2026). Un nom propre, un anglicisme (post, DM,
+ * reel, brief) ou une accroche anglaise citée dans un titre français ne déclenchent rien.
+ *
+ * Compte anglais : règle prudente historique (au moins deux mots outils français).
  */
 export function ecritDansUneAutreLangue(texte: string, langue: Language): boolean {
-  const mots = texte.toLowerCase().match(/[a-zà-ÿœæ]+/g) ?? [];
-  let fr = 0;
-  let en = 0;
-  for (const m of mots) {
-    if (MOTS_FR.has(m)) fr++;
-    if (MOTS_EN.has(m)) en++;
+  if (!texte) return false;
+  if (langue === "en") {
+    const { outilsFr, outilsEn } = compter(texte);
+    return outilsFr >= 2 && outilsFr > outilsEn;
   }
-  return langue === "fr" ? en >= 2 && en > fr : fr >= 2 && fr > en;
+  let c = compter(sansCitations(texte));
+  // Un titre entièrement cité : on juge sur le texte complet.
+  if (c.fr === 0 && c.en === 0) c = compter(texte);
+  return c.en >= 1 && c.en > c.fr;
 }
 
 /** La consigne donnée au modèle pour remettre des textes dans la langue du compte. */
