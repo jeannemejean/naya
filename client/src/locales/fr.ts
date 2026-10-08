@@ -1505,6 +1505,17 @@ const fr = {
  savedJustNow: "Sauvegardé à l'instant",
  },
 
+ taskEdit: {
+ edit: "Modifier",
+ title: "Modifier la tâche",
+ titleLabel: "Titre",
+ descriptionLabel: "Description",
+ descriptionPlaceholder: "Ce qu'il y a à faire, en détail (facultatif)",
+ save: "Enregistrer",
+ saved: "Tâche modifiée",
+ failed: "La modification a échoué. Réessaie.",
+ },
+
  taskFeedback: {
  title: "Pourquoi retires-tu cette tâche ?",
  action: "Action",

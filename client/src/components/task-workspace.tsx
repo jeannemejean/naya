@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { etatSauvegarde, risqueDePerte } from "@/lib/task-workspace-save";
 import { useToast } from "@/hooks/use-toast";
-import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown } from "lucide-react";
+import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown, Pencil } from "lucide-react";
+import TaskEditDialog from "@/components/task-edit-dialog";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
 import { estEvenementAgenda } from "@/lib/agenda-api";
 import { useRefuserTache } from "@/hooks/useRefuserTache";
@@ -64,6 +65,10 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  const { toast } = useToast();
 
  const [refusOuvert, setRefusOuvert] = useState(false);
+ const [editionOuverte, setEditionOuverte] = useState(false);
+ // Titre modifié depuis ce panneau : la tâche reçue en prop est une copie figée du parent.
+ const [titreEdite, setTitreEdite] = useState<{ id: number; title: string; description?: string | null } | null>(null);
+ const titreAffiche = titreEdite && task && titreEdite.id === task.id ? titreEdite.title : task?.title;
  const refuserMutation = useRefuserTache(() => { setRefusOuvert(false); onClose(); });
  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
  const [showReschedule, setShowReschedule] = useState(false);
@@ -257,7 +262,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  <div className="flex items-start gap-3">
  <div className="flex-1 min-w-0">
  <SheetTitle className="text-base text-foreground leading-snug">
- {task?.title ?? t('taskWorkspace.defaultTitle')}
+ {titreAffiche ?? t('taskWorkspace.defaultTitle')}
  </SheetTitle>
  {project && (
  <div className="flex items-center gap-1.5 mt-1">
@@ -271,6 +276,16 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  {/* Actions rapides */}
  <div className="flex items-center gap-1 flex-shrink-0">
+ {task && !estEvenementAgenda(task as any) && (
+ <button
+ onClick={() => setEditionOuverte(true)}
+ aria-label={t('taskEdit.edit')}
+ title={t('taskEdit.edit')}
+ className="p-1.5 rounded-md text-naya-olive-35 hover:text-[#354963] hover:bg-naya-olive-06 transition-colors"
+ >
+ <Pencil className="h-4 w-4" />
+ </button>
+ )}
  {!estEvenementAgenda((task ?? {}) as any) && !(task as any)?.completed && (
  <button
  onClick={() => setRefusOuvert(true)}
@@ -524,6 +539,12 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  refuserMutation.mutate({ taskId: task.id, reason, freeText });
  }}
  isPending={refuserMutation.isPending}
+ />
+ <TaskEditDialog
+ task={task ? (titreEdite && titreEdite.id === task.id ? { ...task, ...titreEdite } : task) : null}
+ open={editionOuverte}
+ onClose={() => setEditionOuverte(false)}
+ onSaved={(saved) => setTitreEdite({ id: saved.id, title: saved.title, description: saved.description ?? null })}
  />
  </>
  );
