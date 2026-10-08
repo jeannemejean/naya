@@ -94,8 +94,8 @@ describe("runDailyAutoPlanner — la matinée est utilisée", () => {
 
     generateDailyTasksMock.mockResolvedValue({
       tasks: [
-        { title: "Tâche A", estimatedDuration: 45, type: "content", category: "visibility", priority: 1 },
-        { title: "Tâche B", estimatedDuration: 45, type: "content", category: "visibility", priority: 2 },
+        { title: "Tâche A", estimatedDuration: 45, type: "planning", category: "planning", priority: 1 },
+        { title: "Tâche B", estimatedDuration: 45, type: "planning", category: "planning", priority: 2 },
       ],
       dependencies: [],
     });
@@ -119,7 +119,7 @@ describe("runDailyAutoPlanner — la matinée est utilisée", () => {
       tasks: Array.from({ length: 4 }, (_, i) => ({
         title: `Tâche ${i}`,
         estimatedDuration: 45,
-        type: "content",
+        type: "planning",
         category: "visibility",
         priority: i + 1,
       })),

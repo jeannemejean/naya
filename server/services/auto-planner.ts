@@ -5,7 +5,9 @@
  * Generates the day's tasks automatically — no button, no friction.
  *
  * Rules (non-negotiable):
- * 1. Never overwrite existing tasks for a day that already has ≥2 tasks
+ * 1. Never overwrite existing tasks. A day already started (ritual, calendar production
+ *    task, prospecting check, rollover) gets generation for its REMAINING capacity only;
+ *    a day already auto-planned is not regenerated (capaciteRestanteDuJour).
  * 2. Never generate tasks for a locked milestone
  * 3. Never generate on a non-work day (respects userPreferences.workDays)
  * 4. Collision-safe: seeds slot from the end of the last existing task
@@ -28,6 +30,8 @@ import { BUFFER_MIN_CEILING } from './rhythm-buffer';
 import { decisionReport, REPORTS_AVANT_QUESTION } from './rollover-decision';
 import { debutEffectifDePlanification } from './planning-start';
 import { remplacerReferencesNumerotees } from "./references-taches";
+import { filtrerTachesGenerees } from "./filtre-taches-generees";
+import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -317,7 +321,12 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   const scheduledForToday = (existingForDate as any[]).filter(
     (t: any) => !t.completed && (t as any).type !== 'milestone'
   );
-  if (scheduledForToday.length > 0) return; // Journée déjà planifiée — ne pas régénérer
+  // Une journée déjà planifiée par l'auto-planner n'est pas regénérée. Une journée seulement
+  // ENTAMÉE (rituel, tâche du calendrier éditorial, vérification de prospection, report)
+  // n'est plus sautée : elle reçoit le reste de sa capacité, calculé plus bas.
+  // Avant (9 octobre 2026) : `if (scheduledForToday.length > 0) return` — une seule tâche
+  // posée suffisait à priver toute la journée de génération.
+  if (capaciteRestanteDuJour(existingForDate as any[], Number.MAX_SAFE_INTEGER) === 0) return;
 
   // 6. Load active milestones to enforce conditional blocking
   const projects = await storage.getProjects(userId);
@@ -337,11 +346,11 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
     }
   });
 
-  // 7. Determine which projects to generate for
-  const activeProjectId = prefs?.activeProjectId ?? null;
-  const projectsToProcess = activeProjectId
-    ? projects.filter(p => p.id === activeProjectId)
-    : projects.filter(p => activeMilestoneProjectIds.has(p.id)).slice(0, 3);
+  // 7. Determine which projects to generate for : TOUS les projets actifs.
+  // `activeProjectId` n'est que le filtre de marque de la barre latérale (vue) : s'en servir
+  // ici liait la journée entière au projet affiché (9 octobre 2026). La part de chaque
+  // projet suit son budget temps/jour (repartirCapaciteDuJour, plus bas).
+  const projectsToProcess = projects.filter(p => activeMilestoneProjectIds.has(p.id));
 
   if (projectsToProcess.length === 0 && projects.length > 0) {
     // All projects have locked milestones — generate general tasks
@@ -395,7 +404,11 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   // toute la journée (BUFFER_MIN_CEILING, voir rhythm-buffer.ts).
   const bufferMin = Math.min(BUFFER_MIN_CEILING, Math.max(0, prefs?.bufferMin ?? 10));
   const dynamicMaxTotal = maxTasksForDay({ availableMin, energyFactor, bufferMin });
-  const maxTasksPerProject = Math.max(1, Math.floor(dynamicMaxTotal / Math.max(projectsToProcess.length, 1)));
+  // Capacité RESTANTE du jour (les tâches déjà posées occupent leur place), répartie entre
+  // projets au prorata du budget temps, une tâche au moins par projet quand c'est possible.
+  const capaciteDuJour = capaciteRestanteDuJour(existingForDate as any[], dynamicMaxTotal);
+  if (capaciteDuJour === 0) return;
+  const capsParProjet = repartirCapaciteDuJour(projectsToProcess as any[], capaciteDuJour);
 
   // 9. Slot-collision guard: tâches existantes + pause déjeuner + calendrier Google
   const blockedRanges = buildBlockedRanges(scheduledForToday, prefs);
@@ -412,8 +425,21 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   // travail. Une tache qui ne rentre pas avant midi est reportee apres 14h par elle-meme.
   let curSlot = hhmmToMin(workDayStart);
 
-  // 10. Generate and persist tasks for each project
-  for (const project of projectsToProcess) {
+  // 10. Génération par projet (collecte), puis placement ENTRELACÉ entre projets.
+  // Avant : chaque projet plaçait ses tâches à la suite — le premier remplissait la matinée,
+  // le dernier n'avait plus de place.
+  type Candidate = {
+    project: (typeof projectsToProcess)[number];
+    activeGoals: any[];
+    taskData: any;
+    titresLot: string[];
+  };
+  const candidates: Candidate[] = [];
+  const declaredDepsByProject = new Map<number, DeclaredDependency[]>();
+
+  for (const [projectIdx, project] of Array.from(projectsToProcess.entries())) {
+    const maxTasksPerProject = capsParProjet[projectIdx] ?? 0;
+    if (maxTasksPerProject <= 0) continue;
     try {
       // Build full context for this project
       const projectData = project.id ? await storage.getProject(project.id, userId) : null;
@@ -499,69 +525,96 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
       // créée. L'ancien code indexait `createdTaskIds`, bâti sur le tableau déjà réordonné et
       // troué par les `continue` des tâches non plaçables : les dépendances enregistrées
       // reliaient des paires arbitraires.
-      const indexedTasks = rawTasks.map((t, __srcIndex) => ({ ...t, __srcIndex }));
-      const orderedTasks = orderGeneratedTasks(indexedTasks, declaredDeps);
+      // Contenu et prospection écartés APRÈS l'indexation (dépendances intactes) : ils
+      // viennent du calendrier éditorial et du pipeline de prospection. Pas de remplissage.
+      const indexedTasks = filtrerTachesGenerees(
+        rawTasks.map((t, __srcIndex) => ({ ...t, __srcIndex })),
+        `auto-planner ${dateStr} projet ${project.id}`,
+      );
+      const orderedTasks = orderGeneratedTasks(indexedTasks, declaredDeps).slice(0, maxTasksPerProject);
 
-      // Persist tasks with collision-safe slot assignment (respects lunch break)
-      const idParIndexSource = new Map<number, number>();
       // Titres dans l'ordre d'origine de la sortie IA (avant réordonnancement) pour le filet
       // contre les « Task N » numérotés en prose.
       const titresLot: string[] = rawTasks.map((t: any) => t?.title ?? '');
+      declaredDepsByProject.set(project.id, declaredDeps ?? []);
       for (const taskData of orderedTasks) {
-        const category = taskData.category || 'general';
-        const rawDuration = taskData.estimatedDuration || 30;
-        // Appliquer le calibrage durée réel de l'utilisateur
-        const duration = applyCalibration(rawDuration, category, durationCalibration);
-        const workEndMin = hhmmToMin(workDayEnd);
-
-        const slotMin = findNextFreeSlot(curSlot, duration, blockedRanges, workEndMin);
-        if (slotMin === -1) continue; // plus de place ce jour-là
-
-        // Verify against DB to guard against concurrent runs
-        const candidateTime = minToHHMM(slotMin);
-        const slotCheck = await storage.checkSlotAvailability(userId, dateStr, candidateTime, duration);
-        const finalSlotMin = (!slotCheck.available && slotCheck.nextAvailableTime)
-          ? (() => { const [h,m] = slotCheck.nextAvailableTime!.split(':').map(Number); return h*60+m; })()
-          : slotMin;
-        if (finalSlotMin + duration > workEndMin) continue; // overflow après correction DB
-
-        const scheduledTime = minToHHMM(finalSlotMin);
-        blockedRanges.push({ start: finalSlotMin, end: finalSlotMin + duration });
-        curSlot = finalSlotMin + duration + 5; // 5-min buffer
-
-        const created = await storage.createTask({
-          userId,
-          projectId: project.id ?? undefined,
-          goalId: (() => {
-            const idx = typeof (taskData as any).goalIndex === 'number' ? (taskData as any).goalIndex : 0;
-            return activeGoals[idx]?.id ?? activeGoals[0]?.id ?? undefined;
-          })(),
-          title: taskData.title,
-          description: remplacerReferencesNumerotees(taskData.description || '', titresLot),
-          type: taskData.type || 'planning',
-          category,
-          priority: taskData.priority || 3,
-          estimatedDuration: duration,
-          scheduledDate: dateStr,
-          scheduledTime,
-          scheduledEndTime: minToHHMM(finalSlotMin + duration),
-          taskEnergyType: taskData.taskEnergyType || 'execution',
-          setupCost: taskData.setupCost || 'low',
-          canBeFragmented: taskData.canBeFragmented ?? false,
-          recommendedTimeOfDay: taskData.recommendedTimeOfDay || 'morning',
-          activationPrompt: taskData.activationPrompt
-            ? remplacerReferencesNumerotees(taskData.activationPrompt, titresLot)
-            : null,
-          workflowGroup: taskData.workflowGroup || null,
-          source: 'auto',
-          completed: false,
-        } as any);
-        idParIndexSource.set((taskData as any).__srcIndex, (created as any).id);
+        candidates.push({ project, activeGoals, taskData, titresLot });
       }
+    } catch (projectError: any) {
+      console.error(`[AutoPlanner] Error generating for project ${project.id}:`, projectError.message);
+      // Continue with next project
+    }
+  }
 
-      // Créer les dépendances entre tâches nouvellement créées.
-      // Une tâche non plaçable n'a pas d'entrée : la dépendance qui la cite est simplement
-      // omise, au lieu de glisser sur sa voisine.
+  // Placement : projets à tour de rôle, dans la limite de la capacité restante du jour.
+  const idParIndexSourceParProjet = new Map<number, Map<number, number>>();
+  let places = 0;
+  for (const { project, activeGoals, taskData, titresLot } of entrelacerParProjet(candidates, (c) => String(c.project.id))) {
+    if (places >= capaciteDuJour) break;
+    try {
+      const category = taskData.category || 'general';
+      const rawDuration = taskData.estimatedDuration || 30;
+      // Appliquer le calibrage durée réel de l'utilisateur
+      const duration = applyCalibration(rawDuration, category, durationCalibration);
+      const workEndMin = hhmmToMin(workDayEnd);
+
+      const slotMin = findNextFreeSlot(curSlot, duration, blockedRanges, workEndMin);
+      if (slotMin === -1) continue; // plus de place ce jour-là
+
+      // Verify against DB to guard against concurrent runs
+      const candidateTime = minToHHMM(slotMin);
+      const slotCheck = await storage.checkSlotAvailability(userId, dateStr, candidateTime, duration);
+      const finalSlotMin = (!slotCheck.available && slotCheck.nextAvailableTime)
+        ? (() => { const [h,m] = slotCheck.nextAvailableTime!.split(':').map(Number); return h*60+m; })()
+        : slotMin;
+      if (finalSlotMin + duration > workEndMin) continue; // overflow après correction DB
+
+      const scheduledTime = minToHHMM(finalSlotMin);
+      blockedRanges.push({ start: finalSlotMin, end: finalSlotMin + duration });
+      curSlot = finalSlotMin + duration + 5; // 5-min buffer
+
+      const created = await storage.createTask({
+        userId,
+        projectId: project.id ?? undefined,
+        goalId: (() => {
+          const idx = typeof (taskData as any).goalIndex === 'number' ? (taskData as any).goalIndex : 0;
+          return activeGoals[idx]?.id ?? activeGoals[0]?.id ?? undefined;
+        })(),
+        title: taskData.title,
+        description: remplacerReferencesNumerotees(taskData.description || '', titresLot),
+        type: taskData.type || 'planning',
+        category,
+        priority: taskData.priority || 3,
+        estimatedDuration: duration,
+        scheduledDate: dateStr,
+        scheduledTime,
+        scheduledEndTime: minToHHMM(finalSlotMin + duration),
+        taskEnergyType: taskData.taskEnergyType || 'execution',
+        setupCost: taskData.setupCost || 'low',
+        canBeFragmented: taskData.canBeFragmented ?? false,
+        recommendedTimeOfDay: taskData.recommendedTimeOfDay || 'morning',
+        activationPrompt: taskData.activationPrompt
+          ? remplacerReferencesNumerotees(taskData.activationPrompt, titresLot)
+          : null,
+        workflowGroup: taskData.workflowGroup || null,
+        source: 'auto',
+        completed: false,
+      } as any);
+      places++;
+      if (!idParIndexSourceParProjet.has(project.id)) idParIndexSourceParProjet.set(project.id, new Map());
+      idParIndexSourceParProjet.get(project.id)!.set((taskData as any).__srcIndex, (created as any).id);
+    } catch (placementError: any) {
+      console.error(`[AutoPlanner] Error placing task for project ${project.id}:`, placementError.message);
+    }
+  }
+
+  // Créer les dépendances entre tâches nouvellement créées, projet par projet (les indices
+  // déclarés sont propres à la sortie IA de chaque projet).
+  // Une tâche non plaçable n'a pas d'entrée : la dépendance qui la cite est simplement
+  // omise, au lieu de glisser sur sa voisine.
+  for (const [projectId, declaredDeps] of Array.from(declaredDepsByProject.entries())) {
+    const idParIndexSource = idParIndexSourceParProjet.get(projectId) ?? new Map<number, number>();
+    try {
       for (const dep of declaredDeps ?? []) {
         const taskId = idParIndexSource.get(dep.taskIndex);
         const dependsOnTaskId = idParIndexSource.get(dep.dependsOnIndex);
@@ -578,9 +631,8 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
           );
         }
       }
-    } catch (projectError: any) {
-      console.error(`[AutoPlanner] Error generating for project ${project.id}:`, projectError.message);
-      // Continue with next project
+    } catch (depError: any) {
+      console.error(`[AutoPlanner] Error linking dependencies for project ${projectId}:`, depError.message);
     }
   }
 

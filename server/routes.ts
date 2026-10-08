@@ -186,6 +186,7 @@ import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import { filtrerTachesGenerees } from "./services/filtre-taches-generees";
+import { entrelacerParProjet } from "./services/repartition-projets";
 import {
   getAuthUrl,
   exchangeCodeForTokens,
@@ -388,6 +389,26 @@ function parseClientToday(body: any): string {
   return sharedFormatDate(candidateDate);
 }
 
+/** Clé projet d'une tâche en attente (generate-daily) ou déjà en base. */
+const cleProjetTache = (t: any): string =>
+  String(t?.projectBatchKey ?? t?.projId ?? t?.projectId ?? 'general');
+
+/**
+ * Sur une liste DÉJÀ triée par date : entrelace les projets à l'intérieur de chaque date,
+ * sans toucher à l'ordre des dates ni à l'ordre interne de chaque projet.
+ */
+function entrelacerParDateEtProjet(triees: any[]): any[] {
+  const sortie: any[] = [];
+  let debut = 0;
+  for (let i = 1; i <= triees.length; i++) {
+    if (i === triees.length || triees[i].scheduledDate !== triees[debut].scheduledDate) {
+      sortie.push(...entrelacerParProjet(triees.slice(debut, i), cleProjetTache));
+      debut = i;
+    }
+  }
+  return sortie;
+}
+
 // After AI generates tasks (some may have past dates), redistribute them forward
 // so no day exceeds dailyCap and no task lands before floor.
 
@@ -445,7 +466,11 @@ function rebalanceTasksForward(
   const slotUsage = new Map<string, number>();
   for (const d of orderedDates) slotUsage.set(d, existingDayCounts?.get(d) || 0);
 
-  const sorted = [...clamped].sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || ''));
+  // Tri par date, puis entrelacement des projets AU SEIN de chaque date : sans lui, les
+  // jours se remplissaient projet par projet (aujourd'hui = projet 1, demain = projet 2).
+  const sorted = entrelacerParDateEtProjet(
+    [...clamped].sort((a, b) => (a.scheduledDate || '').localeCompare(b.scheduledDate || '')),
+  );
 
   const result: any[] = [];
   const clampToWorkDay = (dateStr: string): string => {
@@ -5540,13 +5565,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       for (const r of projResults) {
         if (r.skipped) skippedProjects.push(r.skipped);
         if (r.created?.length) allCreatedTasks.push(...r.created);
-        if (r.pending.length) allPendingTasks.push(...r.pending);
         if (r.workflowSugs.length) allWorkflowSugs.push(...r.workflowSugs);
         if (r.focus) lastFocus = r.focus;
         if (r.reasoning) lastReasoning = r.reasoning;
         if (r.bottleneck) lastBottleneck = r.bottleneck;
         if (r.suggestedNextMove) lastSuggestedNextMove = r.suggestedNextMove;
       }
+      // Projets entrelacés à tour de rôle (A1, B1, C1, A2…) : chaque jour mêle les projets
+      // au lieu d'être rempli par le premier. L'ordre interne de chaque projet est gardé.
+      allPendingTasks.push(...entrelacerParProjet(projResults.flatMap((r) => r.pending), (p) => p.projectBatchKey));
 
       // ── Milestone trigger check — inject unlocked tasks into pending ──────
       let milestoneNotes: string[] = [];
