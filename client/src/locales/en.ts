@@ -1504,6 +1504,17 @@ const en = {
  savedJustNow: "Saved just now",
  },
 
+ taskEdit: {
+ edit: "Edit",
+ title: "Edit task",
+ titleLabel: "Title",
+ descriptionLabel: "Description",
+ descriptionPlaceholder: "What needs doing, in detail (optional)",
+ save: "Save",
+ saved: "Task updated",
+ failed: "The update failed. Try again.",
+ },
+
  taskFeedback: {
  title: "Why are you removing this task?",
  action: "Action",

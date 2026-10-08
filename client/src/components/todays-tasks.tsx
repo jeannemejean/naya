@@ -12,7 +12,7 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import {
  Loader2, Plus, List, LayoutGrid, Clock, CheckCircle2, Circle, X, RotateCcw,
  Target, Sparkles, ClipboardList, MessageCircle, Package, Zap,
- Sunrise, Sun, Moon, Lock, Flag, AlertCircle, Check, ChevronLeft, ChevronRight,
+ Sunrise, Sun, Moon, Lock, Flag, AlertCircle, Check, ChevronLeft, ChevronRight, Pencil,
 } from "lucide-react";
 import { useProject } from "@/lib/project-context";
 import { taskPaletteFor, NAYA_TASK_PALETTES } from "@/lib/task-palette";
@@ -24,6 +24,7 @@ import { estTacheDeProduction } from "@shared/livrables";
 import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import GeneratingOverlay from "@/components/GeneratingOverlay";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
+import TaskEditDialog from "@/components/task-edit-dialog";
 import { useRefuserTache } from "@/hooks/useRefuserTache";
 import type { Project } from "@shared/schema";
 
@@ -110,12 +111,13 @@ function getProjectColor(projectId: number | undefined, projects: Project[]): st
  return p?.color || '#6366f1';
 }
 
-function PlannerTaskPopover({ task, projects, onToggle, onOpen, onRefuse, isToggling }: {
+function PlannerTaskPopover({ task, projects, onToggle, onOpen, onRefuse, onEdit, isToggling }: {
  task: Task;
  projects: Project[];
  onToggle: (task: Task) => void;
  onOpen: (task: Task) => void;
  onRefuse: (task: Task) => void;
+ onEdit: (task: Task) => void;
  isToggling: boolean;
 }) {
  const { t } = useTranslation();
@@ -174,6 +176,17 @@ function PlannerTaskPopover({ task, projects, onToggle, onOpen, onRefuse, isTogg
  </Button>
  )}
 
+ {!estEvenementAgenda(task as any) && (
+ <Button
+ size="sm"
+ variant="outline"
+ className="w-full h-8 text-xs gap-1.5"
+ onClick={() => onEdit(task)}
+ >
+ <Pencil className="h-3 w-3" />{t('taskEdit.edit')}
+ </Button>
+ )}
+
  {!estEvenementAgenda(task as any) && !task.completed && (
  <Button
  size="sm"
@@ -222,6 +235,7 @@ export default function TodaysTasks() {
  const [feedbackTask, setFeedbackTask] = useState<Task | null>(null);
  const [refusTask, setRefusTask] = useState<Task | null>(null);
  const refuserMutation = useRefuserTache(() => setRefusTask(null));
+ const [editTask, setEditTask] = useState<Task | null>(null);
  const [replanOpen, setReplanOpen] = useState(false);
  const [replanPreview, setReplanPreview] = useState<any>(null);
  const [replanLoading, setReplanLoading] = useState(false);
@@ -817,6 +831,17 @@ export default function TodaysTasks() {
  {task.priority && task.priority <= 2 && (
  <AlertCircle className="h-3.5 w-3.5 text-naya-mauve flex-shrink-0" />
  )}
+ {!estEvenementAgenda(task as any) && (
+ <button
+ onClick={(e) => { e.stopPropagation(); setEditTask(task); }}
+ className="p-0.5 opacity-40 hover:opacity-80 transition-opacity ml-0.5"
+ style={palette ? { color: palette.text } : undefined}
+ title={t('taskEdit.edit')}
+ aria-label={t('taskEdit.edit')}
+ >
+ <Pencil className="h-3 w-3" />
+ </button>
+ )}
  <button
  onClick={(e) => { e.stopPropagation(); setFeedbackTask(task); }}
  className="p-0.5 opacity-40 hover:opacity-80 transition-opacity ml-0.5"
@@ -1003,6 +1028,7 @@ export default function TodaysTasks() {
  onToggle={cocherTache}
  onOpen={ouvrirTache}
  onRefuse={(tk) => { setOpenPopover(null); setRefusTask(tk); }}
+ onEdit={(tk) => { setOpenPopover(null); setEditTask(tk); }}
  isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
  />
  </Popover>
@@ -1044,6 +1070,7 @@ export default function TodaysTasks() {
  onToggle={cocherTache}
  onOpen={ouvrirTache}
  onRefuse={(tk) => { setOpenPopover(null); setRefusTask(tk); }}
+ onEdit={(tk) => { setOpenPopover(null); setEditTask(tk); }}
  isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
  />
  </Popover>
@@ -1079,6 +1106,12 @@ export default function TodaysTasks() {
  deleteFeedbackMutation.mutate({ taskId: feedbackTask.id, feedbackType, reason, freeText });
  }}
  isPending={deleteFeedbackMutation.isPending}
+ />
+
+ <TaskEditDialog
+ task={editTask}
+ open={!!editTask}
+ onClose={() => setEditTask(null)}
  />
 
  <TaskFeedbackModal

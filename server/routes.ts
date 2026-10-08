@@ -32,6 +32,7 @@ import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
+import { filtrerEditionTache } from "./services/taches/edition";
 import { refuserPost } from "./services/refus-post/service";
 import { refusPostDeps } from "./services/refus-post/deps";
 import { estRaisonRefusPost, estPublieOuEnCours } from "./services/refus-post/pur";
@@ -4461,16 +4462,26 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     try {
       const userId = req.userId;
       const { id } = req.params;
-      const updates = req.body;
+
+      // Propriété AVANT toute écriture : un identifiant fictif (événement d'agenda, jalon
+      // virtuel) ou la tâche d'un autre compte → 404, rien n'est modifié.
+      if (!/^\d+$/.test(String(id))) return res.status(404).json({ message: 'task_not_found' });
       const taskId = parseInt(id);
+      const currentTask = await storage.getTask(taskId);
+      if (!currentTask || (currentTask as any).userId !== userId) {
+        return res.status(404).json({ message: 'task_not_found' });
+      }
+
+      // Liste blanche : on n'écrit jamais `userId`, `id`, `projectId`… venus du corps.
+      const filtre = filtrerEditionTache(req.body);
+      if (!filtre.ok) return res.status(400).json({ message: filtre.erreur });
+      const updates: any = filtre.updates;
 
       // If updating schedule-related fields, apply slot-safe logic
       const touchesSchedule = !!(updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration);
       let ancienneDate: string | null = null;
       if (touchesSchedule) {
-        const currentTask = await storage.getTask(taskId);
-        ancienneDate = currentTask?.scheduledDate ?? null;
-        if (!currentTask) return res.status(404).json({ message: "Task not found" });
+        ancienneDate = currentTask.scheduledDate ?? null;
 
         const merged = { ...currentTask, ...updates, userId };
 
