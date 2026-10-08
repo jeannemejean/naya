@@ -1498,6 +1498,7 @@ const fr = {
  reflectPlaceholder: "Qu'est-ce qui a marché, qu'est-ce qui n'a pas marché ? Qu'apprends-tu ?",
  researchPlaceholder: "Notes, liens, citations, références...",
  fromCampaign: "Depuis une campagne",
+ openAction: "Ouvrir l'écran de validation",
  taskBrief: "Brief de tâche",
  optionalTitle: "Titre optionnel...",
  saving: "Sauvegarde...",

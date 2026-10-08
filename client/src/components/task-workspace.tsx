@@ -14,6 +14,7 @@ import TaskFeedbackModal from "@/components/task-feedback-modal";
 import { estEvenementAgenda } from "@/lib/agenda-api";
 import { useRefuserTache } from "@/hooks/useRefuserTache";
 import { Link } from "wouter";
+import { lienInterneDeTache } from "@/lib/lien-tache";
 import { useTranslation } from "react-i18next";
 import LivrablesSection from "@/components/livrables/LivrablesSection";
 import type { Task, Project, TaskWorkspaceEntry } from "@shared/schema";
@@ -364,6 +365,18 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </SheetHeader>
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ {lienInterneDeTache(task as any) && (
+ <div className="px-5 pt-3">
+ <Link
+ href={lienInterneDeTache(task as any)!}
+ onClick={onClose}
+ className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-naya-olive-10 text-[#354963] hover:bg-naya-olive-18 transition-colors"
+ >
+ <ExternalLink className="h-3 w-3" />
+ {t('taskWorkspace.openAction')}
+ </Link>
+ </div>
+ )}
  {task?.source === 'campaign' && (
  <div className="flex items-center gap-2 px-5 pt-3 flex-wrap">
  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[rgba(212,201,122,0.20)] text-[#5a4f0d] flex items-center gap-1">

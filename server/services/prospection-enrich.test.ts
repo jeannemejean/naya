@@ -50,8 +50,14 @@ vi.mock("./prospection-access", async (io) => {
   return { ...actual, assertEnrichmentAccess: vi.fn(async () => {}), logProspectionUsage: vi.fn(async () => {}) };
 });
 
+// La tâche de validation du planning est synchronisée en fin d'enrichissement.
+vi.mock("./prospection-verification", () => ({
+  synchroniserValidationsProspection: vi.fn(async () => ({ creees: 1, majs: 0, closes: 0 })),
+}));
+
 import { storage } from "../storage";
 import * as claude from "./claude";
+import * as verification from "./prospection-verification";
 import * as access from "./prospection-access";
 import { ProspectionAccessError } from "./prospection-access";
 import { enrichProspects } from "./prospection-pipeline";
@@ -99,6 +105,20 @@ beforeEach(() => {
     .mockResolvedValueOnce(JSON.stringify({
       linkedinMessage: "Bonjour Marie, votre virage sur les coulisses m'a marquée. Jeanne",
     }));
+});
+
+describe("enrichProspects — tâche de validation dans le planning", () => {
+  it("synchronise la tâche « Valider les messages » de la campagne une fois les messages prêts", async () => {
+    await enrichProspects("u1", campaign, [10]);
+    expect(verification.synchroniserValidationsProspection).toHaveBeenCalledTimes(1);
+    expect(verification.synchroniserValidationsProspection).toHaveBeenCalledWith("u1", undefined, { campaignId: 5 });
+  });
+
+  it("un échec de synchronisation ne fait pas échouer l'enrichissement", async () => {
+    (verification.synchroniserValidationsProspection as any).mockRejectedValueOnce(new Error("db"));
+    const res = await enrichProspects("u1", campaign, [10]);
+    expect(res.enriched).toBe(1);
+  });
 });
 
 describe("enrichProspects — condition 3 (données + coûts enregistrés)", () => {

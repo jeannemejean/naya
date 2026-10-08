@@ -1494,6 +1494,7 @@ const en = {
  reflectPlaceholder: "What worked, what didn't? What are you learning?",
  researchPlaceholder: "Notes, links, quotes, references...",
  fromCampaign: "From campaign",
+ openAction: "Open the review screen",
  taskBrief: "Task brief",
  optionalTitle: "Optional title...",
  saving: "Saving...",

@@ -69,6 +69,7 @@ import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
 import { enrolerEnMasse } from "./services/prospection-enrolement";
+import { synchroniserValidationsProspection } from "./services/prospection-verification";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
@@ -8668,6 +8669,11 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         validatedAt: new Date(),
       } as any);
       if (!updated) return res.status(404).json({ message: 'not_found' });
+      // Un prospect de moins à valider : le compteur de la tâche du planning suit.
+      if ((updated as any).prospectionCampaignId) {
+        synchroniserValidationsProspection(req.userId, undefined, { campaignId: (updated as any).prospectionCampaignId })
+          .catch((e: any) => console.error('[validate] synchro tâche de validation:', e?.message || e));
+      }
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -8682,6 +8688,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         validatedAt: null,
       } as any);
       if (!updated) return res.status(404).json({ message: 'not_found' });
+      if ((updated as any).prospectionCampaignId) {
+        synchroniserValidationsProspection(req.userId, undefined, { campaignId: (updated as any).prospectionCampaignId })
+          .catch((e: any) => console.error('[unvalidate] synchro tâche de validation:', e?.message || e));
+      }
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message });

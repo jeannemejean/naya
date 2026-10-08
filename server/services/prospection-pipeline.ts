@@ -30,6 +30,7 @@ import { serpSearch } from "./serp";
 import { sourcerJusquaCible, marcheDeRecherche, normaliserRequeteGoogle } from "./prospection-sourcing";
 import { calculerCibleProspects, panierMoyenDepuis, tauxConversionObserve } from "./prospection-volume";
 import { resolveLanguage } from "@shared/language";
+import { synchroniserValidationsProspection } from "./prospection-verification";
 import type { IdealCustomerProfile } from "./prospection";
 import {
   scrapeLinkedInProfile,
@@ -556,5 +557,10 @@ export async function enrichProspects(
       failed++;
     }
   }
+  // Des messages viennent d'être préparés : la tâche « Valider les messages » de la campagne
+  // est créée ou mise à jour dans le planning. Ne fait jamais échouer l'enrichissement.
+  await synchroniserValidationsProspection(userId, undefined, { campaignId: campaign.id }).catch((e: any) =>
+    console.error("[prospection] synchro tâche de validation:", e?.message || e),
+  );
   return { enriched, failed, linkedin_requests_used: linkedinUsed };
 }
