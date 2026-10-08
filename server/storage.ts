@@ -153,7 +153,7 @@ import {
   type TaskPrompt,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
-import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql } from "drizzle-orm";
+import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDay } from "./services/schedule-repack";
 import { respecterPrecedences } from "./services/precedence";
@@ -365,6 +365,7 @@ export interface IStorage {
   getContentBySourceTask(userId: string, taskId: number): Promise<Content | undefined>;
   updateContent(id: number, updates: Partial<Content>): Promise<Content>;
   deleteContent(id: number): Promise<void>;
+  getTasksForContents(userId: string, contentIds: number[]): Promise<Task[]>;
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
   deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number>;
@@ -1345,7 +1346,35 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteContent(id: number): Promise<void> {
-    await db.delete(content).where(eq(content.id, id));
+    await db.transaction(async (tx) => {
+      await this.libererTachesDesContenus(tx, [id]);
+      await tx.delete(content).where(eq(content.id, id));
+    });
+  }
+
+  /**
+   * Avant de supprimer des posts : leurs tâches de production NON FAITES partent avec eux
+   * (sinon elles resteraient orphelines dans le planning), les tâches faites restent,
+   * détachées (`tasks.content_id` est en NO ACTION : sans ça, la suppression échoue).
+   * À appeler dans la transaction qui supprime les posts.
+   */
+  private async libererTachesDesContenus(tx: DbExecutor, contentIds: number[]): Promise<void> {
+    if (contentIds.length === 0) return;
+    const nonFaites = await tx.select({ id: tasks.id }).from(tasks)
+      .where(and(inArray(tasks.contentId, contentIds), eq(tasks.completed, false)));
+    const ids = nonFaites.map((t) => t.id);
+    if (ids.length > 0) {
+      await this.clearTaskReferences(tx, ids);
+      await tx.delete(tasks).where(inArray(tasks.id, ids));
+    }
+    await tx.update(tasks).set({ contentId: null }).where(inArray(tasks.contentId, contentIds));
+  }
+
+  /** Tâches reliées à ces posts (`tasks.content_id`), faites ou non, archivées comprises. */
+  async getTasksForContents(userId: string, contentIds: number[]): Promise<Task[]> {
+    if (contentIds.length === 0) return [];
+    return await db.select().from(tasks)
+      .where(and(eq(tasks.userId, userId), inArray(tasks.contentId, contentIds)));
   }
 
   // ── Auto-publication des posts programmés ────────────────────────────────
@@ -1397,28 +1426,35 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number> {
-    const deleted = await db.delete(content).where(
-      and(
-        eq((content as any).campaignId, campaignId),
-        gte(content.scheduledFor, new Date(fromDate + 'T00:00:00'))
-      )
-    ).returning({ id: content.id });
-    return deleted.length;
+    return this.supprimerContenusEtLeursTaches(and(
+      eq(content.campaignId, campaignId),
+      gte(content.scheduledFor, new Date(fromDate + 'T00:00:00')),
+    )!);
   }
 
   async deleteAllCampaignContent(campaignId: number): Promise<number> {
-    const deleted = await db.delete(content).where(
-      eq((content as any).campaignId, campaignId)
-    ).returning({ id: content.id });
-    return deleted.length;
+    return this.supprimerContenusEtLeursTaches(eq(content.campaignId, campaignId));
+  }
+
+  /** Supprime les posts ciblés et, avant eux, leurs tâches de production non faites. */
+  private async supprimerContenusEtLeursTaches(portee: SQL): Promise<number> {
+    return db.transaction(async (tx) => {
+      const cibles = await tx.select({ id: content.id }).from(content).where(portee);
+      if (cibles.length === 0) return 0;
+      const ids = cibles.map((c) => c.id);
+      await this.libererTachesDesContenus(tx, ids);
+      const deleted = await tx.delete(content).where(inArray(content.id, ids)).returning({ id: content.id });
+      return deleted.length;
+    });
   }
 
   // Supprime ces seuls contenus, et seulement s'ils appartiennent bien à la campagne (et à
   // l'utilisatrice si fournie). Les conditions de garde (publié / en cours de publication)
   // sont REDITES en SQL — mêmes que « repenser » (`contenuSupprimable`) : entre la lecture
   // de la route et ici, le publieur a pu prendre un post. Les posts partants sont
-  // verrouillés, les tâches qui y pointent détachées (`tasks.content_id` en NO ACTION),
-  // puis supprimés, en une transaction. Rend le nombre réellement supprimé.
+  // verrouillés ; leurs tâches de production non faites sont supprimées, les faites
+  // détachées (`tasks.content_id` en NO ACTION) ; puis les posts sont supprimés, en une
+  // transaction. Rend le nombre réellement supprimé.
   async deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number> {
     if (ids.length === 0) return 0;
     return db.transaction(async (tx) => {
@@ -1431,7 +1467,7 @@ export class DatabaseStorage implements IStorage {
       const partants = await tx.select({ id: content.id }).from(content).where(portee).for("update");
       if (partants.length === 0) return 0;
       const idsPartants = partants.map((c) => c.id);
-      await tx.update(tasks).set({ contentId: null }).where(inArray(tasks.contentId, idsPartants));
+      await this.libererTachesDesContenus(tx, idsPartants);
       const deleted = await tx.delete(content).where(and(
         eq(content.campaignId, campaignId),
         ...(userId ? [eq(content.userId, userId)] : []),

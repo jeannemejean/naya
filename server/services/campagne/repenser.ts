@@ -386,12 +386,16 @@ async function executer(
   let postsCrees: number;
   etape("placement");
   try {
-    ({ creees: tachesCreees } = await placerTachesCampagne(deps.placement, {
-      userId, campaign: campagneRepensee, debut, fin, bornerA: fin,
+    // Les posts d'abord, avec leurs tâches de production (elles ont une échéance), puis
+    // les autres tâches du plan, qui se rangent autour.
+    let tachesProduction: number;
+    ({ crees: postsCrees, tachesProduction } = await placerPostsCampagne(deps.placement, {
+      userId, campaign: campagneRepensee, debut, fin, bornerA: fin, aujourdhui: deps.aujourdhuiParis(),
     }));
-    ({ crees: postsCrees } = await placerPostsCampagne(deps.placement, {
+    const { creees: autres } = await placerTachesCampagne(deps.placement, {
       userId, campaign: campagneRepensee, debut, fin, bornerA: fin,
-    }));
+    });
+    tachesCreees = tachesProduction + autres;
   } catch (e) {
     throw new PlacementEchoue({ postsSupprimes, tachesSupprimees }, e);
   }
