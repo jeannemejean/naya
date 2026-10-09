@@ -11,6 +11,7 @@ import { runReadingRoom } from "./services/reading/runner";
 import { statutApresReponse } from "./services/reading/statut";
 import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserId, generateJWT } from "./auth";
 import { registerLivrablesRoutes } from "./routes-livrables";
+import { registerProgrammationRoutes } from "./routes-programmation";
 import { 
   generateContent, 
   generateDailyTasks, 
@@ -11368,6 +11369,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   registerLivrablesRoutes(app);
+  registerProgrammationRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

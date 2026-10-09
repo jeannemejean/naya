@@ -4,6 +4,7 @@ import { fetchJson } from '@/lib/fetchJson';
 import { tenterUneFois } from '@/lib/one-shot-guard';
 import { mediasDuPost, estVideo, type MediaDuPost } from "./content-calendar-medias";
 import VisuelsDuPost from "@/components/content/VisuelsDuPost";
+import ProgrammationPost from "@/components/content/ProgrammationPost";
 import { useTranslation } from 'react-i18next';
 import { throwApiError, translateError } from '@/lib/api-error';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
@@ -150,6 +151,17 @@ function messageCollision(brut: unknown): { titre: string; description: string }
 
 interface ContentCalendarProps {
  onSearchClick?: () => void;
+}
+
+// État de publication sur la carte : programmé, en cours, publié par Naya, ou en échec.
+function PastillePublication({ item }: { item: Content }) {
+ const { t } = useTranslation();
+ const p = item as any;
+ if (p.postStatus === 'posted') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-naya-olive-10 text-naya-olive">{t('programmation.pastille.publie')}</span>;
+ if (p.postStatus === 'failed') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-[rgba(158,126,135,0.15)] text-[#5c3d45]">{t('programmation.pastille.echec')}</span>;
+ if (['posting', 'uploading', 'processing'].includes(p.postStatus)) return <span className="text-[10px] px-1.5 py-0.5 rounded bg-naya-olive-10 text-naya-olive-70">{t('programmation.pastille.enCours')}</span>;
+ if (p.autoPost === true && p.postStatus === 'pending') return <span className="text-[10px] px-1.5 py-0.5 rounded bg-naya-olive text-white">{t('programmation.pastille.programme')}</span>;
+ return null;
 }
 
 // Vignettes des visuels d'un post sur sa carte (les quatre premiers, puis « +n »).
@@ -927,6 +939,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {item.scheduledFor && (
  <span className="text-xs text-naya-olive-35">{format(new Date(item.scheduledFor), 'MMM d')}</span>
  )}
+ <PastillePublication item={item} />
  </div>
 
  {/* Inline regenerate form */}
@@ -1315,6 +1328,16 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  }}
  />
  </div>
+
+ {selectedPost && (
+ <ProgrammationPost
+ postId={selectedPost.id}
+ body={formData.body}
+ title={formData.title}
+ scheduledFor={formData.scheduledFor}
+ onComptes={() => { setShowCreateDialog(false); resetForm(); setView('accounts'); }}
+ />
+ )}
 
  <div className="flex flex-wrap justify-end gap-2 pt-4">
  {/* Refuser depuis la fenêtre d'édition : c'est là qu'on arrive en cliquant sur un post

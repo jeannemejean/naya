@@ -15,6 +15,18 @@
 import { storage } from '../storage';
 import { socialMediaService } from './social-integrations';
 import { publishPost, igFinishAsync, tiktokFinishAsync } from './social-publishers';
+import { formatDePublication, plateformeDe } from '@shared/programmation';
+import { db } from '../db';
+import { tasks } from '@shared/schema';
+import { and, eq, like } from 'drizzle-orm';
+
+/** Le post est parti : sa tâche « Publier » n'a plus lieu d'être, elle se coche seule. */
+async function cocherTachePublier(contentId: number): Promise<void> {
+  await db.update(tasks)
+    .set({ completed: true, completedAt: new Date() } as any)
+    .where(and(eq(tasks.contentId, contentId), eq(tasks.completed, false), like(tasks.title, 'Publier — %')))
+    .catch((e: any) => console.error(`[SocialPublisher] tâche Publier du post ${contentId} non cochée:`, e?.message || e));
+}
 
 const SUPPORTED = new Set(['instagram', 'linkedin', 'twitter', 'facebook']);
 
@@ -23,9 +35,10 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
   const claimed = await storage.claimContentForPosting(item.id);
   if (!claimed) return 'skipped';
 
-  const platform: string = item.platform;
+  // « Instagram » et « instagram » : la casse varie selon l'origine du post.
+  const platform: string = plateformeDe(item.platform);
   if (!SUPPORTED.has(platform)) {
-    await storage.updateContent(item.id, { postStatus: 'failed' } as any);
+    await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'plateforme_non_supportee' } as any);
     console.error(`[SocialPublisher] id=${item.id} plateforme non supportée: ${platform}`);
     return 'failed';
   }
@@ -35,15 +48,15 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
     const accounts = await storage.getSocialAccounts(item.userId);
     const account = item.socialAccountId
       ? accounts.find((a: any) => a.id === item.socialAccountId)
-      : accounts.find((a: any) => a.platform === platform && a.isActive);
+      : accounts.find((a: any) => plateformeDe(a.platform) === platform && a.isActive);
 
     if (!account) {
-      await storage.updateContent(item.id, { postStatus: 'failed' } as any);
+      await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'compte_absent' } as any);
       console.error(`[SocialPublisher] id=${item.id} aucun compte ${platform} connecté`);
       return 'failed';
     }
     if (account.expiresAt && new Date() > new Date(account.expiresAt)) {
-      await storage.updateContent(item.id, { postStatus: 'failed' } as any);
+      await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'compte_expire' } as any);
       console.error(`[SocialPublisher] id=${item.id} token ${platform} expiré — reconnexion requise`);
       return 'failed';
     }
@@ -66,8 +79,8 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
     }
     if (media.length === 0 && item.mediaUrl) media.push({ url: item.mediaUrl, kind: 'image' });
 
-    // 4. Format (défaut feed_image ; texte si LinkedIn sans média).
-    const format: string = item.postFormat || (media.length ? 'feed_image' : 'text');
+    // 4. Format déduit des visuels (plusieurs → carrousel), sauf story / reel / short explicites.
+    const format: string = formatDePublication(item.postFormat, media.map((m) => m.kind));
     if (media.length === 0 && platform !== 'linkedin') {
       await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'media_required' } as any);
       return 'failed';
@@ -91,11 +104,13 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
     }
     await storage.updateContent(item.id, {
       status: 'published', publishedAt: new Date(), platformPostId: result.platformPostId, postStatus: 'posted',
+      contentStatus: 'published', lastError: null,
     } as any);
+    await cocherTachePublier(item.id);
     console.log(`[SocialPublisher] ✅ publié id=${item.id} sur ${platform} (postId=${result.platformPostId})`);
     return 'posted';
   } catch (err: any) {
-    await storage.updateContent(item.id, { postStatus: 'failed' } as any).catch(() => {});
+    await storage.updateContent(item.id, { postStatus: 'failed', lastError: String(err?.message || err).slice(0, 300) } as any).catch(() => {});
     console.error(`[SocialPublisher] ❌ échec id=${item.id} sur ${platform}: ${err?.message || err}`);
     return 'failed';
   }
@@ -118,7 +133,8 @@ async function finishProcessing(): Promise<number> {
         ? await tiktokFinishAsync(creds, item.providerContainerId)
         : await igFinishAsync(creds, item.providerContainerId);
       if (r.state === 'posted') {
-        await storage.updateContent(item.id, { status: 'published', publishedAt: new Date(), platformPostId: r.platformPostId, postStatus: 'posted' } as any);
+        await storage.updateContent(item.id, { status: 'published', publishedAt: new Date(), platformPostId: r.platformPostId, postStatus: 'posted', contentStatus: 'published', lastError: null } as any);
+        await cocherTachePublier(item.id);
         done++;
       } else if (r.state === 'failed') {
         await storage.updateContent(item.id, { postStatus: 'failed', lastError: (r.error || '').slice(0, 300) } as any);
