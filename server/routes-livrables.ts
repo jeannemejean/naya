@@ -11,6 +11,20 @@ import {
 import { creerLivrable, modifierLivrable, supprimerLivrable, rattraperMemoire } from "./services/livrables/service";
 import { estCleFichierDe, estUrlMediaDe } from "./services/livrables/urls";
 import { livrablesDeps, listerLivrables } from "./services/livrables/deps";
+import { nourrirLePost, type PostDeps } from "./services/livrables/post";
+import { effetSurPost, postModifiable } from "@shared/livrables";
+
+const postDeps: PostDeps = {
+  lirePost: (id, userId) => storage.getContentById(id, userId) as any,
+  majPost: (id, patch) => storage.updateContent(id, patch as any),
+};
+
+/** La tâche si elle appartient à l'utilisateur (getTask ne filtre pas par compte). */
+async function tacheDe(userId: string, taskId: number | null | undefined) {
+  if (taskId == null) return undefined;
+  const t = await storage.getTask(taskId);
+  return t && t.userId === userId ? t : undefined;
+}
 
 const KINDS: LivrableKind[] = ["texte", "media", "fichier", "lien"];
 
@@ -48,6 +62,40 @@ export function registerLivrablesRoutes(app: Express): void {
     } catch (e: any) {
       console.error("[Livrables] liste projet:", e?.message);
       res.status(500).json({ message: "livrables_read_failed" });
+    }
+  });
+
+  // Le post auquel une tâche de production est rattachée : aperçu dans la tâche, et ce
+  // que le dépôt y changera. `null` quand la tâche n'a pas de post.
+  app.get("/api/tasks/:id/post", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = idPositif(req.params.id);
+      if (id == null) return res.status(400).json({ message: "invalid_id" });
+      const tache = await tacheDe(req.userId, id);
+      if (!tache) return res.status(404).json({ message: "not_found" });
+      const contentId = (tache as any).contentId as number | null;
+      if (contentId == null) return res.json(null);
+      const post = await storage.getContentById(contentId, req.userId);
+      if (!post) return res.json(null);
+      const ids = Array.isArray((post as any).mediaIds) ? ((post as any).mediaIds as unknown[]).map(Number) : [];
+      const medias = (await Promise.all(ids.map((m) => storage.getMediaItemById(m, req.userId))))
+        .filter(Boolean)
+        .map((m: any) => ({ id: m.id, url: m.url, mimeType: m.mimeType }));
+      if (medias.length === 0 && (post as any).mediaUrl) medias.push({ id: 0, url: (post as any).mediaUrl, mimeType: "image/*" });
+      res.json({
+        id: post.id,
+        title: post.title,
+        body: post.body,
+        platform: post.platform,
+        postFormat: (post as any).postFormat ?? null,
+        scheduledFor: (post as any).scheduledFor ?? null,
+        modifiable: postModifiable((post as any).postStatus),
+        medias,
+        effet: effetSurPost(tache.title),
+      });
+    } catch (e: any) {
+      console.error("[Livrables] post de la tâche:", e?.message);
+      res.status(500).json({ message: "post_read_failed" });
     }
   });
 
@@ -127,7 +175,9 @@ export function registerLivrablesRoutes(app: Express): void {
         mimeType: typeof mimeType === "string" ? mimeType : null,
         size: Number.isFinite(Number(size)) ? Number(size) : null,
       });
-      res.status(201).json(l);
+      // Tâche de production d'un post : le dépôt nourrit le post (texte ou visuel).
+      const post = await nourrirLePost(postDeps, { userId, tache: task as any, livrable: l as any });
+      res.status(201).json({ ...l, post });
     } catch (e: any) {
       console.error("[Livrables] création:", e?.message);
       res.status(500).json({ message: "livrable_create_failed" });
@@ -147,7 +197,10 @@ export function registerLivrablesRoutes(app: Express): void {
       const l = await modifierLivrable(livrablesDeps, id, req.userId,
         typeof content === "string" ? content : null);
       if (!l) return res.status(404).json({ message: "not_found" });
-      res.json(l);
+      const post = await nourrirLePost(postDeps, {
+        userId: req.userId, tache: (await tacheDe(req.userId, l.taskId)) as any, livrable: l as any,
+      });
+      res.json({ ...l, post });
     } catch (e: any) {
       console.error("[Livrables] modification:", e?.message);
       res.status(500).json({ message: "livrable_update_failed" });

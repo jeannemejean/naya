@@ -1471,6 +1471,16 @@ const en = {
  },
 
  livrables: {
+  postTitle: "The post",
+  postWhen: "Publishing: {{date}}",
+  postEmpty: "No text yet.",
+  postHintTexte: "The text you drop here becomes the post's text.",
+  postHintMedia: "Photos and videos you drop here are attached to the post.",
+  postHintBoth: "The text you drop becomes the post's text; photos and videos are attached to it.",
+  postHintNone: "What you drop at this step stays in your deliverables: the post does not change.",
+  postLocked: "This post is published: it no longer changes.",
+  sentToPostText: "Post text updated",
+  sentToPostMedia: "Added to the post",
  title: "What you produced",
  addText: "Text",
  addMedia: "Photo/video",

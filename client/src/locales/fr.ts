@@ -1475,6 +1475,16 @@ const fr = {
  },
 
  livrables: {
+  postTitle: "Le post",
+  postWhen: "Publication : {{date}}",
+  postEmpty: "Pas encore de texte.",
+  postHintTexte: "Le texte que tu déposes ici devient le texte du post.",
+  postHintMedia: "Les photos et vidéos que tu déposes ici sont jointes au post.",
+  postHintBoth: "Le texte que tu déposes devient le texte du post ; les photos et vidéos y sont jointes.",
+  postHintNone: "Ce que tu déposes à cette étape reste dans tes livrables : le post ne change pas.",
+  postLocked: "Ce post est publié : il ne change plus.",
+  sentToPostText: "Texte du post mis à jour",
+  sentToPostMedia: "Ajouté au post",
  title: "Ce que tu as produit",
  addText: "Texte",
  addMedia: "Photo/vidéo",

@@ -1,0 +1,50 @@
+import { describe, it, expect, vi } from "vitest";
+import { nourrirLePost, type PostDeps } from "./post";
+
+function deps(post: any): PostDeps & { majPost: ReturnType<typeof vi.fn> } {
+  return { lirePost: vi.fn().mockResolvedValue(post), majPost: vi.fn().mockResolvedValue({}) } as any;
+}
+
+describe("nourrirLePost", () => {
+  it("le texte déposé sur « Rédiger le texte » devient le texte du post", async () => {
+    const d = deps({ id: 9, postStatus: "pending", mediaIds: [] });
+    const r = await nourrirLePost(d, {
+      userId: "u", tache: { title: "Rédiger le texte — Coulisses", contentId: 9 },
+      livrable: { kind: "texte", content: "  Mon texte  " },
+    });
+    expect(d.majPost).toHaveBeenCalledWith(9, { body: "Mon texte" });
+    expect(r).toEqual({ contentId: 9, texte: true });
+  });
+
+  it("la photo déposée sur « Préparer le visuel » est ajoutée aux médias du post, sans doublon", async () => {
+    const d = deps({ id: 9, postStatus: "pending", mediaIds: [3] });
+    await nourrirLePost(d, { userId: "u", tache: { title: "Préparer le visuel — X", contentId: 9 }, livrable: { kind: "media", mediaId: 5 } });
+    expect(d.majPost).toHaveBeenCalledWith(9, { mediaIds: [3, 5] });
+
+    const d2 = deps({ id: 9, postStatus: "pending", mediaIds: [5] });
+    await nourrirLePost(d2, { userId: "u", tache: { title: "Préparer le visuel — X", contentId: 9 }, livrable: { kind: "media", mediaId: 5 } });
+    expect(d2.majPost).not.toHaveBeenCalled();
+  });
+
+  it("ne touche pas au post : tâche sans post, étape intermédiaire, mauvais type", async () => {
+    const d = deps({ id: 9, postStatus: "pending" });
+    expect(await nourrirLePost(d, { userId: "u", tache: { title: "Rédiger le texte — X", contentId: null }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+    expect(await nourrirLePost(d, { userId: "u", tache: { title: "Écrire le script — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+    expect(await nourrirLePost(d, { userId: "u", tache: { title: "Préparer le visuel — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+    expect(await nourrirLePost(d, { userId: "u", tache: { title: "Rédiger le texte — X", contentId: 9 }, livrable: { kind: "lien", content: "a" } })).toBeNull();
+    expect(d.majPost).not.toHaveBeenCalled();
+  });
+
+  it("ne modifie jamais un post publié ou introuvable (autre compte)", async () => {
+    const publie = deps({ id: 9, postStatus: "posted" });
+    expect(await nourrirLePost(publie, { userId: "u", tache: { title: "Publier — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+    expect(publie.majPost).not.toHaveBeenCalled();
+    const absent = deps(undefined);
+    expect(await nourrirLePost(absent, { userId: "u", tache: { title: "Publier — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+  });
+
+  it("un échec d'écriture ne lève pas", async () => {
+    const d: PostDeps = { lirePost: vi.fn().mockResolvedValue({ id: 9, postStatus: "pending" }), majPost: vi.fn().mockRejectedValue(new Error("db")) };
+    expect(await nourrirLePost(d, { userId: "u", tache: { title: "Rédiger le texte — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+  });
+});

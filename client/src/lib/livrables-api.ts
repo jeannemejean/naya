@@ -9,6 +9,23 @@ export const cleLivrablesTache = (taskId: number) => [`/api/tasks/${taskId}/livr
 export const estCleListeLivrables = (key: readonly unknown[]) =>
   typeof key[0] === "string" && key[0].endsWith("/livrables");
 
+/** Post auquel une tâche de production est rattachée (GET /api/tasks/:id/post), ou null. */
+export interface PostDeTache {
+  id: number;
+  title: string;
+  body: string;
+  platform: string;
+  postFormat: string | null;
+  scheduledFor: string | null;
+  modifiable: boolean;
+  medias: { id: number; url: string; mimeType: string }[];
+  effet: { texte: boolean; media: boolean };
+}
+export const clePostTache = (taskId: number) => [`/api/tasks/${taskId}/post`] as const;
+
+/** Ce que le dépôt a changé dans le post (réponse de POST/PATCH /api/livrables). */
+export type EffetDepot = { contentId: number; texte?: boolean; media?: boolean } | null;
+
 export const cleLivrablesProjet = (projectId: number) => [`/api/projects/${projectId}/livrables`] as const;
 
 /** Upload direct vers R2 via URL présignée. Vérifie taille et type AVANT d'envoyer. */
@@ -41,11 +58,11 @@ export async function creerLivrableApi(body: {
   fileName?: string | null;
   mimeType?: string | null;
   size?: number | null;
-}): Promise<LivrableClient> {
+}): Promise<LivrableClient & { post?: EffetDepot }> {
   return (await apiRequest("POST", "/api/livrables", body)).json();
 }
 
-export async function modifierLivrableApi(id: number, content: string | null): Promise<LivrableClient> {
+export async function modifierLivrableApi(id: number, content: string | null): Promise<LivrableClient & { post?: EffetDepot }> {
   return (await apiRequest("PATCH", `/api/livrables/${id}`, { content })).json();
 }
 

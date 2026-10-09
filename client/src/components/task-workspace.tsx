@@ -1,14 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
-import { etatSauvegarde, risqueDePerte } from "@/lib/task-workspace-save";
 import { useToast } from "@/hooks/use-toast";
-import { Check, Loader2, ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown, Pencil } from "lucide-react";
 import TaskEditDialog from "@/components/task-edit-dialog";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
 import { estEvenementAgenda } from "@/lib/agenda-api";
@@ -43,22 +38,6 @@ function formatRelative(date: string | Date) {
  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// Choisit le module le plus pertinent selon la nature de la tâche (type / catégorie /
-// énergie / titre). L'utilisateur peut toujours changer manuellement ensuite.
-function inferWorkspaceModule(task: Task | null): string {
-  if (!task) return "strategy";
-  const hay = `${(task as any).type || ""} ${(task as any).category || ""} ${(task as any).taskEnergyType || ""} ${task.title || ""}`.toLowerCase();
-  if (/(content|writ|copy|post|caption|r[ée]dig|[ée]cri|draft|messaging|outreach|social|engagement|prospect|email|message|newsletter|script|l[ée]gende|bio)/.test(hay)) return "writing";
-  if (/(reflect|r[ée]flex|bilan|review|revue|r[ée]tro|journal|d[ée]brief)/.test(hay)) return "reflection";
-  if (/(research|recherche|analy|[ée]tude|study|explore|veille|benchmark|sourc|identifier|lister)/.test(hay)) return "research";
-  if (/(plan|setup|organi[sz]|schedule|logistic|admin|pr[ée]par|calendr|roadmap|process)/.test(hay)) return "planning";
-  if (/(strateg|strat[ée]g|position|vision|offre|offer|brand|adn|d[ée]cision|decision|pricing|prix|pilier)/.test(hay)) return "strategy";
-  const e = ((task as any).taskEnergyType || "").toLowerCase();
-  if (e === "creative" || e === "social") return "writing";
-  if (e === "admin" || e === "logistics") return "planning";
-  if (e === "deep_work") return "strategy";
-  return "strategy";
-}
 
 export default function TaskWorkspace({ task, project, open, onClose, onDeleted, focusLivrables = false, onFaitHorsNaya }: TaskWorkspaceProps) {
  const { t } = useTranslation();
@@ -124,31 +103,16 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  setShowReschedule(false);
  setRescheduleDate(task?.scheduledDate || "");
  setRescheduleTime(task?.scheduledTime || "");
- // Auto-sélection du module selon la nature de la tâche.
- if (task) setActiveType(inferWorkspaceModule(task));
  }, [task?.id]);
 
- const WORKSPACE_TYPES = [
- { id: "strategy", label: t('taskWorkspace.strategy'), icon: "◆", placeholder: t('taskWorkspace.strategyPlaceholder') },
- { id: "writing", label: t('taskWorkspace.write'), icon: "—", placeholder: t('taskWorkspace.writePlaceholder') },
- { id: "planning", label: t('taskWorkspace.plan'), icon: "▷", placeholder: t('taskWorkspace.planPlaceholder') },
- { id: "reflection", label: t('taskWorkspace.reflect'), icon: "◯", placeholder: t('taskWorkspace.reflectPlaceholder') },
- { id: "research", label: t('taskWorkspace.research'), icon: "◇", placeholder: t('taskWorkspace.researchPlaceholder') },
- ];
-
- const [activeType, setActiveType] = useState("strategy");
- const [title, setTitle] = useState("");
- const [content, setContent] = useState("");
- const [currentEntryId, setCurrentEntryId] = useState<number | null>(null);
+ // Une seule zone de rendu : « Ce que tu as produit » (LivrablesSection). L'ancien
+ // éditeur à onglets (Stratégie / Écrire / Planifier…) doublait cette zone et créait un
+ // second brouillon dans le calendrier, à côté du post de la tâche. Ses notes déjà
+ // enregistrées restent lisibles plus bas.
+ const ICONES_NOTES: Record<string, string> = { strategy: "◆", writing: "—", planning: "▷", reflection: "◯", research: "◇" };
  const [expandedEntry, setExpandedEntry] = useState<number | null>(null);
- // Ce qui se trouve REELLEMENT en base, pour savoir a tout instant si du travail
- // reste non enregistre. L'ancien code posait un drapeau `hasUnsavedRef` qu'il ne
- // lisait jamais : fermer dans les 800 ms suivant une frappe perdait le texte.
- const [contenuEnregistre, setContenuEnregistre] = useState<string | null>(null);
- const [titreEnregistre, setTitreEnregistre] = useState<string | null>(null);
- const [confirmerFermeture, setConfirmerFermeture] = useState(false);
 
- const { data: entries = [], isLoading: entriesLoading } = useQuery<TaskWorkspaceEntry[]>({
+ const { data: entries = [] } = useQuery<TaskWorkspaceEntry[]>({
  queryKey: ['/api/tasks', task?.id, 'workspace'],
  queryFn: async () => {
  if (!task) return [];
@@ -158,82 +122,6 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  enabled: !!task && open,
  });
 
- const createMutation = useMutation({
- mutationFn: async (data: { type: string; title: string; content: string }) => {
- const res = await apiRequest("POST", `/api/tasks/${task!.id}/workspace`, {
- projectId: task?.projectId ?? null,
- type: data.type,
- intent: data.type,
- title: data.title || null,
- source: "task",
- content: data.content,
- });
- return res.json();
- },
- onSuccess: (entry: TaskWorkspaceEntry & { routage?: { destination: string } }) => {
- setCurrentEntryId(entry.id);
- setContenuEnregistre(entry.content ?? "");
- setTitreEnregistre(entry.title ?? "");
- queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id, 'workspace'] });
- // Dire OU le travail est parti. Sans ce retour, le routage serait invisible :
- // l'utilisatrice n'aurait aucune raison d'aller regarder le calendrier.
- if (entry.routage?.destination === 'content') {
- queryClient.invalidateQueries({ queryKey: ['/api/content'] });
- toast({ title: t('taskWorkspace.sentToContentCalendar') });
- }
- },
- onError: () => {
- toast({ title: t('taskWorkspace.error'), description: t('taskWorkspace.failedToSave'), variant: "destructive" });
- },
- });
-
- const updateMutation = useMutation({
- mutationFn: async (data: { content: string; title: string }) => {
- const res = await apiRequest("PATCH", `/api/tasks/workspace/${currentEntryId}`, data);
- return res.json();
- },
- onSuccess: (_data, variables) => {
- setContenuEnregistre(variables.content);
- setTitreEnregistre(variables.title);
- queryClient.invalidateQueries({ queryKey: ['/api/tasks', task?.id, 'workspace'] });
- },
- onError: () => {
- toast({ title: t('taskWorkspace.error'), description: t('taskWorkspace.failedToSave'), variant: "destructive" });
- },
- });
-
- const enCours = createMutation.isPending || updateMutation.isPending;
- const etat = etatSauvegarde({ contenu: content, titre: title, contenuEnregistre, titreEnregistre, enCours });
-
- const enregistrer = useCallback(() => {
- if (!content.trim() || enCours) return;
- if (currentEntryId) {
- updateMutation.mutate({ content, title });
- } else {
- createMutation.mutate({ type: activeType, title, content });
- }
- }, [content, title, activeType, currentEntryId, enCours, createMutation, updateMutation]);
-
- useEffect(() => {
- if (!open) {
- setTitle("");
- setContent("");
- setCurrentEntryId(null);
- setContenuEnregistre(null);
- setTitreEnregistre(null);
- setConfirmerFermeture(false);
- }
- }, [open]);
-
- useEffect(() => {
- setTitle("");
- setContent("");
- setCurrentEntryId(null);
- setContenuEnregistre(null);
- setTitreEnregistre(null);
- setConfirmerFermeture(false);
- }, [activeType]);
-
  // Quand on arrive pour déposer un livrable, on amène la section à l'écran.
  useEffect(() => {
  if (open && focusLivrables) {
@@ -241,22 +129,11 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  }
  }, [open, focusLivrables]);
 
- const activeTypeConfig = WORKSPACE_TYPES.find(t => t.id === activeType) ?? WORKSPACE_TYPES[0];
-
  return (
  <>
  <Sheet
  open={open}
- onOpenChange={(v) => {
- if (v) return;
- // Fermer sur du travail non enregistre demande une confirmation. C'est exactement
- // la fenetre ou l'ancien enregistrement automatique perdait le texte sans rien dire.
- if (risqueDePerte(etat) && !confirmerFermeture) {
- setConfirmerFermeture(true);
- return;
- }
- onClose();
- }}
+ onOpenChange={(v) => { if (!v) onClose(); }}
  >
  <SheetContent side="right" className="w-full sm:max-w-[580px] flex flex-col p-0 overflow-hidden">
  <SheetHeader className="px-5 pt-5 pb-3 border-b border-naya-olive-18 flex-shrink-0">
@@ -405,106 +282,21 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  </div>
  )}
- <div className="px-5 pt-4 flex-shrink-0">
- <div className="flex gap-1 flex-wrap">
- {WORKSPACE_TYPES.map(wt => (
- <button
- key={wt.id}
- onClick={() => setActiveType(wt.id)}
- style={activeType === wt.id ? { backgroundColor: '#2B2D1C', color: '#F7F4EC' } : undefined}
- className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-all ${
- activeType === wt.id
- ? 'font-medium'
- : 'bg-naya-olive-10 text-naya-olive-55 hover:bg-naya-olive-18'
- }`}
- >
- <span>{wt.icon}</span>
- {wt.label}
- </button>
- ))}
- </div>
- </div>
-
- <div className="flex-1 flex flex-col px-5 pt-3 pb-3 min-h-[120px]">
- <Input
- placeholder={t('taskWorkspace.optionalTitle')}
- value={title}
- onChange={(e) => setTitle(e.target.value)}
- className="mb-2 text-sm h-8 border-naya-olive-18 flex-shrink-0"
- />
- <div className="relative flex-1 min-h-0">
- <Textarea
- placeholder={activeTypeConfig.placeholder}
- value={content}
- onChange={(e) => setContent(e.target.value)}
- className="h-full resize-none text-sm border-naya-olive-18 focus:ring-1 focus:ring-slate-300"
- style={{ minHeight: '180px' }}
- />
- </div>
-
- {confirmerFermeture && (
- <div className="mt-2 p-2.5 rounded-lg border border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] flex items-center justify-between gap-3 flex-shrink-0">
- <span className="text-[11px] text-[#6f6526]">{t('taskWorkspace.unsavedWarning')}</span>
- <div className="flex items-center gap-2 flex-shrink-0">
- <button
- onClick={() => { setConfirmerFermeture(false); onClose(); }}
- className="text-[11px] text-naya-olive-55 hover:text-naya-olive-70 px-2 py-1"
- >
- {t('taskWorkspace.closeWithoutSaving')}
- </button>
- <button
- onClick={() => { setConfirmerFermeture(false); enregistrer(); }}
- className="text-[11px] px-2.5 py-1 rounded-md bg-naya-olive text-white"
- >
- {t('taskWorkspace.save')}
- </button>
- </div>
- </div>
- )}
-
- {/* Enregistrement explicite. L'ancien enregistrement automatique perdait le texte
- quand le panneau se fermait dans les 800 ms suivant la derniere frappe. */}
- <div className="flex items-center justify-between gap-3 mt-2 flex-shrink-0">
- <span className="text-[10px] text-naya-olive-35 flex items-center gap-1">
- {etat === "enregistrement" && (<><Loader2 className="h-2.5 w-2.5 animate-spin" /> {t('taskWorkspace.saving')}</>)}
- {etat === "enregistre" && (<><Check className="h-2.5 w-2.5 text-naya-olive-55" /> {t('taskWorkspace.saved')}</>)}
- {etat === "modifie" && t('taskWorkspace.unsaved')}
- </span>
- <button
- onClick={enregistrer}
- disabled={etat !== "modifie"}
- className="text-xs px-3 py-1.5 rounded-md bg-naya-olive text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
- >
- {t('taskWorkspace.save')}
- </button>
- </div>
- </div>
-
  {task && (
- <div id="livrables-section" className="flex-shrink-0 border-t border-naya-olive-18 max-h-[35vh] overflow-y-auto px-5 py-3">
+ <div id="livrables-section" className="flex-1 min-h-0 overflow-y-auto px-5 py-3">
  <LivrablesSection taskId={task.id} focus={focusLivrables} onFaitHorsNaya={onFaitHorsNaya} />
  </div>
  )}
 
+ {entries.length > 0 && (
  <div className="flex-shrink-0 border-t border-naya-olive-18 max-h-60 overflow-y-auto">
  <div className="px-5 py-2.5">
  <p className="text-xs text-naya-cream0 uppercase tracking-wide mb-2">
  {t('taskWorkspace.previousNotes')}
  </p>
- {entriesLoading && (
- <div className="flex justify-center py-3">
- <Loader2 className="h-4 w-4 animate-spin text-naya-olive-35" />
- </div>
- )}
- {!entriesLoading && entries.length === 0 && (
- <p className="text-xs text-naya-olive-35 italic">
- {t('taskWorkspace.noSavedNotes')}
- </p>
- )}
  <div className="space-y-1.5">
  {entries.map(entry => {
- const typeConfig = WORKSPACE_TYPES.find(t => t.id === entry.type);
- const isExpanded = expandedEntry === entry.id;
+  const isExpanded = expandedEntry === entry.id;
  return (
  <div
  key={entry.id}
@@ -514,7 +306,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  onClick={() => setExpandedEntry(isExpanded ? null : entry.id)}
  className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-naya-olive-06 :bg-naya-olive/50 transition-colors"
  >
- <span className="text-xs">{typeConfig?.icon ?? '—'}</span>
+ <span className="text-xs">{ICONES_NOTES[entry.type] ?? '—'}</span>
  <span className="flex-1 text-xs text-naya-olive-70 truncate">
  {entry.title || entry.content.slice(0, 50) || t('taskWorkspace.untitledNote')}
  </span>
@@ -539,6 +331,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  </div>
  </div>
+ )}
  </div>
  </SheetContent>
  </Sheet>

@@ -81,3 +81,47 @@ export function titreMemoire(taskTitle: string | null | undefined): string {
   const t = (taskTitle ?? "").trim();
   return t ? `Livrable : ${t}` : "Livrable déposé";
 }
+
+// ─── Livrable d'une tâche de production de post ─────────────────────────────
+//
+// Les tâches de production dérivent d'un post (`tasks.content_id`, voir
+// server/services/campagne/production.ts) et s'intitulent « <étape> — <titre du post> ».
+// Ce que l'on dépose sur l'une d'elles nourrit le post lui-même, selon l'étape : le texte
+// devient le texte du post, la photo ou la vidéo y est jointe. Une étape intermédiaire
+// (structure, script, rushes) ne touche pas au post : ce n'est pas encore ce qui sera publié.
+
+const ETAPES_TEXTE = [
+  "Rédiger le texte", "Rédiger les slides", "Préparer la story", "Mettre en forme",
+  "Relire et valider le post", "Publier",
+];
+const ETAPES_MEDIA = [
+  "Préparer le visuel", "Designer les slides", "Monter", "Préparer la story", "Mettre en forme",
+  "Relire et valider le post", "Publier",
+];
+
+/** Étape de production portée par le titre de la tâche (« Rédiger le texte — … »), ou null. */
+export function etapeDeProduction(titreTache: string | null | undefined): string | null {
+  const t = (titreTache ?? "").trim();
+  const i = t.indexOf(" — ");
+  return i > 0 ? t.slice(0, i) : null;
+}
+
+export interface EffetSurPost {
+  /** Un texte déposé devient le texte du post. */
+  texte: boolean;
+  /** Une photo ou une vidéo déposée est jointe au post. */
+  media: boolean;
+}
+
+export function effetSurPost(titreTache: string | null | undefined): EffetSurPost {
+  const etape = etapeDeProduction(titreTache);
+  return {
+    texte: etape != null && ETAPES_TEXTE.includes(etape),
+    media: etape != null && ETAPES_MEDIA.includes(etape),
+  };
+}
+
+/** Un post en cours de publication ou déjà publié ne se modifie plus depuis une tâche. */
+export function postModifiable(postStatus: string | null | undefined): boolean {
+  return !["posted", "uploading", "processing", "posting"].includes(postStatus ?? "");
+}

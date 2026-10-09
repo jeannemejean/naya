@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ACCEPT_FICHIER, lienValide } from "@shared/livrables";
 import {
-  cleLivrablesTache, estCleListeLivrables, creerLivrableApi, modifierLivrableApi, supprimerLivrableApi, televerser,
-  type LivrableClient,
+  cleLivrablesTache, clePostTache, estCleListeLivrables, creerLivrableApi, modifierLivrableApi, supprimerLivrableApi, televerser,
+  type EffetDepot, type LivrableClient, type PostDeTache,
 } from "@/lib/livrables-api";
 import { LivrableCarte } from "./LivrableCarte";
+import { ApercuPost } from "./ApercuPost";
 
 type Brouillon =
   | { id: string; kind: "media" | "fichier"; file: File; apercu: string | null; urlEnvoyee?: string; content: string; erreur: string | null; envoi: boolean }
@@ -44,6 +45,16 @@ export default function LivrablesSection({
 
   const { data: livrables = [], isError } = useQuery<LivrableClient[]>({ queryKey: cleLivrablesTache(taskId), throwOnError: false });
   const { data: config } = useQuery<{ fichiers: boolean; medias: boolean }>({ queryKey: ["/api/livrables/config"], throwOnError: false });
+  // Tâche de production d'un post : ce qu'on dépose nourrit le post (voir server/services/livrables/post.ts).
+  const { data: post } = useQuery<PostDeTache | null>({ queryKey: clePostTache(taskId), throwOnError: false });
+
+  // Dire OÙ le dépôt est allé : sans ce retour, la mise à jour du post serait invisible.
+  const signalerPost = (effet: EffetDepot | undefined) => {
+    if (!effet) return;
+    qc.invalidateQueries({ queryKey: clePostTache(taskId) });
+    qc.invalidateQueries({ queryKey: ["/api/content"] });
+    toast({ title: effet.texte ? t("livrables.sentToPostText") : t("livrables.sentToPostMedia") });
+  };
 
   const invalider = () => Promise.all([
     qc.invalidateQueries({ queryKey: cleLivrablesTache(taskId) }),
@@ -73,14 +84,16 @@ export default function LivrablesSection({
           url = (await televerser(b.kind, b.file)).url;
           maj(b.id, { urlEnvoyee: url });
         }
-        await creerLivrableApi({
+        const cree = await creerLivrableApi({
           taskId, kind: b.kind, url, content: b.content || null,
           fileName: b.file.name, mimeType: b.file.type, size: b.file.size,
         });
+        signalerPost(cree.post);
         if (b.apercu) URL.revokeObjectURL(b.apercu);
       } else {
         if (b.kind === "lien" && !lienValide(b.url)) throw new Error("invalid_url");
-        await creerLivrableApi({ taskId, kind: b.kind, url: b.kind === "lien" ? b.url : null, content: b.content || null });
+        const cree = await creerLivrableApi({ taskId, kind: b.kind, url: b.kind === "lien" ? b.url : null, content: b.content || null });
+        signalerPost(cree.post);
       }
       setBrouillons((bs) => bs.filter((x) => x.id !== b.id));
       invalider();
@@ -93,7 +106,7 @@ export default function LivrablesSection({
 
   const modifier = useMutation({
     mutationFn: ({ id, content }: { id: number; content: string | null }) => modifierLivrableApi(id, content),
-    onSuccess: invalider,
+    onSuccess: (l) => { invalider(); signalerPost(l.post); },
     onError: () => toast({ description: t("livrables.err_update"), variant: "destructive" }),
   });
   const supprimer = useMutation({
@@ -105,6 +118,8 @@ export default function LivrablesSection({
   return (
     <section className={`space-y-3 rounded-lg p-3 ${focus ? "ring-2 ring-naya-sulphur/60 bg-naya-sulphur/5" : ""}`}>
       <h3 className="text-sm font-semibold text-foreground">{t("livrables.title")}</h3>
+
+      {post && <ApercuPost post={post} />}
 
       {focus && !isError && livrables.length === 0 && (
         <div className="text-sm space-y-2">
@@ -124,7 +139,11 @@ export default function LivrablesSection({
 
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" onClick={() =>
-          setBrouillons((bs) => [...bs, { id: nouvelId(), kind: "texte", url: "", content: "", erreur: null, envoi: false }])}>
+          setBrouillons((bs) => [...bs, {
+            id: nouvelId(), kind: "texte", url: "", erreur: null, envoi: false,
+            // On part du texte actuel du post : l'étape le retravaille, elle ne repart pas de zéro.
+            content: post?.effet.texte && post.modifiable ? post.body ?? "" : "",
+          }])}>
           {t("livrables.addText")}
         </Button>
         <Button size="sm" variant="outline" disabled={config ? !config.medias : false} onClick={() => media.current?.click()}>
