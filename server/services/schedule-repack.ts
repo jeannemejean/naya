@@ -37,6 +37,22 @@ export interface RepackTask {
    * overflow comme n'importe quelle autre tâche.
    */
   anchored?: boolean;
+  /**
+   * Tâches du même jour qui doivent passer AVANT celle-ci (ex. l'étape précédente d'un
+   * post, ou la préparation d'un post publié plus tôt). Un id absent du jour est ignoré.
+   */
+  apres?: number[];
+  /**
+   * Sous-ensemble de `apres` dont elle DÉPEND (étapes du même post) : si l'une d'elles
+   * déborde au jour suivant, celle-ci la suit — elle ne peut pas passer avant elle.
+   */
+  depend?: number[];
+  /**
+   * Démarre au plus tôt (au curseur), au lieu de garder son heure si elle est plus tardive.
+   * Pour les étapes de production : une heure tardive héritée laisserait la matinée vide et
+   * ferait déborder l'étape suivante au-delà de son échéance.
+   */
+  auPlusTot?: boolean;
 }
 
 export interface RepackOptions {
@@ -148,15 +164,36 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
     if (!!a.prioritaire !== !!b.prioritaire) return a.prioritaire ? -1 : 1;
     if (!!a.unplaced !== !!b.unplaced) return a.unplaced ? 1 : -1;
     if (a.unplaced && b.unplaced) return 0;
+    // Les tâches « au plus tôt » (préparation des posts) ouvrent la journée.
+    if (!!a.auPlusTot !== !!b.auPlusTot) return a.auPlusTot ? -1 : 1;
     return a.startMin - b.startMin;
   });
 
   let cursor = floor;
 
-  for (const task of sorted) {
+  // Ordre de passage : celui du tri, sauf qu'une tâche attend que les tâches qu'elle doit
+  // suivre (`apres`) soient placées ou reportées. Sans contrainte, c'est exactement le tri.
+  const presents = new Set(sorted.map((t) => t.id));
+  const traites = new Set<number>();
+  const reportes = new Set<number>();
+  const restants = [...sorted];
+  const prochaine = (): RepackTask => {
+    const i = restants.findIndex((t) => (t.apres ?? []).every((id) => !presents.has(id) || traites.has(id)));
+    return restants.splice(i >= 0 ? i : 0, 1)[0]; // i < 0 : cycle impossible ici, on garde le tri
+  };
+
+  while (restants.length > 0) {
+    const task = prochaine();
+    traites.add(task.id);
+    // L'étape précédente du même post part au jour suivant : celle-ci la suit.
+    if ((task.depend ?? []).some((id) => reportes.has(id))) {
+      overflow.push(task.id);
+      reportes.add(task.id);
+      continue;
+    }
     // Une tâche sans créneau démarre au curseur : son startMin ne veut rien dire.
     // Une tâche prioritaire passe devant : elle prend le curseur, pas son ancienne heure.
-    let start = task.unplaced || task.prioritaire ? cursor : Math.max(task.startMin, cursor);
+    let start = task.unplaced || task.prioritaire || task.auPlusTot ? cursor : Math.max(task.startMin, cursor);
 
     // On alterne pause déjeuner / blocs ancrés jusqu'à stabilisation : sauter l'un
     // peut faire retomber sur l'autre (ex. juste après l'ancre = dans la pause).
@@ -171,6 +208,7 @@ export function repackDay(tasks: RepackTask[], opts: RepackOptions): RepackResul
     // au jour ouvré suivant (curseur inchangé).
     if (start + task.durationMin > opts.dayEndMin) {
       overflow.push(task.id);
+      reportes.add(task.id);
       continue;
     }
 

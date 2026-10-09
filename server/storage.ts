@@ -156,7 +156,7 @@ import { db, type DbExecutor } from "./db";
 import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
-import { jourDuPost, echeanceTache } from "./services/campagne/production";
+import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, postAProduire, rangEtape } from "./services/campagne/production";
 import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
@@ -167,7 +167,7 @@ import type { StepSendKey } from "./services/prospection-idempotence";
 import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
-import { parisDayBoundsUTC } from "./utils/timezone";
+import { parisDayBoundsUTC, localWallClock } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
 
 /**
@@ -2814,6 +2814,14 @@ export class DatabaseStorage implements IStorage {
    * (re-tassées + déplacées par la règle).
    */
   async fixOverlappingTasks(userId: string, fromDate: string): Promise<number> {
+    // Étapes de production : remises dans l'ordre de leur post et avant sa publication AVANT
+    // le re-tassage, qui respecte ensuite cet ordre dans chaque journée. Ne fait jamais
+    // échouer l'appelant.
+    const ordonnees = await this.ordonnerEtapesPosts(userId).catch((e: any) => {
+      console.error('[ordre-etapes] non appliqué:', e?.message ?? e);
+      return 0;
+    });
+
     // Durées des tâches du dernier calcul, pour recalculer l'heure de fin à l'application.
     let durees = new Map<number, number>();
     // Optimisation : une fois qu'un calcul a constaté qu'aucune tâche chargée n'a de dépendance,
@@ -2883,7 +2891,70 @@ export class DatabaseStorage implements IStorage {
     if (deplaces > 0) {
       console.log(`[precedence] ${deplaces} déplacement(s), stable=${stable} (${tours} tour(s)) user=${userId}`);
     }
-    return retasses + deplaces;
+    return retasses + deplaces + ordonnees;
+  }
+
+  /**
+   * Invariant des étapes de production (voir `joursEtapesEnOrdre`) : pour chaque post à
+   * venir, ses étapes non faites se suivent dans l'ordre, la préparation est finie la veille
+   * et « Publier » est le jour du post, à l'heure du post (heure de Paris). Toutes les étapes
+   * sont lues, quelle que soit leur date : une étape en retard est ramenée elle aussi.
+   * Renvoie le nombre de tâches déplacées.
+   */
+  private async ordonnerEtapesPosts(userId: string): Promise<number> {
+    const etapes = await db.select().from(tasks).where(and(
+      eq(tasks.userId, userId),
+      isNull(tasks.archivedAt),
+      eq(tasks.completed, false),
+      isNotNull(tasks.contentId),
+    ));
+    if (etapes.length === 0) return 0;
+    const idsPosts = Array.from(new Set(etapes.map((t) => t.contentId!)));
+    const posts = await db.select().from(content).where(and(eq(content.userId, userId), inArray(content.id, idsPosts)));
+    const prefs = await this.getUserPreferences(userId);
+    const travailles = new Set(((prefs as any)?.workDays || 'mon,tue,wed,thu,fri').split(',').map((d: string) => d.trim().toLowerCase()));
+    const JOURS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const estTravaille = (ds: string) => {
+      const [y, m, d] = ds.split('-').map(Number);
+      return travailles.has(JOURS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]);
+    };
+    const { aujourdhui } = maintenantParis();
+    const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+    let deplacees = 0;
+    // Deux posts à la même heure : leurs « Publier » s'enchaînent au lieu de se superposer.
+    const finPublication = new Map<string, number>();
+    const parHeure = [...posts].sort((a, b) =>
+      new Date(a.scheduledFor ?? 0).getTime() - new Date(b.scheduledFor ?? 0).getTime() || a.id - b.id);
+    for (const post of parHeure) {
+      if (!post.scheduledFor || !postAProduire(post as any, aujourdhui)) continue;
+      const jourPost = jourDuPost(post.scheduledFor);
+      const siennes = etapes.filter((t) => t.contentId === post.id);
+      const jours = joursEtapesEnOrdre({ post: post as any, etapes: siennes, jourPost, aujourdhui, estTravaille });
+      const heurePost = localWallClock('Europe/Paris', new Date(post.scheduledFor)).minuteOfDay;
+
+      for (const t of siennes) {
+        const jour = jours.get(t.id) ?? t.scheduledDate;
+        const maj: Record<string, unknown> = {};
+        if (jour !== t.scheduledDate) maj.scheduledDate = jour;
+        if (estTachePublier(t.title)) {
+          // Publier : à l'heure du post, jamais ailleurs.
+          const duree = t.estimatedDuration || 15;
+          const debutMin = Math.max(heurePost, finPublication.get(jourPost) ?? 0);
+          finPublication.set(jourPost, debutMin + duree);
+          const debut = hhmm(debutMin);
+          if (t.scheduledTime !== debut) {
+            maj.scheduledTime = debut;
+            maj.scheduledEndTime = hhmm(Math.min(24 * 60 - 1, debutMin + duree));
+          }
+        }
+        if (Object.keys(maj).length === 0) continue;
+        await db.update(tasks).set(maj as any).where(and(eq(tasks.id, t.id), eq(tasks.userId, userId)));
+        deplacees++;
+      }
+    }
+    if (deplacees > 0) console.log(`[ordre-etapes] ${deplacees} étape(s) remise(s) en ordre user=${userId}`);
+    return deplacees;
   }
 
   /** Re-tassage jour par jour (corps historique de fixOverlappingTasks, inchangé). */
@@ -2950,15 +3021,26 @@ export class DatabaseStorage implements IStorage {
     // après le jour de publication de ce post.
     const idsPosts = Array.from(new Set(toFix.map((t) => t.contentId).filter((id): id is number => id != null)));
     const jourParPost = new Map<number, string>();
+    const postParId = new Map<number, any>();
     if (idsPosts.length > 0) {
-      const posts = await db.select({ id: content.id, scheduledFor: content.scheduledFor })
-        .from(content).where(inArray(content.id, idsPosts));
-      for (const p of posts) if (p.scheduledFor) jourParPost.set(p.id, jourDuPost(p.scheduledFor));
+      const posts = await db.select({
+        id: content.id, scheduledFor: content.scheduledFor, title: content.title,
+        postFormat: content.postFormat, contentType: content.contentType,
+      }).from(content).where(inArray(content.id, idsPosts));
+      for (const p of posts) {
+        postParId.set(p.id, p);
+        if (p.scheduledFor) jourParPost.set(p.id, jourDuPost(p.scheduledFor));
+      }
     }
+    // « Publier » est tenue par l'heure du post (posée par ordonnerEtapesPosts) : le
+    // re-tassage ne la déplace pas, son créneau est simplement occupé.
+    const estPublierFixe = (t: typeof toFix[number]) =>
+      t.contentId != null && estTachePublier(t.title) && !!t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime);
 
-    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean; anchored?: boolean; echeance?: string | null }>>();
+    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean; anchored?: boolean; echeance?: string | null; apres?: number[]; depend?: number[]; auPlusTot?: boolean }>>();
     for (const t of toFix) {
       if (!t.scheduledDate) continue;
+      if (estPublierFixe(t)) continue;
       const hasTime = t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime);
       if (!byDate.has(t.scheduledDate)) byDate.set(t.scheduledDate, []);
       byDate.get(t.scheduledDate)!.push({
@@ -2980,6 +3062,35 @@ export class DatabaseStorage implements IStorage {
       if (end <= start) return;
       if (!blockedByDate.has(date)) blockedByDate.set(date, []);
       blockedByDate.get(date)!.push({ start, end });
+    };
+    // 0) Les publications : leur créneau est celui du post.
+    for (const t of toFix) {
+      if (!estPublierFixe(t)) continue;
+      const debut = parseTime(t.scheduledTime!);
+      addBlocked(t.scheduledDate!, debut, debut + (t.estimatedDuration || 15));
+    }
+
+    // Ordre dans chaque journée : les étapes de production passent par échéance (le post
+    // publié le plus tôt d'abord), puis dans l'ordre de leur post. Une étape DÉPEND de la
+    // précédente du même post : si celle-ci déborde au jour suivant, elle la suit.
+    const parId = new Map(toFix.map((t) => [t.id, t] as const));
+    const ordonnerJour = (jour: Array<{ id: number; echeance?: string | null; apres?: number[]; depend?: number[]; auPlusTot?: boolean }>) => {
+      for (const x of jour) { delete x.apres; delete x.depend; delete x.auPlusTot; }
+      const prod = jour
+        .filter((x) => parId.get(x.id)?.contentId != null)
+        .map((x) => {
+          const t = parId.get(x.id)!;
+          const post = postParId.get(t.contentId!);
+          return { x, cid: t.contentId!, jourPost: jourParPost.get(t.contentId!) ?? '9999-12-31', rang: post ? rangEtape(post, t.title) : 99 };
+        })
+        .sort((a, b) => (a.x.echeance ?? '9999').localeCompare(b.x.echeance ?? '9999')
+          || a.jourPost.localeCompare(b.jourPost) || a.cid - b.cid || a.rang - b.rang || a.x.id - b.x.id);
+      for (const p of prod) p.x.auPlusTot = true;
+      for (let i = 1; i < prod.length; i++) {
+        prod[i].x.apres = [prod[i - 1].x.id];
+        const memePost = prod.slice(0, i).filter((p) => p.cid === prod[i].cid).pop();
+        if (memePost) prod[i].x.depend = [memePost.x.id];
+      }
     };
 
     // 2) Les rendez-vous Google Agenda. UN SEUL appel réseau pour toute la plage (le
@@ -3021,6 +3132,8 @@ export class DatabaseStorage implements IStorage {
       const date = queue[i];
       const dayTasks = byDate.get(date)!;
       if (dayTasks.length === 0) continue;
+      // Calculé ici, pas avant la boucle : le débordement de la veille vient d'y arriver.
+      ordonnerJour(dayTasks);
 
       const { moves, overflow, forcees } = repackDayAvecEcheances(dayTasks, {
         dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,

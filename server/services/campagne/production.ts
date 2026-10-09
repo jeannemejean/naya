@@ -210,3 +210,83 @@ export function echeanceTache(titre: string | null | undefined, jourPost: string
   const [y, m, d] = jourPost.split("-").map(Number);
   return formatDate(addDays(new Date(y, m - 1, d), -1));
 }
+
+// ─── Ordre des étapes d'un post (invariant du planning) ──────────────────────
+//
+// Constaté en prod le 9 oct. 2026 : « Relire et valider » le 9, « Rédiger le texte » le 12
+// et « Préparer le visuel » le 14 après la publication — pour le MÊME post. Le placement
+// initial était juste ; les re-tassages successifs (débordement reporté au lendemain, report
+// des tâches en retard) déplaçaient chaque étape sans rien savoir des autres.
+//
+// L'invariant, rétabli à chaque re-tassage (storage.fixOverlappingTasks) :
+//   1. les étapes d'un post se suivent dans l'ordre de `etapesProductionPourPost` ;
+//   2. une étape de préparation est faite au plus tard la veille (jour travaillé) du post ;
+//   3. aucune étape n'est dans le passé ;
+//   4. « Publier » est le jour du post, à l'heure du post.
+
+/** Rang d'une étape dans la production de SON post (0 = la première), ou -1. */
+export function rangEtape(post: PostAProduire, titre: string | null | undefined): number {
+  const t = titre ?? "";
+  return etapesProductionPourPost({ ...post, autoPost: false }).findIndex((e) => t.startsWith(`${e.cle} — `));
+}
+
+export const estTachePublier = (titre: string | null | undefined) => (titre ?? "").startsWith("Publier —");
+
+export interface EtapePlacee {
+  id: number;
+  title: string | null;
+  scheduledDate: string | null;
+  completed?: boolean | null;
+}
+
+/**
+ * Jours corrigés des étapes NON FAITES d'un post, dans le respect de l'invariant. Ne renvoie
+ * que les étapes à déplacer : une étape déjà à un jour admissible reste où elle est (le
+ * planning ne bouge pas sans raison). PURE.
+ */
+export function joursEtapesEnOrdre({ post, etapes, jourPost, aujourdhui, estTravaille }: {
+  post: PostAProduire;
+  etapes: EtapePlacee[];
+  jourPost: string;
+  aujourdhui: string;
+  estTravaille: (d: string) => boolean;
+}): Map<number, string> {
+  const deplacements = new Map<number, string>();
+  if (jourPost < aujourdhui) return deplacements;
+
+  // Veille travaillée du post ; si elle est déjà passée, le jour même (avant l'heure du post).
+  let veille = plusJours(jourPost, -1);
+  while (veille >= aujourdhui && !estTravaille(veille)) veille = plusJours(veille, -1);
+  const echeance = veille >= aujourdhui ? veille : jourPost;
+
+  const ordonnees = etapes
+    .map((e) => ({ e, rang: rangEtape(post, e.title) }))
+    .filter((x) => x.rang >= 0)
+    .sort((a, b) => a.rang - b.rang || a.e.id - b.e.id);
+
+  let plancher = aujourdhui;
+  for (const { e } of ordonnees) {
+    if (e.completed) continue; // une étape faite ne contraint plus rien
+    if (estTachePublier(e.title)) {
+      if (e.scheduledDate !== jourPost) deplacements.set(e.id, jourPost);
+      continue;
+    }
+    const actuel = e.scheduledDate ?? "";
+    let jour = actuel;
+    if (!jour || jour < plancher) jour = plancher;
+    if (jour > echeance) jour = echeance < plancher ? plancher : echeance;
+    if (!estTravaille(jour)) {
+      // Jour travaillé le plus proche dans [plancher, echeance] : d'abord en arrière, puis en avant.
+      let d = jour;
+      while (d > plancher && !estTravaille(d)) d = plusJours(d, -1);
+      if (!estTravaille(d)) {
+        d = jour;
+        while (d < echeance && !estTravaille(d)) d = plusJours(d, 1);
+      }
+      if (estTravaille(d)) jour = d;
+    }
+    if (jour !== actuel) deplacements.set(e.id, jour);
+    plancher = jour;
+  }
+  return deplacements;
+}
