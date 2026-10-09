@@ -24,6 +24,9 @@ const campaign = {
 };
 const d = (s: string) => new Date(s + "T00:00:00");
 const pad = (n: number) => String(n).padStart(2, "0");
+// « Publier » est à l'heure du post EN HEURE DE PARIS (le serveur tourne en UTC) : le test
+// la calcule pareil, pour passer quel que soit le fuseau de la machine (CI en UTC).
+const heureParis = (x: Date) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(x);
 const local = (x: Date) => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())} ${pad(x.getHours())}:${pad(x.getMinutes())}`;
 
 function fabrique(over: any = {}) {
@@ -225,6 +228,8 @@ describe("placerPostsCampagne crée aussi les tâches de production de chaque po
     expect(Array.from(parPost.keys()).sort()).toEqual([101, 102, 103, 104, 105, 106]);
     const jourPost = new Map<number, string>();
     posts.forEach((c: any, i: number) => jourPost.set(101 + i, local(c.scheduledFor).slice(0, 10)));
+    const heurePost = new Map<number, string>();
+    posts.forEach((c: any, i: number) => heurePost.set(101 + i, heureParis(c.scheduledFor)));
 
     for (const [id, ts] of Array.from(parPost.entries())) {
       expect(ts.map((t: any) => t.title.split(" — ")[0])).toEqual([
@@ -241,7 +246,7 @@ describe("placerPostsCampagne crée aussi les tâches de production de chaque po
       expect([...dates].sort()).toEqual(dates);
       const publier = ts[ts.length - 1];
       expect(publier.scheduledDate).toBe(jourPost.get(id));
-      expect(publier.scheduledTime).toBe("09:00");
+      expect(publier.scheduledTime).toBe(heurePost.get(id));
     }
   });
 
@@ -255,7 +260,7 @@ describe("placerPostsCampagne crée aussi les tâches de production de chaque po
       "2026-10-09 09:45 Rédiger les slides — a1",
       "2026-10-09 10:45 Designer les slides — a1",
       "2026-10-09 13:00 Relire et valider le post — a1",
-      "2026-10-12 09:00 Publier — a1",
+      `2026-10-12 ${heureParis((deps.createContent.mock.calls[0] as any[])[0].scheduledFor)} Publier — a1`,
     ]);
   });
 
@@ -309,7 +314,7 @@ describe("placerTachesProductionPourCampagne (idempotent)", () => {
       "2026-10-13 09:00 Rédiger le texte — Mon post #50",
       "2026-10-15 09:00 Préparer le visuel — Mon post #50",
       "2026-10-15 10:00 Relire et valider le post — Mon post #50",
-      "2026-10-16 11:00 Publier — Mon post #50",
+      `2026-10-16 ${heureParis(post().scheduledFor)} Publier — Mon post #50`,
     ]);
     expect(r).toEqual({ creees: 4 });
   });

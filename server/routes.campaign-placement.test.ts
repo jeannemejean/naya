@@ -1,3 +1,7 @@
+// Fuseau fixé à celui de la prod (Railway tourne en UTC) : les posts sont créés à 09:00
+// heure du serveur et « Publier » est posé à l'heure de Paris correspondante. Sans cela, les
+// instantanés ci-dessous dépendraient de la machine qui lance les tests (Mac en Paris, CI en UTC).
+process.env.TZ = "UTC";
 // Tests de caractérisation du placement d'une campagne (launch / regenerate-content /
 // resume / redeploy).
 //
