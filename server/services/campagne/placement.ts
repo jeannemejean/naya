@@ -4,6 +4,7 @@
 //
 // Partagé par `/launch`, `/regenerate-content`, `/resume`, `/redeploy` et « repenser » ; ce
 // qui diffère entre eux est passé en paramètre (fenêtre [debut, fin], contrôle de créneaux).
+import { localWallClock } from '../../utils/timezone';
 import { formatDate as campaignDateToStr, addDays as campaignAddDays } from "../../utils/dateUtils";
 import {
   etapesProductionPourPost, jourDeProduction, jourDuPost, postAProduire,
@@ -331,10 +332,8 @@ export interface PostPlacable {
 
 const aujourdhuiLocal = () => campaignDateToStr(new Date());
 const plusJours = (ds: string, n: number) => campaignDateToStr(campaignAddDays(new Date(ds + 'T00:00:00'), n));
-const heureDuPost = (d: Date | string) => {
-  const x = new Date(d);
-  return minToHHMM(x.getHours() * 60 + x.getMinutes());
-};
+// Heure de Paris : le serveur tourne en UTC, `getHours()` décalait « Publier » de 2 h.
+const heureDuPost = (d: Date | string) => minToHHMM(localWallClock('Europe/Paris', new Date(d)).minuteOfDay);
 
 /**
  * Crée les tâches de production de chaque post à venir et non publié, reliées au post
