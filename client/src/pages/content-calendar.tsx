@@ -856,7 +856,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  };
 
  const formatTextWithHighlights = (text: string) => {
- const parts = text.split(/(#\w+|@\w+)/g);
+ // Lettres accentuées comprises (#rentrée) ; les sauts de ligne sont gardés par le conteneur.
+ const parts = text.split(/([#@][\p{L}\p{N}_]+)/gu);
  return parts.map((part, index) => {
  if (part.startsWith('#') || part.startsWith('@')) {
  return <span key={index} className="text-naya-salvia">{part}</span>;
@@ -1407,7 +1408,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <div className="flex items-center gap-4 mb-3 text-xl">
  <span>♥</span><span>◯</span><span>↗</span>
  </div>
- <div className="text-sm">
+ <div className="text-sm whitespace-pre-wrap">
  <span className="font-semibold">your_business</span>
  <span className="ml-1">{formData.body ? formatTextWithHighlights(formData.body) : t('contentCalendar.yourCaptionWillAppear')}</span>
  </div>
