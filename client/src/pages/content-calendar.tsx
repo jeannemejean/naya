@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { fetchJson } from '@/lib/fetchJson';
 import { tenterUneFois } from '@/lib/one-shot-guard';
 import { mediasDuPost, estVideo, type MediaDuPost } from "./content-calendar-medias";
+import VisuelsDuPost from "@/components/content/VisuelsDuPost";
 import { useTranslation } from 'react-i18next';
 import { throwApiError, translateError } from '@/lib/api-error';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
@@ -1246,25 +1247,14 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  )}
  </div>
 
- {selectedPost && (() => {
- const visuels = mediasDuPost(selectedPost as any, mediaLibrary).filter(m => m.id !== 0);
- if (visuels.length === 0) return null;
- return (
- <div>
- <Label>{t('contentCalendar.visuelsDuPost', { count: visuels.length })}</Label>
- <div className="mt-2 grid grid-cols-4 gap-2">
- {visuels.map(m => (
- <a key={m.id} href={m.url} target="_blank" rel="noreferrer" className="block aspect-square rounded-md overflow-hidden border border-naya-olive-18 bg-naya-olive-06">
- {estVideo(m)
- ? <video src={m.url} className="w-full h-full object-cover" muted />
- : <img src={m.url} alt="" className="w-full h-full object-cover" />}
- </a>
- ))}
- </div>
- <p className="text-xs text-naya-olive-55 mt-1">{t('contentCalendar.visuelsDuPostAide')}</p>
- </div>
- );
- })()}
+ {selectedPost && (
+ <VisuelsDuPost
+ postId={selectedPost.id}
+ medias={mediasDuPost(selectedPost as any, mediaLibrary).filter(m => m.id !== 0)}
+ modifiable={!['posted', 'uploading', 'processing', 'posting'].includes((selectedPost as any).postStatus ?? '')}
+ onOrdre={(mediaIds) => setSelectedPost(p => (p && p.id === selectedPost.id ? { ...p, mediaIds } as any : p))}
+ />
+ )}
 
  <div>
  <Label htmlFor="media">{t('contentCalendar.mediaOptional')}</Label>

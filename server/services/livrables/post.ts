@@ -51,3 +51,18 @@ export async function nourrirLePost(
     return null;
   }
 }
+
+/**
+ * Nouvel ordre des visuels d'un post, demandé par un glisser-déposer. Seuls les visuels
+ * déjà rattachés comptent : un id inconnu est ignoré, et un visuel arrivé entre-temps
+ * (dépôt pendant que l'écran était ouvert) n'est jamais perdu, il reste en fin de liste.
+ */
+export function nouvelOrdreMedias(actuels: number[], demande: unknown[]): number[] {
+  const restants = new Set(actuels);
+  const ordre: number[] = [];
+  for (const brut of demande) {
+    const id = Number(brut);
+    if (restants.delete(id)) ordre.push(id);
+  }
+  return [...ordre, ...actuels.filter((id) => restants.has(id))];
+}

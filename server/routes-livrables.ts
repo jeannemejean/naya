@@ -13,7 +13,7 @@ import {
 import { creerLivrable, modifierLivrable, supprimerLivrable, rattraperMemoire } from "./services/livrables/service";
 import { estCleFichierDe, estUrlMediaDe } from "./services/livrables/urls";
 import { livrablesDeps, listerLivrables } from "./services/livrables/deps";
-import { nourrirLePost, type PostDeps } from "./services/livrables/post";
+import { nourrirLePost, nouvelOrdreMedias, type PostDeps } from "./services/livrables/post";
 import { effetSurPost, postModifiable } from "@shared/livrables";
 
 const postDeps: PostDeps = {
@@ -104,6 +104,33 @@ export function registerLivrablesRoutes(app: Express): void {
     } catch (e: any) {
       console.error("[Livrables] post de la tâche:", e?.message);
       res.status(500).json({ message: "post_read_failed" });
+    }
+  });
+
+  // Réordonner les visuels d'un post (glisser-déposer dans le calendrier de contenu).
+  // L'ordre est celui de la publication (carrousel). Écriture conditionnelle sur la liste
+  // relue : si un visuel arrive au même moment, on recommence avec la liste à jour.
+  app.put("/api/content/:id/medias/ordre", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = idPositif(req.params.id);
+      const demande = req.body?.mediaIds;
+      if (id == null || !Array.isArray(demande)) return res.status(400).json({ message: "invalid_request" });
+      for (let essai = 0; essai < 3; essai++) {
+        const post = await storage.getContentById(id, req.userId);
+        if (!post) return res.status(404).json({ message: "not_found" });
+        if (!postModifiable((post as any).postStatus)) return res.status(409).json({ message: "post_locked" });
+        const actuels = Array.isArray((post as any).mediaIds) ? ((post as any).mediaIds as unknown[]).map(Number) : [];
+        const ordre = nouvelOrdreMedias(actuels, demande);
+        const r: any = await db.execute(sql`
+          UPDATE content SET media_ids = ${JSON.stringify(ordre)}::jsonb, updated_at = now()
+           WHERE id = ${id} AND user_id = ${req.userId}
+             AND COALESCE(media_ids, '[]'::jsonb) = ${JSON.stringify(actuels)}::jsonb`);
+        if ((r.rowCount ?? 0) > 0) return res.json({ mediaIds: ordre });
+      }
+      res.status(409).json({ message: "concurrent_update" });
+    } catch (e: any) {
+      console.error("[Livrables] ordre des visuels:", e?.message);
+      res.status(500).json({ message: "media_order_failed" });
     }
   });
 

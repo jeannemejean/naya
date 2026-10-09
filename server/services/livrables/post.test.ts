@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { nourrirLePost, type PostDeps } from "./post";
+import { nourrirLePost, nouvelOrdreMedias, type PostDeps } from "./post";
 
 function deps(post: any): PostDeps & { majPost: ReturnType<typeof vi.fn> } {
   return { lirePost: vi.fn().mockResolvedValue(post), majPost: vi.fn().mockResolvedValue({}), ajouterMedia: vi.fn().mockResolvedValue({}) } as any;
@@ -46,5 +46,15 @@ describe("nourrirLePost", () => {
   it("un échec d'écriture ne lève pas", async () => {
     const d: PostDeps = { lirePost: vi.fn().mockResolvedValue({ id: 9, postStatus: "pending" }), majPost: vi.fn().mockRejectedValue(new Error("db")), ajouterMedia: vi.fn() };
     expect(await nourrirLePost(d, { userId: "u", tache: { title: "Rédiger le texte — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+  });
+});
+
+describe("nouvelOrdreMedias", () => {
+  it("applique l'ordre demandé", () => {
+    expect(nouvelOrdreMedias([5, 6, 7], [7, 5, 6])).toEqual([7, 5, 6]);
+  });
+  it("ignore les ids inconnus ou en double, garde les visuels arrivés entre-temps", () => {
+    expect(nouvelOrdreMedias([5, 6, 7, 8], [6, 99, 5, 6])).toEqual([6, 5, 7, 8]);
+    expect(nouvelOrdreMedias([5, 6], ["6", "5"])).toEqual([6, 5]);
   });
 });

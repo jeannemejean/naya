@@ -33,3 +33,12 @@ export function mediasDuPost(
 }
 
 export const estVideo = (m: MediaDuPost) => m.mimeType.startsWith("video/");
+
+/** La liste avec l'élément `de` déplacé à la place `vers` (glisser-déposer). */
+export function deplacer<T>(liste: T[], de: number, vers: number): T[] {
+  if (de === vers || de < 0 || vers < 0 || de >= liste.length || vers >= liste.length) return liste;
+  const copie = [...liste];
+  const [x] = copie.splice(de, 1);
+  copie.splice(vers, 0, x);
+  return copie;
+}
