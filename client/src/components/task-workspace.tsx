@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown, Pencil } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, Trash2, CalendarClock, ExternalLink, ThumbsDown, Pencil, Check, Undo2 } from "lucide-react";
 import TaskEditDialog from "@/components/task-edit-dialog";
 import TaskFeedbackModal from "@/components/task-feedback-modal";
 import { estEvenementAgenda } from "@/lib/agenda-api";
@@ -22,6 +22,8 @@ interface TaskWorkspaceProps {
  onDeleted?: () => void;
  focusLivrables?: boolean;
  onFaitHorsNaya?: () => void;
+ // Coche / décoche la tâche (même chemin instantané que la case du planning).
+ onBasculer?: (task: Task) => void;
 }
 
 function formatRelative(date: string | Date) {
@@ -39,7 +41,7 @@ function formatRelative(date: string | Date) {
 }
 
 
-export default function TaskWorkspace({ task, project, open, onClose, onDeleted, focusLivrables = false, onFaitHorsNaya }: TaskWorkspaceProps) {
+export default function TaskWorkspace({ task, project, open, onClose, onDeleted, focusLivrables = false, onFaitHorsNaya, onBasculer }: TaskWorkspaceProps) {
  const { t } = useTranslation();
  const queryClient = useQueryClient();
  const { toast } = useToast();
@@ -97,8 +99,17 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  },
  });
 
+ // La tâche reçue est une copie figée : l'état « réalisée » se suit ici, au clic.
+ const [faite, setFaite] = useState(false);
+ const basculer = () => {
+ if (!task || !onBasculer) return;
+ setFaite(v => !v);
+ onBasculer(task);
+ };
+
  // Reset action states when task changes
  useEffect(() => {
+ setFaite(!!task?.completed);
  setShowDeleteConfirm(false);
  setShowReschedule(false);
  setRescheduleDate(task?.scheduledDate || "");
@@ -330,6 +341,33 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  })}
  </div>
  </div>
+ </div>
+ )}
+ {task && onBasculer && (
+ <div className="flex-shrink-0 border-t border-naya-olive-18 px-5 py-3">
+ {faite ? (
+ <div className="flex items-center justify-between gap-3">
+ <span className="inline-flex items-center gap-1.5 text-sm text-naya-olive-55 line-through">
+ <Check className="h-4 w-4" />
+ {t('taskWorkspace.realisee')}
+ </span>
+ <button
+ onClick={basculer}
+ className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg text-naya-olive-55 hover:text-naya-olive-70 hover:bg-naya-olive-06 transition-colors"
+ >
+ <Undo2 className="h-3.5 w-3.5" />
+ {t('taskWorkspace.annulerRealisee')}
+ </button>
+ </div>
+ ) : (
+ <button
+ onClick={basculer}
+ className="w-full inline-flex items-center justify-center gap-2 text-sm font-medium px-4 py-2.5 rounded-lg bg-naya-olive text-white hover:opacity-90 transition-opacity"
+ >
+ <Check className="h-4 w-4" />
+ {t('taskWorkspace.marquerRealisee')}
+ </button>
+ )}
  </div>
  )}
  </div>

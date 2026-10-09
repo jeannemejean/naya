@@ -1102,6 +1102,7 @@ export default function TodaysTasks() {
  setFocusLivrables(false);
  setWorkspaceTask(null);
  }}
+ onBasculer={(tache) => estEvenementAgenda(tache as any) ? agendaMutation.mutate(tache as any) : toggleTaskMutation.mutate(tache.id)}
  />
 
  <TaskFeedbackModal

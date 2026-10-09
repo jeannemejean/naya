@@ -897,6 +897,7 @@ export default function Planning({ onSearchClick }: Props) {
               setFocusLivrables(false);
               setWorkspaceTask(null);
             }}
+            onBasculer={(tache) => estEvenementAgenda(tache as any) ? agendaMutation.mutate(tache as any) : toggleMutation.mutate(tache.id)}
           />
 
           {/* Dialog de confirmation de jalon */}
