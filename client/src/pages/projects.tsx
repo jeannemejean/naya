@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { CLE_MUTATION_COCHAGE, cocherDansLeCache, derniereCocheEnVol } from "@/lib/cochage-optimiste";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -354,11 +355,16 @@ function ProjectTasksPanel({ project }: { project: Project }) {
  });
 
  const toggleTaskMutation = useMutation({
+ mutationKey: CLE_MUTATION_COCHAGE,
  mutationFn: async (taskId: number) => {
  const res = await apiRequest("POST", `/api/tasks/${taskId}/toggle`);
  return res.json();
  },
- onSuccess: () => {
+ // Cochage instantané : la tâche se barre au clic (lib/cochage-optimiste.ts), le serveur suit.
+ onMutate: async (taskId: number) => ({ annuler: await cocherDansLeCache(queryClient, taskId) }),
+ onError: (_e, _id, ctx) => { ctx?.annuler(); },
+ onSettled: () => {
+ if (!derniereCocheEnVol(queryClient)) return;
  queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
  },
  });
@@ -396,7 +402,6 @@ function ProjectTasksPanel({ project }: { project: Project }) {
  >
  <button
  onClick={() => toggleTaskMutation.mutate(task.id)}
- disabled={toggleTaskMutation.isPending}
  className="mt-0.5 flex-shrink-0"
  >
  {task.completed

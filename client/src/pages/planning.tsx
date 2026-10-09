@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { CLE_MUTATION_COCHAGE, cocherDansLeCache, derniereCocheEnVol } from "@/lib/cochage-optimiste";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
@@ -263,18 +264,25 @@ export default function Planning({ onSearchClick }: Props) {
   }
 
   const toggleMutation = useMutation({
+    mutationKey: CLE_MUTATION_COCHAGE,
     mutationFn: async (taskId: number) => {
       if (taskId < 0) return null; // tâche virtuelle (jalon) — pas de mutation
       const res = await apiRequest("POST", `/api/tasks/${taskId}/toggle`);
       return res.json();
     },
+    // Cochage instantané : la tâche se barre au clic (lib/cochage-optimiste.ts), le serveur suit.
+    onMutate: async (taskId: number) => (taskId < 0 ? undefined : { annuler: await cocherDansLeCache(queryClient, taskId) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
-      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
       triggerAutoRebalance();
     },
-    onError: () => {
+    onError: (_e, _id, ctx) => {
+      ctx?.annuler();
       toast({ title: t('common.error'), description: t('planning.failedToUpdate'), variant: "destructive" });
+    },
+    onSettled: () => {
+      if (!derniereCocheEnVol(queryClient)) return;
+      queryClient.invalidateQueries({ queryKey: rangeQueryKey });
+      queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
     },
   });
 
@@ -446,7 +454,6 @@ export default function Planning({ onSearchClick }: Props) {
           <Checkbox
             checked={task.completed}
             onCheckedChange={() => { void cocherAvecLivrable(task); }}
-            disabled={toggleMutation.isPending}
             className="cursor-pointer"
           />
         </div>

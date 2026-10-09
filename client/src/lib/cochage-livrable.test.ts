@@ -1,37 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { deciderCochage } from './cochage-livrable';
 
-const prod = { id: 1, title: 'Rédiger le post LinkedIn', completed: false };
-const autre = { id: 2, title: 'Appeler Marie', completed: false };
+const prod = { id: 1, title: 'Photographier 3 détails', completed: false };
+const autre = { id: 2, title: 'Appeler le comptable', completed: false };
 
-describe('deciderCochage', () => {
-  it('tâche hors production : cocher sans lire les livrables', async () => {
-    const lire = vi.fn();
-    expect(await deciderCochage(autre, lire)).toBe('cocher');
-    expect(lire).not.toHaveBeenCalled();
+describe('deciderCochage — immédiat, sans réseau', () => {
+  it('coche une tâche hors production', () => {
+    expect(deciderCochage(autre, undefined)).toBe('cocher');
   });
-  it('tâche déjà terminée : cocher sans lire les livrables', async () => {
-    const lire = vi.fn();
-    expect(await deciderCochage({ ...prod, completed: true }, lire)).toBe('cocher');
-    expect(lire).not.toHaveBeenCalled();
+  it('décoche toujours une tâche déjà terminée', () => {
+    expect(deciderCochage({ ...prod, completed: true }, undefined)).toBe('cocher');
   });
-  it('production sans livrable : demander', async () => {
-    expect(await deciderCochage(prod, async () => [])).toBe('demander');
+  it('production sans livrable : ouvre le dépôt', () => {
+    expect(deciderCochage(prod, [])).toBe('demander');
   });
-  it('production avec un livrable : cocher', async () => {
-    expect(await deciderCochage(prod, async () => [{}])).toBe('cocher');
+  it('production avec livrable en cache : coche', () => {
+    expect(deciderCochage(prod, [{}])).toBe('cocher');
   });
-  it('lecture en erreur : cocher', async () => {
-    expect(await deciderCochage(prod, async () => { throw new Error('réseau'); })).toBe('cocher');
-  });
-  it('lecture qui ne répond jamais : cocher après le délai', async () => {
-    vi.useFakeTimers();
-    try {
-      const p = deciderCochage(prod, () => new Promise(() => {}), 1500);
-      await vi.advanceTimersByTimeAsync(1500);
-      expect(await p).toBe('cocher');
-    } finally {
-      vi.useRealTimers();
-    }
+  it('production, livrables inconnus : ouvre le dépôt sans attendre', () => {
+    expect(deciderCochage(prod, undefined)).toBe('demander');
   });
 });

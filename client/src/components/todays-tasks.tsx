@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { CLE_MUTATION_COCHAGE, cocherDansLeCache, derniereCocheEnVol } from "@/lib/cochage-optimiste";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_TODAY_VIEW, nextPlannerDay, tasksForPlannerDay, type TodayView } from "@/lib/today-view";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -378,20 +379,27 @@ export default function TodaysTasks() {
  });
 
  const toggleTaskMutation = useMutation({
+ mutationKey: CLE_MUTATION_COCHAGE,
  mutationFn: async (taskId: number) => {
  const res = await apiRequest("POST", `/api/tasks/${taskId}/toggle`);
  return res.json();
  },
- onSuccess: (updatedTask: Task) => {
+ // Cochage instantané : la tâche se barre au clic (lib/cochage-optimiste.ts), le serveur suit.
+ onMutate: async (taskId: number) => {
+ setOpenPopover(null);
+ return { annuler: await cocherDansLeCache(queryClient, taskId) };
+ },
+ onSuccess: () => {
+ triggerAutoRebalance();
+ },
+ onSettled: () => {
+ if (!derniereCocheEnVol(queryClient)) return;
  queryClient.invalidateQueries({ queryKey: ['/api/tasks/range'] });
  queryClient.invalidateQueries({ queryKey: ['/api/tasks'] });
  queryClient.invalidateQueries({ queryKey: ['/api/dashboard/schedule-preview'] });
- setOpenPopover(null);
- const msg = updatedTask.completed ? t('todaysTasks.taskCompleted') : t('todaysTasks.taskMarkedIncomplete');
- toast({ title: msg });
- triggerAutoRebalance();
  },
- onError: (error) => {
+ onError: (error, _id, ctx) => {
+ ctx?.annuler();
  if (isUnauthorizedError(error)) {
  toast({ title: t('todaysTasks.unauthorized'), description: t('todaysTasks.loggingIn'), variant: "destructive" });
  setTimeout(() => { window.location.href = "/"; }, 500); // "/" = Landing (login). /api/login servait le SPA → page 404 si encore authentifié.
@@ -713,7 +721,6 @@ export default function TodaysTasks() {
  <Checkbox
  checked={true}
  onCheckedChange={() => cocherTache(task)}
- disabled={toggleTaskMutation.isPending}
  className="mt-0.5 cursor-pointer"
  />
  <div className="flex-1 min-w-0">
@@ -809,7 +816,7 @@ export default function TodaysTasks() {
  <Checkbox
  checked={false}
  onCheckedChange={() => { if (!isBlocked) cocherTache(task); }}
- disabled={toggleTaskMutation.isPending || isBlocked}
+ disabled={isBlocked}
  title={isBlocked && blockerTask ? t('todaysTasks.blockedBy', { title: blockerTask.title }) : undefined}
  className={isBlocked ? 'cursor-not-allowed' : 'cursor-pointer'}
  style={palette ? { '--checkbox-color': palette.text } as any : undefined}
@@ -1029,7 +1036,7 @@ export default function TodaysTasks() {
  onOpen={ouvrirTache}
  onRefuse={(tk) => { setOpenPopover(null); setRefusTask(tk); }}
  onEdit={(tk) => { setOpenPopover(null); setEditTask(tk); }}
- isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
+ isToggling={agendaMutation.isPending}
  />
  </Popover>
  );
@@ -1071,7 +1078,7 @@ export default function TodaysTasks() {
  onOpen={ouvrirTache}
  onRefuse={(tk) => { setOpenPopover(null); setRefusTask(tk); }}
  onEdit={(tk) => { setOpenPopover(null); setEditTask(tk); }}
- isToggling={toggleTaskMutation.isPending || agendaMutation.isPending}
+ isToggling={agendaMutation.isPending}
  />
  </Popover>
  );

@@ -1,31 +1,23 @@
-// Décision au cochage, sans réseau tant que ce n'est pas nécessaire.
-// « Naya demande, sans bloquer » : seules les tâches de production lisent la liste
-// des livrables, et la lecture ne bloque jamais plus de `delaiMs`.
+// Décision au cochage, IMMÉDIATE : jamais d'appel réseau entre le clic et l'effet.
+// « Naya demande, sans bloquer » : une tâche de production sans livrable ouvre le dépôt.
+//
+// Avant, la liste des livrables était relue sur le serveur à chaque coche d'une tâche de
+// production (jusqu'à 1,5 s d'attente avant que quoi que ce soit ne bouge). On décide
+// désormais avec ce que le client sait déjà : la liste en cache si elle a été chargée.
+// Inconnue, on ouvre le dépôt — tout de suite — et le panneau affiche les livrables
+// existants avec « Terminer la tâche » : rien n'est perdu, rien n'attend.
 import { decisionAuCochage } from "@shared/livrables";
 
 export type TacheCochage = { id: number; title: string; completed: boolean };
-export const DELAI_LECTURE_LIVRABLES_MS = 1500;
 
-export async function deciderCochage(
+export function deciderCochage(
   task: TacheCochage,
-  lireLivrables: (taskId: number) => Promise<unknown[]>,
-  delaiMs: number = DELAI_LECTURE_LIVRABLES_MS,
-): Promise<"cocher" | "demander"> {
-  // Pré-décision sans réseau : hors production ou déjà terminée, cocher reste instantané.
+  livrablesEnCache: readonly unknown[] | undefined,
+): "cocher" | "demander" {
+  // Hors production ou déjà terminée (décocher) : cocher, sans rien regarder.
   if (decisionAuCochage({ titre: task.title, dejaTerminee: task.completed, nbLivrables: 0 }) === "cocher") {
     return "cocher";
   }
-  let minuteur: ReturnType<typeof setTimeout> | undefined;
-  try {
-    const liste = await Promise.race([
-      lireLivrables(task.id),
-      new Promise<never>((_, rejeter) => { minuteur = setTimeout(() => rejeter(new Error("timeout")), delaiMs); }),
-    ]);
-    return decisionAuCochage({ titre: task.title, dejaTerminee: task.completed, nbLivrables: liste?.length ?? 0 });
-  } catch {
-    // Lecture impossible ou trop lente : on ne bloque jamais le cochage.
-    return "cocher";
-  } finally {
-    if (minuteur) clearTimeout(minuteur);
-  }
+  if (livrablesEnCache === undefined) return "demander";
+  return decisionAuCochage({ titre: task.title, dejaTerminee: task.completed, nbLivrables: livrablesEnCache.length });
 }
