@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'wouter';
 import { fetchJson } from '@/lib/fetchJson';
 import { tenterUneFois } from '@/lib/one-shot-guard';
+import { mediasDuPost, estVideo, type MediaDuPost } from "./content-calendar-medias";
 import { useTranslation } from 'react-i18next';
 import { throwApiError, translateError } from '@/lib/api-error';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
@@ -148,6 +149,25 @@ function messageCollision(brut: unknown): { titre: string; description: string }
 
 interface ContentCalendarProps {
  onSearchClick?: () => void;
+}
+
+// Vignettes des visuels d'un post sur sa carte (les quatre premiers, puis « +n »).
+function VignettesMedias({ medias }: { medias: MediaDuPost[] }) {
+ if (medias.length === 0) return null;
+ const visibles = medias.slice(0, 4);
+ const reste = medias.length - visibles.length;
+ return (
+ <div className="flex items-center gap-1 mb-2">
+ {visibles.map(m => (
+ <div key={`${m.id}-${m.url}`} className="w-9 h-9 rounded overflow-hidden border border-naya-olive-18 bg-naya-olive-06 flex-shrink-0">
+ {estVideo(m)
+ ? <video src={m.url} className="w-full h-full object-cover" muted />
+ : <img src={m.url} alt="" loading="lazy" className="w-full h-full object-cover" />}
+ </div>
+ ))}
+ {reste > 0 && <span className="text-xs text-naya-olive-55 ml-1">+{reste}</span>}
+ </div>
+ );
 }
 
 export default function ContentCalendar({ onSearchClick }: ContentCalendarProps) {
@@ -346,6 +366,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  queryKey: ['/api/media-library'],
  queryFn: () => fetchJson<any[]>('/api/media-library'),
  });
+ // Premier visuel rattaché au post ouvert : sert d'aperçu quand aucun média n'est ajouté à la main.
+ const apercuMedia = selectedPost ? mediasDuPost(selectedPost as any, mediaLibrary).find(m => !estVideo(m))?.url : undefined;
 
  const uploadMediaMutation = useMutation({
  mutationFn: async (data: { fileUrl: string; fileName: string; fileType: string; fileSize: number }) =>
@@ -895,6 +917,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <span className="text-xs text-naya-cream0">{platform.label}</span>
  </div>
  <h4 className="text-sm text-foreground line-clamp-1 mb-2">{item.title}</h4>
+ <VignettesMedias medias={mediasDuPost(item as any, mediaLibrary)} />
  <div className="flex items-center gap-2 flex-wrap">
  {item.pillar && (
  <span className="text-xs px-1.5 py-0.5 border border-naya-olive-18 rounded text-naya-cream0">{item.pillar}</span>
@@ -1223,6 +1246,26 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  )}
  </div>
 
+ {selectedPost && (() => {
+ const visuels = mediasDuPost(selectedPost as any, mediaLibrary).filter(m => m.id !== 0);
+ if (visuels.length === 0) return null;
+ return (
+ <div>
+ <Label>{t('contentCalendar.visuelsDuPost', { count: visuels.length })}</Label>
+ <div className="mt-2 grid grid-cols-4 gap-2">
+ {visuels.map(m => (
+ <a key={m.id} href={m.url} target="_blank" rel="noreferrer" className="block aspect-square rounded-md overflow-hidden border border-naya-olive-18 bg-naya-olive-06">
+ {estVideo(m)
+ ? <video src={m.url} className="w-full h-full object-cover" muted />
+ : <img src={m.url} alt="" className="w-full h-full object-cover" />}
+ </a>
+ ))}
+ </div>
+ <p className="text-xs text-naya-olive-55 mt-1">{t('contentCalendar.visuelsDuPostAide')}</p>
+ </div>
+ );
+ })()}
+
  <div>
  <Label htmlFor="media">{t('contentCalendar.mediaOptional')}</Label>
  <div className="mt-2 space-y-3">
@@ -1362,8 +1405,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </div>
  </div>
  <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center relative">
- {formData.mediaUrl ? (
- <img src={formData.mediaUrl} alt="Post preview" className="w-full h-full object-cover" />
+ {(formData.mediaUrl || apercuMedia) ? (
+ <img src={formData.mediaUrl || apercuMedia} alt="Post preview" className="w-full h-full object-cover" />
  ) : (
  <div className="text-naya-olive-35 text-center">
  <p className="text-xs">{t('contentCalendar.yourMediaWillAppear')}</p>

@@ -769,6 +769,8 @@ const fr = {
  mentionTip: "Astuce : Utilise @mentions et #hashtags pour augmenter l'engagement",
  tooLong: "Trop long",
  almostLimit: "Presque la limite",
+ visuelsDuPost: "Visuels du post ({{count}})",
+ visuelsDuPostAide: "Déposés depuis les tâches de production, publiés dans cet ordre.",
  mediaOptional: "Média (Facultatif)",
  uploadedMedia: "Média téléchargé",
  mediaUploadedLabel: "Média téléchargé avec succès",

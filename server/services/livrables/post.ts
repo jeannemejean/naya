@@ -10,6 +10,9 @@ import { effetSurPost, postModifiable } from "@shared/livrables";
 export interface PostDeps {
   lirePost(id: number, userId: string): Promise<{ id: number; userId?: string; postStatus?: string | null; mediaIds?: unknown } | undefined>;
   majPost(id: number, patch: Record<string, unknown>): Promise<unknown>;
+  /** Ajoute un média au post en une seule écriture (sans doublon). Atomique : plusieurs
+   *  visuels déposés d'un coup arrivent en parallèle, une lecture-puis-écriture en perdrait. */
+  ajouterMedia(id: number, mediaId: number): Promise<unknown>;
 }
 
 export interface ResultatPost {
@@ -41,8 +44,7 @@ export async function nourrirLePost(
       await deps.majPost(contentId, { body: texte });
       return { contentId, texte: true };
     }
-    const actuels = Array.isArray(post.mediaIds) ? (post.mediaIds as unknown[]).map(Number) : [];
-    if (!actuels.includes(mediaId!)) await deps.majPost(contentId, { mediaIds: [...actuels, mediaId] });
+    await deps.ajouterMedia(contentId, mediaId!);
     return { contentId, media: true };
   } catch (e: any) {
     console.error(`[Livrables] post ${contentId} non mis à jour:`, e?.message ?? e);

@@ -3,6 +3,8 @@
 import type { Express } from "express";
 import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { lienValide, limiteOctets, typeAccepte, type LivrableKind } from "@shared/livrables";
 import {
   createUploadUrl, createPrivateUploadUrl, createPrivateDownloadUrl,
@@ -17,6 +19,12 @@ import { effetSurPost, postModifiable } from "@shared/livrables";
 const postDeps: PostDeps = {
   lirePost: (id, userId) => storage.getContentById(id, userId) as any,
   majPost: (id, patch) => storage.updateContent(id, patch as any),
+  ajouterMedia: (id, mediaId) => db.execute(sql`
+    UPDATE content
+       SET media_ids = COALESCE(media_ids, '[]'::jsonb) || jsonb_build_array(${mediaId}::int),
+           updated_at = now()
+     WHERE id = ${id}
+       AND NOT (COALESCE(media_ids, '[]'::jsonb) @> jsonb_build_array(${mediaId}::int))`),
 };
 
 /** La tâche si elle appartient à l'utilisateur (getTask ne filtre pas par compte). */

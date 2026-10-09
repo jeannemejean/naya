@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { nourrirLePost, type PostDeps } from "./post";
 
 function deps(post: any): PostDeps & { majPost: ReturnType<typeof vi.fn> } {
-  return { lirePost: vi.fn().mockResolvedValue(post), majPost: vi.fn().mockResolvedValue({}) } as any;
+  return { lirePost: vi.fn().mockResolvedValue(post), majPost: vi.fn().mockResolvedValue({}), ajouterMedia: vi.fn().mockResolvedValue({}) } as any;
 }
 
 describe("nourrirLePost", () => {
@@ -16,14 +16,14 @@ describe("nourrirLePost", () => {
     expect(r).toEqual({ contentId: 9, texte: true });
   });
 
-  it("la photo déposée sur « Préparer le visuel » est ajoutée aux médias du post, sans doublon", async () => {
+  it("la photo déposée sur « Préparer le visuel » est ajoutée aux médias du post, en une écriture atomique", async () => {
     const d = deps({ id: 9, postStatus: "pending", mediaIds: [3] });
-    await nourrirLePost(d, { userId: "u", tache: { title: "Préparer le visuel — X", contentId: 9 }, livrable: { kind: "media", mediaId: 5 } });
-    expect(d.majPost).toHaveBeenCalledWith(9, { mediaIds: [3, 5] });
-
-    const d2 = deps({ id: 9, postStatus: "pending", mediaIds: [5] });
-    await nourrirLePost(d2, { userId: "u", tache: { title: "Préparer le visuel — X", contentId: 9 }, livrable: { kind: "media", mediaId: 5 } });
-    expect(d2.majPost).not.toHaveBeenCalled();
+    const r = await nourrirLePost(d, { userId: "u", tache: { title: "Préparer le visuel — X", contentId: 9 }, livrable: { kind: "media", mediaId: 5 } });
+    // Pas de lecture-puis-écriture de la liste : cinq slides déposées d'un coup arrivent en
+    // parallèle, et l'une écrasait l'autre (un visuel perdu en prod).
+    expect((d as any).ajouterMedia).toHaveBeenCalledWith(9, 5);
+    expect(d.majPost).not.toHaveBeenCalled();
+    expect(r).toEqual({ contentId: 9, media: true });
   });
 
   it("ne touche pas au post : tâche sans post, étape intermédiaire, mauvais type", async () => {
@@ -44,7 +44,7 @@ describe("nourrirLePost", () => {
   });
 
   it("un échec d'écriture ne lève pas", async () => {
-    const d: PostDeps = { lirePost: vi.fn().mockResolvedValue({ id: 9, postStatus: "pending" }), majPost: vi.fn().mockRejectedValue(new Error("db")) };
+    const d: PostDeps = { lirePost: vi.fn().mockResolvedValue({ id: 9, postStatus: "pending" }), majPost: vi.fn().mockRejectedValue(new Error("db")), ajouterMedia: vi.fn() };
     expect(await nourrirLePost(d, { userId: "u", tache: { title: "Rédiger le texte — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
   });
 });

@@ -765,6 +765,8 @@ const en = {
  mentionTip: "Tip: Use @mentions and #hashtags to increase engagement",
  tooLong: "Too long",
  almostLimit: "Almost limit",
+ visuelsDuPost: "Post visuals ({{count}})",
+ visuelsDuPostAide: "Uploaded from the production tasks, published in this order.",
  mediaOptional: "Media (Optional)",
  uploadedMedia: "Uploaded media",
  mediaUploadedLabel: "Media uploaded successfully",
