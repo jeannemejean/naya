@@ -203,3 +203,27 @@ export const useUpdateCampaign = (id: number) =>
       queryClient.invalidateQueries({ queryKey: ["/api/prospection/campaigns"] });
     },
   });
+
+// Validation des messages préparés par Naya : l'accord explicite avant tout contact
+// (POST /api/leads/:id/validate | unvalidate). Le serveur met à jour la tâche « Valider les
+// messages » du planning : on rafraîchit donc aussi les tâches.
+const rafraichirApresValidation = () => {
+  queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+  queryClient.invalidateQueries({ queryKey: ["/api/tasks/range"] });
+};
+
+export const useValidateLeads = () =>
+  useMutation<number, Error, number[]>({
+    mutationFn: async (ids) => {
+      for (const id of ids) await apiRequest("POST", `/api/leads/${id}/validate`);
+      return ids.length;
+    },
+    onSettled: rafraichirApresValidation,
+  });
+
+export const useUnvalidateLead = () =>
+  useMutation<Response, Error, number>({
+    mutationFn: (id) => apiRequest("POST", `/api/leads/${id}/unvalidate`),
+    onSettled: rafraichirApresValidation,
+  });

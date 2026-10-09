@@ -536,6 +536,9 @@ export async function enrichProspects(
         emailMessage: msg.emailMessage,
         enrichedProfile: data,
         stage: hasMessage ? "messages_ready" : "identified",
+        // Des messages neufs n'ont été lus par personne : une validation donnée aux
+        // précédents ne vaut pas pour eux.
+        validatedAt: null,
         // Compat affichage
         strategicNotes: auditJson,
         message1: msg.linkedinMessage ?? (msg.emailMessage ? undefined : undefined),

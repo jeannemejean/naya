@@ -8386,6 +8386,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         }
       }
 
+      // Un prospect écarté (ou qui change d'étape) sort, ou entre, dans le lot à valider :
+      // le compteur de la tâche « Valider les messages » du planning suit.
+      if (typeof (updates as any).stage === 'string' && (lead as any).prospectionCampaignId) {
+        synchroniserValidationsProspection(userId, undefined, { campaignId: (lead as any).prospectionCampaignId })
+          .catch((e: any) => console.error('[lead patch] synchro tâche de validation:', e?.message || e));
+      }
+
       res.json(lead);
     } catch (error) {
       console.error("Error updating lead:", error);

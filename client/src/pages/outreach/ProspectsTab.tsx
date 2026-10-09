@@ -10,6 +10,7 @@
 // (GET .../enrollments) + barre d'actions groupées pour ajouter/retirer de la séquence. "Lancer
 // pour tous" reste disponible en raccourci (même comportement que l'onglet Aperçu).
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, CheckCircle2, Circle, Hand, Loader2, PauseCircle, PlayCircle,
   Plus, Rocket, Sparkles, Users, X,
@@ -36,6 +37,8 @@ import AddLeadForm from './dialogs/AddLeadForm';
 import LeadFinderDialog from './dialogs/LeadFinderDialog';
 import type { Lead } from '@shared/schema';
 import { resumeEnrolement } from './enrolement-message';
+import ValidationPanel from './ValidationPanel';
+import { attendValidation, estPretAPartir, prospectsAValider } from './validation-messages';
 
 interface ProspectsTabProps {
   campaignId: number;
@@ -75,6 +78,9 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
   const prospects = leads.filter(
     (l) => (l as any).prospectionCampaignId === campaignId && !(l as any).archivedAt,
   );
+
+  // Ceux dont Naya a préparé les messages et que personne n'a validés (tâche du planning).
+  const aValider = prospectsAValider(prospects as any[]) as Lead[];
 
   const statusByLead = useMemo(() => {
     const m = new Map<number, string>();
@@ -216,6 +222,9 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
         </p>
       )}
 
+      {/* Messages à valider — là où mène la tâche « Valider les messages préparés par Naya » */}
+      <ValidationPanel prospects={aValider} onOpenLead={setSelectedLead} />
+
       {/* Barre d'actions groupées — visible dès qu'au moins 1 prospect est sélectionné */}
       {selectedList.length > 0 && (
         <div className="px-4 py-2 rounded-lg border border-border bg-primary/5 flex items-center gap-3 flex-wrap">
@@ -320,6 +329,13 @@ function ProspectRow({
   const stage = STAGE_MAP[(l.stage as StageKey)] || STAGE_MAP.identified;
   const statusMeta = STATUS_META[status ?? 'none'] ?? STATUS_META.none;
   const StatusIcon = statusMeta.Icon;
+  const { t } = useTranslation();
+  // Validation : seulement tant que le prospect n'est pas en séquence.
+  const validation = !status || status === 'none'
+    ? attendValidation(l) ? { label: t('outreach.validation.badgeAValider'), variant: 'sulphur' as const }
+      : estPretAPartir(l) ? { label: t('outreach.validation.badgeValide'), variant: 'salvia' as const }
+      : null
+    : null;
 
   return (
     <div
@@ -365,6 +381,11 @@ function ProspectRow({
         {SCORE_VARIANT[lead.score] && (
           <Badge variant={SCORE_VARIANT[lead.score]} className="px-1.5 py-0.5 text-[10px]">
             {SCORE_LABEL[lead.score]}
+          </Badge>
+        )}
+        {validation && (
+          <Badge variant={validation.variant} className="px-1.5 py-0.5 text-[10px]">
+            {validation.label}
           </Badge>
         )}
         <Badge variant={statusMeta.variant} className="px-1.5 py-0.5 text-[10px] gap-1">

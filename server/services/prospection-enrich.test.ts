@@ -140,6 +140,8 @@ describe("enrichProspects — condition 3 (données + coûts enregistrés)", () 
     expect(upd.linkedinMessage.length).toBeLessThanOrEqual(200);
     expect(upd.linkedinMessage).not.toContain("—");
     expect(upd.stage).toBe("messages_ready");
+    // Messages neufs : la validation donnée aux précédents est retirée.
+    expect(upd).toHaveProperty("validatedAt", null);
     expect(upd.enrichedProfile.linkedin.company).toBe("Maison X");
     // Compat affichage : champs legacy remplis
     expect(upd.strategicNotes).toBe(upd.auditNotes);

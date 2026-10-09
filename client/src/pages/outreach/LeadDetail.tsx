@@ -6,6 +6,7 @@
 // pour respecter l'interface cible `LeadDetail({ lead, open, onOpenChange })` — le parent n'a
 // plus qu'à lui passer le prospect sélectionné et l'état d'ouverture du Sheet.
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Copy, ExternalLink, Instagram, Linkedin, Loader2, Mail, Sparkles, type LucideIcon,
 } from 'lucide-react';
@@ -19,7 +20,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import type { Lead } from '@shared/schema';
-import { useEnrichLead, useProspectionStatus, useUpdateLead } from './useOutreach';
+import { useEnrichLead, useProspectionStatus, useUnvalidateLead, useUpdateLead, useValidateLeads } from './useOutreach';
+import { attendValidation, estPretAPartir } from './validation-messages';
 import { STAGES, STAGE_MAP, type StageKey } from './stages';
 import { channelMeta } from './channels';
 import AuditView from './AuditView';
@@ -253,6 +255,7 @@ function SequenceTabContent({ lead, onCopy }: { lead: Lead; onCopy: (text: strin
 
   return (
     <div className="space-y-3">
+      <ValidationMessages lead={lead} />
       {messages.map(({ key, channel, value, label }) => {
         const meta = channelMeta(channel);
         const Icon = meta.Icon;
@@ -308,4 +311,58 @@ function InfoField({ label, value, onChange }: { label: string; value: string; o
       />
     </div>
   );
+}
+
+// ─── Validation des messages ────────────────────────────────────────────────────
+// L'accord explicite avant tout contact (prospection-validation.ts). Visible seulement à
+// l'étape « Messages prêts » : avant, il n'y a rien à valider ; après, le contact est parti.
+
+function ValidationMessages({ lead }: { lead: Lead }) {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const validate = useValidateLeads();
+  const unvalidate = useUnvalidateLead();
+  const l = lead as any;
+
+  if (attendValidation(l)) {
+    return (
+      <div className="rounded-lg border border-naya-mauve/40 bg-naya-mauve/5 p-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-foreground">{t('outreach.validation.detailAValider')}</p>
+        <Button
+          size="sm"
+          className="h-8 text-xs bg-primary text-primary-foreground hover:opacity-90 flex-shrink-0"
+          disabled={validate.isPending}
+          onClick={() => validate.mutate([lead.id], {
+            onSuccess: () => toast({ title: t('outreach.validation.valides') }),
+            onError: () => toast({ title: t('outreach.validation.erreur'), description: t('outreach.validation.erreurValidation'), variant: 'destructive' }),
+          })}
+        >
+          {validate.isPending && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
+          {t('outreach.validation.valider')}
+        </Button>
+      </div>
+    );
+  }
+
+  if (estPretAPartir(l)) {
+    return (
+      <div className="rounded-lg border border-naya-salvia/40 bg-naya-salvia/5 p-3 flex items-center justify-between gap-2">
+        <p className="text-xs text-foreground">{t('outreach.validation.detailValide')}</p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-8 text-xs flex-shrink-0"
+          disabled={unvalidate.isPending}
+          onClick={() => unvalidate.mutate(lead.id, {
+            onSuccess: () => toast({ title: t('outreach.validation.retiree') }),
+            onError: () => toast({ title: t('outreach.validation.erreur'), description: t('outreach.validation.erreurRetirer'), variant: 'destructive' }),
+          })}
+        >
+          {t('outreach.validation.retirer')}
+        </Button>
+      </div>
+    );
+  }
+
+  return null;
 }
