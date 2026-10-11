@@ -79,6 +79,14 @@ export const SEUIL_INCLUSION_TRIGRAMMES = 0.5;
  * signale alors que l'égalité quasi exacte.
  */
 export const MIN_MOTS_PORTEURS = 6;
+/**
+ * Longueur (en mots) d'une tournure reprise telle quelle d'un message à l'autre au-delà de
+ * laquelle c'est la même accroche (« la façon dont votre division fragrance construit… »),
+ * même si le reste du message change. Il faut au moins MIN_MOTS_LONGS_TOURNURE mots de
+ * 4 lettres ou plus dedans, pour ne pas compter les tournures vides (« est ce que vous »).
+ */
+export const LONGUEUR_TOURNURE = 5;
+export const MIN_MOTS_LONGS_TOURNURE = 3;
 
 /**
  * Formules de salutation / politesse retirées des DEUX textes avant comparaison (en
@@ -142,7 +150,9 @@ export function texteSignifiant(s: string, ctx?: ContexteComparaison): string {
  *  - l'un contient l'autre (≥ 4 mots)                                  → oui ;
  *  - Jaccard des ensembles de mots porteurs ≥ SEUIL_JACCARD_MOTS (0,55) → oui ;
  *  - ≥ SEUIL_INCLUSION_TRIGRAMMES (50 %) des trigrammes du plus court
- *    retrouvés dans le plus long (note d'invitation recopiée)          → oui.
+ *    retrouvés dans le plus long (note d'invitation recopiée)          → oui ;
+ *  - une même tournure de LONGUEUR_TOURNURE (5) mots consécutifs, dont au moins
+ *    3 mots de 4 lettres ou plus, dans les deux textes (même accroche)  → oui.
  * Un texte vide n'est jamais « proche ».
  */
 export function tropProche(a: string, b: string, ctx?: ContexteComparaison): boolean {
@@ -176,7 +186,22 @@ export function tropProche(a: string, b: string, ctx?: ContexteComparaison): boo
     tc.forEach((g) => { if (tl.has(g)) communs++; });
     if (communs / tc.size >= SEUIL_INCLUSION_TRIGRAMMES) return true;
   }
-  return false;
+  return tournureCommune(na, nb) != null;
+}
+
+/** Première tournure de LONGUEUR_TOURNURE mots porteurs présente dans les deux textes signifiants, ou null. Pure. */
+export function tournureCommune(na: string, nb: string): string | null {
+  const tournures = (t: string) => {
+    const mots = t.split(" ");
+    const out: string[] = [];
+    for (let i = 0; i + LONGUEUR_TOURNURE <= mots.length; i++) {
+      const fenetre = mots.slice(i, i + LONGUEUR_TOURNURE);
+      if (fenetre.filter((w) => w.length >= 4).length >= MIN_MOTS_LONGS_TOURNURE) out.push(fenetre.join(" "));
+    }
+    return out;
+  };
+  const dansB = new Set(tournures(nb));
+  return tournures(na).find((g) => dansB.has(g)) ?? null;
 }
 
 /**

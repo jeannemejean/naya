@@ -150,3 +150,16 @@ describe("etatGardeApercu", () => {
     expect(etatGardeApercu({}, [12])).toEqual({ attention: null, indexBloque: -1 });
   });
 });
+
+describe("tropProche — même accroche reprise (cas Sneha, oct. 2026)", () => {
+  const neutres = ["Sneha", "Jeanne"];
+  const note = "Sneha, la façon dont votre division fragrance construit une identité sensorielle cohérente m'a frappée. Comment pensez-vous l'équilibre entre héritage et renouveau ? Jeanne";
+  it("le message après acceptation qui reprend l'ouverture de la note → trop proche", () => {
+    const message = "Sneha, la façon dont votre division fragrance construit une narration sensorielle me fascine vraiment. Comment choisissez-vous l'émotion à ancrer en premier ?";
+    expect(tropProche(note, message, { neutres })).toBe(true);
+  });
+  it("un message qui ne partage que des tournures vides reste distinct", () => {
+    const message = "Merci d'avoir accepté. Une idée en passant : vos lancements d'automne gagneraient à montrer la matière avant le flacon. Est-ce que vous testez ce genre d'approche ?";
+    expect(tropProche(note, message, { neutres })).toBe(false);
+  });
+});

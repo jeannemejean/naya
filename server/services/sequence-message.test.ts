@@ -11,7 +11,7 @@ vi.mock("../storage", () => ({
 }));
 vi.mock("./claude", async (io) => {
   const actual = await io<any>();
-  return { ...actual, callClaude: vi.fn() };
+  return { ...actual, callClaudeWithContext: vi.fn() };
 });
 
 import { buildStepPrompt, generateStepMessage, combineInstructions, contexteProspect, neutresDuProspect } from "./sequence-message";
@@ -89,7 +89,7 @@ describe("generateStepMessage — garde anti-cache-vide", () => {
 
   it("lève une erreur et ne met JAMAIS en cache un corps vide quand la réponse IA n'est pas parsable", async () => {
     (storage.getLeadStepMessage as any).mockResolvedValue(undefined); // cache miss
-    (claude.callClaude as any).mockResolvedValue("désolé je n'ai pas compris");
+    (claude.callClaudeWithContext as any).mockResolvedValue("désolé je n'ai pas compris");
 
     const lead = { id: 42, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac" };
     const campaign = { name: "Agence JMD", founderName: "Jeanne" };
@@ -202,22 +202,22 @@ describe("generateStepMessage — messages distincts", () => {
   });
 
   it("charge le texte de l'invitation et l'injecte dans le prompt de l'étape 2", async () => {
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: distinct }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: distinct }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
     expect(r).toEqual({ subject: null, body: distinct });
-    const prompt = (claude.callClaude as any).mock.calls[0][0].messages[0].content;
+    const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage;
     expect(prompt).toContain(invitation);
     expect(prompt).toContain("APRÈS ACCEPTATION");
     expect(storage.upsertLeadStepMessage).toHaveBeenCalledWith(expect.objectContaining({ stepId: 2, body: distinct }));
   });
 
   it("trop proche une fois : régénère UNE fois avec le texte en conflit cité, puis met en cache", async () => {
-    (claude.callClaude as any)
+    (claude.callClaudeWithContext as any)
       .mockResolvedValueOnce(JSON.stringify({ body: invitation }))
       .mockResolvedValueOnce(JSON.stringify({ body: distinct }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
-    expect(claude.callClaude).toHaveBeenCalledTimes(2);
-    const prompt2 = (claude.callClaude as any).mock.calls[1][0].messages[0].content;
+    expect(claude.callClaudeWithContext).toHaveBeenCalledTimes(2);
+    const prompt2 = (claude.callClaudeWithContext as any).mock.calls[1][0].userMessage;
     expect(prompt2).toContain("beaucoup trop proche");
     expect(r.tropProche).toBeUndefined();
     expect(r.body).toBe(distinct);
@@ -225,9 +225,9 @@ describe("generateStepMessage — messages distincts", () => {
   });
 
   it("toujours trop proche après régénération : signale tropProche et ne met JAMAIS en cache", async () => {
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: invitation }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: invitation }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
-    expect(claude.callClaude).toHaveBeenCalledTimes(2);
+    expect(claude.callClaudeWithContext).toHaveBeenCalledTimes(2);
     expect(r.tropProche).toBe(true);
     expect(r.body).toBe(invitation);
     expect(storage.upsertLeadStepMessage).not.toHaveBeenCalled();
@@ -240,9 +240,9 @@ describe("generateStepMessage — messages distincts", () => {
       { messageType: "step_2", body: "texte de l'étape courante elle-même, ancien", sentAt: new Date() },
       { messageType: "step_1", body: "brouillon jamais parti", sentAt: null },
     ]);
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: distinct }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: distinct }));
     await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
-    const prompt = (claude.callClaude as any).mock.calls[0][0].messages[0].content;
+    const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage;
     expect(prompt).toContain(invitation);
     expect(prompt).not.toContain("texte de l'étape courante elle-même");
     expect(prompt).not.toContain("brouillon jamais parti");
@@ -251,10 +251,10 @@ describe("generateStepMessage — messages distincts", () => {
   it("cache trop proche (généré, non édité) : ignoré et régénéré", async () => {
     (storage.getLeadStepMessage as any).mockImplementation(async (_l: number, stepId: number) =>
       ({ body: invitation, subject: null, edited: false, stepId }));
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: distinct }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: distinct }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
     expect(r.body).toBe(distinct);
-    expect(claude.callClaude).toHaveBeenCalledTimes(1);
+    expect(claude.callClaudeWithContext).toHaveBeenCalledTimes(1);
   });
 
   it("cache édité à la main : toujours respecté", async () => {
@@ -262,17 +262,17 @@ describe("generateStepMessage — messages distincts", () => {
       ({ body: invitation, subject: null, edited: stepId === 2 }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
     expect(r.body).toBe(invitation);
-    expect(claude.callClaude).not.toHaveBeenCalled();
+    expect(claude.callClaudeWithContext).not.toHaveBeenCalled();
   });
 
   it("invitation : note jusqu'à 300 caractères conservée (pas tronquée à 200)", async () => {
     (storage.getLeadStepMessage as any).mockResolvedValue(undefined);
     const longue = `Fred, ${"votre manière de penser le bivouac réparable ".repeat(6)}`.slice(0, 280).trim();
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: longue }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: longue }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[0], steps });
     expect(r.body.length).toBeGreaterThan(200);
     expect(r.body.length).toBeLessThanOrEqual(300);
-    const prompt = (claude.callClaude as any).mock.calls[0][0].messages[0].content;
+    const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage;
     expect(prompt).toContain("NOTE D'INVITATION");
   });
 
@@ -284,9 +284,9 @@ describe("generateStepMessage — messages distincts", () => {
     ];
     (storage.getLeadStepMessage as any).mockImplementation(async (_l: number, stepId: number) =>
       stepId === 1 ? { body: invitation, edited: false } : stepId === 2 ? { body: "TEXTE BRANCHE ACCEPTEE", edited: false } : undefined);
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ subject: "Objet", body: distinct }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ subject: "Objet", body: distinct }));
     await generateStepMessage("u1", { lead, campaign, step: branches[2], steps: branches });
-    const prompt = (claude.callClaude as any).mock.calls[0][0].messages[0].content;
+    const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage;
     expect(prompt).toContain(invitation);
     expect(prompt).not.toContain("TEXTE BRANCHE ACCEPTEE");
   });
@@ -296,16 +296,16 @@ describe("generateStepMessage — messages distincts", () => {
       enrichedProfile: { linkedin: { location: "Lyon" } } };
     (storage.getLeadStepMessage as any).mockImplementation(async (_l: number, stepId: number) =>
       stepId === 1 ? { body: "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Méjean", edited: false } : undefined);
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Méjean" }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Méjean" }));
     const r = await generateStepMessage("u1", { lead: leadM, campaign, step: steps[1], steps, senderLastName: "Méjean" });
     expect(r.tropProche).toBeUndefined();
-    expect(claude.callClaude).toHaveBeenCalledTimes(1);
+    expect(claude.callClaudeWithContext).toHaveBeenCalledTimes(1);
     expect(storage.upsertLeadStepMessage).toHaveBeenCalledTimes(1);
   });
 
   it("textes antérieurs fournis par l'appelant (aperçu) pris en compte", async () => {
     (storage.getLeadStepMessage as any).mockResolvedValue(undefined);
-    (claude.callClaude as any).mockResolvedValue(JSON.stringify({ body: invitation }));
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: invitation }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps, previousTexts: [invitation] });
     expect(r.tropProche).toBe(true);
     expect(storage.upsertLeadStepMessage).not.toHaveBeenCalled();

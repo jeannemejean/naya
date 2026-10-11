@@ -11,7 +11,7 @@
  * jamais envoyé par le moteur).
  */
 import { storage } from "../storage";
-import { callClaude, CLAUDE_MODELS } from "./claude";
+import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
 import { sanitizeMessage, enforceLinkedInLimit, parseJsonObject } from "./prospection-pipeline";
 import { roleEtapeLinkedin, premierConflit, normaliserTexte, branchesExclusives, type RoleEtapeLinkedin } from "./sequence-distinct";
 
@@ -121,7 +121,7 @@ export function buildStepPrompt(args: {
   const contexte = contexteProspect(args.lead, args.audit);
   const precedents = (args.previousTexts || []).map((t) => t?.trim()).filter(Boolean) as string[];
   const precedentsBlock = precedents.length
-    ? `\nMESSAGES DÉJÀ RÉDIGÉS OU ENVOYÉS À CE PROSPECT (ne répète ni ne paraphrase ces messages : ni la même accroche, ni la même observation, ni la même question) :\n${precedents.map((t, i) => `${i + 1}. « ${t} »`).join("\n")}\n`
+    ? `\nMESSAGES DÉJÀ RÉDIGÉS OU ENVOYÉS À CE PROSPECT (ne répète ni ne paraphrase ces messages : ni la même accroche, ni la même observation, ni la même question, et ne commence PAS par la même tournure, par exemple « la façon dont votre… » reprise d'un message à l'autre) :\n${precedents.map((t, i) => `${i + 1}. « ${t} »`).join("\n")}\n`
     : "";
   const conflitBlock = args.conflit?.trim()
     ? `\nATTENTION : ta proposition précédente était beaucoup trop proche de ce message déjà rédigé pour ce prospect :\n« ${args.conflit.trim()} »\nÉcris un message RADICALEMENT différent : autre accroche, autre élément du contexte, autre formulation, autre question.\n`
@@ -141,6 +141,7 @@ RÈGLES ABSOLUES :
 - N'invente JAMAIS et ne promets JAMAIS un lien, un article, une étude, un contenu, une ressource ou une pièce jointe. Ne prétends pas que l'expéditeur a écrit/publié/créé quelque chose. Le message vaut par une observation sincère et une question ouverte, pas par une ressource promise.
 - N'écris AUCUN placeholder entre crochets ([lien], [url], [prénom], [entreprise], ...). Tout doit être du texte final, prêt à envoyer.
 - Aucun tiret en guise de ponctuation : ni —, ni –, ni --. Utilise des virgules ou des points.
+- Appuie-toi sur ce que tu sais (ta marque, ton offre, la recherche déposée, ce que tu sais de l'expéditrice) seulement si cela éclaire CE prospect. Ne le récite pas, ne cite ni source ni étude.
 - Aucune ouverture générique ou passe-partout. Interdits notamment : ${CLICHES_INTERDITS.map((c) => `« ${c} »`).join(", ")}. La première phrase doit être impossible à envoyer à quelqu'un d'autre.
 ${isLi
   ? reglesLinkedIn(role, args.founderName)
@@ -289,7 +290,13 @@ export async function generateStepMessage(
       intention: opts.step.intention || "", lead: opts.lead, audit, instructions: opts.instructions,
       role, bodyTemplate: opts.step.bodyTemplate ?? null, previousTexts: anterieurs, conflit,
     });
-    const raw = await callClaude({ model: CLAUDE_MODELS.smart, userId, messages: [{ role: "user", content: prompt }], max_tokens: 900, temperature: 0.6 });
+    // callClaudeWithContext, comme les messages à valider (prospection-pipeline) : Naya écrit
+    // en sachant qui elle est, ce qu'elle propose, sa voix, sa langue, et avec la mémoire
+    // pertinente pour ce prospect (dont les dossiers de recherche déposés, fil « savoir »).
+    const raw = await callClaudeWithContext({
+      userId, projectId: opts.campaign?.projectId ?? null, userMessage: prompt,
+      model: CLAUDE_MODELS.smart, max_tokens: 900, temperature: 0.6,
+    });
     const p = parseJsonObject(raw);
     const body = isLi
       ? enforceLinkedInLimit(typeof p.body === "string" ? p.body : "", limite)
