@@ -11,7 +11,7 @@ import { storage } from "../../storage";
 import { prochainPassageApres } from "./temps";
 import { notifierRoutine } from "./notifier";
 import { executerSourcing, KIND_SOURCING, cleSourcing } from "./sourcing";
-import type { ExecuteurRoutine } from "./types";
+import type { ExecuteurRoutine, ResultatPassage } from "./types";
 
 export const REGISTRE: Record<string, ExecuteurRoutine> = {
   [KIND_SOURCING]: executerSourcing,
@@ -37,8 +37,14 @@ export async function executerRoutinesDues(maintenant: Date, registre: Record<st
   return executees;
 }
 
-/** Exécute une routine et consigne le passage. Ne lève jamais. */
-export async function executerUne(r: Routine, executer: ExecuteurRoutine, maintenant = new Date()) {
+/**
+ * Exécute une routine et consigne le passage. Ne lève jamais. Un verrou en base empêche deux
+ * passages simultanés de la même routine (ordonnanceur, « Lancer maintenant », autre instance).
+ */
+export async function executerUne(r: Routine, executer: ExecuteurRoutine, maintenant = new Date()): Promise<ResultatPassage & { dejaEnCours?: boolean }> {
+  if (!(await storage.prendreRoutine(r.id))) {
+    return { statut: "rien_a_faire", resume: "Un passage est déjà en cours.", dejaEnCours: true };
+  }
   const debut = new Date();
   try {
     const res = await executer(r);
@@ -56,36 +62,67 @@ export async function executerUne(r: Routine, executer: ExecuteurRoutine, mainte
     await storage.addRoutineRun({ routineId: r.id, userId: r.userId, debut, fin: new Date(), statut: "erreur", resume: raison, details: null }).catch(() => {});
     await storage.updateRoutine(r.id, r.userId, { dernierPassage: maintenant, derniereErreur: raison }).catch(() => {});
     return { statut: "erreur" as const, resume: raison };
+  } finally {
+    await storage.libererRoutine(r.id).catch(() => {});
   }
 }
 
 /** Valeurs d'une routine de sourcing pour une campagne (création idempotente). */
-export function routineSourcingPour(campaign: { id: number; userId: string; projectId?: number | null }, maintenant: Date) {
+export function routineSourcingPour(campaign: { id: number; userId: string; projectId?: number | null }, maintenant: Date, actif = true) {
   return {
     userId: campaign.userId, projectId: campaign.projectId ?? null, kind: KIND_SOURCING,
     cible: { campaignId: campaign.id }, cibleCle: cleSourcing(campaign.id),
-    cadence: "quotidienne", heureUtc: HEURE_SOURCING_UTC, actif: true,
+    cadence: "quotidienne", heureUtc: HEURE_SOURCING_UTC, actif,
     prochainPassage: prochainPassageApres("quotidienne", HEURE_SOURCING_UTC, maintenant),
   };
 }
 
-/** Chaque campagne active a sa routine de sourcing (sans toucher à celles qui existent). */
+/**
+ * Chaque campagne active a sa routine de sourcing (sans toucher à celles qui existent).
+ * Une campagne jamais utilisée (aucun prospect : souvent créée automatiquement avec une
+ * campagne de contenu) reçoit sa routine EN PAUSE : pas de dépense que l'utilisatrice n'a pas
+ * demandée. Elle l'active d'un geste sur la carte « Sourcing automatique ».
+ */
 export async function assurerRoutinesSourcing(maintenant = new Date()): Promise<void> {
   const campagnes = await storage.getAllActiveProspectionCampaigns();
   for (const c of campagnes) {
-    await storage.ensureRoutine(routineSourcingPour(c as any, maintenant) as any).catch((e: any) =>
-      console.error(`[routines] création de la routine de sourcing (campagne ${c.id}) :`, e?.message));
+    try {
+      const utilisee = (await storage.getLeadsByCampaign(c.id, c.userId)).length > 0;
+      await storage.ensureRoutine(routineSourcingPour(c as any, maintenant, utilisee) as any);
+    } catch (e: any) {
+      console.error(`[routines] création de la routine de sourcing (campagne ${c.id}) :`, e?.message);
+    }
   }
 }
 
 const QUINZE_MINUTES = 15 * 60_000;
+const UN_JOUR = 24 * 60 * 60_000;
+let tourEnCours = false;
+let derniereAssurance = 0;
+
+/**
+ * Un tour : routines dues, et une fois par jour la création des routines manquantes.
+ * Deux tours ne se chevauchent jamais dans un même processus (un tour peut dépasser 15 min).
+ */
+export async function tourDeRoutines(maintenant = new Date()): Promise<number | "deja_en_cours"> {
+  if (tourEnCours) return "deja_en_cours";
+  tourEnCours = true;
+  try {
+    if (maintenant.getTime() - derniereAssurance >= UN_JOUR) {
+      derniereAssurance = maintenant.getTime();
+      await assurerRoutinesSourcing(maintenant);
+    }
+    return await executerRoutinesDues(maintenant);
+  } finally {
+    tourEnCours = false;
+  }
+}
 
 export function scheduleRoutines() {
   const tour = async () => {
     try {
-      await assurerRoutinesSourcing();
-      const n = await executerRoutinesDues(new Date());
-      if (n > 0) console.log(`[routines] ${n} routine(s) exécutée(s)`);
+      const n = await tourDeRoutines(new Date());
+      if (typeof n === "number" && n > 0) console.log(`[routines] ${n} routine(s) exécutée(s)`);
     } catch (e: any) {
       console.error("[routines] tour échoué :", e?.message || e);
     }

@@ -6,8 +6,6 @@ import { storage } from "./storage";
 import { executerUne, routineSourcingPour, REGISTRE } from "./services/routines/ordonnanceur";
 import { KIND_SOURCING } from "./services/routines/sourcing";
 
-const enCours = new Set<number>();
-
 async function routineDe(req: any) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return null;
@@ -45,13 +43,10 @@ export function registerRoutinesRoutes(app: Express) {
     try {
       const routine = await routineDe(req);
       if (!routine) return res.status(404).json({ message: "not_found" });
-      if (enCours.has(routine.id)) return res.status(409).json({ message: "deja_en_cours" });
-      enCours.add(routine.id);
-      try {
-        res.json(await executerUne(routine, REGISTRE[KIND_SOURCING]));
-      } finally {
-        enCours.delete(routine.id);
-      }
+      // Le verrou en base (executerUne) couvre aussi l'ordonnanceur et les autres instances.
+      const r = await executerUne(routine, REGISTRE[KIND_SOURCING]);
+      if (r.dejaEnCours) return res.status(409).json({ message: "deja_en_cours" });
+      res.json(r);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

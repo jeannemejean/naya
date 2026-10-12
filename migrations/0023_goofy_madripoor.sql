@@ -1,0 +1,1 @@
+ALTER TABLE "routines" ADD COLUMN "en_cours_depuis" timestamp;

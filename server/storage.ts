@@ -168,7 +168,7 @@ import {
   type TaskPrompt,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
-import { eq, and, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
+import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
 import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, postAProduire, rangEtape } from "./services/campagne/production";
@@ -503,6 +503,9 @@ export interface IStorage {
   /** Verrou : avance prochainPassage SEULEMENT s'il vaut encore `attendu`. true = ce processus a la main. */
   claimRoutine(id: number, attendu: Date | null, prochain: Date): Promise<boolean>;
   addRoutineRun(row: InsertRoutineRun): Promise<RoutineRun>;
+  /** Verrou d'exécution (libre, ou posé il y a plus de 30 min). true = pris par ce processus. */
+  prendreRoutine(id: number): Promise<boolean>;
+  libererRoutine(id: number): Promise<void>;
   getRoutineRuns(routineId: number, userId: string, limit: number): Promise<RoutineRun[]>;
   getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
@@ -1842,9 +1845,21 @@ export class DatabaseStorage implements IStorage {
 
   async claimRoutine(id: number, attendu: Date | null, prochain: Date): Promise<boolean> {
     const cond = attendu ? eq(routines.prochainPassage, attendu) : isNull(routines.prochainPassage);
+    // `actif` revérifié : une mise en pause juste avant le passage est respectée.
     const res = await db.update(routines).set({ prochainPassage: prochain, updatedAt: new Date() })
-      .where(and(eq(routines.id, id), cond));
+      .where(and(eq(routines.id, id), eq(routines.actif, true), cond));
     return (res.rowCount ?? 0) > 0;
+  }
+
+  async prendreRoutine(id: number): Promise<boolean> {
+    const perime = new Date(Date.now() - 30 * 60_000);
+    const res = await db.update(routines).set({ enCoursDepuis: new Date() })
+      .where(and(eq(routines.id, id), or(isNull(routines.enCoursDepuis), lt(routines.enCoursDepuis, perime))));
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async libererRoutine(id: number): Promise<void> {
+    await db.update(routines).set({ enCoursDepuis: null }).where(eq(routines.id, id));
   }
 
   async addRoutineRun(row: InsertRoutineRun): Promise<RoutineRun> {

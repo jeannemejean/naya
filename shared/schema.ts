@@ -2041,6 +2041,9 @@ export const routines = pgTable("routines", {
   prochainPassage: timestamp("prochain_passage"),
   dernierPassage: timestamp("dernier_passage"),
   derniereErreur: text("derniere_erreur"),
+  // Verrou d'exécution : posé pendant un passage (ordonnanceur ou « Lancer maintenant »),
+  // pour qu'un même sourcing ne tourne jamais deux fois en même temps (doublons, double coût).
+  enCoursDepuis: timestamp("en_cours_depuis"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => ({

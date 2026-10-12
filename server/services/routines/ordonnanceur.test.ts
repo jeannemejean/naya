@@ -7,17 +7,24 @@ const storageMock = {
   updateRoutine: vi.fn(async () => null),
   getAllActiveProspectionCampaigns: vi.fn(async () => []),
   ensureRoutine: vi.fn(async (r: any) => ({ id: 9, ...r })),
+  getLeadsByCampaign: vi.fn(async () => []),
+  prendreRoutine: vi.fn(async () => true),
+  libererRoutine: vi.fn(async () => {}),
 };
 vi.mock("../../storage", () => ({ storage: storageMock }));
 const notif = vi.hoisted(() => ({ ajouter: vi.fn(async () => {}) }));
 vi.mock("./notifier", () => ({ notifierRoutine: notif.ajouter }));
 
-const { executerRoutinesDues, assurerRoutinesSourcing } = await import("./ordonnanceur");
+const { executerRoutinesDues, assurerRoutinesSourcing, executerUne, tourDeRoutines } = await import("./ordonnanceur");
 
 const MAINTENANT = new Date("2026-10-13T05:10:00Z");
 const routine = (id: number, over: any = {}) => ({ id, userId: "u1", kind: "sourcing_prospects", cible: { campaignId: id }, cadence: "quotidienne", heureUtc: 5, actif: true, prochainPassage: new Date("2026-10-13T05:00:00Z"), ...over });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  storageMock.prendreRoutine.mockResolvedValue(true);
+  storageMock.claimRoutine.mockResolvedValue(true);
+});
 
 describe("executerRoutinesDues", () => {
   it("avance prochainPassage AVANT d'exécuter, puis consigne le passage", async () => {
@@ -69,12 +76,49 @@ describe("executerRoutinesDues", () => {
 });
 
 describe("assurerRoutinesSourcing", () => {
-  it("crée une routine quotidienne active pour chaque campagne active", async () => {
+  it("campagne déjà utilisée (au moins un prospect) : routine quotidienne active", async () => {
     storageMock.getAllActiveProspectionCampaigns.mockResolvedValue([{ id: 5, userId: "u1", projectId: 7 }]);
+    storageMock.getLeadsByCampaign.mockResolvedValue([{ id: 1 }]);
     await assurerRoutinesSourcing(MAINTENANT);
     expect(storageMock.ensureRoutine).toHaveBeenCalledWith(expect.objectContaining({
       userId: "u1", projectId: 7, kind: "sourcing_prospects", cible: { campaignId: 5 }, cibleCle: "campaign:5",
       cadence: "quotidienne", heureUtc: 5, actif: true, prochainPassage: new Date("2026-10-14T05:00:00Z"),
     }));
+  });
+  it("campagne jamais utilisée (créée automatiquement, aucun prospect) : routine créée EN PAUSE", async () => {
+    storageMock.getAllActiveProspectionCampaigns.mockResolvedValue([{ id: 6, userId: "u1", projectId: 7 }]);
+    storageMock.getLeadsByCampaign.mockResolvedValue([]);
+    await assurerRoutinesSourcing(MAINTENANT);
+    expect(storageMock.ensureRoutine).toHaveBeenCalledWith(expect.objectContaining({ cibleCle: "campaign:6", actif: false }));
+  });
+});
+
+describe("verrou d'exécution", () => {
+  it("un passage déjà en cours (autre instance ou clic) : rien n'est exécuté", async () => {
+    storageMock.prendreRoutine.mockResolvedValue(false);
+    const exec = vi.fn();
+    const r = await executerUne(routine(1) as any, exec);
+    expect(exec).not.toHaveBeenCalled();
+    expect(r.dejaEnCours).toBe(true);
+    expect(storageMock.addRoutineRun).not.toHaveBeenCalled();
+  });
+  it("le verrou est relâché même si la routine lève", async () => {
+    const exec = vi.fn(async () => { throw new Error("boom"); });
+    await executerUne(routine(1) as any, exec);
+    expect(storageMock.libererRoutine).toHaveBeenCalledWith(1);
+  });
+});
+
+describe("tourDeRoutines", () => {
+  it("deux tours ne se chevauchent pas dans le même processus", async () => {
+    let fin!: () => void;
+    storageMock.getDueRoutines.mockImplementation(() => new Promise((r) => { fin = () => r([]); }));
+    const premier = tourDeRoutines(MAINTENANT);
+    const second = await tourDeRoutines(MAINTENANT);
+    expect(second).toBe("deja_en_cours");
+    await vi.waitFor(() => expect(storageMock.getDueRoutines).toHaveBeenCalled());
+    fin();
+    await premier;
+    expect(storageMock.getDueRoutines).toHaveBeenCalledTimes(1);
   });
 });

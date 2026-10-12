@@ -1,4 +1,3 @@
-import { scheduleRoutines } from "./services/routines/ordonnanceur";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -14,6 +13,7 @@ import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
 import { adjustBufferForUser } from "./services/rhythm-buffer";
 import { runReadingRoom } from "./services/reading/runner";
 import { storage } from "./storage";
+import { scheduleRoutines } from "./services/routines/ordonnanceur";
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('unhandledRejection', (reason, promise) => {

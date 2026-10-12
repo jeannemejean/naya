@@ -12,6 +12,8 @@ import { storage } from "../../storage";
 import { sourcerCampagne, enrichProspects } from "../prospection-pipeline";
 import { hasProspectionEnrichment, LinkedInWeeklyLimitError, ProspectionAccessError } from "../prospection-access";
 import { serpConfigured } from "../serp";
+import { isAiBlocked } from "../usage";
+import { hasNayaAccess } from "../access";
 import { resumeSourcing, rechercheEnPanne, type EtatEnrichissement } from "./sourcing-resume";
 import type { ResultatPassage } from "./types";
 
@@ -27,17 +29,27 @@ export async function executerSourcing(routine: Routine): Promise<ResultatPassag
   if (campaign.status !== "active") {
     return { statut: "rien_a_faire", resume: "Campagne en pause : aucune recherche aujourd'hui." };
   }
+  // Jamais de dépense pour un compte sans accès actif, ni au-delà du budget IA du mois :
+  // mêmes règles que les recherches lancées à la main.
+  if (!(await aAccesActif(routine.userId))) {
+    return { statut: "rien_a_faire", resume: "Abonnement inactif : aucune recherche automatique." };
+  }
+  if (await isAiBlocked(routine.userId)) {
+    return { statut: "rien_a_faire", resume: "Budget du mois atteint : recherche automatique en pause jusqu'au mois prochain." };
+  }
   if (!serpConfigured()) {
     return { statut: "erreur", resume: "Bright Data n'est pas configuré (clé absente) : aucune recherche lancée." };
   }
 
   const s = await sourcerCampagne(routine.userId, campaign);
   if (rechercheEnPanne(s.appels, s.erreursRecherche ?? 0)) {
+    // Panne côté plateforme (clé, zone, service) : l'utilisatrice n'y peut rien. On le journalise
+    // pour l'exploitation, sans la notifier chaque jour.
+    console.error(`[routines/sourcing] recherche en panne (campagne ${campaign.id}) : ${s.derniereErreurRecherche ?? "raison inconnue"}`);
     return {
       statut: "erreur",
-      resume: `Bright Data a refusé toutes les recherches (${s.derniereErreurRecherche ?? "raison inconnue"}) : vérifie la clé ou la zone SERP.`,
-      details: { appels: s.appels, erreurs: s.erreursRecherche },
-      notifier: true,
+      resume: "La recherche automatique est indisponible pour le moment : Naya réessaiera demain.",
+      details: { appels: s.appels, erreurs: s.erreursRecherche, raison: s.derniereErreurRecherche ?? null },
     };
   }
 
@@ -72,11 +84,19 @@ export async function executerSourcing(routine: Routine): Promise<ResultatPassag
     importes: s.imported, prepares, cible: s.cible, reserve: s.reserve, appels: s.appels,
     erreursRecherche: s.erreursRecherche ?? 0,
   };
+  const nom = campaign.name ? `${campaign.name} : ` : "";
   if (s.imported === 0 && prepares === 0) {
-    const resume = s.reserveSuffisante
+    const pause = enrichissement === "limite" ? " Préparation en pause : limite LinkedIn de la semaine atteinte."
+      : enrichissement === "erreur" ? " La préparation des messages a échoué, elle sera retentée demain." : "";
+    const base = s.reserveSuffisante
       ? `Réserve suffisante : ${s.reserve} prospects attendent déjà d'être contactés.`
-      : resumeSourcing({ importes: 0, prepares: 0, enrichissement });
-    return { statut: "rien_a_faire", resume, details };
+      : resumeSourcing({ importes: 0, prepares: 0, enrichissement: "ok" });
+    return { statut: "rien_a_faire", resume: `${nom}${base}${pause}`, details };
   }
-  return { statut: "ok", resume: resumeSourcing({ importes: s.imported, prepares, enrichissement }), details, notifier: true };
+  return { statut: "ok", resume: `${nom}${resumeSourcing({ importes: s.imported, prepares, enrichissement })}`, details, notifier: true };
+}
+
+async function aAccesActif(userId: string): Promise<boolean> {
+  const [user, sub] = await Promise.all([storage.getUser(userId), storage.getSubscription(userId)]);
+  return hasNayaAccess({ role: (user as any)?.role ?? null } as any, (sub ?? null) as any);
 }

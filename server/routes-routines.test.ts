@@ -49,6 +49,11 @@ describe("routine de sourcing d'une campagne", () => {
     expect(storageMock.updateRoutine).toHaveBeenCalledWith(9, "user-1", { actif: false });
     expect((await appel("PATCH", "/api/prospection/campaigns/5/routine", { actif: "oui" })).status).toBe(400);
   });
+  it("un passage déjà en cours (ordonnanceur ou autre instance) : 409", async () => {
+    exec.executerUne.mockResolvedValueOnce({ statut: "rien_a_faire", resume: "Un passage est déjà en cours.", dejaEnCours: true } as any);
+    expect((await appel("POST", "/api/prospection/campaigns/5/routine/run")).status).toBe(409);
+  });
+
   it("lancer maintenant exécute la routine et renvoie le résumé", async () => {
     const r = await appel("POST", "/api/prospection/campaigns/5/routine/run");
     expect(r.status).toBe(200);
