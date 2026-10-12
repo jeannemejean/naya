@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   LayoutGrid, Calendar, MessageSquare, BarChart3, Lightbulb,
-  Settings, BookOpen, CalendarDays, Rocket, FolderKanban, Layers, Search,
+  Settings, BookOpen, Radar, CalendarDays, Rocket, FolderKanban, Layers, Search,
   Sun, Moon, Library
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,6 +33,7 @@ const NAV_ITEMS = [
   { key: 'campaigns',       href: "/campaigns",        icon: Rocket       },
   { key: 'contentCalendar', href: "/content-calendar", icon: Calendar     },
   { key: 'outreachCrm',     href: "/outreach",         icon: MessageSquare},
+  { key: 'veille',          href: "/veille",           icon: Radar        },
   // Masqué temporairement — pas utilisé pour le moment (réactiver en décommentant)
   // { key: 'knowledgeHub',    href: "/reading-hub",      icon: BookOpen     },
 ] as const;
