@@ -27,3 +27,11 @@ describe("resumeSourcing", () => {
     expect(resumeSourcing({ imported: 1, skipped: 1, cible: 1, reserve: 0, cibleAtteinte: true }).title).toBe("1 prospect importé");
   });
 });
+
+describe("resumeSourcing — recherche en panne", () => {
+  it("toutes les recherches refusées : le dit, au lieu de « 0 prospect importé »", () => {
+    const r = resumeSourcing({ imported: 0, skipped: 0, cible: 20, reserve: 0, cibleAtteinte: false, appels: 4, erreursRecherche: 4, derniereErreurRecherche: "Bright Data SERP : HTTP 401" });
+    expect(r.title).toMatch(/Bright Data/);
+    expect(r.description).toContain("HTTP 401");
+  });
+});

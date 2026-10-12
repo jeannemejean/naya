@@ -15,6 +15,7 @@ import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
 import { routineSourcingPour } from "./services/routines/ordonnanceur";
+import { registerRoutinesRoutes } from "./routes-routines";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -11401,6 +11402,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerProgrammationRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
+  registerRoutinesRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

@@ -2331,6 +2331,17 @@ const fr = {
    aRevoirDetail: "Le contrôle qualité a trouvé des défauts dans un message (onglet Séquence). Corrige-le, ou valide quand même.",
    validerQuandMeme: "Valider quand même",
   },
+  sourcing: {
+   titre: "Sourcing automatique",
+   intro: "Chaque matin, Naya cherche de nouveaux prospects selon l'objectif de cette campagne et en prépare quelques-uns. Rien ne part sans ta validation.",
+   actif: "Actif",
+   pause: "En pause",
+   lancer: "Lancer maintenant",
+   lance: "Sourcing terminé",
+   erreur: "Le sourcing n'a pas pu être lancé.",
+   dernier: "Dernier passage ({{date}}) :",
+   prochain: "Prochain passage : {{date}}",
+  },
   apercu: {
    aRevoir: "À revoir avant envoi :",
    briefIncomplet: "Pas de déclencheur réel pour ce prospect : rien ne sera rédigé ni envoyé tant que son brief n'est pas complété.",

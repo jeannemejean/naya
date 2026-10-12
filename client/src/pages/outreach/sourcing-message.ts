@@ -6,10 +6,19 @@ export interface ReponseSourcing {
   reserve: number;
   reserveSuffisante?: boolean;
   cibleAtteinte: boolean;
+  appels?: number;
+  erreursRecherche?: number;
+  derniereErreurRecherche?: string | null;
 }
 
 /** Toast après un sourcing : ce qui a été importé, rapporté à la cible de la campagne. */
 export function resumeSourcing(r: ReponseSourcing): { title: string; description: string } {
+  if ((r.appels ?? 0) > 0 && (r.erreursRecherche ?? 0) >= (r.appels ?? 0)) {
+    return {
+      title: "Bright Data a refusé les recherches",
+      description: `${r.derniereErreurRecherche ?? "Raison inconnue"}. Vérifie la clé et la zone SERP : aucun prospect n'a pu être cherché.`,
+    };
+  }
   if (r.reserveSuffisante) {
     return {
       title: "Ta réserve suffit",

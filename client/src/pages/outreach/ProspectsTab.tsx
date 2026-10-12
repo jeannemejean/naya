@@ -9,6 +9,7 @@
 // @/lib/bulk-selection, même pattern que PipelineBoard/LeadCard) + badge de statut d'enrôlement
 // (GET .../enrollments) + barre d'actions groupées pour ajouter/retirer de la séquence. "Lancer
 // pour tous" reste disponible en raccourci (même comportement que l'onglet Aperçu).
+import SourcingAutoCard from './SourcingAutoCard';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -147,6 +148,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
 
   return (
     <div className="p-6 space-y-4">
+      <SourcingAutoCard campaignId={campaignId} />
       {/* Header : sélection + compteur + actions */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">

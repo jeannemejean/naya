@@ -2327,6 +2327,17 @@ const en = {
    aRevoirDetail: "The quality check found issues in a message (Sequence tab). Fix it, or approve anyway.",
    validerQuandMeme: "Approve anyway",
   },
+  sourcing: {
+   titre: "Automatic sourcing",
+   intro: "Every morning, Naya looks for new prospects matching this campaign's goal and prepares a few of them. Nothing is sent without your approval.",
+   actif: "On",
+   pause: "Paused",
+   lancer: "Run now",
+   lance: "Sourcing finished",
+   erreur: "Sourcing could not be started.",
+   dernier: "Last run ({{date}}):",
+   prochain: "Next run: {{date}}",
+  },
   apercu: {
    aRevoir: "Needs review before sending:",
    briefIncomplet: "No real trigger for this prospect: nothing will be written or sent until their brief is completed.",
