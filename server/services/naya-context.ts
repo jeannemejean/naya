@@ -6,6 +6,7 @@ import { languageDirective, resolveLanguage } from "@shared/language";
 import { computeGoalUrgencyScore, formatGoalsWithUrgency } from "./goal-urgency";
 import { formatBehaviorPatternsForContext } from "./behavior-patterns";
 import { retrieveMemories } from "./memory/retrieve";
+import { blocVeille } from "./veille/contexte";
 
 /**
  * Build complete Naya context for AI calls.
@@ -279,6 +280,19 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
       }
     } catch (err: any) {
       console.error('[Lecture] section contexte échouée:', err?.message);
+    }
+
+    // Section 9 : la veille du marché (relevés réels : voix du client, concurrents, Google,
+    // réponses des IA). Gardée en mode tiers : les objections et les mots réels des clients
+    // servent aussi les messages de prospection, et rien n'y est personnel.
+    if (projectId) try {
+      const constats = await storage.getVeilleConstats(userId, projectId, {
+        limite: 20, depuis: new Date(Date.now() - 30 * 24 * 60 * 60_000), statuts: ['nouveau', 'vu'],
+      });
+      const bloc = blocVeille(Array.isArray(constats) ? constats : []);
+      if (bloc) sections.push(bloc);
+    } catch (err: any) {
+      console.error('[Veille] section contexte échouée:', err?.message);
     }
 
     // Section finale : langue de génération (toujours présente)
