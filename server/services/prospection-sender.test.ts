@@ -32,6 +32,7 @@ vi.mock("../storage", () => ({
 vi.mock("./sequence-message", () => ({
   generateStepMessage: vi.fn(),
   combineInstructions: vi.fn(() => ""),
+  BriefIncompletError: class BriefIncompletError extends Error {},
 }));
 
 vi.mock("./linkedin", () => ({
@@ -402,6 +403,47 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     expect(ligne).toContain("lead 1");
     expect(ligne).toContain("étape 100");
     expect(logs.join("\n")).not.toContain("Texte secret du prospect");
+  });
+
+  it("message « à revoir » : AUCUN envoi, aucune réservation, étape non avancée, nouvel essai plus tard", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Texte fautif", aRevoir: true, defauts: [{ code: "tic", raison: "x" }] });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await runProspectionSender();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sendLinkedInStep).not.toHaveBeenCalled();
+    expect(storage.claimStepSend).not.toHaveBeenCalled();
+    for (const call of (storage.updateLeadSequenceState as any).mock.calls) {
+      expect(call[1]).not.toHaveProperty("currentStep");
+    }
+    expect((storage.updateLeadSequenceState as any).mock.calls.some((c: any[]) => c[1].nextRunAt instanceof Date)).toBe(true);
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain("à revoir");
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).not.toContain("Texte fautif");
+  });
+
+  it("étape email sans adresse connue : étape sautée, la séquence continue (pas d'échec)", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    (storage.getLeads as any).mockResolvedValue([baseLead({ email: null })]);
+    (storage.getSequenceSteps as any).mockResolvedValue([baseStep(), baseStep({ id: 101, stepOrder: 2, delayDays: 4 })]);
+    await runProspectionSender();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(generateStepMessage).not.toHaveBeenCalled();
+    const calls = (storage.updateLeadSequenceState as any).mock.calls.map((c: any[]) => c[1]);
+    expect(calls.some((u: any) => u.status === "failed")).toBe(false);
+    expect(calls.some((u: any) => u.currentStep === 1)).toBe(true);
+  });
+
+  it("brief incomplet : AUCUN envoi, étape non avancée, nouvel essai plus tard", async () => {
+    (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    const { BriefIncompletError } = await import("./sequence-message");
+    (generateStepMessage as any).mockRejectedValue(new (BriefIncompletError as any)("brief_incomplet"));
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await runProspectionSender();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(storage.claimStepSend).not.toHaveBeenCalled();
+    const calls = (storage.updateLeadSequenceState as any).mock.calls;
+    expect(calls.every((c: any[]) => !("currentStep" in c[1]))).toBe(true);
+    expect(calls.some((c: any[]) => c[1].nextRunAt instanceof Date)).toBe(true);
   });
 
   it("trop proche : incrémente le compteur de blocages consécutifs du prospect", async () => {

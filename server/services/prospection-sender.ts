@@ -19,7 +19,7 @@ import { decryptToken } from "./token-crypto";
 import { linkedinConfigured, sendLinkedInStep } from "./linkedin";
 import { decideNextStep } from "./sequence-engine";
 import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
-import { generateStepMessage, combineInstructions } from "./sequence-message";
+import { BriefIncompletError, generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
 import { sendOnce, type ClaimStore, type StepSendKey } from "./prospection-idempotence";
 import {
@@ -566,6 +566,13 @@ export async function runProspectionSender(): Promise<void> {
           await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
           continue;
         }
+        // Étape email pour un prospect sans adresse connue : elle est SAUTÉE (comme une
+        // condition fausse, sans consommer de délai), la séquence continue sur LinkedIn.
+        // Auparavant toute la séquence passait en échec.
+        if (step.channel === "email" && !lead.email) {
+          await storage.updateLeadSequenceState(state.leadId, { currentStep: decision.index + 1 });
+          continue;
+        }
 
         // Clé de réservation : le RANG de l'étape, stable à travers les rééditions
         // de séquence (replaceSequenceSteps recrée les lignes et change leurs ids).
@@ -715,14 +722,32 @@ export async function runProspectionSender(): Promise<void> {
         const founderName = resolveFounderName(user, dna as any);
         const campaign = await storage.getProspectionCampaign(state.campaignId);
         const instructions = combineInstructions((prefs as any)?.messageInstructions, (campaign as any)?.messageInstructions);
-        const gen = await generateStepMessage(state.userId, {
-          lead,
-          campaign: { ...campaign, founderName },
-          step: stepForMessage(step),
-          steps: steps.map(stepForMessage),
-          senderLastName: (user as any)?.lastName ?? null,
-          useCache: true, instructions,
-        });
+        let gen;
+        try {
+          gen = await generateStepMessage(state.userId, {
+            lead,
+            campaign: { ...campaign, founderName },
+            step: stepForMessage(step),
+            steps: steps.map(stepForMessage),
+            senderLastName: (user as any)?.lastName ?? null,
+            useCache: true, instructions,
+          });
+        } catch (e: any) {
+          if (!(e instanceof BriefIncompletError)) throw e;
+          // Pas de déclencheur réel pour ce prospect : rien n'est rédigé ni envoyé. L'étape
+          // reste en attente ; on réessaie plus tard (une note ajoutée sur la fiche suffit).
+          console.warn(`[prospection] brief incomplet — lead ${lead.id}, étape ${step.id} : rien envoyé, nouvel essai dans ${TROP_PROCHE_RETRY_BACKOFF_MS / 60_000} min`);
+          await storage.updateLeadSequenceState(state.leadId, { nextRunAt: new Date(now.getTime() + TROP_PROCHE_RETRY_BACKOFF_MS) } as any).catch(() => {});
+          continue;
+        }
+        if (gen.aRevoir) {
+          // Le contrôle qualité a encore trouvé des défauts après réécriture : ce message ne
+          // part pas tant que l'utilisatrice ne l'a pas corrigé (une édition lève le blocage).
+          // Jamais le contenu du message dans les logs.
+          console.warn(`[prospection] message à revoir — lead ${lead.id}, étape ${step.id} : rien envoyé (${(gen.defauts || []).map((d) => d.code).join(", ")}), nouvel essai dans ${TROP_PROCHE_RETRY_BACKOFF_MS / 60_000} min`);
+          await storage.updateLeadSequenceState(state.leadId, { nextRunAt: new Date(now.getTime() + TROP_PROCHE_RETRY_BACKOFF_MS) } as any).catch(() => {});
+          continue;
+        }
         const garde = lireGarde(lead);
         if (gen.tropProche) {
           // Message trop proche d'un message déjà rédigé/envoyé à ce prospect (même après une
@@ -759,10 +784,7 @@ export async function runProspectionSender(): Promise<void> {
         let linkedinFailurePatch: Record<string, any> = {};
 
         if (step.channel === "email") {
-          if (!lead.email) {
-            await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
-            continue;
-          }
+          if (!lead.email) continue; // inatteignable (sauté plus haut) ; garde le narrowing de type
           // Capturé après la garde : le narrowing `lead.email` ne survit pas à la
           // fermeture `async` de `sendOnce` ci-dessous (TS le retypera en nullable).
           const toEmail = lead.email;
