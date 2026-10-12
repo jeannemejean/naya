@@ -13,6 +13,8 @@ import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserI
 import { registerLivrablesRoutes } from "./routes-livrables";
 import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerPreuvesRoutes } from "./routes-preuves";
+import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
+import { tracerEditionMessages, tracerValidation } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
   generateDailyTasks, 
@@ -8374,11 +8376,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const { id } = req.params;
       const userId = req.userId;
       const updates = updateLeadSchema.parse(req.body);
+      // Version AVANT édition des messages : sert à tracer la correction (apprentissage).
+      const touchesMessages = typeof (updates as any).linkedinMessage === 'string' || typeof (updates as any).emailMessage === 'string';
+      const avant = touchesMessages ? await storage.getLead(parseInt(id), userId).catch(() => undefined) : undefined;
       const lead = await storage.updateLead(parseInt(id), userId, updates);
 
       if (!lead) {
         return res.status(404).json({ message: "Lead not found or access denied" });
       }
+      if (avant) await tracerEditionMessages(userId, avant, updates as any);
 
       // Stop-on-reply : si le lead passe à un stade « répondu/engagé », on stoppe sa séquence.
       const ENGAGED = ['connected', 'in_discussion', 'proposal_sent', 'signed'];
@@ -8387,6 +8393,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         if (st && st.status === 'active') {
           await storage.updateLeadSequenceState(parseInt(id), { status: 'stopped_replied', repliedAt: new Date(), nextRunAt: null }).catch(() => {});
         }
+        // Une réponse : les messages envoyés à ce prospect deviennent les meilleurs exemples.
+        await Promise.resolve().then(() => storage.markFeedbackReplied(userId, parseInt(id))).catch(() => {});
       }
 
       // Un prospect écarté (ou qui change d'étape) sort, ou entre, dans le lot à valider :
@@ -8730,6 +8738,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         validatedAt: new Date(),
       } as any);
       if (!updated) return res.status(404).json({ message: 'not_found' });
+      await tracerValidation(req.userId, updated);
       // Un prospect de moins à valider : le compteur de la tâche du planning suit.
       if ((updated as any).prospectionCampaignId) {
         synchroniserValidationsProspection(req.userId, undefined, { campaignId: (updated as any).prospectionCampaignId })
@@ -11377,6 +11386,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerLivrablesRoutes(app);
   registerProgrammationRoutes(app);
   registerPreuvesRoutes(app);
+  registerApprentissageRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

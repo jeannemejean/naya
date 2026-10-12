@@ -520,6 +520,7 @@ export async function runProspectionSender(): Promise<void> {
         }
         if (signals.replied) {
           await storage.updateLeadSequenceState(state.leadId, { status: "stopped_replied", nextRunAt: null });
+          await Promise.resolve().then(() => storage.markFeedbackReplied(state.userId, state.leadId)).catch(() => {});
           continue;
         }
 
