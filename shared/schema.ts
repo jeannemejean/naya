@@ -863,6 +863,9 @@ export const leads = pgTable("leads", {
    */
   outreachUnreachableReason: text("outreach_unreachable_reason"),
   archivedAt: timestamp("archived_at"),   // soft-delete (pattern tasks) : non nul = archivé, exclu des vues actives
+  // Brief stratégique du prospect (déclencheur réel, preuve choisie, raison, angles par touche).
+  // Écrit une fois après l'enrichissement ; pilote toute la rédaction. Voir prospection/brief.ts.
+  prospectBrief: jsonb("prospect_brief"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -1802,6 +1805,10 @@ export const campaignSequenceSteps = pgTable("campaign_sequence_steps", {
   // Condition d'exécution (gate) évaluée par le moteur : always | if_opened | if_not_opened
   // | if_clicked | if_invite_accepted | if_invite_not_accepted.
   condition: text("condition").notNull().default("always"),
+  // Rôle de la touche (invitation | premier_message | email_ouverture | relance | cloture),
+  // porté par la structure de séquence. Nul pour les séquences anciennes : le rôle est alors
+  // déduit (roleEtapeLinkedin).
+  role: text("role"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -1838,6 +1845,9 @@ export const leadStepMessages = pgTable("lead_step_messages", {
   subject: text("subject"),          // email uniquement
   body: text("body").notNull(),
   edited: boolean("edited").notNull().default(false), // true si Jeanne a édité à la main
+  // Contrôle qualité : ok | a_revoir. Un message a_revoir non édité n'est jamais envoyé.
+  qualite: text("qualite").notNull().default("ok"),
+  defauts: jsonb("defauts"),  // [{ code, raison }]
   generatedAt: timestamp("generated_at").defaultNow(),
 }, (t) => ({
   uniqLeadStep: uniqueIndex("lead_step_messages_lead_step_uq").on(t.leadId, t.stepId),
@@ -1848,6 +1858,67 @@ export type InsertCampaignSequenceStep = typeof campaignSequenceSteps.$inferInse
 export type LeadSequenceState = typeof leadSequenceState.$inferSelect;
 export type InsertLeadSequenceState = typeof leadSequenceState.$inferInsert;
 export type LeadStepMessage = typeof leadStepMessages.$inferSelect;
+
+// Bibliothèque de preuves d'un projet : réalisations réelles où la prospection (et plus tard
+// les contenus) puise. Seules les preuves `validated` sont utilisées ; `citable=false` interdit
+// d'écrire le nom du client.
+export const projectProofs = pgTable("project_proofs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull().references(() => projects.id),
+  clientLabel: text("client_label").notNull(),
+  citable: boolean("citable").notNull().default(false),
+  whatWasDone: text("what_was_done").notNull(),
+  result: text("result"),
+  url: text("url"),
+  mediaId: integer("media_id"),
+  tags: text("tags").array(),
+  status: text("status").notNull().default("proposed"), // proposed | validated | archived
+  source: text("source").notNull().default("manual"),   // manual | site | post | document
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  byProject: index("project_proofs_project_idx").on(t.projectId),
+}));
+export type ProjectProof = typeof projectProofs.$inferSelect;
+export type InsertProjectProof = typeof projectProofs.$inferInsert;
+
+// Ce que l'utilisatrice fait des messages proposés (validé, modifié, écarté) + défauts
+// détectés + réponse obtenue. Matière de l'apprentissage par projet.
+export const prospectionMessageFeedback = pgTable("prospection_message_feedback", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id"),
+  campaignId: integer("campaign_id"),
+  leadId: integer("lead_id"),
+  stepId: integer("step_id"),
+  role: text("role").notNull(),
+  action: text("action").notNull(), // valide_tel_quel | modifie | ecarte | controle
+  original: text("original"),
+  final: text("final"),
+  raison: text("raison"),
+  defauts: jsonb("defauts"),
+  aRepondu: boolean("a_repondu"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  byProject: index("prospection_feedback_project_idx").on(t.userId, t.projectId),
+}));
+export type ProspectionMessageFeedback = typeof prospectionMessageFeedback.$inferSelect;
+export type InsertProspectionMessageFeedback = typeof prospectionMessageFeedback.$inferInsert;
+
+// Règles de rédaction tirées des corrections, proposées puis acceptées par l'utilisatrice.
+export const prospectionLearnedRules = pgTable("prospection_learned_rules", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  texte: text("texte").notNull(),
+  statut: text("statut").notNull().default("proposee"), // proposee | acceptee | refusee
+  sourceIds: integer("source_ids").array(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type ProspectionLearnedRule = typeof prospectionLearnedRules.$inferSelect;
+export type InsertProspectionLearnedRule = typeof prospectionLearnedRules.$inferInsert;
 export type InsertLeadStepMessage = typeof leadStepMessages.$inferInsert;
 
 // Réservation d'envoi (garde d'idempotence). Une ligne = « l'étape N de la campagne C

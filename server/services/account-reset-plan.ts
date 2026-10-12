@@ -110,6 +110,9 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   // mais brand_conversions.project_id ne l'est pas → doit être explicitement traitée
   // avant la suppression de projects (Phase 10).
   { table: "brand_conversions", mode: "delete" },
+  { table: "project_proofs", mode: "delete", note: "bibliothèque de preuves" },
+  { table: "prospection_message_feedback", mode: "delete", note: "apprentissage de rédaction" },
+  { table: "prospection_learned_rules", mode: "delete", note: "règles apprises" },
 
   // ── Phase 10 : projects ──────────────────────────────────────────────────────
   { table: "projects", mode: "delete" },

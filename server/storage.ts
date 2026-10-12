@@ -131,8 +131,17 @@ import {
   type LeadSequenceState,
   type InsertLeadSequenceState,
   leadStepMessages,
+  projectProofs,
+  prospectionMessageFeedback,
+  prospectionLearnedRules,
   type LeadStepMessage,
   type InsertLeadStepMessage,
+  type ProjectProof,
+  type InsertProjectProof,
+  type ProspectionMessageFeedback,
+  type InsertProspectionMessageFeedback,
+  type ProspectionLearnedRule,
+  type InsertProspectionLearnedRule,
   outreachStepSends,
   linkedinSendAttempts,
   aiInvocations,
@@ -452,8 +461,8 @@ export interface IStorage {
 
   // Séquences de prospection
   getSequenceSteps(campaignId: number): Promise<CampaignSequenceStep[]>;
-  replaceSequenceSteps(campaignId: number, userId: string, steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate?: string | null; intention?: string | null; condition?: string }>): Promise<CampaignSequenceStep[]>;
-  saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string }[] }): Promise<void>;
+  replaceSequenceSteps(campaignId: number, userId: string, steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate?: string | null; intention?: string | null; condition?: string; role?: string | null }>): Promise<CampaignSequenceStep[]>;
+  saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string; role?: string | null }[] }): Promise<void>;
   getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined>;
   getEnrollmentsByCampaign(campaignId: number): Promise<{ leadId: number; status: string }[]>;
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
@@ -463,6 +472,24 @@ export interface IStorage {
   upsertLeadStepMessage(row: InsertLeadStepMessage): Promise<void>;
   purgeLeadStepMessagesForCampaign(campaignId: number): Promise<void>;
   purgeLeadStepMessagesForUser(userId: string): Promise<void>;
+  deleteLeadStepMessage(leadId: number, stepId: number): Promise<void>;
+  /** Supprime le cache NON édité d'un prospect (brief modifié → réécriture). */
+  purgeUneditedLeadStepMessages(leadId: number): Promise<void>;
+
+  // Bibliothèque de preuves (par projet)
+  getProjectProofs(userId: string, projectId: number, status?: string): Promise<ProjectProof[]>;
+  getProjectProof(id: number, userId: string): Promise<ProjectProof | undefined>;
+  createProjectProof(row: InsertProjectProof): Promise<ProjectProof>;
+  updateProjectProof(id: number, userId: string, patch: Partial<InsertProjectProof>): Promise<ProjectProof | null>;
+  deleteProjectProof(id: number, userId: string): Promise<boolean>;
+
+  // Apprentissage de rédaction
+  addMessageFeedback(row: InsertProspectionMessageFeedback): Promise<ProspectionMessageFeedback>;
+  getMessageFeedback(userId: string, projectId: number | null, opts?: { role?: string; limit?: number; sinceId?: number }): Promise<ProspectionMessageFeedback[]>;
+  markFeedbackReplied(userId: string, leadId: number): Promise<void>;
+  getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
+  createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule>;
+  updateLearnedRule(id: number, userId: string, patch: Partial<InsertProspectionLearnedRule>): Promise<ProspectionLearnedRule | null>;
 
   // Lead operations
   getLeads(userId: string): Promise<Lead[]>;
@@ -1576,7 +1603,7 @@ export class DatabaseStorage implements IStorage {
   async replaceSequenceSteps(
     campaignId: number,
     userId: string,
-    steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate?: string | null; intention?: string | null; condition?: string }>,
+    steps: Array<{ stepOrder: number; channel: string; delayDays: number; subjectTemplate?: string | null; bodyTemplate?: string | null; intention?: string | null; condition?: string; role?: string | null }>,
   ): Promise<CampaignSequenceStep[]> {
     // Fetch old step IDs and purge dependent leadStepMessages before deletion
     const oldStepIds = (
@@ -1601,6 +1628,7 @@ export class DatabaseStorage implements IStorage {
         bodyTemplate: s.bodyTemplate ?? null,
         intention: s.intention ?? null,
         condition: s.condition ?? "always",
+        role: s.role ?? null,
       })),
     ).returning();
     return rows;
@@ -1609,7 +1637,7 @@ export class DatabaseStorage implements IStorage {
   // Plan de séquence multicanal généré par l'IA (canal intelligent + branches conditionnelles).
   // Remplace toute la séquence existante — pas de bodyTemplate/subjectTemplate : le texte réel
   // est généré sur-mesure par prospect (voir leadStepMessages).
-  async saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string }[] }): Promise<void> {
+  async saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string; role?: string | null }[] }): Promise<void> {
     // Fetch old step IDs and purge dependent leadStepMessages before deletion
     const oldStepIds = (
       await db.select({ id: campaignSequenceSteps.id })
@@ -1625,6 +1653,7 @@ export class DatabaseStorage implements IStorage {
     await db.insert(campaignSequenceSteps).values(plan.steps.map((s, i) => ({
       campaignId, userId, stepOrder: i + 1,
       channel: s.channel, delayDays: s.delayDays, intention: s.intention, condition: s.condition,
+      role: s.role ?? null,
       bodyTemplate: null, subjectTemplate: null, isActive: true,
     })));
   }
@@ -1701,8 +1730,88 @@ export class DatabaseStorage implements IStorage {
     await db.insert(leadStepMessages).values(row)
       .onConflictDoUpdate({
         target: [leadStepMessages.leadId, leadStepMessages.stepId],
-        set: { subject: row.subject ?? null, body: row.body!, edited: row.edited ?? false, generatedAt: new Date() },
+        set: {
+          subject: row.subject ?? null, body: row.body!, edited: row.edited ?? false,
+          qualite: row.qualite ?? "ok", defauts: row.defauts ?? null, generatedAt: new Date(),
+        },
       });
+  }
+
+  async deleteLeadStepMessage(leadId: number, stepId: number): Promise<void> {
+    await db.delete(leadStepMessages)
+      .where(and(eq(leadStepMessages.leadId, leadId), eq(leadStepMessages.stepId, stepId)));
+  }
+
+  async purgeUneditedLeadStepMessages(leadId: number): Promise<void> {
+    await db.delete(leadStepMessages)
+      .where(and(eq(leadStepMessages.leadId, leadId), eq(leadStepMessages.edited, false)));
+  }
+
+  async getProjectProofs(userId: string, projectId: number, status?: string): Promise<ProjectProof[]> {
+    const conds = [eq(projectProofs.userId, userId), eq(projectProofs.projectId, projectId)];
+    if (status) conds.push(eq(projectProofs.status, status));
+    return db.select().from(projectProofs).where(and(...conds)).orderBy(desc(projectProofs.updatedAt));
+  }
+
+  async getProjectProof(id: number, userId: string): Promise<ProjectProof | undefined> {
+    const [row] = await db.select().from(projectProofs)
+      .where(and(eq(projectProofs.id, id), eq(projectProofs.userId, userId)));
+    return row;
+  }
+
+  async createProjectProof(row: InsertProjectProof): Promise<ProjectProof> {
+    const [created] = await db.insert(projectProofs).values(row).returning();
+    return created;
+  }
+
+  async updateProjectProof(id: number, userId: string, patch: Partial<InsertProjectProof>): Promise<ProjectProof | null> {
+    const { id: _i, userId: _u, projectId: _p, createdAt: _c, ...rest } = patch as any;
+    const [row] = await db.update(projectProofs).set({ ...rest, updatedAt: new Date() })
+      .where(and(eq(projectProofs.id, id), eq(projectProofs.userId, userId))).returning();
+    return row ?? null;
+  }
+
+  async deleteProjectProof(id: number, userId: string): Promise<boolean> {
+    const res = await db.delete(projectProofs)
+      .where(and(eq(projectProofs.id, id), eq(projectProofs.userId, userId)));
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async addMessageFeedback(row: InsertProspectionMessageFeedback): Promise<ProspectionMessageFeedback> {
+    const [created] = await db.insert(prospectionMessageFeedback).values(row).returning();
+    return created;
+  }
+
+  async getMessageFeedback(userId: string, projectId: number | null, opts: { role?: string; limit?: number; sinceId?: number } = {}): Promise<ProspectionMessageFeedback[]> {
+    const conds: SQL[] = [eq(prospectionMessageFeedback.userId, userId)];
+    conds.push(projectId == null ? isNull(prospectionMessageFeedback.projectId) : eq(prospectionMessageFeedback.projectId, projectId));
+    if (opts.role) conds.push(eq(prospectionMessageFeedback.role, opts.role));
+    if (opts.sinceId != null) conds.push(gt(prospectionMessageFeedback.id, opts.sinceId));
+    return db.select().from(prospectionMessageFeedback).where(and(...conds))
+      .orderBy(desc(prospectionMessageFeedback.id)).limit(opts.limit ?? 200);
+  }
+
+  async markFeedbackReplied(userId: string, leadId: number): Promise<void> {
+    await db.update(prospectionMessageFeedback).set({ aRepondu: true })
+      .where(and(eq(prospectionMessageFeedback.userId, userId), eq(prospectionMessageFeedback.leadId, leadId)));
+  }
+
+  async getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]> {
+    const conds = [eq(prospectionLearnedRules.userId, userId), eq(prospectionLearnedRules.projectId, projectId)];
+    if (statut) conds.push(eq(prospectionLearnedRules.statut, statut));
+    return db.select().from(prospectionLearnedRules).where(and(...conds)).orderBy(desc(prospectionLearnedRules.createdAt));
+  }
+
+  async createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule> {
+    const [created] = await db.insert(prospectionLearnedRules).values(row).returning();
+    return created;
+  }
+
+  async updateLearnedRule(id: number, userId: string, patch: Partial<InsertProspectionLearnedRule>): Promise<ProspectionLearnedRule | null> {
+    const { id: _i, userId: _u, projectId: _p, createdAt: _c, ...rest } = patch as any;
+    const [row] = await db.update(prospectionLearnedRules).set({ ...rest, updatedAt: new Date() })
+      .where(and(eq(prospectionLearnedRules.id, id), eq(prospectionLearnedRules.userId, userId))).returning();
+    return row ?? null;
   }
 
   // Purge le cache de messages générés (lead_step_messages) d'une campagne — même approche
@@ -2523,6 +2632,10 @@ export class DatabaseStorage implements IStorage {
       if (projectIds.length > 0) {
         await tx.delete(brandConversions).where(inArray(brandConversions.projectId, projectIds));
       }
+      // Preuves (project_id sans cascade) et apprentissage de rédaction, propres au compte.
+      await tx.delete(projectProofs).where(eq(projectProofs.userId, userId));
+      await tx.delete(prospectionMessageFeedback).where(eq(prospectionMessageFeedback.userId, userId));
+      await tx.delete(prospectionLearnedRules).where(eq(prospectionLearnedRules.userId, userId));
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────
       console.log(`[reset] phase 10: projects`);
