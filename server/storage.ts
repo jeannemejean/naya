@@ -132,11 +132,17 @@ import {
   type InsertLeadSequenceState,
   leadStepMessages,
   projectProofs,
+  routines,
+  routineRuns,
   prospectionMessageFeedback,
   prospectionLearnedRules,
   type LeadStepMessage,
   type InsertLeadStepMessage,
   type ProjectProof,
+  type Routine,
+  type InsertRoutine,
+  type RoutineRun,
+  type InsertRoutineRun,
   type InsertProjectProof,
   type ProspectionMessageFeedback,
   type InsertProspectionMessageFeedback,
@@ -488,6 +494,17 @@ export interface IStorage {
   getMessageFeedback(userId: string, projectId: number | null, opts?: { role?: string; limit?: number; sinceId?: number }): Promise<ProspectionMessageFeedback[]>;
   markFeedbackReplied(userId: string, leadId: number): Promise<void>;
   markFeedbackExtracted(userId: string, ids: number[]): Promise<void>;
+
+  // Routines planifiées
+  ensureRoutine(row: InsertRoutine): Promise<Routine>;
+  getRoutineByCible(userId: string, kind: string, cibleCle: string): Promise<Routine | undefined>;
+  updateRoutine(id: number, userId: string, patch: Partial<InsertRoutine>): Promise<Routine | null>;
+  getDueRoutines(now: Date, limit: number): Promise<Routine[]>;
+  /** Verrou : avance prochainPassage SEULEMENT s'il vaut encore `attendu`. true = ce processus a la main. */
+  claimRoutine(id: number, attendu: Date | null, prochain: Date): Promise<boolean>;
+  addRoutineRun(row: InsertRoutineRun): Promise<RoutineRun>;
+  getRoutineRuns(routineId: number, userId: string, limit: number): Promise<RoutineRun[]>;
+  getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
   createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule>;
   updateLearnedRule(id: number, userId: string, patch: Partial<InsertProspectionLearnedRule>): Promise<ProspectionLearnedRule | null>;
@@ -1797,6 +1814,54 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(prospectionMessageFeedback.userId, userId), eq(prospectionMessageFeedback.leadId, leadId)));
   }
 
+  async ensureRoutine(row: InsertRoutine): Promise<Routine> {
+    await db.insert(routines).values(row).onConflictDoNothing();
+    const [r] = await db.select().from(routines)
+      .where(and(eq(routines.userId, row.userId), eq(routines.kind, row.kind), eq(routines.cibleCle, row.cibleCle)));
+    return r;
+  }
+
+  async getRoutineByCible(userId: string, kind: string, cibleCle: string): Promise<Routine | undefined> {
+    const [r] = await db.select().from(routines)
+      .where(and(eq(routines.userId, userId), eq(routines.kind, kind), eq(routines.cibleCle, cibleCle)));
+    return r;
+  }
+
+  async updateRoutine(id: number, userId: string, patch: Partial<InsertRoutine>): Promise<Routine | null> {
+    const { id: _i, userId: _u, kind: _k, cible: _c, cibleCle: _cc, createdAt: _cr, ...rest } = patch as any;
+    const [r] = await db.update(routines).set({ ...rest, updatedAt: new Date() })
+      .where(and(eq(routines.id, id), eq(routines.userId, userId))).returning();
+    return r ?? null;
+  }
+
+  async getDueRoutines(now: Date, limit: number): Promise<Routine[]> {
+    return db.select().from(routines)
+      .where(and(eq(routines.actif, true), isNotNull(routines.prochainPassage), lte(routines.prochainPassage, now)))
+      .orderBy(routines.prochainPassage).limit(limit);
+  }
+
+  async claimRoutine(id: number, attendu: Date | null, prochain: Date): Promise<boolean> {
+    const cond = attendu ? eq(routines.prochainPassage, attendu) : isNull(routines.prochainPassage);
+    const res = await db.update(routines).set({ prochainPassage: prochain, updatedAt: new Date() })
+      .where(and(eq(routines.id, id), cond));
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async addRoutineRun(row: InsertRoutineRun): Promise<RoutineRun> {
+    const [r] = await db.insert(routineRuns).values(row).returning();
+    return r;
+  }
+
+  async getRoutineRuns(routineId: number, userId: string, limit: number): Promise<RoutineRun[]> {
+    return db.select().from(routineRuns)
+      .where(and(eq(routineRuns.routineId, routineId), eq(routineRuns.userId, userId)))
+      .orderBy(desc(routineRuns.debut)).limit(limit);
+  }
+
+  async getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]> {
+    return db.select().from(prospectionCampaigns).where(eq(prospectionCampaigns.status, "active"));
+  }
+
   async markFeedbackExtracted(userId: string, ids: number[]): Promise<void> {
     if (ids.length === 0) return;
     await db.update(prospectionMessageFeedback).set({ extraitLe: new Date() })
@@ -2643,6 +2708,8 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(projectProofs).where(eq(projectProofs.userId, userId));
       await tx.delete(prospectionMessageFeedback).where(eq(prospectionMessageFeedback.userId, userId));
       await tx.delete(prospectionLearnedRules).where(eq(prospectionLearnedRules.userId, userId));
+      await tx.delete(routineRuns).where(eq(routineRuns.userId, userId));
+      await tx.delete(routines).where(eq(routines.userId, userId));
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────
       console.log(`[reset] phase 10: projects`);

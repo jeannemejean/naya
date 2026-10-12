@@ -2023,3 +2023,44 @@ export const memoryEntries = pgTable("memory_entries", {
 }));
 export type MemoryEntry = typeof memoryEntries.$inferSelect;
 export type InsertMemoryEntry = typeof memoryEntries.$inferInsert;
+
+// ─── Routines planifiées (couche de pilotage, dossier Acquisition 360) ──────────
+// Une routine = une tâche automatique d'une utilisatrice (ex. sourcer des prospects pour une
+// campagne chaque matin). L'ordonnanceur (services/routines/ordonnanceur.ts) prend les routines
+// dues, avance `prochainPassage` AVANT d'exécuter (verrou), et consigne chaque passage.
+export const routines = pgTable("routines", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id"),
+  kind: text("kind").notNull(),                 // sourcing_prospects | …
+  cible: jsonb("cible").notNull(),              // ex. { campaignId: 12 }
+  cibleCle: text("cible_cle").notNull(),        // forme canonique de `cible` (unicité)
+  cadence: text("cadence").notNull().default("quotidienne"), // quotidienne | hebdomadaire
+  heureUtc: integer("heure_utc").notNull().default(5),
+  actif: boolean("actif").notNull().default(true),
+  prochainPassage: timestamp("prochain_passage"),
+  dernierPassage: timestamp("dernier_passage"),
+  derniereErreur: text("derniere_erreur"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  uniqCible: uniqueIndex("routines_user_kind_cible_uq").on(t.userId, t.kind, t.cibleCle),
+  dues: index("routines_dues_idx").on(t.actif, t.prochainPassage),
+}));
+export type Routine = typeof routines.$inferSelect;
+export type InsertRoutine = typeof routines.$inferInsert;
+
+export const routineRuns = pgTable("routine_runs", {
+  id: serial("id").primaryKey(),
+  routineId: integer("routine_id").notNull().references(() => routines.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  debut: timestamp("debut").notNull().defaultNow(),
+  fin: timestamp("fin"),
+  statut: text("statut").notNull(),            // ok | rien_a_faire | erreur
+  resume: text("resume").notNull(),
+  details: jsonb("details"),
+}, (t) => ({
+  byRoutine: index("routine_runs_routine_idx").on(t.routineId),
+}));
+export type RoutineRun = typeof routineRuns.$inferSelect;
+export type InsertRoutineRun = typeof routineRuns.$inferInsert;
