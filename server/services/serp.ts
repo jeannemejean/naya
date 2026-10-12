@@ -70,26 +70,49 @@ export function parseSerpBody(body: any): SerpResult[] {
 }
 
 /** Exécute une requête Google via la SERP API et renvoie les résultats organiques (ou actualités). */
-export async function serpSearch(query: string, userId?: string, opts: SerpOptions = {}): Promise<SerpResult[]> {
+/**
+ * Recherche SERP qui LÈVE en cas d'échec (clé absente, HTTP non OK, réponse illisible,
+ * erreur réseau), avec une raison lisible. Le sourcing s'en sert pour dire « Bright Data a
+ * refusé la recherche (HTTP 401) » au lieu d'afficher « 0 prospect » en silence.
+ */
+export async function serpSearchStrict(query: string, userId?: string, opts: SerpOptions = {}): Promise<SerpResult[]> {
   const apiKey = process.env.BRIGHT_DATA_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) throw new Error("Bright Data SERP : BRIGHT_DATA_API_KEY absente");
   const zone = process.env.BRIGHT_DATA_SERP_ZONE || "naya";
   const url = buildSerpUrl(query, opts);
+  let res: any;
   try {
-    const res = await fetch(SERP_ENDPOINT, {
+    res = await fetch(SERP_ENDPOINT, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ zone, url, format: "json", data_format: "parsed_light" }),
     });
-    // Imputation du coût Bright Data (1 requête facturée), même si le parsing échoue ensuite.
-    if (userId) recordSpend(userId, SERP_COST_EUR).catch(() => {});
-    if (!res.ok) return [];
-    const wrapper: any = await res.json();
-    // La réponse SERP API : { status_code, headers, body } où body est une STRING JSON.
-    let body: any = wrapper?.body;
-    if (typeof body === "string") { try { body = JSON.parse(body); } catch { return []; } }
-    return parseSerpBody(body);
-  } catch {
+  } catch (e: any) {
+    throw new Error(`Bright Data SERP : erreur réseau (${e?.message || e})`);
+  }
+  // Imputation du coût Bright Data (1 requête facturée), même si le parsing échoue ensuite.
+  if (userId) recordSpend(userId, SERP_COST_EUR).catch(() => {});
+  if (!res.ok) {
+    const detail = await (res.text?.() ?? Promise.resolve("")).catch(() => "");
+    throw new Error(`Bright Data SERP : HTTP ${res.status}${detail ? ` (${String(detail).slice(0, 120)})` : ""}`);
+  }
+  let wrapper: any;
+  try { wrapper = await res.json(); } catch { throw new Error("Bright Data SERP : réponse illisible"); }
+  // La réponse SERP API : { status_code, headers, body } où body est une STRING JSON.
+  let body: any = wrapper?.body;
+  if (typeof body === "string") {
+    try { body = JSON.parse(body); } catch { throw new Error("Bright Data SERP : réponse illisible"); }
+  }
+  return parseSerpBody(body);
+}
+
+/** Comme serpSearchStrict, mais renvoie [] en cas d'échec (appelants historiques) — en le journalisant. */
+export async function serpSearch(query: string, userId?: string, opts: SerpOptions = {}): Promise<SerpResult[]> {
+  if (!process.env.BRIGHT_DATA_API_KEY) return [];
+  try {
+    return await serpSearchStrict(query, userId, opts);
+  } catch (e: any) {
+    console.warn(`[serp] ${e?.message || e}`);
     return [];
   }
 }

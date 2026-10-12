@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { extractLinkedInLead, buildSerpUrl, parseSerpBody } from "./serp";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { extractLinkedInLead, buildSerpUrl, parseSerpBody, serpSearchStrict } from "./serp";
 
 describe("extractLinkedInLead", () => {
   it("extrait nom + URL d'un résultat LinkedIn /in/", () => {
@@ -103,5 +103,38 @@ describe("parseSerpBody — les deux formes de réponse Bright Data", () => {
 
   it("un résultat sans lien est écarté", () => {
     expect(parseSerpBody({ organic: [{ title: "sans lien" }] })).toEqual([]);
+  });
+});
+
+describe("serpSearchStrict — les erreurs Bright Data ne sont plus muettes", () => {
+  const cle = process.env.BRIGHT_DATA_API_KEY;
+  afterEach(() => { vi.unstubAllGlobals(); if (cle === undefined) delete process.env.BRIGHT_DATA_API_KEY; else process.env.BRIGHT_DATA_API_KEY = cle; });
+
+  it("lève une erreur lisible sur un refus HTTP", async () => {
+    process.env.BRIGHT_DATA_API_KEY = "test";
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 401, text: async () => "zone not found" })));
+    await expect(serpSearchStrict("q")).rejects.toThrow(/HTTP 401/);
+  });
+
+  it("lève sans clé configurée, sans appeler le service", async () => {
+    delete process.env.BRIGHT_DATA_API_KEY;
+    const f = vi.fn();
+    vi.stubGlobal("fetch", f);
+    await expect(serpSearchStrict("q")).rejects.toThrow(/BRIGHT_DATA_API_KEY/);
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("renvoie les résultats d'une réponse valide", async () => {
+    process.env.BRIGHT_DATA_API_KEY = "test";
+    const body = JSON.stringify({ organic: [{ link: "https://www.linkedin.com/in/x", title: "X - Y | LinkedIn" }] });
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ body }) })));
+    const r = await serpSearchStrict("q");
+    expect(r[0].link).toBe("https://www.linkedin.com/in/x");
+  });
+
+  it("lève sur une réponse illisible", async () => {
+    process.env.BRIGHT_DATA_API_KEY = "test";
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ body: "pas du json" }) })));
+    await expect(serpSearchStrict("q")).rejects.toThrow(/illisible/);
   });
 });

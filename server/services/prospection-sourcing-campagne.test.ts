@@ -14,7 +14,7 @@ vi.mock("../storage", () => ({
 }));
 vi.mock("./serp", async (importOriginal) => {
   const actual = await importOriginal<any>();
-  return { ...actual, serpSearch: vi.fn() };
+  return { ...actual, serpSearch: vi.fn(), serpSearchStrict: vi.fn() };
 });
 vi.mock("./prospection", async (importOriginal) => {
   const actual = await importOriginal<any>();
@@ -57,7 +57,18 @@ beforeEach(() => {
   (storage.getBrandDna as any).mockResolvedValue(undefined);
   (storage.createLead as any).mockImplementation(async (l: any) => l);
   (prospection.generateLeadCriteria as any).mockResolvedValue(ICP);
-  (serp.serpSearch as any).mockImplementation(async () => page(10));
+  (serp.serpSearchStrict as any).mockImplementation(async () => page(10));
+});
+
+describe("sourcerCampagne — erreurs Bright Data", () => {
+  it("compte les recherches en erreur et garde la dernière raison, au lieu de « 0 prospect » muet", async () => {
+    (serp.serpSearchStrict as any).mockRejectedValue(new Error("Bright Data SERP : HTTP 401"));
+    const r = await sourcerCampagne("u1", campagne);
+    expect(r.imported).toBe(0);
+    expect(r.appels).toBeGreaterThan(0);
+    expect(r.erreursRecherche).toBe(r.appels);
+    expect(r.derniereErreurRecherche).toContain("HTTP 401");
+  });
 });
 
 describe("sourcerCampagne — trouve jusqu'à la cible dérivée du contexte", () => {
@@ -77,17 +88,17 @@ describe("sourcerCampagne — trouve jusqu'à la cible dérivée du contexte", (
   });
 
   it("épingle gl/hl depuis le marché de l'ICP et pagine", async () => {
-    (serp.serpSearch as any).mockImplementation(async () => page(3));
+    (serp.serpSearchStrict as any).mockImplementation(async () => page(3));
     await sourcerCampagne("u1", campagne);
-    const appels = (serp.serpSearch as any).mock.calls;
+    const appels = (serp.serpSearchStrict as any).mock.calls;
     expect(appels[0][2]).toMatchObject({ pays: "be", langue: "fr", page: 0 });
     expect(appels[1][2]).toMatchObject({ page: 1 });
   });
 
   it("n'envoie que des requêtes X-ray Google (pas de AND)", async () => {
-    (serp.serpSearch as any).mockImplementation(async () => page(1));
+    (serp.serpSearchStrict as any).mockImplementation(async () => page(1));
     await sourcerCampagne("u1", campagne);
-    for (const [q] of (serp.serpSearch as any).mock.calls) {
+    for (const [q] of (serp.serpSearchStrict as any).mock.calls) {
       expect(q).toContain("site:linkedin.com/in");
       expect(q).not.toMatch(/\bAND\b/);
     }
@@ -103,7 +114,7 @@ describe("sourcerCampagne — trouve jusqu'à la cible dérivée du contexte", (
   it("plafond dur d'appels SERP même quand rien de neuf ne sort", async () => {
     (storage.getLeads as any).mockResolvedValue([]);
     // Toujours les mêmes profils : rien de neuf après la première page.
-    (serp.serpSearch as any).mockImplementation(async () => [
+    (serp.serpSearchStrict as any).mockImplementation(async () => [
       { link: "https://www.linkedin.com/in/toujours", title: "Toujours - X - Y | LinkedIn" },
     ]);
     (prospection.generateLeadCriteria as any).mockImplementation(async () => ({
@@ -111,7 +122,7 @@ describe("sourcerCampagne — trouve jusqu'à la cible dérivée du contexte", (
     }));
     const r = await sourcerCampagne("u1", campagne);
     expect(r.appels).toBeLessThanOrEqual(PLAFOND_APPELS_SERP);
-    expect(serp.serpSearch).toHaveBeenCalledTimes(r.appels);
+    expect(serp.serpSearchStrict).toHaveBeenCalledTimes(r.appels);
   });
 
   it("la réserve de la campagne (prospects pas encore contactés) compte dans la cible", async () => {
@@ -130,15 +141,15 @@ describe("sourcerCampagne — trouve jusqu'à la cible dérivée du contexte", (
     const r = await sourcerCampagne("u1", campagne);
     expect(r.imported).toBe(0);
     expect(r.reserveSuffisante).toBe(true);
-    expect(serp.serpSearch).not.toHaveBeenCalled();
+    expect(serp.serpSearchStrict).not.toHaveBeenCalled();
     expect(prospection.generateLeadCriteria).not.toHaveBeenCalled();
   });
 
   it("requêtes fournies par l'écran : utilisées telles quelles (normalisées), sans régénérer", async () => {
-    (serp.serpSearch as any).mockImplementation(async () => page(10));
+    (serp.serpSearchStrict as any).mockImplementation(async () => page(10));
     await sourcerCampagne("u1", campagne, { queries: ['"office manager"'], icp: { searchCountry: "CH" } });
     expect(prospection.generateLeadCriteria).not.toHaveBeenCalled();
-    const [q, , opts] = (serp.serpSearch as any).mock.calls[0];
+    const [q, , opts] = (serp.serpSearchStrict as any).mock.calls[0];
     expect(q).toBe('site:linkedin.com/in "office manager"');
     expect(opts).toMatchObject({ pays: "ch", langue: "fr" });
   });

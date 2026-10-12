@@ -28,7 +28,7 @@ import {
 // bespoke du message d'étape) les consomme depuis ce module d'orchestration —
 // comportement strictement inchangé (simple forward des mêmes fonctions).
 export { sanitizeMessage, enforceLinkedInLimit, resolveFounderName };
-import { serpSearch } from "./serp";
+import { serpSearchStrict } from "./serp";
 import { sourcerJusquaCible, marcheDeRecherche, normaliserRequeteGoogle } from "./prospection-sourcing";
 import { calculerCibleProspects, panierMoyenDepuis, tauxConversionObserve } from "./prospection-volume";
 import { resolveLanguage } from "@shared/language";
@@ -184,6 +184,10 @@ export interface ResultatSourcingCampagne {
   /** La réserve couvrait déjà la cible : rien n'a été recherché. */
   reserveSuffisante: boolean;
   appels: number;
+  /** Recherches Bright Data en échec pendant ce passage (0 si tout a répondu). */
+  erreursRecherche?: number;
+  /** Raison lisible du dernier échec (ex. « HTTP 401 »). */
+  derniereErreurRecherche?: string | null;
   requetes: string[];
   cibleAtteinte: boolean;
   method: string;
@@ -277,10 +281,23 @@ export async function sourcerCampagne(
       .filter(Boolean),
   );
 
+  let erreursRecherche = 0;
+  let derniereErreurRecherche: string | null = null;
   const r = await sourcerJusquaCible({
     requetes,
     cible: besoin,
-    search: (q, page) => serpSearch(q, userId, { pays: marche.pays, langue: marche.langue, page }),
+    // Chaque échec est compté et sa raison gardée : sans ça, une clé ou une zone erronée
+    // ressemblait à « aucun prospect trouvé ».
+    search: async (q, page) => {
+      try {
+        return await serpSearchStrict(q, userId, { pays: marche.pays, langue: marche.langue, page });
+      } catch (e: any) {
+        erreursRecherche++;
+        derniereErreurRecherche = e?.message || String(e);
+        console.warn(`[prospection] recherche en échec (campagne ${campaign.id}) : ${derniereErreurRecherche}`);
+        return [];
+      }
+    },
     estConnu: (url) => connus.has(url),
     nouvellesRequetes: async (deja) => {
       const neuf = await generateLeadCriteria(userId, campaign.id, {
@@ -319,6 +336,8 @@ export async function sourcerCampagne(
     appels: r.appels,
     requetes: r.requetesUtilisees,
     cibleAtteinte: r.cibleAtteinte,
+    erreursRecherche,
+    derniereErreurRecherche,
   };
 }
 
