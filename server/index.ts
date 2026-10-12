@@ -1,3 +1,4 @@
+import { scheduleRoutines } from "./services/routines/ordonnanceur";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
@@ -197,6 +198,9 @@ function scheduleReadingRoom() {
 
   // ─── Poller Unipile : acceptation d'invitation LinkedIn (lecture seule, chaque 15 min) ──
   scheduleLinkedInSync();
+
+  // ─── Routines planifiées (sourcing quotidien des prospects par campagne active…) ──
+  scheduleRoutines();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

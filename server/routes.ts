@@ -14,6 +14,7 @@ import { registerLivrablesRoutes } from "./routes-livrables";
 import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
+import { routineSourcingPour } from "./services/routines/ordonnanceur";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -8446,6 +8447,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         ? Math.round(ppd)
         : await prospectsParJourDerive(userId, req.body?.projectId ?? null);
       const campaign = await storage.createProspectionCampaign({ ...req.body, prospectsPerDay, userId });
+      // Sourcing régulier : la campagne reçoit sa routine quotidienne dès sa création.
+      await storage.ensureRoutine(routineSourcingPour(campaign as any, new Date()) as any)
+        .catch((e: any) => console.error('[routines] création à la campagne :', e?.message));
       res.json(campaign);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
