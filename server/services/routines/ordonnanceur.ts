@@ -12,9 +12,11 @@ import { prochainPassageApres } from "./temps";
 import { notifierRoutine } from "./notifier";
 import { executerSourcing, KIND_SOURCING, cleSourcing } from "./sourcing";
 import type { ExecuteurRoutine, ResultatPassage } from "./types";
+import { EXECUTEURS_VEILLE } from "../veille/deps";
 
 export const REGISTRE: Record<string, ExecuteurRoutine> = {
   [KIND_SOURCING]: executerSourcing,
+  ...EXECUTEURS_VEILLE,
 };
 
 const PAR_TOUR = 20;

@@ -12,8 +12,7 @@ import { storage } from "../../storage";
 import { sourcerCampagne, enrichProspects } from "../prospection-pipeline";
 import { hasProspectionEnrichment, LinkedInWeeklyLimitError, ProspectionAccessError } from "../prospection-access";
 import { serpConfigured } from "../serp";
-import { isAiBlocked } from "../usage";
-import { hasNayaAccess } from "../access";
+import { gardeDepense } from "./garde";
 import { resumeSourcing, rechercheEnPanne, type EtatEnrichissement } from "./sourcing-resume";
 import type { ResultatPassage } from "./types";
 
@@ -31,12 +30,8 @@ export async function executerSourcing(routine: Routine): Promise<ResultatPassag
   }
   // Jamais de dépense pour un compte sans accès actif, ni au-delà du budget IA du mois :
   // mêmes règles que les recherches lancées à la main.
-  if (!(await aAccesActif(routine.userId))) {
-    return { statut: "rien_a_faire", resume: "Abonnement inactif : aucune recherche automatique." };
-  }
-  if (await isAiBlocked(routine.userId)) {
-    return { statut: "rien_a_faire", resume: "Budget du mois atteint : recherche automatique en pause jusqu'au mois prochain." };
-  }
+  const refus = await gardeDepense(routine.userId);
+  if (refus) return refus;
   if (!serpConfigured()) {
     return { statut: "erreur", resume: "Bright Data n'est pas configuré (clé absente) : aucune recherche lancée." };
   }
@@ -94,9 +89,4 @@ export async function executerSourcing(routine: Routine): Promise<ResultatPassag
     return { statut: "rien_a_faire", resume: `${nom}${base}${pause}`, details };
   }
   return { statut: "ok", resume: `${nom}${resumeSourcing({ importes: s.imported, prepares, enrichissement })}`, details, notifier: true };
-}
-
-async function aAccesActif(userId: string): Promise<boolean> {
-  const [user, sub] = await Promise.all([storage.getUser(userId), storage.getSubscription(userId)]);
-  return hasNayaAccess({ role: (user as any)?.role ?? null } as any, (sub ?? null) as any);
 }

@@ -26,6 +26,10 @@ export function estimateClaudeCostEur(model: string, inputTokens: number, output
 
 // Bright Data SERP API : ~$1.50 / 1000 requêtes.
 export const SERP_COST_EUR = (1.5 / 1000) * USD_TO_EUR;
+// Bright Data Web Unlocker (lecture d'une page) : même ordre de prix que la SERP API.
+export const SCRAPE_COST_EUR = (1.5 / 1000) * USD_TO_EUR;
+// Une réponse d'IA avec recherche web (veille GEO) : estimation prudente (outil de recherche + tokens).
+export const GEO_COST_EUR = 0.03;
 
 /** Mois courant au format "YYYY-MM" (UTC). Sert au reset mensuel automatique. */
 function currentPeriod(): string {
