@@ -323,6 +323,7 @@ function ValidationMessages({ lead }: { lead: Lead }) {
   const { toast } = useToast();
   const validate = useValidateLeads();
   const unvalidate = useUnvalidateLead();
+  const [aRevoir, setARevoir] = useState(false);
   const l = lead as any;
 
   if (attendValidation(l)) {
@@ -333,13 +334,21 @@ function ValidationMessages({ lead }: { lead: Lead }) {
           size="sm"
           className="h-8 text-xs bg-primary text-primary-foreground hover:opacity-90 flex-shrink-0"
           disabled={validate.isPending}
-          onClick={() => validate.mutate([lead.id], {
-            onSuccess: () => toast({ title: t('outreach.validation.valides') }),
+          onClick={() => validate.mutate(aRevoir ? { ids: [lead.id], forcer: true } : [lead.id], {
+            onSuccess: (r) => {
+              if (r.aRevoir.length > 0) {
+                setARevoir(true);
+                toast({ title: t('ecriture.validation.aRevoirTitre'), description: t('ecriture.validation.aRevoirDetail'), variant: 'destructive' });
+              } else {
+                setARevoir(false);
+                toast({ title: t('outreach.validation.valides') });
+              }
+            },
             onError: () => toast({ title: t('outreach.validation.erreur'), description: t('outreach.validation.erreurValidation'), variant: 'destructive' }),
           })}
         >
           {validate.isPending && <Loader2 className="w-3 h-3 animate-spin mr-1" />}
-          {t('outreach.validation.valider')}
+          {aRevoir ? t('ecriture.validation.validerQuandMeme') : t('outreach.validation.valider')}
         </Button>
       </div>
     );

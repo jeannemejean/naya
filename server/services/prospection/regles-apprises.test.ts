@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseRegles, doitExtraire, SEUIL_EXTRACTION, validerRaisonEcart } from "./regles-apprises";
+import { parseRegles, doitExtraire, correctionsAExtraire, SEUIL_EXTRACTION, validerRaisonEcart } from "./regles-apprises";
 
 describe("parseRegles", () => {
   it("garde au plus 5 règles non vides, sans doublon", () => {
@@ -15,14 +15,22 @@ describe("parseRegles", () => {
   });
 });
 
-describe("doitExtraire", () => {
-  it(`déclenche à partir de ${SEUIL_EXTRACTION} corrections ou écarts depuis la dernière extraction`, () => {
-    const fb = (id: number, action: string) => ({ id, action }) as any;
+describe("doitExtraire / correctionsAExtraire", () => {
+  const fb = (id: number, action: string, over: any = {}) => ({ id, action, original: "o", extraitLe: null, ...over }) as any;
+  it(`déclenche à partir de ${SEUIL_EXTRACTION} corrections ou écarts pas encore traités`, () => {
     const neuf = Array.from({ length: SEUIL_EXTRACTION - 1 }, (_, i) => fb(i + 1, "modifie"));
-    expect(doitExtraire(neuf, 0)).toBe(false);
-    expect(doitExtraire([...neuf, fb(99, "ecarte")], 0)).toBe(true);
-    expect(doitExtraire([...neuf, fb(99, "valide_tel_quel")], 0)).toBe(false);
-    expect(doitExtraire([...neuf, fb(99, "ecarte")], 50)).toBe(false);
+    expect(doitExtraire(neuf)).toBe(false);
+    expect(doitExtraire([...neuf, fb(99, "ecarte")])).toBe(true);
+    expect(doitExtraire([...neuf, fb(99, "valide_tel_quel")])).toBe(false);
+  });
+  it("une correction déjà traitée ne compte plus, même si aucune règle n'en est sortie", () => {
+    const tous = Array.from({ length: SEUIL_EXTRACTION }, (_, i) => fb(i + 1, "modifie", { extraitLe: new Date() }));
+    expect(doitExtraire(tous)).toBe(false);
+  });
+  it("un message collé (sans original) n'est pas une correction", () => {
+    const colles = Array.from({ length: SEUIL_EXTRACTION }, (_, i) => fb(i + 1, "modifie", { original: null }));
+    expect(doitExtraire(colles)).toBe(false);
+    expect(correctionsAExtraire(colles)).toEqual([]);
   });
 });
 

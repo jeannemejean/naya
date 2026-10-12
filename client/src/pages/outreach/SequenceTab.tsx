@@ -23,20 +23,12 @@ import {
 import SequenceTree from './SequenceTree';
 import type { DraftSequenceStep, SequenceStepDTO } from './types';
 
+import { toDraft, payloadSequence } from './sequence-draft';
+
 interface SequenceTabProps {
   campaignId: number;
 }
 
-function toDraft(step: SequenceStepDTO): DraftSequenceStep {
-  return {
-    id: step.id,
-    stepOrder: step.stepOrder,
-    channel: step.channel,
-    delayDays: step.delayDays,
-    intention: step.intention ?? '',
-    condition: step.condition,
-  };
-}
 
 // Panneau collapsible « Consignes de rédaction pour Naya » — consignes GLOBALES (toutes
 // campagnes, stockées sur userPreferences) + consignes PAR CAMPAGNE (override/complément,
@@ -227,14 +219,7 @@ export default function SequenceTab({ campaignId }: SequenceTabProps) {
       return;
     }
     setSaveAttempted(false);
-    const payload = draft.map((s, i) => ({
-      id: s.id,
-      stepOrder: i + 1,
-      channel: s.channel,
-      delayDays: s.delayDays,
-      intention: s.intention,
-      condition: s.condition,
-    }));
+    const payload = payloadSequence(draft);
     saveSequence.mutate(payload, {
       // Re-synchronise le brouillon avec la réponse serveur (ids réels pour les étapes ajoutées,
       // stepOrder canonique) — sans ça, isDirty resterait vrai juste après un save réussi.

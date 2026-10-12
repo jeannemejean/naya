@@ -203,6 +203,24 @@ function MessageCarte({ leadId, m }: { leadId: number; m: StepMessageDTO }) {
         <>
           {m.channel === "email" && m.subject && <p className="text-sm font-semibold text-foreground">{m.subject}</p>}
           <p className="text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap">{m.body}</p>
+          {aRevoir && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button size="sm" variant="outline" className="h-7 text-xs" disabled={editer.isPending}
+                onClick={() => editer.mutate({ stepId: m.stepId, body: m.body!, subject: m.subject }, {
+                  onSuccess: () => toast({ title: t("ecriture.messages.enregistre") }),
+                  onError: erreur,
+                })}>
+                {t("ecriture.messages.envoyerTelQuel")}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={ecarter.isPending}
+                onClick={() => ecarter.mutate({ stepId: m.stepId, raison: "autre" }, {
+                  onSuccess: () => toast({ title: t("ecriture.messages.ecarte") }),
+                  onError: erreur,
+                })}>
+                {t("ecriture.messages.regenerer")}
+              </Button>
+            </div>
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setEdition(true)}>
               <Pencil className="w-3 h-3" />{t("ecriture.messages.modifier")}

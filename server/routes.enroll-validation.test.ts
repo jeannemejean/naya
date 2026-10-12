@@ -35,6 +35,13 @@ const storageMock = {
   updateLead: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
+const aRevoir = vi.hoisted(() => ({ liste: [] as any[] }));
+vi.mock("./services/prospection/edition-lead", () => ({
+  tracerEditionMessages: vi.fn(async () => {}),
+  tracerValidation: vi.fn(async () => {}),
+  messagesARevoir: vi.fn(async () => aRevoir.liste),
+  accepterMessagesARevoir: vi.fn(async () => aRevoir.liste.length),
+}));
 
 const { registerRoutes } = await import("./routes");
 
@@ -154,6 +161,28 @@ describe("POST /api/leads/:id/validate", () => {
 
   afterAll(async () => {
     await new Promise<void>((resolve) => server?.close(() => resolve()));
+  });
+
+  it("messages encore à revoir : 409 avec les raisons, rien n'est validé", async () => {
+    aRevoir.liste = [{ stepId: 11, canal: "linkedin", defauts: [{ code: "tic", raison: "Formule d'IA" }] }];
+    (storageMock as any).getLead = vi.fn(async () => prospect({}));
+    const res = await fetch(`http://127.0.0.1:${port}/api/leads/${LEAD_ID}/validate`, { method: "POST" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toBe("messages_a_revoir");
+    expect(storageMock.updateLead).not.toHaveBeenCalled();
+    aRevoir.liste = [];
+  });
+
+  it("« valider quand même » accepte les messages à revoir puis valide", async () => {
+    aRevoir.liste = [{ stepId: 11, canal: "linkedin", defauts: [] }];
+    (storageMock as any).getLead = vi.fn(async () => prospect({}));
+    storageMock.updateLead.mockResolvedValue(prospect({ validatedAt: new Date() }));
+    const res = await fetch(`http://127.0.0.1:${port}/api/leads/${LEAD_ID}/validate`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ forcer: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(storageMock.updateLead).toHaveBeenCalled();
+    aRevoir.liste = [];
   });
 
   it("inscrit un INSTANT, pas un booléen", async () => {

@@ -35,9 +35,14 @@ export function parseRegles(raw: string): string[] {
   return out;
 }
 
-/** PURE : assez de corrections nouvelles (id > dernierIdTraite) pour une extraction ? */
-export function doitExtraire(fb: Array<Pick<ProspectionMessageFeedback, "id" | "action">>, dernierIdTraite: number): boolean {
-  return fb.filter((f) => f.id > dernierIdTraite && (f.action === "modifie" || f.action === "ecarte")).length >= SEUIL_EXTRACTION;
+/** PURE : corrections pas encore lues par une extraction (les messages collés n'en sont pas). */
+export function correctionsAExtraire<T extends Pick<ProspectionMessageFeedback, "action" | "original" | "extraitLe">>(fb: T[]): T[] {
+  return fb.filter((f) => (f.action === "modifie" || f.action === "ecarte") && f.original != null && !f.extraitLe);
+}
+
+/** PURE : assez de corrections nouvelles pour une extraction ? */
+export function doitExtraire(fb: Array<Pick<ProspectionMessageFeedback, "action" | "original" | "extraitLe">>): boolean {
+  return correctionsAExtraire(fb).length >= SEUIL_EXTRACTION;
 }
 
 const enCours = new Set<string>();
@@ -52,11 +57,12 @@ export async function extraireSiPret(userId: string, projectId: number | null): 
   if (enCours.has(cle)) return 0;
   enCours.add(cle);
   try {
-    const regles = await storage.getLearnedRules(userId, projectId);
-    const dernier = Math.max(0, ...regles.flatMap((r) => r.sourceIds ?? []));
-    const fb = await storage.getMessageFeedback(userId, projectId, { sinceId: dernier, limit: 60 });
-    if (!doitExtraire(fb, dernier)) return 0;
-    const corrections = fb.filter((f) => f.action === "modifie" || f.action === "ecarte");
+    const fb = await storage.getMessageFeedback(userId, projectId, { limit: 200 });
+    if (!doitExtraire(fb)) return 0;
+    const corrections = correctionsAExtraire(fb).slice(0, 40);
+    // Marquées AVANT l'appel : une extraction qui échoue ou ne produit rien ne se relance pas
+    // à chaque correction suivante (elle attendra dix corrections nouvelles).
+    await storage.markFeedbackExtracted(userId, corrections.map((f) => f.id));
     const prompt = `Voici des messages de prospection proposés par Naya et ce que l'utilisatrice en a fait (corrigés ou écartés). Déduis-en de 1 à 5 RÈGLES de rédaction explicites, courtes et actionnables, qui expliquent ses corrections (ex. « Ne commence jamais par une formule de politesse », « Cite le client par son nom dès le premier message »). Ne déduis que ce qui revient plusieurs fois. N'invente rien.
 
 ${corrections.map((f, i) => `${i + 1}. [${f.role}] ${f.action === "ecarte" ? `ÉCARTÉ (raison : ${f.raison || "non précisée"})` : "CORRIGÉ"}

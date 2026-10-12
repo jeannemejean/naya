@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { estRefusARevoir } from "./validation-messages";
 import type { Lead } from "@shared/schema";
 import type { SequenceStepDTO, PreviewResponse, StepAnalytics, EnrollmentDTO } from "./types";
 import type { ProspectionStatusDTO } from "@/lib/prospection-widget";
@@ -213,11 +214,24 @@ const rafraichirApresValidation = () => {
   queryClient.invalidateQueries({ queryKey: ["/api/tasks/range"] });
 };
 
+// Valide un lot. Un prospect dont un message est encore « à revoir » est refusé par le serveur
+// (409) : il est compté à part, le reste du lot est validé. `forcer` = « valider quand même ».
 export const useValidateLeads = () =>
-  useMutation<number, Error, number[]>({
-    mutationFn: async (ids) => {
-      for (const id of ids) await apiRequest("POST", `/api/leads/${id}/validate`);
-      return ids.length;
+  useMutation<{ valides: number; aRevoir: number[] }, Error, number[] | { ids: number[]; forcer?: boolean }>({
+    mutationFn: async (arg) => {
+      const { ids, forcer } = Array.isArray(arg) ? { ids: arg, forcer: false } : { ids: arg.ids, forcer: !!arg.forcer };
+      let valides = 0;
+      const aRevoir: number[] = [];
+      for (const id of ids) {
+        try {
+          await apiRequest("POST", `/api/leads/${id}/validate`, forcer ? { forcer: true } : undefined);
+          valides++;
+        } catch (e) {
+          if (estRefusARevoir(e)) aRevoir.push(id);
+          else throw e;
+        }
+      }
+      return { valides, aRevoir };
     },
     onSettled: rafraichirApresValidation,
   });

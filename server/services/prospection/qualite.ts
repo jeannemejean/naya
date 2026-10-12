@@ -41,11 +41,15 @@ export interface ContexteControle {
 
 const mots = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
 
-const LIEN = /\b(?:https?:\/\/|www\.)[^\s<>"')\]]+/gi;
+// Liens complets, et domaines nus (« monsite.fr/offre », « calendly.com/x ») : un modèle qui
+// invente un lien l'écrit souvent sans « https:// ».
+const LIEN = /\b(?:https?:\/\/|www\.)[^\s<>"')\]]+|(?<![@\w.-])[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:fr|com|io|co|net|org|app|eu|be|ch|ca|me|ly|link|page|site|studio|agency|design|art|shop|store)(?:\/[^\s<>"')\]]*)?(?![a-z0-9])/gi;
 const nettoyerLien = (u: string) => u.replace(/[.,;:!?]+$/, "").replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "").toLowerCase();
 
 /** Adjectif accordé qui décrit l'expéditrice : la phrase doit être tournée autrement. */
-const RACINES_GENRE = "(?:curieu|ravi|intéress|interess|surpris|convaincu|impressionn|heureu|enchant|touch)[a-zà-ÿ]*";
+// Formes ACCORDÉES seulement (participes et adjectifs) : « Intéressant de… », « Heureusement »,
+// « Touchant de… » ne décrivent pas l'expéditrice et ne doivent pas être signalés.
+const RACINES_GENRE = "(?:ravie?s?|curieu(?:x|se)|int[ée]ress[ée]e?|surprise?|convaincue?|impressionn[ée]e?|heureu(?:x|se)|enchant[ée]e?|touch[ée]e?)\\b";
 const GENRE = new RegExp(
   // « je suis ravie », ou en tête de phrase : « Ravie d'être connectée », « Curieuse de… ».
   `(?:\\b(?:je\\s+suis|suis)\\s+(?:très\\s+|tres\\s+|vraiment\\s+)?${RACINES_GENRE}|(?:^|[.!?]\\s+)${RACINES_GENRE}\\s+(?:de|d['’]|que|par|pour))`,

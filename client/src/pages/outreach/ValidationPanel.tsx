@@ -38,7 +38,10 @@ export default function ValidationPanel({ prospects, onOpenLead }: ValidationPan
   const valider = (ids: number[]) => {
     setEnCours((prev) => new Set([...Array.from(prev), ...ids]));
     validate.mutate(ids, {
-      onSuccess: (n) => toast({ title: t('outreach.validation.valides'), description: t('outreach.validation.resume', { count: n }) }),
+      onSuccess: ({ valides, aRevoir }) => {
+        if (valides > 0) toast({ title: t('outreach.validation.valides'), description: t('outreach.validation.resume', { count: valides }) });
+        if (aRevoir.length > 0) toast({ title: t('ecriture.validation.aRevoirTitre'), description: t('ecriture.validation.aRevoir', { count: aRevoir.length }), variant: 'destructive' });
+      },
       onError: () => toast({ title: t('outreach.validation.erreur'), description: t('outreach.validation.erreurValidation'), variant: 'destructive' }),
       onSettled: () => setEnCours((prev) => {
         const next = new Set(prev);

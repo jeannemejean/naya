@@ -63,3 +63,16 @@ describe("depasseLimite", () => {
     expect(depasseLimite({ canal: "email", texte: "a".repeat(900) })).toBe(false);
   });
 });
+
+import { estRefusARevoir } from "./validation-messages";
+
+describe("estRefusARevoir", () => {
+  it("reconnaît le refus « messages à revoir » du serveur", () => {
+    expect(estRefusARevoir(new Error('409: {"message":"messages_a_revoir","aRevoir":[]}'))).toBe(true);
+  });
+  it("ne confond pas avec une autre erreur", () => {
+    expect(estRefusARevoir(new Error("409: {\"message\":\"autre\"}"))).toBe(false);
+    expect(estRefusARevoir(new Error("500: boom"))).toBe(false);
+    expect(estRefusARevoir("x")).toBe(false);
+  });
+});

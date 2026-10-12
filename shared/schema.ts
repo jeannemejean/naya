@@ -1518,6 +1518,8 @@ export const toggleFavoriteSchema = z.object({
 
 export const updateLeadSchema = insertLeadSchema.partial().omit({
   userId: true,
+  // Le brief passe par PATCH /api/leads/:id/brief, qui purge et fait réécrire les messages.
+  prospectBrief: true,
 });
 
 export const insertSocialAccountSchema = createInsertSchema(socialAccounts).omit({
@@ -1899,6 +1901,8 @@ export const prospectionMessageFeedback = pgTable("prospection_message_feedback"
   raison: text("raison"),
   defauts: jsonb("defauts"),
   aRepondu: boolean("a_repondu"),
+  // Correction déjà lue par une extraction de règles (qu'une règle en soit sortie ou non).
+  extraitLe: timestamp("extrait_le"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => ({
   byProject: index("prospection_feedback_project_idx").on(t.userId, t.projectId),

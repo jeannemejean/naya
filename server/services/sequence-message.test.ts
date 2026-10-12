@@ -10,8 +10,12 @@ vi.mock("../storage", () => ({
     getProjectProof: vi.fn(async () => undefined),
     getMessageFeedback: vi.fn(async () => []),
     getLearnedRules: vi.fn(async () => []),
+    getProjectProofs: vi.fn(async () => []),
+    updateLead: vi.fn(async () => ({})),
+    purgeUneditedLeadStepMessages: vi.fn(async () => {}),
   },
 }));
+vi.mock("./prospection/brief", async (io) => ({ ...(await io<any>()), genererBrief: vi.fn() }));
 // Relecture IA (couche 2) : neutre par défaut, pilotée test par test.
 vi.mock("./prospection/relecture", () => ({ relire: vi.fn(async () => []) }));
 vi.mock("./claude", async (io) => {
@@ -23,6 +27,7 @@ import { buildStepPrompt, generateStepMessage, combineInstructions, contextePros
 import { storage } from "../storage";
 import * as claude from "./claude";
 import * as relecture from "./prospection/relecture";
+import * as briefMod from "./prospection/brief";
 
 const BRIEF = {
   declencheur: { fait: "Petit Bivouac lance une collection réparable", source: "post" },
@@ -317,7 +322,8 @@ describe("generateStepMessage — brief et contrôle qualité", () => {
     (relecture.relire as any).mockResolvedValue([]);
   });
 
-  it("sans brief actionnable ni cache : aucun appel IA, BriefIncompletError", async () => {
+  it("sans brief actionnable ni cache : aucun appel IA de rédaction, BriefIncompletError", async () => {
+    (briefMod.genererBrief as any).mockResolvedValue({ ...BRIEF, declencheur: null });
     await expect(generateStepMessage("u1", { lead: { ...lead, prospectBrief: null }, campaign, step: steps[0], steps }))
       .rejects.toBeInstanceOf(BriefIncompletError);
     expect(claude.callClaudeWithContext).not.toHaveBeenCalled();
@@ -384,6 +390,58 @@ describe("generateStepMessage — brief et contrôle qualité", () => {
     (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: bon }));
     await generateStepMessage("u1", { lead: { ...lead, prospectBrief: { ...BRIEF, preuveId: 4 } }, campaign, step: steps[0], steps });
     expect((claude.callClaudeWithContext as any).mock.calls[0][0].userMessage).not.toContain("SECRET");
+  });
+});
+
+describe("generateStepMessage — prospects sans brief (antérieurs) et notes", () => {
+  const campaign = { id: 5, name: "Agence JMD", founderName: "Jeanne", projectId: 7 };
+  const steps = [{ id: 1, channel: "linkedin", intention: "Invitation", condition: "always", role: "invitation" }];
+  const bon = "Fred, la collection réparable de Petit Bivouac m'a parlé : je dirige JMD, on accompagne des marques outdoor. Au plaisir d'échanger. Jeanne";
+  const ancien = { id: 42, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac", prospectBrief: null, auditNotes: "{}" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (storage.getOutreachMessages as any).mockResolvedValue([]);
+    (storage.getMessageFeedback as any).mockResolvedValue([]);
+    (storage.getLearnedRules as any).mockResolvedValue([]);
+    (relecture.relire as any).mockResolvedValue([]);
+  });
+
+  it("un vieux message en cache n'est PAS servi sans brief : le brief est créé, le cache non édité purgé, le message réécrit", async () => {
+    (storage.getLeadStepMessage as any).mockResolvedValue({ body: "vieux texte sans déclencheur", subject: null, edited: false, qualite: "ok" });
+    (briefMod.genererBrief as any).mockResolvedValue(BRIEF);
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: bon }));
+    const r = await generateStepMessage("u1", { lead: { ...ancien }, campaign, step: steps[0], steps });
+    expect(r.body).toBe(bon);
+    expect(storage.updateLead).toHaveBeenCalledWith(42, "u1", expect.objectContaining({ prospectBrief: expect.objectContaining({ declencheur: BRIEF.declencheur }) }));
+    expect(storage.purgeUneditedLeadStepMessages).toHaveBeenCalledWith(42);
+  });
+
+  it("brief créé sans déclencheur : rien n'est servi ni rédigé", async () => {
+    (storage.getLeadStepMessage as any).mockResolvedValue({ body: "vieux texte", subject: null, edited: false, qualite: "ok" });
+    (briefMod.genererBrief as any).mockResolvedValue({ ...BRIEF, declencheur: null });
+    await expect(generateStepMessage("u1", { lead: { ...ancien }, campaign, step: steps[0], steps })).rejects.toBeInstanceOf(BriefIncompletError);
+    expect(claude.callClaudeWithContext).not.toHaveBeenCalled();
+  });
+
+  it("une note ajoutée sur la fiche devient le déclencheur au passage suivant", async () => {
+    (storage.getLeadStepMessage as any).mockResolvedValue(undefined);
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: bon }));
+    const lead = { ...ancien, notes: "Vue au salon Outdoor Days", prospectBrief: { ...BRIEF, declencheur: null } };
+    const r = await generateStepMessage("u1", { lead, campaign, step: steps[0], steps });
+    expect(r.body).toBe(bon);
+    expect(storage.updateLead).toHaveBeenCalledWith(42, "u1", expect.objectContaining({
+      prospectBrief: expect.objectContaining({ declencheur: expect.objectContaining({ fait: "Vue au salon Outdoor Days", source: "note" }) }),
+    }));
+    expect((claude.callClaudeWithContext as any).mock.calls[0][0].userMessage).toContain("Vue au salon Outdoor Days");
+    expect(briefMod.genererBrief).not.toHaveBeenCalled();
+  });
+
+  it("un message ÉDITÉ reste servi même sans brief", async () => {
+    (storage.getLeadStepMessage as any).mockResolvedValue({ body: "écrit par Jeanne", subject: null, edited: true });
+    const r = await generateStepMessage("u1", { lead: { ...ancien }, campaign, step: steps[0], steps });
+    expect(r.body).toBe("écrit par Jeanne");
+    expect(briefMod.genererBrief).not.toHaveBeenCalled();
   });
 });
 

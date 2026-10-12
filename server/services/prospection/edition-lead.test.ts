@@ -13,7 +13,7 @@ const storageMock = {
 vi.mock("../../storage", () => ({ storage: storageMock }));
 vi.mock("./regles-apprises", () => ({ extraireSiPret: vi.fn(async () => 0) }));
 
-const { tracerEditionMessages, tracerValidation } = await import("./edition-lead");
+const { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } = await import("./edition-lead");
 
 const avant = { id: 1, prospectionCampaignId: 5, linkedinMessage: "Version Naya LinkedIn", emailMessage: "Version Naya mail" };
 
@@ -47,6 +47,30 @@ describe("tracerValidation", () => {
   });
   it("une touche déjà éditée n'est pas recomptée", async () => {
     storageMock.getLeadStepMessage.mockResolvedValue({ subject: null, body: "édité", edited: true } as any);
+    await tracerValidation("u1", avant);
+    expect(storageMock.addMessageFeedback).not.toHaveBeenCalled();
+  });
+});
+
+describe("messages à revoir à la validation", () => {
+  it("liste les premières touches générées et marquées à revoir", async () => {
+    storageMock.getLeadStepMessage.mockImplementation(async (_l: number, stepId: number) =>
+      stepId === 11 ? ({ body: "x", edited: false, qualite: "a_revoir", defauts: [{ code: "tic", raison: "Formule d'IA" }] }) as any : ({ body: "y", edited: false, qualite: "ok" }) as any);
+    const r = await messagesARevoir("u1", avant);
+    expect(r).toEqual([expect.objectContaining({ stepId: 11, defauts: [{ code: "tic", raison: "Formule d'IA" }] })]);
+  });
+  it("une touche éditée n'est jamais à revoir", async () => {
+    storageMock.getLeadStepMessage.mockResolvedValue({ body: "x", edited: true, qualite: "a_revoir" } as any);
+    expect(await messagesARevoir("u1", avant)).toEqual([]);
+  });
+  it("valider quand même : la touche est acceptée telle quelle (éditée), sans devenir un exemple", async () => {
+    storageMock.getLeadStepMessage.mockResolvedValue({ body: "x", subject: "o", edited: false, qualite: "a_revoir" } as any);
+    await accepterMessagesARevoir("u1", avant);
+    expect(storageMock.upsertLeadStepMessage).toHaveBeenCalledWith(expect.objectContaining({ stepId: 11, body: "x", edited: true }));
+    expect(storageMock.addMessageFeedback).not.toHaveBeenCalled();
+  });
+  it("la validation ne fait pas d'un message à revoir un exemple", async () => {
+    storageMock.getLeadStepMessage.mockResolvedValue({ body: "x", edited: false, qualite: "a_revoir" } as any);
     await tracerValidation("u1", avant);
     expect(storageMock.addMessageFeedback).not.toHaveBeenCalled();
   });

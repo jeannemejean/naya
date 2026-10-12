@@ -40,6 +40,29 @@ describe("contrôle qualité, couche 1 : la séquence « Sneha » est rejetée",
     expect(codes(controlerMessage({ role: "relance", canal: "linkedin", body }, ctx({ liensAutorises: ["https://exemple.com/cas"] })))).not.toContain("lien_inconnu");
   });
 
+  it("un lien sans http (domaine nu) qui ne vient pas d'une preuve est repéré", () => {
+    const body = "Tout est sur monsite.fr/offre et calendly.com/jeanne. Je vous l'envoie ? Jeanne";
+    expect(codes(controlerMessage({ role: "relance", canal: "linkedin", body }, ctx()))).toContain("lien_inconnu");
+    expect(codes(controlerMessage({ role: "relance", canal: "linkedin", body: "Le cas est ici : jmd.fr/cas. Jeanne" }, ctx({ liensAutorises: ["https://jmd.fr/cas"] })))).not.toContain("lien_inconnu");
+  });
+
+  it("une abréviation ou une phrase normale n'est pas prise pour un lien", () => {
+    const body = "Bonjour Marie, j'ai vu le lancement, p.ex. la gamme 2026. Je vous l'envoie ? Jeanne, jeanne@jmd.fr";
+    expect(codes(controlerMessage({ role: "relance", canal: "linkedin", body }, ctx()))).not.toContain("lien_inconnu");
+  });
+
+  it("les tournures neutres en tête de phrase ne sont pas des adjectifs de genre", () => {
+    for (const body of [
+      "Intéressant de voir votre lancement. Jeanne",
+      "Heureusement que la gamme sort au printemps. Jeanne",
+      "Impressionnant de voir la collection. Jeanne",
+      "Touchant de lire votre post. Jeanne",
+      "Interessant pour la suite. Jeanne",
+    ]) {
+      expect(codes(controlerMessage({ role: "relance", canal: "linkedin", body }, ctx())), body).not.toContain("genre");
+    }
+  });
+
   it("un placeholder et un tiret long", () => {
     const d = codes(controlerMessage({ role: "relance", canal: "linkedin", body: "Bonjour [prénom] — voici l'idée. Jeanne" }, ctx()));
     expect(d).toContain("placeholder");

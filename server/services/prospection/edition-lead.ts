@@ -56,6 +56,7 @@ export async function tracerValidation(userId: string, lead: any): Promise<void>
       const step = c.steps[index];
       const cache: any = await storage.getLeadStepMessage(lead.id, step.id);
       if (!cache?.body || cache.edited) continue; // une édition est déjà tracée comme « modifié »
+      if (cache.qualite === "a_revoir") continue; // un message fautif ne devient jamais un exemple
       await storage.addMessageFeedback({
         userId, projectId: c.projectId, campaignId: c.campaign.id, leadId: lead.id, stepId: step.id,
         role: roleDeTouche(c.steps, index), action: "valide_tel_quel", original: cache.body, final: cache.body,
@@ -64,4 +65,44 @@ export async function tracerValidation(userId: string, lead: any): Promise<void>
   } catch (e: any) {
     console.error("[prospection/validation] traçage échoué :", e?.message);
   }
+}
+
+export interface TouchesARevoir { stepId: number; canal: string; defauts: Array<{ code: string; raison: string }> }
+
+/** Premières touches générées encore « à revoir » (non éditées) : elles ne partiront pas. */
+export async function messagesARevoir(userId: string, lead: any): Promise<TouchesARevoir[]> {
+  try {
+    const c = await contexte(userId, lead);
+    if (!c) return [];
+    const out: TouchesARevoir[] = [];
+    for (const { canal } of CHAMPS) {
+      const step = c.steps.find((s) => s.channel === canal);
+      if (!step) continue;
+      const cache: any = await storage.getLeadStepMessage(lead.id, step.id);
+      if (cache?.body && !cache.edited && cache.qualite === "a_revoir") {
+        out.push({ stepId: step.id, canal, defauts: Array.isArray(cache.defauts) ? cache.defauts : [] });
+      }
+    }
+    return out;
+  } catch (e: any) {
+    console.error("[prospection/validation] lecture des messages à revoir échouée :", e?.message);
+    return [];
+  }
+}
+
+/**
+ * « Valider quand même » : l'utilisatrice accepte ces textes tels quels. Ils deviennent des
+ * textes choisis par elle (edited), donc envoyables, sans servir d'exemple de style.
+ */
+export async function accepterMessagesARevoir(userId: string, lead: any): Promise<number> {
+  const touches = await messagesARevoir(userId, lead);
+  for (const t of touches) {
+    const cache: any = await storage.getLeadStepMessage(lead.id, t.stepId);
+    if (!cache?.body) continue;
+    await storage.upsertLeadStepMessage({
+      leadId: lead.id, stepId: t.stepId, subject: cache.subject ?? null, body: cache.body, edited: true,
+      qualite: "ok", defauts: t.defauts.length ? t.defauts : null,
+    } as any);
+  }
+  return touches.length;
 }

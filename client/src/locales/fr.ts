@@ -2284,6 +2284,8 @@ const fr = {
    modifier: "Modifier",
    enregistrer: "Enregistrer",
    enregistre: "Message enregistré : il partira tel quel.",
+   envoyerTelQuel: "Envoyer tel quel",
+   regenerer: "Régénérer",
    ecarter: "Écarter",
    ecarte: "Message écarté : Naya le réécrira.",
    raison: "Pourquoi ?",
@@ -2321,6 +2323,13 @@ const fr = {
    exempleAjoute: "Exemple ajouté.",
    preuvesManquantes: "Ta bibliothèque de preuves est presque vide : sans réalisation à montrer, tes messages seront moins forts. Ajoute-en depuis la page du projet.",
    erreur: "L'action a échoué. Réessaie.",
+  },
+  validation: {
+   aRevoirTitre: "Messages à revoir",
+   aRevoir_one: "{{count}} prospect a un message à revoir : ouvre sa fiche pour le corriger, ou valide-le quand même.",
+   aRevoir_other: "{{count}} prospects ont un message à revoir : ouvre leur fiche pour corriger, ou valide quand même.",
+   aRevoirDetail: "Le contrôle qualité a trouvé des défauts dans un message (onglet Séquence). Corrige-le, ou valide quand même.",
+   validerQuandMeme: "Valider quand même",
   },
   apercu: {
    aRevoir: "À revoir avant envoi :",

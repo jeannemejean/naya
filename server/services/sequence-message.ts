@@ -12,12 +12,13 @@
  */
 import { storage } from "../storage";
 import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
-import { sanitizeMessage, enforceLinkedInLimit, parseJsonObject } from "./prospection-pipeline";
+import { sanitizeMessage, enforceLinkedInLimit } from "./prospection-audit";
+import { parseJsonObject, enrichmentText } from "./prospection/textes";
 import { roleEtapeLinkedin, premierConflit, normaliserTexte, branchesExclusives } from "./sequence-distinct";
 import { blocDoctrine, limitePour, type RoleTouche, type Canal } from "./prospection/doctrine";
 import { controlerMessage, type Defaut } from "./prospection/qualite";
 import { relire } from "./prospection/relecture";
-import { lireBrief, briefActionnable, angleDeTouche, type BriefProspect } from "./prospection/brief";
+import { lireBrief, briefActionnable, angleDeTouche, genererBrief, appliquerEditionBrief, type BriefProspect } from "./prospection/brief";
 import { texteDePreuve, liensDePreuve } from "./prospection/preuves";
 import { choisirExemples } from "./prospection/exemples";
 
@@ -288,21 +289,24 @@ export async function generateStepMessage(
   const founderName = opts.lead?.founderName || opts.campaign?.founderName || "";
   const ctx = { neutres: neutresDuProspect(opts.lead, [founderName, opts.senderLastName]) };
 
-  if (opts.useCache !== false) {
-    const cached: any = await storage.getLeadStepMessage(opts.lead.id, opts.step.id);
-    // Un texte édité à la main est toujours respecté. Un texte généré trop proche d'un
-    // message antérieur est régénéré. Un texte « à revoir » est resservi avec son drapeau.
-    if (cached && (cached.edited || !premierConflit(cached.body, anterieurs, ctx))) {
-      const aRevoir = !cached.edited && cached.qualite === "a_revoir";
-      return {
-        subject: cached.subject ?? null, body: cached.body,
-        ...(aRevoir ? { aRevoir: true, defauts: Array.isArray(cached.defauts) ? cached.defauts : [] } : {}),
-      };
-    }
-  }
+  let cached: any = opts.useCache !== false ? await storage.getLeadStepMessage(opts.lead.id, opts.step.id) : undefined;
+  // Un texte édité à la main est toujours respecté, brief ou pas : c'est l'utilisatrice qui l'a écrit.
+  if (cached?.edited) return { subject: cached.subject ?? null, body: cached.body };
 
-  const brief = lireBrief(opts.lead?.prospectBrief);
-  if (!briefActionnable(brief)) throw new BriefIncompletError(opts.lead?.id);
+  // Aucun texte généré ne part sans brief actionnable (déclencheur réel). Un prospect antérieur
+  // au brief en reçoit un ici ; ses textes en cache, écrits sans brief, sont alors réécrits.
+  const { brief, cree } = await assurerBrief(userId, opts.lead, opts.campaign, steps.length);
+  if (cree) cached = undefined;
+
+  // Un texte généré trop proche d'un message antérieur est régénéré. Un texte « à revoir » est
+  // resservi avec son drapeau (aucun nouvel appel tant que l'utilisatrice n'a pas tranché).
+  if (cached && !premierConflit(cached.body, anterieurs, ctx)) {
+    const aRevoir = cached.qualite === "a_revoir";
+    return {
+      subject: cached.subject ?? null, body: cached.body,
+      ...(aRevoir ? { aRevoir: true, defauts: Array.isArray(cached.defauts) ? cached.defauts : [] } : {}),
+    };
+  }
 
   // Rang de la touche sur SA branche : sert l'angle prévu et la notion de premier contact.
   const rang = steps.slice(0, index).filter((s) => !branchesExclusives(s.condition, steps[index].condition)).length;
@@ -323,6 +327,45 @@ export async function generateStepMessage(
     subject: res.subject, body: res.body,
     ...(res.aRevoir ? { aRevoir: true, defauts: res.defauts } : {}),
   };
+}
+
+/**
+ * Brief actionnable du prospect, ou BriefIncompletError.
+ *  - Prospect antérieur au brief (`prospectBrief` nul) : le brief est généré une fois et
+ *    enregistré, et ses textes non édités sont purgés (ils ont été écrits sans déclencheur).
+ *  - Brief sans déclencheur mais note de l'utilisatrice sur la fiche : la note devient le
+ *    déclencheur (« vu au salon X »), sans appel IA.
+ */
+async function assurerBrief(userId: string, lead: any, campaign: any, nbTouches: number): Promise<{ brief: BriefProspect; cree: boolean }> {
+  let brief = lireBrief(lead?.prospectBrief);
+  let cree = false;
+  let modifie = false;
+  if (!brief) {
+    const projectId: number | null = campaign?.projectId ?? null;
+    const preuves = projectId != null ? await storage.getProjectProofs(userId, projectId, "validated").catch(() => []) : [];
+    brief = await genererBrief(userId, {
+      lead, campaign, projectId, enrichText: enrichmentText(lead, lead?.enrichedProfile || {}),
+      audit: safeAudit(lead?.auditNotes), preuves: preuves as any, nbTouches: Math.max(3, nbTouches),
+    }).catch((e: any) => {
+      console.error("[prospection] brief à la volée", lead?.id, e?.message || e);
+      return null;
+    });
+    cree = modifie = !!brief;
+  }
+  const note = typeof lead?.notes === "string" ? lead.notes.trim() : "";
+  if (!briefActionnable(brief) && note) {
+    const r = appliquerEditionBrief(brief, { declencheur: { fait: note.slice(0, 400), source: "note" } }, []);
+    const etaitEdite = (brief as BriefProspect | null)?.edite ?? false;
+    if (r.ok) { brief = { ...r.brief, edite: etaitEdite }; modifie = true; }
+  }
+  if (modifie && brief) {
+    await storage.updateLead(lead.id, userId, { prospectBrief: brief } as any).catch((e: any) =>
+      console.error("[prospection] enregistrement du brief", lead?.id, e?.message));
+    if (lead) lead.prospectBrief = brief;
+  }
+  if (cree) await storage.purgeUneditedLeadStepMessages(lead.id).catch(() => {});
+  if (!briefActionnable(brief)) throw new BriefIncompletError(lead?.id);
+  return { brief, cree };
 }
 
 /**

@@ -2280,6 +2280,8 @@ const en = {
    modifier: "Edit",
    enregistrer: "Save",
    enregistre: "Message saved: it will be sent as is.",
+   envoyerTelQuel: "Send as is",
+   regenerer: "Regenerate",
    ecarter: "Discard",
    ecarte: "Message discarded: Naya will rewrite it.",
    raison: "Why?",
@@ -2317,6 +2319,13 @@ const en = {
    exempleAjoute: "Example added.",
    preuvesManquantes: "Your proof library is almost empty: with no work to show, your messages will be weaker. Add some from the project page.",
    erreur: "That didn't work. Try again.",
+  },
+  validation: {
+   aRevoirTitre: "Messages need review",
+   aRevoir_one: "{{count}} prospect has a message that needs review: open their profile to fix it, or approve anyway.",
+   aRevoir_other: "{{count}} prospects have a message that needs review: open their profiles to fix them, or approve anyway.",
+   aRevoirDetail: "The quality check found issues in a message (Sequence tab). Fix it, or approve anyway.",
+   validerQuandMeme: "Approve anyway",
   },
   apercu: {
    aRevoir: "Needs review before sending:",

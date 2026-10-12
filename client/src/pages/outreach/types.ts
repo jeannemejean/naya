@@ -11,6 +11,8 @@ export type SequenceStepDTO = {
   condition: string;
   subjectTemplate: string | null;
   bodyTemplate: string | null;
+  /** Rôle de la touche posé par les structures (invitation, relance, clôture…). */
+  role?: string | null;
 };
 
 export type PreviewStep = {
@@ -80,6 +82,7 @@ export type DraftSequenceStep = {
   delayDays: number;
   intention: string;
   condition: string;
+  role?: string | null;
   // Clé stable UI-only pour les étapes pas encore persistées (pas d'`id` serveur) — évite que
   // React ne remonte les cartes (et perde le focus des inputs) lors d'un réordonnancement.
   // Générée côté client au moment de l'ajout (SequenceTab.handleAdd), jamais envoyée au save.

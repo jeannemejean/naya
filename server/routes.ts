@@ -14,7 +14,7 @@ import { registerLivrablesRoutes } from "./routes-livrables";
 import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
-import { tracerEditionMessages, tracerValidation } from "./services/prospection/edition-lead";
+import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
   generateDailyTasks, 
@@ -8734,6 +8734,16 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // C'est la seule decision du pipeline reservee a une personne (prospection-validation.ts).
   app.post('/api/leads/:id/validate', isAuthenticated, async (req: any, res) => {
     try {
+      // Un message encore « à revoir » ne partira pas : on le dit au lieu de valider en silence.
+      // « Valider quand même » (forcer) accepte ces textes tels quels.
+      const avant = await Promise.resolve().then(() => storage.getLead(Number(req.params.id), req.userId)).catch(() => undefined);
+      if (avant) {
+        const aRevoir = await messagesARevoir(req.userId, avant);
+        if (aRevoir.length > 0) {
+          if (req.body?.forcer !== true) return res.status(409).json({ message: 'messages_a_revoir', aRevoir });
+          await accepterMessagesARevoir(req.userId, avant);
+        }
+      }
       const updated = await storage.updateLead(Number(req.params.id), req.userId, {
         validatedAt: new Date(),
       } as any);

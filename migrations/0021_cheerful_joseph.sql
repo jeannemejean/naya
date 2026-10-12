@@ -1,0 +1,1 @@
+ALTER TABLE "prospection_message_feedback" ADD COLUMN "extrait_le" timestamp;

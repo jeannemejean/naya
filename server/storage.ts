@@ -487,6 +487,7 @@ export interface IStorage {
   addMessageFeedback(row: InsertProspectionMessageFeedback): Promise<ProspectionMessageFeedback>;
   getMessageFeedback(userId: string, projectId: number | null, opts?: { role?: string; limit?: number; sinceId?: number }): Promise<ProspectionMessageFeedback[]>;
   markFeedbackReplied(userId: string, leadId: number): Promise<void>;
+  markFeedbackExtracted(userId: string, ids: number[]): Promise<void>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
   createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule>;
   updateLearnedRule(id: number, userId: string, patch: Partial<InsertProspectionLearnedRule>): Promise<ProspectionLearnedRule | null>;
@@ -1794,6 +1795,12 @@ export class DatabaseStorage implements IStorage {
   async markFeedbackReplied(userId: string, leadId: number): Promise<void> {
     await db.update(prospectionMessageFeedback).set({ aRepondu: true })
       .where(and(eq(prospectionMessageFeedback.userId, userId), eq(prospectionMessageFeedback.leadId, leadId)));
+  }
+
+  async markFeedbackExtracted(userId: string, ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.update(prospectionMessageFeedback).set({ extraitLe: new Date() })
+      .where(and(eq(prospectionMessageFeedback.userId, userId), inArray(prospectionMessageFeedback.id, ids)));
   }
 
   async getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]> {

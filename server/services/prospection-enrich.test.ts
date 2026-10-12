@@ -30,6 +30,7 @@ vi.mock("../storage", () => ({
     getMessageFeedback: vi.fn(async () => []),
     getLearnedRules: vi.fn(async () => []),
     upsertLeadStepMessage: vi.fn(async () => {}),
+    getLeadStepMessage: vi.fn(async () => undefined),
   },
 }));
 vi.mock("./prospection/relecture", () => ({ relire: vi.fn(async () => []) }));
@@ -165,6 +166,38 @@ describe("enrichProspects — condition 3 (données + coûts enregistrés)", () 
     expect(messagePrompt.userMessage).toContain("Jeanne");
     expect(messagePrompt.userMessage).toContain("Maison X prépare un rebranding");
     expect(messagePrompt.userMessage).not.toMatch(/Signature : Agence JMD/);
+  });
+
+  it("brief en échec mais note sur la fiche : la note sert de déclencheur", async () => {
+    (storage.getLead as any).mockResolvedValue({
+      id: 10, userId: "u1", name: "Marie Dupont", role: "Directrice marketing", company: "Maison X",
+      linkedinUrl: "https://linkedin.com/in/marie", notes: "Rencontrée au salon Première Vision",
+    });
+    const defaut = (claude.callClaudeWithContext as any).getMockImplementation();
+    (claude.callClaudeWithContext as any).mockImplementation(async (a: any) => {
+      if (a.userMessage.includes("BRIEF d'une prise de contact")) throw new Error("panne");
+      return defaut(a);
+    });
+    await enrichProspects("u1", campaign, [10]);
+    const upd = (storage.updateLead as any).mock.calls.at(-1)[2];
+    expect(upd.prospectBrief.declencheur).toEqual(expect.objectContaining({ fait: "Rencontrée au salon Première Vision", source: "note" }));
+    expect(upd.linkedinMessage).toBe(MESSAGE);
+  });
+
+  it("ré-enrichir ne remplace ni un brief modifié par l'utilisatrice, ni un message qu'elle a édité", async () => {
+    const briefEdite = { declencheur: { fait: "Vu au salon", source: "note" }, preuveId: null, raison: "r", proposition: { type: "idee", contenu: "c" }, angles: ["a"], langue: "fr", registre: "vous", genereLe: "x", edite: true };
+    (storage.getLead as any).mockResolvedValue({
+      id: 10, userId: "u1", name: "Marie Dupont", role: "Directrice marketing", company: "Maison X",
+      linkedinUrl: "https://linkedin.com/in/marie", prospectBrief: briefEdite, linkedinMessage: "MON TEXTE",
+    });
+    (storage.getSequenceSteps as any).mockResolvedValue([{ id: 11, channel: "linkedin", condition: "always", role: "invitation" }]);
+    (storage.getLeadStepMessage as any).mockResolvedValueOnce({ body: "MON TEXTE", edited: true });
+    await enrichProspects("u1", campaign, [10]);
+    const upd = (storage.updateLead as any).mock.calls.at(-1)[2];
+    expect(upd.prospectBrief).toEqual(briefEdite);
+    expect(upd.linkedinMessage).toBe("MON TEXTE");
+    expect(storage.upsertLeadStepMessage).not.toHaveBeenCalled();
+    (storage.getSequenceSteps as any).mockResolvedValue([]);
   });
 
   it("sans déclencheur réel : aucun message, le prospect reste à compléter", async () => {

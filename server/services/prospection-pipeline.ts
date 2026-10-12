@@ -8,7 +8,7 @@
 import { callClaudeWithContext } from "./claude";
 import { qualifierProspect } from "./prospection-qualify-call";
 import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qualification";
-import { genererBrief, briefActionnable } from "./prospection/brief";
+import { genererBrief, briefActionnable, lireBrief, appliquerEditionBrief } from "./prospection/brief";
 import { redigerTouche, roleDeTouche, combineInstructions } from "./sequence-message";
 import { ProspectionAccessError, LinkedInWeeklyLimitError, assertEnrichmentAccess, logProspectionUsage } from "./prospection-access";
 import { storage } from "../storage";
@@ -111,28 +111,10 @@ function isWebsite(url?: string | null): boolean {
   return !/linkedin\.com|instagram\.com/i.test(url) && /^https?:\/\//i.test(url);
 }
 
-/** Aplati les données enrichies + notes existantes en un bloc de texte (audit / signal). */
-export function enrichmentText(lead: any, data: any): string {
-  const parts: string[] = [];
-  if (lead?.role) parts.push(`Rôle: ${lead.role}`);
-  if (lead?.company) parts.push(`Société: ${lead.company}`);
-  if (lead?.sector) parts.push(`Secteur: ${lead.sector}`);
-  if (lead?.notes) parts.push(`Notes: ${lead.notes}`);
-  const li = data?.linkedin;
-  if (li) parts.push(`LinkedIn — ${[li.headline, li.company, li.location, li.about].filter(Boolean).join(" | ")}`);
-  const ig = data?.instagram;
-  if (ig) parts.push(`Instagram — ${[ig.username, ig.biography, ig.followers ? `${ig.followers} abonnés` : ""].filter(Boolean).join(" | ")}`);
-  if (data?.web?.content) parts.push(`Site web — ${data.web.content}`);
-  return parts.join("\n") || "Données limitées : audit prudent à partir du nom/rôle/société.";
-}
-
-export function parseJsonObject(raw: string): Record<string, any> {
-  try {
-    return JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw);
-  } catch {
-    return {};
-  }
-}
+// enrichmentText et parseJsonObject vivent dans prospection/textes.ts (module feuille, sans
+// import circulaire avec sequence-message.ts) ; réexportés ici pour les appelants existants.
+export { enrichmentText, parseJsonObject } from "./prospection/textes";
+import { enrichmentText, parseJsonObject } from "./prospection/textes";
 
 // ─── PHASE 4 : audit (Claude Sonnet, sections adaptées au type de projet) ──────
 
@@ -429,13 +411,21 @@ export async function enrichProspects(
       // toute la rédaction (sequence-message.ts). Un échec vaut « pas de brief » : le
       // prospect reste à compléter, jamais un message creux.
       const nbTouches = Math.max(3, (await storage.getSequenceSteps(campaign.id).catch(() => [])).length || 4);
-      const brief = await genererBrief(userId, {
+      // Un brief modifié par l'utilisatrice n'est jamais remplacé par un ré-enrichissement.
+      const briefExistant = lireBrief((lead as any).prospectBrief);
+      let brief = briefExistant?.edite ? briefExistant : await genererBrief(userId, {
         lead, campaign, projectId: (project as any)?.id ?? null, enrichText: text, audit, preuves, nbTouches,
       }).catch((e: any) => {
         console.error("[prospection] brief", lead.id, e?.message || e);
         return null;
       });
-      await logProspectionUsage(userId, "claude_audit", { prospectId: lead.id, campaignId: campaign.id });
+      if (!briefExistant?.edite) await logProspectionUsage(userId, "claude_audit", { prospectId: lead.id, campaignId: campaign.id });
+      // Filet : une note de l'utilisatrice est un déclencheur réel, même si le brief a échoué.
+      const note = typeof (lead as any).notes === "string" ? (lead as any).notes.trim() : "";
+      if (!briefActionnable(brief) && note) {
+        const r = appliquerEditionBrief(brief, { declencheur: { fait: note.slice(0, 400), source: "note" } }, []);
+        if (r.ok) brief = { ...r.brief, edite: (brief as any)?.edite ?? false };
+      }
 
       // PHASE 4 — premières touches (une par canal), écrites par le rédacteur de la séquence
       // à partir du brief. Elles sont aussi mises en cache sur la première étape de chaque
@@ -449,6 +439,13 @@ export async function enrichProspects(
         for (const canal of canaux) {
           const iStep = steps.findIndex((st: any) => st.channel === canal);
           const role = iStep >= 0 ? roleDeTouche(steps as any, iStep) : canal === "linkedin" ? "invitation" : "email_ouverture";
+          // Un message édité à la main est gardé tel quel : un ré-enrichissement ne l'écrase pas.
+          const edite: any = iStep >= 0 ? await storage.getLeadStepMessage(lead.id, (steps[iStep] as any).id).catch(() => undefined) : undefined;
+          if (edite?.edited) {
+            if (canal === "linkedin") msg.linkedinMessage = edite.body;
+            else msg.emailMessage = edite.body;
+            continue;
+          }
           try {
             const t = await redigerTouche(userId, {
               lead: { ...lead, prospectBrief: brief, auditNotes: JSON.stringify(audit), enrichedProfile: data },

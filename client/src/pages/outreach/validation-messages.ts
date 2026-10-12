@@ -69,3 +69,12 @@ export function miseAJourMessage(champ: ChampMessage, texte: string): Record<str
     ? { linkedinMessage: texte, message1: texte }
     : { emailMessage: texte, message2: texte };
 }
+
+/**
+ * Le serveur refuse de valider un prospect dont un message est encore « à revoir » (contrôle
+ * qualité) : réponse 409 `messages_a_revoir`. apiRequest lève alors « 409: {json} ».
+ */
+export function estRefusARevoir(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : "";
+  return msg.startsWith("409:") && msg.includes("messages_a_revoir");
+}
