@@ -7,56 +7,86 @@ vi.mock("../storage", () => ({
     getLeadStepMessage: vi.fn(),
     upsertLeadStepMessage: vi.fn(),
     getOutreachMessages: vi.fn(),
+    getProjectProof: vi.fn(async () => undefined),
+    getMessageFeedback: vi.fn(async () => []),
+    getLearnedRules: vi.fn(async () => []),
   },
 }));
+// Relecture IA (couche 2) : neutre par défaut, pilotée test par test.
+vi.mock("./prospection/relecture", () => ({ relire: vi.fn(async () => []) }));
 vi.mock("./claude", async (io) => {
   const actual = await io<any>();
   return { ...actual, callClaudeWithContext: vi.fn() };
 });
 
-import { buildStepPrompt, generateStepMessage, combineInstructions, contexteProspect, neutresDuProspect } from "./sequence-message";
+import { buildStepPrompt, generateStepMessage, combineInstructions, contexteProspect, neutresDuProspect, roleDeTouche, BriefIncompletError } from "./sequence-message";
 import { storage } from "../storage";
 import * as claude from "./claude";
+import * as relecture from "./prospection/relecture";
+
+const BRIEF = {
+  declencheur: { fait: "Petit Bivouac lance une collection réparable", source: "post" },
+  preuveId: null, raison: "Collection en cours de lancement.", proposition: { type: "idee", contenu: "une série courte sur la réparation" },
+  angles: ["la collection réparable", "une idée de série courte", "le rayon outdoor saturé", "clore proprement"],
+  langue: "fr", registre: "vous", genereLe: "2026-10-12", edite: false,
+};
 
 describe("buildStepPrompt", () => {
   const base = {
-    founderName: "Jeanne", projectName: "Agence JMD",
+    founderName: "Jeanne", projectName: "Agence JMD", intention: "Se présenter et proposer l'idée",
     lead: { name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac" },
     audit: { angle: "le nom crée une pause", observations: "marque outdoor grenobloise" },
+    brief: BRIEF as any, angle: "une idée de série courte",
   };
-  it("LinkedIn : impose ≤200 caractères et la signature du prénom", () => {
-    const p = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture" });
-    expect(p).toContain("200");
+  it("contient la doctrine, le rôle, l'angle de la touche et le déclencheur", () => {
+    const p = buildStepPrompt({ ...base, channel: "linkedin", role: "premier_message" });
+    expect(p).toContain("DOCTRINE DE PROSPECTION");
+    expect(p).toContain("PREMIER MESSAGE");
+    expect(p).toContain("une idée de série courte");
+    expect(p).toContain("Petit Bivouac lance une collection réparable");
     expect(p).toContain("Jeanne");
-    expect(p).toContain("Fred Renaud");
-    expect(p).toContain("Invitation d'ouverture");
   });
-  it("Email : demande un objet + un corps et rappelle l'intention", () => {
-    const p = buildStepPrompt({ ...base, channel: "email", intention: "Email de valeur" });
-    expect(p.toLowerCase()).toContain("objet");
-    expect(p).toContain("Email de valeur");
+  it("n'exige plus de question ouverte ni un ton « jamais commercial »", () => {
+    const p = buildStepPrompt({ ...base, channel: "linkedin", role: "premier_message" });
+    expect(p).not.toMatch(/termine par une (seule )?question ouverte/i);
+    expect(p).not.toContain("jamais commercial");
   });
-  it("LinkedIn : interdit d'inventer un lien/ressource et les placeholders entre crochets", () => {
-    const p = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture" });
-    expect(p).toContain("N'invente");
-    expect(p).toContain("crochets");
-    expect(p).not.toMatch(/un lien personnel/i);
+  it("injecte la preuve résolue et les exemples de l'utilisatrice", () => {
+    const p = buildStepPrompt({ ...base, channel: "email", role: "email_ouverture", preuveTexte: "Client : ne pas nommer ce client", exemples: ["Bonjour Claire, je dirige JMD…"] });
+    expect(p).toContain("PREUVE À UTILISER");
+    expect(p).toContain("ne pas nommer ce client");
+    expect(p).toContain("Bonjour Claire, je dirige JMD");
+    expect(p).toContain('"subject"');
   });
-  it("Email : interdit d'inventer un lien/ressource et les placeholders entre crochets", () => {
-    const p = buildStepPrompt({ ...base, channel: "email", intention: "Email de valeur" });
-    expect(p).toContain("N'invente");
-    expect(p).toContain("crochets");
+  it("sans preuve, interdit d'en évoquer une", () => {
+    const p = buildStepPrompt({ ...base, channel: "linkedin", role: "relance" });
+    expect(p).toMatch(/aucune preuve/i);
   });
-  it("injecte les consignes de rédaction utilisateur quand fournies", () => {
-    const p = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture", instructions: "Jamais de tiret long. Ton direct." });
-    expect(p).toContain("CONSIGNES DE RÉDACTION DE L'UTILISATEUR");
-    expect(p).toContain("Jamais de tiret long. Ton direct.");
+  it("injecte les consignes et les défauts à corriger", () => {
+    const p = buildStepPrompt({ ...base, channel: "linkedin", role: "relance", instructions: "Toujours vouvoyer", defautsACorriger: [{ code: "tic", raison: "Formule d'IA : « resonner »" }] });
+    expect(p).toContain("Toujours vouvoyer");
+    expect(p).toContain("À CORRIGER");
+    expect(p).toContain("resonner");
   });
   it("n'ajoute aucun bloc de consignes quand instructions est absent ou vide", () => {
-    const pAbsent = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture" });
-    expect(pAbsent).not.toContain("CONSIGNES DE RÉDACTION DE L'UTILISATEUR");
-    const pEmpty = buildStepPrompt({ ...base, channel: "linkedin", intention: "Invitation d'ouverture", instructions: "   " });
-    expect(pEmpty).not.toContain("CONSIGNES DE RÉDACTION DE L'UTILISATEUR");
+    const p = buildStepPrompt({ ...base, channel: "linkedin", role: "relance", instructions: "  " });
+    expect(p).not.toContain("CONSIGNES DE RÉDACTION");
+  });
+});
+
+describe("roleDeTouche", () => {
+  it("lit le rôle porté par l'étape", () => {
+    expect(roleDeTouche([{ channel: "email", role: "cloture" }] as any, 0)).toBe("cloture");
+  });
+  it("déduit le rôle des séquences anciennes", () => {
+    const steps = [
+      { channel: "linkedin", condition: "always" },
+      { channel: "email", condition: "if_invite_not_accepted" },
+      { channel: "linkedin", condition: "if_invite_accepted" },
+      { channel: "email", condition: "if_not_opened" },
+      { channel: "linkedin", condition: "if_invite_accepted" },
+    ] as any;
+    expect([0, 1, 2, 3, 4].map((i) => roleDeTouche(steps, i))).toEqual(["invitation", "email_ouverture", "premier_message", "relance", "relance"]);
   });
 });
 
@@ -91,7 +121,7 @@ describe("generateStepMessage — garde anti-cache-vide", () => {
     (storage.getLeadStepMessage as any).mockResolvedValue(undefined); // cache miss
     (claude.callClaudeWithContext as any).mockResolvedValue("désolé je n'ai pas compris");
 
-    const lead = { id: 42, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac" };
+    const lead = { id: 42, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac", prospectBrief: BRIEF };
     const campaign = { name: "Agence JMD", founderName: "Jeanne" };
     const step = { id: 7, channel: "linkedin", intention: "Invitation d'ouverture" };
 
@@ -104,64 +134,23 @@ describe("generateStepMessage — garde anti-cache-vide", () => {
 });
 
 
-describe("buildStepPrompt — rôles LinkedIn et textes antérieurs", () => {
+describe("buildStepPrompt — textes antérieurs", () => {
   const base = {
-    founderName: "Jeanne", projectName: "Agence JMD", channel: "linkedin", intention: "",
-    lead: { name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac" },
-    audit: { angle: "le nom crée une pause" },
+    founderName: "Jeanne", projectName: "Agence JMD", channel: "linkedin", intention: "", role: "relance" as const,
+    lead: { name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac" }, audit: {}, brief: BRIEF as any, angle: "x",
   };
-  it("invitation : ≤ 300 caractères, raison personnelle, ni pitch ni question sur les besoins", () => {
-    const p = buildStepPrompt({ ...base, role: "invitation" });
-    expect(p).toContain("300");
-    expect(p).toContain("note d'invitation");
-    expect(p).toContain("AUCUN pitch");
-    expect(p).toContain("AUCUNE question sur ses besoins");
-  });
-  it("message après acceptation : remerciement naturel, interdit de paraphraser l'invitation, une question ouverte", () => {
-    const p = buildStepPrompt({ ...base, role: "message_apres_acceptation" });
-    expect(p).toContain("Remercie d'avoir accepté");
-    expect(p).toContain("NE RÉPÈTE NI NE PARAPHRASE la note d'invitation");
-    expect(p).toContain("UNE seule question ouverte");
-    expect(p).toContain("200");
-  });
-  it("relance : nouvel angle, sans répéter", () => {
-    const p = buildStepPrompt({ ...base, role: "relance" });
-    expect(p).toContain("angle NOUVEAU");
-  });
   it("intègre les textes antérieurs sous un intitulé clair", () => {
-    const p = buildStepPrompt({ ...base, role: "message_apres_acceptation", previousTexts: ["Bonjour Fred, ravie de vous suivre."] });
-    expect(p).toContain("MESSAGES DÉJÀ RÉDIGÉS OU ENVOYÉS À CE PROSPECT");
-    expect(p).toContain("ne répète ni ne paraphrase ces messages");
-    expect(p).toContain("« Bonjour Fred, ravie de vous suivre. »");
+    const p = buildStepPrompt({ ...base, previousTexts: ["Premier texte envoyé"] });
+    expect(p).toContain("MESSAGES DÉJÀ RÉDIGÉS OU ENVOYÉS");
+    expect(p).toContain("Premier texte envoyé");
   });
   it("aucun bloc de textes antérieurs quand il n'y en a pas", () => {
-    expect(buildStepPrompt({ ...base, role: "invitation" })).not.toContain("MESSAGES DÉJÀ RÉDIGÉS");
+    expect(buildStepPrompt(base)).not.toContain("MESSAGES DÉJÀ RÉDIGÉS");
   });
   it("conflit : cite le texte trop proche et exige un message radicalement différent", () => {
-    const p = buildStepPrompt({ ...base, role: "relance", conflit: "Texte en conflit" });
-    expect(p).toContain("« Texte en conflit »");
-    expect(p).toContain("RADICALEMENT différent");
-  });
-  it("intention vide : utilise bodyTemplate comme trame et une intention par rôle (plus « prise de contact »)", () => {
-    const p = buildStepPrompt({ ...base, role: "message_apres_acceptation", bodyTemplate: "Remercier puis parler de {{company}}" });
-    expect(p).toContain("TRAME INDICATIVE");
-    expect(p).toContain("Remercier puis parler de {{company}}");
-    expect(p).not.toContain("INTENTION DE CETTE ÉTAPE : prise de contact");
-  });
-  it("intention fournie : la trame n'est pas injectée", () => {
-    const p = buildStepPrompt({ ...base, intention: "Ouverture", role: "invitation", bodyTemplate: "vieux modèle" });
-    expect(p).not.toContain("TRAME INDICATIVE");
-  });
-  it("interdit les ouvertures génériques", () => {
-    const p = buildStepPrompt({ ...base, role: "invitation" });
-    expect(p).toContain("« Je me permets »");
-    expect(p).toContain("« J'espère que vous allez bien »");
-    expect(p).toContain("« Votre parcours est inspirant »");
-  });
-  it("email : règles email inchangées, pas de règle d'invitation", () => {
-    const p = buildStepPrompt({ ...base, channel: "email", role: "invitation" });
-    expect(p).toContain("EMAIL");
-    expect(p).not.toContain("NOTE D'INVITATION");
+    const p = buildStepPrompt({ ...base, conflit: "Texte en conflit" });
+    expect(p).toContain("beaucoup trop proche");
+    expect(p).toContain("RADICALEMENT");
   });
 });
 
@@ -185,14 +174,14 @@ describe("contexteProspect", () => {
 });
 
 describe("generateStepMessage — messages distincts", () => {
-  const lead = { id: 42, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac" };
+  const lead = { id: 42, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac", prospectBrief: BRIEF };
   const campaign = { name: "Agence JMD", founderName: "Jeanne" };
   const steps = [
     { id: 1, channel: "linkedin", intention: "Invitation", condition: "always" },
     { id: 2, channel: "linkedin", intention: null, condition: "if_invite_accepted" },
   ];
   const invitation = "Fred, le nom Petit Bivouac crée une vraie pause dans un rayon outdoor saturé. J'aimerais suivre votre travail. Jeanne";
-  const distinct = "Merci Fred. Votre collection mise sur la réparation, c'est rare. Comment vos clients l'ont-ils reçue ? Jeanne";
+  const distinct = "Merci Fred. Je dirige JMD, on accompagne des marques outdoor sur leurs contenus. Votre collection réparable m'a donné une idée de série courte. Je vous l'envoie ? Jeanne";
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -207,7 +196,7 @@ describe("generateStepMessage — messages distincts", () => {
     expect(r).toEqual({ subject: null, body: distinct });
     const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage;
     expect(prompt).toContain(invitation);
-    expect(prompt).toContain("APRÈS ACCEPTATION");
+    expect(prompt).toContain("PREMIER MESSAGE");
     expect(storage.upsertLeadStepMessage).toHaveBeenCalledWith(expect.objectContaining({ stepId: 2, body: distinct }));
   });
 
@@ -292,7 +281,7 @@ describe("generateStepMessage — messages distincts", () => {
   });
 
   it("deux messages courts qui ne partagent que noms/entreprise/signature ne sont pas bloqués", async () => {
-    const leadM = { id: 43, name: "Marie Dupont", role: "Gérante", company: "Lumen Concept Store",
+    const leadM = { id: 43, name: "Marie Dupont", role: "Gérante", company: "Lumen Concept Store", prospectBrief: BRIEF,
       enrichedProfile: { linkedin: { location: "Lyon" } } };
     (storage.getLeadStepMessage as any).mockImplementation(async (_l: number, stepId: number) =>
       stepId === 1 ? { body: "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Méjean", edited: false } : undefined);
@@ -309,6 +298,92 @@ describe("generateStepMessage — messages distincts", () => {
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps, previousTexts: [invitation] });
     expect(r.tropProche).toBe(true);
     expect(storage.upsertLeadStepMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("generateStepMessage — brief et contrôle qualité", () => {
+  const lead = { id: 42, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac", prospectBrief: BRIEF };
+  const campaign = { name: "Agence JMD", founderName: "Jeanne", projectId: 7 };
+  const steps = [{ id: 1, channel: "linkedin", intention: "Invitation", condition: "always", role: "invitation" }];
+  const bon = "Fred, la collection réparable de Petit Bivouac m'a parlé : je dirige JMD, on accompagne des marques outdoor. Au plaisir d'échanger. Jeanne";
+  const mauvais = "Fred, la façon dont votre marque pense le bivouac m'a frappée. Comment pensez-vous l'équilibre entre héritage et renouveau ? Jeanne";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (storage.getOutreachMessages as any).mockResolvedValue([]);
+    (storage.getLeadStepMessage as any).mockResolvedValue(undefined);
+    (storage.getMessageFeedback as any).mockResolvedValue([]);
+    (storage.getLearnedRules as any).mockResolvedValue([]);
+    (relecture.relire as any).mockResolvedValue([]);
+  });
+
+  it("sans brief actionnable ni cache : aucun appel IA, BriefIncompletError", async () => {
+    await expect(generateStepMessage("u1", { lead: { ...lead, prospectBrief: null }, campaign, step: steps[0], steps }))
+      .rejects.toBeInstanceOf(BriefIncompletError);
+    expect(claude.callClaudeWithContext).not.toHaveBeenCalled();
+  });
+
+  it("sans brief, un message édité à la main est quand même servi", async () => {
+    (storage.getLeadStepMessage as any).mockResolvedValue({ body: "écrit par Jeanne", subject: null, edited: true });
+    const r = await generateStepMessage("u1", { lead: { ...lead, prospectBrief: null }, campaign, step: steps[0], steps });
+    expect(r.body).toBe("écrit par Jeanne");
+  });
+
+  it("un message qui viole la doctrine est réécrit une fois avec les raisons", async () => {
+    (claude.callClaudeWithContext as any)
+      .mockResolvedValueOnce(JSON.stringify({ body: mauvais }))
+      .mockResolvedValueOnce(JSON.stringify({ body: bon }));
+    const r = await generateStepMessage("u1", { lead, campaign, step: steps[0], steps });
+    expect(r.body).toBe(bon);
+    expect(r.aRevoir).toBeUndefined();
+    const prompt2 = (claude.callClaudeWithContext as any).mock.calls[1][0].userMessage;
+    expect(prompt2).toContain("À CORRIGER");
+    expect(storage.upsertLeadStepMessage).toHaveBeenCalledWith(expect.objectContaining({ body: bon, qualite: "ok" }));
+  });
+
+  it("toujours fautif après réécriture : mis en cache « à revoir » avec ses défauts", async () => {
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: mauvais }));
+    const r = await generateStepMessage("u1", { lead, campaign, step: steps[0], steps });
+    expect(claude.callClaudeWithContext).toHaveBeenCalledTimes(2);
+    expect(r.aRevoir).toBe(true);
+    expect(r.defauts?.map((d) => d.code)).toContain("question_reflexion");
+    expect(storage.upsertLeadStepMessage).toHaveBeenCalledWith(expect.objectContaining({ qualite: "a_revoir" }));
+  });
+
+  it("les défauts de la relecture IA comptent aussi", async () => {
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: bon }));
+    (relecture.relire as any).mockResolvedValue([{ code: "relecture", raison: "Le déclencheur n'est pas utilisé." }]);
+    const r = await generateStepMessage("u1", { lead, campaign, step: steps[0], steps });
+    expect(r.aRevoir).toBe(true);
+    expect(r.defauts?.[0].raison).toContain("déclencheur");
+  });
+
+  it("un cache « à revoir » non édité est resservi avec son drapeau, sans nouvel appel", async () => {
+    (storage.getLeadStepMessage as any).mockResolvedValue({ body: mauvais, subject: null, edited: false, qualite: "a_revoir", defauts: [{ code: "tic", raison: "x" }] });
+    const r = await generateStepMessage("u1", { lead, campaign, step: steps[0], steps });
+    expect(r.aRevoir).toBe(true);
+    expect(claude.callClaudeWithContext).not.toHaveBeenCalled();
+  });
+
+  it("rédige en mode tiers, avec les exemples et les règles apprises du projet", async () => {
+    (storage.getMessageFeedback as any).mockResolvedValue([
+      { id: 1, role: "invitation", action: "modifie", original: "o", final: "EXEMPLE DE JEANNE", aRepondu: null },
+    ]);
+    (storage.getLearnedRules as any).mockResolvedValue([{ id: 1, texte: "REGLE APPRISE", statut: "acceptee" }]);
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: bon }));
+    await generateStepMessage("u1", { lead, campaign, step: steps[0], steps });
+    const appel = (claude.callClaudeWithContext as any).mock.calls[0][0];
+    expect(appel.destinataire).toBe("tiers");
+    expect(appel.userMessage).toContain("EXEMPLE DE JEANNE");
+    expect(appel.userMessage).toContain("REGLE APPRISE");
+    expect(storage.getMessageFeedback).toHaveBeenCalledWith("u1", 7, expect.objectContaining({ role: "invitation" }));
+  });
+
+  it("une preuve non validée n'est jamais injectée", async () => {
+    (storage.getProjectProof as any).mockResolvedValue({ id: 4, projectId: 7, status: "proposed", clientLabel: "SECRET", whatWasDone: "x", citable: true });
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: bon }));
+    await generateStepMessage("u1", { lead: { ...lead, prospectBrief: { ...BRIEF, preuveId: 4 } }, campaign, step: steps[0], steps });
+    expect((claude.callClaudeWithContext as any).mock.calls[0][0].userMessage).not.toContain("SECRET");
   });
 });
 

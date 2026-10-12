@@ -18,7 +18,9 @@ import {
 
 export type CodeDefaut =
   | "trop_long" | "trop_court" | "objet" | "tic" | "question_reflexion" | "tracking"
-  | "lien_inconnu" | "placeholder" | "tiret" | "genre" | "sans_entreprise" | "compliment_retourne";
+  | "lien_inconnu" | "placeholder" | "tiret" | "genre" | "sans_entreprise" | "compliment_retourne"
+  /** Défaut relevé par la relecture IA (couche 2). */
+  | "relecture";
 
 export interface Defaut { code: CodeDefaut; raison: string }
 
@@ -43,7 +45,12 @@ const LIEN = /\b(?:https?:\/\/|www\.)[^\s<>"')\]]+/gi;
 const nettoyerLien = (u: string) => u.replace(/[.,;:!?]+$/, "").replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "").toLowerCase();
 
 /** Adjectif accordé qui décrit l'expéditrice : la phrase doit être tournée autrement. */
-const GENRE = /\b(?:je\s+suis|suis)\s+(?:très\s+|tres\s+|vraiment\s+)?(?:curieu|ravi|intéress|interess|surpris|convaincu|impressionn|heureu|enchant|touch)[a-zà-ÿ]*/i;
+const RACINES_GENRE = "(?:curieu|ravi|intéress|interess|surpris|convaincu|impressionn|heureu|enchant|touch)[a-zà-ÿ]*";
+const GENRE = new RegExp(
+  // « je suis ravie », ou en tête de phrase : « Ravie d'être connectée », « Curieuse de… ».
+  `(?:\\b(?:je\\s+suis|suis)\\s+(?:très\\s+|tres\\s+|vraiment\\s+)?${RACINES_GENRE}|(?:^|[.!?]\\s+)${RACINES_GENRE}\\s+(?:de|d['’]|que|par|pour))`,
+  "i",
+);
 
 function nomme(body: string, entreprise: string): boolean {
   const corps = ` ${normaliserTexte(body)} `;

@@ -8,6 +8,8 @@
 import { callClaudeWithContext } from "./claude";
 import { qualifierProspect } from "./prospection-qualify-call";
 import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qualification";
+import { genererBrief, briefActionnable } from "./prospection/brief";
+import { redigerTouche, roleDeTouche, combineInstructions } from "./sequence-message";
 import { ProspectionAccessError, LinkedInWeeklyLimitError, assertEnrichmentAccess, logProspectionUsage } from "./prospection-access";
 import { storage } from "../storage";
 import { callClaude, CLAUDE_MODELS } from "./claude";
@@ -158,122 +160,25 @@ ${schema}
 Le bloc "angle" (Angle projet) doit être SPÉCIFIQUE à cette campagne (${ctx.campaign?.name || "campagne en cours"}), ancré dans les données.
 Pas d'invention. Réponds UNIQUEMENT avec le JSON.`;
 
-  const raw = await callClaude({
-    model: CLAUDE_MODELS.smart,
+  // Mode « tiers » : l'audit connaît la marque qui écrit (offre, positionnement) sans
+  // recevoir les consignes de tâches ni l'état du jour de l'utilisatrice.
+  const raw = await callClaudeWithContext({
     userId,
-    messages: [{ role: "user", content: prompt }],
+    projectId: ctx.project?.id ?? null,
+    userMessage: prompt,
+    model: CLAUDE_MODELS.smart,
     max_tokens: 1400,
     temperature: 0.3,
+    destinataire: "tiers",
   });
   return parseJsonObject(raw);
 }
 
-// ─── PHASE 4 : message personnalisé (Claude Sonnet, selon le canal) ───────────
-
-/**
- * Rédige les messages de prospection.
- *
- * Réécrit le 18 septembre 2026 après lecture des 41 messages réellement produits. Trois
- * défauts venaient du prompt lui-même, pas du modèle :
- *
- * 1. Il appelait `callClaude`, donc SANS Brand DNA, sans voix, sans langue. Le générateur ne
- *    savait pas qui écrit ni ce qu'elle propose — d'où des messages qui ne disent jamais
- *    rien de l'offre. Il passe désormais par `callClaudeWithContext`.
- * 2. Il ne recevait que DEUX sections d'audit sur six. Tout ce que l'audit savait de CHANEL
- *    — maison fondée en 1910, actionnariat privé, communication délibérément en retrait —
- *    n'atteignait jamais le message.
- * 3. Il exigeait « une question de curiosité sincère EN FIN ». 31 messages sur 41
- *    finissaient donc par une question : le modèle obéissait.
- */
-async function generateChannelMessage(
-  userId: string,
-  ctx: {
-    channel: string;
-    founderName: string;
-    projectName: string;
-    campaign: any;
-    lead: any;
-    audit: Record<string, string>;
-    projectId?: number | null;
-    qualification?: { verdict: string; raison: string } | null;
-  },
-): Promise<{ linkedinMessage?: string; emailMessage?: string }> {
-  const wantLinkedIn = ctx.channel !== "email";
-  const wantEmail = ctx.channel === "email" || ctx.channel === "both";
-
-  const attentionParticuliere = ctx.qualification?.verdict === "attention_particuliere";
-
-  const prompt = `Rédige ${wantLinkedIn && wantEmail ? "un message LinkedIn ET un email" : wantEmail ? "un email" : "un message LinkedIn"} de prospection pour ce prospect.
-
-PROSPECT : ${ctx.lead?.name || ""} — ${ctx.lead?.role || ""} @ ${ctx.lead?.company || ""}
-
-CE QUE L'AUDIT A TROUVÉ
-Contexte : ${ctx.audit?.contexteMarque || ctx.audit?.contexte || ""}
-Audience : ${ctx.audit?.audience || ""}
-Contenu : ${ctx.audit?.contenu || ""}
-Positionnement : ${ctx.audit?.positionnement || ""}
-Enjeux : ${ctx.audit?.enjeux || ctx.audit?.observations || ""}
-Angle : ${ctx.audit?.angle || ctx.campaign?.messageAngle || ""}
-${ctx.qualification ? `\nPOURQUOI CE PROSPECT : ${ctx.qualification.raison}` : ""}
-${attentionParticuliere ? `\nATTENTION : ce prospect a été classé « attention particulière ». L'approche standard le desservirait. Écris quelque chose qui ne ressemble pas à une prospection ordinaire : montre par la forme même du message ce que tu sais faire.` : ""}
-
-CE QUI REND UN MESSAGE LU
-
-Le prospect reçoit dix sollicitations par jour. La question n'est pas « comment être poli »
-mais « pourquoi lirait-il celui-ci jusqu'au bout ».
-
-- Appuie-toi sur quelque chose de PRÉCIS trouvé dans l'audit. Pas « votre marque a une vraie
-  voix » : une observation qu'on ne pourrait pas écrire à quelqu'un d'autre.
-- Dis ce que cette observation te fait penser, en tant que personne qui fait ce métier.
-  Une lecture, un point de vue, quelque chose qui a une valeur en soi.
-- Le prospect doit pouvoir répondre en une phrase, ou ne pas répondre. Jamais lui demander
-  d'expliquer son métier : c'est du travail gratuit demandé à un inconnu.
-
-CE QUI EST INTERDIT
-
-- Terminer sur une question ouverte du type « comment gérez-vous... », « quelle est votre
-  plus grande frustration... ». C'est la formule qui fait fermer le message.
-- Le compliment retourné : « vous avez les bons codes, mais rarement un point de vue ».
-  Dire à quelqu'un que son travail est médiocre puis lui demander de se justifier.
-- Tout adjectif qui s'accorde en genre pour te décrire (« curieux », « ravi », « intéressé »).
-  Tourne la phrase autrement : l'expéditrice ne doit pas changer de genre d'un message à
-  l'autre.
-- Les tirets longs (—).
-- « J'ai vu votre profil », « je me permets de vous contacter », « en tant qu'expert ».
-${wantLinkedIn ? `\nMESSAGE LINKEDIN (note de connexion) :
-- MAXIMUM 200 caractères, strict. C'est très court : une observation précise et une raison
-  d'accepter, rien de plus.
-- Signé du prénom : ${ctx.founderName}.` : ""}
-${wantEmail ? `\nEMAIL :
-- 5 à 8 phrases.
-- L'observation précise, ce qu'elle révèle, ce que ${ctx.projectName} sait en faire
-  concrètement. Une ouverture à la fin, pas un interrogatoire.
-- Signé : ${ctx.founderName} — ${ctx.projectName}.` : ""}
-
-Réponds UNIQUEMENT avec ce JSON :
-{${wantLinkedIn ? '"linkedinMessage":"..."' : ""}${wantLinkedIn && wantEmail ? "," : ""}${wantEmail ? '"emailMessage":"..."' : ""}}`;
-
-  // callClaudeWithContext, et non callClaude : le Brand DNA, la voix et la langue du compte
-  // sont injectés. Sans eux, le modèle ignore ce que propose l'utilisatrice — d'où des
-  // messages qui n'en parlent jamais.
-  const raw = await callClaudeWithContext({
-    userId,
-    projectId: ctx.projectId ?? null,
-    userMessage: prompt,
-    model: CLAUDE_MODELS.smart,
-    max_tokens: 900,
-    temperature: 0.6,
-  });
-  const p = parseJsonObject(raw);
-  const out: { linkedinMessage?: string; emailMessage?: string } = {};
-  if (wantLinkedIn && typeof p.linkedinMessage === "string") {
-    out.linkedinMessage = enforceLinkedInLimit(p.linkedinMessage); // ≤200, sans tiret long
-  }
-  if (wantEmail && typeof p.emailMessage === "string") {
-    out.emailMessage = sanitizeMessage(p.emailMessage); // sans tiret long
-  }
-  return out;
-}
+// ─── PHASE 4 : messages ─────────────────────────────────────────────────────
+// Depuis le 12 octobre 2026, un SEUL rédacteur : redigerTouche (sequence-message.ts), piloté
+// par le brief du prospect, la doctrine et le contrôle qualité. L'ancien generateChannelMessage
+// avait des règles contraires à celles de la séquence (l'un interdisait la question ouverte
+// finale, l'autre l'exigeait).
 
 // ─── PHASES 1+2 : recherche + pré-filtrage + import (plan base) ───────────────
 
@@ -464,6 +369,12 @@ export async function enrichProspects(
   const channel = campaign?.channel || "linkedin";
 
   let enriched = 0, failed = 0, linkedinUsed = 0;
+  const prefs = await storage.getUserPreferences(userId).catch(() => null);
+  const instructions = combineInstructions((prefs as any)?.messageInstructions, campaign?.messageInstructions);
+  // Preuves VALIDÉES du projet : le brief en choisit au plus une par prospect.
+  const preuves = campaign.projectId
+    ? await storage.getProjectProofs(userId, campaign.projectId, "validated").catch(() => [])
+    : [];
 
   for (const id of prospectIds) {
     const lead = await storage.getLead(id, userId);
@@ -514,13 +425,51 @@ export async function enrichProspects(
 
       const decision = decisionCampagne(qualification);
 
-      // PHASE 4 — message (Sonnet)
-      const msg = await generateChannelMessage(userId, {
-        channel, founderName, projectName, campaign, lead, audit,
-        projectId: (project as any)?.id ?? null,
-        qualification,
+      // PHASE 4ter — BRIEF : déclencheur réel, preuve, raison, angles par touche. Il pilote
+      // toute la rédaction (sequence-message.ts). Un échec vaut « pas de brief » : le
+      // prospect reste à compléter, jamais un message creux.
+      const nbTouches = Math.max(3, (await storage.getSequenceSteps(campaign.id).catch(() => [])).length || 4);
+      const brief = await genererBrief(userId, {
+        lead, campaign, projectId: (project as any)?.id ?? null, enrichText: text, audit, preuves, nbTouches,
+      }).catch((e: any) => {
+        console.error("[prospection] brief", lead.id, e?.message || e);
+        return null;
       });
-      await logProspectionUsage(userId, "claude_message", { prospectId: lead.id, campaignId: campaign.id });
+      await logProspectionUsage(userId, "claude_audit", { prospectId: lead.id, campaignId: campaign.id });
+
+      // PHASE 4 — premières touches (une par canal), écrites par le rédacteur de la séquence
+      // à partir du brief. Elles sont aussi mises en cache sur la première étape de chaque
+      // canal : ce que l'utilisatrice valide est exactement ce qui partira.
+      const msg: { linkedinMessage?: string; emailMessage?: string } = {};
+      if (briefActionnable(brief)) {
+        const steps = await storage.getSequenceSteps(campaign.id).catch(() => [] as any[]);
+        const canaux: Array<"linkedin" | "email"> = [];
+        if (channel !== "email") canaux.push("linkedin");
+        if (channel === "email" || channel === "both") canaux.push("email");
+        for (const canal of canaux) {
+          const iStep = steps.findIndex((st: any) => st.channel === canal);
+          const role = iStep >= 0 ? roleDeTouche(steps as any, iStep) : canal === "linkedin" ? "invitation" : "email_ouverture";
+          try {
+            const t = await redigerTouche(userId, {
+              lead: { ...lead, prospectBrief: brief, auditNotes: JSON.stringify(audit), enrichedProfile: data },
+              campaign: { ...campaign, projectName }, role, canal, brief, rang: 0,
+              intention: iStep >= 0 ? (steps[iStep] as any).intention || "" : "",
+              previousTexts: [], instructions, founderName,
+            });
+            await logProspectionUsage(userId, "claude_message", { prospectId: lead.id, campaignId: campaign.id });
+            if (canal === "linkedin") msg.linkedinMessage = t.body;
+            else msg.emailMessage = t.body; // l'objet vit dans le cache de l'étape
+            if (iStep >= 0 && !t.tropProche) {
+              await storage.upsertLeadStepMessage({
+                leadId: lead.id, stepId: (steps[iStep] as any).id, subject: t.subject, body: t.body, edited: false,
+                qualite: t.aRevoir ? "a_revoir" : "ok", defauts: t.defauts.length ? t.defauts : null,
+              } as any);
+            }
+          } catch (e: any) {
+            console.error("[prospection] rédaction", lead.id, canal, e?.message || e);
+          }
+        }
+      }
 
       // PHASE 5 — mise à jour CRM.
       // On écrit AUSSI les champs "legacy" (strategicNotes, message1/2) pour que l'affichage
@@ -535,6 +484,7 @@ export async function enrichProspects(
         linkedinMessage: msg.linkedinMessage,
         emailMessage: msg.emailMessage,
         enrichedProfile: data,
+        prospectBrief: brief,
         stage: hasMessage ? "messages_ready" : "identified",
         // Des messages neufs n'ont été lus par personne : une validation donnée aux
         // précédents ne vaut pas pour eux.

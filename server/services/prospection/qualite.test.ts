@@ -46,6 +46,11 @@ describe("contrôle qualité, couche 1 : la séquence « Sneha » est rejetée",
     expect(d).toContain("tiret");
   });
 
+  it("un adjectif accordé en tête de phrase (« Ravie d'être connectée »)", () => {
+    const body = "Bonjour Marie, je dirige JMD. Ravie d'être connectée. Jeanne";
+    expect(codes(controlerMessage({ role: "invitation", canal: "linkedin", body }, ctx({ entreprise: null })))).toContain("genre");
+  });
+
   it("une note LinkedIn trop longue", () => {
     const body = "a".repeat(301);
     expect(codes(controlerMessage({ role: "invitation", canal: "linkedin", body }, ctx()))).toContain("trop_long");

@@ -22,8 +22,18 @@ vi.mock("../storage", () => ({
     getProjectStrategyProfile: vi.fn(async () => null),
     getTargetPersonas: vi.fn(async () => []),
     getUserPreferences: vi.fn(async () => null),
+    // Depuis le 12 octobre : brief (preuves validées), rédaction unique (séquence, exemples,
+    // règles apprises) et cache de la première touche.
+    getProjectProofs: vi.fn(async () => []),
+    getProjectProof: vi.fn(async () => undefined),
+    getSequenceSteps: vi.fn(async () => []),
+    getMessageFeedback: vi.fn(async () => []),
+    getLearnedRules: vi.fn(async () => []),
+    upsertLeadStepMessage: vi.fn(async () => {}),
   },
 }));
+vi.mock("./prospection/relecture", () => ({ relire: vi.fn(async () => []) }));
+vi.mock("./serp", async (io) => ({ ...(await io<any>()), serpConfigured: () => false }));
 vi.mock("./brightdata-enrich", () => ({
   linkedinEnrichConfigured: () => true,
   instagramEnrichConfigured: () => false,
@@ -83,29 +93,28 @@ beforeEach(() => {
   (storage.getBrandDna as any).mockResolvedValue({ businessType: "agence de communication", businessName: "Agence JMD" });
   (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
   (storage.updateLead as any).mockResolvedValue({});
-  (claude.callClaude as any)
-    .mockResolvedValueOnce(JSON.stringify({
-      contexteMarque: "Maison de mode.", audience: "…", contenu: "…",
-      positionnement: "…", enjeux: "manque de coulisses",
-      angle: "proposer un format coulisses pour la campagne",
-    }))
-    .mockResolvedValueOnce(JSON.stringify({
-      linkedinMessage: "Bonjour Marie, votre virage sur les coulisses m'a marquée. Qu'est-ce qui l'a déclenché ? Jeanne",
-    }));
-
-  // callClaudeWithContext sert DEUX fois depuis le 18 septembre : la qualification du
-  // prospect (verdict) puis la redaction du message. L'ordre compte — la qualification a
-  // lieu avant la redaction dans le pipeline.
-  (claude.callClaudeWithContext as any)
-    .mockResolvedValueOnce(JSON.stringify({
-      verdict: "retenu",
-      raison: "Maison en rebranding, besoin de coulisses editoriales.",
-      confiance: "haute",
-    }))
-    .mockResolvedValueOnce(JSON.stringify({
-      linkedinMessage: "Bonjour Marie, votre virage sur les coulisses m'a marquée. Jeanne",
-    }));
+  // Un seul point d'entrée IA, aiguillé par le contenu du prompt : audit, qualification,
+  // brief, puis rédaction (depuis le 12 octobre, tout passe par callClaudeWithContext).
+  (claude.callClaudeWithContext as any).mockImplementation(async ({ userMessage }: any) => {
+    if (userMessage.includes("audit factuel")) {
+      return JSON.stringify({
+        contexteMarque: "Maison de mode.", audience: "…", contenu: "…",
+        positionnement: "…", enjeux: "manque de coulisses", angle: "proposer un format coulisses",
+      });
+    }
+    if (userMessage.includes("BRIEF d'une prise de contact")) {
+      return JSON.stringify({
+        declencheur: { fait: "Maison X prépare un rebranding en 2026", source: "profil" },
+        raison: "Rebranding en cours.", proposition: { type: "idee", contenu: "un format coulisses" },
+        angles: ["le rebranding", "un format coulisses", "clore"], langue: "fr", registre: "vous",
+      });
+    }
+    if (userMessage.includes("DOCTRINE DE PROSPECTION")) return JSON.stringify({ body: MESSAGE });
+    return JSON.stringify({ verdict: "retenu", raison: "Maison en rebranding.", confiance: "haute" });
+  });
 });
+
+const MESSAGE = "Bonjour Marie, le rebranding de Maison X m'a parlé : je dirige JMD, on raconte les coulisses des maisons de mode. Au plaisir d'échanger. Jeanne";
 
 describe("enrichProspects — tâche de validation dans le planning", () => {
   it("synchronise la tâche « Valider les messages » de la campagne une fois les messages prêts", async () => {
@@ -137,7 +146,7 @@ describe("enrichProspects — condition 3 (données + coûts enregistrés)", () 
     const upd = (storage.updateLead as any).mock.calls[0][2];
     expect(upd.enriched).toBe(true);
     expect(upd.priority).toBe("hot"); // "rebranding" présent dans les données
-    expect(upd.linkedinMessage.length).toBeLessThanOrEqual(200);
+    expect(upd.linkedinMessage.length).toBeLessThanOrEqual(300);
     expect(upd.linkedinMessage).not.toContain("—");
     expect(upd.stage).toBe("messages_ready");
     // Messages neufs : la validation donnée aux précédents est retirée.
@@ -147,20 +156,29 @@ describe("enrichProspects — condition 3 (données + coûts enregistrés)", () 
     expect(upd.strategicNotes).toBe(upd.auditNotes);
     expect(upd.message1).toBe(upd.linkedinMessage);
 
-    // Signature = PRÉNOM (Jeanne), jamais le nom d'agence dans le prompt de message.
-    // L'assertion visait `callClaude.mock.calls[1]` ; la redaction passe desormais par
-    // callClaudeWithContext, donc il n'y a plus de second appel a callClaude. L'INTENTION
-    // est inchangee : on verifie toujours le prompt de message, au bon endroit.
-    const appelsMessage = (claude.callClaudeWithContext as any).mock.calls;
-    expect(appelsMessage.length, "le message doit passer par callClaudeWithContext").toBeGreaterThan(0);
-    // [0] = qualification, [1] = redaction du message.
-    const messagePrompt = appelsMessage[1][0].userMessage;
-    expect(messagePrompt).toContain("Jeanne");
-    expect(messagePrompt).not.toMatch(/Signé du prénom : Agence JMD/);
+    // Le brief est écrit sur la fiche, et la rédaction part du brief, signée du PRÉNOM.
+    expect(upd.prospectBrief.declencheur.fait).toContain("rebranding");
+    expect(upd.linkedinMessage).toBe(MESSAGE);
+    const messagePrompt = (claude.callClaudeWithContext as any).mock.calls
+      .map((c: any[]) => c[0]).find((a: any) => a.userMessage.includes("DOCTRINE DE PROSPECTION"));
+    expect(messagePrompt.destinataire).toBe("tiers");
+    expect(messagePrompt.userMessage).toContain("Jeanne");
+    expect(messagePrompt.userMessage).toContain("Maison X prépare un rebranding");
+    expect(messagePrompt.userMessage).not.toMatch(/Signature : Agence JMD/);
+  });
 
-    // Le prompt recoit desormais l'audit COMPLET, pas deux lignes sur six.
-    expect(messagePrompt).toContain("Positionnement");
-    expect(messagePrompt).toContain("Audience");
+  it("sans déclencheur réel : aucun message, le prospect reste à compléter", async () => {
+    (claude.callClaudeWithContext as any).mockImplementation(async ({ userMessage }: any) => {
+      if (userMessage.includes("BRIEF d'une prise de contact")) return JSON.stringify({ declencheur: null, angles: [] });
+      if (userMessage.includes("DOCTRINE DE PROSPECTION")) throw new Error("ne doit pas rédiger");
+      if (userMessage.includes("audit factuel")) return JSON.stringify({ angle: "x" });
+      return JSON.stringify({ verdict: "retenu", raison: "x", confiance: "haute" });
+    });
+    await enrichProspects("u1", campaign, [10]);
+    const upd = (storage.updateLead as any).mock.calls.at(-1)[2];
+    expect(upd.linkedinMessage).toBeUndefined();
+    expect(upd.stage).toBe("identified");
+    expect(upd.prospectBrief.declencheur).toBeNull();
   });
 
   it("la garde d'accès bloque en entrée (plan base → throw, aucun scrape)", async () => {

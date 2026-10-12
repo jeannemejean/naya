@@ -149,6 +149,7 @@ function stepForMessage(s: any) {
   return {
     id: s.id, channel: s.channel, intention: s.intention ?? null,
     condition: s.condition ?? "always", bodyTemplate: s.bodyTemplate ?? null,
+    role: s.role ?? null,
   };
 }
 

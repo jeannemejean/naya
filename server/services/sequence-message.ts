@@ -13,7 +13,13 @@
 import { storage } from "../storage";
 import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
 import { sanitizeMessage, enforceLinkedInLimit, parseJsonObject } from "./prospection-pipeline";
-import { roleEtapeLinkedin, premierConflit, normaliserTexte, branchesExclusives, type RoleEtapeLinkedin } from "./sequence-distinct";
+import { roleEtapeLinkedin, premierConflit, normaliserTexte, branchesExclusives } from "./sequence-distinct";
+import { blocDoctrine, limitePour, type RoleTouche, type Canal } from "./prospection/doctrine";
+import { controlerMessage, type Defaut } from "./prospection/qualite";
+import { relire } from "./prospection/relecture";
+import { lireBrief, briefActionnable, angleDeTouche, type BriefProspect } from "./prospection/brief";
+import { texteDePreuve, liensDePreuve } from "./prospection/preuves";
+import { choisirExemples } from "./prospection/exemples";
 
 /** Limite LinkedIn d'une note d'invitation (caractères). */
 export const LIMITE_NOTE_INVITATION = 300;
@@ -73,82 +79,89 @@ export function contexteProspect(lead: any, audit: Record<string, any>): string 
   return lignes.join("\n");
 }
 
-function reglesLinkedIn(role: RoleEtapeLinkedin | undefined, founderName: string): string {
-  switch (role) {
-    case "invitation":
-      return `- NOTE D'INVITATION LINKEDIN : MAXIMUM ${LIMITE_NOTE_INVITATION} caractères strict (limite LinkedIn).
-- Donne une raison sincère et personnelle de se connecter, ancrée dans un élément PRÉCIS et propre à ce prospect (une publication, un projet, un choix, un détail du contexte ci-dessus).
-- AUCUN pitch, AUCUNE offre, AUCUN lien, AUCUNE question sur ses besoins ou ses difficultés.
-- Signé : ${founderName}.`;
-    case "message_apres_acceptation":
-      return `- MESSAGE LINKEDIN APRÈS ACCEPTATION : MAXIMUM ${LIMITE_MESSAGE_LINKEDIN} caractères strict.
-- Remercie d'avoir accepté de façon naturelle, jamais formulaire (pas de « Merci pour l'ajout » ou « Merci d'avoir accepté mon invitation » tel quel).
-- Apporte UN point de valeur concret lié à ce prospect (une observation utile, une idée précise).
-- NE RÉPÈTE NI NE PARAPHRASE la note d'invitation : autre accroche, autre observation.
-- Termine par UNE seule question ouverte et sincère.
-- Signé : ${founderName}.`;
-    case "relance":
-      return `- RELANCE LINKEDIN : MAXIMUM ${LIMITE_MESSAGE_LINKEDIN} caractères strict, court.
-- Prends un angle NOUVEAU, jamais utilisé dans les messages précédents. Ne répète ni ne résume ce qui a déjà été dit.
-- Signé : ${founderName}.`;
-    default:
-      return `- MESSAGE LINKEDIN : MAXIMUM ${LIMITE_MESSAGE_LINKEDIN} caractères strict. Une accroche personnelle liée à la marque/la personne + une question sincère. Signé : ${founderName}.`;
+/**
+ * Rôle d'une touche : porté par l'étape (structures, depuis le 12/10/2026), sinon déduit pour
+ * les séquences anciennes (première touche LinkedIn = invitation, première touche email =
+ * ouverture, après acceptation = premier message, le reste = relance).
+ */
+export function roleDeTouche(steps: Array<{ channel: string; condition?: string | null; intention?: string | null; role?: string | null }>, index: number): RoleTouche {
+  const step = steps[index];
+  if (step?.role && ROLES.has(step.role)) return step.role as RoleTouche;
+  if (step?.channel === "linkedin") {
+    const r = roleEtapeLinkedin(steps as any, index);
+    if (r === "invitation") return "invitation";
+    if (r === "message_apres_acceptation") {
+      const dejaPremier = steps.slice(0, index).some((s, i) => s.channel === "linkedin" && roleEtapeLinkedin(steps as any, i) === "message_apres_acceptation");
+      return dejaPremier ? "relance" : "premier_message";
+    }
+    return "relance";
   }
+  const emailAvant = steps.slice(0, index).some((s) => s.channel === "email");
+  return emailAvant ? "relance" : "email_ouverture";
 }
 
-function intentionParDefaut(role?: RoleEtapeLinkedin): string {
-  if (role === "invitation") return "invitation à se connecter";
-  if (role === "message_apres_acceptation") return "premier message après acceptation de l'invitation";
-  if (role === "relance") return "relance";
-  return "prise de contact";
+const ROLES = new Set<string>(["invitation", "premier_message", "email_ouverture", "relance", "cloture"]);
+
+export class BriefIncompletError extends Error {
+  constructor(public leadId: number) {
+    super(`brief_incomplet: prospect ${leadId} sans déclencheur réel, aucun message rédigé`);
+  }
 }
 
 export function buildStepPrompt(args: {
   founderName: string; projectName: string; channel: string; intention: string;
   lead: any; audit: Record<string, string>; instructions?: string;
-  role?: RoleEtapeLinkedin | null; bodyTemplate?: string | null;
-  previousTexts?: string[]; conflit?: string | null;
+  role: RoleTouche; brief: BriefProspect; angle: string;
+  preuveTexte?: string | null; exemples?: string[];
+  bodyTemplate?: string | null; previousTexts?: string[]; conflit?: string | null;
+  defautsACorriger?: Defaut[];
 }): string {
-  const isLi = args.channel === "linkedin";
-  const role = isLi ? args.role ?? undefined : undefined;
-  const instructionsBlock = args.instructions?.trim()
-    ? `\nCONSIGNES DE RÉDACTION DE L'UTILISATEUR (impératives, à respecter absolument) :\n${args.instructions.trim()}\n`
-    : "";
-  const intention = args.intention?.trim() || intentionParDefaut(role);
-  const trame = !args.intention?.trim() && args.bodyTemplate?.trim()
-    ? `TRAME INDICATIVE DE L'ÉTAPE (guide l'intention, à réécrire entièrement sur-mesure, ne pas recopier) : ${tronquer(args.bodyTemplate, 600)}\n`
-    : "";
+  const canal: Canal = args.channel === "linkedin" ? "linkedin" : "email";
+  const b = args.brief;
   const contexte = contexteProspect(args.lead, args.audit);
+  const instructionsBlock = args.instructions?.trim()
+    ? `\nCONSIGNES DE RÉDACTION DE ${args.founderName.toUpperCase() || "L'UTILISATRICE"} (prioritaires sur la doctrine, sauf les règles de sécurité) :\n${args.instructions.trim()}\n`
+    : "";
+  const trame = !args.intention?.trim() && args.bodyTemplate?.trim()
+    ? `TRAME INDICATIVE (à réécrire entièrement) : ${tronquer(args.bodyTemplate, 600)}\n`
+    : "";
   const precedents = (args.previousTexts || []).map((t) => t?.trim()).filter(Boolean) as string[];
   const precedentsBlock = precedents.length
-    ? `\nMESSAGES DÉJÀ RÉDIGÉS OU ENVOYÉS À CE PROSPECT (ne répète ni ne paraphrase ces messages : ni la même accroche, ni la même observation, ni la même question, et ne commence PAS par la même tournure, par exemple « la façon dont votre… » reprise d'un message à l'autre) :\n${precedents.map((t, i) => `${i + 1}. « ${t} »`).join("\n")}\n`
+    ? `\nMESSAGES DÉJÀ RÉDIGÉS OU ENVOYÉS À CETTE PERSONNE (ne répète ni ne paraphrase : ni la même accroche, ni la même idée, ni la même tournure d'ouverture) :\n${precedents.map((t, i) => `${i + 1}. « ${t} »`).join("\n")}\n`
     : "";
   const conflitBlock = args.conflit?.trim()
-    ? `\nATTENTION : ta proposition précédente était beaucoup trop proche de ce message déjà rédigé pour ce prospect :\n« ${args.conflit.trim()} »\nÉcris un message RADICALEMENT différent : autre accroche, autre élément du contexte, autre formulation, autre question.\n`
+    ? `\nATTENTION : ta proposition précédente était beaucoup trop proche de ce message déjà rédigé :\n« ${args.conflit.trim()} »\nÉcris un message RADICALEMENT différent : autre accroche, autre formulation.\n`
     : "";
-  const quoi = isLi
-    ? role === "invitation" ? "une note d'invitation LinkedIn" : "un message LinkedIn"
-    : "un email";
-  return `Tu es Naya. Rédige ${quoi} de prospection sur-mesure.
+  const exemplesBlock = args.exemples?.length
+    ? `\nEXEMPLES DE LA FAÇON D'ÉCRIRE DE ${args.founderName.toUpperCase() || "L'UTILISATRICE"} (imite le ton, la longueur, la simplicité ; ne recopie jamais) :\n${args.exemples.map((e, i) => `${i + 1}. « ${tronquer(e, 700)} »`).join("\n")}\n`
+    : "";
+  const defautsBlock = args.defautsACorriger?.length
+    ? `\nÀ CORRIGER : ta version précédente avait ces défauts. Réécris en les supprimant :\n${args.defautsACorriger.map((d) => `- ${d.raison}`).join("\n")}\n`
+    : "";
+  const preuveBlock = args.preuveTexte?.trim()
+    ? `PREUVE À UTILISER (réelle, validée ; n'en change aucun fait) :\n${args.preuveTexte.trim()}\n`
+    : "PREUVE : aucune preuve pour ce prospect. N'évoque aucun client, chiffre, cas ou lien.\n";
+  const signature = canal === "linkedin" ? args.founderName : `${args.founderName}${args.projectName ? `, ${args.projectName}` : ""}`;
 
-PROSPECT : ${args.lead?.name || ""} — ${args.lead?.role || ""} @ ${args.lead?.company || ""}
-INTENTION DE CETTE ÉTAPE : ${intention}
-${trame}ANGLE (audit) : ${args.audit?.angle || ""}
-ENJEUX : ${args.audit?.enjeux || args.audit?.observations || ""}
-${contexte ? `CONTEXTE PROPRE À CE PROSPECT (appuie-toi sur un élément précis, différent d'un prospect à l'autre) :\n${contexte}\n` : ""}${instructionsBlock}${precedentsBlock}${conflitBlock}
-RÈGLES ABSOLUES :
-- Ton humain, curieux, jamais commercial. JAMAIS de tiret long.
-- N'invente JAMAIS et ne promets JAMAIS un lien, un article, une étude, un contenu, une ressource ou une pièce jointe. Ne prétends pas que l'expéditeur a écrit/publié/créé quelque chose. Le message vaut par une observation sincère et une question ouverte, pas par une ressource promise.
-- N'écris AUCUN placeholder entre crochets ([lien], [url], [prénom], [entreprise], ...). Tout doit être du texte final, prêt à envoyer.
-- Aucun tiret en guise de ponctuation : ni —, ni –, ni --. Utilise des virgules ou des points.
-- Appuie-toi sur ce que tu sais (ta marque, ton offre, la recherche déposée, ce que tu sais de l'expéditrice) seulement si cela éclaire CE prospect. Ne le récite pas, ne cite ni source ni étude.
-- Aucune ouverture générique ou passe-partout. Interdits notamment : ${CLICHES_INTERDITS.map((c) => `« ${c} »`).join(", ")}. La première phrase doit être impossible à envoyer à quelqu'un d'autre.
-${isLi
-  ? reglesLinkedIn(role, args.founderName)
-  : `- EMAIL : rédige un objet court et accrocheur, puis un corps de 5 à 8 phrases. Observation d'ouverture, angle, question ouverte. Signé : ${args.founderName} — ${args.projectName}.`}
+  return `Rédige ${canal === "linkedin" ? (args.role === "invitation" ? "la note d'invitation LinkedIn" : "le message LinkedIn") : "l'email"} de prospection de ${args.founderName || "l'expéditrice"} (${args.projectName}) pour cette touche.
+
+DESTINATAIRE : ${args.lead?.name || ""}, ${args.lead?.role || ""} chez ${args.lead?.company || ""}
+INTENTION DE LA TOUCHE : ${args.intention?.trim() || "voir la règle de la touche"}
+${trame}
+BRIEF
+Déclencheur réel : ${b.declencheur?.fait ?? ""}${b.declencheur?.date ? ` (${b.declencheur.date})` : ""}
+Raison de contacter : ${b.raison}
+Proposition : ${b.proposition.type} : ${b.proposition.contenu}
+ANGLE DE CETTE TOUCHE : ${args.angle}
+Registre : ${b.registre === "tu" ? "tutoiement" : "vouvoiement"} · Langue : ${b.langue}
+${preuveBlock}
+${contexte ? `CE QU'ON SAIT DE LA PERSONNE :\n${contexte}\n` : ""}${instructionsBlock}${exemplesBlock}${precedentsBlock}${conflitBlock}${defautsBlock}
+${blocDoctrine(args.role, canal)}
+
+Signature : ${signature}.
 
 Réponds UNIQUEMENT avec ce JSON :
-{${isLi ? '"body":"..."' : '"subject":"...","body":"..."'}}`;
+{${canal === "linkedin" ? '"body":"..."' : '"subject":"...","body":"..."'}}`;
 }
 
 /**
@@ -169,6 +182,7 @@ export interface StepForMessage {
   intention: string | null;
   condition?: string | null;
   bodyTemplate?: string | null;
+  role?: string | null;
 }
 
 export interface StepMessageResult {
@@ -180,6 +194,9 @@ export interface StepMessageResult {
    * l'aperçu l'affiche avec ce drapeau.
    */
   tropProche?: boolean;
+  /** true = le contrôle qualité a encore trouvé des défauts après une réécriture : jamais envoyé sans édition. */
+  aRevoir?: boolean;
+  defauts?: Defaut[];
 }
 
 function dedoublonner(textes: string[]): string[] {
@@ -252,7 +269,7 @@ export async function generateStepMessage(
   userId: string,
   opts: {
     lead: any; campaign: any; step: StepForMessage; useCache?: boolean; instructions?: string;
-    /** Toutes les étapes de la séquence, dans l'ordre (rôle LinkedIn + textes antérieurs). */
+    /** Toutes les étapes de la séquence, dans l'ordre (rôle + textes antérieurs). */
     steps?: StepForMessage[];
     /** Textes antérieurs déjà connus de l'appelant (ex. générés plus haut dans le même aperçu). */
     previousTexts?: string[];
@@ -260,11 +277,11 @@ export async function generateStepMessage(
     senderLastName?: string | null;
   },
 ): Promise<StepMessageResult> {
-  const steps = opts.steps;
-  const index = steps ? steps.findIndex((s) => s.id === opts.step.id) : -1;
-  const role = steps && index >= 0 ? roleEtapeLinkedin(steps as any, index) : null;
+  const steps = opts.steps && opts.steps.length ? opts.steps : [opts.step];
+  const index = Math.max(0, steps.findIndex((s) => s.id === opts.step.id));
+  const role = roleDeTouche(steps, index);
   const anterieurs = dedoublonner([
-    ...(await chargerTextesAnterieurs(userId, opts.lead.id, steps, index)),
+    ...(await chargerTextesAnterieurs(userId, opts.lead.id, opts.steps, opts.steps ? index : -1)),
     ...(opts.previousTexts || []),
   ]);
 
@@ -272,54 +289,116 @@ export async function generateStepMessage(
   const ctx = { neutres: neutresDuProspect(opts.lead, [founderName, opts.senderLastName]) };
 
   if (opts.useCache !== false) {
-    const cached = await storage.getLeadStepMessage(opts.lead.id, opts.step.id);
-    // Un texte édité à la main par l'utilisatrice est toujours respecté. Un texte généré
-    // (y compris avant ce correctif) trop proche d'un message antérieur est régénéré.
+    const cached: any = await storage.getLeadStepMessage(opts.lead.id, opts.step.id);
+    // Un texte édité à la main est toujours respecté. Un texte généré trop proche d'un
+    // message antérieur est régénéré. Un texte « à revoir » est resservi avec son drapeau.
     if (cached && (cached.edited || !premierConflit(cached.body, anterieurs, ctx))) {
-      return { subject: cached.subject ?? null, body: cached.body };
+      const aRevoir = !cached.edited && cached.qualite === "a_revoir";
+      return {
+        subject: cached.subject ?? null, body: cached.body,
+        ...(aRevoir ? { aRevoir: true, defauts: Array.isArray(cached.defauts) ? cached.defauts : [] } : {}),
+      };
     }
   }
-  const projectName = opts.campaign?.name || "";
-  const audit = safeAudit(opts.lead?.auditNotes);
-  const isLi = opts.step.channel === "linkedin";
-  const limite = role === "invitation" ? LIMITE_NOTE_INVITATION : LIMITE_MESSAGE_LINKEDIN;
 
-  const generer = async (conflit: string | null) => {
+  const brief = lireBrief(opts.lead?.prospectBrief);
+  if (!briefActionnable(brief)) throw new BriefIncompletError(opts.lead?.id);
+
+  // Rang de la touche sur SA branche : sert l'angle prévu et la notion de premier contact.
+  const rang = steps.slice(0, index).filter((s) => !branchesExclusives(s.condition, steps[index].condition)).length;
+  const res = await redigerTouche(userId, {
+    lead: opts.lead, campaign: opts.campaign, role, canal: opts.step.channel === "linkedin" ? "linkedin" : "email",
+    brief, rang, intention: opts.step.intention || "", bodyTemplate: opts.step.bodyTemplate ?? null,
+    previousTexts: anterieurs, instructions: opts.instructions ?? "", founderName, conflitCtx: ctx,
+  });
+  if (res.tropProche) {
+    // Jamais en cache : le prochain passage régénérera au lieu de resservir un doublon.
+    return { subject: res.subject, body: res.body, tropProche: true };
+  }
+  await storage.upsertLeadStepMessage({
+    leadId: opts.lead.id, stepId: opts.step.id, subject: res.subject, body: res.body, edited: false,
+    qualite: res.aRevoir ? "a_revoir" : "ok", defauts: res.defauts.length ? res.defauts : null,
+  } as any);
+  return {
+    subject: res.subject, body: res.body,
+    ...(res.aRevoir ? { aRevoir: true, defauts: res.defauts } : {}),
+  };
+}
+
+/**
+ * Rédige UNE touche à partir du brief, sans cache : génération, anti-doublon (une réécriture),
+ * contrôle qualité couches 1 et 2 (une réécriture avec les raisons). Utilisée par
+ * generateStepMessage (séquence) et par l'enrichissement (premières touches à valider).
+ */
+export async function redigerTouche(userId: string, a: {
+  lead: any; campaign: any; role: RoleTouche; canal: Canal; brief: BriefProspect; rang: number;
+  intention: string; bodyTemplate?: string | null; previousTexts: string[]; instructions: string;
+  founderName: string; conflitCtx?: { neutres: string[] };
+}): Promise<{ subject: string | null; body: string; defauts: Defaut[]; aRevoir: boolean; tropProche: boolean }> {
+  const projectId: number | null = a.campaign?.projectId ?? null;
+  const projectName = a.campaign?.projectName || a.campaign?.name || "";
+  const audit = safeAudit(a.lead?.auditNotes);
+
+  // Preuve : uniquement une preuve VALIDÉE du même projet.
+  let preuve: any = null;
+  if (a.brief.preuveId != null) {
+    const p: any = await storage.getProjectProof(a.brief.preuveId, userId).catch(() => undefined);
+    if (p && p.status === "validated" && (projectId == null || p.projectId === projectId)) preuve = p;
+  }
+  // Apprentissage : exemples et règles acceptées du projet (jamais d'un autre).
+  const [feedback, regles] = await Promise.all([
+    storage.getMessageFeedback(userId, projectId, { role: a.role, limit: 60 }).catch(() => []),
+    projectId != null ? storage.getLearnedRules(userId, projectId, "acceptee").catch(() => []) : Promise.resolve([]),
+  ]);
+  const exemples = choisirExemples(feedback as any, a.role);
+  const instructions = [a.instructions, ...(regles as any[]).map((r) => `- ${r.texte}`)].filter((x) => x && x.trim()).join("\n");
+  const liensAutorises = [...liensDePreuve(preuve), ...((instructions.match(/https?:\/\/\S+/g)) || [])];
+  const premiereTouche = a.rang === 0;
+  const limite = limitePour(a.role, a.canal).maxCaracteres ?? LIMITE_NOTE_INVITATION;
+
+  const ecrire = async (conflit: string | null, defauts: Defaut[]) => {
     const prompt = buildStepPrompt({
-      founderName, projectName, channel: opts.step.channel,
-      intention: opts.step.intention || "", lead: opts.lead, audit, instructions: opts.instructions,
-      role, bodyTemplate: opts.step.bodyTemplate ?? null, previousTexts: anterieurs, conflit,
+      founderName: a.founderName, projectName, channel: a.canal, intention: a.intention,
+      lead: a.lead, audit, instructions, role: a.role, brief: a.brief, angle: angleDeTouche(a.brief, a.rang),
+      preuveTexte: preuve ? texteDePreuve(preuve) : null, exemples, bodyTemplate: a.bodyTemplate ?? null,
+      previousTexts: a.previousTexts, conflit, defautsACorriger: defauts,
     });
-    // callClaudeWithContext, comme les messages à valider (prospection-pipeline) : Naya écrit
-    // en sachant qui elle est, ce qu'elle propose, sa voix, sa langue, et avec la mémoire
-    // pertinente pour ce prospect (dont les dossiers de recherche déposés, fil « savoir »).
     const raw = await callClaudeWithContext({
-      userId, projectId: opts.campaign?.projectId ?? null, userMessage: prompt,
-      model: CLAUDE_MODELS.smart, max_tokens: 900, temperature: 0.6,
+      userId, projectId, userMessage: prompt, model: CLAUDE_MODELS.smart, max_tokens: 900, temperature: 0.6,
+      destinataire: "tiers",
     });
     const p = parseJsonObject(raw);
-    const body = isLi
+    const body = a.canal === "linkedin"
       ? enforceLinkedInLimit(typeof p.body === "string" ? p.body : "", limite)
       : sanitizeMessage(typeof p.body === "string" ? p.body : "");
     if (!body.trim()) {
-      throw new Error(`generateStepMessage: corps vide pour lead ${opts.lead.id}, étape ${opts.step.id} (réponse IA non parsable) — non mis en cache`);
+      throw new Error(`redigerTouche: corps vide pour lead ${a.lead?.id} (réponse IA non parsable) — non mis en cache`);
     }
-    const subjectRaw = opts.step.channel === "email" && typeof p.subject === "string" ? p.subject.trim() : "";
-    return { subject: subjectRaw || null, body };
+    const subject = a.canal === "email" && typeof p.subject === "string" ? sanitizeMessage(p.subject.trim()) || null : null;
+    return { subject, body };
+  };
+  const controler = async (m: { subject: string | null; body: string }): Promise<Defaut[]> => {
+    const code = controlerMessage({ role: a.role, canal: a.canal, body: m.body, subject: m.subject }, {
+      entreprise: a.lead?.company ?? null, liensAutorises, premiereTouche,
+    });
+    if (code.length) return code;
+    return relire({ userId, projectId, role: a.role, body: m.body, subject: m.subject, brief: a.brief, premiereTouche });
   };
 
-  let res = await generer(null);
-  let conflit = premierConflit(res.body, anterieurs, ctx);
+  const ctx = a.conflitCtx ?? { neutres: [] };
+  let m = await ecrire(null, []);
+  let conflit = premierConflit(m.body, a.previousTexts, ctx);
   if (conflit) {
-    res = await generer(conflit);
-    conflit = premierConflit(res.body, anterieurs, ctx);
-    if (conflit) {
-      // Jamais en cache : le prochain passage régénérera au lieu de resservir un doublon.
-      return { subject: res.subject, body: res.body, tropProche: true };
-    }
+    m = await ecrire(conflit, []);
+    if (premierConflit(m.body, a.previousTexts, ctx)) return { ...m, defauts: [], aRevoir: false, tropProche: true };
   }
-  await storage.upsertLeadStepMessage({ leadId: opts.lead.id, stepId: opts.step.id, subject: res.subject, body: res.body, edited: false });
-  return { subject: res.subject, body: res.body };
+  let defauts = await controler(m);
+  if (defauts.length) {
+    m = await ecrire(null, defauts);
+    if (premierConflit(m.body, a.previousTexts, ctx)) return { ...m, defauts: [], aRevoir: false, tropProche: true };
+    defauts = await controler(m);
+  }
+  return { ...m, defauts, aRevoir: defauts.length > 0, tropProche: false };
 }
 
 function safeAudit(auditNotes: any): Record<string, string> {

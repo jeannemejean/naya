@@ -59,7 +59,7 @@ import {
 import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, sourcerCampagne, cibleDeCampagne, prospectsParJourDerive, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
-import { generateStepMessage, combineInstructions } from "./services/sequence-message";
+import { generateStepMessage, combineInstructions, BriefIncompletError } from "./services/sequence-message";
 import { etatGardeApercu } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
@@ -8532,6 +8532,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const allSteps = steps.map((s) => ({
         id: s.id, channel: s.channel, intention: s.intention ?? null,
         condition: s.condition ?? "always", bodyTemplate: (s as any).bodyTemplate ?? null,
+        role: (s as any).role ?? null,
       }));
       // Textes produits plus haut dans CET aperçu (y compris ceux signalés trop proches,
       // qui ne sont pas en cache) : l'étape suivante doit s'en distinguer aussi.
@@ -8549,15 +8550,17 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
             stepOrder: step.stepOrder, channel: step.channel, delayDays: step.delayDays,
             intention: step.intention ?? null, condition: step.condition ?? "always",
             subject: msg.subject, body: msg.body, error: false, tropProche: !!msg.tropProche,
+            stepId: step.id, aRevoir: !!msg.aRevoir, defauts: msg.defauts ?? [],
           });
         } catch (stepError: any) {
           // Une étape ratée (sortie IA vide/imparsable — non mise en cache) ne doit pas faire
           // échouer tout l'aperçu : on la marque error:true, l'UI proposera "régénérer".
-          console.error('[prospection/preview] step failed', step.id, stepError.message);
+          const briefIncomplet = stepError instanceof BriefIncompletError;
+          if (!briefIncomplet) console.error('[prospection/preview] step failed', step.id, stepError.message);
           rendered.push({
             stepOrder: step.stepOrder, channel: step.channel, delayDays: step.delayDays,
             intention: step.intention ?? null, condition: step.condition ?? "always",
-            subject: null, body: null, error: true,
+            subject: null, body: null, error: !briefIncomplet, briefIncomplet, stepId: step.id,
           });
         }
       }
