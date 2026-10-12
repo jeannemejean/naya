@@ -26,6 +26,12 @@ export type PreviewStep = {
   tropProche?: boolean;
   /** Étape sur laquelle le moteur a renoncé (trop de messages trop proches d'affilée). */
   bloqueParMoteur?: boolean;
+  /** Le contrôle qualité a encore trouvé des défauts : non envoyé tant qu'il n'est pas corrigé. */
+  aRevoir?: boolean;
+  defauts?: { code: string; raison: string }[];
+  /** Pas de déclencheur réel pour ce prospect : rien n'est rédigé. */
+  briefIncomplet?: boolean;
+  stepId?: number;
 };
 
 export type PreviewResponse = {

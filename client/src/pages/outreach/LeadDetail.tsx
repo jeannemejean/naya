@@ -25,6 +25,7 @@ import { attendValidation, estPretAPartir } from './validation-messages';
 import { STAGES, STAGE_MAP, type StageKey } from './stages';
 import { channelMeta } from './channels';
 import AuditView from './AuditView';
+import MessagesProspect from './MessagesProspect';
 
 interface LeadDetailProps {
   lead: Lead | null;
@@ -245,17 +246,13 @@ function SequenceTabContent({ lead, onCopy }: { lead: Lead; onCopy: (text: strin
     { key: 'email', channel: 'email', value: l.emailMessage || l.message2, label: 'Email personnalisé' },
   ].filter((m) => m.value);
 
-  if (messages.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground text-center py-10 max-w-xs mx-auto">
-        Aucun message généré pour ce prospect. Lance « Enrichir (IA) » depuis l'onglet Profil.
-      </p>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <ValidationMessages lead={lead} />
+  // Séquence sans étapes (ou pas encore rédigée) : on garde l'affichage des premiers messages.
+  const premiersMessages = messages.length === 0 ? (
+    <p className="text-xs text-muted-foreground text-center py-10 max-w-xs mx-auto">
+      Aucun message généré pour ce prospect. Lance « Enrichir (IA) » depuis l'onglet Profil.
+    </p>
+  ) : (
+    <>
       {messages.map(({ key, channel, value, label }) => {
         const meta = channelMeta(channel);
         const Icon = meta.Icon;
@@ -279,9 +276,13 @@ function SequenceTabContent({ lead, onCopy }: { lead: Lead; onCopy: (text: strin
           </div>
         );
       })}
-      <p className="text-xs text-muted-foreground text-center pt-1">
-        La séquence complète est visible dans l'aperçu de la campagne.
-      </p>
+    </>
+  );
+
+  return (
+    <div className="space-y-3">
+      <ValidationMessages lead={lead} />
+      <MessagesProspect lead={lead} fallback={premiersMessages} />
     </div>
   );
 }

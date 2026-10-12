@@ -361,7 +361,9 @@ function PreviewMessageCard({ step, onCopy, onRegenerate }: PreviewMessageCardPr
           )}
         </div>
 
-        {isUnavailable ? (
+        {step.briefIncomplet ? (
+          <p className="text-sm text-naya-olive-70 rounded-md bg-naya-olive-06 px-3 py-2.5">{t('ecriture.apercu.briefIncomplet')}</p>
+        ) : isUnavailable ? (
           <div className="flex items-center justify-between gap-3 rounded-md bg-naya-olive-06 px-3 py-2.5">
             <p className="text-sm text-naya-olive-55">Message indisponible.</p>
             <Button
@@ -388,6 +390,14 @@ function PreviewMessageCard({ step, onCopy, onRegenerate }: PreviewMessageCardPr
             )}
             {step.tropProche && (
               <p className="text-xs text-naya-olive-70">{t('outreach.previewTropProche')}</p>
+            )}
+            {step.aRevoir && (
+              <div className="rounded-md border border-naya-mauve/30 bg-naya-mauve/5 px-3 py-2">
+                <p className="text-xs font-semibold text-foreground">{t('ecriture.apercu.aRevoir')}</p>
+                <ul className="text-xs text-foreground/80 list-disc pl-4">
+                  {(step.defauts ?? []).map((d, i) => <li key={i}>{d.raison}</li>)}
+                </ul>
+              </div>
             )}
             <div className="flex items-center gap-1">
               <Button

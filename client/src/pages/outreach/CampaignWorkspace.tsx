@@ -11,6 +11,7 @@ import SequenceTab from './SequenceTab';
 import ProspectsTab from './ProspectsTab';
 import PreviewTab from './PreviewTab';
 import ResultsTab from './ResultsTab';
+import ApprentissagePanel from './ApprentissagePanel';
 import { ongletDepuisRecherche } from '@/lib/lien-tache';
 
 const ONGLETS = ['sequence', 'prospects', 'preview', 'results'] as const;
@@ -119,6 +120,9 @@ export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspa
 
             <TabsContent value="sequence" className="flex-1 overflow-y-auto m-0">
               <SequenceTab campaignId={id} />
+              <div className="px-6 pb-8 max-w-3xl">
+                <ApprentissagePanel projectId={(campaign as any)?.projectId ?? null} />
+              </div>
             </TabsContent>
 
             <TabsContent value="prospects" className="flex-1 overflow-y-auto m-0">

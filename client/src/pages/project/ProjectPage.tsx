@@ -13,6 +13,7 @@ import MilestoneRoadmap from "./MilestoneRoadmap";
 import ConversionsPanel from "./ConversionsPanel";
 import BrandLinksPanel from "./BrandLinksPanel";
 import LivrablesPanel from "./LivrablesPanel";
+import PreuvesPanel from "./PreuvesPanel";
 
 interface ProjectPageProps {
   id: number;
@@ -88,6 +89,10 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                 Feuille de route (ce qui est fait / à faire)
               </h2>
               <MilestoneRoadmap project={project} />
+            </section>
+
+            <section>
+              <PreuvesPanel projectId={id} />
             </section>
 
             <section>

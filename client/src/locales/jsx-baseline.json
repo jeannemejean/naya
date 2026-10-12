@@ -38,7 +38,7 @@
   "client/src/pages/outreach/dialogs/LeadFinderDialog.tsx": 17,
   "client/src/pages/outreach/dialogs/ProspectionAccessBar.tsx": 6,
   "client/src/pages/outreach/LeadCard.tsx": 2,
-  "client/src/pages/outreach/LeadDetail.tsx": 14,
+  "client/src/pages/outreach/LeadDetail.tsx": 13,
   "client/src/pages/outreach/OutreachHome.tsx": 2,
   "client/src/pages/outreach/PipelineBoard.tsx": 18,
   "client/src/pages/outreach/PreviewTab.tsx": 22,
