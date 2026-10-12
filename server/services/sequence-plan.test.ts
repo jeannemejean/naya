@@ -26,3 +26,34 @@ describe("parseSequencePlan", () => {
     expect(parseSequencePlan("pas du json")).toEqual({ rationale: "", steps: [] });
   });
 });
+
+import { planDepuisStructure } from "./sequence-plan";
+import { emplacements, verifierStructure } from "./prospection/sequence-structures";
+
+describe("planDepuisStructure", () => {
+  it("garde la forme de la structure et y pose les intentions de l'IA", () => {
+    const raw = `{"rationale":"LinkedIn d'abord.","intentions":["Invitation sur le lancement","Email avec le cas Maison X","Message avec l'idée de série","Relance avec un autre angle","Relance mail preuve","Clôture LinkedIn","Clôture mail"],"delais":[0,6,2,4,6,6,7]}`;
+    const plan = parseSequenceFromStructure(raw);
+    expect(plan.steps).toHaveLength(emplacements("linkedin_first").length);
+    expect(plan.steps[0].intention).toBe("Invitation sur le lancement");
+    expect(plan.steps[0].role).toBe("invitation");
+    expect(plan.steps[2].condition).toBe("if_invite_accepted");
+    expect(verifierStructure(plan.steps as any)).toEqual([]);
+  });
+
+  it("une réponse illisible donne des intentions par défaut, jamais une séquence vide", () => {
+    const plan = planDepuisStructure("email_first", "pas du json");
+    expect(plan.steps).toHaveLength(emplacements("email_first").length);
+    expect(plan.steps.every((s) => s.intention.length > 0)).toBe(true);
+  });
+
+  it("l'IA ne peut pas changer les conditions ni les canaux", () => {
+    const raw = `{"intentions":["a","b","c","d"],"steps":[{"channel":"linkedin","condition":"if_opened"}]}`;
+    const plan = planDepuisStructure("email_first", raw);
+    expect(plan.steps.every((s) => s.channel === "email" && s.condition === "always")).toBe(true);
+  });
+});
+
+function parseSequenceFromStructure(raw: string) {
+  return planDepuisStructure("linkedin_first", raw);
+}

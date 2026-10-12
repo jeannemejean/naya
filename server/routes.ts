@@ -132,6 +132,7 @@ import { parisHourOf, parisTodayString } from "./utils/timezone";
 import { generateGoalTasks } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
+const ROLES_TOUCHE = new Set(["invitation", "premier_message", "email_ouverture", "relance", "cloture"]);
 import { parseCsv, mapLeadRow } from "./services/csv";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
@@ -8707,6 +8708,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           bodyTemplate: typeof s.bodyTemplate === 'string' && s.bodyTemplate.trim() ? s.bodyTemplate : null,
           intention: typeof s.intention === 'string' && s.intention.trim() ? s.intention.trim() : null,
           condition: SEQUENCE_STEP_CONDITIONS.has(s.condition) ? s.condition : 'always',
+          role: ROLES_TOUCHE.has(s.role) ? s.role : null,
         }));
       const saved = await storage.replaceSequenceSteps(campaign.id, req.userId, cleaned);
       res.json(saved);
