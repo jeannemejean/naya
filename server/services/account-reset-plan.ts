@@ -115,6 +115,9 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "prospection_learned_rules", mode: "delete", note: "règles apprises" },
   { table: "routine_runs", mode: "delete", note: "journal des routines" },
   { table: "routines", mode: "delete", note: "routines planifiées (sourcing…)" },
+  { table: "veille_constats", mode: "delete", note: "veille : constats" },
+  { table: "veille_releves", mode: "delete", note: "veille : relevés" },
+  { table: "veille_items", mode: "delete", note: "veille : liste suivie" },
 
   // ── Phase 10 : projects ──────────────────────────────────────────────────────
   { table: "projects", mode: "delete" },

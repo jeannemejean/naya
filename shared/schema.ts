@@ -2067,3 +2067,58 @@ export const routineRuns = pgTable("routine_runs", {
 }));
 export type RoutineRun = typeof routineRuns.$inferSelect;
 export type InsertRoutineRun = typeof routineRuns.$inferInsert;
+
+// ─── Veille élargie (dossier Acquisition 360, étape 1) ─────────────────────────
+// La liste suivie d'un projet : la marque, ses concurrents, les requêtes « voix du client »,
+// les mots-clés dont on suit la position et les questions posées aux IA (GEO). Naya propose,
+// l'utilisatrice valide : seuls les éléments `suivi` sont relevés par les routines de veille.
+export const veilleItems = pgTable("veille_items", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  type: text("type").notNull(),                 // marque | concurrent | requete_voc | mot_cle | prompt_geo
+  libelle: text("libelle").notNull(),
+  valeur: jsonb("valeur"),                      // ex. concurrent : { site, instagram, variantes }
+  statut: text("statut").notNull().default("propose"), // propose | suivi | ecarte
+  source: text("source").notNull().default("naya"),    // naya | manuel
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  byProject: index("veille_items_project_idx").on(t.userId, t.projectId, t.type),
+}));
+export type VeilleItem = typeof veilleItems.$inferSelect;
+export type InsertVeilleItem = typeof veilleItems.$inferInsert;
+
+// Relevés bruts, comparables d'un passage à l'autre (même `cle`) : contenu d'un site
+// concurrent, positions d'un mot-clé, réponse d'une IA à un prompt, page déjà lue.
+export const veilleReleves = pgTable("veille_releves", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  kind: text("kind").notNull(),                 // veille_concurrents | veille_voix_client | veille_serp | veille_geo
+  cle: text("cle").notNull(),                   // url:<hash> | site:<itemId> | serp:<itemId> | geo:<moteur>:<itemId> | actu:<hash>
+  donnees: jsonb("donnees"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  byCle: index("veille_releves_cle_idx").on(t.userId, t.projectId, t.kind, t.cle),
+}));
+export type VeilleReleve = typeof veilleReleves.$inferSelect;
+export type InsertVeilleReleve = typeof veilleReleves.$inferInsert;
+
+// Ce qui compte : ce qui a changé ou ce qui a été appris. Injecté dans le contexte de Naya.
+export const veilleConstats = pgTable("veille_constats", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  kind: text("kind").notNull(),
+  type: text("type").notNull(),                 // objection | vocabulaire | attente | sujet | offre_concurrent | …
+  titre: text("titre").notNull(),
+  texte: text("texte").notNull(),
+  preuve: jsonb("preuve"),                      // { url, extrait, source }
+  statut: text("statut").notNull().default("nouveau"), // nouveau | vu | ecarte
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  byProject: index("veille_constats_project_idx").on(t.userId, t.projectId, t.createdAt),
+}));
+export type VeilleConstat = typeof veilleConstats.$inferSelect;
+export type InsertVeilleConstat = typeof veilleConstats.$inferInsert;

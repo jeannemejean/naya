@@ -169,6 +169,13 @@
       "when": 1791811133132,
       "tag": "0023_goofy_madripoor",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791837388789,
+      "tag": "0024_fat_dagger",
+      "breakpoints": true
     }
   ]
 }

@@ -134,6 +134,9 @@ import {
   projectProofs,
   routines,
   routineRuns,
+  veilleItems,
+  veilleReleves,
+  veilleConstats,
   prospectionMessageFeedback,
   prospectionLearnedRules,
   type LeadStepMessage,
@@ -143,6 +146,12 @@ import {
   type InsertRoutine,
   type RoutineRun,
   type InsertRoutineRun,
+  type VeilleItem,
+  type InsertVeilleItem,
+  type VeilleReleve,
+  type InsertVeilleReleve,
+  type VeilleConstat,
+  type InsertVeilleConstat,
   type InsertProjectProof,
   type ProspectionMessageFeedback,
   type InsertProspectionMessageFeedback,
@@ -507,6 +516,18 @@ export interface IStorage {
   prendreRoutine(id: number): Promise<boolean>;
   libererRoutine(id: number): Promise<void>;
   getRoutineRuns(routineId: number, userId: string, limit: number): Promise<RoutineRun[]>;
+  // Veille élargie
+  getVeilleItems(userId: string, projectId: number): Promise<VeilleItem[]>;
+  getVeilleItem(id: number, userId: string): Promise<VeilleItem | undefined>;
+  createVeilleItems(rows: InsertVeilleItem[]): Promise<VeilleItem[]>;
+  updateVeilleItem(id: number, userId: string, patch: Partial<InsertVeilleItem>): Promise<VeilleItem | null>;
+  deleteVeilleItem(id: number, userId: string): Promise<boolean>;
+  getRelevesParCles(userId: string, projectId: number, kind: string, cles: string[]): Promise<VeilleReleve[]>;
+  getDerniersReleves(userId: string, projectId: number, kind: string): Promise<VeilleReleve[]>;
+  addVeilleReleves(rows: InsertVeilleReleve[]): Promise<void>;
+  addVeilleConstats(rows: InsertVeilleConstat[]): Promise<VeilleConstat[]>;
+  getVeilleConstats(userId: string, projectId: number, opts?: { limite?: number; depuis?: Date; statuts?: string[] }): Promise<VeilleConstat[]>;
+  updateVeilleConstat(id: number, userId: string, patch: { statut: string }): Promise<VeilleConstat | null>;
   getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
   createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule>;
@@ -1873,6 +1894,75 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(routineRuns.debut)).limit(limit);
   }
 
+  // ─── Veille élargie ──────────────────────────────────────────────────────────
+  async getVeilleItems(userId: string, projectId: number): Promise<VeilleItem[]> {
+    return db.select().from(veilleItems)
+      .where(and(eq(veilleItems.userId, userId), eq(veilleItems.projectId, projectId)))
+      .orderBy(veilleItems.type, veilleItems.id);
+  }
+
+  async getVeilleItem(id: number, userId: string): Promise<VeilleItem | undefined> {
+    const [r] = await db.select().from(veilleItems).where(and(eq(veilleItems.id, id), eq(veilleItems.userId, userId)));
+    return r;
+  }
+
+  async createVeilleItems(rows: InsertVeilleItem[]): Promise<VeilleItem[]> {
+    if (rows.length === 0) return [];
+    return db.insert(veilleItems).values(rows).returning();
+  }
+
+  async updateVeilleItem(id: number, userId: string, patch: Partial<InsertVeilleItem>): Promise<VeilleItem | null> {
+    const { id: _i, userId: _u, projectId: _p, type: _t, createdAt: _c, ...rest } = patch as any;
+    const [r] = await db.update(veilleItems).set({ ...rest, updatedAt: new Date() })
+      .where(and(eq(veilleItems.id, id), eq(veilleItems.userId, userId))).returning();
+    return r ?? null;
+  }
+
+  async deleteVeilleItem(id: number, userId: string): Promise<boolean> {
+    const res = await db.delete(veilleItems).where(and(eq(veilleItems.id, id), eq(veilleItems.userId, userId)));
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async getRelevesParCles(userId: string, projectId: number, kind: string, cles: string[]): Promise<VeilleReleve[]> {
+    if (cles.length === 0) return [];
+    return db.select().from(veilleReleves)
+      .where(and(eq(veilleReleves.userId, userId), eq(veilleReleves.projectId, projectId),
+        eq(veilleReleves.kind, kind), inArray(veilleReleves.cle, cles)))
+      .orderBy(desc(veilleReleves.id));
+  }
+
+  /** Le relevé le plus récent de chaque clé d'un type de veille (tableaux GEO et SERP). */
+  async getDerniersReleves(userId: string, projectId: number, kind: string): Promise<VeilleReleve[]> {
+    const rows = await db.selectDistinctOn([veilleReleves.cle]).from(veilleReleves)
+      .where(and(eq(veilleReleves.userId, userId), eq(veilleReleves.projectId, projectId), eq(veilleReleves.kind, kind)))
+      .orderBy(veilleReleves.cle, desc(veilleReleves.id));
+    return rows;
+  }
+
+  async addVeilleReleves(rows: InsertVeilleReleve[]): Promise<void> {
+    if (rows.length === 0) return;
+    await db.insert(veilleReleves).values(rows);
+  }
+
+  async addVeilleConstats(rows: InsertVeilleConstat[]): Promise<VeilleConstat[]> {
+    if (rows.length === 0) return [];
+    return db.insert(veilleConstats).values(rows).returning();
+  }
+
+  async getVeilleConstats(userId: string, projectId: number, opts: { limite?: number; depuis?: Date; statuts?: string[] } = {}): Promise<VeilleConstat[]> {
+    const conds: SQL[] = [eq(veilleConstats.userId, userId), eq(veilleConstats.projectId, projectId)];
+    if (opts.depuis) conds.push(gte(veilleConstats.createdAt, opts.depuis));
+    if (opts.statuts?.length) conds.push(inArray(veilleConstats.statut, opts.statuts));
+    return db.select().from(veilleConstats).where(and(...conds))
+      .orderBy(desc(veilleConstats.id)).limit(opts.limite ?? 30);
+  }
+
+  async updateVeilleConstat(id: number, userId: string, patch: { statut: string }): Promise<VeilleConstat | null> {
+    const [r] = await db.update(veilleConstats).set({ statut: patch.statut })
+      .where(and(eq(veilleConstats.id, id), eq(veilleConstats.userId, userId))).returning();
+    return r ?? null;
+  }
+
   async getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]> {
     return db.select().from(prospectionCampaigns).where(eq(prospectionCampaigns.status, "active"));
   }
@@ -2724,6 +2814,9 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(prospectionMessageFeedback).where(eq(prospectionMessageFeedback.userId, userId));
       await tx.delete(prospectionLearnedRules).where(eq(prospectionLearnedRules.userId, userId));
       await tx.delete(routineRuns).where(eq(routineRuns.userId, userId));
+      await tx.delete(veilleConstats).where(eq(veilleConstats.userId, userId));
+      await tx.delete(veilleReleves).where(eq(veilleReleves.userId, userId));
+      await tx.delete(veilleItems).where(eq(veilleItems.userId, userId));
       await tx.delete(routines).where(eq(routines.userId, userId));
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────
