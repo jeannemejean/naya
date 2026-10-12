@@ -25,6 +25,18 @@ export const CLAUDE_MODELS = {
 export const NAYA_VOICE = NAYA_SYSTEM_VOICE;
 
 /**
+ * Voix quand Naya écrit AU NOM de l'utilisatrice à quelqu'un qui ne la connaît pas
+ * (prospection). Remplace NAYA_SYSTEM_VOICE, faite pour parler à l'utilisatrice (« tu »).
+ */
+export const VOIX_TIERS = `Tu écris AU NOM de l'utilisatrice décrite ci-dessous, à une personne qui ne la connaît pas. Ce n'est pas Naya qui parle : c'est elle, avec sa voix, comme elle l'écrirait elle-même en quelques minutes. Tu ne mentionnes jamais Naya ni une IA.`;
+
+/** PURE : system prompt selon le destinataire. */
+export function systemPromptPour(destinataire: "utilisatrice" | "tiers", contexte: string, extra: string): string {
+  const voix = destinataire === "tiers" ? VOIX_TIERS : NAYA_SYSTEM_VOICE;
+  return `${voix}\n\n${contexte}${extra ? `\n\n${extra}` : ""}`;
+}
+
+/**
  * Call Claude with full Naya context automatically injected.
  * Garde-fou : injecte toujours NAYA_SYSTEM_VOICE + buildNayaContext() dans le system.
  */
@@ -36,6 +48,8 @@ export async function callClaudeWithContext(options: {
   max_tokens?: number;
   temperature?: number;
   additionalSystemContext?: string;
+  /** `tiers` : rédaction au nom de l'utilisatrice pour un inconnu (voir buildNayaContext). */
+  destinataire?: "utilisatrice" | "tiers";
 }): Promise<string> {
   const {
     userId,
@@ -45,16 +59,15 @@ export async function callClaudeWithContext(options: {
     max_tokens = 4096,
     temperature,
     additionalSystemContext = "",
+    destinataire = "utilisatrice",
   } = options;
 
   // Build complete Naya context. Le userMessage sert de focusText (Phase 2) pour
   // récupérer la mémoire pertinente à la décision en cours.
-  const nayaContext = await buildNayaContext(userId, projectId, userMessage);
+  const nayaContext = await buildNayaContext(userId, projectId, userMessage, { destinataire });
 
   // Assemble system prompt with voice + context + optional additional context
-  const systemPrompt = `${NAYA_SYSTEM_VOICE}
-
-${nayaContext}${additionalSystemContext ? `\n\n${additionalSystemContext}` : ""}`;
+  const systemPrompt = systemPromptPour(destinataire, nayaContext, additionalSystemContext);
 
   return callClaude({
     model,

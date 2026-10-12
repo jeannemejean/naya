@@ -89,7 +89,7 @@ Réponds UNIQUEMENT avec ce JSON :
 {"rationale":"une phrase","intentions":["...", "..."],"delais":[0, ...]}`;
 
   const raw = await callClaudeWithContext({
-    userId, projectId, userMessage: prompt, model: CLAUDE_MODELS.smart, max_tokens: 1200, temperature: 0.5,
+    userId, projectId, userMessage: prompt, model: CLAUDE_MODELS.smart, max_tokens: 1200, temperature: 0.5, destinataire: "tiers",
   });
   return planDepuisStructure(nom, raw);
 }

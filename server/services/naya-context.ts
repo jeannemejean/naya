@@ -15,12 +15,25 @@ import { retrieveMemories } from "./memory/retrieve";
  *   Sert à récupérer la mémoire pertinente par similarité. Les appelants qui n'ont
  *   pas de focus naturel l'omettent (fallback fraîcheur) — aucun site d'appel cassé.
  */
+export interface OptionsContexte {
+  /**
+   * `utilisatrice` (défaut) : Naya parle à l'utilisatrice, contexte complet.
+   * `tiers` : Naya écrit AU NOM de l'utilisatrice à quelqu'un qui ne la connaît pas
+   * (prospection). Seule la marque et le savoir utile restent : ni objectifs ni consignes
+   * de tâches, ni jalons, ni énergie, ni mémoire de fondatrice, ni revue du jour. Ces
+   * sections fuyaient dans les messages envoyés à des inconnus.
+   */
+  destinataire?: "utilisatrice" | "tiers";
+}
+
 export async function buildNayaContext(
   userId: string,
   projectId?: number | null,
-  focusText?: string
+  focusText?: string,
+  options: OptionsContexte = {},
 ): Promise<string> {
   const sections: string[] = [];
+  const tiers = options.destinataire === "tiers";
 
   try {
     // Perf : lance la récupération mémoire EN PARALLÈLE des autres requêtes (au lieu de
@@ -91,7 +104,11 @@ Résumé intelligence Naya : ${(brandDna as any).nayaIntelligenceSummary || 'Pas
     }
 
     // Section 2 : Projet actif
-    if (project) {
+    if (project && tiers) {
+      sections.push(`## Projet : ${project.name}
+Positionnement (projet) : ${stratProfile?.uniquePositioning || 'Non renseigné'}
+Audience (projet) : ${stratProfile?.targetAudience || 'Non renseigné'}`);
+    } else if (project) {
       const topGoal = activeGoals[0];
       const p = project as any;
       const budgetLine = p.dailyTimeBudgetHours != null
@@ -115,7 +132,7 @@ Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}${statusNot
     }
 
     // Section 2b : Objectifs actifs avec score d'urgence dynamique
-    if (activeGoals.length > 0) {
+    if (!tiers && activeGoals.length > 0) {
       const goalsWithProgress = activeGoals.map(g => ({
         ...g,
         completedTasks: goalProgressMap[g.id]?.completed ?? 0,
@@ -131,7 +148,7 @@ Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}${statusNot
     }
 
     // Section 3 : Jalons du projet (règle absolue : jamais de tâches pour un jalon locked)
-    if (projectMilestonesList && projectMilestonesList.length > 0) {
+    if (!tiers && projectMilestonesList && projectMilestonesList.length > 0) {
       const active = projectMilestonesList.filter((m: any) => ['unlocked', 'active', 'completed'].includes(m.status));
       const locked = projectMilestonesList.filter((m: any) => m.status === 'locked');
       const lines: string[] = [];
@@ -147,7 +164,7 @@ Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}${statusNot
     }
 
     // Section 4 : Archétype utilisateur
-    if (userPersona?.analysisResult) {
+    if (!tiers && userPersona?.analysisResult) {
       const ar = userPersona.analysisResult as any;
       sections.push(`## Archétype utilisateur
 Persona : ${ar.personaName || 'Non détecté'}
@@ -169,7 +186,7 @@ Leviers de persuasion : ${(tp.persuasionDrivers || []).join(', ')}`);
     }
 
     // Section 6 : État fondateur aujourd'hui
-    if (energyPrefs) {
+    if (!tiers && energyPrefs) {
       sections.push(`## État fondateur aujourd'hui
 Niveau d'énergie : ${energyPrefs.currentEnergyLevel || 'high'}
 Contexte émotionnel : ${energyPrefs.currentEmotionalContext || 'Aucun'}
@@ -178,7 +195,7 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
 
     // Section 6b : Patterns comportementaux (si disponibles)
     const bp = (energyPrefs as any)?.behaviorPatterns;
-    if (bp) {
+    if (!tiers && bp) {
       const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       sections.push(formatBehaviorPatternsForContext(bp, todayName));
     }
@@ -190,14 +207,14 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
     const fmtMem = (arr: { content: string }[]) => arr.map((m) => `- ${m.content}`).join('\n');
     const memSubs: string[] = [];
     if (mem.cap.length) memSubs.push(`### Cap — ADN de la marque\n${fmtMem(mem.cap)}`);
-    if (mem.founder.length) memSubs.push(`### Fondateur — ta façon de travailler\n${fmtMem(mem.founder)}`);
+    if (!tiers && mem.founder.length) memSubs.push(`### Fondateur — ta façon de travailler\n${fmtMem(mem.founder)}`);
     if (mem.reception.length) memSubs.push(`### Réception — audience & marché\n${fmtMem(mem.reception)}`);
     // Dossiers de recherche deposes par l'utilisatrice. Sans cette ligne, ils seraient
     // stockes et vectorises sans jamais atteindre un seul appel IA.
     if ((mem as any).savoir?.length) memSubs.push(`### Ce qu'on t'a appris — recherche déposée\n${fmtMem((mem as any).savoir)}`);
     if (memSubs.length > 0) {
       sections.push(`## Mémoire pertinente\n${memSubs.join('\n\n')}`);
-    } else if (recentMemories && recentMemories.length > 0) {
+    } else if (!tiers && recentMemories && recentMemories.length > 0) {
       // Fallback : mémoire plate historique (compat).
       const memText = recentMemories
         .map((m: any) => `- [${m.type || 'mémoire'}] ${m.content}`)
@@ -220,7 +237,7 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
     // buildNayaContext, dont la Section 8 injecte « les fiches DU JOUR ». Ce n'est pas le
     // statut qui compte, c'est l'avis. La borne de date ci-dessous suffit à écarter le
     // rayonnage ancien : seules les fiches gardées AUJOURD'HUI entrent.
-    try {
+    if (!tiers) try {
       const debutDuJour = new Date();
       debutDuJour.setUTCHours(0, 0, 0, 0);
       const fiches = await db
