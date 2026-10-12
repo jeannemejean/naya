@@ -23,6 +23,8 @@ export interface ConstatBrut {
 export const LIMITES = {
   pagesVocParPassage: 8,
   instagramPostsMin: 4,
+  /** GEO hors propriétaire : une seule IA et 5 questions par passage (~0,65 € par mois). */
+  geoQuestionsStandard: 5,
 } as const;
 
 export const HEURE_VEILLE_UTC = 5;

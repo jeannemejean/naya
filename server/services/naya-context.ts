@@ -8,6 +8,8 @@ import { formatBehaviorPatternsForContext } from "./behavior-patterns";
 import { retrieveMemories } from "./memory/retrieve";
 import { blocVeille } from "./veille/contexte";
 
+const TYPES_VOC_CONTEXTE = ["objection", "vocabulaire", "attente", "sujet"];
+
 /**
  * Build complete Naya context for AI calls.
  * Injected into EVERY AI call via callClaudeWithContext().
@@ -283,13 +285,17 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
     }
 
     // Section 9 : la veille du marché (relevés réels : voix du client, concurrents, Google,
-    // réponses des IA). Gardée en mode tiers : les objections et les mots réels des clients
-    // servent aussi les messages de prospection, et rien n'y est personnel.
+    // réponses des IA). En mode tiers, la voix du client seule : les objections et les mots
+    // réels des clients servent les messages de prospection, et rien n'y est personnel.
     if (projectId) try {
       const constats = await storage.getVeilleConstats(userId, projectId, {
         limite: 20, depuis: new Date(Date.now() - 30 * 24 * 60 * 60_000), statuts: ['nouveau', 'vu'],
       });
-      const bloc = blocVeille(Array.isArray(constats) ? constats : []);
+      // En mode tiers (message à un inconnu) : seulement la voix du client. Les positions
+      // perdues de la marque ou l'actualité des concurrents n'ont rien à faire dans un message.
+      const liste = (Array.isArray(constats) ? constats : [])
+        .filter((c: any) => !tiers || TYPES_VOC_CONTEXTE.includes(c.type));
+      const bloc = blocVeille(liste);
       if (bloc) sections.push(bloc);
     } catch (err: any) {
       console.error('[Veille] section contexte échouée:', err?.message);

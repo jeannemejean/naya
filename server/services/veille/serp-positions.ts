@@ -23,10 +23,13 @@ export function comparerSerp(
 ): ConstatBrut[] {
   if (!prec) return [];
   const out: ConstatBrut[] = [];
+  // Une entité absente du relevé précédent (ajoutée ou reconfigurée depuis) part d'un point
+  // de départ : sa première position n'est pas un « mouvement ».
   const p = prec[ctx.marqueCle] ?? null;
   const c = cur[ctx.marqueCle] ?? null;
   const q = `« ${ctx.motCle} »`;
-  if (p == null && c != null) {
+  if (!(ctx.marqueCle in prec)) { /* point de départ de la marque */ }
+  else if (p == null && c != null) {
     out.push({ type: "position", titre: `Entrée dans le top 10`, texte: `Sur ${q}, tu apparais désormais en position ${c}.` });
   } else if (p != null && c == null) {
     out.push({ type: "position", titre: `Sortie du top 10`, texte: `Sur ${q}, tu n'es plus dans les 10 premiers résultats (tu étais ${p}e).` });
@@ -34,6 +37,7 @@ export function comparerSerp(
     out.push({ type: "position", titre: c < p ? `Gain de position` : `Perte de position`, texte: `Sur ${q}, tu passes de la position ${p} à la position ${c}.` });
   }
   for (const k of ctx.concurrents) {
+    if (!(k.cle in prec)) continue;
     const avant = prec[k.cle] ?? null;
     const apres = cur[k.cle] ?? null;
     if (apres != null && apres <= 3 && (avant == null || avant > 3)) {

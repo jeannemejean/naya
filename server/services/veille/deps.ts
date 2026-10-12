@@ -15,6 +15,7 @@ import { KIND_CONCURRENTS, KIND_VOIX_CLIENT, KIND_SERP, KIND_GEO } from "./types
 export const depsVeille: DepsVeille = {
   storage: storage as any,
   garde: gardeDepense,
+  illimite: async (userId) => (await storage.getUser(userId))?.role === "owner",
   bloque: isAiBlocked,
   chercher,
   lirePage,

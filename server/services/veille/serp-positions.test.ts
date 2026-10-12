@@ -41,3 +41,9 @@ describe("comparerSerp", () => {
 it("bilanSerp compte les requêtes où la marque est dans le top 10", () => {
   expect(bilanSerp([{ marque: 3 }, { marque: null }, { marque: 10 }], "marque")).toEqual({ presentes: 2, total: 3 });
 });
+
+it("comparerSerp ignore une entité absente du relevé précédent (ajoutée depuis)", () => {
+  const ctx = { motCle: "k", marqueCle: "marque", concurrents: [{ cle: "c1", nom: "Soleil" }] };
+  expect(comparerSerp({ c1: 5 }, { marque: 2, c1: 5 }, ctx)).toEqual([]);
+  expect(comparerSerp({ marque: 4 }, { marque: 4, c1: 1 }, ctx)).toEqual([]);
+});

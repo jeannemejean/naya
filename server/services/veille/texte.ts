@@ -57,3 +57,42 @@ export function positionMot(texte: string, mot: string): number {
   const i = t.indexOf(` ${m} `);
   return i;
 }
+
+/**
+ * Hébergeurs partagés : une page Instagram, Etsy ou Linktree n'est pas « le site » de la
+ * marque. Leur domaine ferait passer toute citation de la plateforme pour une citation de la
+ * marque (et le premier résultat Etsy pour sa position Google).
+ */
+const PLATEFORMES = [
+  "instagram.com", "facebook.com", "fb.com", "tiktok.com", "linkedin.com", "youtube.com", "pinterest.com", "x.com", "twitter.com",
+  "etsy.com", "linktr.ee", "linktree.com", "beacons.ai", "wixsite.com", "wordpress.com", "blogspot.com", "squarespace.com",
+  "myshopify.com", "carrd.co", "notion.site", "google.com", "sites.google.com", "amazon.fr", "amazon.com", "vinted.fr", "leboncoin.fr",
+];
+
+/** Domaine propre à la marque, ou null (absent, invalide, ou hébergé sur une plateforme partagée). */
+export function domaineSuivable(site: string | null | undefined): string | null {
+  const d = domaineDe(site);
+  if (!d) return null;
+  return PLATEFORMES.some((p) => d === p || d.endsWith(`.${p}`)) ? null : d;
+}
+
+const sansAccents = (s: string) => (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+const echapper = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Position d'un NOM PROPRE dans un texte : accents ignorés, mais casse respectée (ou tout
+ * en capitales), en mot entier. « Mouture » la marque n'est pas « une mouture fine » ;
+ * « Tour de Main » n'est pas « un tour de main ». -1 si absent.
+ */
+export function positionNom(texte: string, nom: string): number {
+  const n = sansAccents(nom).trim().replace(/\s+/g, " ");
+  if (!n) return -1;
+  const t = sansAccents(texte);
+  let best = -1;
+  for (const forme of Array.from(new Set([n, n.toUpperCase()]))) {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}])${echapper(forme).replace(/ /g, "\\s+")}(?![\\p{L}\\p{N}])`, "u");
+    const m = re.exec(t);
+    if (m && (best < 0 || m.index < best)) best = m.index;
+  }
+  return best;
+}

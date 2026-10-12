@@ -23,6 +23,7 @@ function deps(base: any, over: Partial<DepsVeille> = {}): DepsVeille {
   return {
     storage: base,
     garde: vi.fn(async () => null),
+    illimite: vi.fn(async () => true),
     bloque: vi.fn(async () => false),
     chercher: vi.fn(async () => []),
     lirePage: vi.fn(async () => null),
@@ -73,7 +74,10 @@ describe("veille concurrents", () => {
     expect(r.notifier).toBeFalsy();
   });
   it("site modifié : résumé du changement d'offre, constat et notification", async () => {
-    const base = fausseBase([soleil], [{ id: 1, kind: "veille_concurrents", cle: "site:3", donnees: { hash: empreinte("Coffret à 49 €"), extrait: "Coffret à 49 €" } }]);
+    const base = fausseBase([soleil], [
+      { id: 1, kind: "veille_concurrents", cle: "site:3", donnees: { hash: empreinte("Coffret à 49 €"), extrait: "Coffret à 49 €" } },
+      { id: 2, kind: "veille_concurrents", cle: "init:3", donnees: {} },
+    ]);
     const d = deps(base, {
       lirePage: vi.fn(async () => "Coffret à 39 € jusqu'à dimanche"), serpConfigure: () => false,
       ia: vi.fn(async () => '{"changement_commercial": true, "resume": "Coffret passé de 49 à 39 € jusqu\'à dimanche."}'),
@@ -87,7 +91,10 @@ describe("veille concurrents", () => {
   });
   it("actualité de la semaine : les articles déjà vus ne reviennent pas", async () => {
     const vu = "https://presse.fr/soleil-leve-des-fonds";
-    const base = fausseBase([it_(3, "concurrent", "Soleil")], [{ id: 1, kind: "veille_concurrents", cle: `actu:${empreinte(vu)}`, donnees: {} }]);
+    const base = fausseBase([it_(3, "concurrent", "Soleil")], [
+      { id: 1, kind: "veille_concurrents", cle: `actu:${empreinte(vu)}`, donnees: {} },
+      { id: 2, kind: "veille_concurrents", cle: "init:3", donnees: {} },
+    ]);
     const d = deps(base, { chercher: vi.fn(async () => [{ link: vu, title: "Soleil lève des fonds" }, { link: "https://presse.fr/soleil-ouvre", title: "Soleil ouvre une boutique", source: "Presse" }]) });
     await executerConcurrents(routine("veille_concurrents"), d);
     expect(base.constats.map((c: any) => c.type)).toEqual(["actu_concurrent"]);
@@ -204,4 +211,92 @@ it("routineVeillePour : hebdomadaire, une par projet et par type, premier passag
   const r = routineVeillePour("veille_geo", { userId: "u1", projectId: 7 }, maintenant);
   expect(r).toMatchObject({ kind: "veille_geo", cibleCle: "project:7", cible: { projectId: 7 }, cadence: "hebdomadaire", heureUtc: 5, actif: true });
   expect(r.prochainPassage.toISOString()).toBe("2026-10-13T05:00:00.000Z");
+});
+
+
+describe("corrections de la relecture", () => {
+  it("premier passage d'un concurrent : actualités et posts notés comme vus, sans avalanche ni notification", async () => {
+    const base = fausseBase([it_(3, "concurrent", "Soleil")]);
+    const d = deps(base, { lectureConfiguree: () => false, chercher: vi.fn(async () => [{ link: "https://presse.fr/a", title: "A" }, { link: "https://presse.fr/b", title: "B" }]) });
+    const r = await executerConcurrents(routine("veille_concurrents"), d);
+    expect(base.constats).toEqual([]);
+    expect(r.notifier).toBeFalsy();
+    expect(base.releves.map((x: any) => x.cle)).toEqual(expect.arrayContaining([`actu:${empreinte("https://presse.fr/a")}`, "init:3"]));
+  });
+
+  it("GEO pour une utilisatrice non propriétaire : une seule IA et 5 questions au plus par passage", async () => {
+    const prompts = Array.from({ length: 7 }, (_, i) => it_(10 + i, "prompt_geo", `Q${i}`));
+    const d = deps(fausseBase([it_(1, "marque", "Lune"), ...prompts]), {
+      illimite: vi.fn(async () => false), moteurs: () => ["openai", "perplexity"],
+      interroger: vi.fn(async () => ({ texte: "x", citations: [] })),
+    });
+    await executerGeo(routine("veille_geo"), d);
+    expect(d.interroger).toHaveBeenCalledTimes(5);
+    expect(new Set((d.interroger as any).mock.calls.map((c: any) => c[1]))).toEqual(new Set(["openai"]));
+  });
+
+  it("GEO : une IA qui échoue à chaque question est signalée dans le résumé", async () => {
+    const d = deps(fausseBase([it_(1, "marque", "Lune"), it_(6, "prompt_geo", "Q")]), {
+      moteurs: () => ["openai", "perplexity"],
+      interroger: vi.fn(async (_u: string, m: string) => { if (m === "perplexity") throw new Error("Perplexity : HTTP 401"); return { texte: "x", citations: [] }; }),
+    });
+    const r = await executerGeo(routine("veille_geo"), d);
+    expect(r.resume).toMatch(/Perplexity/);
+  });
+
+  it("GEO : un concurrent ajouté depuis le dernier relevé n'est pas une nouveauté", async () => {
+    const base = fausseBase([it_(1, "marque", "Lune"), it_(2, "concurrent", "Étoile"), it_(3, "concurrent", "Soleil"), it_(6, "prompt_geo", "Q")], [
+      { id: 1, kind: "veille_geo", cle: "geo:openai:6", donnees: { analyse: { citee: false, citeeDansSources: false, position: null, concurrentsCites: ["Étoile"], sources: [] }, config: { marque: "Lune||", concurrents: ["Étoile"] } } },
+    ]);
+    const d = deps(base, { interroger: vi.fn(async () => ({ texte: "Étoile et Soleil.", citations: [] })) });
+    await executerGeo(routine("veille_geo"), d);
+    expect(base.constats.filter((c: any) => c.type === "citation_geo")).toEqual([]);
+  });
+
+  it("GEO : les mêmes sources à travailler ne reviennent pas chaque semaine", async () => {
+    const base = fausseBase([it_(1, "marque", "Lune"), it_(2, "concurrent", "Étoile"), it_(6, "prompt_geo", "Q")], [
+      { id: 1, kind: "veille_geo", cle: "geo:openai:6", donnees: { analyse: { citee: false, citeeDansSources: false, position: null, concurrentsCites: ["Étoile"], sources: ["elle.fr"] }, config: { marque: "Lune||", concurrents: ["Étoile"] } } },
+      { id: 2, kind: "veille_geo", cle: "sources_geo", donnees: { domaines: ["elle.fr"] } },
+    ]);
+    const d = deps(base, { interroger: vi.fn(async () => ({ texte: "Étoile.", citations: ["https://elle.fr/x", "https://elle.fr/y"] })) });
+    const r = await executerGeo(routine("veille_geo"), d);
+    expect(base.constats).toEqual([]);
+    expect(r.notifier).toBeFalsy();
+  });
+
+  it("Google : la marque dont on ajoute le site repart d'un point de départ", async () => {
+    const base = fausseBase([it_(1, "marque", "Lune", { site: "lune.fr" }), it_(2, "concurrent", "Soleil", { site: "soleil.fr" }), it_(5, "mot_cle", "k")], [
+      { id: 1, kind: "veille_serp", cle: "serp:5", donnees: { positions: { marque: null, c2: 2 }, entites: { marque: null, c2: "soleil.fr" } } },
+    ]);
+    const d = deps(base, { chercher: vi.fn(async () => [{ link: "https://lune.fr", title: "x" }, { link: "https://soleil.fr", title: "y" }]) });
+    await executerSerp(routine("veille_serp"), d);
+    expect(base.constats).toEqual([]);
+  });
+
+  it("Google : une page Instagram n'est pas le site de la marque", async () => {
+    const d = deps(fausseBase([it_(1, "marque", "Lune", { site: "instagram.com/lune" }), it_(5, "mot_cle", "k")]));
+    const r = await executerSerp(routine("veille_serp"), d);
+    expect(r.statut).toBe("rien_a_faire");
+    expect(d.chercher).not.toHaveBeenCalled();
+  });
+
+  it("voix du client : lecture de pages non branchée → arrêt avant toute recherche payée", async () => {
+    const d = deps(fausseBase([it_(4, "requete_voc", "q")]), { lectureConfiguree: () => false });
+    const r = await executerVoixClient(routine("veille_voix_client"), d);
+    expect(r.statut).toBe("erreur");
+    expect(d.chercher).not.toHaveBeenCalled();
+  });
+
+  it("voix du client : lecture en panne ou analyse échouée → les pages ne sont pas consommées", async () => {
+    const links = [{ link: "https://reddit.com/r/b/1", title: "t" }];
+    const panne = fausseBase([it_(4, "requete_voc", "q")]);
+    await executerVoixClient(routine("veille_voix_client"), deps(panne, { chercher: vi.fn(async () => links), lirePage: vi.fn(async () => null) }));
+    expect(panne.releves).toEqual([]);
+    const ia = fausseBase([it_(4, "requete_voc", "q")]);
+    const r = await executerVoixClient(routine("veille_voix_client"), deps(ia, {
+      chercher: vi.fn(async () => links), lirePage: vi.fn(async () => "contenu"), ia: vi.fn(async () => { throw new Error("529"); }),
+    }));
+    expect(r.statut).toBe("erreur");
+    expect(ia.releves).toEqual([]);
+  });
 });

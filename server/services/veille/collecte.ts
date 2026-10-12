@@ -20,11 +20,9 @@ export async function lirePage(userId: string, url: string, maxChars = 4000): Pr
   return page?.content ?? null;
 }
 
-/** Pose une question à une IA (GEO). Coût imputé même si la réponse est ensuite illisible. */
+/** Pose une question à une IA (GEO). Coût imputé seulement pour une réponse obtenue : une clé refusée ne coûte rien. */
 export async function interroger(userId: string, moteur: Moteur, prompt: string): Promise<ReponseMoteur> {
-  try {
-    return await interrogerMoteur(moteur, prompt);
-  } finally {
-    recordSpend(userId, GEO_COST_EUR).catch(() => {});
-  }
+  const r = await interrogerMoteur(moteur, prompt);
+  recordSpend(userId, GEO_COST_EUR).catch(() => {});
+  return r;
 }

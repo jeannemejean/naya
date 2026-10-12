@@ -1,6 +1,7 @@
 /** Concurrents : engagement normalisé des posts Instagram, résumé d'un changement d'offre. PUR. */
 import { parseJsonObject } from "../prospection/textes";
 import { LIMITES } from "./types";
+import { anonymiser } from "./texte";
 
 export interface PostEngagement { url: string; taux: number; legende?: string }
 
@@ -18,7 +19,7 @@ export function engagementPosts(raw: any): PostEngagement[] {
     const likes = nombre(p?.likes) ?? nombre(p?.likes_count);
     if (likes == null || !p?.url) continue;
     const coms = nombre(p?.comments) ?? nombre(p?.num_comments) ?? 0;
-    const legende = typeof p?.caption === "string" ? p.caption.slice(0, 160) : undefined;
+    const legende = typeof p?.caption === "string" ? anonymiser(p.caption).slice(0, 160) || undefined : undefined;
     out.push({ url: String(p.url), taux: (likes + coms) / abonnes, ...(legende ? { legende } : {}) });
   }
   return out;

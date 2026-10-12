@@ -21,7 +21,10 @@ const valeurs: Record<string, any> = {
   getUserPreferences: { currentEnergyLevel: "low", currentEmotionalContext: "fatiguée" },
   getMilestones: [{ title: "Jalon", status: "locked" }],
   getTargetPersonas: [],
-  getVeilleConstats: [{ type: "objection", texte: "OBJECTION RELEVEE", kind: "veille_voix_client" }],
+  getVeilleConstats: [
+    { type: "objection", texte: "OBJECTION RELEVEE", kind: "veille_voix_client" },
+    { type: "position", texte: "POSITION PERDUE", kind: "veille_serp" },
+  ],
 };
 vi.mock("../storage", () => ({
   storage: new Proxy({} as any, { get: (_t, k: string) => async () => valeurs[k] }),
@@ -48,6 +51,7 @@ describe("buildNayaContext, mode tiers", () => {
     const c = await buildNayaContext("u1", 7, "prospect", { destinataire: "tiers" });
     expect(c).toContain("Veille du marché");
     expect(c).toContain("OBJECTION RELEVEE");
+    expect(c).not.toContain("POSITION PERDUE");
   });
 
   it("retire tâches, jalons, énergie, mémoire de fondatrice et revue du jour", async () => {
@@ -65,5 +69,6 @@ describe("buildNayaContext, mode tiers", () => {
     expect(c).toContain("Instruction absolue");
     expect(c).toContain("La revue du jour");
     expect(c).toContain("OBJECTION RELEVEE");
+    expect(c).toContain("POSITION PERDUE");
   });
 });

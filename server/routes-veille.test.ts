@@ -86,6 +86,32 @@ describe("routes de la veille", () => {
     expect((await r.json()).message).toBe("plafond");
   });
 
+  it("réajouter un élément écarté le remet en suivi (avec son nouveau site), sans 409", async () => {
+    storageMock.getVeilleItems.mockResolvedValue([{ ...ITEM, type: "marque", libelle: "Mouture", statut: "ecarte" }]);
+    const r = await appel("POST", "/api/veille/7/items", { type: "marque", libelle: "mouture", valeur: { site: "mouture.fr" } });
+    expect(r.status).toBe(200);
+    expect(storageMock.updateVeilleItem).toHaveBeenCalledWith(3, "user-1", expect.objectContaining({ statut: "suivi", valeur: { site: "mouture.fr" } }));
+    expect(storageMock.createVeilleItems).not.toHaveBeenCalled();
+  });
+
+  it("les propositions en attente ne bloquent pas un ajout à la main", async () => {
+    storageMock.getVeilleItems.mockResolvedValue(Array.from({ length: 5 }, (_, i) => ({ ...ITEM, id: i + 10, libelle: `C${i}`, statut: "propose" })));
+    expect((await appel("POST", "/api/veille/7/items", { type: "concurrent", libelle: "Nouveau" })).status).toBe(201);
+  });
+
+  it("identifiant non numérique : 404, pas d'erreur serveur", async () => {
+    expect((await appel("PATCH", "/api/veille/items/abc", { statut: "suivi" })).status).toBe(404);
+    expect((await appel("DELETE", "/api/veille/items/abc")).status).toBe(404);
+    expect((await appel("PATCH", "/api/veille/constats/abc", { statut: "vu" })).status).toBe(404);
+    expect(storageMock.getVeilleItem).not.toHaveBeenCalled();
+  });
+
+  it("lancer une veille jamais activée : la routine est créée en pause, puis le passage a lieu", async () => {
+    await appel("POST", "/api/veille/7/routines/veille_geo/run");
+    expect(storageMock.ensureRoutine).toHaveBeenCalledWith(expect.objectContaining({ kind: "veille_geo", actif: false }));
+    expect(exec.executerUne).toHaveBeenCalled();
+  });
+
   it("400 sur un corps invalide", async () => {
     expect((await appel("POST", "/api/veille/7/items", { type: "espion", libelle: "x" })).status).toBe(400);
     expect((await appel("PATCH", "/api/veille/constats/4", { statut: "publie" })).status).toBe(400);

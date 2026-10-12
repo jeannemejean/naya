@@ -11,8 +11,8 @@ import type { SerpOptions, SerpResult } from "../serp";
 import type { ResultatPassage } from "../routines/types";
 import { prochainPassageApres } from "../routines/temps";
 import { suivis } from "./items";
-import { domaineDe, empreinte } from "./texte";
-import { analyserReponse, comparerGeo, sourcesATravailler, bilanGeo, type AnalyseGeo, type Entite } from "./geo-analyse";
+import { domaineDe, domaineSuivable, empreinte } from "./texte";
+import { analyserReponse, comparerGeo, sourcesATravailler, bilanGeo, nomMoteur, type AnalyseGeo, type Entite } from "./geo-analyse";
 import { positions, comparerSerp, bilanSerp, type Positions } from "./serp-positions";
 import { engagementPosts, contenusForts, lireResumeOffre } from "./concurrents-analyse";
 import { lireConstatsVoc, dedoublonnerConstats } from "./voc-analyse";
@@ -33,6 +33,8 @@ export interface DepsVeille {
   };
   /** Accès et budget avant toute dépense (null : permis). */
   garde(userId: string): Promise<ResultatPassage | null>;
+  /** Propriétaire : pas de plafond de questions GEO (jamais bloquée par le budget). */
+  illimite(userId: string): Promise<boolean>;
   /** Budget atteint en cours de passage : on s'arrête. */
   bloque(userId: string): Promise<boolean>;
   chercher(userId: string, requete: string, opts: SerpOptions): Promise<SerpResult[]>;
@@ -87,13 +89,14 @@ async function preparer(
 function entiteMarque(ctx: Contexte): Entite & { domaine: string | null } {
   const m = ctx.items.find((i) => i.type === "marque" && i.statut !== "ecarte");
   const v: any = m?.valeur || {};
-  return { nom: m?.libelle || ctx.projet?.name || "", variantes: v.variantes || [], domaine: domaineDe(v.site) };
+  // Une page Instagram, Etsy ou Linktree n'est pas le site de la marque (domaine partagé).
+  return { nom: m?.libelle || ctx.projet?.name || "", variantes: v.variantes || [], domaine: domaineSuivable(v.site) };
 }
 
 function entitesConcurrents(ctx: Contexte) {
   return suivis(ctx.items, "concurrent").map((c) => {
     const v: any = c.valeur || {};
-    return { cle: `c${c.id}`, nom: c.libelle, variantes: v.variantes || [], domaine: domaineDe(v.site) };
+    return { cle: `c${c.id}`, nom: c.libelle, variantes: v.variantes || [], domaine: domaineSuivable(v.site) };
   });
 }
 
@@ -158,9 +161,15 @@ export async function executerConcurrents(routine: Routine, deps: DepsVeille): P
   let essais = 0, echecs = 0;
   let derniereErreur: string | null = null;
 
+  // Premier passage d'un concurrent : on note ce qui existe déjà (actualités, posts) comme vu,
+  // sans en faire des « nouveautés » : la veille signale ce qui change, pas l'état des lieux.
+  const inities = await derniers(ctx, kind, cibles.map((c) => `init:${c.id}`));
+  let nouveaux = 0;
   for (const c of cibles) {
     if (await deps.bloque(ctx.userId)) break;
     const v: any = c.valeur || {};
+    const premier = !inities.has(`init:${c.id}`);
+    if (premier) { nouveaux++; releves.push(releve(ctx, kind, `init:${c.id}`, {})); }
 
     // a) Le site : un changement commercial depuis la semaine dernière ?
     if (v.site && deps.lectureConfiguree()) {
@@ -196,9 +205,10 @@ export async function executerConcurrents(routine: Routine, deps: DepsVeille): P
         const vus = await derniers(ctx, kind, cles);
         let n = 0;
         res.forEach((r, i) => {
-          if (vus.has(cles[i]) || n >= 3) return;
-          n++;
+          if (vus.has(cles[i])) return;
           releves.push(releve(ctx, kind, cles[i], { titre: r.title }));
+          if (premier || n >= 3) return;
+          n++;
           constats.push({
             type: "actu_concurrent", titre: `${c.libelle} dans l'actualité`,
             texte: `${r.title}${r.source ? ` (${r.source})` : ""}`, preuve: { url: r.link, source: r.source },
@@ -222,6 +232,7 @@ export async function executerConcurrents(routine: Routine, deps: DepsVeille): P
         forts.forEach((p, i) => {
           if (vus.has(cles[i])) return;
           releves.push(releve(ctx, kind, cles[i], { taux: p.taux }));
+          if (premier) return;
           constats.push({
             type: "contenu_fort", titre: `Un post fort de ${c.libelle}`,
             texte: `Engagement de ${(p.taux * 100).toFixed(1)} %, plus du double de sa moyenne.${p.legende ? ` « ${p.legende} »` : ""}`,
@@ -235,7 +246,9 @@ export async function executerConcurrents(routine: Routine, deps: DepsVeille): P
   await deps.storage.addVeilleReleves(releves);
   const details = { concurrents: cibles.length, essais, echecs };
   if (essais > 0 && echecs === essais) return panne(kind, derniereErreur, details);
-  return conclure(kind, ctx, constats, details, "Rien de nouveau chez tes concurrents cette semaine.");
+  return conclure(kind, ctx, constats, details, nouveaux > 0
+    ? "Point de départ enregistré : Naya signalera les nouveautés de tes concurrents à partir du prochain passage."
+    : "Rien de nouveau chez tes concurrents cette semaine.");
 }
 
 // ─── 2. Voix du client ────────────────────────────────────────────────────────
@@ -258,6 +271,8 @@ export async function executerVoixClient(routine: Routine, deps: DepsVeille): Pr
   const { ctx, cibles } = d;
   const kind = KIND_VOIX_CLIENT;
   if (!deps.serpConfigure()) return panne(kind, "Bright Data non configuré", {});
+  // Sans lecture de pages, chercher ne servirait à rien : on ne paie pas les recherches.
+  if (!deps.lectureConfiguree()) return panne(kind, "lecture de pages non configurée", {});
 
   const liens: string[] = [];
   let echecs = 0;
@@ -290,8 +305,8 @@ export async function executerVoixClient(routine: Routine, deps: DepsVeille): Pr
     releves.push(releve(ctx, kind, `url:${empreinte(url)}`, { lu: !!contenu }));
     if (contenu) pages.push({ url, contenu: contenu.slice(0, 3000) });
   }
-  await deps.storage.addVeilleReleves(releves);
   details.lues = pages.length;
+  // Lecture en panne : rien n'est noté, ces pages seront retentées la semaine prochaine.
   if (pages.length === 0) return panne(kind, "aucune page lisible", details);
 
   let constats: ConstatBrut[] = [];
@@ -305,8 +320,10 @@ export async function executerVoixClient(routine: Routine, deps: DepsVeille): Pr
       type: c.type, titre: TITRE_VOC[c.type], texte: c.texte, preuve: { url: c.url, extrait: c.verbatim || undefined },
     }));
   } catch (e: any) {
+    // Analyse échouée : les pages ne sont pas notées comme lues, elles seront reprises.
     return { statut: "erreur", resume: "L'analyse des discussions a échoué : Naya réessaiera la semaine prochaine.", details: { ...details, raison: e?.message } };
   }
+  await deps.storage.addVeilleReleves(releves);
   return conclure(kind, ctx, constats, details, "Rien de neuf dans ce que disent les clients cette semaine.");
 }
 
@@ -320,6 +337,7 @@ export async function executerSerp(routine: Routine, deps: DepsVeille): Promise<
   const marque = entiteMarque(ctx);
   const concurrents = entitesConcurrents(ctx);
   const entites = [{ cle: "marque", domaine: marque.domaine }, ...concurrents];
+  const domaines: Record<string, string | null> = Object.fromEntries(entites.map((e) => [e.cle, e.domaine]));
   if (entites.every((e) => !e.domaine)) {
     return { statut: "rien_a_faire", resume: "Ajoute le site de ta marque (ou de tes concurrents) pour suivre les positions Google." };
   }
@@ -339,8 +357,8 @@ export async function executerSerp(routine: Routine, deps: DepsVeille): Promise<
       const res = await deps.chercher(ctx.userId, k.libelle, OPTS_RECHERCHE);
       const pos = positions(res, entites);
       toutes.push(pos);
-      releves.push(releve(ctx, kind, cles[i], { positions: pos, top: res.slice(0, 10).map((r) => domaineDe(r.link)) }));
-      constats.push(...comparerSerp(prec.get(cles[i])?.positions ?? null, pos, { motCle: k.libelle, marqueCle: "marque", concurrents }));
+      releves.push(releve(ctx, kind, cles[i], { positions: pos, entites: domaines, top: res.slice(0, 10).map((r) => domaineDe(r.link)) }));
+      constats.push(...comparerSerp(comparables(prec.get(cles[i]), domaines), pos, { motCle: k.libelle, marqueCle: "marque", concurrents }));
     } catch (e: any) {
       echecs++;
       derniereErreur = e?.message || String(e);
@@ -356,6 +374,20 @@ export async function executerSerp(routine: Routine, deps: DepsVeille): Promise<
   return conclure(kind, ctx, constats, details, "Positions Google stables cette semaine.");
 }
 
+/**
+ * Positions précédentes réellement comparables : une entité dont le site a changé (ou qui a été
+ * ajoutée) depuis le dernier relevé en est retirée, et repart d'un point de départ.
+ */
+function comparables(prec: any, domaines: Record<string, string | null>): Positions | null {
+  if (!prec?.positions) return null;
+  if (!prec.entites) return prec.positions;
+  const out: Positions = {};
+  for (const [cle, pos] of Object.entries(prec.positions as Positions)) {
+    if (cle in domaines && prec.entites[cle] === domaines[cle]) out[cle] = pos;
+  }
+  return out;
+}
+
 // ─── 4. Réponses des IA (GEO) ─────────────────────────────────────────────────
 
 export async function executerGeo(routine: Routine, deps: DepsVeille): Promise<ResultatPassage> {
@@ -363,12 +395,22 @@ export async function executerGeo(routine: Routine, deps: DepsVeille): Promise<R
   if ("fin" in d) return d.fin;
   const { ctx, cibles } = d;
   const kind = KIND_GEO;
-  const moteurs = deps.moteurs();
+  let moteurs = deps.moteurs();
   if (moteurs.length === 0) return panne(kind, "aucune IA branchée (clé OpenAI ou Perplexity absente)", {});
+  // Budget : hors propriétaire, une seule IA et quelques questions par passage, pour que la
+  // veille ne consomme pas à elle seule le budget du mois (et ne bloque pas le reste de Naya).
+  let questions = cibles;
+  if (!(await deps.illimite(ctx.userId))) {
+    moteurs = moteurs.slice(0, 1);
+    questions = cibles.slice(0, LIMITES.geoQuestionsStandard);
+  }
   const marque = entiteMarque(ctx);
   const concurrents = entitesConcurrents(ctx);
+  // Configuration au moment du relevé : une marque reconfigurée ou un concurrent ajouté depuis
+  // ne sont pas des « changements » des réponses.
+  const config = { marque: `${marque.nom}|${(marque.variantes || []).join(",")}|${marque.domaine || ""}`, concurrents: concurrents.map((c) => c.nom) };
 
-  const paires = cibles.flatMap((p) => moteurs.map((m) => ({ p, m, cle: `geo:${m}:${p.id}` })));
+  const paires = questions.flatMap((p) => moteurs.map((m) => ({ p, m, cle: `geo:${m}:${p.id}` })));
   const prec = await derniers(ctx, kind, paires.map((x) => x.cle));
   const premierPassage = prec.size === 0;
   const constats: ConstatBrut[] = [];
@@ -376,36 +418,58 @@ export async function executerGeo(routine: Routine, deps: DepsVeille): Promise<R
   const analyses: AnalyseGeo[] = [];
   let echecs = 0, essais = 0;
   let derniereErreur: string | null = null;
+  const parMoteur = new Map<string, { essais: number; echecs: number; raison: string | null }>();
   for (const { p, m, cle } of paires) {
     if (await deps.bloque(ctx.userId)) break;
     essais++;
+    const st = parMoteur.get(m) ?? { essais: 0, echecs: 0, raison: null };
+    st.essais++;
+    parMoteur.set(m, st);
     try {
       const rep = await deps.interroger(ctx.userId, m, p.libelle);
       const a = analyserReponse(rep, marque, concurrents);
       analyses.push(a);
-      releves.push(releve(ctx, kind, cle, { analyse: a, texte: rep.texte.slice(0, 1500), citations: rep.citations.slice(0, 15) }));
-      constats.push(...comparerGeo(prec.get(cle)?.analyse ?? null, a, p.libelle, m));
+      releves.push(releve(ctx, kind, cle, { analyse: a, config, texte: rep.texte.slice(0, 1500), citations: rep.citations.slice(0, 15) }));
+      const avant = prec.get(cle);
+      constats.push(...comparerGeo(avant?.analyse ?? null, a, p.libelle, m, {
+        marqueComparable: !avant?.config || avant.config.marque === config.marque,
+        concurrentsAvant: avant?.config?.concurrents,
+      }));
     } catch (e: any) {
       echecs++;
-      derniereErreur = e?.message || String(e);
+      st.echecs++;
+      st.raison = e?.message || String(e);
+      derniereErreur = st.raison;
     }
   }
-  await deps.storage.addVeilleReleves(releves);
-  const details = { questions: cibles.length, moteurs, essais, echecs };
-  if (essais > 0 && echecs === essais) return panne(kind, derniereErreur, details);
+  const details = { questions: questions.length, moteurs, essais, echecs };
+  if (essais > 0 && echecs === essais) { await deps.storage.addVeilleReleves(releves); return panne(kind, derniereErreur, details); }
 
-  const sources = sourcesATravailler(analyses);
-  if (sources.length > 0) {
-    const texte = `Quand tes concurrents sont cités sans toi, les IA s'appuient sur : ${sources.map((s) => `${s.domaine} (${s.n})`).join(", ")}. Y être présente (article, avis, comparatif) aide à être citée.`;
-    const connus = (await deps.storage.getVeilleConstats(ctx.userId, ctx.projectId, { limite: 50 }))
-      .filter((c) => c.kind === kind).map((c) => c.texte);
-    for (const c of dedoublonnerConstats(connus, [{ texte }])) {
-      constats.push({ type: "source_geo", titre: "Les sources à travailler pour les IA", texte: c.texte });
+  // Sources à travailler : signalées quand la liste des domaines change, pas chaque semaine.
+  if (analyses.length > 0) {
+    const sources = sourcesATravailler(analyses);
+    const domaines = sources.map((x) => x.domaine).sort();
+    const avant = (await derniers(ctx, kind, ["sources_geo"])).get("sources_geo");
+    const memes = Array.isArray(avant?.domaines) && avant.domaines.length === domaines.length
+      && avant.domaines.every((d: string, i: number) => d === domaines[i]);
+    releves.push(releve(ctx, kind, "sources_geo", { domaines }));
+    if (sources.length > 0 && !memes) {
+      constats.push({
+        type: "source_geo", titre: "Les sources à travailler pour les IA",
+        texte: `Quand tes concurrents sont cités sans toi, les IA s'appuient sur : ${sources.map((x) => `${x.domaine} (${x.n})`).join(", ")}. Y être présente (article, avis, comparatif) aide à être citée.`,
+      });
     }
   }
   if (premierPassage && analyses.length > 0) {
     const b = bilanGeo(analyses);
     constats.unshift({ type: "bilan_geo", titre: "Point de départ dans les réponses des IA", texte: `Ta marque est citée dans ${b.citees} des ${b.total} réponses obtenues.` });
   }
-  return conclure(kind, ctx, constats, details, "Les réponses des IA n'ont pas bougé cette semaine.");
+  await deps.storage.addVeilleReleves(releves);
+  const res = await conclure(kind, ctx, constats, details, "Les réponses des IA n'ont pas bougé cette semaine.");
+  // Une IA qui n'a répondu à aucune question (clé refusée…) est signalée, même si l'autre a marché.
+  const enPanne = Array.from(parMoteur).filter(([, st]) => st.essais > 0 && st.echecs === st.essais);
+  if (enPanne.length > 0) {
+    res.resume += ` ${enPanne.map(([m, st]) => `${nomMoteur(m)} n'a pas répondu (${st.raison}).`).join(" ")}`;
+  }
+  return res;
 }

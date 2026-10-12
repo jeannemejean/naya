@@ -31,7 +31,10 @@ async function assurerRoutine(userId: string, projectId: number, type: string) {
   await storage.ensureRoutine(routineVeillePour(kind, { userId, projectId }, new Date()) as any);
 }
 
-const actifs = (items: any[], type: string) => items.filter((i) => i.type === type && i.statut !== "ecarte");
+const suivisDe = (items: any[], type: string) => items.filter((i) => i.type === type && i.statut === "suivi");
+
+/** Identifiant de ressource : entier positif, sinon null (→ 404, jamais une erreur SQL). */
+const idDe = (v: unknown) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 
 export function registerVeilleRoutes(app: Express) {
   app.get("/api/veille/:projectId", isAuthenticated, async (req: any, res) => {
@@ -100,10 +103,16 @@ export function registerVeilleRoutes(app: Express) {
       if (!v.ok) return res.status(400).json({ message: v.erreur });
       const { type, libelle, valeur } = v.valeur as { type: TypeItem; libelle: string; valeur?: Record<string, unknown> };
       const existants = await storage.getVeilleItems(req.userId, projet.id);
-      if (existants.some((e) => e.type === type && normaliser(e.libelle) === normaliser(libelle))) {
-        return res.status(409).json({ message: "deja_present" });
+      // Le plafond porte sur ce qui est suivi : des propositions en attente ne bloquent pas un ajout.
+      if (suivisDe(existants, type).length >= PLAFONDS[type]) return res.status(409).json({ message: "plafond" });
+      const doublon = existants.find((e) => e.type === type && normaliser(e.libelle) === normaliser(libelle));
+      if (doublon && doublon.statut !== "ecarte" && doublon.statut !== "propose") return res.status(409).json({ message: "deja_present" });
+      if (doublon) {
+        // Écarté ou proposé : on le reprend, avec ce qui vient d'être saisi (un site, par exemple).
+        const repris = await storage.updateVeilleItem(doublon.id, req.userId, { libelle, statut: "suivi", ...(valeur ? { valeur } : {}) } as any);
+        await assurerRoutine(req.userId, projet.id, type);
+        return res.json(repris);
       }
-      if (actifs(existants, type).length >= PLAFONDS[type]) return res.status(409).json({ message: "plafond" });
       // Ajouté à la main = choisi : suivi d'emblée.
       const [cree] = await storage.createVeilleItems([{
         userId: req.userId, projectId: projet.id, type, libelle, valeur: valeur ?? null, statut: "suivi", source: "manuel",
@@ -117,7 +126,8 @@ export function registerVeilleRoutes(app: Express) {
 
   app.patch("/api/veille/items/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const item = await storage.getVeilleItem(Number(req.params.id), req.userId);
+      const id = idDe(req.params.id);
+      const item = id ? await storage.getVeilleItem(id, req.userId) : undefined;
       if (!item) return res.status(404).json({ message: "not_found" });
       const v = validerItem(req.body, { partiel: true });
       if (!v.ok) return res.status(400).json({ message: v.erreur });
@@ -136,7 +146,8 @@ export function registerVeilleRoutes(app: Express) {
 
   app.delete("/api/veille/items/:id", isAuthenticated, async (req: any, res) => {
     try {
-      const ok = await storage.deleteVeilleItem(Number(req.params.id), req.userId);
+      const id = idDe(req.params.id);
+      const ok = id ? await storage.deleteVeilleItem(id, req.userId) : false;
       if (!ok) return res.status(404).json({ message: "not_found" });
       res.json({ ok: true });
     } catch (e: any) {
@@ -166,7 +177,8 @@ export function registerVeilleRoutes(app: Express) {
       const projet = await projetDe(req);
       const kind = kindDe(req);
       if (!projet || !kind) return res.status(404).json({ message: "not_found" });
-      const routine = await storage.ensureRoutine(routineVeillePour(kind, { userId: req.userId, projectId: projet.id }, new Date()) as any);
+      // Une veille jamais activée est créée en pause : lancer un passage n'active pas la routine.
+      const routine = await storage.ensureRoutine(routineVeillePour(kind, { userId: req.userId, projectId: projet.id }, new Date(), false) as any);
       const r = await executerUne(routine, REGISTRE[kind]);
       if (r.dejaEnCours) return res.status(409).json({ message: "deja_en_cours" });
       res.json(r);
@@ -177,8 +189,10 @@ export function registerVeilleRoutes(app: Express) {
 
   app.patch("/api/veille/constats/:id", isAuthenticated, async (req: any, res) => {
     try {
+      const id = idDe(req.params.id);
+      if (!id) return res.status(404).json({ message: "not_found" });
       if (!(STATUTS_CONSTAT as readonly string[]).includes(req.body?.statut)) return res.status(400).json({ message: "statut_invalide" });
-      const c = await storage.updateVeilleConstat(Number(req.params.id), req.userId, { statut: req.body.statut });
+      const c = await storage.updateVeilleConstat(id, req.userId, { statut: req.body.statut });
       if (!c) return res.status(404).json({ message: "not_found" });
       res.json(c);
     } catch (e: any) {

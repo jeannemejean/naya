@@ -15,7 +15,7 @@ export function lireConstatsVoc(raw: string, urlsLues: Set<string>): ConstatVoc[
   const out: ConstatVoc[] = [];
   for (const x of xs) {
     if (!TYPES_VOC.includes(x?.type)) continue;
-    const texte = typeof x?.texte === "string" ? x.texte.trim().slice(0, 280) : "";
+    const texte = typeof x?.texte === "string" ? anonymiser(x.texte) : "";
     const url = typeof x?.url === "string" ? x.url.trim() : "";
     if (!texte || !urlsLues.has(url)) continue;
     out.push({ type: x.type, texte, verbatim: anonymiser(typeof x?.verbatim === "string" ? x.verbatim : ""), url });

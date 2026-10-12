@@ -2,7 +2,7 @@
  * GEO : la marque est-elle citée dans la réponse d'une IA, à quelle position, à côté de qui,
  * sur la base de quelles sources. PUR — aucun appel IA : on lit le texte et les citations.
  */
-import { domaineDe, memeDomaine, positionMot } from "./texte";
+import { domaineDe, memeDomaine, positionNom } from "./texte";
 import type { ConstatBrut } from "./types";
 
 export interface Entite { nom: string; variantes?: string[]; domaine?: string | null }
@@ -19,7 +19,7 @@ export interface AnalyseGeo {
 /** Première mention d'une entité dans le texte (nom ou variante de 3 caractères et plus). */
 function premiereMention(texte: string, e: Entite): number {
   const noms = [e.nom, ...(e.variantes || [])].filter((n) => (n || "").trim().length >= 3);
-  const pos = noms.map((n) => positionMot(texte, n)).filter((i) => i >= 0);
+  const pos = noms.map((n) => positionNom(texte, n)).filter((i) => i >= 0);
   return pos.length ? Math.min(...pos) : -1;
 }
 
@@ -47,17 +47,27 @@ export function analyserReponse(r: ReponseIA, marque: Entite, concurrents: Entit
 const NOM_MOTEUR: Record<string, string> = { openai: "ChatGPT", perplexity: "Perplexity" };
 export const nomMoteur = (m: string) => NOM_MOTEUR[m] || m;
 
-/** Ce qui a changé pour un même prompt et un même moteur, d'un passage à l'autre. */
-export function comparerGeo(prec: AnalyseGeo | null, cur: AnalyseGeo, prompt: string, moteur: string): ConstatBrut[] {
+/**
+ * Ce qui a changé pour un même prompt et un même moteur, d'un passage à l'autre. Une liste
+ * modifiée n'est pas un changement du marché : la marque reconfigurée (`marqueComparable`
+ * faux) et les concurrents ajoutés depuis (absents de `concurrentsAvant`) repartent d'un
+ * point de départ.
+ */
+export function comparerGeo(
+  prec: AnalyseGeo | null, cur: AnalyseGeo, prompt: string, moteur: string,
+  opts: { marqueComparable?: boolean; concurrentsAvant?: string[] } = {},
+): ConstatBrut[] {
   if (!prec) return [];
+  const marqueComparable = opts.marqueComparable !== false;
   const ia = nomMoteur(moteur);
   const out: ConstatBrut[] = [];
-  if (!prec.citee && cur.citee) {
+  if (marqueComparable && !prec.citee && cur.citee) {
     out.push({ type: "citation_geo", titre: `${ia} te cite désormais`, texte: `À la question « ${prompt} », ${ia} cite maintenant ta marque${cur.position ? ` (position ${cur.position})` : ""}.` });
-  } else if (prec.citee && !cur.citee) {
+  } else if (marqueComparable && prec.citee && !cur.citee) {
     out.push({ type: "citation_geo", titre: `${ia} ne te cite plus`, texte: `À la question « ${prompt} », ${ia} ne cite plus ta marque.` });
   }
-  const nouveaux = cur.concurrentsCites.filter((c) => !prec.concurrentsCites.includes(c));
+  const nouveaux = cur.concurrentsCites.filter((c) =>
+    !prec.concurrentsCites.includes(c) && (!opts.concurrentsAvant || opts.concurrentsAvant.includes(c)));
   if (nouveaux.length) {
     out.push({ type: "citation_geo", titre: `Nouveau concurrent cité par ${ia}`, texte: `À la question « ${prompt} », ${ia} cite désormais ${nouveaux.join(", ")}.` });
   }

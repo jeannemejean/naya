@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Radar, Sparkles, Loader2, Check, X, Plus, ExternalLink, Eye } from "lucide-react";
+import { Radar, Sparkles, Loader2, Check, X, Plus, ExternalLink, Eye, Pencil } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 import { useProject } from "@/lib/project-context";
 import { useToast } from "@/hooks/use-toast";
@@ -185,33 +185,8 @@ function GroupeItems({ type, projectId, items, onChange }: { type: TypeItem; pro
       {items.length === 0 && <p className="text-xs text-muted-foreground italic">{t("veille.liste.vide")}</p>}
       <ul className="space-y-1.5">
         {items.map((i) => (
-          <li key={i.id} className="flex items-start justify-between gap-2 text-sm">
-            <div className="min-w-0">
-              <span className={i.statut === "suivi" ? "text-foreground" : "text-muted-foreground"}>{i.libelle}</span>
-              {(i.valeur?.site || i.valeur?.instagram) && (
-                <span className="block text-[11px] text-muted-foreground truncate">
-                  {[i.valeur?.site, i.valeur?.instagram].filter(Boolean).join(" · ")}
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              {i.statut === "propose" ? (
-                <>
-                  <Badge variant="outline" className="text-[10px]">{t("veille.liste.propose")}</Badge>
-                  <Button size="sm" variant="ghost" className="h-7 px-2 gap-1 text-xs" disabled={statut.isPending}
-                    onClick={() => statut.mutate({ id: i.id, s: "suivi" })}>
-                    <Check className="w-3.5 h-3.5" />{t("veille.liste.suivre")}
-                  </Button>
-                </>
-              ) : (
-                <Badge variant="secondary" className="text-[10px]">{t("veille.liste.suivi")}</Badge>
-              )}
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={t("veille.liste.ecarter")} title={t("veille.liste.ecarter")}
-                disabled={statut.isPending} onClick={() => statut.mutate({ id: i.id, s: "ecarte" })}>
-                <X className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          </li>
+          <LigneItem key={i.id} item={i} type={type} enCours={statut.isPending}
+            onStatut={(st) => statut.mutate({ id: i.id, s: st })} onChange={onChange} onErreur={erreur} />
         ))}
       </ul>
       <form className="flex flex-col gap-1.5" onSubmit={(e) => { e.preventDefault(); if (libelle.trim()) ajouter.mutate(); }}>
@@ -234,11 +209,85 @@ function GroupeItems({ type, projectId, items, onChange }: { type: TypeItem; pro
   );
 }
 
+function LigneItem({ item: i, type, enCours, onStatut, onChange, onErreur }: {
+  item: Item; type: TypeItem; enCours: boolean;
+  onStatut: (s: Item["statut"]) => void; onChange: () => void; onErreur: (e: unknown) => void;
+}) {
+  const { t } = useTranslation();
+  const [edition, setEdition] = useState(false);
+  const [site, setSite] = useState(i.valeur?.site ?? "");
+  const [instagram, setInstagram] = useState(i.valeur?.instagram ?? "");
+  const [variantes, setVariantes] = useState((i.valeur?.variantes ?? []).join(", "));
+  const enregistrer = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/veille/items/${i.id}`, {
+      valeur: {
+        ...(site.trim() ? { site: site.trim() } : {}),
+        ...(instagram.trim() ? { instagram: instagram.trim() } : {}),
+        variantes: variantes.split(",").map((v) => v.trim()).filter(Boolean),
+      },
+    }),
+    onSuccess: () => { setEdition(false); onChange(); },
+    onError: onErreur,
+  });
+  const editable = AVEC_SITE.includes(type);
+
+  return (
+    <li className="text-sm space-y-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <span className={i.statut === "suivi" ? "text-foreground" : "text-muted-foreground"}>{i.libelle}</span>
+          {(i.valeur?.site || i.valeur?.instagram) && (
+            <span className="block text-[11px] text-muted-foreground truncate">
+              {[i.valeur?.site, i.valeur?.instagram].filter(Boolean).join(" · ")}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {i.statut === "propose" ? (
+            <>
+              <Badge variant="outline" className="text-[10px]">{t("veille.liste.propose")}</Badge>
+              <Button size="sm" variant="ghost" className="h-7 px-2 gap-1 text-xs" disabled={enCours} onClick={() => onStatut("suivi")}>
+                <Check className="w-3.5 h-3.5" />{t("veille.liste.suivre")}
+              </Button>
+            </>
+          ) : (
+            <Badge variant="secondary" className="text-[10px]">{t("veille.liste.suivi")}</Badge>
+          )}
+          {editable && (
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={t("veille.liste.modifier")} title={t("veille.liste.modifier")}
+              onClick={() => setEdition((x) => !x)}>
+              <Pencil className="w-3.5 h-3.5" />
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={t("veille.liste.ecarter")} title={t("veille.liste.ecarter")}
+            disabled={enCours} onClick={() => onStatut("ecarte")}>
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      </div>
+      {edition && (
+        <form className="flex flex-col gap-1.5" onSubmit={(e) => { e.preventDefault(); enregistrer.mutate(); }}>
+          <Input value={site} onChange={(e) => setSite(e.target.value)} className="h-8 text-xs" placeholder={t("veille.liste.site")} />
+          {type === "concurrent" && (
+            <Input value={instagram} onChange={(e) => setInstagram(e.target.value)} className="h-8 text-xs" placeholder={t("veille.liste.instagram")} />
+          )}
+          <Input value={variantes} onChange={(e) => setVariantes(e.target.value)} className="h-8 text-xs" placeholder={t("veille.liste.variantes")} />
+          <div className="flex justify-end">
+            <Button type="submit" size="sm" className="h-7 text-xs" disabled={enregistrer.isPending}>{t("veille.liste.enregistrer")}</Button>
+          </div>
+        </form>
+      )}
+    </li>
+  );
+}
+
 function Constats({ constats, onChange }: { constats: Constat[]; onChange: () => void }) {
   const { t, i18n } = useTranslation();
+  const { toast } = useToast();
   const statut = useMutation({
     mutationFn: ({ id, s }: { id: number; s: "vu" | "ecarte" }) => apiRequest("PATCH", `/api/veille/constats/${id}`, { statut: s }),
     onSuccess: onChange,
+    onError: () => toast({ title: t("veille.erreurs.generique"), variant: "destructive" }),
   });
   return (
     <section className="space-y-3">

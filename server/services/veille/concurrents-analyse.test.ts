@@ -6,7 +6,7 @@ describe("engagement Instagram", () => {
     followers: 1000,
     posts: [
       { url: "p1", likes: 20, comments: 0 }, { url: "p2", likes: 25, comments: 5 },
-      { url: "p3", likes_count: 30, num_comments: 0 }, { url: "p4", likes: 150, comments: 30 },
+      { url: "p3", likes_count: 30, num_comments: 0 }, { url: "p4", likes: 150, comments: 30, caption: "Merci @julie.b pour la photo" },
       { url: "p5", likes: "abc" },
     ],
   };
@@ -14,6 +14,7 @@ describe("engagement Instagram", () => {
     const p = engagementPosts(raw);
     expect(p.map((x) => x.url)).toEqual(["p1", "p2", "p3", "p4"]);
     expect(p[3].taux).toBeCloseTo(0.18);
+    expect(p[3].legende).not.toContain("julie");
   });
   it("sans abonnés connus, aucun taux", () => {
     expect(engagementPosts({ posts: raw.posts })).toEqual([]);

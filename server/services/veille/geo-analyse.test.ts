@@ -63,3 +63,21 @@ describe("sources et bilan", () => {
     expect(bilanGeo(analyses)).toEqual({ citees: 1, total: 4 });
   });
 });
+
+describe("analyse : les noms courants ne passent plus pour des citations", () => {
+  it("« mouture » en minuscules n'est pas la marque Mouture", () => {
+    const a = analyserReponse({ texte: "Prenez une mouture fine.", citations: [] }, { nom: "Mouture", variantes: [], domaine: "mouture.fr" }, []);
+    expect(a.citee).toBe(false);
+  });
+});
+
+describe("comparerGeo : une liste modifiée n'est pas un changement", () => {
+  const base = { citee: false, citeeDansSources: false, position: null, concurrentsCites: [] as string[], sources: [] };
+  it("un concurrent ajouté depuis le dernier relevé n'est pas « nouvellement cité »", () => {
+    const c = comparerGeo(base, { ...base, concurrentsCites: ["Soleil & Co"] }, "Q", "openai", { concurrentsAvant: ["Étoile"] });
+    expect(c).toEqual([]);
+  });
+  it("la marque reconfigurée (site, variantes) repart d'un point de départ", () => {
+    expect(comparerGeo(base, { ...base, citee: true }, "Q", "openai", { marqueComparable: false })).toEqual([]);
+  });
+});

@@ -38,3 +38,34 @@ describe("texte de veille", () => {
     expect(contientMot("rien", "")).toBe(false);
   });
 });
+
+import { domaineSuivable, positionNom } from "./texte";
+
+describe("domaine suivable", () => {
+  it("un site propre est suivi ; une page de plateforme partagée ne l'est pas", () => {
+    expect(domaineSuivable("https://www.mouture.fr")).toBe("mouture.fr");
+    expect(domaineSuivable("instagram.com/mouture")).toBeNull();
+    expect(domaineSuivable("https://www.etsy.com/shop/tourdemain")).toBeNull();
+    expect(domaineSuivable("linktr.ee/garance")).toBeNull();
+    expect(domaineSuivable("garance.wixsite.com/resto")).toBeNull();
+    expect(domaineSuivable(null)).toBeNull();
+  });
+});
+
+describe("positionNom : un nom propre, pas un mot courant", () => {
+  it("respecte la casse du nom, pas les accents", () => {
+    expect(positionNom("Le café Mouture torréfie à Lyon", "Mouture")).toBeGreaterThanOrEqual(0);
+    expect(positionNom("Choisissez une mouture fine pour l'espresso", "Mouture")).toBe(-1);
+    expect(positionNom("Etoile est connue", "Étoile")).toBe(0);
+    expect(positionNom("un tour de main rapide", "Tour de Main")).toBe(-1);
+    expect(positionNom("l'atelier Tour de Main", "Tour de Main")).toBeGreaterThan(0);
+  });
+  it("accepte le nom écrit tout en capitales, et les noms avec ponctuation", () => {
+    expect(positionNom("MOUTURE est top", "Mouture")).toBe(0);
+    expect(positionNom("Soleil & Co aussi", "Soleil & Co")).toBe(0);
+  });
+  it("mot entier seulement", () => {
+    expect(positionNom("Lunettes", "Lune")).toBe(-1);
+    expect(positionNom("rien", "")).toBe(-1);
+  });
+});

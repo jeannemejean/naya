@@ -849,6 +849,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(id: number, userId: string): Promise<boolean> {
+    // La veille du projet part avec lui (pas de clé étrangère : nettoyage explicite).
+    await db.delete(veilleConstats).where(and(eq(veilleConstats.projectId, id), eq(veilleConstats.userId, userId)));
+    await db.delete(veilleReleves).where(and(eq(veilleReleves.projectId, id), eq(veilleReleves.userId, userId)));
+    await db.delete(veilleItems).where(and(eq(veilleItems.projectId, id), eq(veilleItems.userId, userId)));
     const result = await db.delete(projects)
       .where(and(eq(projects.id, id), eq(projects.userId, userId)));
     return (result.rowCount ?? 0) > 0;
@@ -1923,12 +1927,13 @@ export class DatabaseStorage implements IStorage {
     return (res.rowCount ?? 0) > 0;
   }
 
+  /** Le relevé le plus récent de chacune des clés demandées (l'historique ne sert pas). */
   async getRelevesParCles(userId: string, projectId: number, kind: string, cles: string[]): Promise<VeilleReleve[]> {
     if (cles.length === 0) return [];
-    return db.select().from(veilleReleves)
+    return db.selectDistinctOn([veilleReleves.cle]).from(veilleReleves)
       .where(and(eq(veilleReleves.userId, userId), eq(veilleReleves.projectId, projectId),
         eq(veilleReleves.kind, kind), inArray(veilleReleves.cle, cles)))
-      .orderBy(desc(veilleReleves.id));
+      .orderBy(veilleReleves.cle, desc(veilleReleves.id));
   }
 
   /** Le relevé le plus récent de chaque clé d'un type de veille (tableaux GEO et SERP). */
