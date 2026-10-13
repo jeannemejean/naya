@@ -197,6 +197,13 @@
       "when": 1791902008008,
       "tag": "0027_careful_franklin_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791905441046,
+      "tag": "0028_fair_boomer",
+      "breakpoints": true
     }
   ]
 }

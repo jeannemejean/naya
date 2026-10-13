@@ -2209,3 +2209,27 @@ export const connexionsProjet = pgTable("connexions_projet", {
 }));
 export type ConnexionProjet = typeof connexionsProjet.$inferSelect;
 export type InsertConnexionProjet = typeof connexionsProjet.$inferInsert;
+
+// ─── Rapports client (mode agence, sous-projet 7b) ───────────────────────────────
+// Un rapport par projet client et par mois : Naya le prépare, l'utilisatrice le relit et le
+// publie ; le client l'ouvre par un lien privé (jeton), sans compte. Les chiffres (`donnees`)
+// sont calculés et figés à la préparation, jamais tirés de l'IA.
+export const rapportsClient = pgTable("rapports_client", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  mois: text("mois").notNull(),                          // YYYY-MM
+  statut: text("statut").notNull().default("brouillon"), // brouillon | publie
+  donnees: jsonb("donnees").notNull().default({}),
+  sections: jsonb("sections").notNull().default({}),     // { synthese, realise, resultats, prochainesEtapes }
+  jeton: text("jeton"),
+  partageActif: boolean("partage_actif").notNull().default(false),
+  publieLe: timestamp("publie_le"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  parMois: uniqueIndex("rapports_client_user_project_mois_uq").on(t.userId, t.projectId, t.mois),
+  parJeton: uniqueIndex("rapports_client_jeton_uq").on(t.jeton),
+}));
+export type RapportClient = typeof rapportsClient.$inferSelect;
+export type InsertRapportClient = typeof rapportsClient.$inferInsert;

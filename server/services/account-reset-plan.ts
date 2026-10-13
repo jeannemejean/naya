@@ -122,6 +122,7 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "fondations", mode: "delete", note: "fondations et plan d'acquisition" },
   { table: "mesures_mensuelles", mode: "delete", note: "mesure : registre mensuel" },
   { table: "connexions_projet", mode: "delete", note: "connexions des projets client" },
+  { table: "rapports_client", mode: "delete", note: "rapports client (leurs liens cessent de répondre)" },
   { table: "social_accounts", mode: "delete", note: "SEULEMENT les comptes rattachés à un projet client (project_id non nul)" },
 
   // ── Phase 10 : projects ──────────────────────────────────────────────────────

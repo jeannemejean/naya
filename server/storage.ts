@@ -140,6 +140,7 @@ import {
   fondations,
   mesuresMensuelles,
   connexionsProjet,
+  rapportsClient,
   prospectionMessageFeedback,
   prospectionLearnedRules,
   type LeadStepMessage,
@@ -159,6 +160,7 @@ import {
   type InsertFondations,
   type MesureMensuelle,
   type ConnexionProjet,
+  type RapportClient,
   type InsertMesureMensuelle,
   type InsertProjectProof,
   type ProspectionMessageFeedback,
@@ -671,6 +673,14 @@ export interface IStorage {
   // Connexions d'un projet client (mode agence)
   getConnexionProjet(userId: string, projectId: number): Promise<ConnexionProjet | undefined>;
   upsertConnexionProjet(userId: string, projectId: number, patch: Partial<ConnexionProjet>): Promise<ConnexionProjet>;
+  // Rapports client (mode agence)
+  getRapports(userId: string, projectId: number): Promise<RapportClient[]>;
+  getRapport(userId: string, projectId: number, mois: string): Promise<RapportClient | undefined>;
+  /** Crée ou remplace le BROUILLON du mois ; un rapport publié n'est jamais réécrit (renvoie undefined). */
+  enregistrerBrouillonRapport(userId: string, projectId: number, mois: string, v: { donnees: unknown; sections: unknown }): Promise<RapportClient | undefined>;
+  updateRapport(userId: string, projectId: number, mois: string, patch: Partial<RapportClient>): Promise<RapportClient | undefined>;
+  deleteRapport(userId: string, projectId: number, mois: string): Promise<boolean>;
+  getRapportParJeton(jeton: string): Promise<RapportClient | undefined>;
   
   // Media library operations
   getMediaLibrary(userId: string): Promise<MediaLibrary[]>;
@@ -901,6 +911,8 @@ export class DatabaseStorage implements IStorage {
         await tx.delete(socialAccounts).where(and(eq(socialAccounts.projectId, id), eq(socialAccounts.userId, userId)));
       }
       await tx.delete(connexionsProjet).where(and(eq(connexionsProjet.projectId, id), eq(connexionsProjet.userId, userId)));
+      // Ses rapports aussi : leurs liens cessent de répondre.
+      await tx.delete(rapportsClient).where(and(eq(rapportsClient.projectId, id), eq(rapportsClient.userId, userId)));
       await tx.delete(linkedinSendAttempts).where(and(eq(linkedinSendAttempts.projectId, id), eq(linkedinSendAttempts.userId, userId)));
       const result = await tx.delete(projects)
         .where(and(eq(projects.id, id), eq(projects.userId, userId)));
@@ -2785,6 +2797,50 @@ export class DatabaseStorage implements IStorage {
     return account ? this.decryptSocialAccount(account) : undefined;
   }
 
+  async getRapports(userId: string, projectId: number): Promise<RapportClient[]> {
+    return db.select().from(rapportsClient)
+      .where(and(eq(rapportsClient.userId, userId), eq(rapportsClient.projectId, projectId)))
+      .orderBy(desc(rapportsClient.mois));
+  }
+
+  async getRapport(userId: string, projectId: number, mois: string): Promise<RapportClient | undefined> {
+    const [r] = await db.select().from(rapportsClient)
+      .where(and(eq(rapportsClient.userId, userId), eq(rapportsClient.projectId, projectId), eq(rapportsClient.mois, mois)));
+    return r;
+  }
+
+  async enregistrerBrouillonRapport(userId: string, projectId: number, mois: string, v: { donnees: unknown; sections: unknown }): Promise<RapportClient | undefined> {
+    const [r] = await db.insert(rapportsClient)
+      .values({ userId, projectId, mois, statut: 'brouillon', donnees: v.donnees as any, sections: v.sections as any })
+      .onConflictDoUpdate({
+        target: [rapportsClient.userId, rapportsClient.projectId, rapportsClient.mois],
+        set: { donnees: v.donnees as any, sections: v.sections as any, updatedAt: new Date() },
+        // Condition dans la requête : un rapport publié (que le client a peut-être lu) ne bouge pas.
+        setWhere: eq(rapportsClient.statut, 'brouillon'),
+      })
+      .returning();
+    return r;
+  }
+
+  async updateRapport(userId: string, projectId: number, mois: string, patch: Partial<RapportClient>): Promise<RapportClient | undefined> {
+    const { id: _i, userId: _u, projectId: _p, mois: _m, createdAt: _c, ...champs } = patch as any;
+    const [r] = await db.update(rapportsClient).set({ ...champs, updatedAt: new Date() })
+      .where(and(eq(rapportsClient.userId, userId), eq(rapportsClient.projectId, projectId), eq(rapportsClient.mois, mois)))
+      .returning();
+    return r;
+  }
+
+  async deleteRapport(userId: string, projectId: number, mois: string): Promise<boolean> {
+    const res = await db.delete(rapportsClient)
+      .where(and(eq(rapportsClient.userId, userId), eq(rapportsClient.projectId, projectId), eq(rapportsClient.mois, mois)));
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async getRapportParJeton(jeton: string): Promise<RapportClient | undefined> {
+    const [r] = await db.select().from(rapportsClient).where(eq(rapportsClient.jeton, jeton));
+    return r;
+  }
+
   async getConnexionProjet(userId: string, projectId: number): Promise<ConnexionProjet | undefined> {
     const [row] = await db.select().from(connexionsProjet)
       .where(and(eq(connexionsProjet.userId, userId), eq(connexionsProjet.projectId, projectId)));
@@ -3026,6 +3082,7 @@ export class DatabaseStorage implements IStorage {
       // Connexions des projets client : elles partent avec leurs projets. Les comptes
       // sociaux de l'utilisatrice elle-même (project_id nul) restent, comme avant.
       await tx.delete(connexionsProjet).where(eq(connexionsProjet.userId, userId));
+      await tx.delete(rapportsClient).where(eq(rapportsClient.userId, userId));
       await tx.delete(socialAccounts).where(and(eq(socialAccounts.userId, userId), isNotNull(socialAccounts.projectId)));
       await tx.delete(routines).where(eq(routines.userId, userId));
 
