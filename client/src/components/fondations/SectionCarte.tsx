@@ -1,6 +1,6 @@
 // Carte d'une section des fondations : statut, Modifier / Valider / Revenir en proposition,
 // « Reproposer cette section ». L'enregistrement passe par PUT /sections/:section.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
 import { Check, Loader2, Pencil, RotateCcw, Sparkles } from "lucide-react";
@@ -33,14 +33,23 @@ export function useEnvoiSection(projectId: number, section: Section, onChange: (
 }
 
 export default function SectionCarte({
-  projectId, section, statut, enEdition, onModifier, onChange, onReproposer, reproposeEnCours, children,
+  projectId, section, statut, enEdition, onModifier, onChange, onReproposer, reproposeEnCours, verrouille, children,
 }: {
   projectId: number; section: Section; statut: Statut; enEdition: boolean;
   onModifier: () => void; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean;
+  /** Une proposition de Naya est en cours : on ne valide ni ne modifie pendant qu'elle écrit. */
+  verrouille: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   const envoi = useEnvoiSection(projectId, section, onChange);
+  // Reproposer une section validée la remplace : un second clic confirme.
+  const [confirmer, setConfirmer] = useState(false);
+  const reproposer = () => {
+    if (statut === "valide" && !confirmer) { setConfirmer(true); return; }
+    setConfirmer(false);
+    onReproposer();
+  };
   return (
     <Card className="p-4 space-y-3" id={`fondations-${section}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -53,22 +62,23 @@ export default function SectionCarte({
         </div>
         {!enEdition && (
           <div className="flex gap-1.5 flex-wrap">
-            <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" disabled={reproposeEnCours} onClick={onReproposer}>
+            <Button size="sm" variant={confirmer ? "destructive" : "ghost"} className="h-7 gap-1 text-xs" disabled={verrouille} onClick={reproposer}
+              onBlur={() => setConfirmer(false)}>
               {reproposeEnCours ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-              {t("fondations.actions.reproposer")}
+              {t(confirmer ? "fondations.actions.confirmerReproposer" : "fondations.actions.reproposer")}
             </Button>
             {statut !== "vide" && (
-              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={onModifier}>
+              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={verrouille} onClick={onModifier}>
                 <Pencil className="w-3.5 h-3.5" />{t("fondations.actions.modifier")}
               </Button>
             )}
             {statut === "propose" && (
-              <Button size="sm" className="h-7 gap-1 text-xs" disabled={envoi.isPending} onClick={() => envoi.mutate({ statut: "valide" })}>
+              <Button size="sm" className="h-7 gap-1 text-xs" disabled={verrouille || envoi.isPending} onClick={() => envoi.mutate({ statut: "valide" })}>
                 <Check className="w-3.5 h-3.5" />{t("fondations.actions.valider")}
               </Button>
             )}
             {statut === "valide" && (
-              <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" disabled={envoi.isPending} onClick={() => envoi.mutate({ statut: "propose" })}>
+              <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" disabled={verrouille || envoi.isPending} onClick={() => envoi.mutate({ statut: "propose" })}>
                 <RotateCcw className="w-3.5 h-3.5" />{t("fondations.actions.revenir")}
               </Button>
             )}

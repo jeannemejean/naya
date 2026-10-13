@@ -2436,6 +2436,7 @@ const fr = {
   actions: {
    modifier: "Modifier", valider: "Valider", revenir: "Revenir en proposition", reproposer: "Reproposer",
    enregistrer: "Enregistrer", annuler: "Annuler", retirer: "Retirer",
+   confirmerReproposer: "Remplacer la version validée ?",
   },
   proposition: {
    bouton: "Naya propose mes fondations",

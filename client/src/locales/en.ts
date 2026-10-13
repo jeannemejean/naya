@@ -2432,6 +2432,7 @@ const en = {
   actions: {
    modifier: "Edit", valider: "Approve", revenir: "Back to proposal", reproposer: "Propose again",
    enregistrer: "Save", annuler: "Cancel", retirer: "Remove",
+   confirmerReproposer: "Replace the approved version?",
   },
   proposition: {
    bouton: "Let Naya propose my foundations",

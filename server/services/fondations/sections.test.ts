@@ -55,20 +55,21 @@ describe("validerSection — motivations", () => {
 });
 
 describe("validerSection — kpis", () => {
-  it("retire les étages inconnus, fréquence mensuelle par défaut", () => {
+  it("retire les KPI dont l'étage ou la fréquence sort du catalogue (jamais deviné)", () => {
     const r = validerSection("kpis", [
       { nom: "Marge contributive", etage: "business", definition: "CA - coûts", frequence: "mensuel", cible: "30 %" },
       { nom: "Vanité", etage: "ego" },
       { nom: "Taux de réponse", etage: "canal", frequence: "chaque minute" },
+      { nom: "Abonnés", etage: "canal", frequence: "hebdo" },
     ]);
     expect(r.ok).toBe(true);
     expect((r as any).valeur).toEqual([
       { cle: "marge_contributive", nom: "Marge contributive", etage: "business", definition: "CA - coûts", frequence: "mensuel", cible: "30 %" },
-      { cle: "taux_de_reponse", nom: "Taux de réponse", etage: "canal", definition: "", frequence: "mensuel" },
+      { cle: "abonnes", nom: "Abonnés", etage: "canal", definition: "", frequence: "hebdo" },
     ]);
   });
   it("au plus 12, au moins un", () => {
-    const treize = Array.from({ length: 13 }, (_, i) => ({ nom: `K${i}`, etage: "systeme" }));
+    const treize = Array.from({ length: 13 }, (_, i) => ({ nom: `K${i}`, etage: "systeme", frequence: "mensuel" }));
     expect((validerSection("kpis", treize) as any).valeur).toHaveLength(12);
     expect(validerSection("kpis", [{ nom: "x", etage: "nope" }]).ok).toBe(false);
   });

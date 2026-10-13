@@ -95,10 +95,11 @@ export function registerFondationsRoutes(app: Express) {
       } else if (!(f as any)?.[section] || (Array.isArray((f as any)[section]) && !(f as any)[section].length)) {
         return res.status(400).json({ message: "section_vide" });
       }
-      // Modifier garde le statut ; une section encore vide devient une proposition.
-      statuts[section] = statut ?? (statuts[section] === "vide" ? "propose" : statuts[section]);
-      const maj = await storage.upsertFondations(req.userId, projet.id, { ...patch, statuts } as any);
-      if (section === "motivations" && statuts.motivations === "valide") {
+      // Modifier garde le statut ; une section encore vide devient une proposition. Seul le
+      // statut de CETTE section est envoyé (fusion clé par clé dans le stockage).
+      const nouveau = statut ?? (statuts[section] === "vide" ? "propose" : statuts[section]);
+      const maj = await storage.upsertFondations(req.userId, projet.id, { ...patch, statuts: { [section]: nouveau } } as any);
+      if (section === "motivations" && nouveau === "valide") {
         await storage.ensureRoutine(routineEtiquetagePour({ userId: req.userId, projectId: projet.id }, new Date()) as any);
       }
       res.json({ statuts: statutsDe(maj) });
@@ -116,8 +117,10 @@ export function registerFondationsRoutes(app: Express) {
       if (!kpis.some((k) => k.cle === req.params.cle)) return res.status(404).json({ message: "not_found" });
       const valeur = typeof req.body?.valeur === "number" ? req.body.valeur : Number.NaN;
       if (!Number.isFinite(valeur)) return res.status(400).json({ message: "valeur_invalide" });
-      const date = req.body?.date === undefined ? new Date() : new Date(req.body.date);
-      if (Number.isNaN(date.getTime())) return res.status(400).json({ message: "date_invalide" });
+      const brute = req.body?.date;
+      const date = brute === undefined ? new Date() : typeof brute === "string" ? new Date(brute) : new Date(Number.NaN);
+      // Une date future resterait affichée comme « dernière valeur » : refusée (un jour de marge pour les fuseaux).
+      if (Number.isNaN(date.getTime()) || date.getTime() > Date.now() + 86_400_000) return res.status(400).json({ message: "date_invalide" });
       const tous = { ...((f?.kpiReleves as Record<string, Array<{ date: string; valeur: number }>>) || {}) };
       tous[req.params.cle] = [...(tous[req.params.cle] || []), { date: date.toISOString(), valeur }]
         .sort((a, b) => a.date.localeCompare(b.date))

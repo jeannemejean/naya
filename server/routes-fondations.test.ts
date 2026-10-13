@@ -100,7 +100,8 @@ describe("routes des fondations", () => {
     expect(r.status).toBe(200);
     const patch = storageMock.upsertFondations.mock.calls[0][2] as any;
     expect(patch.offre.nom).toBe("Coffret");
-    expect(patch.statuts.offre).toBe("propose");
+    // Seul le statut de la section touchée est envoyé (écriture clé par clé côté stockage).
+    expect(patch.statuts).toEqual({ offre: "propose" });
   });
 
   it("valider une section vide → 400", async () => {
@@ -122,6 +123,8 @@ describe("routes des fondations", () => {
     expect((await appel("POST", "/api/fondations/7/kpis/inconnu/releves", { valeur: 3 })).status).toBe(404);
     expect((await appel("POST", "/api/fondations/7/kpis/abonnes/releves", { valeur: "beaucoup" })).status).toBe(400);
     expect((await appel("POST", "/api/fondations/7/kpis/abonnes/releves", { valeur: 3, date: "pas une date" })).status).toBe(400);
+    expect((await appel("POST", "/api/fondations/7/kpis/abonnes/releves", { valeur: 3, date: null })).status).toBe(400);
+    expect((await appel("POST", "/api/fondations/7/kpis/abonnes/releves", { valeur: 3, date: "2099-01-01" })).status).toBe(400);
     const plein = Array.from({ length: 24 }, (_, i) => ({ date: new Date(2026, 0, i + 1).toISOString(), valeur: i }));
     storageMock.getFondations.mockResolvedValue({ ...structuredClone(FOND), kpiReleves: { abonnes: plein } });
     expect((await appel("POST", "/api/fondations/7/kpis/abonnes/releves", { valeur: 99, date: "2026-10-01" })).status).toBe(200);

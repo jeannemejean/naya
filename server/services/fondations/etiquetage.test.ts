@@ -87,6 +87,12 @@ describe("executerEtiquetage", () => {
     expect((d.ia as any).mock.calls[0][2]).toContain("Efficacité");
   });
 
+  it("un contenu envoyé mais non classé passe en « aucun » : jamais repayé chaque jour", async () => {
+    const { d, ecrits } = depsE({ ia: vi.fn(async () => '{"etiquettes":[{"id":1,"angle":"efficacite"},{"id":2,"angle":"inventee"}]}') });
+    await executerEtiquetage(routine, d);
+    expect(ecrits).toEqual([{ id: 1, angle: "efficacite", formatCreatif: null }, { id: 2, angle: "aucun", formatCreatif: null }]);
+  });
+
   it("réponse illisible → erreur, rien n'est écrit", async () => {
     const { d, ecrits } = depsE({ ia: vi.fn(async () => "oups") });
     const r = await executerEtiquetage(routine, d);

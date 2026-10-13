@@ -14,11 +14,11 @@ import type { Kpi, Releve, Statut } from "./types";
 const MAX = 12;
 type Props = {
   projectId: number; kpis: Kpi[]; releves: Record<string, Releve[]>; statut: Statut;
-  etages: string[]; frequences: string[]; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean;
+  etages: string[]; frequences: string[]; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean; verrouille: boolean;
 };
 const CHAMP_SELECT = "h-8 rounded-md border border-input bg-background px-2 text-xs";
 
-export default function KpisCarte({ projectId, kpis, releves, statut, etages, frequences, onChange, onReproposer, reproposeEnCours }: Props) {
+export default function KpisCarte({ projectId, kpis, releves, statut, etages, frequences, onChange, onReproposer, reproposeEnCours, verrouille }: Props) {
   const { t } = useTranslation();
   const [brouillon, setBrouillon] = useState<Kpi[] | null>(null);
   const envoi = useEnvoiSection(projectId, "kpis", onChange, () => setBrouillon(null));
@@ -27,7 +27,7 @@ export default function KpisCarte({ projectId, kpis, releves, statut, etages, fr
 
   return (
     <SectionCarte projectId={projectId} section="kpis" statut={statut} enEdition={!!brouillon}
-      onModifier={() => setBrouillon(kpis.length ? kpis : [nouveau()])} onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours}>
+      onModifier={() => setBrouillon(kpis.length ? kpis : [nouveau()])} onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (
         <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); envoi.mutate({ valeur: brouillon }); }}>
           {brouillon.map((k, i) => (

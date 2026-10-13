@@ -13,7 +13,7 @@ import { depuisLignes, versLignes, type Motivation, type Statut } from "./types"
 const MAX = 5;
 type Props = {
   projectId: number; motivations: Motivation[]; statut: Statut; formats: string[];
-  onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean;
+  onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean; verrouille: boolean;
 };
 type Edition = Omit<Motivation, "accroches" | "preuves" | "objections"> & { accroches: string; preuves: string; objections: string };
 
@@ -21,7 +21,7 @@ const versEdition = (m: Motivation): Edition => ({ ...m, accroches: versLignes(m
 const depuisEdition = (m: Edition) => ({ ...m, accroches: depuisLignes(m.accroches), preuves: depuisLignes(m.preuves), objections: depuisLignes(m.objections) });
 const nouvelle = (): Edition => ({ cle: "", nom: "", description: "", angle: "", accroches: "", preuves: "", objections: "", formats: [] });
 
-export default function MotivationsCarte({ projectId, motivations, statut, formats, onChange, onReproposer, reproposeEnCours }: Props) {
+export default function MotivationsCarte({ projectId, motivations, statut, formats, onChange, onReproposer, reproposeEnCours, verrouille }: Props) {
   const { t } = useTranslation();
   const [brouillon, setBrouillon] = useState<Edition[] | null>(null);
   const envoi = useEnvoiSection(projectId, "motivations", onChange, () => setBrouillon(null));
@@ -30,7 +30,7 @@ export default function MotivationsCarte({ projectId, motivations, statut, forma
   return (
     <SectionCarte projectId={projectId} section="motivations" statut={statut} enEdition={!!brouillon}
       onModifier={() => setBrouillon(motivations.length ? motivations.map(versEdition) : [nouvelle()])}
-      onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours}>
+      onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); envoi.mutate({ valeur: brouillon.map(depuisEdition) }); }}>
           {brouillon.map((m, i) => (

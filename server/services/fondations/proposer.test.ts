@@ -4,16 +4,18 @@ import { proposerFondations, type DepsProposer } from "./proposer";
 const reponseIA = JSON.stringify({
   offre: { nom: "Coffret découverte", description: "3 cafés", pourquoi: "goûter sans risque" },
   motivations: [{ nom: "Rituel plaisir", angle: "le matin à soi", formats: ["coulisses"] }],
-  kpis: [{ nom: "Abonnés actifs", etage: "business" }],
+  kpis: [{ nom: "Abonnés actifs", etage: "business", frequence: "mensuel" }],
   plan: { maturite: "demarrage", briques: [{ cle: "organique_social", statut: "maintenant" }] },
 });
 
-function deps(over: Partial<DepsProposer> = {}, existant: any = undefined) {
+function deps(over: Partial<DepsProposer> = {}, existant: any = undefined, relu: any = existant) {
   const ecrit: any[] = [];
+  let lectures = 0;
   const d: DepsProposer = {
     storage: {
       getProject: vi.fn(async () => ({ id: 7, name: "Mouture" })),
-      getFondations: vi.fn(async () => existant),
+      // 1re lecture : avant l'appel IA ; suivantes : juste avant l'écriture.
+      getFondations: vi.fn(async () => (lectures++ === 0 ? existant : relu)),
       upsertFondations: vi.fn(async (_u, _p, patch) => { ecrit.push(patch); return { ...existant, ...patch }; }),
       getProjectProofs: vi.fn(async () => [{ clientLabel: "Café Lumière", citable: false, whatWasDone: "carte", result: "+20 %" }]),
     },
@@ -53,7 +55,8 @@ describe("proposerFondations", () => {
     const { d, ecrit } = deps({}, existant);
     await proposerFondations("u", 7, undefined, d);
     expect(ecrit[0].offre).toBeUndefined();
-    expect(ecrit[0].statuts.offre).toBe("valide");
+    // Seuls les statuts des sections écrites sont envoyés : les autres ne sont jamais réécrits.
+    expect(ecrit[0].statuts.offre).toBeUndefined();
     const prompt = (d.ia as any).mock.calls[0][2] as string;
     expect(prompt).toContain("Essai gratuit");
   });
@@ -63,7 +66,7 @@ describe("proposerFondations", () => {
     const { d, ecrit } = deps({}, existant);
     await proposerFondations("u", 7, ["offre"], d);
     expect(ecrit[0].offre.nom).toBe("Coffret découverte");
-    expect(ecrit[0].statuts).toEqual({ offre: "propose", motivations: "valide", kpis: "vide", plan: "vide" });
+    expect(ecrit[0].statuts).toEqual({ offre: "propose" });
     expect(ecrit[0].motivations).toBeUndefined();
   });
 
@@ -86,6 +89,31 @@ describe("proposerFondations", () => {
     expect(r.statut).toBe("ok");
     expect(ecrit[0].offre.nom).toBe("Essai");
     expect(ecrit[0].plan).toBeUndefined();
-    expect(ecrit[0].statuts.plan).toBe("vide");
+    expect(ecrit[0].statuts.plan).toBeUndefined();
+  });
+
+  it("une section validée PENDANT l'appel IA n'est pas écrasée (sauf demande explicite)", async () => {
+    const relu = { statuts: { offre: "valide" }, offre: { nom: "Validée entre-temps" } };
+    const { d, ecrit } = deps({}, undefined, relu);
+    await proposerFondations("u", 7, undefined, d);
+    expect(ecrit[0].offre).toBeUndefined();
+    expect(ecrit[0].statuts.offre).toBeUndefined();
+    expect(ecrit[0].motivations).toBeDefined();
+  });
+
+  it("reproposer les motivations : clés existantes transmises, pas présentées comme « à ne pas refaire »", async () => {
+    const existant = {
+      statuts: { motivations: "valide", offre: "valide" },
+      offre: { nom: "OFFRE VALIDEE" },
+      motivations: [{ cle: "rituel", nom: "Rituel plaisir" }],
+    };
+    const { d } = deps({}, existant);
+    await proposerFondations("u", 7, ["motivations"], d);
+    const prompt = (d.ia as any).mock.calls[0][2] as string;
+    const valide = prompt.split("Déjà validé")[1]?.split("Motivations actuelles")[0] || "";
+    expect(valide).toContain("OFFRE VALIDEE");
+    expect(valide).not.toContain("Rituel plaisir");
+    expect(prompt).toContain("- rituel : Rituel plaisir");
+    expect(prompt).toMatch(/"cle"/);
   });
 });

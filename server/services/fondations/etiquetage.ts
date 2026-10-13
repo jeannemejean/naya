@@ -88,7 +88,10 @@ export async function executerEtiquetage(routine: Routine, deps: DepsEtiquetage)
     new Set(contenus.map((c) => c.id)), new Set(motivations.map((m) => m.cle)),
   );
   if (!etiquettes) return { statut: "erreur", resume: "Réponse de l'IA illisible : aucun contenu étiqueté." };
-  if (!etiquettes.length) return { statut: "rien_a_faire", resume: "Aucune étiquette exploitable dans la réponse." };
+  // Un contenu envoyé mais non classé (oublié, motivation inventée) passe en « aucun » :
+  // sinon il serait renvoyé, et payé, chaque jour. L'utilisatrice peut le corriger.
+  const classes = new Set(etiquettes.map((e) => e.id));
+  for (const c of contenus) if (!classes.has(c.id)) etiquettes.push({ id: c.id, angle: ANGLE_AUCUN, formatCreatif: null });
 
   const n = await deps.storage.etiqueterContenus(routine.userId, etiquettes);
   const parAngle = new Map<string, number>();

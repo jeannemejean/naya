@@ -70,7 +70,7 @@ function FondationsProjet({ projectId }: { projectId: number }) {
   const toutVide = statuts.every((s) => s === "vide");
   const toutValide = statuts.every((s) => s === "valide");
   const enCours = (s: Section) => proposer.isPending && (proposer.variables?.includes(s) ?? true);
-  const commun = (s: Section) => ({ projectId, statut: f.statuts[s], onChange: rafraichir, onReproposer: () => proposer.mutate([s]), reproposeEnCours: enCours(s) });
+  const commun = (s: Section) => ({ projectId, statut: f.statuts[s], onChange: rafraichir, onReproposer: () => proposer.mutate([s]), reproposeEnCours: enCours(s), verrouille: proposer.isPending });
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">

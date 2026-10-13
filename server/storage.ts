@@ -1992,10 +1992,17 @@ export class DatabaseStorage implements IStorage {
     return r;
   }
 
+  /**
+   * `patch.statuts` ne porte que les sections touchées : il est FUSIONNÉ dans la base
+   * (`statuts || patch`), jamais réécrit en bloc. Deux écritures concurrentes sur deux
+   * sections différentes (une validation pendant une proposition) ne s'écrasent donc pas.
+   */
   async upsertFondations(userId: string, projectId: number, patch: Partial<InsertFondations>): Promise<Fondations> {
-    const { id: _i, userId: _u, projectId: _p, createdAt: _c, ...rest } = patch as any;
-    const [r] = await db.insert(fondations).values({ ...rest, userId, projectId })
-      .onConflictDoUpdate({ target: [fondations.userId, fondations.projectId], set: { ...rest, updatedAt: new Date() } })
+    const { id: _i, userId: _u, projectId: _p, createdAt: _c, statuts, ...rest } = patch as any;
+    const set: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+    if (statuts) set.statuts = sql`${fondations.statuts} || ${JSON.stringify(statuts)}::jsonb`;
+    const [r] = await db.insert(fondations).values({ ...rest, ...(statuts ? { statuts } : {}), userId, projectId })
+      .onConflictDoUpdate({ target: [fondations.userId, fondations.projectId], set })
       .returning();
     return r;
   }

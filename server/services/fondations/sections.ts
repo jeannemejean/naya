@@ -69,11 +69,11 @@ function validerKpis(v: unknown): Resultat<Kpi[]> {
   for (const k of Array.isArray(v) ? v : []) {
     if (!estObjet(k) || out.length >= PLAFONDS.kpis) continue;
     const nom = texte(k.nom, 80);
-    if (!nom || !dans(ETAGES_KPI, k.etage)) continue;
+    if (!nom || !dans(ETAGES_KPI, k.etage) || !dans(FREQUENCES_KPI, k.frequence)) continue;
     const cible = texte(k.cible, 80);
     out.push({
       cle: cleUnique(k.cle, nom, prises), nom, etage: k.etage, definition: texte(k.definition, 400),
-      frequence: dans(FREQUENCES_KPI, k.frequence) ? k.frequence : "mensuel", ...(cible ? { cible } : {}),
+      frequence: k.frequence, ...(cible ? { cible } : {}),
     });
   }
   return out.length ? { ok: true, valeur: out } : { ok: false, erreur: "kpis_vides" };

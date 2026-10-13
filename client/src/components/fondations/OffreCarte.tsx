@@ -7,9 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import SectionCarte, { PiedEdition, useEnvoiSection } from "./SectionCarte";
 import type { Offre, Statut } from "./types";
 
-type Props = { projectId: number; offre: Offre | null; statut: Statut; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean };
+type Props = { projectId: number; offre: Offre | null; statut: Statut; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean; verrouille: boolean };
 
-export default function OffreCarte({ projectId, offre, statut, onChange, onReproposer, reproposeEnCours }: Props) {
+export default function OffreCarte({ projectId, offre, statut, onChange, onReproposer, reproposeEnCours, verrouille }: Props) {
   const { t } = useTranslation();
   const [brouillon, setBrouillon] = useState<Offre | null>(null);
   const envoi = useEnvoiSection(projectId, "offre", onChange, () => setBrouillon(null));
@@ -18,7 +18,7 @@ export default function OffreCarte({ projectId, offre, statut, onChange, onRepro
 
   return (
     <SectionCarte projectId={projectId} section="offre" statut={statut} enEdition={!!brouillon}
-      onModifier={() => setBrouillon(offre || vide)} onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours}>
+      onModifier={() => setBrouillon(offre || vide)} onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (
         <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); envoi.mutate({ valeur: brouillon }); }}>
           <div className="grid gap-2 sm:grid-cols-3">

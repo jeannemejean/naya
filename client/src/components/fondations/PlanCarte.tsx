@@ -11,14 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import SectionCarte, { PiedEdition, useEnvoiSection } from "./SectionCarte";
 import type { Catalogues, Plan, Statut } from "./types";
 
-type Props = { projectId: number; plan: Plan | null; statut: Statut; catalogues: Catalogues; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean };
+type Props = { projectId: number; plan: Plan | null; statut: Statut; catalogues: Catalogues; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean; verrouille: boolean };
 const MOTEURS = ["creation", "captation", "socle"] as const;
 const CHAMP_SELECT = "h-8 rounded-md border border-input bg-background px-2 text-xs";
 const COULEUR: Record<string, string> = {
   maintenant: "text-naya-salvia border-naya-salvia/40", plus_tard: "text-naya-mauve border-naya-mauve/40", sans_objet: "text-muted-foreground",
 };
 
-export default function PlanCarte({ projectId, plan, statut, catalogues, onChange, onReproposer, reproposeEnCours }: Props) {
+export default function PlanCarte({ projectId, plan, statut, catalogues, onChange, onReproposer, reproposeEnCours, verrouille }: Props) {
   const { t } = useTranslation();
   const [brouillon, setBrouillon] = useState<Plan | null>(null);
   const envoi = useEnvoiSection(projectId, "plan", onChange, () => setBrouillon(null));
@@ -34,7 +34,7 @@ export default function PlanCarte({ projectId, plan, statut, catalogues, onChang
   return (
     <SectionCarte projectId={projectId} section="plan" statut={statut} enEdition={!!brouillon}
       onModifier={() => setBrouillon(plan || { maturite: "demarrage", resume: "", briques: [] })}
-      onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours}>
+      onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); envoi.mutate({ valeur: brouillon }); }}>
           <div className="flex gap-2 items-center flex-wrap">

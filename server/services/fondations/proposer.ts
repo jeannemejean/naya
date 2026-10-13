@@ -32,16 +32,16 @@ export type ResultatProposition =
 
 const FORMATS_JSON: Record<Section, string> = {
   offre: `"offre": { "nom": "...", "description": "ce que reçoit le client", "prix": "si pertinent", "pourquoi": "pourquoi un inconnu passe à l'achat avec un risque perçu faible", "existe": true si elle est déjà dans l'offre actuelle, sinon false }`,
-  motivations: `"motivations": [{ "nom": "raison d'acheter, en 2 à 4 mots", "description": "...", "angle": "l'angle créatif en une phrase", "accroches": ["les premières secondes / la première ligne"], "preuves": ["preuves réelles uniquement"], "objections": ["ce qui retient d'acheter"], "formats": [${FORMATS_CREATIFS.map((f) => `"${f}"`).join(", ")}] }]`,
+  motivations: `"motivations": [{ "cle": "la clé existante si c'est la même motivation, sinon omets", "nom": "raison d'acheter, en 2 à 4 mots", "description": "...", "angle": "l'angle créatif en une phrase", "accroches": ["les premières secondes / la première ligne"], "preuves": ["preuves réelles uniquement"], "objections": ["ce qui retient d'acheter"], "formats": [${FORMATS_CREATIFS.map((f) => `"${f}"`).join(", ")}] }]`,
   kpis: `"kpis": [{ "nom": "...", "etage": ${ETAGES_KPI.map((e) => `"${e}"`).join(" | ")}, "definition": "comment le calculer", "frequence": ${FREQUENCES_KPI.map((e) => `"${e}"`).join(" | ")}, "cible": "si une cible chiffrée est connue" }]`,
   plan: `"plan": { "maturite": ${MATURITES.map((m) => `"${m}"`).join(" | ")}, "resume": "2 phrases", "briques": [{ "cle": "...", "statut": ${STATUTS_BRIQUE.map((s) => `"${s}"`).join(" | ")}, "raison": "pourquoi pour CE business", "action": "première action concrète si maintenant" }] }`,
 };
 
-function consigne(sections: Section[], valides: string, preuves: string): string {
+function consigne(sections: Section[], valides: string, preuves: string, clesExistantes: string): string {
   return `Pose les fondations d'acquisition de ce projet, comme une stratège qui connaît ce business (dossier « Acquisition 360 », étape 0).
 
 Sections à produire : ${sections.join(", ")}.
-${valides ? `\nDéjà validé par l'utilisatrice (à respecter, ne pas refaire) :\n${valides}\n` : ""}${preuves ? `\nPreuves réelles du projet (les seules que tu peux citer) :\n${preuves}\n` : ""}
+${valides ? `\nDéjà validé par l'utilisatrice (à respecter, ne pas refaire) :\n${valides}\n` : ""}${clesExistantes ? `\nMotivations actuelles (clé : nom). Garde la même clé pour une motivation que tu reprends, même reformulée : les contenus déjà classés en dépendent.\n${clesExistantes}\n` : ""}${preuves ? `\nPreuves réelles du projet (les seules que tu peux citer) :\n${preuves}\n` : ""}
 Réponds en JSON strict, sans commentaire, avec seulement les sections demandées :
 {
 ${sections.map((s) => `  ${FORMATS_JSON[s]}`).join(",\n")}
@@ -57,9 +57,10 @@ ${BRIQUES.map((b) => `  - ${b.cle} : ${b.libelle}`).join("\n")}
 - N'invente ni chiffre, ni preuve, ni client. Écris dans la langue du projet.`;
 }
 
-function resumeValide(f: Fondations | undefined, statuts: Record<Section, string>): string {
+/** Les sections validées QUE L'ON NE REFAIT PAS : une section redemandée n'y figure jamais. */
+function resumeValide(f: Fondations | undefined, statuts: Record<Section, string>, aProduire: Section[]): string {
   if (!f) return "";
-  return SECTIONS.filter((s) => statuts[s] === "valide" && (f as any)[s])
+  return SECTIONS.filter((s) => statuts[s] === "valide" && (f as any)[s] && !aProduire.includes(s))
     .map((s) => `- ${s} : ${JSON.stringify((f as any)[s]).slice(0, 1500)}`).join("\n");
 }
 
@@ -84,17 +85,24 @@ export async function proposerFondations(
   if (refus) return { statut: "refus", raison: refus.resume };
 
   const preuves = (await deps.storage.getProjectProofs(userId, projectId, "validated")).slice(0, 15).map(lignePreuve).join("\n");
-  const brut = lireProposition(await deps.ia(userId, projectId, consigne(sections, resumeValide(existant, statuts), preuves)));
+  const motivationsActuelles = sections.includes("motivations") && Array.isArray(existant?.motivations)
+    ? (existant!.motivations as Array<{ cle: string; nom: string }>).map((m) => `- ${m.cle} : ${m.nom}`).join("\n") : "";
+  const brut = lireProposition(await deps.ia(userId, projectId,
+    consigne(sections, resumeValide(existant, statuts, sections), preuves, motivationsActuelles)));
 
+  // L'appel IA dure : relire juste avant d'écrire. Une section validée entre-temps n'est pas
+  // écrasée, sauf si l'utilisatrice l'avait explicitement redemandée.
+  const frais = statutsDe(await deps.storage.getFondations(userId, projectId));
   const patch: Partial<InsertFondations> = {};
-  const nouveaux = { ...statuts };
+  const touches: Partial<Record<Section, "propose">> = {};
   for (const s of sections) {
+    if (frais[s] === "valide" && !demandees?.includes(s)) continue;
     const v = validerSection(s, brut[s]);
     if (!v.ok) continue;
     (patch as any)[s] = v.valeur;
-    nouveaux[s] = "propose";
+    touches[s] = "propose";
   }
-  if (!Object.keys(patch).length) return { statut: "vide" };
-  const fondations = await deps.storage.upsertFondations(userId, projectId, { ...patch, statuts: nouveaux });
+  if (!Object.keys(touches).length) return { statut: "vide" };
+  const fondations = await deps.storage.upsertFondations(userId, projectId, { ...patch, statuts: touches });
   return { statut: "ok", fondations };
 }
