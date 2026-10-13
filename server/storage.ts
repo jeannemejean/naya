@@ -883,25 +883,44 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(id: number, userId: string): Promise<boolean> {
-    // La veille et les fondations du projet partent avec lui (pas de clé étrangère : nettoyage explicite).
-    await db.delete(fondations).where(and(eq(fondations.projectId, id), eq(fondations.userId, userId)));
-    await db.delete(mesuresMensuelles).where(and(eq(mesuresMensuelles.projectId, id), eq(mesuresMensuelles.userId, userId)));
-    await db.delete(veilleConstats).where(and(eq(veilleConstats.projectId, id), eq(veilleConstats.userId, userId)));
-    await db.delete(veilleReleves).where(and(eq(veilleReleves.projectId, id), eq(veilleReleves.userId, userId)));
-    await db.delete(veilleItems).where(and(eq(veilleItems.projectId, id), eq(veilleItems.userId, userId)));
-    // Connexions du client : posts détachés de ses comptes, puis comptes, connexion et budget LinkedIn.
-    const comptes = await db.select({ id: socialAccounts.id }).from(socialAccounts)
-      .where(and(eq(socialAccounts.projectId, id), eq(socialAccounts.userId, userId)));
-    if (comptes.length) {
-      await db.update(content).set({ socialAccountId: null } as any)
-        .where(and(inArray(content.socialAccountId, comptes.map((c) => c.id)), eq(content.userId, userId)));
-      await db.delete(socialAccounts).where(and(eq(socialAccounts.projectId, id), eq(socialAccounts.userId, userId)));
-    }
-    await db.delete(connexionsProjet).where(and(eq(connexionsProjet.projectId, id), eq(connexionsProjet.userId, userId)));
-    await db.delete(linkedinSendAttempts).where(and(eq(linkedinSendAttempts.projectId, id), eq(linkedinSendAttempts.userId, userId)));
-    const result = await db.delete(projects)
-      .where(and(eq(projects.id, id), eq(projects.userId, userId)));
-    return (result.rowCount ?? 0) > 0;
+    // Une seule transaction : si la suppression du projet échoue (contenus, campagnes ou
+    // prospects qui le référencent encore), rien n'est perdu — ni ses connexions (jetons
+    // OAuth, clé SendGrid, compte LinkedIn), ni sa veille, ni ses fondations.
+    return await db.transaction(async (tx) => {
+      // La veille et les fondations du projet partent avec lui (pas de clé étrangère : nettoyage explicite).
+      await tx.delete(fondations).where(and(eq(fondations.projectId, id), eq(fondations.userId, userId)));
+      await tx.delete(mesuresMensuelles).where(and(eq(mesuresMensuelles.projectId, id), eq(mesuresMensuelles.userId, userId)));
+      await tx.delete(veilleConstats).where(and(eq(veilleConstats.projectId, id), eq(veilleConstats.userId, userId)));
+      await tx.delete(veilleReleves).where(and(eq(veilleReleves.projectId, id), eq(veilleReleves.userId, userId)));
+      await tx.delete(veilleItems).where(and(eq(veilleItems.projectId, id), eq(veilleItems.userId, userId)));
+      // Connexions du client : posts détachés de ses comptes (et arrêtés), puis comptes, connexion et budget LinkedIn.
+      const comptes = await tx.select({ id: socialAccounts.id }).from(socialAccounts)
+        .where(and(eq(socialAccounts.projectId, id), eq(socialAccounts.userId, userId)));
+      if (comptes.length) {
+        await this.detacherPostsDesComptes(tx, userId, comptes.map((c) => c.id));
+        await tx.delete(socialAccounts).where(and(eq(socialAccounts.projectId, id), eq(socialAccounts.userId, userId)));
+      }
+      await tx.delete(connexionsProjet).where(and(eq(connexionsProjet.projectId, id), eq(connexionsProjet.userId, userId)));
+      await tx.delete(linkedinSendAttempts).where(and(eq(linkedinSendAttempts.projectId, id), eq(linkedinSendAttempts.userId, userId)));
+      const result = await tx.delete(projects)
+        .where(and(eq(projects.id, id), eq(projects.userId, userId)));
+      return (result.rowCount ?? 0) > 0;
+    });
+  }
+
+  /**
+   * Avant de supprimer des comptes sociaux : les posts qui les visaient en sont détachés (la clé
+   * étrangère bloquerait sinon). Un post pas encore parti est ARRÊTÉ (plus de publication
+   * automatique, « compte_supprime ») : détaché seul, il partirait sur un autre compte de la
+   * plateforme. Il faut le relier à un compte, délibérément, pour qu'il reparte.
+   */
+  private async detacherPostsDesComptes(ex: any, userId: string, ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    const vises = and(inArray(content.socialAccountId, ids), eq(content.userId, userId));
+    await ex.update(content)
+      .set({ autoPost: false, postStatus: 'failed', lastError: 'compte_supprime' } as any)
+      .where(and(vises, isNull(content.publishedAt), sql`coalesce(${content.postStatus}, '') <> 'posted'`));
+    await ex.update(content).set({ socialAccountId: null } as any).where(vises);
   }
 
   async getPrimaryProject(userId: string): Promise<Project | undefined> {
@@ -2637,12 +2656,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSocialAccount(id: number, userId: string): Promise<boolean> {
-    // Les posts qui visaient ce compte en sont détachés (sinon la clé étrangère bloque la suppression).
-    await db.update(content).set({ socialAccountId: null } as any)
-      .where(and(eq(content.socialAccountId, id), eq(content.userId, userId)));
-    const result = await db.delete(socialAccounts)
-      .where(and(eq(socialAccounts.id, id), eq(socialAccounts.userId, userId)));
-    return (result.rowCount ?? 0) > 0;
+    return await db.transaction(async (tx) => {
+      await this.detacherPostsDesComptes(tx, userId, [id]);
+      const result = await tx.delete(socialAccounts)
+        .where(and(eq(socialAccounts.id, id), eq(socialAccounts.userId, userId)));
+      return (result.rowCount ?? 0) > 0;
+    });
   }
 
   // Suppression de tous les comptes liés à un identifiant utilisateur de plateforme
