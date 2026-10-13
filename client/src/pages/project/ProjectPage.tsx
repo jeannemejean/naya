@@ -15,6 +15,7 @@ import BrandLinksPanel from "./BrandLinksPanel";
 import LivrablesPanel from "./LivrablesPanel";
 import PreuvesPanel from "./PreuvesPanel";
 import ConnexionsClientPanel from "./ConnexionsClientPanel";
+import RapportsClientPanel from "./RapportsClientPanel";
 
 interface ProjectPageProps {
   id: number;
@@ -111,6 +112,12 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
             {project.projectKind === "client" && (
               <section>
                 <ConnexionsClientPanel projectId={id} />
+              </section>
+            )}
+
+            {project.projectKind === "client" && (
+              <section>
+                <RapportsClientPanel projectId={id} />
               </section>
             )}
 

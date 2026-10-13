@@ -20,6 +20,7 @@ const storageMock = {
   deleteRapport: vi.fn(async (_u: string, _p: number, m: string) => { delete rapports[m]; return true; }),
   getRapportParJeton: vi.fn(async (j: string) => Object.values(rapports).find((r: any) => r.jeton === j)),
   getRoutineByCible: vi.fn(async () => undefined),
+  getRoutineRuns: vi.fn(async () => []),
   ensureRoutine: vi.fn(async (row: any) => ({ id: 9, ...row })),
   updateRoutine: vi.fn(async (_id: number, _u: string, p: any) => ({ id: 9, ...p })),
 };

@@ -56,7 +56,7 @@ Rien n'est inventé : une rubrique sans donnée est absente, jamais à zéro.
 
 ## Routine mensuelle (`rapport_client`)
 
-- Le 3 du mois, 6 h UTC (après le bilan du 2) : prépare le brouillon du mois écoulé et prévient Jeanne : « Le rapport de septembre pour {client} est prêt à relire. »
+- Le 2 du mois, 7 h UTC (deux heures après le bilan de 5 h ; toutes les routines mensuelles tournent le 2) : prépare le brouillon du mois écoulé et prévient Jeanne : « Le rapport de septembre pour {client} est prêt à relire. »
 - Créée (active) quand Jeanne prépare son premier rapport pour le projet ; une pause choisie est respectée.
 - Rien à faire (projet perso, rapport déjà publié ou brouillon déjà là, aucune donnée) → aucun appel IA.
 
@@ -110,4 +110,4 @@ Toutes (sauf la lecture publique) : projet de l'utilisatrice sinon 404 ; projet 
 - **Mode tiers** pour la rédaction : aucune note privée de Jeanne n'entre dans un texte destiné au client.
 - **Un rapport publié ne se régénère pas** : il faut le repasser en brouillon (ce qui coupe le lien), pour ne jamais changer sous les yeux du client ce qu'il a lu.
 - **PDF par l'impression du navigateur** plutôt qu'une génération côté serveur : même rendu que la page, aucune dépendance nouvelle.
-- **Routine le 3 du mois** : le bilan du 2 a eu lieu, et les chiffres saisis en retard comptent.
+- **Routine le 2 du mois à 7 h UTC**, après le bilan de 5 h : le moteur n'a qu'un jour mensuel (le 2).

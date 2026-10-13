@@ -63,7 +63,10 @@ export function registerRapportsRoutes(app: Express) {
         storage.getRapports(req.userId, projectId),
         storage.getRoutineByCible(req.userId, KIND_RAPPORT, cleRoutine(projectId)),
       ]);
-      res.json({ rapports: rapports.map(vue), routine: routine ?? null });
+      res.json({
+        rapports: rapports.map(vue),
+        routine: routine ? { routine, derniersPassages: await storage.getRoutineRuns(routine.id, req.userId, 3) } : null,
+      });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

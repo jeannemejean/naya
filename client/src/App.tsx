@@ -13,6 +13,7 @@ import GlobalSearch from "@/components/global-search";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Privacy from "@/pages/privacy";
+import RapportPublic from "@/pages/rapport-public";
 import Terms from "@/pages/terms";
 import DataDeletion from "@/pages/data-deletion";
 import Paywall from "@/pages/paywall";
@@ -71,6 +72,7 @@ function Router() {
  <Suspense fallback={<LoadingScreen />}>
  <Switch>
  <Route path="/privacy" component={Privacy} />
+ <Route path="/rapport/:jeton" component={RapportPublic} />
  <Route path="/terms" component={Terms} />
  <Route path="/data-deletion" component={DataDeletion} />
  {isLoading ? (
