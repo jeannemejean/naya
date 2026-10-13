@@ -2567,6 +2567,24 @@ const fr = {
   },
  },
  mesure: {
+  phrase: {
+   titre: "Dis-moi tes chiffres",
+   aide: "En une phrase : Naya comprend et remplit le mois. Rien n'est enregistré avant que tu valides.",
+   exemple: "Septembre : 12 000 € de CA, 20 nouveaux clients, 2 000 € de pub Meta",
+   comprendre: "Comprendre",
+   compris: "Voici ce que j'ai compris pour {{mois}} :",
+   depense: "Dépense",
+   rienEfface: "Seuls ces chiffres seront écrits : rien de ce que tu avais déjà saisi n'est effacé.",
+   corriger: "Corriger",
+   enregistre: "Mesure de {{mois}} enregistrée",
+   erreurs: {
+    inconnue: "Je n'ai pas pu lire ces chiffres.",
+    rien_compris: "Je n'ai trouvé aucun chiffre : essaie « septembre : 12 000 € de CA, 20 nouveaux clients ».",
+    mois_invalide: "Ce mois n'est pas valide (pas de mois futur).",
+    refus: "Budget IA atteint : saisis le mois dans la saisie détaillée.",
+    texte_invalide: "Écris une phrase de 1 000 caractères au plus.",
+   },
+  },
   titre: "Mesure",
   description: "Ton registre mensuel : chiffre d'affaires, nouveaux clients, dépenses marketing. Naya en tire les chiffres qui comptent et fait ton bilan chaque début de mois.",
   choisirProjet: "Choisis un projet dans la barre latérale pour tenir son registre.",
@@ -2592,6 +2610,7 @@ const fr = {
    vide: "—",
   },
   actions: {
+   saisieDetaillee: "Saisie détaillée",
    importer: "Importer", ajouterMois: "Ajouter un mois", modifier: "Modifier", supprimer: "Supprimer",
    annuler: "Annuler", enregistrer: "Enregistrer",
   },

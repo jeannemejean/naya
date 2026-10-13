@@ -2563,6 +2563,24 @@ const en = {
   },
  },
  mesure: {
+  phrase: {
+   titre: "Tell me your figures",
+   aide: "In one sentence: Naya understands and fills in the month. Nothing is saved until you confirm.",
+   exemple: "September: €12,000 revenue, 20 new customers, €2,000 on Meta ads",
+   comprendre: "Understand",
+   compris: "Here's what I understood for {{mois}}:",
+   depense: "Spend",
+   rienEfface: "Only these figures will be written: nothing you entered before is erased.",
+   corriger: "Edit",
+   enregistre: "{{mois}} figures saved",
+   erreurs: {
+    inconnue: "I couldn't read those figures.",
+    rien_compris: "I found no figures: try \"September: €12,000 revenue, 20 new customers\".",
+    mois_invalide: "This month isn't valid (no future month).",
+    refus: "AI budget reached: use the detailed entry instead.",
+    texte_invalide: "Write a sentence of 1,000 characters at most.",
+   },
+  },
   titre: "Measurement",
   description: "Your monthly ledger: revenue, new customers, marketing spend. Naya turns it into the numbers that matter and reviews your month at the start of each month.",
   choisirProjet: "Pick a project in the sidebar to keep its ledger.",
@@ -2588,6 +2606,7 @@ const en = {
    vide: "—",
   },
   actions: {
+   saisieDetaillee: "Detailed entry",
    importer: "Import", ajouterMois: "Add a month", modifier: "Edit", supprimer: "Delete",
    annuler: "Cancel", enregistrer: "Save",
   },

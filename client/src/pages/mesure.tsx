@@ -16,6 +16,7 @@ import RoutineCard from "@/components/routines/RoutineCard";
 import IndicateursCarte from "@/components/mesure/IndicateursCarte";
 import FormulaireMois from "@/components/mesure/FormulaireMois";
 import ImportCarte from "@/components/mesure/ImportCarte";
+import PhraseMesure from "@/components/mesure/PhraseMesure";
 import { GENRE, formater, libelleMois, type DonneesMesure, type Indicateur, type Mois } from "@/components/mesure/types";
 
 interface MesureProps { onSearchClick?: () => void }
@@ -52,6 +53,10 @@ export function MesureProjet({ projectId }: { projectId: number }) {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {/* Le geste principal : dire ses chiffres en une phrase. Le formulaire détaillé et
+          l'import restent plus bas pour corriger un chiffre ou reprendre un historique. */}
+      <PhraseMesure projectId={projectId} onEnregistre={rafraichir} />
+
       {data.mois[0] ? <IndicateursCarte mois={data.mois[0]} /> : (
         <Card className="p-4 text-sm text-muted-foreground">{t("mesure.vide")}</Card>
       )}
@@ -64,8 +69,8 @@ export function MesureProjet({ projectId }: { projectId: number }) {
           </div>
           {!edition && !importer && (
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setImporter(true)}><Upload className="w-4 h-4" />{t("mesure.actions.importer")}</Button>
-              <Button size="sm" className="gap-1.5" onClick={() => setEdition("nouveau")}><Plus className="w-4 h-4" />{t("mesure.actions.ajouterMois")}</Button>
+              <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => setImporter(true)}><Upload className="w-4 h-4" />{t("mesure.actions.importer")}</Button>
+              <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEdition("nouveau")}><Plus className="w-4 h-4" />{t("mesure.actions.saisieDetaillee")}</Button>
             </div>
           )}
         </div>
