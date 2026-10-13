@@ -2666,6 +2666,14 @@ const en = {
    nonConfigure: "Not available on Naya yet",
    connecte: "{{reseau}} connected for this client",
    echec: "The connection failed",
+   enAttente: "LinkedIn pages found on your account: pick this client's page, dismiss the others.",
+   utiliser: "Use for this client",
+   ecarter: "Dismiss",
+   raisons: {
+    compte_de_l_utilisatrice: "This account is already yours: it can't become the client's. Sign in with the client's account.",
+    compte_d_un_autre_projet: "This account already belongs to another client.",
+    state_invalide: "The connection expired: start it again from this page.",
+   },
   },
   email: {
    titre: "Prospecting sender address",

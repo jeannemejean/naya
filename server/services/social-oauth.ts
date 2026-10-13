@@ -9,6 +9,13 @@
  */
 
 import { storage } from '../storage';
+import { conflitIdentite, pagesLinkedinPourClient } from './connexions/oauth-garde';
+
+/** Refuse un compte déjà rangé dans un autre périmètre (le code part dans l'URL de retour). */
+async function garderIdentite(userId: string, platform: string, accountId: string, projectId: number | null): Promise<void> {
+  const conflit = conflitIdentite(await storage.getSocialAccounts(userId) as any, { platform, accountId, projectId });
+  if (conflit) throw new Error(conflit);
+}
 
 // ─── URL de base de l'app ───────────────────────────────────────────────────
 
@@ -81,6 +88,7 @@ export async function exchangeInstagramCode(userId: string, code: string, projec
   } catch { /* ignore */ }
 
   const expiresAt = new Date(Date.now() + expiresIn * 1000);
+  await garderIdentite(userId, 'instagram', accountId, projectId);
   const existing = await storage.getSocialAccountByPlatform(userId, 'instagram', projectId);
   if (existing) {
     await storage.updateSocialAccount(existing.id, userId, {
@@ -180,13 +188,16 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
     console.warn('[LinkedIn] Could not fetch org pages:', e);
   }
 
-  // 4. Sauvegarder profil personnel (upsert)
-  const existing = await storage.getSocialAccountByPlatform(userId, 'linkedin', projectId);
+  // 4. Sauvegarder profil personnel (upsert) — JAMAIS dans un projet client : pour connecter la
+  //    page d'un client, l'utilisatrice se connecte avec SON login ; ce profil est le sien.
+  const existing = projectId == null ? await storage.getSocialAccountByPlatform(userId, 'linkedin', null) : undefined;
   const expiresAt = tokenData.expires_in
     ? new Date(Date.now() + tokenData.expires_in * 1000)
     : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
 
-  if (existing) {
+  if (projectId != null) {
+    // rien : seul le choix d'une page compte pour un client
+  } else if (existing) {
     await storage.updateSocialAccount(existing.id, userId, {
       accessToken: tokenData.access_token,
       refreshToken: tokenData.refresh_token || undefined,
@@ -212,15 +223,19 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
     });
   }
 
-  // 5. Sauvegarder chaque page comme compte séparé (linkedin_page)
-  for (const page of orgPages) {
+  // 5. Sauvegarder chaque page comme compte séparé (linkedin_page). Jamais une page déjà rangée
+  //    dans un autre périmètre. Pour un client, une page NOUVELLE arrive en attente (inactive) :
+  //    l'utilisatrice choisit dans la carte du client celle qui est vraiment la sienne.
+  const comptesActuels = await storage.getSocialAccounts(userId) as any[];
+  for (const page of pagesLinkedinPourClient(orgPages, comptesActuels, projectId)) {
     const existingPage = await storage.getSocialAccountByPlatform(userId, `linkedin_page_${page.id}`, projectId);
     if (existingPage) {
       await storage.updateSocialAccount(existingPage.id, userId, {
         accessToken: tokenData.access_token,
         accountName: page.name,
         expiresAt,
-        isActive: true,
+        // Pour un client, l'état choisi (en attente ou utilisée) est gardé.
+        ...(projectId == null ? { isActive: true } : {}),
         lastSyncAt: new Date(),
       });
     } else {
@@ -233,7 +248,7 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
         accessToken: tokenData.access_token,
         expiresAt,
         permissions: ['w_organization_social', 'r_organization_social'],
-        isActive: true,
+        isActive: projectId == null,
         lastSyncAt: new Date(),
       });
     }
@@ -300,6 +315,7 @@ export async function exchangeTwitterCode(userId: string, code: string, codeVeri
   const accountId = profile?.id || 'unknown';
   const accountName = profile?.name || profile?.username || 'X / Twitter';
 
+  await garderIdentite(userId, 'twitter', accountId, projectId);
   const existing = await storage.getSocialAccountByPlatform(userId, 'twitter', projectId);
   const expiresAt = tokenData.expires_in
     ? new Date(Date.now() + tokenData.expires_in * 1000)
@@ -368,6 +384,7 @@ export async function exchangeTikTokCode(userId: string, code: string, projectId
   } catch { /* ignore */ }
 
   const expiresAt = tok.expires_in ? new Date(Date.now() + tok.expires_in * 1000) : undefined;
+  await garderIdentite(userId, 'tiktok', String(tok.open_id), projectId);
   await storage.createSocialAccount({
     userId,
     projectId,

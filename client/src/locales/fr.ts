@@ -2670,6 +2670,14 @@ const fr = {
    nonConfigure: "Pas encore disponible sur Naya",
    connecte: "{{reseau}} connecté pour ce client",
    echec: "La connexion a échoué",
+   enAttente: "Pages LinkedIn trouvées sur ton compte : choisis celle de ce client, écarte les autres.",
+   utiliser: "Utiliser pour ce client",
+   ecarter: "Écarter",
+   raisons: {
+    compte_de_l_utilisatrice: "Ce compte est déjà le tien : il ne peut pas devenir celui du client. Connecte-toi avec le compte du client.",
+    compte_d_un_autre_projet: "Ce compte est déjà celui d'un autre client.",
+    state_invalide: "La connexion a expiré : relance-la depuis cette page.",
+   },
   },
   email: {
    titre: "Adresse d'envoi de la prospection",

@@ -23,7 +23,12 @@ const RESEAUX = [
 interface Statut { connected: boolean; etat: string; accountName?: string; configured: boolean; pagesCount?: number }
 interface Email { senderEmail: string; senderName: string; address: string; city: string; country: string; hasOwnKey: boolean; verificationStatus: string }
 interface Linkedin { configured: boolean; connected: boolean; restricted: boolean; restrictedReason: string | null }
-interface Connexions { reseaux: { statut: Record<string, Statut> }; email: Email; linkedin: Linkedin }
+interface CompteListe { id: number; platform: string; accountName: string; isPage?: boolean }
+interface Connexions {
+  reseaux: { statut: Record<string, Statut>; comptes: CompteListe[]; enAttente: CompteListe[] };
+  email: Email;
+  linkedin: Linkedin;
+}
 
 export default function ConnexionsClientPanel({ projectId }: { projectId: number }) {
   const { t } = useTranslation();
@@ -40,7 +45,14 @@ export default function ConnexionsClientPanel({ projectId }: { projectId: number
     const st = params.get("status");
     if (!social || !st) return;
     if (st === "connected") toast({ title: t("connexions.reseaux.connecte", { reseau: social }) });
-    else toast({ title: t("connexions.reseaux.echec"), description: params.get("reason") || undefined, variant: "destructive" });
+    else {
+      const raison = params.get("reason");
+      toast({
+        title: t("connexions.reseaux.echec"),
+        description: raison ? t(`connexions.reseaux.raisons.${raison}`, { defaultValue: raison }) : undefined,
+        variant: "destructive",
+      });
+    }
     const url = new URL(window.location.href);
     ["social", "status", "reason"].forEach((k) => url.searchParams.delete(k));
     window.history.replaceState({}, "", url.toString());
@@ -59,7 +71,23 @@ export default function ConnexionsClientPanel({ projectId }: { projectId: number
     onError: erreur,
   });
   const deconnecter = useMutation({
-    mutationFn: (reseau: string) => apiRequest("DELETE", `/api/social/disconnect/${reseau}?projectId=${projectId}`),
+    mutationFn: async (reseau: string) => {
+      // LinkedIn d'un client = ses pages (jamais de profil personnel) : on les retire une à une.
+      if (reseau === "linkedin") {
+        for (const c of data?.reseaux.comptes.filter((x) => x.platform.startsWith("linkedin_page_")) ?? []) {
+          await apiRequest("DELETE", `/api/projects/${projectId}/connexions/reseaux/${c.id}`);
+        }
+        return;
+      }
+      await apiRequest("DELETE", `/api/social/disconnect/${reseau}?projectId=${projectId}`);
+    },
+    onSuccess: rafraichir,
+    onError: erreur,
+  });
+  const choisirPage = useMutation({
+    mutationFn: ({ id, garder }: { id: number; garder: boolean }) => garder
+      ? apiRequest("POST", `/api/projects/${projectId}/connexions/reseaux/${id}/activer`)
+      : apiRequest("DELETE", `/api/projects/${projectId}/connexions/reseaux/${id}`),
     onSuccess: rafraichir,
     onError: erreur,
   });
@@ -107,6 +135,22 @@ export default function ConnexionsClientPanel({ projectId }: { projectId: number
                 </div>
               );
             })}
+            {data.reseaux.enAttente.length > 0 && (
+              <div className="rounded-md border border-dashed border-border p-2 space-y-2">
+                <p className="text-xs text-muted-foreground">{t("connexions.reseaux.enAttente")}</p>
+                {data.reseaux.enAttente.map((c) => (
+                  <div key={c.id} className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm flex-1">{c.accountName}</span>
+                    <Button size="sm" variant="outline" disabled={choisirPage.isPending} onClick={() => choisirPage.mutate({ id: c.id, garder: true })}>
+                      {t("connexions.reseaux.utiliser")}
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={choisirPage.isPending} onClick={() => choisirPage.mutate({ id: c.id, garder: false })}>
+                      {t("connexions.reseaux.ecarter")}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <EmailClient projectId={projectId} email={data.email} onSaved={rafraichir} />

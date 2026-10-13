@@ -69,6 +69,14 @@ describe("routes des comptes sociaux", () => {
     expect(JSON.stringify(client)).not.toContain("accessToken");
   });
 
+  it("LinkedIn d'un client : connecté dès qu'une page choisie est active (jamais de profil personnel chez un client)", async () => {
+    const { statutReseaux } = await import("./routes-social");
+    const page = { id: 9, platform: "linkedin_page_300", projectId: 7, isActive: true, accountName: "Page client", accessToken: "t", expiresAt: null };
+    expect(statutReseaux([page], 7).linkedin).toMatchObject({ connected: true, accountName: "Page client" });
+    expect(statutReseaux([{ ...page, isActive: false }], 7).linkedin.connected).toBe(false);
+    expect(statutReseaux([page], null).linkedin.connected).toBe(false);
+  });
+
   it("OAuth d'un projet client : le compte est rangé dans le projet, retour sur la page projet", async () => {
     const { url } = await (await appel("GET", "/api/social/oauth/instagram/url?projectId=7")).json();
     const state = new URL(url).searchParams.get("state")!;
@@ -92,6 +100,12 @@ describe("routes des comptes sociaux", () => {
     await appel("GET", "/api/social/oauth/instagram/url?projectId=7");
     const r = await appel("GET", "/api/social/oauth/instagram/callback?code=abc&state=user-2:1");
     expect(r.headers.get("location")).toBe("/projects/7?social=instagram&status=error&reason=state_invalide");
+    expect(oauth.exchangeInstagramCode).not.toHaveBeenCalled();
+  });
+
+  it("aucune connexion en cours dans la session (state forgé depuis un autre navigateur) → refus, aucun échange", async () => {
+    const r = await appel("GET", "/api/social/oauth/instagram/callback?code=abc&state=user-1:1");
+    expect(r.headers.get("location")).toBe("/settings?social=instagram&status=error&reason=state_invalide");
     expect(oauth.exchangeInstagramCode).not.toHaveBeenCalled();
   });
 

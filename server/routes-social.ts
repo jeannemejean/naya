@@ -50,8 +50,9 @@ export function statutReseaux(comptes: any[], portee: Portee, maintenant = new D
   const permis = comptes.filter((a) => dansPortee(a, portee));
   const status: Record<string, { connected: boolean; etat: string; accountName?: string; expiresAt?: Date; configured: boolean; pagesCount?: number }> = {};
   for (const platform of ["instagram", "linkedin", "tiktok"] as const) {
-    const account = permis.find((a) => a.platform === platform && a.isActive);
     const linkedinPages = platform === "linkedin" ? permis.filter((a) => a.platform.startsWith("linkedin_page_") && a.isActive) : [];
+    // Un client n'a jamais de profil LinkedIn personnel : sa page choisie fait la connexion.
+    const account = permis.find((a) => a.platform === platform && a.isActive) ?? (portee != null ? linkedinPages[0] : undefined);
     // `is_active` dit que la connexion n'a pas été révoquée, pas qu'elle marche (jetons morts
     // affichés « Connecté » le 18 septembre) : on qualifie le jeton.
     const etat = account
@@ -123,16 +124,13 @@ export function registerSocialRoutes(app: Express) {
       console.error(`[Social OAuth] ${platform} error:`, error);
       return res.redirect(retour(sessionProjectId, `social=${platform}&status=error&reason=${encodeURIComponent(error)}`));
     }
-    // Le `state` renvoyé doit être celui émis pour cette session (sinon : requête forgée).
-    if (session.socialOAuthState && state !== session.socialOAuthState) {
+    // Le `state` renvoyé doit être celui émis pour CETTE session. Sans connexion en cours dans
+    // la session, on refuse aussi : n'importe qui pourrait sinon forger `?state=<id>:…` et
+    // rattacher son propre compte à celui d'une autre (ancien repli « session perdue »).
+    if (!session.socialOAuthState || state !== session.socialOAuthState) {
       return res.redirect(retour(sessionProjectId, `social=${platform}&status=error&reason=state_invalide`));
     }
-
-    // userId depuis la session OU depuis le state (repli si session perdue). Sans session, pas
-    // de projet : le compte ne peut alors être rangé que chez l'utilisatrice.
-    const sessionUserId = session.socialOAuthUserId || session.userId;
-    const stateUserId = state?.split(":")[0];
-    const userId = sessionUserId || stateUserId;
+    const userId: string | undefined = session.socialOAuthUserId;
 
     if (!code) return res.redirect(retour(sessionProjectId, `social=${platform}&status=error&reason=missing_code`));
     if (!userId) return res.redirect(retour(sessionProjectId, `social=${platform}&status=error&reason=missing_session`));

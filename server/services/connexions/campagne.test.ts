@@ -32,3 +32,30 @@ describe("controleProjetCampagne", () => {
       .toEqual({ ok: true, change: true });
   });
 });
+
+import { controleChangementNature } from "./campagne";
+describe("controleChangementNature — client ↔ perso change qui envoie et qui signe", () => {
+  const deps = (enrol: Record<number, { leadId: number; status: string }[]>) => ({
+    getProspectionCampaigns: vi.fn(async () => [{ id: 31, projectId: 7 }, { id: 32, projectId: 9 }]),
+    getEnrollmentsByCampaign: vi.fn(async (id: number) => enrol[id] ?? []),
+    purgeLeadStepMessagesForCampaign: vi.fn(async () => 0),
+  });
+  it("nature inchangée ou non fournie : rien", async () => {
+    const d = deps({});
+    expect(await controleChangementNature({ userId: "u", projectId: 7, avant: "client", corps: { name: "x" } }, d)).toEqual({ ok: true });
+    expect(await controleChangementNature({ userId: "u", projectId: 7, avant: "client", corps: { projectKind: "client" } }, d)).toEqual({ ok: true });
+    expect(d.purgeLeadStepMessagesForCampaign).not.toHaveBeenCalled();
+  });
+  it("séquences en cours dans une campagne du projet → 409, rien n'est purgé", async () => {
+    const d = deps({ 31: [{ leadId: 1, status: "active" }] });
+    expect(await controleChangementNature({ userId: "u", projectId: 7, avant: "client", corps: { projectKind: "personal" } }, d))
+      .toEqual({ ok: false, status: 409, message: "campagne_en_cours" });
+    expect(d.purgeLeadStepMessagesForCampaign).not.toHaveBeenCalled();
+  });
+  it("aucune séquence en cours → accepté, messages rédigés des campagnes du projet périmés", async () => {
+    const d = deps({ 32: [{ leadId: 1, status: "active" }] });
+    expect(await controleChangementNature({ userId: "u", projectId: 7, avant: "personal", corps: { projectKind: "client" } }, d)).toEqual({ ok: true });
+    expect(d.purgeLeadStepMessagesForCampaign).toHaveBeenCalledWith(31);
+    expect(d.purgeLeadStepMessagesForCampaign).toHaveBeenCalledTimes(1);
+  });
+});

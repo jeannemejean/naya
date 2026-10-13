@@ -58,7 +58,14 @@ export function registerConnexionsRoutes(app: Express) {
       ]);
       const statut = c?.senderEmail ? await getSenderStatus(cleSendgrid(c), c.senderEmail) : "none";
       res.json({
-        reseaux: { statut: statutReseaux(comptes, projectId), comptes: listeComptes(comptes, projectId) },
+        reseaux: {
+          statut: statutReseaux(comptes, projectId),
+          comptes: listeComptes(comptes, projectId),
+          // Pages LinkedIn importées à la connexion, en attente du choix de l'utilisatrice.
+          enAttente: comptes
+            .filter((a: any) => a.projectId === projectId && !a.isActive && String(a.platform).startsWith("linkedin_page_"))
+            .map((a: any) => ({ id: a.id, platform: a.platform, accountName: a.accountName })),
+        },
         email: vueEmail(c, statut),
         linkedin: vueLinkedin(c),
       });
@@ -125,6 +132,44 @@ export function registerConnexionsRoutes(app: Express) {
       });
       if (!r.ok) return res.status(400).json({ message: r.error });
       res.json({ verificationStatus: "pending" });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  /** Un compte social du projet, ou null (réponse 404 envoyée). */
+  const compteDuProjet = async (req: any, res: any, projectId: number) => {
+    const id = Number(req.params.compteId);
+    const compte = Number.isInteger(id)
+      ? (await storage.getSocialAccounts(req.userId)).find((a: any) => a.id === id && a.projectId === projectId)
+      : undefined;
+    if (!compte) { res.status(404).json({ message: "not_found" }); return null; }
+    return compte;
+  };
+
+  // Choisir une page en attente : elle devient un compte du client.
+  app.post("/api/projects/:id/connexions/reseaux/:compteId/activer", isAuthenticated, async (req: any, res) => {
+    try {
+      const projectId = await projetClient(req, res);
+      if (projectId == null) return;
+      const compte = await compteDuProjet(req, res, projectId);
+      if (!compte) return;
+      await storage.updateSocialAccount(compte.id, req.userId, { isActive: true });
+      res.json({ ok: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Écarter un compte du client (page en attente qui n'est pas la sienne, par exemple).
+  app.delete("/api/projects/:id/connexions/reseaux/:compteId", isAuthenticated, async (req: any, res) => {
+    try {
+      const projectId = await projetClient(req, res);
+      if (projectId == null) return;
+      const compte = await compteDuProjet(req, res, projectId);
+      if (!compte) return;
+      await storage.deleteSocialAccount(compte.id, req.userId);
+      res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

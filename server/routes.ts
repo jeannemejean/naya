@@ -24,7 +24,7 @@ import { registerConnexionsRoutes } from "./routes-connexions";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
 import { dansPortee } from "./services/connexions/portee";
 import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
-import { controleProjetCampagne } from "./services/connexions/campagne";
+import { controleProjetCampagne, controleChangementNature } from "./services/connexions/campagne";
 import { compteUnipile } from "./services/connexions/unipile";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
@@ -1911,6 +1911,13 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       const validated = validateProjectPatchFields(picked);
       if (!validated.ok) {
         return res.status(400).json({ message: validated.message, field: validated.field });
+      }
+      // Mode agence : passer de client à perso (ou l'inverse) change qui envoie et qui signe.
+      if ('projectKind' in (validated.fields as any)) {
+        const avant = await storage.getProject(parseInt(req.params.id), userId);
+        if (!avant) return res.status(404).json({ message: "Project not found" });
+        const ctl = await controleChangementNature({ userId, projectId: avant.id, avant: (avant as any).projectKind, corps: validated.fields });
+        if (!ctl.ok) return res.status(ctl.status).json({ message: ctl.message });
       }
       const project = await storage.updateProject(parseInt(req.params.id), userId, validated.fields);
       if (!project) return res.status(404).json({ message: "Project not found" });

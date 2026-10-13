@@ -19,7 +19,11 @@ const storageMock = {
   getSocialAccounts: vi.fn(async () => [
     { id: 1, platform: "instagram", projectId: null, isActive: true, accountName: "jeanne", accessToken: "t" },
     { id: 2, platform: "instagram", projectId: 7, isActive: true, accountName: "client", accessToken: "t" },
+    { id: 3, platform: "linkedin_page_300", projectId: 7, isActive: false, accountName: "Page client", accessToken: "t" },
+    { id: 4, platform: "linkedin_page_100", projectId: null, isActive: true, accountName: "JMD", accessToken: "t" },
   ]),
+  updateSocialAccount: vi.fn(async (id: number, _u: string, patch: any) => ({ id, ...patch })),
+  deleteSocialAccount: vi.fn(async () => true),
   getConnexionProjet: vi.fn(async () => connexion),
   upsertConnexionProjet: vi.fn(async (_u: string, _p: number, patch: any) => (connexion = { ...(connexion ?? {}), ...patch })),
   getProspectionCampaigns: vi.fn(async () => [{ id: 31, projectId: 7 }, { id: 32, projectId: 9 }, { id: 33, projectId: 7 }]),
@@ -89,6 +93,17 @@ describe("routes des connexions d'un projet client", () => {
     vi.clearAllMocks();
     await appel("PUT", "/api/projects/7/connexions/email", { senderName: "Sophie", city: "Lyon" });
     expect(storageMock.purgeLeadStepMessagesForCampaign).not.toHaveBeenCalled();
+  });
+
+  it("pages LinkedIn en attente : listées, puis choisies ou écartées — seulement celles du projet", async () => {
+    const j = await (await appel("GET", "/api/projects/7/connexions")).json();
+    expect(j.reseaux.enAttente).toEqual([{ id: 3, platform: "linkedin_page_300", accountName: "Page client" }]);
+    expect((await appel("POST", "/api/projects/7/connexions/reseaux/3/activer")).status).toBe(200);
+    expect(storageMock.updateSocialAccount).toHaveBeenCalledWith(3, "user-1", { isActive: true });
+    expect((await appel("POST", "/api/projects/7/connexions/reseaux/4/activer")).status).toBe(404);
+    expect((await appel("DELETE", "/api/projects/7/connexions/reseaux/1")).status).toBe(404);
+    expect((await appel("DELETE", "/api/projects/7/connexions/reseaux/3")).status).toBe(200);
+    expect(storageMock.deleteSocialAccount).toHaveBeenCalledWith(3, "user-1");
   });
 
   it("LinkedIn : lien et synchro au nom du projet, jamais le compte de l'utilisatrice", async () => {
