@@ -5,7 +5,7 @@
  * mapping d'erreur), puis l'orchestration (search / enrich).
  */
 
-import { identitePourCampagne } from "./connexions/resolution";
+import { identitePourCampagne, signatureCampagne, SignatureClientManquanteError } from "./connexions/resolution";
 import { callClaudeWithContext } from "./claude";
 import { qualifierProspect } from "./prospection-qualify-call";
 import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qualification";
@@ -95,6 +95,9 @@ export function prospectionErrorResponse(
 ): { status: number; body: { message: string; code: string } } | null {
   if (err instanceof ProspectionAccessError || err instanceof LinkedInWeeklyLimitError) {
     return { status: 403, body: { message: (err as Error).message, code: (err as any).code } };
+  }
+  if (err instanceof SignatureClientManquanteError) {
+    return { status: 409, body: { message: err.code, code: err.code } };
   }
   return null;
 }
@@ -368,8 +371,7 @@ export async function enrichProspects(
   const prefs = await storage.getUserPreferences(userId).catch(() => null);
   // Signature = PRÉNOM du créateur (jamais le nom d'agence ni "Naya") ; pour un projet
   // client, la signature du client — même résolution que l'envoi.
-  const { identite } = await identitePourCampagne(userId, campaign, prefs);
-  const founderName = identite.signature ?? resolveFounderName(user, dna);
+  const founderName = signatureCampagne(await identitePourCampagne(userId, campaign, prefs), () => resolveFounderName(user, dna));
   const projectName = project?.name || (dna as any)?.businessName || campaign?.name || "";
   const channel = campaign?.channel || "linkedin";
 

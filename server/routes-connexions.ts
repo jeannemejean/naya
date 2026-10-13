@@ -82,7 +82,13 @@ export function registerConnexionsRoutes(app: Express) {
       if (typeof sendgridApiKey === "string") {
         data.sendgridApiKey = sendgridApiKey.trim() ? encryptToken(sendgridApiKey.trim()) : null;
       }
+      const avant = await storage.getConnexionProjet(req.userId, projectId);
       const c = await storage.upsertConnexionProjet(req.userId, projectId, data);
+      // Signature changée : les messages déjà rédigés pour ce client portent l'ancienne.
+      if ("senderName" in data && (avant?.senderName ?? null) !== (c.senderName ?? null)) {
+        const campagnes = (await storage.getProspectionCampaigns(req.userId)).filter((x: any) => x.projectId === projectId);
+        for (const x of campagnes) await storage.purgeLeadStepMessagesForCampaign(x.id);
+      }
 
       // Vérification SendGrid demandée d'elle-même quand l'adresse est complète (non bloquant).
       let verificationStatus = "none";

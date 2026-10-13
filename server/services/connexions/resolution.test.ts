@@ -41,3 +41,17 @@ describe("identiteCampagne", () => {
     expect(r.identite.email?.fromEmail).toBe("jeanne@jmd.com");
   });
 });
+
+import { signatureCampagne, SignatureClientManquanteError } from "./resolution";
+describe("signatureCampagne — même signature à l'aperçu, à l'enrichissement et à l'envoi", () => {
+  const vide = { email: null, linkedin: null };
+  it("utilisatrice : sa signature habituelle", () => {
+    expect(signatureCampagne({ portee: null, identite: { ...vide, signature: null } }, () => "Jeanne")).toBe("Jeanne");
+  });
+  it("client avec signature : celle du client", () => {
+    expect(signatureCampagne({ portee: 7, identite: { ...vide, signature: "Marc" } }, () => "Jeanne")).toBe("Marc");
+  });
+  it("client sans signature : refus, jamais celle de l'utilisatrice", () => {
+    expect(() => signatureCampagne({ portee: 7, identite: { ...vide, signature: null } }, () => "Jeanne")).toThrow(SignatureClientManquanteError);
+  });
+});

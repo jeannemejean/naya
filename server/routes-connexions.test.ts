@@ -22,6 +22,8 @@ const storageMock = {
   ]),
   getConnexionProjet: vi.fn(async () => connexion),
   upsertConnexionProjet: vi.fn(async (_u: string, _p: number, patch: any) => (connexion = { ...(connexion ?? {}), ...patch })),
+  getProspectionCampaigns: vi.fn(async () => [{ id: 31, projectId: 7 }, { id: 32, projectId: 9 }, { id: 33, projectId: 7 }]),
+  purgeLeadStepMessagesForCampaign: vi.fn(async () => 0),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const sg = vi.hoisted(() => ({ getSenderStatus: vi.fn(async () => "none"), createSingleSender: vi.fn(async () => ({ ok: true })) }));
@@ -78,6 +80,15 @@ describe("routes des connexions d'un projet client", () => {
     expect(JSON.stringify(j)).not.toContain("SG.secret");
     expect(j.verificationTriggered).toBe(true);
     expect(sg.createSingleSender).toHaveBeenCalledWith("SG.secret", expect.objectContaining({ email: "marc@client.fr", city: "Paris" }));
+  });
+
+  it("signature changée : les messages déjà rédigés des campagnes du client sont périmés (et seulement eux)", async () => {
+    connexion = { senderName: "Marc" };
+    await appel("PUT", "/api/projects/7/connexions/email", { senderName: "Sophie" });
+    expect(storageMock.purgeLeadStepMessagesForCampaign.mock.calls.map((c: any[]) => c[0]).sort()).toEqual([31, 33]);
+    vi.clearAllMocks();
+    await appel("PUT", "/api/projects/7/connexions/email", { senderName: "Sophie", city: "Lyon" });
+    expect(storageMock.purgeLeadStepMessagesForCampaign).not.toHaveBeenCalled();
   });
 
   it("LinkedIn : lien et synchro au nom du projet, jamais le compte de l'utilisatrice", async () => {

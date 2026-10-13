@@ -578,7 +578,7 @@ export interface IStorage {
    * Critique : sans limite, un compte avec des centaines de leads en attente ferait
    * consulter LinkedIn sans aucune borne, à chaque passage du poller).
    */
-  getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]>;
+  getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null; campaignId: number | null }[]>;
   /**
    * Trace une raison de non-joignabilité STRUCTURELLE (pays inconnu, aucun créneau
    * commun) — jamais une raison temporelle (pas un jour ouvré, hors fenêtre du jour),
@@ -2317,8 +2317,9 @@ export class DatabaseStorage implements IStorage {
 
   // Leads enrôlés (séquence active) dont l'invitation LinkedIn n'a pas encore été confirmée
   // acceptée — candidats au poller Unipile.
-  async getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null }[]> {
-    return await db.select({ id: leads.id, userId: leads.userId, linkedinUrl: leads.linkedinUrl })
+  async getLeadsAwaitingInvite(limit: number): Promise<{ id: number; userId: string; linkedinUrl: string | null; campaignId: number | null }[]> {
+    // `campaignId` : la campagne de la séquence, qui décide du compte LinkedIn (mode agence).
+    return await db.select({ id: leads.id, userId: leads.userId, linkedinUrl: leads.linkedinUrl, campaignId: leadSequenceState.campaignId })
       .from(leads)
       .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
       .where(and(

@@ -95,7 +95,7 @@ export async function syncLinkedInConnections(): Promise<number> {
     if (!lead.linkedinUrl) continue;
     try {
       const prefs = await getPrefs(lead.userId);
-      const campaignId = (lead as any).prospectionCampaignId as number | null | undefined;
+      const campaignId = lead.campaignId;
       let resolu: Awaited<ReturnType<typeof identiteCampagne>>;
       if (campaignId != null) {
         const cle = `${lead.userId}:${campaignId}`;

@@ -23,7 +23,7 @@ import { registerSocialRoutes } from "./routes-social";
 import { registerConnexionsRoutes } from "./routes-connexions";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
 import { dansPortee } from "./services/connexions/portee";
-import { identiteCampagne } from "./services/connexions/resolution";
+import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
 import { controleProjetCampagne } from "./services/connexions/campagne";
 import { compteUnipile } from "./services/connexions/unipile";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
@@ -8413,8 +8413,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const dna = await storage.getBrandDna(userId);
       const user = await storage.getUser(userId);
       const prefs = await storage.getUserPreferences(userId);
-      const { identite } = await identiteCampagne(userId, campaignId, prefs);
-      const founderName = identite.signature ?? resolveFounderName(user, dna as any);
+      let founderName: string;
+      try {
+        founderName = signatureCampagne(await identiteCampagne(userId, campaignId, prefs), () => resolveFounderName(user, dna as any));
+      } catch (e) {
+        if (e instanceof SignatureClientManquanteError) return res.status(409).json({ message: e.code });
+        throw e;
+      }
       const campaignWithFounder = { ...campaign, founderName };
       const instructions = combineInstructions((prefs as any)?.messageInstructions, (campaign as any)?.messageInstructions);
 

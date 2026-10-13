@@ -225,7 +225,7 @@ describe("syncLinkedInConnections", () => {
       (storage.getConnexionProjet as any).mockResolvedValue({
         senderName: "Marc", linkedinUnipileAccountId: "uni-client", linkedinAccountConnectedAt: new Date(Date.now() - 60 * 24 * HOUR),
       });
-      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ prospectionCampaignId: 10 })]);
+      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ campaignId: 10 })]);
       (checkConnection as any).mockResolvedValue({ ok: true, connected: true });
 
       await syncLinkedInConnections();
@@ -237,7 +237,7 @@ describe("syncLinkedInConnections", () => {
 
     it("client sans compte LinkedIn : aucune vérification avec celui de l'utilisatrice", async () => {
       (storage.getConnexionProjet as any).mockResolvedValue(undefined);
-      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ prospectionCampaignId: 10 })]);
+      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ campaignId: 10 })]);
 
       await syncLinkedInConnections();
 
@@ -248,7 +248,7 @@ describe("syncLinkedInConnections", () => {
       (storage.getConnexionProjet as any).mockResolvedValue({
         senderName: "Marc", linkedinUnipileAccountId: "uni-client", linkedinAccountConnectedAt: new Date(Date.now() - 60 * 24 * HOUR),
       });
-      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ prospectionCampaignId: 10 })]);
+      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ campaignId: 10 })]);
       (checkConnection as any).mockResolvedValue({ ok: false, error: "chat_401 Unauthorized" });
 
       await syncLinkedInConnections();

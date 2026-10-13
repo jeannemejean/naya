@@ -36,3 +36,23 @@ export async function identitePourCampagne(
   const connexion = portee != null ? await deps.getConnexionProjet(userId, portee) : null;
   return { portee, identite: identiteEnvoi(portee, prefs, connexion) };
 }
+
+/**
+ * Projet client sans signature : rien ne se rédige (un message en cache garderait sinon la
+ * signature de l'utilisatrice, puis partirait de l'adresse du client).
+ */
+export class SignatureClientManquanteError extends Error {
+  code = "signature_client_manquante";
+  constructor() { super("signature_client_manquante"); }
+}
+
+/** La signature des messages d'une campagne ; client sans signature → refus (jamais celle de l'utilisatrice). */
+export function signatureCampagne(
+  resolu: { portee: Portee; identite: IdentiteEnvoi }, signatureUtilisatrice: () => string,
+): string {
+  if (resolu.portee != null) {
+    if (!resolu.identite.signature) throw new SignatureClientManquanteError();
+    return resolu.identite.signature;
+  }
+  return signatureUtilisatrice();
+}

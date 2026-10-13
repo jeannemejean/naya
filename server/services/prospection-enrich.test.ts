@@ -31,6 +31,7 @@ vi.mock("../storage", () => ({
     getLearnedRules: vi.fn(async () => []),
     upsertLeadStepMessage: vi.fn(async () => {}),
     getLeadStepMessage: vi.fn(async () => undefined),
+    getConnexionProjet: vi.fn(async () => undefined),
   },
 }));
 vi.mock("./prospection/relecture", () => ({ relire: vi.fn(async () => []) }));
@@ -71,7 +72,7 @@ import * as claude from "./claude";
 import * as verification from "./prospection-verification";
 import * as access from "./prospection-access";
 import { ProspectionAccessError } from "./prospection-access";
-import { enrichProspects } from "./prospection-pipeline";
+import { enrichProspects, prospectionErrorResponse } from "./prospection-pipeline";
 
 const campaign = {
   id: 5,
@@ -116,6 +117,18 @@ beforeEach(() => {
 });
 
 const MESSAGE = "Bonjour Marie, le rebranding de Maison X m'a parlé : je dirige JMD, on raconte les coulisses des maisons de mode. Au plaisir d'échanger. Jeanne";
+
+describe("enrichProspects — projet client (mode agence)", () => {
+  it("sans signature du client : rien n'est rédigé (jamais la signature de l'utilisatrice), erreur 409 lisible", async () => {
+    (storage.getProject as any).mockResolvedValue({ id: 8, name: "Client", projectKind: "client" });
+    (storage.getConnexionProjet as any).mockResolvedValue({ senderEmail: "marc@client.fr" });
+    const err = await enrichProspects("u1", { ...campaign, userId: "u1" }, [10]).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(prospectionErrorResponse(err)).toEqual({ status: 409, body: { message: "signature_client_manquante", code: "signature_client_manquante" } });
+    expect(claude.callClaudeWithContext).not.toHaveBeenCalled();
+    expect(storage.upsertLeadStepMessage).not.toHaveBeenCalled();
+  });
+});
 
 describe("enrichProspects — tâche de validation dans le planning", () => {
   it("synchronise la tâche « Valider les messages » de la campagne une fois les messages prêts", async () => {
