@@ -543,7 +543,9 @@ export interface IStorage {
   getDerniersReleves(userId: string, projectId: number, kind: string): Promise<VeilleReleve[]>;
   addVeilleReleves(rows: InsertVeilleReleve[]): Promise<void>;
   addVeilleConstats(rows: InsertVeilleConstat[]): Promise<VeilleConstat[]>;
-  getVeilleConstats(userId: string, projectId: number, opts?: { limite?: number; depuis?: Date; statuts?: string[] }): Promise<VeilleConstat[]>;
+  getVeilleConstats(userId: string, projectId: number, opts?: { limite?: number; depuis?: Date; jusqua?: Date; statuts?: string[] }): Promise<VeilleConstat[]>;
+  /** Contenus d'un projet publiés dans [debut, fin[ (rapports client). */
+  getContenusPubliesEntre(userId: string, projectId: number, debut: Date, fin: Date): Promise<Content[]>;
   updateVeilleConstat(id: number, userId: string, patch: { statut: string }): Promise<VeilleConstat | null>;
 
   // Fondations et étiquetage des contenus
@@ -1330,6 +1332,13 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
+  async getContenusPubliesEntre(userId: string, projectId: number, debut: Date, fin: Date): Promise<Content[]> {
+    return await db.select().from(content).where(and(
+      eq(content.userId, userId), eq(content.projectId, projectId),
+      gte(content.publishedAt, debut), lt(content.publishedAt, fin),
+    ));
+  }
+
   async getContentById(id: number, userId: string): Promise<Content | undefined> {
     const [item] = await db.select().from(content)
       .where(and(eq(content.id, id), eq(content.userId, userId)));
@@ -2031,9 +2040,10 @@ export class DatabaseStorage implements IStorage {
     return db.insert(veilleConstats).values(rows).returning();
   }
 
-  async getVeilleConstats(userId: string, projectId: number, opts: { limite?: number; depuis?: Date; statuts?: string[] } = {}): Promise<VeilleConstat[]> {
+  async getVeilleConstats(userId: string, projectId: number, opts: { limite?: number; depuis?: Date; jusqua?: Date; statuts?: string[] } = {}): Promise<VeilleConstat[]> {
     const conds: SQL[] = [eq(veilleConstats.userId, userId), eq(veilleConstats.projectId, projectId)];
     if (opts.depuis) conds.push(gte(veilleConstats.createdAt, opts.depuis));
+    if (opts.jusqua) conds.push(lt(veilleConstats.createdAt, opts.jusqua));
     if (opts.statuts?.length) conds.push(inArray(veilleConstats.statut, opts.statuts));
     return db.select().from(veilleConstats).where(and(...conds))
       .orderBy(desc(veilleConstats.id)).limit(opts.limite ?? 30);

@@ -44,7 +44,11 @@ const appel = (method: string, path: string, body?: unknown) =>
 const BROUILLON = () => ({
   userId: "user-1", projectId: 7, mois: "2026-09", statut: "brouillon", jeton: null, partageActif: false,
   sections: { synthese: "S", realise: "R", resultats: "Res", prochainesEtapes: "P" },
-  donnees: { chiffres: { indicateurs: { ca: 12000 } }, contenus: null, prospection: null, veille: ["interne"] },
+  donnees: {
+    chiffres: { indicateurs: { ca: 12000, marge_contributive: 777, depense_acquisition: 55 }, evolutions: { ca: 0.2, marge_contributive: 0.5 } },
+    contenus: { total: 3, parPlateforme: { instagram: 3 }, meilleurs: [{ titre: "T", plateforme: "instagram", date: "2026-09-10", score: 4.91 }] },
+    prospection: { envoyes: 4, reponses: 1, enDiscussion: 99 }, veille: ["interne"],
+  },
 });
 beforeEach(() => { vi.clearAllMocks(); rapports = { "2026-09": BROUILLON() }; });
 
@@ -87,7 +91,12 @@ describe("routes des rapports client", () => {
     const j = await r.json();
     expect(j).toMatchObject({ client: "Maison X", agence: "Agence JMD", mois: "2026-09" });
     const brut = JSON.stringify(j);
-    for (const interdit of ["user-1", "projectId", "jeton", "interne"]) expect(brut).not.toContain(interdit);
+    for (const interdit of ["user-1", "projectId", "jeton", "interne", "marge_contributive", "depense_acquisition", "score", "4.91", "enDiscussion", "parPlateforme"]) {
+      expect(brut).not.toContain(interdit);
+    }
+    expect(j.chiffres.indicateurs).toEqual({ ca: 12000 });
+    expect(j.contenus).toEqual({ total: 3, meilleurs: [{ titre: "T", plateforme: "instagram", date: "2026-09-10" }] });
+    expect(j.prospection).toEqual({ envoyes: 4, reponses: 1 });
 
     await appel("POST", "/api/rapports/7/2026-09/couper");
     const coupe = await appel("GET", `/api/public/rapports/${jeton}`);

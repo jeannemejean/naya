@@ -6,22 +6,23 @@ import { gardeDepense } from "../routines/garde";
 import type { ExecuteurRoutine } from "../routines/types";
 import { preparerRapport, type DepsRapport } from "./rediger";
 import { executerRapport, KIND_RAPPORT } from "./routine";
-import { moisDe, type EntreesRapport } from "./donnees";
+import { bornesMois, type EntreesRapport } from "./donnees";
 
-/** Tout ce que le rapport du mois peut dire du projet, sans rien calculer ici. */
+/** Tout ce que le rapport du mois peut dire du projet, lu sur les bornes du mois à Paris. */
 async function lireEntrees(userId: string, projectId: number, mois: string): Promise<EntreesRapport> {
-  const [mesures, contenusTous, campagnes, constats] = await Promise.all([
-    storage.getMesures(userId, projectId, 13),
-    storage.getContent(userId, 500, projectId),
+  const { debut, fin } = bornesMois(mois);
+  const [mesures, contenus, campagnes, constats] = await Promise.all([
+    // Tout le registre (dix ans au plus) : un mois ancien garde ses chiffres et son mois précédent.
+    storage.getMesures(userId, projectId, 120),
+    storage.getContenusPubliesEntre(userId, projectId, debut, fin),
     storage.getProspectionCampaigns(userId),
-    storage.getVeilleConstats(userId, projectId, { limite: 60, depuis: new Date(`${mois}-01T00:00:00Z`) }),
+    storage.getVeilleConstats(userId, projectId, { limite: 200, depuis: debut, jusqua: fin }),
   ]);
-  const contenus = contenusTous.filter((c: any) => c.publishedAt && moisDe(c.publishedAt) === mois);
   const scores = await storage.getScoresReception(contenus.map((c: any) => c.id));
   const leads: any[] = [];
   for (const c of campagnes.filter((x: any) => x.projectId === projectId)) leads.push(...await storage.getLeadsByCampaign(c.id, userId));
   const messages = await storage.getOutreachForLeads(leads.map((l) => l.id));
-  return { mesures: mesures as any, contenus: contenus as any, scores, messages: messages as any, leads, constats: constats as any };
+  return { mesures: mesures as any, contenus: contenus as any, scores, messages: messages as any, constats: constats as any };
 }
 
 export const depsRapport: DepsRapport = {

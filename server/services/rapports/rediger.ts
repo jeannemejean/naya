@@ -63,7 +63,7 @@ export function lignesDonnees(d: DonneesRapport): string {
     l.push(`Contenus publiés : ${d.contenus.total} (${Object.entries(d.contenus.parPlateforme).map(([p, n]) => `${p} ${n}`).join(", ")})`);
     for (const c of d.contenus.meilleurs) l.push(`- Contenu qui a le mieux fonctionné : « ${c.titre} » (${c.plateforme}, ${c.date})`);
   }
-  if (d.prospection) l.push(`Prospection : ${d.prospection.envoyes} messages envoyés dans le mois, ${d.prospection.enDiscussion} prospects en discussion`);
+  if (d.prospection) l.push(`Prospection : ${d.prospection.envoyes} messages envoyés dans le mois, ${d.prospection.reponses} prospects ont répondu`);
   if (d.veille) for (const v of d.veille) l.push(`- Fait marquant de la veille : ${v}`);
   return l.join("\n");
 }

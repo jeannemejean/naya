@@ -8,7 +8,7 @@ interface RapportPublic {
   sections: Record<string, string>;
   chiffres: { indicateurs: Record<string, number | null>; evolutions: Record<string, number | null> } | null;
   contenus: { total: number; meilleurs: Array<{ titre: string; plateforme: string; date: string }> } | null;
-  prospection: { envoyes: number; enDiscussion: number } | null;
+  prospection: { envoyes: number; reponses: number } | null;
 }
 
 const SECTIONS = ["synthese", "realise", "resultats", "prochainesEtapes"];
@@ -61,12 +61,12 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
           </button>
         </div>
 
-        {r.chiffres && (
+        {(r.chiffres || r.contenus || r.prospection) && (
           <section className="mb-8">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">{t("rapports.public.chiffres")}</h2>
             <table className="w-full text-sm">
               <tbody>
-                {CHIFFRES.filter((c) => r.chiffres!.indicateurs[c.cle] != null).map((c) => (
+                {r.chiffres && CHIFFRES.filter((c) => r.chiffres!.indicateurs[c.cle] != null).map((c) => (
                   <tr key={c.cle} className="border-b border-neutral-100">
                     <td className="py-1.5 text-neutral-600">{t(`rapports.public.indicateurs.${c.cle}`)}</td>
                     <td className="py-1.5 text-right font-medium">
@@ -84,7 +84,7 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
                 {r.prospection && (
                   <tr className="border-b border-neutral-100">
                     <td className="py-1.5 text-neutral-600">{t("rapports.public.prospection")}</td>
-                    <td className="py-1.5 text-right font-medium">{t("rapports.public.prospectionValeur", { envoyes: r.prospection.envoyes, enDiscussion: r.prospection.enDiscussion })}</td>
+                    <td className="py-1.5 text-right font-medium">{t("rapports.public.prospectionValeur", { envoyes: r.prospection.envoyes, reponses: r.prospection.reponses })}</td>
                   </tr>
                 )}
               </tbody>

@@ -18,7 +18,11 @@ import RoutineCard from "@/components/routines/RoutineCard";
 
 const SECTIONS = ["synthese", "realise", "resultats", "prochainesEtapes"] as const;
 type Sections = Record<(typeof SECTIONS)[number], string>;
-interface Rapport { mois: string; statut: "brouillon" | "publie"; sections: Sections; partageActif: boolean; lien: string | null; publieLe: string | null }
+interface Rapport {
+  mois: string; statut: "brouillon" | "publie"; sections: Sections; partageActif: boolean; lien: string | null; publieLe: string | null;
+  donnees?: { chiffres?: { indicateurs: Record<string, number | null> } | null; contenus?: { total: number } | null; prospection?: { envoyes: number; reponses: number } | null };
+}
+const INDICATEURS_MONTRES = ["ca", "nouveaux_clients", "depense_totale", "mer", "cac", "panier_moyen"];
 interface Donnees { rapports: Rapport[]; routine: any }
 
 /** Le mois écoulé, à Paris (YYYY-MM). */
@@ -155,6 +159,16 @@ function EditeurRapport({ rapport, titre, url, onSaved }: { rapport: Rapport; ti
         <DialogTitle className="capitalize">{titre}</DialogTitle>
       </DialogHeader>
       {publie && <p className="text-xs text-muted-foreground">{t("rapports.publieLectureSeule")}</p>}
+      <div className="rounded-md bg-muted/40 p-2 text-xs space-y-0.5">
+        <p className="font-medium text-muted-foreground">{t("rapports.chiffresClient")}</p>
+        {INDICATEURS_MONTRES.filter((k) => rapport.donnees?.chiffres?.indicateurs?.[k] != null).map((k) => (
+          <p key={k}>{t(`rapports.public.indicateurs.${k}`)} : {rapport.donnees!.chiffres!.indicateurs[k]!.toLocaleString(undefined, { maximumFractionDigits: 1 })}</p>
+        ))}
+        {rapport.donnees?.contenus && <p>{t("rapports.public.contenus")} : {rapport.donnees.contenus.total}</p>}
+        {rapport.donnees?.prospection && (
+          <p>{t("rapports.public.prospection")} : {t("rapports.public.prospectionValeur", { envoyes: rapport.donnees.prospection.envoyes, reponses: rapport.donnees.prospection.reponses })}</p>
+        )}
+      </div>
       <div className="space-y-3">
         {SECTIONS.map((k) => (
           <div key={k}>

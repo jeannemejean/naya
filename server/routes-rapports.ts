@@ -7,6 +7,7 @@ import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { perimetreDemande } from "./routes-social";
 import { preparerRapport, CLES_SECTIONS } from "./services/rapports/rediger";
+import { SUIVIS } from "./services/rapports/donnees";
 import { depsRapport } from "./services/rapports/deps";
 import { routineRapportPour, KIND_RAPPORT } from "./services/rapports/routine";
 import { executerUne, REGISTRE } from "./services/routines/ordonnanceur";
@@ -39,6 +40,31 @@ export function validerSections(corps: unknown): { ok: true; sections: Record<st
     s[k] = v;
   }
   return Object.keys(s).length ? { ok: true, sections: s } : { ok: false };
+}
+
+/**
+ * Ce qui sort vers le client, champ par champ : jamais la marge, les coûts variables, les
+ * scores internes ni la veille brute — même si les données enregistrées en contiennent.
+ */
+export function projectionPublique(donnees: any, sections: any) {
+  const d = donnees ?? {};
+  const choisir = (o: any) => {
+    if (!o) return {};
+    const r: Record<string, number | null> = {};
+    for (const k of SUIVIS) if (k in o) r[k] = typeof o[k] === "number" ? o[k] : null;
+    return r;
+  };
+  const texte = (v: unknown) => (typeof v === "string" ? v : "");
+  return {
+    sections: Object.fromEntries(CLES_SECTIONS.map((k) => [k, texte(sections?.[k])])),
+    chiffres: d.chiffres ? { indicateurs: choisir(d.chiffres.indicateurs), evolutions: choisir(d.chiffres.evolutions) } : null,
+    contenus: d.contenus ? {
+      total: Number(d.contenus.total) || 0,
+      meilleurs: (Array.isArray(d.contenus.meilleurs) ? d.contenus.meilleurs : []).slice(0, 3)
+        .map((c: any) => ({ titre: texte(c?.titre), plateforme: texte(c?.plateforme), date: texte(c?.date) })),
+    } : null,
+    prospection: d.prospection ? { envoyes: Number(d.prospection.envoyes) || 0, reponses: Number(d.prospection.reponses) || 0 } : null,
+  };
 }
 
 export function registerRapportsRoutes(app: Express) {
@@ -188,16 +214,12 @@ export function registerRapportsRoutes(app: Express) {
       if (!r || !r.partageActif || r.statut !== "publie") return res.status(404).json({ message: "indisponible" });
       const projet: any = await storage.getProject(r.projectId, r.userId);
       if (!projet) return res.status(404).json({ message: "indisponible" });
-      const d: any = r.donnees ?? {};
       res.json({
         client: projet.clientName || projet.name,
         agence: await depsRapport.nomAgence(r.userId),
         mois: r.mois,
         libelleMois: libelleMois(r.mois),
-        sections: r.sections,
-        chiffres: d.chiffres ?? null,
-        contenus: d.contenus ?? null,
-        prospection: d.prospection ?? null,
+        ...projectionPublique(r.donnees, r.sections),
         publieLe: r.publieLe,
       });
     } catch {
