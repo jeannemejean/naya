@@ -14,6 +14,7 @@ import ConversionsPanel from "./ConversionsPanel";
 import BrandLinksPanel from "./BrandLinksPanel";
 import LivrablesPanel from "./LivrablesPanel";
 import PreuvesPanel from "./PreuvesPanel";
+import ConnexionsClientPanel from "./ConnexionsClientPanel";
 
 interface ProjectPageProps {
   id: number;
@@ -106,6 +107,12 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
             <section>
               <LivrablesPanel projectId={id} />
             </section>
+
+            {project.projectKind === "client" && (
+              <section>
+                <ConnexionsClientPanel projectId={id} />
+              </section>
+            )}
 
             <section>
               <h2 className="text-sm font-semibold text-foreground mb-2">Accès rapides</h2>

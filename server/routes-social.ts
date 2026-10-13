@@ -20,14 +20,15 @@ export type Perimetre = { ok: true; portee: Portee } | { ok: false; status: numb
  * Le périmètre demandé : aucun projet → l'utilisatrice ; sinon un projet CLIENT à elle.
  * Projet introuvable (ou d'une autre) → 404 ; projet perso → 409 `projet_perso`.
  */
-export async function perimetreDemande(userId: string, brut: unknown): Promise<Perimetre> {
+export async function perimetreDemande(userId: string, brut: unknown, opts: { persoAccepte?: boolean } = {}): Promise<Perimetre> {
   if (brut === undefined || brut === null || brut === "") return { ok: true, portee: null };
   const id = Number(brut);
   if (!Number.isInteger(id) || id <= 0) return { ok: false, status: 404, message: "not_found" };
   const projet = await storage.getProject(id, userId);
   if (!projet) return { ok: false, status: 404, message: "not_found" };
   const portee = porteeDe(projet as any);
-  if (portee == null) return { ok: false, status: 409, message: "projet_perso" };
+  // En lecture, un projet perso désigne simplement le périmètre de l'utilisatrice.
+  if (portee == null && !opts.persoAccepte) return { ok: false, status: 409, message: "projet_perso" };
   return { ok: true, portee };
 }
 
@@ -164,7 +165,7 @@ export function registerSocialRoutes(app: Express) {
   // Comptes connectés du périmètre (avec IDs) pour le composeur multi-réseaux.
   app.get("/api/social/accounts", isAuthenticated, async (req: any, res) => {
     try {
-      const p = await perimetreDemande(req.userId, req.query.projectId);
+      const p = await perimetreDemande(req.userId, req.query.projectId, { persoAccepte: true });
       if (!p.ok) return res.status(p.status).json({ message: p.message });
       res.json(listeComptes(await storage.getSocialAccounts(req.userId), p.portee));
     } catch (err: any) {
@@ -175,7 +176,7 @@ export function registerSocialRoutes(app: Express) {
   // État de connexion de chaque réseau du périmètre.
   app.get("/api/social/status", isAuthenticated, async (req: any, res) => {
     try {
-      const p = await perimetreDemande(req.userId, req.query.projectId);
+      const p = await perimetreDemande(req.userId, req.query.projectId, { persoAccepte: true });
       if (!p.ok) return res.status(p.status).json({ message: p.message });
       res.json(statutReseaux(await storage.getSocialAccounts(req.userId), p.portee));
     } catch (err: any) {

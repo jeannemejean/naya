@@ -3,7 +3,8 @@
 // sur /api/prospection/campaigns et invalide le cache campagnes au succès.
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useProject } from '@/lib/project-context';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,7 +23,11 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
   const { toast } = useToast();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  // Le projet décide de qui envoie : un projet client prospecte avec SES connexions.
+  const { activeProjectId } = useProject();
+  const { data: projets = [] } = useQuery<{ id: number; name: string; projectKind?: string }[]>({ queryKey: ['/api/projects?limit=200'] });
   const [form, setForm] = useState({
+    projectId: initial ? (initial.projectId != null ? String(initial.projectId) : 'aucun') : (activeProjectId != null ? String(activeProjectId) : 'aucun'),
     name: initial?.name || '',
     status: initial?.status || 'active',
     targetSector: initial?.targetSector || '',
@@ -50,7 +55,11 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
     e.preventDefault();
     if (!form.name.trim()) return;
     const ppd = Number(form.prospectsPerDay);
-    createCampaign.mutate({ ...form, prospectsPerDay: Number.isFinite(ppd) && ppd > 0 ? ppd : null });
+    createCampaign.mutate({
+      ...form,
+      projectId: form.projectId === 'aucun' ? null : Number(form.projectId),
+      prospectsPerDay: Number.isFinite(ppd) && ppd > 0 ? ppd : null,
+    });
   };
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -66,6 +75,24 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
           placeholder="Vignobles — Tourisme international"
           required
         />
+      </div>
+
+      <div>
+        <Label className="text-xs">{t('connexions.campagne.projet')}</Label>
+        <Select value={form.projectId} onValueChange={(v) => set('projectId', v)}>
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="aucun">{t('connexions.campagne.aucun')}</SelectItem>
+            {projets.map((p) => (
+              <SelectItem key={p.id} value={String(p.id)}>
+                {p.projectKind === 'client' ? t('connexions.campagne.client', { nom: p.name }) : p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[11px] text-muted-foreground mt-1">{t('connexions.campagne.aide')}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

@@ -50,7 +50,8 @@ describe("routes des comptes sociaux", () => {
   it("projet d'une autre ou inconnu → 404 ; projet perso → 409", async () => {
     expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=8")).status).toBe(404);
     expect((await appel("GET", "/api/social/accounts?projectId=abc")).status).toBe(404);
-    expect((await appel("GET", "/api/social/status?projectId=5")).status).toBe(409);
+    expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=5")).status).toBe(409);
+    expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=5")).status).toBe(409);
     expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=8")).status).toBe(404);
     expect(storageMock.deleteSocialAccount).not.toHaveBeenCalled();
   });
@@ -60,6 +61,8 @@ describe("routes des comptes sociaux", () => {
     expect(perso.map((a: any) => a.id)).toEqual([1]);
     const client = await (await appel("GET", "/api/social/accounts?projectId=7")).json();
     expect(client.map((a: any) => a.id)).toEqual([2]);
+    const projetPerso = await (await appel("GET", "/api/social/accounts?projectId=5")).json();
+    expect(projetPerso.map((a: any) => a.id)).toEqual([1]);
     const statut = await (await appel("GET", "/api/social/status?projectId=7")).json();
     expect(statut.instagram).toMatchObject({ accountName: "client", connected: true });
     expect(statut.linkedin.connected).toBe(false);

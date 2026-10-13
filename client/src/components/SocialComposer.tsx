@@ -43,7 +43,11 @@ function defaultFormat(platform: Platform, media: MediaAsset[]): PostFormat {
 export function SocialComposer({ open, onClose, projectId }: { open: boolean; onClose: () => void; projectId?: number | null }) {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const { data: accounts = [] } = useQuery<Account[]>({ queryKey: ["/api/social/accounts"], enabled: open });
+  // Comptes du périmètre du projet : un projet client ne propose que les comptes du client.
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: [projectId ? `/api/social/accounts?projectId=${projectId}` : "/api/social/accounts"],
+    enabled: open,
+  });
 
   const [selected, setSelected] = useState<Record<number, PostFormat>>({}); // accountId -> format
   const [caption, setCaption] = useState("");
