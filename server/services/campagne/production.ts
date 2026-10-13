@@ -290,3 +290,25 @@ export function joursEtapesEnOrdre({ post, etapes, jourPost, aujourdhui, estTrav
   }
   return deplacements;
 }
+
+/**
+ * Ce qu'il faut écrire pour remettre une étape de production à son jour. Une étape qui change
+ * de jour perd son heure : l'heure d'un autre jour peut tomber sur une tâche ou un rendez-vous,
+ * le re-tassage lui en donne une libre. « Publier » est tenue par l'heure du post (`publier`).
+ */
+export function majEtape(
+  t: { scheduledDate: string | null; scheduledTime: string | null },
+  jour: string,
+  publier: { debut: string; fin: string } | null,
+): Record<string, unknown> {
+  const maj: Record<string, unknown> = {};
+  if (jour !== t.scheduledDate) {
+    maj.scheduledDate = jour;
+    if (!publier) { maj.scheduledTime = null; maj.scheduledEndTime = null; }
+  }
+  if (publier && t.scheduledTime !== publier.debut) {
+    maj.scheduledTime = publier.debut;
+    maj.scheduledEndTime = publier.fin;
+  }
+  return maj;
+}

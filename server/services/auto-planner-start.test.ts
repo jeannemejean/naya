@@ -148,3 +148,23 @@ describe("runDailyAutoPlanner — date de départ future", () => {
     expect(debutsDeFenetreObserves()).toContain("2026-08-25");
   });
 });
+
+describe("runDailyAutoPlanner — re-tassage garanti chaque matin", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storageMock.getActiveUserIds.mockResolvedValue(["u1"]);
+    storageMock.getTasksInRange.mockResolvedValue([]);
+    storageMock.fixOverlappingTasks.mockResolvedValue(0);
+    storageMock.getUserPreferences.mockResolvedValue({ planningStatus: "active", workDays: "mon,tue,wed,thu,fri" });
+  });
+
+  it("même sans tâche en retard ni génération (journées pleines), la journée est re-tassée : un rendez-vous ajouté la veille ne reste jamais sous une tâche", async () => {
+    // Pas de Brand DNA : la génération s'arrête avant son propre re-tassage ; rien en retard :
+    // la remise des tâches en retard non plus. Seul le filet final re-tasse.
+    storageMock.getBrandDna.mockResolvedValue(null);
+
+    await runDailyAutoPlanner("2026-10-13");
+
+    expect(storageMock.fixOverlappingTasks).toHaveBeenCalledWith("u1", "2026-10-13");
+  });
+});

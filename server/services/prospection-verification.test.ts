@@ -7,6 +7,7 @@ vi.mock("../storage", () => ({
     getTasksInRange: vi.fn(),
     createTask: vi.fn(),
     updateTask: vi.fn(),
+    fixOverlappingTasks: vi.fn(async () => 0),
   },
 }));
 
@@ -107,6 +108,13 @@ describe("planTacheValidation — idempotent, une tâche par campagne et par jou
     const p = planTacheValidation({ campagne, aValider: 2, taches: [tache({ scheduledDate: "2026-10-06" })], jour: JOUR });
     expect(p.creer).toBeNull();
     expect(p.maj[0].data.scheduledDate).toBe(JOUR);
+    // Jamais l'heure d'un autre jour : elle pourrait tomber sur une tâche ou un rendez-vous.
+    expect(p.maj[0].data).toMatchObject({ scheduledTime: null, scheduledEndTime: null });
+  });
+
+  it("tâche du jour mise à jour : son heure n'est pas touchée", () => {
+    const p = planTacheValidation({ campagne, aValider: 5, taches: [tache({ scheduledTime: "10:00" })], jour: JOUR });
+    expect(p.maj[0].data).not.toHaveProperty("scheduledTime");
   });
 
   it("deux tâches ouvertes (doublon hérité) → on garde la plus récente, l'autre est close", () => {
@@ -176,6 +184,17 @@ describe("synchroniserValidationsProspection", () => {
     (storage.getTasksInRange as any).mockResolvedValue([tache({ id: 9, actionData: { prospectionCampaignId: 8 } })]);
     await synchroniserValidationsProspection("u1", JOUR);
     expect(storage.updateTask).toHaveBeenCalledWith(9, expect.objectContaining({ completed: true }));
+  });
+
+  it("une tâche créée ou déplacée est placée sans chevauchement (re-tassage du jour)", async () => {
+    await synchroniserValidationsProspection("u1", JOUR);
+    expect(storage.fixOverlappingTasks).toHaveBeenCalledWith("u1", JOUR);
+  });
+
+  it("rien d'écrit → aucun re-tassage", async () => {
+    (storage.getProspectionCampaigns as any).mockResolvedValue([]);
+    await synchroniserValidationsProspection("u1", JOUR);
+    expect(storage.fixOverlappingTasks).not.toHaveBeenCalled();
   });
 
   it("peut se limiter à une campagne", async () => {

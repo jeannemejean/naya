@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { joursEtapesEnOrdre, rangEtape } from "./production";
+import { joursEtapesEnOrdre, majEtape, rangEtape } from "./production";
 
 // Semaine d'octobre 2026 : le 10 et le 11 sont un samedi et un dimanche.
 const travaille = (d: string) => !["2026-10-10", "2026-10-11", "2026-10-17", "2026-10-18"].includes(d);
@@ -77,5 +77,20 @@ describe("joursEtapesEnOrdre — propriétés", () => {
   });
   it("un post passé : rien ne bouge", () => {
     expect(joursEtapesEnOrdre({ post: image, etapes: [t(1, "Rédiger le texte", "2026-10-01")], jourPost: "2026-10-05", aujourdhui: "2026-10-09", estTravaille: travaille }).size).toBe(0);
+  });
+});
+
+describe("majEtape — remettre une étape à son jour sans jamais garder une heure d'un autre jour", () => {
+  it("étape changée de jour : l'heure est effacée (le re-tassage lui en donne une libre)", () => {
+    expect(majEtape({ scheduledDate: "2026-10-09", scheduledTime: "17:25" }, "2026-10-13", null))
+      .toEqual({ scheduledDate: "2026-10-13", scheduledTime: null, scheduledEndTime: null });
+  });
+  it("étape au bon jour : rien", () => {
+    expect(majEtape({ scheduledDate: "2026-10-13", scheduledTime: "17:25" }, "2026-10-13", null)).toEqual({});
+  });
+  it("Publier : à l'heure du post, même en changeant de jour", () => {
+    expect(majEtape({ scheduledDate: "2026-10-09", scheduledTime: "09:00" }, "2026-10-13", { debut: "11:00", fin: "11:15" }))
+      .toEqual({ scheduledDate: "2026-10-13", scheduledTime: "11:00", scheduledEndTime: "11:15" });
+    expect(majEtape({ scheduledDate: "2026-10-13", scheduledTime: "11:00" }, "2026-10-13", { debut: "11:00", fin: "11:15" })).toEqual({});
   });
 });

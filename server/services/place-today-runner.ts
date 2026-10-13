@@ -14,8 +14,11 @@ export async function runPlaceToday(
   const workDayStartStr = prefs?.workDayStart || "09:00";
   const workDayEndStr = prefs?.workDayEnd || "18:00";
 
-  const todayTasks = (await storage.getTasksInRange(userId, today, today))
-    .filter((t: any) => t.type !== "milestone" && t.source !== "milestone" && !t.completed);
+  const duJour = (await storage.getTasksInRange(userId, today, today))
+    .filter((t: any) => t.type !== "milestone" && t.source !== "milestone");
+  // Les tâches TERMINÉES restent affichées (barrées) à leur heure : elles occupent leur
+  // créneau. Seules les autres sont à placer.
+  const todayTasks = duJour.filter((t: any) => !t.completed);
 
   const nullTimeCount = (todayTasks as any[]).filter((t) => !t.scheduledTime).length;
   if (nullTimeCount === 0) return { placed: 0, unplaced: 0 };
@@ -28,7 +31,7 @@ export async function runPlaceToday(
 
   // Créneaux occupés : tâches déjà datées + pause déjeuner + pauses + agenda Google.
   const used: Array<{ start: number; end: number }> = [];
-  for (const t of todayTasks as any[]) {
+  for (const t of duJour as any[]) {
     if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
       const s = hhmm(t.scheduledTime);
       const e = (t.scheduledEndTime && /^\d{2}:\d{2}$/.test(t.scheduledEndTime)) ? hhmm(t.scheduledEndTime) : s + (t.estimatedDuration || 30);

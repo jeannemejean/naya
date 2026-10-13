@@ -716,6 +716,14 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         }
         await synchroniserValidationsProspection(userId, dates[0] ?? debutUtilisateur).catch(e => console.error(`[AutoPlanner] Validation prospection failed for ${userId}:`, e.message));
 
+        // 3. Filet final, TOUJOURS : la remise en retard et la génération ne re-tassent que
+        //    si elles ont écrit quelque chose. Or un rendez-vous ajouté à l'agenda la veille
+        //    (« Imetik », 13 oct.) arrive sur des tâches déjà placées sans que rien ne bouge :
+        //    chaque matin, toute la suite du planning est re-tassée contre l'agenda.
+        await storage.fixOverlappingTasks(userId, debutUtilisateur).catch((e: any) =>
+          console.error(`[AutoPlanner] fixOverlappingTasks final ${userId}:`, e.message),
+        );
+
         processed++;
       } catch (err: any) {
         console.error(`[AutoPlanner] Failed for user ${userId}:`, err.message);

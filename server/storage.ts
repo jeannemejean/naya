@@ -187,7 +187,8 @@ import { memesChiffres } from "./services/mesure/calculs";
 import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
-import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, postAProduire, rangEtape } from "./services/campagne/production";
+import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, majEtape, postAProduire, rangEtape } from "./services/campagne/production";
+import { chevauchements, heurePublicationLibre, peutDeplacerPublication } from "./services/publication-libre";
 import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
@@ -198,7 +199,7 @@ import type { StepSendKey } from "./services/prospection-idempotence";
 import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
-import { parisDayBoundsUTC, localWallClock } from "./utils/timezone";
+import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
 
 /**
@@ -3252,10 +3253,14 @@ export class DatabaseStorage implements IStorage {
     // Étapes de production : remises dans l'ordre de leur post et avant sa publication AVANT
     // le re-tassage, qui respecte ensuite cet ordre dans chaque journée. Ne fait jamais
     // échouer l'appelant.
-    const ordonnees = await this.ordonnerEtapesPosts(userId).catch((e: any) => {
+    const { n: ordonnees, plusTot } = await this.ordonnerEtapesPosts(userId).catch((e: any) => {
       console.error('[ordre-etapes] non appliqué:', e?.message ?? e);
-      return 0;
+      return { n: 0, plusTot: null as string | null };
     });
+    // Une étape remise à un jour plus tôt que `fromDate` y a perdu son heure : le re-tassage
+    // doit couvrir ce jour-là aussi (jamais avant aujourd'hui, le passé n'est pas re-tassé).
+    const { aujourdhui: jourCourant } = maintenantParis();
+    const depart = plusTot && plusTot < fromDate ? (plusTot > jourCourant ? plusTot : jourCourant) : fromDate;
 
     // Durées des tâches du dernier calcul, pour recalculer l'heure de fin à l'application.
     let durees = new Map<number, number>();
@@ -3268,12 +3273,12 @@ export class DatabaseStorage implements IStorage {
       calculerDeplacements: async () => {
         if (sansDependance) return [];
         // Même périmètre que le re-tassage : tâches visibles (non archivées) à partir de
-        // fromDate. Une tâche archivée n'est pas chargée, donc ne contraint jamais.
+        // depart. Une tâche archivée n'est pas chargée, donc ne contraint jamais.
         const [visibles, prefs] = await Promise.all([
           db.select().from(tasks).where(and(
             eq(tasks.userId, userId),
             isNull(tasks.archivedAt),
-            gte(tasks.scheduledDate, fromDate),
+            gte(tasks.scheduledDate, depart),
           )),
           this.getUserPreferences(userId),
         ]);
@@ -3320,12 +3325,23 @@ export class DatabaseStorage implements IStorage {
             .where(and(eq(tasks.id, mv.id), eq(tasks.userId, userId)));
         }
       },
-      retasser: () => this.retasserJours(userId, fromDate),
+      retasser: () => this.retasserJours(userId, depart),
     });
 
     if (deplaces > 0) {
       console.log(`[precedence] ${deplaces} déplacement(s), stable=${stable} (${tours} tour(s)) user=${userId}`);
     }
+    // Surveillance : ce qui se recouvrirait encore (deux tâches terminées, une publication
+    // non déplaçable…) est journalisé avec les identifiants, pour trouver toute cause restante.
+    try {
+      const apres = await db.select({
+        id: tasks.id, scheduledDate: tasks.scheduledDate, scheduledTime: tasks.scheduledTime, estimatedDuration: tasks.estimatedDuration,
+      }).from(tasks).where(and(eq(tasks.userId, userId), isNull(tasks.archivedAt), gte(tasks.scheduledDate, depart)));
+      const restants = chevauchements(apres);
+      if (restants.length > 0) {
+        console.error(`[fixOverlappingTasks] ${restants.length} chevauchement(s) restant(s) user=${userId} : ${restants.slice(0, 10).map((c) => `${c.jour} ${c.a}×${c.b}`).join(', ')}`);
+      }
+    } catch { /* surveillance seulement */ }
     return retasses + deplaces + ordonnees;
   }
 
@@ -3336,14 +3352,14 @@ export class DatabaseStorage implements IStorage {
    * sont lues, quelle que soit leur date : une étape en retard est ramenée elle aussi.
    * Renvoie le nombre de tâches déplacées.
    */
-  private async ordonnerEtapesPosts(userId: string): Promise<number> {
+  private async ordonnerEtapesPosts(userId: string): Promise<{ n: number; plusTot: string | null }> {
     const etapes = await db.select().from(tasks).where(and(
       eq(tasks.userId, userId),
       isNull(tasks.archivedAt),
       eq(tasks.completed, false),
       isNotNull(tasks.contentId),
     ));
-    if (etapes.length === 0) return 0;
+    if (etapes.length === 0) return { n: 0, plusTot: null };
     const idsPosts = Array.from(new Set(etapes.map((t) => t.contentId!)));
     const posts = await db.select().from(content).where(and(eq(content.userId, userId), inArray(content.id, idsPosts)));
     const prefs = await this.getUserPreferences(userId);
@@ -3357,6 +3373,7 @@ export class DatabaseStorage implements IStorage {
     const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 
     let deplacees = 0;
+    let plusTot: string | null = null;
     // Deux posts à la même heure : leurs « Publier » s'enchaînent au lieu de se superposer.
     const finPublication = new Map<string, number>();
     const parHeure = [...posts].sort((a, b) =>
@@ -3370,26 +3387,25 @@ export class DatabaseStorage implements IStorage {
 
       for (const t of siennes) {
         const jour = jours.get(t.id) ?? t.scheduledDate;
-        const maj: Record<string, unknown> = {};
-        if (jour !== t.scheduledDate) maj.scheduledDate = jour;
+        let publier: { debut: string; fin: string } | null = null;
         if (estTachePublier(t.title)) {
           // Publier : à l'heure du post, jamais ailleurs.
           const duree = t.estimatedDuration || 15;
           const debutMin = Math.max(heurePost, finPublication.get(jourPost) ?? 0);
           finPublication.set(jourPost, debutMin + duree);
-          const debut = hhmm(debutMin);
-          if (t.scheduledTime !== debut) {
-            maj.scheduledTime = debut;
-            maj.scheduledEndTime = hhmm(Math.min(24 * 60 - 1, debutMin + duree));
-          }
+          publier = { debut: hhmm(debutMin), fin: hhmm(Math.min(24 * 60 - 1, debutMin + duree)) };
         }
+        // Une étape qui change de jour perd son heure (jamais l'heure d'un autre jour).
+        const maj = majEtape(t as any, jour as string, publier);
         if (Object.keys(maj).length === 0) continue;
         await db.update(tasks).set(maj as any).where(and(eq(tasks.id, t.id), eq(tasks.userId, userId)));
         deplacees++;
+        const jourEcrit = (maj.scheduledDate as string | undefined) ?? t.scheduledDate;
+        if (jourEcrit && (plusTot === null || jourEcrit < plusTot)) plusTot = jourEcrit;
       }
     }
     if (deplacees > 0) console.log(`[ordre-etapes] ${deplacees} étape(s) remise(s) en ordre user=${userId}`);
-    return deplacees;
+    return { n: deplacees, plusTot };
   }
 
   /** Re-tassage jour par jour (corps historique de fixOverlappingTasks, inchangé). */
@@ -3461,6 +3477,7 @@ export class DatabaseStorage implements IStorage {
       const posts = await db.select({
         id: content.id, scheduledFor: content.scheduledFor, title: content.title,
         postFormat: content.postFormat, contentType: content.contentType,
+        publishedAt: content.publishedAt, postStatus: content.postStatus,
       }).from(content).where(inArray(content.id, idsPosts));
       for (const p of posts) {
         postParId.set(p.id, p);
@@ -3498,12 +3515,8 @@ export class DatabaseStorage implements IStorage {
       if (!blockedByDate.has(date)) blockedByDate.set(date, []);
       blockedByDate.get(date)!.push({ start, end });
     };
-    // 0) Les publications : leur créneau est celui du post.
-    for (const t of toFix) {
-      if (!estPublierFixe(t)) continue;
-      const debut = parseTime(t.scheduledTime!);
-      addBlocked(t.scheduledDate!, debut, debut + (t.estimatedDuration || 15));
-    }
+    // 0) Les publications : leur créneau est celui du post. Elles sont posées APRÈS la
+    //    lecture de l'agenda (plus bas), pour vérifier qu'elles ne tombent sur rien.
 
     // Ordre dans chaque journée : les étapes de production passent par échéance (le post
     // publié le plus tôt d'abord), puis dans l'ordre de leur post. Une étape DÉPEND de la
@@ -3533,20 +3546,22 @@ export class DatabaseStorage implements IStorage {
     //    problème on dégrade proprement : on re-tasse sans le calendrier plutôt que
     //    de faire échouer l'écriture appelante.
     const datesWithTasks = Array.from(byDate.keys()).sort();
-    if (datesWithTasks.length > 0) {
+    // L'agenda est lu aussi pour les jours qui n'ont qu'une publication.
+    const joursAgenda = Array.from(new Set([...datesWithTasks, ...toFix.filter(estPublierFixe).map((t) => t.scheduledDate!)])).sort();
+    if (joursAgenda.length > 0) {
       try {
         const { getCalendarEvents } = await import('./services/google-calendar');
         // La borne haute déborde de 14 jours : une tâche qui déborde d'un jour est
         // reportée au jour ouvré suivant, qui peut sortir de la plage des tâches
         // actuelles — sans ça ce jour-là serait re-tassé en ignorant l'agenda.
-        const lastDate = datesWithTasks[datesWithTasks.length - 1];
+        const lastDate = joursAgenda[joursAgenda.length - 1];
         const [ly, lm, ld] = lastDate.split('-').map(Number);
         const horizon = new Date(Date.UTC(ly, lm - 1, ld));
         horizon.setUTCDate(horizon.getUTCDate() + 14);
 
         const events = await getCalendarEvents(
           userId,
-          datesWithTasks[0],
+          joursAgenda[0],
           horizon.toISOString().slice(0, 10),
         );
         for (const ev of events) {
@@ -3557,6 +3572,37 @@ export class DatabaseStorage implements IStorage {
       } catch (e: any) {
         console.error('[fixOverlappingTasks] GCal indisponible, re-tassage sans agenda:', e?.message);
       }
+    }
+
+    // Les publications, maintenant que les rendez-vous et les tâches terminées sont connus.
+    // Une « Publier » qui tombe sur l'un d'eux (13 oct. : Publier 11:00 sur « serrure »
+    // 10:00–11:30) glisse, AVEC SON POST, au premier créneau libre du même jour — tant que
+    // le post n'est pas parti et que le créneau n'est pas passé. Sinon elle reste (journalisé).
+    const publications = toFix
+      .filter(estPublierFixe)
+      .sort((a, b) => (a.scheduledDate! + a.scheduledTime!).localeCompare(b.scheduledDate! + b.scheduledTime!));
+    for (const t of publications) {
+      const jour = t.scheduledDate!;
+      const duree = t.estimatedDuration || 15;
+      let debut = parseTime(t.scheduledTime!);
+      const occupes = blockedByDate.get(jour) ?? [];
+      if (occupes.some((r) => debut < r.end && debut + duree > r.start)) {
+        const libre = heurePublicationLibre({ debut, duree, occupes });
+        const post = postParId.get(t.contentId!);
+        if (libre != null && peutDeplacerPublication(post, jour, debut, { jour: parisToday, minute: parisNowMin })) {
+          await db.update(tasks)
+            .set({ scheduledTime: formatTime(libre), scheduledEndTime: formatTime(libre + duree) })
+            .where(eq(tasks.id, t.id));
+          await db.update(content)
+            .set({ scheduledFor: wallClockToInstant('Europe/Paris', jour, formatTime(libre)) } as any)
+            .where(and(eq(content.id, t.contentId!), eq(content.userId, userId)));
+          console.log(`[fixOverlappingTasks] publication ${t.id} (post ${t.contentId}) ${formatTime(debut)} → ${formatTime(libre)} le ${jour} : créneau occupé`);
+          debut = libre;
+        } else {
+          console.warn(`[fixOverlappingTasks] publication ${t.id} le ${jour} à ${formatTime(debut)} sur un créneau occupé, non déplaçable user=${userId}`);
+        }
+      }
+      addBlocked(jour, debut, debut + duree);
     }
 
     let fixed = 0;

@@ -124,6 +124,9 @@ export function planTacheValidation(e: {
           scheduledDate: e.jour,
           estimatedDuration: dureeValidation(e.aValider),
           actionData: actionData(e.campagne, e.aValider),
+          // Ramenée d'un autre jour : son ancienne heure n'a plus de sens ici (elle pourrait
+          // tomber sur une tâche ou un rendez-vous). Le re-tassage lui en donne une libre.
+          ...(gardee.scheduledDate !== e.jour ? { scheduledTime: null, scheduledEndTime: null } : {}),
         },
       });
     }
@@ -204,6 +207,12 @@ export async function synchroniserValidationsProspection(
       await storage.updateTask(id, { completed: true, completedAt: new Date() } as any);
       compte.closes++;
     }
+  }
+  // Une tâche créée ou déplacée n'a pas d'heure : le re-tassage la pose sur un créneau
+  // libre (tâches, terminées comprises, et rendez-vous), sans jamais chevaucher.
+  if (compte.creees > 0 || compte.majs > 0) {
+    await storage.fixOverlappingTasks(userId, jour).catch((e: any) =>
+      console.error(`[validation-prospection] re-tassage ${userId}:`, e?.message));
   }
   return compte;
 }

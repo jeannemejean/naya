@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { voiesPlanning } from "@/lib/voies-planning";
 import { CLE_MUTATION_COCHAGE, cocherDansLeCache, derniereCocheEnVol } from "@/lib/cochage-optimiste";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_TODAY_VIEW, nextPlannerDay, tasksForPlannerDay, type TodayView } from "@/lib/today-view";
@@ -569,6 +570,12 @@ export default function TodaysTasks() {
      .catch(() => { /* best-effort */ });
  }, [unscheduledTasks.length, today]);
 
+ // Colonnes de la journée, sur l'étendue AFFICHÉE de chaque carte (hauteur minimale comprise).
+ const voies = voiesPlanning(plannerScheduled.map((task: Task) => {
+   const { top, height } = getTaskPosition(task);
+   return { id: task.id, debut: top, fin: top + height };
+ }));
+
  function getTaskPosition(task: Task): { top: number; height: number } {
  // Positionne par scheduledTime (HH:MM) — le champ réel. suggestedStartTime est legacy
  // et toujours null → c'est ce qui empilait toutes les tâches à 7h.
@@ -1000,6 +1007,9 @@ export default function TodaysTasks() {
 
  {plannerScheduled.map((task: Task) => {
  const { top, height } = getTaskPosition(task);
+ // Colonnes : deux cartes qui se touchent à l'écran (hauteur minimale comprise) sont
+ // posées côte à côte, jamais l'une sur l'autre.
+ const v = voies.get(task.id) ?? { voie: 0, total: 1 };
  const projColor = getProjectColor(task.projectId, projects);
  const project = task.projectId ? projects.find(p => p.id === task.projectId) : null;
  return (
@@ -1011,8 +1021,12 @@ export default function TodaysTasks() {
  <PopoverTrigger asChild>
  <div
  data-task-title={task.title}
- className={`absolute left-12 right-0 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity select-none ${task.completed ? 'opacity-50' : ''}`}
- style={{ top, height, backgroundColor: `${projColor}15`, borderLeft: `3px solid ${projColor}` }}
+ className={`absolute rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity select-none ${task.completed ? 'opacity-50' : ''}`}
+ style={{
+   top, height, backgroundColor: `${projColor}15`, borderLeft: `3px solid ${projColor}`,
+   left: `calc(3rem + (100% - 3rem) * ${v.voie} / ${v.total})`,
+   width: `calc((100% - 3rem) / ${v.total} - ${v.total > 1 ? 2 : 0}px)`,
+ }}
  >
  <div className="p-2">
  <div className="flex items-center gap-1.5">
