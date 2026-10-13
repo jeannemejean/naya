@@ -551,6 +551,7 @@ export interface IStorage {
 
   // Fondations et étiquetage des contenus
   getFondations(userId: string, projectId: number): Promise<Fondations | undefined>;
+  creerFondationsSiAbsentes(userId: string, projectId: number): Promise<boolean>;
   upsertFondations(userId: string, projectId: number, patch: Partial<InsertFondations>): Promise<Fondations>;
   getContenusAEtiqueter(userId: string, projectId: number, depuis: Date, limite: number): Promise<Array<{ id: number; title: string; body: string }>>;
   etiqueterContenus(userId: string, rows: Array<{ id: number; angle: string; formatCreatif: string | null }>): Promise<number>;
@@ -2070,6 +2071,12 @@ export class DatabaseStorage implements IStorage {
    * (`statuts || patch`), jamais réécrit en bloc. Deux écritures concurrentes sur deux
    * sections différentes (une validation pendant une proposition) ne s'écrasent donc pas.
    */
+  /** Pose une ligne vide si le projet n'en a pas ; vrai seulement pour la demande qui l'a créée. */
+  async creerFondationsSiAbsentes(userId: string, projectId: number): Promise<boolean> {
+    const r = await db.insert(fondations).values({ userId, projectId }).onConflictDoNothing().returning({ id: fondations.id });
+    return r.length > 0;
+  }
+
   async upsertFondations(userId: string, projectId: number, patch: Partial<InsertFondations>): Promise<Fondations> {
     const { id: _i, userId: _u, projectId: _p, createdAt: _c, statuts, ...rest } = patch as any;
     // Motivations supprimées : leurs contenus repassent « à étiqueter » — sinon une nouvelle

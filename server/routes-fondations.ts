@@ -56,6 +56,8 @@ export function registerFondationsRoutes(app: Express) {
           plan: f?.plan ?? null, kpiReleves: f?.kpiReleves ?? {}, statuts: statutsDe(f),
         },
         catalogues: CATALOGUES,
+        // Aucune fondation encore enregistrée : l'onglet demande à Naya de les préparer.
+        aRemplir: !f,
         kpiAuto,
         routine: r ? { routine: r, derniersPassages: await storage.getRoutineRuns(r.id, userId, 3) } : null,
         couverture: couverture(motivationsDe(f), contenus, scores),
@@ -70,6 +72,12 @@ export function registerFondationsRoutes(app: Express) {
     try {
       const projet = await projetDe(req);
       if (!projet) return res.status(404).json({ message: "not_found" });
+      // Remplissage automatique à la première ouverture : une ligne est posée AVANT l'appel IA,
+      // de façon atomique — une seule demande passe, même avec deux onglets ou après un échec.
+      if (req.body?.auto === true) {
+        const creee = await storage.creerFondationsSiAbsentes(req.userId, projet.id);
+        if (!creee) return res.json({ deja: true });
+      }
       const demandees = req.body?.sections;
       if (demandees !== undefined && (!Array.isArray(demandees) || demandees.some((s: unknown) => !(SECTIONS as readonly unknown[]).includes(s)))) {
         return res.status(400).json({ message: "sections_invalides" });

@@ -19,6 +19,7 @@ const FOND = {
 const storageMock = {
   getProject: vi.fn(),
   getFondations: vi.fn(),
+  creerFondationsSiAbsentes: vi.fn(async () => true),
   upsertFondations: vi.fn(async (_u: string, _p: number, patch: any) => ({ ...FOND, ...patch })),
   getContenusEtiquetes: vi.fn(async () => [] as any[]),
   getScoresReception: vi.fn(async () => []),
@@ -173,5 +174,21 @@ describe("routes des fondations", () => {
     expect((await appel("PATCH", "/api/fondations/7/routine", {})).status).toBe(400);
     expect((await appel("PATCH", "/api/fondations/7/routine", { actif: false })).status).toBe(200);
     expect(storageMock.updateRoutine).toHaveBeenCalledWith(9, "user-1", { actif: false });
+  });
+
+  it("remplissage automatique : aRemplir quand rien n'existe ; une seule demande paie, jamais deux", async () => {
+    storageMock.getFondations.mockResolvedValueOnce(undefined);
+    expect((await (await appel("GET", "/api/fondations/7")).json()).aRemplir).toBe(true);
+    expect((await (await appel("GET", "/api/fondations/7")).json()).aRemplir).toBe(false);
+
+    storageMock.creerFondationsSiAbsentes.mockResolvedValueOnce(true);
+    expect((await appel("POST", "/api/fondations/7/proposer", { auto: true })).status).toBe(200);
+    expect(prop.proposerFondations).toHaveBeenCalledTimes(1);
+
+    prop.proposerFondations.mockClear();
+    storageMock.creerFondationsSiAbsentes.mockResolvedValueOnce(false);
+    const j = await (await appel("POST", "/api/fondations/7/proposer", { auto: true })).json();
+    expect(j).toEqual({ deja: true });
+    expect(prop.proposerFondations).not.toHaveBeenCalled();
   });
 });
