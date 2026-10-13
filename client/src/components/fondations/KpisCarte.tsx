@@ -13,12 +13,15 @@ import type { Kpi, Releve, Statut } from "./types";
 
 const MAX = 12;
 type Props = {
-  projectId: number; kpis: Kpi[]; releves: Record<string, Releve[]>; statut: Statut;
+  projectId: number; kpis: Kpi[]; releves: Record<string, Releve[]>; kpiAuto: Record<string, Releve[]>; statut: Statut;
   etages: string[]; frequences: string[]; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean; verrouille: boolean;
 };
 const CHAMP_SELECT = "h-8 rounded-md border border-input bg-background px-2 text-xs";
 
-export default function KpisCarte({ projectId, kpis, releves, statut, etages, frequences, onChange, onReproposer, reproposeEnCours, verrouille }: Props) {
+/** Indicateurs calculés du registre mensuel (page Mesure), dans l'ordre d'affichage. */
+const SOURCES = ["mer", "cac", "ca", "nouveaux_clients", "panier_moyen", "part_ca_nouveaux", "marge_contributive", "depense_totale"];
+
+export default function KpisCarte({ projectId, kpis, releves, kpiAuto, statut, etages, frequences, onChange, onReproposer, reproposeEnCours, verrouille }: Props) {
   const { t } = useTranslation();
   const [brouillon, setBrouillon] = useState<Kpi[] | null>(null);
   const envoi = useEnvoiSection(projectId, "kpis", onChange, () => setBrouillon(null));
@@ -44,7 +47,12 @@ export default function KpisCarte({ projectId, kpis, releves, statut, etages, fr
                 onClick={() => setBrouillon((b) => b && b.filter((_, j) => j !== i))}>
                 <Trash2 className="w-3.5 h-3.5" />
               </Button>
-              <Input className="h-8 text-xs sm:col-span-5" value={k.definition} placeholder={t("fondations.kpis.definition")} onChange={(e) => maj(i, { definition: e.target.value })} />
+              <select className={`${CHAMP_SELECT} sm:col-span-2`} value={k.source || ""} aria-label={t("fondations.kpis.source")}
+                onChange={(e) => maj(i, { source: e.target.value || undefined })}>
+                <option value="">{t("fondations.kpis.sourceManuelle")}</option>
+                {SOURCES.map((s) => <option key={s} value={s}>{t("fondations.kpis.sourceMesure", { nom: t(`mesure.indicateurs.${s}.nom`) })}</option>)}
+              </select>
+              <Input className="h-8 text-xs sm:col-span-3" value={k.definition} placeholder={t("fondations.kpis.definition")} onChange={(e) => maj(i, { definition: e.target.value })} />
             </div>
           ))}
           {brouillon.length < MAX && (
@@ -59,7 +67,7 @@ export default function KpisCarte({ projectId, kpis, releves, statut, etages, fr
           {etages.filter((e) => kpis.some((k) => k.etage === e)).map((e) => (
             <div key={e} className="space-y-1.5">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t(`fondations.kpis.etages.${e}`)}</p>
-              {kpis.filter((k) => k.etage === e).map((k) => <LigneKpi key={k.cle} projectId={projectId} kpi={k} releves={releves[k.cle] || []} onChange={onChange} />)}
+              {kpis.filter((k) => k.etage === e).map((k) => <LigneKpi key={k.cle} projectId={projectId} kpi={k} releves={(k.source ? kpiAuto[k.cle] : releves[k.cle]) || []} onChange={onChange} />)}
             </div>
           ))}
         </div>
@@ -87,16 +95,17 @@ function LigneKpi({ projectId, kpi, releves, onChange }: { projectId: number; kp
           <span className="font-normal text-muted-foreground"> · {t(`fondations.kpis.frequences.${kpi.frequence}`)}{kpi.cible ? ` · ${t("fondations.kpis.cibleCourte", { cible: kpi.cible })}` : ""}</span>
         </p>
         {kpi.definition && <p className="text-muted-foreground">{kpi.definition}</p>}
+        {kpi.source && <p className="text-[10px] text-naya-salvia">{t("fondations.kpis.calcule")}</p>}
         <p className="text-muted-foreground mt-0.5">
           {dernier
             ? t("fondations.kpis.dernier", { valeur: dernier.valeur.toLocaleString(i18n.language), date: new Date(dernier.date).toLocaleDateString(i18n.language) })
             : t("fondations.kpis.aucunReleve")}
         </p>
       </div>
-      <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (valide) saisir.mutate(); }}>
+      {!kpi.source && <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (valide) saisir.mutate(); }}>
         <Input className="h-7 w-24 text-xs" inputMode="decimal" value={valeur} placeholder={t("fondations.kpis.valeur")} onChange={(e) => setValeur(e.target.value)} />
         <Button type="submit" size="sm" variant="outline" className="h-7 text-xs" disabled={!valide || saisir.isPending}>{t("fondations.kpis.saisir")}</Button>
-      </form>
+      </form>}
     </div>
   );
 }

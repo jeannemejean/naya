@@ -86,7 +86,7 @@ function FondationsProjet({ projectId }: { projectId: number }) {
 
       <OffreCarte {...commun("offre")} offre={f.offre} />
       <MotivationsCarte {...commun("motivations")} motivations={f.motivations} formats={catalogues.formats} />
-      <KpisCarte {...commun("kpis")} kpis={f.kpis} releves={f.kpiReleves} etages={catalogues.etages} frequences={catalogues.frequences} />
+      <KpisCarte {...commun("kpis")} kpis={f.kpis} releves={f.kpiReleves} kpiAuto={data.kpiAuto || {}} etages={catalogues.etages} frequences={catalogues.frequences} />
       <PlanCarte {...commun("plan")} plan={f.plan} catalogues={catalogues} />
       <CouvertureCarte projectId={projectId} donnees={data} motivationsValidees={f.statuts.motivations === "valide"} onChange={rafraichir} />
     </div>

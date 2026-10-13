@@ -9,7 +9,7 @@ export type Motivation = {
   cle: string; nom: string; description: string; angle: string;
   accroches: string[]; preuves: string[]; objections: string[]; formats: string[];
 };
-export type Kpi = { cle: string; nom: string; etage: string; definition: string; frequence: string; cible?: string };
+export type Kpi = { cle: string; nom: string; etage: string; definition: string; frequence: string; cible?: string; source?: string };
 export type Brique = { cle: string; statut: string; raison: string; action: string };
 export type Plan = { maturite: string; resume: string; briques: Brique[] };
 export type Releve = { date: string; valeur: number };
@@ -30,6 +30,8 @@ export type DonneesFondations = {
     kpiReleves: Record<string, Releve[]>; statuts: Record<Section, Statut>;
   };
   catalogues: Catalogues;
+  /** Série calculée depuis le registre mensuel, pour les KPI reliés (`source`). */
+  kpiAuto: Record<string, Releve[]>;
   routine: RoutineDTO | null;
   couverture: {
     lignes: Array<{ cle: string; nom: string; contenus: number; publies: number; score: number | null; retiree?: boolean }>;
