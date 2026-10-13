@@ -29,6 +29,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/meta",
   "/api/waitlist",
   "/api/health",
+  "/api/public", // rapports client partagés par lien privé (lus sans compte)
   "/api/admin",
   "/api/social/oauth",
   "/api/calendar/oauth",
