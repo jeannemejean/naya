@@ -7,6 +7,7 @@ import { computeGoalUrgencyScore, formatGoalsWithUrgency } from "./goal-urgency"
 import { formatBehaviorPatternsForContext } from "./behavior-patterns";
 import { retrieveMemories } from "./memory/retrieve";
 import { blocVeille } from "./veille/contexte";
+import { blocFondations } from "./fondations/contexte";
 
 const TYPES_VOC_CONTEXTE = ["objection", "vocabulaire", "attente", "sujet"];
 
@@ -299,6 +300,16 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
       if (bloc) sections.push(bloc);
     } catch (err: any) {
       console.error('[Veille] section contexte échouée:', err?.message);
+    }
+
+    // Section 10 : les fondations validées (offre d'entrée, motivations d'achat et leur
+    // matrice créative, KPI, plan d'acquisition). Seules les sections validées sortent ; en
+    // mode tiers, l'offre et les motivations seulement.
+    if (projectId) try {
+      const bloc = blocFondations(await storage.getFondations(userId, projectId), { tiers });
+      if (bloc) sections.push(bloc);
+    } catch (err: any) {
+      console.error('[Fondations] section contexte échouée:', err?.message);
     }
 
     // Section finale : langue de génération (toujours présente)

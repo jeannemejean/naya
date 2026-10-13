@@ -25,6 +25,13 @@ const valeurs: Record<string, any> = {
     { type: "objection", texte: "OBJECTION RELEVEE", kind: "veille_voix_client" },
     { type: "position", texte: "POSITION PERDUE", kind: "veille_serp" },
   ],
+  getFondations: {
+    statuts: { offre: "valide", motivations: "valide", kpis: "valide", plan: "propose" },
+    offre: { nom: "OFFRE ENTREE", description: "", pourquoi: "", existe: true },
+    motivations: [{ cle: "m", nom: "MOTIVATION VALIDEE", angle: "", accroches: [], preuves: [], objections: [], formats: [] }],
+    kpis: [{ cle: "k", nom: "KPI SUIVI", etage: "business", definition: "", frequence: "mensuel" }],
+    plan: { maturite: "demarrage", resume: "", briques: [{ cle: "seo", statut: "maintenant", raison: "", action: "PLAN NON VALIDE" }] },
+  },
 };
 vi.mock("../storage", () => ({
   storage: new Proxy({} as any, { get: (_t, k: string) => async () => valeurs[k] }),
@@ -54,6 +61,13 @@ describe("buildNayaContext, mode tiers", () => {
     expect(c).not.toContain("POSITION PERDUE");
   });
 
+  it("garde l'offre d'entrée et les motivations validées, sans KPI", async () => {
+    const c = await buildNayaContext("u1", 7, "prospect", { destinataire: "tiers" });
+    expect(c).toContain("OFFRE ENTREE");
+    expect(c).toContain("MOTIVATION VALIDEE");
+    expect(c).not.toContain("KPI SUIVI");
+  });
+
   it("retire tâches, jalons, énergie, mémoire de fondatrice et revue du jour", async () => {
     const c = await buildNayaContext("u1", 7, "prospect", { destinataire: "tiers" });
     expect(c).not.toContain("Instruction absolue");
@@ -70,5 +84,7 @@ describe("buildNayaContext, mode tiers", () => {
     expect(c).toContain("La revue du jour");
     expect(c).toContain("OBJECTION RELEVEE");
     expect(c).toContain("POSITION PERDUE");
+    expect(c).toContain("KPI SUIVI");
+    expect(c).not.toContain("PLAN NON VALIDE");
   });
 });
