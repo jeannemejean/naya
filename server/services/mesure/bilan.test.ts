@@ -66,6 +66,15 @@ describe("executerBilan", () => {
     const d = deps([{ ...sept, bilan: "x", bilanLe: new Date("2026-09-30") }, aout]);
     expect((await executerBilan(routine, d)).statut).toBe("ok");
   });
+  it("le mois de comparaison (août) corrigé après le bilan de septembre → septembre est refait", async () => {
+    const d = deps([
+      { ...sept, updatedAt: new Date("2026-09-30"), bilan: "x", bilanLe: new Date("2026-10-01T12:00:00Z") },
+      { ...aout, updatedAt: new Date("2026-10-01T15:00:00Z") },
+    ]);
+    const r = await executerBilan(routine, d);
+    expect(r.statut).toBe("ok");
+    expect(r.details).toMatchObject({ mois: "2026-09" });
+  });
   it("garde refusée → rendue telle quelle", async () => {
     const d = deps(undefined, { garde: vi.fn(async () => ({ statut: "rien_a_faire" as const, resume: "Budget" })) });
     expect((await executerBilan(routine, d)).resume).toBe("Budget");
@@ -113,5 +122,17 @@ describe("routineBilanPour", () => {
     const r = routineBilanPour({ userId: "u", projectId: 7 }, new Date("2026-10-13T10:00:00Z"));
     expect(r).toMatchObject({ kind: "mesure_bilan", cadence: "mensuelle", cibleCle: "project:7", actif: true });
     expect(r.prochainPassage.toISOString()).toBe("2026-11-02T05:00:00.000Z");
+  });
+});
+
+describe("langue du compte", () => {
+  it("compte en anglais : résumé du bilan et rappel en anglais", async () => {
+    expect(resumeBilan("2026-09", [sept, aout], "en")).toMatch(/^September 2026 review ready: MER 5\.0 \(\+/);
+    const d = deps([aout], { langue: vi.fn(async () => "en" as const) });
+    const r = await executerBilan(routine, d);
+    expect(r.resume).toBe("Enter your September 2026 figures in Measure: Naya will write your monthly review.");
+  });
+  it("compte en français : inchangé", () => {
+    expect(resumeBilan("2026-09", [sept, aout])).toMatch(/^Bilan de septembre 2026 prêt : MER 5,0/);
   });
 });

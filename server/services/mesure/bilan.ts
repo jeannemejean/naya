@@ -16,19 +16,46 @@ export const euros = (n: number) => `${espaces(Math.round(n).toLocaleString("fr-
 const ratio = (n: number) => espaces(n.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
 const pourcent = (x: number | null) => (x === null ? "" : ` (${x >= 0 ? "+" : "−"}${Math.round(Math.abs(x) * 100)} %)`);
 
+export type Langue = "fr" | "en";
+const eurosEn = (n: number) => `€${Math.round(n).toLocaleString("en-US")}`;
+const ratioEn = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const pourcentEn = (x: number | null) => (x === null ? "" : ` (${x >= 0 ? "+" : "−"}${Math.round(Math.abs(x) * 100)}%)`);
+const moisEn = (mois: string) => libelleMois(mois, "en-US");
+
+/** Les phrases des passages du bilan, dans la langue du compte. */
+const TEXTES = {
+  fr: {
+    projetDisparu: "Ce projet n'existe plus : bilan arrêté.",
+    rappel: (m: string) => `Saisis tes chiffres de ${libelleMois(m)} dans Mesure : Naya fera ton bilan du mois.`,
+    dejaFait: (m: string) => `Bilan de ${libelleMois(m)} déjà fait, chiffres inchangés.`,
+    vide: "Réponse de l'IA vide : bilan non écrit.",
+    manqueEncore: (m: string) => ` Il manque encore tes chiffres de ${libelleMois(m)}.`,
+  },
+  en: {
+    projetDisparu: "This project no longer exists: review stopped.",
+    rappel: (m: string) => `Enter your ${moisEn(m)} figures in Measure: Naya will write your monthly review.`,
+    dejaFait: (m: string) => `${moisEn(m)} review already done, figures unchanged.`,
+    vide: "Empty AI answer: review not written.",
+    manqueEncore: (m: string) => ` Your ${moisEn(m)} figures are still missing.`,
+  },
+};
+
 const serie = (lignes: LigneMesure[], cle: "mer" | "cac") => lignes.map((l) => ({ mois: l.mois, valeur: indicateurs(l)[cle] }));
 
-/** « Bilan de septembre 2026 prêt : MER 5,0 (+25 %), CAC 75 € (+17 %). » */
-export function resumeBilan(mois: string, lignes: LigneMesure[]): string {
+/** « Bilan de septembre 2026 prêt : MER 5,0 (+25 %), CAC 75 € (+17 %). » (ou en anglais). */
+export function resumeBilan(mois: string, lignes: LigneMesure[], langue: Langue = "fr"): string {
+  const en = langue === "en";
+  const [eur, rat, pct] = en ? [eurosEn, ratioEn, pourcentEn] : [euros, ratio, pourcent];
   const l = lignes.find((x) => x.mois === mois);
   const ind = l ? indicateurs(l) : null;
   const morceaux: string[] = [];
-  if (ind?.mer != null) morceaux.push(`MER ${ratio(ind.mer)}${pourcent(evolutions(serie(lignes, "mer"), mois).precedent)}`);
-  if (ind?.cac != null) morceaux.push(`CAC ${euros(ind.cac)}${pourcent(evolutions(serie(lignes, "cac"), mois).precedent)}`);
+  if (ind?.mer != null) morceaux.push(`MER ${rat(ind.mer)}${pct(evolutions(serie(lignes, "mer"), mois).precedent)}`);
+  if (ind?.cac != null) morceaux.push(`CAC ${eur(ind.cac)}${pct(evolutions(serie(lignes, "cac"), mois).precedent)}`);
   if (!morceaux.length && ind) {
-    if (ind.ca != null) morceaux.push(`CA ${euros(ind.ca)}`);
-    if (ind.nouveaux_clients != null) morceaux.push(`${ind.nouveaux_clients} nouveaux clients`);
+    if (ind.ca != null) morceaux.push(`${en ? "Revenue" : "CA"} ${eur(ind.ca)}`);
+    if (ind.nouveaux_clients != null) morceaux.push(`${ind.nouveaux_clients} ${en ? "new customers" : "nouveaux clients"}`);
   }
+  if (en) return `${moisEn(mois)} review ready${morceaux.length ? `: ${morceaux.join(", ")}` : ""}.`;
   return `Bilan de ${libelleMois(mois)} prêt${morceaux.length ? ` : ${morceaux.join(", ")}` : ""}.`;
 }
 
@@ -69,6 +96,8 @@ export interface DepsBilan {
   garde(userId: string): Promise<ResultatPassage | null>;
   ia(userId: string, projectId: number, prompt: string): Promise<string>;
   maintenant(): Date;
+  /** Langue du compte pour les phrases du passage (français par défaut). */
+  langue?(userId: string): Promise<Langue>;
 }
 
 export function routineBilanPour(p: { userId: string; projectId: number }, maintenant: Date, actif = true) {
@@ -99,7 +128,9 @@ N'invente aucun chiffre. Si les données sont trop incomplètes pour conclure, d
 export async function executerBilan(routine: Routine, deps: DepsBilan): Promise<ResultatPassage> {
   const projectId = Number((routine.cible as any)?.projectId);
   const projet = Number.isInteger(projectId) ? await deps.storage.getProject(projectId, routine.userId) : null;
-  if (!projet) return { statut: "rien_a_faire", resume: "Ce projet n'existe plus : bilan arrêté.", desactiver: true };
+  const langue: Langue = (await deps.langue?.(routine.userId)) ?? "fr";
+  const T = TEXTES[langue];
+  if (!projet) return { statut: "rien_a_faire", resume: T.projetDisparu, desactiver: true };
 
   const now = deps.maintenant();
   const courant = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -110,10 +141,14 @@ export async function executerBilan(routine: Routine, deps: DepsBilan): Promise<
   // saisis après le 2, ou un passage raté, ont quand même leur bilan.
   const aFaire = lignes
     .filter((l) => l.mois <= precedent && l.mois >= moisPrecedent(courant, 3))
-    .find((l) => !(l.bilan && temps(l.bilanLe) >= temps(l.updatedAt)));
+    // Périmé si ses chiffres OU ceux du mois auquel il se compare ont changé depuis.
+    .find((l) => {
+      const compare = lignes.find((x) => x.mois === moisPrecedent(l.mois));
+      return !(l.bilan && temps(l.bilanLe) >= Math.max(temps(l.updatedAt), temps(compare?.updatedAt)));
+    });
   if (!aFaire) {
-    if (manque) return { statut: "rien_a_faire", notifier: true, resume: `Saisis tes chiffres de ${libelleMois(precedent)} dans Mesure : Naya fera ton bilan du mois.` };
-    return { statut: "rien_a_faire", resume: `Bilan de ${libelleMois(precedent)} déjà fait, chiffres inchangés.` };
+    if (manque) return { statut: "rien_a_faire", notifier: true, resume: T.rappel(precedent) };
+    return { statut: "rien_a_faire", resume: T.dejaFait(precedent) };
   }
   const vise = aFaire.mois;
 
@@ -125,8 +160,8 @@ export async function executerBilan(routine: Routine, deps: DepsBilan): Promise<
   const cibles = kpis.filter((k) => k.cible).map((k) => `- ${k.nom} : ${k.cible}`).join("\n");
 
   const texte = (await deps.ia(routine.userId, projectId, consigne(vise, lignes, cibles))).trim();
-  if (!texte) return { statut: "erreur", resume: "Réponse de l'IA vide : bilan non écrit." };
+  if (!texte) return { statut: "erreur", resume: T.vide };
   await deps.storage.setBilanMesure(routine.userId, projectId, vise, texte.slice(0, 3000), aFaire.updatedAt);
-  const rappel = manque && vise !== precedent ? ` Il manque encore tes chiffres de ${libelleMois(precedent)}.` : "";
-  return { statut: "ok", notifier: true, resume: resumeBilan(vise, lignes) + rappel, details: { mois: vise } };
+  const rappel = manque && vise !== precedent ? T.manqueEncore(precedent) : "";
+  return { statut: "ok", notifier: true, resume: resumeBilan(vise, lignes, langue) + rappel, details: { mois: vise } };
 }

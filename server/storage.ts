@@ -561,6 +561,7 @@ export interface IStorage {
   getMesures(userId: string, projectId: number, limite?: number): Promise<MesureMensuelle[]>;
   upsertMesure(userId: string, projectId: number, mois: string, data: Partial<InsertMesureMensuelle>): Promise<MesureMensuelle>;
   deleteMesure(userId: string, projectId: number, mois: string): Promise<boolean>;
+  importerMesures(userId: string, projectId: number, lignes: Array<{ mois: string; data: Partial<InsertMesureMensuelle> }>): Promise<number>;
   setBilanMesure(userId: string, projectId: number, mois: string, bilan: string, lu?: Date | string | null): Promise<void>;
   getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
@@ -2132,13 +2133,25 @@ export class DatabaseStorage implements IStorage {
 
   /** Remplace les chiffres saisis du mois ; le bilan déjà écrit est gardé (il sera refait s'il est plus ancien). */
   async upsertMesure(userId: string, projectId: number, mois: string, data: Partial<InsertMesureMensuelle>): Promise<MesureMensuelle> {
+    return this.ecrireMesure(db, userId, projectId, mois, data);
+  }
+
+  /** Tout un import en une transaction : un échec au milieu n'enregistre rien. */
+  async importerMesures(userId: string, projectId: number, lignes: Array<{ mois: string; data: Partial<InsertMesureMensuelle> }>): Promise<number> {
+    return await db.transaction(async (tx) => {
+      for (const l of lignes) await this.ecrireMesure(tx, userId, projectId, l.mois, l.data);
+      return lignes.length;
+    });
+  }
+
+  private async ecrireMesure(ex: any, userId: string, projectId: number, mois: string, data: Partial<InsertMesureMensuelle>): Promise<MesureMensuelle> {
     const { id: _i, userId: _u, projectId: _p, mois: _m, bilan: _b, bilanLe: _bl, createdAt: _c, ...rest } = data as any;
     // Mêmes chiffres : rien n'est réécrit, `updatedAt` ne bouge pas, le bilan reste à jour
     // (sinon réenregistrer ou réimporter à l'identique ferait payer un nouveau bilan).
-    const [existant] = await db.select().from(mesuresMensuelles)
+    const [existant] = await ex.select().from(mesuresMensuelles)
       .where(and(eq(mesuresMensuelles.userId, userId), eq(mesuresMensuelles.projectId, projectId), eq(mesuresMensuelles.mois, mois)));
     if (existant && memesChiffres(existant, rest)) return existant;
-    const [r] = await db.insert(mesuresMensuelles).values({ ...rest, userId, projectId, mois })
+    const [r] = await ex.insert(mesuresMensuelles).values({ ...rest, userId, projectId, mois })
       .onConflictDoUpdate({
         target: [mesuresMensuelles.userId, mesuresMensuelles.projectId, mesuresMensuelles.mois],
         set: { ...rest, updatedAt: new Date() },

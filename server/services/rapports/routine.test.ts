@@ -49,3 +49,13 @@ describe("mois écoulé à l'heure de Paris", () => {
     expect(preparer).toHaveBeenCalledWith("u", 7, "2026-09");
   });
 });
+
+describe("langue du compte", () => {
+  it("compte en anglais : notification en anglais", async () => {
+    const r = await executerRapport(routine, {
+      getProject: vi.fn(async () => ({ id: 7, projectKind: "client", name: "Maison X" })), getRapport: vi.fn(async () => undefined),
+      preparer: vi.fn(async () => ({ statut: "ok", rapport: {} }) as any), maintenant, langue: vi.fn(async () => "en" as const),
+    });
+    expect(r.resume).toBe("The September 2026 report for Maison X is ready to review.");
+  });
+});

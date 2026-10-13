@@ -2638,6 +2638,7 @@ const fr = {
    erreurs: {
     vide: "rien à importer",
     colonne_mois_absente: "il manque une colonne « mois »",
+    date_ambigue: "date ambiguë (jour/mois ou mois/jour ?) : écris le mois sous la forme 2026-09",
     mois_invalide: "mois illisible ou futur",
     mois_en_double: "mois déjà présent plus haut",
     colonnes_incoherentes: "plus de cellules que de colonnes (un séparateur dans un montant ? mets-le entre guillemets)",

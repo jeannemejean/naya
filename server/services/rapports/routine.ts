@@ -27,35 +27,61 @@ export interface DepsRoutineRapport {
   getRapport(userId: string, projectId: number, mois: string): Promise<{ statut: string } | undefined>;
   preparer(userId: string, projectId: number, mois: string): Promise<ResultatPreparation>;
   maintenant(): Date;
+  langue?(userId: string): Promise<"fr" | "en">;
 }
+
+const moisEn = (m: string) => libelleMois(m, "en-US");
+const TEXTES = {
+  fr: {
+    disparu: "Ce projet n'existe plus : rapports arrêtés.",
+    perso: "Ce projet n'est plus un projet client : rapports arrêtés.",
+    existe: (m: string, c: string) => `Le rapport de ${libelleMois(m)} pour ${c} existe déjà.`,
+    pret: (m: string, c: string) => `Le rapport de ${libelleMois(m)} pour ${c} est prêt à relire.`,
+    rien: (m: string, c: string) => `Aucune donnée pour ${c} en ${libelleMois(m)} : pas de rapport.`,
+    illisible: "Réponse de l'IA illisible : rapport non préparé.",
+    publie: (m: string, c: string) => `Le rapport de ${libelleMois(m)} pour ${c} est déjà publié.`,
+    non: "Rapport non préparé.",
+  },
+  en: {
+    disparu: "This project no longer exists: reports stopped.",
+    perso: "This project is no longer a client project: reports stopped.",
+    existe: (m: string, c: string) => `The ${moisEn(m)} report for ${c} already exists.`,
+    pret: (m: string, c: string) => `The ${moisEn(m)} report for ${c} is ready to review.`,
+    rien: (m: string, c: string) => `No data for ${c} in ${moisEn(m)}: no report.`,
+    illisible: "Unreadable AI answer: report not prepared.",
+    publie: (m: string, c: string) => `The ${moisEn(m)} report for ${c} is already published.`,
+    non: "Report not prepared.",
+  },
+};
 
 export async function executerRapport(routine: Routine, deps: DepsRoutineRapport): Promise<ResultatPassage> {
   const projectId = Number((routine.cible as any)?.projectId);
   const projet = Number.isInteger(projectId) ? await deps.getProject(projectId, routine.userId) : null;
-  if (!projet) return { statut: "rien_a_faire", resume: "Ce projet n'existe plus : rapports arrêtés.", desactiver: true };
-  if (porteeDe(projet) == null) return { statut: "rien_a_faire", resume: "Ce projet n'est plus un projet client : rapports arrêtés.", desactiver: true };
+  const T = TEXTES[(await deps.langue?.(routine.userId)) ?? "fr"];
+  if (!projet) return { statut: "rien_a_faire", resume: T.disparu, desactiver: true };
+  if (porteeDe(projet) == null) return { statut: "rien_a_faire", resume: T.perso, desactiver: true };
 
   const now = deps.maintenant();
   // Le mois écoulé à Paris (comme l'écran et la validation des routes), pas en UTC.
   const mois = moisPrecedent(moisDe(now));
   const client = projet.clientName || projet.name;
   if (await deps.getRapport(routine.userId, projectId, mois)) {
-    return { statut: "rien_a_faire", resume: `Le rapport de ${libelleMois(mois)} pour ${client} existe déjà.` };
+    return { statut: "rien_a_faire", resume: T.existe(mois, client) };
   }
 
   const r = await deps.preparer(routine.userId, projectId, mois);
   switch (r.statut) {
     case "ok":
-      return { statut: "ok", notifier: true, resume: `Le rapport de ${libelleMois(mois)} pour ${client} est prêt à relire.`, details: { mois } };
+      return { statut: "ok", notifier: true, resume: T.pret(mois, client), details: { mois } };
     case "refus":
       return r.raison;
     case "rien":
-      return { statut: "rien_a_faire", resume: `Aucune donnée pour ${client} en ${libelleMois(mois)} : pas de rapport.` };
+      return { statut: "rien_a_faire", resume: T.rien(mois, client) };
     case "illisible":
-      return { statut: "erreur", resume: "Réponse de l'IA illisible : rapport non préparé." };
+      return { statut: "erreur", resume: T.illisible };
     case "deja_publie":
-      return { statut: "rien_a_faire", resume: `Le rapport de ${libelleMois(mois)} pour ${client} est déjà publié.` };
+      return { statut: "rien_a_faire", resume: T.publie(mois, client) };
     default:
-      return { statut: "rien_a_faire", resume: "Rapport non préparé.", desactiver: r.statut === "introuvable" || r.statut === "projet_perso" };
+      return { statut: "rien_a_faire", resume: T.non, desactiver: r.statut === "introuvable" || r.statut === "projet_perso" };
   }
 }

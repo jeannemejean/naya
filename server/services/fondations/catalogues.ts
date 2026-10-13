@@ -52,3 +52,6 @@ export const ANGLE_AUCUN = "aucun";
 
 export const KIND_ETIQUETAGE = "fondations_etiquetage";
 export const HEURE_ETIQUETAGE_UTC = 5;
+
+/** Fenêtre de la couverture ET de l'étiquetage : tout contenu compté dans l'une passe par l'autre. */
+export const JOURS_COUVERTURE = 90;

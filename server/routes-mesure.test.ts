@@ -11,6 +11,7 @@ const storageMock = {
   getProject: vi.fn(),
   getMesures: vi.fn(async () => [SEPT] as any[]),
   upsertMesure: vi.fn(async (_u: string, _p: number, mois: string, data: any) => ({ mois, ...data })),
+  importerMesures: vi.fn(async (_u: string, _p: number, lignes: any[]) => lignes.length),
   deleteMesure: vi.fn(async () => true),
   getBrandConversionsWithCredits: vi.fn(async () => [{ convertedAt: new Date("2026-09-10"), conversionType: "vente", value: 90 }]),
   getRoutineByCible: vi.fn(async () => undefined),
@@ -81,14 +82,20 @@ describe("routes de la mesure", () => {
   });
 
   it("import : aperçu sans écrire, puis confirmation", async () => {
-    const texte = "mois;ca\n2026-09;100\n2026-13;5";
+    const texte = "mois;ca\n2026-09;100\n2026-08;80\n2026-13;5";
     const apercu = await (await appel("POST", "/api/mesure/7/import", { texte })).json();
-    expect(apercu.lignes).toHaveLength(1);
+    expect(apercu.lignes).toHaveLength(2);
     expect(apercu.erreurs).toHaveLength(1);
     expect(storageMock.upsertMesure).not.toHaveBeenCalled();
     const ok = await (await appel("POST", "/api/mesure/7/import", { texte, confirmer: true })).json();
-    expect(ok.ecrits).toBe(1);
-    expect(storageMock.upsertMesure).toHaveBeenCalledWith("user-1", 7, "2026-09", expect.objectContaining({ ca: 100, source: "import" }));
+    expect(ok.ecrits).toBe(2);
+    // Tout l'import en UNE écriture (transaction) : jamais un import à moitié enregistré.
+    expect(storageMock.importerMesures).toHaveBeenCalledTimes(1);
+    expect(storageMock.importerMesures).toHaveBeenCalledWith("user-1", 7, [
+      expect.objectContaining({ mois: "2026-09", data: expect.objectContaining({ ca: 100, source: "import" }) }),
+      expect.objectContaining({ mois: "2026-08", data: expect.objectContaining({ ca: 80, source: "import" }) }),
+    ]);
+    expect(storageMock.upsertMesure).not.toHaveBeenCalled();
     expect(storageMock.ensureRoutine).toHaveBeenCalled();
     expect((await appel("POST", "/api/mesure/7/import", { texte: "mois;ca\n2026-13;5", confirmer: true })).status).toBe(400);
     expect((await appel("POST", "/api/mesure/7/import", { texte: 3 })).status).toBe(400);
@@ -113,7 +120,9 @@ describe("routes de la mesure", () => {
   it("I4 : l'import confirmé fusionne avec le mois existant", async () => {
     storageMock.getMesures.mockResolvedValue([{ ...SEPT }]);
     await appel("POST", "/api/mesure/7/import", { texte: "mois;google ads\n2026-09;40", confirmer: true });
-    expect(storageMock.upsertMesure).toHaveBeenCalledWith("user-1", 7, "2026-09", expect.objectContaining({ ca: 10000, nouveauxClients: 20, depenses: { paid_social: 1000, google_ads: 40 } }));
+    expect(storageMock.importerMesures).toHaveBeenCalledWith("user-1", 7, [
+      { mois: "2026-09", data: expect.objectContaining({ ca: 10000, nouveauxClients: 20, depenses: { paid_social: 1000, google_ads: 40 } }) },
+    ]);
     storageMock.getMesures.mockResolvedValue([SEPT]);
   });
 

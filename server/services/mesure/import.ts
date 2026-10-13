@@ -26,12 +26,40 @@ function colonneDe(entete: string): { champ: string } | { canal: string } | null
   return null;
 }
 
-/** « 2026-09 », « 2026-09-01 », « 09/2026 », « 9/2026 », « 01/09/2026 » → « 2026-09 ». */
-function lireMois(v: string): string | null {
-  const s = v.trim().replace(/^["']|["']$/g, "");
+const nettoyer = (v: string) => v.trim().replace(/^["']|["']$/g, "");
+const DATE_COMPLETE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+
+/**
+ * Ordre des dates complètes « a/b/aaaa » de la colonne : jour/mois (FR) ou mois/jour (US).
+ * Une valeur > 12 tranche ; sinon la partie constante est le jour (registre daté du 1er) ;
+ * sinon la partie qui vaut 01. Impossible à trancher → null (la ligne est refusée).
+ */
+export function ordreDates(cellules: string[]): "jm" | "mj" | null {
+  const d = cellules.map((c) => DATE_COMPLETE.exec(nettoyer(c))).filter((m): m is RegExpExecArray => !!m)
+    .map((m) => [Number(m[1]), Number(m[2])] as const);
+  if (!d.length) return "jm";
+  if (d.some(([a]) => a > 12)) return "jm";
+  if (d.some(([, b]) => b > 12)) return "mj";
+  const aConstant = d.every(([a]) => a === d[0][0]);
+  const bConstant = d.every(([, b]) => b === d[0][1]);
+  if (aConstant && !bConstant) return "jm";
+  if (bConstant && !aConstant) return "mj";
+  if (d.every(([a]) => a === 1) && !d.every(([, b]) => b === 1)) return "jm";
+  if (d.every(([, b]) => b === 1) && !d.every(([a]) => a === 1)) return "mj";
+  return null;
+}
+
+/** « 2026-09 », « 2026-09-01 », « 09/2026 », « 9/2026 », « 01/09/2026 » (selon `ordre`) → « 2026-09 ». */
+function lireMois(v: string, ordre: "jm" | "mj" | null): string | null | "ambigu" {
+  const s = nettoyer(v);
   let m = /^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/.exec(s);
   if (m) return `${m[1]}-${m[2].padStart(2, "0")}`;
-  m = /^(?:\d{1,2}\/)?(\d{1,2})\/(\d{4})$/.exec(s);
+  m = DATE_COMPLETE.exec(s);
+  if (m) {
+    if (!ordre) return "ambigu";
+    return `${m[3]}-${(ordre === "jm" ? m[2] : m[1]).padStart(2, "0")}`;
+  }
+  m = /^(\d{1,2})\/(\d{4})$/.exec(s);
   if (m) return `${m[2]}-${m[1].padStart(2, "0")}`;
   return null;
 }
@@ -95,6 +123,7 @@ export function lireImport(texte: string, maintenant = new Date()): ResultatImpo
 
   const out: ResultatImport = { lignes: [], erreurs: [], inconnues };
   const vus = new Set<string>();
+  const ordre = ordreDates(lignesBrutes.slice(1).map((l) => decouper(l, sep)[iMois] || ""));
   lignesBrutes.slice(1).forEach((brute, i) => {
     const ligne = i + 2;
     const cellules = decouper(brute, sep);
@@ -102,7 +131,8 @@ export function lireImport(texte: string, maintenant = new Date()): ResultatImpo
     if (cellules.length > colonnes.length && cellules.slice(colonnes.length).some((c) => c.trim())) {
       out.erreurs.push({ ligne, message: "colonnes_incoherentes" }); return;
     }
-    const mois = lireMois(cellules[iMois] || "");
+    const mois = lireMois(cellules[iMois] || "", ordre);
+    if (mois === "ambigu") { out.erreurs.push({ ligne, message: "date_ambigue" }); return; }
     if (!mois || !moisValide(mois, maintenant)) { out.erreurs.push({ ligne, message: "mois_invalide" }); return; }
     if (vus.has(mois)) { out.erreurs.push({ ligne, message: "mois_en_double" }); return; }
     const corps: Record<string, unknown> = { depenses: {} as Record<string, number> };

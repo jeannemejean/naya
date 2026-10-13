@@ -4,7 +4,7 @@
 import type { Routine, Fondations } from "@shared/schema";
 import type { ResultatPassage } from "../routines/types";
 import { prochainPassageApres } from "../routines/temps";
-import { FORMATS_CREATIFS, ANGLE_AUCUN, KIND_ETIQUETAGE, HEURE_ETIQUETAGE_UTC, LIBELLES_FORMATS } from "./catalogues";
+import { FORMATS_CREATIFS, ANGLE_AUCUN, KIND_ETIQUETAGE, HEURE_ETIQUETAGE_UTC, LIBELLES_FORMATS, JOURS_COUVERTURE } from "./catalogues";
 import { lireProposition, statutsDe, type Motivation } from "./sections";
 
 export type Etiquette = { id: number; angle: string; formatCreatif: string | null };
@@ -27,7 +27,8 @@ export function lireEtiquettes(reponse: string, ids: Set<number>, cles: Set<stri
 }
 
 // ─── La routine ──────────────────────────────────────────────────────────────
-const FENETRE_JOURS = 60;
+// Même fenêtre que la couverture : un contenu compté là-bas a toujours été étiqueté ici.
+const FENETRE_JOURS = JOURS_COUVERTURE;
 const PAR_PASSAGE = 25;
 
 export interface DepsEtiquetage {
@@ -39,7 +40,28 @@ export interface DepsEtiquetage {
   };
   garde(userId: string): Promise<ResultatPassage | null>;
   ia(userId: string, projectId: number, prompt: string): Promise<string>;
+  /** Langue du compte pour les phrases du passage (français par défaut). */
+  langue?(userId: string): Promise<"fr" | "en">;
 }
+
+const TEXTES = {
+  fr: {
+    disparu: "Ce projet n'existe plus : étiquetage arrêté.",
+    pasValide: "Motivations pas encore validées : rien à étiqueter.",
+    rien: "Aucun nouveau contenu à étiqueter.",
+    illisible: "Réponse de l'IA illisible : aucun contenu étiqueté.",
+    hors: "hors motivations",
+    resume: (n: number, m: string[]) => `${n} contenu${n > 1 ? "s" : ""} étiqueté${n > 1 ? "s" : ""} : ${m.join(", ")}.`,
+  },
+  en: {
+    disparu: "This project no longer exists: tagging stopped.",
+    pasValide: "Motivations not validated yet: nothing to tag.",
+    rien: "No new content to tag.",
+    illisible: "Unreadable AI answer: no content tagged.",
+    hors: "outside motivations",
+    resume: (n: number, m: string[]) => `${n} piece${n > 1 ? "s" : ""} of content tagged: ${m.join(", ")}.`,
+  },
+};
 
 export function routineEtiquetagePour(p: { userId: string; projectId: number }, maintenant: Date, actif = true) {
   return {
@@ -68,17 +90,18 @@ Réponds en JSON strict : {"etiquettes":[{"id":123,"angle":"cle","format":"forma
 export async function executerEtiquetage(routine: Routine, deps: DepsEtiquetage): Promise<ResultatPassage> {
   const projectId = Number((routine.cible as any)?.projectId);
   const projet = Number.isInteger(projectId) ? await deps.storage.getProject(projectId, routine.userId) : null;
-  if (!projet) return { statut: "rien_a_faire", resume: "Ce projet n'existe plus : étiquetage arrêté.", desactiver: true };
+  const T = TEXTES[(await deps.langue?.(routine.userId)) ?? "fr"];
+  if (!projet) return { statut: "rien_a_faire", resume: T.disparu, desactiver: true };
 
   const f = await deps.storage.getFondations(routine.userId, projectId);
   const motivations = Array.isArray(f?.motivations) ? (f!.motivations as Motivation[]) : [];
   if (statutsDe(f).motivations !== "valide" || !motivations.length) {
-    return { statut: "rien_a_faire", resume: "Motivations pas encore validées : rien à étiqueter." };
+    return { statut: "rien_a_faire", resume: T.pasValide };
   }
 
   const depuis = new Date(Date.now() - FENETRE_JOURS * 86_400_000);
   const contenus = await deps.storage.getContenusAEtiqueter(routine.userId, projectId, depuis, PAR_PASSAGE);
-  if (!contenus.length) return { statut: "rien_a_faire", resume: "Aucun nouveau contenu à étiqueter." };
+  if (!contenus.length) return { statut: "rien_a_faire", resume: T.rien };
 
   const refus = await deps.garde(routine.userId);
   if (refus) return refus;
@@ -87,7 +110,7 @@ export async function executerEtiquetage(routine: Routine, deps: DepsEtiquetage)
     await deps.ia(routine.userId, projectId, consigne(motivations, contenus)),
     new Set(contenus.map((c) => c.id)), new Set(motivations.map((m) => m.cle)),
   );
-  if (!etiquettes) return { statut: "erreur", resume: "Réponse de l'IA illisible : aucun contenu étiqueté." };
+  if (!etiquettes) return { statut: "erreur", resume: T.illisible };
   // Un contenu envoyé mais non classé (oublié, motivation inventée) passe en « aucun » :
   // sinon il serait renvoyé, et payé, chaque jour. L'utilisatrice peut le corriger.
   const classes = new Set(etiquettes.map((e) => e.id));
@@ -97,10 +120,10 @@ export async function executerEtiquetage(routine: Routine, deps: DepsEtiquetage)
   const parAngle = new Map<string, number>();
   for (const e of etiquettes) parAngle.set(e.angle, (parAngle.get(e.angle) || 0) + 1);
   const morceaux = motivations.filter((m) => parAngle.has(m.cle)).map((m) => `${parAngle.get(m.cle)} ${m.nom}`);
-  if (parAngle.has(ANGLE_AUCUN)) morceaux.push(`${parAngle.get(ANGLE_AUCUN)} hors motivations`);
+  if (parAngle.has(ANGLE_AUCUN)) morceaux.push(`${parAngle.get(ANGLE_AUCUN)} ${T.hors}`);
   return {
     statut: "ok",
-    resume: `${n} contenu${n > 1 ? "s" : ""} étiqueté${n > 1 ? "s" : ""} : ${morceaux.join(", ")}.`,
+    resume: T.resume(n, morceaux),
     details: { etiquetes: n },
   };
 }

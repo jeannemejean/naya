@@ -1,4 +1,5 @@
 /** Les vraies dépendances des fondations, et l'exécuteur d'étiquetage prêt pour l'ordonnanceur. */
+import { langueDuCompte } from "../garde-langue";
 import type { Routine } from "@shared/schema";
 import { storage } from "../../storage";
 import { callClaude, callClaudeWithContext, CLAUDE_MODELS } from "../claude";
@@ -25,6 +26,7 @@ export const depsEtiquetage: DepsEtiquetage = {
     messages: [{ role: "user", content: prompt }],
     max_tokens: 1500, temperature: 0, userId, projectId, taskKind: "fast_generation",
   }),
+  langue: langueDuCompte,
 };
 
 export const EXECUTEURS_FONDATIONS: Record<string, ExecuteurRoutine> = {

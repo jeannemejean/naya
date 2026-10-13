@@ -74,3 +74,23 @@ describe("fusionnerImport (I4 : un import partiel n'efface rien)", () => {
     expect(fusionnerImport(undefined, importe, { champs: ["ca"], canaux: [] })).toEqual(importe);
   });
 });
+
+describe("lireImport — dates jour/mois ou mois/jour (registre daté du 1er)", () => {
+  const MAINTENANT = new Date("2026-12-15T12:00:00Z");
+  const mois = (texte: string) => lireImport(texte, MAINTENANT).lignes.map((l) => l.mois);
+  it("export américain (mois/jour) : 09/01/2026 est septembre", () => {
+    expect(mois("Mois;CA\n09/01/2026;100\n10/01/2026;200")).toEqual(["2026-09", "2026-10"]);
+  });
+  it("export français (jour/mois) : 01/09/2026 est septembre", () => {
+    expect(mois("Mois;CA\n01/09/2026;100\n01/10/2026;200")).toEqual(["2026-09", "2026-10"]);
+  });
+  it("une valeur au-dessus de 12 tranche pour toute la colonne", () => {
+    expect(mois("Mois;CA\n15/09/2026;100\n03/10/2026;200")).toEqual(["2026-09", "2026-10"]);
+    expect(mois("Mois;CA\n09/15/2026;100\n10/03/2026;200")).toEqual(["2026-09", "2026-10"]);
+  });
+  it("impossible à trancher : refusé avec un message clair, jamais deviné", () => {
+    const r = lireImport("Mois;CA\n05/06/2026;100", MAINTENANT);
+    expect(r.lignes).toEqual([]);
+    expect(r.erreurs[0].message).toBe("date_ambigue");
+  });
+});

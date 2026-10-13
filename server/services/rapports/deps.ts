@@ -3,6 +3,7 @@ import type { Routine } from "@shared/schema";
 import { storage } from "../../storage";
 import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
 import { gardeDepense } from "../routines/garde";
+import { langueDuCompte } from "../garde-langue";
 import type { ExecuteurRoutine } from "../routines/types";
 import { preparerRapport, type DepsRapport } from "./rediger";
 import { executerRapport, KIND_RAPPORT } from "./routine";
@@ -49,5 +50,6 @@ export const EXECUTEURS_RAPPORTS: Record<string, ExecuteurRoutine> = {
     getRapport: (u, p, m) => storage.getRapport(u, p, m),
     preparer: (u, p, m) => preparerRapport(u, p, m, depsRapport),
     maintenant: () => new Date(),
+    langue: langueDuCompte,
   }),
 };

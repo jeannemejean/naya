@@ -71,3 +71,12 @@ describe("lireNombre", () => {
     expect(lireNombre(true)).toBeUndefined();
   });
 });
+
+describe("lireNombre — « 0,500 » n'est jamais « zéro mille cinq cents »", () => {
+  it("0,500 et 0.500 valent 0,5 ; 1,200 reste ambigu", () => {
+    expect(lireNombre("0,500")).toBe(0.5);
+    expect(lireNombre("0.500")).toBe(0.5);
+    expect(lireNombre("-0,250")).toBe(-0.25);
+    expect(lireNombre("1,200")).toBeUndefined();
+  });
+});

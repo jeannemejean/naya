@@ -2,6 +2,7 @@
 // offre d'entrée, motivations et matrice créative, arbre de KPI, plan d'acquisition ; la
 // routine d'étiquetage des contenus et la couverture des angles. Toute route vérifie que le
 // projet ou le contenu est à l'utilisatrice (404 sinon).
+import { JOURS_COUVERTURE } from "./services/fondations/catalogues";
 import type { Express } from "express";
 import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
@@ -18,7 +19,6 @@ import {
   PLAFONDS, ANGLE_AUCUN, KIND_ETIQUETAGE, type Section,
 } from "./services/fondations/catalogues";
 
-const JOURS_COUVERTURE = 90;
 const cleRoutine = (projectId: number) => `project:${projectId}`;
 const idDe = (v: unknown) => { const n = Number(v); return Number.isInteger(n) && n > 0 ? n : null; };
 

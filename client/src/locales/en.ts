@@ -2634,6 +2634,7 @@ const en = {
    erreurs: {
     vide: "nothing to import",
     colonne_mois_absente: "a \"month\" column is missing",
+    date_ambigue: "ambiguous date (day/month or month/day?): write the month as 2026-09",
     mois_invalide: "unreadable or future month",
     mois_en_double: "month already listed above",
     colonnes_incoherentes: "more cells than columns (a separator inside an amount? put it in quotes)",

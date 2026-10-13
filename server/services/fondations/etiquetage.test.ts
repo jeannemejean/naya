@@ -1,3 +1,4 @@
+import { JOURS_COUVERTURE } from "./catalogues";
 import { describe, it, expect } from "vitest";
 import { lireEtiquettes } from "./etiquetage";
 
@@ -106,5 +107,20 @@ describe("routineEtiquetagePour", () => {
     const r = routineEtiquetagePour({ userId: "u", projectId: 7 }, new Date("2026-10-13T10:00:00Z"));
     expect(r).toMatchObject({ kind: "fondations_etiquetage", cibleCle: "project:7", cadence: "quotidienne", heureUtc: 5, actif: true, cible: { projectId: 7 } });
     expect(r.prochainPassage.toISOString()).toBe("2026-10-14T05:00:00.000Z");
+  });
+});
+
+describe("étiquetage — langue du compte et fenêtre de la couverture", () => {
+  it("compte en anglais : résumé en anglais", async () => {
+    const { d } = depsE({ langue: vi.fn(async () => "en" as const) });
+    expect((await executerEtiquetage(routine, d)).resume).toBe("2 pieces of content tagged: 1 Efficacité, 1 outside motivations.");
+  });
+  it("remonte sur la même fenêtre que la couverture (90 jours) : rien n'y reste non étiqueté", async () => {
+    const { d } = depsE();
+    const avant = Date.now();
+    await executerEtiquetage(routine, d);
+    const depuis = (d.storage.getContenusAEtiqueter as any).mock.calls[0][2] as Date;
+    expect(Math.round((avant - depuis.getTime()) / 86_400_000)).toBe(JOURS_COUVERTURE);
+    expect(JOURS_COUVERTURE).toBe(90);
   });
 });

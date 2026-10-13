@@ -111,10 +111,11 @@ export function registerMesureRoutes(app: Express) {
       if (!r.lignes.length) return res.status(400).json({ message: "aucune_ligne", erreurs: r.erreurs });
       // Les colonnes absentes du fichier gardent leurs valeurs (un import partiel n'efface rien).
       const existants = new Map((await storage.getMesures(req.userId, projet.id, 600)).map((l) => [l.mois, l]));
-      for (const l of r.lignes) {
-        const valeur = fusionnerImport(existants.get(l.mois) as any, l.valeur, l.presentes);
-        await storage.upsertMesure(req.userId, projet.id, l.mois, { ...valeur, source: "import" });
-      }
+      // Une seule transaction : un échec au milieu n'enregistre rien (jamais d'import partiel).
+      await storage.importerMesures(req.userId, projet.id, r.lignes.map((l) => ({
+        mois: l.mois,
+        data: { ...fusionnerImport(existants.get(l.mois) as any, l.valeur, l.presentes), source: "import" },
+      })));
       await assurerRoutine(req.userId, projet.id, r.lignes.map((l) => l.mois));
       res.json({ ecrits: r.lignes.length, erreurs: r.erreurs });
     } catch (e: any) {

@@ -28,6 +28,7 @@ export function lireNombre(v: unknown): number | null | undefined {
   const virgule = s.lastIndexOf(",");
   const point = s.lastIndexOf(".");
   if (virgule >= 0 && point >= 0) s = virgule > point ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  else if (/^-?0[,.]\d+$/.test(s)) s = s.replace(",", ".");                       // 0,500 : un « 0 mille » n'existe pas
   else if (/^-?\d{1,3}(,\d{3}){2,}$/.test(s)) s = s.replace(/,/g, "");           // 1,200,000
   else if (/^-?\d{1,3},\d{3}$/.test(s)) return undefined;                        // 1,200 : 1,2 ou 1 200 ? refusé
   else if (/^-?\d{1,3}(\.\d{3}){2,}$/.test(s)) s = s.replace(/\./g, "");         // 1.200.000
