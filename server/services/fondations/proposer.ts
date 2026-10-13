@@ -10,6 +10,7 @@ import {
   SECTIONS, BRIQUES, FORMATS_CREATIFS, ETAGES_KPI, FREQUENCES_KPI, MATURITES, STATUTS_BRIQUE, PLAFONDS, type Section,
 } from "./catalogues";
 import { validerSection, lireProposition, statutsDe } from "./sections";
+import { INDICATEURS } from "../mesure/catalogues";
 
 export interface DepsProposer {
   storage: {
@@ -33,7 +34,7 @@ export type ResultatProposition =
 const FORMATS_JSON: Record<Section, string> = {
   offre: `"offre": { "nom": "...", "description": "ce que reçoit le client", "prix": "si pertinent", "pourquoi": "pourquoi un inconnu passe à l'achat avec un risque perçu faible", "existe": true si elle est déjà dans l'offre actuelle, sinon false }`,
   motivations: `"motivations": [{ "cle": "la clé existante si c'est la même motivation, sinon omets", "nom": "raison d'acheter, en 2 à 4 mots", "description": "...", "angle": "l'angle créatif en une phrase", "accroches": ["les premières secondes / la première ligne"], "preuves": ["preuves réelles uniquement"], "objections": ["ce qui retient d'acheter"], "formats": [${FORMATS_CREATIFS.map((f) => `"${f}"`).join(", ")}] }]`,
-  kpis: `"kpis": [{ "nom": "...", "etage": ${ETAGES_KPI.map((e) => `"${e}"`).join(" | ")}, "definition": "comment le calculer", "frequence": ${FREQUENCES_KPI.map((e) => `"${e}"`).join(" | ")}, "cible": "si une cible chiffrée est connue" }]`,
+  kpis: `"kpis": [{ "nom": "...", "etage": ${ETAGES_KPI.map((e) => `"${e}"`).join(" | ")}, "definition": "comment le calculer", "frequence": ${FREQUENCES_KPI.map((e) => `"${e}"`).join(" | ")}, "cible": "si une cible chiffrée est connue", "source": ${INDICATEURS.map((i) => `"${i}"`).join(" | ")} seulement si l'indicateur est exactement l'un de ces calculs du registre mensuel, sinon omets }]`,
   plan: `"plan": { "maturite": ${MATURITES.map((m) => `"${m}"`).join(" | ")}, "resume": "2 phrases", "briques": [{ "cle": "...", "statut": ${STATUTS_BRIQUE.map((s) => `"${s}"`).join(" | ")}, "raison": "pourquoi pour CE business", "action": "première action concrète si maintenant" }] }`,
 };
 

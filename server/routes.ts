@@ -18,6 +18,7 @@ import { routineSourcingPour } from "./services/routines/ordonnanceur";
 import { registerRoutinesRoutes } from "./routes-routines";
 import { registerVeilleRoutes } from "./routes-veille";
 import { registerFondationsRoutes } from "./routes-fondations";
+import { registerMesureRoutes } from "./routes-mesure";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -11407,6 +11408,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerRoutinesRoutes(app);
   registerVeilleRoutes(app);
   registerFondationsRoutes(app);
+  registerMesureRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

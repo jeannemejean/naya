@@ -68,6 +68,15 @@ describe("validerSection — kpis", () => {
       { cle: "abonnes", nom: "Abonnés", etage: "canal", definition: "", frequence: "hebdo" },
     ]);
   });
+  it("garde une source du registre (indicateur calculé), retire une source inconnue", () => {
+    const r = validerSection("kpis", [
+      { nom: "MER", etage: "business", frequence: "mensuel", source: "mer" },
+      { nom: "Abonnés", etage: "canal", frequence: "hebdo", source: "followers" },
+    ]);
+    expect((r as any).valeur[0].source).toBe("mer");
+    expect((r as any).valeur[1]).not.toHaveProperty("source");
+  });
+
   it("au plus 12, au moins un", () => {
     const treize = Array.from({ length: 13 }, (_, i) => ({ nom: `K${i}`, etage: "systeme", frequence: "mensuel" }));
     expect((validerSection("kpis", treize) as any).valeur).toHaveLength(12);

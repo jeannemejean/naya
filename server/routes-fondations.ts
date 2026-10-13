@@ -11,6 +11,8 @@ import { depsProposer } from "./services/fondations/deps";
 import { routineEtiquetagePour } from "./services/fondations/etiquetage";
 import { validerSection, statutsDe, type Motivation } from "./services/fondations/sections";
 import { couverture } from "./services/fondations/couverture";
+import { serieIndicateur } from "./services/mesure/calculs";
+import type { Indicateur } from "./services/mesure/catalogues";
 import {
   SECTIONS, BRIQUES, FORMATS_CREATIFS, ETAGES_KPI, FREQUENCES_KPI, MATURITES, STATUTS_BRIQUE,
   PLAFONDS, ANGLE_AUCUN, KIND_ETIQUETAGE, type Section,
@@ -44,12 +46,17 @@ export function registerFondationsRoutes(app: Express) {
       const scores = await storage.getScoresReception(contenus.filter((c) => c.angle && c.angle !== ANGLE_AUCUN).map((c) => c.id));
       // Lecture seule : l'ouverture de la page ne crée aucune routine.
       const r = await storage.getRoutineByCible(userId, KIND_ETIQUETAGE, cleRoutine(projet.id));
+      // KPI reliés au registre mensuel : leur série est calculée, jamais saisie.
+      const relies = (Array.isArray(f?.kpis) ? (f!.kpis as Array<{ cle: string; source?: string }>) : []).filter((k) => k.source);
+      const lignesMesure = relies.length ? await storage.getMesures(userId, projet.id, 24) : [];
+      const kpiAuto = Object.fromEntries(relies.map((k) => [k.cle, serieIndicateur(lignesMesure, k.source as Indicateur)]));
       res.json({
         fondations: {
           offre: f?.offre ?? null, motivations: motivationsDe(f), kpis: Array.isArray(f?.kpis) ? f!.kpis : [],
           plan: f?.plan ?? null, kpiReleves: f?.kpiReleves ?? {}, statuts: statutsDe(f),
         },
         catalogues: CATALOGUES,
+        kpiAuto,
         routine: r ? { routine: r, derniersPassages: await storage.getRoutineRuns(r.id, userId, 3) } : null,
         couverture: couverture(motivationsDe(f), contenus, scores),
         contenus: contenus.slice(0, 20),
@@ -113,8 +120,10 @@ export function registerFondationsRoutes(app: Express) {
       const projet = await projetDe(req);
       if (!projet) return res.status(404).json({ message: "not_found" });
       const f = await storage.getFondations(req.userId, projet.id);
-      const kpis = Array.isArray(f?.kpis) ? (f!.kpis as Array<{ cle: string }>) : [];
-      if (!kpis.some((k) => k.cle === req.params.cle)) return res.status(404).json({ message: "not_found" });
+      const kpis = Array.isArray(f?.kpis) ? (f!.kpis as Array<{ cle: string; source?: string }>) : [];
+      const kpi = kpis.find((k) => k.cle === req.params.cle);
+      if (!kpi) return res.status(404).json({ message: "not_found" });
+      if (kpi.source) return res.status(409).json({ message: "kpi_calcule" });
       const valeur = typeof req.body?.valeur === "number" ? req.body.valeur : Number.NaN;
       if (!Number.isFinite(valeur)) return res.status(400).json({ message: "valeur_invalide" });
       const brute = req.body?.date;

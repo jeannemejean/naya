@@ -6,13 +6,15 @@ import {
   SECTIONS, STATUTS_SECTION, FORMATS_CREATIFS, ETAGES_KPI, FREQUENCES_KPI, MATURITES, STATUTS_BRIQUE,
   CLES_BRIQUES, PLAFONDS, ANGLE_AUCUN, type Section, type StatutSection,
 } from "./catalogues";
+import { INDICATEURS } from "../mesure/catalogues";
 
 export type Offre = { nom: string; description: string; prix?: string; pourquoi: string; existe: boolean };
 export type Motivation = {
   cle: string; nom: string; description: string; angle: string;
   accroches: string[]; preuves: string[]; objections: string[]; formats: string[];
 };
-export type Kpi = { cle: string; nom: string; etage: string; definition: string; frequence: string; cible?: string };
+/** `source` : indicateur calculé du registre mensuel (Mesure) ; la valeur se remplit seule. */
+export type Kpi = { cle: string; nom: string; etage: string; definition: string; frequence: string; cible?: string; source?: string };
 export type Brique = { cle: string; statut: string; raison: string; action: string };
 export type Plan = { maturite: string; resume: string; briques: Brique[] };
 
@@ -73,7 +75,7 @@ function validerKpis(v: unknown): Resultat<Kpi[]> {
     const cible = texte(k.cible, 80);
     out.push({
       cle: cleUnique(k.cle, nom, prises), nom, etage: k.etage, definition: texte(k.definition, 400),
-      frequence: k.frequence, ...(cible ? { cible } : {}),
+      frequence: k.frequence, ...(cible ? { cible } : {}), ...(dans(INDICATEURS, k.source) ? { source: k.source } : {}),
     });
   }
   return out.length ? { ok: true, valeur: out } : { ok: false, erreur: "kpis_vides" };

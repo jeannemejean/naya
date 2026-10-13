@@ -48,6 +48,7 @@ describe("proposerFondations", () => {
     const prompt = (d.ia as any).mock.calls[0][2] as string;
     expect(prompt).not.toContain("Café Lumière");
     expect(prompt).toContain("+20 %");
+    expect(prompt).toContain('"source"');
   });
 
   it("ne remplace jamais une section validée non demandée", async () => {

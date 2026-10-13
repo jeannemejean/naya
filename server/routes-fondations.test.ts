@@ -10,7 +10,10 @@ const FOND = {
   id: 1, userId: "user-1", projectId: 7,
   offre: { nom: "Essai", description: "", pourquoi: "", existe: false },
   motivations: [{ cle: "efficacite", nom: "Efficacité", description: "", angle: "", accroches: [], preuves: [], objections: [], formats: [] }],
-  kpis: [{ cle: "abonnes", nom: "Abonnés", etage: "business", definition: "", frequence: "mensuel" }],
+  kpis: [
+    { cle: "abonnes", nom: "Abonnés", etage: "business", definition: "", frequence: "mensuel" },
+    { cle: "mer", nom: "MER", etage: "business", definition: "", frequence: "mensuel", source: "mer" },
+  ],
   plan: null, kpiReleves: {}, statuts: { offre: "propose", motivations: "propose", kpis: "valide" },
 };
 const storageMock = {
@@ -19,6 +22,7 @@ const storageMock = {
   upsertFondations: vi.fn(async (_u: string, _p: number, patch: any) => ({ ...FOND, ...patch })),
   getContenusEtiquetes: vi.fn(async () => [] as any[]),
   getScoresReception: vi.fn(async () => []),
+  getMesures: vi.fn(async () => [{ mois: "2026-09", ca: 1000, depenses: { paid_social: 250 } }]),
   getContentById: vi.fn(),
   etiqueterContenuManuel: vi.fn(async (id: number, _u: string, e: any) => ({ id, ...e, etiquetage: "utilisatrice" })),
   getRoutineByCible: vi.fn(async () => undefined),
@@ -74,6 +78,15 @@ describe("routes des fondations", () => {
     expect(j.couverture.lignes[0]).toMatchObject({ cle: "efficacite", contenus: 1 });
     expect(j.catalogues.briques.length).toBeGreaterThan(10);
     expect(storageMock.ensureRoutine).not.toHaveBeenCalled();
+  });
+
+  it("GET : les KPI reliés au registre reçoivent leur série calculée", async () => {
+    const j = await (await appel("GET", "/api/fondations/7")).json();
+    expect(j.kpiAuto).toEqual({ mer: [{ date: "2026-09-01T00:00:00.000Z", valeur: 4 }] });
+  });
+
+  it("relevé manuel refusé sur un KPI relié au registre", async () => {
+    expect((await appel("POST", "/api/fondations/7/kpis/mer/releves", { valeur: 3 })).status).toBe(409);
   });
 
   it("GET sans fondations : sections vides", async () => {
