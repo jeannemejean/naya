@@ -21,7 +21,7 @@ export const STATUTS_BRIQUE = ["maintenant", "plus_tard", "sans_objet"] as const
 export type Moteur = "creation" | "captation" | "socle";
 /** Les briques du système 360. `page` : la page de Naya qui sert la brique, quand il y en a une. */
 export const BRIQUES: ReadonlyArray<{ cle: string; moteur: Moteur; libelle: string; page?: string }> = [
-  { cle: "organique_social", moteur: "creation", libelle: "Organique social (labo d'angles, preuve de vie)", page: "/content" },
+  { cle: "organique_social", moteur: "creation", libelle: "Organique social (labo d'angles, preuve de vie)", page: "/content-calendar" },
   { cle: "createurs_ugc", moteur: "creation", libelle: "Créateurs et UGC" },
   { cle: "paid_social", moteur: "creation", libelle: "Publicité sociale (Meta, TikTok, Pinterest, LinkedIn)" },
   { cle: "pr_partenariats", moteur: "creation", libelle: "PR digitale et partenariats" },
@@ -32,7 +32,7 @@ export const BRIQUES: ReadonlyArray<{ cle: string; moteur: Moteur; libelle: stri
   { cle: "marketplaces", moteur: "captation", libelle: "Marketplaces et retail media" },
   { cle: "affiliation", moteur: "captation", libelle: "Affiliation et comparateurs" },
   { cle: "veille", moteur: "socle", libelle: "Veille et intelligence marché", page: "/veille" },
-  { cle: "prospection_directe", moteur: "socle", libelle: "Prospection directe (B2B)", page: "/prospection" },
+  { cle: "prospection_directe", moteur: "socle", libelle: "Prospection directe (B2B)", page: "/outreach" },
   { cle: "conversion", moteur: "socle", libelle: "Conversion (site, landing, offre d'entrée, preuve sociale)" },
   { cle: "data_tracking", moteur: "socle", libelle: "Tracking et consentement" },
   { cle: "crm_retention", moteur: "socle", libelle: "CRM, rétention, avis et parrainage" },
