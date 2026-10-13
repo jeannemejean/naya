@@ -648,6 +648,13 @@ export const content = pgTable("content", {
   // Référence souple (pas de FK) : supprimer une tâche ne doit pas emporter le contenu
   // rédigé en la réalisant — c'est le travail de l'utilisatrice, pas un sous-produit.
   sourceTaskId: integer("source_task_id"),
+  // ── Fondations : la motivation d'achat (angle) et le format créatif du contenu ──
+  // `angle` : `cle` d'une motivation des fondations, ou "aucun" (déjà examiné, hors
+  // motivations : on ne le réétiquette pas). `etiquetage` : "naya" | "utilisatrice". Une
+  // étiquette posée par l'utilisatrice n'est jamais écrasée par la routine.
+  angle: text("angle"),
+  formatCreatif: text("format_creatif"),
+  etiquetage: text("etiquetage"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -2122,3 +2129,25 @@ export const veilleConstats = pgTable("veille_constats", {
 }));
 export type VeilleConstat = typeof veilleConstats.$inferSelect;
 export type InsertVeilleConstat = typeof veilleConstats.$inferInsert;
+
+// ─── Fondations (dossier Acquisition 360, étape 0) et plan d'acquisition ──────────
+// Une ligne par projet : offre d'entrée, motivations d'achat (chacune porte sa ligne de la
+// matrice créative), arbre de KPI, plan d'acquisition. Naya propose, l'utilisatrice valide :
+// seules les sections `valide` (cf. `statuts`) orientent Naya.
+export const fondations = pgTable("fondations", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  offre: jsonb("offre"),                        // { nom, description, prix?, pourquoi, existe }
+  motivations: jsonb("motivations"),            // [{ cle, nom, description, angle, accroches, preuves, objections, formats }]
+  kpis: jsonb("kpis"),                          // [{ cle, nom, etage, definition, frequence, cible? }]
+  plan: jsonb("plan"),                          // { maturite, resume, briques: [{ cle, statut, raison, action }] }
+  kpiReleves: jsonb("kpi_releves").notNull().default({}), // { [cleKpi]: [{ date, valeur }] }
+  statuts: jsonb("statuts").notNull().default({}),        // { offre, motivations, kpis, plan } : vide | propose | valide
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  parProjet: uniqueIndex("fondations_user_project_uq").on(t.userId, t.projectId),
+}));
+export type Fondations = typeof fondations.$inferSelect;
+export type InsertFondations = typeof fondations.$inferInsert;

@@ -137,6 +137,7 @@ import {
   veilleItems,
   veilleReleves,
   veilleConstats,
+  fondations,
   prospectionMessageFeedback,
   prospectionLearnedRules,
   type LeadStepMessage,
@@ -152,6 +153,8 @@ import {
   type InsertVeilleReleve,
   type VeilleConstat,
   type InsertVeilleConstat,
+  type Fondations,
+  type InsertFondations,
   type InsertProjectProof,
   type ProspectionMessageFeedback,
   type InsertProspectionMessageFeedback,
@@ -215,6 +218,11 @@ function maintenantParis(): { aujourdhui: string; maintenantMin: number } {
  */
 export type CreditedAttribution = ConversionAttribution & { contentTitle: string | null };
 export type BrandConversionWithCredits = BrandConversion & { attributions: CreditedAttribution[] };
+/** Un contenu vu par les fondations : son étiquette (motivation, format) et son état. */
+export type ContenuEtiquete = {
+  id: number; title: string; status: string; publishedAt: Date | null;
+  angle: string | null; formatCreatif: string | null; etiquetage: string | null; createdAt: Date | null;
+};
 
 export interface IStorage {
   // User operations
@@ -528,6 +536,15 @@ export interface IStorage {
   addVeilleConstats(rows: InsertVeilleConstat[]): Promise<VeilleConstat[]>;
   getVeilleConstats(userId: string, projectId: number, opts?: { limite?: number; depuis?: Date; statuts?: string[] }): Promise<VeilleConstat[]>;
   updateVeilleConstat(id: number, userId: string, patch: { statut: string }): Promise<VeilleConstat | null>;
+
+  // Fondations et étiquetage des contenus
+  getFondations(userId: string, projectId: number): Promise<Fondations | undefined>;
+  upsertFondations(userId: string, projectId: number, patch: Partial<InsertFondations>): Promise<Fondations>;
+  getContenusAEtiqueter(userId: string, projectId: number, depuis: Date, limite: number): Promise<Array<{ id: number; title: string; body: string }>>;
+  etiqueterContenus(userId: string, rows: Array<{ id: number; angle: string; formatCreatif: string | null }>): Promise<number>;
+  getContenusEtiquetes(userId: string, projectId: number, depuis: Date): Promise<ContenuEtiquete[]>;
+  getScoresReception(contentIds: number[]): Promise<Array<{ contentId: number; score: number }>>;
+  etiqueterContenuManuel(id: number, userId: string, e: { angle: string; formatCreatif: string | null }): Promise<Content | null>;
   getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
   createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule>;
@@ -849,7 +866,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(id: number, userId: string): Promise<boolean> {
-    // La veille du projet part avec lui (pas de clé étrangère : nettoyage explicite).
+    // La veille et les fondations du projet partent avec lui (pas de clé étrangère : nettoyage explicite).
+    await db.delete(fondations).where(and(eq(fondations.projectId, id), eq(fondations.userId, userId)));
     await db.delete(veilleConstats).where(and(eq(veilleConstats.projectId, id), eq(veilleConstats.userId, userId)));
     await db.delete(veilleReleves).where(and(eq(veilleReleves.projectId, id), eq(veilleReleves.userId, userId)));
     await db.delete(veilleItems).where(and(eq(veilleItems.projectId, id), eq(veilleItems.userId, userId)));
@@ -1968,6 +1986,64 @@ export class DatabaseStorage implements IStorage {
     return r ?? null;
   }
 
+  // ─── Fondations ──────────────────────────────────────────────────────────────
+  async getFondations(userId: string, projectId: number): Promise<Fondations | undefined> {
+    const [r] = await db.select().from(fondations).where(and(eq(fondations.userId, userId), eq(fondations.projectId, projectId)));
+    return r;
+  }
+
+  async upsertFondations(userId: string, projectId: number, patch: Partial<InsertFondations>): Promise<Fondations> {
+    const { id: _i, userId: _u, projectId: _p, createdAt: _c, ...rest } = patch as any;
+    const [r] = await db.insert(fondations).values({ ...rest, userId, projectId })
+      .onConflictDoUpdate({ target: [fondations.userId, fondations.projectId], set: { ...rest, updatedAt: new Date() } })
+      .returning();
+    return r;
+  }
+
+  async getContenusAEtiqueter(userId: string, projectId: number, depuis: Date, limite: number): Promise<Array<{ id: number; title: string; body: string }>> {
+    return db.select({ id: content.id, title: content.title, body: content.body }).from(content)
+      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), isNull(content.angle), isNull(content.etiquetage), gte(content.createdAt, depuis)))
+      .orderBy(desc(content.id)).limit(limite);
+  }
+
+  async etiqueterContenus(userId: string, rows: Array<{ id: number; angle: string; formatCreatif: string | null }>): Promise<number> {
+    let n = 0;
+    for (const r of rows) {
+      // La condition est DANS la requête : une étiquette posée par l'utilisatrice entre la
+      // lecture et l'écriture n'est jamais écrasée.
+      const res = await db.update(content).set({ angle: r.angle, formatCreatif: r.formatCreatif, etiquetage: "naya" })
+        .where(and(eq(content.id, r.id), eq(content.userId, userId), or(isNull(content.etiquetage), ne(content.etiquetage, "utilisatrice"))));
+      n += res.rowCount ?? 0;
+    }
+    return n;
+  }
+
+  async getContenusEtiquetes(userId: string, projectId: number, depuis: Date): Promise<ContenuEtiquete[]> {
+    return db.select({
+      id: content.id, title: content.title, status: content.status, publishedAt: content.publishedAt,
+      angle: content.angle, formatCreatif: content.formatCreatif, etiquetage: content.etiquetage, createdAt: content.createdAt,
+    }).from(content)
+      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), gte(content.createdAt, depuis)))
+      .orderBy(desc(content.id)).limit(500);
+  }
+
+  async getScoresReception(contentIds: number[]): Promise<Array<{ contentId: number; score: number }>> {
+    if (contentIds.length === 0) return [];
+    const rows = await db.select({
+      contentId: contentReception.contentId,
+      score: sql<number>`avg(${contentReception.receivedVsIntentScore})`,
+    }).from(contentReception)
+      .where(and(inArray(contentReception.contentId, contentIds), isNotNull(contentReception.receivedVsIntentScore)))
+      .groupBy(contentReception.contentId);
+    return rows.map((r) => ({ contentId: r.contentId, score: Number(r.score) })).filter((r) => Number.isFinite(r.score));
+  }
+
+  async etiqueterContenuManuel(id: number, userId: string, e: { angle: string; formatCreatif: string | null }): Promise<Content | null> {
+    const [r] = await db.update(content).set({ angle: e.angle, formatCreatif: e.formatCreatif, etiquetage: "utilisatrice" })
+      .where(and(eq(content.id, id), eq(content.userId, userId))).returning();
+    return r ?? null;
+  }
+
   async getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]> {
     return db.select().from(prospectionCampaigns).where(eq(prospectionCampaigns.status, "active"));
   }
@@ -2822,6 +2898,7 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(veilleConstats).where(eq(veilleConstats.userId, userId));
       await tx.delete(veilleReleves).where(eq(veilleReleves.userId, userId));
       await tx.delete(veilleItems).where(eq(veilleItems.userId, userId));
+      await tx.delete(fondations).where(eq(fondations.userId, userId));
       await tx.delete(routines).where(eq(routines.userId, userId));
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────

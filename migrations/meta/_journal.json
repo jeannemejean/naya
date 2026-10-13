@@ -176,6 +176,13 @@
       "when": 1791837388789,
       "tag": "0024_fat_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791880079617,
+      "tag": "0025_sticky_ultragirl",
+      "breakpoints": true
     }
   ]
 }
