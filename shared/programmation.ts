@@ -45,15 +45,16 @@ export interface CompteSocial {
   expiresAt?: string | Date | null;
 }
 
-/** Le compte qui publiera ce post : celui lié au post, sinon le compte actif de la plateforme. */
-export function compteDuPost(
+/**
+ * Le compte qui publiera ce post : celui lié au post, sinon le compte actif de la plateforme.
+ * Un compte lié absent de `comptes` (supprimé, ou hors du périmètre du projet) n'est JAMAIS
+ * remplacé par un autre : null.
+ */
+export function compteDuPost<C extends CompteSocial>(
   post: { platform: string; socialAccountId?: number | null },
-  comptes: CompteSocial[],
-): CompteSocial | null {
-  if (post.socialAccountId != null) {
-    const lie = comptes.find((c) => c.id === post.socialAccountId);
-    if (lie) return lie;
-  }
+  comptes: C[],
+): C | null {
+  if (post.socialAccountId != null) return comptes.find((c) => c.id === post.socialAccountId) ?? null;
   const p = plateformeDe(post.platform);
   return comptes.find((c) => plateformeDe(c.platform) === p && c.isActive !== false) ?? null;
 }

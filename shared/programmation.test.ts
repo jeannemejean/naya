@@ -25,6 +25,9 @@ describe("compteDuPost", () => {
     expect(compteDuPost({ platform: "instagram", socialAccountId: 3 }, [li, ig])?.id).toBe(3);
     expect(compteDuPost({ platform: "tiktok" }, [li, ig])).toBeNull();
   });
+  it("ne remplace jamais un compte lié introuvable par un autre", () => {
+    expect(compteDuPost({ platform: "instagram", socialAccountId: 99 }, [ig])).toBeNull();
+  });
 });
 
 describe("problemesProgrammation", () => {
