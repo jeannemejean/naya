@@ -11,7 +11,8 @@ const COLONNES: Record<string, string[]> = {
   ca: ["ca", "chiffre_d_affaires", "chiffre_affaires", "ca_total", "revenue", "revenu", "revenus", "sales"],
   caNouveaux: ["ca_nouveaux", "ca_nouveaux_clients", "new_revenue", "revenue_new", "revenue_new_customers"],
   nouveauxClients: ["nouveaux_clients", "new_customers", "nouveaux", "clients_nouveaux"],
-  commandes: ["commandes", "ventes", "orders", "nb_ventes", "nombre_de_ventes", "nb_commandes"],
+  // Pas « ventes » : en français, une colonne « Ventes » contient souvent des euros.
+  commandes: ["commandes", "orders", "nb_ventes", "nombre_de_ventes", "nb_commandes", "nombre_de_commandes"],
   coutsVariables: ["couts_variables", "cogs", "couts", "couts_produits"],
 };
 
@@ -35,8 +36,44 @@ function lireMois(v: string): string | null {
   return null;
 }
 
+/** Les colonnes présentes dans le fichier : un import partiel ne touche qu'elles. */
+export type Presentes = { champs: string[]; canaux: string[] };
+
+/** Découpe une ligne CSV en respectant les guillemets (`""` = guillemet échappé). */
+function decouper(ligne: string, sep: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let dedans = false;
+  for (let i = 0; i < ligne.length; i++) {
+    const ch = ligne[i];
+    if (dedans) {
+      if (ch === '"' && ligne[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') dedans = false;
+      else cur += ch;
+    } else if (ch === '"') dedans = true;
+    else if (ch === sep) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/** Fusionne une ligne importée avec le mois existant : les colonnes absentes du fichier gardent leur valeur. */
+export function fusionnerImport(existant: Partial<ChiffresMois> | undefined, importe: ChiffresMois, presentes: Presentes): ChiffresMois {
+  if (!existant) return importe;
+  const out: any = { depenses: { ...((existant.depenses as Record<string, number>) || {}) } };
+  for (const champ of ["ca", "caNouveaux", "nouveauxClients", "commandes", "coutsVariables"] as const) {
+    out[champ] = presentes.champs.includes(champ) ? importe[champ] : (existant[champ] ?? null);
+  }
+  for (const canal of presentes.canaux) {
+    if (canal in importe.depenses) out.depenses[canal] = importe.depenses[canal];
+    else delete out.depenses[canal];
+  }
+  return out;
+}
+
 export type ResultatImport = {
-  lignes: Array<{ mois: string; valeur: ChiffresMois }>;
+  lignes: Array<{ mois: string; valeur: ChiffresMois; presentes: Presentes }>;
   erreurs: Array<{ ligne: number; message: string }>;
   inconnues: string[];
 };
@@ -46,8 +83,13 @@ export function lireImport(texte: string, maintenant = new Date()): ResultatImpo
   if (!lignesBrutes.length) return { lignes: [], erreurs: [{ ligne: 1, message: "vide" }], inconnues: [] };
   const entete = lignesBrutes[0];
   const sep = entete.includes("\t") ? "\t" : entete.includes(";") ? ";" : ",";
-  const colonnes = entete.split(sep).map(colonneDe);
-  const inconnues = entete.split(sep).filter((_, i) => !colonnes[i]).map((s) => s.trim()).filter(Boolean);
+  const titres = decouper(entete, sep);
+  const colonnes = titres.map(colonneDe);
+  const inconnues = titres.filter((_, i) => !colonnes[i]).map((s) => s.trim()).filter(Boolean);
+  const presentes: Presentes = {
+    champs: [...new Set(colonnes.flatMap((c) => (c && "champ" in c && c.champ !== "mois" ? [c.champ] : [])))],
+    canaux: [...new Set(colonnes.flatMap((c) => (c && "canal" in c ? [c.canal] : [])))],
+  };
   const iMois = colonnes.findIndex((c) => c && "champ" in c && c.champ === "mois");
   if (iMois < 0) return { lignes: [], erreurs: [{ ligne: 1, message: "colonne_mois_absente" }], inconnues };
 
@@ -55,7 +97,11 @@ export function lireImport(texte: string, maintenant = new Date()): ResultatImpo
   const vus = new Set<string>();
   lignesBrutes.slice(1).forEach((brute, i) => {
     const ligne = i + 2;
-    const cellules = brute.split(sep);
+    const cellules = decouper(brute, sep);
+    // Une cellule de plus que l'en-tête (séparateur non protégé) décalerait les montants : refusé.
+    if (cellules.length > colonnes.length && cellules.slice(colonnes.length).some((c) => c.trim())) {
+      out.erreurs.push({ ligne, message: "colonnes_incoherentes" }); return;
+    }
     const mois = lireMois(cellules[iMois] || "");
     if (!mois || !moisValide(mois, maintenant)) { out.erreurs.push({ ligne, message: "mois_invalide" }); return; }
     if (vus.has(mois)) { out.erreurs.push({ ligne, message: "mois_en_double" }); return; }
@@ -63,7 +109,7 @@ export function lireImport(texte: string, maintenant = new Date()): ResultatImpo
     for (let j = 0; j < colonnes.length; j++) {
       const col = colonnes[j];
       if (!col || j === iMois) continue;
-      const cellule = (cellules[j] ?? "").trim().replace(/^["']|["']$/g, "");
+      const cellule = (cellules[j] ?? "").trim();
       if ("canal" in col) {
         const n = lireNombre(cellule);
         if (n === undefined) { corps.invalide = true; continue; }
@@ -74,7 +120,7 @@ export function lireImport(texte: string, maintenant = new Date()): ResultatImpo
     const v = validerMois(corps);
     if (!v.ok) { out.erreurs.push({ ligne, message: v.erreur.endsWith("_invalide") ? "valeur_invalide" : v.erreur }); return; }
     vus.add(mois);
-    out.lignes.push({ mois, valeur: v.valeur });
+    out.lignes.push({ mois, valeur: v.valeur, presentes });
   });
   return out;
 }

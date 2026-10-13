@@ -74,7 +74,7 @@ describe("executerBilan", () => {
   it("écrit le bilan, notifie avec un résumé calculé", async () => {
     const d = deps();
     const r = await executerBilan(routine, d);
-    expect(d.storage.setBilanMesure).toHaveBeenCalledWith("u", 7, "2026-09", "Le MER monte.");
+    expect(d.storage.setBilanMesure).toHaveBeenCalledWith("u", 7, "2026-09", "Le MER monte.", sept.updatedAt);
     expect(r).toMatchObject({ statut: "ok", notifier: true, resume: "Bilan de septembre 2026 prêt : MER 5,0 (+25 %), CAC 75 € (+17 %)." });
     const prompt = (d.ia as any).mock.calls[0][2] as string;
     expect(prompt).toContain("30 par mois");
@@ -84,6 +84,27 @@ describe("executerBilan", () => {
     const d = deps(undefined, { ia: vi.fn(async () => "   ") });
     expect((await executerBilan(routine, d)).statut).toBe("erreur");
     expect(d.storage.setBilanMesure).not.toHaveBeenCalled();
+  });
+});
+
+describe("executerBilan — relecture", () => {
+  it("I2 : septembre saisi en retard (après le passage du 2 octobre) a son bilan au passage suivant de novembre", async () => {
+    const d = deps([{ ...sept, updatedAt: new Date("2026-10-10") }, aout], { maintenant: () => new Date("2026-11-02T05:00:00Z") });
+    const r = await executerBilan(routine, d);
+    expect(d.storage.setBilanMesure).toHaveBeenCalledWith("u", 7, "2026-09", "Le MER monte.", expect.anything());
+    expect(r.resume).toContain("septembre 2026");
+    expect(r.resume).toContain("octobre 2026"); // rappel du mois manquant
+  });
+  it("M2 : le prompt n'inclut pas le mois en cours", async () => {
+    const oct = { ...sept, mois: "2026-10", ca: 777 };
+    const d = deps([oct, sept, aout]);
+    await executerBilan(routine, d);
+    expect((d.ia as any).mock.calls[0][2]).not.toContain("2026-10");
+  });
+  it("M3 : le bilan n'est écrit que si les chiffres lus n'ont pas changé (updatedAt transmis)", async () => {
+    const d = deps();
+    await executerBilan(routine, d);
+    expect((d.storage.setBilanMesure as any).mock.calls[0][4]).toEqual(sept.updatedAt);
   });
 });
 

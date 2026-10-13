@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import SectionCarte, { PiedEdition, useEnvoiSection } from "./SectionCarte";
+import { GENRE, formater, libelleMois, type Indicateur } from "@/components/mesure/types";
 import type { Kpi, Releve, Statut } from "./types";
 
 const MAX = 12;
@@ -98,7 +99,10 @@ function LigneKpi({ projectId, kpi, releves, onChange }: { projectId: number; kp
         {kpi.source && <p className="text-[10px] text-naya-salvia">{t("fondations.kpis.calcule")}</p>}
         <p className="text-muted-foreground mt-0.5">
           {dernier
-            ? t("fondations.kpis.dernier", { valeur: dernier.valeur.toLocaleString(i18n.language), date: new Date(dernier.date).toLocaleDateString(i18n.language) })
+            ? t("fondations.kpis.dernier", kpi.source
+              // Relié au registre : valeur au format de l'indicateur, et le mois (pas une date UTC qui glisserait).
+              ? { valeur: formater(dernier.valeur, GENRE[kpi.source as Indicateur] ?? "nombre", i18n.language), date: libelleMois(dernier.date.slice(0, 7), i18n.language) }
+              : { valeur: dernier.valeur.toLocaleString(i18n.language), date: new Date(dernier.date).toLocaleDateString(i18n.language) })
             : t("fondations.kpis.aucunReleve")}
         </p>
       </div>

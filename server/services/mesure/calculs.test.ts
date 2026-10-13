@@ -72,3 +72,17 @@ describe("mois", () => {
     expect(libelleMois("2026-09")).toBe("septembre 2026");
   });
 });
+
+import { memesChiffres } from "./calculs";
+describe("relecture", () => {
+  it("I5 : évolution depuis une base négative (−1000 → +500 = +150 %)", () => {
+    expect(evolutions([{ mois: "2026-09", valeur: 500 }, { mois: "2026-08", valeur: -1000 }], "2026-09").precedent).toBeCloseTo(1.5);
+  });
+  it("I3 : memesChiffres ignore l'ordre des canaux, voit toute différence", () => {
+    const a = { ca: 1, caNouveaux: null, nouveauxClients: 2, commandes: null, coutsVariables: null, depenses: { outils: 1, paid_social: 2 } };
+    expect(memesChiffres(a, { ...a, depenses: { paid_social: 2, outils: 1 } })).toBe(true);
+    expect(memesChiffres(a, { ...a, ca: 2 })).toBe(false);
+    expect(memesChiffres(a, { ...a, depenses: { outils: 1 } })).toBe(false);
+    expect(memesChiffres(undefined, a)).toBe(false);
+  });
+});

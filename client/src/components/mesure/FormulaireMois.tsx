@@ -15,6 +15,12 @@ type Champs = { ca: string; caNouveaux: string; nouveauxClients: string; command
 const CHAMPS = ["ca", "caNouveaux", "nouveauxClients", "commandes", "coutsVariables"] as const;
 const texte = (v: number | null | undefined) => (v === null || v === undefined ? "" : String(v));
 
+/** Le serveur juge le « mois futur » en UTC : le sélecteur est borné pareil. */
+function moisMax() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 function moisCourant() {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
@@ -64,7 +70,7 @@ export default function FormulaireMois({
         <div className="flex items-end gap-2 flex-wrap">
           <label className="space-y-1">
             <span className="text-[11px] text-muted-foreground">{t("mesure.formulaire.mois")}</span>
-            <Input type="month" className="h-8 text-xs w-40" value={mois} disabled={!!initial} onChange={(e) => { setMois(e.target.value); setSuggestion(undefined); }} />
+            <Input type="month" className="h-8 text-xs w-40" max={moisMax()} value={mois} disabled={!!initial} onChange={(e) => { setMois(e.target.value); setSuggestion(undefined); }} />
           </label>
           <Button type="button" size="sm" variant="ghost" className="h-8 gap-1 text-xs" disabled={!mois || chercher.isPending} onClick={() => chercher.mutate()}>
             {chercher.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}

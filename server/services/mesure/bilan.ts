@@ -62,7 +62,8 @@ export interface DepsBilan {
   storage: {
     getProject(id: number, userId: string): Promise<any>;
     getMesures(userId: string, projectId: number, limite?: number): Promise<LigneRegistre[]>;
-    setBilanMesure(userId: string, projectId: number, mois: string, bilan: string): Promise<void>;
+    /** N'écrit que si la ligne n'a pas été modifiée depuis `lu` (sinon le bilan commenterait d'anciens chiffres). */
+    setBilanMesure(userId: string, projectId: number, mois: string, bilan: string, lu: Date | string | null | undefined): Promise<void>;
     getFondations(userId: string, projectId: number): Promise<Fondations | undefined>;
   };
   garde(userId: string): Promise<ResultatPassage | null>;
@@ -82,7 +83,7 @@ export function routineBilanPour(p: { userId: string; projectId: number }, maint
 const temps = (v: Date | string | null | undefined) => (v ? new Date(v).getTime() : 0);
 
 function consigne(mois: string, lignes: LigneRegistre[], cibles: string): string {
-  const tableau = [...lignes].slice(0, 6).reverse().map((l) => `- ${l.mois} : ${ligneIndicateurs(l) || "chiffres incomplets"}`).join("\n");
+  const tableau = lignes.filter((l) => l.mois <= mois).slice(0, 6).reverse().map((l) => `- ${l.mois} : ${ligneIndicateurs(l) || "chiffres incomplets"}`).join("\n");
   return `Écris le bilan d'acquisition de ${libelleMois(mois)} pour ce projet, à partir de ces chiffres réels saisis par l'utilisatrice (du plus ancien au plus récent) :
 ${tableau}
 ${cibles ? `\nCibles qu'elle s'est fixées :\n${cibles}\n` : ""}
@@ -102,15 +103,19 @@ export async function executerBilan(routine: Routine, deps: DepsBilan): Promise<
 
   const now = deps.maintenant();
   const courant = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-  const vise = moisPrecedent(courant);
+  const precedent = moisPrecedent(courant);
   const lignes = await deps.storage.getMesures(routine.userId, projectId, 13);
-  const ligne = lignes.find((l) => l.mois === vise);
-  if (!ligne) {
-    return { statut: "rien_a_faire", notifier: true, resume: `Saisis tes chiffres de ${libelleMois(vise)} dans Mesure : Naya fera ton bilan du mois.` };
+  const manque = !lignes.some((l) => l.mois === precedent);
+  // Le mois clos le plus récent (3 derniers) dont le bilan manque ou est périmé : des chiffres
+  // saisis après le 2, ou un passage raté, ont quand même leur bilan.
+  const aFaire = lignes
+    .filter((l) => l.mois <= precedent && l.mois >= moisPrecedent(courant, 3))
+    .find((l) => !(l.bilan && temps(l.bilanLe) >= temps(l.updatedAt)));
+  if (!aFaire) {
+    if (manque) return { statut: "rien_a_faire", notifier: true, resume: `Saisis tes chiffres de ${libelleMois(precedent)} dans Mesure : Naya fera ton bilan du mois.` };
+    return { statut: "rien_a_faire", resume: `Bilan de ${libelleMois(precedent)} déjà fait, chiffres inchangés.` };
   }
-  if (ligne.bilan && temps(ligne.bilanLe) >= temps(ligne.updatedAt)) {
-    return { statut: "rien_a_faire", resume: `Bilan de ${libelleMois(vise)} déjà fait, chiffres inchangés.` };
-  }
+  const vise = aFaire.mois;
 
   const refus = await deps.garde(routine.userId);
   if (refus) return refus;
@@ -121,6 +126,7 @@ export async function executerBilan(routine: Routine, deps: DepsBilan): Promise<
 
   const texte = (await deps.ia(routine.userId, projectId, consigne(vise, lignes, cibles))).trim();
   if (!texte) return { statut: "erreur", resume: "Réponse de l'IA vide : bilan non écrit." };
-  await deps.storage.setBilanMesure(routine.userId, projectId, vise, texte.slice(0, 3000));
-  return { statut: "ok", notifier: true, resume: resumeBilan(vise, lignes), details: { mois: vise } };
+  await deps.storage.setBilanMesure(routine.userId, projectId, vise, texte.slice(0, 3000), aFaire.updatedAt);
+  const rappel = manque && vise !== precedent ? ` Il manque encore tes chiffres de ${libelleMois(precedent)}.` : "";
+  return { statut: "ok", notifier: true, resume: resumeBilan(vise, lignes) + rappel, details: { mois: vise } };
 }

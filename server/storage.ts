@@ -183,6 +183,7 @@ import {
   type TaskPrompt,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
+import { memesChiffres } from "./services/mesure/calculs";
 import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
@@ -553,7 +554,7 @@ export interface IStorage {
   getMesures(userId: string, projectId: number, limite?: number): Promise<MesureMensuelle[]>;
   upsertMesure(userId: string, projectId: number, mois: string, data: Partial<InsertMesureMensuelle>): Promise<MesureMensuelle>;
   deleteMesure(userId: string, projectId: number, mois: string): Promise<boolean>;
-  setBilanMesure(userId: string, projectId: number, mois: string, bilan: string): Promise<void>;
+  setBilanMesure(userId: string, projectId: number, mois: string, bilan: string, lu?: Date | string | null): Promise<void>;
   getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
   createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule>;
@@ -2072,6 +2073,11 @@ export class DatabaseStorage implements IStorage {
   /** Remplace les chiffres saisis du mois ; le bilan déjà écrit est gardé (il sera refait s'il est plus ancien). */
   async upsertMesure(userId: string, projectId: number, mois: string, data: Partial<InsertMesureMensuelle>): Promise<MesureMensuelle> {
     const { id: _i, userId: _u, projectId: _p, mois: _m, bilan: _b, bilanLe: _bl, createdAt: _c, ...rest } = data as any;
+    // Mêmes chiffres : rien n'est réécrit, `updatedAt` ne bouge pas, le bilan reste à jour
+    // (sinon réenregistrer ou réimporter à l'identique ferait payer un nouveau bilan).
+    const [existant] = await db.select().from(mesuresMensuelles)
+      .where(and(eq(mesuresMensuelles.userId, userId), eq(mesuresMensuelles.projectId, projectId), eq(mesuresMensuelles.mois, mois)));
+    if (existant && memesChiffres(existant, rest)) return existant;
     const [r] = await db.insert(mesuresMensuelles).values({ ...rest, userId, projectId, mois })
       .onConflictDoUpdate({
         target: [mesuresMensuelles.userId, mesuresMensuelles.projectId, mesuresMensuelles.mois],
@@ -2086,9 +2092,13 @@ export class DatabaseStorage implements IStorage {
     return (res.rowCount ?? 0) > 0;
   }
 
-  async setBilanMesure(userId: string, projectId: number, mois: string, bilan: string): Promise<void> {
-    await db.update(mesuresMensuelles).set({ bilan, bilanLe: new Date() })
-      .where(and(eq(mesuresMensuelles.userId, userId), eq(mesuresMensuelles.projectId, projectId), eq(mesuresMensuelles.mois, mois)));
+  async setBilanMesure(userId: string, projectId: number, mois: string, bilan: string, lu?: Date | string | null): Promise<void> {
+    const conds: SQL[] = [eq(mesuresMensuelles.userId, userId), eq(mesuresMensuelles.projectId, projectId), eq(mesuresMensuelles.mois, mois)];
+    // Les chiffres ont changé pendant l'écriture du bilan : on ne l'enregistre pas (il sera refait).
+    // Postgres garde les microsecondes, JavaScript les millisecondes : « inchangé » = dans la
+    // milliseconde lue (une égalité stricte échouerait pour une ligne créée par `defaultNow()`).
+    if (lu) conds.push(lt(mesuresMensuelles.updatedAt, new Date(new Date(lu).getTime() + 1)));
+    await db.update(mesuresMensuelles).set({ bilan, bilanLe: new Date() }).where(and(...conds));
   }
 
   async getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]> {

@@ -57,7 +57,8 @@ export function evolutions(serie: Array<{ mois: string; valeur: number | null }>
   const prec = val.get(moisPrecedent(mois)) ?? null;
   const base = [1, 2, 3].map((n) => val.get(moisPrecedent(mois, n)) ?? null).filter((x): x is number => x !== null);
   const moy = base.length ? base.reduce((a, b) => a + b, 0) / base.length : null;
-  const ecart = (b: number | null) => (b === null || b === 0 ? null : cur / b - 1);
+  // Écart rapporté à la valeur absolue : de −1000 à +500, c'est +150 %, pas −150 %.
+  const ecart = (b: number | null) => (b === null || b === 0 ? null : (cur - b) / Math.abs(b));
   return { precedent: ecart(prec), moyenne3: ecart(moy) };
 }
 
@@ -66,4 +67,14 @@ export function serieIndicateur(lignes: LigneMesure[], ind: Indicateur): Array<{
   return [...lignes].sort((a, b) => a.mois.localeCompare(b.mois))
     .map((l) => ({ date: `${l.mois}-01T00:00:00.000Z`, valeur: indicateurs(l)[ind] }))
     .filter((x): x is { date: string; valeur: number } => x.valeur !== null);
+}
+
+/** Mêmes chiffres saisis (ordre des canaux indifférent) : rien à réécrire, rien à refaire. */
+export function memesChiffres(a: Partial<LigneMesure> | undefined, b: Partial<LigneMesure>): boolean {
+  if (!a) return false;
+  const norme = (l: Partial<LigneMesure>) => JSON.stringify([
+    l.ca ?? null, l.caNouveaux ?? null, l.nouveauxClients ?? null, l.commandes ?? null, l.coutsVariables ?? null,
+    Object.entries((l.depenses as Record<string, number>) || {}).sort(([x], [y]) => x.localeCompare(y)),
+  ]);
+  return norme(a) === norme(b);
 }

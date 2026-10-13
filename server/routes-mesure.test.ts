@@ -94,6 +94,29 @@ describe("routes de la mesure", () => {
     expect((await appel("POST", "/api/mesure/7/import", { texte: 3 })).status).toBe(400);
   });
 
+  it("I1 : lancer sans aucun mois saisi ne crée pas de routine (elle restera activable)", async () => {
+    storageMock.getMesures.mockResolvedValueOnce([]);
+    const r = await (await appel("POST", "/api/mesure/7/routine/run")).json();
+    expect(r.statut).toBe("rien_a_faire");
+    expect(storageMock.ensureRoutine).not.toHaveBeenCalled();
+    expect(exec.executerUne).not.toHaveBeenCalled();
+  });
+
+  it("I2 : enregistrer un mois clos avance le prochain bilan d'une routine active", async () => {
+    storageMock.getRoutineByCible.mockResolvedValueOnce({ id: 9, actif: true, prochainPassage: new Date("2099-01-01") } as any);
+    await appel("PUT", "/api/mesure/7/mois/2026-09", { ca: 10 });
+    const maj = storageMock.updateRoutine.mock.calls.at(-1) as any;
+    expect(maj[0]).toBe(9);
+    expect(new Date(maj[2].prochainPassage).getTime()).toBeLessThan(Date.now() + 60 * 60_000);
+  });
+
+  it("I4 : l'import confirmé fusionne avec le mois existant", async () => {
+    storageMock.getMesures.mockResolvedValue([{ ...SEPT }]);
+    await appel("POST", "/api/mesure/7/import", { texte: "mois;google ads\n2026-09;40", confirmer: true });
+    expect(storageMock.upsertMesure).toHaveBeenCalledWith("user-1", 7, "2026-09", expect.objectContaining({ ca: 10000, nouveauxClients: 20, depenses: { paid_social: 1000, google_ads: 40 } }));
+    storageMock.getMesures.mockResolvedValue([SEPT]);
+  });
+
   it("routine : lancer (créée en pause si absente), basculer", async () => {
     await appel("POST", "/api/mesure/7/routine/run");
     expect(storageMock.ensureRoutine).toHaveBeenCalledWith(expect.objectContaining({ actif: false }));

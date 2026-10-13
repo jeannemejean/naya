@@ -6,9 +6,9 @@ import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { executerUne, REGISTRE } from "./services/routines/ordonnanceur";
 import { CANAUX, INDICATEURS, KIND_BILAN } from "./services/mesure/catalogues";
-import { indicateurs, evolutions } from "./services/mesure/calculs";
+import { indicateurs, evolutions, moisPrecedent } from "./services/mesure/calculs";
 import { validerMois, moisValide, suggestionDepuisConversions } from "./services/mesure/saisie";
-import { lireImport } from "./services/mesure/import";
+import { lireImport, fusionnerImport } from "./services/mesure/import";
 import { routineBilanPour } from "./services/mesure/bilan";
 
 const MAX_IMPORT = 200_000;
@@ -20,8 +20,23 @@ async function projetDe(req: any) {
   return (await storage.getProject(id, req.userId)) ?? null;
 }
 
-const assurerRoutine = (userId: string, projectId: number) =>
-  storage.ensureRoutine(routineBilanPour({ userId, projectId }, new Date()) as any);
+const AVANCE_MS = 5 * 60_000;
+const moisCourant = (d = new Date()) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+
+/**
+ * Crée la routine (active) au premier mois enregistré ; une pause choisie est respectée. Si un
+ * mois clos vient d'être saisi (après le passage du 2, par exemple), le prochain bilan est
+ * avancé de quelques minutes plutôt que d'attendre le mois suivant.
+ */
+async function assurerRoutine(userId: string, projectId: number, moisEcrits: string[]) {
+  await storage.ensureRoutine(routineBilanPour({ userId, projectId }, new Date()) as any);
+  if (!moisEcrits.some((m) => m <= moisPrecedent(moisCourant()))) return;
+  const r = await storage.getRoutineByCible(userId, KIND_BILAN, cleRoutine(projectId));
+  const bientot = new Date(Date.now() + AVANCE_MS);
+  if (r?.actif && (!r.prochainPassage || new Date(r.prochainPassage) > bientot)) {
+    await storage.updateRoutine(r.id, userId, { prochainPassage: bientot } as any);
+  }
+}
 
 export function registerMesureRoutes(app: Express) {
   app.get("/api/mesure/:projectId", isAuthenticated, async (req: any, res) => {
@@ -65,7 +80,7 @@ export function registerMesureRoutes(app: Express) {
       const v = validerMois(req.body);
       if (!v.ok) return res.status(400).json({ message: v.erreur });
       const ligne = await storage.upsertMesure(req.userId, projet.id, req.params.mois, { ...v.valeur, source: "manuel" });
-      await assurerRoutine(req.userId, projet.id);
+      await assurerRoutine(req.userId, projet.id, [req.params.mois]);
       res.json(ligne);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -94,8 +109,13 @@ export function registerMesureRoutes(app: Express) {
       const r = lireImport(texte);
       if (req.body?.confirmer !== true) return res.json(r);
       if (!r.lignes.length) return res.status(400).json({ message: "aucune_ligne", erreurs: r.erreurs });
-      for (const l of r.lignes) await storage.upsertMesure(req.userId, projet.id, l.mois, { ...l.valeur, source: "import" });
-      await assurerRoutine(req.userId, projet.id);
+      // Les colonnes absentes du fichier gardent leurs valeurs (un import partiel n'efface rien).
+      const existants = new Map((await storage.getMesures(req.userId, projet.id, 600)).map((l) => [l.mois, l]));
+      for (const l of r.lignes) {
+        const valeur = fusionnerImport(existants.get(l.mois) as any, l.valeur, l.presentes);
+        await storage.upsertMesure(req.userId, projet.id, l.mois, { ...valeur, source: "import" });
+      }
+      await assurerRoutine(req.userId, projet.id, r.lignes.map((l) => l.mois));
       res.json({ ecrits: r.lignes.length, erreurs: r.erreurs });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -118,6 +138,11 @@ export function registerMesureRoutes(app: Express) {
     try {
       const projet = await projetDe(req);
       if (!projet) return res.status(404).json({ message: "not_found" });
+      // Rien de saisi : on le dit, sans créer de routine (sinon elle naîtrait en pause et ne
+      // s'activerait jamais au premier mois enregistré).
+      if (!(await storage.getMesures(req.userId, projet.id, 1)).length) {
+        return res.json({ statut: "rien_a_faire", resume: "Saisis d'abord un mois dans le registre : Naya fera ensuite ton bilan." });
+      }
       const routine = await storage.ensureRoutine(routineBilanPour({ userId: req.userId, projectId: projet.id }, new Date(), false) as any);
       const r = await executerUne(routine, REGISTRE[KIND_BILAN]);
       if (r.dejaEnCours) return res.status(409).json({ message: "deja_en_cours" });

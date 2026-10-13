@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { formater, libelleMois } from "./types";
 
-type Apercu = { lignes: Array<{ mois: string; valeur: { ca: number | null; nouveauxClients: number | null; depenses: Record<string, number> } }>; erreurs: Array<{ ligne: number; message: string }>; inconnues: string[] };
+type Apercu = { lignes: Array<{ mois: string; valeur: { ca: number | null; nouveauxClients: number | null; commandes: number | null; depenses: Record<string, number> } }>; erreurs: Array<{ ligne: number; message: string }>; inconnues: string[] };
 
 export default function ImportCarte({ projectId, onFini }: { projectId: number; onFini: (importe: boolean) => void }) {
   const { t, i18n } = useTranslation();
@@ -65,6 +65,7 @@ export default function ImportCarte({ projectId, onFini }: { projectId: number; 
                   <span>{t("mesure.import.ligne", {
                     ca: formater(l.valeur.ca, "euros", i18n.language) ?? "—",
                     clients: l.valeur.nouveauxClients ?? "—",
+                    commandes: l.valeur.commandes ?? "—",
                     depense: Object.keys(l.valeur.depenses).length ? formater(somme(l.valeur.depenses), "euros", i18n.language) : "—",
                   })}</span>
                 </li>
