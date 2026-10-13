@@ -139,6 +139,7 @@ import {
   veilleConstats,
   fondations,
   mesuresMensuelles,
+  connexionsProjet,
   prospectionMessageFeedback,
   prospectionLearnedRules,
   type LeadStepMessage,
@@ -157,6 +158,7 @@ import {
   type Fondations,
   type InsertFondations,
   type MesureMensuelle,
+  type ConnexionProjet,
   type InsertMesureMensuelle,
   type InsertProjectProof,
   type ProspectionMessageFeedback,
@@ -610,9 +612,9 @@ export interface IStorage {
    * `prospection-linkedin-guard.ts` : les plafonds comptent les TENTATIVES (ce que
    * LinkedIn voit), pas seulement les succès — voir `linkedinSendAttempts` dans le schéma.
    */
-  recordLinkedInSendAttempt(userId: string, leadId: number | null, ok: boolean, error: string | null): Promise<void>;
+  recordLinkedInSendAttempt(userId: string, leadId: number | null, ok: boolean, error: string | null, projectId?: number | null): Promise<void>;
   /** Instants de TOUTES les tentatives d'envoi LinkedIn d'un user depuis `since` (succès ET échecs). */
-  getLinkedInAttemptTimestampsSince(userId: string, since: Date): Promise<Date[]>;
+  getLinkedInAttemptTimestampsSince(userId: string, since: Date, projectId?: number | null): Promise<Date[]>;
   getCampaignStepAnalytics(campaignId: number): Promise<{
     byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
     byChannel: { channel: string; sent: number; replied: number }[];
@@ -664,7 +666,11 @@ export interface IStorage {
   markStripeEventProcessed(eventId: string): Promise<void>;
   getSocialAccountById(id: number, userId: string): Promise<SocialAccount | undefined>;
   getSafeSocialAccountById(id: number, userId: string): Promise<SafeSocialAccount | undefined>;
-  getSocialAccountByPlatform(userId: string, platform: string): Promise<SocialAccount | undefined>;
+  /** Périmètre : `projectId` null (défaut) = comptes de l'utilisatrice ; sinon ceux du projet client. */
+  getSocialAccountByPlatform(userId: string, platform: string, projectId?: number | null): Promise<SocialAccount | undefined>;
+  // Connexions d'un projet client (mode agence)
+  getConnexionProjet(userId: string, projectId: number): Promise<ConnexionProjet | undefined>;
+  upsertConnexionProjet(userId: string, projectId: number, patch: Partial<ConnexionProjet>): Promise<ConnexionProjet>;
   
   // Media library operations
   getMediaLibrary(userId: string): Promise<MediaLibrary[]>;
@@ -883,6 +889,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(veilleConstats).where(and(eq(veilleConstats.projectId, id), eq(veilleConstats.userId, userId)));
     await db.delete(veilleReleves).where(and(eq(veilleReleves.projectId, id), eq(veilleReleves.userId, userId)));
     await db.delete(veilleItems).where(and(eq(veilleItems.projectId, id), eq(veilleItems.userId, userId)));
+    // Connexions du client : posts détachés de ses comptes, puis comptes, connexion et budget LinkedIn.
+    const comptes = await db.select({ id: socialAccounts.id }).from(socialAccounts)
+      .where(and(eq(socialAccounts.projectId, id), eq(socialAccounts.userId, userId)));
+    if (comptes.length) {
+      await db.update(content).set({ socialAccountId: null } as any)
+        .where(and(inArray(content.socialAccountId, comptes.map((c) => c.id)), eq(content.userId, userId)));
+      await db.delete(socialAccounts).where(and(eq(socialAccounts.projectId, id), eq(socialAccounts.userId, userId)));
+    }
+    await db.delete(connexionsProjet).where(and(eq(connexionsProjet.projectId, id), eq(connexionsProjet.userId, userId)));
+    await db.delete(linkedinSendAttempts).where(and(eq(linkedinSendAttempts.projectId, id), eq(linkedinSendAttempts.userId, userId)));
     const result = await db.delete(projects)
       .where(and(eq(projects.id, id), eq(projects.userId, userId)));
     return (result.rowCount ?? 0) > 0;
@@ -2429,13 +2445,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Journal de TOUTE tentative d'envoi LinkedIn (garde de risque) — voir la doc d'interface.
-  async recordLinkedInSendAttempt(userId: string, leadId: number | null, ok: boolean, error: string | null): Promise<void> {
-    await db.insert(linkedinSendAttempts).values({ userId, leadId, ok, error });
+  // `projectId` : périmètre du compte LinkedIn (null = celui de l'utilisatrice).
+  async recordLinkedInSendAttempt(userId: string, leadId: number | null, ok: boolean, error: string | null, projectId: number | null = null): Promise<void> {
+    await db.insert(linkedinSendAttempts).values({ userId, leadId, ok, error, projectId });
   }
 
-  async getLinkedInAttemptTimestampsSince(userId: string, since: Date): Promise<Date[]> {
+  async getLinkedInAttemptTimestampsSince(userId: string, since: Date, projectId: number | null = null): Promise<Date[]> {
     const rows = await db.select({ attemptedAt: linkedinSendAttempts.attemptedAt }).from(linkedinSendAttempts)
-      .where(and(eq(linkedinSendAttempts.userId, userId), gte(linkedinSendAttempts.attemptedAt, since)));
+      .where(and(
+        eq(linkedinSendAttempts.userId, userId),
+        gte(linkedinSendAttempts.attemptedAt, since),
+        projectId == null ? isNull(linkedinSendAttempts.projectId) : eq(linkedinSendAttempts.projectId, projectId),
+      ));
     return rows.map((r) => r.attemptedAt as Date);
   }
 
@@ -2615,6 +2636,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSocialAccount(id: number, userId: string): Promise<boolean> {
+    // Les posts qui visaient ce compte en sont détachés (sinon la clé étrangère bloque la suppression).
+    await db.update(content).set({ socialAccountId: null } as any)
+      .where(and(eq(content.socialAccountId, id), eq(content.userId, userId)));
     const result = await db.delete(socialAccounts)
       .where(and(eq(socialAccounts.id, id), eq(socialAccounts.userId, userId)));
     return (result.rowCount ?? 0) > 0;
@@ -2732,10 +2756,31 @@ export class DatabaseStorage implements IStorage {
     return account ? this.decryptSocialAccount(account) : undefined;
   }
 
-  async getSocialAccountByPlatform(userId: string, platform: string): Promise<SocialAccount | undefined> {
+  async getSocialAccountByPlatform(userId: string, platform: string, projectId: number | null = null): Promise<SocialAccount | undefined> {
     const [account] = await db.select().from(socialAccounts)
-      .where(and(eq(socialAccounts.userId, userId), eq(socialAccounts.platform, platform)));
+      .where(and(
+        eq(socialAccounts.userId, userId), eq(socialAccounts.platform, platform),
+        projectId == null ? isNull(socialAccounts.projectId) : eq(socialAccounts.projectId, projectId),
+      ));
     return account ? this.decryptSocialAccount(account) : undefined;
+  }
+
+  async getConnexionProjet(userId: string, projectId: number): Promise<ConnexionProjet | undefined> {
+    const [row] = await db.select().from(connexionsProjet)
+      .where(and(eq(connexionsProjet.userId, userId), eq(connexionsProjet.projectId, projectId)));
+    return row;
+  }
+
+  async upsertConnexionProjet(userId: string, projectId: number, patch: Partial<ConnexionProjet>): Promise<ConnexionProjet> {
+    const { id: _id, userId: _u, projectId: _p, createdAt: _c, ...champs } = patch as any;
+    const [row] = await db.insert(connexionsProjet)
+      .values({ ...champs, userId, projectId })
+      .onConflictDoUpdate({
+        target: [connexionsProjet.userId, connexionsProjet.projectId],
+        set: { ...champs, updatedAt: new Date() },
+      })
+      .returning();
+    return row;
   }
 
   private toSafeSocialAccount(account: SocialAccount): SafeSocialAccount {
@@ -2958,6 +3003,10 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(veilleItems).where(eq(veilleItems.userId, userId));
       await tx.delete(fondations).where(eq(fondations.userId, userId));
       await tx.delete(mesuresMensuelles).where(eq(mesuresMensuelles.userId, userId));
+      // Connexions des projets client : elles partent avec leurs projets. Les comptes
+      // sociaux de l'utilisatrice elle-même (project_id nul) restent, comme avant.
+      await tx.delete(connexionsProjet).where(eq(connexionsProjet.userId, userId));
+      await tx.delete(socialAccounts).where(and(eq(socialAccounts.userId, userId), isNotNull(socialAccounts.projectId)));
       await tx.delete(routines).where(eq(routines.userId, userId));
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────

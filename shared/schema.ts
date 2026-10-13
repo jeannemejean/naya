@@ -1002,6 +1002,9 @@ export type ReadingCard = typeof readingCards.$inferSelect;
 export const socialAccounts = pgTable("social_accounts", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
+  // Périmètre (mode agence) : null = compte de l'utilisatrice ; sinon le projet CLIENT qui
+  // l'utilise seul. Pas de FK : nettoyage explicite dans deleteProject.
+  projectId: integer("project_id"),
   platform: text("platform").notNull(),
   accountId: text("account_id").notNull(),
   // ID utilisateur sur la plateforme (ex: Facebook user ID). Requis pour honorer
@@ -1016,7 +1019,9 @@ export const socialAccounts = pgTable("social_accounts", {
   lastSyncAt: timestamp("last_sync_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_social_accounts_user_project_platform").on(t.userId, t.projectId, t.platform),
+]);
 
 // Media library for content assets
 export const mediaLibrary = pgTable("media_library", {
@@ -1974,6 +1979,9 @@ export const linkedinSendAttempts = pgTable("linkedin_send_attempts", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id),
   leadId: integer("lead_id").references(() => leads.id),
+  // Périmètre du compte LinkedIn utilisé : null = celui de l'utilisatrice, sinon le projet
+  // client. Le budget et la montée en charge se comptent par compte, donc par périmètre.
+  projectId: integer("project_id"),
   attemptedAt: timestamp("attempted_at").defaultNow().notNull(),
   ok: boolean("ok").notNull(),
   error: text("error"),
@@ -2176,3 +2184,28 @@ export const mesuresMensuelles = pgTable("mesures_mensuelles", {
 }));
 export type MesureMensuelle = typeof mesuresMensuelles.$inferSelect;
 export type InsertMesureMensuelle = typeof mesuresMensuelles.$inferInsert;
+
+// ─── Connexions d'un projet client (mode agence, sous-projet 7a) ─────────────────
+// Expéditeur e-mail, signature et compte LinkedIn PROPRES au client. Un projet client
+// n'utilise que ceux-ci, jamais ceux de l'utilisatrice (user_preferences).
+export const connexionsProjet = pgTable("connexions_projet", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  senderEmail: text("sender_email"),
+  senderName: text("sender_name"),                   // aussi la signature des messages du client
+  sendgridApiKey: text("sendgrid_api_key"),          // CHIFFRÉE (encryptToken)
+  senderAddress: text("sender_address"),
+  senderCity: text("sender_city"),
+  senderCountry: text("sender_country"),
+  linkedinUnipileAccountId: text("linkedin_unipile_account_id"),
+  linkedinAccountConnectedAt: timestamp("linkedin_account_connected_at"),
+  linkedinRestrictedAt: timestamp("linkedin_restricted_at"),
+  linkedinRestrictedReason: text("linkedin_restricted_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  parProjet: uniqueIndex("connexions_projet_user_project_uq").on(t.userId, t.projectId),
+}));
+export type ConnexionProjet = typeof connexionsProjet.$inferSelect;
+export type InsertConnexionProjet = typeof connexionsProjet.$inferInsert;

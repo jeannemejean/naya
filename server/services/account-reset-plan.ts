@@ -27,7 +27,8 @@ export interface ResetStep {
 
 // Ce que le reset NE touche JAMAIS (décision produit, 2026-07-24) :
 //  - users, subscriptions, access_code_redemptions → compte et facturation
-//  - social_accounts, google_calendar_tokens       → connexions (pas de OAuth à refaire)
+//  - social_accounts, google_calendar_tokens       → connexions (pas de OAuth à refaire) —
+//    sauf les comptes rattachés à un projet client, qui partent avec lui (mode agence)
 //  - user_preferences                              → réglages (seul active_project_id est détaché)
 //  - ai_invocations                                → corpus propriétaire Naya (FK en SET NULL)
 
@@ -120,6 +121,8 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "veille_items", mode: "delete", note: "veille : liste suivie" },
   { table: "fondations", mode: "delete", note: "fondations et plan d'acquisition" },
   { table: "mesures_mensuelles", mode: "delete", note: "mesure : registre mensuel" },
+  { table: "connexions_projet", mode: "delete", note: "connexions des projets client" },
+  { table: "social_accounts", mode: "delete", note: "SEULEMENT les comptes rattachés à un projet client (project_id non nul)" },
 
   // ── Phase 10 : projects ──────────────────────────────────────────────────────
   { table: "projects", mode: "delete" },
