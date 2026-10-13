@@ -1684,6 +1684,7 @@ const en = {
  },
 
  companion: {
+ mesureProjetInconnu: "Figures not saved: tell me which project and which month.",
  mesureEnregistree: "{{mois}} figures saved",
  ouvrir: "Open →",
  title: "Naya",

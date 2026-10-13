@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
+import { lienDansProjet } from "@/pages/project/onglets";
 import { ArrowUpRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -85,7 +86,7 @@ export default function PlanCarte({ projectId, plan, statut, catalogues, onChang
                       <span className="font-medium text-foreground">{t(`fondations.plan.briques.${cle}`)}</span>
                       <Badge variant="outline" className={`text-[10px] ${COULEUR[choix!.statut] || ""}`}>{t(`fondations.plan.statuts.${choix!.statut}`)}</Badge>
                       {page && choix!.statut !== "sans_objet" && (
-                        <Link href={page} className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-naya-salvia hover:underline">
+                        <Link href={lienDansProjet(page, projectId)} className="ml-auto inline-flex items-center gap-0.5 text-[11px] text-naya-salvia hover:underline">
                           {t("fondations.plan.ouvrir")}<ArrowUpRight className="w-3 h-3" />
                         </Link>
                       )}

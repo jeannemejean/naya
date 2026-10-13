@@ -7,6 +7,16 @@ describe("completerMois — seuls les chiffres dits sont écrits", () => {
     const r = completerMois(existant, { nouveauxClients: 25, depenses: { google_ads: 300 } });
     expect(r).toEqual({ ok: true, valeur: { ca: 10000, caNouveaux: null, nouveauxClients: 25, commandes: null, coutsVariables: 500, depenses: { paid_social: 1000, outils: 200, google_ads: 300 } } });
   });
+  it("une valeur vide (null, espace) n'efface jamais un chiffre existant", () => {
+    const r = completerMois(existant, { ca: " ", nouveauxClients: 25, depenses: { paid_social: null, outils: "" } });
+    expect(r).toEqual({ ok: true, valeur: { ...existant, nouveauxClients: 25 } });
+  });
+  it("lirePhrase refuse un nombre de clients non entier (l'enregistrement le refuserait)", () => {
+    expect(lirePhrase('{"mois":"2026-09","nouveauxClients":20.5,"ca":100}', new Date("2026-10-13T10:00:00Z"))).toEqual({ ok: true, mois: "2026-09", champs: { ca: 100 } });
+  });
+  it("mois par défaut à l'heure de Paris : le 1er octobre à 0 h 30 (encore septembre en UTC), le mois écoulé est septembre", () => {
+    expect(lirePhrase('{"ca":1}', new Date("2026-09-30T22:30:00Z"))).toMatchObject({ ok: true, mois: "2026-09" });
+  });
   it("sans existant : les seuls chiffres dits", () => {
     expect(completerMois(undefined, { ca: 5000 })).toEqual({ ok: true, valeur: { ca: 5000, caNouveaux: null, nouveauxClients: null, commandes: null, coutsVariables: null, depenses: {} } });
   });

@@ -31,7 +31,7 @@ const routine = { id: 1, userId: "u", kind: "mesure_bilan", cible: { projectId: 
 function deps(lignes: any[] = [sept, aout], over: Partial<DepsBilan> = {}) {
   const d: DepsBilan = {
     storage: {
-      getProject: vi.fn(async () => ({ id: 7 })),
+      getProject: vi.fn(async () => ({ id: 7, name: "Maison X" })),
       getMesures: vi.fn(async () => lignes),
       setBilanMesure: vi.fn(async () => {}),
       getFondations: vi.fn(async () => ({ statuts: { kpis: "valide" }, kpis: [{ nom: "Nouveaux clients", cible: "30 par mois" }] })),
@@ -131,7 +131,7 @@ describe("langue du compte", () => {
     expect(resumeBilan("2026-09", [sept, aout], "en")).toMatch(/^September 2026 review ready: MER 5\.0 \(\+/);
     const d = deps([aout], { langue: vi.fn(async () => "en" as const) });
     const r = await executerBilan(routine, d);
-    expect(r.resume).toBe("Tell me your September 2026 figures (revenue, new customers, spend), here or in Measure: I'll write your monthly review.");
+    expect(r.resume).toBe("Maison X · Tell me your September 2026 figures (revenue, new customers, spend), here or in Measure: I'll write your monthly review.");
   });
   it("compte en français : inchangé", () => {
     expect(resumeBilan("2026-09", [sept, aout])).toMatch(/^Bilan de septembre 2026 prêt : MER 5,0/);

@@ -12,10 +12,11 @@ const CHAMPS = ["ca", "caNouveaux", "nouveauxClients", "commandes", "coutsVariab
 export function completerMois(existant: Partial<ChiffresMois> | undefined, dits: Record<string, unknown>): Resultat<ChiffresMois> {
   const v = validerMois(dits);
   if (!v.ok) return v;
-  const depensesDites = dits.depenses && typeof dits.depenses === "object" ? Object.keys(dits.depenses as object) : [];
+  // « Présent » = une valeur réellement lue. Un champ envoyé vide (null, "", espaces) n'est
+  // PAS présent : il n'efface jamais le chiffre déjà saisi.
   const presentes = {
-    champs: CHAMPS.filter((c) => c in dits && dits[c] !== undefined && dits[c] !== null && dits[c] !== ""),
-    canaux: (CLES_CANAUX as readonly string[]).filter((c) => depensesDites.includes(c)),
+    champs: CHAMPS.filter((c) => v.valeur[c] !== null),
+    canaux: Object.keys(v.valeur.depenses),
   };
   const fusion = fusionnerImport(existant, v.valeur, presentes);
   if (fusion.ca !== null && fusion.caNouveaux !== null && fusion.caNouveaux > fusion.ca) return { ok: false, erreur: "ca_nouveaux_superieur" };
@@ -30,14 +31,18 @@ export function lirePhrase(brut: string, maintenant = new Date()): PhraseLue {
   let o: any;
   try { o = m ? JSON.parse(m[0]) : null; } catch { o = null; }
   if (!o || typeof o !== "object") return { ok: false, erreur: "rien_compris" };
-  const courant = `${maintenant.getUTCFullYear()}-${String(maintenant.getUTCMonth() + 1).padStart(2, "0")}`;
+  // Le mois en cours à Paris (pas en UTC : juste après minuit le 1er, c'est déjà le nouveau mois).
+  const p = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit" }).formatToParts(maintenant);
+  const courant = `${p.find((x) => x.type === "year")!.value}-${p.find((x) => x.type === "month")!.value}`;
   const mois = o.mois == null || o.mois === "" ? moisPrecedent(courant) : o.mois;
   if (!moisValide(mois, maintenant)) return { ok: false, erreur: "mois_invalide" };
   const champs: Record<string, unknown> = {};
   for (const c of CHAMPS) {
     if (o[c] == null) continue;
     const n = lireNombre(o[c]);
-    if (typeof n === "number" && n >= 0) champs[c] = n;
+    // Mêmes règles que l'enregistrement : un nombre de clients ou de ventes est entier.
+    const entier = c === "nouveauxClients" || c === "commandes";
+    if (typeof n === "number" && n >= 0 && (!entier || Number.isInteger(n))) champs[c] = n;
   }
   const depenses: Record<string, number> = {};
   for (const [canal, v] of Object.entries(o.depenses && typeof o.depenses === "object" ? o.depenses : {})) {

@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Briefcase, ChevronDown, Compass, Gauge, LayoutGrid, Radar, Users } from "lucide-react";
 import Sidebar from "@/components/sidebar";
+import { useProject } from "@/lib/project-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -39,6 +40,7 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
   const { t } = useTranslation();
   const [, navigate] = useLocation();
   const recherche = useSearch();
+  const { setActiveProjectId } = useProject();
   const { data: project, isLoading } = useProjectDetail(id);
   const { data: milestones } = useProjectMilestones(id);
   const { data: projets = [] } = useQuery<ProjetListe[]>({ queryKey: ["/api/projects?limit=200"] });
@@ -47,13 +49,19 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
   const onglet = ongletDe(recherche, estClient);
   const onglets: Onglet[] = estClient ? ["ensemble", "fondations", "veille", "mesure", "client"] : ["ensemble", "fondations", "veille", "mesure"];
   const changerOnglet = (o: string) => navigate(lienOnglet(id, o as Onglet), { replace: true });
-  const changerProjet = (p: ProjetListe) => navigate(lienOnglet(p.id, ongletPourAutreProjet(onglet, p.projectKind === "client")));
+  // Changer de projet ici en fait aussi le projet actif (comme la barre latérale).
+  const changerProjet = (p: ProjetListe) => {
+    setActiveProjectId(p.id);
+    navigate(lienOnglet(p.id, ongletPourAutreProjet(onglet, p.projectKind === "client")));
+  };
 
   return (
     <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* UN seul composant d'onglets pour l'en-tête et le contenu : chaque onglet est relié à
+          son panneau (lecteurs d'écran, clavier). */}
+      <Tabs value={onglet} onValueChange={changerOnglet} className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-card border-b border-border px-6 pt-4 flex-shrink-0">
           <Link href="/projects" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
             <ArrowLeft className="w-4 h-4" />
@@ -100,7 +108,7 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                 )}
               </div>
 
-              <Tabs value={onglet} onValueChange={changerOnglet} className="mt-3">
+              <div className="mt-3">
                 <TabsList className="bg-transparent p-0 h-auto gap-1 border-0">
                   {onglets.map((o) => {
                     const Icone = ICONES[o];
@@ -116,14 +124,13 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                     );
                   })}
                 </TabsList>
-              </Tabs>
+              </div>
             </>
           )}
         </header>
 
         {project && (
           <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-            <Tabs value={onglet}>
               <TabsContent value="ensemble" className="mt-0 space-y-6">
                 <section>
                   <h2 className="text-sm font-semibold text-foreground mb-2">{t("projet.resume")}</h2>
@@ -141,19 +148,19 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                 <section><BrandLinksPanel projectId={id} /></section>
                 <section><LivrablesPanel projectId={id} /></section>
               </TabsContent>
-              <TabsContent value="fondations" className="mt-0"><FondationsProjet projectId={id} /></TabsContent>
-              <TabsContent value="veille" className="mt-0"><VeilleProjet projectId={id} /></TabsContent>
-              <TabsContent value="mesure" className="mt-0"><MesureProjet projectId={id} /></TabsContent>
+              {/* key : un autre projet repart de zéro (remplissage automatique compris). */}
+              <TabsContent value="fondations" className="mt-0"><FondationsProjet key={id} projectId={id} /></TabsContent>
+              <TabsContent value="veille" className="mt-0"><VeilleProjet key={id} projectId={id} /></TabsContent>
+              <TabsContent value="mesure" className="mt-0"><MesureProjet key={id} projectId={id} /></TabsContent>
               {estClient && (
                 <TabsContent value="client" className="mt-0 space-y-6 max-w-5xl mx-auto">
                   <ConnexionsClientPanel projectId={id} />
                   <RapportsClientPanel projectId={id} />
                 </TabsContent>
               )}
-            </Tabs>
           </main>
         )}
-      </div>
+      </Tabs>
     </div>
   );
 }

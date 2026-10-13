@@ -1,6 +1,6 @@
 // Carte d'une section des fondations : statut, Modifier / Valider / Revenir en proposition,
 // « Reproposer cette section ». L'enregistrement passe par PUT /sections/:section.
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
 import { Check, Loader2, Pencil, RotateCcw, Sparkles } from "lucide-react";
@@ -45,6 +45,11 @@ export default function SectionCarte({
 }) {
   const { t } = useTranslation();
   const envoi = useEnvoiSection(projectId, section, onChange);
+  // À l'ouverture de l'édition, le curseur va dans le premier champ (Échap fonctionne aussitôt).
+  const zoneEdition = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (enEdition) zoneEdition.current?.querySelector<HTMLElement>("input,textarea,select")?.focus();
+  }, [enEdition]);
   // Reproposer une section validée la remplace : un second clic confirme.
   const [confirmer, setConfirmer] = useState(false);
   const reproposer = () => {
@@ -62,8 +67,12 @@ export default function SectionCarte({
           </div>
           <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">{t(`fondations.${section}.intro`)}</p>
         </div>
-        {!enEdition && (
+        {!enEdition && statut !== "vide" && (
           <div className="flex gap-1.5 flex-wrap">
+            {/* Le chemin clavier, tactile et lecteur d'écran : un vrai bouton, toujours visible. */}
+            <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={verrouille} onClick={onModifier}>
+              <Pencil className="w-3.5 h-3.5" />{t("fondations.actions.modifier")}
+            </Button>
             <Button size="sm" variant={confirmer ? "destructive" : "ghost"} className="h-7 gap-1 text-xs" disabled={verrouille} onClick={reproposer}
               onBlur={() => setConfirmer(false)}>
               {reproposeEnCours ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
@@ -83,7 +92,7 @@ export default function SectionCarte({
         )}
       </div>
       {enEdition ? (
-        <div onKeyDown={(e) => { if (e.key === "Escape" && onAnnuler) { e.preventDefault(); onAnnuler(); } }}>{children}</div>
+        <div ref={zoneEdition} onKeyDown={(e) => { if (e.key === "Escape" && onAnnuler) { e.preventDefault(); onAnnuler(); } }}>{children}</div>
       ) : statut === "vide" ? (
         // Partie vide : jamais un bloc inerte — on écrit soi-même, ou on laisse Naya proposer.
         <div className="rounded-md border border-dashed border-border p-4 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -98,26 +107,19 @@ export default function SectionCarte({
           </div>
         </div>
       ) : (
-        // Contenu rempli : cliquer dessus (ou Entrée) ouvre l'édition. Les champs et liens à
-        // l'intérieur gardent leur propre comportement.
+        // Contenu rempli : cliquer sur le texte ouvre aussi l'édition (raccourci souris ; le
+        // bouton « Modifier » reste le vrai chemin). Une sélection de texte, un champ, un lien ou
+        // un formulaire à l'intérieur gardent leur propre comportement.
         <div
-          role="button"
-          tabIndex={verrouille ? -1 : 0}
-          aria-label={t("fondations.actions.cliquerPourModifier")}
-          aria-disabled={verrouille}
           onClick={(e) => {
-            if (verrouille || (e.target as HTMLElement).closest("button,a,input,select,textarea,label")) return;
+            if (verrouille || (e.target as HTMLElement).closest("button,a,input,select,textarea,label,form")) return;
+            if (window.getSelection()?.toString()) return;
             onModifier();
           }}
-          onKeyDown={(e) => {
-            if (verrouille || e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
-            e.preventDefault();
-            onModifier();
-          }}
-          className={`group relative rounded-md -m-2 p-2 transition-colors ${verrouille ? "" : "cursor-text hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"}`}
+          className={`group relative rounded-md -m-2 p-2 transition-colors ${verrouille ? "" : "cursor-text hover:bg-muted/40"}`}
         >
           {!verrouille && (
-            <span className="pointer-events-none absolute right-2 top-2 hidden items-center gap-1 text-[10px] text-muted-foreground group-hover:flex group-focus-visible:flex">
+            <span aria-hidden="true" className="pointer-events-none absolute right-2 top-2 hidden items-center gap-1 text-[10px] text-muted-foreground group-hover:flex">
               <Pencil className="w-3 h-3" />{t("fondations.actions.cliquerPourModifier")}
             </span>
           )}

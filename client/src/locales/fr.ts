@@ -1688,6 +1688,7 @@ const fr = {
  },
 
  companion: {
+ mesureProjetInconnu: "Chiffres non enregistrés : dis-moi pour quel projet et quel mois.",
  mesureEnregistree: "Mesure de {{mois}} enregistrée",
  ouvrir: "Ouvrir →",
  title: "Naya",

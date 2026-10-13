@@ -122,9 +122,14 @@ function useActionExecutor(activeProject: any, projects: any[]) {
 
  case "saisir_mesure": {
  // Chiffres du mois dits en une phrase : seuls ceux-là sont écrits (rien n'est effacé).
- const pid = resolveProjectId(action.projectId);
- if (!pid) break;
- await apiRequest("POST", `/api/mesure/${pid}/mois/${action.mois}/completer`, action.champs);
+ // Jamais de repli sur le projet actif ou le premier : un projet explicite, à elle ; un
+ // mois au bon format (il entre dans l'adresse de la requête).
+ const pid = Number(action.projectId);
+ if (!projects.some((p: any) => p.id === pid) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(action.mois))) {
+ toast({ title: t("companion.mesureProjetInconnu"), variant: "destructive" });
+ break;
+ }
+ await apiRequest("POST", `/api/mesure/${pid}/mois/${encodeURIComponent(action.mois)}/completer`, action.champs);
  queryClient.invalidateQueries({ queryKey: [`/api/mesure/${pid}`] });
  toast({ title: t("companion.mesureEnregistree", { mois: action.mois }) });
  break;

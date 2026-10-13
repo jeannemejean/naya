@@ -17,3 +17,17 @@ export function lienOnglet(projectId: number, onglet: Onglet): string {
 export function ongletPourAutreProjet(onglet: Onglet, autreEstClient: boolean): Onglet {
   return onglet === "client" && !autreEstClient ? "ensemble" : onglet;
 }
+
+/** Où envoyer une ancienne adresse (/fondations…) ; null tant que le serveur n'a pas répondu. */
+export function cibleRedirection(p: { chargees: boolean; projetActif: number | null }, onglet: Onglet): string | null {
+  if (!p.chargees) return null;
+  return p.projetActif != null ? lienOnglet(p.projetActif, onglet) : "/projects";
+}
+
+const ANCIENNES: Record<string, Onglet> = { "/fondations": "fondations", "/veille": "veille", "/mesure": "mesure" };
+
+/** Un lien vers une ancienne page de projet ouvre l'onglet du projet AFFICHÉ (pas du projet actif). */
+export function lienDansProjet(page: string, projectId: number): string {
+  const onglet = ANCIENNES[page];
+  return onglet ? lienOnglet(projectId, onglet) : page;
+}
