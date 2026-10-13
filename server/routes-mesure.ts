@@ -10,6 +10,8 @@ import { indicateurs, evolutions, moisPrecedent } from "./services/mesure/calcul
 import { validerMois, moisValide, suggestionDepuisConversions } from "./services/mesure/saisie";
 import { lireImport, fusionnerImport } from "./services/mesure/import";
 import { routineBilanPour } from "./services/mesure/bilan";
+import { completerMois, lirePhrase } from "./services/mesure/phrase";
+import { comprendrePhrase } from "./services/mesure/deps";
 
 const MAX_IMPORT = 200_000;
 const cleRoutine = (projectId: number) => `project:${projectId}`;
@@ -82,6 +84,40 @@ export function registerMesureRoutes(app: Express) {
       const ligne = await storage.upsertMesure(req.userId, projet.id, req.params.mois, { ...v.valeur, source: "manuel" });
       await assurerRoutine(req.userId, projet.id, [req.params.mois]);
       res.json(ligne);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Compléter un mois : seuls les chiffres envoyés sont écrits (phrase à Naya, compagnon).
+  app.post("/api/mesure/:projectId/mois/:mois/completer", isAuthenticated, async (req: any, res) => {
+    try {
+      const projet = await projetDe(req);
+      if (!projet) return res.status(404).json({ message: "not_found" });
+      if (!moisValide(req.params.mois)) return res.status(400).json({ message: "mois_invalide" });
+      const existant = (await storage.getMesures(req.userId, projet.id, 600)).find((l) => l.mois === req.params.mois);
+      const v = completerMois(existant as any, (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>);
+      if (!v.ok) return res.status(400).json({ message: v.erreur });
+      const ligne = await storage.upsertMesure(req.userId, projet.id, req.params.mois, { ...v.valeur, source: "manuel" });
+      await assurerRoutine(req.userId, projet.id, [req.params.mois]);
+      res.json(ligne);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // « Dis-moi tes chiffres » : Naya comprend la phrase et renvoie un APERÇU (rien n'est écrit).
+  app.post("/api/mesure/:projectId/phrase", isAuthenticated, async (req: any, res) => {
+    try {
+      const projet = await projetDe(req);
+      if (!projet) return res.status(404).json({ message: "not_found" });
+      const texte = typeof req.body?.texte === "string" ? req.body.texte.trim() : "";
+      if (!texte || texte.length > 1000) return res.status(400).json({ message: "texte_invalide" });
+      const r = await comprendrePhrase(req.userId, projet.id, texte);
+      if ("refus" in r) return res.status(409).json({ message: "refus", raison: r.refus });
+      const lu = lirePhrase(r.brut);
+      if (!lu.ok) return res.status(422).json({ message: lu.erreur });
+      res.json({ mois: lu.mois, champs: lu.champs });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

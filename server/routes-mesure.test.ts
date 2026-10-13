@@ -23,6 +23,8 @@ vi.mock("./storage", () => ({ storage: storageMock }));
 const exec = vi.hoisted(() => ({ executerUne: vi.fn(async () => ({ statut: "ok", resume: "Bilan prêt" })) }));
 vi.mock("./services/routines/ordonnanceur", () => ({ executerUne: exec.executerUne, REGISTRE: { mesure_bilan: vi.fn() } }));
 
+const phrase = vi.hoisted(() => ({ comprendrePhrase: vi.fn(async () => ({ brut: '{"mois":"2026-09","nouveauxClients":25}' }) as any) }));
+vi.mock("./services/mesure/deps", () => phrase);
 const { registerMesureRoutes } = await import("./routes-mesure");
 const app = express();
 app.use(express.json());
@@ -133,5 +135,26 @@ describe("routes de la mesure", () => {
     expect((await appel("POST", "/api/mesure/7/routine/run")).status).toBe(409);
     expect((await appel("PATCH", "/api/mesure/7/routine", {})).status).toBe(400);
     expect((await appel("PATCH", "/api/mesure/7/routine", { actif: true })).status).toBe(200);
+  });
+
+  it("compléter un mois : seuls les chiffres dits changent ; 404 sur le projet d'une autre", async () => {
+    expect((await appel("POST", "/api/mesure/8/mois/2026-09/completer", { ca: 1 })).status).toBe(404);
+    const r = await appel("POST", "/api/mesure/7/mois/2026-09/completer", { nouveauxClients: 25 });
+    expect(r.status).toBe(200);
+    expect(storageMock.upsertMesure).toHaveBeenCalledWith("user-1", 7, "2026-09", expect.objectContaining({ ca: 10000, nouveauxClients: 25, depenses: { paid_social: 1000 } }));
+    expect((await appel("POST", "/api/mesure/7/mois/2026-09/completer", {})).status).toBe(400);
+  });
+
+  it("phrase : aperçu sans rien écrire ; refus de budget lisible ; 404 sur le projet d'une autre", async () => {
+    expect((await appel("POST", "/api/mesure/8/phrase", { texte: "x" })).status).toBe(404);
+    const r = await (await appel("POST", "/api/mesure/7/phrase", { texte: "septembre 25 nouveaux clients" })).json();
+    expect(r).toEqual({ mois: "2026-09", champs: { nouveauxClients: 25 } });
+    expect(storageMock.upsertMesure).not.toHaveBeenCalled();
+    phrase.comprendrePhrase.mockResolvedValueOnce({ refus: "Budget IA atteint" } as any);
+    const refus = await appel("POST", "/api/mesure/7/phrase", { texte: "x" });
+    expect(refus.status).toBe(409);
+    expect((await refus.json()).raison).toBe("Budget IA atteint");
+    phrase.comprendrePhrase.mockResolvedValueOnce({ brut: "je ne sais pas" } as any);
+    expect((await appel("POST", "/api/mesure/7/phrase", { texte: "x" })).status).toBe(422);
   });
 });

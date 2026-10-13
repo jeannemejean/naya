@@ -34,7 +34,8 @@ type CompanionAction =
  | { type: "create_project"; name: string; projectType?: string; description?: string; milestones?: { title: string; description?: string }[] }
  | { type: "create_milestone_chain"; projectId: number; milestones: any[] }
  | { type: "confirm_milestone"; milestoneId: number }
- | { type: "show_project_roadmap"; projectId: number };
+ | { type: "show_project_roadmap"; projectId: number }
+ | { type: "saisir_mesure"; projectId: number; mois: string; champs: Record<string, unknown> };
 
 // ─── Action executor ─────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ function useActionExecutor(activeProject: any, projects: any[]) {
  const queryClient = useQueryClient();
  const { toast } = useToast();
  const [, navigate] = useLocation();
+ const { t } = useTranslation();
 
  // Résout le projectId depuis l'action, avec fallback sur projet actif ou premier projet
  const resolveProjectId = (actionProjectId?: number | null): number | null => {
@@ -115,6 +117,16 @@ function useActionExecutor(activeProject: any, projects: any[]) {
  });
  queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
  toast({ title: "Tâche complétée" });
+ break;
+ }
+
+ case "saisir_mesure": {
+ // Chiffres du mois dits en une phrase : seuls ceux-là sont écrits (rien n'est effacé).
+ const pid = resolveProjectId(action.projectId);
+ if (!pid) break;
+ await apiRequest("POST", `/api/mesure/${pid}/mois/${action.mois}/completer`, action.champs);
+ queryClient.invalidateQueries({ queryKey: [`/api/mesure/${pid}`] });
+ toast({ title: t("companion.mesureEnregistree", { mois: action.mois }) });
  break;
  }
 
@@ -905,6 +917,7 @@ export default function NayaCompanion() {
 }
 
 function ActionLabel({ action }: { action: CompanionAction }) {
+ const { t } = useTranslation();
  switch (action.type) {
  case "create_project": return <span>Projet créé : {action.name}{action.milestones?.length ? ` · ${action.milestones.length} jalons` : ""}</span>;
  case "reschedule_day": return <span>Journée réorganisée{action.reason ? ` — ${action.reason}` : ""}</span>;
@@ -918,6 +931,7 @@ function ActionLabel({ action }: { action: CompanionAction }) {
  case "create_milestone_chain": return <span>{action.milestones.length} jalons créés</span>;
  case "confirm_milestone": return <span>Jalon confirmé</span>;
  case "show_project_roadmap": return <span>Ouverture roadmap</span>;
+ case "saisir_mesure": return <span>{t("companion.mesureEnregistree", { mois: action.mois })}</span>;
  default: return null;
  }
 }

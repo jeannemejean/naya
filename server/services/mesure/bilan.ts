@@ -27,14 +27,14 @@ const moisEn = (mois: string) => libelleMois(mois, "en-US");
 const TEXTES = {
   fr: {
     projetDisparu: "Ce projet n'existe plus : bilan arrêté.",
-    rappel: (m: string) => `Saisis tes chiffres de ${libelleMois(m)} dans Mesure : Naya fera ton bilan du mois.`,
+    rappel: (m: string) => `Dis-moi tes chiffres de ${libelleMois(m)} (CA, nouveaux clients, dépenses), ici ou dans Mesure : je fais ton bilan du mois.`,
     dejaFait: (m: string) => `Bilan de ${libelleMois(m)} déjà fait, chiffres inchangés.`,
     vide: "Réponse de l'IA vide : bilan non écrit.",
     manqueEncore: (m: string) => ` Il manque encore tes chiffres de ${libelleMois(m)}.`,
   },
   en: {
     projetDisparu: "This project no longer exists: review stopped.",
-    rappel: (m: string) => `Enter your ${moisEn(m)} figures in Measure: Naya will write your monthly review.`,
+    rappel: (m: string) => `Tell me your ${moisEn(m)} figures (revenue, new customers, spend), here or in Measure: I'll write your monthly review.`,
     dejaFait: (m: string) => `${moisEn(m)} review already done, figures unchanged.`,
     vide: "Empty AI answer: review not written.",
     manqueEncore: (m: string) => ` Your ${moisEn(m)} figures are still missing.`,

@@ -131,7 +131,7 @@ describe("langue du compte", () => {
     expect(resumeBilan("2026-09", [sept, aout], "en")).toMatch(/^September 2026 review ready: MER 5\.0 \(\+/);
     const d = deps([aout], { langue: vi.fn(async () => "en" as const) });
     const r = await executerBilan(routine, d);
-    expect(r.resume).toBe("Enter your September 2026 figures in Measure: Naya will write your monthly review.");
+    expect(r.resume).toBe("Tell me your September 2026 figures (revenue, new customers, spend), here or in Measure: I'll write your monthly review.");
   });
   it("compte en français : inchangé", () => {
     expect(resumeBilan("2026-09", [sept, aout])).toMatch(/^Bilan de septembre 2026 prêt : MER 5,0/);

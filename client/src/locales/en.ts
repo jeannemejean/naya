@@ -1684,6 +1684,7 @@ const en = {
  },
 
  companion: {
+ mesureEnregistree: "{{mois}} figures saved",
  ouvrir: "Open →",
  title: "Naya",
  placeholder: "Send a message to Naya…",

@@ -1,5 +1,6 @@
 import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
 import { storage } from "../storage";
+import { CANAUX } from "./mesure/catalogues";
 
 const COMPANION_SYSTEM_ADDON = `
 Tu es Naya en mode Companion — l'interface conversationnelle directe.
@@ -26,6 +27,7 @@ TYPES D'ACTIONS DISPONIBLES :
 - show_project_roadmap: { type, projectId }
 - add_project_note: { type, projectId, content } — note stratégique liée à un projet
 - reschedule_tasks: { type, fromDate, toDate } — déplace TOUTES les tâches incomplètes d'une date à une autre (ex: "décale toutes mes tâches de demain à jeudi"). Format YYYY-MM-DD.
+- saisir_mesure: { type, projectId, mois, champs: { ca?, caNouveaux?, nouveauxClients?, commandes?, coutsVariables?, depenses?: { <canal>: montant } } } — enregistre les chiffres du mois qu'elle te donne (ex: "septembre : 12 000 €, 20 nouveaux clients, 2 000 € de pub Meta"). mois = "YYYY-MM" (sans mois précisé : le mois écoulé). Canaux de dépense : ${CANAUX.map((c) => c.cle).join(", ")}. Seuls les chiffres DITS figurent dans champs : n'invente rien, n'efface rien. Répète dans ta réponse les chiffres compris.
 
 RÈGLES :
 1. Les actions sont discrètes — l'utilisateur les voit exécutées, pas le JSON brut.
@@ -54,7 +56,8 @@ export type CompanionAction =
   | { type: "confirm_milestone"; milestoneId: number }
   | { type: "show_project_roadmap"; projectId: number }
   | { type: "add_project_note"; projectId: number; content: string }
-  | { type: "reschedule_tasks"; fromDate: string; toDate: string };
+  | { type: "reschedule_tasks"; fromDate: string; toDate: string }
+  | { type: "saisir_mesure"; projectId: number; mois: string; champs: Record<string, unknown> };
 
 export interface CompanionRequest {
   message: string;
