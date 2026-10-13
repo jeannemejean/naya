@@ -16,6 +16,7 @@ import { storage } from '../storage';
 import { socialMediaService } from './social-integrations';
 import { publishPost, igFinishAsync, tiktokFinishAsync } from './social-publishers';
 import { formatDePublication, plateformeDe } from '@shared/programmation';
+import { compteDePublication } from './connexions/comptes';
 import { db } from '../db';
 import { tasks } from '@shared/schema';
 import { and, eq, like } from 'drizzle-orm';
@@ -44,17 +45,15 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
   }
 
   try {
-    // 2. Compte connecté pour cette plateforme (priorité au compte explicitement lié).
-    const accounts = await storage.getSocialAccounts(item.userId);
-    const account = item.socialAccountId
-      ? accounts.find((a: any) => a.id === item.socialAccountId)
-      : accounts.find((a: any) => plateformeDe(a.platform) === platform && a.isActive);
-
-    if (!account) {
-      await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'compte_absent' } as any);
-      console.error(`[SocialPublisher] id=${item.id} aucun compte ${platform} connecté`);
+    // 2. Compte du périmètre du post (projet client → ses comptes seulement ; priorité au
+    //    compte explicitement lié, jamais remplacé s'il est hors périmètre).
+    const choix = await compteDePublication(item);
+    if ('erreur' in choix) {
+      await storage.updateContent(item.id, { postStatus: 'failed', lastError: choix.erreur } as any);
+      console.error(`[SocialPublisher] id=${item.id} ${choix.erreur} (${platform})`);
       return 'failed';
     }
+    const account = choix.compte;
     if (account.expiresAt && new Date() > new Date(account.expiresAt)) {
       await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'compte_expire' } as any);
       console.error(`[SocialPublisher] id=${item.id} token ${platform} expiré — reconnexion requise`);
@@ -123,11 +122,9 @@ async function finishProcessing(): Promise<number> {
   for (const item of rows) {
     if (!item.providerContainerId || (item.platform !== 'instagram' && item.platform !== 'tiktok')) continue;
     try {
-      const accounts = await storage.getSocialAccounts(item.userId);
-      const account = item.socialAccountId
-        ? accounts.find((a: any) => a.id === item.socialAccountId)
-        : accounts.find((a: any) => a.platform === item.platform && a.isActive);
-      if (!account) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: 'no_account' } as any); continue; }
+      const choix = await compteDePublication(item);
+      if ('erreur' in choix) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: choix.erreur } as any); continue; }
+      const account = choix.compte;
       const creds = { accessToken: account.accessToken, accountId: account.accountId };
       const r = item.platform === 'tiktok'
         ? await tiktokFinishAsync(creds, item.providerContainerId)

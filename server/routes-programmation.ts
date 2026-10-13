@@ -6,8 +6,9 @@
 import type { Express } from "express";
 import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
+import { compteDePublication } from "./services/connexions/comptes";
 import {
-  compteDuPost, formatDePublication, plateformeDe, problemesProgrammation, type GenreMedia,
+  formatDePublication, plateformeDe, problemesProgrammation, type GenreMedia,
 } from "@shared/programmation";
 
 const EN_COURS = ["posting", "uploading", "processing"];
@@ -20,8 +21,10 @@ async function etatProgrammation(userId: string, post: any) {
     if (m?.url) medias.push((m.mimeType || "").startsWith("video/") ? "video" : "image");
   }
   if (medias.length === 0 && post.mediaUrl) medias.push("image");
-  const comptes = (await storage.getSocialAccounts(userId)) as any[];
-  const compte = compteDuPost(post, comptes);
+  // Le compte du périmètre du post (projet client → ses comptes seulement, jamais ceux de
+  // l'utilisatrice) : même résolution que le worker qui publiera.
+  const choix = await compteDePublication({ ...post, userId });
+  const compte = "compte" in choix ? choix.compte : null;
   return {
     programme: post.autoPost === true && post.postStatus !== "posted",
     etat: post.postStatus ?? "pending",

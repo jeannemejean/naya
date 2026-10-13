@@ -19,6 +19,9 @@ import { registerRoutinesRoutes } from "./routes-routines";
 import { registerVeilleRoutes } from "./routes-veille";
 import { registerFondationsRoutes } from "./routes-fondations";
 import { registerMesureRoutes } from "./routes-mesure";
+import { registerSocialRoutes } from "./routes-social";
+import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
+import { dansPortee } from "./services/connexions/portee";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -850,169 +853,8 @@ ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>${e.email}</td><td>${e.languag
     }
   });
 
-  // ─── Social OAuth ────────────────────────────────────────────────────────────
-
-  // GET /api/social/oauth/:platform/url — génère l'URL de consentement
-  app.get('/api/social/oauth/:platform/url', isAuthenticated, async (req: any, res) => {
-    const { platform } = req.params;
-    const validPlatforms = ['instagram', 'linkedin', 'twitter', 'tiktok'];
-    if (!validPlatforms.includes(platform)) {
-      return res.status(400).json({ error: "social_connect_failed", message: `Plateforme non supportée: ${platform}` });
-    }
-    if (!isPlatformConfigured(platform as any)) {
-      return res.status(503).json({
-        error: "social_not_configured",
-        message: `${platform} n'est pas encore configuré sur ce serveur. Ajoute les variables d'environnement.`,
-        notConfigured: true,
-      });
-    }
-    try {
-      const state = `${req.userId}:${Date.now()}`;
-      (req.session as any).socialOAuthState = state;
-      (req.session as any).socialOAuthUserId = req.userId;
-
-      let url: string;
-      if (platform === 'instagram') {
-        url = getInstagramAuthUrl(state);
-      } else if (platform === 'linkedin') {
-        url = getLinkedInAuthUrl(state);
-      } else if (platform === 'tiktok') {
-        url = getTikTokAuthUrl(state);
-      } else {
-        // twitter — génère un code_verifier simple
-        const codeVerifier = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-        (req.session as any).twitterCodeVerifier = codeVerifier;
-        url = getTwitterAuthUrl(state, codeVerifier);
-      }
-      res.json({ url });
-    } catch (err: any) {
-      res.status(500).json({ error: "social_connect_failed", message: err.message });
-    }
-  });
-
-  // GET /api/social/oauth/:platform/callback — reçoit le code, échange le token
-  app.get('/api/social/oauth/:platform/callback', async (req: any, res) => {
-    const { platform } = req.params;
-    const { code, state, error } = req.query as Record<string, string>;
-
-    if (error) {
-      console.error(`[Social OAuth] ${platform} error:`, error);
-      return res.redirect(`/settings?social=${platform}&status=error&reason=${encodeURIComponent(error)}`);
-    }
-
-    // Récupérer userId depuis la session OU depuis le state (fallback si session perdue)
-    const sessionUserId = (req.session as any)?.socialOAuthUserId || (req.session as any)?.userId;
-    const stateUserId = state?.split(':')[0];
-    const userId = sessionUserId || stateUserId;
-
-    if (!code) {
-      return res.redirect(`/settings?social=${platform}&status=error&reason=missing_code`);
-    }
-    if (!userId) {
-      return res.redirect(`/settings?social=${platform}&status=error&reason=missing_session`);
-    }
-
-    try {
-      if (platform === 'instagram') {
-        await exchangeInstagramCode(userId, code);
-      } else if (platform === 'linkedin') {
-        await exchangeLinkedInCode(userId, code);
-      } else if (platform === 'tiktok') {
-        await exchangeTikTokCode(userId, code);
-      } else if (platform === 'twitter') {
-        const codeVerifier = (req.session as any)?.twitterCodeVerifier || '';
-        await exchangeTwitterCode(userId, code, codeVerifier);
-        delete (req.session as any).twitterCodeVerifier;
-      }
-      delete (req.session as any).socialOAuthState;
-      delete (req.session as any).socialOAuthUserId;
-      res.redirect(`/settings?social=${platform}&status=connected`);
-    } catch (err: any) {
-      console.error(`[Social OAuth] ${platform} callback error:`, err.message);
-      res.redirect(`/settings?social=${platform}&status=error&reason=${encodeURIComponent(err.message)}`);
-    }
-  });
-
-  // GET /api/social/status — état de connexion de tous les réseaux
-  // Liste des comptes sociaux connectés (avec IDs) pour le composer multi-réseaux.
-  // Inclut profils + pages LinkedIn + IG/FB/TikTok.
-  app.get('/api/social/accounts', isAuthenticated, async (req: any, res) => {
-    try {
-      const accounts = await storage.getSocialAccounts(req.userId);
-      res.json(
-        accounts
-          .filter((a: any) => a.isActive)
-          .map((a: any) => ({
-            id: a.id,
-            platform: a.platform,                                   // instagram|facebook|linkedin|linkedin_page_<id>|tiktok
-            basePlatform: a.platform.startsWith('linkedin') ? 'linkedin' : a.platform,
-            accountName: a.accountName,
-            isPage: a.platform.startsWith('linkedin_page_'),
-          })),
-      );
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  app.get('/api/social/status', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.userId;
-      const accounts = await storage.getSocialAccounts(userId);
-      const status: Record<string, { connected: boolean; etat: string; accountName?: string; expiresAt?: Date; configured: boolean }> = {};
-
-      for (const platform of ['instagram', 'linkedin', 'tiktok'] as const) {
-        const account = accounts.find(a => a.platform === platform && a.isActive);
-        // Compter les pages LinkedIn connectées
-        const linkedinPages = platform === 'linkedin'
-          ? accounts.filter(a => a.platform.startsWith('linkedin_page_') && a.isActive)
-          : [];
-        // ETAT REEL, pas `!!account`.
-        //
-        // `is_active` ne dit pas si la connexion marche : il dit qu'elle n'a pas ete revoquee
-        // depuis l'application. Le 18 septembre, les deux comptes de la production portaient
-        // is_active = true avec des jetons morts depuis 56 et 26 jours, et l'ecran Reglages
-        // affichait « Connecte ». La route renvoyait meme `expiresAt` — que personne ne lisait.
-        const etat = account
-          ? etatConnexion({
-              accessToken: (account as any).accessToken,
-              isActive: account.isActive,
-              expiresAt: (account as any).expiresAt ?? null,
-              now: new Date(),
-            })
-          : 'absente' as const;
-
-        status[platform] = {
-          configured: isPlatformConfigured(platform),
-          // `connected` veut dire UTILISABLE. Un jeton expire ne l'est pas.
-          connected: etat === 'connectee' || etat === 'expire_bientot' || etat === 'echeance_inconnue',
-          etat,
-          accountName: account?.accountName,
-          expiresAt: account?.expiresAt || undefined,
-          ...(platform === 'linkedin' && linkedinPages.length > 0 && {
-            pagesCount: linkedinPages.length,
-          }),
-        };
-      }
-      res.json(status);
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  // DELETE /api/social/disconnect/:platform — déconnecte un réseau
-  app.delete('/api/social/disconnect/:platform', isAuthenticated, async (req: any, res) => {
-    try {
-      const { platform } = req.params;
-      const userId = req.userId;
-      const account = await storage.getSocialAccountByPlatform(userId, platform);
-      if (!account) return res.status(404).json({ message: 'Compte non trouvé' });
-      await storage.deleteSocialAccount(account.id, userId);
-      res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
+  // Comptes sociaux : OAuth, listes, état, déconnexion (périmètre utilisatrice ou projet client).
+  registerSocialRoutes(app);
 
   // Auth routes
   app.post('/api/auth/register', async (req, res) => {
@@ -7053,6 +6895,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const userId = req.userId;
       const { targets, caption, mediaIds, scheduledFor, autoPost, projectId, pillar, goal } = req.body || {};
       if (!Array.isArray(targets) || targets.length === 0) return res.status(400).json({ message: 'no_targets' });
+      // Mode agence : chaque compte cible doit appartenir au périmètre du projet (client → ses
+      // comptes seulement ; perso ou aucun projet → ceux de l'utilisatrice).
+      if (projectId && !(await storage.getProject(Number(projectId), userId))) return res.status(404).json({ message: 'not_found' });
+      const portee = await porteeDuProjet(userId, projectId ? Number(projectId) : null);
+      const comptes = await storage.getSocialAccounts(userId);
+      for (const tgt of targets) {
+        if (tgt?.socialAccountId == null) continue;
+        const compte = comptes.find((c: any) => c.id === Number(tgt.socialAccountId));
+        if (!compte || !dansPortee(compte as any, portee)) return res.status(400).json({ message: 'compte_hors_projet' });
+      }
       const groupId = randomUUID();
       const when = scheduledFor ? new Date(scheduledFor) : null;
       const title = (caption || 'Publication').slice(0, 80);
@@ -8076,8 +7928,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.get('/api/social-accounts', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
+      // Liste historique : les comptes de l'utilisatrice seulement (ceux d'un client sont sur sa page projet).
       const accounts = await storage.getSafeSocialAccounts(userId);
-      res.json(accounts);
+      res.json(accounts.filter((a: any) => a.projectId == null));
     } catch (error) {
       console.error("Error fetching social accounts:", error);
       res.status(500).json({ message: "Failed to fetch social accounts" });
@@ -9928,18 +9781,11 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/social/post', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const { platform, content, imageUrl, scheduledFor, socialAccountId } = req.body;
+      const { platform, content, imageUrl, scheduledFor, socialAccountId, projectId } = req.body;
       
-      // Get user's stored credentials for platform
-      let socialAccount;
-      if (socialAccountId) {
-        const accounts = await storage.getSocialAccounts(userId);
-        socialAccount = accounts.find(acc => acc.id === socialAccountId);
-      } else {
-        // Find active account for this platform
-        const accounts = await storage.getSocialAccounts(userId);
-        socialAccount = accounts.find(acc => acc.platform === platform && acc.isActive);
-      }
+      // Compte du périmètre (projet client → ses comptes seulement), jamais remplacé.
+      const choix = await compteDePublication({ userId, projectId: projectId ? Number(projectId) : null, platform, socialAccountId: socialAccountId ?? null });
+      const socialAccount = 'compte' in choix ? choix.compte : undefined;
       
       if (!socialAccount) {
         return res.status(400).json({ message: `No connected ${platform} account found. Please connect your account first.` });
@@ -9996,9 +9842,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         return res.status(400).json({ error: "content_already_published", message: "Content is already published" });
       }
 
-      // Get connected account for this platform
-      const accounts = await storage.getSocialAccounts(userId);
-      const socialAccount = accounts.find(acc => acc.platform === content.platform && acc.isActive);
+      // Compte du périmètre du post (projet client → ses comptes seulement ; compte lié respecté).
+      const choix = await compteDePublication(content as any);
+      if ('erreur' in choix && choix.erreur === 'compte_hors_projet') {
+        return res.status(400).json({ error: "compte_hors_projet", params: { platform: content.platform }, message: "compte_hors_projet" });
+      }
+      const socialAccount = 'compte' in choix ? choix.compte : undefined;
 
       if (!socialAccount) {
         return res.status(400).json({

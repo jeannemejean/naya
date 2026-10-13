@@ -35,7 +35,8 @@ export function getInstagramAuthUrl(state: string): string {
   return `https://www.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${redirect}&response_type=code&scope=${scope}&state=${state}`;
 }
 
-export async function exchangeInstagramCode(userId: string, code: string): Promise<void> {
+// `projectId` : périmètre du compte (null = l'utilisatrice ; sinon le projet client qui l'utilise seul).
+export async function exchangeInstagramCode(userId: string, code: string, projectId: number | null = null): Promise<void> {
   const appId = process.env.IG_APP_ID!;
   const appSecret = process.env.IG_APP_SECRET!;
   const redirectUri = `${getBaseUrl()}/api/social/oauth/instagram/callback`;
@@ -80,14 +81,14 @@ export async function exchangeInstagramCode(userId: string, code: string): Promi
   } catch { /* ignore */ }
 
   const expiresAt = new Date(Date.now() + expiresIn * 1000);
-  const existing = await storage.getSocialAccountByPlatform(userId, 'instagram');
+  const existing = await storage.getSocialAccountByPlatform(userId, 'instagram', projectId);
   if (existing) {
     await storage.updateSocialAccount(existing.id, userId, {
       accessToken: longToken, accountId, platformUserId: accountId, accountName, expiresAt, isActive: true, lastSyncAt: new Date(),
     });
   } else {
     await storage.createSocialAccount({
-      userId, platform: 'instagram', accountId, platformUserId: accountId, accountName,
+      userId, projectId, platform: 'instagram', accountId, platformUserId: accountId, accountName,
       accessToken: longToken, expiresAt, permissions: INSTAGRAM_SCOPES.split(','), isActive: true, lastSyncAt: new Date(),
     });
   }
@@ -112,7 +113,7 @@ export function getLinkedInAuthUrl(state: string): string {
   return `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirect}&state=${state}&scope=${scope}`;
 }
 
-export async function exchangeLinkedInCode(userId: string, code: string): Promise<void> {
+export async function exchangeLinkedInCode(userId: string, code: string, projectId: number | null = null): Promise<void> {
   const clientId = process.env.LINKEDIN_CLIENT_ID!;
   const clientSecret = process.env.LINKEDIN_CLIENT_SECRET!;
   const redirectUri = `${getBaseUrl()}/api/social/oauth/linkedin/callback`;
@@ -180,7 +181,7 @@ export async function exchangeLinkedInCode(userId: string, code: string): Promis
   }
 
   // 4. Sauvegarder profil personnel (upsert)
-  const existing = await storage.getSocialAccountByPlatform(userId, 'linkedin');
+  const existing = await storage.getSocialAccountByPlatform(userId, 'linkedin', projectId);
   const expiresAt = tokenData.expires_in
     ? new Date(Date.now() + tokenData.expires_in * 1000)
     : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
@@ -198,6 +199,7 @@ export async function exchangeLinkedInCode(userId: string, code: string): Promis
   } else {
     await storage.createSocialAccount({
       userId,
+      projectId,
       platform: 'linkedin',
       accountId,
       accountName,
@@ -212,7 +214,7 @@ export async function exchangeLinkedInCode(userId: string, code: string): Promis
 
   // 5. Sauvegarder chaque page comme compte séparé (linkedin_page)
   for (const page of orgPages) {
-    const existingPage = await storage.getSocialAccountByPlatform(userId, `linkedin_page_${page.id}`);
+    const existingPage = await storage.getSocialAccountByPlatform(userId, `linkedin_page_${page.id}`, projectId);
     if (existingPage) {
       await storage.updateSocialAccount(existingPage.id, userId, {
         accessToken: tokenData.access_token,
@@ -224,6 +226,7 @@ export async function exchangeLinkedInCode(userId: string, code: string): Promis
     } else {
       await storage.createSocialAccount({
         userId,
+        projectId,
         platform: `linkedin_page_${page.id}`,
         accountId: page.id,
         accountName: page.name,
@@ -262,7 +265,7 @@ export function getTwitterAuthUrl(state: string, codeChallenge: string): string 
   );
 }
 
-export async function exchangeTwitterCode(userId: string, code: string, codeVerifier: string): Promise<void> {
+export async function exchangeTwitterCode(userId: string, code: string, codeVerifier: string, projectId: number | null = null): Promise<void> {
   const clientId = process.env.TWITTER_CLIENT_ID!;
   const clientSecret = process.env.TWITTER_CLIENT_SECRET!;
   const redirectUri = `${getBaseUrl()}/api/social/oauth/twitter/callback`;
@@ -297,7 +300,7 @@ export async function exchangeTwitterCode(userId: string, code: string, codeVeri
   const accountId = profile?.id || 'unknown';
   const accountName = profile?.name || profile?.username || 'X / Twitter';
 
-  const existing = await storage.getSocialAccountByPlatform(userId, 'twitter');
+  const existing = await storage.getSocialAccountByPlatform(userId, 'twitter', projectId);
   const expiresAt = tokenData.expires_in
     ? new Date(Date.now() + tokenData.expires_in * 1000)
     : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
@@ -315,6 +318,7 @@ export async function exchangeTwitterCode(userId: string, code: string, codeVeri
   } else {
     await storage.createSocialAccount({
       userId,
+      projectId,
       platform: 'twitter',
       accountId,
       accountName,
@@ -338,7 +342,7 @@ export function getTikTokAuthUrl(state: string): string {
   return `https://www.tiktok.com/v2/auth/authorize/?client_key=${clientKey}&scope=${encodeURIComponent(TIKTOK_SCOPES)}&response_type=code&redirect_uri=${redirect}&state=${state}`;
 }
 
-export async function exchangeTikTokCode(userId: string, code: string): Promise<void> {
+export async function exchangeTikTokCode(userId: string, code: string, projectId: number | null = null): Promise<void> {
   const redirectUri = `${getBaseUrl()}/api/social/oauth/tiktok/callback`;
   const tokenRes = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
     method: 'POST',
@@ -366,6 +370,7 @@ export async function exchangeTikTokCode(userId: string, code: string): Promise<
   const expiresAt = tok.expires_in ? new Date(Date.now() + tok.expires_in * 1000) : undefined;
   await storage.createSocialAccount({
     userId,
+    projectId,
     platform: 'tiktok',
     accountId: tok.open_id,
     accountName,
