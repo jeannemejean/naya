@@ -58,13 +58,18 @@ export async function generateConnectLink(nom: string): Promise<string | null> {
 }
 
 /** Liste les comptes connectés côté Unipile (admin / mapping). */
-export async function listUnipileAccounts(): Promise<Array<{ id: string; type?: string; name?: string }>> {
+export async function listUnipileAccounts(): Promise<Array<{ id: string; type?: string; name?: string; profil?: string | null }>> {
   if (!linkedinConfigured()) return [];
   const res = await fetch(`${DSN}/api/v1/accounts`, { headers: headers() });
   if (!res.ok) return [];
   const data: any = await res.json().catch(() => ({}));
   const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-  return items.map((a: any) => ({ id: a.id, type: a.type || a.provider, name: a.name }));
+  // `profil` : l'identité LinkedIn derrière la connexion (même personne = même profil, quel que
+  // soit le nombre de connexions Unipile). null quand Unipile ne la donne pas.
+  return items.map((a: any) => ({
+    id: a.id, type: a.type || a.provider, name: a.name,
+    profil: a.connection_params?.im?.id ?? a.connection_params?.im?.publicIdentifier ?? null,
+  }));
 }
 
 export interface ProviderIdResolution {

@@ -26,7 +26,7 @@ import { compteDePublication, porteeDuProjet } from "./services/connexions/compt
 import { dansPortee } from "./services/connexions/portee";
 import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
 import { controleProjetCampagne, controleChangementNature } from "./services/connexions/campagne";
-import { compteUnipile } from "./services/connexions/unipile";
+import { compteUnipile, profilDejaUtilise } from "./services/connexions/unipile";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -8902,6 +8902,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // Jamais le compte d'un projet client (mode agence), même s'il est seul chez Unipile.
       const mine = compteUnipile(accounts, req.userId, null);
       if (!mine) return res.status(404).json({ message: 'no_linkedin_account_found' });
+      // Le même profil LinkedIn déjà connecté pour un client : un seul budget, un seul périmètre.
+      const autresProjets = (await storage.getConnexionsProjetDe(req.userId)).map((c) => c.linkedinUnipileAccountId);
+      if (profilDejaUtilise(accounts, mine.id, autresProjets)) return res.status(409).json({ message: 'linkedin_deja_utilise' });
       const prevPrefs = await storage.getUserPreferences(req.userId);
       const prevAccountId = (prevPrefs as any)?.linkedinUnipileAccountId;
       // `linkedinAccountConnectedAt` est le point de départ de la montée en charge

@@ -2701,6 +2701,7 @@ const fr = {
    aide: "Connecte le LinkedIn du client dans la fenêtre qui s'ouvre, puis reviens ici.",
    termine: "J'ai terminé",
    connecte: "LinkedIn du client connecté",
+   dejaUtilise: "Ce profil LinkedIn est déjà connecté ailleurs (chez toi ou pour un autre client) : un même compte ne peut servir qu'à un seul endroit.",
    introuvable: "Compte introuvable : termine la connexion dans la fenêtre ouverte, puis réessaie",
    actif: "Connecté. Naya envoie avec ce compte, à son propre rythme.",
    restreint: "En pause : LinkedIn a signalé un problème ({{raison}}). Vérifie le compte avant de reprendre.",

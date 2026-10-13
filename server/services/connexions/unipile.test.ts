@@ -22,3 +22,23 @@ describe("compteUnipile", () => {
     expect(compteUnipile([client], "u1", null)).toBeUndefined();
   });
 });
+
+import { profilDejaUtilise } from "./unipile";
+describe("profilDejaUtilise — un même LinkedIn n'a qu'un budget", () => {
+  const comptes = [
+    { id: "a", name: "u1", profil: "li-jeanne" },
+    { id: "b", name: "u1:projet:7", profil: "li-jeanne" },
+    { id: "c", name: "u1:projet:8", profil: "li-marc" },
+  ];
+  it("le même profil LinkedIn déjà utilisé ailleurs est refusé", () => {
+    expect(profilDejaUtilise(comptes, "b", ["a"])).toBe(true);
+  });
+  it("un autre profil, ou un compte non utilisé ailleurs : permis", () => {
+    expect(profilDejaUtilise(comptes, "c", ["a"])).toBe(false);
+    expect(profilDejaUtilise(comptes, "b", [])).toBe(false);
+    expect(profilDejaUtilise(comptes, "b", [null, undefined, "b"])).toBe(false);
+  });
+  it("identité inconnue (Unipile ne la donne pas) : on ne peut pas trancher, on ne bloque pas", () => {
+    expect(profilDejaUtilise([{ id: "x", profil: null }, { id: "y", profil: null }], "x", ["y"])).toBe(false);
+  });
+});

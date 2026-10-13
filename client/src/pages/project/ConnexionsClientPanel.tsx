@@ -236,7 +236,10 @@ function LinkedinClient({ projectId, linkedin, onChange }: { projectId: number; 
   const sync = useMutation({
     mutationFn: () => apiRequest("POST", `${base}/sync`),
     onSuccess: () => { setLienOuvert(false); toast({ title: t("connexions.linkedin.connecte") }); onChange(); },
-    onError: () => toast({ title: t("connexions.linkedin.introuvable"), variant: "destructive" }),
+    onError: (e: any) => toast({
+      title: String(e?.message || "").includes("linkedin_deja_utilise") ? t("connexions.linkedin.dejaUtilise") : t("connexions.linkedin.introuvable"),
+      variant: "destructive",
+    }),
   });
   const lever = useMutation({ mutationFn: () => apiRequest("POST", `${base}/lever-restriction`), onSuccess: onChange, onError: erreur });
   const retirer = useMutation({ mutationFn: () => apiRequest("DELETE", base), onSuccess: onChange, onError: erreur });

@@ -26,6 +26,8 @@ const storageMock = {
   deleteSocialAccount: vi.fn(async () => true),
   getConnexionProjet: vi.fn(async () => connexion),
   upsertConnexionProjet: vi.fn(async (_u: string, _p: number, patch: any) => (connexion = { ...(connexion ?? {}), ...patch })),
+  getUserPreferences: vi.fn(async () => ({ linkedinUnipileAccountId: "acc-jeanne" })),
+  getConnexionsProjetDe: vi.fn(async () => [] as any[]),
   getProspectionCampaigns: vi.fn(async () => [{ id: 31, projectId: 7 }, { id: 32, projectId: 9 }, { id: 33, projectId: 7 }]),
   purgeLeadStepMessagesForCampaign: vi.fn(async () => 0),
 };
@@ -114,6 +116,17 @@ describe("routes des connexions d'un projet client", () => {
     expect(j.linkedin.connected).toBe(true);
     li.listUnipileAccounts.mockResolvedValueOnce([{ id: "acc-jeanne", name: "user-1" }]);
     expect((await appel("POST", "/api/projects/7/connexions/linkedin/sync")).status).toBe(404);
+  });
+
+  it("LinkedIn : le même profil que celui de l'utilisatrice (deux connexions Unipile) est refusé — un seul budget", async () => {
+    li.listUnipileAccounts.mockResolvedValueOnce([
+      { id: "acc-jeanne", name: "user-1", profil: "li-jeanne" },
+      { id: "acc-client", name: "user-1:projet:7", profil: "li-jeanne" },
+    ] as any);
+    const r = await appel("POST", "/api/projects/7/connexions/linkedin/sync");
+    expect(r.status).toBe(409);
+    expect((await r.json()).message).toBe("linkedin_deja_utilise");
+    expect(storageMock.upsertConnexionProjet).not.toHaveBeenCalled();
   });
 
   it("LinkedIn : reconnecter le même compte ne relance pas la montée en charge", async () => {

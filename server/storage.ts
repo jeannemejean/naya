@@ -674,6 +674,7 @@ export interface IStorage {
   getSocialAccountByPlatform(userId: string, platform: string, projectId?: number | null): Promise<SocialAccount | undefined>;
   // Connexions d'un projet client (mode agence)
   getConnexionProjet(userId: string, projectId: number): Promise<ConnexionProjet | undefined>;
+  getConnexionsProjetDe(userId: string): Promise<ConnexionProjet[]>;
   upsertConnexionProjet(userId: string, projectId: number, patch: Partial<ConnexionProjet>): Promise<ConnexionProjet>;
   // Rapports client (mode agence)
   getRapports(userId: string, projectId: number): Promise<RapportClient[]>;
@@ -2854,6 +2855,10 @@ export class DatabaseStorage implements IStorage {
     return r;
   }
 
+  async getConnexionsProjetDe(userId: string): Promise<ConnexionProjet[]> {
+    return db.select().from(connexionsProjet).where(eq(connexionsProjet.userId, userId));
+  }
+
   async getConnexionProjet(userId: string, projectId: number): Promise<ConnexionProjet | undefined> {
     const [row] = await db.select().from(connexionsProjet)
       .where(and(eq(connexionsProjet.userId, userId), eq(connexionsProjet.projectId, projectId)));
@@ -3129,6 +3134,9 @@ export class DatabaseStorage implements IStorage {
     await db.delete(projects).where(eq(projects.userId, userId));
     await db.delete(personaAnalysisResults).where(eq(personaAnalysisResults.userId, userId));
     await db.delete(targetPersonas).where(eq(targetPersonas.userId, userId));
+    // Mode agence : connexions et rapports des projets client (leurs clés pointent sur users).
+    await db.delete(connexionsProjet).where(eq(connexionsProjet.userId, userId));
+    await db.delete(rapportsClient).where(eq(rapportsClient.userId, userId));
     const result = await db.delete(users).where(eq(users.id, userId));
     return (result.rowCount ?? 0) > 0;
   }

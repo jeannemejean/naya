@@ -18,3 +18,16 @@ export function compteUnipile<C extends { id: string; name?: string }>(
   // qu'il ne soit pas celui d'un projet client.
   return comptes.length === 1 && !estDeProjet(comptes[0].name) ? comptes[0] : undefined;
 }
+
+/**
+ * Le profil LinkedIn du compte choisi est-il déjà utilisé par un autre périmètre ? Chaque
+ * connexion Unipile a son propre id, mais le même profil connecté deux fois aurait deux
+ * budgets alors que LinkedIn n'en voit qu'un. Profil inconnu → on ne bloque pas.
+ */
+export function profilDejaUtilise(
+  comptes: Array<{ id: string; profil?: string | null }>, choisi: string, utilisesAilleurs: Array<string | null | undefined>,
+): boolean {
+  const profil = comptes.find((c) => c.id === choisi)?.profil;
+  if (!profil) return false;
+  return utilisesAilleurs.some((id) => id && id !== choisi && comptes.find((c) => c.id === id)?.profil === profil);
+}

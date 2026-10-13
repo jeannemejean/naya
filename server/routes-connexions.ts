@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
-import { compteUnipile, nomUnipile } from "./services/connexions/unipile";
+import { compteUnipile, nomUnipile, profilDejaUtilise } from "./services/connexions/unipile";
 import { perimetreDemande, statutReseaux, listeComptes } from "./routes-social";
 
 const cleSendgrid = (c: any): string | undefined =>
@@ -195,8 +195,16 @@ export function registerConnexionsRoutes(app: Express) {
       const projectId = await projetClient(req, res);
       if (projectId == null) return;
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
-      const compte = compteUnipile(await listUnipileAccounts(), req.userId, projectId);
+      const comptes = await listUnipileAccounts();
+      const compte = compteUnipile(comptes, req.userId, projectId);
       if (!compte) return res.status(404).json({ message: "no_linkedin_account_found" });
+      // Le même profil LinkedIn ne sert qu'à un périmètre : sinon deux budgets pour un seul compte.
+      const prefs: any = await storage.getUserPreferences(req.userId);
+      const autres = (await storage.getConnexionsProjetDe(req.userId))
+        .filter((c) => c.projectId !== projectId).map((c) => c.linkedinUnipileAccountId);
+      if (profilDejaUtilise(comptes, compte.id, [prefs?.linkedinUnipileAccountId, ...autres])) {
+        return res.status(409).json({ message: "linkedin_deja_utilise" });
+      }
       const avant = await storage.getConnexionProjet(req.userId, projectId);
       // La montée en charge repart de zéro pour un compte NOUVEAU seulement.
       const nouveau = avant?.linkedinUnipileAccountId !== compte.id || !avant?.linkedinAccountConnectedAt;

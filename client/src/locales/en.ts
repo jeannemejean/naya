@@ -2697,6 +2697,7 @@ const en = {
    aide: "Connect the client's LinkedIn in the window that opens, then come back here.",
    termine: "I'm done",
    connecte: "Client's LinkedIn connected",
+   dejaUtilise: "This LinkedIn profile is already connected elsewhere (yours or another client's): one account can only be used in one place.",
    introuvable: "Account not found: finish connecting in the open window, then try again",
    actif: "Connected. Naya sends with this account, at its own pace.",
    restreint: "Paused: LinkedIn flagged a problem ({{raison}}). Check the account before resuming.",
