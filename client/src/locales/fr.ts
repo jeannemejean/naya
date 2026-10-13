@@ -2431,12 +2431,16 @@ const fr = {
   },
  },
  fondations: {
+  preparation: "Naya prépare tes fondations à partir de ce qu'elle sait du projet…",
   titre: "Fondations",
   description: "Ton offre d'entrée, les raisons pour lesquelles on t'achète, les indicateurs qui comptent et ton plan d'acquisition. Naya propose, tu corriges et tu valides.",
   choisirProjet: "Choisis un projet dans la barre latérale pour poser ses fondations.",
   intro: "Seules les sections validées orientent Naya : tes contenus, tes campagnes, tes tâches et tes messages partent de là.",
   statuts: { vide: "À poser", propose: "Proposé", valide: "Validé" },
   actions: {
+   ecrire: "Écrire moi-même",
+   laisserNaya: "Laisser Naya proposer",
+   cliquerPourModifier: "Cliquer pour modifier",
    modifier: "Modifier", valider: "Valider", revenir: "Revenir en proposition", reproposer: "Reproposer",
    enregistrer: "Enregistrer", annuler: "Annuler", retirer: "Retirer",
    confirmerReproposer: "Remplacer la version validée ?",

@@ -2427,12 +2427,16 @@ const en = {
   },
  },
  fondations: {
+  preparation: "Naya is preparing your foundations from what she knows about the project…",
   titre: "Foundations",
   description: "Your entry offer, the reasons people buy from you, the metrics that matter and your acquisition plan. Naya proposes, you correct and approve.",
   choisirProjet: "Pick a project in the sidebar to lay its foundations.",
   intro: "Only approved sections guide Naya: your content, campaigns, tasks and messages start from here.",
   statuts: { vide: "To do", propose: "Proposed", valide: "Approved" },
   actions: {
+   ecrire: "Write it myself",
+   laisserNaya: "Let Naya suggest",
+   cliquerPourModifier: "Click to edit",
    modifier: "Edit", valider: "Approve", revenir: "Back to proposal", reproposer: "Propose again",
    enregistrer: "Save", annuler: "Cancel", retirer: "Remove",
    confirmerReproposer: "Replace the approved version?",

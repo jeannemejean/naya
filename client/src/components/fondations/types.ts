@@ -30,6 +30,8 @@ export type DonneesFondations = {
     kpiReleves: Record<string, Releve[]>; statuts: Record<Section, Statut>;
   };
   catalogues: Catalogues;
+  /** Aucune fondation encore enregistrée : l'onglet demande à Naya de les préparer. */
+  aRemplir?: boolean;
   /** Série calculée depuis le registre mensuel, pour les KPI reliés (`source`). */
   kpiAuto: Record<string, Releve[]>;
   routine: RoutineDTO | null;

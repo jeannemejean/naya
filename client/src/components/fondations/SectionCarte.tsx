@@ -33,10 +33,12 @@ export function useEnvoiSection(projectId: number, section: Section, onChange: (
 }
 
 export default function SectionCarte({
-  projectId, section, statut, enEdition, onModifier, onChange, onReproposer, reproposeEnCours, verrouille, children,
+  projectId, section, statut, enEdition, onModifier, onAnnuler, onChange, onReproposer, reproposeEnCours, verrouille, children,
 }: {
   projectId: number; section: Section; statut: Statut; enEdition: boolean;
   onModifier: () => void; onChange: () => void; onReproposer: () => void; reproposeEnCours: boolean;
+  /** Échap ferme l'édition sans enregistrer. */
+  onAnnuler?: () => void;
   /** Une proposition de Naya est en cours : on ne valide ni ne modifie pendant qu'elle écrit. */
   verrouille: boolean;
   children: ReactNode;
@@ -67,11 +69,6 @@ export default function SectionCarte({
               {reproposeEnCours ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
               {t(confirmer ? "fondations.actions.confirmerReproposer" : "fondations.actions.reproposer")}
             </Button>
-            {statut !== "vide" && (
-              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={verrouille} onClick={onModifier}>
-                <Pencil className="w-3.5 h-3.5" />{t("fondations.actions.modifier")}
-              </Button>
-            )}
             {statut === "propose" && (
               <Button size="sm" className="h-7 gap-1 text-xs" disabled={verrouille || envoi.isPending} onClick={() => envoi.mutate({ statut: "valide" })}>
                 <Check className="w-3.5 h-3.5" />{t("fondations.actions.valider")}
@@ -85,9 +82,48 @@ export default function SectionCarte({
           </div>
         )}
       </div>
-      {statut === "vide" && !enEdition
-        ? <p className="text-xs text-muted-foreground italic">{t(`fondations.${section}.vide`)}</p>
-        : children}
+      {enEdition ? (
+        <div onKeyDown={(e) => { if (e.key === "Escape" && onAnnuler) { e.preventDefault(); onAnnuler(); } }}>{children}</div>
+      ) : statut === "vide" ? (
+        // Partie vide : jamais un bloc inerte — on écrit soi-même, ou on laisse Naya proposer.
+        <div className="rounded-md border border-dashed border-border p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <p className="text-xs text-muted-foreground flex-1">{t(`fondations.${section}.vide`)}</p>
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" className="h-8 gap-1 text-xs" disabled={verrouille} onClick={onModifier}>
+              <Pencil className="w-3.5 h-3.5" />{t("fondations.actions.ecrire")}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 gap-1 text-xs" disabled={verrouille} onClick={onReproposer}>
+              <Sparkles className="w-3.5 h-3.5" />{t("fondations.actions.laisserNaya")}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        // Contenu rempli : cliquer dessus (ou Entrée) ouvre l'édition. Les champs et liens à
+        // l'intérieur gardent leur propre comportement.
+        <div
+          role="button"
+          tabIndex={verrouille ? -1 : 0}
+          aria-label={t("fondations.actions.cliquerPourModifier")}
+          aria-disabled={verrouille}
+          onClick={(e) => {
+            if (verrouille || (e.target as HTMLElement).closest("button,a,input,select,textarea,label")) return;
+            onModifier();
+          }}
+          onKeyDown={(e) => {
+            if (verrouille || e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+            e.preventDefault();
+            onModifier();
+          }}
+          className={`group relative rounded-md -m-2 p-2 transition-colors ${verrouille ? "" : "cursor-text hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"}`}
+        >
+          {!verrouille && (
+            <span className="pointer-events-none absolute right-2 top-2 hidden items-center gap-1 text-[10px] text-muted-foreground group-hover:flex group-focus-visible:flex">
+              <Pencil className="w-3 h-3" />{t("fondations.actions.cliquerPourModifier")}
+            </span>
+          )}
+          {children}
+        </div>
+      )}
     </Card>
   );
 }

@@ -17,7 +17,7 @@ export default function OffreCarte({ projectId, offre, statut, onChange, onRepro
   const maj = (p: Partial<Offre>) => setBrouillon((b) => ({ ...(b || vide), ...p }));
 
   return (
-    <SectionCarte projectId={projectId} section="offre" statut={statut} enEdition={!!brouillon}
+    <SectionCarte projectId={projectId} section="offre" statut={statut} enEdition={!!brouillon} onAnnuler={() => setBrouillon(null)}
       onModifier={() => setBrouillon(offre || vide)} onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (
         <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); envoi.mutate({ valeur: brouillon }); }}>

@@ -32,7 +32,7 @@ export default function PlanCarte({ projectId, plan, statut, catalogues, onChang
   });
 
   return (
-    <SectionCarte projectId={projectId} section="plan" statut={statut} enEdition={!!brouillon}
+    <SectionCarte projectId={projectId} section="plan" statut={statut} enEdition={!!brouillon} onAnnuler={() => setBrouillon(null)}
       onModifier={() => setBrouillon(plan || { maturite: "demarrage", resume: "", briques: [] })}
       onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (

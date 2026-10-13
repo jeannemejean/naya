@@ -30,7 +30,7 @@ export default function KpisCarte({ projectId, kpis, releves, kpiAuto, statut, e
   const nouveau = (): Kpi => ({ cle: "", nom: "", etage: etages[0] || "business", definition: "", frequence: "mensuel" });
 
   return (
-    <SectionCarte projectId={projectId} section="kpis" statut={statut} enEdition={!!brouillon}
+    <SectionCarte projectId={projectId} section="kpis" statut={statut} enEdition={!!brouillon} onAnnuler={() => setBrouillon(null)}
       onModifier={() => setBrouillon(kpis.length ? kpis : [nouveau()])} onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (
         <form className="space-y-2" onSubmit={(e) => { e.preventDefault(); envoi.mutate({ valeur: brouillon }); }}>

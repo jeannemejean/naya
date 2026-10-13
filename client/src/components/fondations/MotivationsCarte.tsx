@@ -28,7 +28,7 @@ export default function MotivationsCarte({ projectId, motivations, statut, forma
   const maj = (i: number, p: Partial<Edition>) => setBrouillon((b) => b && b.map((m, j) => (j === i ? { ...m, ...p } : m)));
 
   return (
-    <SectionCarte projectId={projectId} section="motivations" statut={statut} enEdition={!!brouillon}
+    <SectionCarte projectId={projectId} section="motivations" statut={statut} enEdition={!!brouillon} onAnnuler={() => setBrouillon(null)}
       onModifier={() => setBrouillon(motivations.length ? motivations.map(versEdition) : [nouvelle()])}
       onChange={onChange} onReproposer={onReproposer} reproposeEnCours={reproposeEnCours} verrouille={verrouille}>
       {brouillon ? (

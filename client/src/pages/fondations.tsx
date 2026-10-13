@@ -2,6 +2,7 @@
 // motivations d'achat et matrice créative, arbre de KPI, plan d'acquisition. Naya propose,
 // l'utilisatrice corrige et valide ; seules les sections validées orientent Naya.
 import RedirectionOnglet from "@/pages/project/RedirectionOnglet";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Compass, Loader2, Sparkles } from "lucide-react";
@@ -10,6 +11,7 @@ import { useProject } from "@/lib/project-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import OffreCarte from "@/components/fondations/OffreCarte";
 import MotivationsCarte from "@/components/fondations/MotivationsCarte";
 import KpisCarte from "@/components/fondations/KpisCarte";
@@ -44,8 +46,32 @@ export function FondationsProjet({ projectId }: { projectId: number }) {
     },
   });
 
+  // Première ouverture : Naya prépare les fondations à partir de ce qu'elle sait du projet.
+  // Une seule fois (le serveur pose la ligne avant l'appel : jamais payé deux fois).
+  const remplir = useMutation({
+    mutationFn: () => apiRequest("POST", `${cle}/proposer`, { auto: true }, { timeoutMs: 180_000 }).then((r) => r.json()),
+    onSuccess: rafraichir,
+    onError: (e) => {
+      rafraichir();
+      const c = corpsErreur(e);
+      toast({ title: t("fondations.proposition.erreur"), description: c.raison, variant: "destructive" });
+    },
+  });
+  const demandeAuto = useRef(false);
+  useEffect(() => {
+    if (data?.aRemplir && !demandeAuto.current) { demandeAuto.current = true; remplir.mutate(); }
+  }, [data?.aRemplir]);
+
   if (isLoading || !data) {
     return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  }
+  if (remplir.isPending) {
+    return (
+      <div className="max-w-5xl mx-auto space-y-4">
+        <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />{t("fondations.preparation")}</p>
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-28 w-full" />)}
+      </div>
+    );
   }
   const { fondations: f, catalogues } = data;
   const statuts = Object.values(f.statuts);
