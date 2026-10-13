@@ -25,6 +25,7 @@ const valeurs: Record<string, any> = {
     { type: "objection", texte: "OBJECTION RELEVEE", kind: "veille_voix_client" },
     { type: "position", texte: "POSITION PERDUE", kind: "veille_serp" },
   ],
+  getMesures: [{ mois: "2026-09", ca: 4321, nouveauxClients: 7, depenses: {}, bilan: "BILAN MENSUEL" }],
   getFondations: {
     statuts: { offre: "valide", motivations: "valide", kpis: "valide", plan: "propose" },
     offre: { nom: "OFFRE ENTREE", description: "", pourquoi: "", existe: true },
@@ -66,6 +67,8 @@ describe("buildNayaContext, mode tiers", () => {
     expect(c).toContain("OFFRE ENTREE");
     expect(c).toContain("MOTIVATION VALIDEE");
     expect(c).not.toContain("KPI SUIVI");
+    expect(c).not.toContain("BILAN MENSUEL");
+    expect(c).not.toContain("4 321");
   });
 
   it("retire tâches, jalons, énergie, mémoire de fondatrice et revue du jour", async () => {
@@ -86,5 +89,7 @@ describe("buildNayaContext, mode tiers", () => {
     expect(c).toContain("POSITION PERDUE");
     expect(c).toContain("KPI SUIVI");
     expect(c).not.toContain("PLAN NON VALIDE");
+    expect(c).toContain("CA 4 321 €");
+    expect(c).toContain("BILAN MENSUEL");
   });
 });

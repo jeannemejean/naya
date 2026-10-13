@@ -8,6 +8,7 @@ import { formatBehaviorPatternsForContext } from "./behavior-patterns";
 import { retrieveMemories } from "./memory/retrieve";
 import { blocVeille } from "./veille/contexte";
 import { blocFondations } from "./fondations/contexte";
+import { blocMesure } from "./mesure/bilan";
 
 const TYPES_VOC_CONTEXTE = ["objection", "vocabulaire", "attente", "sujet"];
 
@@ -310,6 +311,16 @@ Mis à jour le : ${energyPrefs.energyUpdatedDate || 'Non renseigné'}`);
       if (bloc) sections.push(bloc);
     } catch (err: any) {
       console.error('[Fondations] section contexte échouée:', err?.message);
+    }
+
+    // Section 11 : la mesure (registre mensuel, indicateurs, dernier bilan). Jamais en mode
+    // tiers : les chiffres de l'entreprise n'ont rien à faire dans un message à un inconnu.
+    if (projectId && !tiers) try {
+      const lignes = await storage.getMesures(userId, projectId, 3);
+      const bloc = blocMesure(Array.isArray(lignes) ? lignes : []);
+      if (bloc) sections.push(bloc);
+    } catch (err: any) {
+      console.error('[Mesure] section contexte échouée:', err?.message);
     }
 
     // Section finale : langue de génération (toujours présente)
