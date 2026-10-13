@@ -36,6 +36,8 @@
  * prochain tick (toutes les 15 min). La boucle ne doit jamais lever d'exception.
  */
 import { storage } from "../storage";
+import { identiteCampagne } from "./connexions/resolution";
+import { identiteEnvoi } from "./connexions/portee";
 import { linkedinConfigured, checkConnection } from "./linkedin";
 import {
   decideLinkedInAction,
@@ -85,25 +87,37 @@ export async function syncLinkedInConnections(): Promise<number> {
   // `prefsCache` fige le même objet pour tout le passage, donc persister une restriction
   // détectée par CE poller ne serait pas visible des leads suivants du même user sans ce Set.
   const restrictedThisPass = new Set<string>();
+  // Mode agence : le compte LinkedIn est celui du périmètre de la campagne du lead
+  // (l'utilisatrice, ou le client d'un projet client) — résolu une fois par campagne.
+  const identites = new Map<string, ReturnType<typeof identiteCampagne>>();
 
   for (const lead of waiting) {
     if (!lead.linkedinUrl) continue;
     try {
       const prefs = await getPrefs(lead.userId);
-      const accountId = (prefs as any)?.linkedinUnipileAccountId?.trim();
+      const campaignId = (lead as any).prospectionCampaignId as number | null | undefined;
+      let resolu: Awaited<ReturnType<typeof identiteCampagne>>;
+      if (campaignId != null) {
+        const cle = `${lead.userId}:${campaignId}`;
+        if (!identites.has(cle)) identites.set(cle, identiteCampagne(lead.userId, campaignId, prefs));
+        resolu = await identites.get(cle)!;
+      } else {
+        resolu = { portee: null, identite: identiteEnvoi(null, prefs, null) };
+      }
+      const { portee, identite } = resolu;
+      const accountId = identite.linkedin?.accountId;
       if (!accountId) continue;
-      if (restrictedThisPass.has(lead.userId)) continue;
+      const cleCompte = `${lead.userId}|${portee ?? "utilisatrice"}`;
+      if (restrictedThisPass.has(cleCompte)) continue;
 
       const now = new Date();
-      if (!historyCache.has(lead.userId)) {
+      if (!historyCache.has(cleCompte)) {
         const since = new Date(now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
-        const ts = await storage.getLinkedInAttemptTimestampsSince(lead.userId, since).catch(() => null);
-        historyCache.set(lead.userId, ts);
+        const ts = await storage.getLinkedInAttemptTimestampsSince(lead.userId, since, portee).catch(() => null);
+        historyCache.set(cleCompte, ts);
       }
-      const accountConnectedAt = (prefs as any)?.linkedinAccountConnectedAt ? new Date((prefs as any).linkedinAccountConnectedAt) : null;
-      const restriction = (prefs as any)?.linkedinRestrictedAt
-        ? { restrictedAt: new Date((prefs as any).linkedinRestrictedAt), reason: (prefs as any)?.linkedinRestrictedReason ?? undefined }
-        : null;
+      const accountConnectedAt = identite.linkedin?.connectedAt ?? null;
+      const restriction = identite.linkedin?.restriction ?? null;
       const workDayStartMin = hhmmToMin((prefs as any)?.workDayStart, 9 * 60);
       const workDayEndMin = hhmmToMin((prefs as any)?.workDayEnd, 18 * 60);
       const workDays = new Set<string>(
@@ -115,7 +129,7 @@ export async function syncLinkedInConnections(): Promise<number> {
         timezone: (prefs as any)?.timezone || "UTC",
         workDayStartMin, workDayEndMin, workDays,
         accountConnectedAt,
-        recentSendTimestamps: historyCache.get(lead.userId)!,
+        recentSendTimestamps: historyCache.get(cleCompte)!,
         restriction,
         minDelayMs: LINKEDIN_MIN_DELAY_BASE_MS + Math.random() * LINKEDIN_MIN_DELAY_JITTER_MS,
       });
@@ -129,21 +143,21 @@ export async function syncLinkedInConnections(): Promise<number> {
       const result = await checkConnection(accountId, lead.linkedinUrl);
       const attemptAt = new Date();
       try {
-        await storage.recordLinkedInSendAttempt(lead.userId, lead.id, result.ok, result.ok ? null : result.error);
+        await storage.recordLinkedInSendAttempt(lead.userId, lead.id, result.ok, result.ok ? null : result.error, portee);
       } catch (e: any) {
         console.error(`[LinkedInSync] échec d'enregistrement de la tentative (lead ${lead.id}) : ${String(e?.message ?? e)}`);
       }
-      const hist = historyCache.get(lead.userId);
+      const hist = historyCache.get(cleCompte);
       if (hist) hist.push(attemptAt);
 
       if (!result.ok) {
         if (isLinkedInRestrictionSignal(result.error)) {
-          restrictedThisPass.add(lead.userId);
+          restrictedThisPass.add(cleCompte);
           try {
-            await storage.updateUserPreferences(lead.userId, {
-              linkedinRestrictedAt: new Date(),
-              linkedinRestrictedReason: result.error,
-            } as any);
+            // Enregistrée là où vit le compte : chez l'utilisatrice, ou chez le client.
+            const pause = { linkedinRestrictedAt: new Date(), linkedinRestrictedReason: result.error };
+            if (portee == null) await storage.updateUserPreferences(lead.userId, pause as any);
+            else await storage.upsertConnexionProjet(lead.userId, portee, pause as any);
             console.error(
               `[LinkedInSync] compte LinkedIn de l'utilisateur ${lead.userId} mis EN PAUSE (signal de restriction détecté au poll) — reprise manuelle requise.`,
             );

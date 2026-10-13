@@ -16,6 +16,10 @@ vi.mock("../storage", () => ({
     getLinkedInAttemptTimestampsSince: vi.fn(),
     recordLinkedInSendAttempt: vi.fn(),
     updateUserPreferences: vi.fn(),
+    getProspectionCampaign: vi.fn(),
+    getProject: vi.fn(),
+    getConnexionProjet: vi.fn(),
+    upsertConnexionProjet: vi.fn(),
   },
 }));
 
@@ -143,7 +147,7 @@ describe("syncLinkedInConnections", () => {
     const updated = await syncLinkedInConnections();
 
     expect(checkConnection).toHaveBeenCalledWith("acc1", "https://linkedin.com/in/x");
-    expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, true, null);
+    expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, true, null, null);
     expect(storage.setLeadLinkedinConnected).toHaveBeenCalledWith(1, expect.any(Date));
     expect(updated).toBe(1);
   });
@@ -183,7 +187,7 @@ describe("syncLinkedInConnections", () => {
 
     await syncLinkedInConnections();
 
-    expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, false, "check_500");
+    expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, false, "check_500", null);
     expect(storage.updateUserPreferences).not.toHaveBeenCalled();
   });
 
@@ -206,5 +210,51 @@ describe("syncLinkedInConnections", () => {
 
     expect(storage.getLeadsAwaitingInvite).not.toHaveBeenCalled();
     expect(updated).toBe(0);
+  });
+
+  describe("lead d'une campagne de projet client (mode agence)", () => {
+    beforeEach(async () => {
+      const linkedinModule = await import("./linkedin");
+      (linkedinModule.linkedinConfigured as any).mockReturnValue(true);
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, userId: "u1", projectId: 7 });
+      (storage.getProject as any).mockResolvedValue({ id: 7, projectKind: "client" });
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc-jeanne" }));
+    });
+
+    it("vérifie avec le compte du client, dans le budget du client", async () => {
+      (storage.getConnexionProjet as any).mockResolvedValue({
+        senderName: "Marc", linkedinUnipileAccountId: "uni-client", linkedinAccountConnectedAt: new Date(Date.now() - 60 * 24 * HOUR),
+      });
+      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ prospectionCampaignId: 10 })]);
+      (checkConnection as any).mockResolvedValue({ ok: true, connected: true });
+
+      await syncLinkedInConnections();
+
+      expect(checkConnection).toHaveBeenCalledWith("uni-client", "https://linkedin.com/in/x");
+      expect(storage.getLinkedInAttemptTimestampsSince).toHaveBeenCalledWith("u1", expect.any(Date), 7);
+      expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, true, null, 7);
+    });
+
+    it("client sans compte LinkedIn : aucune vérification avec celui de l'utilisatrice", async () => {
+      (storage.getConnexionProjet as any).mockResolvedValue(undefined);
+      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ prospectionCampaignId: 10 })]);
+
+      await syncLinkedInConnections();
+
+      expect(checkConnection).not.toHaveBeenCalled();
+    });
+
+    it("restriction détectée : enregistrée chez le client", async () => {
+      (storage.getConnexionProjet as any).mockResolvedValue({
+        senderName: "Marc", linkedinUnipileAccountId: "uni-client", linkedinAccountConnectedAt: new Date(Date.now() - 60 * 24 * HOUR),
+      });
+      (storage.getLeadsAwaitingInvite as any).mockResolvedValue([baseLead({ prospectionCampaignId: 10 })]);
+      (checkConnection as any).mockResolvedValue({ ok: false, error: "chat_401 Unauthorized" });
+
+      await syncLinkedInConnections();
+
+      expect(storage.upsertConnexionProjet).toHaveBeenCalledWith("u1", 7, expect.objectContaining({ linkedinRestrictedAt: expect.any(Date) }));
+      expect(storage.updateUserPreferences).not.toHaveBeenCalled();
+    });
   });
 });

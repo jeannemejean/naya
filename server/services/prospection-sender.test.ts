@@ -26,6 +26,9 @@ vi.mock("../storage", () => ({
     getReservedStepOrders: vi.fn(),
     setLeadUnreachable: vi.fn(),
     setLeadSequenceGuard: vi.fn(),
+    getProject: vi.fn(),
+    getConnexionProjet: vi.fn(),
+    upsertConnexionProjet: vi.fn(),
   },
 }));
 
@@ -928,6 +931,109 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       });
     });
 
+    describe("campagne d'un projet client (mode agence)", () => {
+      const connexionClient = (overrides: Record<string, any> = {}) => ({
+        senderEmail: "marc@client.fr", senderName: "Marc Dupont", sendgridApiKey: null,
+        senderAddress: "2 av", senderCity: "Paris", senderCountry: "France",
+        linkedinUnipileAccountId: "uni-client", linkedinAccountConnectedAt: new Date(Date.now() - 60 * 86400000),
+        linkedinRestrictedAt: null, linkedinRestrictedReason: null,
+        ...overrides,
+      });
+      const campagneClient = () => {
+        (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, userId: "u1", name: "Campagne", projectId: 7 });
+        (storage.getProject as any).mockImplementation(async (id: number, u: string) => (id === 7 && u === "u1" ? { id: 7, projectKind: "client" } : undefined));
+      };
+
+      it("e-mail : expéditeur, pied de mail et signature du client, jamais ceux de l'utilisatrice", async () => {
+        campagneClient();
+        (storage.getConnexionProjet as any).mockResolvedValue(connexionClient());
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+        await runProspectionSender();
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+        expect(payload.from.email).toBe("marc@client.fr");
+        expect(payload.from.name).toBe("Marc Dupont");
+        expect(JSON.stringify(payload)).toContain("2 av, Paris, France");
+        expect((generateStepMessage as any).mock.calls[0][1].campaign.founderName).toBe("Marc Dupont");
+        expect(storage.getConnexionProjet).toHaveBeenCalledWith("u1", 7);
+      });
+
+      it("client sans connexion : rien n'est rédigé ni envoyé, même si l'utilisatrice a une adresse", async () => {
+        campagneClient();
+        (storage.getConnexionProjet as any).mockResolvedValue(undefined);
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+        await runProspectionSender();
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(generateStepMessage).not.toHaveBeenCalled();
+        expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      });
+
+      it("client avec adresse mais sans signature : rien ne part", async () => {
+        campagneClient();
+        (storage.getConnexionProjet as any).mockResolvedValue(connexionClient({ senderName: null }));
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+        await runProspectionSender();
+
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(generateStepMessage).not.toHaveBeenCalled();
+      });
+
+      it("LinkedIn : compte, historique et journal du client", async () => {
+        campagneClient();
+        (storage.getConnexionProjet as any).mockResolvedValue(connexionClient());
+        (linkedinConfigured as any).mockReturnValue(true);
+        (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+        (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc-jeanne" }));
+        (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+        (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+        (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+        await runProspectionSender();
+
+        expect(sendLinkedInStep).toHaveBeenCalledWith(expect.objectContaining({ accountId: "uni-client" }));
+        expect(storage.getLinkedInAttemptTimestampsSince).toHaveBeenCalledWith("u1", expect.any(Date), 7);
+        expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, true, null, 7);
+      });
+
+      it("restriction LinkedIn d'un client : enregistrée chez le client, pas chez l'utilisatrice", async () => {
+        campagneClient();
+        (storage.getConnexionProjet as any).mockResolvedValue(connexionClient());
+        (linkedinConfigured as any).mockReturnValue(true);
+        (sendLinkedInStep as any).mockResolvedValue({ ok: false, action: "none", error: "chat_401/invite_403 Forbidden" });
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+        (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+        (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+        (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+        await runProspectionSender();
+
+        expect(storage.upsertConnexionProjet).toHaveBeenCalledWith("u1", 7, expect.objectContaining({ linkedinRestrictedAt: expect.any(Date) }));
+        expect(storage.updateUserPreferences).not.toHaveBeenCalled();
+      });
+
+      it("campagne sans projet : historique et journal LinkedIn de l'utilisatrice (périmètre null)", async () => {
+        (linkedinConfigured as any).mockReturnValue(true);
+        (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+        (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc-jeanne" }));
+        (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+        (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+        (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+        await runProspectionSender();
+
+        expect(sendLinkedInStep).toHaveBeenCalledWith(expect.objectContaining({ accountId: "acc-jeanne" }));
+        expect(storage.getLinkedInAttemptTimestampsSince).toHaveBeenCalledWith("u1", expect.any(Date), null);
+        expect(storage.getConnexionProjet).not.toHaveBeenCalled();
+      });
+    });
+
     it("échec LinkedIn transitoire (5xx, pas de signal de restriction) → ne persiste RIEN", async () => {
       (linkedinConfigured as any).mockReturnValue(true);
       (sendLinkedInStep as any).mockResolvedValue({ ok: false, action: "none", error: "chat_500/invite_502 Internal Server Error" });
@@ -961,7 +1067,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
       await runProspectionSender();
 
-      expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, false, "profile_not_resolved");
+      expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, false, "profile_not_resolved", null);
     });
 
     it("un échec (même transitoire) alimente EN DIRECT l'historique du tick : le lead suivant du même user est refusé pour délai minimum non écoulé (mineur relevé en revue)", async () => {

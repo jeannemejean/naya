@@ -22,6 +22,9 @@ import { registerMesureRoutes } from "./routes-mesure";
 import { registerSocialRoutes } from "./routes-social";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
 import { dansPortee } from "./services/connexions/portee";
+import { identiteCampagne } from "./services/connexions/resolution";
+import { controleProjetCampagne } from "./services/connexions/campagne";
+import { compteUnipile } from "./services/connexions/unipile";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -8298,6 +8301,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/prospection/campaigns', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
+      // Le projet décide de qui envoie (mode agence) : un projet à elle seulement.
+      const ctl = await controleProjetCampagne({ userId, corps: req.body });
+      if (!ctl.ok) return res.status(ctl.status).json({ message: ctl.message });
+      if (req.body && 'projectId' in req.body) req.body.projectId = req.body.projectId ? Number(req.body.projectId) : null;
       // Rythme non choisi par l'utilisatrice → dérivé de ses objectifs, jamais un défaut fixe.
       const ppd = Number(req.body?.prospectsPerDay);
       const prospectsPerDay = Number.isFinite(ppd) && ppd > 0
@@ -8328,10 +8335,21 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         const next = typeof nextRaw === 'string' ? (nextRaw.trim() || null) : (nextRaw ?? null);
         instructionsChanged = !!existing && (existing as any).userId === userId && next !== prev;
       }
+      // Changer de projet change qui envoie et qui signe : refusé pendant des séquences en
+      // cours ; accepté, il périme les messages déjà rédigés.
+      let projetChange = false;
+      if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'projectId')) {
+        const existante = await storage.getProspectionCampaign(campaignId);
+        if (!existante || (existante as any).userId !== userId) return res.status(404).json({ message: "Campaign not found" });
+        const ctl = await controleProjetCampagne({ userId, corps: req.body, existante: existante as any });
+        if (!ctl.ok) return res.status(ctl.status).json({ message: ctl.message });
+        projetChange = ctl.change;
+        req.body.projectId = req.body.projectId ? Number(req.body.projectId) : null;
+      }
       const updated = await storage.updateProspectionCampaign(campaignId, userId, req.body);
       if (!updated) return res.status(404).json({ message: "Campaign not found" });
       // Consignes par campagne modifiées → cache périmé pour cette campagne : purge ciblée.
-      if (instructionsChanged) await storage.purgeLeadStepMessagesForCampaign(campaignId);
+      if (instructionsChanged || projetChange) await storage.purgeLeadStepMessagesForCampaign(campaignId);
       res.json(updated);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -8389,12 +8407,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const lead = (await storage.getLeads(userId)).find((l) => l.id === leadId);
       if (!lead) return res.status(404).json({ message: "Prospect introuvable" });
 
-      // Signature = PRÉNOM du créateur (jamais le nom d'agence) — même résolution que l'envoi.
+      // Signature = PRÉNOM du créateur (jamais le nom d'agence) ; pour un projet client, la
+      // signature du client — même résolution que l'envoi (le message en cache est réutilisé).
       const dna = await storage.getBrandDna(userId);
       const user = await storage.getUser(userId);
-      const founderName = resolveFounderName(user, dna as any);
-      const campaignWithFounder = { ...campaign, founderName };
       const prefs = await storage.getUserPreferences(userId);
+      const { identite } = await identiteCampagne(userId, campaignId, prefs);
+      const founderName = identite.signature ?? resolveFounderName(user, dna as any);
+      const campaignWithFounder = { ...campaign, founderName };
       const instructions = combineInstructions((prefs as any)?.messageInstructions, (campaign as any)?.messageInstructions);
 
       const rendered: any[] = [];
@@ -8865,8 +8885,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       if (!linkedinConfigured()) return res.status(400).json({ message: 'linkedin_not_configured' });
       const accounts = await listUnipileAccounts();
-      const mine = accounts.find(a => a.name === req.userId)
-        || (accounts.length === 1 ? accounts[0] : undefined);
+      // Jamais le compte d'un projet client (mode agence), même s'il est seul chez Unipile.
+      const mine = compteUnipile(accounts, req.userId, null);
       if (!mine) return res.status(404).json({ message: 'no_linkedin_account_found' });
       const prevPrefs = await storage.getUserPreferences(req.userId);
       const prevAccountId = (prevPrefs as any)?.linkedinUnipileAccountId;

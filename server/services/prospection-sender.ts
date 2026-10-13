@@ -21,6 +21,8 @@ import { decideNextStep } from "./sequence-engine";
 import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
 import { BriefIncompletError, generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
+import { identiteCampagne } from "./connexions/resolution";
+import type { IdentiteEnvoi } from "./connexions/portee";
 import { sendOnce, type ClaimStore, type StepSendKey } from "./prospection-idempotence";
 import {
   decideLinkedInAction,
@@ -303,14 +305,16 @@ function targetDateStrFor(countryCode: string | null, city: string | null, now: 
   return zone ? todayStringIn(zone, now) : fallbackDateStr;
 }
 
-// Résout la config d'envoi PROPRE à l'utilisateur (adresse + clé) depuis ses préférences.
-function resolveSenderConfig(prefs: any): { apiKey: string; fromEmail: string; fromName: string } | null {
-  const fromEmail = prefs?.prospectionSenderEmail?.trim();
-  if (!fromEmail) return null; // pas d'adresse expéditrice → on n'envoie jamais en son nom
-  const userKey = prefs?.prospectionSendgridApiKey ? decryptToken(prefs.prospectionSendgridApiKey) : null;
-  const apiKey = userKey || process.env.SENDGRID_API_KEY;
-  if (!apiKey) return null; // ni clé perso ni clé partagée
-  return { apiKey, fromEmail, fromName: prefs?.prospectionSenderName?.trim() || "" };
+// Config d'envoi du périmètre de la campagne (l'utilisatrice, ou le client d'un projet
+// client) : adresse + clé. Jamais l'adresse de l'app ; jamais celle de l'utilisatrice pour
+// un client (voir connexions/portee.ts).
+function resolveSenderConfig(identite: IdentiteEnvoi): { apiKey: string; fromEmail: string; fromName: string; footerAddress: string } | null {
+  const e = identite.email;
+  if (!e) return null; // pas d'adresse expéditrice → on n'envoie jamais en son nom
+  const cle = e.apiKeyChiffree ? decryptToken(e.apiKeyChiffree) : null;
+  const apiKey = cle || process.env.SENDGRID_API_KEY;
+  if (!apiKey) return null; // ni clé propre ni clé partagée
+  return { apiKey, fromEmail: e.fromEmail, fromName: e.fromName, footerAddress: e.footerAddress };
 }
 
 async function sendEmail(opts: {
@@ -382,6 +386,14 @@ export async function runProspectionSender(): Promise<void> {
     // y compris si la persistance en base échoue (revue post-commit 261835e, défaut
     // Critique 1 : jusqu'à 99 tentatives supplémentaires observées dans une même passe).
     const restrictedThisTick = new Set<string>();
+    // Qui envoie pour chaque campagne (mode agence : périmètre utilisatrice ou client),
+    // résolu UNE fois par campagne et par passage.
+    const identites = new Map<string, ReturnType<typeof identiteCampagne>>();
+    const identiteDe = (uid: string, campaignId: number, prefs: any) => {
+      const cle = `${uid}:${campaignId}`;
+      if (!identites.has(cle)) identites.set(cle, identiteCampagne(uid, campaignId, prefs));
+      return identites.get(cle)!;
+    };
     const getPrefs = async (uid: string) => {
       if (!prefsCache.has(uid)) prefsCache.set(uid, await storage.getUserPreferences(uid));
       return prefsCache.get(uid);
@@ -590,7 +602,16 @@ export async function runProspectionSender(): Promise<void> {
         // IA (generateStepMessage) — sur un compte restreint avec de nombreux leads dus,
         // l'ancien code payait cette génération à chaque minute pour un message qui ne
         // partirait jamais (revue post-commit 261835e, dernier point mineur).
-        const liAccountId = prefs?.linkedinUnipileAccountId?.trim();
+        // Périmètre de la campagne : un projet client n'envoie qu'avec SES connexions et SA
+        // signature ; sans signature, rien ne se rédige (jamais celle de l'utilisatrice).
+        const { portee, identite } = await identiteDe(state.userId, state.campaignId, prefs);
+        if (portee != null && !identite.signature) {
+          console.log(`[ProspectionSender] campagne ${state.campaignId} (projet client ${portee}) sans signature configurée — étape EN ATTENTE (rien rédigé ni envoyé)`);
+          continue;
+        }
+        // Le budget, la montée en charge et la restriction LinkedIn sont ceux DU COMPTE.
+        const cleCompte = `${state.userId}|${portee ?? "utilisatrice"}`;
+        const liAccountId = identite.linkedin?.accountId;
         // Capturé après la garde : le narrowing `lead.linkedinUrl` ne survit pas à la
         // fermeture `async` de `sendOnce` plus bas (TS le retypera en nullable).
         const linkedinUrl = lead.linkedinUrl;
@@ -598,7 +619,7 @@ export async function runProspectionSender(): Promise<void> {
           step.channel === "linkedin" && linkedinConfigured() && !!liAccountId && !!linkedinUrl;
 
         if (willAttemptRealLinkedInSend) {
-          if (restrictedThisTick.has(state.userId)) {
+          if (restrictedThisTick.has(cleCompte)) {
             console.log(
               `[ProspectionSender] LinkedIn lead ${lead.id} — compte de l'utilisateur ${state.userId} restreint plus tôt dans ce passage : refus immédiat, aucun coût DB/IA, aucun appel Unipile.`,
             );
@@ -680,21 +701,19 @@ export async function runProspectionSender(): Promise<void> {
             continue; // hors session : rien à signaler sur le lead, on réessaiera plus tard
           }
 
-          if (!liHistoryCache.has(state.userId)) {
+          if (!liHistoryCache.has(cleCompte)) {
             const since = new Date(now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
-            const ts = await storage.getLinkedInAttemptTimestampsSince(state.userId, since).catch(() => null);
-            liHistoryCache.set(state.userId, ts);
+            const ts = await storage.getLinkedInAttemptTimestampsSince(state.userId, since, portee).catch(() => null);
+            liHistoryCache.set(cleCompte, ts);
           }
-          const accountConnectedAt = prefs?.linkedinAccountConnectedAt ? new Date(prefs.linkedinAccountConnectedAt) : null;
-          const restriction = prefs?.linkedinRestrictedAt
-            ? { restrictedAt: new Date(prefs.linkedinRestrictedAt), reason: prefs?.linkedinRestrictedReason ?? undefined }
-            : null;
+          const accountConnectedAt = identite.linkedin?.connectedAt ?? null;
+          const restriction = identite.linkedin?.restriction ?? null;
           const guardDecision = decideLinkedInAction({
             now,
             timezone: prefs?.timezone || DEFAULT_USER_TIMEZONE,
             workDayStartMin, workDayEndMin, workDays: workDaysSet,
             accountConnectedAt,
-            recentSendTimestamps: liHistoryCache.get(state.userId)!,
+            recentSendTimestamps: liHistoryCache.get(cleCompte)!,
             restriction,
             minDelayMs: LINKEDIN_MIN_DELAY_BASE_MS + Math.random() * LINKEDIN_MIN_DELAY_JITTER_MS,
           });
@@ -720,7 +739,7 @@ export async function runProspectionSender(): Promise<void> {
         // try/catch par lead). On ne fabrique JAMAIS de corps vide ici.
         const dna = await storage.getBrandDna(state.userId);
         const user = await storage.getUser(state.userId);
-        const founderName = resolveFounderName(user, dna as any);
+        const founderName = identite.signature ?? resolveFounderName(user, dna as any);
         const campaign = await storage.getProspectionCampaign(state.campaignId);
         const instructions = combineInstructions((prefs as any)?.messageInstructions, (campaign as any)?.messageInstructions);
         let gen;
@@ -790,7 +809,7 @@ export async function runProspectionSender(): Promise<void> {
           // fermeture `async` de `sendOnce` ci-dessous (TS le retypera en nullable).
           const toEmail = lead.email;
           // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
-          const sender = resolveSenderConfig(prefs);
+          const sender = resolveSenderConfig(identite);
           if (!sender) {
             console.log(`[ProspectionSender] user ${state.userId} sans adresse expéditrice configurée — étape EN ATTENTE (rien envoyé)`);
             continue; // on n'avance pas : l'utilisateur doit configurer son email d'envoi
@@ -808,8 +827,7 @@ export async function runProspectionSender(): Promise<void> {
           if (currentSentCount >= DAILY_CAP) {
             continue; // plafond atteint → on réessaiera plus tard (nextRunAt inchangé)
           }
-          const footerAddress = [prefs?.prospectionSenderAddress, prefs?.prospectionSenderCity, prefs?.prospectionSenderCountry]
-            .filter(Boolean).join(", ");
+          const footerAddress = sender.footerAddress;
           // Réservation AVANT tout appel à SendGrid. Réservation refusée = l'étape est
           // déjà partie (ou son sort est inconnu) : on n'envoie rien et on laisse la
           // séquence avancer plus bas.
@@ -861,7 +879,7 @@ export async function runProspectionSender(): Promise<void> {
               // LinkedIn voit une requête qu'elle réussisse ou non). Écrit AVANT toute
               // autre logique pour ne perdre la trace de rien derrière.
               try {
-                await storage.recordLinkedInSendAttempt(state.userId, lead.id, result.ok, result.ok ? null : (result.error ?? null));
+                await storage.recordLinkedInSendAttempt(state.userId, lead.id, result.ok, result.ok ? null : (result.error ?? null), portee);
               } catch (e: any) {
                 console.error(
                   `[ProspectionSender] échec d'enregistrement de la tentative LinkedIn (lead ${lead.id}) : ${String(e?.message ?? e)} — la garde risque de sous-compter ce compte pour ce tick.`,
@@ -869,7 +887,7 @@ export async function runProspectionSender(): Promise<void> {
               }
               // Alimente le cache EN DIRECT, même si la persistance ci-dessus a échoué :
               // au moins CE tick reste correctement borné localement.
-              const hist = liHistoryCache.get(state.userId);
+              const hist = liHistoryCache.get(cleCompte);
               if (hist) hist.push(attemptAt);
 
               if (!result.ok) {
@@ -879,12 +897,12 @@ export async function runProspectionSender(): Promise<void> {
                   // IMMÉDIAT pour ce compte, pour le reste de CE tick — indépendant du
                   // succès de la persistance ci-dessous (revue post-commit 261835e, défaut
                   // Critique 1).
-                  restrictedThisTick.add(state.userId);
+                  restrictedThisTick.add(cleCompte);
                   try {
-                    await storage.updateUserPreferences(state.userId, {
-                      linkedinRestrictedAt: new Date(),
-                      linkedinRestrictedReason: result.error ?? null,
-                    } as any);
+                    // Enregistrée là où vit le compte : chez l'utilisatrice, ou chez le client.
+                    const pause = { linkedinRestrictedAt: new Date(), linkedinRestrictedReason: result.error ?? null };
+                    if (portee == null) await storage.updateUserPreferences(state.userId, pause as any);
+                    else await storage.upsertConnexionProjet(state.userId, portee, pause);
                     console.error(
                       `[ProspectionSender] compte LinkedIn de l'utilisateur ${state.userId} mis EN PAUSE (signal de restriction Unipile) — reprise manuelle requise.`,
                     );

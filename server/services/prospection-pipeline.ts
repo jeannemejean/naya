@@ -5,6 +5,7 @@
  * mapping d'erreur), puis l'orchestration (search / enrich).
  */
 
+import { identitePourCampagne } from "./connexions/resolution";
 import { callClaudeWithContext } from "./claude";
 import { qualifierProspect } from "./prospection-qualify-call";
 import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qualification";
@@ -364,13 +365,15 @@ export async function enrichProspects(
     storage.getUser(userId),
   ]);
   const projectType = classifyProjectType(project, dna);
-  // Signature = PRÉNOM du créateur (jamais le nom d'agence ni "Naya").
-  const founderName = resolveFounderName(user, dna);
+  const prefs = await storage.getUserPreferences(userId).catch(() => null);
+  // Signature = PRÉNOM du créateur (jamais le nom d'agence ni "Naya") ; pour un projet
+  // client, la signature du client — même résolution que l'envoi.
+  const { identite } = await identitePourCampagne(userId, campaign, prefs);
+  const founderName = identite.signature ?? resolveFounderName(user, dna);
   const projectName = project?.name || (dna as any)?.businessName || campaign?.name || "";
   const channel = campaign?.channel || "linkedin";
 
   let enriched = 0, failed = 0, linkedinUsed = 0;
-  const prefs = await storage.getUserPreferences(userId).catch(() => null);
   const instructions = combineInstructions((prefs as any)?.messageInstructions, campaign?.messageInstructions);
   // Preuves VALIDÉES du projet : le brief en choisit au plus une par prospect.
   const preuves = campaign.projectId

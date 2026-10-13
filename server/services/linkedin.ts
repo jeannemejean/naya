@@ -40,16 +40,17 @@ export function publicIdFromUrl(linkedinUrl: string | null | undefined): string 
 }
 
 /**
- * Génère un lien d'authentification hébergé Unipile pour que l'utilisateur connecte SON
- * compte LinkedIn. Le compte créé est tagué `name = userId` → on le retrouve ensuite via sync.
+ * Génère un lien d'authentification hébergé Unipile pour connecter un compte LinkedIn. Le
+ * compte créé est tagué `name = nom` (l'id de l'utilisatrice, ou `<id>:projet:<n>` pour un
+ * projet client — voir connexions/unipile.ts) → on le retrouve ensuite via sync.
  */
-export async function generateConnectLink(userId: string): Promise<string | null> {
+export async function generateConnectLink(nom: string): Promise<string | null> {
   if (!linkedinConfigured()) return null;
   const expiresOn = new Date(Date.now() + 7 * 86400000).toISOString();
   const res = await fetch(`${DSN}/api/v1/hosted/accounts/link`, {
     method: "POST",
     headers: headers({ "content-type": "application/json" }),
-    body: JSON.stringify({ type: "create", providers: ["LINKEDIN"], api_url: DSN, expiresOn, name: userId }),
+    body: JSON.stringify({ type: "create", providers: ["LINKEDIN"], api_url: DSN, expiresOn, name: nom }),
   });
   if (!res.ok) return null;
   const data: any = await res.json().catch(() => ({}));
