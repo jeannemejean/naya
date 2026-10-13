@@ -138,6 +138,7 @@ import {
   veilleReleves,
   veilleConstats,
   fondations,
+  mesuresMensuelles,
   prospectionMessageFeedback,
   prospectionLearnedRules,
   type LeadStepMessage,
@@ -155,6 +156,8 @@ import {
   type InsertVeilleConstat,
   type Fondations,
   type InsertFondations,
+  type MesureMensuelle,
+  type InsertMesureMensuelle,
   type InsertProjectProof,
   type ProspectionMessageFeedback,
   type InsertProspectionMessageFeedback,
@@ -545,6 +548,12 @@ export interface IStorage {
   getContenusEtiquetes(userId: string, projectId: number, depuis: Date): Promise<ContenuEtiquete[]>;
   getScoresReception(contentIds: number[]): Promise<Array<{ contentId: number; score: number }>>;
   etiqueterContenuManuel(id: number, userId: string, e: { angle: string; formatCreatif: string | null }): Promise<Content | null>;
+
+  // Mesure (registre mensuel)
+  getMesures(userId: string, projectId: number, limite?: number): Promise<MesureMensuelle[]>;
+  upsertMesure(userId: string, projectId: number, mois: string, data: Partial<InsertMesureMensuelle>): Promise<MesureMensuelle>;
+  deleteMesure(userId: string, projectId: number, mois: string): Promise<boolean>;
+  setBilanMesure(userId: string, projectId: number, mois: string, bilan: string): Promise<void>;
   getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]>;
   getLearnedRules(userId: string, projectId: number, statut?: string): Promise<ProspectionLearnedRule[]>;
   createLearnedRule(row: InsertProspectionLearnedRule): Promise<ProspectionLearnedRule>;
@@ -868,6 +877,7 @@ export class DatabaseStorage implements IStorage {
   async deleteProject(id: number, userId: string): Promise<boolean> {
     // La veille et les fondations du projet partent avec lui (pas de clé étrangère : nettoyage explicite).
     await db.delete(fondations).where(and(eq(fondations.projectId, id), eq(fondations.userId, userId)));
+    await db.delete(mesuresMensuelles).where(and(eq(mesuresMensuelles.projectId, id), eq(mesuresMensuelles.userId, userId)));
     await db.delete(veilleConstats).where(and(eq(veilleConstats.projectId, id), eq(veilleConstats.userId, userId)));
     await db.delete(veilleReleves).where(and(eq(veilleReleves.projectId, id), eq(veilleReleves.userId, userId)));
     await db.delete(veilleItems).where(and(eq(veilleItems.projectId, id), eq(veilleItems.userId, userId)));
@@ -2051,6 +2061,36 @@ export class DatabaseStorage implements IStorage {
     return r ?? null;
   }
 
+  // ─── Mesure ──────────────────────────────────────────────────────────────────
+  /** Les mois les plus récents d'abord. */
+  async getMesures(userId: string, projectId: number, limite = 24): Promise<MesureMensuelle[]> {
+    return db.select().from(mesuresMensuelles)
+      .where(and(eq(mesuresMensuelles.userId, userId), eq(mesuresMensuelles.projectId, projectId)))
+      .orderBy(desc(mesuresMensuelles.mois)).limit(limite);
+  }
+
+  /** Remplace les chiffres saisis du mois ; le bilan déjà écrit est gardé (il sera refait s'il est plus ancien). */
+  async upsertMesure(userId: string, projectId: number, mois: string, data: Partial<InsertMesureMensuelle>): Promise<MesureMensuelle> {
+    const { id: _i, userId: _u, projectId: _p, mois: _m, bilan: _b, bilanLe: _bl, createdAt: _c, ...rest } = data as any;
+    const [r] = await db.insert(mesuresMensuelles).values({ ...rest, userId, projectId, mois })
+      .onConflictDoUpdate({
+        target: [mesuresMensuelles.userId, mesuresMensuelles.projectId, mesuresMensuelles.mois],
+        set: { ...rest, updatedAt: new Date() },
+      }).returning();
+    return r;
+  }
+
+  async deleteMesure(userId: string, projectId: number, mois: string): Promise<boolean> {
+    const res = await db.delete(mesuresMensuelles)
+      .where(and(eq(mesuresMensuelles.userId, userId), eq(mesuresMensuelles.projectId, projectId), eq(mesuresMensuelles.mois, mois)));
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  async setBilanMesure(userId: string, projectId: number, mois: string, bilan: string): Promise<void> {
+    await db.update(mesuresMensuelles).set({ bilan, bilanLe: new Date() })
+      .where(and(eq(mesuresMensuelles.userId, userId), eq(mesuresMensuelles.projectId, projectId), eq(mesuresMensuelles.mois, mois)));
+  }
+
   async getAllActiveProspectionCampaigns(): Promise<ProspectionCampaign[]> {
     return db.select().from(prospectionCampaigns).where(eq(prospectionCampaigns.status, "active"));
   }
@@ -2906,6 +2946,7 @@ export class DatabaseStorage implements IStorage {
       await tx.delete(veilleReleves).where(eq(veilleReleves.userId, userId));
       await tx.delete(veilleItems).where(eq(veilleItems.userId, userId));
       await tx.delete(fondations).where(eq(fondations.userId, userId));
+      await tx.delete(mesuresMensuelles).where(eq(mesuresMensuelles.userId, userId));
       await tx.delete(routines).where(eq(routines.userId, userId));
 
       // ── Phase 10 : projects ────────────────────────────────────────────────────

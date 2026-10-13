@@ -119,6 +119,7 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "veille_releves", mode: "delete", note: "veille : relevés" },
   { table: "veille_items", mode: "delete", note: "veille : liste suivie" },
   { table: "fondations", mode: "delete", note: "fondations et plan d'acquisition" },
+  { table: "mesures_mensuelles", mode: "delete", note: "mesure : registre mensuel" },
 
   // ── Phase 10 : projects ──────────────────────────────────────────────────────
   { table: "projects", mode: "delete" },

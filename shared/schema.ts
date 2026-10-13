@@ -2151,3 +2151,28 @@ export const fondations = pgTable("fondations", {
 }));
 export type Fondations = typeof fondations.$inferSelect;
 export type InsertFondations = typeof fondations.$inferInsert;
+
+// ─── Mesure (dossier Acquisition 360, étape 7, stade démarrage) ──────────────────
+// Le registre mensuel d'un projet : CA, nouveaux clients, dépenses marketing par canal.
+// Naya en calcule le MER, le CAC nouveaux clients et le reste ; le bilan mensuel s'y rattache.
+export const mesuresMensuelles = pgTable("mesures_mensuelles", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull(),
+  mois: text("mois").notNull(),                       // YYYY-MM
+  ca: doublePrecision("ca"),
+  caNouveaux: doublePrecision("ca_nouveaux"),
+  nouveauxClients: integer("nouveaux_clients"),
+  commandes: integer("commandes"),
+  coutsVariables: doublePrecision("couts_variables"),
+  depenses: jsonb("depenses").notNull().default({}),  // { [canal]: montant }
+  source: text("source").notNull().default("manuel"), // manuel | import
+  bilan: text("bilan"),
+  bilanLe: timestamp("bilan_le"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  parMois: uniqueIndex("mesures_mensuelles_user_project_mois_uq").on(t.userId, t.projectId, t.mois),
+}));
+export type MesureMensuelle = typeof mesuresMensuelles.$inferSelect;
+export type InsertMesureMensuelle = typeof mesuresMensuelles.$inferInsert;

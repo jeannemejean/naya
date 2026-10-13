@@ -20,3 +20,15 @@ describe("prochainPassageApres", () => {
     expect(prochainPassageApres("quotidienne", 30, new Date("2026-10-12T03:00:00Z")).getUTCHours()).toBe(23);
   });
 });
+
+describe("prochainPassageApres — mensuelle (le 2 du mois)", () => {
+  it("le 2 du mois courant si l'heure n'est pas passée", () => {
+    expect(prochainPassageApres("mensuelle", 5, new Date("2026-10-01T10:00:00Z")).toISOString()).toBe("2026-10-02T05:00:00.000Z");
+    expect(prochainPassageApres("mensuelle", 5, new Date("2026-10-02T04:59:00Z")).toISOString()).toBe("2026-10-02T05:00:00.000Z");
+  });
+  it("le 2 du mois suivant sinon, y compris décembre → janvier", () => {
+    expect(prochainPassageApres("mensuelle", 5, new Date("2026-10-02T05:00:00Z")).toISOString()).toBe("2026-11-02T05:00:00.000Z");
+    expect(prochainPassageApres("mensuelle", 5, new Date("2026-10-31T23:00:00Z")).toISOString()).toBe("2026-11-02T05:00:00.000Z");
+    expect(prochainPassageApres("mensuelle", 5, new Date("2026-12-15T00:00:00Z")).toISOString()).toBe("2027-01-02T05:00:00.000Z");
+  });
+});
