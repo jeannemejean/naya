@@ -15,12 +15,14 @@ import type { ExecuteurRoutine, ResultatPassage } from "./types";
 import { EXECUTEURS_VEILLE } from "../veille/deps";
 import { EXECUTEURS_FONDATIONS } from "../fondations/deps";
 import { EXECUTEURS_MESURE } from "../mesure/deps";
+import { EXECUTEURS_RAPPORTS } from "../rapports/deps";
 
 export const REGISTRE: Record<string, ExecuteurRoutine> = {
   [KIND_SOURCING]: executerSourcing,
   ...EXECUTEURS_VEILLE,
   ...EXECUTEURS_FONDATIONS,
   ...EXECUTEURS_MESURE,
+  ...EXECUTEURS_RAPPORTS,
 };
 
 const PAR_TOUR = 20;
