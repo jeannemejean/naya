@@ -72,7 +72,7 @@ export async function executerRapport(routine: Routine, deps: DepsRoutineRapport
   const r = await deps.preparer(routine.userId, projectId, mois);
   switch (r.statut) {
     case "ok":
-      return { statut: "ok", notifier: true, resume: T.pret(mois, client), details: { mois } };
+      return { statut: "ok", notifier: true, resume: T.pret(mois, client), details: { mois }, lien: `/projects/${projectId}?onglet=client` };
     case "refus":
       return r.raison;
     case "rien":

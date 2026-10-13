@@ -39,6 +39,14 @@ describe("executerRoutinesDues", () => {
     expect(notif.ajouter).toHaveBeenCalledTimes(1);
   });
 
+  it("la notification porte le lien de l'écran à ouvrir", async () => {
+    storageMock.getDueRoutines.mockResolvedValue([routine(1)]);
+    storageMock.claimRoutine.mockResolvedValue(true);
+    const exec = vi.fn(async () => ({ statut: "ok" as const, resume: "Bilan prêt.", notifier: true, lien: "/projects/7?onglet=mesure" }));
+    await executerRoutinesDues(MAINTENANT, { sourcing_prospects: exec });
+    expect(notif.ajouter).toHaveBeenCalledWith("u1", "Bilan prêt.", "/projects/7?onglet=mesure");
+  });
+
   it("une routine déjà prise par une autre instance n'est pas exécutée", async () => {
     storageMock.getDueRoutines.mockResolvedValue([routine(1)]);
     storageMock.claimRoutine.mockResolvedValue(false);

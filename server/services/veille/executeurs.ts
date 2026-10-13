@@ -117,6 +117,7 @@ async function conclure(
     resume: `${nom}veille ${NOM_VEILLE[kind]} : ${n} nouveauté${n > 1 ? "s" : ""}. ${constats[0].titre}.`,
     details: { ...details, constats: n },
     notifier: true,
+    lien: `/projects/${ctx.projectId}?onglet=veille`,
   };
 }
 

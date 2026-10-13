@@ -11,6 +11,8 @@ export interface ResultatPassage {
   notifier?: boolean;
   /** La cible n'existe plus : la routine est désactivée. */
   desactiver?: boolean;
+  /** Écran à ouvrir depuis la notification (ex. « /projects/7?onglet=mesure »). */
+  lien?: string;
 }
 
 export type ExecuteurRoutine = (routine: Routine) => Promise<ResultatPassage>;

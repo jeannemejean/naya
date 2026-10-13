@@ -204,6 +204,13 @@
       "when": 1791905441046,
       "tag": "0028_fair_boomer",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791910722494,
+      "tag": "0029_magenta_kate_bishop",
+      "breakpoints": true
     }
   ]
 }

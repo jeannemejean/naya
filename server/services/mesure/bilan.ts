@@ -17,6 +17,7 @@ const ratio = (n: number) => espaces(n.toLocaleString("fr-FR", { minimumFraction
 const pourcent = (x: number | null) => (x === null ? "" : ` (${x >= 0 ? "+" : "−"}${Math.round(Math.abs(x) * 100)} %)`);
 
 export type Langue = "fr" | "en";
+const lienMesure = (projectId: number) => `/projects/${projectId}?onglet=mesure`;
 const eurosEn = (n: number) => `€${Math.round(n).toLocaleString("en-US")}`;
 const ratioEn = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const pourcentEn = (x: number | null) => (x === null ? "" : ` (${x >= 0 ? "+" : "−"}${Math.round(Math.abs(x) * 100)}%)`);
@@ -147,7 +148,7 @@ export async function executerBilan(routine: Routine, deps: DepsBilan): Promise<
       return !(l.bilan && temps(l.bilanLe) >= Math.max(temps(l.updatedAt), temps(compare?.updatedAt)));
     });
   if (!aFaire) {
-    if (manque) return { statut: "rien_a_faire", notifier: true, resume: T.rappel(precedent) };
+    if (manque) return { statut: "rien_a_faire", notifier: true, resume: T.rappel(precedent), lien: lienMesure(projectId) };
     return { statut: "rien_a_faire", resume: T.dejaFait(precedent) };
   }
   const vise = aFaire.mois;
@@ -163,5 +164,5 @@ export async function executerBilan(routine: Routine, deps: DepsBilan): Promise<
   if (!texte) return { statut: "erreur", resume: T.vide };
   await deps.storage.setBilanMesure(routine.userId, projectId, vise, texte.slice(0, 3000), aFaire.updatedAt);
   const rappel = manque && vise !== precedent ? T.manqueEncore(precedent) : "";
-  return { statut: "ok", notifier: true, resume: resumeBilan(vise, lignes, langue) + rappel, details: { mois: vise } };
+  return { statut: "ok", notifier: true, resume: resumeBilan(vise, lignes, langue) + rappel, details: { mois: vise }, lien: lienMesure(projectId) };
 }

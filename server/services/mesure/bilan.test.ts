@@ -85,6 +85,7 @@ describe("executerBilan", () => {
     const r = await executerBilan(routine, d);
     expect(d.storage.setBilanMesure).toHaveBeenCalledWith("u", 7, "2026-09", "Le MER monte.", sept.updatedAt);
     expect(r).toMatchObject({ statut: "ok", notifier: true, resume: "Bilan de septembre 2026 prêt : MER 5,0 (+25 %), CAC 75 € (+17 %)." });
+    expect(r.lien).toBe("/projects/7?onglet=mesure");
     const prompt = (d.ia as any).mock.calls[0][2] as string;
     expect(prompt).toContain("30 par mois");
     expect(prompt).toContain("2026-08");

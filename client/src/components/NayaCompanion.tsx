@@ -18,6 +18,8 @@ interface Message {
  content: string;
  actions?: CompanionAction[];
  isLoading?: boolean;
+ /** Écran à ouvrir (messages des routines : « Bilan prêt » → onglet Mesure du projet). */
+ lien?: string | null;
 }
 
 type CompanionAction =
@@ -239,7 +241,7 @@ function useCompanionChat() {
  enabled: open && messages.length === 0,
  });
 
- const { data: pendingData } = useQuery<{ messages: Array<{ id: number; message: string }>; unreadCount: number }>({
+ const { data: pendingData } = useQuery<{ messages: Array<{ id: number; message: string; lien?: string | null }>; unreadCount: number }>({
  queryKey: ['/api/companion/pending'],
  queryFn: () => fetchJson('/api/companion/pending'),
  refetchInterval: 60 * 1000,
@@ -258,6 +260,7 @@ function useCompanionChat() {
  const pendingMsgs: Message[] = pending.map((pm) => ({
  role: 'assistant' as const,
  content: pm.message,
+ lien: pm.lien ?? null,
  }));
  setMessages([...pendingMsgs, ...historyMsgs]);
 
@@ -369,6 +372,8 @@ function useCompanionChat() {
 // ─── Messages panel (shared between modes) ───────────────────────────────────
 
 function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; messagesEndRef: React.RefObject<HTMLDivElement> }) {
+ const { t } = useTranslation();
+ const [, navigate] = useLocation();
  return (
  <div
  className="flex-1 overflow-y-auto min-h-0"
@@ -457,6 +462,15 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
  >
  {msg.content}
  </p>
+ )}
+ {msg.lien && msg.lien.startsWith('/') && (
+ <button
+ type="button"
+ onClick={() => navigate(msg.lien!)}
+ className="mt-2 text-xs underline underline-offset-2 text-foreground hover:opacity-80"
+ >
+ {t('companion.ouvrir')}
+ </button>
  )}
  {msg.actions && msg.actions.length > 0 && (
  <div

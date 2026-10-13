@@ -1,0 +1,1 @@
+ALTER TABLE "companion_pending_messages" ADD COLUMN "lien" text;

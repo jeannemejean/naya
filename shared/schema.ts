@@ -1198,6 +1198,8 @@ export const companionPendingMessages = pgTable("companion_pending_messages", {
   triggerType: text("trigger_type").notNull(),
   // "task_deferred_2x" | "task_deferred_3x" | "weekly_insight"
   relatedTaskId: integer("related_task_id").references(() => tasks.id),
+  // Écran à ouvrir depuis le message (ex. « /projects/7?onglet=mesure ») ; facultatif.
+  lien: text("lien"),
   isRead: boolean("is_read").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });

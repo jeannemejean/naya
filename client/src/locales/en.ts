@@ -1684,6 +1684,7 @@ const en = {
  },
 
  companion: {
+ ouvrir: "Open →",
  title: "Naya",
  placeholder: "Send a message to Naya…",
  thinking: "Naya is thinking…",

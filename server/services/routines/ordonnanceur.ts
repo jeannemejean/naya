@@ -62,7 +62,7 @@ export async function executerUne(r: Routine, executer: ExecuteurRoutine, mainte
       derniereErreur: res.statut === "erreur" ? res.resume : null,
       ...(res.desactiver ? { actif: false } : {}),
     });
-    if (res.notifier) await notifierRoutine(r.userId, res.resume).catch(() => {});
+    if (res.notifier) await notifierRoutine(r.userId, res.resume, res.lien).catch(() => {});
     return res;
   } catch (e: any) {
     const raison = `Échec de la routine : ${e?.message || e}`;
