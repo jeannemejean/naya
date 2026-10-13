@@ -33,9 +33,6 @@ const NAV_ITEMS = [
   { key: 'campaigns',       href: "/campaigns",        icon: Rocket       },
   { key: 'contentCalendar', href: "/content-calendar", icon: Calendar     },
   { key: 'outreachCrm',     href: "/outreach",         icon: MessageSquare},
-  { key: 'fondations',      href: "/fondations",       icon: Compass      },
-  { key: 'veille',          href: "/veille",           icon: Radar        },
-  { key: 'mesure',          href: "/mesure",           icon: Gauge        },
   // Masqué temporairement — pas utilisé pour le moment (réactiver en décommentant)
   // { key: 'knowledgeHub',    href: "/reading-hub",      icon: BookOpen     },
 ] as const;

@@ -52,7 +52,6 @@
   "client/src/pages/privacy.tsx": 46,
   "client/src/pages/project/BrandLinksPanel.tsx": 27,
   "client/src/pages/project/ProjectContextEditor.tsx": 12,
-  "client/src/pages/project/ProjectPage.tsx": 10,
   "client/src/pages/project/ProjectSummaryBar.tsx": 15,
   "client/src/pages/project/RitualList.tsx": 3,
   "client/src/pages/reading-hub.tsx": 4,

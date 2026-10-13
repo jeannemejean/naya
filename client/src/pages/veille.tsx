@@ -1,6 +1,7 @@
 // Page « Veille » d'un projet (dossier Acquisition 360, étape 1) : ce que Naya surveille
 // (liste proposée par Naya, validée ici), les quatre routines hebdomadaires, ce qu'elles ont
 // relevé, et les tableaux « réponses des IA » et « positions Google ».
+import RedirectionOnglet from "@/pages/project/RedirectionOnglet";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -42,32 +43,12 @@ function corpsErreur(e: unknown): { message?: string; raison?: string } {
 
 interface VeilleProps { onSearchClick?: () => void }
 
-export default function Veille({ onSearchClick }: VeilleProps) {
-  const { t } = useTranslation();
-  const { activeProjectId } = useProject();
-
-  return (
-    <div className="flex h-screen bg-background">
-      <Sidebar onSearchClick={onSearchClick} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-card border-b border-border px-6 py-4 flex-shrink-0">
-          <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Radar className="h-5 w-5 text-naya-salvia" />
-            {t("veille.titre")}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-3xl">{t("veille.description")}</p>
-        </header>
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {activeProjectId == null
-            ? <p className="max-w-3xl mx-auto text-sm text-muted-foreground">{t("veille.choisirProjet")}</p>
-            : <VeilleProjet projectId={activeProjectId} />}
-        </main>
-      </div>
-    </div>
-  );
+/** Ancienne adresse : renvoie vers l'onglet « veille » de la page projet. */
+export default function PageVeille(_props: { onSearchClick?: () => void }) {
+  return <RedirectionOnglet onglet="veille" />;
 }
 
-function VeilleProjet({ projectId }: { projectId: number }) {
+export function VeilleProjet({ projectId }: { projectId: number }) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const cle = `/api/veille/${projectId}`;

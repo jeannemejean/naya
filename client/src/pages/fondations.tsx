@@ -1,6 +1,7 @@
 // Page « Fondations » d'un projet (dossier Acquisition 360, étape 0) : offre d'entrée,
 // motivations d'achat et matrice créative, arbre de KPI, plan d'acquisition. Naya propose,
 // l'utilisatrice corrige et valide ; seules les sections validées orientent Naya.
+import RedirectionOnglet from "@/pages/project/RedirectionOnglet";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Compass, Loader2, Sparkles } from "lucide-react";
@@ -18,31 +19,12 @@ import { corpsErreur, type DonneesFondations, type Section } from "@/components/
 
 interface FondationsProps { onSearchClick?: () => void }
 
-export default function Fondations({ onSearchClick }: FondationsProps) {
-  const { t } = useTranslation();
-  const { activeProjectId } = useProject();
-  return (
-    <div className="flex h-screen bg-background">
-      <Sidebar onSearchClick={onSearchClick} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-card border-b border-border px-6 py-4 flex-shrink-0">
-          <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Compass className="h-5 w-5 text-naya-salvia" />
-            {t("fondations.titre")}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-3xl">{t("fondations.description")}</p>
-        </header>
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {activeProjectId == null
-            ? <p className="max-w-3xl mx-auto text-sm text-muted-foreground">{t("fondations.choisirProjet")}</p>
-            : <FondationsProjet projectId={activeProjectId} />}
-        </main>
-      </div>
-    </div>
-  );
+/** Ancienne adresse : renvoie vers l'onglet « fondations » de la page projet. */
+export default function PageFondations(_props: { onSearchClick?: () => void }) {
+  return <RedirectionOnglet onglet="fondations" />;
 }
 
-function FondationsProjet({ projectId }: { projectId: number }) {
+export function FondationsProjet({ projectId }: { projectId: number }) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const cle = `/api/fondations/${projectId}`;

@@ -2718,6 +2718,15 @@ const fr = {
    aide: "Une campagne d'un projet client prospecte avec les connexions et la signature du client.",
   },
  },
+ projet: {
+  tousLesProjets: "Tous les projets",
+  introuvable: "Projet introuvable.",
+  changerDeProjet: "Changer de projet",
+  client: "Client",
+  resume: "Résumé",
+  feuilleDeRoute: "Feuille de route (ce qui est fait / à faire)",
+  onglets: { ensemble: "Vue d'ensemble", fondations: "Fondations", veille: "Veille", mesure: "Mesure", client: "Client" },
+ },
  rapports: {
   titre: "Rapports du client",
   description: "Chaque mois, Naya prépare le rapport à envoyer au client : chiffres, contenus, prospection, prochaines étapes. Tu le relis et le corriges ; rien ne part avant que tu le publies. Le client l'ouvre par un lien privé, sans compte, et peut l'enregistrer en PDF.",

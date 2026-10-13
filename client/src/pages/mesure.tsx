@@ -1,6 +1,7 @@
 // Page « Mesure » d'un projet (dossier Acquisition 360, mesure au stade démarrage) : le
 // registre mensuel (CA, nouveaux clients, dépenses par canal), les indicateurs que Naya en
 // calcule (MER, CAC nouveaux clients…), l'import et le bilan mensuel en routine.
+import RedirectionOnglet from "@/pages/project/RedirectionOnglet";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -19,33 +20,14 @@ import { GENRE, formater, libelleMois, type DonneesMesure, type Indicateur, type
 
 interface MesureProps { onSearchClick?: () => void }
 
-export default function Mesure({ onSearchClick }: MesureProps) {
-  const { t } = useTranslation();
-  const { activeProjectId } = useProject();
-  return (
-    <div className="flex h-screen bg-background">
-      <Sidebar onSearchClick={onSearchClick} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="bg-card border-b border-border px-6 py-4 flex-shrink-0">
-          <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Gauge className="h-5 w-5 text-naya-salvia" />
-            {t("mesure.titre")}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5 max-w-3xl">{t("mesure.description")}</p>
-        </header>
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {activeProjectId == null
-            ? <p className="max-w-3xl mx-auto text-sm text-muted-foreground">{t("mesure.choisirProjet")}</p>
-            : <MesureProjet projectId={activeProjectId} />}
-        </main>
-      </div>
-    </div>
-  );
+/** Ancienne adresse : renvoie vers l'onglet « mesure » de la page projet. */
+export default function PageMesure(_props: { onSearchClick?: () => void }) {
+  return <RedirectionOnglet onglet="mesure" />;
 }
 
 const COLONNES: Indicateur[] = ["ca", "nouveaux_clients", "depense_totale", "mer", "cac"];
 
-function MesureProjet({ projectId }: { projectId: number }) {
+export function MesureProjet({ projectId }: { projectId: number }) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const cle = `/api/mesure/${projectId}`;

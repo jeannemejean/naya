@@ -2714,6 +2714,15 @@ const en = {
    aide: "A campaign for a client project prospects with the client's connections and signature.",
   },
  },
+ projet: {
+  tousLesProjets: "All projects",
+  introuvable: "Project not found.",
+  changerDeProjet: "Switch project",
+  client: "Client",
+  resume: "Summary",
+  feuilleDeRoute: "Roadmap (done / to do)",
+  onglets: { ensemble: "Overview", fondations: "Foundations", veille: "Watch", mesure: "Measure", client: "Client" },
+ },
  rapports: {
   titre: "Client reports",
   description: "Each month, Naya prepares the report to send the client: figures, content, prospecting, next steps. You review and edit it; nothing goes out until you publish. The client opens it through a private link, no account needed, and can save it as a PDF.",
