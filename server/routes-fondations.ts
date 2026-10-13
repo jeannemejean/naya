@@ -175,7 +175,10 @@ export function registerFondationsRoutes(app: Express) {
       if (!c) return res.status(404).json({ message: "not_found" });
       const f = c.projectId ? await storage.getFondations(req.userId, c.projectId) : undefined;
       const angle = req.body?.angle;
-      if (angle !== ANGLE_AUCUN && !motivationsDe(f).some((m) => m.cle === angle)) return res.status(400).json({ message: "angle_invalide" });
+      // L'angle actuel du contenu reste accepté tel quel (motivation retirée depuis) : on peut en
+      // changer le format sans être bloquée. Un AUTRE angle doit être une motivation en vigueur.
+      const inchange = angle === (c as any).angle;
+      if (angle !== ANGLE_AUCUN && !inchange && !motivationsDe(f).some((m) => m.cle === angle)) return res.status(400).json({ message: "angle_invalide" });
       const format = req.body?.formatCreatif ?? null;
       if (format !== null && !(FORMATS_CREATIFS as readonly unknown[]).includes(format)) return res.status(400).json({ message: "format_invalide" });
       res.json(await storage.etiqueterContenuManuel(c.id, req.userId, { angle, formatCreatif: format }));

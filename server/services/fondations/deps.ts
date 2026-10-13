@@ -26,7 +26,7 @@ export const depsEtiquetage: DepsEtiquetage = {
     messages: [{ role: "user", content: prompt }],
     max_tokens: 1500, temperature: 0, userId, projectId, taskKind: "fast_generation",
   }),
-  langue: langueDuCompte,
+  langue: (userId) => langueDuCompte(userId),
 };
 
 export const EXECUTEURS_FONDATIONS: Record<string, ExecuteurRoutine> = {

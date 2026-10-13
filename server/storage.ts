@@ -192,6 +192,7 @@ import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sq
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
 import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, majEtape, postAProduire, rangEtape } from "./services/campagne/production";
+import { clesRetirees } from "./services/fondations/sections";
 import { chevauchements, heurePublicationLibre, peutDeplacerPublication } from "./services/publication-libre";
 import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
@@ -2071,6 +2072,17 @@ export class DatabaseStorage implements IStorage {
    */
   async upsertFondations(userId: string, projectId: number, patch: Partial<InsertFondations>): Promise<Fondations> {
     const { id: _i, userId: _u, projectId: _p, createdAt: _c, statuts, ...rest } = patch as any;
+    // Motivations supprimées : leurs contenus repassent « à étiqueter » — sinon une nouvelle
+    // motivation qui reprendrait la même clé hériterait de contenus qui ne la concernent pas.
+    if ('motivations' in rest) {
+      const [avant] = await db.select({ motivations: fondations.motivations }).from(fondations)
+        .where(and(eq(fondations.userId, userId), eq(fondations.projectId, projectId)));
+      const retirees = clesRetirees(avant?.motivations, rest.motivations);
+      if (retirees.length) {
+        await db.update(content).set({ angle: null, formatCreatif: null, etiquetage: null } as any)
+          .where(and(eq(content.userId, userId), eq(content.projectId, projectId), inArray(content.angle, retirees)));
+      }
+    }
     const set: Record<string, unknown> = { ...rest, updatedAt: new Date() };
     if (statuts) set.statuts = sql`${fondations.statuts} || ${JSON.stringify(statuts)}::jsonb`;
     const [r] = await db.insert(fondations).values({ ...rest, ...(statuts ? { statuts } : {}), userId, projectId })

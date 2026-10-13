@@ -50,6 +50,6 @@ export const EXECUTEURS_RAPPORTS: Record<string, ExecuteurRoutine> = {
     getRapport: (u, p, m) => storage.getRapport(u, p, m),
     preparer: (u, p, m) => preparerRapport(u, p, m, depsRapport),
     maintenant: () => new Date(),
-    langue: langueDuCompte,
+    langue: (userId) => langueDuCompte(userId),
   }),
 };

@@ -121,3 +121,10 @@ export function statutsDe(f: { statuts?: unknown } | null | undefined): Record<S
   const s = estObjet(f?.statuts) ? (f!.statuts as Record<string, unknown>) : {};
   return Object.fromEntries(SECTIONS.map((k) => [k, dans(STATUTS_SECTION, s[k]) ? s[k] : "vide"])) as Record<Section, StatutSection>;
 }
+
+/** Clés de motivation qui disparaissent (leurs contenus repassent « à étiqueter »). */
+export function clesRetirees(avant: unknown, apres: unknown): string[] {
+  const cles = (v: unknown) => new Set((Array.isArray(v) ? v : []).map((m: any) => m?.cle).filter((c: unknown): c is string => typeof c === "string"));
+  const nouvelles = cles(apres);
+  return [...cles(avant)].filter((c) => c !== ANGLE_AUCUN && !nouvelles.has(c));
+}

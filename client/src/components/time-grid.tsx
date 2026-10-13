@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useMemo } from "react";
+import { voiesPlanning } from "@/lib/voies-planning";
 import { useTranslation } from "react-i18next";
 import { laneGeometry } from "./time-grid-geometry";
 import { taskPaletteFor } from "@/lib/task-palette";
@@ -118,108 +119,6 @@ function snapToQuarter(minutes: number): number {
   return Math.round(minutes / 15) * 15;
 }
 
-// Maximum de colonnes visuelles dans une cellule de grille.
-// Au-delà, les tâches partagent une colonne (z-stacking léger).
-const MAX_VISUAL_LANES = 3;
-
-/**
- * Safety net: if tasks arrive from the server with overlapping times (stale data,
- * concurrent writes, etc.), re-sequence them in memory before rendering so they
- * never appear as side-by-side columns. The DB fix is the real solution; this
- * prevents a bad visual while the data catches up.
- */
-function deduplicateOverlaps(tasks: Task[]): Task[] {
-  if (tasks.length < 2) return tasks;
-  const sorted = [...tasks].sort((a, b) =>
-    (a.scheduledTime ? timeToMinutes(a.scheduledTime) : 0) -
-    (b.scheduledTime ? timeToMinutes(b.scheduledTime) : 0)
-  );
-  let cursor = -1;
-  return sorted.map(task => {
-    if (!task.scheduledTime) return task;
-    const start = timeToMinutes(task.scheduledTime);
-    const dur   = task.estimatedDuration || 30;
-    if (cursor !== -1 && start < cursor) {
-      console.error(
-        `[time-grid] overlap detected: task ${task.id} "${task.title}" at ${task.scheduledTime} overlaps previous end ${cursor}min — shifting display to ${cursor}min`
-      );
-      const shifted = { ...task, scheduledTime: minutesToHHMM(cursor) };
-      cursor = cursor + dur;
-      return shifted;
-    }
-    cursor = start + dur;
-    return task;
-  });
-}
-
-function assignLanes(tasks: Task[]): Map<number, { lane: number; totalLanes: number }> {
-  const sorted = deduplicateOverlaps(tasks).sort((a, b) => {
-    const aMin = a.scheduledTime ? timeToMinutes(a.scheduledTime) : 0;
-    const bMin = b.scheduledTime ? timeToMinutes(b.scheduledTime) : 0;
-    return aMin - bMin;
-  });
-
-  const laneMap = new Map<number, { lane: number; totalLanes: number }>();
-  const laneEnds: number[] = [];
-  // Mémorise les intervalles pour le calcul de chevauchement local
-  const intervals: { id: number; start: number; end: number; lane: number }[] = [];
-
-  for (const task of sorted) {
-    const startMin = task.scheduledTime ? timeToMinutes(task.scheduledTime) : GRID_START_HOUR * 60;
-    const dur = task.estimatedDuration || 30;
-    const endMin = startMin + dur;
-
-    let placed = false;
-    let assignedLane = 0;
-
-    // Cherche une lane libre (dans la limite MAX_VISUAL_LANES)
-    for (let l = 0; l < Math.min(laneEnds.length, MAX_VISUAL_LANES); l++) {
-      if (laneEnds[l] <= startMin) {
-        laneEnds[l] = endMin;
-        assignedLane = l;
-        placed = true;
-        break;
-      }
-    }
-
-    if (!placed) {
-      if (laneEnds.length < MAX_VISUAL_LANES) {
-        // Nouvelle lane (sous le plafond)
-        assignedLane = laneEnds.length;
-        laneEnds.push(endMin);
-      } else {
-        // Plafond atteint : recycle la lane qui se libère le plus tôt
-        let earliest = 0;
-        for (let l = 1; l < laneEnds.length; l++) {
-          if (laneEnds[l] < laneEnds[earliest]) earliest = l;
-        }
-        assignedLane = earliest;
-        laneEnds[earliest] = endMin;
-      }
-    }
-
-    laneMap.set(task.id, { lane: assignedLane, totalLanes: 0 });
-    intervals.push({ id: task.id, start: startMin, end: endMin, lane: assignedLane });
-  }
-
-  // 2e passe : totalLanes locaux = max concurrent dans le groupe de chevauchement
-  for (const task of sorted) {
-    const info   = laneMap.get(task.id)!;
-    const itvl   = intervals.find(i => i.id === task.id)!;
-    let maxLane  = 0;
-    for (const other of intervals) {
-      if (other.start < itvl.end && other.end > itvl.start) {
-        maxLane = Math.max(maxLane, other.lane);
-      }
-    }
-    laneMap.set(task.id, { lane: info.lane, totalLanes: Math.min(maxLane + 1, MAX_VISUAL_LANES) });
-  }
-
-  return laneMap;
-}
-
-// ── DayAvailabilityBadge ────────────────────────────────────────────────────
-
 function DayAvailabilityBadge({
   date,
   availability,
@@ -314,9 +213,7 @@ function TaskBlock({
   const top    = minutesToGridPx(startMin);
   const height = Math.max(duration * PX_PER_MINUTE, 28);
 
-  // Vue Jour (fullWidth) : chaque tâche occupe la PLEINE largeur de la colonne — on ignore le
-  // calcul de lanes (chevauchement). Deux tâches qui se chevauchent se superposent visuellement,
-  // c'est accepté. Ailleurs (semaine), on garde le placement côte-à-côte par lanes.
+  // Pleine largeur quand rien ne la touche ; sinon côte à côte (voir voiesPlanning).
   //
   // La géométrie est en CSS relatif, jamais en pixels mesurés : voir time-grid-geometry.ts
   // pour la raison — une ref lue pendant le rendu vaut null au premier passage, ce qui
@@ -805,12 +702,15 @@ export default function TimeGrid({
             // chevauchent) et on positionne les cartes sur ces heures dédupliquées, pour ne
             // JAMAIS superposer deux tâches — même si les données serveur sont transitoirement
             // en conflit. Le vrai correctif reste côté serveur (fixOverlappingTasks).
-            const displayTasks   = deduplicateOverlaps(scheduledTasks);
-            // Vue Jour (une seule colonne) : AUCUN calcul de largeur par chevauchement (lanes).
-            // Chaque tâche prend la pleine largeur ; deux tâches qui se chevauchent se superposent
-            // visuellement, c'est accepté. Vue semaine : placement côte-à-côte par lanes conservé.
-            const singleDay      = dates.length === 1;
-            const laneMap        = singleDay ? null : assignLanes(displayTasks);
+            // Chaque élément reste à SON heure (un rendez-vous n'est jamais affiché à une fausse
+            // heure). Deux éléments qui se touchent à l'écran — hauteur minimale comprise — sont
+            // posés côte à côte, en vue Jour comme en vue Semaine ; sinon, pleine largeur.
+            const displayTasks   = scheduledTasks;
+            const laneMap        = voiesPlanning(displayTasks.map((task) => {
+              const debut = task.scheduledTime ? timeToMinutes(task.scheduledTime) : GRID_START_HOUR * 60;
+              const duree = Math.max(task.estimatedDuration || 30, 15, Math.ceil(28 / PX_PER_MINUTE));
+              return { id: task.id, debut, fin: debut + duree };
+            }));
             const isOff          = dayType === 'off';
             const isHalfAm       = dayType === 'half-am';
             const isHalfPm       = dayType === 'half-pm';
@@ -928,7 +828,7 @@ export default function TimeGrid({
 
                 {/* Blocs de tâches planifiées */}
                 {displayTasks.map(task => {
-                  const { lane, totalLanes: tl } = laneMap?.get(task.id) || { lane: 0, totalLanes: 1 };
+                  const { voie: lane, total: tl } = laneMap.get(task.id) || { voie: 0, total: 1 };
                   const isBlocked = dependencies[task.id] !== undefined;
                   return (
                     <TaskBlock
@@ -938,7 +838,7 @@ export default function TimeGrid({
                       task={task}
                       lane={lane}
                       totalLanes={tl || 1}
-                      fullWidth={singleDay}
+                      fullWidth={tl <= 1}
                       isBlocked={isBlocked}
                       onTaskClick={onTaskClick}
                       onToggle={onToggle}

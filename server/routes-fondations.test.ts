@@ -156,6 +156,12 @@ describe("routes des fondations", () => {
     expect((await appel("PATCH", "/api/fondations/contenus/5", { angle: "aucun" })).status).toBe(200);
   });
 
+  it("angle retiré des motivations : changer seulement le format reste possible ; choisir un autre angle inconnu, non", async () => {
+    storageMock.getContentById.mockImplementation(async (id: number, u: string) => (id === 5 && u === "user-1" ? { id: 5, projectId: 7, angle: "ancienne" } : undefined));
+    expect((await appel("PATCH", "/api/fondations/contenus/5", { angle: "ancienne", formatCreatif: "demonstration" })).status).toBe(200);
+    expect((await appel("PATCH", "/api/fondations/contenus/5", { angle: "autre_inconnue" })).status).toBe(400);
+  });
+
   it("lancer l'étiquetage : routine créée en pause si absente, 409 si déjà en cours", async () => {
     await appel("POST", "/api/fondations/7/routine/run");
     expect(storageMock.ensureRoutine).toHaveBeenCalledWith(expect.objectContaining({ actif: false }));

@@ -133,3 +133,13 @@ describe("statutsDe", () => {
     expect(statutsDe(undefined)).toEqual({ offre: "vide", motivations: "vide", kpis: "vide", plan: "vide" });
   });
 });
+
+import { clesRetirees } from "./sections";
+describe("clesRetirees — motivations supprimées", () => {
+  it("les clés qui disparaissent, jamais « aucun »", () => {
+    const avant = [{ cle: "efficacite" }, { cle: "cadeau" }, { cle: "aucun" }];
+    expect(clesRetirees(avant, [{ cle: "cadeau" }, { cle: "statut" }])).toEqual(["efficacite"]);
+    expect(clesRetirees(avant, avant)).toEqual([]);
+    expect(clesRetirees(undefined, [{ cle: "x" }])).toEqual([]);
+  });
+});

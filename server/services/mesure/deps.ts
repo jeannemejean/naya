@@ -15,7 +15,7 @@ export const depsBilan: DepsBilan = {
     userId, projectId, userMessage: prompt, model: CLAUDE_MODELS.smart, max_tokens: 900,
   }),
   maintenant: () => new Date(),
-  langue: langueDuCompte,
+  langue: (userId) => langueDuCompte(userId),
 };
 
 export const EXECUTEURS_MESURE: Record<string, ExecuteurRoutine> = {
