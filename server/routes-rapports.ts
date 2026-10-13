@@ -11,7 +11,7 @@ import { SUIVIS } from "./services/rapports/donnees";
 import { depsRapport } from "./services/rapports/deps";
 import { routineRapportPour, KIND_RAPPORT } from "./services/rapports/routine";
 import { executerUne, REGISTRE } from "./services/routines/ordonnanceur";
-import { libelleMois } from "./services/mesure/calculs";
+import { porteeDe } from "./services/connexions/portee";
 
 const MOIS = /^\d{4}-(0[1-9]|1[0-2])$/;
 const nouveauJeton = () => randomBytes(32).toString("base64url");
@@ -167,7 +167,9 @@ export function registerRapportsRoutes(app: Express) {
       if (r.statut === "publie") return res.status(409).json({ message: "deja_publie" });
       const v = validerSections(req.body?.sections);
       if (!v.ok) return res.status(400).json({ message: "sections_invalides" });
-      const maj = await storage.updateRapport(req.userId, projectId, r.mois, { sections: { ...(r.sections as any), ...v.sections } });
+      // Condition dans la requête : publié entre-temps (autre onglet) → rien n'est écrit.
+      const maj = await storage.updateRapport(req.userId, projectId, r.mois, { sections: { ...(r.sections as any), ...v.sections } }, { siBrouillon: true });
+      if (!maj) return res.status(409).json({ message: "deja_publie" });
       res.json(vue(maj));
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -186,10 +188,13 @@ export function registerRapportsRoutes(app: Express) {
         res.status(500).json({ message: e.message });
       }
     });
-  action("publier", (r) => ({ statut: "publie", publieLe: new Date(), jeton: r.jeton ?? nouveauJeton(), partageActif: true }));
+  // Republier après une correction garde le même lien (le client n'en change pas) et la date
+  // de première publication.
+  action("publier", (r) => ({ statut: "publie", publieLe: r.publieLe ?? new Date(), jeton: r.jeton ?? nouveauJeton(), partageActif: true }));
   action("depublier", () => ({ statut: "brouillon", partageActif: false }));
   action("couper", () => ({ partageActif: false }));
-  action("nouveau-lien", (r) => ({ jeton: nouveauJeton(), partageActif: r.statut === "publie" }));
+  // Nouveau lien : l'ancien meurt ; le partage ne se rouvre pas pour autant.
+  action("nouveau-lien", () => ({ jeton: nouveauJeton() }));
 
   app.delete("/api/rapports/:projectId/:mois", isAuthenticated, async (req: any, res) => {
     try {
@@ -213,12 +218,15 @@ export function registerRapportsRoutes(app: Express) {
       const r = /^[A-Za-z0-9_-]{20,100}$/.test(jeton) ? await storage.getRapportParJeton(jeton) : undefined;
       if (!r || !r.partageActif || r.statut !== "publie") return res.status(404).json({ message: "indisponible" });
       const projet: any = await storage.getProject(r.projectId, r.userId);
-      if (!projet) return res.status(404).json({ message: "indisponible" });
+      // Un projet redevenu perso n'a plus de rapport client à montrer.
+      if (!projet || porteeDe(projet) == null) return res.status(404).json({ message: "indisponible" });
+      const prefs: any = await storage.getUserPreferences(r.userId).catch(() => null);
       res.json({
         client: projet.clientName || projet.name,
         agence: await depsRapport.nomAgence(r.userId),
         mois: r.mois,
-        libelleMois: libelleMois(r.mois),
+        // La page met en forme le mois et ses libellés dans la langue du compte.
+        langue: prefs?.language === "en" ? "en" : "fr",
         ...projectionPublique(r.donnees, r.sections),
         publieLe: r.publieLe,
       });

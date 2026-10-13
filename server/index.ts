@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import { cheminJournal, corpsJournalisable, estPagePrivee } from "./journal-requetes";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { seedUserPersonaArchetypes } from "./services/persona-intelligence";
@@ -29,9 +30,18 @@ app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Page d'un rapport client (lien privé) : jamais indexée, jamais mise en cache partagé.
+app.use((req, res, next) => {
+  if (estPagePrivee(req.path)) {
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+    res.setHeader("Cache-Control", "no-store");
+  }
+  next();
+});
+
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
+  const path = cheminJournal(req.path);
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
@@ -44,7 +54,7 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      if (capturedJsonResponse && corpsJournalisable(req.path)) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 

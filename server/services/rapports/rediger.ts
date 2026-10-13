@@ -69,7 +69,8 @@ export function lignesDonnees(d: DonneesRapport): string {
 }
 
 function consigne(client: string, agence: string, mois: string, d: DonneesRapport): string {
-  return `Rédige le rapport mensuel de ${libelleMois(mois)} que l'agence « ${agence} » envoie à son client « ${client} ».
+  const qui = agence ? `l'agence « ${agence} »` : "l'agence";
+  return `Rédige le rapport mensuel de ${libelleMois(mois)} que ${qui} envoie à son client « ${client} ».
 
 Données du mois (calculées, exactes) :
 ${lignesDonnees(d)}

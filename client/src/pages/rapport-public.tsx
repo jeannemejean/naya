@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 interface RapportPublic {
-  client: string; agence: string; mois: string; libelleMois: string;
+  client: string; agence: string; mois: string; langue: "fr" | "en";
   sections: Record<string, string>;
   chiffres: { indicateurs: Record<string, number | null>; evolutions: Record<string, number | null> } | null;
   contenus: { total: number; meilleurs: Array<{ titre: string; plateforme: string; date: string }> } | null;
@@ -18,7 +18,7 @@ const CHIFFRES: Array<{ cle: string; genre: "euros" | "nombre" | "ratio" }> = [
 ];
 
 export default function RapportPublic({ params }: { params: { jeton: string } }) {
-  const { t, i18n } = useTranslation();
+  const { t: tVisiteur, i18n } = useTranslation();
   const [etat, setEtat] = useState<"chargement" | "indisponible" | RapportPublic>("chargement");
 
   useEffect(() => {
@@ -28,13 +28,15 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
       .catch(() => setEtat("indisponible"));
   }, [params.jeton]);
 
-  const fmt = (v: number, genre: string) =>
-    genre === "euros" ? v.toLocaleString(i18n.language, { style: "currency", currency: "EUR", maximumFractionDigits: 0 })
-      : genre === "ratio" ? v.toLocaleString(i18n.language, { maximumFractionDigits: 1 })
-      : v.toLocaleString(i18n.language);
+  const fmt = (v: number, genre: string, lg: string) =>
+    genre === "euros" ? v.toLocaleString(lg, { style: "currency", currency: "EUR", maximumFractionDigits: 0 })
+      : genre === "ratio" ? v.toLocaleString(lg, { maximumFractionDigits: 1 })
+      : v.toLocaleString(lg);
   const evo = (x: number | null | undefined) => (x == null ? "" : ` (${x >= 0 ? "+" : "−"}${Math.round(Math.abs(x) * 100)} %)`);
 
   if (etat === "chargement") return <div className="min-h-screen bg-white" />;
+  const t = typeof etat === "object" ? i18n.getFixedT(etat.langue) : tVisiteur;
+  const langue = typeof etat === "object" ? etat.langue : i18n.language;
   if (etat === "indisponible") {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center p-6">
@@ -48,9 +50,11 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
       <main className="max-w-2xl mx-auto px-6 py-12 print:py-0">
         <div className="flex items-start justify-between gap-4 mb-10">
           <div>
-            <p className="text-xs uppercase tracking-widest text-neutral-500">{r.agence}</p>
+            {r.agence && <p className="text-xs uppercase tracking-widest text-neutral-500">{r.agence}</p>}
             <h1 className="text-2xl font-semibold mt-1">{t("rapports.public.titre", { client: r.client })}</h1>
-            <p className="text-sm text-neutral-600 capitalize">{r.libelleMois}</p>
+            <p className="text-sm text-neutral-600 capitalize">
+              {new Date(`${r.mois}-15T12:00:00Z`).toLocaleDateString(langue, { month: "long", year: "numeric" })}
+            </p>
           </div>
           <button
             type="button"
@@ -70,7 +74,7 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
                   <tr key={c.cle} className="border-b border-neutral-100">
                     <td className="py-1.5 text-neutral-600">{t(`rapports.public.indicateurs.${c.cle}`)}</td>
                     <td className="py-1.5 text-right font-medium">
-                      {fmt(r.chiffres!.indicateurs[c.cle]!, c.genre)}
+                      {fmt(r.chiffres!.indicateurs[c.cle]!, c.genre, langue)}
                       <span className="text-neutral-500 font-normal">{evo(r.chiffres!.evolutions[c.cle])}</span>
                     </td>
                   </tr>

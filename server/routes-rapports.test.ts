@@ -16,18 +16,23 @@ const storageMock = {
   }),
   getRapports: vi.fn(async () => Object.values(rapports)),
   getRapport: vi.fn(async (_u: string, _p: number, m: string) => rapports[m]),
-  updateRapport: vi.fn(async (_u: string, _p: number, m: string, patch: any) => (rapports[m] = { ...rapports[m], ...patch })),
+  updateRapport: vi.fn(async (_u: string, _p: number, m: string, patch: any, opts?: { siBrouillon?: boolean }) => {
+    if (opts?.siBrouillon && rapports[m]?.statut !== "brouillon") return undefined;
+    return (rapports[m] = { ...rapports[m], ...patch });
+  }),
   deleteRapport: vi.fn(async (_u: string, _p: number, m: string) => { delete rapports[m]; return true; }),
   getRapportParJeton: vi.fn(async (j: string) => Object.values(rapports).find((r: any) => r.jeton === j)),
   getRoutineByCible: vi.fn(async () => undefined),
   getRoutineRuns: vi.fn(async () => []),
+  getUserPreferences: vi.fn(async () => ({ language: "en" })),
   ensureRoutine: vi.fn(async (row: any) => ({ id: 9, ...row })),
   updateRoutine: vi.fn(async (_id: number, _u: string, p: any) => ({ id: 9, ...p })),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const prep = vi.hoisted(() => ({ preparerRapport: vi.fn() }));
 vi.mock("./services/rapports/rediger", async (io) => ({ ...(await io<any>()), preparerRapport: prep.preparerRapport }));
-vi.mock("./services/rapports/deps", () => ({ depsRapport: { nomAgence: async () => "Agence JMD" } }));
+const agence = vi.hoisted(() => ({ nom: "Agence JMD" as string }));
+vi.mock("./services/rapports/deps", () => ({ depsRapport: { nomAgence: async () => agence.nom } }));
 vi.mock("./services/routines/ordonnanceur", () => ({ executerUne: vi.fn(async () => ({ statut: "ok" })), REGISTRE: {} }));
 
 const { registerRapportsRoutes } = await import("./routes-rapports");
@@ -79,6 +84,14 @@ describe("routes des rapports client", () => {
     expect((await appel("PATCH", "/api/rapports/7/2026-09", { sections: { synthese: "Encore" } })).status).toBe(409);
   });
 
+  it("publié entre la lecture et l'écriture (autre onglet) : le texte publié ne change pas", async () => {
+    const lu = { ...rapports["2026-09"] };
+    rapports["2026-09"].statut = "publie";
+    storageMock.getRapport.mockResolvedValueOnce(lu);
+    expect((await appel("PATCH", "/api/rapports/7/2026-09", { sections: { synthese: "Trop tard" } })).status).toBe(409);
+    expect(rapports["2026-09"].sections.synthese).toBe("S");
+  });
+
   it("publier, lire sans compte, couper le lien : le lien ne répond plus, de façon indistincte", async () => {
     const pub = await (await appel("POST", "/api/rapports/7/2026-09/publier")).json();
     expect(pub).toMatchObject({ statut: "publie", partageActif: true });
@@ -103,6 +116,29 @@ describe("routes des rapports client", () => {
     const inconnu = await appel("GET", `/api/public/rapports/${"x".repeat(43)}`);
     expect(coupe.status).toBe(404);
     expect(await coupe.json()).toEqual(await inconnu.json());
+  });
+
+  it("nouveau lien sur un rapport coupé : le partage reste coupé ; republier garde la date de première publication", async () => {
+    await appel("POST", "/api/rapports/7/2026-09/publier");
+    const premiere = rapports["2026-09"].publieLe;
+    await appel("POST", "/api/rapports/7/2026-09/couper");
+    await appel("POST", "/api/rapports/7/2026-09/nouveau-lien");
+    expect(rapports["2026-09"].partageActif).toBe(false);
+    await appel("POST", "/api/rapports/7/2026-09/publier");
+    expect(rapports["2026-09"].publieLe).toBe(premiere);
+  });
+
+  it("lecture publique : langue du compte, jamais un nom personnel faute de nom d'agence, et plus rien si le projet redevient perso", async () => {
+    await appel("POST", "/api/rapports/7/2026-09/publier");
+    const jeton = rapports["2026-09"].jeton;
+    const j = await (await appel("GET", `/api/public/rapports/${jeton}`)).json();
+    expect(j.langue).toBe("en");
+    expect(j.libelleMois).toBeUndefined();
+    agence.nom = "";
+    expect((await (await appel("GET", `/api/public/rapports/${jeton}`)).json()).agence).toBe("");
+    agence.nom = "Agence JMD";
+    storageMock.getProject.mockResolvedValueOnce({ id: 7, name: "Maison X", projectKind: "personal" } as any);
+    expect((await appel("GET", `/api/public/rapports/${jeton}`)).status).toBe(404);
   });
 
   it("un brouillon n'est jamais lisible publiquement, même avec un jeton ; nouveau lien → l'ancien meurt", async () => {

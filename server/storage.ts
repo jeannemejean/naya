@@ -680,7 +680,8 @@ export interface IStorage {
   getRapport(userId: string, projectId: number, mois: string): Promise<RapportClient | undefined>;
   /** Crée ou remplace le BROUILLON du mois ; un rapport publié n'est jamais réécrit (renvoie undefined). */
   enregistrerBrouillonRapport(userId: string, projectId: number, mois: string, v: { donnees: unknown; sections: unknown }): Promise<RapportClient | undefined>;
-  updateRapport(userId: string, projectId: number, mois: string, patch: Partial<RapportClient>): Promise<RapportClient | undefined>;
+  /** `siBrouillon` : n'écrit que sur un brouillon (condition dans la requête). */
+  updateRapport(userId: string, projectId: number, mois: string, patch: Partial<RapportClient>, opts?: { siBrouillon?: boolean }): Promise<RapportClient | undefined>;
   deleteRapport(userId: string, projectId: number, mois: string): Promise<boolean>;
   getRapportParJeton(jeton: string): Promise<RapportClient | undefined>;
   
@@ -2832,10 +2833,12 @@ export class DatabaseStorage implements IStorage {
     return r;
   }
 
-  async updateRapport(userId: string, projectId: number, mois: string, patch: Partial<RapportClient>): Promise<RapportClient | undefined> {
+  async updateRapport(userId: string, projectId: number, mois: string, patch: Partial<RapportClient>, opts: { siBrouillon?: boolean } = {}): Promise<RapportClient | undefined> {
     const { id: _i, userId: _u, projectId: _p, mois: _m, createdAt: _c, ...champs } = patch as any;
+    const conds = [eq(rapportsClient.userId, userId), eq(rapportsClient.projectId, projectId), eq(rapportsClient.mois, mois)];
+    if (opts.siBrouillon) conds.push(eq(rapportsClient.statut, 'brouillon'));
     const [r] = await db.update(rapportsClient).set({ ...champs, updatedAt: new Date() })
-      .where(and(eq(rapportsClient.userId, userId), eq(rapportsClient.projectId, projectId), eq(rapportsClient.mois, mois)))
+      .where(and(...conds))
       .returning();
     return r;
   }

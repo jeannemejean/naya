@@ -2729,6 +2729,8 @@ const en = {
   enregistrer: "Save",
   enregistre: "Report saved",
   chiffresClient: "The figures the client will see (computed, read-only):",
+  confirmerRefaire: "Redo? Your edits will be replaced",
+  confirmerSupprimer: "Delete? The client’s link will stop working",
   publieLectureSeule: "This report is published: move it back to draft to edit it (the link will be disabled).",
   statut: { brouillon: "Draft", partage: "Published, link active", coupe: "Published, link disabled" },
   sections: { synthese: "The month at a glance", realise: "What was done", resultats: "Results", prochainesEtapes: "Next steps" },
@@ -2739,6 +2741,7 @@ const en = {
    erreur: "The preparation couldn't start.",
   },
   erreurs: {
+   chargement: "Couldn't load the reports. Reload the page.",
    inconnue: "That didn't go through.",
    aucune_donnee: "Nothing to report for that month: no figures, content, messages or findings.",
    deja_publie: "This report is published: move it back to draft to redo it.",

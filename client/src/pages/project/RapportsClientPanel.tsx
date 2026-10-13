@@ -36,16 +36,28 @@ export default function RapportsClientPanel({ projectId }: { projectId: number }
   const { toast } = useToast();
   const qc = useQueryClient();
   const cle = `/api/rapports/${projectId}`;
-  const { data, isLoading } = useQuery<Donnees>({ queryKey: [cle] });
+  const { data, isLoading, isError } = useQuery<Donnees>({ queryKey: [cle] });
+  // Confirmation en deux clics pour ce qui écrase ou coupe : refaire un rapport, en supprimer un.
+  const [aConfirmer, setAConfirmer] = useState<string | null>(null);
+  const confirme = (cleAction: string, faire: () => void) => {
+    if (aConfirmer === cleAction) { setAConfirmer(null); faire(); } else setAConfirmer(cleAction);
+  };
   const rafraichir = () => qc.invalidateQueries({ queryKey: [cle] });
   const [mois, setMois] = useState(moisEcoule());
   const [ouvert, setOuvert] = useState<string | null>(null);
   const libelle = (m: string) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString(i18n.language, { month: "long", year: "numeric" });
 
   const erreur = (e: any) => {
-    const code = String(e?.message || "").match(/"message":"([a-z_]+)"/)?.[1];
-    toast({ title: t(`rapports.erreurs.${code ?? "inconnue"}`, { defaultValue: t("rapports.erreurs.inconnue") }), variant: "destructive" });
+    const brut = String(e?.message || "");
+    const code = brut.match(/"message":"([a-z_]+)"/)?.[1];
+    const raison = brut.match(/"raison":"([^"]+)"/)?.[1];
+    toast({
+      title: t(`rapports.erreurs.${code ?? "inconnue"}`, { defaultValue: t("rapports.erreurs.inconnue") }),
+      description: raison,
+      variant: "destructive",
+    });
   };
+  const existe = (m: string) => !!data?.rapports.some((r) => r.mois === m);
   const preparer = useMutation({
     mutationFn: () => apiRequest("POST", `${cle}/preparer`, { mois }),
     onSuccess: () => { toast({ title: t("rapports.prepare") }); rafraichir(); setOuvert(mois); },
@@ -79,13 +91,19 @@ export default function RapportsClientPanel({ projectId }: { projectId: number }
           <Label className="text-xs">{t("rapports.mois")}</Label>
           <Input type="month" value={mois} max={moisEcoule()} onChange={(e) => setMois(e.target.value)} className="h-8 text-sm w-44" />
         </div>
-        <Button size="sm" disabled={preparer.isPending || !mois} onClick={() => preparer.mutate()}>
+        <Button
+          size="sm"
+          disabled={preparer.isPending || !mois}
+          onClick={() => existe(mois) ? confirme(`preparer:${mois}`, () => preparer.mutate()) : preparer.mutate()}
+        >
           {preparer.isPending && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
-          {t("rapports.preparer")}
+          {aConfirmer === `preparer:${mois}` ? t("rapports.confirmerRefaire") : t("rapports.preparer")}
         </Button>
       </div>
 
-      {isLoading || !data ? (
+      {isError ? (
+        <p className="text-xs text-destructive">{t("rapports.erreurs.chargement")}</p>
+      ) : isLoading || !data ? (
         <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
       ) : data.rapports.length === 0 ? (
         <p className="text-xs text-muted-foreground italic">{t("rapports.aucun")}</p>
@@ -111,7 +129,9 @@ export default function RapportsClientPanel({ projectId }: { projectId: number }
                     <Button size="sm" variant="ghost" disabled={action.isPending} onClick={() => action.mutate({ m: r.mois, a: "depublier" })}>{t("rapports.brouillon")}</Button>
                   </>
                 )}
-                <Button size="sm" variant="ghost" disabled={action.isPending} onClick={() => action.mutate({ m: r.mois, a: "supprimer" })}>{t("rapports.supprimer")}</Button>
+                <Button size="sm" variant="ghost" disabled={action.isPending} onClick={() => confirme(`supprimer:${r.mois}`, () => action.mutate({ m: r.mois, a: "supprimer" }))}>
+                  {aConfirmer === `supprimer:${r.mois}` ? t("rapports.confirmerSupprimer") : t("rapports.supprimer")}
+                </Button>
               </div>
             </li>
           ))}
@@ -151,7 +171,10 @@ function EditeurRapport({ rapport, titre, url, onSaved }: { rapport: Rapport; ti
   const enregistrer = useMutation({
     mutationFn: () => apiRequest("PATCH", url, { sections: textes }),
     onSuccess: () => { toast({ title: t("rapports.enregistre") }); onSaved(); },
-    onError: () => toast({ title: t("rapports.erreurs.inconnue"), variant: "destructive" }),
+    onError: (e: any) => {
+      const code = String(e?.message || "").match(/"message":"([a-z_]+)"/)?.[1];
+      toast({ title: t(`rapports.erreurs.${code ?? "inconnue"}`, { defaultValue: t("rapports.erreurs.inconnue") }), variant: "destructive" });
+    },
   });
   return (
     <>

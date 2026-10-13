@@ -29,10 +29,11 @@ export const depsRapport: DepsRapport = {
   getProject: (id, userId) => storage.getProject(id, userId),
   getRapport: (userId, projectId, mois) => storage.getRapport(userId, projectId, mois),
   lireEntrees,
+  // Le nom de l'entreprise de l'utilisatrice ; jamais son nom personnel (la page publique est
+  // lue par un tiers). Vide si elle n'en a pas renseigné : la page ne l'affiche alors pas.
   nomAgence: async (userId) => {
     const dna: any = await storage.getBrandDna(userId);
-    const u: any = await storage.getUser(userId);
-    return dna?.businessName || [u?.firstName, u?.lastName].filter(Boolean).join(" ") || "l'agence";
+    return typeof dna?.businessName === "string" ? dna.businessName.trim() : "";
   },
   garde: gardeDepense,
   // Mode tiers : un texte destiné au client ne reçoit aucune note privée de l'utilisatrice.

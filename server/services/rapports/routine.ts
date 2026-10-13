@@ -7,6 +7,7 @@ import { prochainPassageApres } from "../routines/temps";
 import { porteeDe } from "../connexions/portee";
 import { libelleMois, moisPrecedent } from "../mesure/calculs";
 import type { ResultatPreparation } from "./rediger";
+import { moisDe } from "./donnees";
 
 export const KIND_RAPPORT = "rapport_client";
 /** Le 2 du mois (cadence mensuelle), deux heures après le bilan de la Mesure (5 h UTC). */
@@ -35,7 +36,8 @@ export async function executerRapport(routine: Routine, deps: DepsRoutineRapport
   if (porteeDe(projet) == null) return { statut: "rien_a_faire", resume: "Ce projet n'est plus un projet client : rapports arrêtés.", desactiver: true };
 
   const now = deps.maintenant();
-  const mois = moisPrecedent(`${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`);
+  // Le mois écoulé à Paris (comme l'écran et la validation des routes), pas en UTC.
+  const mois = moisPrecedent(moisDe(now));
   const client = projet.clientName || projet.name;
   if (await deps.getRapport(routine.userId, projectId, mois)) {
     return { statut: "rien_a_faire", resume: `Le rapport de ${libelleMois(mois)} pour ${client} existe déjà.` };

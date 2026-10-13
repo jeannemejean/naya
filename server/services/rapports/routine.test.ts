@@ -38,3 +38,14 @@ describe("routine mensuelle du rapport client", () => {
     expect(r2.statut).toBe("erreur");
   });
 });
+
+describe("mois écoulé à l'heure de Paris", () => {
+  it("le 1er octobre à 0 h 30 à Paris (encore le 30 septembre en UTC), le mois écoulé est septembre", async () => {
+    const preparer = vi.fn(async () => ({ statut: "ok", rapport: {} }) as any);
+    await executerRapport(routine, {
+      getProject: vi.fn(async () => ({ id: 7, projectKind: "client", name: "X" })), getRapport: vi.fn(async () => undefined),
+      preparer, maintenant: () => new Date("2026-09-30T22:30:00Z"),
+    });
+    expect(preparer).toHaveBeenCalledWith("u", 7, "2026-09");
+  });
+});

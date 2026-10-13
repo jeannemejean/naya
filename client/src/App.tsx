@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { lazy, Suspense, useEffect } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -65,7 +65,10 @@ function Router() {
  }
  }, [isAuthenticated, qc]);
  // Bouton flottant Naya sur toutes les pages authentifiées (dashboard inclus)
- const showFloatingCompanion = isAuthenticated && hasAccess;
+ // Rapport client (lien public) : page autonome, rien de Naya autour — ni à l'écran ni au PDF.
+ const [location] = useLocation();
+ const pagePublique = location.startsWith("/rapport/");
+ const showFloatingCompanion = isAuthenticated && hasAccess && !pagePublique;
 
  return (
  <>
@@ -145,7 +148,7 @@ function Router() {
  </Suspense>
  
  {/* Global Search - only when authenticated */}
- {isAuthenticated && (
+ {isAuthenticated && !pagePublique && (
  <GlobalSearch open={isOpen} onOpenChange={setIsOpen} />
  )}
 
@@ -153,6 +156,12 @@ function Router() {
  {showFloatingCompanion && <NayaCompanion />}
  </>
  );
+}
+
+/** La bannière de nouvelle version, partout sauf sur la page publique d'un rapport client. */
+function BanniereHorsRapport() {
+ const [location] = useLocation();
+ return location.startsWith("/rapport/") ? null : <NouvelleVersionBanner />;
 }
 
 function LanguageGate({ children }: { children: React.ReactNode }) {
@@ -170,7 +179,7 @@ function App() {
  <ErrorBoundary>
  <LanguageGate>
  <Router />
- <NouvelleVersionBanner />
+ <BanniereHorsRapport />
  </LanguageGate>
  </ErrorBoundary>
  </TooltipProvider>

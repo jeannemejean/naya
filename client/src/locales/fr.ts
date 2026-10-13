@@ -2733,6 +2733,8 @@ const fr = {
   enregistrer: "Enregistrer",
   enregistre: "Rapport enregistré",
   chiffresClient: "Les chiffres que verra le client (calculés, non modifiables) :",
+  confirmerRefaire: "Refaire ? Tes corrections seront remplacées",
+  confirmerSupprimer: "Supprimer ? Le lien du client ne marchera plus",
   publieLectureSeule: "Ce rapport est publié : repasse-le en brouillon pour le modifier (le lien sera coupé).",
   statut: { brouillon: "Brouillon", partage: "Publié, lien actif", coupe: "Publié, lien coupé" },
   sections: { synthese: "L'essentiel du mois", realise: "Ce qui a été fait", resultats: "Les résultats", prochainesEtapes: "Les prochaines étapes" },
@@ -2743,6 +2745,7 @@ const fr = {
    erreur: "La préparation n'a pas pu être lancée.",
   },
   erreurs: {
+   chargement: "Impossible de charger les rapports. Recharge la page.",
    inconnue: "L'opération n'a pas abouti.",
    aucune_donnee: "Rien à raconter ce mois-là : aucun chiffre, contenu, message ni constat.",
    deja_publie: "Ce rapport est publié : repasse-le en brouillon pour le refaire.",

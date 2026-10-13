@@ -65,6 +65,12 @@ describe("preparerRapport", () => {
     expect(prompt).toContain("12");
     expect(d.enregistrer).toHaveBeenCalledWith("u", 7, "2026-09", expect.objectContaining({ sections: SECTIONS }));
   });
+  it("sans nom d'agence renseigné : le prompt ne cite pas un nom vide", async () => {
+    const d = deps({ nomAgence: vi.fn(async () => "") });
+    await preparerRapport("u", 7, "2026-09", d);
+    expect((d.ia as any).mock.calls[0][2]).not.toMatch(/«\s*»/);
+  });
+
   it("sortie IA illisible → erreur, rien d'écrit", async () => {
     const d = deps({ ia: vi.fn(async () => "bla") });
     expect((await preparerRapport("u", 7, "2026-09", d)).statut).toBe("illisible");
