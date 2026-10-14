@@ -10,6 +10,7 @@ import { libelleAppelRevue } from "@/lib/appel-revue";
 import { useTranslation } from "react-i18next";
 import { formatLocalDate } from "@/lib/dateUtils";
 import Sidebar from "@/components/sidebar";
+import { TendancesSecteur } from "@/components/tendances-secteur";
 import TodaysTasks from "@/components/todays-tasks";
 import SchedulePreview from "@/components/schedule-preview";
 import MilestoneChain from "@/components/milestone-chain";
@@ -1331,6 +1332,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
               {/* Left column — tasks */}
               <div className="lg:col-span-2 space-y-6">
                 <AppelRevue />
+                {new Date().getDay() === 1 && activeProjectId != null && <TendancesSecteur projectId={activeProjectId} compact />}
                 <TodaysTasks />
                 <StuckTasksCard onOpenCompanion={() => window.dispatchEvent(new CustomEvent('naya:open-companion'))} />
                 <SchedulePreview />

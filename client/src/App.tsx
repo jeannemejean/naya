@@ -44,6 +44,7 @@ const Onboarding = lazy(() => import("@/pages/onboarding"));
 const Projects = lazy(() => import("@/pages/projects"));
 const Settings = lazy(() => import("@/pages/settings"));
 const Savoir = lazy(() => import("@/pages/savoir"));
+const AdminProfilsVeille = lazy(() => import("@/pages/admin-profils-veille"));
 const Veille = lazy(() => import("@/pages/veille"));
 const Fondations = lazy(() => import("@/pages/fondations"));
 const Mesure = lazy(() => import("@/pages/mesure"));
@@ -135,6 +136,9 @@ function Router() {
  </Route>
  <Route path="/savoir">
  {() => <Savoir onSearchClick={openSearch} />}
+ </Route>
+ <Route path="/admin/profils-veille">
+ {() => <AdminProfilsVeille onSearchClick={openSearch} />}
  </Route>
  <Route path="/planning">
  {() => <Planning onSearchClick={openSearch} />}

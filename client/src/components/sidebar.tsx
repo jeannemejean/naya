@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutGrid, Calendar, MessageSquare, BarChart3, Lightbulb,
   Settings, BookOpen, Radar, Compass, Gauge, CalendarDays, Rocket, FolderKanban, Layers, Search,
-  Sun, Moon, Library
+  Sun, Moon, Library, TrendingUp
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -39,6 +39,8 @@ const NAV_ITEMS = [
 
 // Réservé au propriétaire (le serveur refuse aussi : 403).
 const SAVOIR_ITEM = { key: 'savoirNaya', href: "/savoir", icon: Library } as const;
+
+const PROFILS_ITEM = { key: 'profilsVeille', href: "/admin/profils-veille", icon: TrendingUp } as const;
 
 export default function Sidebar({ onSearchClick }: SidebarProps) {
   const { t } = useTranslation();
@@ -102,7 +104,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2 px-2.5 flex flex-col gap-0.5">
-        {[...NAV_ITEMS, ...((user as any)?.role === 'owner' ? [SAVOIR_ITEM] : [])].map((item) => {
+        {[...NAV_ITEMS, ...((user as any)?.role === 'owner' ? [SAVOIR_ITEM, PROFILS_ITEM] : [])].map((item) => {
           const Icon = item.icon;
           const isActive = location === item.href;
 

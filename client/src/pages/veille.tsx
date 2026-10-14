@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Radar, Sparkles, Loader2, Check, X, Plus, ExternalLink, Eye, Pencil } from "lucide-react";
 import Sidebar from "@/components/sidebar";
+import { TendancesSecteur } from "@/components/tendances-secteur";
 import { useProject } from "@/lib/project-context";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -74,6 +75,7 @@ export function VeilleProjet({ projectId }: { projectId: number }) {
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
+      <TendancesSecteur projectId={projectId} />
       <section className="space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
