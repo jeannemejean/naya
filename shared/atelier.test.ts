@@ -116,6 +116,11 @@ describe("etatPost", () => {
     expect(etatPost({ contentStatus: "draft" })).toBe("brouillon");
     expect(etatPost({ contentStatus: "idea", autoPost: false })).toBe("a_rediger");
   });
+  it("un post manuel (hors campagne) qui a déjà un texte est un brouillon : c'est le texte de l'utilisatrice", () => {
+    expect(etatPost({ campaignId: null, body: "Mon texte", contentStatus: "idea", autoPost: false })).toBe("brouillon");
+    expect(etatPost({ campaignId: null, body: "  ", contentStatus: "idea", autoPost: false })).toBe("a_rediger");
+    expect(etatPost({ campaignId: 3, body: "Consigne", contentStatus: "idea", autoPost: false })).toBe("a_rediger");
+  });
 });
 
 describe("manquesPourValider", () => {
