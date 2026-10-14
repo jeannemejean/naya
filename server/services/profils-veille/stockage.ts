@@ -1,7 +1,7 @@
 // Requêtes Drizzle du module profils de veille. Toute la base du module passe par ici.
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, profilsVeille, profilRattachements, projects, brandDna, fondations, type InsertProfilPost, type InsertProfilTendance } from "@shared/schema";
+import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, profilsVeille, profilRattachements, tendancesProjet, projects, brandDna, fondations, type InsertProfilPost, type InsertProfilTendance, type InsertTendanceProjet } from "@shared/schema";
 import { REGLES, type PlateformeVeille, type PostFenetre, type TypeMedia, type Structure } from "@shared/profils-veille";
 import type { CompteSuivi } from "./collecte";
 
@@ -129,5 +129,31 @@ export const stockageProfils = {
       }
     }
     return out;
+  },
+  async tendancesSemaineDuProfil(profilId: number, semaine: string) {
+    return db.select({ id: profilTendances.id, cle: profilTendances.cle, plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure, lift: profilTendances.lift, pourquoi: profilTendances.pourquoi, commentAdapter: profilTendances.commentAdapter })
+      .from(profilTendances).where(and(eq(profilTendances.profilId, profilId), eq(profilTendances.semaine, semaine), eq(profilTendances.ecarteParJeanne, false)));
+  },
+  async ecarteesDuProjet(projectId: number) {
+    const rows = await db.select({ cle: profilTendances.cle, ecarteLe: tendancesProjet.ecarteLe }).from(tendancesProjet)
+      .innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
+      .where(and(eq(tendancesProjet.projectId, projectId), eq(tendancesProjet.statut, "ecarte"), isNotNull(tendancesProjet.ecarteLe)));
+    return rows.map((r) => ({ cle: r.cle, ecarteLe: r.ecarteLe as Date }));
+  },
+  async enregistrerTendancesProjet(rows: InsertTendanceProjet[]) {
+    if (rows.length) await db.insert(tendancesProjet).values(rows).onConflictDoNothing();
+  },
+  async marquerTri(projectId: number, semaine: string) {
+    await db.update(profilRattachements).set({ dernierTri: semaine }).where(eq(profilRattachements.projectId, projectId));
+  },
+  async tendancesDuProjet(userId: string, projectId: number) {
+    return db.select({
+      id: tendancesProjet.id, tendanceId: tendancesProjet.tendanceId, statut: tendancesProjet.statut, expireLe: tendancesProjet.expireLe, adaptation: tendancesProjet.adaptation, contentId: tendancesProjet.contentId,
+      plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure, lift: profilTendances.lift,
+      nbForts: profilTendances.nbForts, nbComptes: profilTendances.nbComptes, exemples: profilTendances.exemples, pourquoi: profilTendances.pourquoi,
+      statutTendance: profilTendances.statut, semaine: profilTendances.semaine,
+    }).from(tendancesProjet).innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
+      .where(and(eq(tendancesProjet.userId, userId), eq(tendancesProjet.projectId, projectId)))
+      .orderBy(desc(tendancesProjet.createdAt), desc(profilTendances.lift)).limit(40);
   },
 };
