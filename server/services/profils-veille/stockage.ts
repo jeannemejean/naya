@@ -1,7 +1,7 @@
 // Requêtes Drizzle du module profils de veille. Toute la base du module passe par ici.
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, profilsVeille, profilRattachements, tendancesProjet, projects, brandDna, fondations, type InsertProfilPost, type InsertProfilTendance, type InsertTendanceProjet } from "@shared/schema";
+import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, profilsVeille, profilRattachements, profilEtiquettes, tendancesProjet, projects, brandDna, fondations, type InsertProfilPost, type InsertProfilTendance, type InsertTendanceProjet } from "@shared/schema";
 import { REGLES, type PlateformeVeille, type PostFenetre, type TypeMedia, type Structure } from "@shared/profils-veille";
 import type { CompteSuivi } from "./collecte";
 
@@ -177,5 +177,83 @@ export const stockageProfils = {
     }).from(tendancesProjet).innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
       .where(and(eq(tendancesProjet.userId, userId), eq(tendancesProjet.projectId, projectId)))
       .orderBy(desc(tendancesProjet.createdAt), desc(profilTendances.lift)).limit(40);
+  },
+  async rattachementDuProjet(userId: string, projectId: number) {
+    const [r] = await db.select({ id: profilRattachements.id, profilId: profilRattachements.profilId, statut: profilRattachements.statut, raison: profilRattachements.raison, nomProfil: profilsVeille.nom, descriptionProfil: profilsVeille.description, statutProfil: profilsVeille.statut })
+      .from(profilRattachements).innerJoin(profilsVeille, eq(profilsVeille.id, profilRattachements.profilId))
+      .where(and(eq(profilRattachements.userId, userId), eq(profilRattachements.projectId, projectId))).limit(1);
+    return r;
+  },
+  async tendanceProjet(userId: string, id: number) {
+    const [r] = await db.select({ id: tendancesProjet.id, userId: tendancesProjet.userId, projectId: tendancesProjet.projectId, tendanceId: tendancesProjet.tendanceId, statut: tendancesProjet.statut, adaptation: tendancesProjet.adaptation, plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure })
+      .from(tendancesProjet).innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
+      .where(and(eq(tendancesProjet.id, id), eq(tendancesProjet.userId, userId))).limit(1);
+    return r;
+  },
+  async majTendanceProjet(id: number, patch: Record<string, unknown>) {
+    await db.update(tendancesProjet).set(patch as any).where(eq(tendancesProjet.id, id));
+  },
+  async choisirProfil(userId: string, projectId: number, profilId: number) {
+    await db.insert(profilRattachements).values({ userId, projectId, profilId, confiance: 1, raison: "Choisi par l'utilisatrice.", statut: "confirme" })
+      .onConflictDoUpdate({ target: profilRattachements.projectId, set: { profilId, statut: "confirme", raison: "Choisi par l'utilisatrice.", updatedAt: new Date() } });
+  },
+  async refuserRattachement(userId: string, projectId: number) {
+    const [r] = await db.select().from(profilRattachements).where(and(eq(profilRattachements.userId, userId), eq(profilRattachements.projectId, projectId))).limit(1);
+    if (!r) return;
+    const exclus = Array.from(new Set([...(((r.exclus as number[]) ?? [])), r.profilId]));
+    await db.update(profilRattachements).set({ statut: "refuse", exclus, updatedAt: new Date() }).where(eq(profilRattachements.id, r.id));
+  },
+  async ajouterCompte(row: { profilId: number; plateforme: string; compte: string; url: string; origine: string; suggerePar?: string | null; statut: string }) {
+    const [c] = await db.insert(profilComptes).values(row).onConflictDoNothing().returning();
+    return c ?? null;
+  },
+  async profil(id: number) {
+    const [p] = await db.select().from(profilsVeille).where(eq(profilsVeille.id, id)).limit(1);
+    return p;
+  },
+  async listeAdmin(mois: string) {
+    const profils = await db.select().from(profilsVeille).orderBy(profilsVeille.statut, profilsVeille.nom);
+    const out = [];
+    for (const p of profils) {
+      const [comptes, rattachements, passages] = await Promise.all([
+        db.select().from(profilComptes).where(eq(profilComptes.profilId, p.id)).orderBy(profilComptes.plateforme, profilComptes.id),
+        db.select({ id: profilRattachements.id, statut: profilRattachements.statut }).from(profilRattachements).where(eq(profilRattachements.profilId, p.id)),
+        db.select().from(profilPassages).where(eq(profilPassages.profilId, p.id)).orderBy(desc(profilPassages.createdAt)).limit(6),
+      ]);
+      out.push({ ...p, comptes, nbProjets: rattachements.filter((r) => r.statut === "propose" || r.statut === "confirme").length, nbEnAttente: rattachements.filter((r) => r.statut === "en_attente").length, depenseMois: await this.depenseDuMois(p.id, mois), passages });
+    }
+    return out;
+  },
+  async creerProfil(row: { nom: string; description: string; criteres: unknown }) {
+    const [p] = await db.insert(profilsVeille).values({ ...row, criteres: row.criteres as any, origine: "jeanne", statut: "actif" }).returning();
+    return p;
+  },
+  async majProfil(id: number, patch: Record<string, unknown>) {
+    const [p] = await db.update(profilsVeille).set({ ...patch, updatedAt: new Date() } as any).where(eq(profilsVeille.id, id)).returning();
+    if (p && patch.statut === "actif") {
+      // Un profil proposé validé : les projets en attente de lui deviennent rattachés.
+      await db.update(profilRattachements).set({ statut: "propose", updatedAt: new Date() }).where(and(eq(profilRattachements.profilId, id), eq(profilRattachements.statut, "en_attente")));
+    }
+    return p;
+  },
+  async majCompteAdmin(id: number, patch: { statut: string }) {
+    const [c] = await db.update(profilComptes).set({ ...patch, ...(patch.statut === "suivi" ? { echecsConsecutifs: 0 } : {}) }).where(eq(profilComptes.id, id)).returning();
+    return c;
+  },
+  async tendancesAdmin(profilId: number, semaine: string) {
+    return db.select().from(profilTendances).where(and(eq(profilTendances.profilId, profilId), eq(profilTendances.semaine, semaine))).orderBy(desc(profilTendances.lift));
+  },
+  async majTendanceAdmin(id: number, ecarteParJeanne: boolean) {
+    const [t] = await db.update(profilTendances).set({ ecarteParJeanne }).where(eq(profilTendances.id, id)).returning();
+    return t;
+  },
+  /** 40 posts récents, avec légende, pas encore étiquetés (banc d'évaluation). */
+  async aEtiqueter() {
+    return db.select({ id: profilPosts.id, typeMedia: profilPosts.typeMedia, legende: profilPosts.legende, url: profilPosts.url })
+      .from(profilPosts).leftJoin(profilEtiquettes, eq(profilEtiquettes.postId, profilPosts.id))
+      .where(and(isNull(profilEtiquettes.id), isNotNull(profilPosts.legende))).orderBy(desc(profilPosts.publieLe)).limit(40);
+  },
+  async etiqueter(postId: number, structure: string, accroche: string) {
+    await db.insert(profilEtiquettes).values({ postId, structure, accroche }).onConflictDoUpdate({ target: profilEtiquettes.postId, set: { structure, accroche } });
   },
 };

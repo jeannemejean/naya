@@ -51,7 +51,7 @@ const storageMock = {
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 
-vi.mock("./services/usage", () => ({ isAiBlocked: hoisted.isAiBlocked }));
+vi.mock("./services/usage", () => ({ isAiBlocked: hoisted.isAiBlocked, SCRAPE_COST_EUR: 0 }));
 
 vi.mock("./services/content-import/import", () => ({
   importerTexte: hoisted.importerTexte,
