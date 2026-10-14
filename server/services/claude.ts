@@ -91,11 +91,12 @@ interface CallClaudeOptions {
   // Champs internes optionnels (rétro-compatibles, défaut = comportement historique) :
   taskKind?: TaskKind;          // intention métier (sinon dérivée du modèle)
   projectId?: number | null;    // marque concernée (journalisation)
+  schema?: Record<string, unknown>; // JSON Schema → sortie structurée
 }
 
 // Variante qui expose la RAISON D'ARRÊT (stopReason) en plus du texte — indispensable pour
 // détecter une réponse tronquée (max_tokens) AVANT tout JSON.parse. Voir assertNotTruncated().
-export async function callClaudeDetailed(options: CallClaudeOptions): Promise<{ text: string; stopReason?: string }> {
+export async function callClaudeDetailed(options: CallClaudeOptions): Promise<{ text: string; stopReason?: string; coutEur: number }> {
   const { model = CLAUDE_MODELS.fast, messages, max_tokens = 1024, system, temperature, userId, projectId } = options;
 
   const systemMsg = system ?? messages.find((m) => m.role === "system")?.content;
@@ -109,7 +110,7 @@ export async function callClaudeDetailed(options: CallClaudeOptions): Promise<{ 
 
   const started = Date.now();
   const result = await provider.generate(
-    { system: systemMsg, messages: chatMessages, maxTokens: max_tokens, temperature },
+    { system: systemMsg, messages: chatMessages, maxTokens: max_tokens, temperature, schema: options.schema },
     model,
   );
   const latencyMs = Date.now() - started;
@@ -137,7 +138,7 @@ export async function callClaudeDetailed(options: CallClaudeOptions): Promise<{ 
     costEur,
   });
 
-  return { text: result.text, stopReason: result.stopReason };
+  return { text: result.text, stopReason: result.stopReason, coutEur: costEur ?? 0 };
 }
 
 // Wrapper rétro-compatible : renvoie uniquement le texte (comportement historique).

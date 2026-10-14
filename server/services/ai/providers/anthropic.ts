@@ -15,13 +15,14 @@ export class AnthropicProvider implements NayaModelProvider {
   }
 
   async generate(input: GenerateInput, model: string): Promise<GenerateResult> {
-    const { system, messages, maxTokens = 1024, temperature } = input;
+    const { system, messages, maxTokens = 1024, temperature, schema } = input;
 
     const response = await anthropic.messages.create({
       model,
       max_tokens: maxTokens,
       ...(system ? { system } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
+      ...(schema ? { output_config: { format: { type: "json_schema" as const, schema } } } : {}),
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     });
 

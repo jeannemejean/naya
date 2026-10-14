@@ -14,6 +14,7 @@ export class OpenAIProvider implements NayaModelProvider {
   }
 
   async generate(input: GenerateInput, model: string): Promise<GenerateResult> {
+    if (input.schema) throw new Error("[ai/openai] sortie structurée non prise en charge par ce fournisseur");
     const { system, messages, maxTokens = 1024, temperature } = input;
 
     const resp = await this.client.chat.completions.create({

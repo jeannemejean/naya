@@ -19,6 +19,8 @@ export interface GenerateInput {
   messages: ChatMessage[];
   maxTokens?: number;
   temperature?: number;
+  /** JSON Schema de la réponse (sortie structurée). Le texte rendu est alors un JSON conforme. */
+  schema?: Record<string, unknown>;
 }
 
 export interface GenerateResult {
