@@ -7,6 +7,7 @@
 // sans lien avec les posts (`tasks.content_id` jamais rempli) : des posts tombaient à
 // échéance sans aucune tâche de production dans le planning.
 import { formatDate, addDays } from "../../utils/dateUtils";
+import { genreDuPost } from "@shared/atelier";
 
 export type GenreProduction = "image" | "texte" | "carrousel" | "video" | "story" | "long";
 
@@ -32,18 +33,9 @@ export interface EtapeProduction {
   publication: boolean;
 }
 
-const VIDEO = ["feed_video", "reel", "short"];
-const LONG = ["article", "email", "newsletter", "blog"];
-
+/** Même lecture du format que l'atelier (règle partagée). */
 export function genreProduction(post: PostAProduire): GenreProduction {
-  const pf = (post.postFormat || "").trim().toLowerCase();
-  const ct = (post.contentType || "").trim().toLowerCase();
-  if (pf === "carousel" || ct === "carousel") return "carrousel";
-  if (VIDEO.includes(pf)) return "video";
-  if (LONG.includes(ct)) return "long";
-  if (pf === "story" || ct === "story") return "story";
-  if (pf === "text") return "texte";
-  return "image";
+  return genreDuPost(post);
 }
 
 type Modele = Omit<EtapeProduction, "titre" | "publication">;
