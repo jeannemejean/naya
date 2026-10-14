@@ -185,7 +185,7 @@ export const stockageProfils = {
     return r;
   },
   async tendanceProjet(userId: string, id: number) {
-    const [r] = await db.select({ id: tendancesProjet.id, userId: tendancesProjet.userId, projectId: tendancesProjet.projectId, tendanceId: tendancesProjet.tendanceId, statut: tendancesProjet.statut, adaptation: tendancesProjet.adaptation, plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure })
+    const [r] = await db.select({ id: tendancesProjet.id, userId: tendancesProjet.userId, projectId: tendancesProjet.projectId, tendanceId: tendancesProjet.tendanceId, statut: tendancesProjet.statut, adaptation: tendancesProjet.adaptation, contentId: tendancesProjet.contentId, plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure })
       .from(tendancesProjet).innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
       .where(and(eq(tendancesProjet.id, id), eq(tendancesProjet.userId, userId))).limit(1);
     return r;
@@ -206,6 +206,14 @@ export const stockageProfils = {
   async ajouterCompte(row: { profilId: number; plateforme: string; compte: string; url: string; origine: string; suggerePar?: string | null; statut: string }) {
     const [c] = await db.insert(profilComptes).values(row).onConflictDoNothing().returning();
     return c ?? null;
+  },
+  async compte(id: number) {
+    const [c] = await db.select({ id: profilComptes.id, profilId: profilComptes.profilId, plateforme: profilComptes.plateforme, statut: profilComptes.statut }).from(profilComptes).where(eq(profilComptes.id, id)).limit(1);
+    return c;
+  },
+  async nbSuivis(profilId: number, plateforme: string): Promise<number> {
+    const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(profilComptes).where(and(eq(profilComptes.profilId, profilId), eq(profilComptes.plateforme, plateforme), eq(profilComptes.statut, "suivi")));
+    return r?.n ?? 0;
   },
   async profil(id: number) {
     const [p] = await db.select().from(profilsVeille).where(eq(profilsVeille.id, id)).limit(1);

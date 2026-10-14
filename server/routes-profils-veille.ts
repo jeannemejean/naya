@@ -30,6 +30,10 @@ function compteDe(plateforme: unknown, saisie: unknown) {
 }
 
 export function registerProfilsVeilleRoutes(app: Express) {
+  // Express 4 n'achemine pas un rejet async : sans ce garde-fou la requête pend.
+  const sur = (h: (req: any, res: any) => Promise<any>) => async (req: any, res: any) => {
+    try { await h(req, res); } catch (e: any) { console.error("[ProfilsVeille] route :", e?.message); if (!res.headersSent) res.status(500).json({ message: "profils_veille_failed" }); }
+  };
   // ─── Utilisatrice ────────────────────────────────────────────────────────────
   app.get("/api/profils-veille/projet/:projectId", isAuthenticated, async (req: any, res) => {
     try {
@@ -52,7 +56,7 @@ export function registerProfilsVeilleRoutes(app: Express) {
     }
   });
 
-  app.post("/api/profils-veille/projet/:projectId/profil", isAuthenticated, async (req: any, res) => {
+  app.post("/api/profils-veille/projet/:projectId/profil", isAuthenticated, sur(async (req: any, res) => {
     const pid = idDe(req.params.projectId);
     const projet = pid ? await storage.getProject(pid, req.userId) : undefined;
     if (!projet) return res.status(404).json({ message: "not_found" });
@@ -60,17 +64,17 @@ export function registerProfilsVeilleRoutes(app: Express) {
     if (!profilId || !(await s.catalogueActif()).some((c: any) => c.id === profilId)) return res.status(400).json({ message: "profil_invalide" });
     await s.choisirProfil(req.userId, projet.id, profilId);
     res.json({ ok: true });
-  });
+  }));
 
-  app.post("/api/profils-veille/projet/:projectId/refuser", isAuthenticated, async (req: any, res) => {
+  app.post("/api/profils-veille/projet/:projectId/refuser", isAuthenticated, sur(async (req: any, res) => {
     const pid = idDe(req.params.projectId);
     const projet = pid ? await storage.getProject(pid, req.userId) : undefined;
     if (!projet) return res.status(404).json({ message: "not_found" });
     await s.refuserRattachement(req.userId, projet.id);
     res.json({ ok: true });
-  });
+  }));
 
-  app.post("/api/profils-veille/projet/:projectId/suggestion", isAuthenticated, async (req: any, res) => {
+  app.post("/api/profils-veille/projet/:projectId/suggestion", isAuthenticated, sur(async (req: any, res) => {
     const pid = idDe(req.params.projectId);
     const projet = pid ? await storage.getProject(pid, req.userId) : undefined;
     if (!projet) return res.status(404).json({ message: "not_found" });
@@ -80,23 +84,26 @@ export function registerProfilsVeilleRoutes(app: Express) {
     if (!c) return res.status(400).json({ message: "compte_invalide" });
     const cree = await s.ajouterCompte({ profilId: r.profilId, plateforme: req.body.plateforme, compte: c.compte, url: c.url, origine: "suggestion", suggerePar: req.userId, statut: "propose" });
     res.status(201).json({ compte: cree });
-  });
+  }));
 
-  app.patch("/api/profils-veille/tendances/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/profils-veille/tendances/:id", isAuthenticated, sur(async (req: any, res) => {
     const id = idDe(req.params.id);
     const t = id ? await s.tendanceProjet(req.userId, id) : undefined;
     if (!t) return res.status(404).json({ message: "not_found" });
+    if (t.statut === "utilise") return res.status(409).json({ message: "deja_utilise" });
     const statut = req.body?.statut;
     if (!STATUTS_TENDANCE_UTILISATRICE.includes(statut)) return res.status(400).json({ message: "statut_invalide" });
     await s.majTendanceProjet(t.id, statut === "ecarte" ? { statut, ecarteLe: new Date() } : { statut });
     res.json({ ok: true });
-  });
+  }));
 
   app.post("/api/profils-veille/tendances/:id/post", isAuthenticated, async (req: any, res) => {
     try {
       const id = idDe(req.params.id);
       const t = id ? await s.tendanceProjet(req.userId, id) : undefined;
       if (!t) return res.status(404).json({ message: "not_found" });
+      // Double clic : la tendance a déjà son post. `semaine` n'est pas recalculée (inconnue ici), on l'omet.
+      if (t.statut === "utilise" || t.contentId) return res.status(200).json({ contentId: t.contentId ?? null, deja: true });
       const typeMedia = t.typeMedia as TypeMedia;
       const libelle = libelleFormat(typeMedia, t.structure as Structure);
       const cree = await storage.createContent({
@@ -152,9 +159,7 @@ export function registerProfilsVeilleRoutes(app: Express) {
     if (!id || !c) return res.status(400).json({ message: "compte_invalide" });
     const statut = req.body?.statut === "suivi" ? "suivi" : "propose";
     if (statut === "suivi") {
-      const p = (await s.listeAdmin(moisDe(new Date()))).find((x: any) => x.id === id);
-      const suivis = (p?.comptes ?? []).filter((x: any) => x.plateforme === req.body.plateforme && x.statut === "suivi").length;
-      if (suivis >= REGLES.comptesMaxParPlateforme) return res.status(409).json({ message: "plafond_comptes" });
+      if ((await s.nbSuivis(id, req.body.plateforme)) >= REGLES.comptesMaxParPlateforme) return res.status(409).json({ message: "plafond_comptes" });
     }
     res.status(201).json({ compte: await s.ajouterCompte({ profilId: id, plateforme: req.body.plateforme, compte: c.compte, url: c.url, origine: "jeanne", statut }) });
   }));
@@ -162,6 +167,9 @@ export function registerProfilsVeilleRoutes(app: Express) {
   app.patch("/api/admin/profils-veille/comptes/:id", isAuthenticated, admin(async (req, res) => {
     const id = idDe(req.params.id);
     if (!id || !STATUTS_COMPTE.includes(req.body?.statut)) return res.status(400).json({ message: "statut_invalide" });
+    const existant = await s.compte(id);
+    if (!existant) return res.status(404).json({ message: "not_found" });
+    if (req.body.statut === "suivi" && existant.statut !== "suivi" && (await s.nbSuivis(existant.profilId, existant.plateforme)) >= REGLES.comptesMaxParPlateforme) return res.status(409).json({ message: "plafond_comptes" });
     const c = await s.majCompteAdmin(id, { statut: req.body.statut });
     if (!c) return res.status(404).json({ message: "not_found" });
     res.json({ compte: c });

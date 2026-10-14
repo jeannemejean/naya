@@ -14,7 +14,7 @@ const s = vi.hoisted(() => ({
   rattachementDuProjet: vi.fn(async () => ({ id: 1, profilId: 7, statut: "propose", raison: "r", nomProfil: "Coachs", descriptionProfil: "d" })),
   catalogueActif: vi.fn(async () => [{ id: 7, nom: "Coachs", description: "d", criteres: {} }, { id: 8, nom: "Mode", description: "d", criteres: {} }]),
   tendancesDuProjet: vi.fn(async () => [{ id: 3, tendanceId: 12, statut: "nouveau", expireLe: new Date("2030-01-01"), plateforme: "instagram", typeMedia: "carrousel", structure: "avant_apres", lift: 2, adaptation: "a", exemples: [], pourquoi: "p", nbForts: 3, nbComptes: 2 }]),
-  tendanceProjet: vi.fn(async (u: string, id: number) => (u === "user-1" && id === 3 ? { id: 3, userId: "user-1", projectId: 4, tendanceId: 12, statut: "nouveau", adaptation: "Ta cliente avant/après", plateforme: "instagram", typeMedia: "carrousel", structure: "avant_apres" } : undefined)),
+  tendanceProjet: vi.fn(async (u: string, id: number) => (u === "user-1" && id === 5 ? { id: 5, userId: "user-1", projectId: 4, tendanceId: 12, statut: "utilise", contentId: 70, adaptation: "a", plateforme: "instagram", typeMedia: "carrousel", structure: "avant_apres" } : u === "user-1" && id === 3 ? { id: 3, userId: "user-1", projectId: 4, tendanceId: 12, statut: "nouveau", adaptation: "Ta cliente avant/après", plateforme: "instagram", typeMedia: "carrousel", structure: "avant_apres" } : undefined)),
   majTendanceProjet: vi.fn(async () => {}),
   choisirProfil: vi.fn(async () => {}),
   refuserRattachement: vi.fn(async () => {}),
@@ -27,6 +27,8 @@ const s = vi.hoisted(() => ({
   majTendanceAdmin: vi.fn(async () => ({ id: 1 })),
   aEtiqueter: vi.fn(async () => []),
   etiqueter: vi.fn(async () => {}),
+  compte: vi.fn(async (id: number) => (id === 5 ? { id: 5, profilId: 9, plateforme: "instagram", statut: "propose" } : id === 6 ? { id: 6, profilId: 9, plateforme: "instagram", statut: "suivi" } : undefined)),
+  nbSuivis: vi.fn(async () => 0),
   profil: vi.fn(async (id: number) => (id === 9 ? { id: 9, nom: "n", description: "d", statut: "actif" } : undefined)),
 }));
 vi.mock("./services/profils-veille/stockage", () => ({ stockageProfils: s }));
@@ -87,6 +89,26 @@ describe("routes utilisatrice", () => {
   });
 });
 
+describe("robustesse utilisatrice", () => {
+  it("une erreur de base renvoie 500 au lieu de laisser la requête pendre", async () => {
+    s.choisirProfil.mockRejectedValueOnce(new Error("boom"));
+    expect((await appel("POST", "/api/profils-veille/projet/4/profil", { profilId: 8 })).status).toBe(500);
+    s.majTendanceProjet.mockRejectedValueOnce(new Error("boom"));
+    expect((await appel("PATCH", "/api/profils-veille/tendances/3", { statut: "garde" })).status).toBe(500);
+  });
+  it("En faire un post est idempotent", async () => {
+    const r = await appel("POST", "/api/profils-veille/tendances/5/post");
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j.contentId).toBe(70);
+    expect(j.deja).toBe(true);
+    expect(storageMock.createContent).not.toHaveBeenCalled();
+  });
+  it("PATCH sur une tendance déjà utilisée : 409", async () => {
+    expect((await appel("PATCH", "/api/profils-veille/tendances/5", { statut: "ecarte" })).status).toBe(409);
+  });
+});
+
 describe("routes admin", () => {
   it("403 sans rôle owner", async () => {
     expect((await appel("GET", "/api/admin/profils-veille")).status).toBe(403);
@@ -99,8 +121,15 @@ describe("routes admin", () => {
     expect((await appel("PATCH", "/api/admin/profils-veille/9", { statut: "actif" }, "owner-1")).status).toBe(200);
   });
   it("owner : refuse un 16e compte suivi sur une plateforme", async () => {
-    s.listeAdmin.mockResolvedValueOnce([{ id: 9, comptes: Array.from({ length: 15 }, (_, i) => ({ id: i, plateforme: "instagram", statut: "suivi" })) }] as any);
+    s.nbSuivis.mockResolvedValueOnce(15);
     expect((await appel("POST", "/api/admin/profils-veille/9/comptes", { plateforme: "instagram", saisie: "@nouveau", statut: "suivi" }, "owner-1")).status).toBe(409);
+  });
+  it("owner : promouvoir un 16e compte en suivi est refusé, un compte déjà suivi passe", async () => {
+    s.nbSuivis.mockResolvedValue(15);
+    expect((await appel("PATCH", "/api/admin/profils-veille/comptes/5", { statut: "suivi" }, "owner-1")).status).toBe(409);
+    expect((await appel("PATCH", "/api/admin/profils-veille/comptes/6", { statut: "suivi" }, "owner-1")).status).toBe(200);
+    expect((await appel("PATCH", "/api/admin/profils-veille/comptes/99", { statut: "suivi" }, "owner-1")).status).toBe(404);
+    s.nbSuivis.mockResolvedValue(0);
   });
   it("owner : étiquette — structure et accroche du vocabulaire", async () => {
     expect((await appel("POST", "/api/admin/profils-veille/etiquettes", { postId: 1, structure: "x", accroche: "chiffre" }, "owner-1")).status).toBe(400);
