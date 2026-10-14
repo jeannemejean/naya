@@ -142,6 +142,23 @@ describe("comptes et posts", () => {
     expect(extraireTendance("Mon post.\n\nTENDANCE: 12")).toEqual({ texte: "Mon post.", tendanceId: 12 });
     expect(extraireTendance("Mon post.")).toEqual({ texte: "Mon post.", tendanceId: null });
   });
+  it("TENDANCE : variantes tolérées (crochets, point, gras), id lu, ligne toujours retirée", () => {
+    expect(extraireTendance("Mon post.\nTENDANCE: [3]")).toEqual({ texte: "Mon post.", tendanceId: 3 });
+    expect(extraireTendance("Mon post.\nTENDANCE : 3.")).toEqual({ texte: "Mon post.", tendanceId: 3 });
+    expect(extraireTendance("Mon post.\n**TENDANCE: 3**")).toEqual({ texte: "Mon post.", tendanceId: 3 });
+    expect(extraireTendance("Mon post.\n\nTENDANCE: aucune")).toEqual({ texte: "Mon post.", tendanceId: null });
+  });
+  it("TENDANCE avant SLIDES : retirée où qu'elle soit, le reste intact", () => {
+    const r = extraireTendance("LÉGENDE :\nMon texte\nTENDANCE: 7\nSLIDES :\n1. a");
+    expect(r.tendanceId).toBe(7);
+    expect(r.texte).not.toMatch(/TENDANCE/);
+    expect(r.texte).toContain("Mon texte");
+    expect(r.texte).toContain("SLIDES :\n1. a");
+  });
+  it("texte sans TENDANCE : inchangé", () => {
+    const t = "Ligne 1\n\nLa tendance du moment : les carrousels.";
+    expect(extraireTendance(t)).toEqual({ texte: t, tendanceId: null });
+  });
   it("libellé lisible d'un format", () => {
     expect(libelleFormat("carrousel", "avant_apres")).toBe("Carrousel avant/après");
   });

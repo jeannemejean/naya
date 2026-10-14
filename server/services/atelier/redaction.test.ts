@@ -86,6 +86,25 @@ describe("redigerPost : tendances", () => {
     expect((r as any).body).not.toContain("TENDANCE");
     expect(deps.lierTendance).toHaveBeenCalledWith(1, "u", 3);
   });
+  it("ligne TENDANCE placée avant SLIDES, entre crochets ou en gras : jamais dans le corps publié", async () => {
+    for (const sortie of [
+      "LÉGENDE :\nMon texte\nTENDANCE: [3]\nSLIDES :\n1. a",
+      "LÉGENDE :\nMon texte\n**TENDANCE : 3.**\nSLIDES :\n1. a",
+      "Mon texte\nTENDANCE: aucune",
+    ]) {
+      const deps = fabrique(post({ id: 1, postFormat: "carousel" }), { ia: vi.fn(async () => sortie) });
+      const r = await redigerPost(deps, "u", 1);
+      expect(r.statut).toBe("redige");
+      expect((r as any).body).not.toMatch(/TENDANCE/);
+      const annexe = (deps.ecrireBrouillon as any).mock.calls[0][3].annexe;
+      if (annexe) expect(annexe).not.toMatch(/TENDANCE/);
+    }
+  });
+  it("consigne : le numéro seul, sans crochets", () => {
+    const c = consigneRedaction(post(), "idée", null, null);
+    expect(c).toContain("TENDANCE: 12 (le numéro seul, sans crochets)");
+    expect(c).not.toContain("entre crochets");
+  });
 });
 
 describe("refairePost", () => {

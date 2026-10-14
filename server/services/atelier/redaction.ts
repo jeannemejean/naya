@@ -90,7 +90,7 @@ export function consigneRedaction(post: PostARediger, idee: string, actuel: stri
     "- Une accroche forte en première ligne ; des paragraphes courts ; adapté aux usages du réseau.",
     "- N'invente aucun chiffre, aucun client, aucun témoignage, aucune citation : s'il en faut un, écris [à compléter].",
     "- Écris dans la langue de l'idée prévue.",
-    "- Si tu t'inspires d'un format de la liste « Ce qui marche en ce moment dans le secteur », termine par une ligne seule : TENDANCE: <numéro entre crochets>. Sinon, n'ajoute rien.",
+    "- Si tu t'inspires d'un format de la liste « Ce qui marche en ce moment dans le secteur », termine par une ligne seule : TENDANCE: 12 (le numéro seul, sans crochets). Sinon, n'ajoute rien.",
     "- Réponds uniquement avec le texte demandé, prêt à publier : pas de titre, pas de commentaire, pas de guillemets.",
   );
   return lignes.join("\n");

@@ -206,8 +206,15 @@ export function cleDePost(url: string): string {
   return (url || "").trim().split(/[?#]/)[0].replace(/\/+$/, "");
 }
 
+/**
+ * Retire TOUTE ligne « TENDANCE: … » (où qu'elle soit, gras ou crochets tolérés) — elle ne doit
+ * jamais être publiée. L'id = premier nombre de la dernière ligne trouvée ; « TENDANCE: aucune » → null.
+ */
 export function extraireTendance(texte: string): { texte: string; tendanceId: number | null } {
-  const m = /\n?\s*TENDANCE\s*:\s*(\d+)\s*$/i.exec(texte ?? "");
-  if (!m) return { texte: (texte ?? "").trim(), tendanceId: null };
-  return { texte: texte.slice(0, m.index).trim(), tendanceId: Number(m[1]) };
+  const brut = texte ?? "";
+  const lignes = brut.match(/^\s*\**\s*TENDANCE\s*:.*$/gim);
+  if (!lignes) return { texte: brut.trim(), tendanceId: null };
+  const id = /\d{1,9}/.exec(lignes[lignes.length - 1]);
+  const reste = brut.replace(/^\s*\**\s*TENDANCE\s*:.*$/gim, "").replace(/\n{3,}/g, "\n\n").trim();
+  return { texte: reste, tendanceId: id ? Number(id[0]) : null };
 }
