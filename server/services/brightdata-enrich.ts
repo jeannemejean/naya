@@ -74,6 +74,47 @@ async function triggerAndPoll(
   }
 }
 
+export function instagramDataset(): string | undefined {
+  return process.env.BRIGHT_DATA_INSTAGRAM_DATASET;
+}
+
+/**
+ * Comme triggerAndPoll, mais pour PLUSIEURS URL d'un coup (un seul déclenchement, un seul
+ * instantané) et en renvoyant TOUTES les lignes (dont les lignes d'erreur, `include_errors`).
+ * null : non configuré, refus, délai dépassé. [] : terminé sans ligne.
+ */
+export async function collecterParLot(
+  datasetId: string,
+  urls: string[],
+  { maxWaitMs = 300_000, intervalMs = 10_000 }: { maxWaitMs?: number; intervalMs?: number } = {},
+): Promise<any[] | null> {
+  const key = apiKey();
+  if (!key || urls.length === 0) return null;
+  try {
+    const trig = await fetch(
+      `${API}/datasets/v3/trigger?dataset_id=${encodeURIComponent(datasetId)}&include_errors=true`,
+      { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(urls.map((url) => ({ url }))) },
+    );
+    if (!trig.ok) return null;
+    const snapshotId: string | undefined = (await trig.json())?.snapshot_id;
+    if (!snapshotId) return null;
+    const deadline = Date.now() + maxWaitMs;
+    while (Date.now() < deadline) {
+      await sleep(intervalMs);
+      const snap = await fetch(`${API}/datasets/v3/snapshot/${snapshotId}?format=json`, { headers: { Authorization: `Bearer ${key}` } });
+      if (snap.status === 202) continue;
+      if (!snap.ok) return null;
+      const data: any = await snap.json();
+      const rows = Array.isArray(data) ? data : data?.data;
+      if (Array.isArray(rows)) return rows;
+    }
+    return null;
+  } catch (e: any) {
+    console.error("[brightdata] collecterParLot:", e?.message || e);
+    return null;
+  }
+}
+
 export interface LinkedInProfileData {
   fullName?: string;
   headline?: string;
