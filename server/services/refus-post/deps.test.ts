@@ -11,6 +11,10 @@ const h = vi.hoisted(() => ({
     getTasksInRange: vi.fn(async () => []),
     checkSlotAvailability: vi.fn(async () => ({ available: true })),
     createTask: vi.fn(async (t: any) => t),
+    getPostsEntre: vi.fn(async () => [] as any[]),
+    getTachesAtelier: vi.fn(async () => [] as any[]),
+    getTasksForContents: vi.fn(async () => [] as any[]),
+    updateTask: vi.fn(async () => ({})),
   },
 }));
 
@@ -31,14 +35,14 @@ const ligne = (over: any = {}) => ({
 beforeEach(() => vi.clearAllMocks());
 
 describe("refusPostDeps.creerPost", () => {
-  it("post de campagne : crée le post puis ses tâches de production reliées", async () => {
+  it("post de campagne : crée le post puis l'atelier de sa semaine (ou l'allonge)", async () => {
     h.storage.createContent.mockImplementation(async (c: any) => ({ id: 77, ...c }));
+    h.storage.getPostsEntre.mockImplementation(async () => [{ id: 77, ...ligne() }]);
     const cree = await refusPostDeps.creerPost(ligne());
     expect(cree.id).toBe(77);
     const taches = h.storage.createTask.mock.calls.map(([t]: any[]) => t);
-    expect(taches.length).toBeGreaterThan(0);
-    expect(taches.every((t: any) => t.contentId === 77 && t.campaignId === 3)).toBe(true);
-    expect(taches[taches.length - 1].title).toBe("Publier — Remplaçant");
+    expect(taches.filter((t: any) => t.taskType === "atelier_contenu")).toHaveLength(1);
+    expect(taches.some((t: any) => t.contentId != null)).toBe(false);
   });
 
   it("post hors campagne : aucune tâche", async () => {

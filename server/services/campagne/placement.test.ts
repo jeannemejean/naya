@@ -179,6 +179,7 @@ describe("borne de fin (option bornerA, utilisée par « repenser »)", () => {
 describe("dépendances portées par une instance de classe (comme `storage`)", () => {
   class FauxStockage {
     private journal: string[] = [];
+    private posts: any[] = [];
     async getUserPreferences() { return { workDays: "mon,tue,wed,thu,fri" }; }
     async getDayAvailabilityRange() { return []; }
     async getTasksInRange(userId: string) { this.journal.push("range"); return this.taches(userId); }
@@ -186,7 +187,10 @@ describe("dépendances portées par une instance de classe (comme `storage`)", (
     async checkSlotAvailability() { return this.libre(); }
     private libre() { return { available: true }; }
     async createTask(t: any) { this.journal.push("task"); return this.copie(t); }
-    async createContent(c: any) { this.journal.push("content"); return this.copie({ id: this.journal.length, ...c }); }
+    async createContent(c: any) { this.journal.push("content"); const p = this.copie({ id: this.journal.length, ...c }); this.posts.push(p); return p; }
+    async getPostsEntre() { return this.copie(this.posts); }
+    async getTachesAtelier() { return this.taches("u"); }
+    async getTasksForContents() { return this.taches("u"); }
     private copie<T>(x: T): T { return x; }
     get appels() { return this.journal; }
   }
@@ -203,80 +207,42 @@ describe("dépendances portées par une instance de classe (comme `storage`)", (
   });
 });
 
-// ─── Production dérivée des posts ────────────────────────────────────────────
+// ─── Production : l'atelier de la semaine (spec 2026-10-14) ──────────────────
 
-describe("placerPostsCampagne crée aussi les tâches de production de chaque post", () => {
+describe("placerPostsCampagne pose l'atelier de chaque semaine de posts", () => {
   const avecIds = () => {
     let n = 100;
-    return fabrique({ createContent: vi.fn(async (c: any) => ({ id: ++n, ...c })) });
+    const crees: any[] = [];
+    const deps = fabrique({
+      createContent: vi.fn(async (c: any) => { const p = { id: ++n, ...c }; crees.push(p); return p; }),
+      getPostsEntre: vi.fn(async (_u: string, debut: Date, fin: Date) => crees.filter((p) => p.scheduledFor >= debut && p.scheduledFor < fin)),
+      getTachesAtelier: vi.fn(async () => []),
+      getTasksForContents: vi.fn(async () => []),
+    });
+    return deps;
   };
   const prod = (deps: any) => deps.createTask.mock.calls.map(([t]: any[]) => t);
 
-  it("chaque post a ses étapes (format carrousel), reliées par contentId, avant la publication", async () => {
+  it("un atelier par semaine (et sa validation), plus aucune tâche par post", async () => {
     const deps = avecIds();
     const r = await placerPostsCampagne(deps, { userId: "u", campaign, debut: d("2026-10-12"), fin: d("2026-11-11"), aujourdhui: "2026-10-08" });
     expect(r.crees).toBe(6);
-    const posts = deps.createContent.mock.calls.map(([c]: any[]) => c);
-    expect(posts.every((c: any) => c.postFormat === "carousel")).toBe(true);
-
     const taches = prod(deps);
     expect(r.tachesProduction).toBe(taches.length);
-    // 6 posts × (structurer, rédiger, designer, relire, publier — pas de publication automatique)
-    expect(taches).toHaveLength(30);
-    const parPost = new Map<number, any[]>();
-    for (const t of taches) parPost.set(t.contentId, [...(parPost.get(t.contentId) || []), t]);
-    expect(Array.from(parPost.keys()).sort()).toEqual([101, 102, 103, 104, 105, 106]);
-    const jourPost = new Map<number, string>();
-    posts.forEach((c: any, i: number) => jourPost.set(101 + i, local(c.scheduledFor).slice(0, 10)));
-    const heurePost = new Map<number, string>();
-    posts.forEach((c: any, i: number) => heurePost.set(101 + i, heureParis(c.scheduledFor)));
-
-    for (const [id, ts] of Array.from(parPost.entries())) {
-      expect(ts.map((t: any) => t.title.split(" — ")[0])).toEqual([
-        "Structurer le carrousel", "Rédiger les slides", "Designer les slides", "Relire et valider le post", "Publier",
-      ]);
-      for (const t of ts) {
-        expect(t).toMatchObject({ userId: "u", campaignId: 3, projectId: 9, contentId: id, source: "campaign", type: "content", completed: false });
-        expect(t.scheduledDate <= jourPost.get(id)!).toBe(true);
-        expect(t.scheduledDate >= "2026-10-08").toBe(true);
-        expect(t.scheduledDate).not.toBe("2026-10-14");
-        expect([0, 6]).not.toContain(d(t.scheduledDate).getDay());
-      }
-      const dates = ts.map((t: any) => t.scheduledDate);
-      expect([...dates].sort()).toEqual(dates);
-      const publier = ts[ts.length - 1];
-      expect(publier.scheduledDate).toBe(jourPost.get(id));
-      expect(publier.scheduledTime).toBe(heurePost.get(id));
-    }
-  });
-
-  it("post du lundi 12 : tout est prêt le vendredi 9, rien le week-end, publication le lundi", async () => {
-    const deps = avecIds();
-    await placerPostsCampagne(deps, {
-      userId: "u", campaign: { ...campaign, contentPlan: [piece("Week 1", "a1")] }, debut: d("2026-10-12"), aujourdhui: "2026-10-08",
-    });
-    expect(prod(deps).map((t: any) => `${t.scheduledDate} ${t.scheduledTime} ${t.title}`)).toEqual([
-      "2026-10-09 09:00 Structurer le carrousel — a1",
-      "2026-10-09 09:45 Rédiger les slides — a1",
-      "2026-10-09 10:45 Designer les slides — a1",
-      "2026-10-09 13:00 Relire et valider le post — a1",
-      `2026-10-12 ${heureParis((deps.createContent.mock.calls[0] as any[])[0].scheduledFor)} Publier — a1`,
+    expect(taches.every((t: any) => t.contentId === undefined)).toBe(true);
+    expect(taches.map((t: any) => `${t.scheduledDate} ${t.estimatedDuration} ${t.title}`)).toEqual([
+      // Semaine du 12 : 4 carrousels (120 min) → 90 + 30, premier post le lundi 12 → tout avant, dès le 8.
+      "2026-10-08 90 Atelier contenu — semaine du 12 oct. (1/2)",
+      "2026-10-09 30 Atelier contenu — semaine du 12 oct. (2/2)",
+      "2026-10-13 30 Atelier contenu — semaine du 19 oct.",
+      "2026-10-15 7 Valider la semaine — 19 oct.",
+      "2026-11-04 30 Atelier contenu — semaine du 9 nov.",
+      "2026-11-05 7 Valider la semaine — 9 nov.",
     ]);
+    expect(taches.every((t: any) => ![0, 6].includes(d(t.scheduledDate).getDay()) && t.scheduledDate !== "2026-10-14")).toBe(true);
   });
 
-  it("le plafond de 3 tâches par jour ne bloque pas la production (elle a une échéance)", async () => {
-    const plein = Array.from({ length: 5 }, () => ({ scheduledDate: "2026-10-09" }));
-    const deps = avecIds();
-    deps.getTasksInRange = vi.fn(async () => plein);
-    await placerPostsCampagne(deps, {
-      userId: "u", campaign: { ...campaign, contentPlan: [piece("Week 1", "a1")] }, debut: d("2026-10-12"), aujourdhui: "2026-10-09",
-    });
-    const t = prod(deps);
-    expect(t).toHaveLength(5);
-    expect(t.every((x: any) => x.scheduledDate <= "2026-10-12" && x.scheduledDate >= "2026-10-09")).toBe(true);
-  });
-
-  it("un post déjà passé n'a pas de tâches de production", async () => {
+  it("un post déjà passé n'a pas d'atelier", async () => {
     const deps = avecIds();
     await placerPostsCampagne(deps, {
       userId: "u", campaign: { ...campaign, contentPlan: [piece("Week 1", "a1")] }, debut: d("2026-10-12"), aujourdhui: "2026-10-20",
@@ -293,14 +259,17 @@ describe("placerTachesProductionPourCampagne (idempotent)", () => {
     ...over,
   });
 
-  function deps(posts: any[], liees: any[] = []) {
+  function deps(posts: any[], liees: any[] = [], ateliers: any[] = []) {
     return fabrique({
       getContent: vi.fn(async () => posts),
+      getPostsEntre: vi.fn(async () => posts),
+      getTachesAtelier: vi.fn(async () => ateliers),
       getTasksForContents: vi.fn(async () => liees),
+      updateTask: vi.fn(async () => ({})),
     });
   }
 
-  it("crée les étapes manquantes des posts à venir, rien pour les posts publiés ou passés", async () => {
+  it("pose l'atelier de la semaine des posts à venir, rien pour les posts publiés ou passés", async () => {
     const dp = deps([
       post(),
       post({ id: 51, postStatus: "posted" }),
@@ -309,30 +278,23 @@ describe("placerTachesProductionPourCampagne (idempotent)", () => {
     ]);
     const r = await placerTachesProductionPourCampagne(dp, { userId: "u", campaignId: 3, aujourdhui: "2026-10-08" });
     expect(dp.getContent).toHaveBeenCalledWith("u", expect.any(Number), undefined, 3);
-    expect(dp.getTasksForContents).toHaveBeenCalledWith("u", [50]);
-    expect(dp.createTask.mock.calls.map(([x]: any[]) => `${x.scheduledDate} ${x.scheduledTime} ${x.title} #${x.contentId}`)).toEqual([
-      "2026-10-13 09:00 Rédiger le texte — Mon post #50",
-      "2026-10-15 09:00 Préparer le visuel — Mon post #50",
-      "2026-10-15 10:00 Relire et valider le post — Mon post #50",
-      `2026-10-16 ${heureParis(post().scheduledFor)} Publier — Mon post #50`,
+    expect(dp.createTask.mock.calls.map(([x]: any[]) => `${x.scheduledDate} ${x.title}`)).toEqual([
+      // Post le vendredi 16 ; le mercredi 14 est indisponible → 3 jours travaillés avant = lundi 12.
+      "2026-10-12 Atelier contenu — semaine du 12 oct.",
+      "2026-10-13 Valider la semaine — 12 oct.",
     ]);
-    expect(r).toEqual({ creees: 4 });
+    expect(r).toEqual({ creees: 2 });
   });
 
-  it("deuxième passage : les étapes déjà présentes (faites ou non) ne sont pas recréées", async () => {
-    const liees = [
-      { contentId: 50, title: "Rédiger le texte — Mon post", completed: true },
-      { contentId: 50, title: "Préparer le visuel — Ancien titre", completed: false },
-    ];
-    const dp = deps([post()], liees);
+  it("deuxième passage : l'atelier existant n'est pas recréé", async () => {
+    const atelier = { id: 7, taskType: "atelier_contenu", completed: false, estimatedDuration: 15, title: "Atelier contenu — semaine du 12 oct.", actionData: { semaine: "2026-10-12", partie: 1, parties: 1, echeance: "2026-10-15" } };
+    const dp = deps([post()], [], [atelier]);
     const r = await placerTachesProductionPourCampagne(dp, { userId: "u", campaignId: 3, aujourdhui: "2026-10-08" });
-    expect(dp.createTask.mock.calls.map(([x]: any[]) => x.title)).toEqual([
-      "Relire et valider le post — Mon post", "Publier — Mon post",
-    ]);
-    expect(r.creees).toBe(2);
+    expect(dp.createTask).not.toHaveBeenCalled();
+    expect(r.creees).toBe(0);
   });
 
-  it("aucun post à produire : aucune lecture de tâches, rien de créé", async () => {
+  it("aucun post à produire : rien de lu ni de créé", async () => {
     const dp = deps([post({ postStatus: "posted" })]);
     const r = await placerTachesProductionPourCampagne(dp, { userId: "u", campaignId: 3, aujourdhui: "2026-10-08" });
     expect(r.creees).toBe(0);

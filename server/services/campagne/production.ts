@@ -304,3 +304,26 @@ export function majEtape(
   }
   return maj;
 }
+
+// ─── Atelier de contenu (spec 2026-10-14) ────────────────────────────────────
+//
+// Depuis l'atelier, tout ce qui se fait derrière un écran (écrire, préparer un visuel, relire,
+// publier) se fait en UNE session par semaine. Seules restent des tâches par post celles qui
+// ne s'y font pas : tourner et monter une vidéo.
+
+const HORS_ATELIER = ["Tourner", "Monter"];
+
+/** Étapes d'un post qui restent des tâches à part (vidéo : tourner, monter). */
+export function etapesHorsAtelier(post: PostAProduire): EtapeProduction[] {
+  return etapesProductionPourPost({ ...post, autoPost: true }).filter((e) => HORS_ATELIER.includes(e.cle));
+}
+
+/** Ancienne étape d'écran d'un post (« Rédiger le texte — … », « Publier — … »…) : l'atelier la remplace. */
+export function estEtapeEcran(titre: string | null | undefined): boolean {
+  const t = titre ?? "";
+  const i = t.indexOf(" — ");
+  if (i <= 0) return false;
+  const cle = t.slice(0, i);
+  if (HORS_ATELIER.includes(cle)) return false;
+  return cle === "Publier" || Object.values(MODELES).some((ms) => ms.some((m) => m.cle === cle));
+}

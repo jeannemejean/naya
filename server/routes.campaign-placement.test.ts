@@ -34,6 +34,12 @@ const storageMock = {
   createTask: vi.fn(async (t: any) => ({ id: 1, ...t })),
   createContent: vi.fn(async (c: any) => ({ id: ++prochainPost, ...c })),
   getTasksForContents: vi.fn(async () => [] as any[]),
+  // Atelier de contenu : les posts de la semaine sont ceux créés pendant l'appel.
+  getPostsEntre: vi.fn(async (_u: string, debut: Date, fin: Date) =>
+    storageMock.createContent.mock.calls.map(([c]: any[], i: number) => ({ id: 101 + i, ...c }))
+      .filter((c: any) => c.scheduledFor >= debut && c.scheduledFor < fin)),
+  getTachesAtelier: vi.fn(async () => [] as any[]),
+  updateTask: vi.fn(async (id: number, p: any) => ({ id, ...p })),
   fixOverlappingTasks: vi.fn(async () => {}),
   deleteAllIncompleteCampaignTasks: vi.fn(async () => 2),
   deleteAllCampaignContent: vi.fn(async () => 5),
@@ -43,6 +49,7 @@ const storageMock = {
 vi.mock("./storage", () => ({ storage: storageMock }));
 
 const { registerRoutes } = await import("./routes");
+const { lundiDe } = await import("@shared/atelier");
 
 let server: http.Server;
 let port: number;
@@ -91,21 +98,34 @@ const local = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.
 const tasksCreated = () => storageMock.createTask.mock.calls.map(([t]: any[]) => `${t.scheduledDate} ${t.scheduledTime}-${t.scheduledEndTime} ${t.title} [${t.source}/${t.campaignId}/${t.projectId}${t.contentId ? `/#${t.contentId}` : ""}]`);
 const tachesProduction = () => storageMock.createTask.mock.calls.map(([t]: any[]) => t).filter((t: any) => t.contentId);
 const jourDe = (d: Date) => local(d).slice(0, 10);
-/** Chaque post créé a ses 5 étapes (carrousel, sans publication automatique), avant lui. */
+/**
+ * Atelier de contenu (spec 2026-10-14) : aucune tâche par post pour un carrousel ; chaque
+ * semaine qui a un post à venir a son atelier, posé avant le premier post de la semaine.
+ */
 function verifierProduction() {
   const posts = storageMock.createContent.mock.calls.map(([c]: any[], i: number) => ({ id: 101 + i, jour: jourDe(c.scheduledFor) }));
-  for (const p of posts) {
-    const liees = tachesProduction().filter((t: any) => t.contentId === p.id);
-    expect(liees.map((t: any) => t.title.split(" — ")[0])).toEqual([
-      "Structurer le carrousel", "Rédiger les slides", "Designer les slides", "Relire et valider le post", "Publier",
-    ]);
-    for (const t of liees) {
-      expect(t.scheduledDate <= p.jour).toBe(true);
-      expect(t.scheduledDate >= "2026-10-12").toBe(true);
-    }
+  expect(tachesProduction()).toEqual([]);
+  const ateliers = storageMock.createTask.mock.calls.map(([t]: any[]) => t).filter((t: any) => t.taskType === "atelier_contenu");
+  for (const p of posts.filter((x) => x.jour >= "2026-10-12")) {
+    const lundi = lundiDe(p.jour);
+    const siens = ateliers.filter((t: any) => t.actionData.semaine === lundi);
+    expect(siens.length).toBeGreaterThan(0);
+    for (const t of siens) expect(t.scheduledDate >= "2026-10-12" && t.scheduledDate <= p.jour).toBe(true);
   }
   return posts.length;
 }
+const titresAtelier = () => storageMock.createTask.mock.calls.map(([t]: any[]) => t)
+  .filter((t: any) => t.taskType).map((t: any) => `${t.scheduledDate} ${t.title}`);
+// Lancement le lundi 12 avec un post le jour même : l'atelier de cette semaine ne peut être
+// qu'aujourd'hui (ses deux parties), sans validation ; les semaines suivantes ont la leur.
+const ATELIERS_LANCEMENT = [
+  "2026-10-12 Atelier contenu — semaine du 12 oct. (1/2)",
+  "2026-10-12 Atelier contenu — semaine du 12 oct. (2/2)",
+  "2026-10-13 Atelier contenu — semaine du 19 oct.",
+  "2026-10-15 Valider la semaine — 19 oct.",
+  "2026-11-04 Atelier contenu — semaine du 9 nov.",
+  "2026-11-05 Valider la semaine — 9 nov.",
+];
 const postsCreated = () => storageMock.createContent.mock.calls.map(([c]: any[]) => `${local(c.scheduledFor)} ${c.title} ${c.contentType} auto=${c.autoPost}`);
 const call = (path: string, body: any = {}) => fetch(`http://127.0.0.1:${port}/api/campaigns/3/${path}`, {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -117,10 +137,12 @@ describe("placement de campagne : caractérisation des routes", () => {
     const res = await call("launch", { startDate: "2026-10-12" });
     const json: any = await res.json();
     expect(res.status).toBe(200);
-    // 6 posts × 5 étapes de production + 2 tâches hors contenu (ni contenu ni prospection)
-    expect({ tasksCreated: json.tasksCreated, contentCreated: json.contentCreated }).toEqual({ tasksCreated: 32, contentCreated: 6 });
+    // Ateliers des 3 semaines de posts (12 oct. en 2 parties, 19 oct., 9 nov., avec leurs
+    // validations quand il reste un jour) + 2 tâches hors contenu (ni contenu ni prospection).
     expect(verifierProduction()).toBe(6);
-    const autres = storageMock.createTask.mock.calls.map(([t]: any[]) => t).filter((t: any) => !t.contentId);
+    expect(titresAtelier()).toEqual(ATELIERS_LANCEMENT);
+    expect({ tasksCreated: json.tasksCreated, contentCreated: json.contentCreated }).toEqual({ tasksCreated: ATELIERS_LANCEMENT.length + 2, contentCreated: 6 });
+    const autres = storageMock.createTask.mock.calls.map(([t]: any[]) => t).filter((t: any) => !t.taskType);
     expect(autres.map((t: any) => t.title)).toEqual(["Plan review", "Wrap up"]);
     expect(tasksCreated()).toMatchSnapshot("launch tâches");
     expect(postsCreated()).toMatchSnapshot("launch posts");
@@ -153,9 +175,10 @@ describe("placement de campagne : caractérisation des routes", () => {
     expect(res.status).toBe(200);
     expect(json.contentCreated).toBe(6);
     expect(postsCreated()).toMatchSnapshot("regenerate posts");
-    // Les nouveaux posts arrivent avec leurs tâches de production, et seulement elles.
-    expect(json.tasksCreated).toBe(30);
-    expect(storageMock.createTask).toHaveBeenCalledTimes(30);
+    // Les nouveaux posts arrivent avec leurs ateliers, et seulement eux.
+    expect(titresAtelier()).toEqual(ATELIERS_LANCEMENT);
+    expect(json.tasksCreated).toBe(ATELIERS_LANCEMENT.length);
+    expect(storageMock.createTask).toHaveBeenCalledTimes(ATELIERS_LANCEMENT.length);
     expect(verifierProduction()).toBe(6);
     expect(storageMock.getDayAvailabilityRange).toHaveBeenCalledWith("user-1", "2026-10-12", "2026-11-11");
   });
@@ -175,7 +198,7 @@ describe("placement de campagne : caractérisation des routes", () => {
     expect(res.status).toBe(200);
     expect(storageMock.deleteCampaignContentItems).toHaveBeenCalledWith(3, [1, 6]);
     expect(storageMock.deleteAllCampaignContent).not.toHaveBeenCalled();
-    expect(json).toEqual({ deleted: 2, contentCreated: 6, tasksCreated: 30 });
+    expect(json).toEqual({ deleted: 2, contentCreated: 6, tasksCreated: ATELIERS_LANCEMENT.length });
   });
 
   it("regenerate-content : sans date de fin, disponibilités sur 365 jours", async () => {
@@ -208,17 +231,18 @@ describe("placement de campagne : caractérisation des routes", () => {
       { id: 41, title: "Publié", postFormat: "feed_image", contentType: "post", autoPost: false, campaignId: 3, projectId: 9,
         scheduledFor: new Date("2026-10-15T11:00:00"), publishedAt: new Date(), postStatus: "posted", contentStatus: "published" },
     ] as any);
+    storageMock.getPostsEntre.mockImplementation(async () => (await storageMock.getContent()) as any);
     const res = await call("redeploy");
     const json: any = await res.json();
     expect(res.status).toBe(200);
     expect(storageMock.getContent).toHaveBeenCalledWith("user-1", expect.any(Number), undefined, 3);
-    expect(tachesProduction().map((t: any) => `${t.scheduledDate} ${t.title} #${t.contentId}`)).toEqual([
-      "2026-10-13 Rédiger le texte — Mon post #40",
-      "2026-10-15 Préparer le visuel — Mon post #40",
-      "2026-10-15 Relire et valider le post — Mon post #40",
-      "2026-10-16 Publier — Mon post #40",
+    // Post du vendredi 16 (mercredi 14 indisponible) : atelier lundi 12, validation mardi 13.
+    expect(tachesProduction()).toEqual([]);
+    expect(titresAtelier()).toEqual([
+      "2026-10-12 Atelier contenu — semaine du 12 oct.",
+      "2026-10-13 Valider la semaine — 12 oct.",
     ]);
-    expect(json.tasksCreated).toBe(6);
+    expect(json.tasksCreated).toBe(4);
     expect(storageMock.checkSlotAvailability).not.toHaveBeenCalled();
   });
 
@@ -231,16 +255,20 @@ describe("placement de campagne : caractérisation des routes", () => {
     storageMock.getTasksForContents.mockResolvedValue([
       { contentId: 40, title: "Structurer le carrousel — Mon post", completed: true },
     ]);
+    storageMock.getPostsEntre.mockImplementation(async () => (await storageMock.getContent()) as any);
     const res = await call("resume");
     const json: any = await res.json();
     expect(res.status).toBe(200);
     const toutes = storageMock.createTask.mock.calls.map(([t]: any[]) => t);
-    expect(toutes.filter((t: any) => t.contentId === 40).map((t: any) => t.title.split(" — ")[0])).toEqual([
-      "Rédiger les slides", "Designer les slides", "Relire et valider le post", "Publier",
+    // Une étape déjà faite (et plus aucune d'écran à faire) : le post rejoint l'atelier de sa semaine.
+    expect(toutes.filter((t: any) => t.contentId === 40)).toEqual([]);
+    expect(titresAtelier()).toEqual([
+      "2026-10-12 Atelier contenu — semaine du 12 oct.",
+      "2026-10-13 Valider la semaine — 12 oct.",
     ]);
-    expect(toutes.filter((t: any) => !t.contentId).map((t: any) => t.title)).toEqual(["Plan review", "Wrap up"]);
+    expect(toutes.filter((t: any) => !t.taskType).map((t: any) => t.title)).toEqual(["Plan review", "Wrap up"]);
     expect(toutes.some((t: any) => /prospect|DM|Write|Publish|Script/.test(t.title))).toBe(false);
-    expect(json.tasksCreated).toBe(6);
+    expect(json.tasksCreated).toBe(4);
     expect(storageMock.createContent).not.toHaveBeenCalled();
     expect(storageMock.checkSlotAvailability).toHaveBeenCalled();
   });

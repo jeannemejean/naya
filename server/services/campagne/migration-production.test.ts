@@ -30,6 +30,9 @@ function fabrique() {
     createTask: vi.fn(async (t: any) => t),
     getContent: vi.fn(async () => [post(), post({ id: 51, postStatus: "posted" })]),
     getTasksForContents: vi.fn(async () => taches.filter((t) => t.contentId === 50)),
+    getPostsEntre: vi.fn(async () => [post(), post({ id: 51, postStatus: "posted" })]),
+    getTachesAtelier: vi.fn(async () => []),
+    updateTask: vi.fn(async () => ({})),
   };
   const deps = {
     placement,
@@ -45,10 +48,10 @@ describe("migrerProductionCampagne", () => {
     const r = await migrerProductionCampagne(deps, { userId: "u", campaignId: 7, aujourdhui: "2026-10-08" });
     expect(r.applique).toBe(false);
     expect(r.aSupprimer.map((t) => t.id)).toEqual([1, 2]);
+    // Depuis l'atelier de contenu : un atelier pour la semaine du post (vendredi 16).
     expect(r.aCreer.map((t) => `${t.scheduledDate} ${t.title} #${t.contentId}`)).toEqual([
-      "2026-10-15 Préparer le visuel — Mon post #50",
-      "2026-10-15 Relire et valider le post — Mon post #50",
-      "2026-10-16 Publier — Mon post #50",
+      "2026-10-13 Atelier contenu — semaine du 12 oct. #null",
+      "2026-10-14 Valider la semaine — 12 oct. #null",
     ]);
     expect(deps.supprimerTaches).not.toHaveBeenCalled();
     expect(placement.createTask).not.toHaveBeenCalled();
@@ -70,7 +73,7 @@ describe("migrerProductionCampagne", () => {
     const r = await migrerProductionCampagne(deps, { userId: "u", campaignId: 7, aujourdhui: "2026-10-08", appliquer: true });
     expect(deps.supprimerTaches).toHaveBeenCalledWith([1, 2]);
     expect(ordre[0]).toBe("suppr");
-    expect(placement.createTask).toHaveBeenCalledTimes(3);
-    expect(r).toMatchObject({ applique: true, supprimees: 2, creees: 3 });
+    expect(placement.createTask).toHaveBeenCalledTimes(2);
+    expect(r).toMatchObject({ applique: true, supprimees: 2, creees: 2 });
   });
 });

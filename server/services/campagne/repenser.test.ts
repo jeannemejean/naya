@@ -72,6 +72,11 @@ function fabrique(over: Partial<RepenserDeps> & { campaign?: any; fraiche?: any 
     checkSlotAvailability: vi.fn(async () => ({ available: true })),
     createTask: vi.fn(async (t: any) => { journal.push("createTask"); return t; }),
     createContent: vi.fn(async (c: any) => { journal.push("createContent"); return c; }),
+    // Atelier de contenu : les posts de la semaine sont ceux que le placement vient de créer.
+    getPostsEntre: vi.fn(async (): Promise<any[]> => (await Promise.all(placement.createContent.mock.results.map((r: any) => r.value)))),
+    getTachesAtelier: vi.fn(async () => [] as any[]),
+    getTasksForContents: vi.fn(async () => [] as any[]),
+    updateTask: vi.fn(async () => ({})),
   };
   const deps = {
     getCampaign: vi.fn(async (id: number, userId: string) =>
@@ -289,25 +294,19 @@ describe("repenserCampagne — écritures", () => {
     expect(deps.fixOverlappingTasks).toHaveBeenCalledWith("u1", "2026-10-07");
   });
 
-  it("active → chaque nouveau post a ses tâches de production, reliées et avant sa publication", async () => {
+  it("active → les nouveaux posts ont l'atelier de leur semaine, avant leur publication (plus de tâches par post)", async () => {
     const { deps, placement } = fabrique();
     let id = 500;
     placement.createContent.mockImplementation(async (c: any) => ({ id: ++id, ...c }));
     const r = await repenserCampagne(deps, "u1", 7);
-    const posts = placement.createContent.mock.calls.map(([c]: any[], i: number) => ({ id: 501 + i, jour: c.scheduledFor }));
+    const posts = placement.createContent.mock.calls.map(([c]: any[]) => c.scheduledFor as Date);
     const taches = placement.createTask.mock.calls.map(([t]: any[]) => t);
     expect(r.tachesCreees).toBe(taches.length);
-    for (const p of posts) {
-      const liees = taches.filter((t: any) => t.contentId === p.id);
-      expect(liees.map((t: any) => t.title.split(" — ")[0])).toEqual([
-        "Rédiger le texte", "Préparer le visuel", "Relire et valider le post", "Publier",
-      ]);
-      const jourPost = `${p.jour.getFullYear()}-${String(p.jour.getMonth() + 1).padStart(2, "0")}-${String(p.jour.getDate()).padStart(2, "0")}`;
-      for (const t of liees) {
-        expect(t.scheduledDate >= "2026-10-07" && t.scheduledDate <= jourPost).toBe(true);
-        expect(t).toMatchObject({ campaignId: 7, projectId: 3 });
-      }
-    }
+    expect(taches.some((t: any) => t.contentId != null)).toBe(false);
+    const ateliers = taches.filter((t: any) => t.taskType === "atelier_contenu");
+    expect(ateliers.length).toBeGreaterThan(0);
+    const premier = posts.map((d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`).sort()[0];
+    expect(ateliers[0].scheduledDate >= "2026-10-07" && ateliers[0].scheduledDate <= premier).toBe(true);
     // Les tâches générées hors contenu restent, une fois chacune.
     expect(taches.filter((t: any) => t.title === "Plan review")).toHaveLength(1);
   });

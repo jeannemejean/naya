@@ -19,7 +19,7 @@ export interface MigrationProductionDeps {
 export interface ResultatMigration {
   applique: boolean;
   aSupprimer: Array<{ id: number; title: string; scheduledDate: string | null }>;
-  aCreer: Array<{ title: string; scheduledDate: string; scheduledTime: string; contentId: number }>;
+  aCreer: Array<{ title: string; scheduledDate: string; scheduledTime: string; contentId: number | null }>;
   supprimees: number;
   creees: number;
 }
@@ -55,8 +55,11 @@ export async function migrerProductionCampagne(
     checkSlotAvailability: (u, d, t, m) => p.checkSlotAvailability!(u, d, t, m),
     getContent: (u, l, pr, c) => p.getContent!(u, l, pr, c),
     getTasksForContents: (u, ids) => p.getTasksForContents!(u, ids),
+    getPostsEntre: (u, a, b) => p.getPostsEntre!(u, a, b),
+    getTachesAtelier: (u, s) => p.getTachesAtelier!(u, s),
+    updateTask: async (id, patch) => (appliquer ? p.updateTask!(id, patch) : patch),
     createTask: async (t: any) => {
-      aCreer.push({ title: t.title, scheduledDate: t.scheduledDate, scheduledTime: t.scheduledTime, contentId: t.contentId });
+      aCreer.push({ title: t.title, scheduledDate: t.scheduledDate, scheduledTime: t.scheduledTime, contentId: t.contentId ?? null });
       return appliquer ? p.createTask!(t) : t;
     },
   };

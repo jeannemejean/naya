@@ -10,6 +10,7 @@ import {
   etapesProductionPourPost, jourDeProduction, jourDuPost, postAProduire,
   estTacheContenuGeneree, estTacheProspection, mapFormatToPostFormat,
 } from "./production";
+import { placerAteliers } from "../atelier/placement";
 
 export const DAY_ABBRS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 export const DEFAULT_WORK_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
@@ -99,6 +100,11 @@ export interface PlacementDeps {
   getContent?(userId: string, limit?: number, projectId?: number, campaignId?: number): Promise<any[]>;
   /** Tâches reliées à ces posts (`tasks.content_id`), faites ou non. */
   getTasksForContents?(userId: string, contentIds: number[]): Promise<any[]>;
+  /** Posts de l'utilisatrice dont la publication tombe dans [debut, fin[ (atelier de la semaine). */
+  getPostsEntre?(userId: string, debut: Date, fin: Date): Promise<any[]>;
+  /** Tâches d'atelier (non archivées) de la semaine qui commence ce lundi. */
+  getTachesAtelier?(userId: string, semaine: string): Promise<any[]>;
+  updateTask?(id: number, patch: any): Promise<any>;
 }
 
 export interface CampagnePlacable {
@@ -116,13 +122,13 @@ export interface CampagnePlacable {
  * repensées le 7 oct. 2026 (« Cannot read properties of undefined (reading
  * 'checkSlotAvailability') »).
  */
-function requis<K extends keyof PlacementDeps>(deps: PlacementDeps, nom: K): NonNullable<PlacementDeps[K]> {
+export function requis<K extends keyof PlacementDeps>(deps: PlacementDeps, nom: K): NonNullable<PlacementDeps[K]> {
   const f = deps[nom];
   if (typeof f !== "function") throw new Error(`PlacementDeps.${String(nom)} manquant`);
   return (f as Function).bind(deps) as NonNullable<PlacementDeps[K]>;
 }
 
-async function joursTravailles(deps: PlacementDeps, userId: string, debutStr: string, finStr: string) {
+export async function joursTravailles(deps: PlacementDeps, userId: string, debutStr: string, finStr: string) {
   const prefs = await deps.getUserPreferences(userId);
   const workDaySet = parseWorkDays(prefs?.workDays);
   const availability = await deps.getDayAvailabilityRange(userId, debutStr, finStr);
@@ -141,7 +147,7 @@ async function joursTravailles(deps: PlacementDeps, userId: string, debutStr: st
  * Grille des créneaux en mémoire : prochain créneau libre par jour, initialisé depuis les
  * tâches existantes, heures de travail et pause déjeuner de l'utilisatrice.
  */
-function grilleCreneaux(prefs: any, existingTasks: any[]) {
+export function grilleCreneaux(prefs: any, existingTasks: any[]) {
   const DAY_START = hhmmToMin(prefs?.workDayStart || '09:00');
   const DAY_END = hhmmToMin(prefs?.workDayEnd || '18:00');
   const LUNCH_START = hhmmToMin(prefs?.lunchBreakStart || '12:00');
@@ -184,10 +190,10 @@ function grilleCreneaux(prefs: any, existingTasks: any[]) {
     },
   };
 }
-type Grille = ReturnType<typeof grilleCreneaux>;
+export type Grille = ReturnType<typeof grilleCreneaux>;
 
 /** Heure attribuée en mémoire, revérifiée en base si demandé (lancements concurrents). */
-async function heureDeCreneau(
+export async function heureDeCreneau(
   deps: PlacementDeps, grille: Grille, userId: string, dateStr: string, duree: number, controleCreneaux: boolean,
 ): Promise<string> {
   const inMemoryTime = grille.attribuer(dateStr, duree);
@@ -336,98 +342,20 @@ const plusJours = (ds: string, n: number) => campaignDateToStr(campaignAddDays(n
 const heureDuPost = (d: Date | string) => minToHHMM(localWallClock('Europe/Paris', new Date(d)).minuteOfDay);
 
 /**
- * Crée les tâches de production de chaque post à venir et non publié, reliées au post
- * (`contentId`), planifiées À REBOURS depuis sa publication (voir `etapesProductionPourPost`).
- *
- * Elles ont une échéance : le plafond de 3 tâches par jour ne s'applique pas, une étape
- * n'est jamais placée après le post ni dans le passé, et n'est jamais abandonnée. Un jour
- * sans place (heures de travail) fait reculer l'étape vers un jour travaillé plus tôt qui en
- * a, sans passer avant l'étape précédente du même post ; sinon elle reste sur son jour
- * (le re-tassage `fixOverlappingTasks` des routes s'en charge).
- *
- * `existantes` : tâches déjà reliées à ces posts ; une étape dont le libellé y figure
- * (faite ou non) n'est pas recréée — c'est ce qui rend le placement idempotent.
+ * Production des posts : depuis l'atelier de contenu (spec 2026-10-14), UNE session par
+ * semaine (« Atelier contenu » + « Valider la semaine ») au lieu de 3 à 5 tâches par post ;
+ * seules les étapes vidéo hors écran (tourner, monter) restent des tâches du post. Voir
+ * services/atelier/placement.ts. Idempotent. `existantes` n'est plus utilisé (les tâches liées
+ * sont relues), il reste pour la compatibilité des appelants.
  */
 export async function placerTachesProductionPosts(
   deps: PlacementDeps,
-  { userId, posts, aujourdhui = aujourdhuiLocal(), controleCreneaux = true, existantes = [] }: {
+  { userId, posts, aujourdhui = aujourdhuiLocal(), controleCreneaux = true }: {
     userId: string; posts: PostPlacable[]; aujourdhui?: string; controleCreneaux?: boolean;
     existantes?: Array<{ contentId?: number | null; title?: string | null }>;
   },
 ): Promise<{ creees: number }> {
-  const aProduire = posts
-    .filter((p) => typeof p?.id === 'number' && postAProduire(p, aujourdhui))
-    .sort((a, b) => new Date(a.scheduledFor!).getTime() - new Date(b.scheduledFor!).getTime());
-  if (aProduire.length === 0) return { creees: 0 };
-
-  const dejaLa = new Map<number, string[]>();
-  for (const t of existantes) {
-    if (typeof t.contentId !== 'number') continue;
-    dejaLa.set(t.contentId, [...(dejaLa.get(t.contentId) || []), t.title || '']);
-  }
-
-  const dernierJour = jourDuPost(aProduire[aProduire.length - 1].scheduledFor!);
-  const existingTasks = await requis(deps, 'getTasksInRange')(userId, aujourdhui, dernierJour);
-  const { prefs, isWorkDay } = await joursTravailles(deps, userId, aujourdhui, dernierJour);
-  const grille = grilleCreneaux(prefs, existingTasks);
-
-  const aCreer = (post: PostPlacable, cle: string) =>
-    !(dejaLa.get(post.id) || []).some((t) => t.startsWith(`${cle} — `));
-
-  // Les publications ont une heure fixe (celle du post) : elles réservent leur créneau
-  // avant que les étapes de préparation ne remplissent les journées.
-  for (const post of aProduire) {
-    const pub = etapesProductionPourPost(post).find((e) => e.publication);
-    if (pub && aCreer(post, pub.cle)) grille.occuper(jourDuPost(post.scheduledFor!), heureDuPost(post.scheduledFor!), pub.duree);
-  }
-
-  let creees = 0;
-  for (const post of aProduire) {
-    const jourPost = jourDuPost(post.scheduledFor!);
-    let plancher = aujourdhui;
-    for (const etape of etapesProductionPourPost(post)) {
-      let jour: string;
-      let heure: string;
-      if (etape.publication) {
-        jour = jourPost;
-        heure = heureDuPost(post.scheduledFor!);
-      } else {
-        jour = jourDeProduction({
-          cible: plusJours(jourPost, -etape.joursAvant), jourPost, aujourdhui, estTravaille: isWorkDay, plancher,
-        });
-        if (!grille.aDeLaPlace(jour, etape.duree)) {
-          for (let d = plusJours(jour, -1); d >= plancher; d = plusJours(d, -1)) {
-            if (isWorkDay(d) && grille.aDeLaPlace(d, etape.duree)) { jour = d; break; }
-          }
-        }
-        heure = '';
-      }
-      plancher = jour;
-      if (!aCreer(post, etape.cle)) continue;
-      if (!etape.publication) heure = await heureDeCreneau(deps, grille, userId, jour, etape.duree, controleCreneaux);
-
-      await requis(deps, 'createTask')({
-        userId,
-        projectId: post.projectId ?? undefined,
-        campaignId: post.campaignId ?? undefined,
-        contentId: post.id,
-        title: etape.titre,
-        description: etape.description,
-        type: 'content',
-        category: 'engagement',
-        priority: 2,
-        estimatedDuration: etape.duree,
-        taskEnergyType: etape.energie,
-        source: 'campaign',
-        scheduledDate: jour,
-        scheduledTime: heure,
-        scheduledEndTime: minToHHMM(hhmmToMin(heure) + etape.duree),
-        completed: false,
-      });
-      creees++;
-    }
-  }
-  return { creees };
+  return placerAteliers(deps, { userId, posts, aujourdhui, controleCreneaux });
 }
 
 /**

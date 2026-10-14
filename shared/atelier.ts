@@ -158,3 +158,10 @@ export function manquesPourValider({ genre, body, scheduledFor, medias, maintena
   if (genre === "video" && !medias.includes("video")) manques.push("video");
   return manques;
 }
+
+/** Échéance d'une tâche d'atelier (le re-tassage ne la repousse pas au-delà), sinon null. */
+export function echeanceAtelier(t: { taskType?: string | null; actionData?: unknown }): string | null {
+  if (t.taskType !== TYPE_ATELIER && t.taskType !== TYPE_VALIDATION) return null;
+  const e = (t.actionData as { echeance?: unknown } | null)?.echeance;
+  return typeof e === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e) ? e : null;
+}

@@ -191,6 +191,7 @@ import { memesChiffres } from "./services/mesure/calculs";
 import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
+import { TYPE_ATELIER, TYPE_VALIDATION, echeanceAtelier } from "@shared/atelier";
 import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, majEtape, postAProduire, rangEtape } from "./services/campagne/production";
 import { clesRetirees } from "./services/fondations/sections";
 import { chevauchements, heurePublicationLibre, peutDeplacerPublication } from "./services/publication-libre";
@@ -409,6 +410,10 @@ export interface IStorage {
   updateContent(id: number, updates: Partial<Content>): Promise<Content>;
   deleteContent(id: number): Promise<void>;
   getTasksForContents(userId: string, contentIds: number[]): Promise<Task[]>;
+  /** Posts dont la publication tombe dans [debut, fin[ (atelier de contenu). */
+  getPostsEntre(userId: string, debut: Date, fin: Date): Promise<Content[]>;
+  /** Tâches d'atelier non archivées de la semaine qui commence ce lundi (YYYY-MM-DD). */
+  getTachesAtelier(userId: string, semaine: string): Promise<Task[]>;
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
   deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number>;
@@ -1540,6 +1545,21 @@ export class DatabaseStorage implements IStorage {
     if (contentIds.length === 0) return [];
     return await db.select().from(tasks)
       .where(and(eq(tasks.userId, userId), inArray(tasks.contentId, contentIds)));
+  }
+
+  async getPostsEntre(userId: string, debut: Date, fin: Date): Promise<Content[]> {
+    return await db.select().from(content).where(and(
+      eq(content.userId, userId), gte(content.scheduledFor, debut), lt(content.scheduledFor, fin),
+    )).orderBy(content.scheduledFor);
+  }
+
+  async getTachesAtelier(userId: string, semaine: string): Promise<Task[]> {
+    return await db.select().from(tasks).where(and(
+      eq(tasks.userId, userId),
+      isNull(tasks.archivedAt),
+      inArray(tasks.taskType, [TYPE_ATELIER, TYPE_VALIDATION]),
+      sql`${tasks.actionData}->>'semaine' = ${semaine}`,
+    )).orderBy(tasks.id);
   }
 
   // ── Auto-publication des posts programmés ────────────────────────────────
@@ -3680,7 +3700,7 @@ export class DatabaseStorage implements IStorage {
         durationMin: t.estimatedDuration || 30,
         ...(hasTime ? {} : { unplaced: true as const }),
         ...(hasTime && t.schedulingMode === 'fixed' ? { anchored: true as const } : {}),
-        echeance: t.contentId != null ? echeanceTache(t.title, jourParPost.get(t.contentId)) : null,
+        echeance: t.contentId != null ? echeanceTache(t.title, jourParPost.get(t.contentId)) : echeanceAtelier(t),
       });
     }
 

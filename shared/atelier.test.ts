@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   lundiDe, plusJours, decouperAtelier, planAtelier, etatPost, manquesPourValider, genreDuPost,
-  DUREE_ATELIER, libelleSemaine, dureeValidation,
+  DUREE_ATELIER, libelleSemaine, dureeValidation, echeanceAtelier,
 } from "./atelier";
 
 // Lundi 19 oct. 2026 ; semaine de travail du lundi au vendredi.
@@ -141,5 +141,15 @@ describe("manquesPourValider", () => {
   it("une vidéo sans vidéo, même avec une image", () => {
     expect(manquesPourValider({ ...base, genre: "video", medias: ["image"] })).toEqual(["video"]);
     expect(manquesPourValider({ ...base, genre: "video", medias: ["video"] })).toEqual([]);
+  });
+});
+
+describe("echeanceAtelier", () => {
+  it("l'échéance d'une tâche d'atelier, rien pour une autre tâche", () => {
+    expect(echeanceAtelier({ taskType: "atelier_contenu", actionData: { echeance: "2026-10-21" } })).toBe("2026-10-21");
+    expect(echeanceAtelier({ taskType: "atelier_validation", actionData: { echeance: "2026-10-21" } })).toBe("2026-10-21");
+    expect(echeanceAtelier({ taskType: "generic", actionData: { echeance: "2026-10-21" } })).toBeNull();
+    expect(echeanceAtelier({ taskType: "atelier_contenu", actionData: { echeance: "n'importe quoi" } })).toBeNull();
+    expect(echeanceAtelier({ taskType: "atelier_contenu", actionData: null })).toBeNull();
   });
 });
