@@ -16,6 +16,7 @@ export interface PostAtelier {
   projectId: number | null;
   projet: string | null;
   campaignId: number | null;
+  tendanceProjetId: number | null;
   etat: EtatPost;
   programme: boolean;
   erreurPublication: string | null;

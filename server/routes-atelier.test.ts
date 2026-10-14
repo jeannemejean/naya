@@ -59,6 +59,14 @@ describe("routes de l'atelier", () => {
     expect(json.posts[0]).toMatchObject({ etat: "brouillon", genre: "texte", compteConnecte: false });
   });
 
+  it("un post issu d'une tendance expose tendanceProjetId (le client le fait rédiger à l'ouverture)", async () => {
+    h.storage.getPostsEntre.mockResolvedValueOnce([
+      { id: 3, title: "t", body: "Format : …", platform: "instagram", postFormat: "carousel", scheduledFor: new Date("2026-10-21T08:00:00Z"), contentStatus: "idea", campaignId: null, tendanceProjetId: 12 },
+    ]);
+    const json: any = await (await req("GET", "/api/atelier/2026-10-19")).json();
+    expect(json.posts[0]).toMatchObject({ id: 3, campaignId: null, tendanceProjetId: 12 });
+  });
+
   it("le post d'un autre compte est introuvable partout", async () => {
     h.storage.getContentById.mockResolvedValue(undefined);
     expect((await req("PATCH", "/api/atelier/posts/9", { body: "x" })).status).toBe(404);

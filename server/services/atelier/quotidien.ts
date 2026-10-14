@@ -5,7 +5,7 @@
 //   3. pré-rédaction — les posts des ateliers d'aujourd'hui et du prochain jour travaillé sont
 //      rédigés d'avance, pour que l'atelier s'ouvre sur des brouillons.
 // Spec : docs/superpowers/specs/2026-10-14-atelier-contenu-design.md, partie 4.
-import { etatPost, lundiDe, plusJours, TYPE_ATELIER } from "@shared/atelier";
+import { doitRedigerAutomatiquement, etatPost, lundiDe, plusJours, TYPE_ATELIER } from "@shared/atelier";
 import { estEtapeEcran, jourDuPost, postAProduire } from "../campagne/production";
 import { jourHeureParis } from "./validation";
 import type { ResultatRedaction } from "./redaction";
@@ -96,7 +96,7 @@ export async function preRediger(deps: DepsQuotidien, userId: string, aujourdhui
   let rediges = 0;
   for (const s of semaines) {
     const posts = (await deps.postsEntre(userId, debutJour(plusJours(s, -1)), debutJour(plusJours(s, 8))))
-      .filter((p) => p.campaignId != null && p.scheduledFor && lundiDe(jourDuPost(p.scheduledFor)) === s && etatPost(p) === "a_rediger")
+      .filter((p) => doitRedigerAutomatiquement(p) && p.scheduledFor && lundiDe(jourDuPost(p.scheduledFor)) === s && etatPost(p) === "a_rediger")
       .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
     for (const p of posts) {
       const r = await deps.rediger(userId, p.id);

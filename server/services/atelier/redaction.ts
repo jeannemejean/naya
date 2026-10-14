@@ -5,7 +5,7 @@
 // consigne de côté (`content.consigne`, posée seulement si elle est vide). Deux onglets, le
 // passage en arrière-plan et l'ouverture de l'atelier peuvent demander la même chose : un
 // seul gagne le verrou, les autres ne dépensent rien. En cas d'échec, le verrou est rendu.
-import { etatPost } from "@shared/atelier";
+import { doitRedigerAutomatiquement, etatPost } from "@shared/atelier";
 import { postModifiable } from "@shared/livrables";
 import { extraireTendance } from "@shared/profils-veille";
 
@@ -136,7 +136,7 @@ export async function redigerPost(deps: DepsRedaction, userId: string, id: numbe
   const post = await deps.lirePost(id, userId);
   if (!post) return { statut: "introuvable" };
   // Un post manuel est le texte de l'utilisatrice : Naya ne l'écrase jamais d'elle-même.
-  if ((post.campaignId == null && post.tendanceProjetId == null) || !modifiable(post) || etatPost(post) !== "a_rediger") return { statut: "deja" };
+  if (!doitRedigerAutomatiquement(post) || !modifiable(post) || etatPost(post) !== "a_rediger") return { statut: "deja" };
   // Écrit à la main dans l'ancien parcours (« Rédiger le texte » faite) : jamais réécrit par Naya.
   if (await deps.etapeEcritureFaite(userId, id)) {
     await deps.marquerBrouillon(id, userId);

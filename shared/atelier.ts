@@ -128,6 +128,11 @@ export function planAtelier({ joursPosts, durees, aujourdhui, estTravaille }: {
 
 // ─── État d'un post et ce qui manque pour le valider ────────────────────────────────────
 
+/** Naya rédige d'elle-même les posts de campagne et ceux issus d'une tendance ; jamais un post manuel. */
+export function doitRedigerAutomatiquement(p: { campaignId?: number | null; tendanceProjetId?: number | null }): boolean {
+  return p.campaignId != null || p.tendanceProjetId != null;
+}
+
 export type EtatPost = "publie" | "valide" | "brouillon" | "a_rediger";
 
 export function etatPost(p: {

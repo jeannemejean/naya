@@ -113,4 +113,12 @@ describe("preRediger", () => {
     expect(rediger.mock.calls.map((c: any[]) => c[1])).toEqual([1, 3]);
     expect(deps.postsEntre).toHaveBeenCalledTimes(1);
   });
+
+  it("rédige aussi d'avance un post issu d'une tendance (hors campagne), jamais un post manuel", async () => {
+    const atelier = { id: 7, taskType: "atelier_contenu", completed: false, scheduledDate: "2026-10-20", actionData: { semaine: "2026-10-26" } };
+    const posts = [post(1, "2026-10-27", { campaignId: null, tendanceProjetId: 4 }), post(2, "2026-10-28", { campaignId: null, tendanceProjetId: null })];
+    const deps = fabrique(posts, [], { tachesAtelier: vi.fn(async (_u: string, s: string) => (s === "2026-10-26" ? [atelier] : [])) });
+    expect(await preRediger(deps, "u", "2026-10-19", () => true)).toBe(1);
+    expect(deps.rediger.mock.calls.map((c: any[]) => c[1])).toEqual([1]);
+  });
 });

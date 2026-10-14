@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   lundiDe, plusJours, decouperAtelier, planAtelier, etatPost, manquesPourValider, genreDuPost,
-  DUREE_ATELIER, libelleSemaine, dureeValidation, echeanceAtelier,
+  DUREE_ATELIER, libelleSemaine, dureeValidation, echeanceAtelier, doitRedigerAutomatiquement,
 } from "./atelier";
 
 // Lundi 19 oct. 2026 ; semaine de travail du lundi au vendredi.
@@ -186,5 +186,14 @@ describe("genreDuMedia", () => {
     expect(genreDuMedia({ mimeType: "application/octet-stream", url: "https://cdn/uploads/u/videos/a" })).toBe("video");
     expect(genreDuMedia({ mimeType: "image/png", url: "https://cdn/uploads/u/images/a.png" })).toBe("image");
     expect(genreDuMedia({ mimeType: null, url: "https://cdn/uploads/u/images/a" })).toBe("image");
+  });
+});
+
+describe("doitRedigerAutomatiquement", () => {
+  it("post de campagne ou issu d'une tendance : Naya le rédige ; post manuel : jamais", () => {
+    expect(doitRedigerAutomatiquement({ campaignId: 3, tendanceProjetId: null })).toBe(true);
+    expect(doitRedigerAutomatiquement({ campaignId: null, tendanceProjetId: 8 })).toBe(true);
+    expect(doitRedigerAutomatiquement({ campaignId: null, tendanceProjetId: null })).toBe(false);
+    expect(doitRedigerAutomatiquement({})).toBe(false);
   });
 });

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { plusJours } from "@shared/atelier";
+import { doitRedigerAutomatiquement, plusJours } from "@shared/atelier";
 import { cleAtelier, rediger, valider, type DonneesAtelier } from "./api";
 import { aValider, aujourdhuiParis, postSuivant, progression, semaineDepuisRecherche } from "./navigation";
 import ListePosts from "./ListePosts";
@@ -44,7 +44,7 @@ export default function AtelierPage({ onSearchClick }: { onSearchClick?: () => v
 
   // Rédaction par Naya de ce qui ne l'est pas encore (une seule demande par post et par ouverture).
   useEffect(() => {
-    const aFaire = posts.filter((p) => p.etat === "a_rediger" && p.campaignId != null && !demandes.current.has(p.id));
+    const aFaire = posts.filter((p) => p.etat === "a_rediger" && doitRedigerAutomatiquement(p) && !demandes.current.has(p.id));
     if (!aFaire.length) return;
     aFaire.forEach((p) => demandes.current.add(p.id));
     let arret = false;

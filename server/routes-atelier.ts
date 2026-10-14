@@ -42,6 +42,7 @@ async function vuePost(userId: string, p: any, noms: Map<number, string>) {
     projectId: p.projectId ?? null,
     projet: p.projectId != null ? noms.get(p.projectId) ?? null : null,
     campaignId: p.campaignId ?? null,
+    tendanceProjetId: p.tendanceProjetId ?? null,
     etat,
     // Naya publiera seule ce post (programmé) ; sinon, validé, il attend une publication à la main.
     programme: p.autoPost === true && etat === "valide",
