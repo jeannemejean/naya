@@ -49,6 +49,7 @@ const Fondations = lazy(() => import("@/pages/fondations"));
 const Mesure = lazy(() => import("@/pages/mesure"));
 const Planning = lazy(() => import("@/pages/planning"));
 const Campaigns = lazy(() => import("@/pages/campaigns"));
+const Atelier = lazy(() => import("@/pages/atelier/AtelierPage"));
 const CampaignWorkspace = lazy(() => import("@/pages/outreach/CampaignWorkspace"));
 const ProjectPage = lazy(() => import("@/pages/project/ProjectPage"));
 
@@ -140,6 +141,9 @@ function Router() {
  </Route>
  <Route path="/campaigns">
  {() => <Campaigns onSearchClick={openSearch} />}
+ </Route>
+ <Route path="/atelier">
+ {() => <Atelier onSearchClick={openSearch} />}
  </Route>
  </>
  )}

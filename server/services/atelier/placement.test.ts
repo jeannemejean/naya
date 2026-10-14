@@ -37,11 +37,11 @@ describe("placerTachesProductionPosts — l'atelier de la semaine", () => {
     const [atelier, validation] = creees(deps);
     expect(atelier).toMatchObject({
       userId: "u", type: "content", taskType: "atelier_contenu", completed: false, canBeFragmented: false,
-      actionData: { semaine: "2026-10-19", partie: 1, parties: 1, echeance: "2026-10-21" },
+      actionData: { semaine: "2026-10-19", partie: 1, parties: 1, echeance: "2026-10-21", lien: "/atelier?semaine=2026-10-19" },
     });
     expect(atelier.contentId).toBeUndefined();
     expect(atelier.scheduledTime).toBe("09:00");
-    expect(validation).toMatchObject({ taskType: "atelier_validation", actionData: { semaine: "2026-10-19", echeance: "2026-10-21" } });
+    expect(validation).toMatchObject({ taskType: "atelier_validation", actionData: { semaine: "2026-10-19", echeance: "2026-10-21", lien: "/atelier?semaine=2026-10-19" } });
     expect(r.creees).toBe(2);
     expect(deps.getTachesAtelier).toHaveBeenCalledWith("u", "2026-10-19");
   });
@@ -67,8 +67,8 @@ describe("placerTachesProductionPosts — l'atelier de la semaine", () => {
 
   it("idempotent : un atelier déjà posé et à la bonne durée n'est ni recréé ni modifié", async () => {
     const posts = [post(1, "2026-10-22")];
-    const existant = { id: 7, taskType: "atelier_contenu", completed: false, estimatedDuration: 15, title: "Atelier contenu — semaine du 19 oct.", scheduledTime: "09:00", actionData: { semaine: "2026-10-19", partie: 1, parties: 1, echeance: "2026-10-21" } };
-    const validation = { id: 8, taskType: "atelier_validation", completed: false, estimatedDuration: 7, title: "Valider la semaine — 19 oct.", actionData: { semaine: "2026-10-19", echeance: "2026-10-21" } };
+    const existant = { id: 7, taskType: "atelier_contenu", completed: false, estimatedDuration: 15, title: "Atelier contenu — semaine du 19 oct.", scheduledTime: "09:00", actionData: { semaine: "2026-10-19", partie: 1, parties: 1, echeance: "2026-10-21", lien: "/atelier?semaine=2026-10-19" } };
+    const validation = { id: 8, taskType: "atelier_validation", completed: false, estimatedDuration: 7, title: "Valider la semaine — 19 oct.", actionData: { semaine: "2026-10-19", echeance: "2026-10-21", lien: "/atelier?semaine=2026-10-19" } };
     const deps = fabrique(posts, { getTachesAtelier: vi.fn(async () => [existant, validation]) });
     const r = await placerTachesProductionPosts(deps, { userId: "u", posts, aujourdhui: "2026-10-14" });
     expect(deps.createTask).not.toHaveBeenCalled();
@@ -93,7 +93,7 @@ describe("placerTachesProductionPosts — l'atelier de la semaine", () => {
     const deps = fabrique(posts, { getTachesAtelier: vi.fn(async () => [fait]) });
     await placerTachesProductionPosts(deps, { userId: "u", posts: [posts[1]], aujourdhui: "2026-10-20" });
     expect(resume(deps)).toEqual(["2026-10-20 15 Atelier contenu — semaine du 19 oct. (rattrapage)"]);
-    expect(creees(deps)[0].actionData).toMatchObject({ semaine: "2026-10-19", rattrapage: true, echeance: "2026-10-22" });
+    expect(creees(deps)[0].actionData).toMatchObject({ semaine: "2026-10-19", rattrapage: true, echeance: "2026-10-22", lien: "/atelier?semaine=2026-10-19" });
   });
 
   it("atelier déjà fait : un post non validé mais déjà là avant ne relance rien", async () => {

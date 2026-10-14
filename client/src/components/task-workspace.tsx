@@ -12,6 +12,7 @@ import { Link } from "wouter";
 import { lienInterneDeTache } from "@/lib/lien-tache";
 import { useTranslation } from "react-i18next";
 import LivrablesSection from "@/components/livrables/LivrablesSection";
+import { TacheAtelier, ValiderVideo, estTacheAtelier } from "@/components/atelier/TacheAtelier";
 import type { Task, Project, TaskWorkspaceEntry } from "@shared/schema";
 
 interface TaskWorkspaceProps {
@@ -253,7 +254,8 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </SheetHeader>
 
  <div className="flex-1 flex flex-col overflow-hidden">
- {lienInterneDeTache(task as any) && (
+ {task && estTacheAtelier(task as any) && <TacheAtelier task={task as any} onClose={onClose} />}
+ {!estTacheAtelier(task as any) && lienInterneDeTache(task as any) && (
  <div className="px-5 pt-3">
  <Link
  href={lienInterneDeTache(task as any)!}
@@ -293,7 +295,8 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  </div>
  )}
- {task && (
+ {task && <ValiderVideo task={task as any} />}
+ {task && !estTacheAtelier(task as any) && (
  <div id="livrables-section" className="flex-1 min-h-0 overflow-y-auto px-5 py-3">
  <LivrablesSection taskId={task.id} focus={focusLivrables} onFaitHorsNaya={onFaitHorsNaya} />
  </div>

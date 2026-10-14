@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useLocation } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { fetchJson } from '@/lib/fetchJson';
 import { tenterUneFois } from '@/lib/one-shot-guard';
 import { mediasDuPost, estVideo, type MediaDuPost } from "./content-calendar-medias";
@@ -16,7 +16,7 @@ import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { fr } from 'date-fns/locale/fr';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -1506,6 +1506,9 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <p className="text-sm text-muted-foreground mt-1">{t('contentCalendar.subtitle')}</p>
  </div>
  <div className="flex items-center gap-2">
+ <Button asChild variant="outline" className="flex items-center gap-2">
+ <Link href="/atelier"><PenLine className="h-4 w-4" />{t('atelier.lienCalendrier')}</Link>
+ </Button>
  <Button variant="default" className="flex items-center gap-2" onClick={() => setShowComposer(true)}>
  <Sparkles className="h-4 w-4" />
  Composer multi-réseaux

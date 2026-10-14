@@ -24,6 +24,7 @@ type Tache = Record<string, any>;
 const titreAtelier = (lundi: string, partie: number, parties: number) =>
   `Atelier contenu — semaine du ${libelleSemaine(lundi)}${parties > 1 ? ` (${partie}/${parties})` : ""}`;
 const titreRattrapage = (lundi: string) => `Atelier contenu — semaine du ${libelleSemaine(lundi)} (rattrapage)`;
+export const lienAtelier = (lundi: string) => `/atelier?semaine=${lundi}`;
 const titreValidation = (lundi: string) => `Valider la semaine — ${libelleSemaine(lundi)}`;
 
 const DESCRIPTION_ATELIER =
@@ -75,7 +76,8 @@ async function creer(ctx: Contexte, t: { titre: string; description: string; tas
     canBeFragmented: false,
     source: "campaign",
     taskType: t.taskType,
-    actionData: t.actionData,
+    // `lien` : la tâche ouvre l'atelier de sa semaine (voir client/src/lib/lien-tache.ts).
+    actionData: { ...t.actionData, lien: lienAtelier(String(t.actionData.semaine)) },
     scheduledDate: jour,
     scheduledTime: heure,
     scheduledEndTime: minToHHMM(hhmmToMin(heure) + t.duree),
@@ -92,6 +94,7 @@ async function ajuster(ctx: Contexte, t: Tache, voulu: { duree: number; titre?: 
   }
   if (voulu.titre && t.title !== voulu.titre) patch.title = voulu.titre;
   const ad = { ...(t.actionData ?? {}), ...voulu.actionData };
+  if (typeof ad.semaine === "string") ad.lien = lienAtelier(ad.semaine);
   if (JSON.stringify(ad) !== JSON.stringify(t.actionData ?? {})) patch.actionData = ad;
   if (Object.keys(patch).length === 0) return false;
   await requis(ctx.deps, "updateTask")(t.id, patch);
