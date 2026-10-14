@@ -4,6 +4,8 @@ import { db } from "../../db";
 import { content, tasks } from "@shared/schema";
 import { storage } from "../../storage";
 import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
+import { tendancesPourLeContenu } from "../profils-veille/tri";
+import { stockageProfils } from "../profils-veille/stockage";
 import { gardeDepense } from "../routines/garde";
 import { compteDePublication } from "../connexions/comptes";
 import type { GenreMedia } from "@shared/programmation";
@@ -72,9 +74,14 @@ export const depsRedaction: DepsRedaction = {
       .where(and(eq(content.id, id), eq(content.userId, userId), sql`coalesce(${content.contentStatus}, '') <> 'draft'`));
   },
   garde: gardeDepense,
-  ia: (userId, projectId, prompt) => callClaudeWithContext({
+  ia: async (userId, projectId, prompt, opts) => callClaudeWithContext({
     userId, projectId, userMessage: prompt, model: CLAUDE_MODELS.smart, max_tokens: 1500,
+    additionalSystemContext: await tendancesPourLeContenu(userId, projectId, opts?.plateformes ?? []),
   }),
+  async lierTendance(id, userId, tendanceProjetId) {
+    const t = await stockageProfils.tendanceProjet(userId, tendanceProjetId);
+    if (t) await db.update(content).set({ tendanceId: t.tendanceId }).where(and(eq(content.id, id), eq(content.userId, userId)));
+  },
 };
 
 export const depsValidation: DepsValidation = {

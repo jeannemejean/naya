@@ -7,9 +7,10 @@
 // seul gagne le verrou, les autres ne dépensent rien. En cas d'échec, le verrou est rendu.
 import { etatPost } from "@shared/atelier";
 import { postModifiable } from "@shared/livrables";
+import { extraireTendance } from "@shared/profils-veille";
 
 export interface PostARediger {
-  id: number; projectId?: number | null; campaignId?: number | null;
+  id: number; projectId?: number | null; campaignId?: number | null; tendanceProjetId?: number | null;
   title?: string | null; body?: string | null; consigne?: string | null;
   platform?: string | null; postFormat?: string | null; contentType?: string | null;
   pillar?: string | null; goal?: string | null;
@@ -34,7 +35,9 @@ export interface DepsRedaction {
   liberer(id: number, userId: string): Promise<void>;
   /** null : la dépense est permise. */
   garde(userId: string): Promise<unknown | null>;
-  ia(userId: string, projectId: number | null, prompt: string): Promise<string>;
+  ia(userId: string, projectId: number | null, prompt: string, opts?: { plateformes: string[] }): Promise<string>;
+  /** Relie le post à la tendance dont il s'inspire (tendances_projet → profil_tendances). */
+  lierTendance(id: number, userId: string, tendanceProjetId: number): Promise<void>;
 }
 
 export type ResultatRedaction =
@@ -87,6 +90,7 @@ export function consigneRedaction(post: PostARediger, idee: string, actuel: stri
     "- Une accroche forte en première ligne ; des paragraphes courts ; adapté aux usages du réseau.",
     "- N'invente aucun chiffre, aucun client, aucun témoignage, aucune citation : s'il en faut un, écris [à compléter].",
     "- Écris dans la langue de l'idée prévue.",
+    "- Si tu t'inspires d'un format de la liste « Ce qui marche en ce moment dans le secteur », termine par une ligne seule : TENDANCE: <numéro entre crochets>. Sinon, n'ajoute rien.",
     "- Réponds uniquement avec le texte demandé, prêt à publier : pas de titre, pas de commentaire, pas de guillemets.",
   );
   return lignes.join("\n");
@@ -106,7 +110,8 @@ async function ecrire(
   { liberer, siCorps, separer }: { liberer: boolean; siCorps?: string; separer: boolean },
 ): Promise<ResultatRedaction> {
   try {
-    const brut = nettoyerTexte(await deps.ia(userId, post.projectId ?? null, prompt));
+    const sortie = extraireTendance(nettoyerTexte(await deps.ia(userId, post.projectId ?? null, prompt, { plateformes: post.platform ? [post.platform] : [] })));
+    const brut = sortie.texte;
     const { legende, annexe } = separer ? separerLegende(brut) : { legende: brut, annexe: null };
     const body = legende.slice(0, 5000);
     if (!body) throw new Error("reponse_vide");
@@ -114,6 +119,7 @@ async function ecrire(
     if (!(await deps.ecrireBrouillon(post.id, userId, body, { ...(siCorps !== undefined ? { siCorps } : {}), annexe: annexe ? annexe.slice(0, 5000) : null }))) {
       return { statut: "deja" };
     }
+    if (sortie.tendanceId != null) await deps.lierTendance(post.id, userId, sortie.tendanceId).catch(() => {});
     return { statut: "redige", body };
   } catch (e: any) {
     console.error(`[atelier] rédaction du post ${post.id} :`, e?.message ?? e);
@@ -130,7 +136,7 @@ export async function redigerPost(deps: DepsRedaction, userId: string, id: numbe
   const post = await deps.lirePost(id, userId);
   if (!post) return { statut: "introuvable" };
   // Un post manuel est le texte de l'utilisatrice : Naya ne l'écrase jamais d'elle-même.
-  if (post.campaignId == null || !modifiable(post) || etatPost(post) !== "a_rediger") return { statut: "deja" };
+  if ((post.campaignId == null && post.tendanceProjetId == null) || !modifiable(post) || etatPost(post) !== "a_rediger") return { statut: "deja" };
   // Écrit à la main dans l'ancien parcours (« Rédiger le texte » faite) : jamais réécrit par Naya.
   if (await deps.etapeEcritureFaite(userId, id)) {
     await deps.marquerBrouillon(id, userId);

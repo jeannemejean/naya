@@ -18,6 +18,7 @@ import { registerApprentissageRoutes } from "./routes-prospection-apprentissage"
 import { routineSourcingPour } from "./services/routines/ordonnanceur";
 import { registerRoutinesRoutes } from "./routes-routines";
 import { registerVeilleRoutes } from "./routes-veille";
+import { tendancesPourLeContenu } from "./services/profils-veille/tri";
 import { registerProfilsVeilleRoutes } from "./routes-profils-veille";
 import { registerFondationsRoutes } from "./routes-fondations";
 import { registerMesureRoutes } from "./routes-mesure";
@@ -7399,7 +7400,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         userMessage: userPrompt,
         model: CLAUDE_MODELS.smart,
         max_tokens: 800,
-        additionalSystemContext: systemPrompt,
+        additionalSystemContext: [systemPrompt, await tendancesPourLeContenu(userId, existing.projectId ?? null, [existing.platform ?? ""])].filter(Boolean).join("\n\n"),
       });
 
       let replacement: { title: string; body: string };

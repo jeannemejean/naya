@@ -1,3 +1,4 @@
+import { tendancesPourLeContenu } from "./profils-veille/tri";
 import { callClaude, callClaudeDetailed, callClaudeWithContext, assertNotTruncated, CLAUDE_MODELS } from "./claude";
 import { storage } from "../storage";
 import { NAYA_SYSTEM_VOICE } from "../naya-voice";
@@ -329,7 +330,10 @@ Respond with JSON only:
       userMessage: prompt,
       model: CLAUDE_MODELS.fast,
       max_tokens: 2000,
-      additionalSystemContext: `You are an expert content strategist who creates engaging, on-brand content that drives results for entrepreneurs. You adapt your output based on project type, monetization intent, and active goal mode. Always respond with valid JSON only.`,
+      additionalSystemContext: [
+        `You are an expert content strategist who creates engaging, on-brand content that drives results for entrepreneurs. You adapt your output based on project type, monetization intent, and active goal mode. Always respond with valid JSON only.`,
+        await tendancesPourLeContenu(request.userId, projectId, [request.platform]),
+      ].filter(Boolean).join("\n\n"),
     });
 
     const parsed = JSON.parse(stripMarkdownJSON(raw));
@@ -1360,10 +1364,11 @@ Return ONLY this JSON object:
   ]
 }`;
 
+  const tendances = await tendancesPourLeContenu(request.userId, request.projectId ?? null, (strategy.channels || []).map((c) => c.platform));
   const { text, stopReason } = await callClaudeDetailed({
     model: CLAUDE_MODELS.smart,
     system: CAMPAIGN_SYSTEM,
-    messages: [{ role: 'user', content: prompt + buildCampaignBrandContext(request.brandDna) }],
+    messages: [{ role: 'user', content: prompt + buildCampaignBrandContext(request.brandDna) + (tendances ? `\n\n${tendances}` : "") }],
     max_tokens: 4500, // marge sous 6000 ; le plan représentatif (~10-16 pièces) finit bien avant
     projectId: request.projectId ?? null,
   });

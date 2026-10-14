@@ -132,13 +132,14 @@ export type EtatPost = "publie" | "valide" | "brouillon" | "a_rediger";
 
 export function etatPost(p: {
   publishedAt?: unknown; postStatus?: string | null; contentStatus?: string | null;
-  autoPost?: boolean | null; consigne?: string | null; campaignId?: number | null; body?: string | null;
+  autoPost?: boolean | null; consigne?: string | null; campaignId?: number | null; body?: string | null; tendanceProjetId?: number | null;
 }): EtatPost {
   if ((p.publishedAt !== null && p.publishedAt !== undefined) || p.postStatus === "posted") return "publie";
   if (p.contentStatus === "ready" || p.autoPost === true) return "valide";
   if (p.consigne || p.contentStatus === "draft") return "brouillon";
-  // Un post manuel : son texte est celui de l'utilisatrice, pas une consigne à rédiger.
-  if (p.campaignId === null && (p.body ?? "").trim()) return "brouillon";
+  // Un post manuel : son texte est celui de l'utilisatrice, pas une consigne à rédiger. Un post
+  // créé depuis une tendance (« En faire un post ») porte, lui, une consigne : il est à rédiger.
+  if (p.campaignId === null && p.tendanceProjetId == null && (p.body ?? "").trim()) return "brouillon";
   return "a_rediger";
 }
 

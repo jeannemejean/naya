@@ -107,6 +107,10 @@ describe("planAtelier", () => {
 });
 
 describe("etatPost", () => {
+  it("un post créé depuis une tendance (hors campagne) avec sa consigne dans body est « à rédiger »", () => {
+    expect(etatPost({ campaignId: null, tendanceProjetId: 3, body: "Format : Carrousel avant/après…" })).toBe("a_rediger");
+    expect(etatPost({ campaignId: null, tendanceProjetId: 3, body: "x", consigne: "Format…" })).toBe("brouillon");
+  });
   it("publié, validé, brouillon, à rédiger", () => {
     expect(etatPost({ publishedAt: new Date() })).toBe("publie");
     expect(etatPost({ postStatus: "posted" })).toBe("publie");

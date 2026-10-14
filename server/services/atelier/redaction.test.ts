@@ -17,6 +17,7 @@ function fabrique(p: any = post(), over: any = {}) {
     marquerBrouillon: vi.fn(async () => {}),
     liberer: vi.fn(async () => {}),
     garde: vi.fn(async () => null),
+    lierTendance: vi.fn(async () => {}),
     ia: vi.fn(async () => "Le texte du post.\n\nEt sa question ?"),
     ...over,
   };
@@ -68,6 +69,22 @@ describe("redigerPost", () => {
   it("post introuvable (ou d'un autre compte)", async () => {
     const deps = fabrique(post(), { lirePost: vi.fn(async () => undefined) });
     expect((await redigerPost(deps, "u", 5)).statut).toBe("introuvable");
+  });
+});
+
+describe("redigerPost : tendances", () => {
+  it("rédige un post issu d'une tendance (hors campagne) et transmet la plateforme pour l'injection", async () => {
+    const deps = fabrique(post({ id: 5, projectId: 4, campaignId: null, tendanceProjetId: 3, platform: "instagram", postFormat: "carousel", title: "Carrousel avant/après", body: "Format : … Ta cliente" }));
+    const r = await redigerPost(deps, "u", 5);
+    expect(r.statut).toBe("redige");
+    expect((deps.ia as any).mock.calls[0][3]).toEqual({ plateformes: ["instagram"] });
+  });
+  it("lit puis retire la ligne TENDANCE: <id> et relie le post à la tendance", async () => {
+    const deps = fabrique(post({ id: 1 }), { ia: vi.fn(async () => "LÉGENDE :\nMon texte\nSLIDES :\n1. a\n\nTENDANCE: 3") });
+    const r = await redigerPost(deps, "u", 1);
+    expect(r).toMatchObject({ statut: "redige" });
+    expect((r as any).body).not.toContain("TENDANCE");
+    expect(deps.lierTendance).toHaveBeenCalledWith(1, "u", 3);
   });
 });
 

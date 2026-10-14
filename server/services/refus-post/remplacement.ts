@@ -1,4 +1,5 @@
 // Génération d'un post de remplacement après un refus. Ne lève jamais.
+import { tendancesPourLeContenu } from "../profils-veille/tri";
 import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
 import { imposerLangueDuCompte } from "../garde-langue";
 import { formaterPreferences, preferencesDeLaMarque } from "../campaign-reject/preferences";
@@ -55,6 +56,7 @@ export async function genererPostRemplacement(input: {
       userMessage: message,
       model: CLAUDE_MODELS.fast,
       max_tokens: 1500,
+      additionalSystemContext: await tendancesPourLeContenu(userId, projectId, [post.platform ?? ""]),
     });
 
     let brut: unknown;
