@@ -8,7 +8,7 @@
 import { effetSurPost, postModifiable } from "@shared/livrables";
 
 export interface PostDeps {
-  lirePost(id: number, userId: string): Promise<{ id: number; userId?: string; postStatus?: string | null; mediaIds?: unknown } | undefined>;
+  lirePost(id: number, userId: string): Promise<{ id: number; userId?: string; postStatus?: string | null; contentStatus?: string | null; autoPost?: boolean | null; mediaIds?: unknown } | undefined>;
   majPost(id: number, patch: Record<string, unknown>): Promise<unknown>;
   /** Ajoute un média au post en une seule écriture (sans doublon). Atomique : plusieurs
    *  visuels déposés d'un coup arrivent en parallèle, une lecture-puis-écriture en perdrait. */
@@ -39,9 +39,11 @@ export async function nourrirLePost(
   try {
     const post = await deps.lirePost(contentId, args.userId);
     if (!post || !postModifiable(post.postStatus)) return null;
+    // Validé dans l'atelier (ou programmé) : il part tel que validé, rien ne s'y ajoute.
+    if (post.contentStatus === "ready" || post.autoPost === true) return null;
 
     if (texte) {
-      await deps.majPost(contentId, { body: texte });
+      await deps.majPost(contentId, { body: texte, contentStatus: "draft" });
       return { contentId, texte: true };
     }
     await deps.ajouterMedia(contentId, mediaId!);

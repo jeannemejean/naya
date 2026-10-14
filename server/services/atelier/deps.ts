@@ -7,6 +7,7 @@ import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
 import { gardeDepense } from "../routines/garde";
 import { compteDePublication } from "../connexions/comptes";
 import type { GenreMedia } from "@shared/programmation";
+import { effetSurPost } from "@shared/livrables";
 import type { DepsRedaction } from "./redaction";
 import type { DepsValidation } from "./validation";
 import { notifierRoutine } from "../routines/notifier";
@@ -46,11 +47,24 @@ export const depsRedaction: DepsRedaction = {
       .returning({ id: content.id });
     return r.length > 0;
   },
-  async ecrireBrouillon(id, userId, body) {
-    // Jamais par-dessus un post validé, programmé ou publié entre-temps.
-    await db.update(content).set({ body, contentStatus: "draft", updatedAt: new Date() })
-      .where(and(eq(content.id, id), eq(content.userId, userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`,
-        sql`coalesce(${content.autoPost}, false) = false`, isNull(content.publishedAt)));
+  async ecrireBrouillon(id, userId, body, { siCorps, annexe }) {
+    // Jamais par-dessus un post validé, programmé ou publié entre-temps ; et, pour une rédaction
+    // automatique, jamais par-dessus ce que l'utilisatrice a écrit pendant ce temps (`siCorps`).
+    const r = await db.update(content).set({
+      body, contentStatus: "draft", updatedAt: new Date(),
+      ...(annexe ? { consigne: sql`coalesce(${content.consigne}, '') || ${"\n\n" + annexe}` } : {}),
+    }).where(and(eq(content.id, id), eq(content.userId, userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`,
+      sql`coalesce(${content.autoPost}, false) = false`, isNull(content.publishedAt),
+      ...(siCorps !== undefined ? [eq(content.body, siCorps)] : []))).returning({ id: content.id });
+    return r.length > 0;
+  },
+  async etapeEcritureFaite(userId, id) {
+    const liees = await storage.getTasksForContents(userId, [id]);
+    return liees.some((t) => t.completed && effetSurPost(t.title).texte);
+  },
+  async marquerBrouillon(id, userId) {
+    await db.update(content).set({ contentStatus: "draft", updatedAt: new Date() })
+      .where(and(eq(content.id, id), eq(content.userId, userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`));
   },
   async liberer(id, userId) {
     await db.update(content).set({ consigne: null })

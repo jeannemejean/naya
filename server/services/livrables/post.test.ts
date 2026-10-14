@@ -12,7 +12,8 @@ describe("nourrirLePost", () => {
       userId: "u", tache: { title: "Rédiger le texte — Coulisses", contentId: 9 },
       livrable: { kind: "texte", content: "  Mon texte  " },
     });
-    expect(d.majPost).toHaveBeenCalledWith(9, { body: "Mon texte" });
+    // Brouillon : c'est le texte de l'utilisatrice, l'atelier ne le fera pas réécrire par Naya.
+    expect(d.majPost).toHaveBeenCalledWith(9, { body: "Mon texte", contentStatus: "draft" });
     expect(r).toEqual({ contentId: 9, texte: true });
   });
 
@@ -41,6 +42,16 @@ describe("nourrirLePost", () => {
     expect(publie.majPost).not.toHaveBeenCalled();
     const absent = deps(undefined);
     expect(await nourrirLePost(absent, { userId: "u", tache: { title: "Publier — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+  });
+
+  it("ne modifie jamais un post validé ou programmé (il partirait autrement que validé)", async () => {
+    for (const post of [{ id: 9, postStatus: "pending", contentStatus: "ready" }, { id: 9, postStatus: "pending", autoPost: true }]) {
+      const d = deps(post);
+      expect(await nourrirLePost(d, { userId: "u", tache: { title: "Monter — X", contentId: 9 }, livrable: { kind: "media", mediaId: 5 } })).toBeNull();
+      expect(await nourrirLePost(d, { userId: "u", tache: { title: "Rédiger le texte — X", contentId: 9 }, livrable: { kind: "texte", content: "a" } })).toBeNull();
+      expect((d as any).ajouterMedia).not.toHaveBeenCalled();
+      expect(d.majPost).not.toHaveBeenCalled();
+    }
   });
 
   it("un échec d'écriture ne lève pas", async () => {

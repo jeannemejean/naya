@@ -165,7 +165,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide }: {
         </p>
         <h2 id={`post-${post.id}`} className="text-lg font-semibold text-foreground">{post.title}</h2>
         {(post.consigne || post.etat === "a_rediger") && (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground whitespace-pre-line max-h-48 overflow-y-auto">
             <span className="font-medium">{t("atelier.idee")}</span> {post.consigne ?? post.body}
           </p>
         )}

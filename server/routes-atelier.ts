@@ -121,7 +121,8 @@ export function registerAtelierRoutes(app: Express): void {
       // Écrire soi-même un post « à rédiger » en fait un brouillon (Naya ne le réécrira plus seule).
       if (typeof patch.body === "string" && etatPost(post as any) === "a_rediger") {
         patch.contentStatus = "draft";
-        if (!post.consigne) patch.consigne = post.body;
+        // Jamais une consigne vide : elle sert de verrou (« déjà rédigé »).
+        if (post.consigne == null) patch.consigne = (post.body ?? "").trim() || post.title || "—";
       }
       await db.update(content).set({ ...(patch as any), updatedAt: new Date() })
         .where(and(eq(content.id, post.id), eq(content.userId, req.userId)));

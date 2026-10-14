@@ -20,8 +20,16 @@ export interface DepsRedaction {
   lirePost(id: number, userId: string): Promise<PostARediger | undefined>;
   /** Pose la consigne si elle est vide ; vrai si ce passage a pris le verrou. */
   reserverRedaction(id: number, userId: string, consigne: string): Promise<boolean>;
-  /** Écrit le texte rédigé (le post devient un brouillon). */
-  ecrireBrouillon(id: number, userId: string, body: string): Promise<void>;
+  /**
+   * Écrit le texte rédigé (le post devient un brouillon). `siCorps` : seulement si le texte n'a
+   * pas changé depuis (l'utilisatrice a pu écrire pendant la rédaction). `annexe` : le script ou
+   * les slides, ajoutés à la consigne (jamais publiés). Vrai si écrit.
+   */
+  ecrireBrouillon(id: number, userId: string, body: string, opts: { siCorps?: string; annexe: string | null }): Promise<boolean>;
+  /** Une étape d'écriture de l'ancien parcours est faite (le texte est celui de l'utilisatrice). */
+  etapeEcritureFaite(userId: string, id: number): Promise<boolean>;
+  /** Marque le post comme brouillon sans toucher à son texte. */
+  marquerBrouillon(id: number, userId: string): Promise<void>;
   /** Rend le verrou après un échec (consigne remise à vide). */
   liberer(id: number, userId: string): Promise<void>;
   /** null : la dépense est permise. */
@@ -34,11 +42,19 @@ export type ResultatRedaction =
   | { statut: "deja" | "refus" | "erreur" | "introuvable" };
 
 const FORMATS: Record<string, string> = {
-  feed_image: "post avec une image", text: "post texte seul", carousel: "carrousel (légende du carrousel, puis le texte de chaque slide numérotée)",
-  reel: "script de vidéo courte (accroche des 3 premières secondes, puis le déroulé) et sa légende",
-  short: "script de vidéo courte (accroche des 3 premières secondes, puis le déroulé) et sa légende",
-  feed_video: "script de vidéo (accroche, déroulé) et sa légende", story: "story (texte court, à l'écran)",
+  feed_image: "post avec une image", text: "post texte seul", carousel: "carrousel", reel: "vidéo courte",
+  short: "vidéo courte", feed_video: "vidéo", story: "story (texte court, à l'écran)",
 };
+/** Formats dont le support (script, slides) n'est PAS la légende publiée. */
+const ANNEXES: Record<string, string> = { carousel: "SLIDES", reel: "SCRIPT", short: "SCRIPT", feed_video: "SCRIPT" };
+
+/** Sépare la légende (publiée) du script ou des slides (mis à part). Sans marqueur : tout est la légende. */
+export function separerLegende(texte: string): { legende: string; annexe: string | null } {
+  const m = /^\s*(script|slides)\s*:/im.exec(texte);
+  const avant = m ? texte.slice(0, m.index) : texte;
+  const legende = avant.replace(/^\s*l[ée]gende\s*:\s*/i, "").trim();
+  return { legende, annexe: m ? texte.slice(m.index).trim() : null };
+}
 
 /** La demande faite à l'IA. `actuel` + `retouche` : on réécrit un brouillon selon une consigne courte. */
 export function consigneRedaction(post: PostARediger, idee: string, actuel: string | null, retouche: string | null): string {
@@ -50,9 +66,19 @@ export function consigneRedaction(post: PostARediger, idee: string, actuel: stri
     post.pillar ? `Pilier : ${post.pillar}` : "",
     post.goal ? `Objectif : ${post.goal}` : "",
   ].filter(Boolean);
+  const annexe = ANNEXES[(post.postFormat || "").toLowerCase()];
   if (actuel) {
-    lignes.push("", "Le texte actuel, à réécrire :", actuel);
+    lignes.push("", annexe ? "La légende actuelle, à réécrire (la légende seulement) :" : "Le texte actuel, à réécrire :", actuel);
     lignes.push("", `Ce qu'il faut changer : ${retouche || "propose une autre version, meilleure"}`);
+  } else if (annexe) {
+    lignes.push(
+      "",
+      `Donne deux parties, exactement sous cette forme :`,
+      `LÉGENDE :`,
+      `<la légende publiée avec la ${annexe === "SLIDES" ? "publication" : "vidéo"}>`,
+      `${annexe} :`,
+      annexe === "SLIDES" ? "<le texte de chaque slide, numérotées>" : "<le script : l'accroche des 3 premières secondes, puis le déroulé>",
+    );
   }
   lignes.push(
     "",
@@ -61,7 +87,7 @@ export function consigneRedaction(post: PostARediger, idee: string, actuel: stri
     "- Une accroche forte en première ligne ; des paragraphes courts ; adapté aux usages du réseau.",
     "- N'invente aucun chiffre, aucun client, aucun témoignage, aucune citation : s'il en faut un, écris [à compléter].",
     "- Écris dans la langue de l'idée prévue.",
-    "- Réponds uniquement avec le texte du post, prêt à publier : pas de titre, pas de commentaire, pas de guillemets.",
+    "- Réponds uniquement avec le texte demandé, prêt à publier : pas de titre, pas de commentaire, pas de guillemets.",
   );
   return lignes.join("\n");
 }
@@ -75,12 +101,20 @@ export function nettoyerTexte(brut: string): string {
   return t;
 }
 
-async function ecrire(deps: DepsRedaction, userId: string, post: PostARediger, prompt: string, liberer: boolean): Promise<ResultatRedaction> {
+async function ecrire(
+  deps: DepsRedaction, userId: string, post: PostARediger, prompt: string,
+  { liberer, siCorps, separer }: { liberer: boolean; siCorps?: string; separer: boolean },
+): Promise<ResultatRedaction> {
   try {
-    const texte = nettoyerTexte(await deps.ia(userId, post.projectId ?? null, prompt));
-    if (!texte) throw new Error("reponse_vide");
-    await deps.ecrireBrouillon(post.id, userId, texte.slice(0, 5000));
-    return { statut: "redige", body: texte.slice(0, 5000) };
+    const brut = nettoyerTexte(await deps.ia(userId, post.projectId ?? null, prompt));
+    const { legende, annexe } = separer ? separerLegende(brut) : { legende: brut, annexe: null };
+    const body = legende.slice(0, 5000);
+    if (!body) throw new Error("reponse_vide");
+    // Écrit entre-temps par l'utilisatrice : son texte gagne, la rédaction est jetée.
+    if (!(await deps.ecrireBrouillon(post.id, userId, body, { ...(siCorps !== undefined ? { siCorps } : {}), annexe: annexe ? annexe.slice(0, 5000) : null }))) {
+      return { statut: "deja" };
+    }
+    return { statut: "redige", body };
   } catch (e: any) {
     console.error(`[atelier] rédaction du post ${post.id} :`, e?.message ?? e);
     if (liberer) await deps.liberer(post.id, userId).catch(() => {});
@@ -97,24 +131,33 @@ export async function redigerPost(deps: DepsRedaction, userId: string, id: numbe
   if (!post) return { statut: "introuvable" };
   // Un post manuel est le texte de l'utilisatrice : Naya ne l'écrase jamais d'elle-même.
   if (post.campaignId == null || !modifiable(post) || etatPost(post) !== "a_rediger") return { statut: "deja" };
+  // Écrit à la main dans l'ancien parcours (« Rédiger le texte » faite) : jamais réécrit par Naya.
+  if (await deps.etapeEcritureFaite(userId, id)) {
+    await deps.marquerBrouillon(id, userId);
+    return { statut: "deja" };
+  }
   if (await deps.garde(userId)) return { statut: "refus" };
   const idee = (post.body ?? "").trim() || (post.title ?? "").trim();
   if (!(await deps.reserverRedaction(id, userId, idee))) return { statut: "deja" };
-  return ecrire(deps, userId, post, consigneRedaction(post, idee, null, null), true);
+  return ecrire(deps, userId, post, consigneRedaction(post, idee, null, null), { liberer: true, siCorps: post.body ?? "", separer: true });
 }
 
 /** « Refaire » : nouvelle version, demandée par l'utilisatrice, avec une consigne courte facultative. */
 export async function refairePost(deps: DepsRedaction, userId: string, id: number, retoucheBrute: string): Promise<ResultatRedaction> {
-  const post = await deps.lirePost(id, userId);
+  let post = await deps.lirePost(id, userId);
   if (!post) return { statut: "introuvable" };
   if (!modifiable(post)) return { statut: "deja" };
   if (await deps.garde(userId)) return { statut: "refus" };
   const retouche = (retoucheBrute ?? "").trim().slice(0, 300);
-  if (!post.consigne) {
+  if (post.consigne == null) {
     // Jamais rédigé : la consigne d'origine est mise de côté avant d'être remplacée.
     const idee = (post.body ?? "").trim() || (post.title ?? "").trim();
-    if (!(await deps.reserverRedaction(id, userId, idee))) return refairePost(deps, userId, id, retouche);
-    return ecrire(deps, userId, post, consigneRedaction(post, idee, null, retouche || null), true);
+    if (await deps.reserverRedaction(id, userId, idee)) {
+      return ecrire(deps, userId, post, consigneRedaction(post, idee, null, retouche || null), { liberer: true, separer: true });
+    }
+    // Un autre passage vient de la poser : on relit une fois, sans boucler.
+    post = (await deps.lirePost(id, userId)) ?? post;
   }
-  return ecrire(deps, userId, post, consigneRedaction(post, post.consigne, (post.body ?? "").trim() || null, retouche || null), false);
+  const idee = (post.consigne ?? "").trim() || (post.title ?? "").trim();
+  return ecrire(deps, userId, post, consigneRedaction(post, idee, (post.body ?? "").trim() || null, retouche || null), { liberer: false, separer: false });
 }
