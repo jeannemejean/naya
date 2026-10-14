@@ -1,8 +1,8 @@
 // Requêtes Drizzle du module profils de veille. Toute la base du module passe par ici.
-import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { profilComptes, profilPassages, profilPosts, profilAnalyses, type InsertProfilPost } from "@shared/schema";
-import { REGLES, type PlateformeVeille } from "@shared/profils-veille";
+import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, type InsertProfilPost, type InsertProfilTendance } from "@shared/schema";
+import { REGLES, type PlateformeVeille, type PostFenetre, type TypeMedia, type Structure } from "@shared/profils-veille";
 import type { CompteSuivi } from "./collecte";
 
 export const stockageProfils = {
@@ -56,5 +56,41 @@ export const stockageProfils = {
     const [b] = await db.select({ s: sql<number>`coalesce(sum(${profilAnalyses.coutEur}), 0)` }).from(profilAnalyses)
       .where(and(eq(profilAnalyses.profilId, profilId), gte(profilAnalyses.createdAt, debut), lt(profilAnalyses.createdAt, fin)));
     return Number(a?.s ?? 0) + Number(b?.s ?? 0);
+  },
+  async creerAnalyse(profilId: number, semaine: string): Promise<number | null> {
+    const [r] = await db.insert(profilAnalyses).values({ profilId, semaine }).onConflictDoNothing().returning({ id: profilAnalyses.id });
+    return r?.id ?? null;
+  },
+  async majAnalyse(id: number, patch: Record<string, unknown>): Promise<void> {
+    await db.update(profilAnalyses).set(patch as any).where(eq(profilAnalyses.id, id));
+  },
+  async analysesEnAttente() {
+    return db.select().from(profilAnalyses).where(eq(profilAnalyses.statut, "lot_soumis"));
+  },
+  async postsAClasser(profilId: number, depuis: Date, maintenant: Date) {
+    const mur = new Date(maintenant.getTime() - REGLES.maturiteHeures * 3600_000);
+    return db.select({ id: profilPosts.id, typeMedia: profilPosts.typeMedia, legende: profilPosts.legende }).from(profilPosts)
+      .where(and(eq(profilPosts.profilId, profilId), isNull(profilPosts.format), gte(profilPosts.publieLe, depuis), lt(profilPosts.publieLe, mur))) as any;
+  },
+  async enregistrerFormat(postId: number, format: unknown): Promise<void> {
+    await db.update(profilPosts).set({ format }).where(eq(profilPosts.id, postId));
+  },
+  async postsFenetre(profilId: number, depuis: Date, maintenant: Date): Promise<PostFenetre[]> {
+    const mur = new Date(maintenant.getTime() - REGLES.maturiteHeures * 3600_000);
+    const rows = await db.select({ cle: profilPosts.cle, compteId: profilPosts.compteId, plateforme: profilPosts.plateforme, typeMedia: profilPosts.typeMedia, format: profilPosts.format, fort: profilPosts.fort })
+      .from(profilPosts).where(and(eq(profilPosts.profilId, profilId), gte(profilPosts.publieLe, depuis), lt(profilPosts.publieLe, mur)));
+    return rows.map((r) => ({ cle: r.cle, compteId: r.compteId, plateforme: r.plateforme as any, typeMedia: r.typeMedia as TypeMedia, structure: ((r.format as any)?.structure ?? null) as Structure | null, fort: r.fort }));
+  },
+  async exemples(profilId: number, cles: string[]) {
+    if (cles.length === 0) return [];
+    const rows = await db.select({ cle: profilPosts.cle, url: profilPosts.url, legende: profilPosts.legende, compteId: profilPosts.compteId, format: profilPosts.format, engagement: profilPosts.engagement })
+      .from(profilPosts).where(and(eq(profilPosts.profilId, profilId), inArray(profilPosts.cle, cles))).orderBy(desc(profilPosts.engagement));
+    return rows.map((r) => ({ cle: r.cle, url: r.url, legende: r.legende, compteId: r.compteId, accroche: (r.format as any)?.accroche ?? null }));
+  },
+  async tendancesPrecedentes(profilId: number, semaine: string) {
+    return db.select().from(profilTendances).where(and(eq(profilTendances.profilId, profilId), eq(profilTendances.semaine, semaine)));
+  },
+  async enregistrerTendances(rows: InsertProfilTendance[]): Promise<void> {
+    if (rows.length) await db.insert(profilTendances).values(rows).onConflictDoNothing();
   },
 };
