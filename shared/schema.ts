@@ -660,6 +660,11 @@ export const content = pgTable("content", {
   // devient le brouillon. Sert aussi de verrou — rédiger = poser la consigne si elle est vide :
   // un post n'est jamais rédigé deux fois automatiquement.
   consigne: text("consigne"),
+  // Profils de veille : la tendance dont le post s'inspire (null = aucune), et la tendance de
+  // la marque d'où il a été créé (« En faire un post »). Entiers simples, sans clé étrangère :
+  // les tendances ne sont jamais supprimées, et le post ne doit jamais dépendre d'elles.
+  tendanceId: integer("tendance_id"),
+  tendanceProjetId: integer("tendance_projet_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -2240,3 +2245,167 @@ export const rapportsClient = pgTable("rapports_client", {
 }));
 export type RapportClient = typeof rapportsClient.$inferSelect;
 export type InsertRapportClient = typeof rapportsClient.$inferInsert;
+
+// ─── Profils de veille (spec 2026-10-14) ────────────────────────────────────────
+// Recherche MUTUALISÉE : un profil = un type de marque, suivi pour toutes les marques qui lui
+// ressemblent. Aucune donnée privée d'utilisatrice dans profils/comptes/posts/tendances.
+export const profilsVeille = pgTable("profils_veille", {
+  id: serial("id").primaryKey(),
+  nom: text("nom").notNull(),
+  description: text("description").notNull().default(""),
+  criteres: jsonb("criteres").notNull().default({}),        // { typesBusiness: string[], cibles: string[], motsCles: string[] }
+  origine: text("origine").notNull().default("jeanne"),     // jeanne | naya
+  statut: text("statut").notNull().default("propose"),      // propose | actif | en_pause | archive
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export type ProfilVeille = typeof profilsVeille.$inferSelect;
+export type InsertProfilVeille = typeof profilsVeille.$inferInsert;
+
+export const profilComptes = pgTable("profil_comptes", {
+  id: serial("id").primaryKey(),
+  profilId: integer("profil_id").notNull().references(() => profilsVeille.id, { onDelete: "cascade" }),
+  plateforme: text("plateforme").notNull(),                 // instagram | linkedin | tiktok
+  compte: text("compte").notNull(),                         // handle normalisé
+  url: text("url").notNull(),
+  libelle: text("libelle"),
+  statut: text("statut").notNull().default("propose"),      // propose | suivi | ecarte | injoignable
+  origine: text("origine").notNull().default("naya"),       // naya | jeanne | suggestion
+  suggerePar: varchar("suggere_par").references(() => users.id),
+  echecsConsecutifs: integer("echecs_consecutifs").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  unCompteParProfil: uniqueIndex("profil_comptes_unique").on(t.profilId, t.plateforme, t.compte),
+}));
+export type ProfilCompte = typeof profilComptes.$inferSelect;
+export type InsertProfilCompte = typeof profilComptes.$inferInsert;
+
+export const profilRattachements = pgTable("profil_rattachements", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  profilId: integer("profil_id").notNull().references(() => profilsVeille.id),
+  confiance: doublePrecision("confiance").notNull().default(0),
+  raison: text("raison").notNull().default(""),
+  statut: text("statut").notNull().default("propose"),      // propose | confirme | refuse | en_attente (profil proposé à Jeanne)
+  exclus: jsonb("exclus").notNull().default([]),             // ids de profils refusés par l'utilisatrice
+  dernierTri: text("dernier_tri"),                           // semaine (lundi ISO) du dernier tri, même vide
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  unParProjet: uniqueIndex("profil_rattachements_projet").on(t.projectId),
+}));
+export type ProfilRattachement = typeof profilRattachements.$inferSelect;
+export type InsertProfilRattachement = typeof profilRattachements.$inferInsert;
+
+export const profilPosts = pgTable("profil_posts", {
+  id: serial("id").primaryKey(),
+  profilId: integer("profil_id").notNull().references(() => profilsVeille.id, { onDelete: "cascade" }),
+  compteId: integer("compte_id").notNull().references(() => profilComptes.id, { onDelete: "cascade" }),
+  plateforme: text("plateforme").notNull(),
+  url: text("url").notNull(),
+  cle: text("cle").notNull(),
+  publieLe: timestamp("publie_le"),
+  typeMedia: text("type_media").notNull(),
+  legende: text("legende"),
+  metriques: jsonb("metriques").notNull().default({}),
+  abonnes: integer("abonnes"),
+  engagement: doublePrecision("engagement"),
+  fort: boolean("fort"),
+  format: jsonb("format"),                                  // { structure, accroche, autreLibelle? }
+  releveLe: timestamp("releve_le").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  unParProfil: uniqueIndex("profil_posts_cle").on(t.profilId, t.cle),
+  parCompte: index("profil_posts_compte_idx").on(t.compteId, t.publieLe),
+}));
+export type ProfilPost = typeof profilPosts.$inferSelect;
+export type InsertProfilPost = typeof profilPosts.$inferInsert;
+
+export const profilPassages = pgTable("profil_passages", {
+  id: serial("id").primaryKey(),
+  profilId: integer("profil_id").notNull().references(() => profilsVeille.id, { onDelete: "cascade" }),
+  plateforme: text("plateforme").notNull(),
+  jour: text("jour").notNull(),                             // YYYY-MM-DD (UTC)
+  statut: text("statut").notNull().default("en_cours"),     // en_cours | ok | erreur | plafond
+  comptes: integer("comptes").notNull().default(0),
+  postsNouveaux: integer("posts_nouveaux").notNull().default(0),
+  postsMisAJour: integer("posts_mis_a_jour").notNull().default(0),
+  echecs: integer("echecs").notNull().default(0),
+  erreur: text("erreur"),
+  coutEur: doublePrecision("cout_eur").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  unParJour: uniqueIndex("profil_passages_jour").on(t.profilId, t.plateforme, t.jour),
+}));
+export type ProfilPassage = typeof profilPassages.$inferSelect;
+
+export const profilAnalyses = pgTable("profil_analyses", {
+  id: serial("id").primaryKey(),
+  profilId: integer("profil_id").notNull().references(() => profilsVeille.id, { onDelete: "cascade" }),
+  semaine: text("semaine").notNull(),                       // lundi ISO de la semaine préparée
+  statut: text("statut").notNull().default("en_cours"),     // en_cours | lot_soumis | termine | rien | erreur | plafond
+  batchId: text("batch_id"),
+  retenus: jsonb("retenus").notNull().default([]),           // StatFormat[] retenus + en baisse, en attente du lot
+  coutEur: doublePrecision("cout_eur").notNull().default(0),
+  erreur: text("erreur"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => ({
+  uneParSemaine: uniqueIndex("profil_analyses_semaine").on(t.profilId, t.semaine),
+}));
+export type ProfilAnalyse = typeof profilAnalyses.$inferSelect;
+
+export const profilTendances = pgTable("profil_tendances", {
+  id: serial("id").primaryKey(),
+  profilId: integer("profil_id").notNull().references(() => profilsVeille.id, { onDelete: "cascade" }),
+  semaine: text("semaine").notNull(),
+  plateforme: text("plateforme").notNull(),
+  typeMedia: text("type_media").notNull(),
+  structure: text("structure").notNull(),
+  cle: text("cle").notNull(),                               // cleFormat(plateforme, typeMedia, structure)
+  accrocheDominante: text("accroche_dominante"),
+  lift: doublePrecision("lift").notNull(),
+  nbForts: integer("nb_forts").notNull(),
+  nbComptes: integer("nb_comptes").notNull(),
+  exemples: jsonb("exemples").notNull().default([]),         // [url]
+  pourquoi: text("pourquoi").notNull().default(""),
+  commentAdapter: text("comment_adapter").notNull().default(""),
+  statut: text("statut").notNull().default("nouveau"),      // nouveau | confirme | en_baisse
+  ecarteParJeanne: boolean("ecarte_par_jeanne").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  uneParFormat: uniqueIndex("profil_tendances_format").on(t.profilId, t.semaine, t.cle),
+}));
+export type ProfilTendance = typeof profilTendances.$inferSelect;
+export type InsertProfilTendance = typeof profilTendances.$inferInsert;
+
+export const tendancesProjet = pgTable("tendances_projet", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  tendanceId: integer("tendance_id").notNull().references(() => profilTendances.id, { onDelete: "cascade" }),
+  adaptation: text("adaptation").notNull(),
+  statut: text("statut").notNull().default("nouveau"),      // nouveau | vu | garde | utilise | ecarte
+  contentId: integer("content_id"),
+  ecarteLe: timestamp("ecarte_le"),
+  expireLe: timestamp("expire_le").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  uneParProjet: uniqueIndex("tendances_projet_unique").on(t.projectId, t.tendanceId),
+  parProjet: index("tendances_projet_idx").on(t.userId, t.projectId),
+}));
+export type TendanceProjet = typeof tendancesProjet.$inferSelect;
+export type InsertTendanceProjet = typeof tendancesProjet.$inferInsert;
+
+// Banc d'évaluation du classement : les étiquettes posées à la main par Jeanne.
+export const profilEtiquettes = pgTable("profil_etiquettes", {
+  id: serial("id").primaryKey(),
+  postId: integer("post_id").notNull().references(() => profilPosts.id, { onDelete: "cascade" }),
+  structure: text("structure").notNull(),
+  accroche: text("accroche").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  uneParPost: uniqueIndex("profil_etiquettes_post").on(t.postId),
+}));
+export type ProfilEtiquette = typeof profilEtiquettes.$inferSelect;
