@@ -9,6 +9,12 @@ import { compteDePublication } from "../connexions/comptes";
 import type { GenreMedia } from "@shared/programmation";
 import type { DepsRedaction } from "./redaction";
 import type { DepsValidation } from "./validation";
+import { notifierRoutine } from "../routines/notifier";
+import { langueDuCompte } from "../garde-langue";
+import { placerTachesProductionPosts, parseWorkDays, DAY_ABBRS } from "../campagne/placement";
+import { redigerPost } from "./redaction";
+import { basculerVersAteliers, preRediger, rappelVeille, type DepsQuotidien } from "./quotidien";
+import { jourHeureParis } from "./validation";
 
 /** Les visuels d'un post (dans l'ordre de publication), avec leur nature. */
 export async function mediasDuPost(userId: string, post: any): Promise<Array<{ id: number; url: string; mimeType: string | null; genre: GenreMedia }>> {
@@ -83,3 +89,35 @@ export const depsValidation: DepsValidation = {
   },
   maintenant: () => new Date(),
 };
+
+// ─── Le passage du matin ─────────────────────────────────────────────────────
+
+export const depsQuotidien: DepsQuotidien = {
+  postsEntre: (userId, debut, fin) => storage.getPostsEntre(userId, debut, fin),
+  tachesDesPosts: (userId, ids) => storage.getTasksForContents(userId, ids),
+  archiverTaches: (userId, ids) => depsValidation.archiverTaches(userId, ids),
+  placer: (userId, posts) => placerTachesProductionPosts(storage, { userId, posts, aujourdhui: jourHeureParis(new Date()).jour }),
+  tachesAtelier: (userId, semaine) => storage.getTachesAtelier(userId, semaine),
+  rediger: (userId, id) => redigerPost(depsRedaction, userId, id),
+  notifier: (userId, message, lien) => notifierRoutine(userId, message, lien),
+};
+
+/** Bascule des campagnes en cours, puis rappel des posts de demain non validés. */
+export async function passageAtelierMatin(userId: string): Promise<void> {
+  const maintenant = new Date();
+  const aujourdhui = jourHeureParis(maintenant).jour;
+  const b = await basculerVersAteliers(depsQuotidien, userId, { aujourdhui, appliquer: true });
+  if (b.convertis.length) {
+    console.log(`[atelier] bascule user=${userId} : ${b.convertis.length} post(s), ${b.archivees.length} étape(s) archivée(s), ${b.creees} tâche(s) d'atelier`);
+  }
+  const langue = (await langueDuCompte(userId)) === "en" ? "en" : "fr";
+  await rappelVeille(depsQuotidien, userId, maintenant, langue);
+}
+
+/** Pré-rédaction des ateliers d'aujourd'hui et du prochain jour travaillé (appels IA). */
+export async function preRedactionMatin(userId: string): Promise<number> {
+  const prefs = await storage.getUserPreferences(userId);
+  const jours = parseWorkDays((prefs as any)?.workDays);
+  const estTravaille = (d: string) => jours.has(DAY_ABBRS[new Date(`${d}T12:00:00Z`).getUTCDay()]);
+  return preRediger(depsQuotidien, userId, jourHeureParis(new Date()).jour, estTravaille);
+}

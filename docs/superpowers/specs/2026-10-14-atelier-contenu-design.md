@@ -48,7 +48,7 @@ Adresse `/atelier?semaine=2026-10-19` (l'état est dans l'URL, ouvrable depuis u
   - le format (image / texte seul / carrousel / vidéo / story) modifiable : passer en « texte seul » lève l'exigence de visuel ;
   - jour et heure de publication modifiables ;
   - **Valider** (⌘/Ctrl + Entrée) : programme le post et passe au suivant non validé. Ce qui empêche de valider est dit en clair (« Ajoute un visuel : Instagram en exige un »).
-- **Rédaction par Naya** : à l'ouverture, chaque post encore « à rédiger » est rédigé (3 en parallèle), avec squelette « Naya rédige… ». La rédaction démarre aussi en arrière-plan dès que l'atelier est posé dans le planning. Un post n'est jamais rédigé deux fois sans demande (« Refaire »).
+- **Rédaction par Naya** : à l'ouverture, chaque post encore « à rédiger » est rédigé (3 en parallèle), avec squelette « Naya rédige… ». Le passage du matin rédige aussi d'avance les posts des ateliers prévus aujourd'hui et au prochain jour travaillé. Un post n'est jamais rédigé deux fois sans demande (« Refaire »).
 - Fin : quand tout est validé, écran « Ta semaine est prête » et l'atelier (toutes ses parties) et la validation sont cochés.
 
 Raccourcis : ⌘/Ctrl+Entrée valider, Alt+↓ / Alt+↑ post suivant / précédent (hors saisie : ↓ ↑ ou j k).
@@ -65,7 +65,7 @@ Raccourcis : ⌘/Ctrl+Entrée valider, Alt+↓ / Alt+↑ post suivant / précéd
 ## 4. Les filets
 
 - **La veille au matin** (passage quotidien de 06:00 UTC) : si des posts de demain ne sont pas validés, Naya prévient dans le compagnon : « 2 posts de demain ne sont pas validés : ils ne partiront pas. » avec un lien vers l'atelier.
-- **Bascule des campagnes en cours** (même passage quotidien, et un script pour la faire tout de suite) : un post à venir dont **aucune** étape n'est faite et qui tombe à partir de demain perd ses anciennes tâches d'écran non faites (archivées, jamais supprimées) et rejoint l'atelier de sa semaine. Un post dont une étape est déjà faite garde son ancien parcours ; il apparaît aussi dans l'atelier et peut y être validé.
+- **Bascule des campagnes en cours** (même passage quotidien) : un post à venir dont **aucune** étape n'est faite et qui tombe à partir de demain perd ses anciennes tâches d'écran non faites (archivées, jamais supprimées) et rejoint l'atelier de sa semaine. Un post dont une étape est déjà faite garde son ancien parcours ; il apparaît aussi dans l'atelier et peut y être validé.
 
 ## 5. Planning et tâche
 
@@ -88,4 +88,6 @@ Raccourcis : ⌘/Ctrl+Entrée valider, Alt+↓ / Alt+↑ post suivant / précéd
 
 - 3 jours travaillés avant le premier post (dans la fourchette « 3 à 4 » annoncée) : laisse un jour pour la validation à froid et un pour Tourner/Monter.
 - Un post manuel du calendrier (hors campagne) apparaît dans l'atelier de sa semaine s'il n'est ni validé ni programmé, mais ne crée pas d'atelier à lui seul.
+- Pas de script de bascule : le passage du matin (06:00 UTC) bascule les campagnes en cours dès le lendemain du déploiement — aucune étape manuelle en production.
+- Pré-rédaction au passage du matin (et à l'ouverture), pas à la pose de l'atelier : un déploiement tuerait un travail de fond lancé au fil de la journée.
 - Validation possible même sans compte connecté (avec la tâche Publier de secours), pour ne jamais bloquer le travail.

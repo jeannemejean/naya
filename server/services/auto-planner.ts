@@ -14,6 +14,7 @@
  * 5. Silently skips users on error — one failure must not block others
  */
 
+import { passageAtelierMatin, preRedactionMatin } from './atelier/deps';
 import { storage } from '../storage';
 import { ajouterDependance } from './dependances';
 import { generateDailyTasks } from './openai';
@@ -705,6 +706,12 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
           console.error(`[AutoPlanner] Rollover failed for ${userId}:`, e.message)
         );
 
+        // 1 bis. Atelier de contenu : bascule des campagnes en cours, rappel des posts de
+        //        demain non validés (spec 2026-10-14-atelier-contenu-design.md).
+        await passageAtelierMatin(userId).catch((e: any) =>
+          console.error(`[AutoPlanner] Atelier (matin) failed for ${userId}:`, e?.message),
+        );
+
         // 2. Générer les 7 prochains jours de travail
         const workDays = parseWorkDays(prefs?.workDays);
         const dates = nextWorkingDates(debutUtilisateur, 7, workDays);
@@ -723,6 +730,11 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         await storage.fixOverlappingTasks(userId, debutUtilisateur).catch((e: any) =>
           console.error(`[AutoPlanner] fixOverlappingTasks final ${userId}:`, e.message),
         );
+        // 4. Les posts des ateliers d'aujourd'hui et de demain sont rédigés d'avance, sans
+        //    retenir le passage (appels IA, un post à la fois).
+        void preRedactionMatin(userId)
+          .then((n) => { if (n) console.log(`[atelier] ${n} post(s) pré-rédigé(s) user=${userId}`); })
+          .catch((e: any) => console.error(`[AutoPlanner] Pré-rédaction failed for ${userId}:`, e?.message));
 
         processed++;
       } catch (err: any) {
