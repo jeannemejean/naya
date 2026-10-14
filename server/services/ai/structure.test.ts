@@ -16,6 +16,19 @@ describe("sorties structurées", () => {
     expect(j.type).toBe("object");
     expect(j.additionalProperties).toBe(false);
     expect(j.required.sort()).toEqual(["choix", "note"]);
+    expect(j.properties.choix.enum).toEqual(["a", "b"]);
+    expect(j.$schema).toBeUndefined();
+  });
+  it("schemaJson : enum imbriqué, nullable et objets imbriqués fermés", () => {
+    const P = z.object({ posts: z.array(z.object({ id: z.number().int(), s: z.enum(["x", "y"]), autre: z.string().nullable() })) });
+    const j: any = schemaJson(P);
+    const item = j.properties.posts.items;
+    expect(item.properties.s.enum).toEqual(["x", "y"]);
+    expect(item.additionalProperties).toBe(false);
+    expect([...item.required].sort()).toEqual(["autre", "id", "s"]);
+    expect(item.properties.autre.anyOf).toEqual([{ type: "string" }, { type: "null" }]);
+    expect(item.properties.id.minimum).toBeUndefined();
+    expect(lireStructure(P, '{"posts":[{"id":1,"s":"x","autre":null}]}').posts[0].s).toBe("x");
   });
   it("lireStructure valide, sinon lève", () => {
     expect(lireStructure(S, '{"choix":"a","note":2}')).toEqual({ choix: "a", note: 2 });

@@ -1,16 +1,21 @@
 // Sorties structurées : le schéma zod (v4) est la seule source de vérité. Il produit le JSON
 // Schema envoyé au modèle ET valide la réponse. Jamais de JSON découpé à la main.
 import { z } from "zod/v4";
-import { transformJSONSchema } from "@anthropic-ai/sdk/lib/transform-json-schema";
 import { callClaudeDetailed, assertNotTruncated } from "../claude";
 import type { TaskKind } from "./types";
 
-// Les sorties structurées exigent `additionalProperties: false` sur chaque objet.
+// Contraintes de bornes non prises en charge par les sorties structurées (zod les revérifie
+// de toute façon à la lecture) ; z.int() en émet par défaut (±2^53).
+const NON_SUPPORTE = new Set(["$schema", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "minItems", "maxItems"]);
+
+// On part de z.toJSONSchema (enum, const, anyOf, items, required conservés tels quels ; le
+// transformJSONSchema du SDK 0.78 les fondrait dans `description`, ce qui ne contraint plus le
+// modèle). Chaque objet est fermé : les sorties structurées exigent `additionalProperties: false`.
 function fermer(n: any): any {
   if (Array.isArray(n)) return n.map(fermer);
   if (n && typeof n === "object") {
     const o: Record<string, any> = {};
-    for (const [k, v] of Object.entries(n)) o[k] = fermer(v);
+    for (const [k, v] of Object.entries(n)) if (!NON_SUPPORTE.has(k)) o[k] = fermer(v);
     if (o.type === "object" || o.properties) o.additionalProperties = false;
     return o;
   }
@@ -18,7 +23,7 @@ function fermer(n: any): any {
 }
 
 export function schemaJson(s: z.ZodType): Record<string, unknown> {
-  return fermer(transformJSONSchema(z.toJSONSchema(s) as Record<string, any>));
+  return fermer(z.toJSONSchema(s));
 }
 
 export function lireStructure<T>(s: z.ZodType<T>, texte: string): T {
