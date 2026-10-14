@@ -44,6 +44,9 @@ export function lireModifications(m: Modifications): Record<string, unknown> | n
   if (m.scheduledFor !== undefined) {
     const d = typeof m.scheduledFor === "string" ? new Date(m.scheduledFor) : null;
     if (!d || isNaN(d.getTime())) return null;
+    // Une année hors de toute plausibilité (saisie en cours, « 0002 ») : jamais enregistrée.
+    const annee = d.getUTCFullYear();
+    if (annee < 2020 || annee > 2100) return null;
     patch.scheduledFor = d;
   }
   if (m.postFormat !== undefined) {

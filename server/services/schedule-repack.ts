@@ -11,6 +11,7 @@
  * Garantit l'absence de chevauchement ET le respect strict des heures de travail :
  * ce qui ne tient pas est renvoyé dans `overflow`, à reporter au jour suivant.
  */
+import { echeanceAtelier } from "@shared/atelier";
 
 export interface RepackTask {
   id: number;
@@ -264,6 +265,7 @@ export function repackDayAvecEcheances(
  * à un post — une tâche de production est tenue par la date de publication de son post,
  * un plafond de charge ne doit jamais la pousser après.
  */
-export function tachesARebalancer<T extends { completed?: boolean | null; contentId?: number | null }>(taches: T[]): T[] {
-  return taches.filter((t) => !t.completed && t.contentId == null);
+export function tachesARebalancer<T extends { completed?: boolean | null; contentId?: number | null; taskType?: string | null; actionData?: unknown }>(taches: T[]): T[] {
+  // Les tâches d'atelier de contenu ont aussi une échéance (la veille du premier post).
+  return taches.filter((t) => !t.completed && t.contentId == null && echeanceAtelier(t) == null);
 }

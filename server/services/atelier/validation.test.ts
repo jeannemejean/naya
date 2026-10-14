@@ -170,3 +170,12 @@ describe("devaliderPost", () => {
     expect((await devaliderPost(fabrique(post({ postStatus: "uploading" })), "u", 5)).statut).toBe("en_cours");
   });
 });
+
+describe("lireModifications — dates", () => {
+  it("refuse une date aberrante (année tapée chiffre par chiffre)", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ scheduledFor: "0002-10-19T07:00:00Z" })).toBeNull();
+    expect(lireModifications({ scheduledFor: "20266-10-19T07:00:00Z" })).toBeNull();
+    expect(lireModifications({ scheduledFor: "2026-10-19T07:00:00Z" })).toEqual({ scheduledFor: new Date("2026-10-19T07:00:00Z") });
+  });
+});

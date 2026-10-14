@@ -283,7 +283,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide }: {
         <div className="space-y-1">
           <Label htmlFor={`date-${post.id}`} className="text-xs">{t("atelier.date")}</Label>
           <Input id={`date-${post.id}`} type="datetime-local" className="h-8 text-sm" disabled={!modifiable}
-            value={versChampLocal(date)} onChange={(e) => { void changerDate(e.target.value); }} />
+            key={date} defaultValue={versChampLocal(date)} onBlur={(e) => { if (e.target.value !== versChampLocal(date)) void changerDate(e.target.value); }} />
         </div>
       </section>
 

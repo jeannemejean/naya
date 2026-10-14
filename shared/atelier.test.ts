@@ -173,3 +173,14 @@ describe("echeanceAtelier", () => {
     expect(echeanceAtelier({ taskType: "atelier_contenu", actionData: null })).toBeNull();
   });
 });
+
+describe("genreDuMedia", () => {
+  it("vidéo selon le type, ou selon le dossier d'envoi quand le navigateur n'a pas donné de type (.mov, HEIC)", async () => {
+    const { genreDuMedia } = await import("./atelier");
+    expect(genreDuMedia({ mimeType: "video/mp4", url: "x" })).toBe("video");
+    expect(genreDuMedia({ mimeType: "", url: "https://cdn/uploads/u/videos/a.mov" })).toBe("video");
+    expect(genreDuMedia({ mimeType: "application/octet-stream", url: "https://cdn/uploads/u/videos/a" })).toBe("video");
+    expect(genreDuMedia({ mimeType: "image/png", url: "https://cdn/uploads/u/images/a.png" })).toBe("image");
+    expect(genreDuMedia({ mimeType: null, url: "https://cdn/uploads/u/images/a" })).toBe("image");
+  });
+});

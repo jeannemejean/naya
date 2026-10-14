@@ -379,3 +379,14 @@ describe("tachesARebalancer", () => {
     expect(r.map((t) => t.id)).toEqual([1, 4]);
   });
 });
+
+describe("tachesARebalancer — atelier de contenu", () => {
+  it("une tâche d'atelier a une échéance : le rééquilibrage ne la déplace pas", () => {
+    const taches = [
+      { id: 1, completed: false, contentId: null, taskType: "atelier_contenu", actionData: { echeance: "2026-10-21" } },
+      { id: 2, completed: false, contentId: null, taskType: "atelier_validation", actionData: { echeance: "2026-10-21" } },
+      { id: 3, completed: false, contentId: null, taskType: "generic", actionData: null },
+    ];
+    expect(tachesARebalancer(taches).map((t) => t.id)).toEqual([3]);
+  });
+});

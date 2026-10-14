@@ -14,6 +14,7 @@ export interface DepsQuotidien {
   postsEntre(userId: string, debut: Date, fin: Date): Promise<any[]>;
   tachesDesPosts(userId: string, ids: number[]): Promise<any[]>;
   archiverTaches(userId: string, ids: number[]): Promise<void>;
+  desarchiverTaches(userId: string, ids: number[]): Promise<void>;
   /** Pose les ateliers de ces posts (placement idempotent). */
   placer(userId: string, posts: any[]): Promise<{ creees: number }>;
   tachesAtelier(userId: string, semaine: string): Promise<any[]>;
@@ -32,19 +33,30 @@ export async function basculerVersAteliers(
   const posts = (await deps.postsEntre(userId, debutJour(plusJours(demain, -1)), debutJour(plusJours(demain, 120))))
     .filter((p) => p.campaignId != null && p.scheduledFor && jourDuPost(p.scheduledFor) >= demain && postAProduire(p, aujourdhui) && aProduire(p));
   if (!posts.length) return { convertis: [], archivees: [], creees: 0 };
-  const taches = (await deps.tachesDesPosts(userId, posts.map((p) => p.id))).filter((t) => !t.archivedAt && estEtapeEcran(t.title));
+  const liees = (await deps.tachesDesPosts(userId, posts.map((p) => p.id))).filter((t) => !t.archivedAt);
 
   const convertis: any[] = [];
   const archivees: number[] = [];
   for (const p of posts) {
-    const siennes = taches.filter((t) => t.contentId === p.id);
-    if (siennes.length === 0 || siennes.some((t) => t.completed)) continue;
+    const toutes = liees.filter((t) => t.contentId === p.id);
+    // Aucune étape faite, quelle qu'elle soit (écrire, tourner…) : sinon l'ancien parcours continue.
+    if (toutes.some((t) => t.completed)) continue;
+    const ecran = toutes.filter((t) => estEtapeEcran(t.title));
+    if (ecran.length === 0) continue;
     convertis.push(p);
-    archivees.push(...siennes.map((t) => t.id));
+    archivees.push(...ecran.map((t) => t.id));
   }
   if (!appliquer || convertis.length === 0) return { convertis: convertis.map((p) => p.id), archivees, creees: 0 };
+  // Archivées d'abord (sinon le placement les voit encore sur l'ancien parcours) ; rendues si la
+  // pose échoue : un post n'est jamais laissé sans aucune tâche.
   await deps.archiverTaches(userId, archivees);
-  const { creees } = await deps.placer(userId, convertis);
+  let creees: number;
+  try {
+    ({ creees } = await deps.placer(userId, convertis));
+  } catch (e) {
+    await deps.desarchiverTaches(userId, archivees).catch(() => {});
+    throw e;
+  }
   return { convertis: convertis.map((p) => p.id), archivees, creees };
 }
 

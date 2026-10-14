@@ -125,7 +125,8 @@ export function registerAtelierRoutes(app: Express): void {
         if (post.consigne == null) patch.consigne = (post.body ?? "").trim() || post.title || "—";
       }
       await db.update(content).set({ ...(patch as any), updatedAt: new Date() })
-        .where(and(eq(content.id, post.id), eq(content.userId, req.userId)));
+        // Jamais sous un post validé entre-temps (il part tel que validé).
+        .where(and(eq(content.id, post.id), eq(content.userId, req.userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`, sql`coalesce(${content.autoPost}, false) = false`));
       res.json({ ok: true });
     } catch (e: any) {
       console.error("[Atelier] enregistrement:", e?.message);
@@ -185,6 +186,7 @@ export function registerAtelierRoutes(app: Express): void {
         UPDATE content
            SET media_ids = COALESCE(media_ids, '[]'::jsonb) || jsonb_build_array(${mediaId}::int), updated_at = now()
          WHERE id = ${post.id} AND user_id = ${req.userId}
+           AND COALESCE(content_status, '') <> 'ready' AND NOT COALESCE(auto_post, false)
            AND NOT (COALESCE(media_ids, '[]'::jsonb) @> jsonb_build_array(${mediaId}::int))`);
       res.status(201).json({ mediaId });
     } catch (e: any) {
@@ -208,7 +210,8 @@ export function registerAtelierRoutes(app: Express): void {
            SET media_ids = COALESCE((SELECT jsonb_agg(x) FROM jsonb_array_elements(COALESCE(media_ids, '[]'::jsonb)) x
                                       WHERE x <> to_jsonb(${mediaId}::int)), '[]'::jsonb),
                updated_at = now()
-         WHERE id = ${post.id} AND user_id = ${req.userId}`);
+         WHERE id = ${post.id} AND user_id = ${req.userId}
+           AND COALESCE(content_status, '') <> 'ready' AND NOT COALESCE(auto_post, false)`);
       res.json({ ok: true });
     } catch (e: any) {
       console.error("[Atelier] retrait visuel:", e?.message);

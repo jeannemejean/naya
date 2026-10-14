@@ -180,3 +180,10 @@ export function echeanceAtelier(t: { taskType?: string | null; actionData?: unkn
   const e = (t.actionData as { echeance?: unknown } | null)?.echeance;
   return typeof e === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e) ? e : null;
 }
+
+/** Nature d'un visuel : son type, sinon le dossier où il a été envoyé (…/videos/…). */
+export function genreDuMedia(m: { mimeType?: string | null; url?: string | null }): GenreMedia {
+  if ((m.mimeType || "").startsWith("video/")) return "video";
+  if ((m.mimeType || "").startsWith("image/")) return "image";
+  return /\/videos\//.test(m.url || "") ? "video" : "image";
+}

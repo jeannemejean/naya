@@ -87,6 +87,17 @@ describe("placerTachesProductionPosts — l'atelier de la semaine", () => {
     expect(deps.updateTask).toHaveBeenCalledWith(8, expect.objectContaining({ estimatedDuration: 9 }));
   });
 
+  it("l'échéance avance (post ajouté plus tôt) : l'atelier et la validation non faits reviennent avant elle", async () => {
+    const posts = [post(1, "2026-10-19"), post(2, "2026-10-22")];
+    const existant = { id: 7, taskType: "atelier_contenu", completed: false, estimatedDuration: 15, scheduledDate: "2026-10-19", scheduledTime: "09:00", title: "Atelier contenu — semaine du 19 oct.", actionData: { semaine: "2026-10-19", partie: 1, parties: 1, echeance: "2026-10-21", lien: "/atelier?semaine=2026-10-19" } };
+    const validation = { id: 8, taskType: "atelier_validation", completed: false, estimatedDuration: 7, scheduledDate: "2026-10-20", scheduledTime: "09:00", title: "Valider la semaine — 19 oct.", actionData: { semaine: "2026-10-19", echeance: "2026-10-21", lien: "/atelier?semaine=2026-10-19" } };
+    const deps = fabrique(posts, { getTachesAtelier: vi.fn(async () => [existant, validation]) });
+    await placerTachesProductionPosts(deps, { userId: "u", posts, aujourdhui: "2026-10-14" });
+    // Premier post lundi 19 → échéance vendredi 16 ; atelier 3 jours travaillés avant = mercredi 14.
+    expect(deps.updateTask).toHaveBeenCalledWith(7, expect.objectContaining({ scheduledDate: "2026-10-14", scheduledTime: null, scheduledEndTime: null }));
+    expect(deps.updateTask).toHaveBeenCalledWith(8, expect.objectContaining({ scheduledDate: "2026-10-15", scheduledTime: null }));
+  });
+
   it("atelier déjà fait : un post créé après lui ouvre un atelier de rattrapage, sans validation", async () => {
     const posts = [post(1, "2026-10-22", { contentStatus: "ready" }), post(2, "2026-10-23", { createdAt: new Date("2026-10-19T15:00:00Z") })];
     const fait = { id: 7, taskType: "atelier_contenu", completed: true, completedAt: new Date("2026-10-19T11:00:00Z"), estimatedDuration: 15, actionData: { semaine: "2026-10-19", partie: 1, parties: 1 } };
@@ -157,5 +168,21 @@ describe("placerTachesProductionPosts — l'atelier de la semaine", () => {
     const r = await placerTachesProductionPosts(deps, { userId: "u", posts, aujourdhui: "2026-10-14" });
     expect(r.creees).toBe(0);
     expect(deps.getPostsEntre).not.toHaveBeenCalled();
+  });
+});
+
+describe("placements simultanés (double clic, remplacement pendant le passage du matin)", () => {
+  it("deux placements en même temps pour la même utilisatrice ne créent qu'un atelier", async () => {
+    const posts = [post(1, "2026-10-22")];
+    const base: any[] = [];
+    const deps = fabrique(posts, {
+      getTachesAtelier: vi.fn(async () => { await new Promise((r) => setTimeout(r, 5)); return base.filter((t) => !t.archivedAt); }),
+      createTask: vi.fn(async (t: any) => { await new Promise((r) => setTimeout(r, 5)); const c = { id: base.length + 1, ...t }; base.push(c); return c; }),
+    });
+    await Promise.all([
+      placerTachesProductionPosts(deps, { userId: "u", posts, aujourdhui: "2026-10-14" }),
+      placerTachesProductionPosts(deps, { userId: "u", posts, aujourdhui: "2026-10-14" }),
+    ]);
+    expect(base.filter((t) => t.taskType === "atelier_contenu")).toHaveLength(1);
   });
 });

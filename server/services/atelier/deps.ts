@@ -8,6 +8,7 @@ import { gardeDepense } from "../routines/garde";
 import { compteDePublication } from "../connexions/comptes";
 import type { GenreMedia } from "@shared/programmation";
 import { effetSurPost } from "@shared/livrables";
+import { genreDuMedia } from "@shared/atelier";
 import type { DepsRedaction } from "./redaction";
 import type { DepsValidation } from "./validation";
 import { notifierRoutine } from "../routines/notifier";
@@ -23,7 +24,7 @@ export async function mediasDuPost(userId: string, post: any): Promise<Array<{ i
   const out: Array<{ id: number; url: string; mimeType: string | null; genre: GenreMedia }> = [];
   for (const id of ids) {
     const m = await storage.getMediaItemById(id, userId);
-    if (m?.url) out.push({ id, url: m.url, mimeType: m.mimeType ?? null, genre: (m.mimeType || "").startsWith("video/") ? "video" : "image" });
+    if (m?.url) out.push({ id, url: m.url, mimeType: m.mimeType ?? null, genre: genreDuMedia(m) });
   }
   return out;
 }
@@ -110,6 +111,10 @@ export const depsQuotidien: DepsQuotidien = {
   postsEntre: (userId, debut, fin) => storage.getPostsEntre(userId, debut, fin),
   tachesDesPosts: (userId, ids) => storage.getTasksForContents(userId, ids),
   archiverTaches: (userId, ids) => depsValidation.archiverTaches(userId, ids),
+  async desarchiverTaches(userId, ids) {
+    if (!ids.length) return;
+    await db.update(tasks).set({ archivedAt: null }).where(and(eq(tasks.userId, userId), inArray(tasks.id, ids)));
+  },
   placer: (userId, posts) => placerTachesProductionPosts(storage, { userId, posts, aujourdhui: jourHeureParis(new Date()).jour }),
   tachesAtelier: (userId, semaine) => storage.getTachesAtelier(userId, semaine),
   rediger: (userId, id) => redigerPost(depsRedaction, userId, id),

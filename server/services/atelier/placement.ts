@@ -86,11 +86,14 @@ async function creer(ctx: Contexte, t: { titre: string; description: string; tas
 }
 
 /** Met une tâche existante à la bonne durée / au bon titre ; n'écrit que ce qui change. */
-async function ajuster(ctx: Contexte, t: Tache, voulu: { duree: number; titre?: string; actionData: Record<string, unknown> }): Promise<boolean> {
+async function ajuster(ctx: Contexte, t: Tache, voulu: { duree: number; titre?: string; actionData: Record<string, unknown>; jour?: string | null }): Promise<boolean> {
   const patch: Record<string, unknown> = {};
+  // Un autre jour : sans heure (celle d'un autre jour peut tomber sur autre chose), le re-tassage en donne une.
+  const deplacer = !!voulu.jour && voulu.jour !== t.scheduledDate;
+  if (deplacer) { patch.scheduledDate = voulu.jour; patch.scheduledTime = null; patch.scheduledEndTime = null; }
   if ((t.estimatedDuration ?? 0) !== voulu.duree) {
     patch.estimatedDuration = voulu.duree;
-    if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) patch.scheduledEndTime = minToHHMM(hhmmToMin(t.scheduledTime) + voulu.duree);
+    if (!deplacer && t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) patch.scheduledEndTime = minToHHMM(hhmmToMin(t.scheduledTime) + voulu.duree);
   }
   if (voulu.titre && t.title !== voulu.titre) patch.title = voulu.titre;
   const ad = { ...(t.actionData ?? {}), ...voulu.actionData };
@@ -167,13 +170,17 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
         continue;
       }
       const rattrapage = !!t.actionData?.rattrapage;
+      // L'échéance a pu avancer (post ajouté plus tôt dans la semaine) : la partie revient avant.
+      const jour = t.scheduledDate && t.scheduledDate > echeance ? plan.parties[Math.min(i, plan.parties.length - 1)]?.jour ?? echeance : null;
       await ajuster(ctx, t, {
+        jour,
         duree: durees[i],
         titre: rattrapage ? undefined : titreAtelier(lundi, faits + i + 1, total),
         actionData: rattrapage ? { echeance } : { partie: faits + i + 1, parties: total, echeance },
       });
     }
     let jour = nonFaits[nonFaits.length - 1].scheduledDate ?? plan.parties[0]?.jour ?? aujourdhui;
+    if (jour > echeance) jour = echeance;
     for (let i = nonFaits.length; i < durees.length; i++) {
       for (let x = plusJours(jour, 1); x <= echeance; x = plusJours(x, 1)) if (ctx.isWorkDay(x)) { jour = x; break; }
       await creer(ctx, {
@@ -183,7 +190,8 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
       creees++;
     }
     for (const v of validations.filter((x) => !x.completed)) {
-      await ajuster(ctx, v, { duree: dureeValidation(aFaire.length), actionData: { echeance } });
+      const jour = v.scheduledDate && v.scheduledDate > echeance ? plan.validation?.jour ?? echeance : null;
+      await ajuster(ctx, v, { jour, duree: dureeValidation(aFaire.length), actionData: { echeance } });
     }
     return { creees, jourAtelier: premierNonFait };
   }
@@ -208,7 +216,26 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
  * Production des posts : l'atelier de chaque semaine concernée, puis les étapes qui restent
  * des tâches du post (tourner, monter une vidéo), jamais avant l'atelier.
  */
+// Un placement à la fois par utilisatrice : deux placements simultanés (double clic sur
+// « lancer », remplacement d'un post pendant le passage du matin) liraient tous deux « pas
+// d'atelier » et en créeraient deux. Le serveur tourne en une seule instance (Railway).
+const enCours = new Map<string, Promise<unknown>>();
+
 export async function placerAteliers(
+  deps: PlacementDeps,
+  args: { userId: string; posts: PostPlacable[]; aujourdhui: string; controleCreneaux?: boolean },
+): Promise<{ creees: number }> {
+  const precedent = enCours.get(args.userId) ?? Promise.resolve();
+  const courant = precedent.catch(() => {}).then(() => placerAteliersSeul(deps, args));
+  enCours.set(args.userId, courant);
+  try {
+    return await courant;
+  } finally {
+    if (enCours.get(args.userId) === courant) enCours.delete(args.userId);
+  }
+}
+
+async function placerAteliersSeul(
   deps: PlacementDeps,
   { userId, posts, aujourdhui, controleCreneaux = true }: {
     userId: string; posts: PostPlacable[]; aujourdhui: string; controleCreneaux?: boolean;

@@ -12,6 +12,7 @@ function fabrique(posts: any[], taches: any[] = [], over: any = {}) {
     postsEntre: vi.fn(async () => posts),
     tachesDesPosts: vi.fn(async () => taches),
     archiverTaches: vi.fn(async () => {}),
+    desarchiverTaches: vi.fn(async () => {}),
     placer: vi.fn(async () => ({ creees: 2 })),
     tachesAtelier: vi.fn(async () => [] as any[]),
     rediger: vi.fn(async () => ({ statut: "redige", body: "x" } as any)),
@@ -54,6 +55,18 @@ describe("basculerVersAteliers", () => {
     expect(r).toEqual({ convertis: [1], archivees: [10], creees: 0 });
     expect(deps.archiverTaches).not.toHaveBeenCalled();
     expect(deps.placer).not.toHaveBeenCalled();
+  });
+
+  it("une étape vidéo faite (Tourner) compte aussi : le post garde son parcours", async () => {
+    const deps = fabrique([post(1, "2026-10-22", { postFormat: "reel" })], [t(10, 1, "Écrire le script — Post 1"), t(11, 1, "Tourner — Post 1", { completed: true })]);
+    expect((await basculerVersAteliers(deps, "u", { aujourdhui: "2026-10-19", appliquer: true })).convertis).toEqual([]);
+    expect(deps.archiverTaches).not.toHaveBeenCalled();
+  });
+
+  it("la pose de l'atelier échoue : les étapes archivées sont rendues (le post n'est jamais laissé sans rien)", async () => {
+    const deps = fabrique([post(1, "2026-10-22")], [t(10, 1, "Rédiger le texte — Post 1")], { placer: vi.fn(async () => { throw new Error("db"); }) });
+    await expect(basculerVersAteliers(deps, "u", { aujourdhui: "2026-10-19", appliquer: true })).rejects.toThrow("db");
+    expect(deps.desarchiverTaches).toHaveBeenCalledWith("u", [10]);
   });
 
   it("les étapes archivées ne comptent plus (bascule déjà faite → rien)", async () => {
