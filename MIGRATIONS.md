@@ -311,6 +311,39 @@ Livrables de tâche, étape 1 (spec `docs/superpowers/specs/2026-10-06-naya-livr
       avec leurs endpoints quand le déploiement est stable.
 
 
+## 3nonies. Production — **NON migrée** (`0031`) — précondition de fusion des profils de veille
+
+Profils de veille, lot 1 (spec `docs/superpowers/specs/2026-10-14-profils-de-veille-design.md`,
+branche `feat/profils-de-veille`, fichier `migrations/0031_gray_thunderball.sql`).
+
+- Contenu : **9 `CREATE TABLE`** (`profils_veille`, `profil_comptes`, `profil_passages`,
+  `profil_posts`, `profil_analyses`, `profil_tendances`, `profil_rattachements`,
+  `tendances_projet`, `profil_etiquettes`), leurs contraintes et index, et **2 `ADD COLUMN`
+  nullables** sur `content` : `tendance_id integer`, `tendance_projet_id integer`. Aucun `DROP`,
+  `TRUNCATE`, `DELETE`, changement de type ni `SET NOT NULL` sur l'existant.
+- [x] Appliquée sur **dev-local** le 14 octobre 2026.
+- [ ] **NON appliquée en production.**
+
+### Ordre obligatoire
+
+1. [ ] Sauvegarde Neon de la production (branche `sauvegarde-avant-profils-veille-…`), vérifiée.
+2. [ ] Migrer la production par `scripts/migrate-prod.ts` — **vérifier d'abord l'endpoint** :
+       `ep-damp-water-anuyb0k6` = production ; garde re-testée à blanc.
+3. [ ] **Seulement ensuite**, pousser `main`.
+
+**Pourquoi cet ordre.** Drizzle nomme chaque colonne du schéma dans ses `SELECT` : dès que le
+code de la branche est en ligne, toute lecture de `content` demande `tendance_id` et
+`tendance_projet_id`. Sans la migration, **toutes les lectures de `content` cassent** (posts,
+atelier, campagnes). L'inverse est sûr : le code actuellement en ligne ignore les nouvelles
+tables et colonnes (purement additif).
+
+### Ce qui reste (après déploiement)
+
+- [ ] `profil_comptes.suggere_par` est en `ON DELETE NO ACTION` : à passer en `SET NULL` dans une
+      prochaine migration (sinon une utilisatrice ayant suggéré un compte ne peut être supprimée).
+- [ ] Supprimer la branche de sauvegarde quand le déploiement est stable.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;

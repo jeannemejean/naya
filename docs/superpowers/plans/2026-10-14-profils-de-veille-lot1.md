@@ -3602,3 +3602,6 @@ Expected : 0 erreur, suite verte, build OK.
 - **Libellés « autre » récurrents proposés à Jeanne** (spec §3, étape 1) : les libellés sont enregistrés (`profil_posts.format.autreLibelle`) mais leur proposition dans l'admin est reportée au lot 2.
 - **Identifiant de tendance renvoyé par la rédaction** : seulement dans l'atelier (`TENDANCE: <id>`). Les autres générateurs reçoivent le bloc mais ne relient pas le post à la tendance.
 - **Ouverture progressive** : la diffusion aux utilisatrices passe par `PROFILS_VEILLE_POUR_TOUS`, posée après le banc d'évaluation (la spec demandait le banc « avant d'ouvrir le lot 1 aux utilisatrices » sans dire comment).
+- **Avant ouverture (`PROFILS_VEILLE_POUR_TOUS`)** : langue du compte dans le tri et la rédaction, et libellés traduits côté client (formats, structures). Le lot 1 est en français seulement.
+- **Ligne « Format inspiré de : … » dans l'atelier** : non construite. Le post est relié à sa tendance (`content.tendance_id`) mais l'atelier ne l'affiche pas encore.
+- **`profil_comptes.suggere_par` sans `ON DELETE SET NULL`** : à corriger dans une prochaine migration (bloque la suppression d'une utilisatrice ayant suggéré un compte). Voir `MIGRATIONS.md`, section `0031`.
