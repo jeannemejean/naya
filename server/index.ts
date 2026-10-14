@@ -15,6 +15,7 @@ import { adjustBufferForUser } from "./services/rhythm-buffer";
 import { runReadingRoom } from "./services/reading/runner";
 import { storage } from "./storage";
 import { scheduleRoutines } from "./services/routines/ordonnanceur";
+import { scheduleProfilsVeille } from "./services/profils-veille/planificateur";
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('unhandledRejection', (reason, promise) => {
@@ -211,6 +212,9 @@ function scheduleReadingRoom() {
 
   // ─── Routines planifiées (sourcing quotidien des prospects par campagne active…) ──
   scheduleRoutines();
+
+  // ─── Profils de veille : rattachement, collecte (lun/mer/ven), analyse (dim), tri (chaque tour) ──
+  scheduleProfilsVeille();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

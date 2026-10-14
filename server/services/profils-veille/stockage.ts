@@ -146,6 +146,28 @@ export const stockageProfils = {
   async marquerTri(projectId: number, semaine: string) {
     await db.update(profilRattachements).set({ dernierTri: semaine }).where(eq(profilRattachements.projectId, projectId));
   },
+  /** Actif ET au moins un projet actif rattaché (propose ou confirme) : un profil vide ne coûte rien. */
+  async profilsCollectables() {
+    return db.selectDistinct({ id: profilsVeille.id, nom: profilsVeille.nom, description: profilsVeille.description })
+      .from(profilsVeille)
+      .innerJoin(profilRattachements, eq(profilRattachements.profilId, profilsVeille.id))
+      .innerJoin(projects, eq(projects.id, profilRattachements.projectId))
+      .where(and(eq(profilsVeille.statut, "actif"), inArray(profilRattachements.statut, ["propose", "confirme"]), eq(projects.projectStatus, "active")));
+  },
+  /** Rattachements actifs dont le profil a des tendances terminées pour cette semaine et pas encore triés. */
+  async rattachementsATrier(semaine: string) {
+    return db.selectDistinct({ userId: profilRattachements.userId, projectId: profilRattachements.projectId, profilId: profilRattachements.profilId, dernierTri: profilRattachements.dernierTri })
+      .from(profilRattachements)
+      .innerJoin(profilAnalyses, and(eq(profilAnalyses.profilId, profilRattachements.profilId), eq(profilAnalyses.semaine, semaine), inArray(profilAnalyses.statut, ["termine", "rien"])))
+      .innerJoin(projects, eq(projects.id, profilRattachements.projectId))
+      .where(and(inArray(profilRattachements.statut, ["propose", "confirme"]), eq(projects.projectStatus, "active"),
+        sql`coalesce(${profilRattachements.dernierTri}, '') <> ${semaine}`));
+  },
+  async purgerPosts(maintenant: Date): Promise<number> {
+    const limite = new Date(maintenant.getTime() - REGLES.retentionPostsJours * 24 * 3600_000);
+    const r = await db.delete(profilPosts).where(lt(profilPosts.releveLe, limite)).returning({ id: profilPosts.id });
+    return r.length;
+  },
   async tendancesDuProjet(userId: string, projectId: number) {
     return db.select({
       id: tendancesProjet.id, tendanceId: tendancesProjet.tendanceId, statut: tendancesProjet.statut, expireLe: tendancesProjet.expireLe, adaptation: tendancesProjet.adaptation, contentId: tendancesProjet.contentId,
