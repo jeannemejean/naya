@@ -87,4 +87,44 @@ describe("collecterProfil", () => {
     await collecterProfil(d, 7, "instagram", maintenant);
     expect(d.terminerPassage).toHaveBeenCalledWith(50, expect.objectContaining({ statut: "ok", comptes: 1, coutEur: 0.0014 }));
   });
+
+  it("appariement exact : « maison » en erreur ne prend pas les lignes de « maison.paris »", async () => {
+    d = deps({
+      comptesSuivis: vi.fn(async () => [
+        { id: 1, compte: "maison", url: "https://www.instagram.com/maison/", echecsConsecutifs: 0 },
+        { id: 2, compte: "maison.paris", url: "https://www.instagram.com/maison.paris/", echecsConsecutifs: 0 },
+      ]),
+      collecter: vi.fn(async () => [
+        { account: "maison.paris", followers: 500, input: { url: "https://www.instagram.com/maison.paris/" },
+          posts: [{ url: "https://www.instagram.com/p/M/", datetime: ancien, likes: 10, comments: 0 }] },
+        { error: "Profile not found", input: { url: "https://www.instagram.com/maison/" } },
+      ]),
+    });
+    await collecterProfil(d, 7, "instagram", maintenant);
+    expect(d.majCompte).toHaveBeenCalledWith(1, { echecsConsecutifs: 1 });
+    const rows = (d.enregistrerPosts as any).mock.calls[0][0];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ compteId: 2 });
+  });
+
+  it("un même post renvoyé par deux comptes n'est enregistré qu'une fois", async () => {
+    const post = { url: "https://www.instagram.com/p/X/", datetime: ancien, likes: 10, comments: 0 };
+    d = deps({
+      collecter: vi.fn(async () => [
+        { account: "lune", followers: 1000, posts: [post] },
+        { account: "soleil", followers: 900, posts: [post] },
+      ]),
+    });
+    await collecterProfil(d, 7, "instagram", maintenant);
+    const rows = (d.enregistrerPosts as any).mock.calls[0][0];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].compteId).toBe(1);
+  });
+
+  it("une exception après la réservation : passage terminé en erreur, résultat erreur", async () => {
+    d = deps({ enregistrerPosts: vi.fn(async () => { throw new Error("db down"); }) });
+    const r = await collecterProfil(d, 7, "instagram", maintenant);
+    expect(r).toMatchObject({ statut: "erreur" });
+    expect(d.terminerPassage).toHaveBeenCalledWith(50, expect.objectContaining({ statut: "erreur", erreur: expect.stringContaining("db down") }));
+  });
 });

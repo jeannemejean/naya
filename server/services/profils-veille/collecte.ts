@@ -32,6 +32,26 @@ export async function collecterProfil(deps: DepsCollecte, profilId: number, plat
   const passage = await deps.reserverPassage(profilId, plateforme, jourDe(maintenant));
   if (passage == null) return { statut: "deja" };
 
+  const etat = { cout: 0 };
+  try {
+    return await executer(deps, passage, profilId, plateforme, maintenant, etat);
+  } catch (e) {
+    // Le passage est réservé : on ne le laisse jamais « en_cours » sans trace.
+    const erreur = (e instanceof Error ? e.message : String(e)).slice(0, 500);
+    await deps.terminerPassage(passage, { statut: "erreur", erreur, coutEur: etat.cout });
+    return { statut: "erreur", erreur };
+  }
+}
+
+/** Premier segment du chemin d'une URL de profil (le nom du compte), en minuscules ; null si illisible. */
+function premierSegment(url: unknown): string | null {
+  try {
+    return new URL(String(url)).pathname.split("/").filter(Boolean)[0]?.toLowerCase() ?? null;
+  } catch { return null; }
+}
+
+async function executer(deps: DepsCollecte, passage: number, profilId: number, plateforme: PlateformeVeille, maintenant: Date, etat: { cout: number }): Promise<ResultatCollecte> {
+
   if ((await deps.depenseDuMois(profilId, moisDe(maintenant))) >= REGLES.plafondEurParMois) {
     await deps.terminerPassage(passage, { statut: "plafond", erreur: "Plafond mensuel du profil atteint." });
     return { statut: "plafond" };
@@ -50,9 +70,13 @@ export async function collecterProfil(deps: DepsCollecte, profilId: number, plat
     return { statut: "erreur", erreur };
   }
 
-  const lus = lignes.map((l) => ({ l, p: deps.lireProfil(l) }));
-  const pourCompte = (c: CompteSuivi) =>
-    lus.find(({ l, p }) => p.compte === c.compte || String(l?.input?.url ?? l?.url ?? "").toLowerCase().includes(`/${c.compte}`));
+  const lus = lignes.map((l) => ({ l, p: deps.lireProfil(l), pris: false }));
+  // Appariement exact (nom de compte), une ligne au plus par compte.
+  const pourCompte = (c: CompteSuivi) => {
+    const trouve = lus.find((x) => !x.pris && (x.p.compte === c.compte || premierSegment(x.l?.input?.url ?? x.l?.url) === c.compte));
+    if (trouve) trouve.pris = true;
+    return trouve;
+  };
 
   const rows: InsertProfilPost[] = [];
   const parCompte = new Map<number, string[]>();
@@ -77,6 +101,14 @@ export async function collecterProfil(deps: DepsCollecte, profilId: number, plat
       if (mur) parCompte.set(c.id, [...(parCompte.get(c.id) ?? []), cle]);
     }
   }
+
+  etat.cout = (comptes.length - echecs) * deps.coutParCompte;
+
+  // Un même post peut sortir deux fois (collaboration, doublon du fournisseur) : première occurrence retenue.
+  const vues = new Set<string>();
+  const uniques = rows.filter((r) => (vues.has(r.cle) ? false : (vues.add(r.cle), true)));
+  rows.length = 0;
+  rows.push(...uniques);
 
   const existantes = await deps.clesExistantes(profilId, rows.map((r) => r.cle));
   await deps.enregistrerPosts(rows);
