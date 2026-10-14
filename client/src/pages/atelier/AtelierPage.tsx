@@ -81,7 +81,8 @@ export default function AtelierPage({ onSearchClick }: { onSearchClick?: () => v
   }, [posts, actif]);
 
   const { faits, total } = progression(posts);
-  const pretsATout = posts.filter((p) => aValider(p) && p.manques.length === 0 && !enRedaction.has(p.id));
+  // Seulement des brouillons : un post « à rédiger » porte encore la consigne, jamais publiée.
+  const pretsATout = posts.filter((p) => p.etat === "brouillon" && p.manques.length === 0 && !enRedaction.has(p.id));
   const postActif = useMemo(() => posts.find((p) => p.id === actif) ?? null, [posts, actif]);
   const libelle = new Date(`${semaine}T12:00:00Z`).toLocaleDateString(i18n.language, { day: "numeric", month: "long" });
   const allerA = (s: string) => navigate(`/atelier?semaine=${s}`);

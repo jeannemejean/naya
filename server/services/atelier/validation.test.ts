@@ -53,7 +53,7 @@ describe("validerPost", () => {
 
   it("vidéo : sans vidéo, jamais programmée (même avec une image)", async () => {
     const deps = fabrique(post({ postFormat: "reel" }), { mediasDuPost: vi.fn(async () => ["image"]) });
-    expect(await validerPost(deps, "u", 5, {})).toEqual({ statut: "manques", manques: ["video"] });
+    expect(await validerPost(deps, "u", 5, {})).toEqual({ statut: "manques", manques: ["video", "format_incoherent"] });
   });
 
   it("Instagram en texte seul : Instagram exige un visuel", async () => {
@@ -133,6 +133,26 @@ describe("validerPost", () => {
   it("format inconnu ou date illisible : refusés", async () => {
     expect((await validerPost(fabrique(), "u", 5, { postFormat: "hologramme" })).statut).toBe("invalide");
     expect((await validerPost(fabrique(), "u", 5, { scheduledFor: "pas une date" })).statut).toBe("invalide");
+  });
+});
+
+describe("validerPost — jamais la consigne, jamais un post déjà programmé", () => {
+  it("un post encore « à rédiger » (son texte est la consigne) n'est jamais validé, même avec ce texte renvoyé", async () => {
+    const p = post({ contentStatus: "idea", consigne: null, body: "Raconter le retour d'un client" });
+    const deps = fabrique(p);
+    expect(await validerPost(deps, "u", 5, { body: "Raconter le retour d'un client" })).toEqual({ statut: "manques", manques: ["redaction"] });
+    expect(deps.ecrits).toEqual([]);
+  });
+  it("un post « à rédiger » dont l'utilisatrice a écrit le texte : c'est son texte, il est validé", async () => {
+    const p = post({ contentStatus: "idea", consigne: null, body: "Raconter le retour d'un client" });
+    const deps = fabrique(p);
+    expect((await validerPost(deps, "u", 5, { body: "Mon vrai post." })).statut).toBe("programme");
+    expect(deps.ecrits[0]).toMatchObject({ body: "Mon vrai post.", contentStatus: "draft", consigne: "Raconter le retour d'un client" });
+  });
+  it("un post déjà validé n'est ni modifié ni revalidé (on le dévalide d'abord)", async () => {
+    const deps = fabrique(post({ contentStatus: "ready", autoPost: true }));
+    expect(await validerPost(deps, "u", 5, { scheduledFor: "2026-10-19T07:00:00Z" })).toEqual({ statut: "deja_valide" });
+    expect(deps.ecrits).toEqual([]);
   });
 });
 

@@ -139,7 +139,7 @@ export function registerAtelierRoutes(app: Express): void {
       const r = await validerPost(depsValidation, req.userId, id, req.body ?? {});
       if (r.statut === "introuvable") return res.status(404).json({ message: "not_found" });
       if (r.statut === "invalide") return res.status(400).json({ message: "invalide" });
-      if (r.statut === "en_cours" || r.statut === "deja_publie") return res.status(409).json({ message: r.statut });
+      if (r.statut === "en_cours" || r.statut === "deja_publie" || r.statut === "deja_valide") return res.status(409).json({ message: r.statut });
       if (r.statut === "manques") return res.status(422).json(r);
       res.json(r);
     } catch (e: any) {

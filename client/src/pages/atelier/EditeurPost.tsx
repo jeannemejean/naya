@@ -92,7 +92,8 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide }: {
     : [];
 
   const lancerValidation = useCallback(async () => {
-    if (!modifiable || occupe) return;
+    // Jamais pendant que Naya rédige (le texte affiché est encore la consigne), ni s'il manque quelque chose.
+    if (!modifiable || occupe || enRedaction || manques.length > 0) return;
     setOccupe("valider");
     try {
       await vider();
@@ -107,7 +108,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide }: {
       onValide();
     } catch (e) { erreur(e); }
     finally { setOccupe(null); }
-  }, [modifiable, occupe, vider, post.id, texte, date, i18n.language]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [modifiable, occupe, enRedaction, manques.length, vider, post.id, texte, date, i18n.language]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ⌘/Ctrl + Entrée : valider, où que soit le curseur.
   useEffect(() => {

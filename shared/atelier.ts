@@ -142,7 +142,7 @@ export function etatPost(p: {
   return "a_rediger";
 }
 
-export type Manque = "texte" | "date" | "visuel" | "visuels" | "video";
+export type Manque = "texte" | "date" | "visuel" | "visuels" | "video" | "format_incoherent" | "redaction";
 
 /**
  * Ce qui empêche de valider un post : le post publié ne serait pas celui prévu. Le compte
@@ -158,6 +158,19 @@ export function manquesPourValider({ genre, body, scheduledFor, medias, maintena
   if ((genre === "image" || genre === "story") && medias.length === 0) manques.push("visuel");
   if (genre === "carrousel" && medias.length < 2) manques.push("visuels");
   if (genre === "video" && !medias.includes("video")) manques.push("video");
+  // Le réseau publie selon les visuels joints (formatDePublication), pas selon le format choisi :
+  // ils doivent correspondre exactement, sinon une image partirait en carrousel, une vidéo en
+  // carrousel, un « texte seul » avec ses images…
+  const images = medias.filter((m) => m === "image").length;
+  const videos = medias.length - images;
+  const coherent =
+    genre === "texte" ? medias.length === 0
+    : genre === "image" ? videos === 0 && images <= 1
+    : genre === "video" ? images === 0 && videos <= 1
+    : genre === "story" ? medias.length <= 1
+    : genre === "long" ? medias.length <= 1
+    : true;
+  if (!coherent) manques.push("format_incoherent");
   return manques;
 }
 

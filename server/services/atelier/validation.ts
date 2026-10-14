@@ -32,7 +32,7 @@ export interface DepsValidation {
 export type ResultatValidation =
   | { statut: "programme" | "a_publier_soi_meme" }
   | { statut: "manques"; manques: Array<Manque | "trop_de_visuels"> }
-  | { statut: "introuvable" | "en_cours" | "deja_publie" | "invalide" };
+  | { statut: "introuvable" | "en_cours" | "deja_publie" | "deja_valide" | "invalide" };
 
 export interface Modifications { body?: unknown; title?: unknown; scheduledFor?: unknown; postFormat?: unknown }
 
@@ -84,8 +84,18 @@ export async function validerPost(deps: DepsValidation, userId: string, id: numb
   if (!post) return { statut: "introuvable" };
   if (EN_COURS.includes(post.postStatus)) return { statut: "en_cours" };
   if (etatPost(post) === "publie") return { statut: "deja_publie" };
+  // Un post validé part tel quel : on ne le change pas sous le worker (on le dévalide d'abord).
+  if (etatPost(post) === "valide") return { statut: "deja_valide" };
   const patch = lireModifications(modifs);
   if (!patch) return { statut: "invalide" };
+  if (etatPost(post) === "a_rediger") {
+    // Son texte est encore la CONSIGNE du plan : jamais publiée. Un texte différent envoyé ici
+    // est celui de l'utilisatrice : le post devient un brouillon (la consigne est mise de côté).
+    const ecrit = typeof patch.body === "string" && patch.body.trim() && patch.body.trim() !== (post.body ?? "").trim();
+    if (!ecrit) return { statut: "manques", manques: ["redaction"] };
+    patch.contentStatus = "draft";
+    if (post.consigne == null) patch.consigne = (post.body ?? "").trim() || post.title || "—";
+  }
   if (Object.keys(patch).length) post = await deps.majPost(id, userId, patch);
 
   const maintenant = deps.maintenant();

@@ -143,8 +143,23 @@ describe("manquesPourValider", () => {
     expect(manquesPourValider({ ...base, genre: "carrousel", medias: ["image"] })).toEqual(["visuels"]);
     expect(manquesPourValider({ ...base, genre: "carrousel", medias: ["image", "image"] })).toEqual([]);
   });
+  it("les visuels doivent correspondre exactement au format (sinon le réseau publierait autre chose)", () => {
+    // Image : une seule image. Deux → carrousel ; une vidéo → vidéo.
+    expect(manquesPourValider({ ...base, genre: "image", medias: ["image", "image"] })).toEqual(["format_incoherent"]);
+    expect(manquesPourValider({ ...base, genre: "image", medias: ["video"] })).toEqual(["format_incoherent"]);
+    // Vidéo : une seule vidéo, rien d'autre.
+    expect(manquesPourValider({ ...base, genre: "video", medias: ["video", "image"] })).toEqual(["format_incoherent"]);
+    // Texte seul : aucun visuel.
+    expect(manquesPourValider({ ...base, genre: "texte", medias: ["image"] })).toEqual(["format_incoherent"]);
+    // Story : un seul visuel.
+    expect(manquesPourValider({ ...base, genre: "story", medias: ["image", "image"] })).toEqual(["format_incoherent"]);
+    // Carrousel : que des images ou vidéos, 2 au moins ; long : un visuel au plus.
+    expect(manquesPourValider({ ...base, genre: "carrousel", medias: ["image", "video", "image"] })).toEqual([]);
+    expect(manquesPourValider({ ...base, genre: "long", medias: ["image", "image"] })).toEqual(["format_incoherent"]);
+    expect(manquesPourValider({ ...base, genre: "long", medias: [] })).toEqual([]);
+  });
   it("une vidéo sans vidéo, même avec une image", () => {
-    expect(manquesPourValider({ ...base, genre: "video", medias: ["image"] })).toEqual(["video"]);
+    expect(manquesPourValider({ ...base, genre: "video", medias: ["image"] })).toEqual(["video", "format_incoherent"]);
     expect(manquesPourValider({ ...base, genre: "video", medias: ["video"] })).toEqual([]);
   });
 });
