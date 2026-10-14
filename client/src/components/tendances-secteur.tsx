@@ -61,6 +61,8 @@ export function TendancesSecteur({ projectId, compact = false }: { projectId: nu
     );
   }
 
+  // Refusé (« Aucun des deux ») : plus de « Naya suit pour toi… » ; Naya range de nouveau le projet.
+  const actif = data.rattachement && (data.rattachement.statut === "propose" || data.rattachement.statut === "confirme") ? data.rattachement : null;
   const nombre = (x: number) => x.toLocaleString(i18n.language, { maximumFractionDigits: 1 });
   const marquerVu = (tend: Tendance) => {
     if (tend.statut !== "nouveau" || dejaVues.current.has(tend.id)) return;
@@ -71,11 +73,11 @@ export function TendancesSecteur({ projectId, compact = false }: { projectId: nu
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" />{t("tendancesSecteur.titre")}</CardTitle></CardHeader>
       <CardContent className="space-y-4">
-        {!data.rattachement && <p className="text-sm text-muted-foreground">{t("tendancesSecteur.aucunProfil")}</p>}
+        {(!data.rattachement || data.rattachement.statut === "refuse") && <p className="text-sm text-muted-foreground">{t("tendancesSecteur.aucunProfil")}</p>}
         {data.rattachement?.statut === "en_attente" && <p className="text-sm text-muted-foreground">{t("tendancesSecteur.enAttente")}</p>}
-        {data.rattachement && data.rattachement.statut !== "en_attente" && (
+        {actif && (
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span>{t("tendancesSecteur.suivi", { profil: data.rattachement.nomProfil })}</span>
+            <span>{t("tendancesSecteur.suivi", { profil: actif.nomProfil })}</span>
             <Button size="sm" variant="ghost" onClick={() => setChoix(!choix)}>{t("tendancesSecteur.pasToi")}</Button>
           </div>
         )}
@@ -87,15 +89,15 @@ export function TendancesSecteur({ projectId, compact = false }: { projectId: nu
             <Button size="sm" variant="ghost" onClick={() => refuser.mutate()}>{t("tendancesSecteur.aucunDesDeux")}</Button>
           </div>
         )}
-        {data.rattachement && data.rattachement.statut !== "en_attente" && (
+        {actif && (
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (saisie.trim()) suggerer.mutate(); }}>
             <Input value={saisie} onChange={(e) => setSaisie(e.target.value)} placeholder={t("tendancesSecteur.suggererPlaceholder")} className="max-w-xs" />
             <Button size="sm" variant="outline" type="submit">{t("tendancesSecteur.suggerer")}</Button>
           </form>
         )}
 
-        {!data.ouvert && data.rattachement && <p className="text-sm text-muted-foreground">{t("tendancesSecteur.ferme")}</p>}
-        {data.ouvert && data.rattachement && data.tendances.length === 0 && <p className="text-sm text-muted-foreground">{t("tendancesSecteur.rien")}</p>}
+        {!data.ouvert && actif && <p className="text-sm text-muted-foreground">{t("tendancesSecteur.ferme")}</p>}
+        {data.ouvert && actif && data.tendances.length === 0 && <p className="text-sm text-muted-foreground">{t("tendancesSecteur.rien")}</p>}
         {postCree && <Link href={`/atelier?semaine=${encodeURIComponent(postCree)}`}><Button size="sm">{t("tendancesSecteur.ouvrirAtelier")}</Button></Link>}
 
         {data.tendances.map((tend) => (

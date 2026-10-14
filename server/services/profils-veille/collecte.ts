@@ -64,7 +64,8 @@ async function executer(deps: DepsCollecte, passage: number, profilId: number, p
   }
 
   const lignes = await deps.collecter(plateforme, comptes.map((c) => c.url));
-  if (lignes == null) {
+  // Instantané vide : c'est le fournisseur qui a échoué, pas les comptes (aucun n'est pénalisé).
+  if (lignes == null || lignes.length === 0) {
     const erreur = "La collecte n'a pas répondu (fournisseur indisponible ou délai dépassé).";
     await deps.terminerPassage(passage, { statut: "erreur", comptes: comptes.length, erreur, coutEur: 0 });
     return { statut: "erreur", erreur };

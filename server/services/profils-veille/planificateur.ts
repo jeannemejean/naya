@@ -20,14 +20,48 @@ async function etape(nom: string, compte: Record<string, number>, f: () => Promi
   try { compte[nom] = await f(); } catch (e: any) { console.error(`[profils-veille] étape ${nom} :`, e?.message ?? e); compte[nom] = -1; }
 }
 
+/** Un élément qui lève est journalisé, les suivants passent quand même. Renvoie le nombre de réussites. */
+async function chacun<T>(nom: string, elements: T[], f: (x: T) => Promise<unknown>): Promise<number> {
+  let n = 0;
+  for (const x of elements) {
+    try { await f(x); n++; } catch (e: any) { console.error(`[profils-veille] ${nom} :`, e?.message ?? e); }
+  }
+  return n;
+}
+
+const MAX_RATTACHEMENTS_PAR_TOUR = 10;
+
+/**
+ * Les projets à ranger ce tour-ci : jamais tentés d'abord, puis la tentative la plus ancienne ;
+ * jamais deux fois le même jour. Un projet qui échoue chaque jour passe donc derrière les autres
+ * au lieu de les bloquer. `tentatives` : projectId → jour UTC de la dernière tentative.
+ */
+export function selectionnerARattacher<T extends { projectId: number }>(candidats: T[], tentatives: Map<number, string>, jour: string, max = MAX_RATTACHEMENTS_PAR_TOUR): T[] {
+  return candidats
+    .map((c, i) => ({ c, i, t: tentatives.get(c.projectId) ?? "" }))
+    .filter((x) => x.t !== jour)
+    .sort((a, b) => (a.t < b.t ? -1 : a.t > b.t ? 1 : a.i - b.i))
+    .slice(0, max)
+    .map((x) => x.c);
+}
+
+/** Le rattachement (IA + recherche payantes) ne concerne que les utilisatrices pour qui la diffusion est ouverte. */
+export async function utilisatricesOuvertes(userIds: string[], estOuvert: (userId: string) => Promise<boolean>): Promise<string[]> {
+  const out: string[] = [];
+  for (const u of userIds) if (await estOuvert(u).catch(() => false)) out.push(u);
+  return out;
+}
+
 // Un rattachement ou un tri qui échoue n'écrit rien : sans ces garde-fous, il serait retenté
 // (avec appel IA payant) à chaque tour de 15 minutes. État en mémoire du processus.
 let dernierRattachement: string | null = null; // jour UTC (AAAA-MM-JJ) du dernier passage
 let dernierTriHeure: string | null = null; // heure UTC (AAAA-MM-JJTHH) du dernier passage
+const tentativesRattachement = new Map<number, string>(); // projectId → jour UTC de la dernière tentative
 
 export function _reinitialiserTour(): void {
   dernierRattachement = null;
   dernierTriHeure = null;
+  tentativesRattachement.clear();
 }
 
 export async function tourProfilsVeille(maintenant: Date, d?: DepsTour): Promise<Record<string, number>> {
@@ -40,31 +74,31 @@ export async function tourProfilsVeille(maintenant: Date, d?: DepsTour): Promise
   if (heure >= REGLES.heureCollecteUtc && dernierRattachement !== jourUtc) {
     dernierRattachement = jourUtc;
     await etape("rattachements", compte, async () => {
-      let n = 0; for (const p of await deps.projetsARattacher()) { await deps.rattacher(p); n++; } return n;
+      const choisis = selectionnerARattacher(await deps.projetsARattacher(), tentativesRattachement, jourUtc);
+      return chacun("rattachement", choisis, (p) => { tentativesRattachement.set(p.projectId, jourUtc); return deps.rattacher(p); });
     });
   }
   if (REGLES.joursCollecteUtc.includes(jour) && heure >= REGLES.heureCollecteUtc) {
     await etape("collectes", compte, async () => {
-      let n = 0;
-      for (const p of await deps.profilsCollectables()) for (const pl of PLATEFORMES_LOT1) { await deps.collecter(p.id, pl, maintenant); n++; }
-      return n;
+      const paires = (await deps.profilsCollectables()).flatMap((p) => PLATEFORMES_LOT1.map((pl) => ({ p, pl })));
+      return chacun("collecte", paires, ({ p, pl }) => deps.collecter(p.id, pl, maintenant));
     });
   }
   if (jour === REGLES.jourAnalyseUtc && heure >= REGLES.heureAnalyseUtc) {
     await etape("analyses", compte, async () => {
-      let n = 0; for (const p of await deps.profilsCollectables()) { await deps.lancerAnalyse(p, semaineAnalysee(maintenant), maintenant); n++; } return n;
+      return chacun("analyse", await deps.profilsCollectables(), (p) => deps.lancerAnalyse(p, semaineAnalysee(maintenant), maintenant));
     });
     await etape("purge", compte, () => deps.purger(maintenant));
   }
   await etape("finalisations", compte, async () => {
-    let n = 0; for (const a of await deps.analysesEnAttente()) { await deps.finaliser(a); n++; } return n;
+    return chacun("finalisation", await deps.analysesEnAttente(), (a) => deps.finaliser(a));
   });
   const heureUtc = iso.slice(0, 13);
   if (dernierTriHeure !== heureUtc) {
     dernierTriHeure = heureUtc;
     await etape("tris", compte, async () => {
-      let n = 0; const semaine = semaineDe(maintenant);
-      for (const r of await deps.rattachementsATrier()) { await deps.trier(r, semaine, maintenant); n++; } return n;
+      const semaine = semaineDe(maintenant);
+      return chacun("tri", await deps.rattachementsATrier(), (r) => deps.trier(r, semaine, maintenant));
     });
   }
   return compte;

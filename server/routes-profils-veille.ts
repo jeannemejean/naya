@@ -79,7 +79,7 @@ export function registerProfilsVeilleRoutes(app: Express) {
     const projet = pid ? await storage.getProject(pid, req.userId) : undefined;
     if (!projet) return res.status(404).json({ message: "not_found" });
     const r = await s.rattachementDuProjet(req.userId, projet.id);
-    if (!r) return res.status(409).json({ message: "sans_profil" });
+    if (!r || r.statut === "refuse") return res.status(409).json({ message: "sans_profil" });
     const c = compteDe(req.body?.plateforme, req.body?.saisie);
     if (!c) return res.status(400).json({ message: "compte_invalide" });
     const cree = await s.ajouterCompte({ profilId: r.profilId, plateforme: req.body.plateforme, compte: c.compte, url: c.url, origine: "suggestion", suggerePar: req.userId, statut: "propose" });
@@ -126,8 +126,10 @@ export function registerProfilsVeilleRoutes(app: Express) {
 
   // ─── Administration (owner) ──────────────────────────────────────────────────
   const admin = (h: (req: any, res: any) => Promise<any>) => async (req: any, res: any) => {
-    if (!(await estOwner(req))) return res.status(403).json({ message: "forbidden" });
-    try { await h(req, res); } catch (e: any) { console.error("[ProfilsVeille] admin :", e?.message); res.status(500).json({ message: "admin_failed" }); }
+    try {
+      if (!(await estOwner(req))) return res.status(403).json({ message: "forbidden" });
+      await h(req, res);
+    } catch (e: any) { console.error("[ProfilsVeille] admin :", e?.message); if (!res.headersSent) res.status(500).json({ message: "admin_failed" }); }
   };
 
   app.get("/api/admin/profils-veille", isAuthenticated, admin(async (_req, res) => {
@@ -177,8 +179,12 @@ export function registerProfilsVeilleRoutes(app: Express) {
 
   app.get("/api/admin/profils-veille/:id/tendances", isAuthenticated, admin(async (req, res) => {
     const id = idDe(req.params.id);
-    const semaine = typeof req.query.semaine === "string" ? req.query.semaine : semaineDe(new Date());
-    res.json({ semaine, tendances: id ? await s.tendancesAdmin(id, semaine) : [] });
+    // Sans semaine : la semaine en cours ET celle que prépare l'analyse du dimanche (la même en semaine).
+    const maintenant = new Date();
+    const semaines: string[] = typeof req.query.semaine === "string"
+      ? [req.query.semaine]
+      : Array.from(new Set([semaineDe(maintenant), semaineAnalysee(maintenant)]));
+    res.json({ semaine: semaines[0], semaines, tendances: id ? await s.tendancesAdmin(id, semaines) : [] });
   }));
 
   app.patch("/api/admin/profils-veille/tendances/:id", isAuthenticated, admin(async (req, res) => {

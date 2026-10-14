@@ -104,6 +104,11 @@ describe("robustesse utilisatrice", () => {
     expect(j.deja).toBe(true);
     expect(storageMock.createContent).not.toHaveBeenCalled();
   });
+  it("rattachement refusé : on ne suggère plus de compte à l'ancien profil", async () => {
+    s.rattachementDuProjet.mockResolvedValueOnce({ id: 1, profilId: 7, statut: "refuse", raison: "r", nomProfil: "Coachs", descriptionProfil: "d" });
+    expect((await appel("POST", "/api/profils-veille/projet/4/suggestion", { plateforme: "instagram", saisie: "@terre" })).status).toBe(409);
+    expect(s.ajouterCompte).not.toHaveBeenCalled();
+  });
   it("PATCH sur une tendance déjà utilisée : 409", async () => {
     expect((await appel("PATCH", "/api/profils-veille/tendances/5", { statut: "ecarte" })).status).toBe(409);
   });
@@ -130,6 +135,28 @@ describe("routes admin", () => {
     expect((await appel("PATCH", "/api/admin/profils-veille/comptes/6", { statut: "suivi" }, "owner-1")).status).toBe(200);
     expect((await appel("PATCH", "/api/admin/profils-veille/comptes/99", { statut: "suivi" }, "owner-1")).status).toBe(404);
     s.nbSuivis.mockResolvedValue(0);
+  });
+  it("une erreur en lisant le rôle renvoie 500 (jamais une requête qui pend)", async () => {
+    storageMock.getUser.mockRejectedValueOnce(new Error("db"));
+    expect((await appel("GET", "/api/admin/profils-veille", undefined, "owner-1")).status).toBe(500);
+  });
+  it("owner : tendances d'un profil sans semaine → la semaine en cours ET celle préparée par l'analyse du dimanche", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-18T09:00:00Z")); // dimanche
+    try {
+      s.tendancesAdmin.mockResolvedValueOnce([{ id: 1, semaine: "2026-10-19" }, { id: 2, semaine: "2026-10-12" }] as any);
+      const r = await (await appel("GET", "/api/admin/profils-veille/7/tendances", undefined, "owner-1")).json();
+      expect(s.tendancesAdmin).toHaveBeenCalledWith(7, ["2026-10-12", "2026-10-19"]);
+      expect(r.semaines).toEqual(["2026-10-12", "2026-10-19"]);
+      expect(r.tendances.map((t: any) => t.id)).toEqual([1, 2]);
+      // un jour de semaine : une seule semaine
+      vi.setSystemTime(new Date("2026-10-14T09:00:00Z"));
+      await appel("GET", "/api/admin/profils-veille/7/tendances", undefined, "owner-1");
+      expect(s.tendancesAdmin).toHaveBeenLastCalledWith(7, ["2026-10-12"]);
+      // semaine explicite
+      await appel("GET", "/api/admin/profils-veille/7/tendances?semaine=2026-10-05", undefined, "owner-1");
+      expect(s.tendancesAdmin).toHaveBeenLastCalledWith(7, ["2026-10-05"]);
+    } finally { vi.useRealTimers(); }
   });
   it("owner : étiquette — structure et accroche du vocabulaire", async () => {
     expect((await appel("POST", "/api/admin/profils-veille/etiquettes", { postId: 1, structure: "x", accroche: "chiffre" }, "owner-1")).status).toBe(400);

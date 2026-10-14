@@ -89,6 +89,17 @@ describe("lancerAnalyse", () => {
   });
 });
 
+describe("lancerAnalyse : base du statut", () => {
+  it("une fiche « en baisse » la semaine d'avant ne compte pas comme précédente (ni confirme, ni re-en baisse)", async () => {
+    const d = deps({
+      tendancesPrecedentes: vi.fn(async () => [{ cle: AV, statut: "en_baisse", pourquoi: "p", commentAdapter: "c", exemples: [], plateforme: "instagram", typeMedia: "carrousel", structure: "avant_apres", accrocheDominante: null } as any]),
+    });
+    expect(await lancerAnalyse(d, profil, "2026-10-19", maintenant)).toBe("lot_soumis");
+    const derniere = (d.majAnalyse as any).mock.calls.at(-1)[1];
+    expect(derniere.retenus).toEqual([expect.objectContaining({ cle: AV, statut: "nouveau" })]);
+  });
+});
+
 describe("finaliserAnalyse", () => {
   const analyse = { id: 30, profilId: 7, semaine: "2026-10-19", batchId: "lot_9", coutEur: 0.01,
     retenus: [{ cle: AV, plateforme: "instagram", typeMedia: "carrousel", structure: "avant_apres", lift: 1.9, nbPosts: 4, nbForts: 3, nbComptes: 2, clesForts: ["a", "b", "c"], exemples: ["https://ig/a", "https://ig/b"], accrocheDominante: "chiffre", statut: "nouveau" }] };
@@ -107,6 +118,16 @@ describe("finaliserAnalyse", () => {
     const maj = (d.majAnalyse as any).mock.calls.at(-1)[1];
     expect(maj.statut).toBe("termine");
     expect(maj.coutEur).toBeCloseTo(0.014);
+  });
+  it("lecture du lot ou écriture qui lève : statut erreur écrit sur l'analyse (plus retentée), jamais d'exception", async () => {
+    for (const over of [{ lire: vi.fn(async () => { throw new Error("lot illisible"); }) }, {
+      lire: vi.fn(async () => [{ customId: AV, texte: '{"pourquoi":"a","commentAdapter":"b"}', coutEur: 0 }]),
+      enregistrerTendances: vi.fn(async () => { throw new Error("db"); }),
+    }]) {
+      const d = deps(over as any);
+      expect(await finaliserAnalyse(d, analyse)).toBe("erreur");
+      expect(d.majAnalyse).toHaveBeenLastCalledWith(30, expect.objectContaining({ statut: "erreur", erreur: expect.any(String) }));
+    }
   });
   it("une réponse invalide n'écrit pas cette tendance et le dit", async () => {
     const d = deps({ lire: vi.fn(async () => [{ customId: AV, texte: "{}", coutEur: 0.004 }]) });

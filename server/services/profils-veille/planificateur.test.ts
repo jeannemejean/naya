@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { tourProfilsVeille, scheduleProfilsVeille, _reinitialiserTour, type DepsTour } from "./planificateur";
+import { tourProfilsVeille, scheduleProfilsVeille, _reinitialiserTour, selectionnerARattacher, utilisatricesOuvertes, type DepsTour } from "./planificateur";
 
 function deps(over: Partial<DepsTour> = {}): DepsTour {
   return {
@@ -77,6 +77,58 @@ describe("tourProfilsVeille", () => {
     expect(d.trier).toHaveBeenCalledTimes(1);
     await tourProfilsVeille(new Date("2026-10-14T08:00:00Z"), d);
     expect(d.trier).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("un élément qui lève n'empêche pas les suivants", () => {
+  beforeEach(() => { vi.spyOn(console, "error").mockImplementation(() => {}); });
+  afterEach(() => vi.restoreAllMocks());
+  it("collecte, analyse, finalisation, rattachement et tri : on journalise et on continue", async () => {
+    const leve = (premier: unknown) => vi.fn().mockRejectedValueOnce(new Error("boum")).mockResolvedValue(premier);
+    const d = deps({
+      projetsARattacher: vi.fn(async () => [{ userId: "u", projectId: 4 }, { userId: "u", projectId: 5 }]),
+      rattacher: leve("rattache"),
+      profilsCollectables: vi.fn(async () => [{ id: 7, nom: "n", description: "d" }, { id: 8, nom: "m", description: "e" }]),
+      collecter: leve({ statut: "ok" }),
+      lancerAnalyse: leve("lot_soumis"),
+      analysesEnAttente: vi.fn(async () => [{ id: 30 }, { id: 31 }]),
+      finaliser: leve("termine"),
+      rattachementsATrier: vi.fn(async () => [{ userId: "u", projectId: 4, profilId: 7, dernierTri: null }, { userId: "u", projectId: 5, profilId: 7, dernierTri: null }]),
+      trier: leve("ok"),
+    });
+    // Dimanche 6 h UTC : toutes les étapes tournent (rattachement, analyse, finalisation, tri).
+    await tourProfilsVeille(new Date("2026-10-18T06:00:00Z"), d);
+    expect(d.rattacher).toHaveBeenCalledTimes(2);
+    expect(d.lancerAnalyse).toHaveBeenCalledTimes(2);
+    expect(d.finaliser).toHaveBeenCalledTimes(2);
+    expect(d.trier).toHaveBeenCalledTimes(2);
+    // Mercredi : la collecte.
+    await tourProfilsVeille(new Date("2026-10-21T06:00:00Z"), d);
+    expect(d.collecter).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("rattachement : sélection équitable", () => {
+  const C = (projectId: number) => ({ userId: "u", projectId });
+  it("10 au plus, jamais tentés d'abord, puis la tentative la plus ancienne ; jamais deux fois le même jour", () => {
+    const candidats = Array.from({ length: 12 }, (_, i) => C(i + 1));
+    const tentatives = new Map<number, string>([[1, "2026-10-13"], [2, "2026-10-12"], [3, "2026-10-14"]]);
+    const choisis = selectionnerARattacher(candidats, tentatives, "2026-10-14").map((c) => c.projectId);
+    expect(choisis).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 2]);
+    expect(choisis).not.toContain(3);
+  });
+  it("des projets qui échouent chaque jour ne bloquent pas les autres", async () => {
+    const candidats = Array.from({ length: 15 }, (_, i) => C(i + 1));
+    const d = deps({ projetsARattacher: vi.fn(async () => candidats), rattacher: vi.fn(async () => "erreur") });
+    await tourProfilsVeille(new Date("2026-10-14T07:00:00Z"), d);
+    await tourProfilsVeille(new Date("2026-10-15T07:00:00Z"), d);
+    const vus = (d.rattacher as any).mock.calls.map((c: any[]) => c[0].projectId);
+    expect(vus.slice(0, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(vus.slice(10, 15)).toEqual([11, 12, 13, 14, 15]);
+  });
+  it("seulement les utilisatrices pour qui la diffusion est ouverte (appels payants)", async () => {
+    const ouvert = vi.fn(async (u: string) => u === "owner");
+    expect(await utilisatricesOuvertes(["a", "owner", "b"], ouvert)).toEqual(["owner"]);
   });
 });
 

@@ -33,7 +33,7 @@ export interface DepsAnalyse {
   enregistrerFormat(postId: number, format: Format): Promise<void>;
   postsFenetre(profilId: number, depuis: Date, maintenant: Date): Promise<PostFenetre[]>;
   exemples(profilId: number, cles: string[]): Promise<Array<{ cle: string; url: string; legende: string | null; compteId: number; accroche: string | null }>>;
-  tendancesPrecedentes(profilId: number, semaine: string): Promise<Array<Pick<InsertProfilTendance, "cle" | "pourquoi" | "commentAdapter" | "exemples" | "plateforme" | "typeMedia" | "structure" | "accrocheDominante">>>;
+  tendancesPrecedentes(profilId: number, semaine: string): Promise<Array<Pick<InsertProfilTendance, "cle" | "pourquoi" | "commentAdapter" | "exemples" | "plateforme" | "typeMedia" | "structure" | "accrocheDominante" | "statut">>>;
   soumettre(reqs: RequeteLot[]): Promise<string>;
   lire(batchId: string): Promise<ResultatLot[] | null>;
   enregistrerTendances(rows: InsertProfilTendance[]): Promise<void>;
@@ -78,7 +78,8 @@ export async function lancerAnalyse(deps: DepsAnalyse, profil: { id: number; nom
     }
     const stats = statsFormats(await deps.postsFenetre(profil.id, depuis, maintenant));
     const retenus = formatsRetenus(stats);
-    const precedentes = await deps.tendancesPrecedentes(profil.id, semainePrecedente(semaine));
+    // Une fiche « en baisse » n'est pas une tendance retenue : elle ne fonde ni « confirme » ni un nouvel « en baisse ».
+    const precedentes = (await deps.tendancesPrecedentes(profil.id, semainePrecedente(semaine))).filter((p) => p.statut !== "en_baisse");
     const clesPrec = new Set(precedentes.map((p) => p.cle));
     const enBaisseCles = enBaisse(precedentes.map((p) => ({ cle: p.cle })), new Set(retenus.map((r) => r.cle)), stats);
 
@@ -126,6 +127,17 @@ export function semainePrecedente(semaine: string): string {
 }
 
 export async function finaliserAnalyse(deps: DepsAnalyse, analyse: { id: number; profilId: number; semaine: string; batchId: string | null; retenus: unknown; coutEur: number }) {
+  try {
+    return await finaliser(deps, analyse);
+  } catch (e: any) {
+    // Sans trace, le lot resterait « lot_soumis » et lèverait à chaque tour de 15 minutes.
+    console.error(`[profils-veille] finalisation de l'analyse ${analyse.id} :`, e?.message ?? e);
+    await deps.majAnalyse(analyse.id, { statut: "erreur", erreur: String(e?.message ?? e).slice(0, 500), updatedAt: new Date() });
+    return "erreur" as const;
+  }
+}
+
+async function finaliser(deps: DepsAnalyse, analyse: { id: number; profilId: number; semaine: string; batchId: string | null; retenus: unknown; coutEur: number }) {
   const fiches = (analyse.retenus as Retenu[]) ?? [];
   const resultats = analyse.batchId ? await deps.lire(analyse.batchId) : [];
   if (resultats == null) return "en_cours" as const;

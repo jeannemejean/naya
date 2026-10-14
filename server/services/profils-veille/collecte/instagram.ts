@@ -1,6 +1,6 @@
 // Adaptateur Instagram (dataset Bright Data « instagram profiles ») → posts normalisés.
 // Les noms de champs varient selon les versions du dataset : on lit les variantes connues.
-// Vérifié sur un échantillon réel (scripts/capturer-instagram.ts) — voir Task 4, Step 6.
+// À vérifier sur un échantillon réel (scripts/capturer-instagram.ts) — voir Task 4, Step 6.
 import type { Metriques, TypeMedia } from "@shared/profils-veille";
 import { anonymiser } from "../../veille/texte";
 

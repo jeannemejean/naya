@@ -58,7 +58,7 @@ function CarteProfil({ p, plafond, onStatut, onCompte, onLancer, onRafraichir, o
   const { t } = useTranslation();
   const [saisie, setSaisie] = useState("");
   const ajouter = useMutation({ mutationFn: () => apiRequest("POST", `/api/admin/profils-veille/${p.id}/comptes`, { plateforme: "instagram", saisie, statut: "suivi" }), onSuccess: () => { setSaisie(""); onRafraichir(); }, onError: onErreurCompte });
-  const { data: tend } = useQuery<{ tendances: Array<{ id: number; plateforme: string; typeMedia: string; structure: string; lift: number; pourquoi: string; ecarteParJeanne: boolean }> }>({ queryKey: [`/api/admin/profils-veille/${p.id}/tendances`] });
+  const { data: tend } = useQuery<{ tendances: Array<{ id: number; semaine: string; plateforme: string; typeMedia: string; structure: string; lift: number; pourquoi: string; ecarteParJeanne: boolean }> }>({ queryKey: [`/api/admin/profils-veille/${p.id}/tendances`] });
   const diffuser = useMutation({ mutationFn: ({ id, ecarte }: { id: number; ecarte: boolean }) => apiRequest("PATCH", `/api/admin/profils-veille/tendances/${id}`, { ecarteParJeanne: ecarte }), onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/admin/profils-veille/${p.id}/tendances`] }) });
   return (
     <Card>
@@ -105,7 +105,7 @@ function CarteProfil({ p, plafond, onStatut, onCompte, onLancer, onRafraichir, o
           <ul className="space-y-1">
             {tend?.tendances.map((x) => (
               <li key={x.id} className="flex flex-wrap items-center gap-2">
-                <span>{x.plateforme} · {x.typeMedia} {x.structure} · {t("adminProfils.multiplicateur", { lift: x.lift.toFixed(1) })}</span>
+                <span>{x.semaine} · {x.plateforme} · {x.typeMedia} {x.structure} · {t("adminProfils.multiplicateur", { lift: x.lift.toFixed(1) })}</span>
                 <Button size="sm" variant="ghost" onClick={() => diffuser.mutate({ id: x.id, ecarte: !x.ecarteParJeanne })}>{x.ecarteParJeanne ? t("adminProfils.diffuser") : t("adminProfils.ecarterTendance")}</Button>
               </li>
             ))}

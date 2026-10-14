@@ -16,6 +16,7 @@ function deps(over: Partial<DepsTri> = {}): DepsTri {
     choisir: vi.fn(async () => ({ choix: [{ tendanceId: 1, adaptation: "Ta cliente avant/après 3 séances." }, { tendanceId: 2, adaptation: "x" }, { tendanceId: 99, adaptation: "y" }] })),
     enregistrer: vi.fn(async () => {}),
     marquerTri: vi.fn(async () => {}),
+    clesRecentes: vi.fn(async () => new Set<string>()),
     ...over,
   };
 }
@@ -37,6 +38,17 @@ describe("trierPourProjet", () => {
     expect((d.choisir as any).mock.calls[0][0].tendances.map((t: any) => t.id)).toEqual([1, 3]);
     expect(d.enregistrer).toHaveBeenCalledWith([{ userId: "u", projectId: 4, tendanceId: 1, adaptation: "Ta cliente avant/après 3 séances.", statut: "nouveau", expireLe: new Date("2026-11-16T07:00:00Z") }]);
     expect(d.marquerTri).toHaveBeenCalledWith(4, "2026-10-19");
+  });
+  it("même format déjà proposé (visible ou utilisé < 28 j) : jamais reproposé en double", async () => {
+    const d = deps({ ecartees: vi.fn(async () => []), clesRecentes: vi.fn(async () => new Set(["a"])) });
+    expect(await trierPourProjet(d, r, "2026-10-19", maintenant)).toBe("ok");
+    expect((d.choisir as any).mock.calls[0][0].tendances.map((t: any) => t.id)).toEqual([2, 3]);
+    expect(d.clesRecentes).toHaveBeenCalledWith(4, maintenant);
+  });
+  it("une tendance « en baisse » n'est jamais proposée au tri", async () => {
+    const d = deps({ ecartees: vi.fn(async () => []), tendancesSemaine: vi.fn(async () => [{ ...T(1, "a"), statut: "en_baisse" }, { ...T(3, "c"), statut: "confirme" }]) });
+    await trierPourProjet(d, r, "2026-10-19", maintenant);
+    expect((d.choisir as any).mock.calls[0][0].tendances.map((t: any) => t.id)).toEqual([3]);
   });
   it("aucune tendance cette semaine : marqué trié, sans IA (zéro est normal)", async () => {
     const d = deps({ tendancesSemaine: vi.fn(async () => []) });

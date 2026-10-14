@@ -1,5 +1,5 @@
 // Requêtes Drizzle du module profils de veille. Toute la base du module passe par ici.
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, profilsVeille, profilRattachements, profilEtiquettes, tendancesProjet, projects, brandDna, fondations, type InsertProfilPost, type InsertProfilTendance, type InsertTendanceProjet } from "@shared/schema";
 import { REGLES, type PlateformeVeille, type PostFenetre, type TypeMedia, type Structure } from "@shared/profils-veille";
@@ -111,7 +111,8 @@ export const stockageProfils = {
   /**
    * Projets actifs à (re)ranger : sans rattachement, refusé, ou dont le Brand DNA a changé depuis un
    * rattachement « propose ». Jamais écrasés : « confirme » (choix de l'utilisatrice) et
-   * « en_attente » (attend Jeanne). 10 au plus par tour.
+   * « en_attente » (attend Jeanne). Tous les candidats : le planificateur choisit les 10 du tour
+   * (jamais tentés d'abord), pour qu'un projet qui échoue ne bloque pas les autres.
    */
   async projetsARattacher(userIds: string[]) {
     const out: Array<{ userId: string; projectId: number; nom: string; dna: any; fond: any; exclus: number[]; rattachementId: number | null }> = [];
@@ -125,14 +126,25 @@ export const stockageProfils = {
         if (!aRefaire) continue;
         const [fond] = await db.select().from(fondations).where(and(eq(fondations.userId, userId), eq(fondations.projectId, pr.id))).limit(1);
         out.push({ userId, projectId: pr.id, nom: pr.name, dna, fond, exclus: (r?.exclus as number[]) ?? [], rattachementId: r?.id ?? null });
-        if (out.length >= 10) return out;
       }
     }
     return out;
   },
   async tendancesSemaineDuProfil(profilId: number, semaine: string) {
-    return db.select({ id: profilTendances.id, cle: profilTendances.cle, plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure, lift: profilTendances.lift, pourquoi: profilTendances.pourquoi, commentAdapter: profilTendances.commentAdapter })
+    return db.select({ id: profilTendances.id, cle: profilTendances.cle, plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure, lift: profilTendances.lift, pourquoi: profilTendances.pourquoi, commentAdapter: profilTendances.commentAdapter, statut: profilTendances.statut })
       .from(profilTendances).where(and(eq(profilTendances.profilId, profilId), eq(profilTendances.semaine, semaine), eq(profilTendances.ecarteParJeanne, false)));
+  },
+  /** Formats déjà proposés à ce projet : ligne visible (gardée, ou nouvelle/vue non expirée) ou utilisée il y a moins de 28 jours. */
+  async clesRecentes(projectId: number, maintenant: Date): Promise<Set<string>> {
+    const limite = new Date(maintenant.getTime() - REGLES.dureeTendanceJours * 24 * 3600_000);
+    const rows = await db.select({ cle: profilTendances.cle }).from(tendancesProjet)
+      .innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
+      .where(and(eq(tendancesProjet.projectId, projectId), or(
+        eq(tendancesProjet.statut, "garde"),
+        and(inArray(tendancesProjet.statut, ["nouveau", "vu"]), gt(tendancesProjet.expireLe, maintenant)),
+        and(eq(tendancesProjet.statut, "utilise"), gte(tendancesProjet.createdAt, limite)),
+      )));
+    return new Set(rows.map((r) => r.cle));
   },
   async ecarteesDuProjet(projectId: number) {
     const rows = await db.select({ cle: profilTendances.cle, ecarteLe: tendancesProjet.ecarteLe }).from(tendancesProjet)
@@ -165,9 +177,16 @@ export const stockageProfils = {
   },
   async purgerPosts(maintenant: Date): Promise<number> {
     const limite = new Date(maintenant.getTime() - REGLES.retentionPostsJours * 24 * 3600_000);
-    const r = await db.delete(profilPosts).where(lt(profilPosts.releveLe, limite)).returning({ id: profilPosts.id });
+    // Un post étiqueté reste : il fait partie du banc d'évaluation du classement.
+    const r = await db.delete(profilPosts).where(and(lt(profilPosts.releveLe, limite),
+      sql`not exists (select 1 from ${profilEtiquettes} where ${profilEtiquettes.postId} = ${profilPosts.id})`))
+      .returning({ id: profilPosts.id });
     return r.length;
   },
+  /**
+   * Tendances du projet : jamais une écartée par Jeanne, et seulement celles du profil du
+   * rattachement courant, s'il est actif (propose|confirme) — « Ce n'est pas toi ? » les retire.
+   */
   async tendancesDuProjet(userId: string, projectId: number) {
     return db.select({
       id: tendancesProjet.id, tendanceId: tendancesProjet.tendanceId, statut: tendancesProjet.statut, expireLe: tendancesProjet.expireLe, adaptation: tendancesProjet.adaptation, contentId: tendancesProjet.contentId,
@@ -175,7 +194,12 @@ export const stockageProfils = {
       nbForts: profilTendances.nbForts, nbComptes: profilTendances.nbComptes, exemples: profilTendances.exemples, pourquoi: profilTendances.pourquoi,
       statutTendance: profilTendances.statut, semaine: profilTendances.semaine,
     }).from(tendancesProjet).innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
-      .where(and(eq(tendancesProjet.userId, userId), eq(tendancesProjet.projectId, projectId)))
+      .innerJoin(profilRattachements, and(
+        eq(profilRattachements.projectId, tendancesProjet.projectId),
+        eq(profilRattachements.profilId, profilTendances.profilId),
+        inArray(profilRattachements.statut, ["propose", "confirme"]),
+      ))
+      .where(and(eq(tendancesProjet.userId, userId), eq(tendancesProjet.projectId, projectId), eq(profilTendances.ecarteParJeanne, false)))
       .orderBy(desc(tendancesProjet.createdAt), desc(profilTendances.lift)).limit(40);
   },
   async rattachementDuProjet(userId: string, projectId: number) {
@@ -187,7 +211,7 @@ export const stockageProfils = {
   async tendanceProjet(userId: string, id: number) {
     const [r] = await db.select({ id: tendancesProjet.id, userId: tendancesProjet.userId, projectId: tendancesProjet.projectId, tendanceId: tendancesProjet.tendanceId, statut: tendancesProjet.statut, adaptation: tendancesProjet.adaptation, contentId: tendancesProjet.contentId, plateforme: profilTendances.plateforme, typeMedia: profilTendances.typeMedia, structure: profilTendances.structure })
       .from(tendancesProjet).innerJoin(profilTendances, eq(profilTendances.id, tendancesProjet.tendanceId))
-      .where(and(eq(tendancesProjet.id, id), eq(tendancesProjet.userId, userId))).limit(1);
+      .where(and(eq(tendancesProjet.id, id), eq(tendancesProjet.userId, userId), eq(profilTendances.ecarteParJeanne, false))).limit(1);
     return r;
   },
   async majTendanceProjet(id: number, patch: Record<string, unknown>) {
@@ -195,13 +219,17 @@ export const stockageProfils = {
   },
   async choisirProfil(userId: string, projectId: number, profilId: number) {
     await db.insert(profilRattachements).values({ userId, projectId, profilId, confiance: 1, raison: "Choisi par l'utilisatrice.", statut: "confirme" })
-      .onConflictDoUpdate({ target: profilRattachements.projectId, set: { profilId, statut: "confirme", raison: "Choisi par l'utilisatrice.", updatedAt: new Date() } });
+      .onConflictDoUpdate({ target: profilRattachements.projectId, set: {
+        profilId, statut: "confirme", raison: "Choisi par l'utilisatrice.", updatedAt: new Date(),
+        // Un autre profil : son tri de la semaine doit se faire. Le même (confirmation) : rien à refaire.
+        dernierTri: sql`case when ${profilRattachements.profilId} = ${profilId} then ${profilRattachements.dernierTri} else null end`,
+      } });
   },
   async refuserRattachement(userId: string, projectId: number) {
     const [r] = await db.select().from(profilRattachements).where(and(eq(profilRattachements.userId, userId), eq(profilRattachements.projectId, projectId))).limit(1);
     if (!r) return;
     const exclus = Array.from(new Set([...(((r.exclus as number[]) ?? [])), r.profilId]));
-    await db.update(profilRattachements).set({ statut: "refuse", exclus, updatedAt: new Date() }).where(eq(profilRattachements.id, r.id));
+    await db.update(profilRattachements).set({ statut: "refuse", exclus, dernierTri: null, updatedAt: new Date() }).where(eq(profilRattachements.id, r.id));
   },
   async ajouterCompte(row: { profilId: number; plateforme: string; compte: string; url: string; origine: string; suggerePar?: string | null; statut: string }) {
     const [c] = await db.insert(profilComptes).values(row).onConflictDoNothing().returning();
@@ -242,14 +270,25 @@ export const stockageProfils = {
       // Un profil proposé validé : les projets en attente de lui deviennent rattachés.
       await db.update(profilRattachements).set({ statut: "propose", updatedAt: new Date() }).where(and(eq(profilRattachements.profilId, id), eq(profilRattachements.statut, "en_attente")));
     }
+    if (p && patch.statut === "archive") {
+      // Une proposition archivée (rejetée) : ses projets en attente ne restent pas bloqués. Ils
+      // passent « refuse » avec ce profil exclu, et sont rangés de nouveau au rattachement suivant.
+      const enAttente = await db.select({ id: profilRattachements.id, exclus: profilRattachements.exclus }).from(profilRattachements)
+        .where(and(eq(profilRattachements.profilId, id), eq(profilRattachements.statut, "en_attente")));
+      for (const r of enAttente) {
+        const exclus = Array.from(new Set([...(((r.exclus as number[]) ?? [])), id]));
+        await db.update(profilRattachements).set({ statut: "refuse", exclus, updatedAt: new Date() }).where(and(eq(profilRattachements.id, r.id), eq(profilRattachements.statut, "en_attente")));
+      }
+    }
     return p;
   },
   async majCompteAdmin(id: number, patch: { statut: string }) {
     const [c] = await db.update(profilComptes).set({ ...patch, ...(patch.statut === "suivi" ? { echecsConsecutifs: 0 } : {}) }).where(eq(profilComptes.id, id)).returning();
     return c;
   },
-  async tendancesAdmin(profilId: number, semaine: string) {
-    return db.select().from(profilTendances).where(and(eq(profilTendances.profilId, profilId), eq(profilTendances.semaine, semaine))).orderBy(desc(profilTendances.lift));
+  async tendancesAdmin(profilId: number, semaines: string[]) {
+    if (semaines.length === 0) return [];
+    return db.select().from(profilTendances).where(and(eq(profilTendances.profilId, profilId), inArray(profilTendances.semaine, semaines))).orderBy(desc(profilTendances.semaine), desc(profilTendances.lift));
   },
   async majTendanceAdmin(id: number, ecarteParJeanne: boolean) {
     const [t] = await db.update(profilTendances).set({ ecarteParJeanne }).where(eq(profilTendances.id, id)).returning();

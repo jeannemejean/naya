@@ -14,7 +14,7 @@ import { lancerAnalyse, finaliserAnalyse, SCHEMA_CLASSEMENT, type DepsAnalyse } 
 import { rattacherProjet, SCHEMA_CHOIX, SCHEMA_PROPOSITION, type DepsRattachement } from "./rattachement";
 import { trierPourProjet, SCHEMA_TRI, type DepsTri } from "./tri";
 import { semaineDe } from "@shared/profils-veille";
-import type { DepsTour } from "./planificateur";
+import { utilisatricesOuvertes, type DepsTour } from "./planificateur";
 
 export async function estOuvertPour(userId: string): Promise<boolean> {
   if (process.env.PROFILS_VEILLE_POUR_TOUS === "true") return true;
@@ -108,10 +108,13 @@ export const depsTri: DepsTri = {
   })).valeur,
   enregistrer: s.enregistrerTendancesProjet,
   marquerTri: s.marquerTri,
+  clesRecentes: s.clesRecentes,
 };
 
 export const depsTour: DepsTour = {
-  projetsARattacher: async () => (await s.projetsARattacher(await storage.getActiveUserIds())).map((p) => ({ ...p, contexte: contexteProjet(p.nom, p.dna, p.fond) })),
+  // Rattachement (IA + recherche payantes) : seulement les utilisatrices pour qui la diffusion est ouverte.
+  projetsARattacher: async () => (await s.projetsARattacher(await utilisatricesOuvertes(await storage.getActiveUserIds(), estOuvertPour)))
+    .map((p) => ({ ...p, contexte: contexteProjet(p.nom, p.dna, p.fond) })),
   rattacher: (p) => rattacherProjet(depsRattachement, { userId: p.userId, projectId: p.projectId, nom: p.nom, contexte: p.contexte, exclus: p.exclus, rattachementId: p.rattachementId }),
   profilsCollectables: s.profilsCollectables,
   collecter: (id, pl, m) => collecterProfil(depsCollecte, id, pl, m),

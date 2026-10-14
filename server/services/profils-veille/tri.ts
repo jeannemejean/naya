@@ -6,7 +6,7 @@ import type { InsertTendanceProjet } from "@shared/schema";
 
 export const SCHEMA_TRI = z.object({ choix: z.array(z.object({ tendanceId: z.number().int(), adaptation: z.string().min(1) })).max(REGLES.tendancesMaxParProjet) });
 
-type Tendance = { id: number; cle: string; plateforme: string; typeMedia: string; structure: string; lift: number; pourquoi: string; commentAdapter: string };
+type Tendance = { id: number; cle: string; plateforme: string; typeMedia: string; structure: string; lift: number; pourquoi: string; commentAdapter: string; statut?: string | null };
 
 export interface DepsTri {
   /** Diffusion ouverte pour cette utilisatrice (owner, ou PROFILS_VEILLE_POUR_TOUS=true). */
@@ -19,13 +19,18 @@ export interface DepsTri {
   choisir(i: { userId: string; projectId: number; projet: { nom: string; plateformes: string; offre: string; cible: string }; tendances: Tendance[] }): Promise<z.infer<typeof SCHEMA_TRI>>;
   enregistrer(rows: InsertTendanceProjet[]): Promise<void>;
   marquerTri(projectId: number, semaine: string): Promise<void>;
+  /** Formats (cle) déjà proposés à ce projet : ligne encore visible, ou utilisée il y a moins de 28 jours. */
+  clesRecentes(projectId: number, maintenant: Date): Promise<Set<string>>;
 }
 
 export async function trierPourProjet(deps: DepsTri, r: { userId: string; projectId: number; profilId: number; dernierTri: string | null }, semaine: string, maintenant: Date) {
   if (r.dernierTri === semaine) return "deja" as const;
   if (!(await deps.estOuvert(r.userId))) return "ferme" as const;
   const bloquees = clesEcartees(await deps.ecartees(r.projectId), maintenant);
-  const tendances = (await deps.tendancesSemaine(r.profilId, semaine)).filter((t) => !bloquees.has(t.cle));
+  const recentes = await deps.clesRecentes(r.projectId, maintenant);
+  // Jamais le même format en double d'une semaine à l'autre ; une tendance « en baisse » ne se propose pas.
+  const tendances = (await deps.tendancesSemaine(r.profilId, semaine))
+    .filter((t) => !bloquees.has(t.cle) && !recentes.has(t.cle) && t.statut !== "en_baisse");
   if (tendances.length === 0) { await deps.marquerTri(r.projectId, semaine); return "rien" as const; }
   if (await deps.garde(r.userId)) return "refus_garde" as const;
   try {

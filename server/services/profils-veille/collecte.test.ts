@@ -45,6 +45,15 @@ describe("collecterProfil", () => {
     expect(d.collecter).not.toHaveBeenCalled();
   });
 
+  it("instantané vide du fournisseur : passage en erreur, aucun compte pénalisé", async () => {
+    d = deps({ collecter: vi.fn(async () => []) });
+    const r = await collecterProfil(d, 7, "instagram", maintenant);
+    expect(r.statut).toBe("erreur");
+    expect(d.majCompte).not.toHaveBeenCalled();
+    expect(d.enregistrerPosts).not.toHaveBeenCalled();
+    expect(d.terminerPassage).toHaveBeenCalledWith(50, expect.objectContaining({ statut: "erreur", coutEur: 0 }));
+  });
+
   it("plafond atteint : une ligne de passage « plafond », aucune collecte", async () => {
     d = deps({ depenseDuMois: vi.fn(async () => 10) });
     expect(await collecterProfil(d, 7, "instagram", maintenant)).toEqual({ statut: "plafond" });
