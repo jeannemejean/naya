@@ -1,7 +1,7 @@
 // Requêtes Drizzle du module profils de veille. Toute la base du module passe par ici.
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, type InsertProfilPost, type InsertProfilTendance } from "@shared/schema";
+import { profilComptes, profilPassages, profilPosts, profilAnalyses, profilTendances, profilsVeille, profilRattachements, projects, brandDna, fondations, type InsertProfilPost, type InsertProfilTendance } from "@shared/schema";
 import { REGLES, type PlateformeVeille, type PostFenetre, type TypeMedia, type Structure } from "@shared/profils-veille";
 import type { CompteSuivi } from "./collecte";
 
@@ -92,5 +92,42 @@ export const stockageProfils = {
   },
   async enregistrerTendances(rows: InsertProfilTendance[]): Promise<void> {
     if (rows.length) await db.insert(profilTendances).values(rows).onConflictDoNothing();
+  },
+  async catalogueActif() {
+    return db.select({ id: profilsVeille.id, nom: profilsVeille.nom, description: profilsVeille.description, criteres: profilsVeille.criteres })
+      .from(profilsVeille).where(eq(profilsVeille.statut, "actif"));
+  },
+  async enregistrerRattachement(row: { userId: string; projectId: number; profilId: number; confiance: number; raison: string; statut: string }) {
+    await db.insert(profilRattachements).values(row).onConflictDoUpdate({
+      target: profilRattachements.projectId,
+      set: { profilId: row.profilId, confiance: row.confiance, raison: row.raison, statut: row.statut, updatedAt: new Date() },
+    });
+  },
+  async creerProposition(profil: { nom: string; description: string; criteres: unknown }, comptes: Array<{ plateforme: string; compte: string; url: string }>) {
+    const [p] = await db.insert(profilsVeille).values({ ...profil, criteres: profil.criteres as any, origine: "naya", statut: "propose" }).returning({ id: profilsVeille.id });
+    if (comptes.length) await db.insert(profilComptes).values(comptes.map((c) => ({ ...c, profilId: p.id, origine: "naya", statut: "propose" }))).onConflictDoNothing();
+    return p.id;
+  },
+  /**
+   * Projets actifs à (re)ranger : sans rattachement, refusé, ou dont le Brand DNA a changé depuis un
+   * rattachement « propose ». Jamais écrasés : « confirme » (choix de l'utilisatrice) et
+   * « en_attente » (attend Jeanne). 10 au plus par tour.
+   */
+  async projetsARattacher(userIds: string[]) {
+    const out: Array<{ userId: string; projectId: number; nom: string; dna: any; fond: any; exclus: number[]; rattachementId: number | null }> = [];
+    for (const userId of userIds) {
+      const projets = await db.select().from(projects).where(and(eq(projects.userId, userId), eq(projects.projectStatus, "active")));
+      for (const pr of projets) {
+        const [dna] = await db.select().from(brandDna).where(and(eq(brandDna.userId, userId), eq(brandDna.projectId, pr.id))).limit(1);
+        if (!dna) continue;
+        const [r] = await db.select().from(profilRattachements).where(eq(profilRattachements.projectId, pr.id)).limit(1);
+        const aRefaire = !r || r.statut === "refuse" || (r.statut === "propose" && !!dna.updatedAt && !!r.updatedAt && dna.updatedAt > r.updatedAt);
+        if (!aRefaire) continue;
+        const [fond] = await db.select().from(fondations).where(and(eq(fondations.userId, userId), eq(fondations.projectId, pr.id))).limit(1);
+        out.push({ userId, projectId: pr.id, nom: pr.name, dna, fond, exclus: (r?.exclus as number[]) ?? [], rattachementId: r?.id ?? null });
+        if (out.length >= 10) return out;
+      }
+    }
+    return out;
   },
 };
