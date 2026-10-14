@@ -655,6 +655,11 @@ export const content = pgTable("content", {
   angle: text("angle"),
   formatCreatif: text("format_creatif"),
   etiquetage: text("etiquetage"),
+  // ── Atelier de contenu (spec 2026-10-14) ──
+  // La consigne du plan (l'idée du post), mise de côté quand Naya rédige le texte : le texte
+  // devient le brouillon. Sert aussi de verrou — rédiger = poser la consigne si elle est vide :
+  // un post n'est jamais rédigé deux fois automatiquement.
+  consigne: text("consigne"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
