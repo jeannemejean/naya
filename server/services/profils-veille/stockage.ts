@@ -264,4 +264,8 @@ export const stockageProfils = {
   async etiqueter(postId: number, structure: string, accroche: string) {
     await db.insert(profilEtiquettes).values({ postId, structure, accroche }).onConflictDoUpdate({ target: profilEtiquettes.postId, set: { structure, accroche } });
   },
+  async postsEtiquetes() {
+    return db.select({ id: profilPosts.id, typeMedia: profilPosts.typeMedia, legende: profilPosts.legende, structure: profilEtiquettes.structure, accroche: profilEtiquettes.accroche })
+      .from(profilEtiquettes).innerJoin(profilPosts, eq(profilPosts.id, profilEtiquettes.postId)) as any;
+  },
 };
