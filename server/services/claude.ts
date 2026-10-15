@@ -30,9 +30,18 @@ export const NAYA_VOICE = NAYA_SYSTEM_VOICE;
  */
 export const VOIX_TIERS = `Tu écris AU NOM de l'utilisatrice décrite ci-dessous, à une personne qui ne la connaît pas. Ce n'est pas Naya qui parle : c'est elle, avec sa voix, comme elle l'écrirait elle-même en quelques minutes. Tu ne mentionnes jamais Naya ni une IA.`;
 
+/**
+ * Voix quand Naya écrit une PUBLICATION de la marque, lue par son audience (post, carrousel,
+ * script, légende). Remplace NAYA_SYSTEM_VOICE, faite pour parler à l'utilisatrice : un post
+ * écrit par « Naya qui te parle » sortait en « tu » adressé à la fondatrice (audit du 14 oct.).
+ */
+export const VOIX_MARQUE = `Tu écris une publication de la marque décrite ci-dessous, destinée à son audience. Ce n'est pas Naya qui parle et tu ne t'adresses jamais à l'utilisatrice : c'est la marque qui s'adresse à ses clients et à sa communauté, dans sa voix à elle (ton, vocabulaire, façon de tutoyer ou de vouvoyer, d'après son identité et ses préférences ci-dessous). Tu ne mentionnes jamais Naya ni une IA.`;
+
+export type Destinataire = "utilisatrice" | "tiers" | "audience";
+
 /** PURE : system prompt selon le destinataire. */
-export function systemPromptPour(destinataire: "utilisatrice" | "tiers", contexte: string, extra: string): string {
-  const voix = destinataire === "tiers" ? VOIX_TIERS : NAYA_SYSTEM_VOICE;
+export function systemPromptPour(destinataire: Destinataire, contexte: string, extra: string): string {
+  const voix = destinataire === "tiers" ? VOIX_TIERS : destinataire === "audience" ? VOIX_MARQUE : NAYA_SYSTEM_VOICE;
   return `${voix}\n\n${contexte}${extra ? `\n\n${extra}` : ""}`;
 }
 
@@ -48,8 +57,12 @@ export async function callClaudeWithContext(options: {
   max_tokens?: number;
   temperature?: number;
   additionalSystemContext?: string;
-  /** `tiers` : rédaction au nom de l'utilisatrice pour un inconnu (voir buildNayaContext). */
-  destinataire?: "utilisatrice" | "tiers";
+  /**
+   * `tiers` : rédaction au nom de l'utilisatrice pour un inconnu (prospection).
+   * `audience` : publication de la marque pour son public (posts). Les deux reçoivent le
+   * contexte réduit de buildNayaContext (ni énergie, ni objectifs, ni consignes de tâches).
+   */
+  destinataire?: Destinataire;
 }): Promise<string> {
   const {
     userId,

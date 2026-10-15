@@ -56,6 +56,7 @@ describe("POST /api/content/:id/regenerate", () => {
     const res = await regen();
     expect(res.status).toBe(200);
     const appel = claudeMock.callClaudeWithContext.mock.calls[0][0] as any;
+    expect(appel.destinataire).toBe("audience");
     expect(appel.projectId).toBe(15);
     expect(appel.userId).toBe("user-1");
     expect(appel.userMessage).toContain("Pas de ton institutionnel");

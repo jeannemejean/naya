@@ -7397,6 +7397,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const raw = await callClaudeWithContext({
         userId,
         projectId: existing.projectId ?? null,
+        destinataire: "audience", // un post de la marque pour son public, pas Naya qui parle à l'utilisatrice
         userMessage: userPrompt,
         model: CLAUDE_MODELS.smart,
         max_tokens: 800,
@@ -7637,6 +7638,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const brouillon = await callClaudeWithContext({
         userId,
         projectId: card.projectId,
+        destinataire: "audience", // le post est lu par son audience LinkedIn
         max_tokens: 1200,
         additionalSystemContext:
           "Tu mets en forme l'avis de la fondatrice en post LinkedIn. Tu n'ajoutes AUCUNE opinion " +

@@ -27,8 +27,11 @@ export interface OptionsContexte {
    * (prospection). Seule la marque et le savoir utile restent : ni objectifs ni consignes
    * de tâches, ni jalons, ni énergie, ni mémoire de fondatrice, ni revue du jour. Ces
    * sections fuyaient dans les messages envoyés à des inconnus.
+   * `audience` : Naya écrit une publication de la marque pour son public (post). Même
+   * contexte réduit que `tiers` : la vie intérieure de l'utilisatrice n'a rien à faire dans
+   * un post, et ses consignes de tâches y polluaient la rédaction.
    */
-  destinataire?: "utilisatrice" | "tiers";
+  destinataire?: "utilisatrice" | "tiers" | "audience";
 }
 
 export async function buildNayaContext(
@@ -38,7 +41,8 @@ export async function buildNayaContext(
   options: OptionsContexte = {},
 ): Promise<string> {
   const sections: string[] = [];
-  const tiers = options.destinataire === "tiers";
+  // `tiers` désigne ici le CONTEXTE RÉDUIT, partagé par la prospection et les publications.
+  const tiers = options.destinataire === "tiers" || options.destinataire === "audience";
 
   try {
     // Perf : lance la récupération mémoire EN PARALLÈLE des autres requêtes (au lieu de

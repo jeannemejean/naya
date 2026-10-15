@@ -93,3 +93,18 @@ describe("buildNayaContext, mode tiers", () => {
     expect(c).toContain("BILAN MENSUEL");
   });
 });
+
+describe("buildNayaContext, mode audience (publications de la marque)", () => {
+  it("même contexte réduit que le mode tiers : la marque oui, la vie intérieure de l'utilisatrice non", async () => {
+    const c = await buildNayaContext("u1", 7, "post", { destinataire: "audience" });
+    expect(c).toContain("Agence JMD");
+    expect(c).toContain("OFFRE ENTREE");
+    expect(c).toContain("OBJECTION RELEVEE");
+    expect(c).not.toContain("Instruction absolue");
+    expect(c).not.toContain("Jalons du projet");
+    expect(c).not.toContain("Niveau d'énergie");
+    expect(c).not.toContain("MEMOIRE FONDATRICE");
+    expect(c).not.toContain("BILAN MENSUEL");
+    expect(c).toBe(await buildNayaContext("u1", 7, "post", { destinataire: "tiers" }));
+  });
+});

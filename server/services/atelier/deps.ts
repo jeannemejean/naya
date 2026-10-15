@@ -76,6 +76,7 @@ export const depsRedaction: DepsRedaction = {
   garde: gardeDepense,
   ia: async (userId, projectId, prompt, opts) => callClaudeWithContext({
     userId, projectId, userMessage: prompt, model: CLAUDE_MODELS.smart, max_tokens: 1500,
+    destinataire: "audience", // le texte d'un post de la marque, pas Naya qui parle à l'utilisatrice
     additionalSystemContext: await tendancesPourLeContenu(userId, projectId, opts?.plateformes ?? []),
   }),
   async lierTendance(id, userId, tendanceProjetId) {

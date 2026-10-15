@@ -37,6 +37,7 @@ describe("genererPostRemplacement", () => {
     const r = await genererPostRemplacement(input);
     expect(r).toEqual({ title: "Nouveau", body: "Texte prêt" });
     const o = mockClaude.mock.calls[0][0];
+    expect(o.destinataire).toBe("audience");
     expect(o.projectId).toBe(7);
     expect(o.model).toBe("fast-model");
     expect(o.max_tokens).toBe(1500);

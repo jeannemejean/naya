@@ -63,6 +63,9 @@ const storageMock = {
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 
+const claudeMock = vi.hoisted(() => ({ callClaudeWithContext: vi.fn(async () => "Brouillon du post") }));
+vi.mock("./services/claude", async (orig) => ({ ...(await orig<any>()), callClaudeWithContext: claudeMock.callClaudeWithContext }));
+
 const extractToMemoryMock = vi.fn();
 vi.mock("./services/memory/extract", () => ({ extractToMemory: extractToMemoryMock }));
 
@@ -231,5 +234,15 @@ describe("POST /api/saved-articles — appartenance du projectId (B7)", () => {
 
     expect(res.status).toBe(404);
     expect(storageMock.updateSavedArticle).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/reading/cards/:id/to-content", () => {
+  it("le post tiré d'un avis est écrit dans la voix de la marque pour son audience, pas par Naya à l'utilisatrice", async () => {
+    hoisted.resultats = [[fiche({ userAnswer: "Mon avis tranché.", factSummary: "FAIT" })], [{ id: 55 }]];
+    const r = await fetch(`http://127.0.0.1:${port}/api/reading/cards/1/to-content`, { method: "POST" });
+    expect(r.status).toBe(200);
+    expect(claudeMock.callClaudeWithContext).toHaveBeenCalledTimes(1);
+    expect((claudeMock.callClaudeWithContext.mock.calls[0] as any)[0].destinataire).toBe("audience");
   });
 });

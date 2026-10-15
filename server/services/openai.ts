@@ -327,6 +327,7 @@ Respond with JSON only:
     const raw = await callClaudeWithContext({
       userId: request.userId,
       projectId,
+      destinataire: "audience", // une publication de la marque, lue par son audience
       userMessage: prompt,
       model: CLAUDE_MODELS.fast,
       max_tokens: 2000,
@@ -730,6 +731,8 @@ Respond with JSON:
       userMessage: prompt,
       model: CLAUDE_MODELS.fast,
       max_tokens: 1500,
+      // Un message à quelqu'un qui ne la connaît pas : écrit en son nom, sans sa vie intérieure.
+      destinataire: "tiers",
       additionalSystemContext: `You are an expert at authentic, relationship-based outreach that uses target persona psychology to craft messages that convert — while always feeling human and genuine. Always respond with valid JSON only.`,
     });
 

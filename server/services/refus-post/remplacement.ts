@@ -53,6 +53,7 @@ export async function genererPostRemplacement(input: {
     const texte = await callClaudeWithContext({
       userId,
       projectId,
+      destinataire: "audience", // le remplaçant est une publication de la marque
       userMessage: message,
       model: CLAUDE_MODELS.fast,
       max_tokens: 1500,
