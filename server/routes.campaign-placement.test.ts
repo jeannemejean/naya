@@ -47,6 +47,10 @@ const storageMock = {
   deleteCampaignContentItems: vi.fn(async (_cid: number, ids: number[]) => ids.length),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
+const claudeMock = vi.hoisted(() => ({ callClaudeWithContext: vi.fn() }));
+vi.mock("./services/claude", async (orig) => ({ ...(await orig<any>()), callClaudeWithContext: claudeMock.callClaudeWithContext }));
+const gardeJalons = vi.hoisted(() => ({ marquerTachesDesJalonsVerrouilles: vi.fn(async () => 0) }));
+vi.mock("./services/jalons-verrouilles", () => gardeJalons);
 
 const { registerRoutes } = await import("./routes");
 const { lundiDe } = await import("@shared/atelier");
@@ -272,4 +276,16 @@ describe("placement de campagne : caractérisation des routes", () => {
     expect(storageMock.createContent).not.toHaveBeenCalled();
     expect(storageMock.checkSlotAvailability).toHaveBeenCalled();
   });
+
+  it("resume avec une note : une tâche réécrite qui ferait avancer un jalon verrouillé n'est pas gardée", async () => {
+    const { marquer } = await import("./services/marques-jalons");
+    storageMock.getCampaign.mockResolvedValue(campagne({ status: "paused", pauseNote: "Décale tout d'une semaine" }));
+    claudeMock.callClaudeWithContext.mockResolvedValue(JSON.stringify([task("Plan review", 1), task("Ouvrir les inscriptions", 1)]));
+    gardeJalons.marquerTachesDesJalonsVerrouilles.mockImplementationOnce(async (ts: any[]) => { marquer(ts[1]); return 1; });
+    await call("resume");
+    expect(gardeJalons.marquerTachesDesJalonsVerrouilles.mock.calls[0][1]).toBe("user-1");
+    const ecrit = storageMock.updateCampaign.mock.calls.map((c: any[]) => c[2]).find((d: any) => d.generatedTasks);
+    expect(ecrit.generatedTasks.map((t: any) => t.title)).toEqual(["Plan review"]);
+  });
 });
+

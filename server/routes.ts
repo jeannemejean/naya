@@ -210,6 +210,7 @@ import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFa
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import { filtrerTachesGenerees } from "./services/filtre-taches-generees";
 import { marquerTachesDesJalonsVerrouilles } from "./services/jalons-verrouilles";
+import { estPourJalonVerrouille } from "./services/marques-jalons";
 import { entrelacerParProjet } from "./services/repartition-projets";
 import {
   getAuthUrl,
@@ -10863,7 +10864,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         });
         let parsed: any;
         try { parsed = JSON.parse(raw); } catch { parsed = {}; }
-        const updatedTasks: any[] = Array.isArray(parsed) ? parsed : (parsed.tasks ?? existingTasks);
+        const reecrites: any[] | null = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.tasks) ? parsed.tasks : null);
+        let updatedTasks: any[] = reecrites ?? existingTasks;
+        if (reecrites) {
+          // Tâches réécrites par l'IA : la règle des jalons verrouillés s'applique aussi.
+          await marquerTachesDesJalonsVerrouilles(reecrites, userId, campaign.projectId ?? null);
+          updatedTasks = reecrites.filter((t) => !estPourJalonVerrouille(t));
+        }
         await storage.updateCampaign(id, userId, { generatedTasks: updatedTasks });
       }
 

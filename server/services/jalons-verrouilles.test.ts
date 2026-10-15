@@ -84,3 +84,32 @@ describe("filtrerTachesGenerees retire les tâches marquées", () => {
     expect(filtrerTachesGenerees(enveloppees, "test", (p) => p.taskData)).toEqual([enveloppees[0]]);
   });
 });
+
+describe("la marque survit aux copies faites entre la génération et le filtre", () => {
+  it("une copie {...t} reste marquée, sans que la marque apparaisse dans les données", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const t = lot();
+    await marquerTachesDesJalonsVerrouilles(t, "u1", 7, deps());
+    const copie = { ...t[1], scheduledDate: "2026-10-20" };
+    expect(estPourJalonVerrouille(copie)).toBe(true);
+    expect(Object.keys(copie)).not.toContain("jalonVerrouille");
+    expect(JSON.stringify(copie)).not.toMatch(/jalon/i);
+  });
+
+  it("motif des routes mois / auto-planner : map({...t, __srcIndex}) puis filtre → retirée", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const t = lot();
+    await marquerTachesDesJalonsVerrouilles(t, "u1", 7, deps());
+    const gardees = filtrerTachesGenerees(t.map((x, __srcIndex) => ({ ...x, __srcIndex })), "test");
+    expect(gardees.map((g) => g.__srcIndex)).toEqual([0]);
+  });
+
+  it("motif generate-daily : { taskData: {...rt, normalisé} } puis filtre → retirée", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const t = lot();
+    await marquerTachesDesJalonsVerrouilles(t, "u1", 7, deps());
+    const pending = t.map((rt) => ({ taskData: { ...rt, priority: 2 } }));
+    expect(filtrerTachesGenerees(pending, "test", (p) => p.taskData)).toEqual([pending[0]]);
+  });
+});
+
