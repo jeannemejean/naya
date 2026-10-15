@@ -10,6 +10,8 @@
 // Les prompts le disent déjà ; ce filtre le GARANTIT, parce qu'une consigne ne suffit pas.
 // Une journée qui s'amincit après filtrage reste mince : on ne comble pas avec du remplissage.
 
+import { estPourJalonVerrouille } from "./marques-jalons";
+
 export type RaisonExclusion = "prospection" | "contenu";
 
 export interface TacheFiltrable {
@@ -99,12 +101,14 @@ export function filtrerTachesGenerees<T>(
   const gardees: T[] = [];
   const ecartees: string[] = [];
   for (const t of taches ?? []) {
+    // Marquée par la garde des jalons verrouillés (jalons-verrouilles.ts) : jamais gardée.
+    if (estPourJalonVerrouille(acces(t))) { ecartees.push(`jalon verrouillé : « ${String(acces(t)?.title ?? "")} »`); continue; }
     const raison = raisonExclusionGenerateur(acces(t));
     if (raison) ecartees.push(`${raison} : « ${String(acces(t)?.title ?? "")} »`);
     else gardees.push(t);
   }
   if (ecartees.length > 0) {
-    console.log(`[FiltreGenerateur] ${origine} — ${ecartees.length} tâche(s) écartée(s) (calendrier éditorial / pipeline de prospection) :\n  ${ecartees.join("\n  ")}`);
+    console.log(`[FiltreGenerateur] ${origine} — ${ecartees.length} tâche(s) écartée(s) (calendrier éditorial / pipeline de prospection / jalon verrouillé) :\n  ${ecartees.join("\n  ")}`);
   }
   return gardees;
 }

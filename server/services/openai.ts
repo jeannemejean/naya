@@ -5,6 +5,8 @@ import { NAYA_SYSTEM_VOICE } from "../naya-voice";
 import { validateGeneratedIntent } from "./reception/validate-generated-intent";
 import type { Intent } from "./reception/score";
 import { formaterArticulation, type Articulation } from "./brand-links/links";
+import { marquerTachesDesJalonsVerrouilles } from "./jalons-verrouilles";
+import { estPourJalonVerrouille } from "./marques-jalons";
 import { formaterPreferences, type Preference } from "./campaign-reject/preferences";
 import { TITRE_SAVOIR } from "./memory/savoir-campagne";
 import { imposerLangueDuCompte, langueDuCompte } from "./garde-langue";
@@ -620,6 +622,8 @@ ${urgencyInstruction}`,
     const parsed = JSON.parse(stripMarkdownJSON(raw));
     // Garde de sortie : le prompt est en anglais et le modèle rapide l'imite parfois.
     await imposerLangueDuCompte(parsed?.tasks, request.userId);
+    // Règle des jalons verrouillés : marque, retiré par filtrerTachesGenerees (positions gardées).
+    await marquerTachesDesJalonsVerrouilles(parsed?.tasks, request.userId, projectId);
     return parsed;
   } catch (error) {
     throw new Error("Failed to generate daily tasks: " + (error as Error).message);
@@ -928,6 +932,7 @@ Always respond with valid JSON only.`,
   const result = JSON.parse(stripMarkdownJSON(raw));
   // Garde de sortie : le prompt est en anglais, le modèle l'imite sur une partie des titres.
   await imposerLangueDuCompte(result.tasks, request.userId);
+  await marquerTachesDesJalonsVerrouilles(result.tasks, request.userId, projectId);
   return {
     tasks: result.tasks || [],
     dependencies: result.dependencies || [],
@@ -1022,6 +1027,7 @@ Always respond with valid JSON only.`,
 
   const result = JSON.parse(stripMarkdownJSON(raw));
   await imposerLangueDuCompte(result.newTasks, request.userId);
+  await marquerTachesDesJalonsVerrouilles(result.newTasks, request.userId, projectId);
   return {
     reschedules: result.reschedules || [],
     newTasks: result.newTasks || [],
@@ -1425,7 +1431,9 @@ Return ONLY this JSON object:
     const parsed = JSON.parse(stripMarkdownJSON(text));
     const tasks = (Array.isArray(parsed) ? parsed : parsed.tasks || []) as GeneratedCampaign["tasks"];
     await imposerLangueDuCompte(tasks as any[], request.userId);
-    return tasks;
+    // Pas de dépendances par position ici : la tâche d'un jalon verrouillé est retirée directement.
+    await marquerTachesDesJalonsVerrouilles(tasks as any[], request.userId, request.projectId ?? null);
+    return tasks.filter((t) => !estPourJalonVerrouille(t));
   } catch (e) {
     throw new Error("Failed to parse campaign tasks JSON: " + (e as Error).message);
   }

@@ -209,6 +209,7 @@ import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import { filtrerTachesGenerees } from "./services/filtre-taches-generees";
+import { marquerTachesDesJalonsVerrouilles } from "./services/jalons-verrouilles";
 import { entrelacerParProjet } from "./services/repartition-projets";
 import {
   getAuthUrl,
@@ -5500,6 +5501,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               projectBatchKey: triggered.trigger.projectId?.toString() || 'general',
             });
           }
+          await marquerTachesDesJalonsVerrouilles(debloquees.map((p) => p.taskData), userId, triggered.trigger.projectId ?? null);
           const debloqueesGardees = filtrerTachesGenerees(debloquees, `jalon déclenché ${triggered.trigger.id}`, (p: PendingTask) => p.taskData);
           // Tâches enregistrées au moment où la règle a été écrite, parfois en anglais.
           await imposerLangueDuCompte(debloqueesGardees.map((p) => p.taskData), userId);

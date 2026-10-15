@@ -14,6 +14,7 @@ import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
 import { storage } from "../storage";
 import { imposerLangueDuCompte, langueDuCompte } from "./garde-langue";
 import { consignesGenerateur } from "./consignes-generateur";
+import { marquerTachesDesJalonsVerrouilles } from "./jalons-verrouilles";
 
 export interface GeneratedTask {
   title: string;
@@ -133,6 +134,8 @@ ${consignesGenerateur(langue)}`;
     const tasks: GeneratedTask[] = parsed.tasks || [];
     // Garde de sortie : titres et descriptions dans la langue du compte.
     await imposerLangueDuCompte(tasks as any[], userId);
+    // Règle des jalons verrouillés : marque, retiré par filtrerTachesGenerees à l'enregistrement.
+    await marquerTachesDesJalonsVerrouilles(tasks as any[], userId, goal.projectId ?? null);
     return tasks;
   } catch {
     return [];

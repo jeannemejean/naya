@@ -3,6 +3,8 @@ import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
 import { imposerLangueDuCompte } from "../garde-langue";
 import { remplacerReferencesNumerotees } from "../references-taches";
 import { libelleRaison, validerRemplacement, type RaisonRefus, type Remplacement } from "./pur";
+import { marquerTachesDesJalonsVerrouilles } from "../jalons-verrouilles";
+import { estPourJalonVerrouille } from "../marques-jalons";
 
 // Retire les clôtures ``` éventuelles autour du JSON.
 function retirerClotures(s: string): string {
@@ -53,6 +55,9 @@ export async function genererRemplacement(input: {
       return null;
     }
     await imposerLangueDuCompte([r as any], userId);
+    // Un remplaçant qui ferait avancer un jalon verrouillé n'est pas proposé.
+    await marquerTachesDesJalonsVerrouilles([r], userId, tache.projectId ?? null);
+    if (estPourJalonVerrouille(r)) return null;
     r.description = remplacerReferencesNumerotees(r.description, []);
     if (r.activationPrompt) r.activationPrompt = remplacerReferencesNumerotees(r.activationPrompt, []);
     return r;
