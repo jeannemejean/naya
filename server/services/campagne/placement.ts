@@ -144,8 +144,13 @@ export async function joursTravailles(deps: PlacementDeps, userId: string, debut
 }
 
 /**
- * Grille des créneaux en mémoire : prochain créneau libre par jour, initialisé depuis les
- * tâches existantes, heures de travail et pause déjeuner de l'utilisatrice.
+ * Grille des créneaux en mémoire : les PLAGES OCCUPÉES de chaque jour (tâches existantes,
+ * pause déjeuner, créneaux attribués), dans les heures de travail de l'utilisatrice.
+ *
+ * Jusqu'au 15 oct. 2026, la grille ne retenait qu'un « prochain créneau libre » par jour — la
+ * fin de la DERNIÈRE tâche. Une journée libre le matin mais avec une tâche à 17 h passait pour
+ * pleine : l'atelier de la semaine du 26 octobre est parti au 16 octobre, un autre à 18 h 11.
+ * Elle cherche désormais le premier trou assez grand.
  */
 export function grilleCreneaux(prefs: any, existingTasks: any[]) {
   const DAY_START = hhmmToMin(prefs?.workDayStart || '09:00');
@@ -154,39 +159,54 @@ export function grilleCreneaux(prefs: any, existingTasks: any[]) {
   const LUNCH_END = hhmmToMin(prefs?.lunchBreakEnd || '13:00');
   const BUFFER = 15;
 
-  const dayNextSlot = new Map<string, number>();
+  // Plages occupées [début, fin) par jour, tampon compris après chaque tâche.
+  const occupees = new Map<string, Array<[number, number]>>();
+  const ajouter = (dateStr: string, debut: number, fin: number) => {
+    const l = occupees.get(dateStr) ?? [];
+    l.push([debut, fin]);
+    l.sort((x, y) => x[0] - y[0]);
+    occupees.set(dateStr, l);
+  };
   for (const t of existingTasks) {
-    if (!t.scheduledDate) continue;
-    const existing = dayNextSlot.get(t.scheduledDate) ?? DAY_START;
-    if (t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime)) {
-      const startMin = hhmmToMin(t.scheduledTime);
-      const endMin = startMin + (t.estimatedDuration || 30) + BUFFER;
-      if (endMin > existing) dayNextSlot.set(t.scheduledDate, endMin);
-    }
+    if (!t.scheduledDate || !t.scheduledTime || !/^\d{2}:\d{2}$/.test(t.scheduledTime)) continue;
+    const debut = hhmmToMin(t.scheduledTime);
+    ajouter(t.scheduledDate, debut, debut + (t.estimatedDuration || 30) + BUFFER);
   }
+
+  /** Premier début possible pour `duree` minutes ce jour-là, ou null si aucun trou. */
+  const premierTrou = (dateStr: string, duree: number): number | null => {
+    const plages = [...(occupees.get(dateStr) ?? []), [LUNCH_START, LUNCH_END] as [number, number]]
+      .sort((x, y) => x[0] - y[0]);
+    let curseur = DAY_START;
+    for (const [debut, fin] of plages) {
+      if (debut - curseur >= duree && curseur + duree <= DAY_END) return curseur;
+      if (fin > curseur) curseur = fin;
+    }
+    return curseur + duree <= DAY_END ? curseur : null;
+  };
+  /** Sans trou : après la dernière plage (débordement, comme avant — l'appelant a vérifié aDeLaPlace). */
+  const apresTout = (dateStr: string) =>
+    Math.max(DAY_START, ...(occupees.get(dateStr) ?? []).map(([, fin]) => fin));
 
   return {
     aDeLaPlace(dateStr: string, durationMin: number): boolean {
-      const slot = dayNextSlot.get(dateStr) ?? DAY_START;
-      const adjusted = (slot < LUNCH_END && slot + durationMin > LUNCH_START) ? LUNCH_END : slot;
-      return adjusted + durationMin <= DAY_END;
+      return premierTrou(dateStr, durationMin) !== null;
     },
     attribuer(dateStr: string, durationMin: number): string {
-      let slot = dayNextSlot.get(dateStr) ?? DAY_START;
-      if (slot < LUNCH_END && slot + durationMin > LUNCH_START) slot = LUNCH_END;
-      dayNextSlot.set(dateStr, slot + durationMin + BUFFER);
-      return minToHHMM(slot);
+      const debut = premierTrou(dateStr, durationMin) ?? apresTout(dateStr);
+      ajouter(dateStr, debut, debut + durationMin + BUFFER);
+      return minToHHMM(debut);
     },
     /** L'heure réellement écrite diffère de l'heure attribuée : la grille la suit. */
     caler(dateStr: string, hhmm: string, durationMin: number) {
-      dayNextSlot.set(dateStr, hhmmToMin(hhmm) + durationMin + BUFFER);
+      const debut = hhmmToMin(hhmm);
+      ajouter(dateStr, debut, debut + durationMin + BUFFER);
     },
-    /** Un créneau fixe (la publication) occupe la grille s'il recouvre le prochain créneau. */
+
+    /** Un créneau fixe (la publication) occupe sa plage. */
     occuper(dateStr: string, hhmm: string, durationMin: number) {
       const debut = hhmmToMin(hhmm);
-      const fin = debut + durationMin + BUFFER;
-      const next = dayNextSlot.get(dateStr) ?? DAY_START;
-      if (debut <= next && fin > next) dayNextSlot.set(dateStr, fin);
+      ajouter(dateStr, debut, debut + durationMin + BUFFER);
     },
   };
 }
@@ -200,6 +220,8 @@ export async function heureDeCreneau(
   if (!controleCreneaux) return inMemoryTime;
   const slotCheck = await requis(deps, 'checkSlotAvailability')(userId, dateStr, inMemoryTime, duree);
   const scheduledTime = (!slotCheck.available && slotCheck.nextAvailableTime) ? slotCheck.nextAvailableTime : inMemoryTime;
+  // La plage attribuée en mémoire reste réservée : la base l'a dite prise (par quelque chose
+  // que la grille ne connaît pas). On y ajoute la plage réellement écrite.
   if (scheduledTime !== inMemoryTime) grille.caler(dateStr, scheduledTime, duree);
   return scheduledTime;
 }
