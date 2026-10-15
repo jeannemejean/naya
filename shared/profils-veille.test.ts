@@ -148,6 +148,16 @@ describe("comptes et posts", () => {
     expect(extraireTendance("Mon post.\n**TENDANCE: 3**")).toEqual({ texte: "Mon post.", tendanceId: 3 });
     expect(extraireTendance("Mon post.\n\nTENDANCE: aucune")).toEqual({ texte: "Mon post.", tendanceId: null });
   });
+  it("TENDANCE : gras autour du mot, puce, citation, code, souligné, en fin de phrase, consigne recopiée", () => {
+    for (const ligne of ["**TENDANCE**: 3", "*Tendance* : 3", "- TENDANCE: 3", "> TENDANCE: 3", "`TENDANCE: 3`", "__TENDANCE:__ 3", "TENDANCE: 3 (le numéro seul, sans crochets)"]) {
+      expect(extraireTendance(`Mon post.\n\n${ligne}`)).toEqual({ texte: "Mon post.", tendanceId: 3 });
+    }
+    expect(extraireTendance("Mon post. TENDANCE: 3")).toEqual({ texte: "Mon post.", tendanceId: 3 });
+  });
+  it("une phrase qui commence par « Tendance : » n'est pas une ligne technique", () => {
+    const t = "Tendance : 3 façons de rater ton carrousel.\nLa suite.";
+    expect(extraireTendance(t)).toEqual({ texte: t, tendanceId: null });
+  });
   it("TENDANCE avant SLIDES : retirée où qu'elle soit, le reste intact", () => {
     const r = extraireTendance("LÉGENDE :\nMon texte\nTENDANCE: 7\nSLIDES :\n1. a");
     expect(r.tendanceId).toBe(7);

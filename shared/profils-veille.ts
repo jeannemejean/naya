@@ -210,11 +210,18 @@ export function cleDePost(url: string): string {
  * Retire TOUTE ligne « TENDANCE: … » (où qu'elle soit, gras ou crochets tolérés) — elle ne doit
  * jamais être publiée. L'id = premier nombre de la dernière ligne trouvée ; « TENDANCE: aucune » → null.
  */
+// La marque technique : « TENDANCE: 12 » en fin de ligne (début de ligne ou après une espace),
+// habillage Markdown toléré autour (gras, souligné, code, puce, citation), crochets ou point
+// autour du numéro, « aucune », et la consigne recopiée entre parenthèses. Le numéro doit finir
+// la ligne : « Tendance : 3 façons de… » est une phrase, pas une marque.
+const MARQUE_TENDANCE =
+  /(^|[ \t])[ \t>*_`\-]*TENDANCE[ \t*_`]*:[ \t*_`]*(?:\[?(\d{1,9})\]?|aucune)[ \t*_`.\]]*(?:\([^)\n]*\))?[ \t*_`.]*$/gim;
+
 export function extraireTendance(texte: string): { texte: string; tendanceId: number | null } {
   const brut = texte ?? "";
-  const lignes = brut.match(/^\s*\**\s*TENDANCE\s*:.*$/gim);
-  if (!lignes) return { texte: brut.trim(), tendanceId: null };
-  const id = /\d{1,9}/.exec(lignes[lignes.length - 1]);
-  const reste = brut.replace(/^\s*\**\s*TENDANCE\s*:.*$/gim, "").replace(/\n{3,}/g, "\n\n").trim();
-  return { texte: reste, tendanceId: id ? Number(id[0]) : null };
+  const marques = Array.from(brut.matchAll(MARQUE_TENDANCE));
+  if (marques.length === 0) return { texte: brut.trim(), tendanceId: null };
+  const id = marques[marques.length - 1][2];
+  const reste = brut.replace(MARQUE_TENDANCE, "").replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+  return { texte: reste, tendanceId: id ? Number(id) : null };
 }
