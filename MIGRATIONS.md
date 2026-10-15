@@ -311,37 +311,41 @@ Livrables de tâche, étape 1 (spec `docs/superpowers/specs/2026-10-06-naya-livr
       avec leurs endpoints quand le déploiement est stable.
 
 
-## 3nonies. Production — **NON migrée** (`0031`) — précondition de fusion des profils de veille
+## 3nonies. Production — migrée le 15 octobre 2026 (`0030` → `0031`) — atelier de contenu et profils de veille
 
-Profils de veille, lot 1 (spec `docs/superpowers/specs/2026-10-14-profils-de-veille-design.md`,
-branche `feat/profils-de-veille`, fichier `migrations/0031_gray_thunderball.sql`).
+> Endpoint vérifié avant exécution : `ep-damp-water-anuyb0k6` = branche `br-floral-wave-ane2h3l1`
+> = **production**. Vérification faite par l'API Neon (`list_branch_computes`), pas de mémoire.
 
-- Contenu : **9 `CREATE TABLE`** (`profils_veille`, `profil_comptes`, `profil_passages`,
-  `profil_posts`, `profil_analyses`, `profil_tendances`, `profil_rattachements`,
-  `tendances_projet`, `profil_etiquettes`), leurs contraintes et index, et **2 `ADD COLUMN`
-  nullables** sur `content` : `tendance_id integer`, `tendance_projet_id integer`. Aucun `DROP`,
-  `TRUNCATE`, `DELETE`, changement de type ni `SET NOT NULL` sur l'existant.
-- [x] Appliquée sur **dev-local** le 14 octobre 2026.
-- [ ] **NON appliquée en production.**
+- [x] État lu avant toute écriture : suivi **30 lignes**, dernier `created_at` = `1791910722494`
+      (`0029`). ⚠️ `0030` (atelier, `content.consigne`) n'avait **pas** été appliquée : elle est
+      donc partie avec `0031`. Les sections `0020` → `0029` n'ont pas été écrites ici ; seul l'état
+      de la table de suivi fait foi.
+- [x] Point de restauration Neon : branche **`sauvegarde-avant-profils-veille-2026-10-15`**
+      (`br-flat-recipe-anbmp91v`), forkée de `production`, **vérifiée identique** avant migration :
+      30 lignes de suivi, 78 tables, 3 utilisateurs, 4 projets, 236 tâches, 40 contenus.
+      ⚠️ Rétention d'historique : **6 heures**. Au-delà, seule cette branche permet un retour.
+- [x] SQL relu, purement additif :
+      - `0030` : `ALTER TABLE "content" ADD COLUMN "consigne" text` (nullable).
+      - `0031` (`0031_gray_thunderball.sql`) : **9 `CREATE TABLE`** (`profils_veille`,
+        `profil_comptes`, `profil_passages`, `profil_posts`, `profil_analyses`, `profil_tendances`,
+        `profil_rattachements`, `tendances_projet`, `profil_etiquettes`), leurs contraintes et index,
+        et **2 `ADD COLUMN` nullables** sur `content` (`tendance_id`, `tendance_projet_id`).
+      Aucun `DROP`, `TRUNCATE`, `DELETE`, changement de type ni `SET NOT NULL` sur l'existant.
+- [x] Garde de `scripts/migrate-prod.ts` **testée à blanc** (URL dev-local → refus, code 1), puis
+      appliquée avec l'URL de production passée explicitement (`MIGRATION_DATABASE_URL`).
+- [x] Résultat vérifié : suivi **30 → 32** (dernier `created_at` = `1791989755724`, `0031`),
+      **78 → 87 tables** (les 9 tables des profils), colonnes `consigne`, `tendance_id`,
+      `tendance_projet_id` présentes, **données inchangées** (3 utilisateurs, 4 projets,
+      236 tâches, 40 contenus).
+- [x] Ordre respecté : migration d'abord, `main` poussé ensuite (atelier + profils de veille).
 
-### Ordre obligatoire
-
-1. [ ] Sauvegarde Neon de la production (branche `sauvegarde-avant-profils-veille-…`), vérifiée.
-2. [ ] Migrer la production par `scripts/migrate-prod.ts` — **vérifier d'abord l'endpoint** :
-       `ep-damp-water-anuyb0k6` = production ; garde re-testée à blanc.
-3. [ ] **Seulement ensuite**, pousser `main`.
-
-**Pourquoi cet ordre.** Drizzle nomme chaque colonne du schéma dans ses `SELECT` : dès que le
-code de la branche est en ligne, toute lecture de `content` demande `tendance_id` et
-`tendance_projet_id`. Sans la migration, **toutes les lectures de `content` cassent** (posts,
-atelier, campagnes). L'inverse est sûr : le code actuellement en ligne ignore les nouvelles
-tables et colonnes (purement additif).
-
-### Ce qui reste (après déploiement)
+### Ce qui reste
 
 - [ ] `profil_comptes.suggere_par` est en `ON DELETE NO ACTION` : à passer en `SET NULL` dans une
       prochaine migration (sinon une utilisatrice ayant suggéré un compte ne peut être supprimée).
-- [ ] Supprimer la branche de sauvegarde quand le déploiement est stable.
+- [ ] Supprimer `sauvegarde-avant-profils-veille-2026-10-15` quand le déploiement est stable.
+- [ ] Le robot des profils ne tourne que si `PROFILS_VEILLE_ROBOT=on` (Railway) ; la diffusion à
+      toutes que si `PROFILS_VEILLE_POUR_TOUS=true`, après le banc d'évaluation.
 
 
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
