@@ -118,7 +118,7 @@ describe("preferencesDeLaMarque — la requête", () => {
     infoSpy.mockRestore();
   });
 
-  it("cas 1 — la clause porte sur fil = \"cap\", entryType = \"préférence\" ET supersededAt IS NULL, rendue par PgDialect", async () => {
+  it("cas 1 — la clause porte sur fil = \"cap\", entryType ∈ (\"rejet\", \"préférence\") ET supersededAt IS NULL, rendue par PgDialect", async () => {
     hoisted.resultats = [[]];
 
     await preferencesDeLaMarque("user-1", 7);
@@ -129,6 +129,23 @@ describe("preferencesDeLaMarque — la requête", () => {
     expect(requete.sql).toContain('"memory_entries"."superseded_at" is null');
     expect(requete.params).toContain("cap");
     expect(requete.params).toContain("préférence");
+    expect(requete.params).toContain("rejet");
+  });
+
+  it("chaque préférence porte son sens : un rejet (ou une ancienne ligne de rejet) est à éviter, le reste est à suivre", async () => {
+    hoisted.resultats = [[
+      { ...ligne({ id: 1, content: "Post refusé (instagram, preuve) « X » — ton trop vendeur" }), entryType: "rejet" },
+      { ...ligne({ id: 2, content: "Post refusé (linkedin, ?) « Y » — hors sujet" }), entryType: "préférence" },
+      { ...ligne({ id: 3, content: "Campagne rejetée pour cette marque : « Z »." }), entryType: "préférence" },
+      { ...ligne({ id: 4, content: "Une campagne générée pour cette marque a été rejetée. Ce qui n'allait pas…" }), entryType: "préférence" },
+      { ...ligne({ id: 5, content: "Ton : direct, jamais corporate" }), entryType: "préférence" },
+    ]];
+
+    const r = await preferencesDeLaMarque("user-1", 7);
+
+    expect(r.map((p) => p.sens)).toEqual(["eviter", "eviter", "eviter", "eviter", "suivre"]);
+    // Le type de ligne n'est pas exposé : seul le sens sort du module.
+    expect((r[0] as any).entryType).toBeUndefined();
   });
 
   it("cas 2 — le tri (salience DESC, createdAt DESC) et le plafond sont rendus au constructeur de requête", async () => {
@@ -255,6 +272,26 @@ describe("formaterPreferences — PURE, n'expose que content", () => {
     const premiereLigne = sortie.split("\n")[0];
     expect(premiereLigne).toContain("À ÉVITER");
     expect(premiereLigne).not.toBe("PRÉFÉRENCES EXPRIMÉES PAR L'UTILISATRICE SUR CETTE MARQUE");
+  });
+
+  it("une préférence à SUIVRE n'est jamais rangée sous « À ÉVITER » (le bug des préférences inversées)", () => {
+    const sortie = formaterPreferences([
+      { ...ligne({ content: "Ton : direct, jamais corporate" }), sens: "suivre" },
+      { ...ligne({ content: "Post refusé (instagram, ?) « X » — trop vendeur" }), sens: "eviter" },
+    ]);
+    const [aSuivre, aEviter] = sortie.split("\n\n");
+    expect(aSuivre).toContain("À SUIVRE");
+    expect(aSuivre).toContain("- Ton : direct, jamais corporate");
+    expect(aSuivre).not.toContain("trop vendeur");
+    expect(aEviter).toContain("À ÉVITER");
+    expect(aEviter).toContain("trop vendeur");
+    expect(aEviter).not.toContain("jamais corporate");
+  });
+
+  it("seulement des préférences à suivre : aucun bloc « À ÉVITER »", () => {
+    const sortie = formaterPreferences([{ ...ligne({ content: "Tutoiement." }), sens: "suivre" }]);
+    expect(sortie).toContain("À SUIVRE");
+    expect(sortie).not.toContain("À ÉVITER");
   });
 
   it("ne s'étale jamais et ne sérialise jamais tout l'objet : un champ ajouté demain à Preference ne peut pas fuiter", () => {

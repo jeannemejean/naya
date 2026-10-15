@@ -5,6 +5,7 @@ import { db } from "../../db";
 import { storage } from "../../storage";
 import { embedText } from "../memory/embed";
 import { genererPostRemplacement } from "./remplacement";
+import { TYPE_REJET } from "../campaign-reject/preferences";
 import { placerTachesProductionPosts } from "../campagne/placement";
 import type { RefusPostDeps } from "./service";
 
@@ -30,7 +31,7 @@ export const refusPostDeps: RefusPostDeps = {
       userId,
       projectId,
       fil: "cap",
-      entryType: "préférence",
+      entryType: TYPE_REJET,
       content: texte,
       salience: SALIENCE_REFUS_POST,
       ...(embedding ? { embedding } : {}),

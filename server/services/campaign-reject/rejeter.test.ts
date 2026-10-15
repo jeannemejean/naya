@@ -513,7 +513,7 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     expect(enSql(suppression.where).params).toContain(301);
   });
 
-  it("cas 5 — avec une raison, une entrée memoryEntries est insérée avec fil 'cap', entryType 'préférence', le bon projectId et la bonne salience", async () => {
+  it("cas 5 — avec une raison, une entrée memoryEntries est insérée avec fil 'cap', entryType 'rejet', le bon projectId et la bonne salience", async () => {
     hoisted.resultats = [[CAMPAGNE_LIGNE], [], []];
     hoisted.resultatsArticulations = [[]];
 
@@ -523,7 +523,7 @@ describe("rejeterCampagne — orchestration transactionnelle", () => {
     const insertion = hoisted.inserts.find((i) => i.table === memoryEntries);
     expect(insertion).toBeDefined();
     expect(insertion.values.fil).toBe("cap");
-    expect(insertion.values.entryType).toBe("préférence");
+    expect(insertion.values.entryType).toBe("rejet");
     expect(insertion.values.projectId).toBe(CAMPAGNE_LIGNE.projectId);
     expect(insertion.values.salience).toBe(SALIENCE_REJET_ORCH);
     expect(insertion.values.userId).toBe(INPUT.userId);

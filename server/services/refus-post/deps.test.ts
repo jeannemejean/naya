@@ -18,7 +18,11 @@ const h = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../db", () => ({ db: {}, pool: { query: vi.fn(), on: vi.fn() } }));
+const insertions = vi.hoisted(() => [] as any[]);
+vi.mock("../../db", () => ({
+  db: { insert: () => ({ values: async (v: any) => { insertions.push(v); } }) },
+  pool: { query: vi.fn(), on: vi.fn() },
+}));
 vi.mock("../../storage", () => ({ storage: h.storage }));
 vi.mock("../memory/embed", () => ({ embedText: vi.fn() }));
 vi.mock("./remplacement", () => ({ genererPostRemplacement: vi.fn() }));
@@ -32,7 +36,15 @@ const ligne = (over: any = {}) => ({
   autoPost: false as const, ...over,
 });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); insertions.length = 0; });
+
+describe("refusPostDeps.ecrireSouvenir", () => {
+  it("un post refusé est mémorisé comme un REJET de la marque (jamais comme une préférence à suivre)", async () => {
+    await refusPostDeps.ecrireSouvenir({ userId: "u1", projectId: 9, texte: "Post refusé (linkedin, p) « X » — trop vendeur" });
+    expect(insertions).toHaveLength(1);
+    expect(insertions[0]).toMatchObject({ userId: "u1", projectId: 9, fil: "cap", entryType: "rejet" });
+  });
+});
 
 describe("refusPostDeps.creerPost", () => {
   it("post de campagne : crée le post puis l'atelier de sa semaine (ou l'allonge)", async () => {

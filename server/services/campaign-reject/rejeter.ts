@@ -108,6 +108,7 @@ import { content, tasks, campaigns, projects, memoryEntries, prospectionCampaign
 import { db } from "../../db";
 import { embedText } from "../memory/embed";
 import { storage } from "../../storage";
+import { TYPE_REJET } from "./preferences";
 
 /**
  * Levée quand la campagne n'existe pas, ou n'appartient pas à l'utilisatrice — les
@@ -327,7 +328,7 @@ export async function rejeterCampagne(input: {
           userId,
           projectId: campagne.projectId,
           fil: "cap",
-          entryType: "préférence",
+          entryType: TYPE_REJET,
           content: texte,
           embedding,
           salience: SALIENCE_REJET,

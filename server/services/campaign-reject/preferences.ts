@@ -11,18 +11,50 @@
 // Brancher la génération sur `buildNayaContext` (qui lit la mémoire pour d'autres
 // usages) est une autre voie, explicitement écartée par le spec de ce chantier.
 
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { memoryEntries } from "@shared/schema";
 import { db } from "../../db";
 
 /** Nombre maximal de préférences injectées dans un prompt de génération. */
 export const PLAFOND_PREFERENCES = 8;
 
+/**
+ * Le sens d'une préférence de marque. `eviter` : ce que l'utilisatrice a REJETÉ (un post
+ * refusé, une campagne rejetée). `suivre` : ce qu'elle a dit VOULOIR (« ton direct, jamais
+ * corporate », extrait d'une conversation). Absent = traité comme `eviter` (voir
+ * `formaterPreferences`) : sans information, ne pas reproduire est le choix sûr.
+ */
+export type SensPreference = "eviter" | "suivre";
+
 export interface Preference {
   id: number;
   content: string;
   salience: number | null;
   createdAt: Date | null;
+  sens?: SensPreference;
+}
+
+/** Type des souvenirs écrits par un refus de post ou un rejet de campagne (fil `cap`). */
+export const TYPE_REJET = "rejet";
+
+/**
+ * Avant le type `rejet` (15 oct. 2026), les rejets étaient écrits en `préférence`, comme les
+ * préférences positives extraites des conversations — d'où le bug des préférences inversées.
+ * Ces anciennes lignes se reconnaissent à la formule de leurs deux seuls producteurs
+ * (`texteSouvenirPost` dans refus-post/pur.ts, `construirePreference` dans rejeter.ts) : on
+ * les lit comme des rejets sans toucher aux données.
+ */
+const DEBUTS_ANCIENS_REJETS = [
+  "Post refusé (",
+  "Campagne rejetée pour cette marque",
+  "Une campagne générée pour cette marque a été rejetée",
+];
+
+/** PURE : le sens d'une ligne de mémoire `cap`. */
+export function sensDe(entryType: string | null | undefined, content: string | null | undefined): SensPreference {
+  if (entryType === TYPE_REJET) return "eviter";
+  const texte = (content ?? "").trimStart();
+  return DEBUTS_ANCIENS_REJETS.some((d) => texte.startsWith(d)) ? "eviter" : "suivre";
 }
 
 /**
@@ -53,7 +85,7 @@ export async function preferencesDeLaMarque(userId: string, projectId: number): 
     eq(memoryEntries.userId, userId),
     eq(memoryEntries.projectId, projectId),
     eq(memoryEntries.fil, "cap"),
-    eq(memoryEntries.entryType, "préférence"),
+    inArray(memoryEntries.entryType, [TYPE_REJET, "préférence"]),
     isNull(memoryEntries.supersededAt),
   );
 
@@ -63,6 +95,7 @@ export async function preferencesDeLaMarque(userId: string, projectId: number): 
       content: memoryEntries.content,
       salience: memoryEntries.salience,
       createdAt: memoryEntries.createdAt,
+      entryType: memoryEntries.entryType,
     })
     .from(memoryEntries)
     .where(clause)
@@ -80,7 +113,8 @@ export async function preferencesDeLaMarque(userId: string, projectId: number): 
     }
   }
 
-  return lignes;
+  // Le type de ligne ne sort pas du module : seul le sens en est tiré.
+  return lignes.map(({ entryType, ...p }) => ({ ...p, sens: sensDe(entryType, p.content) }));
 }
 
 /**
@@ -90,28 +124,36 @@ export async function preferencesDeLaMarque(userId: string, projectId: number): 
  * qu'on n'a pas voulu envoyer : ni identifiant, ni salience, ni date de création ne
  * peuvent se retrouver dans la sortie, même si `Preference` gagnait un champ demain.
  *
- * L'EN-TÊTE PORTE LA DIRECTION LUI-MÊME ("à éviter"), PAS LE CONTENU — c'est
- * délibéré. Aujourd'hui, `content` ne vient que de `construirePreference`
- * (`rejeter.ts`), qui termine toujours par « Ce qui n'allait pas, dans les mots de
- * l'utilisatrice : … » : la direction est donc *actuellement* portée par la phrase,
- * pas par ce module. Mais `preferencesDeLaMarque` lit `memory_entries` sans savoir
- * qui a écrit la ligne : une préférence saisie à la main, importée, ou écrite par un
- * autre chantier demain pourrait arriver comme une phrase nue ("ton plus corporate"),
- * sans cette formule. Sous un en-tête neutre, le modèle la lirait comme une consigne
- * à SUIVRE — l'inverse exact de ce que la fonctionnalité existe pour garantir. En
- * portant la direction dans l'en-tête, ce module reste correct même si son unique
- * producteur actuel change de phrasé. Ne raccourcis pas cet en-tête à un simple
- * titre neutre en le jugeant verbeux : c'est précisément la garantie qu'il porte.
+ * DEUX BLOCS, CHACUN PORTANT SA DIRECTION DANS SON EN-TÊTE. « À SUIVRE » : ce que
+ * l'utilisatrice a dit vouloir pour la marque. « À ÉVITER, PAS À REPRODUIRE » : ce qu'elle a
+ * rejeté. Jusqu'au 15 oct. 2026, tout était rangé sous « À ÉVITER » : une préférence positive
+ * (« ton direct, jamais corporate ») était présentée au modèle comme un rejet — l'inverse
+ * exact de l'intention. Une préférence SANS sens (saisie à la main, importée, ou produite par
+ * un chantier qui ne le renseigne pas) reste sous « À ÉVITER » : sous un en-tête neutre, le
+ * modèle la lirait comme une consigne à suivre. Ne fusionne pas les deux blocs en un en-tête
+ * neutre : la direction est précisément ce que ces en-têtes garantissent.
  *
  * Rend une chaîne vide sans préférences, pour que l'appelant n'injecte alors rien
  * (motif `articulation` : `request.preferences?.length ? ... : ''`).
  */
 export function formaterPreferences(ps: Preference[]): string {
   if (ps.length === 0) return "";
-  const lignes: string[] = [
-    "PRÉFÉRENCES DE CETTE MARQUE — À ÉVITER, PAS À REPRODUIRE",
-    "Ce qui suit a été explicitement rejeté par l'utilisatrice pour cette marque : ne le reproduis pas, ne t'en inspire pas.",
-    ...ps.map((p) => `- ${p.content}`),
-  ];
-  return lignes.join("\n");
+  const aSuivre = ps.filter((p) => p.sens === "suivre");
+  const aEviter = ps.filter((p) => p.sens !== "suivre");
+  const blocs: string[] = [];
+  if (aSuivre.length) {
+    blocs.push([
+      "PRÉFÉRENCES DE CETTE MARQUE — À SUIVRE",
+      "Ce que l'utilisatrice a dit vouloir pour cette marque : respecte-le.",
+      ...aSuivre.map((p) => `- ${p.content}`),
+    ].join("\n"));
+  }
+  if (aEviter.length) {
+    blocs.push([
+      "PRÉFÉRENCES DE CETTE MARQUE — À ÉVITER, PAS À REPRODUIRE",
+      "Ce qui suit a été explicitement rejeté par l'utilisatrice pour cette marque : ne le reproduis pas, ne t'en inspire pas.",
+      ...aEviter.map((p) => `- ${p.content}`),
+    ].join("\n"));
+  }
+  return blocs.join("\n\n");
 }
