@@ -319,7 +319,7 @@ Respond with JSON only:
   "title": "Brief title/hook",
   "body": "Full content text with appropriate platform formatting",
   "cta": "Call-to-action appropriate for the goal mode",
-  "strategicNote": "Why this content works for their specific business, project, and goal",
+  "strategicNote": "Internal note for the user (not part of the post, not in the brand voice): why this content works for their specific business, project, and goal",
   "intent": "awareness" | "consideration" | "conversion" | null
 }`;
 
@@ -1143,7 +1143,8 @@ export interface CampaignGenerationRequest {
    */
   articulation?: Articulation;
   /**
-   * Les préférences actives de CETTE marque, issues du rejet de campagnes passées.
+   * Les préférences actives de CETTE marque : ce qu'elle a dit vouloir (à suivre) et ce
+   * qu'elle a rejeté — campagnes, posts (à éviter). Voir campaign-reject/preferences.ts.
    * Volontairement pauvre : ni ADN, ni mémoire founder/reception, ni ton de voix
    * d'une AUTRE marque — seulement ce que l'utilisatrice a explicitement rejeté pour
    * celle-ci. Résolue côté serveur (`preferencesDeLaMarque`, `campaign-reject/preferences.ts`).

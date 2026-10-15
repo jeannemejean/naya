@@ -7348,7 +7348,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const brandDna = await storage.getBrandDna(userId);
       const bd: any = brandDna || {};
 
-      // Préférences apprises pour CETTE marque (refus de campagnes, de posts) — à éviter.
+      // Préférences de CETTE marque : ce qu'elle a dit vouloir (à suivre) et ce qu'elle a rejeté (à éviter).
       let blocPreferences = "";
       if (existing.projectId) {
         try {
@@ -7359,8 +7359,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
 
-      const systemPrompt = `Tu es Naya, spécialiste en stratégie de contenu pour entrepreneurs indépendants.
-Tu génères un post de remplacement pour le content calendar. Le post DOIT:
+      const systemPrompt = `Tu génères un post de remplacement pour le content calendar de la marque. Le post DOIT:
 - Refléter la voix et le positionnement de la marque
 - Ne jamais critiquer ou analyser des marques qui ne sont pas clientes
 - Rester dans l'expertise propre de la marque (pas de commentaire sur les concurrents)

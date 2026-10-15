@@ -114,9 +114,15 @@ Résumé intelligence Naya : ${(brandDna as any).nayaIntelligenceSummary || 'Pas
 
     // Section 2 : Projet actif
     if (project && tiers) {
+      // Une publication peut raconter l'actualité que l'utilisatrice a dite à Naya (« je lance
+      // X le 3 nov. ») ; un message à un inconnu, jamais.
+      const note = (project as any).statusNote ? String((project as any).statusNote).trim() : "";
+      const actualite = options.destinataire === "audience" && note
+        ? `\n\n## Actualité de ${project.name} (dite par l'utilisatrice — matière possible pour les publications)\n${note}`
+        : "";
       sections.push(`## Projet : ${project.name}
 Positionnement (projet) : ${stratProfile?.uniquePositioning || 'Non renseigné'}
-Audience (projet) : ${stratProfile?.targetAudience || 'Non renseigné'}`);
+Audience (projet) : ${stratProfile?.targetAudience || 'Non renseigné'}${actualite}`);
     } else if (project) {
       const topGoal = activeGoals[0];
       const p = project as any;

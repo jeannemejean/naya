@@ -15,7 +15,7 @@ vi.mock("../db", () => {
 
 const valeurs: Record<string, any> = {
   getBrandDna: { businessName: "Agence JMD", uniquePositioning: "Direction éditoriale pour la beauté" },
-  getProject: { id: 7, name: "JMD", type: "service", monetizationIntent: "revenue", priorityLevel: 1 },
+  getProject: { id: 7, name: "JMD", type: "service", monetizationIntent: "revenue", priorityLevel: 1, statusNote: "LANCEMENT DE L'OFFRE LE 3 NOVEMBRE" },
   getActiveGoalsForProject: [{ id: 1, title: "Signer 3 clients", successMode: "x", dueDate: null }],
   getGoalProgress: { completed: 0, total: 0 },
   getUserPreferences: { currentEnergyLevel: "low", currentEmotionalContext: "fatiguée" },
@@ -105,6 +105,10 @@ describe("buildNayaContext, mode audience (publications de la marque)", () => {
     expect(c).not.toContain("Niveau d'énergie");
     expect(c).not.toContain("MEMOIRE FONDATRICE");
     expect(c).not.toContain("BILAN MENSUEL");
-    expect(c).toBe(await buildNayaContext("u1", 7, "post", { destinataire: "tiers" }));
+  });
+
+  it("garde ce que l'utilisatrice a dit de son actualité (un lancement se raconte dans les posts) — jamais dans un message à un inconnu", async () => {
+    expect(await buildNayaContext("u1", 7, "post", { destinataire: "audience" })).toContain("LANCEMENT DE L'OFFRE LE 3 NOVEMBRE");
+    expect(await buildNayaContext("u1", 7, "prospect", { destinataire: "tiers" })).not.toContain("LANCEMENT DE L'OFFRE LE 3 NOVEMBRE");
   });
 });

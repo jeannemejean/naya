@@ -62,7 +62,7 @@ export function sensDe(entryType: string | null | undefined, content: string | n
  * génération de campagne.
  *
  * La requête porte sur les QUATRE conditions à la fois : `userId`, `projectId`,
- * `fil = "cap"`, `entryType = "préférence"`, ET `supersededAt IS NULL`. Une préférence
+ * `fil = "cap"`, `entryType ∈ ("rejet", "préférence")`, ET `supersededAt IS NULL`. Une préférence
  * périmée ne doit jamais atteindre le prompt — c'est tout l'intérêt du `supersededAt`
  * de cette table, qui dit « périmé = invalidé, pas supprimé », pas « périmé = absent
  * de la requête si on oublie le filtre ».

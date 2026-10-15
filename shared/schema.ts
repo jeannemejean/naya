@@ -2037,7 +2037,7 @@ export const memoryEntries = pgTable("memory_entries", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }), // null = mémoire transverse (fil founder global)
   fil: text("fil").notNull(),               // "cap" | "founder" | "reception"
-  entryType: text("entry_type").notNull(),  // fait | décision | préférence | observation
+  entryType: text("entry_type").notNull(),  // fait | décision | préférence | observation | rejet (refus de post / rejet de campagne) | signal_reception | …
   content: text("content").notNull(),
   embedding: vector("embedding", { dimensions: 1536 }), // text-embedding-3-large réduit à 1536
   salience: doublePrecision("salience").default(0.5),   // importance 0-1 (importance/10 à l'extraction)
