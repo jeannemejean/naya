@@ -181,7 +181,7 @@ export default function ProgrammationPost({
 
   return (
     <div className="rounded-lg border border-naya-olive-18 bg-naya-olive-06 p-3 space-y-2">
-      <p className="text-[10px] uppercase tracking-wider text-naya-olive-35">{t("programmation.titre")}</p>
+      <p className="text-[10px] text-naya-olive-35">{t("programmation.titre")}</p>
       {contenu}
     </div>
   );

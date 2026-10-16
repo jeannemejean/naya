@@ -142,7 +142,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
         <div className="space-y-5">
           {/* Réseaux */}
           <div>
-            <p className="text-xs uppercase tracking-wide text-naya-olive-35 mb-2 font-mono">Réseaux</p>
+            <p className="text-xs text-naya-olive-35 mb-2 font-mono">Réseaux</p>
             {accounts.length === 0 ? (
               <p className="text-sm text-naya-olive-35">Aucun compte connecté — connecte tes réseaux dans Réglages.</p>
             ) : (
@@ -163,7 +163,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
 
           {/* Médias */}
           <div>
-            <p className="text-xs uppercase tracking-wide text-naya-olive-35 mb-2 font-mono">Médias (image / vidéo)</p>
+            <p className="text-xs text-naya-olive-35 mb-2 font-mono">Médias (image / vidéo)</p>
             <div className="flex flex-wrap gap-2 items-center">
               {media.map((m) => (
                 <div key={m.id} className="relative w-20 h-20 rounded-lg overflow-hidden border border-naya-olive-18 bg-naya-olive-06 flex items-center justify-center">
@@ -191,7 +191,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           {/* Format par réseau sélectionné */}
           {validations.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wide text-naya-olive-35 font-mono">Format par réseau</p>
+              <p className="text-xs text-naya-olive-35 font-mono">Format par réseau</p>
               {validations.map((v) => (
                 <div key={v.acc.id} className="flex items-center gap-3 text-sm">
                   <span className="w-40 shrink-0 truncate">{PLATFORM_LABEL[v.acc.basePlatform]}{v.acc.isPage ? " (page)" : ""}</span>
@@ -213,7 +213,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
             const m0 = media[0];
             return (
               <div>
-                <p className="text-xs uppercase tracking-wide text-naya-olive-35 mb-2 font-mono">
+                <p className="text-xs text-naya-olive-35 mb-2 font-mono">
                   Aperçu — {PLATFORM_LABEL[primary.acc.basePlatform]} · {fmt}
                 </p>
                 <div className="mx-auto bg-black rounded-2xl overflow-hidden relative" style={{ width: tall ? 200 : 264, aspectRatio: tall ? "9 / 16" : "1 / 1" }}>
@@ -238,14 +238,14 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
 
           {/* Légende */}
           <div>
-            <p className="text-xs uppercase tracking-wide text-naya-olive-35 mb-2 font-mono">Légende</p>
+            <p className="text-xs text-naya-olive-35 mb-2 font-mono">Légende</p>
             <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={5} placeholder="Écris ta légende…" />
           </div>
 
           {/* Programmation */}
           <div className="flex items-center gap-4 flex-wrap">
             <div>
-              <p className="text-xs uppercase tracking-wide text-naya-olive-35 mb-1 font-mono">Date / heure</p>
+              <p className="text-xs text-naya-olive-35 mb-1 font-mono">Date / heure</p>
               <input type="datetime-local" value={scheduledFor} onChange={(e) => setScheduledFor(e.target.value)}
                 className="border border-naya-olive-18 rounded-md px-2 py-1 text-sm" />
             </div>

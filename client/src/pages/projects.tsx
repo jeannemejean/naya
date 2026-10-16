@@ -303,7 +303,7 @@ function ClientCard({ client, isExpanded, onToggle }: { client: Client, isExpand
  {isExpanded && (
  <CardContent className="p-4 pt-0 border-t bg-naya-olive-06/50 ">
  <div className="mt-4">
- <h4 className="text-xs text-naya-olive-35 uppercase tracking-wider mb-3">{t('projectsPage.clientTasks')}</h4>
+ <h4 className="text-xs text-naya-olive-35 mb-3">{t('projectsPage.clientTasks')}</h4>
  {isLoading ? (
  <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
  ) : tasks.length === 0 ? (

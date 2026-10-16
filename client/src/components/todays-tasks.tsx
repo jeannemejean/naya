@@ -672,7 +672,7 @@ export default function TodaysTasks() {
  /* Tâches générées mais planifiées sur le prochain jour ouvré */
  <div className="space-y-3">
  <div className="flex items-center gap-2 mb-4">
- <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+ <span className="text-xs font-semibold text-muted-foreground">
  Prochaine session — {new Date(nextScheduledDate! + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}
  </span>
  <div className="flex-1 h-px bg-border" />
@@ -763,7 +763,7 @@ export default function TodaysTasks() {
  <div key={group ?? `ungrouped-${gIdx}`}>
  {group && (
  <div className="flex items-center gap-2 py-1.5 border-b border-dashed border-naya-olive-18 mb-1">
- <span className="text-xs text-naya-cream0 uppercase tracking-wide">
+ <span className="text-xs text-naya-cream0">
  ▸ {group}
  </span>
  {groupTotalMin > 0 && (
@@ -975,7 +975,7 @@ export default function TodaysTasks() {
  >
  <ChevronLeft className="h-4 w-4" />
  </button>
- <span className="text-xs font-semibold text-foreground uppercase tracking-wide">
+ <span className="text-xs font-semibold text-foreground">
  {plannerDay === 0
  ? "Aujourd'hui"
  : `Demain — ${new Date(tomorrowDate + 'T00:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}`}
@@ -1060,7 +1060,7 @@ export default function TodaysTasks() {
 
  {plannerUnscheduled.length > 0 && (
  <div className="w-48 flex-shrink-0">
- <p className="text-xs text-naya-cream0 uppercase tracking-wide mb-2">{t('todaysTasks.unscheduled')}</p>
+ <p className="text-xs text-naya-cream0 mb-2">{t('todaysTasks.unscheduled')}</p>
  <div className="space-y-2">
  {plannerUnscheduled.map((task: Task) => {
  const projColor = getProjectColor(task.projectId, projects);

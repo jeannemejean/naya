@@ -92,7 +92,7 @@ export default function FormulaireMois({
         )}
         <div className="grid gap-2 grid-cols-2 md:grid-cols-5">{CHAMPS.map(champ)}</div>
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">{t("mesure.formulaire.depenses")}</p>
+          <p className="text-[11px] font-semibold text-muted-foreground mb-1">{t("mesure.formulaire.depenses")}</p>
           <div className="grid gap-2 grid-cols-2 md:grid-cols-5">
             {canaux.map((k) => (
               <label key={k.cle} className="space-y-1">

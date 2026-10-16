@@ -107,7 +107,7 @@ export default function ConnexionsClientPanel({ projectId }: { projectId: number
       ) : (
         <>
           <section className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("connexions.reseaux.titre")}</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground">{t("connexions.reseaux.titre")}</h3>
             {RESEAUX.map(({ id, nom }) => {
               const s = data.reseaux.statut[id];
               return (
@@ -192,7 +192,7 @@ function EmailClient({ projectId, email, onSaved }: { projectId: number; email: 
   return (
     <section className="space-y-2">
       <div className="flex items-center gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("connexions.email.titre")}</h3>
+        <h3 className="text-xs font-semibold text-muted-foreground">{t("connexions.email.titre")}</h3>
         {email.senderEmail && (
           <Badge variant="outline" className="text-[10px]">{t(`connexions.email.statut.${email.verificationStatus}`, { defaultValue: email.verificationStatus })}</Badge>
         )}
@@ -246,7 +246,7 @@ function LinkedinClient({ projectId, linkedin, onChange }: { projectId: number; 
 
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("connexions.linkedin.titre")}</h3>
+      <h3 className="text-xs font-semibold text-muted-foreground">{t("connexions.linkedin.titre")}</h3>
       {!linkedin.configured ? (
         <p className="text-xs text-muted-foreground">{t("connexions.linkedin.nonConfigure")}</p>
       ) : linkedin.connected ? (

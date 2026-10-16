@@ -67,7 +67,7 @@ export default function MilestoneChain({ projectId, projectName }: MilestoneChai
  return (
  <div className="bg-card border border-border rounded-lg p-4 shadow-card">
  <div className="flex items-center justify-between mb-3">
- <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Roadmap</span>
+ <span className="text-xs font-semibold text-muted-foreground">Roadmap</span>
  {projectName && <span className="text-xs text-muted-foreground/60 truncate max-w-[120px]">{projectName}</span>}
  </div>
  <div className="text-center py-5 border border-dashed border-border rounded-lg">
@@ -93,7 +93,7 @@ export default function MilestoneChain({ projectId, projectName }: MilestoneChai
  <div className="bg-card border border-border rounded-lg p-4 shadow-card">
  {/* Header */}
  <div className="flex items-center justify-between mb-3">
- <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Roadmap</span>
+ <span className="text-xs font-semibold text-muted-foreground">Roadmap</span>
  <div className="flex items-center gap-2">
  {projectName && <span className="text-xs text-muted-foreground/60 truncate max-w-[100px]">{projectName}</span>}
  <Link href="/projects">

@@ -286,7 +286,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  {task?.description?.trim() && (
  <div className="px-5 pt-3">
  <div className="bg-naya-olive-06 rounded-lg px-3 py-2.5 border border-naya-olive-18 ">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-1">
+ <p className="text-[10px] text-naya-olive-35 mb-1">
  {t('taskWorkspace.taskBrief')}
  </p>
  <p className="text-xs text-naya-olive-70 leading-relaxed">
@@ -305,7 +305,7 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  {entries.length > 0 && (
  <div className="flex-shrink-0 border-t border-naya-olive-18 max-h-60 overflow-y-auto">
  <div className="px-5 py-2.5">
- <p className="text-xs text-naya-cream0 uppercase tracking-wide mb-2">
+ <p className="text-xs text-naya-cream0 mb-2">
  {t('taskWorkspace.previousNotes')}
  </p>
  <div className="space-y-1.5">

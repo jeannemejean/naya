@@ -477,7 +477,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  <div className="bg-naya-olive-06/50 rounded-lg p-4 space-y-4">
  {weeklyStrategy.insights.length > 0 && (
  <div>
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-2">
+ <p className="text-[10px] text-naya-olive-35 mb-2">
  {t('strategy.thisWeeksAngles')}
  </p>
  <div className="space-y-2">
@@ -493,7 +493,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
  {weeklyStrategy.recommendations.length > 0 && (
  <div>
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-2">
+ <p className="text-[10px] text-naya-olive-35 mb-2">
  {t('strategy.recommendedMoves')}
  </p>
  <div className="space-y-1.5">
@@ -520,7 +520,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  {/* Sub-card C: Direction this week */}
  {weeklyStrategy.nextWeekPlan && (
  <div className="bg-naya-olive-06/50 rounded-lg p-4">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-2">
+ <p className="text-[10px] text-naya-olive-35 mb-2">
  {t('strategy.directionThisWeek')}
  </p>
  <div className="space-y-2">
@@ -1160,7 +1160,7 @@ function TriggerCard({
 
  {isExpanded && tasksToUnlock.length > 0 && (
  <div className="mt-3 pt-3 border-t border-naya-olive-10 space-y-2">
- <p className="text-[11px] text-naya-olive-55 uppercase tracking-wide">
+ <p className="text-[11px] text-naya-olive-55">
  {t('strategy.tasksToUnlockHeader')}
  </p>
  {tasksToUnlock.map((task, i) => (

@@ -123,7 +123,7 @@ export function RequetesDeVeille() {
 
       {(projets ?? []).map((p) => (
         <div key={p.id} className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">{p.name}</p>
+          <p className="text-xs text-muted-foreground">{p.name}</p>
           {queries.filter((q) => q.projectId === p.id).map((q) => (
             <div key={q.id} className="flex items-center gap-2">
               <Input

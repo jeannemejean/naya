@@ -124,9 +124,12 @@ export default {
       letterSpacing: {
         tight:  "-0.01em",
         normal: "0",
-        wide:   "0.12em",
-        xwide:  "0.22em",
-        xxwide: "0.30em",
+        // Discrètes : plus d'espacement large (spec cocon), noms conservés pour ne rien casser
+        wide:    "0.02em",
+        wider:   "0.02em",
+        widest:  "0.02em",
+        xwide:   "0.02em",
+        xxwide:  "0.02em",
       },
       borderRadius: {
         none:    "0px",

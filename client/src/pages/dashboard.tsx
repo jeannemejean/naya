@@ -191,10 +191,10 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
           />
           <div className="min-w-0">
             <div className="flex items-center gap-2 min-w-0">
-              <span className={`font-display uppercase tracking-xwide text-foreground truncate ${compact ? "text-[9px]" : "text-[11px]"}`}>{project.name}</span>
+              <span className={`font-display text-foreground truncate ${compact ? "text-[9px]" : "text-[11px]"}`}>{project.name}</span>
               {(project as any).projectKind === "client" && (
                 <span
-                  className="flex-shrink-0 text-[9px] font-display uppercase tracking-xwide px-1.5 py-0.5 rounded border border-[rgba(125,143,168,0.45)] bg-[rgba(125,143,168,0.18)] text-[#354963]"
+                  className="flex-shrink-0 text-[9px] font-display px-1.5 py-0.5 rounded border border-[rgba(125,143,168,0.45)] bg-[rgba(125,143,168,0.18)] text-[#354963]"
                   title="Projet client"
                 >
                   💼 Client
@@ -207,7 +207,7 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
               )}
               {showAmber && (
                 <span
-                  className="flex items-center gap-1 flex-shrink-0 text-[9px] font-display uppercase tracking-xwide px-1.5 py-0.5 rounded border border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] text-[#6f6526]"
+                  className="flex items-center gap-1 flex-shrink-0 text-[9px] font-display px-1.5 py-0.5 rounded border border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] text-[#6f6526]"
                   title="Ce projet dépasse son budget de tâches du jour"
                 >
                   <Gauge className="h-3 w-3" />
@@ -227,7 +227,7 @@ function ActiveProjectBand({ projectId, compact = false, overcommitted = false }
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {daysLeft !== null && daysLeft >= 0 && (
-            <span className={`font-display uppercase tracking-xwide text-[9px] ${
+            <span className={`font-display text-[9px] ${
               daysLeft <= 7 ? "text-[#6f6526]" : daysLeft <= 14 ? "text-[#6e4b53]" : "text-naya-olive-55"
             }`}>
               {daysLeft}j
@@ -290,7 +290,7 @@ function AllProjectsBand() {
               key={val}
               type="button"
               onClick={() => setKindFilter(val)}
-              className={`text-[10px] font-display uppercase tracking-xwide px-2.5 py-1 rounded-full border transition-colors ${
+              className={`text-[10px] font-display px-2.5 py-1 rounded-full border transition-colors ${
                 kindFilter === val
                   ? "bg-primary text-primary-foreground border-transparent"
                   : "bg-naya-olive-06 text-naya-olive-55 border-naya-olive-18 hover:bg-naya-olive-10"
@@ -355,7 +355,7 @@ function AIRecommendations({ projectId }: { projectId: number | null }) {
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <Sparkles style={{ width: 13, height: 13, strokeWidth: 1.5 }} className="text-naya-olive-55" />
-          <span className="font-display uppercase tracking-xwide text-[11px] text-naya-olive-70">
+          <span className="font-display text-[11px] text-naya-olive-70">
             {t("dashboard.aiRecommendations")}
           </span>
         </div>
@@ -469,7 +469,7 @@ function QuickCapture() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Zap style={{ width: 13, height: 13, strokeWidth: 1.5 }} className="text-naya-olive-55" />
-            <span className="font-display uppercase tracking-xwide text-[11px] text-naya-olive-70">
+            <span className="font-display text-[11px] text-naya-olive-70">
               {t("dashboard.captureInbox")}
             </span>
             {inboxEntries.length > 0 && (
@@ -555,13 +555,13 @@ function QuickCapture() {
                       {isClassifying ? (
                         <span className="text-[10px] text-naya-olive-35 italic">{t("dashboard.classifying")}</span>
                       ) : config ? (
-                        <span className={`font-display uppercase tracking-xwide text-[9px] px-1.5 py-0.5 rounded-pill border ${config.colorClass}`}>
+                        <span className={`font-display text-[9px] px-1.5 py-0.5 rounded-pill border ${config.colorClass}`}>
                           {config.label}
                         </span>
                       ) : null}
                       {isMilestone && unlockCount > 0 && (
                         <>
-                          <span className="font-display uppercase tracking-xwide text-[9px] px-1.5 py-0.5 rounded-pill bg-naya-olive-10 text-naya-olive border border-naya-olive-18">
+                          <span className="font-display text-[9px] px-1.5 py-0.5 rounded-pill bg-naya-olive-10 text-naya-olive border border-naya-olive-18">
                             {t("dashboard.tasksWillUnlock", { count: unlockCount })}
                           </span>
                           <button
@@ -638,7 +638,7 @@ function SelfCareBlock() {
       <CardHeader className="pb-3">
         <div className="flex items-center gap-2">
           <Activity style={{ width: 13, height: 13, strokeWidth: 1.5 }} className="text-naya-olive-55" />
-          <span className="font-display uppercase tracking-xwide text-[11px] text-naya-olive-70">
+          <span className="font-display text-[11px] text-naya-olive-70">
             {t("dashboard.selfCare")}
           </span>
         </div>
@@ -649,7 +649,7 @@ function SelfCareBlock() {
             <button
               key={option.id}
               onClick={() => toggleOption(option.id)}
-              className={`font-display uppercase tracking-xwide text-[9px] py-2 px-3 rounded-sm border transition-colors text-left cursor-pointer ${
+              className={`font-display text-[9px] py-2 px-3 rounded-sm border transition-colors text-left cursor-pointer ${
                 selected === option.id
                   ? "border-naya-olive bg-naya-olive text-naya-cream"
                   : "border-naya-olive-18 text-naya-olive-55 hover:border-naya-olive-35 hover:text-naya-olive"
@@ -714,7 +714,7 @@ function PersonaCard() {
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <Brain style={{ width: 13, height: 13, strokeWidth: 1.5 }} className="text-naya-olive-55" />
-            <span className="font-display uppercase tracking-xwide text-[11px] text-naya-olive-70">
+            <span className="font-display text-[11px] text-naya-olive-70">
               {t("dashboard.operatingProfile")}
             </span>
           </div>
@@ -724,7 +724,7 @@ function PersonaCard() {
             <div className="p-3 bg-naya-olive-06 rounded-lg border border-naya-olive-10">
               <div className="flex items-center gap-1.5 mb-1">
                 <User style={{ width: 11, height: 11, strokeWidth: 1.5 }} className="text-naya-olive-55" />
-                <span className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55">
+                <span className="font-display text-[9px] text-naya-olive-55">
                   Ton archétype
                 </span>
               </div>
@@ -747,7 +747,7 @@ function PersonaCard() {
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
                 <Users style={{ width: 11, height: 11, strokeWidth: 1.5 }} className="text-naya-olive-55" />
-                <span className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55">
+                <span className="font-display text-[9px] text-naya-olive-55">
                   {activeProjectId ? "Persona cible" : "Mes personas"}
                 </span>
               </div>
@@ -771,7 +771,7 @@ function PersonaCard() {
                 )}
                 {primaryTarget.decisionTriggers && primaryTarget.decisionTriggers.length > 0 && (
                   <div className="mt-2">
-                    <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55 mb-1">
+                    <p className="font-display text-[9px] text-naya-olive-55 mb-1">
                       Déclencheur de décision
                     </p>
                     <p className="text-xs text-naya-olive-70">{primaryTarget.decisionTriggers[0]}</p>
@@ -843,7 +843,7 @@ function LiveClock() {
 
   return (
     <div className="text-right">
-      <p className="font-display uppercase tracking-xwide text-[10px] text-naya-olive-55">
+      <p className="font-display text-[10px] text-naya-olive-55">
         {dayName} {dateStr}
       </p>
       <p className="font-display text-[10px] text-naya-olive-35">{timeStr}</p>
@@ -864,7 +864,7 @@ function ProjectSetupBanner() {
   return (
     <div className="bg-naya-olive-06 border border-naya-olive-18 rounded-lg p-4 mb-4 flex items-center justify-between">
       <div>
-        <p className="font-display uppercase tracking-xwide text-[11px] text-foreground mb-1">
+        <p className="font-display text-[11px] text-foreground mb-1">
           Premier projet créé depuis l'onboarding
         </p>
         <p className="text-xs text-naya-olive-55">
@@ -1245,7 +1245,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
             alt="Naya"
             className="w-10 h-10 object-contain mx-auto mb-4 opacity-60"
           />
-          <p className="font-display uppercase tracking-xwide text-[11px] text-naya-olive-55">
+          <p className="font-display text-[11px] text-naya-olive-55">
             Chargement…
           </p>
         </div>
@@ -1268,14 +1268,14 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
         >
           <div className="flex items-start justify-between">
             <div>
-              <p className="font-display uppercase tracking-xwide text-[10px] text-naya-olive-55 mb-1">
+              <p className="font-display text-[10px] text-naya-olive-55 mb-1">
                 {isAllProjects
                   ? "Tous les projets"
                   : activeProject
                     ? activeProject.name
                     : "Pilot Board"}
               </p>
-              <h1 className="font-display uppercase tracking-xwide text-xl font-light text-foreground">
+              <h1 className="font-display text-xl text-foreground">
                 {greeting()}{firstName ? `, ${firstName}` : ""}
               </h1>
             </div>
@@ -1284,7 +1284,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
                 <button
                   onClick={() => resumeMutation.mutate()}
                   disabled={resumeMutation.isPending}
-                  className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-xwide text-naya-olive-55 hover:text-naya-olive transition-colors"
+                  className="flex items-center gap-1.5 text-[10px] font-display text-naya-olive-55 hover:text-naya-olive transition-colors"
                   title={t("planning.resume")}
                 >
                   <PlayCircle style={{ width: 14, height: 14 }} />
@@ -1294,14 +1294,14 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
                 <button
                   onClick={() => pauseMutation.mutate()}
                   disabled={pauseMutation.isPending}
-                  className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-xwide text-naya-olive-35 hover:text-naya-olive-55 transition-colors"
+                  className="flex items-center gap-1.5 text-[10px] font-display text-naya-olive-35 hover:text-naya-olive-55 transition-colors"
                   title={t("planning.pause")}
                 >
                   <PauseCircle style={{ width: 14, height: 14 }} />
                   <span className="hidden sm:inline">{t("planning.pause")}</span>
                 </button>
               )}
-              <PlanningRestartButton className="flex items-center gap-1.5 text-[10px] font-display uppercase tracking-xwide text-naya-olive-35 hover:text-naya-olive-55 transition-colors disabled:opacity-50">
+              <PlanningRestartButton className="flex items-center gap-1.5 text-[10px] font-display text-naya-olive-35 hover:text-naya-olive-55 transition-colors disabled:opacity-50">
                 <RotateCcw style={{ width: 14, height: 14 }} />
                 <span className="hidden sm:inline">{t("planning.restart")}</span>
               </PlanningRestartButton>

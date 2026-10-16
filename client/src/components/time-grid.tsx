@@ -157,7 +157,7 @@ function DayAvailabilityBadge({
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`font-display uppercase tracking-xwide text-[8px] px-1.5 py-0.5 rounded-pill transition-colors cursor-pointer ${BADGE_STYLES[current] || BADGE_STYLES.full}`}
+        className={`font-display text-[8px] px-1.5 py-0.5 rounded-pill transition-colors cursor-pointer ${BADGE_STYLES[current] || BADGE_STYLES.full}`}
         title="Type de journée"
       >
         {currentOpt.symbol} {currentOpt.label.split(' ')[0]}
@@ -173,7 +173,7 @@ function DayAvailabilityBadge({
               <button
                 key={opt.key}
                 onClick={() => { onSelect(date, opt.key); setOpen(false); }}
-                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-sm transition-colors text-left cursor-pointer font-display uppercase tracking-xwide text-[9px] ${
+                className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs rounded-sm transition-colors text-left cursor-pointer font-display text-[9px] ${
                   current === opt.key
                     ? 'bg-naya-olive-10 text-naya-olive'
                     : 'text-naya-olive-55 hover:bg-naya-olive-06'
@@ -354,7 +354,7 @@ function TaskBlock({
           </p>
         )}
         {showGroup && task.workflowGroup && (
-          <p className="text-[9px] pl-3.5 opacity-40 truncate font-display uppercase tracking-xwide text-[8px]" style={{ color: palette.text }}>
+          <p className="text-[9px] pl-3.5 opacity-40 truncate font-display text-[8px]" style={{ color: palette.text }}>
             {task.workflowGroup}
           </p>
         )}
@@ -362,7 +362,7 @@ function TaskBlock({
           <span className="absolute right-1 top-1 text-[9px] opacity-40" style={{ color: palette.text }}>○</span>
         )}
         {isActiveMilestone && height >= 38 && (
-          <p className="text-[8px] opacity-60 mt-0.5 font-display uppercase tracking-xwide" style={{ color: palette.text }}>
+          <p className="text-[8px] opacity-60 mt-0.5 font-display" style={{ color: palette.text }}>
             Confirmer →
           </p>
         )}
@@ -545,7 +545,7 @@ export default function TimeGrid({
           return (
             <div key={date} className="flex-1 flex flex-col items-center pb-2.5 pt-2 gap-1" style={{ minWidth: 0 }}>
               {/* Jour de semaine */}
-              <span className={`font-display uppercase tracking-xwide text-[9px] ${
+              <span className={`font-display text-[9px] ${
                 isToday ? 'text-naya-olive' : isPast ? 'text-naya-olive-18' : 'text-naya-olive-35'
               }`}>
                 {weekday}
@@ -576,7 +576,7 @@ export default function TimeGrid({
               </div>
               {/* Compteur tâches */}
               {count > 0 && (
-                <span className={`font-display uppercase tracking-xwide text-[8px] px-1.5 py-0.5 rounded-pill ${
+                <span className={`font-display text-[8px] px-1.5 py-0.5 rounded-pill ${
                   isToday
                     ? 'bg-naya-olive-10 text-naya-olive'
                     : 'bg-naya-olive-06 text-naya-olive-35'
@@ -593,7 +593,7 @@ export default function TimeGrid({
       {dates.some(d => (tasksByDate[d] || []).some(t => !t.scheduledTime)) && (
         <div className="flex flex-shrink-0 border-b border-naya-olive-10 bg-naya-olive-10/40">
           <div className="flex-shrink-0 flex items-center justify-end pr-1.5" style={{ width: 48 }} title="Tâches à planifier — glisse-les sur la grille">
-            <span className="text-[8px] font-display uppercase tracking-xwide text-naya-olive-35 text-right leading-[1.1]">À<br />planifier</span>
+            <span className="text-[8px] font-display text-naya-olive-35 text-right leading-[1.1]">À<br />planifier</span>
           </div>
           {dates.map(date => {
             const unscheduled = (tasksByDate[date] || []).filter(t => !t.scheduledTime);
@@ -657,7 +657,7 @@ export default function TimeGrid({
                             </span>
                           )}
                           {isMTask && undated && (
-                            <span className="text-[8px] font-display uppercase tracking-xwide flex-shrink-0 leading-none" style={{ color: mAccent }}>
+                            <span className="text-[8px] font-display flex-shrink-0 leading-none" style={{ color: mAccent }}>
                               à dater
                             </span>
                           )}
@@ -783,7 +783,7 @@ export default function TimeGrid({
                     style={{ backgroundImage: hatchStyle }}
                   >
                     <span
-                      className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-18 select-none"
+                      className="font-display text-[9px] text-naya-olive-18 select-none"
                       style={{ transform: 'rotate(-30deg)' }}
                     >
                       Jour off

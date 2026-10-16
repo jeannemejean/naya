@@ -39,7 +39,7 @@ export default function Paywall() {
   return (
     <div className="min-h-screen flex items-center justify-center naya-paper px-6">
       <div className="max-w-md w-full text-center">
-        <h1 className="font-display uppercase text-naya-olive mb-3" style={{ fontSize: "1.8rem", letterSpacing: "0.06em" }}>
+        <h1 className="font-display text-naya-olive mb-3" style={{ fontSize: "1.8rem", letterSpacing: "0.06em" }}>
           Accède à Naya
         </h1>
         <p className="text-naya-olive-70 mb-8">29 €/mois · 7 jours d'essai gratuit, sans engagement.</p>

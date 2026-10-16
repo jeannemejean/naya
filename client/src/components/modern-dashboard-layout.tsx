@@ -85,7 +85,6 @@ export function ModernDashboardLayout({
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.6875rem',
  letterSpacing: '0.06em',
- textTransform: 'uppercase',
  fontWeight: 300,
  color: 'var(--muted-foreground)',
  marginTop: 4,
@@ -182,7 +181,6 @@ export function ModernDashboardLayout({
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.625rem',
  letterSpacing: '0.12em',
- textTransform: 'uppercase',
  fontWeight: 400,
  color: 'var(--muted-foreground)',
  }}
