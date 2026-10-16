@@ -13,6 +13,7 @@
 :root {
   /* ── Saison : valeurs par défaut = automne, écrasées en JavaScript ── */
   --fond:    #F3EADB;
+  --fond-rgb: 243 234 219;   /* mêmes canaux, pour les opacités Tailwind */
   --touche-1: #C07A47;
   --touche-2: #D9B98A;
   --motif:   repeating-linear-gradient(0deg, transparent 0 8px, rgba(192, 122, 71, 0.22) 8px 10px), repeating-linear-gradient(90deg, transparent 0 8px, rgba(192, 122, 71, 0.22) 8px 10px), #FFFBF3;

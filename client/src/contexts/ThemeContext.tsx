@@ -10,25 +10,19 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+// Pas de mode sombre : le thème reste 'light'. L'API est gardée pour les appelants existants.
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
- const [theme, setThemeState] = useState<Theme>(() => {
- // Lire le thème sauvegardé, sinon dark par défaut
- const saved = localStorage.getItem('naya-theme') as Theme | null;
- return saved === 'light' || saved === 'dark' ? saved : 'dark';
- });
+ const [theme] = useState<Theme>('light');
 
  useEffect(() => {
- const root = window.document.documentElement;
- if (theme === 'dark') {
- root.classList.add('dark');
- } else {
- root.classList.remove('dark');
- }
- localStorage.setItem('naya-theme', theme);
- }, [theme]);
+ window.document.documentElement.classList.remove('dark');
+ try {
+ if (localStorage.getItem('naya-theme') === 'dark') localStorage.removeItem('naya-theme');
+ } catch { /* stockage indisponible */ }
+ }, []);
 
- const setTheme = (t: Theme) => setThemeState(t);
- const toggleTheme = () => setThemeState(prev => prev === 'light' ? 'dark' : 'light');
+ const setTheme = (_t: Theme) => {};
+ const toggleTheme = () => {};
 
  return (
  <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>

@@ -7,9 +7,9 @@
     <!-- Anti-flash : applique le thème avant le premier paint -->
     <script>
       (function() {
-        var saved = localStorage.getItem('naya-theme');
-        var theme = (saved === 'light' || saved === 'dark') ? saved : 'dark';
-        if (theme === 'dark') document.documentElement.classList.add('dark');
+        // Pas de mode sombre : la classe dark n'est jamais posée.
+        try { if (localStorage.getItem('naya-theme') === 'dark') localStorage.removeItem('naya-theme'); } catch (e) {}
+        document.documentElement.classList.remove('dark');
       })();
     </script>
 

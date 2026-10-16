@@ -17,7 +17,7 @@ export default {
       colors: {
         /* ── Palette Naya — namespace direct (brand kit) ── */
         naya: {
-          cream:      "var(--fond)",
+          cream:      "rgb(var(--fond-rgb) / <alpha-value>)",
           olive:      "#2F2A22",
           sulphur:    "#D4C97A",
           salvia:     "#7D8FA8",
@@ -33,7 +33,7 @@ export default {
 
         /* ── Palette principale Naya (legacy) ── */
         cream: {
-          DEFAULT: "var(--fond)",
+          DEFAULT: "rgb(var(--fond-rgb) / <alpha-value>)",
           dark:    "#EDE9DC",
           light:   "#FAFAF5",
         },
