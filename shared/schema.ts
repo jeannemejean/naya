@@ -18,6 +18,7 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
+import { APPARENCE_DEFAUT, type Apparence } from "./saisons";
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -194,6 +195,7 @@ export const userPreferences = pgTable("user_preferences", {
   planningStatus: text("planning_status").default("active"), // active | paused
   planningPausedAt: timestamp("planning_paused_at"),
   language: text("language").default("fr"), // fr | en — langue de génération IA
+  apparence: jsonb("apparence").$type<Apparence>().notNull().default(APPARENCE_DEFAUT), // saison + décor
 
   durationCalibration: jsonb("duration_calibration"), // { "content": 0.7, "admin": 1.2, ... } ratio réel/estimé par catégorie
   behaviorPatterns: jsonb("behavior_patterns"),       // { bestTaskTypeByHour, worstCompletionByDayOfWeek, averageCompletionRateByCategory }
@@ -1439,7 +1441,10 @@ export const insertProjectStrategyProfileSchema = createInsertSchema(projectStra
   updatedAt: true,
 });
 
-export const insertUserPreferencesSchema = createInsertSchema(userPreferences).omit({
+// apparence : drizzle-zod inférait un JSON libre ; on garde le type précis (la valeur est assainie côté route).
+export const insertUserPreferencesSchema = createInsertSchema(userPreferences, {
+  apparence: z.custom<Apparence>().optional(),
+}).omit({
   id: true,
   updatedAt: true,
 });

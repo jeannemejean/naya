@@ -226,6 +226,7 @@ import {
 } from "./services/persona-intelligence";
 import multer from "multer";
 import { tachesARebalancer } from "./services/schedule-repack";
+import { assainirPatchPreferences } from "./services/apparence";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Helper: fetch project + persona context for AI generation
@@ -2306,7 +2307,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   app.patch('/api/preferences', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const prefs = await storage.upsertUserPreferences(userId, req.body);
+      const prefs = await storage.upsertUserPreferences(userId, assainirPatchPreferences(req.body));
       res.json(prefs);
     } catch (error) {
       console.error("Error updating preferences:", error);
