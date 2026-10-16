@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
  * • primary   — ancre sombre, label en casse normale
  * • secondary — surface carte sans bordure, ombre cocon
  * • ghost     — no fill, no border, body-cased label
- * • display   — uppercase display label (tracking-xwide). Use for CTAs.
+ * • display   — display label. Use for CTAs.
  * • link      — inline text with olive underline (hover: solid)
  *
  * Sizes: sm (36, zone cliquable 44), default/md/lg (44), icon (44x44).
@@ -39,7 +39,7 @@ const buttonVariants = cva(
         ghost:
           "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground rounded-full",
         display:
-          "bg-primary text-primary-foreground hover:bg-[#3D372F] rounded-full font-display uppercase tracking-xwide",
+          "bg-primary text-primary-foreground hover:bg-[#3D372F] rounded-full font-display",
         link:
           "text-naya-olive border-b border-naya-olive-35 hover:border-naya-olive rounded-none px-0 h-auto",
       },

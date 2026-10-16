@@ -59,7 +59,7 @@ const CardEyebrow = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <span
     ref={ref}
-    className={cn("font-display uppercase tracking-xwide text-[11px] text-foreground", className)}
+    className={cn("font-display text-[11px] text-foreground", className)}
     {...props}
   />
 ))
@@ -71,7 +71,7 @@ const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("font-display uppercase tracking-wide text-md text-foreground", className)}
+    className={cn("font-display text-md text-foreground", className)}
     {...props}
   />
 ))

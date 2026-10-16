@@ -75,7 +75,7 @@ const ToastAction = React.forwardRef<
     ref={ref}
     className={cn(
       "inline-flex h-7 shrink-0 items-center justify-center",
-      "font-display uppercase tracking-xwide text-[10px]",
+      "font-display text-[10px]",
       "text-naya-olive border-b border-naya-olive-35 hover:border-naya-olive",
       "transition-colors duration-base ease-quiet",
       "focus:outline-none disabled:pointer-events-none disabled:opacity-50",
@@ -112,7 +112,7 @@ const ToastTitle = React.forwardRef<
   <ToastPrimitives.Title
     ref={ref}
     className={cn(
-      "font-display uppercase tracking-xwide text-[11px] text-naya-olive mb-1",
+      "font-display text-[11px] text-naya-olive mb-1",
       className,
     )}
     {...props}
