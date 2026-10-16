@@ -189,7 +189,7 @@ export default function Sidebar({ onSearchClick }: SidebarProps) {
               style={{
                 fontFamily: '"IBM Plex Mono", monospace',
                 fontSize: '0.625rem',
-                letterSpacing: '0.1em',
+                letterSpacing: '0.02em',
                 fontWeight: 300,
                 color: 'var(--muted-foreground)',
                 padding: '8px 12px 4px',

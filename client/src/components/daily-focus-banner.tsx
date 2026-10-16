@@ -77,7 +77,7 @@ export default function DailyFocusBanner() {
  style={{
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.625rem',
- letterSpacing: '0.08em',
+ letterSpacing: '0.02em',
  fontWeight: 300,
  color: 'var(--muted-foreground)',
  marginTop: 3,

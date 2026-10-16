@@ -28,7 +28,7 @@ import { AmbianceSaison } from "@/components/AmbianceSaison";
 function LoadingScreen({ label = "Naya" }: { label?: string }) {
   return (
     <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--background)' }}>
-      <span style={{ fontFamily: '"Montserrat", system-ui, sans-serif', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.15em', animation: 'fade-in 0.3s ease both' }}>
+      <span style={{ fontFamily: '"Montserrat", system-ui, sans-serif', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.02em', animation: 'fade-in 0.3s ease both' }}>
         {label}
       </span>
     </div>

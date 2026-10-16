@@ -247,7 +247,7 @@ export default function Landing() {
         <div className="max-w-2xl mb-14">
           <h2
             className="font-display text-naya-olive leading-[1.12] mb-6"
-            style={{ fontSize: "clamp(1.5rem, 3.2vw, 2.4rem)", letterSpacing: "0.07em" }}
+            style={{ fontSize: "clamp(1.5rem, 3.2vw, 2.4rem)", letterSpacing: "0.02em" }}
           >
             {t("landing.mechaniqueH2")}
           </h2>
@@ -398,7 +398,7 @@ export default function Landing() {
           <div>
             <h2
               className="font-display text-naya-olive leading-[1.12] mb-7"
-              style={{ fontSize: "clamp(1.5rem, 3vw, 2.2rem)", letterSpacing: "0.07em" }}
+              style={{ fontSize: "clamp(1.5rem, 3vw, 2.2rem)", letterSpacing: "0.02em" }}
             >
               {t("landing.positionH2")}
             </h2>

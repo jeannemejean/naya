@@ -31,7 +31,7 @@ export default function DataDeletion() {
 
         <h1
           className="font-display text-naya-olive leading-[1.1] mb-4"
-          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.07em" }}
+          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.02em" }}
         >
           Supprimer vos données.
         </h1>
