@@ -649,9 +649,9 @@ button {
 }
 
 [data-radix-tooltip-content] {
-  background: var(--foreground) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--background) !important;
+  background: var(--primary) !important;
+  border: 0 !important;
+  color: var(--primary-foreground) !important;
   font-size: 0.75rem;
-  border-radius: 4px;
+  border-radius: 12px;
 }

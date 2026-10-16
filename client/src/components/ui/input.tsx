@@ -3,8 +3,8 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * Naya input — hairline border, soft radius, no shadow.
- * Focus = 1px olive ring at 2px offset. Never a glow.
+ * Naya input — fond carte sans bordure, rayon champ.
+ * Focus = anneau 2px, décalé de 2px. Never a glow.
  */
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => (

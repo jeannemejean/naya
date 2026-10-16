@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils"
 
 /**
  * Naya button.
- * • primary   — olive fill on cream, body-cased label
- * • secondary — cream fill, olive hairline, body-cased label
+ * • primary   — ancre sombre, label en casse normale
+ * • secondary — surface carte sans bordure, ombre cocon
  * • ghost     — no fill, no border, body-cased label
  * • display   — uppercase display label (tracking-xwide). Use for CTAs.
  * • link      — inline text with olive underline (hover: solid)
@@ -27,19 +27,19 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground hover:bg-primary/90 rounded-full",
+          "bg-primary text-primary-foreground hover:bg-[#3D372F] rounded-full",
         primary:
-          "bg-primary text-primary-foreground hover:bg-primary/90 rounded-full",
+          "bg-primary text-primary-foreground hover:bg-[#3D372F] rounded-full",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90 rounded-full",
+          "bg-destructive text-destructive-foreground hover:brightness-95 rounded-full",
         outline:
           "bg-card text-foreground shadow-cocon hover:bg-muted rounded-full",
         secondary:
           "bg-card text-foreground shadow-cocon hover:bg-muted rounded-full",
         ghost:
-          "bg-transparent text-foreground/70 hover:bg-muted hover:text-foreground rounded-full",
+          "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground rounded-full",
         display:
-          "bg-primary text-primary-foreground hover:bg-primary/90 rounded-full font-display uppercase tracking-xwide",
+          "bg-primary text-primary-foreground hover:bg-[#3D372F] rounded-full font-display uppercase tracking-xwide",
         link:
           "text-naya-olive border-b border-naya-olive-35 hover:border-naya-olive rounded-none px-0 h-auto",
       },
