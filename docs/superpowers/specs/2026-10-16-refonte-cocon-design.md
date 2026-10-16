@@ -71,7 +71,7 @@ Hémisphère nord uniquement (toutes les utilisatrices actuelles).
 ### Le moteur des saisons
 
 - **`shared/saisons.ts`** (pur, testé) : `saisonDuJour(date: Date, fuseau: string): Saison` et `saisonEffective(apparence, date, fuseau)` (le choix forcé gagne sur l'automatique). `Saison = "automne" | "hiver" | "printemps" | "ete"`.
-- Le client pose `data-saison="automne"` sur `<html>` ; `index.css` définit les variables de saison sous `[data-saison="…"]`. Tous les composants lisent des variables, aucun ne connaît la saison.
+- **Source unique des couleurs** : les palettes et motifs de saison vivent dans `shared/saisons.ts` (pour que le test de contraste lise les vraies valeurs). Le client pose `data-saison="automne"` sur `<html>` et y écrit les variables CSS de la saison (`--fond`, `--touche-1`, `--touche-2`, `--motif`). Tous les composants lisent des variables, aucun ne connaît la saison.
 - **Préférence** : nouvelle colonne `user_preferences.apparence` (`jsonb`, non nulle, défaut `{"saison":"auto","decor":true}`), type `{ saison: "auto" | Saison; decor: boolean }`, lue et écrite par les routes de préférences existantes. Réglages : « Ambiance » (Automatique / Automne / Hiver / Printemps / Été) et « Décor animé » (oui / non).
 - **Migration 0032** : un seul `ALTER TABLE user_preferences ADD COLUMN apparence jsonb DEFAULT … NOT NULL`. Procédure de `MIGRATIONS.md` : `drizzle-kit generate`, relecture ligne par ligne, sauvegarde Neon, `npm run db:migrate`. La correction `suggere_par` prévue passe en 0033.
 
@@ -130,7 +130,7 @@ Nouvelle page à `/`, qui remplace `Dashboard`. Cinq blocs, de haut en bas.
 - Date (13 px), **« Bonjour {prénom}. »** (Lora, 36 px), puis le **mot du matin** (16 px, 2 lignes au plus, 42 caractères par ligne environ).
 - Le mot du matin **est le `greeting` du brief du jour existant**. Changements côté serveur :
   - le prompt du brief reçoit la saison effective et la consigne : « tu peux évoquer la saison en une touche légère, jamais en cliché » ;
-  - 2 phrases au plus, voix de Naya, `destinataire: "utilisatrice"` ;
+  - 2 phrases au plus, voix de Naya, `destinataire: "utilisatrice"`, **sans formule de salutation** (l'écran affiche déjà « Bonjour {prénom}. ») ;
   - le contexte reste celui de `callClaudeWithContext` (`buildNayaContext`).
 - L'accueil lit `GET /api/tasks/daily-brief` ; s'il n'y a rien pour aujourd'hui, il appelle `POST` une fois, et affiche une phrase de secours tant que la réponse n'est pas là. **Jamais d'écran vide.**
 
@@ -148,7 +148,7 @@ Une rangée horizontale de capsules (104 × 120 px, arrondi haut en dôme) qui d
 | Capsule | Contenu | Mène à | Affichée si |
 |---|---|---|---|
 | Ta semaine | « 6 sur 11 » tâches faites | Aujourd'hui › Semaine | la semaine a des tâches |
-| Campagne | campagne en cours la plus proche de sa fin, « 3 sur 8 » posts | Créer › Campagnes | une campagne tourne |
+| Campagne | campagne active qui finit le plus tôt : son nom et « jusqu'au 30 oct. » | Créer › Campagnes | une campagne est active |
 | Veille | nombre de tendances nouvelles | Veille › Tendances | il y en a |
 | Chiffres | un chiffre clé et sa variation | Chiffres | une mesure existe |
 
@@ -157,8 +157,8 @@ Une capsule porte le **motif de saison** (la campagne). Une capsule sur fond anc
 ### 4. Le fil de ta journée
 
 - Les tâches d'aujourd'hui à leur heure : point, heure, titre. La tâche en cours a un point plein couleur de touche. Les tâches faites s'estompent (texte secondaire, barré léger).
-- **Relances de prospection** : les prospects (`leads`) dont `next_follow_up` tombe aujourd'hui s'insèrent à leur heure, marqués « prospection » ; un clic ouvre le prospect. Lecture par un petit endpoint dédié `GET /api/leads/relances-du-jour`.
-- **Rien en rouge.** Si le report de fin de journée a déplacé des tâches d'hier, une ligne calme en bas du fil : « Naya a replacé 2 tâches d'hier dans ta semaine. »
+- **Relances de prospection** : elles arrivent déjà dans le planning sous forme de tâche (« Valider les messages préparés par Naya », lien interne dans `actionData.lien` vers `/outreach…`). Le fil les affiche à leur heure comme les autres, marquées « prospection » quand leur lien mène à `/outreach` ; un clic suit le lien. Aucun endpoint nouveau. (Correction du 16 oct. : `leads.next_follow_up` n'est rempli nulle part.)
+- **Rien en rouge.** S'il reste des tâches passées non faites (`GET /api/tasks/overdue`), une ligne calme en bas du fil : « 2 tâches d'avant attendent leur place. Naya les replace en fin de journée. », avec un lien vers Aujourd'hui › Semaine. (Correction du 16 oct. : le report de fin de journée n'enregistre pas ce qu'il déplace.)
 
 ### 5. La note pour Naya
 
@@ -193,7 +193,8 @@ Les composants existants sont **déplacés**, pas réécrits.
   - `espaceDuChemin` pour toutes les routes de `App.tsx` ;
   - `prochaineEtape` (heure passée, sans heure, tout fait) ;
   - présence de la saison dans le prompt du brief ;
-  - `GET /api/leads/relances-du-jour` (fuseau, prospects clos exclus).
+  - le marquage « prospection » d'une tâche du fil ;
+  - le choix de la capsule Campagne et du chiffre clé.
 - `npx tsc --noEmit` à **zéro**.
 - **Contrastes** : un script vérifie ≥ 4,5:1 pour l'encre et le texte secondaire sur chaque fond de saison et sur la surface de carte, et pour le texte clair sur l'ancre sombre.
 - **Navigateur** : chaque saison forcée tour à tour, à 1 440, 1 024 et 375 px ; clavier seul sur la pilule et l'accueil ; animations réduites.
