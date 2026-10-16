@@ -25,8 +25,8 @@ ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 const toastVariants = cva(
   [
     "group pointer-events-auto relative flex w-full items-start justify-between gap-3 overflow-hidden",
-    "rounded-lg border border-naya-olive-18 bg-naya-cream text-naya-olive",
-    "p-4 pl-5 shadow-lift",
+    "rounded-carte border-0 bg-card text-foreground",
+    "p-4 pl-5 shadow-cocon",
     "transition-all duration-base",
     "data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)]",
     "data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none",

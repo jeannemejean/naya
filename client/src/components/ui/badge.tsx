@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 const badgeVariants = cva(
   [
     "inline-flex items-center gap-1.5 px-2.5 py-1",
-    "rounded-pill font-display uppercase tracking-xwide text-[9px] font-normal",
+    "rounded-full font-display uppercase tracking-xwide text-[9px] font-normal",
   ].join(" "),
   {
     variants: {

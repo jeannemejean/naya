@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * Naya card.
- * Cream background, 1px olive-18 hairline, radius 14, padding 24-32.
+ * Surface carte, ombre cocon, sans bordure, rayon 20.
  * Optional `accent` adds a 1.5px top stripe — one accent per visual surface.
  */
 type AccentKey = "sulphur" | "salvia" | "mauve"
@@ -25,9 +25,9 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     <div
       ref={ref}
       className={cn(
-        "relative bg-card text-card-foreground rounded-lg border border-naya-olive-18",
+        "relative bg-card text-card-foreground rounded-carte shadow-cocon border-0",
         "transition-shadow duration-base ease-quiet",
-        lift ? "shadow-lift border-naya-olive-10" : "shadow-none hover:shadow-lift",
+        lift && "shadow-lift",
         accent && [
           "before:content-[''] before:absolute before:top-0 before:left-5 before:right-5",
           "before:h-[1.5px] before:rounded-sm",
