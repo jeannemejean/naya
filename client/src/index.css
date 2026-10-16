@@ -616,6 +616,84 @@ button {
 .stagger-children > *:nth-child(5) { animation-delay: 160ms; }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   Décor de saison (DecorSaison) — confiné à la photo d'accueil
+   Lent (6 à 12 s), doux, jamais criard. Les durées et délais viennent
+   des variables --duree / --delai posées par le composant.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.decor-saison {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* cqh dans les keyframes : la chute traverse toute la hauteur du bloc, quelle qu'elle soit */
+  container-type: size;
+}
+
+/* Onglet caché : tout se fige */
+.decor-saison[data-pause] * { animation-play-state: paused !important; }
+
+/* Le conteneur tombe, l'enfant se balance : deux mouvements simples qui se composent */
+.decor-chute {
+  position: absolute;
+  top: -40px;
+  animation: decor-chute var(--duree) linear var(--delai) infinite;
+}
+.decor-feuille, .decor-flocon, .decor-petale { display: block; }
+.decor-feuille { animation: decor-feuille var(--duree) ease-in-out infinite; }
+.decor-flocon  { animation: decor-flocon var(--duree) ease-in-out infinite alternate; }
+.decor-petale  { animation: decor-petale var(--duree) linear var(--delai) infinite; }
+
+.decor-bonhomme {
+  position: absolute;
+  right: 16px;
+  bottom: 8px;
+}
+
+.decor-reflet {
+  position: absolute;
+  border-radius: 9999px;
+  /* doré franc : en mode « screen » il virait au gris sur le bleu de l'été */
+  background: radial-gradient(closest-side, rgba(255, 206, 120, 0.6), rgba(255, 200, 110, 0));
+  filter: blur(10px);
+  animation: decor-reflet var(--duree) ease-in-out var(--delai) infinite alternate;
+}
+
+@keyframes decor-chute {
+  from { transform: translateY(0); }
+  to   { transform: translateY(calc(100cqh + 80px)); }
+}
+
+@keyframes decor-feuille {
+  0%   { transform: translateX(-14px) rotate(-28deg); }
+  50%  { transform: translateX(14px) rotate(22deg); }
+  100% { transform: translateX(-14px) rotate(-28deg); }
+}
+
+@keyframes decor-flocon {
+  from { transform: translateX(-8px); }
+  to   { transform: translateX(8px); }
+}
+
+@keyframes decor-petale {
+  0%   { transform: translateX(0) rotate(0deg); }
+  50%  { transform: translateX(40px) rotate(140deg); }
+  100% { transform: translateX(80px) rotate(280deg); }
+}
+
+/* Lumière qui passe à travers un rideau : glisse, s'étire et respire */
+@keyframes decor-reflet {
+  0%   { transform: translate(0, 0) scale(1) skewX(0deg); opacity: 0.35; }
+  50%  { transform: translate(18px, -6px) scale(1.12) skewX(-6deg); opacity: 0.65; }
+  100% { transform: translate(-12px, 8px) scale(0.94) skewX(4deg); opacity: 0.4; }
+}
+
+/* Mouvement réduit : rien ne bouge ; seul le bonhomme de neige (immobile) reste */
+@media (prefers-reduced-motion: reduce) {
+  .decor-saison .decor-mobile { display: none; }
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Scrollbar — fine, olive très atténué
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
