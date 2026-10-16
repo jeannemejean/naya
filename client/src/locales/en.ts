@@ -1970,6 +1970,18 @@ const en = {
  },
  },
  settingsPage: {
+ ambiance: {
+ titre: "Ambiance",
+ description: "The season tints all of Naya: background, accents, patterns.",
+ saison: "Season",
+ auto: "Automatic",
+ automne: "Autumn",
+ hiver: "Winter",
+ printemps: "Spring",
+ ete: "Summer",
+ decor: "Animated scenery",
+ decorAide: "The season's scenery gently moves behind the app.",
+ },
  connectionExpired: "Connection expired — reconnect {{compte}}",
  expiresSoon: "expires soon",
  "12RueDeLaRepublique": "12 Market Street",

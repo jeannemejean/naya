@@ -1974,6 +1974,18 @@ const fr = {
  },
  },
  settingsPage: {
+ ambiance: {
+ titre: "Ambiance",
+ description: "La saison colore tout Naya : le fond, les accents, les motifs.",
+ saison: "Saison",
+ auto: "Automatique",
+ automne: "Automne",
+ hiver: "Hiver",
+ printemps: "Printemps",
+ ete: "Été",
+ decor: "Décor animé",
+ decorAide: "Le décor de la saison s'anime doucement derrière l'app.",
+ },
  connectionExpired: "Connexion expirée — reconnecte {{compte}}",
  expiresSoon: "expire bientôt",
  "12RueDeLaRepublique": "12 rue de la République",
