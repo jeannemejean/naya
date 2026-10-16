@@ -1984,7 +1984,7 @@ const fr = {
  printemps: "Printemps",
  ete: "Été",
  decor: "Décor animé",
- decorAide: "Le décor de la saison s'anime doucement derrière l'app.",
+ decorAide: "Feuilles, neige, pétales ou reflets de soleil sur la photo d'accueil.",
  },
  connectionExpired: "Connexion expirée — reconnecte {{compte}}",
  expiresSoon: "expire bientôt",

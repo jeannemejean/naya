@@ -1,11 +1,16 @@
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useApparence } from "@/hooks/useApparence";
-import { PALETTES, photoDuJour } from "@shared/saisons";
+import { photoDuJour } from "@shared/saisons";
 import { DecorSaison } from "./DecorSaison";
 
 // Dégradé espresso à gauche : le texte blanc est toujours posé sur un voile (spec, règle 5).
 const VOILE = "linear-gradient(90deg, rgba(46,42,36,.62), rgba(46,42,36,.08) 70%)";
+
+// Repli sans photo : la touche de saison assombrie vers l'ancre, pour que le texte clair passe 4,5:1
+// sur toute la largeur, voile compris ou non (touche1 pure : le printemps tombait à ~3:1 dès 30 %).
+// Aussi posé sous la photo : le texte reste lisible pendant son chargement.
+const REPLI = "color-mix(in srgb, var(--touche-1) 35%, #2E2A24)";
 
 // La couleur de saison est là tout de suite ; la photo arrive en fondu par-dessus, sans saut de mise en page.
 function PhotoSaison({ src }: { src: string }) {
@@ -35,7 +40,7 @@ export function HeroSaison({ className, children }: { className?: string; childr
   return (
     <div
       className={cn("relative isolate min-h-[200px] overflow-hidden rounded-bloc md:min-h-[240px]", className)}
-      style={{ backgroundColor: PALETTES[saison].touche1 }}
+      style={{ backgroundColor: REPLI }}
     >
       {/* key : nouvel état « pas encore chargée » à chaque changement de photo */}
       {photo && <PhotoSaison key={photo} src={photo} />}

@@ -1980,7 +1980,7 @@ const en = {
  printemps: "Spring",
  ete: "Summer",
  decor: "Animated scenery",
- decorAide: "The season's scenery gently moves behind the app.",
+ decorAide: "Leaves, snow, petals or sunlight on the home photo.",
  },
  connectionExpired: "Connection expired — reconnect {{compte}}",
  expiresSoon: "expires soon",
