@@ -6,37 +6,39 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        display: ['"Anantason Ultra Expanded"', '"Montserrat"', 'system-ui', 'sans-serif'],
-        body:    ['"Inter"', '"Helvetica Neue"', '"Helvetica"', 'system-ui', 'sans-serif'],
-        sans:    ['"Inter"', '"Helvetica Neue"', '"Helvetica"', 'system-ui', '-apple-system', 'sans-serif'],
-        inter:   ['"Inter"', 'system-ui', 'sans-serif'],
+        /* Lora : accueil seulement (28 px et plus). Nunito Sans partout ailleurs. */
+        accueil: ['"Lora"', 'Georgia', 'serif'],
+        display: ['"Nunito Sans"', 'system-ui', 'sans-serif'],
+        body:    ['"Nunito Sans"', 'system-ui', 'sans-serif'],
+        sans:    ['"Nunito Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+        inter:   ['"Nunito Sans"', 'system-ui', 'sans-serif'],
         mono:    ['ui-monospace', '"SF Mono"', 'Menlo', 'Consolas', 'monospace'],
       },
       colors: {
         /* ── Palette Naya — namespace direct (brand kit) ── */
         naya: {
-          cream:      "#F7F4EC",
-          olive:      "#2B2D1C",
+          cream:      "var(--fond)",
+          olive:      "#2F2A22",
           sulphur:    "#D4C97A",
           salvia:     "#7D8FA8",
           mauve:      "#9E7E87",
-          "olive-90": "rgb(43 45 28 / 0.90)",
-          "olive-70": "rgb(43 45 28 / 0.70)",
-          "olive-55": "rgb(43 45 28 / 0.55)",
-          "olive-35": "rgb(43 45 28 / 0.35)",
-          "olive-18": "rgb(43 45 28 / 0.18)",
-          "olive-10": "rgb(43 45 28 / 0.10)",
-          "olive-06": "rgb(43 45 28 / 0.06)",
+          "olive-90": "rgb(47 42 34 / 0.90)",
+          "olive-70": "rgb(47 42 34 / 0.70)",
+          "olive-55": "rgb(47 42 34 / 0.55)",
+          "olive-35": "rgb(47 42 34 / 0.35)",
+          "olive-18": "rgb(47 42 34 / 0.18)",
+          "olive-10": "rgb(47 42 34 / 0.10)",
+          "olive-06": "rgb(47 42 34 / 0.06)",
         },
 
         /* ── Palette principale Naya (legacy) ── */
         cream: {
-          DEFAULT: "#F7F4EC",
+          DEFAULT: "var(--fond)",
           dark:    "#EDE9DC",
           light:   "#FAFAF5",
         },
         olive: {
-          DEFAULT: "#2B2D1C",
+          DEFAULT: "#2F2A22",
           light:   "#3D4028",
           muted:   "#5C6040",
           faint:   "rgba(43, 45, 28, 0.08)",
@@ -135,6 +137,9 @@ export default {
         lg:      "14px",
         xl:      "22px",
         "2xl":   "28px",
+        champ:   "12px",
+        carte:   "20px",
+        bloc:    "28px",
         "3xl":   "36px",
         full:    "9999px",
         pill:    "9999px",
@@ -146,9 +151,10 @@ export default {
       },
       boxShadow: {
         none:        "none",
-        rest:        "0 1px 0 rgb(43 45 28 / 0.06)",
-        lift:        "0 8px 24px -16px rgb(43 45 28 / 0.25), 0 2px 6px -3px rgb(43 45 28 / 0.10)",
-        panel:       "0 24px 60px -36px rgb(43 45 28 / 0.40)",
+        cocon:       "0 8px 24px rgba(90, 65, 30, 0.08)",
+        rest:        "0 1px 0 rgb(47 42 34 / 0.06)",
+        lift:        "0 8px 24px -16px rgb(47 42 34 / 0.25), 0 2px 6px -3px rgb(47 42 34 / 0.10)",
+        panel:       "0 24px 60px -36px rgb(47 42 34 / 0.40)",
         sm:          "0 1px 2px rgba(43, 45, 28, 0.08)",
         DEFAULT:     "0 2px 6px rgba(43, 45, 28, 0.10)",
         md:          "0 4px 12px rgba(43, 45, 28, 0.10)",
@@ -171,7 +177,7 @@ export default {
       },
       backgroundImage: {
         "naya-paper":
-          "radial-gradient(rgb(43 45 28 / 0.025) 1px, transparent 1px), radial-gradient(rgb(43 45 28 / 0.018) 1px, transparent 1px)",
+          "radial-gradient(rgb(47 42 34 / 0.025) 1px, transparent 1px), radial-gradient(rgb(47 42 34 / 0.018) 1px, transparent 1px)",
       },
       backgroundSize: {
         "naya-paper": "3px 3px, 7px 7px",
