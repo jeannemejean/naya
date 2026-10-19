@@ -105,3 +105,18 @@ export function espaceDuChemin(chemin: string): { espace: EspaceId; onglet: stri
 export function ongletsVisibles(espace: Espace, estProprietaire: boolean): Onglet[] {
   return espace.onglets.filter((o) => !o.proprietaire || estProprietaire);
 }
+
+// Anciennes adresses qui redirigent vers un onglet du projet actif (pages/project/onglets.ts),
+// ou vers /projects s'il n'y en a pas.
+const REDIRECTIONS_PROJET = new Set(["/fondations", "/veille", "/mesure"]);
+
+/**
+ * Lien du bouton d'un espace. Sans projet actif, une cible qui redirige vers la page projet
+ * ferait atterrir dans Projets : on prend alors le premier onglet visible qui n'en est pas une.
+ * (Les onglets, eux, gardent leur adresse.)
+ */
+export function hrefEspace(espace: Espace, projetActif: number | null, estProprietaire = false): string {
+  if (projetActif != null || !REDIRECTIONS_PROJET.has(espace.href)) return espace.href;
+  const repli = ongletsVisibles(espace, estProprietaire).find((o) => !REDIRECTIONS_PROJET.has(o.href));
+  return repli?.href ?? espace.href;
+}

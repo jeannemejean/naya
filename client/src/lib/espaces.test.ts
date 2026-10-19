@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ESPACES, espaceDuChemin, estPageProjet, ongletsVisibles } from "./espaces";
+import { ESPACES, espaceDuChemin, estPageProjet, hrefEspace, ongletsVisibles } from "./espaces";
 import fr from "@/locales/fr";
 import en from "@/locales/en";
 
@@ -42,6 +42,25 @@ describe("espaces", () => {
     expect(estPageProjet("/projects/4?onglet=veille")).toBe(true);
     expect(estPageProjet("/projects")).toBe(false);
     expect(estPageProjet("/strategy")).toBe(false);
+  });
+
+  describe("hrefEspace", () => {
+    const e = (id: string) => ESPACES.find((x) => x.id === id)!;
+    it("Veille : /veille avec un projet actif, sinon le premier onglet qui n'est pas une redirection", () => {
+      expect(hrefEspace(e("veille"), 4)).toBe("/veille");
+      expect(hrefEspace(e("veille"), null)).toBe("/reading-hub");
+      expect(hrefEspace(e("veille"), null, true)).toBe("/reading-hub");
+    });
+    it("les autres espaces gardent leur adresse, projet actif ou non", () => {
+      for (const id of ["aujourdhui", "projets", "creer", "chiffres"]) {
+        expect(hrefEspace(e(id), null)).toBe(e(id).href);
+        expect(hrefEspace(e(id), 4)).toBe(e(id).href);
+      }
+    });
+    it("un espace dont tous les onglets sont des redirections garde son adresse", () => {
+      const factice = { id: "veille" as const, cle: "x", href: "/veille", onglets: [{ id: "t", cle: "x", href: "/veille", prefixes: ["/veille"] }] };
+      expect(hrefEspace(factice, null)).toBe("/veille");
+    });
   });
 
   it("chaque route authentifiée de App.tsx (hors /settings et /onboarding) a un espace", () => {

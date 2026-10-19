@@ -743,5 +743,6 @@ button {
   }
   body.pilule-en-bas .h-screen {
     height: calc(100vh - 88px);
+    height: calc(100dvh - 88px); /* barre d'adresse mobile ; 100vh en repli */
   }
 }

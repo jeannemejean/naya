@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useLanguageToggle } from "@/hooks/useLanguageToggle";
 import { useProject } from "@/lib/project-context";
-import { ESPACES, espaceDuChemin, type EspaceId } from "@/lib/espaces";
+import { ESPACES, espaceDuChemin, hrefEspace, type EspaceId } from "@/lib/espaces";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -32,15 +32,16 @@ const ICONES: Record<EspaceId, LucideIcon> = {
 // Classe posée sur <body> : sous 768 px, index.css y réserve la hauteur de la pilule du bas.
 export const CLASSE_PILULE_BAS = "pilule-en-bas";
 
-// Bouton rond de 44 px ; anneau clair visible sur le fond sombre de la pilule.
+// Bouton rond de 44 px ; anneau clair visible sur le fond sombre de la pilule. Sous 360 px
+// de large, 40 px pour que les 7 boutons tiennent dans 288 px (320 − 2 × 16).
 const ROND =
-  "flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-primary";
+  "flex h-11 w-11 max-[359px]:h-10 max-[359px]:w-10 shrink-0 items-center justify-center rounded-full transition-colors duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-foreground focus-visible:ring-offset-2 focus-visible:ring-offset-primary";
 
 export default function PiluleNavigation({ onSearchClick }: { onSearchClick?: () => void }) {
   const { t } = useTranslation();
   const [location, navigate] = useLocation();
   const { user, logout } = useAuth();
-  const { setActiveProjectId } = useProject();
+  const { activeProjectId, setActiveProjectId } = useProject();
   const { current: langue, toggle: basculerLangue } = useLanguageToggle();
   const telephone = useIsMobile();
   const recherche = useSearch();
@@ -57,21 +58,22 @@ export default function PiluleNavigation({ onSearchClick }: { onSearchClick?: ()
   return (
     <nav
       aria-label={t("navigation.espaces")}
-      className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-between rounded-full bg-primary p-1.5 shadow-cocon md:static md:inset-auto md:flex-col md:justify-start md:gap-1"
+      className="fixed inset-x-4 bottom-4 z-40 flex items-center justify-between rounded-full bg-primary p-1.5 shadow-cocon max-[359px]:p-1 md:static md:inset-auto md:flex-col md:justify-start md:gap-1"
     >
       {ESPACES.map((espace) => {
         const Icone = ICONES[espace.id];
         const estActif = espace.id === actif;
         const nom = t(espace.cle);
+        const href = hrefEspace(espace, activeProjectId, user?.role === "owner");
         return (
           <Tooltip key={espace.id} delayDuration={200}>
             <TooltipTrigger asChild>
               <Link
-                href={espace.href}
+                href={href}
                 aria-label={nom}
                 aria-current={estActif ? "page" : undefined}
                 // L'accueil ramène toujours à la vue globale, comme l'ancien logo.
-                onClick={() => { if (espace.href === "/") setActiveProjectId(null); }}
+                onClick={() => { if (href === "/") setActiveProjectId(null); }}
                 className={cn(
                   ROND,
                   estActif
