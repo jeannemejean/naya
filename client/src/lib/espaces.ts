@@ -66,8 +66,28 @@ function correspond(chemin: string, prefixe: string): boolean {
   return chemin === prefixe || chemin.startsWith(`${prefixe}/`);
 }
 
+// Page projet (/projects/<id>) : ses onglets fondations, veille et mesure (?onglet=…, voir
+// pages/project/onglets.ts) sont rangés dans l'espace qui leur correspond. Les anciennes
+// adresses /fondations, /veille, /mesure y redirigent : l'onglet de navigation reste allumé.
+const ONGLETS_PAGE_PROJET: Record<string, { espace: EspaceId; onglet: string }> = {
+  fondations: { espace: "projets", onglet: "fondations" },
+  veille: { espace: "veille", onglet: "tendances" },
+  mesure: { espace: "chiffres", onglet: "mesure" },
+};
+
+export function estPageProjet(chemin: string): boolean {
+  return /^\/projects\/[^/?#]+$/.test(chemin.split(/[?#]/)[0]);
+}
+
+/** `chemin` peut porter sa requête (`/projects/4?onglet=veille`) : elle ne compte que sur une page projet. */
 export function espaceDuChemin(chemin: string): { espace: EspaceId; onglet: string } | null {
   const propre = chemin.split(/[?#]/)[0];
+  if (estPageProjet(propre)) {
+    const requete = chemin.split("#")[0].split("?")[1] ?? "";
+    const o = new URLSearchParams(requete).get("onglet");
+    // hasOwn : « ?onglet=toString » ne doit pas tomber sur le prototype.
+    return o && Object.hasOwn(ONGLETS_PAGE_PROJET, o) ? ONGLETS_PAGE_PROJET[o] : { espace: "projets", onglet: "projets" };
+  }
   let meilleur: { espace: EspaceId; onglet: string; longueur: number } | null = null;
   for (const e of ESPACES) {
     for (const o of e.onglets) {

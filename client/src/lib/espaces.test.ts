@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ESPACES, espaceDuChemin, ongletsVisibles } from "./espaces";
+import { ESPACES, espaceDuChemin, estPageProjet, ongletsVisibles } from "./espaces";
 import fr from "@/locales/fr";
 import en from "@/locales/en";
 
@@ -18,6 +18,30 @@ describe("espaces", () => {
   it("ignore la requête et l'ancre", () => {
     expect(espaceDuChemin("/?x=1")).toEqual({ espace: "aujourdhui", onglet: "aujourdhui" });
     expect(espaceDuChemin("/savoir#haut")).toEqual({ espace: "veille", onglet: "savoir" });
+  });
+
+  // La page projet porte trois onglets qui appartiennent à d'autres espaces (?onglet=…).
+  it.each([
+    ["/projects/4?onglet=fondations", "projets", "fondations"],
+    ["/projects/4?onglet=veille", "veille", "tendances"],
+    ["/projects/4?onglet=mesure", "chiffres", "mesure"],
+    ["/projects/4?onglet=client", "projets", "projets"],
+    ["/projects/4?onglet=ensemble", "projets", "projets"],
+    ["/projects/4", "projets", "projets"],
+    ["/projects/4?x=1&onglet=veille#haut", "veille", "tendances"],
+    ["/projects/4?onglet=toString", "projets", "projets"],
+  ])("page projet %s → %s / %s", (c, espace, onglet) => expect(espaceDuChemin(c)).toEqual({ espace, onglet }));
+
+  it("?onglet= ne compte que sur une page projet", () => {
+    expect(espaceDuChemin("/projects?onglet=veille")).toEqual({ espace: "projets", onglet: "projets" });
+    expect(espaceDuChemin("/strategy?onglet=mesure")).toEqual({ espace: "projets", onglet: "strategie" });
+  });
+
+  it("estPageProjet", () => {
+    expect(estPageProjet("/projects/4")).toBe(true);
+    expect(estPageProjet("/projects/4?onglet=veille")).toBe(true);
+    expect(estPageProjet("/projects")).toBe(false);
+    expect(estPageProjet("/strategy")).toBe(false);
   });
 
   it("chaque route authentifiée de App.tsx (hors /settings et /onboarding) a un espace", () => {

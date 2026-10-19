@@ -1,9 +1,10 @@
 // Les onglets en pilule de l'espace courant, en tête du contenu de chaque page. Rien hors
-// espace (Réglages, adresse inconnue). Dans Projets, le choix du projet actif s'y ajoute.
-import { Link, useLocation } from "wouter";
+// espace (Réglages, adresse inconnue). Dans Projets (hors page d'un projet), le choix du
+// projet actif s'y ajoute.
+import { Link, useLocation, useSearch } from "wouter";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
-import { ESPACES, espaceDuChemin, ongletsVisibles } from "@/lib/espaces";
+import { ESPACES, espaceDuChemin, estPageProjet, ongletsVisibles } from "@/lib/espaces";
 import { cn } from "@/lib/utils";
 import SelecteurProjet from "./SelecteurProjet";
 
@@ -11,7 +12,9 @@ export default function OngletsEspace() {
   const { t } = useTranslation();
   const [location] = useLocation();
   const { user } = useAuth();
-  const position = espaceDuChemin(location);
+  const recherche = useSearch();
+  // La requête compte : /projects/4?onglet=veille appartient à l'espace Veille.
+  const position = espaceDuChemin(recherche ? `${location}?${recherche}` : location);
   const espace = position ? ESPACES.find((e) => e.id === position.espace) : undefined;
   if (!position || !espace) return null;
 
@@ -43,7 +46,8 @@ export default function OngletsEspace() {
           })}
         </ul>
       </nav>
-      {espace.id === "projets" && <SelecteurProjet />}
+      {/* Une page projet a déjà son propre sélecteur (le nom du projet). */}
+      {espace.id === "projets" && !estPageProjet(location) && <SelecteurProjet />}
     </div>
   );
 }

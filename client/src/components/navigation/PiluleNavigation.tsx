@@ -2,7 +2,7 @@
 // dessous. Un seul rendu pour les deux tailles (pas de doublon pour le clavier ni les
 // lecteurs d'écran) : seules les classes changent.
 import { useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { useTranslation } from "react-i18next";
 import { LayoutGrid, LineChart, LogOut, Languages, PenLine, Search, Settings, Sun, Telescope, type LucideIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -43,7 +43,9 @@ export default function PiluleNavigation({ onSearchClick }: { onSearchClick?: ()
   const { setActiveProjectId } = useProject();
   const { current: langue, toggle: basculerLangue } = useLanguageToggle();
   const telephone = useIsMobile();
-  const actif = espaceDuChemin(location)?.espace ?? null;
+  const recherche = useSearch();
+  // La requête compte : /projects/4?onglet=veille appartient à l'espace Veille.
+  const actif = espaceDuChemin(recherche ? `${location}?${recherche}` : location)?.espace ?? null;
   const cote = telephone ? "top" : "right";
   const initiale = user?.firstName?.charAt(0) || user?.email?.charAt(0) || "N";
 
