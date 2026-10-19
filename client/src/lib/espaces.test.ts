@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ESPACES, espaceDuChemin, ongletsVisibles } from "./espaces";
+import fr from "@/locales/fr";
+import en from "@/locales/en";
 
 describe("espaces", () => {
   it.each([
@@ -27,5 +29,14 @@ describe("espaces", () => {
     const veille = ESPACES.find((e) => e.id === "veille")!;
     expect(ongletsVisibles(veille, false).map((o) => o.id)).toEqual(["tendances", "lecture"]);
     expect(ongletsVisibles(veille, true).map((o) => o.id)).toEqual(["tendances", "lecture", "savoir", "profils"]);
+  });
+});
+
+// Les clés sont fabriquées (`espaces.<espace>...`) : keys-exist.test ne les voit pas.
+describe("libellés des espaces", () => {
+  const resoudre = (d: unknown, cle: string) => cle.split(".").reduce<any>((o, p) => o?.[p], d);
+  it.each([["fr", fr], ["en", en]] as const)("toutes les clés existent en %s", (_l, dico) => {
+    const cles = ESPACES.flatMap((e) => [e.cle, ...e.onglets.map((o) => o.cle)]);
+    expect(cles.filter((c) => typeof resoudre(dico, c) !== "string")).toEqual([]);
   });
 });

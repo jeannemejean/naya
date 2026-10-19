@@ -10,6 +10,7 @@ import { libelleAppelRevue } from "@/lib/appel-revue";
 import { useTranslation } from "react-i18next";
 import { formatLocalDate } from "@/lib/dateUtils";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { TendancesSecteur } from "@/components/tendances-secteur";
 import TodaysTasks from "@/components/todays-tasks";
 import SchedulePreview from "@/components/schedule-preview";
@@ -1258,6 +1259,7 @@ export default function Dashboard({ onSearchClick }: DashboardProps) {
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        <OngletsEspace />
         {/* Header */}
         <header
           className="px-6 py-4 flex-shrink-0 border-b"

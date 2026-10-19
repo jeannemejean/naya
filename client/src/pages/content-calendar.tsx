@@ -21,6 +21,7 @@ import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
 import Sidebar from '@/components/sidebar';
+import OngletsEspace from '@/components/navigation/OngletsEspace';
 import { SocialComposer } from '@/components/SocialComposer';
 import { ImportCalendrier } from '@/components/content/import-calendrier';
 import { Button } from '@/components/ui/button';
@@ -1496,6 +1497,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <div className="flex h-screen bg-background">
  <Sidebar onSearchClick={onSearchClick} />
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-white border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
  <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
  <div className="flex items-center justify-between">

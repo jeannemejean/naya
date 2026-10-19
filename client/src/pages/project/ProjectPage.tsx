@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Briefcase, ChevronDown, Compass, Gauge, LayoutGrid, Radar, Users } from "lucide-react";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { useProject } from "@/lib/project-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,7 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
       {/* UN seul composant d'onglets pour l'en-tête et le contenu : chaque onglet est relié à
           son panneau (lecteurs d'écran, clavier). */}
       <Tabs value={onglet} onValueChange={changerOnglet} className="flex-1 flex flex-col overflow-hidden">
+        <OngletsEspace />
         <header className="bg-card border-b border-border px-6 pt-4 flex-shrink-0">
           <Link href="/projects" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
             <ArrowLeft className="w-4 h-4" />

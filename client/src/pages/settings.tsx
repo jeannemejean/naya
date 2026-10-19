@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { throwApiError, translateError, ApiError } from "@/lib/api-error";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -551,6 +552,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
  <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
  <h1 className="text-xl font-bold tracking-tight text-foreground">{t('settings.title')}</h1>

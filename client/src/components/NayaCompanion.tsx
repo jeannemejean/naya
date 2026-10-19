@@ -754,9 +754,9 @@ export default function NayaCompanion() {
 
  return (
  <>
- {/* Bouton flottant Naya */}
+ {/* Bouton flottant Naya — sous 768 px, remonté au-dessus de la pilule de navigation du bas */}
  {!open && (
- <div className="fixed bottom-6 right-6 z-50">
+ <div className="fixed bottom-[88px] md:bottom-6 right-6 z-50">
  <div className="relative">
  <button
  onClick={() => setOpen(true)}

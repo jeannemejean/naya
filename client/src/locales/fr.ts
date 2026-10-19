@@ -2967,6 +2967,24 @@ const fr = {
   handle: "@{{compte}}",
   multiplicateur: "×{{lift}}",
  },
+ navigation: {
+  espaces: "Espaces",
+  rechercher: "Rechercher",
+  compte: "Ton compte",
+  reglages: "Réglages",
+  deconnexion: "Se déconnecter",
+  autreLangue: "English",
+  projetActif: "Projet actif",
+  projetPrincipal: "Projet principal",
+ },
+
+ espaces: {
+  aujourdhui: { nom: "Aujourd'hui", onglets: { aujourdhui: "Aujourd'hui", semaine: "Semaine" } },
+  projets: { nom: "Projets", onglets: { projets: "Projets", strategie: "Stratégie", fondations: "Fondations", prospection: "Prospection" } },
+  creer: { nom: "Créer", onglets: { atelier: "Atelier", calendrier: "Calendrier", campagnes: "Campagnes" } },
+  veille: { nom: "Veille", onglets: { tendances: "Tendances", lecture: "Lecture", savoir: "Savoir", profils: "Profils de veille" } },
+  chiffres: { nom: "Chiffres", onglets: { chiffres: "Chiffres", mesure: "Mesure" } },
+ },
 };
 
 export default fr;

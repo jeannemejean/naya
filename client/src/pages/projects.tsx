@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -719,6 +720,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
  <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
  <div className="flex items-center justify-between">

@@ -19,6 +19,7 @@ import { useCocherAvecLivrable } from "@/hooks/useCocherAvecLivrable";
 import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import { PlanningRestartButton } from "@/components/planning-restart-button";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import TimeGrid from "@/components/time-grid";
 import type { Project } from "@shared/schema";
 import { formatLocalDate } from "@/lib/dateUtils";
@@ -501,6 +502,7 @@ export default function Planning({ onSearchClick }: Props) {
     <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <OngletsEspace />
         <div className="flex-1 flex flex-col min-h-0 bg-card">
 
           {/* Header */}

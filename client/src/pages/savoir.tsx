@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Library, Upload, Loader2, Trash2, AlertTriangle } from "lucide-react";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -190,6 +191,7 @@ export default function Savoir({ onSearchClick }: SavoirProps) {
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-card border-b border-border px-6 py-4 flex-shrink-0">
  <h1 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
  <Library className="h-5 w-5 text-naya-salvia" />

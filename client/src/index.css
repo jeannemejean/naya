@@ -733,3 +733,15 @@ button {
   font-size: 0.75rem;
   border-radius: 12px;
 }
+
+/* Pilule de navigation en bas (sous 768 px) : le contenu lui réserve 88 px. Les pages
+   tiennent dans une rangée `h-screen` : on la raccourcit d'autant, sinon le bas de leur
+   zone de défilement passerait sous la pilule. Classe posée par PiluleNavigation. */
+@media (max-width: 767px) {
+  body.pilule-en-bas {
+    padding-bottom: 88px;
+  }
+  body.pilule-en-bas .h-screen {
+    height: calc(100vh - 88px);
+  }
+}
