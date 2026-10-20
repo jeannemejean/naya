@@ -18,7 +18,7 @@ import Terms from "@/pages/terms";
 import DataDeletion from "@/pages/data-deletion";
 import Paywall from "@/pages/paywall";
 import Welcome from "@/pages/welcome";
-import Dashboard from "@/pages/dashboard";
+import Aujourdhui from "@/pages/aujourdhui";
 import NayaCompanion from "@/components/NayaCompanion";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import NouvelleVersionBanner from "@/components/NouvelleVersionBanner";
@@ -67,7 +67,7 @@ function Router() {
  qc.prefetchQuery({ queryKey: ["/api/projects?limit=200"] });
  }
  }, [isAuthenticated, qc]);
- // Bouton flottant Naya sur toutes les pages authentifiées (dashboard inclus)
+ // Bouton flottant Naya sur toutes les pages authentifiées, accueil « Aujourd'hui » compris
  // Rapport client (lien public) : page autonome, rien de Naya autour — ni à l'écran ni au PDF.
  const [location] = useLocation();
  const pagePublique = location.startsWith("/rapport/");
@@ -96,7 +96,7 @@ function Router() {
  ) : (
  <>
  <Route path="/">
- {() => <Dashboard onSearchClick={openSearch} />}
+ {() => <Aujourdhui onSearchClick={openSearch} />}
  </Route>
  <Route path="/onboarding" component={Onboarding} />
  <Route path="/content-calendar">
@@ -161,7 +161,7 @@ function Router() {
  <GlobalSearch open={isOpen} onOpenChange={setIsOpen} />
  )}
 
- {/* Companion IA — bouton flottant (absent du dashboard qui a sa propre barre) */}
+ {/* Companion IA — bouton flottant, sur toutes les pages authentifiées (accueil compris) */}
  {showFloatingCompanion && <NayaCompanion />}
  </>
  );
