@@ -7,7 +7,7 @@ import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
 import { tendancesPourLeContenu } from "../profils-veille/tri";
 import { stockageProfils } from "../profils-veille/stockage";
 import { gardeDepense } from "../routines/garde";
-import { compteDePublication } from "../connexions/comptes";
+import { compteDePublication, type DepsComptes } from "../connexions/comptes";
 import type { GenreMedia } from "@shared/programmation";
 import { effetSurPost } from "@shared/livrables";
 import { genreDuMedia } from "@shared/atelier";
@@ -23,12 +23,10 @@ import { jourHeureParis } from "./validation";
 /** Les visuels d'un post (dans l'ordre de publication), avec leur nature. */
 export async function mediasDuPost(userId: string, post: any): Promise<Array<{ id: number; url: string; mimeType: string | null; genre: GenreMedia }>> {
   const ids = Array.isArray(post?.mediaIds) ? (post.mediaIds as unknown[]).map(Number).filter(Number.isInteger) : [];
-  const out: Array<{ id: number; url: string; mimeType: string | null; genre: GenreMedia }> = [];
-  for (const id of ids) {
-    const m = await storage.getMediaItemById(id, userId);
-    if (m?.url) out.push({ id, url: m.url, mimeType: m.mimeType ?? null, genre: genreDuMedia(m) });
-  }
-  return out;
+  // En parallèle : chaque lecture est un aller-retour réseau vers la base (l'atelier en faisait
+  // des dizaines à la suite). Promise.all garde l'ordre des visuels.
+  const lus = await Promise.all(ids.map((id) => storage.getMediaItemById(id, userId)));
+  return lus.flatMap((m, i) => (m?.url ? [{ id: ids[i], url: m.url, mimeType: m.mimeType ?? null, genre: genreDuMedia(m) }] : []));
 }
 
 async function genresDuPost(userId: string, post: any): Promise<GenreMedia[]> {
@@ -37,8 +35,8 @@ async function genresDuPost(userId: string, post: any): Promise<GenreMedia[]> {
   return g;
 }
 
-export async function compteDuPost(userId: string, post: any) {
-  const choix = await compteDePublication({ ...post, userId });
+export async function compteDuPost(userId: string, post: any, deps?: DepsComptes) {
+  const choix = await compteDePublication({ ...post, userId }, deps);
   return "compte" in choix ? (choix.compte as any) : null;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { compteDePublication, porteeDuProjet } from "./comptes";
+import { compteDePublication, depsComptesMemorisees, porteeDuProjet } from "./comptes";
 
 const igJeanne = { id: 1, platform: "instagram", projectId: null, isActive: true };
 const igClient = { id: 2, platform: "instagram", projectId: 7, isActive: true };
@@ -34,5 +34,15 @@ describe("compteDePublication", () => {
     expect(await compteDePublication({ userId: "u", projectId: 5, platform: "instagram" }, d)).toEqual({ compte: igJeanne });
     expect(await compteDePublication({ userId: "u", projectId: null, platform: "instagram" }, d)).toEqual({ compte: igJeanne });
     expect(await compteDePublication({ userId: "u", platform: "instagram", socialAccountId: 2 }, d)).toEqual({ erreur: "compte_hors_projet" });
+  });
+});
+
+describe("depsComptesMemorisees", () => {
+  it("chaque projet et la liste des comptes ne sont lus qu'une fois pour plusieurs posts", async () => {
+    const d = deps({ 7: { id: 7, userId: "u", projectKind: "client" } }, [igJeanne, igClient]);
+    const memo = depsComptesMemorisees(d);
+    await Promise.all([1, 2, 3].map(() => compteDePublication({ userId: "u", projectId: 7, platform: "instagram" }, memo)));
+    expect(d.getProject).toHaveBeenCalledTimes(1);
+    expect(d.getSocialAccounts).toHaveBeenCalledTimes(1);
   });
 });
