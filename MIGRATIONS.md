@@ -347,6 +347,27 @@ Livrables de tâche, étape 1 (spec `docs/superpowers/specs/2026-10-06-naya-livr
 - [ ] Le robot des profils ne tourne que si `PROFILS_VEILLE_ROBOT=on` (Railway) ; la diffusion à
       toutes que si `PROFILS_VEILLE_POUR_TOUS=true`, après le banc d'évaluation.
 
+## 3decies. Production — migrée le 20 octobre 2026 (`0032`) — refonte « cocon »
+
+> Endpoint vérifié avant exécution : `ep-damp-water-anuyb0k6` = branche `br-floral-wave-ane2h3l1`
+> = **production** (hôte lu dans `.env.prod.bak`, seul l'hôte affiché).
+
+- [x] État lu avant toute écriture : suivi **32 lignes**, dernier `created_at` = `1791989755724`
+      (`0031`) ; colonne `user_preferences.apparence` absente.
+- [x] Point de restauration Neon : branche **`sauvegarde-avant-refonte-cocon-2026-10-20`**
+      (`br-billowing-wildflower-an4nmizv`), forkée de `production` juste avant la migration.
+- [x] SQL relu, purement additif (`0032_parallel_jazinda.sql`) : un seul
+      `ALTER TABLE "user_preferences" ADD COLUMN "apparence" jsonb DEFAULT '{"saison":"auto","decor":true}'::jsonb NOT NULL`.
+- [x] Appliquée avec `scripts/migrate-prod.ts` (`MIGRATION_DATABASE_URL` explicite, garde d'endpoint).
+- [x] Résultat vérifié : suivi **32 → 33**, colonne présente (non nulle, défaut appliqué aux
+      2 lignes existantes, 0 valeur nulle).
+- [x] Ordre respecté : migration d'abord, `main` poussé ensuite (le code lit `apparence`).
+
+### Ce qui reste
+
+- [ ] `profil_comptes.suggere_par` → `SET NULL` : désormais en `0033`.
+- [ ] Supprimer `sauvegarde-avant-refonte-cocon-2026-10-20` quand le déploiement est stable.
+
 
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
