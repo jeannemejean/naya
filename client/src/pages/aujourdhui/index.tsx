@@ -1,6 +1,6 @@
 // L'accueil « Aujourd'hui » (spec refonte cocon, section 3) : la photo et le mot du matin,
 // la prochaine étape, les capsules, la note pour Naya et le fil de la journée.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
@@ -20,7 +20,7 @@ import { CLE_MUTATION_COCHAGE, cocherDansLeCache, derniereCocheEnVol } from "@/l
 import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import { estTacheDeProduction } from "@shared/livrables";
 import type { Project, Task } from "@shared/schema";
-import { prochaineEtape, type TacheAccueil } from "./logique";
+import { doitAllerALOnboarding, prochaineEtape, type TacheAccueil } from "./logique";
 import { MotDuMatin } from "./MotDuMatin";
 import { PiluleEtape } from "./PiluleEtape";
 import { Capsules } from "./Capsules";
@@ -84,6 +84,13 @@ export default function Aujourdhui({ onSearchClick }: { onSearchClick?: () => vo
   });
 
   const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects?limit=200"], throwOnError: false });
+
+  // Garde reprise de l'ancien dashboard (même requête, même redirection) : un nouveau compte
+  // sans ADN de marque part à l'onboarding. throwOnError: false, pas d'écran d'erreur pour une garde.
+  const brandDna = useQuery({ queryKey: ["/api/brand-dna"], retry: false, throwOnError: false });
+  useEffect(() => {
+    if (doitAllerALOnboarding(brandDna)) window.location.href = "/onboarding";
+  }, [brandDna.isSuccess, brandDna.data]);
 
   // Cochage depuis le panneau de la tâche : même chemin instantané que todays-tasks.tsx.
   const toggleTaskMutation = useMutation({

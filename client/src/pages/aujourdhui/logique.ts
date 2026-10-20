@@ -83,3 +83,12 @@ export function ligneEnAttente(n: number): string | null {
     ? "1 tâche d'avant attend sa place. Naya la replace en fin de journée."
     : `${n} tâches d'avant attendent leur place. Naya les replace en fin de journée.`;
 }
+
+/**
+ * Reprise de la garde de l'ancien dashboard : un compte sans ADN de marque part à l'onboarding.
+ * Seulement sur une réponse reçue (le serveur renvoie `null` quand il n'y en a pas) : pendant le
+ * chargement l'accueil s'affiche normalement, et une erreur de requête ne redirige jamais.
+ */
+export function doitAllerALOnboarding(q: { isSuccess: boolean; data: unknown }): boolean {
+  return q.isSuccess && !q.data;
+}

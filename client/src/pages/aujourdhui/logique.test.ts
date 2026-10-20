@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   prochaineEtape, trierFil, estTacheProspection, capsuleCampagne, chiffreCle,
-  capsulesAffichables, ligneEnAttente, type TacheAccueil,
+  capsulesAffichables, ligneEnAttente, doitAllerALOnboarding, type TacheAccueil,
 } from "./logique";
 
 const t = (id: number, o: Partial<TacheAccueil> = {}): TacheAccueil =>
@@ -81,4 +81,15 @@ it("ligneEnAttente", () => {
   expect(ligneEnAttente(0)).toBeNull();
   expect(ligneEnAttente(1)).toBe("1 tâche d'avant attend sa place. Naya la replace en fin de journée.");
   expect(ligneEnAttente(2)).toBe("2 tâches d'avant attendent leur place. Naya les replace en fin de journée.");
+});
+
+describe("doitAllerALOnboarding", () => {
+  it("réponse reçue sans ADN de marque (null) → onboarding", () =>
+    expect(doitAllerALOnboarding({ isSuccess: true, data: null })).toBe(true));
+  it("ADN de marque présent → on reste", () =>
+    expect(doitAllerALOnboarding({ isSuccess: true, data: { id: 1 } })).toBe(false));
+  it("requête en cours → on reste (pas de flash)", () =>
+    expect(doitAllerALOnboarding({ isSuccess: false, data: undefined })).toBe(false));
+  it("requête en erreur → on reste", () =>
+    expect(doitAllerALOnboarding({ isSuccess: false, data: undefined })).toBe(false));
 });
