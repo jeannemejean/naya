@@ -352,7 +352,7 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
         <div className="space-y-4">
           {sortants.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Cette marque nourrit</p>
+              <p className="text-xs text-muted-foreground">Cette marque nourrit</p>
               {sortants.map((lien) => (
                 <LienCard
                   key={lien.id}
@@ -367,7 +367,7 @@ export default function BrandLinksPanel({ projectId }: BrandLinksPanelProps) {
           )}
           {entrants.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Cette marque est nourrie par</p>
+              <p className="text-xs text-muted-foreground">Cette marque est nourrie par</p>
               {entrants.map((lien) => (
                 <LienCard
                   key={lien.id}

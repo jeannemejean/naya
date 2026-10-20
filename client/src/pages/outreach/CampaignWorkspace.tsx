@@ -3,6 +3,7 @@
 import { Link } from 'wouter';
 import { ArrowLeft, Users } from 'lucide-react';
 import Sidebar from '@/components/sidebar';
+import OngletsEspace from '@/components/navigation/OngletsEspace';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCampaign, useLeads } from './useOutreach';
@@ -34,6 +35,7 @@ export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspa
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        <OngletsEspace />
         <header className="bg-white border-b border-border px-6 py-4 flex-shrink-0">
           <Link
             href="/outreach"

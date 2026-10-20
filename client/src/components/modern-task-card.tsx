@@ -141,7 +141,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.625rem',
  fontWeight: 300,
- letterSpacing: '0.04em',
+ letterSpacing: '0.02em',
  color: 'var(--muted-foreground)',
  }}
  >
@@ -156,7 +156,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.625rem',
  fontWeight: 300,
- letterSpacing: '0.04em',
+ letterSpacing: '0.02em',
  color: 'var(--muted-foreground)',
  }}
  >
@@ -170,8 +170,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.5625rem',
  fontWeight: 400,
- letterSpacing: '0.1em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  color: 'var(--accent)',
  border: '1px solid var(--accent)',
  padding: '1px 5px',
@@ -188,8 +187,7 @@ export function ModernTaskCard({ task, onClick, onToggle }: ModernTaskCardProps)
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.5625rem',
  fontWeight: 300,
- letterSpacing: '0.1em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  color: 'var(--muted-foreground)',
  border: '1px solid var(--border)',
  padding: '1px 5px',

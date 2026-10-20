@@ -1184,7 +1184,7 @@ export default function Onboarding() {
  {/* Operating profile summary */}
  {(opProfile.energyRhythm || opProfile.planningStyle || opProfile.activationStyle) && (
  <div className="rounded-lg border border-[rgba(158,126,135,0.35)] bg-[rgba(158,126,135,0.12)] p-4">
- <p className="text-xs text-[#5c3d45] uppercase tracking-wider mb-2">{t('onboarding.howYouWorkSummary')}</p>
+ <p className="text-xs text-[#5c3d45] mb-2">{t('onboarding.howYouWorkSummary')}</p>
  <div className="flex flex-wrap gap-1.5">
  {opProfile.energyRhythm && <Badge variant="outline" className="text-xs border-[rgba(158,126,135,0.45)] text-[#5c3d45]">{opProfile.energyRhythm.replace(/-/g, ' ')}</Badge>}
  {opProfile.planningStyle && <Badge variant="outline" className="text-xs border-[rgba(158,126,135,0.45)] text-[#5c3d45]">{opProfile.planningStyle.replace(/-/g, ' ')} {t('onboarding.plannerSuffix')}</Badge>}
@@ -1196,7 +1196,7 @@ export default function Onboarding() {
 
  {/* Primary project */}
  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
- <p className="text-xs text-primary uppercase tracking-wider mb-2">{t('onboarding.primaryProjectSummary')}</p>
+ <p className="text-xs text-primary mb-2">{t('onboarding.primaryProjectSummary')}</p>
  <p className="font-semibold text-foreground ">{primary.name}</p>
  {primary.businessType && <p className="text-xs text-naya-cream0 mt-0.5">{primary.businessType.replace(/-/g, ' ')}</p>}
  {primary.initialGoalTitle && (
@@ -1213,7 +1213,7 @@ export default function Onboarding() {
  {/* Additional projects */}
  {additionalProjects.length > 0 && (
  <div className="rounded-lg border border-naya-olive-18 bg-naya-olive-06 p-4">
- <p className="text-xs text-naya-olive uppercase tracking-wider mb-2">{t('onboarding.additionalProjectsSummary')}</p>
+ <p className="text-xs text-naya-olive mb-2">{t('onboarding.additionalProjectsSummary')}</p>
  <div className="space-y-1.5">
  {additionalProjects.map(p => (
  <div key={p.id} className="flex items-center gap-2">

@@ -17,7 +17,7 @@ export default function DataDeletion() {
           <img src="/naya-mark-elephant.png" alt="Naya" className="w-16 h-16 object-contain" />
           <span className="wordmark text-sm">NAYA</span>
         </Link>
-        <Link href="/" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors tracking-[0.04em] cursor-pointer">
+        <Link href="/" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer">
           ← Retour
         </Link>
       </header>
@@ -25,13 +25,13 @@ export default function DataDeletion() {
       {/* Content */}
       <main className="max-w-2xl mx-auto px-6 sm:px-10 py-16 sm:py-24">
 
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-naya-olive-35 mb-8">
+        <p className="font-mono text-[11px] text-naya-olive-35 mb-8">
           Suppression des données
         </p>
 
         <h1
-          className="font-display font-light uppercase text-naya-olive leading-[1.1] mb-4"
-          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.07em" }}
+          className="font-display text-naya-olive leading-[1.1] mb-4"
+          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.02em" }}
         >
           Supprimer vos données.
         </h1>
@@ -44,7 +44,7 @@ export default function DataDeletion() {
 
           {code && (
             <section className="rounded-lg border border-naya-olive-18 bg-card p-5">
-              <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-3">
+              <h2 className="font-display text-[13px] text-naya-olive mb-3">
                 Demande reçue
               </h2>
               <p>
@@ -59,7 +59,7 @@ export default function DataDeletion() {
           )}
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Comment supprimer vos données
             </h2>
             <p className="mb-4">
@@ -80,7 +80,7 @@ export default function DataDeletion() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Ce qui est supprimé
             </h2>
             <p>
@@ -92,7 +92,7 @@ export default function DataDeletion() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Contact
             </h2>
             <p>

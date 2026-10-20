@@ -18,16 +18,17 @@ import Terms from "@/pages/terms";
 import DataDeletion from "@/pages/data-deletion";
 import Paywall from "@/pages/paywall";
 import Welcome from "@/pages/welcome";
-import Dashboard from "@/pages/dashboard";
+import Aujourdhui from "@/pages/aujourdhui";
 import NayaCompanion from "@/components/NayaCompanion";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import NouvelleVersionBanner from "@/components/NouvelleVersionBanner";
+import { AmbianceSaison } from "@/components/AmbianceSaison";
 
 // Écran de chargement neutre — affiché tant que l'auth se résout (jamais Landing ni 404).
 function LoadingScreen({ label = "Naya" }: { label?: string }) {
   return (
     <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: 'var(--background)' }}>
-      <span style={{ fontFamily: '"Montserrat", system-ui, sans-serif', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.15em', animation: 'fade-in 0.3s ease both' }}>
+      <span style={{ fontFamily: '"Montserrat", system-ui, sans-serif', fontSize: '1.5rem', color: 'var(--muted-foreground)', letterSpacing: '0.02em', animation: 'fade-in 0.3s ease both' }}>
         {label}
       </span>
     </div>
@@ -66,7 +67,7 @@ function Router() {
  qc.prefetchQuery({ queryKey: ["/api/projects?limit=200"] });
  }
  }, [isAuthenticated, qc]);
- // Bouton flottant Naya sur toutes les pages authentifiées (dashboard inclus)
+ // Bouton flottant Naya sur toutes les pages authentifiées, accueil « Aujourd'hui » compris
  // Rapport client (lien public) : page autonome, rien de Naya autour — ni à l'écran ni au PDF.
  const [location] = useLocation();
  const pagePublique = location.startsWith("/rapport/");
@@ -95,7 +96,7 @@ function Router() {
  ) : (
  <>
  <Route path="/">
- {() => <Dashboard onSearchClick={openSearch} />}
+ {() => <Aujourdhui onSearchClick={openSearch} />}
  </Route>
  <Route path="/onboarding" component={Onboarding} />
  <Route path="/content-calendar">
@@ -160,7 +161,7 @@ function Router() {
  <GlobalSearch open={isOpen} onOpenChange={setIsOpen} />
  )}
 
- {/* Companion IA — bouton flottant (absent du dashboard qui a sa propre barre) */}
+ {/* Companion IA — bouton flottant, sur toutes les pages authentifiées (accueil compris) */}
  {showFloatingCompanion && <NayaCompanion />}
  </>
  );
@@ -184,6 +185,7 @@ function App() {
  <ProjectProvider>
  <TooltipProvider>
  <Toaster />
+ <AmbianceSaison />
  <ErrorBoundary>
  <LanguageGate>
  <Router />

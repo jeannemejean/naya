@@ -12,7 +12,7 @@ export default function Terms() {
           <img src="/naya-mark-elephant.png" alt="Naya" className="w-16 h-16 object-contain" />
           <span className="wordmark text-sm">NAYA</span>
         </Link>
-        <Link href="/" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors tracking-[0.04em] cursor-pointer">
+        <Link href="/" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer">
           ← Retour
         </Link>
       </header>
@@ -20,13 +20,13 @@ export default function Terms() {
       {/* Content */}
       <main className="max-w-2xl mx-auto px-6 sm:px-10 py-16 sm:py-24">
 
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-naya-olive-35 mb-8">
+        <p className="font-mono text-[11px] text-naya-olive-35 mb-8">
           Conditions d'utilisation
         </p>
 
         <h1
-          className="font-display font-light uppercase text-naya-olive leading-[1.1] mb-4"
-          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.07em" }}
+          className="font-display text-naya-olive leading-[1.1] mb-4"
+          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.02em" }}
         >
           Les règles, simplement.
         </h1>
@@ -38,7 +38,7 @@ export default function Terms() {
         <div className="space-y-10 text-[15px] leading-[1.75] text-naya-olive-70">
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               1. Acceptation
             </h2>
             <p>
@@ -50,7 +50,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               2. Le service
             </h2>
             <p className="mb-4">
@@ -62,7 +62,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               3. Votre compte
             </h2>
             <p>
@@ -71,7 +71,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               4. Abonnement, essai et paiement
             </h2>
             <ul className="space-y-2 pl-4">
@@ -90,7 +90,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               5. Comptes tiers connectés
             </h2>
             <p className="mb-4">
@@ -102,7 +102,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               6. Usage acceptable
             </h2>
             <p className="mb-4">
@@ -124,7 +124,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               7. Contenu généré par IA
             </h2>
             <p>
@@ -133,7 +133,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               8. Propriété intellectuelle
             </h2>
             <p>
@@ -142,7 +142,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               9. Données personnelles
             </h2>
             <p>
@@ -157,7 +157,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               10. Garanties et responsabilité
             </h2>
             <p>
@@ -166,7 +166,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               11. Suspension et résiliation
             </h2>
             <p>
@@ -175,7 +175,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               12. Modifications
             </h2>
             <p>
@@ -184,7 +184,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               13. Droit applicable
             </h2>
             <p>
@@ -193,7 +193,7 @@ export default function Terms() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               14. Contact
             </h2>
             <p>

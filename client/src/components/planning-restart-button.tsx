@@ -93,7 +93,7 @@ export function PlanningRestartButton({ className, children, title }: PlanningRe
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-display uppercase tracking-xwide text-[11px]">
+            <AlertDialogTitle className="font-display text-[11px]">
               {t("planning.restartConfirmTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription className="text-[13px] text-naya-olive-55">
@@ -101,12 +101,12 @@ export function PlanningRestartButton({ className, children, title }: PlanningRe
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="font-display uppercase tracking-xwide text-[9px]">
+            <AlertDialogCancel className="font-display text-[9px]">
               {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => { setConfirmOpen(false); restartMutation.mutate(); }}
-              className="font-display uppercase tracking-xwide text-[9px] bg-naya-olive text-naya-cream hover:opacity-90"
+              className="font-display text-[9px] bg-naya-olive text-naya-cream hover:opacity-90"
             >
               {t("planning.restartConfirm")}
             </AlertDialogAction>

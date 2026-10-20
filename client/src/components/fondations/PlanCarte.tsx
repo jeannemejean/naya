@@ -47,7 +47,7 @@ export default function PlanCarte({ projectId, plan, statut, catalogues, onChang
           <Textarea className="text-xs min-h-[50px]" value={brouillon.resume} placeholder={t("fondations.plan.resume")} onChange={(e) => setBrouillon({ ...brouillon, resume: e.target.value })} />
           {MOTEURS.map((moteur) => (
             <div key={moteur} className="space-y-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t(`fondations.plan.moteurs.${moteur}`)}</p>
+              <p className="text-[11px] font-semibold text-muted-foreground">{t(`fondations.plan.moteurs.${moteur}`)}</p>
               {catalogues.briques.filter((b) => b.moteur === moteur).map((b) => {
                 const v = brique(brouillon, b.cle);
                 return (
@@ -79,7 +79,7 @@ export default function PlanCarte({ projectId, plan, statut, catalogues, onChang
             if (!briques.length) return null;
             return (
               <div key={moteur} className="space-y-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t(`fondations.plan.moteurs.${moteur}`)}</p>
+                <p className="text-[11px] font-semibold text-muted-foreground">{t(`fondations.plan.moteurs.${moteur}`)}</p>
                 {briques.map(({ cle, page, choix }) => (
                   <div key={cle} className="rounded-md border border-border px-3 py-2 space-y-0.5">
                     <div className="flex items-center gap-2 flex-wrap">

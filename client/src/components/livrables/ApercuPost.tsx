@@ -23,7 +23,7 @@ export function ApercuPost({ post }: { post: PostDeTache }) {
   return (
     <div className="rounded-lg border border-naya-olive-18 bg-naya-olive-06 p-3 space-y-2">
       <div className="flex items-baseline justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-wider text-naya-olive-35">{t("livrables.postTitle")}</p>
+        <p className="text-[10px] text-naya-olive-35">{t("livrables.postTitle")}</p>
         {quand && <p className="text-[11px] text-naya-olive-55">{t("livrables.postWhen", { date: quand })}</p>}
       </div>
       <p className="text-xs font-medium text-foreground">{post.title}</p>

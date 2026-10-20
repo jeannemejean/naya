@@ -26,7 +26,7 @@ interface SequenceStepCardProps {
   showConditionBadge?: boolean;
 }
 
-const FIELD_LABEL = 'text-[10px] font-medium uppercase tracking-wide text-naya-olive-55';
+const FIELD_LABEL = 'text-[10px] font-medium text-naya-olive-55';
 
 export default function SequenceStepCard({
   step,

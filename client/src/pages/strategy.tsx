@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { fetchJson, readJsonSafe } from "@/lib/fetchJson";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -299,6 +300,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
  <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
  <h1 className="text-2xl font-bold tracking-tight text-foreground">
@@ -477,7 +479,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  <div className="bg-naya-olive-06/50 rounded-lg p-4 space-y-4">
  {weeklyStrategy.insights.length > 0 && (
  <div>
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-2">
+ <p className="text-[10px] text-naya-olive-35 mb-2">
  {t('strategy.thisWeeksAngles')}
  </p>
  <div className="space-y-2">
@@ -493,7 +495,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
 
  {weeklyStrategy.recommendations.length > 0 && (
  <div>
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-2">
+ <p className="text-[10px] text-naya-olive-35 mb-2">
  {t('strategy.recommendedMoves')}
  </p>
  <div className="space-y-1.5">
@@ -520,7 +522,7 @@ export default function Strategy({ onSearchClick }: StrategyProps) {
  {/* Sub-card C: Direction this week */}
  {weeklyStrategy.nextWeekPlan && (
  <div className="bg-naya-olive-06/50 rounded-lg p-4">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-2">
+ <p className="text-[10px] text-naya-olive-35 mb-2">
  {t('strategy.directionThisWeek')}
  </p>
  <div className="space-y-2">
@@ -1160,7 +1162,7 @@ function TriggerCard({
 
  {isExpanded && tasksToUnlock.length > 0 && (
  <div className="mt-3 pt-3 border-t border-naya-olive-10 space-y-2">
- <p className="text-[11px] text-naya-olive-55 uppercase tracking-wide">
+ <p className="text-[11px] text-naya-olive-55">
  {t('strategy.tasksToUnlockHeader')}
  </p>
  {tasksToUnlock.map((task, i) => (

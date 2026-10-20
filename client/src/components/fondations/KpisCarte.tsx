@@ -67,7 +67,7 @@ export default function KpisCarte({ projectId, kpis, releves, kpiAuto, statut, e
         <div className="space-y-3">
           {etages.filter((e) => kpis.some((k) => k.etage === e)).map((e) => (
             <div key={e} className="space-y-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t(`fondations.kpis.etages.${e}`)}</p>
+              <p className="text-[11px] font-semibold text-muted-foreground">{t(`fondations.kpis.etages.${e}`)}</p>
               {kpis.filter((k) => k.etage === e).map((k) => <LigneKpi key={k.cle} projectId={projectId} kpi={k} releves={(k.source ? kpiAuto[k.cle] : releves[k.cle]) || []} onChange={onChange} />)}
             </div>
           ))}

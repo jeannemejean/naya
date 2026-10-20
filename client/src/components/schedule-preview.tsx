@@ -135,7 +135,7 @@ function TomorrowTab({ data }: { data: SchedulePreviewData }) {
 
  {unscheduled.length > 0 && (
  <div>
- <p className="text-[10px] text-naya-olive-35 uppercase tracking-wider mb-1.5">
+ <p className="text-[10px] text-naya-olive-35 mb-1.5">
  {t('schedulePreview.unscheduled')}
  </p>
  <div className="space-y-1.5">
@@ -160,7 +160,7 @@ function TomorrowTab({ data }: { data: SchedulePreviewData }) {
 
  {data.approachingDeadlines.length > 0 && (
  <div className="pt-2 border-t border-naya-olive-18 ">
- <p className="text-[10px] text-naya-sulphur uppercase tracking-wider mb-1.5 flex items-center gap-1">
+ <p className="text-[10px] text-naya-sulphur mb-1.5 flex items-center gap-1">
  <AlertCircle className="h-2.5 w-2.5" />
  {t('schedulePreview.approachingDeadlines')}
  </p>

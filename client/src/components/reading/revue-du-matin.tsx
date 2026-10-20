@@ -217,7 +217,7 @@ export function RevueDuMatin() {
   // montrer, jamais vide : une section « tu n'as rien gardé » serait un reproche.
   const sectionGardees = gardees.length > 0 && (
     <section className="mt-8" data-testid="fiches-gardees">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Ce que tu as gardé</h2>
+      <h2 className="text-sm font-medium text-muted-foreground mb-3">Ce que tu as gardé</h2>
       <div className="space-y-4">
         {gardees.map((c) => rendreFiche(c, { dejaGardee: true }))}
       </div>
@@ -228,7 +228,7 @@ export function RevueDuMatin() {
   if (duJour.length === 0) {
     return (
       <section className="mb-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Ce matin</h2>
+        <h2 className="text-sm font-medium text-muted-foreground mb-3">Ce matin</h2>
         <p className="text-sm text-muted-foreground">Rien qui mérite ton avis ce matin.</p>
         {sectionGardees}
         <div className="mt-3">
@@ -240,7 +240,7 @@ export function RevueDuMatin() {
 
   return (
     <section className="mb-8">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground mb-3">Ce matin</h2>
+      <h2 className="text-sm font-medium text-muted-foreground mb-3">Ce matin</h2>
       <div className="space-y-4">
         {duJour.map((c) => rendreFiche(c, { dejaGardee: false }))}
       </div>

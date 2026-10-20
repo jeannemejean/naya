@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { BrandDnaEditor } from "@/components/brand-dna-editor";
 import MilestoneRoadmap from "@/pages/project/MilestoneRoadmap";
+import { ActiveProjectBand, AllProjectsBand, ProjectStatusNote } from "@/components/accueil-retire/ActiveProjectBand";
 import type { Project, ProjectGoal, Client, Task } from "@shared/schema";
 
 const createClientSchema = (t: (k: string) => string) => z.object({
@@ -303,7 +305,7 @@ function ClientCard({ client, isExpanded, onToggle }: { client: Client, isExpand
  {isExpanded && (
  <CardContent className="p-4 pt-0 border-t bg-naya-olive-06/50 ">
  <div className="mt-4">
- <h4 className="text-xs text-naya-olive-35 uppercase tracking-wider mb-3">{t('projectsPage.clientTasks')}</h4>
+ <h4 className="text-xs text-naya-olive-35 mb-3">{t('projectsPage.clientTasks')}</h4>
  {isLoading ? (
  <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
  ) : tasks.length === 0 ? (
@@ -565,7 +567,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  const { t } = useTranslation();
  const queryClient = useQueryClient();
  const { toast } = useToast();
- const { setActiveProjectId } = useProject();
+ const { setActiveProjectId, activeProjectId, isAllProjects } = useProject();
  const [createOpen, setCreateOpen] = useState(false);
  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
  const [selectedColor, setSelectedColor] = useState(PROJECT_COLORS[0]);
@@ -719,6 +721,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
  <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
  <div className="flex items-center justify-between">
@@ -957,6 +960,18 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </header>
  <main className="flex-1 overflow-y-auto">
  <div className="p-8">
+ {/* En-tête de l'espace, venu de l'ancien accueil : bandeau du projet actif (ou de tous les
+     projets, avec l'alerte de surcharge) et « Dis à Naya où tu en es ». */}
+ {isAllProjects
+ ? <AllProjectsBand />
+ : activeProjectId
+ ? (
+ <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+ <div className="lg:col-span-2"><ActiveProjectBand projectId={activeProjectId} /></div>
+ <ProjectStatusNote projectId={activeProjectId} />
+ </div>
+ )
+ : null}
 
  {isLoading ? (
  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

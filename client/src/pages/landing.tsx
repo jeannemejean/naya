@@ -47,7 +47,7 @@ function WaitlistForm() {
   if (submitted) {
     return (
       <div className="py-6 space-y-3">
-        <p className="eyebrow text-[11px] tracking-[0.22em] text-naya-cream">
+        <p className="eyebrow text-[11px] text-naya-cream">
           {t("landing.waitlistConfirm")}
         </p>
         <p className="text-[14px] text-naya-cream/50 leading-relaxed">
@@ -60,7 +60,7 @@ function WaitlistForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div>
-        <label className="block font-mono text-[10px] uppercase tracking-[0.1em] text-naya-cream/40 mb-2">
+        <label className="block font-mono text-[10px] text-naya-cream/40 mb-2">
           {t("landing.waitlistEmailLabel")}
         </label>
         <input
@@ -73,7 +73,7 @@ function WaitlistForm() {
         />
       </div>
       <div>
-        <label className="block font-mono text-[10px] uppercase tracking-[0.1em] text-naya-cream/40 mb-2">
+        <label className="block font-mono text-[10px] text-naya-cream/40 mb-2">
           {t("landing.waitlistDescLabel")}
         </label>
         <input
@@ -104,7 +104,7 @@ function WaitlistForm() {
 // ── Section label ────────────────────────────────────────────────────────────
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-naya-olive-35 mb-12">
+    <p className="font-mono text-[11px] text-naya-olive-35 mb-12">
       {children}
     </p>
   );
@@ -153,12 +153,12 @@ export default function Landing() {
           <span className="wordmark text-base">NAYA</span>
         </div>
         <div className="flex items-center gap-6">
-          <span className="font-mono text-[11px] text-naya-olive-35 tracking-[0.04em] hidden sm:block">
+          <span className="font-mono text-[11px] text-naya-olive-35 hidden sm:block">
             {t("landing.heroMeta")}
           </span>
           <button
             onClick={() => openAuth("login")}
-            className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer tracking-[0.04em]"
+            className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer"
           >
             Connexion
           </button>
@@ -174,7 +174,7 @@ export default function Landing() {
 
       {/* ── ② Hero ───────────────────────────────────────────────────── */}
       <section className="px-6 sm:px-10 lg:px-16 pt-20 pb-24 sm:pt-28 sm:pb-32 w-full max-w-screen-xl mx-auto">
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-naya-olive-35 mb-10">
+        <p className="font-mono text-[11px] text-naya-olive-35 mb-10">
           {t("landing.heroEyebrow")}
         </p>
 
@@ -246,8 +246,8 @@ export default function Landing() {
 
         <div className="max-w-2xl mb-14">
           <h2
-            className="font-display font-light uppercase text-naya-olive leading-[1.12] mb-6"
-            style={{ fontSize: "clamp(1.5rem, 3.2vw, 2.4rem)", letterSpacing: "0.07em" }}
+            className="font-display text-naya-olive leading-[1.12] mb-6"
+            style={{ fontSize: "clamp(1.5rem, 3.2vw, 2.4rem)", letterSpacing: "0.02em" }}
           >
             {t("landing.mechaniqueH2")}
           </h2>
@@ -271,7 +271,7 @@ export default function Landing() {
             </span>
           </div>
 
-          <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-naya-cream/40 mb-3">
+          <p className="font-mono text-[10px] text-naya-cream/40 mb-3">
             {t("landing.mockupObjectiveLabel")}
           </p>
           <p className="font-sans font-medium text-naya-cream text-[20px] sm:text-[22px] leading-tight mb-2" style={{ letterSpacing: "-0.01em" }}>
@@ -284,7 +284,7 @@ export default function Landing() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {phases.map((phase, i) => (
               <div key={i} className="bg-naya-cream/5 rounded-xl p-5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-naya-cream/35 mb-3">
+                <p className="font-mono text-[10px] text-naya-cream/35 mb-3">
                   {phase.label}
                 </p>
                 <p className="text-naya-cream text-[14px] leading-snug mb-2 font-medium">
@@ -306,7 +306,7 @@ export default function Landing() {
             className="naya-paper-inverse rounded-2xl p-7 flex flex-col"
             style={{ boxShadow: "0 24px 60px -20px rgba(43,45,28,0.25)" }}
           >
-            <p className="font-mono text-[10px] text-naya-cream/30 tracking-[0.1em] uppercase mb-6">01</p>
+            <p className="font-mono text-[10px] text-naya-cream/30 mb-6">01</p>
             <h3 className="font-sans font-medium text-naya-cream text-[18px] sm:text-[20px] leading-[1.25] mb-3">
               {t("landing.case1Title")}
             </h3>
@@ -334,7 +334,7 @@ export default function Landing() {
             className="naya-paper-inverse rounded-2xl p-7 flex flex-col"
             style={{ boxShadow: "0 24px 60px -20px rgba(43,45,28,0.25)" }}
           >
-            <p className="font-mono text-[10px] text-naya-cream/30 tracking-[0.1em] uppercase mb-6">02</p>
+            <p className="font-mono text-[10px] text-naya-cream/30 mb-6">02</p>
             <h3 className="font-sans font-medium text-naya-cream text-[18px] sm:text-[20px] leading-[1.25] mb-3">
               {t("landing.case2Title")}
             </h3>
@@ -345,7 +345,7 @@ export default function Landing() {
               {([1, 2, 3] as const).map(n => (
                 <div key={n}>
                   <div className="bg-naya-cream/5 rounded px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-[0.08em] text-naya-cream/30 mb-1">
+                    <p className="font-mono text-[9px] text-naya-cream/30 mb-1">
                       {t(`landing.case2L${n}`)}
                     </p>
                     <p className="text-naya-cream/80">{t(`landing.case2V${n}`)}</p>
@@ -364,7 +364,7 @@ export default function Landing() {
             className="naya-paper-inverse rounded-2xl p-7 flex flex-col"
             style={{ boxShadow: "0 24px 60px -20px rgba(43,45,28,0.25)" }}
           >
-            <p className="font-mono text-[10px] text-naya-cream/30 tracking-[0.1em] uppercase mb-6">03</p>
+            <p className="font-mono text-[10px] text-naya-cream/30 mb-6">03</p>
             <h3 className="font-sans font-medium text-naya-cream text-[18px] sm:text-[20px] leading-[1.25] mb-3">
               {t("landing.case3Title")}
             </h3>
@@ -376,7 +376,7 @@ export default function Landing() {
                 {t("landing.case3Q")}
               </div>
               <div className="bg-naya-cream/5 rounded px-3 py-3">
-                <span className="inline-block bg-naya-mauve/60 text-naya-cream font-mono text-[9px] px-2 py-0.5 rounded tracking-[0.05em] uppercase mb-2">
+                <span className="inline-block bg-naya-mauve/60 text-naya-cream font-mono text-[9px] px-2 py-0.5 rounded mb-2">
                   {t("landing.case3Tag")}
                 </span>
                 <p className="text-naya-cream/70 text-[11px] leading-[1.6]">
@@ -397,8 +397,8 @@ export default function Landing() {
           {/* Text side */}
           <div>
             <h2
-              className="font-display font-light uppercase text-naya-olive leading-[1.12] mb-7"
-              style={{ fontSize: "clamp(1.5rem, 3vw, 2.2rem)", letterSpacing: "0.07em" }}
+              className="font-display text-naya-olive leading-[1.12] mb-7"
+              style={{ fontSize: "clamp(1.5rem, 3vw, 2.2rem)", letterSpacing: "0.02em" }}
             >
               {t("landing.positionH2")}
             </h2>
@@ -424,13 +424,13 @@ export default function Landing() {
                 className={`grid grid-cols-2 gap-6 py-5 ${i < compRows.length - 1 ? "border-b border-naya-cream/10" : ""}`}
               >
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-naya-cream/30 mb-2">
+                  <p className="font-mono text-[10px] text-naya-cream/30 mb-2">
                     {t("landing.compBefore")}
                   </p>
                   <p className="text-[14px] text-naya-cream/40 leading-snug">{row.before}</p>
                 </div>
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-naya-cream/30 mb-2">
+                  <p className="font-mono text-[10px] text-naya-cream/30 mb-2">
                     {t("landing.compAfter")}
                   </p>
                   <p className="text-[14px] text-naya-cream font-medium leading-snug">{row.after}</p>

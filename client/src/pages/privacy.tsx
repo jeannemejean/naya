@@ -12,7 +12,7 @@ export default function Privacy() {
           <img src="/naya-mark-elephant.png" alt="Naya" className="w-16 h-16 object-contain" />
           <span className="wordmark text-sm">NAYA</span>
         </Link>
-        <Link href="/" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors tracking-[0.04em] cursor-pointer">
+        <Link href="/" className="font-mono text-[11px] text-naya-olive-35 hover:text-naya-olive transition-colors cursor-pointer">
           ← Retour
         </Link>
       </header>
@@ -20,13 +20,13 @@ export default function Privacy() {
       {/* Content */}
       <main className="max-w-2xl mx-auto px-6 sm:px-10 py-16 sm:py-24">
 
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-naya-olive-35 mb-8">
+        <p className="font-mono text-[11px] text-naya-olive-35 mb-8">
           Politique de confidentialité
         </p>
 
         <h1
-          className="font-display font-light uppercase text-naya-olive leading-[1.1] mb-4"
-          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.07em" }}
+          className="font-display text-naya-olive leading-[1.1] mb-4"
+          style={{ fontSize: "clamp(1.6rem, 3.5vw, 2.6rem)", letterSpacing: "0.02em" }}
         >
           Vos données, en clair.
         </h1>
@@ -38,7 +38,7 @@ export default function Privacy() {
         <div className="space-y-10 text-[15px] leading-[1.75] text-naya-olive-70">
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Qui sommes-nous
             </h2>
             <p>
@@ -53,7 +53,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Données collectées — liste d'attente
             </h2>
             <ul className="space-y-2 pl-4">
@@ -74,7 +74,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Données collectées — application
             </h2>
             <p className="mb-4">
@@ -97,7 +97,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Comment nous utilisons les données des plateformes
             </h2>
             <p className="mb-4">
@@ -120,7 +120,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Sous-traitants et tiers
             </h2>
             <p className="mb-4">
@@ -142,7 +142,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Stockage et sécurité
             </h2>
             <p>
@@ -151,7 +151,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Durée de conservation
             </h2>
             <p>
@@ -160,7 +160,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Suppression de vos données
             </h2>
             <p>
@@ -172,7 +172,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Vos droits (RGPD)
             </h2>
             <p className="mb-4">
@@ -188,7 +188,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Cookies
             </h2>
             <p>
@@ -197,7 +197,7 @@ export default function Privacy() {
           </section>
 
           <section>
-            <h2 className="font-display text-[13px] uppercase tracking-[0.12em] text-naya-olive mb-4">
+            <h2 className="font-display text-[13px] text-naya-olive mb-4">
               Contact
             </h2>
             <p>

@@ -7,6 +7,7 @@ import { tenterUneFois } from "@/lib/one-shot-guard";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import GeneratingOverlay from "@/components/GeneratingOverlay";
 import RepenserCampagneDialog from "@/components/repenser-campagne-dialog";
 import { campagneRepensable } from "@/lib/repenser-campagne";
@@ -238,7 +239,7 @@ function CollapsibleSection({ title, children, defaultOpen = true }: { title: st
  return (
  <div>
  <button onClick={() => setOpen(!open)} className="flex items-center gap-2 w-full text-left mb-2">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 flex-1">{title}</p>
+ <p className="text-[10px] text-naya-olive-35 flex-1">{title}</p>
  {open ? <ChevronUp className="h-3 w-3 text-naya-olive-35" /> : <ChevronDown className="h-3 w-3 text-naya-olive-35" />}
  </button>
  {open && children}
@@ -292,12 +293,12 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
  <Card className=" ">
  <CardContent className="p-3 space-y-3">
  <div>
- <p className="text-[10px] text-naya-olive-35 uppercase mb-0.5">{t('campaigns.coreMessage')}</p>
+ <p className="text-[10px] text-naya-olive-35 mb-0.5">{t('campaigns.coreMessage')}</p>
  <p className="text-sm text-naya-olive-70 ">{mf.coreMessage}</p>
  </div>
  {mf.proofPoints && mf.proofPoints.length > 0 && (
  <div>
- <p className="text-[10px] text-naya-olive-35 uppercase mb-0.5">{t('campaigns.proofPoints')}</p>
+ <p className="text-[10px] text-naya-olive-35 mb-0.5">{t('campaigns.proofPoints')}</p>
  <ul className="space-y-0.5">
  {mf.proofPoints.map((pp, i) => (
  <li key={i} className="text-xs text-naya-olive-70 flex items-start gap-1.5">
@@ -309,17 +310,17 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
  )}
  <div className="grid grid-cols-2 gap-3">
  <div>
- <p className="text-[10px] text-naya-olive-35 uppercase mb-0.5">{t('campaigns.primaryCTA')}</p>
+ <p className="text-[10px] text-naya-olive-35 mb-0.5">{t('campaigns.primaryCTA')}</p>
  <p className="text-xs text-naya-olive-70">{mf.primaryCTA}</p>
  </div>
  <div>
- <p className="text-[10px] text-naya-olive-35 uppercase mb-0.5">{t('campaigns.secondaryCTA')}</p>
+ <p className="text-[10px] text-naya-olive-35 mb-0.5">{t('campaigns.secondaryCTA')}</p>
  <p className="text-xs text-naya-olive-70">{mf.secondaryCTA}</p>
  </div>
  </div>
  {mf.toneKeywords && mf.toneKeywords.length > 0 && (
  <div>
- <p className="text-[10px] text-naya-olive-35 uppercase mb-0.5">{t('campaigns.tone')}</p>
+ <p className="text-[10px] text-naya-olive-35 mb-0.5">{t('campaigns.tone')}</p>
  <div className="flex flex-wrap gap-1">
  {mf.toneKeywords.map((kw, i) => (
  <span key={i} className="px-2 py-0.5 rounded-full bg-naya-olive-06 text-[#354963] text-[10px]">{kw}</span>
@@ -329,7 +330,7 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
  )}
  {mf.thingsToAvoid && mf.thingsToAvoid.length > 0 && (
  <div>
- <p className="text-[10px] text-naya-olive-35 uppercase mb-0.5">{t('campaigns.avoid')}</p>
+ <p className="text-[10px] text-naya-olive-35 mb-0.5">{t('campaigns.avoid')}</p>
  <div className="flex flex-wrap gap-1">
  {mf.thingsToAvoid.map((item, i) => (
  <span key={i} className="px-2 py-0.5 rounded-full bg-[rgba(158,126,135,0.12)] text-[#5c3d45] text-[10px]">{item}</span>
@@ -412,7 +413,7 @@ function CampaignArchitectureSections({ campaign }: { campaign: Campaign }) {
  <div key={phaseNum}>
  <p className="text-[10px] text-naya-olive-55 mb-1">{t('campaigns.phase')} {phaseNum}</p>
  <div className="border border-naya-olive-18 rounded-lg overflow-hidden">
- <div className="grid grid-cols-3 gap-0 bg-naya-olive-06 px-3 py-1.5 text-[10px] text-naya-olive-55 uppercase">
+ <div className="grid grid-cols-3 gap-0 bg-naya-olive-06 px-3 py-1.5 text-[10px] text-naya-olive-55">
  <span>{t('campaigns.metric')}</span>
  <span>{t('campaigns.target')}</span>
  <span>{t('campaigns.howToMeasure')}</span>
@@ -459,7 +460,7 @@ function TasksByPhase({ tasks, editingTaskIdx, editTaskTitle, setEditingTaskIdx,
  {Object.entries(grouped).sort(([a], [b]) => Number(a) - Number(b)).map(([phaseNum, items]) => (
  <div key={phaseNum}>
  {hasPhases && Number(phaseNum) > 0 && (
- <p className="text-[10px] text-naya-olive-55 mb-1.5 uppercase">{translate('campaigns.phase')} {phaseNum}</p>
+ <p className="text-[10px] text-naya-olive-55 mb-1.5">{translate('campaigns.phase')} {phaseNum}</p>
  )}
  {items.map(({ task: t, originalIdx: i }) => {
  const EnergyIcon = ENERGY_ICONS[t.taskEnergyType] || Zap;
@@ -543,10 +544,10 @@ function DetailTasksByPhase({ campaignTasks, generatedTasks }: { campaignTasks: 
  {Object.entries(grouped).sort(([a], [b]) => Number(a) - Number(b)).map(([phaseNum, items]) => (
  <div key={phaseNum}>
  {hasPhases && Number(phaseNum) > 0 && (
- <p className="text-[10px] text-naya-olive-55 mb-1.5 uppercase">{t('campaigns.phase')} {phaseNum}</p>
+ <p className="text-[10px] text-naya-olive-55 mb-1.5">{t('campaigns.phase')} {phaseNum}</p>
  )}
  {hasPhases && Number(phaseNum) === 0 && items.length > 0 && (
- <p className="text-[10px] text-naya-olive-55 mb-1.5 uppercase">{t('campaigns.other')}</p>
+ <p className="text-[10px] text-naya-olive-55 mb-1.5">{t('campaigns.other')}</p>
  )}
  <div className="space-y-2">
  {items.map((t) => {
@@ -1121,6 +1122,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
  <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
  <div className="flex items-center justify-between">
@@ -1460,7 +1462,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  {/* Core Message */}
  {selectedCampaign.coreMessage && (
  <div className="bg-naya-olive-06 rounded-lg p-4 border-l-4 border-naya-salvia ">
- <p className="text-[10px] uppercase tracking-wider text-[#354963] mb-1">{t('campaigns.coreMessage')}</p>
+ <p className="text-[10px] text-[#354963] mb-1">{t('campaigns.coreMessage')}</p>
  <p className="text-sm text-naya-olive-70 leading-relaxed">{selectedCampaign.coreMessage}</p>
  </div>
  )}
@@ -1483,7 +1485,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  {/* Insights */}
  {selectedCampaign.insights && (selectedCampaign.insights as string[]).length > 0 && (
  <div className="space-y-2">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 ">{t('campaigns.strategicInsights')}</p>
+ <p className="text-[10px] text-naya-olive-35 ">{t('campaigns.strategicInsights')}</p>
  {(selectedCampaign.insights as string[]).map((insight, i) => (
  <div key={i} className="flex items-start gap-2.5">
  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${INSIGHT_COLORS[i % INSIGHT_COLORS.length]}`} />
@@ -1645,7 +1647,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  <p className="text-xs text-[#354963] ">{t('campaigns.campaignPausedLabel')}</p>
  {selectedCampaign.pauseNote && (
  <div className="rounded bg-naya-olive-10 px-2 py-1.5">
- <p className="text-[10px] uppercase tracking-wider text-naya-salvia mb-0.5">{t('campaigns.savedNote')}</p>
+ <p className="text-[10px] text-naya-salvia mb-0.5">{t('campaigns.savedNote')}</p>
  <p className="text-xs text-naya-olive-55 ">{selectedCampaign.pauseNote}</p>
  </div>
  )}
@@ -1675,7 +1677,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  { key: 'taskExecution' as const, label: t('campaigns.taskExecution'), value: reviewTaskExecution, set: setReviewTaskExecution },
  ]).map(dim => (
  <div key={dim.key}>
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-1">{dim.label}</p>
+ <p className="text-[10px] text-naya-olive-35 mb-1">{dim.label}</p>
  <div className="flex gap-1">
  {[1, 2, 3, 4, 5].map(star => (
  <button key={star} onClick={() => dim.set(star)} className={`text-lg transition-colors ${dim.value >= star ? 'text-naya-sulphur' : 'text-naya-olive-18 hover:text-naya-sulphur'}`}>★</button>
@@ -1702,7 +1704,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  { label: t('campaigns.taskExecution'), val: selectedCampaign.reviewTaskExecution },
  ]).map(dim => (
  <div key={dim.label} className="flex items-center justify-between">
- <span className="text-[10px] uppercase tracking-wider text-naya-olive-35">{dim.label}</span>
+ <span className="text-[10px] text-naya-olive-35">{dim.label}</span>
  <div className="flex gap-0.5">
  {[1, 2, 3, 4, 5].map(star => (
  <span key={star} className={`text-sm ${(dim.val || 0) >= star ? 'text-naya-sulphur' : 'text-naya-olive-18 '}`}>★</span>
@@ -1717,7 +1719,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  {/* Core Message */}
  {selectedCampaign.coreMessage && (
  <div className="bg-naya-olive-06 rounded-lg p-4 border-l-4 border-naya-salvia ">
- <p className="text-[10px] uppercase tracking-wider text-[#354963] mb-1">{t('campaigns.coreMessage')}</p>
+ <p className="text-[10px] text-[#354963] mb-1">{t('campaigns.coreMessage')}</p>
  <p className="text-sm text-naya-olive-70 leading-relaxed">{selectedCampaign.coreMessage}</p>
  </div>
  )}
@@ -1740,7 +1742,7 @@ export default function Campaigns({ onSearchClick }: CampaignsProps) {
  {/* Insights */}
  {selectedCampaign.insights && (selectedCampaign.insights as string[]).length > 0 && (
  <div className="space-y-2">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 ">{t('campaigns.strategicInsights')}</p>
+ <p className="text-[10px] text-naya-olive-35 ">{t('campaigns.strategicInsights')}</p>
  {(selectedCampaign.insights as string[]).map((insight, i) => (
  <div key={i} className="flex items-start gap-2.5">
  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${INSIGHT_COLORS[i % INSIGHT_COLORS.length]}`} />

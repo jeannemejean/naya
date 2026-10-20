@@ -3,6 +3,7 @@
 // (Task 8, kanban repensé — canal + progression).
 import { useTranslation } from 'react-i18next';
 import Sidebar from '@/components/sidebar';
+import OngletsEspace from '@/components/navigation/OngletsEspace';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useProspectionStatus } from './useOutreach';
 import ProspectionAccessBar from './dialogs/ProspectionAccessBar';
@@ -22,6 +23,7 @@ export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
       <Sidebar onSearchClick={onSearchClick} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
+        <OngletsEspace />
         {/* Header */}
         <header className="bg-white border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
           <div

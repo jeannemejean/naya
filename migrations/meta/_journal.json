@@ -225,6 +225,13 @@
       "when": 1791989755724,
       "tag": "0031_gray_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792141827467,
+      "tag": "0032_parallel_jazinda",
+      "breakpoints": true
     }
   ]
 }

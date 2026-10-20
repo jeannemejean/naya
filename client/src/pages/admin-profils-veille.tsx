@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -37,19 +38,22 @@ export default function AdminProfilsVeille({ onSearchClick }: { onSearchClick?: 
   return (
     <div className="flex h-screen">
       <Sidebar onSearchClick={onSearchClick} />
-      <main className="flex-1 overflow-y-auto p-6 space-y-6">
-        <h1 className="text-2xl font-semibold">{t("adminProfils.titre")}</h1>
-        <Card>
-          <CardHeader><CardTitle>{t("adminProfils.nouveau")}</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            <Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder={t("adminProfils.nom")} />
-            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("adminProfils.description")} />
-            <Button onClick={() => creer.mutate()} disabled={nom.trim().length < 2}>{t("adminProfils.creer")}</Button>
-          </CardContent>
-        </Card>
-        {data?.profils.map((p) => <CarteProfil key={p.id} p={p} plafond={data.plafond} onStatut={(statut) => majProfil.mutate({ id: p.id, statut })} onCompte={(id, statut) => majCompte.mutate({ id, statut })} onLancer={(etape) => lancer.mutate({ id: p.id, etape })} onRafraichir={rafraichir} onErreurCompte={surErreurCompte} />)}
-        <Etiquetage />
-      </main>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <OngletsEspace />
+        <main className="flex-1 overflow-y-auto p-6 space-y-6">
+          <h1 className="text-2xl font-semibold">{t("adminProfils.titre")}</h1>
+          <Card>
+            <CardHeader><CardTitle>{t("adminProfils.nouveau")}</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder={t("adminProfils.nom")} />
+              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("adminProfils.description")} />
+              <Button onClick={() => creer.mutate()} disabled={nom.trim().length < 2}>{t("adminProfils.creer")}</Button>
+            </CardContent>
+          </Card>
+          {data?.profils.map((p) => <CarteProfil key={p.id} p={p} plafond={data.plafond} onStatut={(statut) => majProfil.mutate({ id: p.id, statut })} onCompte={(id, statut) => majCompte.mutate({ id, statut })} onLancer={(etape) => lancer.mutate({ id: p.id, etape })} onRafraichir={rafraichir} onErreurCompte={surErreurCompte} />)}
+          <Etiquetage />
+        </main>
+      </div>
     </div>
   );
 }

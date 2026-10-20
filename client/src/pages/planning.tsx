@@ -19,7 +19,13 @@ import { useCocherAvecLivrable } from "@/hooks/useCocherAvecLivrable";
 import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import { PlanningRestartButton } from "@/components/planning-restart-button";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import TimeGrid from "@/components/time-grid";
+import PlanningStartBanner from "@/components/PlanningStartBanner";
+import ProjectSetupBanner from "@/components/accueil-retire/ProjectSetupBanner";
+import AppelRevue from "@/components/accueil-retire/AppelRevue";
+import OverdueTasks from "@/components/accueil-retire/OverdueTasks";
+import SelfCareBlock from "@/components/accueil-retire/SelfCareBlock";
 import type { Project } from "@shared/schema";
 import { formatLocalDate } from "@/lib/dateUtils";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
@@ -470,7 +476,7 @@ export default function Planning({ onSearchClick }: Props) {
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             {energyBadge && (
               <span
-                className={`font-display uppercase tracking-xwide text-[9px] px-1.5 py-0.5 rounded-pill border ${energyBadge.cls}`}
+                className={`font-display text-[9px] px-1.5 py-0.5 rounded-pill border ${energyBadge.cls}`}
               >
                 {energyBadge.symbol} {energyBadge.label}
               </span>
@@ -501,13 +507,14 @@ export default function Planning({ onSearchClick }: Props) {
     <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <OngletsEspace />
         <div className="flex-1 flex flex-col min-h-0 bg-card">
 
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-naya-olive-10 flex-shrink-0">
             <div className="flex items-center gap-5">
               <div>
-                <h1 className="font-display uppercase tracking-xwide text-[11px] text-foreground">{t('planning.title')}</h1>
+                <h1 className="font-display text-[11px] text-foreground">{t('planning.title')}</h1>
                 <p className="text-xs text-naya-olive-55 mt-0.5">{headerLabel}</p>
               </div>
               <div className="flex items-center gap-px bg-naya-olive-06 border border-naya-olive-10 rounded-sm p-0.5">
@@ -515,7 +522,7 @@ export default function Planning({ onSearchClick }: Props) {
                   <button
                     key={v}
                     onClick={() => setViewScope(v)}
-                    className={`font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-xs transition-colors cursor-pointer ${
+                    className={`font-display text-[9px] px-3 py-1.5 rounded-xs transition-colors cursor-pointer ${
                       viewScope === v
                         ? 'bg-naya-olive text-naya-cream'
                         : 'text-naya-olive-55 hover:text-naya-olive'
@@ -535,7 +542,7 @@ export default function Planning({ onSearchClick }: Props) {
               </button>
               <button
                 onClick={() => setSelectedDate(new Date())}
-                className="font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-xs text-naya-olive-55 hover:bg-naya-olive-10 hover:text-naya-olive transition-colors cursor-pointer"
+                className="font-display text-[9px] px-3 py-1.5 rounded-xs text-naya-olive-55 hover:bg-naya-olive-10 hover:text-naya-olive transition-colors cursor-pointer"
               >
                 {t('common.today')}
               </button>
@@ -553,7 +560,7 @@ export default function Planning({ onSearchClick }: Props) {
                 <button
                   onClick={() => resumeMutation.mutate()}
                   disabled={resumeMutation.isPending}
-                  className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm bg-naya-sulphur/20 border border-naya-sulphur/40 text-naya-olive hover:bg-naya-sulphur/30 transition-colors cursor-pointer disabled:opacity-50"
+                  className="flex items-center gap-1.5 font-display text-[9px] px-3 py-1.5 rounded-sm bg-naya-sulphur/20 border border-naya-sulphur/40 text-naya-olive hover:bg-naya-sulphur/30 transition-colors cursor-pointer disabled:opacity-50"
                 >
                   <span className="text-[10px]">▶</span>
                   {t('planning.resume')}
@@ -562,13 +569,13 @@ export default function Planning({ onSearchClick }: Props) {
                 <button
                   onClick={() => pauseMutation.mutate()}
                   disabled={pauseMutation.isPending}
-                  className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer disabled:opacity-50"
+                  className="flex items-center gap-1.5 font-display text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer disabled:opacity-50"
                 >
                   <span className="text-[10px]">◑</span>
                   {t('planning.pause')}
                 </button>
               )}
-              <PlanningRestartButton className="flex items-center gap-1.5 font-display uppercase tracking-xwide text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer disabled:opacity-50">
+              <PlanningRestartButton className="flex items-center gap-1.5 font-display text-[9px] px-3 py-1.5 rounded-sm border border-naya-olive-18 text-naya-olive-55 hover:text-naya-olive hover:border-naya-olive-35 transition-colors cursor-pointer disabled:opacity-50">
                 <span className="text-[10px]">◈</span>
                 {t('planning.restart')}
               </PlanningRestartButton>
@@ -578,18 +585,31 @@ export default function Planning({ onSearchClick }: Props) {
           {/* Paused banner */}
           {preferences?.planningStatus === 'paused' && (
             <div className="px-5 py-2.5 bg-naya-sulphur/10 border-b border-naya-sulphur/20 flex items-center justify-between">
-              <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55">
+              <p className="font-display text-[9px] text-naya-olive-55">
                 {t('planning.pausedBanner')}
               </p>
               <button
                 onClick={() => resumeMutation.mutate()}
-                className="font-display uppercase tracking-xwide text-[9px] text-naya-olive underline cursor-pointer hover:no-underline"
+                className="font-display text-[9px] text-naya-olive underline cursor-pointer hover:no-underline"
               >
                 {t('planning.resume')}
               </button>
             </div>
           )}
 
+          {/* Venus de l'ancien accueil : bannières, appel à la lecture du jour, tâches jamais
+              planifiées, moment pour soi. Bornée en hauteur pour laisser la place au calendrier. */}
+          <div className="px-5 pt-4 flex-shrink-0 max-h-[35vh] overflow-y-auto border-b border-naya-olive-10">
+            <PlanningStartBanner />
+            <ProjectSetupBanner />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <AppelRevue />
+                <OverdueTasks />
+              </div>
+              <div className="mb-4"><SelfCareBlock /></div>
+            </div>
+          </div>
 
           {/* Body */}
           {rangeLoading ? (
@@ -601,7 +621,7 @@ export default function Planning({ onSearchClick }: Props) {
             <div className="flex-1 overflow-auto p-4">
               <div className="grid grid-cols-7 mb-2">
                 {['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].map(d => (
-                  <div key={d} className="text-center font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 py-1">
+                  <div key={d} className="text-center font-display text-[9px] text-naya-olive-35 py-1">
                     {t(`planning.days.${d}`)}
                   </div>
                 ))}
@@ -685,7 +705,7 @@ export default function Planning({ onSearchClick }: Props) {
                     {lastStrategySignal.reasoning && (
                       <button
                         onClick={() => setStrategyExpanded(!strategyExpanded)}
-                        className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 hover:text-naya-olive flex-shrink-0 whitespace-nowrap cursor-pointer"
+                        className="font-display text-[9px] text-naya-olive-35 hover:text-naya-olive flex-shrink-0 whitespace-nowrap cursor-pointer"
                       >
                         {strategyExpanded ? t('planning.less') : 'Pourquoi ?'}
                       </button>
@@ -779,13 +799,13 @@ export default function Planning({ onSearchClick }: Props) {
                 {/* Daily feedback */}
                 {startDate === today && (tasksByDate[startDate] || []).length > 0 && !todayFeedbackStored && !dailyFeedbackGiven && (
                   <div className="p-3.5 border border-naya-olive-18 rounded-lg bg-naya-olive-06">
-                    <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55 mb-2">{t('planning.howDidTodayGo')}</p>
+                    <p className="font-display text-[9px] text-naya-olive-55 mb-2">{t('planning.howDidTodayGo')}</p>
                     <div className="flex gap-1.5 flex-wrap">
                       {DAILY_FEEDBACK_OPTIONS.map(opt => (
                         <button
                           key={opt.key}
                           onClick={() => handleDailyFeedback(opt.key)}
-                          className="font-display uppercase tracking-xwide text-[9px] px-2.5 py-1.5 rounded-sm border border-naya-olive-18 hover:border-naya-olive-35 hover:bg-naya-olive-10 transition-colors text-naya-olive-55 hover:text-naya-olive cursor-pointer"
+                          className="font-display text-[9px] px-2.5 py-1.5 rounded-sm border border-naya-olive-18 hover:border-naya-olive-35 hover:bg-naya-olive-10 transition-colors text-naya-olive-55 hover:text-naya-olive cursor-pointer"
                         >
                           {t(opt.labelKey)}
                         </button>
@@ -794,30 +814,30 @@ export default function Planning({ onSearchClick }: Props) {
                   </div>
                 )}
                 {startDate === today && (dailyFeedbackGiven || todayFeedbackStored) && dailyFeedbackThanks && (
-                  <p className="font-display uppercase tracking-xwide text-[9px] text-center text-naya-olive-35">{t('planning.thanksFeedback')}</p>
+                  <p className="font-display text-[9px] text-center text-naya-olive-35">{t('planning.thanksFeedback')}</p>
                 )}
 
                 {/* Strategy panel */}
                 {lastStrategySignal ? (
                   <div className="border border-naya-olive-18 rounded-lg bg-naya-olive-06 p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55">
+                      <span className="font-display text-[9px] text-naya-olive-55">
                         {t('planning.nayasReadToday')}
                       </span>
                       <span className="text-[9px] text-naya-olive-35">{lastStrategySignal.generatedAt}</span>
                     </div>
                     <div className="mb-3">
-                      <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.focus')}</p>
+                      <p className="font-display text-[9px] text-naya-olive-35 mb-1">{t('planning.focus')}</p>
                       <p className="text-xs text-foreground">{lastStrategySignal.focus}</p>
                     </div>
                     {lastStrategySignal.reasoning && (
                       <div className="mb-3">
-                        <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.whyTheseTasks')}</p>
+                        <p className="font-display text-[9px] text-naya-olive-35 mb-1">{t('planning.whyTheseTasks')}</p>
                         <p className={`text-xs text-naya-olive-70 leading-relaxed ${!strategyExpanded ? 'line-clamp-4' : ''}`}>
                           {lastStrategySignal.reasoning}
                         </p>
                         {lastStrategySignal.reasoning.length > 150 && (
-                          <button onClick={() => setStrategyExpanded(v => !v)} className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-55 hover:text-naya-olive mt-1 cursor-pointer">
+                          <button onClick={() => setStrategyExpanded(v => !v)} className="font-display text-[9px] text-naya-olive-55 hover:text-naya-olive mt-1 cursor-pointer">
                             {strategyExpanded ? t('planning.less') : t('planning.more')}
                           </button>
                         )}
@@ -826,20 +846,20 @@ export default function Planning({ onSearchClick }: Props) {
                     <div className="space-y-2">
                       {lastStrategySignal.bottleneck && (
                         <div className="bg-naya-olive-10 rounded-sm p-2">
-                          <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-0.5">{t('planning.bottleneck')}</p>
+                          <p className="font-display text-[9px] text-naya-olive-35 mb-0.5">{t('planning.bottleneck')}</p>
                           <p className="text-[10px] text-naya-olive-70">{lastStrategySignal.bottleneck}</p>
                         </div>
                       )}
                       {lastStrategySignal.suggestedNextMove && (
                         <div className="bg-naya-olive-10 rounded-sm p-2">
-                          <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-0.5">{t('planning.nextMove')}</p>
+                          <p className="font-display text-[9px] text-naya-olive-35 mb-0.5">{t('planning.nextMove')}</p>
                           <p className="text-[10px] text-naya-olive-70">{lastStrategySignal.suggestedNextMove}</p>
                         </div>
                       )}
                     </div>
                     {lastStrategySignal.skippedProjects && lastStrategySignal.skippedProjects.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-naya-olive-10">
-                        <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.projectsWithoutTasks')}</p>
+                        <p className="font-display text-[9px] text-naya-olive-35 mb-1">{t('planning.projectsWithoutTasks')}</p>
                         {lastStrategySignal.skippedProjects.map((sp, i) => (
                           <p key={i} className="text-[10px] text-naya-olive-55">{sp.name}: {sp.reason}</p>
                         ))}
@@ -848,7 +868,7 @@ export default function Planning({ onSearchClick }: Props) {
                   </div>
                 ) : (
                   <div className="border border-dashed border-naya-olive-18 rounded-lg p-5 text-center">
-                    <p className="font-display uppercase tracking-xwide text-[9px] text-naya-olive-35 mb-1">{t('planning.nayasStrategicRead')}</p>
+                    <p className="font-display text-[9px] text-naya-olive-35 mb-1">{t('planning.nayasStrategicRead')}</p>
                     <p className="text-[10px] text-naya-olive-35">{t('planning.generateToSee')}</p>
                   </div>
                 )}
@@ -859,7 +879,7 @@ export default function Planning({ onSearchClick }: Props) {
                   if (!unscheduled.length) return null;
                   return (
                     <div>
-                      <p className="text-[10px] text-naya-olive-55 uppercase tracking-wide mb-2">
+                      <p className="text-[10px] text-naya-olive-55 mb-2">
                         {t('planning.unscheduled')} ({unscheduled.length})
                       </p>
                       <div className="space-y-1.5">

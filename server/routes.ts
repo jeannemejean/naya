@@ -1,5 +1,7 @@
 import { savoirPourCampagne } from "./services/memory/savoir-campagne";
 import type { Express } from "express";
+import { saisonEffective, normaliserApparence } from "@shared/saisons";
+import { consigneMotDuMatin, phraseDeSecours, LONGUEUR_MAX_MOT } from "./services/brief-saison";
 import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
@@ -226,6 +228,7 @@ import {
 } from "./services/persona-intelligence";
 import multer from "multer";
 import { tachesARebalancer } from "./services/schedule-repack";
+import { assainirPatchPreferences } from "./services/apparence";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Helper: fetch project + persona context for AI generation
@@ -2306,7 +2309,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
   app.patch('/api/preferences', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const prefs = await storage.upsertUserPreferences(userId, req.body);
+      const prefs = await storage.upsertUserPreferences(userId, assainirPatchPreferences(req.body));
       res.json(prefs);
     } catch (error) {
       console.error("Error updating preferences:", error);
@@ -2652,6 +2655,10 @@ TA VOIX :
 
 IMPÉRATIF : réponds avec du JSON valide, et rien d'autre.`;
 
+      // Saison du jour (préférence d'apparence, fuseau de l'utilisatrice) pour le mot du matin.
+      const fuseauBrief = !prefs?.timezone || prefs.timezone === 'UTC' ? 'Europe/Paris' : prefs.timezone;
+      const saisonBrief = saisonEffective(normaliserApparence(prefs?.apparence), new Date(), fuseauBrief);
+
       const briefPrompt = `CE QUE TU SAIS D'ELLE :
 - Énergie aujourd'hui : ${energyLevel}
 ${emotionalContext ? `- Comment elle se sent : ${emotionalContext}` : ''}
@@ -2665,9 +2672,11 @@ ${carryoverLines.length > 0 ? `\nRESTANT D'HIER :\n${carryoverLines.join('\n')}`
 ${upcomingMilestone ? `\nÀ VENIR :\n- ${upcomingMilestone}` : ''}
 ${memoryBlock}
 
+${consigneMotDuMatin(saisonBrief)}
+
 Retourne du JSON valide (uniquement du JSON, rien d'autre) :
 {
-  "greeting": "1-2 phrases d'intro. Personnelle, directe, humaine. En français.",
+  "greeting": "2 phrases au plus, ${LONGUEUR_MAX_MOT} caractères au plus au total, sans salutation (l'écran dit déjà Bonjour). Personnelle, directe, humaine, avec une touche de saison. En français.",
   "topTasks": ["titre tâche 1", "titre tâche 2", "titre tâche 3"],
   "carryovers": ["tâche importante non faite hier — ou tableau vide"],
   "strategicReminder": "Une phrase reliant aujourd'hui à la vision. Si jalon proche, le mentionner.",
@@ -2708,11 +2717,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         res.json({ date: todayStr, content: briefContent, dismissed: false });
       } catch (aiError: any) {
         const fallbackBrief = {
-          greeting: energyLevel === 'depleted'
-            ? "It's okay to go gentle today. You're still showing up."
-            : energyLevel === 'low'
-            ? "Today's a lighter day — and that's fine. Focus on what matters most."
-            : `Ready to make today count. You have ${incompleteTasks.length} task${incompleteTasks.length !== 1 ? 's' : ''} lined up.`,
+          greeting: phraseDeSecours(energyLevel, saisonBrief),
           topTasks: briefCandidates.slice(0, 3).map((t: any) => t.title),
           carryovers: carryoverTasks.slice(0, 1).map((t: any) => t.title),
           strategicReminder: "Every small step compounds. Stay focused on what moves the needle.",

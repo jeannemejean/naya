@@ -84,8 +84,7 @@ export function ModernDashboardLayout({
  style={{
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.6875rem',
- letterSpacing: '0.06em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  fontWeight: 300,
  color: 'var(--muted-foreground)',
  marginTop: 4,
@@ -181,8 +180,7 @@ export function ModernDashboardLayout({
  style={{
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.625rem',
- letterSpacing: '0.12em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  fontWeight: 400,
  color: 'var(--muted-foreground)',
  }}
@@ -235,7 +233,7 @@ export function ModernDashboardLayout({
  height: 80,
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.6875rem',
- letterSpacing: '0.06em',
+ letterSpacing: '0.02em',
  color: 'var(--muted-foreground)',
  opacity: 0.5,
  }}

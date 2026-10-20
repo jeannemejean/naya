@@ -25,8 +25,8 @@ ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 const toastVariants = cva(
   [
     "group pointer-events-auto relative flex w-full items-start justify-between gap-3 overflow-hidden",
-    "rounded-lg border border-naya-olive-18 bg-naya-cream text-naya-olive",
-    "p-4 pl-5 shadow-lift",
+    "rounded-carte border-0 bg-card text-foreground",
+    "p-4 pl-5 shadow-cocon",
     "transition-all duration-base",
     "data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)]",
     "data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none",
@@ -75,7 +75,7 @@ const ToastAction = React.forwardRef<
     ref={ref}
     className={cn(
       "inline-flex h-7 shrink-0 items-center justify-center",
-      "font-display uppercase tracking-xwide text-[10px]",
+      "font-display text-[10px]",
       "text-naya-olive border-b border-naya-olive-35 hover:border-naya-olive",
       "transition-colors duration-base ease-quiet",
       "focus:outline-none disabled:pointer-events-none disabled:opacity-50",
@@ -112,7 +112,7 @@ const ToastTitle = React.forwardRef<
   <ToastPrimitives.Title
     ref={ref}
     className={cn(
-      "font-display uppercase tracking-xwide text-[11px] text-naya-olive mb-1",
+      "font-display text-[11px] text-naya-olive mb-1",
       className,
     )}
     {...props}

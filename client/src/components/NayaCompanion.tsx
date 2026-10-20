@@ -419,8 +419,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
  style={{
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.625rem',
- letterSpacing: '0.08em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  fontWeight: 300,
  color: 'var(--muted-foreground)',
  opacity: 0.6,
@@ -461,7 +460,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
  fontFamily: '"Montserrat", system-ui, sans-serif',
  fontSize: '0.9rem',
  color: 'var(--muted-foreground)',
- letterSpacing: '0.1em',
+ letterSpacing: '0.02em',
  }}
  >
  · · ·
@@ -506,8 +505,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
  style={{
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.5625rem',
- letterSpacing: '0.08em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  fontWeight: 300,
  color: 'var(--accent)',
  display: 'flex',
@@ -684,8 +682,7 @@ export function NayaCompanionBar() {
  style={{
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.5625rem',
- letterSpacing: '0.1em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  fontWeight: 300,
  color: 'var(--primary-foreground)',
  opacity: 0.6,
@@ -757,9 +754,9 @@ export default function NayaCompanion() {
 
  return (
  <>
- {/* Bouton flottant Naya */}
+ {/* Bouton flottant Naya — sous 768 px, remonté au-dessus de la pilule de navigation du bas */}
  {!open && (
- <div className="fixed bottom-6 right-6 z-50">
+ <div className="fixed bottom-[88px] md:bottom-6 right-6 z-50">
  <div className="relative">
  <button
  onClick={() => setOpen(true)}
@@ -856,8 +853,7 @@ export default function NayaCompanion() {
  style={{
  fontFamily: '"IBM Plex Mono", monospace',
  fontSize: '0.5625rem',
- letterSpacing: '0.1em',
- textTransform: 'uppercase',
+ letterSpacing: '0.02em',
  fontWeight: 300,
  color: 'var(--primary-foreground)',
  opacity: 0.6,

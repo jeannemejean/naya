@@ -61,7 +61,7 @@ export default function LeadFinderDialog({ campaign, onClose }: LeadFinderDialog
   );
   const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div className="space-y-1">
-      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</p>
+      <p className="text-[10px] font-semibold text-muted-foreground">{label}</p>
       {children}
     </div>
   );

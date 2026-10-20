@@ -102,7 +102,7 @@ export default function ResultsTab({ campaignId }: ResultsTabProps) {
 
       {/* ── Par étape ── */}
       <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-naya-olive-55">Par étape</h3>
+        <h3 className="text-xs font-semibold text-naya-olive-55">Par étape</h3>
         {steps.length === 0 ? (
           <p className="text-sm text-naya-olive-55">Aucune étape enregistrée pour cette campagne.</p>
         ) : (
@@ -134,7 +134,7 @@ export default function ResultsTab({ campaignId }: ResultsTabProps) {
 
       {/* ── Par canal ── */}
       <div className="space-y-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-naya-olive-55">Par canal</h3>
+        <h3 className="text-xs font-semibold text-naya-olive-55">Par canal</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {CHANNEL_ROWS.map((channelId) => {
             const meta = channelMeta(channelId);

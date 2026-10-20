@@ -50,7 +50,7 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
       <main className="max-w-2xl mx-auto px-6 py-12 print:py-0">
         <div className="flex items-start justify-between gap-4 mb-10">
           <div>
-            {r.agence && <p className="text-xs uppercase tracking-widest text-neutral-500">{r.agence}</p>}
+            {r.agence && <p className="text-xs text-neutral-500">{r.agence}</p>}
             <h1 className="text-2xl font-semibold mt-1">{t("rapports.public.titre", { client: r.client })}</h1>
             <p className="text-sm text-neutral-600 capitalize">
               {new Date(`${r.mois}-15T12:00:00Z`).toLocaleDateString(langue, { month: "long", year: "numeric" })}
@@ -67,7 +67,7 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
 
         {(r.chiffres || r.contenus || r.prospection) && (
           <section className="mb-8">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">{t("rapports.public.chiffres")}</h2>
+            <h2 className="text-sm font-semibold text-neutral-500 mb-3">{t("rapports.public.chiffres")}</h2>
             <table className="w-full text-sm">
               <tbody>
                 {r.chiffres && CHIFFRES.filter((c) => r.chiffres!.indicateurs[c.cle] != null).map((c) => (
@@ -98,7 +98,7 @@ export default function RapportPublic({ params }: { params: { jeton: string } })
 
         {SECTIONS.filter((k) => r.sections?.[k]).map((k) => (
           <section key={k} className="mb-7 break-inside-avoid">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-2">{t(`rapports.sections.${k}`)}</h2>
+            <h2 className="text-sm font-semibold text-neutral-500 mb-2">{t(`rapports.sections.${k}`)}</h2>
             <p className="text-[15px] leading-relaxed whitespace-pre-line">{r.sections[k]}</p>
           </section>
         ))}

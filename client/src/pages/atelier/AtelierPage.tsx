@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { CalendarDays, CheckCheck, ChevronLeft, ChevronRight, PartyPopper } from "lucide-react";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
@@ -104,6 +105,7 @@ export default function AtelierPage({ onSearchClick }: { onSearchClick?: () => v
     <div className="flex h-screen bg-background">
       <Sidebar onSearchClick={onSearchClick} />
       <div className="flex-1 flex flex-col overflow-hidden">
+        <OngletsEspace />
         <header className="bg-card border-b border-border px-4 sm:px-6 py-4 flex-shrink-0 space-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <div className="min-w-0">

@@ -4,13 +4,13 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 /**
- * Naya tag / status chip — uppercase display caps, pill radius.
+ * Naya tag / status chip — display caps, pill radius.
  * One accent per visual surface; never two together.
  */
 const badgeVariants = cva(
   [
     "inline-flex items-center gap-1.5 px-2.5 py-1",
-    "rounded-pill font-display uppercase tracking-xwide text-[9px] font-normal",
+    "rounded-full font-display text-[9px] font-normal",
   ].join(" "),
   {
     variants: {

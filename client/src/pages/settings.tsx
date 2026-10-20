@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { useTheme } from "@/contexts/ThemeContext";
+import { useApparence } from "@/hooks/useApparence";
+import type { Apparence } from "@shared/saisons";
 import { apiRequest } from "@/lib/queryClient";
 import { oublierMarqueStockee } from "@/lib/marque-active-stockee";
 import { useToast } from "@/hooks/use-toast";
@@ -18,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Sun, Moon, LogOut, RefreshCw, AlertTriangle, User, Zap, Brain, Clock, Calendar, Loader2, CheckCircle2, Link2Off, ExternalLink , AlertCircle} from "lucide-react";
+import { Sun, LogOut, RefreshCw, AlertTriangle, User, Zap, Brain, Clock, Calendar, Loader2, CheckCircle2, Link2Off, ExternalLink , AlertCircle} from "lucide-react";
 import { useLocation } from "wouter";
 import type { UserOperatingProfile, UserPreferences } from "@shared/schema";
 
@@ -341,7 +342,7 @@ function SocialConnectionsCard() {
 export default function Settings({ onSearchClick }: SettingsProps) {
  const { t } = useTranslation();
  const { user, logout } = useAuth();
- const { theme, toggleTheme } = useTheme();
+ const { apparence, modifier: modifierApparence } = useApparence();
  const { toast } = useToast();
  const queryClient = useQueryClient();
  const [, setLocation] = useLocation();
@@ -583,24 +584,44 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </CardContent>
  </Card>
 
- {/* Appearance */}
+ {/* Ambiance : saison du décor, appliquée sur toute l'app */}
  <Card className=" ">
  <CardHeader>
  <CardTitle className="flex items-center gap-2 text-base">
- {theme === 'light' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />} {t('settings.theme')}
+ <Sun className="h-4 w-4" /> {t('settingsPage.ambiance.titre')}
  </CardTitle>
+ <CardDescription>{t('settingsPage.ambiance.description')}</CardDescription>
  </CardHeader>
- <CardContent>
+ <CardContent className="space-y-5">
+ <div className="space-y-2">
+ <Label htmlFor="ambiance-saison" className="text-sm">{t('settingsPage.ambiance.saison')}</Label>
+ <Select
+ value={apparence.saison}
+ onValueChange={(v) => modifierApparence({ saison: v as Apparence['saison'] })}
+ >
+ <SelectTrigger id="ambiance-saison" className="w-full sm:w-64">
+ <SelectValue />
+ </SelectTrigger>
+ <SelectContent>
+ <SelectItem value="auto">{t('settingsPage.ambiance.auto')}</SelectItem>
+ <SelectItem value="automne">{t('settingsPage.ambiance.automne')}</SelectItem>
+ <SelectItem value="hiver">{t('settingsPage.ambiance.hiver')}</SelectItem>
+ <SelectItem value="printemps">{t('settingsPage.ambiance.printemps')}</SelectItem>
+ <SelectItem value="ete">{t('settingsPage.ambiance.ete')}</SelectItem>
+ </SelectContent>
+ </Select>
+ </div>
  <div className="flex items-center justify-between">
  <div>
- <p className="text-sm text-foreground">{t('settings.dark')}</p>
- <p className="text-xs text-naya-olive-55">
- {theme === 'light' ? t('settings.light') : t('settings.dark')}
- </p>
+ <p id="ambiance-decor" className="text-sm text-foreground">{t('settingsPage.ambiance.decor')}</p>
+ <p id="ambiance-decor-aide" className="text-[13px] text-muted-foreground">{t('settingsPage.ambiance.decorAide')}</p>
  </div>
+ {/* Nom et description reliés : sinon un lecteur d'écran n'annonce qu'« interrupteur ». */}
  <Switch
- checked={theme === 'dark'}
- onCheckedChange={toggleTheme}
+ aria-labelledby="ambiance-decor"
+ aria-describedby="ambiance-decor-aide"
+ checked={apparence.decor}
+ onCheckedChange={(v) => modifierApparence({ decor: v })}
  />
  </div>
  </CardContent>

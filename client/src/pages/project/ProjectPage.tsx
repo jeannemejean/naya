@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Briefcase, ChevronDown, Compass, Gauge, LayoutGrid, Radar, Users } from "lucide-react";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { useProject } from "@/lib/project-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,8 @@ import PreuvesPanel from "./PreuvesPanel";
 import ConnexionsClientPanel from "./ConnexionsClientPanel";
 import RapportsClientPanel from "./RapportsClientPanel";
 import { FondationsProjet } from "@/pages/fondations";
+import AIRecommendations from "@/components/accueil-retire/AIRecommendations";
+import PersonaCard from "@/components/accueil-retire/PersonaCard";
 import { VeilleProjet } from "@/pages/veille";
 import { MesureProjet } from "@/pages/mesure";
 import { lienOnglet, ongletDe, ongletPourAutreProjet, type Onglet } from "./onglets";
@@ -62,6 +65,7 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
       {/* UN seul composant d'onglets pour l'en-tête et le contenu : chaque onglet est relié à
           son panneau (lecteurs d'écran, clavier). */}
       <Tabs value={onglet} onValueChange={changerOnglet} className="flex-1 flex flex-col overflow-hidden">
+        <OngletsEspace />
         <header className="bg-card border-b border-border px-6 pt-4 flex-shrink-0">
           <Link href="/projects" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
             <ArrowLeft className="w-4 h-4" />
@@ -147,9 +151,15 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                 <section><ConversionsPanel projectId={id} /></section>
                 <section><BrandLinksPanel projectId={id} /></section>
                 <section><LivrablesPanel projectId={id} /></section>
+                {/* Venues de l'ancien accueil (spec refonte cocon, « Ce qui quitte l'accueil »). */}
+                <section><AIRecommendations projectId={id} /></section>
               </TabsContent>
               {/* key : un autre projet repart de zéro (remplissage automatique compris). */}
-              <TabsContent value="fondations" className="mt-0"><FondationsProjet key={id} projectId={id} /></TabsContent>
+              <TabsContent value="fondations" className="mt-0 space-y-6">
+                <FondationsProjet key={id} projectId={id} />
+                {/* Archétype et persona cible, venus de l'ancien accueil : en bas des fondations. */}
+                <div className="max-w-5xl mx-auto"><PersonaCard key={id} projectId={id} /></div>
+              </TabsContent>
               <TabsContent value="veille" className="mt-0"><VeilleProjet key={id} projectId={id} /></TabsContent>
               <TabsContent value="mesure" className="mt-0"><MesureProjet key={id} projectId={id} /></TabsContent>
               {estClient && (

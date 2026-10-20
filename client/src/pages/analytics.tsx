@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
 import { throwIfResNotOk, is401 } from "@/lib/queryClient";
 import Sidebar from "@/components/sidebar";
+import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { Card, CardContent } from "@/components/ui/card";
 import {
  CheckCircle2, FileText, Rocket, Layers, Compass, BarChart3
@@ -133,6 +134,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
  <Sidebar onSearchClick={onSearchClick} />
 
  <div className="flex-1 flex flex-col overflow-hidden">
+ <OngletsEspace />
  <header className="bg-card border-b border-border px-6 py-4 relative overflow-hidden flex-shrink-0">
  <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: 'linear-gradient(90deg, #6C5CE7, #a78bfa, #fd79a8, #fdcb6e)' }} />
  <h1 className="text-2xl font-bold tracking-tight text-foreground">
@@ -260,7 +262,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
  <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
  <Card className="lg:col-span-3 ">
  <CardContent className="p-5">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-3">
+ <p className="text-[10px] text-naya-olive-35 mb-3">
  {t('analytics.weeklyCompletion')}
  </p>
  <div className="h-[200px]">
@@ -287,7 +289,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
 
  <Card className="lg:col-span-2 ">
  <CardContent className="p-5">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-3">
+ <p className="text-[10px] text-naya-olive-35 mb-3">
  {t('analytics.contentPipeline')}
  </p>
  <div className="space-y-3">
@@ -323,7 +325,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
  <Card className=" ">
  <CardContent className="p-5">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-3">
+ <p className="text-[10px] text-naya-olive-35 mb-3">
  {t('analytics.taskDistribution')}
  </p>
  {taskTypeData.length > 0 ? (
@@ -353,7 +355,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
 
  <Card className=" ">
  <CardContent className="p-5">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-3">
+ <p className="text-[10px] text-naya-olive-35 mb-3">
  {t('campaigns.title')}
  </p>
  {data.campaigns.active === 0 && data.campaigns.completed === 0 && data.campaigns.draft === 0 ? (
@@ -390,7 +392,7 @@ export default function Analytics({ onSearchClick }: AnalyticsProps) {
  {data.strategy ? (
  <Card className=" border-l-4 border-l-indigo-400 ">
  <CardContent className="p-5">
- <p className="text-[10px] uppercase tracking-wider text-naya-olive-35 mb-2">
+ <p className="text-[10px] text-naya-olive-35 mb-2">
  {t('analytics.strategicFocus')}
  </p>
  <p className="text-lg text-foreground mb-3">

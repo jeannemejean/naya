@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ADD COLUMN "apparence" jsonb DEFAULT '{"saison":"auto","decor":true}'::jsonb NOT NULL;
