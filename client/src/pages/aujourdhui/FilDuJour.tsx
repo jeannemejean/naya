@@ -39,7 +39,7 @@ export function FilDuJour({ taches, etat, enCoursId, enAttente, estOuvrable, onO
                   aria-hidden="true"
                   className={cn(
                     "mt-[9px] h-2 w-2 shrink-0 rounded-full",
-                    enCours ? "" : tache.completed ? "bg-muted-foreground/40" : "border border-muted-foreground",
+                    enCours ? "" : tache.completed ? "bg-[rgba(94,85,70,0.4)]" : "border border-muted-foreground",
                   )}
                   style={enCours ? { backgroundColor: "var(--touche-1)" } : undefined}
                 />
@@ -47,7 +47,7 @@ export function FilDuJour({ taches, etat, enCoursId, enAttente, estOuvrable, onO
                   <span
                     className={cn(
                       "line-clamp-2 break-words text-[16px] leading-[1.6]",
-                      tache.completed ? "text-muted-foreground line-through decoration-muted-foreground/50" : "text-foreground",
+                      tache.completed ? "text-muted-foreground line-through decoration-[rgba(94,85,70,0.5)]" : "text-foreground",
                       enCours && "font-semibold",
                     )}
                   >
@@ -70,7 +70,7 @@ export function FilDuJour({ taches, etat, enCoursId, enAttente, estOuvrable, onO
                   <button
                     type="button"
                     onClick={() => onOuvrir(tache)}
-                    className={cn(ligne, "transition-colors duration-150 hover:bg-muted/60 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
+                    className={cn(ligne, "transition-colors duration-150 hover:bg-[rgba(239,231,217,0.6)] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")}
                   >
                     {contenu}
                   </button>

@@ -74,9 +74,13 @@ function useCapsuleCampagne(aujourdhui: string): ReactNode {
   if (!c) return null;
   return (
     <Capsule key="campagne" href="/campaigns" style={{ background: "var(--motif)" }}>
-      <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.campagne")}</span>
-      <span className="line-clamp-2 break-words text-[13px] font-semibold leading-snug">{c.nom}</span>
-      <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.jusquau", { date: c.fin })}</span>
+      {/* Pastille couleur carte sous le texte : le motif reste visible autour, mais le texte
+          ne pose jamais sur ses croisements (≥ 4,5:1 dans les quatre saisons). */}
+      <span className="-mx-1.5 flex flex-col gap-0.5 rounded-champ bg-card px-1.5 py-1">
+        <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.campagne")}</span>
+        <span className="line-clamp-2 break-words text-[13px] font-semibold leading-snug">{c.nom}</span>
+        <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.jusquau", { date: c.fin })}</span>
+      </span>
     </Capsule>
   );
 }

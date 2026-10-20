@@ -128,6 +128,8 @@ function Petales() {
 
 // Taches de lumière dorée, floues, qui ondulent comme le soleil à travers un rideau.
 // Placées hors de la zone de texte (à gauche) : elles éclaircissent le fond, donc le contraste.
+// Sous 768 px, le texte occupe toute la largeur du héros (mesuré à 375 px : de bord à bord,
+// du haut jusqu'au bouton) : aucune place ne l'évite, les reflets y sont donc masqués.
 function Reflets() {
   const places = [
     { left: "30%", top: "6%", taille: 150 },
@@ -140,7 +142,7 @@ function Reflets() {
       {places.map((p, i) => (
         <span
           key={i}
-          className="decor-mobile decor-reflet"
+          className="decor-mobile decor-reflet max-md:hidden"
           style={vars({
             left: p.left,
             top: p.top,

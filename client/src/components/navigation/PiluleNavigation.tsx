@@ -78,7 +78,7 @@ export default function PiluleNavigation({ onSearchClick }: { onSearchClick?: ()
                   ROND,
                   estActif
                     ? "bg-[var(--fond)] text-primary"
-                    : "text-primary-foreground hover:bg-primary-foreground/15",
+                    : "text-primary-foreground hover:bg-[rgba(246,239,227,0.15)]",
                 )}
               >
                 <Icone className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
@@ -89,7 +89,7 @@ export default function PiluleNavigation({ onSearchClick }: { onSearchClick?: ()
         );
       })}
 
-      <span aria-hidden="true" className="hidden md:my-1 md:block md:h-px md:w-6 md:bg-primary-foreground/20" />
+      <span aria-hidden="true" className="hidden md:my-1 md:block md:h-px md:w-6 md:bg-[rgba(246,239,227,0.2)]" />
 
       {onSearchClick && (
         <Tooltip delayDuration={200}>
@@ -98,7 +98,7 @@ export default function PiluleNavigation({ onSearchClick }: { onSearchClick?: ()
               type="button"
               onClick={onSearchClick}
               aria-label={t("navigation.rechercher")}
-              className={cn(ROND, "text-primary-foreground hover:bg-primary-foreground/15")}
+              className={cn(ROND, "text-primary-foreground hover:bg-[rgba(246,239,227,0.15)]")}
             >
               <Search className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
             </button>
@@ -117,7 +117,7 @@ export default function PiluleNavigation({ onSearchClick }: { onSearchClick?: ()
                 ROND,
                 location === "/settings"
                   ? "bg-[var(--fond)] text-primary"
-                  : "bg-primary-foreground/15 text-primary-foreground hover:bg-primary-foreground/25",
+                  : "bg-[rgba(246,239,227,0.15)] text-primary-foreground hover:bg-[rgba(246,239,227,0.25)]",
               )}
             >
               <span className="text-[16px] font-semibold leading-none" aria-hidden="true">{initiale.toUpperCase()}</span>
