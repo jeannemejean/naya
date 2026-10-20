@@ -34,6 +34,7 @@ export function estTacheProspection(t: { actionData?: unknown }): boolean {
 export function capsuleCampagne(
   campagnes: Array<{ name: string; status: string | null; endDate: string | null }>,
   aujourdhui: string,
+  locale = "fr-FR",
 ): { nom: string; fin: string } | null {
   const candidates = campagnes
     .filter((c): c is typeof c & { endDate: string } => c.status === "active" && !!c.endDate && c.endDate >= aujourdhui)
@@ -41,7 +42,7 @@ export function capsuleCampagne(
   const c = candidates[0];
   if (!c) return null;
   // Midi UTC : le jour affiché ne bascule pas selon le fuseau.
-  const fin = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", timeZone: "UTC" })
+  const fin = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", timeZone: "UTC" })
     .format(new Date(`${c.endDate.slice(0, 10)}T12:00:00Z`));
   return { nom: c.name, fin };
 }

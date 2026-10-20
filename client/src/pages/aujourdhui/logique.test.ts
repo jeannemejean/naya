@@ -45,6 +45,11 @@ describe("capsuleCampagne", () => {
     expect(capsuleCampagne([{ name: "A", status: "active", endDate: null }], "2026-10-16")).toBeNull();
     expect(capsuleCampagne([], "2026-10-16")).toBeNull();
   });
+  it("date de fin dans la langue demandée, fr-FR par défaut", () => {
+    const c = [{ name: "A", status: "active", endDate: "2026-10-30" }];
+    expect(capsuleCampagne(c, "2026-10-16")?.fin).toBe("30 oct.");
+    expect(capsuleCampagne(c, "2026-10-16", "en-GB")?.fin).toBe("30 Oct");
+  });
 });
 
 describe("chiffreCle", () => {

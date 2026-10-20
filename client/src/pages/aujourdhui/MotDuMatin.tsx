@@ -1,25 +1,28 @@
 // Le mot du matin : le `greeting` du brief du jour. Jamais vide : la phrase de secours
 // tient la place pendant le chargement, en cas d'erreur ou de brief sans mot.
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { formatLocalDate } from "@/lib/dateUtils";
 
 type Brief = { date?: string; content?: { greeting?: string } | null } | null;
 
 const CLE = ["/api/tasks/daily-brief"];
 
+// Date (locale) du dernier POST tenté, au niveau du module : revenir sur « / » le même jour ne
+// relance pas la génération (un appel IA), même si le brief est revenu vide (pause, onboarding).
+let postTenteLe: string | null = null;
+
 export function MotDuMatin({ className }: { className?: string }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { data, isSuccess } = useQuery<Brief>({ queryKey: CLE, retry: false, throwOnError: false });
-  // Un seul POST par montage : la génération coûte un appel IA.
-  const demande = useRef(false);
-
   useEffect(() => {
-    if (!isSuccess || data?.content || demande.current) return;
-    demande.current = true;
+    const aujourdhui = formatLocalDate(new Date());
+    if (!isSuccess || data?.content || postTenteLe === aujourdhui) return;
+    postTenteLe = aujourdhui;
     apiRequest("POST", "/api/tasks/daily-brief", {})
       .then((r) => r.json())
       .then((reponse: Brief) => {

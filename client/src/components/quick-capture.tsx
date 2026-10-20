@@ -38,6 +38,8 @@ export default function QuickCapture({ variante = "carte" }: { variante?: "carte
 
   const { data: entries = [] } = useQuery<QuickCaptureEntry[]>({
     queryKey: ["/api/capture"],
+    // Une panne de la capture ne doit pas faire tomber la page qui l'héberge (l'accueil).
+    throwOnError: false,
     // Poll rapide UNIQUEMENT tant qu'il reste des captures en cours de classification IA ;
     // sinon poll lent. ET en pause totale quand l'onglet n'est pas visible.
     refetchInterval: (q) => {
@@ -51,6 +53,7 @@ export default function QuickCapture({ variante = "carte" }: { variante?: "carte
   const { data: milestoneTriggers = [] } = useQuery<MilestoneTrigger[]>({
     queryKey: ["/api/milestone-triggers"],
     refetchInterval: pageVisible ? 30000 : false, // en pause quand l'onglet n'est pas visible
+    throwOnError: false,
   });
 
   const createMutation = useMutation({
