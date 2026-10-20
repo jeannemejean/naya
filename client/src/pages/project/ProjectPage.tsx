@@ -24,6 +24,8 @@ import PreuvesPanel from "./PreuvesPanel";
 import ConnexionsClientPanel from "./ConnexionsClientPanel";
 import RapportsClientPanel from "./RapportsClientPanel";
 import { FondationsProjet } from "@/pages/fondations";
+import AIRecommendations from "@/components/accueil-retire/AIRecommendations";
+import PersonaCard from "@/components/accueil-retire/PersonaCard";
 import { VeilleProjet } from "@/pages/veille";
 import { MesureProjet } from "@/pages/mesure";
 import { lienOnglet, ongletDe, ongletPourAutreProjet, type Onglet } from "./onglets";
@@ -149,9 +151,15 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                 <section><ConversionsPanel projectId={id} /></section>
                 <section><BrandLinksPanel projectId={id} /></section>
                 <section><LivrablesPanel projectId={id} /></section>
+                {/* Venues de l'ancien accueil (spec refonte cocon, « Ce qui quitte l'accueil »). */}
+                <section><AIRecommendations projectId={id} /></section>
               </TabsContent>
               {/* key : un autre projet repart de zéro (remplissage automatique compris). */}
-              <TabsContent value="fondations" className="mt-0"><FondationsProjet key={id} projectId={id} /></TabsContent>
+              <TabsContent value="fondations" className="mt-0 space-y-6">
+                <FondationsProjet key={id} projectId={id} />
+                {/* Archétype et persona cible, venus de l'ancien accueil : en bas des fondations. */}
+                <div className="max-w-5xl mx-auto"><PersonaCard key={id} projectId={id} /></div>
+              </TabsContent>
               <TabsContent value="veille" className="mt-0"><VeilleProjet key={id} projectId={id} /></TabsContent>
               <TabsContent value="mesure" className="mt-0"><MesureProjet key={id} projectId={id} /></TabsContent>
               {estClient && (

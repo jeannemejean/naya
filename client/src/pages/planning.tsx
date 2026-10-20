@@ -21,6 +21,11 @@ import { PlanningRestartButton } from "@/components/planning-restart-button";
 import Sidebar from "@/components/sidebar";
 import OngletsEspace from "@/components/navigation/OngletsEspace";
 import TimeGrid from "@/components/time-grid";
+import PlanningStartBanner from "@/components/PlanningStartBanner";
+import ProjectSetupBanner from "@/components/accueil-retire/ProjectSetupBanner";
+import AppelRevue from "@/components/accueil-retire/AppelRevue";
+import OverdueTasks from "@/components/accueil-retire/OverdueTasks";
+import SelfCareBlock from "@/components/accueil-retire/SelfCareBlock";
 import type { Project } from "@shared/schema";
 import { formatLocalDate } from "@/lib/dateUtils";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
@@ -592,6 +597,19 @@ export default function Planning({ onSearchClick }: Props) {
             </div>
           )}
 
+          {/* Venus de l'ancien accueil : bannières, appel à la lecture du jour, tâches jamais
+              planifiées, moment pour soi. Bornée en hauteur pour laisser la place au calendrier. */}
+          <div className="px-5 pt-4 flex-shrink-0 max-h-[35vh] overflow-y-auto border-b border-naya-olive-10">
+            <PlanningStartBanner />
+            <ProjectSetupBanner />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2">
+                <AppelRevue />
+                <OverdueTasks />
+              </div>
+              <div className="mb-4"><SelfCareBlock /></div>
+            </div>
+          </div>
 
           {/* Body */}
           {rangeLoading ? (

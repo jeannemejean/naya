@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { BrandDnaEditor } from "@/components/brand-dna-editor";
 import MilestoneRoadmap from "@/pages/project/MilestoneRoadmap";
+import { ActiveProjectBand, AllProjectsBand, ProjectStatusNote } from "@/components/accueil-retire/ActiveProjectBand";
 import type { Project, ProjectGoal, Client, Task } from "@shared/schema";
 
 const createClientSchema = (t: (k: string) => string) => z.object({
@@ -566,7 +567,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  const { t } = useTranslation();
  const queryClient = useQueryClient();
  const { toast } = useToast();
- const { setActiveProjectId } = useProject();
+ const { setActiveProjectId, activeProjectId, isAllProjects } = useProject();
  const [createOpen, setCreateOpen] = useState(false);
  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
  const [selectedColor, setSelectedColor] = useState(PROJECT_COLORS[0]);
@@ -959,6 +960,18 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </header>
  <main className="flex-1 overflow-y-auto">
  <div className="p-8">
+ {/* En-tête de l'espace, venu de l'ancien accueil : bandeau du projet actif (ou de tous les
+     projets, avec l'alerte de surcharge) et « Dis à Naya où tu en es ». */}
+ {isAllProjects
+ ? <AllProjectsBand />
+ : activeProjectId
+ ? (
+ <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+ <div className="lg:col-span-2"><ActiveProjectBand projectId={activeProjectId} /></div>
+ <ProjectStatusNote projectId={activeProjectId} />
+ </div>
+ )
+ : null}
 
  {isLoading ? (
  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

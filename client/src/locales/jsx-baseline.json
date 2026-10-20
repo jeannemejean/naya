@@ -1,5 +1,9 @@
 {
   "client/src/App.tsx": 1,
+  "client/src/components/accueil-retire/ActiveProjectBand.tsx": 47,
+  "client/src/components/accueil-retire/OverdueTasks.tsx": 4,
+  "client/src/components/accueil-retire/PersonaCard.tsx": 15,
+  "client/src/components/accueil-retire/ProjectSetupBanner.tsx": 3,
   "client/src/components/auth-dialog.tsx": 19,
   "client/src/components/daily-focus-banner.tsx": 1,
   "client/src/components/milestone-chain.tsx": 7,
@@ -24,7 +28,6 @@
   "client/src/pages/analytics.tsx": 5,
   "client/src/pages/campaigns.tsx": 11,
   "client/src/pages/content-calendar.tsx": 24,
-  "client/src/pages/dashboard.tsx": 73,
   "client/src/pages/data-deletion.tsx": 18,
   "client/src/pages/landing.tsx": 10,
   "client/src/pages/onboarding.tsx": 5,
