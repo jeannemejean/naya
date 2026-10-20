@@ -24,7 +24,7 @@ export default {
           mauve:      "#9E7E87",
           "olive-90": "rgb(47 42 34 / 0.90)",
           "olive-70": "rgb(47 42 34 / 0.70)",
-          "olive-55": "rgb(47 42 34 / 0.55)",
+          "olive-55": "rgb(47 42 34 / 0.70)", // texte secondaire : ≥ 4,5:1 sur carte et fond de saison
           "olive-35": "rgb(47 42 34 / 0.35)",
           "olive-18": "rgb(47 42 34 / 0.18)",
           "olive-10": "rgb(47 42 34 / 0.10)",

@@ -53,7 +53,7 @@
   --destructive-foreground: #F7F4EC;
 
   /* ── Ring (focus) ── */
-  --ring: rgba(46, 42, 36, 0.45);
+  --ring: #2E2A24; /* ancre sombre : focus ≥ 3:1 sur carte et fond de saison */
 
   /* ── Border radius ── */
   --radius: 1.25rem;   /* 20px : cartes */
@@ -345,7 +345,7 @@
 
   .view-toggle-btn {
     padding: 4px 14px;
-    font-family: "Helvetica Neue", "Helvetica", "Inter", sans-serif;
+    font-family: "Nunito Sans", system-ui, -apple-system, sans-serif;
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--muted-foreground);
@@ -364,7 +364,7 @@
 
   /* ── Numbers / stats ── */
   .num-xl {
-    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
+    font-family: "Nunito Sans", system-ui, -apple-system, sans-serif;
     font-size: clamp(2.5rem, 5vw, 4rem);
     font-weight: 700;
     letter-spacing: -0.04em;
@@ -372,7 +372,7 @@
   }
 
   .num-lg {
-    font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
+    font-family: "Nunito Sans", system-ui, -apple-system, sans-serif;
     font-size: 2rem;
     font-weight: 700;
     letter-spacing: -0.03em;
@@ -529,39 +529,43 @@
    Inputs & Forms
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-textarea,
-select {
-  background: var(--input);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  outline: none;
-  font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
-  font-size: 0.875rem;
-  font-weight: 400;
-  color: var(--foreground);
-  padding: 8px 12px;
-  width: 100%;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
-}
+/* Dans @layer base et sous :where() (spécificité minimale) : ces valeurs par défaut
+   ne servent qu'aux champs nus ; les classes des composants ui et les utilitaires
+   Tailwind gardent toujours la main. */
+@layer base {
+  input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"])),
+  textarea,
+  select {
+    background: var(--input);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    outline: none;
+    font-family: "Nunito Sans", system-ui, -apple-system, sans-serif;
+    /* 16 px : en dessous, iOS zoome au focus */
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--foreground);
+    padding: 8px 12px;
+    width: 100%;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
 
-input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
-textarea:focus {
-  border-color: var(--foreground);
-  box-shadow: 0 0 0 3px rgba(43, 45, 28, 0.08);
-}
+  input:where(:not([type="checkbox"]):not([type="radio"]):not([type="range"])):focus,
+  textarea:focus {
+    border-color: var(--foreground);
+    box-shadow: 0 0 0 3px rgba(43, 45, 28, 0.08);
+  }
 
-input::placeholder,
-textarea::placeholder {
-  color: var(--muted-foreground);
-  opacity: 0.6;
-}
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+  }
 
-button {
-  font-family: "Helvetica Neue", "Helvetica", "Inter", system-ui, sans-serif;
-  font-weight: 500;
-  font-size: 0.875rem;
-  cursor: pointer;
+  /* Police, taille et graisse héritées : les boutons restent en Nunito Sans */
+  button {
+    cursor: pointer;
+  }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
