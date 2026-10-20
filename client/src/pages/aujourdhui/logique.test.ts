@@ -90,6 +90,7 @@ describe("doitAllerALOnboarding", () => {
     expect(doitAllerALOnboarding({ isSuccess: true, data: { id: 1 } })).toBe(false));
   it("requête en cours → on reste (pas de flash)", () =>
     expect(doitAllerALOnboarding({ isSuccess: false, data: undefined })).toBe(false));
+  // Même un null (dernière valeur connue) ne doit pas suffire sans réponse réussie.
   it("requête en erreur → on reste", () =>
-    expect(doitAllerALOnboarding({ isSuccess: false, data: undefined })).toBe(false));
+    expect(doitAllerALOnboarding({ isSuccess: false, data: null })).toBe(false));
 });

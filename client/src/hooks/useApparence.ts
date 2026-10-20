@@ -27,10 +27,32 @@ export function useApparence(enabled = true): {
   const fuseau = !prefs?.timezone || prefs.timezone === "UTC" ? FUSEAU_REPLI : prefs.timezone;
   const saison = saisonEffective(apparence, new Date(), fuseau);
 
+  type Prefs = { apparence?: unknown; timezone?: string | null };
+  const CLE = ["/api/preferences"];
+
+  // Mise à jour optimiste : le décor change tout de suite, et deux choix rapprochés
+  // (saison puis décor) ne s'écrasent pas en attendant le retour du serveur.
   const mutation = useMutation({
     mutationFn: (a: Apparence) => apiRequest("PATCH", "/api/preferences", { apparence: a }).then((r) => r.json()),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/preferences"] }),
+    onMutate: async (a: Apparence) => {
+      await queryClient.cancelQueries({ queryKey: CLE });
+      const avant = queryClient.getQueryData<Prefs>(CLE);
+      queryClient.setQueryData<Prefs>(CLE, (p) => ({ ...(p ?? {}), apparence: a }));
+      return { avant };
+    },
+    onError: (_e, _a, ctx) => {
+      // Retour arrière : on remet les préférences d'avant ce choix.
+      if (ctx) queryClient.setQueryData(CLE, ctx.avant);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: CLE }),
   });
 
-  return { apparence, saison, fuseau, modifier: (a) => mutation.mutate({ ...apparence, ...a }) };
+  // Fusion sur la valeur la plus récente du cache (pas celle du dernier rendu).
+  const modifier = (a: Partial<Apparence>) => {
+    const actuelle = queryClient.getQueryData<Prefs>(CLE);
+    const base = actuelle ? normaliserApparence(actuelle.apparence) : apparence;
+    mutation.mutate({ ...base, ...a });
+  };
+
+  return { apparence, saison, fuseau, modifier };
 }

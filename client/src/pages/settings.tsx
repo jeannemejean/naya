@@ -594,12 +594,12 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </CardHeader>
  <CardContent className="space-y-5">
  <div className="space-y-2">
- <Label className="text-sm">{t('settingsPage.ambiance.saison')}</Label>
+ <Label htmlFor="ambiance-saison" className="text-sm">{t('settingsPage.ambiance.saison')}</Label>
  <Select
  value={apparence.saison}
  onValueChange={(v) => modifierApparence({ saison: v as Apparence['saison'] })}
  >
- <SelectTrigger className="w-full sm:w-64">
+ <SelectTrigger id="ambiance-saison" className="w-full sm:w-64">
  <SelectValue />
  </SelectTrigger>
  <SelectContent>
@@ -613,10 +613,13 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </div>
  <div className="flex items-center justify-between">
  <div>
- <p className="text-sm text-foreground">{t('settingsPage.ambiance.decor')}</p>
- <p className="text-xs text-naya-olive-55">{t('settingsPage.ambiance.decorAide')}</p>
+ <p id="ambiance-decor" className="text-sm text-foreground">{t('settingsPage.ambiance.decor')}</p>
+ <p id="ambiance-decor-aide" className="text-[13px] text-muted-foreground">{t('settingsPage.ambiance.decorAide')}</p>
  </div>
+ {/* Nom et description reliés : sinon un lecteur d'écran n'annonce qu'« interrupteur ». */}
  <Switch
+ aria-labelledby="ambiance-decor"
+ aria-describedby="ambiance-decor-aide"
  checked={apparence.decor}
  onCheckedChange={(v) => modifierApparence({ decor: v })}
  />
