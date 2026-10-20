@@ -1,7 +1,7 @@
 import { savoirPourCampagne } from "./services/memory/savoir-campagne";
 import type { Express } from "express";
 import { saisonEffective, normaliserApparence } from "@shared/saisons";
-import { consigneMotDuMatin, phraseDeSecours } from "./services/brief-saison";
+import { consigneMotDuMatin, phraseDeSecours, LONGUEUR_MAX_MOT } from "./services/brief-saison";
 import { createServer, type Server } from "http";
 import crypto from "node:crypto";
 import { storage } from "./storage";
@@ -2676,7 +2676,7 @@ ${consigneMotDuMatin(saisonBrief)}
 
 Retourne du JSON valide (uniquement du JSON, rien d'autre) :
 {
-  "greeting": "2 phrases au plus, sans salutation (l'écran dit déjà Bonjour). Personnelle, directe, humaine, avec une touche de saison. En français.",
+  "greeting": "2 phrases au plus, ${LONGUEUR_MAX_MOT} caractères au plus au total, sans salutation (l'écran dit déjà Bonjour). Personnelle, directe, humaine, avec une touche de saison. En français.",
   "topTasks": ["titre tâche 1", "titre tâche 2", "titre tâche 3"],
   "carryovers": ["tâche importante non faite hier — ou tableau vide"],
   "strategicReminder": "Une phrase reliant aujourd'hui à la vision. Si jalon proche, le mentionner.",

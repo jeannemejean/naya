@@ -2,11 +2,15 @@ import type { Saison } from "@shared/saisons";
 
 const NOM: Record<Saison, string> = { automne: "automne", hiver: "hiver", printemps: "printemps", ete: "été" };
 
+// Longueur totale du mot du matin : l'accueil le coupe à 3 lignes, au-delà il finirait en « … ».
+export const LONGUEUR_MAX_MOT = 140;
+
 // Consigne ajoutée au prompt du brief : la saison reste une touche, jamais un cliché.
 // Pas de salutation : l'écran affiche déjà « Bonjour {prénom}. ».
 export function consigneMotDuMatin(saison: Saison): string {
   return `MOT DU MATIN : nous sommes en ${NOM[saison]}. Tu peux l'évoquer en une touche légère, jamais en cliché. `
-    + `Le champ "greeting" fait 2 phrases au plus, sans aucune formule de salutation (pas de « Bonjour », pas de « Salut ») : l'écran l'affiche déjà.`;
+    + `Le champ "greeting" fait 2 phrases au plus et ${LONGUEUR_MAX_MOT} caractères au plus au total, espaces compris, `
+    + `sans aucune formule de salutation (pas de « Bonjour », pas de « Salut ») : l'écran l'affiche déjà.`;
 }
 
 // Phrases de secours (IA indisponible), dans la voix de Naya : directes, au tutoiement.

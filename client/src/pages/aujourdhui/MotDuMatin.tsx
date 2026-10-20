@@ -33,8 +33,9 @@ export function MotDuMatin({ className }: { className?: string }) {
   }, [isSuccess, data, qc]);
 
   const mot = data?.content?.greeting?.trim() || t("accueil.motSecours");
+  // 3 lignes : le serveur demande 140 caractères au plus (brief-saison.ts), ça tient sans « … ».
   return (
-    <p className={cn("line-clamp-2 max-w-[42ch] text-[16px] leading-[1.6]", className)}>{mot}</p>
+    <p className={cn("line-clamp-3 max-w-[42ch] text-[16px] leading-[1.6]", className)}>{mot}</p>
   );
 }
 
