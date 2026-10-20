@@ -3017,6 +3017,7 @@ const fr = {
    placeholder: "Une idée, une note pour Naya…",
    envoyer: "Confier à Naya",
    notee: "Noté. Naya s'en occupe.",
+   tesNotes: "Tes notes ({{count}})",
   },
  },
 

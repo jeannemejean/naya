@@ -3013,6 +3013,7 @@ const en = {
    placeholder: "An idea, a note for Naya…",
    envoyer: "Hand it to Naya",
    notee: "Noted. Naya's on it.",
+   tesNotes: "Your notes ({{count}})",
   },
  },
 

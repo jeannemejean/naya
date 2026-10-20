@@ -10,7 +10,8 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { Zap, Plus, X } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Zap, Plus, X, ChevronDown } from "lucide-react";
 import type { QuickCaptureEntry, MilestoneTrigger } from "@shared/schema";
 
 const CLASSIFIED_TYPE_CONFIG: Record<string, { icon: string; label: string; colorClass: string; noteKey?: string }> = {
@@ -24,8 +25,9 @@ const CLASSIFIED_TYPE_CONFIG: Record<string, { icon: string; label: string; colo
   milestone_trigger:  { icon: "⬡",  label: "Trigger", colorClass: "bg-naya-olive-10 text-naya-olive border-naya-olive-18", noteKey: "nayaCreatedRule" },
 };
 
-// « carte » : le bloc complet du dashboard (champ + boîte de réception).
-// « pilule » : le seul champ, discret, pour l'accueil ; la réception reste au dashboard.
+// « carte » : le bloc complet de l'ancien dashboard (champ + boîte de réception).
+// « pilule » : le champ discret de l'accueil, suivi de la boîte de réception repliée
+// (« Tes notes (n) »), qui n'apparaît que s'il reste des notes à traiter.
 export default function QuickCapture({ variante = "carte" }: { variante?: "carte" | "pilule" }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -35,6 +37,7 @@ export default function QuickCapture({ variante = "carte" }: { variante?: "carte
   const [content, setContent] = useState("");
   const [classifyingIds, setClassifyingIds] = useState<Set<number>>(new Set());
   const [expandedMilestones, setExpandedMilestones] = useState<Set<number>>(new Set());
+  const [notesOuvertes, setNotesOuvertes] = useState(false);
 
   const { data: entries = [] } = useQuery<QuickCaptureEntry[]>({
     queryKey: ["/api/capture"],
@@ -97,6 +100,115 @@ export default function QuickCapture({ variante = "carte" }: { variante?: "carte
   const inboxEntries = entries.filter((e: any) => e.routingStatus !== "dismissed");
   const routedCount = inboxEntries.filter((e: any) => e.routingStatus === "routed").length;
 
+  // Ce que Naya a fait des notes, et de quoi les écarter : rendu par les deux variantes.
+  const listeNotes = (
+    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+      {inboxEntries.slice(0, 8).map((entry: any) => {
+        const isClassifying = classifyingIds.has(entry.id);
+        const ct = entry.classifiedType;
+        const config = ct ? CLASSIFIED_TYPE_CONFIG[ct] : undefined;
+        const isRouted = entry.routingStatus === "routed";
+        const isMilestone = ct === "milestone_trigger";
+        const milestoneId = isMilestone && entry.routedTo?.startsWith("milestone:")
+          ? parseInt(entry.routedTo.split(":")[1])
+          : null;
+        const linkedTrigger = milestoneId
+          ? milestoneTriggers.find((t: MilestoneTrigger) => t.id === milestoneId)
+          : null;
+        type UnlockedTask = { title: string; estimatedDuration?: number };
+        const tasksToUnlockList: UnlockedTask[] = linkedTrigger
+          ? (linkedTrigger.tasksToUnlock as UnlockedTask[]) || []
+          : [];
+        const unlockCount = tasksToUnlockList.length;
+        const isExpanded = expandedMilestones.has(entry.id);
+
+        return (
+          <div
+            key={entry.id}
+            className={`flex items-start gap-2 p-2 rounded-champ text-[13px] border transition-colors ${
+              isMilestone
+                ? "bg-naya-olive-10 border-naya-olive-18"
+                : isRouted
+                  ? "bg-naya-olive-06 border-naya-olive-10"
+                  : "bg-naya-olive-06 border-naya-olive-10"
+            }`}
+          >
+            <span aria-hidden="true" className="flex-shrink-0 mt-0.5 font-mono text-muted-foreground">
+              {isClassifying ? "…" : config?.icon || "—"}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-foreground line-clamp-2">
+                {entry.aiSummary || entry.content}
+              </p>
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                {isClassifying ? (
+                  <span className="text-[13px] text-muted-foreground italic">{t("dashboard.classifying")}</span>
+                ) : config ? (
+                  <span className={`text-[13px] px-1.5 py-0.5 rounded-pill border ${config.colorClass}`}>
+                    {config.label}
+                  </span>
+                ) : null}
+                {isMilestone && unlockCount > 0 && (
+                  <>
+                    <span className="text-[13px] px-1.5 py-0.5 rounded-pill bg-naya-olive-10 text-naya-olive border border-naya-olive-18">
+                      {t("dashboard.tasksWillUnlock", { count: unlockCount })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedMilestones(prev => {
+                        const next = new Set(prev);
+                        if (next.has(entry.id)) next.delete(entry.id);
+                        else next.add(entry.id);
+                        return next;
+                      })}
+                      className="text-[13px] text-foreground underline-offset-2 hover:underline font-semibold cursor-pointer"
+                    >
+                      {isExpanded ? t("dashboard.hideTasks") : t("dashboard.viewTasks")}
+                    </button>
+                  </>
+                )}
+                {isRouted && !isMilestone && (
+                  <span className="text-[13px] text-muted-foreground">{t("dashboard.addedToBoard")}</span>
+                )}
+              </div>
+              {isMilestone && isExpanded && tasksToUnlockList.length > 0 && (
+                <div className="mt-1.5 pl-1 space-y-1 border-l border-naya-olive-18 ml-1">
+                  {tasksToUnlockList.map((task, idx) => (
+                    <div key={idx} className="text-[13px] text-muted-foreground flex items-start gap-1">
+                      <span aria-hidden="true" className="mt-0.5">·</span>
+                      <div>
+                        <span className="font-semibold text-foreground">{task.title}</span>
+                        {task.estimatedDuration && (
+                          <span className="ml-1">({t("common.dureeMin", { n: task.estimatedDuration })})</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {config?.noteKey && !isMilestone && !isRouted && (
+                <p className="text-[13px] text-muted-foreground italic mt-0.5">{t(`dashboard.${config.noteKey}`)}</p>
+              )}
+              {isMilestone && config?.noteKey && (
+                <p className="text-[13px] text-muted-foreground italic mt-0.5">{t(`dashboard.${config.noteKey}`)}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => deleteMutation.mutate(entry.id)}
+              // Cible de 44 px, rognée par des marges négatives pour ne pas grossir la ligne.
+              className="-my-2.5 -mr-2 inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-foreground cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title={t("common.dismiss")}
+              aria-label={t("common.dismiss")}
+            >
+              <X aria-hidden="true" style={{ width: 14, height: 14 }} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   if (variante === "pilule") {
     return (
       <form
@@ -109,8 +221,7 @@ export default function QuickCapture({ variante = "carte" }: { variante?: "carte
             onChange={e => setContent(e.target.value)}
             placeholder={t("accueil.capture.placeholder")}
             aria-label={t("accueil.capture.placeholder")}
-            // « ! » : les styles globaux des champs (index.css, hors couche Tailwind) l'emportent sinon.
-            className="h-11 min-w-0 flex-1 !rounded-none !border-0 !bg-transparent !p-0 !font-[inherit] !text-[16px] text-foreground !shadow-none placeholder:text-muted-foreground placeholder:!opacity-100 focus:outline-none"
+            className="h-11 min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 text-[16px] text-foreground shadow-none placeholder:text-muted-foreground placeholder:opacity-100 focus:outline-none"
           />
           <button
             type="submit"
@@ -124,6 +235,30 @@ export default function QuickCapture({ variante = "carte" }: { variante?: "carte
         <p aria-live="polite" className="min-h-[1.25rem] pl-5 text-[13px] text-muted-foreground">
           {classifyingIds.size > 0 ? t("accueil.capture.notee") : null}
         </p>
+        {/* Discret et fermé par défaut ; n'existe que s'il reste des notes à traiter. */}
+        {inboxEntries.length > 0 && (
+          <Collapsible open={notesOuvertes} onOpenChange={setNotesOuvertes} className="pl-5">
+            <div className="flex flex-wrap items-center justify-between gap-x-3">
+              <CollapsibleTrigger className="-ml-2 inline-flex min-h-11 items-center gap-1.5 rounded-full px-2 text-[13px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <ChevronDown
+                  aria-hidden="true"
+                  className={`h-4 w-4 transition-transform duration-150 motion-reduce:transition-none ${notesOuvertes ? "rotate-180" : ""}`}
+                />
+                {t("accueil.capture.tesNotes", { count: inboxEntries.length })}
+              </CollapsibleTrigger>
+              {notesOuvertes && routedCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => clearRoutedMutation.mutate()}
+                  className="inline-flex min-h-11 items-center rounded-full px-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {t("dashboard.clearRouted", { count: routedCount })}
+                </button>
+              )}
+            </div>
+            <CollapsibleContent className="pt-1">{listeNotes}</CollapsibleContent>
+          </Collapsible>
+        )}
       </form>
     );
   }
@@ -177,109 +312,7 @@ export default function QuickCapture({ variante = "carte" }: { variante?: "carte
           </Button>
         </div>
 
-        {inboxEntries.length > 0 && (
-          <div className="space-y-1.5 max-h-48 overflow-y-auto">
-            {inboxEntries.slice(0, 8).map((entry: any) => {
-              const isClassifying = classifyingIds.has(entry.id);
-              const ct = entry.classifiedType;
-              const config = ct ? CLASSIFIED_TYPE_CONFIG[ct] : undefined;
-              const isRouted = entry.routingStatus === "routed";
-              const isMilestone = ct === "milestone_trigger";
-              const milestoneId = isMilestone && entry.routedTo?.startsWith("milestone:")
-                ? parseInt(entry.routedTo.split(":")[1])
-                : null;
-              const linkedTrigger = milestoneId
-                ? milestoneTriggers.find((t: MilestoneTrigger) => t.id === milestoneId)
-                : null;
-              type UnlockedTask = { title: string; estimatedDuration?: number };
-              const tasksToUnlockList: UnlockedTask[] = linkedTrigger
-                ? (linkedTrigger.tasksToUnlock as UnlockedTask[]) || []
-                : [];
-              const unlockCount = tasksToUnlockList.length;
-              const isExpanded = expandedMilestones.has(entry.id);
-
-              return (
-                <div
-                  key={entry.id}
-                  className={`flex items-start gap-2 p-2 rounded-lg text-xs border transition-colors ${
-                    isMilestone
-                      ? "bg-naya-olive-10 border-naya-olive-18"
-                      : isRouted
-                        ? "bg-naya-olive-06 border-naya-olive-10"
-                        : "bg-naya-olive-06 border-naya-olive-10"
-                  }`}
-                >
-                  <span className="flex-shrink-0 mt-0.5 font-mono text-naya-olive-55">
-                    {isClassifying ? "…" : config?.icon || "—"}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-naya-olive-70 line-clamp-2">
-                      {entry.aiSummary || entry.content}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      {isClassifying ? (
-                        <span className="text-[10px] text-naya-olive-35 italic">{t("dashboard.classifying")}</span>
-                      ) : config ? (
-                        <span className={`font-display text-[9px] px-1.5 py-0.5 rounded-pill border ${config.colorClass}`}>
-                          {config.label}
-                        </span>
-                      ) : null}
-                      {isMilestone && unlockCount > 0 && (
-                        <>
-                          <span className="font-display text-[9px] px-1.5 py-0.5 rounded-pill bg-naya-olive-10 text-naya-olive border border-naya-olive-18">
-                            {t("dashboard.tasksWillUnlock", { count: unlockCount })}
-                          </span>
-                          <button
-                            onClick={() => setExpandedMilestones(prev => {
-                              const next = new Set(prev);
-                              if (next.has(entry.id)) next.delete(entry.id);
-                              else next.add(entry.id);
-                              return next;
-                            })}
-                            className="text-[10px] text-naya-olive hover:underline font-medium cursor-pointer"
-                          >
-                            {isExpanded ? t("dashboard.hideTasks") : t("dashboard.viewTasks")}
-                          </button>
-                        </>
-                      )}
-                      {isRouted && !isMilestone && (
-                        <span className="text-[10px] text-naya-olive-55">{t("dashboard.addedToBoard")}</span>
-                      )}
-                    </div>
-                    {isMilestone && isExpanded && tasksToUnlockList.length > 0 && (
-                      <div className="mt-1.5 pl-1 space-y-1 border-l border-naya-olive-18 ml-1">
-                        {tasksToUnlockList.map((task, idx) => (
-                          <div key={idx} className="text-[10px] text-naya-olive-55 flex items-start gap-1">
-                            <span className="text-naya-olive-35 mt-0.5">·</span>
-                            <div>
-                              <span className="font-medium text-naya-olive-70">{task.title}</span>
-                              {task.estimatedDuration && (
-                                <span className="text-naya-olive-35 ml-1">({t("common.dureeMin", { n: task.estimatedDuration })})</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {config?.noteKey && !isMilestone && !isRouted && (
-                      <p className="text-[10px] text-naya-olive-35 italic mt-0.5">{t(`dashboard.${config.noteKey}`)}</p>
-                    )}
-                    {isMilestone && config?.noteKey && (
-                      <p className="text-[10px] text-naya-olive-35 italic mt-0.5">{t(`dashboard.${config.noteKey}`)}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => deleteMutation.mutate(entry.id)}
-                    className="text-naya-olive-18 hover:text-naya-olive-55 flex-shrink-0 mt-0.5 transition-colors cursor-pointer"
-                    title={t("common.dismiss")}
-                  >
-                    <X style={{ width: 12, height: 12 }} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {inboxEntries.length > 0 && listeNotes}
       </CardContent>
     </Card>
   );
