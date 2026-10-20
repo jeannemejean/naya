@@ -3,10 +3,12 @@ import { lienInterneDeTache } from "@/lib/lien-tache";
 
 export type TacheAccueil = {
   id: number; title: string; completed: boolean; scheduledTime: string | null;
-  priority: number | null; estimatedDuration: number | null; actionData?: unknown;
+  scheduledEndTime?: string | null; priority: number | null; estimatedDuration: number | null;
+  actionData?: unknown; projectId?: number | null;
 };
 
 const PRIORITE_PAR_DEFAUT = 5;
+const DUREE_PAR_DEFAUT = 30;
 
 // Avec heure d'abord (heure croissante, « HH:MM » se compare en texte), puis sans heure par priorité.
 function comparer(a: TacheAccueil, b: TacheAccueil): number {
@@ -16,9 +18,58 @@ function comparer(a: TacheAccueil, b: TacheAccueil): number {
   return (a.priority ?? PRIORITE_PAR_DEFAUT) - (b.priority ?? PRIORITE_PAR_DEFAUT);
 }
 
-/** La prochaine tâche non faite ; une heure déjà passée reste devant tant qu'elle n'est pas faite. */
-export function prochaineEtape<T extends TacheAccueil>(taches: T[]): T | null {
-  return [...taches.filter((x) => !x.completed)].sort(comparer)[0] ?? null;
+/** « HH:MM » → minutes depuis minuit ; null si l'heure est absente ou mal formée. */
+export function enMinutes(hhmm: string | null | undefined): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm ?? "");
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/** Fin d'une tâche à heure : son heure de fin, sinon début + durée (30 min par défaut). */
+function finEnMinutes(t: TacheAccueil): number | null {
+  const debut = enMinutes(t.scheduledTime);
+  if (debut === null) return null;
+  return enMinutes(t.scheduledEndTime) ?? debut + (t.estimatedDuration || DUREE_PAR_DEFAUT);
+}
+
+/** Heure locale « HH:MM » d'un instant. */
+export function heureLocale(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+export type MomentEtape = "maintenant" | "ensuite" | "sansHeure";
+
+/**
+ * La prochaine étape à `maintenant` (« HH:MM ») : jamais une tâche dont le créneau est déjà
+ * passé. D'abord celle qui occupe le créneau en cours, puis la prochaine à venir, puis les
+ * tâches sans heure par priorité. Une tâche passée non cochée reste dans le fil, mais n'est
+ * plus proposée comme « prochaine » : à 18 h 48, Naya ne renvoie pas à la tâche de 10 h 50.
+ */
+export function prochaineEtape<T extends TacheAccueil>(taches: T[], maintenant: string): { tache: T; moment: MomentEtape } | null {
+  const m = enMinutes(maintenant) ?? 0;
+  const ouvertes = [...taches.filter((x) => !x.completed)].sort(comparer);
+  const enCours = ouvertes.find((x) => {
+    const d = enMinutes(x.scheduledTime);
+    const f = finEnMinutes(x);
+    return d !== null && f !== null && d <= m && m < f;
+  });
+  if (enCours) return { tache: enCours, moment: "maintenant" };
+  const aVenir = ouvertes.find((x) => (enMinutes(x.scheduledTime) ?? -1) > m);
+  if (aVenir) return { tache: aVenir, moment: "ensuite" };
+  const sansHeure = ouvertes.find((x) => !x.scheduledTime);
+  return sansHeure ? { tache: sansHeure, moment: "sansHeure" } : null;
+}
+
+/** Tâches à heure dont le créneau est fini sans avoir été cochées. */
+export function nonCocheesPassees<T extends TacheAccueil>(taches: T[], maintenant: string): T[] {
+  const m = enMinutes(maintenant) ?? 0;
+  return taches.filter((x) => !x.completed && (finEnMinutes(x) ?? Infinity) <= m);
+}
+
+/** Position de la ligne « maintenant » dans le fil trié : avant la première tâche qui commence après. */
+export function indexMaintenant(fil: TacheAccueil[], maintenant: string): number {
+  const m = enMinutes(maintenant) ?? 0;
+  const i = fil.findIndex((x) => { const d = enMinutes(x.scheduledTime); return d === null || d > m; });
+  return i === -1 ? fil.length : i;
 }
 
 /** Toutes les tâches du jour, dans l'ordre du fil (l'entrée n'est pas modifiée). */

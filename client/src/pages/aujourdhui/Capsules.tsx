@@ -1,31 +1,37 @@
-// La rangée de capsules. Chacune charge ses données seule et disparaît si sa requête échoue
-// ou n'a rien à dire ; la rangée défile au trackpad, au doigt et au clavier (capsules = liens).
-// Sans aucune capsule, la section n'est pas rendue du tout.
+// « En un coup d'œil » : une carte, une ligne par repère (semaine, campagne, veille,
+// chiffres). Chaque ligne charge ses données seule et disparaît si sa requête échoue ou n'a
+// rien à dire ; sans aucune ligne, la carte n'est pas rendue du tout.
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
-import { cn } from "@/lib/utils";
+import { CalendarDays, ChevronRight, LineChart, Megaphone, Telescope, type LucideIcon } from "lucide-react";
 import { estEvenementAgenda } from "@/lib/agenda-api";
 import { capsuleCampagne, capsulesAffichables, chiffreCle } from "./logique";
 
 type TacheSemaine = { id: number; completed: boolean; type?: string; source?: string };
 
-function Capsule({ href, className, style, children }: {
-  href: string; className?: string; style?: React.CSSProperties; children: ReactNode;
+// Toutes les lignes ont la même grille : rond d'icône de 40 px, texte, chevron. Les icônes
+// tombent ainsi sur une seule colonne, quelle que soit la longueur des textes.
+function Capsule({ href, icone: Icone, titre, valeur, detail, children }: {
+  href: string; icone: LucideIcon; titre: string; valeur: ReactNode; detail?: ReactNode; children?: ReactNode;
 }) {
   return (
-    <li className="shrink-0 snap-start">
+    <li>
       <Link
         href={href}
-        style={style}
-        // Arrondi haut en dôme (moitié de la largeur), bas en arrondi de carte.
-        className={cn(
-          "flex h-[120px] w-[104px] flex-col justify-end gap-0.5 rounded-b-carte rounded-t-[52px] bg-card px-3 pb-3 text-foreground shadow-cocon transition-transform duration-150 hover:-translate-y-0.5 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          className,
-        )}
+        className="flex min-h-[64px] items-center gap-3 rounded-champ px-3 py-3 transition-colors duration-150 hover:bg-[rgba(239,231,217,0.55)] motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {children}
+        <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">
+          <Icone className="h-[18px] w-[18px]" strokeWidth={1.75} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] text-muted-foreground">{titre}</span>
+          <span className="block truncate text-[16px] font-semibold leading-snug text-foreground">{valeur}</span>
+          {detail && <span className="block truncate text-[13px] text-muted-foreground">{detail}</span>}
+          {children}
+        </span>
+        <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
       </Link>
     </li>
   );
@@ -54,10 +60,11 @@ function useCapsuleSemaine(lundi: string, dimanche: string, activeProjectId: num
   if (vraies.length === 0) return null;
   const faites = vraies.filter((x) => x.completed).length;
   return (
-    <Capsule key="semaine" href="/planning">
-      <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.semaine")}</span>
-      <span className="whitespace-nowrap text-[17px] font-semibold leading-tight">{t("accueil.capsules.semaineValeur", { faites, total: vraies.length })}</span>
-      <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.semaineDetail")}</span>
+    <Capsule key="semaine" href="/semaine" icone={CalendarDays} titre={t("accueil.capsules.semaine")}
+      valeur={t("accueil.capsules.semaineValeur", { faites, total: vraies.length })}>
+      <span aria-hidden="true" className="mt-2 block h-1.5 overflow-hidden rounded-full bg-muted">
+        <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.round((faites / vraies.length) * 100)}%` }} />
+      </span>
     </Capsule>
   );
 }
@@ -73,15 +80,8 @@ function useCapsuleCampagne(aujourdhui: string): ReactNode {
   const c = isSuccess && Array.isArray(data) ? capsuleCampagne(data, aujourdhui, locale) : null;
   if (!c) return null;
   return (
-    <Capsule key="campagne" href="/campaigns" style={{ background: "var(--motif)" }}>
-      {/* Pastille couleur carte sous le texte : le motif reste visible autour, mais le texte
-          ne pose jamais sur ses croisements (≥ 4,5:1 dans les quatre saisons). */}
-      <span className="-mx-1.5 flex flex-col gap-0.5 rounded-champ bg-card px-1.5 py-1">
-        <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.campagne")}</span>
-        <span className="line-clamp-2 break-words text-[13px] font-semibold leading-snug">{c.nom}</span>
-        <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.jusquau", { date: c.fin })}</span>
-      </span>
-    </Capsule>
+    <Capsule key="campagne" href="/campaigns" icone={Megaphone} titre={t("accueil.capsules.campagne")}
+      valeur={c.nom} detail={t("accueil.capsules.jusquau", { date: c.fin })} />
   );
 }
 
@@ -97,11 +97,8 @@ function useCapsuleVeille(projectId: number | null, actif: boolean): ReactNode {
   const nouvelles = actif && isSuccess && Array.isArray(data?.tendances) ? data!.tendances!.filter((x) => x.statut === "nouveau").length : 0;
   if (nouvelles === 0) return null;
   return (
-    <Capsule key="veille" href="/veille">
-      <span className="text-[13px] text-muted-foreground">{t("accueil.capsules.veille")}</span>
-      <span className="text-[22px] font-semibold leading-tight">{nouvelles}</span>
-      <span className="text-[13px] leading-snug text-muted-foreground">{t("accueil.capsules.tendances", { count: nouvelles })}</span>
-    </Capsule>
+    <Capsule key="veille" href="/veille" icone={Telescope} titre={t("accueil.capsules.veille")}
+      valeur={`${nouvelles} ${t("accueil.capsules.tendances", { count: nouvelles })}`} />
   );
 }
 
@@ -117,11 +114,8 @@ function useCapsuleChiffres(projectId: number | null, actif: boolean): ReactNode
   if (!chiffre) return null;
   const nom = t(`mesure.indicateurs.${chiffre.libelle}.nom`, { defaultValue: chiffre.libelle });
   return (
-    <Capsule key="chiffres" href="/mesure" className="bg-primary text-primary-foreground">
-      <span className="line-clamp-2 text-[13px] leading-snug">{nom}</span>
-      <span className="text-[22px] font-semibold leading-tight">{chiffre.variation}</span>
-      <span className="text-[13px]">{t("accueil.capsules.variation")}</span>
-    </Capsule>
+    <Capsule key="chiffres" href="/mesure" icone={LineChart} titre={nom}
+      valeur={chiffre.variation} detail={t("accueil.capsules.variation")} />
   );
 }
 
@@ -138,11 +132,9 @@ export function Capsules({ aujourdhui, lundi, dimanche, activeProjectId }: {
   ].filter(Boolean);
   if (capsules.length === 0) return null;
   return (
-    // Marges négatives : la rangée déborde jusqu'au bord droit de l'écran (indice de défilement).
-    <section aria-label={t("accueil.capsules.region")} className="-mr-4 sm:-mr-6 lg:mr-0">
-      <ul className="flex snap-x gap-3 overflow-x-auto overscroll-x-contain p-1 pb-3 pr-4 sm:pr-6 [scrollbar-width:thin]">
-        {capsules}
-      </ul>
+    <section aria-labelledby="capsules-titre" className="rounded-carte bg-card p-3 shadow-cocon">
+      <h2 id="capsules-titre" className="px-3 pb-1 pt-2 text-[13px] font-semibold text-muted-foreground">{t("accueil.capsules.region")}</h2>
+      <ul>{capsules}</ul>
     </section>
   );
 }

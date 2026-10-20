@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  prochaineEtape, trierFil, estTacheProspection, capsuleCampagne, chiffreCle,
+  prochaineEtape, nonCocheesPassees, indexMaintenant, trierFil, estTacheProspection, capsuleCampagne, chiffreCle,
   capsulesAffichables, ligneEnAttente, doitAllerALOnboarding, type TacheAccueil,
 } from "./logique";
 
@@ -8,14 +8,32 @@ const t = (id: number, o: Partial<TacheAccueil> = {}): TacheAccueil =>
   ({ id, title: `T${id}`, completed: false, scheduledTime: null, priority: 3, estimatedDuration: 30, ...o });
 
 describe("prochaineEtape", () => {
-  it("la première non faite dans l'ordre des heures, passées comprises", () =>
-    expect(prochaineEtape([t(1, { scheduledTime: "14:00" }), t(2, { scheduledTime: "09:30" }), t(3, { scheduledTime: "08:00", completed: true })])?.id).toBe(2));
-  it("sans heure : la plus prioritaire", () =>
-    expect(prochaineEtape([t(1, { priority: 4 }), t(2, { priority: 1 }), t(3, { priority: null })])?.id).toBe(2));
-  it("les tâches avec heure passent avant celles sans heure", () =>
-    expect(prochaineEtape([t(1, { priority: 1 }), t(2, { scheduledTime: "16:00", priority: 5 })])?.id).toBe(2));
-  it("tout est fait → null", () => expect(prochaineEtape([t(1, { completed: true })])).toBeNull());
-  it("journée vide → null", () => expect(prochaineEtape([])).toBeNull());
+  const id = (r: ReturnType<typeof prochaineEtape>) => r && { id: r.tache.id, moment: r.moment };
+  it("la tâche dont le créneau est en cours", () =>
+    expect(id(prochaineEtape([t(1, { scheduledTime: "18:30", scheduledEndTime: "19:00" }), t(2, { scheduledTime: "19:00" })], "18:48")))
+      .toEqual({ id: 1, moment: "maintenant" }));
+  it("jamais une tâche passée : à 18:48, pas celle de 10:50 (cas réel du 20 oct.)", () =>
+    expect(id(prochaineEtape([t(1, { scheduledTime: "10:50", estimatedDuration: 5 }), t(2, { scheduledTime: "19:00" })], "18:48")))
+      .toEqual({ id: 2, moment: "ensuite" }));
+  it("sans heure de fin : début + durée", () =>
+    expect(id(prochaineEtape([t(1, { scheduledTime: "18:30", estimatedDuration: 30 })], "18:48"))).toEqual({ id: 1, moment: "maintenant" }));
+  it("plus rien à venir : la plus prioritaire sans heure", () =>
+    expect(id(prochaineEtape([t(1, { scheduledTime: "09:00" }), t(2, { priority: 4 }), t(3, { priority: 1 })], "18:48")))
+      .toEqual({ id: 3, moment: "sansHeure" }));
+  it("seulement des tâches passées non cochées → null", () =>
+    expect(prochaineEtape([t(1, { scheduledTime: "09:00" })], "18:48")).toBeNull());
+  it("tout est fait → null", () => expect(prochaineEtape([t(1, { completed: true })], "08:00")).toBeNull());
+  it("journée vide → null", () => expect(prochaineEtape([], "08:00")).toBeNull());
+});
+
+describe("nonCocheesPassees et indexMaintenant", () => {
+  const fil = [t(1, { scheduledTime: "09:00" }), t(2, { scheduledTime: "10:00", completed: true }), t(3, { scheduledTime: "18:30" }), t(4, { scheduledTime: "19:00" }), t(5)];
+  it("créneau fini et non coché", () => expect(nonCocheesPassees(fil, "18:48").map((x) => x.id)).toEqual([1]));
+  it("la ligne se pose avant la première tâche qui commence après maintenant", () => {
+    expect(indexMaintenant(fil, "18:48")).toBe(3);
+    expect(indexMaintenant(fil, "07:00")).toBe(0);
+    expect(indexMaintenant([t(1, { scheduledTime: "09:00" })], "23:00")).toBe(1);
+  });
 });
 
 describe("trierFil", () => {

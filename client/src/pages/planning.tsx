@@ -23,9 +23,7 @@ import OngletsEspace from "@/components/navigation/OngletsEspace";
 import TimeGrid from "@/components/time-grid";
 import PlanningStartBanner from "@/components/PlanningStartBanner";
 import ProjectSetupBanner from "@/components/accueil-retire/ProjectSetupBanner";
-import AppelRevue from "@/components/accueil-retire/AppelRevue";
 import OverdueTasks from "@/components/accueil-retire/OverdueTasks";
-import SelfCareBlock from "@/components/accueil-retire/SelfCareBlock";
 import type { Project } from "@shared/schema";
 import { formatLocalDate } from "@/lib/dateUtils";
 import { useAutoRebalance } from "@/hooks/use-auto-rebalance";
@@ -116,13 +114,13 @@ function endOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth() + 1, 0);
 }
 
-function formatHeaderLabel(d: Date, scope: ViewScope): string {
+function formatHeaderLabel(d: Date, scope: ViewScope, locale: string): string {
   const opts: Intl.DateTimeFormatOptions = scope === 'day'
     ? { weekday: 'long', month: 'short', day: 'numeric' }
     : scope === 'week'
     ? { month: 'short', day: 'numeric' }
     : { month: 'long', year: 'numeric' };
-  return d.toLocaleDateString('en-US', opts);
+  return d.toLocaleDateString(locale, opts);
 }
 
 const DAILY_FEEDBACK_OPTIONS = [
@@ -136,7 +134,8 @@ interface Props {
 }
 
 export default function Planning({ onSearchClick }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language === 'en' ? 'en-GB' : 'fr-FR';
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { activeProjectId } = useProject();
@@ -152,7 +151,9 @@ export default function Planning({ onSearchClick }: Props) {
     };
   }, [location]);
 
-  const [viewScope, setViewScope] = useState<ViewScope>('day');
+  // Depuis la Semaine (« Vue horaire ») : ?vue=semaine ouvre directement la grille de la semaine.
+  const [viewScope, setViewScope] = useState<ViewScope>(() =>
+    new URLSearchParams(window.location.search).get('vue') === 'semaine' ? 'week' : 'day');
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
     const params = new URLSearchParams(window.location.search);
     const d = params.get('date');
@@ -179,7 +180,7 @@ export default function Planning({ onSearchClick }: Props) {
   const { startDate, endDate, headerLabel } = useMemo(() => {
     if (viewScope === 'day') {
       const s = formatDate(selectedDate);
-      return { startDate: s, endDate: s, headerLabel: formatHeaderLabel(selectedDate, 'day') };
+      return { startDate: s, endDate: s, headerLabel: formatHeaderLabel(selectedDate, 'day', locale) };
     }
     if (viewScope === 'week') {
       const mon = startOfWeek(selectedDate);
@@ -187,7 +188,7 @@ export default function Planning({ onSearchClick }: Props) {
       return {
         startDate: formatDate(mon),
         endDate: formatDate(sun),
-        headerLabel: `Week of ${formatHeaderLabel(mon, 'week')}`,
+        headerLabel: `${t('planning.weekOf')} ${formatHeaderLabel(mon, 'week', locale)}`,
       };
     }
     const first = startOfMonth(selectedDate);
@@ -195,9 +196,9 @@ export default function Planning({ onSearchClick }: Props) {
     return {
       startDate: formatDate(first),
       endDate: formatDate(last),
-      headerLabel: formatHeaderLabel(selectedDate, 'month'),
+      headerLabel: formatHeaderLabel(selectedDate, 'month', locale),
     };
-  }, [viewScope, selectedDate]);
+  }, [viewScope, selectedDate, locale, t]);
 
   const rangeQueryKey = ['/api/tasks/range', startDate, endDate, activeProjectId];
   const { data: rangeTasks = [], isLoading: rangeLoading } = useQuery<Task[]>({
@@ -597,18 +598,12 @@ export default function Planning({ onSearchClick }: Props) {
             </div>
           )}
 
-          {/* Venus de l'ancien accueil : bannières, appel à la lecture du jour, tâches jamais
-              planifiées, moment pour soi. Bornée en hauteur pour laisser la place au calendrier. */}
-          <div className="px-5 pt-4 flex-shrink-0 max-h-[35vh] overflow-y-auto border-b border-naya-olive-10">
+          {/* Bannières de démarrage et tâches jamais planifiées : chacune ne s'affiche que si elle a
+              quelque chose à dire. Bornée en hauteur pour laisser la place au calendrier. */}
+          <div className="px-5 flex-shrink-0 max-h-[35vh] overflow-y-auto empty:hidden [&:has(>*)]:pt-4">
             <PlanningStartBanner />
             <ProjectSetupBanner />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2">
-                <AppelRevue />
-                <OverdueTasks />
-              </div>
-              <div className="mb-4"><SelfCareBlock /></div>
-            </div>
+            <OverdueTasks />
           </div>
 
           {/* Body */}

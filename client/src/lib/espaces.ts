@@ -35,7 +35,8 @@ const espace = (id: EspaceId, href: string, onglets: Onglet[]): Espace => ({
 export const ESPACES: Espace[] = [
   espace("aujourdhui", "/", [
     onglet("aujourdhui", "aujourdhui", "/"),
-    onglet("aujourdhui", "semaine", "/planning"),
+    // La vue horaire (/planning) s'ouvre depuis la Semaine : l'onglet reste allumé.
+    onglet("aujourdhui", "semaine", "/semaine", { prefixes: ["/semaine", "/planning"] }),
   ]),
   espace("projets", "/projects", [
     onglet("projets", "projets", "/projects"),
