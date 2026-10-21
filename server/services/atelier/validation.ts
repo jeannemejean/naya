@@ -89,6 +89,15 @@ export async function validerPost(deps: DepsValidation, userId: string, id: numb
   if (etatPost(post) === "publie") return { statut: "deja_publie" };
   // Un post validé part tel quel : on ne le change pas sous le worker (on le dévalide d'abord).
   if (etatPost(post) === "valide") return { statut: "deja_valide" };
+  // Sa tâche « Publier » est déjà cochée : l'utilisatrice l'a publié elle-même. On l'enregistre
+  // au lieu de recréer une tâche « Publier » (doublon du 15 oct. pour un post publié le 13).
+  const publierFaite = (await deps.tachesDuPost(userId, id)).find((t) => t.completed && !t.archivedAt && estTachePublier(t.title));
+  if (publierFaite) {
+    await deps.majPost(id, userId, {
+      publishedAt: publierFaite.completedAt ? new Date(publierFaite.completedAt) : deps.maintenant(), status: "published", contentStatus: "published",
+    });
+    return { statut: "deja_publie" };
+  }
   const patch = lireModifications(modifs);
   if (!patch) return { statut: "invalide" };
   if (etatPost(post) === "a_rediger") {
@@ -161,4 +170,26 @@ export async function devaliderPost(deps: DepsValidation, userId: string, id: nu
   const publier = nonFaites(await deps.tachesDuPost(userId, id)).filter((t) => estTachePublier(t.title)).map((t) => t.id);
   if (publier.length) await deps.archiverTaches(userId, publier);
   return { statut: "brouillon" };
+}
+
+/**
+ * Cocher la tâche « Publier » d'un post, c'est dire qu'il est parti : le post passe publié
+ * (il quitte l'atelier et ne regénère plus de tâche). Décocher annule, sauf si le réseau a
+ * réellement publié le post (postStatus « posted » ou identifiant de publication).
+ * Rend le changement à écrire sur le post, ou null s'il n'y a rien à faire.
+ */
+export function publicationManuelle(
+  tache: { title: string | null; contentId?: number | null; completed: boolean | null; completedAt?: Date | string | null },
+  post: { publishedAt?: Date | string | null; postStatus?: string | null; platformPostId?: string | null },
+  maintenant: Date,
+): { publishedAt: Date | null; status: string; contentStatus: string } | null {
+  if (!tache.contentId || !estTachePublier(tache.title)) return null;
+  const publieParLeReseau = post.postStatus === "posted" || !!post.platformPostId;
+  if (tache.completed && !post.publishedAt && !publieParLeReseau) {
+    // Mêmes champs que le calendrier quand on y glisse un post en « publié ».
+    return { publishedAt: tache.completedAt ? new Date(tache.completedAt) : maintenant, status: "published", contentStatus: "published" };
+  }
+  // Retour à l'état d'avant la coche : un post validé, en attente de sa publication à la main.
+  if (!tache.completed && post.publishedAt && !publieParLeReseau) return { publishedAt: null, status: "draft", contentStatus: "ready" };
+  return null;
 }

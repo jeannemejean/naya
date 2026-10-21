@@ -361,7 +361,7 @@ export default function SchedulePreview() {
  {data && tab === "week" && <WeekTab data={data} />}
 
  <div className="mt-3 pt-2 border-t border-naya-olive-18 ">
- <Link href="/planning" className="flex items-center gap-1 text-xs text-naya-salvia hover:text-[#354963] transition-colors">
+ <Link href="/semaine" className="flex items-center gap-1 text-xs text-naya-salvia hover:text-[#354963] transition-colors">
  {t('schedulePreview.openPlanner')}
  <ArrowRight className="h-3 w-3" />
  </Link>

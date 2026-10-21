@@ -15,6 +15,22 @@ const depsReelles: DepsComptes = {
   getSocialAccounts: (userId) => storage.getSocialAccounts(userId),
 };
 
+/**
+ * Les mêmes lectures, mémorisées le temps d'une requête : un écran qui résout le compte de
+ * plusieurs posts (l'atelier) lit chaque projet et la liste des comptes une seule fois.
+ */
+export function depsComptesMemorisees(base: DepsComptes = depsReelles): DepsComptes {
+  const projets = new Map<number, Promise<any>>();
+  let comptes: Promise<any[]> | null = null;
+  return {
+    getProject: (id, userId) => {
+      if (!projets.has(id)) projets.set(id, base.getProject(id, userId));
+      return projets.get(id)!;
+    },
+    getSocialAccounts: (userId) => (comptes ??= base.getSocialAccounts(userId)),
+  };
+}
+
 export async function porteeDuProjet(userId: string, projectId: number | null | undefined, deps: DepsComptes = depsReelles): Promise<Portee> {
   if (projectId == null) return null;
   return porteeDe(await deps.getProject(projectId, userId));

@@ -5,7 +5,7 @@ import en from "@/locales/en";
 
 describe("espaces", () => {
   it.each([
-    ["/", "aujourdhui", "aujourdhui"], ["/planning", "aujourdhui", "semaine"],
+    ["/", "aujourdhui", "aujourdhui"], ["/planning", "aujourdhui", "semaine"], ["/semaine", "aujourdhui", "semaine"],
     ["/projects/12", "projets", "projets"], ["/outreach/campaigns/3", "projets", "prospection"],
     ["/fondations?projet=2", "projets", "fondations"], ["/atelier", "creer", "atelier"],
     ["/campaigns", "creer", "campagnes"], ["/admin/profils-veille", "veille", "profils"],
@@ -64,7 +64,7 @@ describe("espaces", () => {
   });
 
   it("chaque route authentifiée de App.tsx (hors /settings et /onboarding) a un espace", () => {
-    for (const r of ["/", "/content-calendar", "/reading-hub", "/outreach", "/analytics", "/strategy", "/projects", "/veille", "/fondations", "/mesure", "/savoir", "/admin/profils-veille", "/planning", "/campaigns", "/atelier"])
+    for (const r of ["/", "/content-calendar", "/reading-hub", "/outreach", "/analytics", "/strategy", "/projects", "/veille", "/fondations", "/mesure", "/savoir", "/admin/profils-veille", "/planning", "/semaine", "/campaigns", "/atelier"])
       expect(espaceDuChemin(r)).not.toBeNull();
   });
 

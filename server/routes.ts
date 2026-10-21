@@ -229,6 +229,7 @@ import {
 import multer from "multer";
 import { tachesARebalancer } from "./services/schedule-repack";
 import { assainirPatchPreferences } from "./services/apparence";
+import { publicationManuelle } from "./services/atelier/validation";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Helper: fetch project + persona context for AI generation
@@ -4556,6 +4557,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       }
 
       const task = await storage.toggleTaskCompletion(parseInt(id));
+
+      // Cocher « Publier — … », c'est dire que le post est parti : il quitte l'atelier et ne
+      // régénère plus de tâche « Publier » (services/atelier/validation.ts).
+      if ((task as any).contentId) {
+        try {
+          const post = await storage.getContentById((task as any).contentId, userId);
+          const patch = post ? publicationManuelle(task as any, post as any, new Date()) : null;
+          if (patch) await storage.updateContent(post!.id, patch as any);
+        } catch (e: any) { console.error("[toggle] publication manuelle :", e?.message ?? e); }
+      }
 
       // Capture completion signal when task flips to completed
       if (task.completed && taskBefore && !taskBefore.completed) {

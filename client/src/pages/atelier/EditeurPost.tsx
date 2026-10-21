@@ -194,8 +194,13 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide }: {
         </div>
         {enRedaction ? (
           <div className="space-y-2 rounded-md border border-dashed border-border p-4" aria-busy="true">
-            <p className="text-sm text-muted-foreground flex items-center gap-2"><Sparkles className="w-4 h-4" />{t("atelier.nayaRedige")}</p>
-            <Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-11/12" /><Skeleton className="h-4 w-4/5" /><Skeleton className="h-4 w-2/3" />
+            <p className="text-sm text-muted-foreground flex items-center gap-2"><Sparkles className="w-4 h-4 animate-pulse motion-reduce:animate-none" />{t("atelier.nayaRedige")}</p>
+            {/* Pendant la rédaction (10 à 30 s), l'idée du post reste lisible au lieu d'un écran vide. */}
+            {(post.consigne || post.body)?.trim() ? (
+              <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{(post.consigne || post.body).trim()}</p>
+            ) : (
+              <><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-11/12" /><Skeleton className="h-4 w-4/5" /></>
+            )}
           </div>
         ) : (
           <Textarea

@@ -50,6 +50,7 @@ const Veille = lazy(() => import("@/pages/veille"));
 const Fondations = lazy(() => import("@/pages/fondations"));
 const Mesure = lazy(() => import("@/pages/mesure"));
 const Planning = lazy(() => import("@/pages/planning"));
+const Semaine = lazy(() => import("@/pages/semaine"));
 const Campaigns = lazy(() => import("@/pages/campaigns"));
 const Atelier = lazy(() => import("@/pages/atelier/AtelierPage"));
 const CampaignWorkspace = lazy(() => import("@/pages/outreach/CampaignWorkspace"));
@@ -140,6 +141,9 @@ function Router() {
  </Route>
  <Route path="/admin/profils-veille">
  {() => <AdminProfilsVeille onSearchClick={openSearch} />}
+ </Route>
+ <Route path="/semaine">
+ {() => <Semaine onSearchClick={openSearch} />}
  </Route>
  <Route path="/planning">
  {() => <Planning onSearchClick={openSearch} />}

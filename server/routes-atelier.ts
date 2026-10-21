@@ -15,6 +15,7 @@ import { redigerPost, refairePost } from "./services/atelier/redaction";
 import { validerPost, devaliderPost, lireModifications } from "./services/atelier/validation";
 import { compteDuPost, depsRedaction, depsValidation, mediasDuPost } from "./services/atelier/deps";
 import { creerLivrable } from "./services/livrables/service";
+import { depsComptesMemorisees, type DepsComptes } from "./services/connexions/comptes";
 import { livrablesDeps } from "./services/livrables/deps";
 import { estUrlMediaDe } from "./services/livrables/urls";
 
@@ -26,10 +27,12 @@ function idPositif(v: unknown): number | null {
 }
 
 /** Un post de la semaine, tel que l'écran de l'atelier le montre. */
-async function vuePost(userId: string, p: any, noms: Map<number, string>) {
-  const medias = await mediasDuPost(userId, p);
+async function vuePost(userId: string, p: any, noms: Map<number, string>, comptes: DepsComptes) {
+  const [medias, compte] = await Promise.all([
+    mediasDuPost(userId, p),
+    compteDuPost(userId, p, comptes).catch(() => null),
+  ]);
   const etat = etatPost(p);
-  const compte = await compteDuPost(userId, p).catch(() => null);
   return {
     id: p.id,
     title: p.title,
@@ -64,14 +67,17 @@ export function registerAtelierRoutes(app: Express): void {
       const userId = req.userId;
       const posts = (await storage.getPostsEntre(userId, new Date(`${plusJours(semaine, -1)}T00:00:00Z`), new Date(`${plusJours(semaine, 8)}T00:00:00Z`)))
         .filter((p) => p.scheduledFor && lundiDe(jourDuPost(p.scheduledFor)) === semaine);
+      // Tout en parallèle, chaque projet et la liste des comptes lus une seule fois : la page
+      // attendait ici des dizaines d'allers-retours successifs vers la base.
+      const comptes = depsComptesMemorisees();
+      const pids = Array.from(new Set(posts.map((p) => p.projectId).filter((x): x is number => x != null)));
+      const [projets, taches] = await Promise.all([
+        Promise.all(pids.map((pid) => comptes.getProject(pid, userId))),
+        storage.getTachesAtelier(userId, semaine),
+      ]);
       const noms = new Map<number, string>();
-      for (const pid of Array.from(new Set(posts.map((p) => p.projectId).filter((x): x is number => x != null)))) {
-        const pr = await storage.getProject(pid, userId);
-        if (pr) noms.set(pid, pr.name);
-      }
-      const vues = [];
-      for (const p of posts) vues.push(await vuePost(userId, p, noms));
-      const taches = await storage.getTachesAtelier(userId, semaine);
+      projets.forEach((pr, i) => { if (pr) noms.set(pids[i], pr.name); });
+      const vues = await Promise.all(posts.map((p) => vuePost(userId, p, noms, comptes)));
       res.json({
         semaine,
         posts: vues,

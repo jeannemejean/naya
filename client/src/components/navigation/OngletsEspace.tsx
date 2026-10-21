@@ -22,7 +22,7 @@ export default function OngletsEspace() {
 
   return (
     <div className="flex shrink-0 items-center gap-3 px-4 pb-2 pt-4 sm:px-6">
-      <nav aria-label={t(espace.cle)} className="min-w-0 flex-1 overflow-x-auto">
+      <nav aria-label={t(espace.cle)} className="-ml-1 min-w-0 flex-1 overflow-x-auto">
         {/* Marge intérieure : l'anneau de focus ne doit pas être rogné par le défilement. */}
         <ul className="flex w-max items-center gap-2 p-1">
           {onglets.map((o) => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { validerPost, devaliderPost } from "./validation";
+import { validerPost, devaliderPost, publicationManuelle } from "./validation";
 
 const maintenant = new Date("2026-10-19T08:00:00Z");
 const post = (over: any = {}) => ({
@@ -87,6 +87,14 @@ describe("validerPost", () => {
     expect(deps.creerTache).not.toHaveBeenCalled();
     expect(deps.majTache).toHaveBeenCalledWith("u", 31, expect.objectContaining({ scheduledDate: "2026-10-22", scheduledTime: "09:00", estimatedDuration: 5 }));
     expect(deps.archiverTaches).not.toHaveBeenCalledWith("u", expect.arrayContaining([31]));
+  });
+
+  it("une tâche « Publier » déjà COCHÉE : le post est déjà parti, rien n'est recréé (cas réel des 13 et 15 oct.)", async () => {
+    const faite = { id: 805, title: "Publier — Mon post", completed: true, completedAt: new Date("2026-10-13T14:53:15Z"), archivedAt: null };
+    const deps = fabrique(post(), { compteDuPost: vi.fn(async () => null), tachesDuPost: vi.fn(async () => [faite]) });
+    expect(await validerPost(deps, "u", 5, {})).toEqual({ statut: "deja_publie" });
+    expect(deps.creerTache).not.toHaveBeenCalled();
+    expect(deps.ecrits).toEqual([{ publishedAt: new Date("2026-10-13T14:53:15Z"), status: "published", contentStatus: "published" }]);
   });
 
   it("archive les anciennes étapes d'écran non faites du post ; garde Tourner, Monter et les étapes faites", async () => {
@@ -177,5 +185,20 @@ describe("lireModifications — dates", () => {
     expect(lireModifications({ scheduledFor: "0002-10-19T07:00:00Z" })).toBeNull();
     expect(lireModifications({ scheduledFor: "20266-10-19T07:00:00Z" })).toBeNull();
     expect(lireModifications({ scheduledFor: "2026-10-19T07:00:00Z" })).toEqual({ scheduledFor: new Date("2026-10-19T07:00:00Z") });
+  });
+});
+
+describe("publicationManuelle — cocher « Publier », c'est publier", () => {
+  const m = new Date("2026-10-20T16:48:00Z");
+  const publier = { title: "Publier — Mon post", contentId: 5, completed: true, completedAt: m };
+  it("cochée : le post devient publié à l'heure de la coche", () =>
+    expect(publicationManuelle(publier, { publishedAt: null, postStatus: "pending" }, m)).toEqual({ publishedAt: m, status: "published", contentStatus: "published" }));
+  it("décochée : le post redevient non publié", () =>
+    expect(publicationManuelle({ ...publier, completed: false }, { publishedAt: m, postStatus: "pending" }, m)).toEqual({ publishedAt: null, status: "draft", contentStatus: "ready" }));
+  it("jamais quand le réseau l'a vraiment publié", () =>
+    expect(publicationManuelle({ ...publier, completed: false }, { publishedAt: m, postStatus: "posted" }, m)).toBeNull());
+  it("ni pour une autre étape ni sans post", () => {
+    expect(publicationManuelle({ ...publier, title: "Préparer le visuel — Mon post" }, { publishedAt: null }, m)).toBeNull();
+    expect(publicationManuelle({ ...publier, contentId: null }, { publishedAt: null }, m)).toBeNull();
   });
 });

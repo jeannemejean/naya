@@ -719,7 +719,10 @@
    Radix UI / shadcn
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-[data-radix-popper-content-wrapper] > * {
+/* Menus et listes flottants : surface carte. Les infobulles en sont exclues : Radix ne pose
+   aucun attribut « data-radix-tooltip-content », elles prenaient donc ce fond crème sous un
+   texte crème (noms de la pilule illisibles au survol). Elles portent .naya-infobulle. */
+[data-radix-popper-content-wrapper] > :not(.naya-infobulle) {
   background: var(--popover) !important;
   border-color: var(--border) !important;
 }
@@ -730,12 +733,10 @@
   background: var(--popover) !important;
 }
 
-[data-radix-tooltip-content] {
+.naya-infobulle {
   background: var(--primary) !important;
   border: 0 !important;
   color: var(--primary-foreground) !important;
-  font-size: 0.75rem;
-  border-radius: 12px;
 }
 
 /* Pilule de navigation en bas (sous 768 px) : le contenu lui réserve 88 px. Les pages
