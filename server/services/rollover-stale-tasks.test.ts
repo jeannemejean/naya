@@ -1,121 +1,49 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// On mocke le storage (accès DB). Le reste de rolloverStaleTasks est du vrai code.
-vi.mock("../storage", () => ({
-  storage: {
-    getUserPreferences: vi.fn(),
-    getTasksInRange: vi.fn(),
-    findFirstFreeSlot: vi.fn(),
-    updateTask: vi.fn(),
-    fixOverlappingTasks: vi.fn(),
-    createBehavioralSignal: vi.fn(),
-    getTask: vi.fn(),
-  },
-}));
-// L'arbitrage IA « cette tâche vaut-elle encore le coup ? » ne doit jamais partir
-// en réseau depuis un test.
-vi.mock("./claude", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return { ...actual, callClaude: vi.fn().mockResolvedValue("reschedule") };
-});
+// rolloverStaleTasks ne déplace plus rien lui-même : il choisit le jour de reprise et confie
+// les tâches à la reprise intelligente (services/reprise), testée à part.
+vi.mock("../storage", () => ({ storage: { getUserPreferences: vi.fn() } }));
+vi.mock("./reprise", () => ({ reprendreTaches: vi.fn() }));
+vi.mock("./reprise/deps", () => ({ depsReprise: vi.fn().mockResolvedValue({}) }));
 
 import { storage } from "../storage";
+import { reprendreTaches } from "./reprise";
 import { rolloverStaleTasks } from "./auto-planner";
-
-const TODAY = "2026-07-24";
-
-/** 28 tâches en retard, comme le cas réel qui a motivé ce comportement. */
-function staleTasks(count: number) {
-  return Array.from({ length: count }, (_, i) => ({
-    id: i + 1,
-    title: `Tâche en retard ${i + 1}`,
-    completed: false,
-    scheduledDate: "2026-07-21",
-    estimatedDuration: 30,
-    priority: (i % 5) + 1,
-    learnedAdjustmentCount: 0,
-  }));
-}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  (storage.getUserPreferences as any).mockResolvedValue({
-    planningStatus: "active",
-    workDays: "mon,tue,wed,thu,fri",
-    workDayStart: "09:00",
-    workDayEnd: "18:00",
-  });
-  (storage.findFirstFreeSlot as any).mockResolvedValue({ date: TODAY, time: "09:00" });
-  (storage.updateTask as any).mockResolvedValue({});
-  (storage.fixOverlappingTasks as any).mockResolvedValue(undefined);
+  (storage.getUserPreferences as any).mockResolvedValue({ workDays: "mon,tue,wed,thu,fri", workDayEnd: "18:00" });
+  (reprendreTaches as any).mockResolvedValue({ replacees: 3, modifiees: 2, archivees: 1, creees: 0 });
 });
+afterEach(() => vi.useRealTimers());
 
 describe("rolloverStaleTasks", () => {
-  it("plafonne à 8 tâches par défaut (passage quotidien)", async () => {
-    (storage.getTasksInRange as any).mockResolvedValue(staleTasks(28));
-
-    const { moved } = await rolloverStaleTasks("u1", TODAY);
-
-    expect(moved).toBe(8);
-    expect(storage.updateTask).toHaveBeenCalledTimes(8);
+  it("le matin, reprend le retard sur aujourd'hui (aujourd'hui exclu du retard)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-27T06:00:00Z")); // mardi, 7 h à Paris
+    const { moved } = await rolloverStaleTasks("u1", "2026-10-27");
+    expect(moved).toBe(5);
+    expect(reprendreTaches).toHaveBeenCalledWith({}, expect.objectContaining({
+      userId: "u1", aujourdhui: "2026-10-27", cible: "2026-10-27", inclureAujourdhui: false, reinitialiserReports: false,
+    }));
   });
 
-  it("reprend TOUTES les tâches en retard quand limit vaut Infinity (redémarrage)", async () => {
-    (storage.getTasksInRange as any).mockResolvedValue(staleTasks(28));
-
-    const { moved } = await rolloverStaleTasks("u1", TODAY, {
-      limit: Infinity,
-      deferralMode: 'reset' as const,
-    });
-
-    expect(moved).toBe(28);
-    expect(storage.updateTask).toHaveBeenCalledTimes(28);
+  it("en fin de journée, ce qui reste d'aujourd'hui part au prochain jour ouvré", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-30T16:30:00Z")); // vendredi, 17 h 30 à Paris
+    await rolloverStaleTasks("u1", "2026-10-30");
+    expect(reprendreTaches).toHaveBeenCalledWith({}, expect.objectContaining({ cible: "2026-11-02", inclureAujourdhui: true }));
   });
 
-  it("remet le compteur de reports à zéro lors d'un redémarrage", async () => {
-    // 3 tâches déjà signalées « reviennent depuis plusieurs jours » (compteur ≥ 2).
-    const flagged = staleTasks(3).map(t => ({ ...t, learnedAdjustmentCount: 3 }));
-    (storage.getTasksInRange as any).mockResolvedValue(flagged);
-
-    await rolloverStaleTasks("u1", TODAY, { limit: Infinity, deferralMode: 'reset' });
-
-    // Sans remise à zéro, l'encadré « Naya a remarqué » resterait affiché
-    // (getStuckTasks filtre sur learnedAdjustmentCount >= 2).
-    for (const call of (storage.updateTask as any).mock.calls) {
-      expect(call[1].learnedAdjustmentCount).toBe(0);
-    }
+  it("un redémarrage remet les compteurs de reports à zéro", async () => {
+    await rolloverStaleTasks("u1", "2026-10-27", { limit: Infinity, deferralMode: "reset" });
+    expect(reprendreTaches).toHaveBeenCalledWith({}, expect.objectContaining({ reinitialiserReports: true }));
   });
 
-  it("compte bien un report lors du passage quotidien normal", async () => {
-    (storage.getTasksInRange as any).mockResolvedValue(staleTasks(1));
-
-    await rolloverStaleTasks("u1", TODAY);
-
-    expect((storage.updateTask as any).mock.calls[0][1]).toMatchObject({
-      learnedAdjustmentCount: 1,
-    });
-  });
-
-  it("ne touche à rien si la planification est en pause", async () => {
-    (storage.getUserPreferences as any).mockResolvedValue({ planningStatus: "paused" });
-    (storage.getTasksInRange as any).mockResolvedValue(staleTasks(28));
-
-    const { moved } = await rolloverStaleTasks("u1", TODAY, { limit: Infinity });
-
-    expect(moved).toBe(0);
-    expect(storage.updateTask).not.toHaveBeenCalled();
-  });
-
-  it("replanifie sur un créneau libre et repasse le filet anti-chevauchement", async () => {
-    (storage.getTasksInRange as any).mockResolvedValue(staleTasks(2));
-
-    await rolloverStaleTasks("u1", TODAY, { limit: Infinity, deferralMode: 'reset' as const });
-
-    expect((storage.updateTask as any).mock.calls[0][1]).toMatchObject({
-      scheduledDate: TODAY,
-      scheduledTime: "09:00",
-      scheduledEndTime: "09:30",
-    });
-    expect(storage.fixOverlappingTasks).toHaveBeenCalled();
+  it("un jour non travaillé reprend au prochain jour ouvré", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-31T08:00:00Z")); // samedi
+    await rolloverStaleTasks("u1", "2026-10-31");
+    expect(reprendreTaches).toHaveBeenCalledWith({}, expect.objectContaining({ cible: "2026-11-02" }));
   });
 });

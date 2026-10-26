@@ -49,6 +49,9 @@ import {
   type BrandDna,
   type InsertBrandDna,
   type Task,
+  reprisesTaches,
+  type RepriseTache,
+  type InsertRepriseTache,
   type InsertTask,
   type Content,
   type InsertContent,
@@ -414,6 +417,13 @@ export interface IStorage {
   getPostsEntre(userId: string, debut: Date, fin: Date): Promise<Content[]>;
   /** Tâches d'atelier non archivées de la semaine qui commence ce lundi (YYYY-MM-DD). */
   getTachesAtelier(userId: string, semaine: string): Promise<Task[]>;
+  /** Journal de la reprise des tâches non faites. */
+  ajouterReprises(lignes: InsertRepriseTache[]): Promise<void>;
+  /** Ce que la reprise a fait depuis `depuis` et que l'utilisatrice n'a pas encore vu. */
+  getReprisesNonVues(userId: string, depuis: Date): Promise<RepriseTache[]>;
+  getReprise(id: number, userId: string): Promise<RepriseTache | undefined>;
+  marquerReprisesVues(userId: string): Promise<void>;
+  marquerRepriseAnnulee(id: number, userId: string): Promise<void>;
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
   deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number>;
@@ -1560,6 +1570,31 @@ export class DatabaseStorage implements IStorage {
       inArray(tasks.taskType, [TYPE_ATELIER, TYPE_VALIDATION]),
       sql`${tasks.actionData}->>'semaine' = ${semaine}`,
     )).orderBy(tasks.id);
+  }
+
+  async ajouterReprises(lignes: InsertRepriseTache[]): Promise<void> {
+    if (lignes.length) await db.insert(reprisesTaches).values(lignes);
+  }
+
+  async getReprisesNonVues(userId: string, depuis: Date): Promise<RepriseTache[]> {
+    return await db.select().from(reprisesTaches)
+      .where(and(eq(reprisesTaches.userId, userId), gte(reprisesTaches.createdAt, depuis), isNull(reprisesTaches.vueAt)))
+      .orderBy(reprisesTaches.id);
+  }
+
+  async getReprise(id: number, userId: string): Promise<RepriseTache | undefined> {
+    const [l] = await db.select().from(reprisesTaches).where(and(eq(reprisesTaches.id, id), eq(reprisesTaches.userId, userId)));
+    return l;
+  }
+
+  async marquerReprisesVues(userId: string): Promise<void> {
+    await db.update(reprisesTaches).set({ vueAt: new Date() })
+      .where(and(eq(reprisesTaches.userId, userId), isNull(reprisesTaches.vueAt)));
+  }
+
+  async marquerRepriseAnnulee(id: number, userId: string): Promise<void> {
+    await db.update(reprisesTaches).set({ annuleeAt: new Date() })
+      .where(and(eq(reprisesTaches.id, id), eq(reprisesTaches.userId, userId)));
   }
 
   // ── Auto-publication des posts programmés ────────────────────────────────

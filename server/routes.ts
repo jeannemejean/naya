@@ -207,6 +207,8 @@ import {
 } from "@shared/schema";
 import { articleAnalysisService } from "./services/article-analysis";
 import { runDailyAutoPlanner, rolloverStaleTasks } from "./services/auto-planner";
+import { annulerReprise, vueReprises } from "./services/reprise";
+import { depsAnnulation } from "./services/reprise/deps";
 import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
 import { resolveScheduledEndTime } from "./services/task-schedule-fields";
@@ -10998,6 +11000,41 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       res.json({ ok: true });
     } catch (err: any) {
       console.error('POST /api/companion/pending/:id/read error:', err);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
+  // ── Reprise des tâches non faites : la carte « Ce que j'ai repris » ──
+  app.get('/api/reprises', isAuthenticated, async (req: any, res) => {
+    try {
+      const lignes = await storage.getReprisesNonVues(req.userId, new Date(Date.now() - 36 * 3600_000));
+      res.json(vueReprises(lignes));
+    } catch (err: any) {
+      console.error('GET /api/reprises error:', err);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
+  app.post('/api/reprises/vues', isAuthenticated, async (req: any, res) => {
+    try {
+      await storage.marquerReprisesVues(req.userId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /api/reprises/vues error:', err);
+      res.status(500).json({ message: 'Erreur serveur' });
+    }
+  });
+
+  app.post('/api/reprises/:id/annuler', isAuthenticated, async (req: any, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id)) return res.status(400).json({ message: 'id invalide' });
+      const aujourdhui = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+      const ok = await annulerReprise(await depsAnnulation(), req.userId, id, aujourdhui);
+      if (!ok) return res.status(409).json({ message: 'Rien à annuler' });
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error('POST /api/reprises/:id/annuler error:', err);
       res.status(500).json({ message: 'Erreur serveur' });
     }
   });

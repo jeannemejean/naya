@@ -77,6 +77,7 @@ export function repartirCapaciteDuJour(
  * faite compte : elle a occupé sa place. Les jalons ne comptent pas.
  * Une journée qui porte déjà des tâches de l'auto-planner (source « auto ») n'est pas
  * regénérée : sinon chaque passage du matin re-remplirait ce que l'utilisatrice a retiré.
+ * Une tâche reprise d'un autre jour ne compte pas comme telle : la reprise la passe en « replan ».
  */
 export function capaciteRestanteDuJour(
   tachesDuJour: Array<{ source?: string | null; type?: string | null; completed?: boolean | null }>,
