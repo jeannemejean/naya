@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Archive, ChevronDown, Combine, PenLine, Scissors, type LucideIcon } from "lucide-react";
+import { Archive, CalendarClock, CalendarX, ChevronDown, Combine, PenLine, Scissors, type LucideIcon } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +21,7 @@ interface VueReprise {
   annulee: boolean;
 }
 
-const ICONES: Record<string, LucideIcon> = { reformuler: PenLine, decouper: Scissors, fusionner: Combine };
+const ICONES: Record<string, LucideIcon> = { reformuler: PenLine, decouper: Scissors, fusionner: Combine, post_reprogramme: CalendarClock, post_retire: CalendarX };
 const CLE = ["/api/reprises"];
 
 export function CarteReprise() {
@@ -44,7 +44,7 @@ export function CarteReprise() {
 
   const jourCourt = (d: string) =>
     new Intl.DateTimeFormat(i18n.language === "en" ? "en-GB" : "fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${d}T12:00:00Z`));
-  const archivee = (a: string) => a === "abandonner" || a === "perimee" || a === "fusionnee";
+  const archivee = (a: string) => a === "abandonner" || a === "perimee" || a === "fusionnee" || a === "post_retire";
 
   return (
     <section aria-labelledby="reprise-titre" className="mb-6 rounded-carte bg-card p-5 shadow-cocon sm:p-6">
@@ -63,7 +63,7 @@ export function CarteReprise() {
       {changements.length > 0 && (
         <ul className="mt-4 divide-y divide-border">
           {changements.map((c) => {
-            const Icone = archivee(c.action) ? Archive : ICONES[c.action] ?? PenLine;
+            const Icone = ICONES[c.action] ?? (archivee(c.action) ? Archive : PenLine);
             return (
               <li key={c.id} className={cn("grid grid-cols-[40px_minmax(0,1fr)] items-start gap-x-3 py-3 sm:grid-cols-[40px_minmax(0,1fr)_auto]", c.annulee && "opacity-60")}>
                 <span aria-hidden="true" className="row-span-2 mt-0.5 flex sm:row-span-1 h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground">

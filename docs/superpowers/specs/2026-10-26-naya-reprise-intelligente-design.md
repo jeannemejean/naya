@@ -74,3 +74,25 @@ passé, sur aujourd'hui) et au redémarrage de la planification.
 - Non vérifié sur données réelles : la qualité des décisions du modèle (reformuler,
   découper, fusionner, abandonner). Couvert par les tests ; à relire dans le journal
   `reprises_taches` après le premier passage du soir en production.
+
+## Les posts jamais partis (ajout du 26 oct., après mise en ligne)
+
+Constaté par Jeanne le jour même : neuf posts du 14 au 23 oct. (brouillons ou validés)
+restaient datés de la semaine passée. Choix de Jeanne : Naya décide seule.
+
+- Étape 0 du passage, avant le tri : chaque post daté d'avant le jour de reprise, jamais
+  parti (un mois en arrière au plus), est **reprogrammé** (il sert encore sa campagne) ou
+  **retiré du calendrier** (date effacée, ses étapes archivées ; « Restaurer » le remet
+  le lendemain à son heure). Avis du modèle (`posts.ts`, `SCHEMA_POSTS`) ; sans avis, tout
+  est reprogrammé.
+- Jour d'un post reprogrammé : un jour travaillé, au plus tôt deux jours après la reprise
+  pour un brouillon (le temps de l'atelier et de la validation), un pour un post validé ;
+  un post par plateforme et par jour ; la série garde son ordre ; l'heure d'origine (Paris).
+- L'atelier des semaines qui reçoivent ces posts est posé ou ajusté (`placerAteliers`).
+- Dans une journée, les parties d'atelier se suivent et la validation vient en dernier
+  (`ordreAtelierDansLaJournee`) : le re-tassage, qui range par heure, ne le savait pas.
+- Le journal porte une tâche OU un post (`reprises_taches.content_id`, migration 0034).
+
+Essai sur copie de la production : 9 posts reprogrammés du mar. 27 oct. au lun. 9 nov.,
+en semaine ; les ateliers des semaines du 12 et du 19 oct. archivés ; ceux du 26 oct. et du
+2 nov. dans l'ordre (parties puis validation).

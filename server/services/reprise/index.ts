@@ -13,6 +13,8 @@ import { maxTasksForDay } from "../day-sizing";
 import { classer, planRepriseAtelier, estTacheAtelier } from "./tri";
 import { normaliserDecisions, decisionParDefaut, type Decision, type EntreePrompt, type SortieReprise, type TacheAReprendre } from "./decision";
 import { placerElements, type ElementAPlacer } from "./placement";
+import { deciderJoursPosts, estPostManque, type Campagne, type PostManque, type SortiePosts } from "./posts";
+import { wallClockToInstant } from "../../utils/timezone";
 
 type Tache = Record<string, any> & { id: number; title: string; taskType: string; scheduledDate: string | null };
 
@@ -22,6 +24,8 @@ export const MAX_TACHES_IA = 40;
 const HORIZON_JOURS = 21;
 /** Tâches en retard remontées jusqu'à deux mois en arrière. */
 const RECUL_JOURS = 60;
+/** Posts jamais partis : un mois en arrière au plus (au-delà, ils ne se rattrapent plus). */
+const RECUL_POSTS = 30;
 
 export interface DepsReprise extends PlacementDeps {
   getTasksInRange(userId: string, startDate: string, endDate: string): Promise<any[]>;
@@ -36,6 +40,12 @@ export interface DepsReprise extends PlacementDeps {
   evenementsAgenda?(userId: string, debut: string, fin: string): Promise<Array<{ date: string; startTime: string; endTime: string; allDay?: boolean }>>;
   /** L'avis de Naya ; null si l'IA n'est pas disponible (panne, budget). */
   decider(userId: string, entree: Omit<EntreePrompt, "contexte">): Promise<SortieReprise | null>;
+  /** Posts jamais partis : modifier le post (date), lire ses campagnes, l'avis de Naya. */
+  updateContent?(id: number, patch: any): Promise<any>;
+  campagnes?(userId: string): Promise<Map<number, Campagne>>;
+  deciderPosts?(userId: string, entree: { aujourdhui: string; cible: string; fin: string; posts: PostManque[]; campagnes: Map<number, Campagne>; dejaPrevus: Array<{ title?: string | null; platform?: string | null; jour: string }> }): Promise<SortiePosts | null>;
+  /** Atelier des semaines qui reçoivent des posts reprogrammés (idempotent). */
+  placerAteliers?(userId: string, posts: any[], aujourdhui: string): Promise<unknown>;
 }
 
 export interface OptionsReprise {
@@ -51,7 +61,7 @@ export interface OptionsReprise {
   ia?: boolean;
 }
 
-export interface BilanReprise { replacees: number; modifiees: number; archivees: number; creees: number }
+export interface BilanReprise { replacees: number; modifiees: number; archivees: number; creees: number; postsReprogrammes: number; postsRetires: number }
 
 const etat = (t: Tache) => ({
   title: t.title ?? null, description: t.description ?? null, estimatedDuration: t.estimatedDuration ?? null,
@@ -71,7 +81,7 @@ export function plafondDeLaJournee(prefs: any): number {
 const compte = (t: Tache) => !t.completed && t.type !== "milestone" && t.source !== "milestone";
 
 export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Promise<BilanReprise> {
-  const bilan: BilanReprise = { replacees: 0, modifiees: 0, archivees: 0, creees: 0 };
+  const bilan: BilanReprise = { replacees: 0, modifiees: 0, archivees: 0, creees: 0, postsReprogrammes: 0, postsRetires: 0 };
   const { userId, aujourdhui, cible } = o;
   const prefs = await deps.getUserPreferences(userId);
   if (prefs?.planningStatus === "paused") return bilan;
@@ -110,6 +120,50 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
     bilan.archivees++;
   };
 
+  // ── 0. Les posts jamais partis : reprogrammés ou retirés, AVANT le tri (leurs étapes et
+  //       leur atelier suivent alors leur nouveau jour). ──
+  const dejaTraitees = new Set<number>();
+  if (deps.getPostsEntre && deps.updateContent) {
+    const jourParis = (d: Date | string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date(d));
+    const heureParis = (d: Date | string) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(d));
+    const proches = await deps.getPostsEntre(userId, new Date(`${plusJours(aujourdhui, -RECUL_POSTS)}T00:00:00Z`), new Date(`${plusJours(fin, 1)}T00:00:00Z`));
+    const manques = (proches as any[]).filter((p) => p.scheduledFor && jourParis(p.scheduledFor) >= plusJours(aujourdhui, -RECUL_POSTS) && estPostManque(p, jourParis(p.scheduledFor), finRetard));
+    if (manques.length > 0) {
+      const dejaPrevus = (proches as any[])
+        .filter((p) => p.scheduledFor && jourParis(p.scheduledFor) >= cible && !manques.includes(p))
+        .map((p) => ({ title: p.title, platform: p.platform, jour: jourParis(p.scheduledFor) }));
+      const campagnes = (await deps.campagnes?.(userId).catch(() => null)) ?? new Map<number, Campagne>();
+      const finPosts = plusJours(cible, 13);
+      let sortie: SortiePosts | null = null;
+      if (o.ia !== false && deps.deciderPosts) {
+        sortie = await deps.deciderPosts(userId, { aujourdhui, cible, fin: finPosts, posts: manques, campagnes, dejaPrevus })
+          .catch((e: any) => { console.error(`[Reprise] avis sur les posts indisponible user=${userId} :`, e?.message ?? e); return null; });
+      }
+      const decisions = deciderJoursPosts({ posts: manques, sortie, cible, fin: finPosts, dejaPrevus, jourDe: (p) => jourParis(p.scheduledFor), estTravaille: isWorkDay });
+      const reprogrammes: any[] = [];
+      for (const d of decisions) {
+        const p = manques.find((x) => x.id === d.id)!;
+        const avant = { title: p.title, scheduledFor: new Date(p.scheduledFor).toISOString(), scheduledDate: jourParis(p.scheduledFor) };
+        if (d.action === "retirer") {
+          await deps.updateContent(p.id, { scheduledFor: null });
+          // Ses étapes de production n'ont plus d'objet : archivées avec lui, restaurées avec lui.
+          const liees = deps.getTasksForContents ? await deps.getTasksForContents(userId, [p.id]) : [];
+          const archivees: number[] = [];
+          for (const t of liees as any[]) if (!t.completed && !t.archivedAt) { await deps.updateTask(t.id, { archivedAt: new Date() }); archivees.push(t.id); dejaTraitees.add(t.id); }
+          journal.push({ userId, lot, contentId: p.id, action: "post_retire", raison: d.raison || "Son moment est passé : je l'ai retiré du calendrier.", avant, apres: { title: p.title, scheduledFor: null, archive: true, tachesArchivees: archivees } });
+          bilan.postsRetires++;
+          continue;
+        }
+        const quand = wallClockToInstant("Europe/Paris", d.jour!, heureParis(p.scheduledFor));
+        await deps.updateContent(p.id, { scheduledFor: quand });
+        journal.push({ userId, lot, contentId: p.id, action: "post_reprogramme", raison: d.raison || "Toujours utile : je l'ai reprogrammé.", avant, apres: { title: p.title, scheduledFor: quand.toISOString(), scheduledDate: d.jour } });
+        reprogrammes.push({ ...p, scheduledFor: quand });
+        bilan.postsReprogrammes++;
+      }
+      if (reprogrammes.length > 0) await deps.placerAteliers?.(userId, reprogrammes, aujourdhui).catch((e: any) => console.error(`[Reprise] atelier des posts reprogrammés user=${userId} :`, e?.message ?? e));
+    }
+  }
+
   // ── 1. Le tri ──
   const libres: Tache[] = [];
   const elements: ElementAPlacer[] = [];
@@ -117,6 +171,7 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
   const semaines = new Set<string>();
 
   for (const t of enRetard) {
+    if (dejaTraitees.has(t.id)) continue;
     const c = classer(t);
     if (c.genre === "ignorer") continue;
     if (c.genre === "rituel") { await archiver(t, "Rituel manqué : il revient à sa prochaine date."); continue; }
@@ -278,8 +333,50 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
 
   if (journal.length) await deps.ajouterReprises(journal);
   await deps.fixOverlappingTasks(userId, cible);
+  let reordonnees = false;
+  // Dans une journée, l'atelier se fait dans l'ordre de ses parties et la validation en
+  // dernier. Le re-tassage range par heure : il ne le sait pas (essai du 26 oct. : « Valider
+  // la semaine » à 10 h, l'atelier à 10 h 23 ; la partie 3/3 avant la 1/3).
+  for (const semaine of Array.from(semaines)) {
+    const taches = ((await requisAtelier(deps)(userId, semaine)) as Tache[]).filter((t) => !t.completed && t.scheduledDate && t.scheduledTime);
+    for (const [, duJour] of Array.from(groupesParJour(taches))) {
+      for (const { id, scheduledTime, scheduledEndTime } of ordreAtelierDansLaJournee(duJour)) {
+        await deps.updateTask(id, { scheduledTime, scheduledEndTime });
+        reordonnees = true;
+      }
+    }
+  }
+  if (reordonnees) await deps.fixOverlappingTasks(userId, cible);
   console.log(`[Reprise] user=${userId} lot=${lot} → ${JSON.stringify(bilan)}`);
   return bilan;
+}
+
+const groupesParJour = (taches: Tache[]) => {
+  const m = new Map<string, Tache[]>();
+  for (const t of taches) m.set(t.scheduledDate!, [...(m.get(t.scheduledDate!) ?? []), t]);
+  return m;
+};
+
+/**
+ * Les créneaux d'une journée d'atelier, redistribués pour que les parties se suivent dans
+ * l'ordre et que la validation vienne en dernier. Ne rend que les tâches à changer. PUR.
+ */
+export function ordreAtelierDansLaJournee(taches: Array<{ id: number; taskType: string; scheduledTime?: string | null; estimatedDuration?: number | null; actionData?: unknown }>) {
+  if (taches.length < 2) return [];
+  const rang = (t: (typeof taches)[number]) => (t.taskType === "atelier_validation" ? 1000 : Number((t.actionData as any)?.partie) || 0);
+  const creneaux = taches.map((t) => hhmmToMin(t.scheduledTime!)).sort((a, b) => a - b);
+  const voulu = [...taches].sort((a, b) => rang(a) - rang(b) || a.id - b.id);
+  // Les créneaux existants, dans l'ordre voulu ; une tâche plus longue que la précédente
+  // ne la chevauche pas : la suivante attend sa fin (le re-tassage remet ensuite la journée à plat).
+  let finPrecedente = 0;
+  return voulu
+    .map((t, i) => {
+      const debut = Math.max(creneaux[i], finPrecedente);
+      finPrecedente = debut + (t.estimatedDuration || 30);
+      return { t, debut };
+    })
+    .filter(({ t, debut }) => t.scheduledTime !== minToHHMM(debut))
+    .map(({ t, debut }) => ({ id: t.id, scheduledTime: minToHHMM(debut), scheduledEndTime: minToHHMM(debut + (t.estimatedDuration || 30)) }));
 }
 
 function minutesLibres(grille: ReturnType<typeof grilleCreneaux>, jour: string): number {
@@ -324,7 +421,7 @@ export function vueReprises(lignes: RepriseTache[]): { changements: VueReprise[]
       titre, titreAvant: avant.title && avant.title !== titre ? String(avant.title) : null,
       jour: apres.archive && l.action !== "decouper" ? null : apres.scheduledDate ?? null,
       sousTaches: Array.isArray(apres.sousTaches) ? apres.sousTaches.map(String) : [],
-      annulable: l.action !== "replacer" && !l.annuleeAt, annulee: !!l.annuleeAt,
+      annulable: l.action !== "replacer" && l.action !== "post_reprogramme" && !l.annuleeAt, annulee: !!l.annuleeAt,
     };
   });
   return { changements: vues.filter((v) => v.action !== "replacer"), replacees: vues.filter((v) => v.action === "replacer") };
@@ -338,22 +435,38 @@ export interface DepsAnnulation {
   getTask(id: number): Promise<any>;
   updateTask(id: number, patch: any): Promise<any>;
   fixOverlappingTasks(userId: string, fromDate: string): Promise<unknown>;
+  getContentById?(id: number, userId: string): Promise<any>;
+  updateContent?(id: number, patch: any): Promise<any>;
 }
 
 /** Défait une ligne du journal. Rend false si elle ne se défait pas (simple replacement, déjà annulée). */
 export async function annulerReprise(deps: DepsAnnulation, userId: string, id: number, aujourdhui: string): Promise<boolean> {
   const l = await deps.getReprise(id, userId);
-  if (!l || l.annuleeAt || l.action === "replacer") return false;
+  if (!l || l.annuleeAt || l.action === "replacer" || l.action === "post_reprogramme") return false;
   const avant = l.avant as Record<string, any>;
   const apres = l.apres as Record<string, any>;
   const jour = (j: unknown) => (typeof j === "string" && j >= aujourdhui ? j : aujourdhui);
   const ressortir = (taskId: number, j: unknown) =>
     deps.updateTask(taskId, { archivedAt: null, scheduledDate: jour(j), scheduledTime: null, scheduledEndTime: null });
 
+  if (l.action === "post_retire") {
+    // Le post revient demain, à son heure d'origine ; ses étapes reviennent avec lui (le
+    // re-tassage les remet dans l'ordre, à rebours de la publication).
+    if (!l.contentId || !deps.updateContent) return false;
+    const heure = new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(avant.scheduledFor));
+    const demain = plusJours(aujourdhui, 1);
+    await deps.updateContent(l.contentId, { scheduledFor: wallClockToInstant("Europe/Paris", demain, heure) });
+    for (const id of (apres.tachesArchivees as number[] | undefined) ?? []) await deps.updateTask(id, { archivedAt: null, scheduledDate: aujourdhui, scheduledTime: null, scheduledEndTime: null });
+    await deps.marquerRepriseAnnulee(id, userId);
+    await deps.fixOverlappingTasks(userId, aujourdhui);
+    return true;
+  }
+  if (l.taskId == null) return false;
+  const taskId = l.taskId;
   switch (l.action) {
     case "reformuler":
     case "fusionner":
-      await deps.updateTask(l.taskId, { title: avant.title, description: avant.description, estimatedDuration: avant.estimatedDuration });
+      await deps.updateTask(taskId, { title: avant.title, description: avant.description, estimatedDuration: avant.estimatedDuration });
       for (const absorbee of (apres.absorbees as number[] | undefined) ?? []) await ressortir(absorbee, apres.scheduledDate);
       break;
     case "decouper":
@@ -361,10 +474,10 @@ export async function annulerReprise(deps: DepsAnnulation, userId: string, id: n
         const t = await deps.getTask(creee);
         if (t && t.userId === userId && !t.completed) await deps.updateTask(creee, { archivedAt: new Date() });
       }
-      await ressortir(l.taskId, apres.scheduledDate);
+      await ressortir(taskId, apres.scheduledDate);
       break;
     default: // abandonner, perimee, fusionnee
-      await ressortir(l.taskId, avant.scheduledDate);
+      await ressortir(taskId, avant.scheduledDate);
   }
   await deps.marquerRepriseAnnulee(id, userId);
   await deps.fixOverlappingTasks(userId, aujourdhui);
