@@ -369,6 +369,25 @@ Livrables de tâche, étape 1 (spec `docs/superpowers/specs/2026-10-06-naya-livr
 - [ ] Supprimer `sauvegarde-avant-refonte-cocon-2026-10-20` quand le déploiement est stable.
 
 
+## 3undecies. Production — migrée le 26 octobre 2026 (`0033`) — reprise des tâches non faites
+
+- [x] État lu avant toute écriture : suivi **33 lignes**, dernier `created_at` = `1792141827467`
+      (`0032`) ; table `reprises_taches` absente.
+- [x] Point de restauration Neon : branche **`sauvegarde-avant-reprise-2026-10-26`**
+      (`br-soft-rain-anrkskif`), forkée de `production` juste avant la migration.
+- [x] SQL relu, purement additif (`0033_slow_maggott.sql`) : `CREATE TABLE reprises_taches`,
+      deux clés étrangères (`users`, `tasks`, `ON DELETE cascade`), un index `(user_id, lot)`.
+      Répété avant sur trois branches d'essai forkées de la production.
+- [x] Garde du script vérifiée à blanc (refus sur un autre endpoint), puis appliquée avec
+      `scripts/migrate-prod.ts` (lancée par Jeanne).
+- [x] Résultat vérifié : suivi **33 → 34**, table présente (11 colonnes, 2 index).
+- [x] Ordre respecté : migration d'abord, `main` poussé ensuite.
+
+### Ce qui reste
+
+- [ ] Supprimer `sauvegarde-avant-reprise-2026-10-26` quand le déploiement est stable.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;
