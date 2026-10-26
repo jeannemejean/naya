@@ -3024,6 +3024,8 @@ const en = {
     abandonner: "Archived",
     perimee: "Archived · no longer relevant",
     replacer: "Moved",
+    post_reprogramme: "Post rescheduled",
+    post_retire: "Post removed from the calendar",
    },
   },
   fil: {

@@ -3028,6 +3028,8 @@ const fr = {
     abandonner: "Archivée",
     perimee: "Archivée · plus d'actualité",
     replacer: "Replacée",
+    post_reprogramme: "Post reprogrammé",
+    post_retire: "Post retiré du calendrier",
    },
   },
   fil: {

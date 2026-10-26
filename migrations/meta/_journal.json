@@ -239,6 +239,13 @@
       "when": 1792999630495,
       "tag": "0033_slow_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793005479252,
+      "tag": "0034_absurd_mephisto",
+      "breakpoints": true
     }
   ]
 }

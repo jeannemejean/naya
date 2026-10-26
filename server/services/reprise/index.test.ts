@@ -6,7 +6,7 @@ const AUJ = "2026-10-26"; // lundi
 const DEMAIN = "2026-10-27";
 
 /** Une base en mémoire : assez pour rejouer un passage de reprise de bout en bout. */
-function base(taches: any[], { posts = [] as any[], avis = null as SortieReprise | null | Error } = {}) {
+function base(taches: any[], { posts = [] as any[], avis = null as SortieReprise | null | Error, avisPosts = null as any } = {}) {
   const t = new Map<number, any>(taches.map((x) => [x.id, { completed: false, archivedAt: null, ...x }]));
   let prochainId = 1000;
   const journal: any[] = [];
@@ -19,6 +19,11 @@ function base(taches: any[], { posts = [] as any[], avis = null as SortieReprise
     updateTask: async (id, p) => { t.set(id, { ...t.get(id), ...p }); return t.get(id); },
     createTask: async (x) => { const n = { ...x, id: prochainId++ }; t.set(n.id, n); return n; },
     getContentById: async (id) => posts.find((p) => p.id === id),
+    updateContent: async (id, patch) => { const p = posts.find((x) => x.id === id); Object.assign(p, patch); return p; },
+    getTasksForContents: async (_u, ids) => Array.from(t.values()).filter((x) => ids.includes(x.contentId)),
+    campagnes: async () => new Map([[8, { name: "Halloween", endDate: "2026-10-31" }]]),
+    deciderPosts: async () => (avisPosts instanceof Error ? Promise.reject(avisPosts) : avisPosts),
+    placerAteliers: vi.fn(async () => ({ creees: 0 })),
     getPostsEntre: async (_u, a, b) => posts.filter((p) => new Date(p.scheduledFor) >= a && new Date(p.scheduledFor) < b),
     getTachesAtelier: async (_u, s) => Array.from(t.values()).filter((x) => !x.archivedAt && (x.actionData as any)?.semaine === s),
     fixOverlappingTasks: async () => 0,
@@ -114,6 +119,31 @@ describe("reprendreTaches", () => {
     expect(journal.map((l) => l.action).sort()).toEqual(["abandonner", "fusionnee", "fusionner"]);
   });
 
+  it("posts jamais partis : Naya en reprogramme un (à son heure), en retire un autre avec ses étapes", async () => {
+    const posts = [
+      { id: 216, title: "Sélection chromatique automne", platform: "instagram", campaignId: 8, scheduledFor: new Date("2026-10-14T09:00:00Z"), contentStatus: "ready" },
+      { id: 199, title: "Trop beau — Halloween", platform: "TikTok", campaignId: 8, scheduledFor: new Date("2026-10-19T09:00:00Z"), contentStatus: "draft" },
+      { id: 300, title: "Déjà publié", platform: "instagram", scheduledFor: new Date("2026-10-15T09:00:00Z"), publishedAt: new Date() },
+    ];
+    const { deps, t, journal } = base(
+      [{ id: 60, title: "Tourner — Trop beau", contentId: 199, scheduledDate: AUJ }],
+      { posts, avisPosts: { posts: [
+        { id: 216, action: "reprogrammer", jour: "2026-10-28", raison: "Toujours dans le ton de la campagne." },
+        { id: 199, action: "retirer", jour: null, raison: "Trop tard pour le tourner avant Halloween." },
+      ] } },
+    );
+
+    const bilan = await reprendreTaches(deps, opts);
+
+    expect(bilan).toMatchObject({ postsReprogrammes: 1, postsRetires: 1 });
+    expect(posts[0].scheduledFor.toISOString()).toBe("2026-10-28T10:00:00.000Z"); // 11 h à Paris, comme avant (passée à l'heure d'hiver)
+    expect(posts[1].scheduledFor).toBeNull();
+    expect(t.get(60)!.archivedAt).toBeInstanceOf(Date);
+    expect(journal.filter((l) => l.taskId === 60)).toHaveLength(0); // archivée avec son post, pas en double
+    expect(journal.filter((l) => l.contentId).map((l) => [l.contentId, l.action])).toEqual([[216, "post_reprogramme"], [199, "post_retire"]]);
+    expect(deps.placerAteliers).toHaveBeenCalledWith("u", [expect.objectContaining({ id: 216 })], AUJ);
+  });
+
   it("planification en pause : rien ne bouge", async () => {
     const { deps, t } = base([{ id: 40, title: "x", scheduledDate: AUJ }]);
     deps.getUserPreferences = async () => ({ planningStatus: "paused" });
@@ -165,6 +195,18 @@ describe("annulerReprise", () => {
     );
     await annulerReprise(deps, "u", 3, AUJ);
     expect(t.get(5)).toMatchObject({ title: "Ancien", description: "d", estimatedDuration: 45 });
+  });
+
+  it("restaurer un post retiré : il revient demain à son heure, ses étapes avec lui", async () => {
+    const { deps, t } = depsAnnul(
+      { id: 6, taskId: null, contentId: 199, action: "post_retire", annuleeAt: null, avant: { scheduledFor: "2026-10-19T09:00:00.000Z" }, apres: { tachesArchivees: [60] } },
+      { 60: { userId: "u", archivedAt: new Date() } },
+    );
+    const posts: Record<number, any> = { 199: {} };
+    (deps as any).updateContent = async (id: number, p: any) => Object.assign(posts[id], p);
+    expect(await annulerReprise(deps, "u", 6, AUJ)).toBe(true);
+    expect(posts[199].scheduledFor.toISOString()).toBe("2026-10-27T10:00:00.000Z"); // 11 h à Paris, le 27
+    expect(t.get(60)).toMatchObject({ archivedAt: null, scheduledDate: AUJ });
   });
 
   it("un simple replacement, ou une ligne déjà annulée, ne se défait pas", async () => {

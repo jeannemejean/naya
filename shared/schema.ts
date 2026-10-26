@@ -2424,8 +2424,10 @@ export const reprisesTaches = pgTable("reprises_taches", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   lot: text("lot").notNull(),                     // un passage de reprise
-  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
-  action: text("action").notNull(),               // garder | reformuler | decouper | fusionner | abandonner | perimee | replacer
+  // Une ligne porte sur une tâche OU sur un post (posts dont la date est passée sans partir).
+  taskId: integer("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+  contentId: integer("content_id").references(() => content.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),               // garder | reformuler | decouper | fusionner | abandonner | perimee | replacer | post_reprogramme | post_retire
   raison: text("raison").notNull().default(""),
   avant: jsonb("avant").notNull(),                // { title, description, estimatedDuration, scheduledDate, scheduledTime, scheduledEndTime }
   apres: jsonb("apres").notNull(),                // idem, + creees: number[] (découpage), absorbees: number[] (fusion)

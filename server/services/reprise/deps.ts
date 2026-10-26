@@ -1,6 +1,7 @@
 // Reprise des tâches non faites — branchement réel (base, contexte, modèle).
 import type { DepsAnnulation, DepsReprise } from "./index";
 import { SCHEMA_REPRISE, SYSTEME_REPRISE, promptReprise } from "./decision";
+import { SCHEMA_POSTS, SYSTEME_POSTS, promptPosts, type Campagne } from "./posts";
 
 export async function depsReprise(): Promise<DepsReprise> {
   const { storage } = await import("../../storage");
@@ -17,6 +18,30 @@ export async function depsReprise(): Promise<DepsReprise> {
     getTachesAtelier: (u, semaine) => s.getTachesAtelier(u, semaine),
     fixOverlappingTasks: (u, d) => s.fixOverlappingTasks(u, d),
     ajouterReprises: (l) => s.ajouterReprises(l),
+    getTasksForContents: (u, ids) => s.getTasksForContents(u, ids),
+    updateContent: (id, p) => s.updateContent(id, p),
+    async campagnes(userId) {
+      const m = new Map<number, Campagne>();
+      for (const c of await s.getCampaigns(userId)) m.set(c.id, { name: c.name, startDate: c.startDate ?? null, endDate: c.endDate ?? null });
+      return m;
+    },
+    async placerAteliers(userId, posts, aujourdhui) {
+      const { placerTachesProductionPosts } = await import("../campagne/placement");
+      return placerTachesProductionPosts(storage as any, { userId, posts, aujourdhui });
+    },
+    async deciderPosts(userId, entree) {
+      const [{ isAiBlocked }, { genererStructure }, { CLAUDE_MODELS }] = await Promise.all([
+        import("../usage"), import("../ai/structure"), import("../claude"),
+      ]);
+      if (await isAiBlocked(userId)) return null;
+      const jourParis = (d: Date | string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date(d));
+      const { valeur } = await genererStructure({
+        schema: SCHEMA_POSTS, system: SYSTEME_POSTS, model: CLAUDE_MODELS.smart, maxTokens: 3000,
+        taskKind: "strategic_reasoning", etape: "reprise des posts jamais partis", userId,
+        prompt: promptPosts({ ...entree, jourDe: (p) => jourParis(p.scheduledFor) }),
+      });
+      return valeur;
+    },
     async evenementsAgenda(userId, debut, fin) {
       const { getCalendarEvents } = await import("../google-calendar");
       return getCalendarEvents(userId, debut, fin);
@@ -57,5 +82,7 @@ export async function depsAnnulation(): Promise<DepsAnnulation> {
     getTask: (id) => s.getTask(id),
     updateTask: (id, p) => s.updateTask(id, p),
     fixOverlappingTasks: (u, d) => s.fixOverlappingTasks(u, d),
+    getContentById: (id, u) => s.getContentById(id, u),
+    updateContent: (id, p) => s.updateContent(id, p),
   };
 }

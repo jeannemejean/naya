@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { classer, planRepriseAtelier } from "./tri";
+import { ordreAtelierDansLaJournee } from "./index";
 
 // Lundi → vendredi travaillés.
 const ouvre = (d: string) => { const j = new Date(`${d}T12:00:00Z`).getUTCDay(); return j >= 1 && j <= 5; };
@@ -67,5 +68,25 @@ describe("planRepriseAtelier", () => {
       joursPostsRestants: ["2026-10-29"], cible: "2026-10-26", estTravaille: ouvre,
     });
     expect(p.placer).toEqual([{ id: 1, jour: "2026-10-28" }]);
+  });
+});
+
+describe("ordreAtelierDansLaJournee", () => {
+  it("la validation passe après l'atelier, les parties dans l'ordre, sans chevauchement", () => {
+    const r = ordreAtelierDansLaJournee([
+      { id: 928, taskType: "atelier_validation", scheduledTime: "10:00", estimatedDuration: 20 },
+      { id: 927, taskType: "atelier_contenu", scheduledTime: "10:23", estimatedDuration: 60, actionData: { partie: 1 } },
+    ]);
+    expect(r).toEqual([
+      { id: 927, scheduledTime: "10:00", scheduledEndTime: "11:00" },
+      { id: 928, scheduledTime: "11:00", scheduledEndTime: "11:20" },
+    ]);
+  });
+
+  it("déjà dans l'ordre : rien ne change", () => {
+    expect(ordreAtelierDansLaJournee([
+      { id: 1, taskType: "atelier_contenu", scheduledTime: "10:00", estimatedDuration: 60, actionData: { partie: 1 } },
+      { id: 2, taskType: "atelier_contenu", scheduledTime: "14:00", estimatedDuration: 60, actionData: { partie: 2 } },
+    ])).toEqual([]);
   });
 });
