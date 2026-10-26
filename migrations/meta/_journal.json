@@ -232,6 +232,13 @@
       "when": 1792141827467,
       "tag": "0032_parallel_jazinda",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792999630495,
+      "tag": "0033_slow_maggott",
+      "breakpoints": true
     }
   ]
 }

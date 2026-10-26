@@ -28,7 +28,8 @@ import { summarizeMilestones } from './project-summary';
 import { materializeRituals } from './ritual-materialize';
 import { maxTasksForDay } from './day-sizing';
 import { BUFFER_MIN_CEILING } from './rhythm-buffer';
-import { decisionReport, REPORTS_AVANT_QUESTION } from './rollover-decision';
+import { reprendreTaches } from './reprise';
+import { depsReprise } from './reprise/deps';
 import { debutEffectifDePlanification } from './planning-start';
 import { remplacerReferencesNumerotees } from "./references-taches";
 import { filtrerTachesGenerees } from "./filtre-taches-generees";
@@ -156,21 +157,17 @@ function nextWorkDay(fromDate: string, workDays: Set<string>): string {
 }
 
 export interface RolloverOptions {
-  /**
-   * Nombre max de tâches remontées. Défaut 8 (passage quotidien : on ne veut pas
-   * noyer la journée). Un redémarrage de planification passe Infinity : l'objectif
-   * est justement de TOUT reprogrammer.
-   */
+  /** Sans effet depuis la reprise (26 oct. 2026) : tout est repris, la place décide. */
   limit?: number;
   /**
-   * Traitement du compteur de reports (`learnedAdjustmentCount`), qui alimente
-   * l'encadré « Naya a remarqué » (seuil : 2 reports) :
-   *  - 'count' (défaut) : +1 et arbitrage IA « cette tâche vaut-elle encore le coup ? ».
-   *  - 'reset' : remise à 0, sans arbitrage IA. C'est le mode d'un redémarrage —
-   *    repartir de zéro inclut l'ardoise des reports : les tâches ne sont pas en
+   * Traitement du compteur de reports (`learnedAdjustmentCount`) :
+   *  - 'count' (défaut) : +1 pour une tâche replacée telle quelle ;
+   *  - 'reset' : remise à 0. C'est le mode d'un redémarrage — les tâches ne sont pas en
    *    cause, l'utilisateur a décroché sans mettre son planning en pause.
    */
   deferralMode?: 'count' | 'reset';
+  /** Le jour du passage (défaut : aujourd'hui à Paris) ; `targetDate` peut être plus tard. */
+  aujourdhui?: string;
 }
 
 export async function rolloverStaleTasks(
@@ -178,120 +175,21 @@ export async function rolloverStaleTasks(
   targetDate: string,
   options: RolloverOptions = {},
 ): Promise<{ moved: number }> {
-  const { limit = 8, deferralMode = 'count' } = options;
+  // Plus de report aveugle : la reprise (services/reprise) décide de chaque tâche au regard
+  // des objectifs et la replace là où il y a la place. `limit` n'a plus d'objet — les
+  // tâches au-delà de 8 restaient dans le passé.
   const prefs = await storage.getUserPreferences(userId);
-
-  // Ne pas rollover si la planification est en pause
-  if (prefs?.planningStatus === 'paused') {
-    console.log(`[Rollover] Skipping ${userId} — planning paused`);
-    return { moved: 0 };
-  }
-
   const workDays = parseWorkDays(prefs?.workDays);
-  const workDayStart = (prefs as any)?.workDayStart || '09:00';
   const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
-  const dayEndMin = hhmmToMin(workDayEnd);
-
-  // Si on est après workDayEnd - 60 min, planifier sur le prochain jour ouvré
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const isLateInDay = nowMin >= dayEndMin - 60;
-
-  const scheduleDate = isLateInDay
-    ? nextWorkDay(targetDate, workDays)
-    : (workDays.has(dayOfWeekName(targetDate)) ? targetDate : nextWorkDay(targetDate, workDays));
-
-  // Charger toutes les tâches incomplètes d'avant targetDate (30 jours de lookback)
-  const lookbackDate = (() => {
-    const d = new Date(targetDate + 'T00:00:00');
-    d.setDate(d.getDate() - 30);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  })();
-
-  const yesterday = (() => {
-    const d = new Date(targetDate + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  })();
-
-  // Inclure également les tâches d'aujourd'hui dans le passé (si on planifie sur demain)
-  const rangeEnd = isLateInDay ? targetDate : yesterday;
-
-  const staleTasks = await storage.getTasksInRange(userId, lookbackDate, rangeEnd).catch(() => []);
-
-  const incomplete = (staleTasks as any[])
-    .filter(t => !t.completed && t.scheduledDate && t.scheduledDate <= rangeEnd)
-    .sort((a, b) => (a.priority || 5) - (b.priority || 5))
-    .slice(0, limit);
-
-  if (incomplete.length === 0) return { moved: 0 };
-
-  // Utilise findFirstFreeSlot qui gère automatiquement le débordement sur les jours suivants
-  let moved = 0;
-  let questionnees = 0;
-  for (const task of incomplete) {
-    // Une tâche reportée deux fois ou plus est remise en question AVANT d'être reportée une
-    // fois de plus. Cette évaluation ne vivait que dans le re-tassage intra-journée, qui est
-    // désormais arrêté — mais sa place est ici : c'est au moment de reporter qu'on peut
-    // encore renoncer.
-    //
-    // Sans elle, « Publier le brouillon LinkedIn de ce matin », créée le 30 juin, continue
-    // d'être reportée indéfiniment en parlant d'un brouillon qui n'existe pas.
-    const reportsPrecedents = task.learnedAdjustmentCount ?? 0;
-    if (reportsPrecedents >= REPORTS_AVANT_QUESTION) {
-      // `null` = évaluation indisponible. decisionReport fait alors reporter : perdre du
-      // travail réel parce qu'un appel réseau a raté serait pire que reporter une fois de plus.
-      const encorePertinente = await evaluateTaskRelevanceFull(task)
-        .then(r => r.stillRelevant)
-        .catch(() => null);
-
-      if (decisionReport({ reportsPrecedents, encorePertinente }) === 'questionner') {
-        console.log(`[Rollover] Tâche ${task.id} "${task.title}" questionnée (${reportsPrecedents} reports)`);
-        storage.saveCompanionMessage({
-          userId,
-          role: 'assistant',
-          content: `Cette tâche a été reportée ${reportsPrecedents} fois : « ${task.title} ». Elle ne semble plus d'actualité. On la reformule, on la garde, ou on l'abandonne ?`,
-          platform: 'web',
-        } as any).catch((e: any) => console.error('[Rollover] message Companion:', e?.message ?? e));
-        questionnees += 1;
-        continue; // Ne PAS reporter : le Companion prend le relais.
-      }
-    }
-
-    const duration = task.estimatedDuration || 30;
-
-    // findFirstFreeSlot cherche à partir de scheduleDate et avance de jour en jour si nécessaire
-    const slot = await storage.findFirstFreeSlot(userId, scheduleDate, duration);
-
-    const newCount = (task.learnedAdjustmentCount || 0) + 1;
-    await storage.updateTask(task.id, {
-      scheduledDate: slot.date,
-      scheduledTime: slot.time,
-      scheduledEndTime: (() => {
-        const [h, m] = slot.time.split(':').map(Number);
-        const end = h * 60 + m + duration;
-        return `${String(Math.floor(end / 60)).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
-      })(),
-      learnedAdjustmentCount: deferralMode === 'reset' ? 0 : newCount,
-    });
-
-    if (deferralMode === 'count') {
-      handleTaskDeferral(userId, task, newCount).catch(e =>
-        console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
-      );
-    }
-
-    console.log(`[Rollover] Moved id=${task.id} → ${slot.date} ${slot.time}`);
-    moved++;
-  }
-
-  // Filet anti-chevauchement après rollover des tâches en retard.
-  await storage.fixOverlappingTasks(userId, scheduleDate).catch((e: any) =>
-    console.error(`[Rollover] fixOverlappingTasks ${userId}:`, e.message),
-  );
-
-  console.log(`[AutoPlanner] Rollover for ${userId}: moved ${moved} stale tasks from ${scheduleDate}`);
-  return { moved };
+  // Après la fin de journée moins une heure, ce qui reste d'aujourd'hui part aussi.
+  const aujourdhui = options.aujourdhui ?? todayStringParis();
+  const tard = targetDate === aujourdhui && currentParisTimeMin() >= hhmmToMin(workDayEnd) - 60;
+  const cible = tard || !workDays.has(dayOfWeekName(targetDate)) ? nextWorkDay(targetDate, workDays) : targetDate;
+  const bilan = await reprendreTaches(await depsReprise(), {
+    userId, aujourdhui, cible, inclureAujourdhui: tard,
+    reinitialiserReports: options.deferralMode === 'reset',
+  });
+  return { moved: bilan.replacees + bilan.modifiees };
 }
 
 // ─── Core: generate tasks for one user on a given date ───────────
@@ -702,7 +600,7 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         // 1. Rollover des tâches incomplètes des jours passés.
         //    Vers `debutUtilisateur` : une tache en retard doit atterrir le jour ou la
         //    planification reprend, pas sur une journee que l'utilisatrice a mise de cote.
-        await rolloverStaleTasks(userId, debutUtilisateur).catch(e =>
+        await rolloverStaleTasks(userId, debutUtilisateur, { aujourdhui: startDate }).catch(e =>
           console.error(`[AutoPlanner] Rollover failed for ${userId}:`, e.message)
         );
 
@@ -830,124 +728,24 @@ Réponds UNIQUEMENT avec ce JSON valide, sans texte autour :
 }
 
 /**
- * End-of-day rollover: moves all incomplete tasks from today → next work day.
- * Runs at 17:00 UTC (= ~19:00 Paris / CEST).
+ * Fin de journée (17:00 UTC, 18 h ou 19 h à Paris) : ce qui n'a pas été fait aujourd'hui est
+ * repris par Naya (services/reprise) et replacé à partir du prochain jour ouvré.
  */
 async function runEndOfDayRollover(): Promise<void> {
-  const today = todayString();
+  const today = todayStringParis();
   const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
-  console.log(`[Rollover] End-of-day run for ${userIds.length} users`);
+  console.log(`[Reprise] Fin de journée pour ${userIds.length} utilisatrice(s)`);
+  const deps = await depsReprise();
 
   for (const userId of userIds) {
     try {
       const prefs = await storage.getUserPreferences(userId);
-
-      // Skip si pause ou planning pas encore démarré
-      if (prefs?.planningStatus === 'paused') {
-        console.log(`[Rollover] Skipping ${userId} — planning paused`);
-        continue;
-      }
-      if (prefs?.planningStartDate && prefs.planningStartDate > today) {
-        console.log(`[Rollover] Skipping ${userId} — planning starts ${prefs.planningStartDate}`);
-        continue;
-      }
-
-      const workDays = parseWorkDays(prefs?.workDays);
-
-      // Tâches incomplètes de today et avant (lookback 30j) — UTC safe
-      const lookback = (() => {
-        const [y, m, d] = today.split('-').map(Number);
-        const dt = new Date(Date.UTC(y, m - 1, d - 30));
-        return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,'0')}-${String(dt.getUTCDate()).padStart(2,'0')}`;
-      })();
-
-      const staleTasks = await storage.getTasksInRange(userId, lookback, today).catch(() => []);
-      const incomplete = (staleTasks as any[]).filter(t => !t.completed && t.scheduledDate && t.scheduledDate <= today);
-
-      if (incomplete.length === 0) continue;
-
-      // Toujours planifier sur le prochain jour de travail (la journée est terminée)
-      const scheduleDate = nextWorkDay(today, workDays);
-      const scheduledDayTasks = await storage.getTasksInRange(userId, scheduleDate, scheduleDate).catch(() => []);
-      const blockedRanges = buildBlockedRanges(scheduledDayTasks as any[], prefs);
-      const calBlocked = await getCalendarBlockedRanges(userId, scheduleDate).catch(() => []);
-      blockedRanges.push(...calBlocked);
-
-      const workDayStart = (prefs as any)?.workDayStart || '09:00';
-      const workDayEnd = (prefs as any)?.workDayEnd || '18:00';
-      const dayEndMin = hhmmToMin(workDayEnd);
-
-      // Meme correction que dans generateForUser : on part du debut de journee, pas de la
-      // fin du dernier bloc. Une tache reportee le soir doit pouvoir atterrir le matin.
-      let curSlot = hhmmToMin(workDayStart);
-
-      let moved = 0;
-      // Pre-load the next-next work day as overflow target if scheduleDate fills up
-      const overflowDate = nextWorkDay(scheduleDate, workDays);
-      const overflowDayTasks = await storage.getTasksInRange(userId, overflowDate, overflowDate).catch(() => []);
-      const overflowBlockedRanges = buildBlockedRanges(overflowDayTasks as any[], prefs);
-      const overflowCalBlocked = await getCalendarBlockedRanges(userId, overflowDate).catch(() => []);
-      overflowBlockedRanges.push(...overflowCalBlocked);
-      let overflowSlot = overflowBlockedRanges.reduce((max, r) => Math.max(max, r.end), hhmmToMin(workDayStart));
-
-      for (const task of incomplete.sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5))) {
-        const dur = task.estimatedDuration || 30;
-        // Sauter les plages bloquées sur scheduleDate
-        let attempts = 0;
-        while (attempts++ < 20) {
-          const overlap = blockedRanges.find(r => curSlot < r.end && curSlot + dur > r.start);
-          if (!overlap) break;
-          curSlot = overlap.end;
-        }
-
-        let targetDate = scheduleDate;
-        let targetSlot = curSlot;
-
-        if (curSlot + dur > dayEndMin) {
-          // scheduleDate est plein — essayer overflowDate
-          let ovAttempts = 0;
-          while (ovAttempts++ < 20) {
-            const overlap = overflowBlockedRanges.find(r => overflowSlot < r.end && overflowSlot + dur > r.start);
-            if (!overlap) break;
-            overflowSlot = overlap.end;
-          }
-          if (overflowSlot + dur > dayEndMin) continue; // plus de place nulle part, sauter
-          targetDate = overflowDate;
-          targetSlot = overflowSlot;
-        }
-
-        const newCount = (task.learnedAdjustmentCount || 0) + 1;
-        const newTime = minToHHMM(targetSlot);
-        await storage.updateTask(task.id, {
-          scheduledDate: targetDate,
-          scheduledTime: newTime,
-          scheduledEndTime: minToHHMM(targetSlot + dur),
-          learnedAdjustmentCount: newCount,
-        }).catch(e => console.error(`[Rollover] updateTask ${task.id} failed:`, e.message));
-
-        // Intelligence layer — non-blocking
-        handleTaskDeferral(userId, task, newCount).catch(e =>
-          console.error(`[Rollover] handleTaskDeferral ${task.id}:`, e.message)
-        );
-
-        if (targetDate === scheduleDate) {
-          blockedRanges.push({ start: targetSlot, end: targetSlot + dur });
-          curSlot = targetSlot + dur;
-        } else {
-          overflowBlockedRanges.push({ start: targetSlot, end: targetSlot + dur });
-          overflowSlot = targetSlot + dur;
-        }
-        moved++;
-      }
-
-      if (moved > 0) console.log(`[Rollover] Moved ${moved} tasks → ${scheduleDate}/${overflowDate} for user ${userId}`);
-
-      // Filet anti-chevauchement après rollover de fin de journée.
-      await storage.fixOverlappingTasks(userId, scheduleDate).catch((e: any) =>
-        console.error(`[Rollover] fixOverlappingTasks ${userId}:`, e.message),
-      );
+      if (prefs?.planningStatus === 'paused') continue;
+      if (prefs?.planningStartDate && prefs.planningStartDate > today) continue;
+      const cible = nextWorkDay(today, parseWorkDays(prefs?.workDays));
+      await reprendreTaches(deps, { userId, aujourdhui: today, cible, inclureAujourdhui: true });
     } catch (err: any) {
-      console.error(`[Rollover] Error for user ${userId}:`, err.message);
+      console.error(`[Reprise] Fin de journée user=${userId} :`, err?.message ?? err);
     }
   }
 }

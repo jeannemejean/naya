@@ -2414,3 +2414,26 @@ export const profilEtiquettes = pgTable("profil_etiquettes", {
   uneParPost: uniqueIndex("profil_etiquettes_post").on(t.postId),
 }));
 export type ProfilEtiquette = typeof profilEtiquettes.$inferSelect;
+
+/**
+ * Journal de la reprise des tâches non faites (spec 2026-10-26-naya-reprise-intelligente-design.md).
+ * Une ligne par tâche touchée par un passage : ce que Naya en a fait, pourquoi, et de quoi
+ * l'annuler. Nourrit la carte « Ce que j'ai repris » de l'accueil.
+ */
+export const reprisesTaches = pgTable("reprises_taches", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  lot: text("lot").notNull(),                     // un passage de reprise
+  taskId: integer("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),               // garder | reformuler | decouper | fusionner | abandonner | perimee | replacer
+  raison: text("raison").notNull().default(""),
+  avant: jsonb("avant").notNull(),                // { title, description, estimatedDuration, scheduledDate, scheduledTime, scheduledEndTime }
+  apres: jsonb("apres").notNull(),                // idem, + creees: number[] (découpage), absorbees: number[] (fusion)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  vueAt: timestamp("vue_at"),
+  annuleeAt: timestamp("annulee_at"),
+}, (t) => [
+  index("reprises_taches_user_lot_idx").on(t.userId, t.lot),
+]);
+export type RepriseTache = typeof reprisesTaches.$inferSelect;
+export type InsertRepriseTache = typeof reprisesTaches.$inferInsert;

@@ -25,6 +25,11 @@ const storageMock = {
   findFirstFreeSlot: vi.fn(),
 };
 vi.mock("../storage", () => ({ storage: storageMock }));
+// La reprise des tâches en retard est testée à part (services/reprise) : ici, on observe
+// seulement le jour à partir duquel le planificateur la lance.
+const reprendreTaches = vi.fn().mockResolvedValue({ replacees: 0, modifiees: 0, archivees: 0, creees: 0 });
+vi.mock("./reprise", () => ({ reprendreTaches }));
+vi.mock("./reprise/deps", () => ({ depsReprise: vi.fn().mockResolvedValue({}) }));
 vi.mock("../db", () => ({
   db: { select: vi.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })) },
   pool: { query: vi.fn(), on: vi.fn() },
@@ -32,9 +37,9 @@ vi.mock("../db", () => ({
 
 const { runDailyAutoPlanner } = await import("./auto-planner");
 
-/** Fenêtre de rollover observée : son début est `targetDate - 30 jours`, deterministe. */
-function debutsDeFenetreObserves(): string[] {
-  return storageMock.getTasksInRange.mock.calls.map((c: any[]) => c[1]);
+/** Jours à partir desquels la reprise des tâches en retard a été lancée. */
+function ciblesDeReprise(): string[] {
+  return reprendreTaches.mock.calls.map((c: any[]) => c[1].cible);
 }
 
 /**
@@ -72,10 +77,8 @@ describe("runDailyAutoPlanner — date de départ future", () => {
 
     await runDailyAutoPlanner("2026-09-24");
 
-    // La fenetre de rollover part de `targetDate - 30 jours`. Depuis le 25 → 26 aout.
-    // Depuis le 24 (l'ancien comportement) → 25 aout. Un jour d'ecart, donc discriminant.
-    expect(debutsDeFenetreObserves()).toContain("2026-08-26");
-    expect(debutsDeFenetreObserves()).not.toContain("2026-08-25");
+    // Les tâches en retard reprennent le vendredi 25, pas le jeudi 24 (l'ancien comportement).
+    expect(ciblesDeReprise()).toEqual(["2026-09-25"]);
 
     // ET la generation part bien du vendredi 25, sans repasser par le jeudi 24 — c'est la
     // moitie qui decide si Jeanne voit enfin quelque chose dans son planning du vendredi.
@@ -119,7 +122,7 @@ describe("runDailyAutoPlanner — date de départ future", () => {
 
     await runDailyAutoPlanner("2026-09-24");
 
-    expect(storageMock.getTasksInRange).toHaveBeenCalled();
+    expect(reprendreTaches).toHaveBeenCalled();
   });
 
   it("une date de départ passée ne fait pas remonter le temps", async () => {
@@ -131,9 +134,8 @@ describe("runDailyAutoPlanner — date de départ future", () => {
 
     await runDailyAutoPlanner("2026-09-24");
 
-    // Depuis le 24 → 25 aout. Si la date passee etait prise, on partirait du 2 aout.
-    expect(debutsDeFenetreObserves()).toContain("2026-08-25");
-    expect(debutsDeFenetreObserves()).not.toContain("2026-08-02");
+    // Depuis le 24. Si la date passee etait prise, on partirait du 1er septembre.
+    expect(ciblesDeReprise()).toEqual(["2026-09-24"]);
   });
 
   it("sans date de départ, on part d'aujourd'hui", async () => {
@@ -145,7 +147,7 @@ describe("runDailyAutoPlanner — date de départ future", () => {
 
     await runDailyAutoPlanner("2026-09-24");
 
-    expect(debutsDeFenetreObserves()).toContain("2026-08-25");
+    expect(ciblesDeReprise()).toEqual(["2026-09-24"]);
   });
 });
 
