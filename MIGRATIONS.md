@@ -388,6 +388,23 @@ Livrables de tâche, étape 1 (spec `docs/superpowers/specs/2026-10-06-naya-livr
 - [ ] Supprimer `sauvegarde-avant-reprise-2026-10-26` quand le déploiement est stable.
 
 
+## 3duodecies. Production — migrée le 26 octobre 2026 (`0034`) — reprise des posts jamais partis
+
+- [x] État lu avant : suivi **34 lignes** ; `reprises_taches.task_id` NOT NULL, 0 ligne.
+- [x] Point de restauration : branche **`sauvegarde-avant-reprise-posts-2026-10-26`**
+      (`br-rough-wind-an86sjim`).
+- [x] SQL relu (`0034_absurd_mephisto.sql`) : `task_id` devient nullable, ajout de
+      `content_id` (clé étrangère `content`, `ON DELETE cascade`). Répété avant sur deux
+      branches d'essai.
+- [x] Appliquée avec `scripts/migrate-prod.ts` (lancée par Jeanne). Vérifié : suivi
+      **34 → 35**, `task_id` nullable, `content_id` présente.
+- [x] Ordre respecté : migration d'abord, `main` poussé ensuite.
+
+### Ce qui reste
+
+- [ ] Supprimer `sauvegarde-avant-reprise-posts-2026-10-26` quand le déploiement est stable.
+
+
 ## 4. Comment le migrator décide (drizzle-orm 0.39.1, vérifié dans `node_modules`)
 
 1. crée `drizzle.__drizzle_migrations` (`id`, `hash`, `created_at bigint`) si absente ;
