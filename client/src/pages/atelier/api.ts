@@ -88,3 +88,22 @@ export async function retirerVisuel(id: number, mediaId: number): Promise<void> 
   const { status, data } = await envoyer("DELETE", `/api/atelier/posts/${id}/visuels/${mediaId}`);
   if (status >= 400) throw echec(status, data);
 }
+
+export type MotifNote = "deja_programme" | "plus_actuel";
+
+export type ResultatNote =
+  | { statut: "reecrit"; body: string }
+  | { statut: "remplace"; remplacement: { id: number; title: string } }
+  | { statut: "supprime"; remplacementEchoue: boolean };
+
+/** Une note à Naya : elle réécrit le post, le remplace par un autre ou le supprime. */
+export async function noterPost(id: number, note: { motif: MotifNote | null; note: string }): Promise<ResultatNote> {
+  const { status, data } = await envoyer("POST", `/api/atelier/posts/${id}/note`, note);
+  if (status >= 400) throw echec(status, data);
+  return data as ResultatNote;
+}
+
+export async function supprimerPost(id: number): Promise<void> {
+  const { status, data } = await envoyer("DELETE", `/api/atelier/posts/${id}`);
+  if (status >= 400) throw echec(status, data);
+}

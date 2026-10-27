@@ -72,9 +72,13 @@ async function sansLever<T>(nom: string, f: () => Promise<T>, fallback: T): Prom
 
 export async function refuserPost(
   deps: RefusPostDeps,
-  input: { userId: string; contentId: number; raison: RaisonRefusPost; explication?: string | null; remplacer: boolean },
+  input: {
+    userId: string; contentId: number; raison: RaisonRefusPost; explication?: string | null; remplacer: boolean;
+    /** false : rien à apprendre sur la marque (ex. « déjà programmé ailleurs »), l'explication ne sert qu'au remplaçant. */
+    souvenir?: boolean;
+  },
 ): Promise<ResultatRefusPost> {
-  const { userId, contentId, raison, remplacer } = input;
+  const { userId, contentId, raison, remplacer, souvenir = true } = input;
   const explication = input.explication ?? null;
 
   // 1. Lecture + propriété : un post d'un autre compte est « introuvable ».
@@ -95,7 +99,7 @@ export async function refuserPost(
   }
 
   // 3. Souvenir, seulement s'il y a quelque chose à apprendre.
-  await sansLever("souvenir", async () => {
+  if (souvenir) await sansLever("souvenir", async () => {
     const texte = texteSouvenirPost(post, raison, explication);
     if (texte !== null) await deps.ecrireSouvenir({ userId, projectId: post.projectId ?? null, texte });
   }, undefined);

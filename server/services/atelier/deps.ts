@@ -16,7 +16,11 @@ import type { DepsValidation } from "./validation";
 import { notifierRoutine } from "../routines/notifier";
 import { langueDuCompte } from "../garde-langue";
 import { placerTachesProductionPosts, parseWorkDays, DAY_ABBRS } from "../campagne/placement";
-import { redigerPost } from "./redaction";
+import { redigerPost, refairePost } from "./redaction";
+import { devaliderPost } from "./validation";
+import { SCHEMA_NOTE, SYSTEME_NOTE, promptNote, type DepsNote } from "./note";
+import { refuserPost } from "../refus-post/service";
+import { refusPostDeps } from "../refus-post/deps";
 import { basculerVersAteliers, preRediger, rappelVeille, type DepsQuotidien } from "./quotidien";
 import { jourHeureParis } from "./validation";
 
@@ -146,3 +150,32 @@ export async function preRedactionMatin(userId: string): Promise<number> {
   const estTravaille = (d: string) => jours.has(DAY_ABBRS[new Date(`${d}T12:00:00Z`).getUTCDay()]);
   return preRediger(depsQuotidien, userId, jourHeureParis(new Date()).jour, estTravaille);
 }
+
+// ─── La note à Naya sur un post ──────────────────────────────────────────────
+
+export const depsNote: DepsNote = {
+  lirePost: (id, userId) => storage.getContentById(id, userId) as any,
+  garde: gardeDepense,
+  async decider(userId, post, note) {
+    const [{ isAiBlocked }, { buildNayaContext }, { genererStructure }] = await Promise.all([
+      import("../usage"), import("../naya-context"), import("../ai/structure"),
+    ]);
+    if (await isAiBlocked(userId)) return null;
+    const contexte = await buildNayaContext(userId, (post as any).projectId ?? null, "Une note sur un post prévu");
+    const { valeur } = await genererStructure({
+      schema: SCHEMA_NOTE, system: `${SYSTEME_NOTE}\n\n${contexte}`, model: CLAUDE_MODELS.fast, maxTokens: 600,
+      taskKind: "classification", etape: "note sur un post de l'atelier", userId, projectId: (post as any).projectId ?? null,
+      prompt: promptNote(post, note),
+    });
+    return valeur;
+  },
+  async autresSujets(userId, post) {
+    if (!post.scheduledFor) return [];
+    const t = new Date(post.scheduledFor).getTime();
+    const voisins = await storage.getPostsEntre(userId, new Date(t - 7 * 86400000), new Date(t + 8 * 86400000));
+    return voisins.filter((p) => p.id !== post.id).map((p) => (p.title ?? "").trim()).filter(Boolean);
+  },
+  devalider: (userId, id) => devaliderPost(depsValidation, userId, id),
+  refaire: (userId, id, consigne) => refairePost(depsRedaction, userId, id, consigne),
+  refuser: (userId, id, o) => refuserPost(refusPostDeps, { userId, contentId: id, raison: "other", ...o }),
+};
