@@ -171,6 +171,11 @@ export default function AtelierPage({ onSearchClick }: { onSearchClick?: () => v
                   enRedaction={enRedaction.has(postActif.id)}
                   onChange={() => { void rafraichir(); }}
                   onValide={() => { const s = postSuivant(posts, postActif.id); if (s != null) setActif(s); }}
+                  // Supprimé : le post suivant s'ouvre ; remplacé : son remplaçant, une fois la semaine relue.
+                  onRetire={(remplacant) => {
+                    const s = postSuivant(posts, postActif.id);
+                    void rafraichir().then(() => setActif(remplacant ?? s));
+                  }}
                 />
               )}
             </div>

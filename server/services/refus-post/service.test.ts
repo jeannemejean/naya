@@ -167,4 +167,12 @@ describe("refuserPost", () => {
     const r: any = await refuserPost(d, entree);
     expect(r.remplacement.id).toBe(99);
   });
+
+  it("souvenir: false : rien n'est mémorisé, l'explication sert quand même au remplaçant", async () => {
+    const d = faire();
+    const r = await refuserPost(d, { ...entree, raison: "other", explication: "Déjà programmé ailleurs", souvenir: false });
+    expect(r.statut).toBe("refuse");
+    expect(d.j).not.toContain("souvenir");
+    expect(d.genInput.explication).toBe("Déjà programmé ailleurs");
+  });
 });

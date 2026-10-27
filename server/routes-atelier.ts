@@ -13,13 +13,23 @@ import { postModifiable } from "@shared/livrables";
 import { jourDuPost } from "./services/campagne/production";
 import { redigerPost, refairePost } from "./services/atelier/redaction";
 import { validerPost, devaliderPost, lireModifications } from "./services/atelier/validation";
-import { compteDuPost, depsRedaction, depsValidation, mediasDuPost } from "./services/atelier/deps";
+import { compteDuPost, depsNote, depsRedaction, depsValidation, mediasDuPost } from "./services/atelier/deps";
+import { lireNote, supprimerPostAtelier, traiterNote, type ResultatNote } from "./services/atelier/note";
 import { creerLivrable } from "./services/livrables/service";
 import { depsComptesMemorisees, type DepsComptes } from "./services/connexions/comptes";
 import { livrablesDeps } from "./services/livrables/deps";
 import { estUrlMediaDe } from "./services/livrables/urls";
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
+
+/** La réponse d'une action sur un post (note à Naya, suppression). */
+function repondreNote(res: any, r: ResultatNote) {
+  if (r.statut === "introuvable") return res.status(404).json({ message: "not_found" });
+  if (r.statut === "deja_publie") return res.status(409).json({ message: "deja_publie" });
+  if (r.statut === "refus") return res.status(402).json({ message: "budget" });
+  if (r.statut === "erreur") return res.status(502).json({ message: "redaction_failed" });
+  return res.json(r);
+}
 
 function idPositif(v: unknown): number | null {
   const n = Number(v);
@@ -168,6 +178,33 @@ export function registerAtelierRoutes(app: Express): void {
     } catch (e: any) {
       console.error("[Atelier] dévalidation:", e?.message);
       res.status(500).json({ message: "devalidation_failed" });
+    }
+  });
+
+  // Une note à Naya : « déjà programmé », « plus d'actualité » ou une phrase libre. Naya
+  // réécrit le post, le remplace par un autre (même créneau, même objectif) ou le supprime.
+  app.post("/api/atelier/posts/:id/note", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = idPositif(req.params.id);
+      if (id == null) return res.status(404).json({ message: "not_found" });
+      const entree = lireNote(req.body);
+      if (!entree) return res.status(400).json({ message: "invalide" });
+      repondreNote(res, await traiterNote(depsNote, req.userId, id, entree));
+    } catch (e: any) {
+      console.error("[Atelier] note:", e?.message);
+      res.status(500).json({ message: "note_failed" });
+    }
+  });
+
+  // Supprimer un post depuis l'atelier (sans remplaçant ; ses étapes non faites partent avec lui).
+  app.delete("/api/atelier/posts/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = idPositif(req.params.id);
+      if (id == null) return res.status(404).json({ message: "not_found" });
+      repondreNote(res, await supprimerPostAtelier(depsNote, req.userId, id));
+    } catch (e: any) {
+      console.error("[Atelier] suppression:", e?.message);
+      res.status(500).json({ message: "suppression_failed" });
     }
   });
 
