@@ -9194,6 +9194,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const userId = req.userId;
       const messageData = insertOutreachMessageSchema.parse({ ...req.body, userId });
+      // Jamais un message rattaché au prospect d'un autre compte.
+      if (!(await storage.getLead(messageData.leadId, userId))) return res.status(404).json({ message: "Lead not found" });
       const message = await storage.createOutreachMessage(messageData);
       res.json(message);
     } catch (error) {
@@ -9204,9 +9206,11 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/outreach/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const { id } = req.params;
-      const updates = req.body;
-      const message = await storage.updateOutreachMessage(parseInt(id), updates);
+      // Seul le propriétaire du message peut le modifier, et jamais le réattribuer.
+      const existing = await storage.getOutreachMessageById(parseInt(req.params.id));
+      if (!existing || existing.userId !== req.userId) return res.status(404).json({ message: "not_found" });
+      const { id: _id, userId: _userId, leadId: _leadId, ...updates } = req.body ?? {};
+      const message = await storage.updateOutreachMessage(existing.id, updates);
       res.json(message);
     } catch (error) {
       console.error("Error updating outreach message:", error);
