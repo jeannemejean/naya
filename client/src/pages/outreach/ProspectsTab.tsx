@@ -39,6 +39,7 @@ import LeadFinderDialog from './dialogs/LeadFinderDialog';
 import type { Lead } from '@shared/schema';
 import { resumeEnrolement } from './enrolement-message';
 import ValidationPanel from './ValidationPanel';
+import LinkedInAEnvoyer from './LinkedInAEnvoyer';
 import { attendValidation, estPretAPartir, prospectsAValider } from './validation-messages';
 
 interface ProspectsTabProps {
@@ -50,10 +51,12 @@ interface ProspectsTabProps {
 const STATUS_META: Record<string, { label: string; variant: NonNullable<BadgeProps['variant']>; Icon: typeof Circle }> = {
   none: { label: 'Pas en séquence', variant: 'outline', Icon: Circle },
   active: { label: 'En séquence', variant: 'salvia', Icon: PlayCircle },
+  awaiting_linkedin: { label: 'À envoyer sur LinkedIn', variant: 'salvia', Icon: PauseCircle },
   stopped_replied: { label: 'A répondu', variant: 'sulphur', Icon: Hand },
   completed: { label: 'Terminé', variant: 'default', Icon: CheckCircle2 },
   paused: { label: 'En pause', variant: 'outline', Icon: PauseCircle },
   bounced: { label: 'Bounce', variant: 'destructive', Icon: AlertTriangle },
+  unsubscribed: { label: 'Désinscrit', variant: 'destructive', Icon: AlertTriangle },
   failed: { label: 'Échec', variant: 'destructive', Icon: AlertTriangle },
 };
 
@@ -226,6 +229,9 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
 
       {/* Messages à valider — là où mène la tâche « Valider les messages préparés par Naya » */}
       <ValidationPanel prospects={aValider} onOpenLead={setSelectedLead} />
+
+      {/* Brouillons LinkedIn : la séquence attend que tu les envoies */}
+      <LinkedInAEnvoyer campaignId={campaignId} />
 
       {/* Barre d'actions groupées — visible dès qu'au moins 1 prospect est sélectionné */}
       {selectedList.length > 0 && (

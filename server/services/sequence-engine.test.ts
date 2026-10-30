@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateCondition, decideNextStep } from "./sequence-engine";
+import { evaluateCondition, decideNextStep, planAfterStep, stepOrderFromMessageType } from "./sequence-engine";
 import type { LeadSignals } from "./sequence-signals";
 
 const NONE: LeadSignals = { opened: false, clicked: false, bounced: false, replied: false, inviteAccepted: false };
@@ -50,5 +50,25 @@ describe("decideNextStep", () => {
   });
   it("dernière étape marque done", () => {
     expect(decideNextStep(2, steps, { ...NONE, opened: true }, 3)).toEqual({ action: "send", index: 2, done: true });
+  });
+});
+
+describe("planAfterStep", () => {
+  const signals = { opened: false, clicked: false, bounced: false, replied: false, inviteAccepted: false };
+  const now = new Date("2026-10-30T10:00:00Z");
+  it("programme l'étape suivante à partir de maintenant, avec son délai", () => {
+    const r = planAfterStep(0, [{ delayDays: 0, condition: "always" }, { delayDays: 2, condition: "always" }], signals, now);
+    expect(r).toEqual({ currentStep: 1, lastStepSentAt: now, status: "active", nextRunAt: new Date(now.getTime() + 2 * 86_400_000) });
+  });
+  it("dernière étape → terminée", () => {
+    expect(planAfterStep(0, [{ delayDays: 0, condition: "always" }], signals, now)).toMatchObject({ status: "completed", nextRunAt: null });
+  });
+});
+
+describe("stepOrderFromMessageType", () => {
+  it("lit le rang de l'étape", () => {
+    expect(stepOrderFromMessageType("step_2")).toBe(2);
+    expect(stepOrderFromMessageType("step_3_invitation")).toBe(3);
+    expect(stepOrderFromMessageType("manual")).toBeNull();
   });
 });

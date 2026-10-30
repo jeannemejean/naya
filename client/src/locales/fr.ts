@@ -1142,6 +1142,21 @@ const fr = {
  },
 
  outreach: {
+  linkedinManuel: {
+    titre_one: "{{count}} message à envoyer sur LinkedIn",
+    titre_other: "{{count}} messages à envoyer sur LinkedIn",
+    intro: "Naya a rédigé ces messages. Copie-les, envoie-les depuis LinkedIn, puis dis-le ici : la suite de la séquence part de ce moment-là.",
+    attend: "La séquence attend ce message",
+    etape: "Étape {{n}}",
+    copier: "Copier",
+    copie: "Message copié",
+    profil: "Ouvrir le profil",
+    envoye: "Envoyé",
+    passer: "Passer",
+    envoyeOk: "C'est noté : la séquence reprend à partir de maintenant.",
+    passeOk: "Étape passée.",
+    erreur: "Ça n'a pas marché, réessaie.",
+  },
   validation: {
     titre_one: "{{count}} message à valider",
     titre_other: "{{count}} messages à valider",

@@ -17,6 +17,7 @@ vi.mock("../storage", () => ({
     getUserPreferences: vi.fn(),
     createOutreachMessage: vi.fn(),
     countOutreachSentSince: vi.fn(),
+    getLastOutreachSentAt: vi.fn(),
     getLinkedInAttemptTimestampsSince: vi.fn(),
     recordLinkedInSendAttempt: vi.fn(),
     updateUserPreferences: vi.fn(),
@@ -51,6 +52,8 @@ import {
   nextLinkedInFailureState,
   LINKEDIN_FAILURE_BACKOFF_BASE_MIN,
   LINKEDIN_MAX_CONSECUTIVE_FAILURES,
+  emailGapMs,
+  emailGapElapsed,
 } from "./prospection-sender";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
@@ -136,6 +139,33 @@ const steps = [
   { delayDays: 3 }, // étape 2
   { delayDays: 4 }, // étape 3
 ];
+
+describe("emailGapMs / emailGapElapsed", () => {
+  it("l'écart exigé est toujours entre 3 et 8 minutes", () => {
+    for (let i = 0; i < 500; i++) {
+      const gap = emailGapMs(new Date(1_780_000_000_000 + i * 7_919));
+      expect(gap).toBeGreaterThanOrEqual(3 * 60_000);
+      expect(gap).toBeLessThan(8 * 60_000);
+    }
+  });
+  it("l'écart varie d'un envoi à l'autre (pas un rythme fixe)", () => {
+    const gaps = new Set(Array.from({ length: 20 }, (_, i) => emailGapMs(new Date(1_780_000_000_000 + i * 61_000))));
+    expect(gaps.size).toBeGreaterThan(10);
+  });
+  it("le même dernier envoi donne toujours le même écart (pas de nouveau tirage à chaque passage)", () => {
+    const last = new Date("2026-06-10T07:00:00.123Z");
+    expect(emailGapMs(last)).toBe(emailGapMs(new Date(last)));
+  });
+  it("aucun email encore envoyé → peut partir", () => {
+    expect(emailGapElapsed(null, new Date())).toBe(true);
+  });
+  it("respecte l'écart exigé", () => {
+    const last = new Date("2026-06-10T07:00:00.000Z");
+    const gap = emailGapMs(last);
+    expect(emailGapElapsed(last, new Date(last.getTime() + gap - 1))).toBe(false);
+    expect(emailGapElapsed(last, new Date(last.getTime() + gap))).toBe(true);
+  });
+});
 
 describe("planNextStep", () => {
   it("currentStep=0 → envoie l'étape 0, programme l'étape 1 à +3j", () => {
@@ -280,6 +310,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.updateLeadSequenceState as any).mockResolvedValue(null);
     (storage.createOutreachMessage as any).mockResolvedValue({});
     (storage.countOutreachSentSince as any).mockResolvedValue(0);
+    (storage.getLastOutreachSentAt as any).mockResolvedValue(null);
     (storage.getLinkedInAttemptTimestampsSince as any).mockResolvedValue([]);
     (storage.updateUserPreferences as any).mockResolvedValue(undefined);
     (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Corps du message" });
@@ -509,6 +540,58 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     expect(opts.step).toEqual(expect.objectContaining({ id: 100 }));
   });
 
+  describe("rythme des emails (plafond email seul, écart entre deux emails)", () => {
+    it("le plafond du jour ne compte que les emails", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+
+      await runProspectionSender();
+
+      expect(storage.countOutreachSentSince).toHaveBeenCalledWith("u1", expect.any(Date), "email");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("plusieurs emails dus au même passage : un seul part", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([
+        baseState({ id: 1, leadId: 1 }), baseState({ id: 2, leadId: 2 }), baseState({ id: 3, leadId: 3 }),
+      ]);
+      (storage.getLeads as any).mockResolvedValue([
+        baseLead({ id: 1, email: "a@example.com" }), baseLead({ id: 2, email: "b@example.com" }), baseLead({ id: 3, email: "c@example.com" }),
+      ]);
+
+      await runProspectionSender();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("dernier email parti il y a 2 minutes : rien ne part, aucune génération IA", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLastOutreachSentAt as any).mockResolvedValue(new Date(Date.now() - 2 * 60_000));
+
+      await runProspectionSender();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+    });
+
+    it("dernier email parti il y a 9 minutes : l'email part", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLastOutreachSentAt as any).mockResolvedValue(new Date(Date.now() - 9 * 60_000));
+
+      await runProspectionSender();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("lecture du dernier envoi ratée : refus par prudence", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLastOutreachSentAt as any).mockRejectedValue(new Error("DB down"));
+
+      await runProspectionSender();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe("garde d'idempotence", () => {
     it("étape déjà réservée : n'envoie RIEN mais fait avancer la séquence", async () => {
       (storage.claimStepSend as any).mockResolvedValue(false);
@@ -673,6 +756,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
         (freshStorage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
         (freshStorage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
         (freshStorage.countOutreachSentSince as any).mockResolvedValue(0);
+        (freshStorage.getLastOutreachSentAt as any).mockResolvedValue(null);
         (freshStorage.updateLeadSequenceState as any).mockResolvedValue(null);
         (freshStorage.createOutreachMessage as any).mockResolvedValue({});
         (freshStorage.markStepSendSent as any).mockResolvedValue(undefined);
@@ -754,6 +838,21 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       // brouillon enregistré à tort comme parti passerait ce test).
       expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ sentAt: null }));
       expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "draft");
+    });
+
+    it("brouillon LinkedIn : la séquence ATTEND l'envoi manuel au lieu d'avancer", async () => {
+      // Avant : la séquence avançait comme si le message était parti (currentStep+1,
+      // lastStepSentAt = maintenant) et le délai suivant courait depuis un envoi fictif.
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" }), baseStep({ id: 101, stepOrder: 2 })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      const ecritures = (storage.updateLeadSequenceState as any).mock.calls.map((c: any[]) => c[1]);
+      expect(ecritures).toEqual([{ status: "awaiting_linkedin", nextRunAt: null }]);
+      expect(ecritures.some((u: any) => "lastStepSentAt" in u || "currentStep" in u)).toBe(false);
     });
 
     it("brouillon LinkedIn : createOutreachMessage rejette → réservation libérée, la séquence n'avance pas", async () => {

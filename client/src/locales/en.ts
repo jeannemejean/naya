@@ -1138,6 +1138,21 @@ const en = {
  },
 
  outreach: {
+  linkedinManuel: {
+    titre_one: "{{count}} message to send on LinkedIn",
+    titre_other: "{{count}} messages to send on LinkedIn",
+    intro: "Naya wrote these messages. Copy them, send them from LinkedIn, then confirm here: the rest of the sequence starts from that moment.",
+    attend: "The sequence is waiting for this message",
+    etape: "Step {{n}}",
+    copier: "Copy",
+    copie: "Message copied",
+    profil: "Open profile",
+    envoye: "Sent",
+    passer: "Skip",
+    envoyeOk: "Noted: the sequence resumes from now.",
+    passeOk: "Step skipped.",
+    erreur: "That didn't work, try again.",
+  },
   validation: {
     titre_one: "{{count}} message to approve",
     titre_other: "{{count}} messages to approve",

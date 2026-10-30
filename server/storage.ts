@@ -626,7 +626,15 @@ export interface IStorage {
   /** Rangs d'étapes déjà réservés pour ce couple (prospect, campagne) — sert au rattrapage. */
   getReservedStepOrders(leadId: number, campaignId: number): Promise<number[]>;
   updateOutreachMessage(id: number, updates: Partial<OutreachMessage>): Promise<OutreachMessage>;
-  getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined>;
+  getLatestOutreachByLead(leadId: number, platform?: string): Promise<OutreachMessage | undefined>;
+  /** Instant du dernier envoi RÉEL de l'utilisatrice sur ce canal (null = aucun). */
+  getLastOutreachSentAt(userId: string, platform: string): Promise<Date | null>;
+  /** Désinscrit ou a signalé un spam — ce prospect OU une autre fiche de la même adresse. */
+  isLeadUnsubscribed(leadId: number, userId: string): Promise<boolean>;
+  /** Brouillons LinkedIn (jamais envoyés) des prospects d'une campagne, à envoyer à la main. */
+  getLinkedInDraftsForCampaign(campaignId: number, userId: string): Promise<Array<{ message: OutreachMessage; lead: Lead; sequenceStatus: string; currentStep: number }>>;
+  deleteOutreachMessage(id: number): Promise<void>;
+  getOutreachMessageById(id: number): Promise<OutreachMessage | undefined>;
   getOutreachForLeads(leadIds: number[]): Promise<OutreachMessage[]>;
   countOutreachSentSince(userId: string, since: Date, platform?: string): Promise<number>;
   /**
@@ -1866,6 +1874,9 @@ export class DatabaseStorage implements IStorage {
   async enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null> {
     const steps = await this.getSequenceSteps(campaignId);
     if (steps.length === 0) return null; // pas de séquence définie → rien à enrôler
+    // Un désinscrit ne rentre plus jamais en séquence, ni par une relance de campagne,
+    // ni par une autre fiche portant la même adresse.
+    if (await this.isLeadUnsubscribed(leadId, userId)) return null;
     const firstDelayDays = steps[0].delayDays || 0;
     const nextRunAt = new Date(Date.now() + firstDelayDays * 86400000);
 
@@ -1895,21 +1906,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null> {
+    // Une désinscription est définitive : aucune écriture (pause, réponse, rebond, worker)
+    // ne fait ressortir un prospect de cet état.
     const [updated] = await db.update(leadSequenceState)
       .set({ ...updates, updatedAt: new Date() })
-      .where(eq(leadSequenceState.leadId, leadId)).returning();
+      .where(and(
+        eq(leadSequenceState.leadId, leadId),
+        ne(leadSequenceState.status, "unsubscribed"),
+      )).returning();
     return updated || null;
   }
 
   async getDueEnrollments(now: Date, limit: number = 50): Promise<LeadSequenceState[]> {
-    return await db.select().from(leadSequenceState)
+    // La campagne doit être ACTIVE : « En pause » et « Terminée » n'envoient plus rien.
+    // L'état des prospects n'est pas touché — à la reprise, chacun repart où il en était.
+    const rows = await db.select({ state: leadSequenceState }).from(leadSequenceState)
+      .innerJoin(prospectionCampaigns, eq(prospectionCampaigns.id, leadSequenceState.campaignId))
       .where(and(
         eq(leadSequenceState.status, "active"),
+        eq(prospectionCampaigns.status, "active"),
         isNotNull(leadSequenceState.nextRunAt),
         lte(leadSequenceState.nextRunAt, now),
       ))
       .orderBy(leadSequenceState.nextRunAt)
       .limit(limit);
+    return rows.map((r) => r.state);
   }
 
   async getLeadStepMessage(leadId: number, stepId: number): Promise<LeadStepMessage | undefined> {
@@ -2549,12 +2570,74 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Dernier message envoyé pour un lead (pour le webhook de tracking).
-  async getLatestOutreachByLead(leadId: number): Promise<OutreachMessage | undefined> {
+  // `platform` : le webhook SendGrid ne concerne que l'email — sans ce filtre, une
+  // ouverture ou un rebond pouvait être rattaché à un message LinkedIn plus récent.
+  async getLatestOutreachByLead(leadId: number, platform?: string): Promise<OutreachMessage | undefined> {
     const [m] = await db.select().from(outreachMessages)
-      .where(and(eq(outreachMessages.leadId, leadId), isNotNull(outreachMessages.sentAt)))
+      .where(and(
+        eq(outreachMessages.leadId, leadId),
+        isNotNull(outreachMessages.sentAt),
+        ...(platform ? [eq(outreachMessages.platform, platform)] : []),
+      ))
       .orderBy(desc(outreachMessages.sentAt))
       .limit(1);
     return m;
+  }
+
+  async getLastOutreachSentAt(userId: string, platform: string): Promise<Date | null> {
+    const [m] = await db.select({ sentAt: outreachMessages.sentAt }).from(outreachMessages)
+      .where(and(
+        eq(outreachMessages.userId, userId),
+        eq(outreachMessages.platform, platform),
+        isNotNull(outreachMessages.sentAt),
+      ))
+      .orderBy(desc(outreachMessages.sentAt))
+      .limit(1);
+    return m?.sentAt ?? null;
+  }
+
+  async isLeadUnsubscribed(leadId: number, userId: string): Promise<boolean> {
+    const [lead] = await db.select({ email: leads.email }).from(leads).where(eq(leads.id, leadId));
+    const email = lead?.email?.trim().toLowerCase();
+    const memeAdresse = email
+      ? or(eq(leadSequenceState.leadId, leadId), sql`lower(trim(${leads.email})) = ${email}`)
+      : eq(leadSequenceState.leadId, leadId);
+    const rows = await db.select({ id: leadSequenceState.id }).from(leadSequenceState)
+      .innerJoin(leads, eq(leads.id, leadSequenceState.leadId))
+      .where(and(
+        eq(leadSequenceState.userId, userId),
+        eq(leadSequenceState.status, "unsubscribed"),
+        memeAdresse,
+      ))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async getLinkedInDraftsForCampaign(campaignId: number, userId: string) {
+    const rows = await db.select({ message: outreachMessages, lead: leads, state: leadSequenceState })
+      .from(outreachMessages)
+      .innerJoin(leads, eq(leads.id, outreachMessages.leadId))
+      .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, outreachMessages.leadId))
+      .where(and(
+        eq(outreachMessages.userId, userId),
+        eq(outreachMessages.platform, "linkedin"),
+        isNull(outreachMessages.sentAt),
+        eq(leadSequenceState.campaignId, campaignId),
+        // Plus rien à envoyer à quelqu'un qui a répondu, s'est désinscrit ou dont l'adresse est morte.
+        sql`${leadSequenceState.status} not in ('stopped_replied', 'unsubscribed', 'bounced')`,
+        isNull(leads.archivedAt),
+      ))
+      .orderBy(outreachMessages.createdAt);
+    return rows.map((r) => ({ message: r.message, lead: r.lead, sequenceStatus: r.state.status, currentStep: r.state.currentStep }));
+  }
+
+  async getOutreachMessageById(id: number): Promise<OutreachMessage | undefined> {
+    const [m] = await db.select().from(outreachMessages).where(eq(outreachMessages.id, id));
+    return m;
+  }
+
+  async deleteOutreachMessage(id: number): Promise<void> {
+    await db.delete(outreachMessages).where(eq(outreachMessages.id, id));
   }
 
   // Tous les messages d'une liste de leads (pour l'analytics de campagne).

@@ -45,6 +45,14 @@ describe("enrolerEnMasse — la barrière vaut aussi pour l'enrôlement groupé"
     expect(r.skippedNotValidated).toBe(0);
   });
 
+  it("ne ré-enrôle jamais un désinscrit ni un prospect qui attend un envoi LinkedIn", async () => {
+    const enroll = vi.fn(async (_id: number) => ({ ok: true }));
+    const states: Record<number, { status: string }> = { 1: { status: "unsubscribed" }, 2: { status: "awaiting_linkedin" } };
+    const r = await enrolerEnMasse({ leads: [lead(1), lead(2)], getState: async (id) => states[id], enroll });
+    expect(enroll).not.toHaveBeenCalled();
+    expect(r.skipped).toBe(2);
+  });
+
   it("compte comme ignoré un enrôlement refusé par le stockage", async () => {
     const r = await enrolerEnMasse({
       leads: [lead(1)],
