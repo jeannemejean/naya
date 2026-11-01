@@ -17,7 +17,7 @@
 import { storage } from "../storage";
 import { decryptToken } from "./token-crypto";
 import { linkedinConfigured, sendLinkedInStep } from "./linkedin";
-import { decideNextStep } from "./sequence-engine";
+import { decideNextStep, planAfterStep } from "./sequence-engine";
 import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
 import { BriefIncompletError, generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
@@ -96,7 +96,28 @@ export function masterSendingEnabled(): boolean {
 }
 
 // Plafond d'emails / utilisateur / jour (délivrabilité). Configurable via env.
+// Ne compte QUE les emails : les messages LinkedIn ont leurs propres plafonds (garde de risque).
 const DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80;
+
+// Écart minimum entre deux emails du même expéditeur : sans lui, tous les emails dus
+// partaient dans la même minute (jusqu'à 100 par passage), un rythme qu'aucun humain n'a.
+// Entre 3 et 8 minutes selon l'envoi précédent. Le tirage est DÉRIVÉ de l'instant du
+// dernier envoi (pas un nouveau Math.random à chaque passage) : retirer au sort chaque
+// minute ferait passer l'envoi dès le premier tirage court, soit presque toujours à 3 min.
+export const EMAIL_MIN_GAP_BASE_MS = 3 * 60_000;
+export const EMAIL_MIN_GAP_JITTER_MS = 5 * 60_000;
+
+/** Écart exigé après un email parti à `lastSentAt`, entre 3 et 8 minutes. Pure. */
+export function emailGapMs(lastSentAt: Date): number {
+  const graine = Math.abs(Math.sin(lastSentAt.getTime() / 1000)) % 1;
+  return EMAIL_MIN_GAP_BASE_MS + Math.floor(graine * EMAIL_MIN_GAP_JITTER_MS);
+}
+
+/** Un nouvel email peut-il partir ? `null` = aucun email encore envoyé. Pure. */
+export function emailGapElapsed(lastSentAt: Date | null, now: Date): boolean {
+  if (!lastSentAt) return true;
+  return now.getTime() - lastSentAt.getTime() >= emailGapMs(lastSentAt);
+}
 
 // Délai minimum ALÉATOIRE entre deux actions LinkedIn du même compte. Le worker est
 // réveillé CHAQUE MINUTE (POLL_MS) et enverrait sinon en rafale — un rythme mécanique
@@ -368,6 +389,9 @@ export async function runProspectionSender(): Promise<void> {
     // partout ailleurs dans ce chantier) ; une lecture ratée refuse désormais d'envoyer,
     // au lieu de l'autoriser à tort.
     const sentCount = new Map<string, number | null>();
+    // Dernier email RÉEL par user (écart minimum entre deux emails). `undefined` dans la Map
+    // = pas encore lu ; lecture ratée = refus par prudence pour ce passage.
+    const lastEmailAt = new Map<string, Date | null>();
     // Historique des TENTATIVES d'envoi LinkedIn (succès ET échecs) sur les 7 derniers
     // jours glissants, par user — alimente à la fois le plafond quotidien de montée en
     // charge ET le plafond hebdomadaire de `prospection-linkedin-guard.ts`. Compter les
@@ -733,6 +757,42 @@ export async function runProspectionSender(): Promise<void> {
           }
         }
 
+        // Email : expéditeur, plafond du jour et écart minimum vérifiés AVANT la génération
+        // IA — un email qui ne peut pas partir maintenant ne coûte rien.
+        let sender: ReturnType<typeof resolveSenderConfig> = null;
+        if (step.channel === "email") {
+          // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
+          sender = resolveSenderConfig(identite);
+          if (!sender) {
+            console.log(`[ProspectionSender] user ${state.userId} sans adresse expéditrice configurée — étape EN ATTENTE (rien envoyé)`);
+            continue; // on n'avance pas : l'utilisateur doit configurer son email d'envoi
+          }
+          // Plafond d'envoi / jour (24h glissantes) pour préserver la délivrabilité — emails seulement.
+          if (!sentCount.has(state.userId)) {
+            const count = await storage.countOutreachSentSince(state.userId, new Date(Date.now() - 86400000), "email").catch(() => null);
+            sentCount.set(state.userId, count);
+          }
+          const currentSentCount = sentCount.get(state.userId);
+          if (currentSentCount === null || currentSentCount === undefined) {
+            console.log(`[ProspectionSender] plafond email illisible pour l'utilisateur ${state.userId} — refus par prudence (jamais traité comme 0 envoi).`);
+            continue; // lecture ratée : refus par prudence, jamais "0 envoi aujourd'hui"
+          }
+          if (currentSentCount >= DAILY_CAP) {
+            continue; // plafond atteint → on réessaiera plus tard (nextRunAt inchangé)
+          }
+          if (!lastEmailAt.has(state.userId)) {
+            const last = await storage.getLastOutreachSentAt(state.userId, "email").catch(() => undefined);
+            if (last === undefined) {
+              console.log(`[ProspectionSender] dernier envoi email illisible pour l'utilisateur ${state.userId} — refus par prudence.`);
+              continue;
+            }
+            lastEmailAt.set(state.userId, last);
+          }
+          if (!emailGapElapsed(lastEmailAt.get(state.userId) ?? null, now)) {
+            continue; // trop tôt après le dernier email → on réessaiera au prochain passage
+          }
+        }
+
         // Texte SUR-MESURE au dernier moment. useCache:true → réutilise EXACTEMENT le message
         // déjà généré/mis en cache par l'aperçu (parité aperçu ↔ envoi). generateStepMessage
         // LÈVE une exception si le corps est vide : le lead reste alors non avancé (retry via le
@@ -805,35 +865,18 @@ export async function runProspectionSender(): Promise<void> {
 
         if (step.channel === "email") {
           if (!lead.email) continue; // inatteignable (sauté plus haut) ; garde le narrowing de type
+          if (!sender) continue; // vérifié plus haut ; garde le narrowing de type
           // Capturé après la garde : le narrowing `lead.email` ne survit pas à la
           // fermeture `async` de `sendOnce` ci-dessous (TS le retypera en nullable).
           const toEmail = lead.email;
-          // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
-          const sender = resolveSenderConfig(identite);
-          if (!sender) {
-            console.log(`[ProspectionSender] user ${state.userId} sans adresse expéditrice configurée — étape EN ATTENTE (rien envoyé)`);
-            continue; // on n'avance pas : l'utilisateur doit configurer son email d'envoi
-          }
-          // Plafond d'envoi / jour (24h glissantes) pour préserver la délivrabilité.
-          if (!sentCount.has(state.userId)) {
-            const count = await storage.countOutreachSentSince(state.userId, new Date(Date.now() - 86400000)).catch(() => null);
-            sentCount.set(state.userId, count);
-          }
-          const currentSentCount = sentCount.get(state.userId);
-          if (currentSentCount === null || currentSentCount === undefined) {
-            console.log(`[ProspectionSender] plafond email illisible pour l'utilisateur ${state.userId} — refus par prudence (jamais traité comme 0 envoi).`);
-            continue; // lecture ratée : refus par prudence, jamais "0 envoi aujourd'hui"
-          }
-          if (currentSentCount >= DAILY_CAP) {
-            continue; // plafond atteint → on réessaiera plus tard (nextRunAt inchangé)
-          }
-          const footerAddress = sender.footerAddress;
+          const emailSender = sender;
+          const footerAddress = emailSender.footerAddress;
           // Réservation AVANT tout appel à SendGrid. Réservation refusée = l'étape est
           // déjà partie (ou son sort est inconnu) : on n'envoie rien et on laisse la
           // séquence avancer plus bas.
           const outcome = await sendOnce(claimStore, sendKey, async () => {
             const ok = await sendEmail({
-              apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName, footerAddress,
+              apiKey: emailSender.apiKey, fromEmail: emailSender.fromEmail, fromName: emailSender.fromName, footerAddress,
               to: toEmail, toName: lead.name || "", subject, body, leadId: lead.id,
             });
             if (!ok) return { ok: false };
@@ -862,6 +905,7 @@ export async function runProspectionSender(): Promise<void> {
             console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} — avancement sans envoi`);
           } else {
             sentCount.set(state.userId, (sentCount.get(state.userId) || 0) + 1);
+            lastEmailAt.set(state.userId, new Date());
           }
         } else {
           // LinkedIn : auto-envoi via Unipile depuis le compte de l'utilisateur, SI configuré.
@@ -985,19 +1029,25 @@ export async function runProspectionSender(): Promise<void> {
             }
             if (outcome.action === "skipped") {
               console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà traitée pour le lead ${lead.id} — pas de nouveau brouillon`);
+            } else {
+              // Brouillon prêt : la séquence ATTEND que l'utilisatrice l'envoie (comme une
+              // tâche manuelle chez lemlist). Avant, elle avançait comme si le message était
+              // parti — et le délai de l'étape suivante courait depuis un envoi qui n'avait
+              // jamais eu lieu. Le bouton « Envoyé » reprend la séquence à partir de ce moment-là.
+              await storage.updateLeadSequenceState(state.leadId, { status: "awaiting_linkedin", nextRunAt: null } as any);
+              if (garde) {
+                await storage.setLeadSequenceGuard(lead.id, null)
+                  .catch((e: any) => console.error("[ProspectionSender] remise à zéro garde trop proche échouée", e.message));
+              }
+              continue;
             }
           }
         }
 
         // Étape envoyée : programmer la suite via la décision (le délai de l'étape suivante
         // court à partir de maintenant, ce dernier envoi étant la nouvelle référence).
-        const after = decideNextStep(decision.index + 1, engineSteps, signals, 0);
-        const nextDelay = after.action === "send" ? 0 : after.action === "wait" ? (steps[decision.index + 1]?.delayDays || 1) : null;
         await storage.updateLeadSequenceState(state.leadId, {
-          currentStep: decision.index + 1,
-          lastStepSentAt: new Date(),
-          status: decision.done ? "completed" : "active",
-          nextRunAt: decision.done ? null : new Date(Date.now() + (nextDelay || 0) * 86_400_000),
+          ...planAfterStep(decision.index, engineSteps, signals, new Date()),
           ...linkedinFailurePatch,
         });
         // Étape traitée (envoyée, brouillon ou déjà partie) : remet à zéro la garde « trop proche ».

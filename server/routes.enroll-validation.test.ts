@@ -33,6 +33,7 @@ const storageMock = {
   getLeads: vi.fn(),
   enrollLead: vi.fn(),
   updateLead: vi.fn(),
+  isLeadUnsubscribed: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const aRevoir = vi.hoisted(() => ({ liste: [] as any[] }));
@@ -84,6 +85,7 @@ describe("POST /api/leads/:id/enroll — la validation humaine est exigée", () 
   beforeEach(async () => {
     vi.clearAllMocks();
     storageMock.enrollLead.mockResolvedValue({ leadId: LEAD_ID, status: "active" });
+    storageMock.isLeadUnsubscribed.mockResolvedValue(false);
     ({ server, port } = await startServer());
   });
 
@@ -113,6 +115,19 @@ describe("POST /api/leads/:id/enroll — la validation humaine est exigée", () 
 
     expect(res.status).toBe(200);
     expect(storageMock.enrollLead).toHaveBeenCalledWith(LEAD_ID, CAMPAGNE, "user-1");
+  });
+
+  it("refuse un prospect validé mais désinscrit, et n'enrôle pas", async () => {
+    storageMock.getLeads.mockResolvedValue([
+      prospect({ validatedAt: new Date("2026-09-17T08:00:00Z") }),
+    ]);
+    storageMock.isLeadUnsubscribed.mockResolvedValue(true);
+
+    const res = await enroler(port);
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toBe("unsubscribed");
+    expect(storageMock.enrollLead).not.toHaveBeenCalled();
   });
 
   it("refuse une validation portée par une date INVALIDE", async () => {

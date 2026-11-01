@@ -241,3 +241,29 @@ export const useUnvalidateLead = () =>
     mutationFn: (id) => apiRequest("POST", `/api/leads/${id}/unvalidate`),
     onSettled: rafraichirApresValidation,
   });
+
+// ─── LinkedIn à envoyer à la main ───────────────────────────────────────────
+export interface LinkedInTask {
+  id: number;
+  leadId: number;
+  leadName: string;
+  company: string | null;
+  linkedinUrl: string | null;
+  body: string;
+  stepOrder: number | null;
+  createdAt: string | null;
+  /** La séquence de ce prospect attend ce message pour continuer. */
+  bloquant: boolean;
+}
+
+export const useLinkedInTasks = (campaignId: number) =>
+  useQuery<LinkedInTask[]>({ queryKey: [`/api/prospection/campaigns/${campaignId}/linkedin-tasks`] });
+
+export const useLinkedInTaskAction = (campaignId: number) =>
+  useMutation<Response, Error, { id: number; quoi: "sent" | "skip" }>({
+    mutationFn: ({ id, quoi }) => apiRequest("POST", `/api/outreach/${id}/linkedin-${quoi}`),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${campaignId}/linkedin-tasks`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${campaignId}/enrollments`] });
+    },
+  });

@@ -26,7 +26,7 @@ export interface ResultatEnrolement {
 }
 
 /** États de séquence qu'on ne ré-enrôle jamais. */
-const ETATS_DEFINITIFS = ["active", "stopped_replied", "completed"];
+const ETATS_DEFINITIFS = ["active", "awaiting_linkedin", "stopped_replied", "completed", "unsubscribed"];
 
 export async function enrolerEnMasse(deps: {
   leads: ProspectEnrolable[];

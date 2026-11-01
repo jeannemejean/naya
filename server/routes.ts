@@ -91,6 +91,8 @@ import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { peutEtreContacte } from "./services/prospection-validation";
 import { enrolerEnMasse } from "./services/prospection-enrolement";
+import { stepOrderFromMessageType } from "./services/sequence-engine";
+import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
 import { synchroniserValidationsProspection } from "./services/prospection-verification";
 import { verrouDeTache } from "./services/task-lock";
 import { etatConnexion } from "./services/social-connection-state";
@@ -8285,7 +8287,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const ENGAGED = ['connected', 'in_discussion', 'proposal_sent', 'signed'];
       if (typeof (updates as any).stage === 'string' && ENGAGED.includes((updates as any).stage)) {
         const st = await storage.getLeadSequenceState(parseInt(id));
-        if (st && st.status === 'active') {
+        if (st && ['active', 'awaiting_linkedin'].includes(st.status)) {
           await storage.updateLeadSequenceState(parseInt(id), { status: 'stopped_replied', repliedAt: new Date(), nextRunAt: null }).catch(() => {});
         }
         // Une réponse : les messages envoyés à ce prospect deviennent les meilleurs exemples.
@@ -8721,6 +8723,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
       const campaignId = Number(req.body?.campaignId) || lead.prospectionCampaignId;
       if (!campaignId) return res.status(400).json({ message: 'no_campaign' });
+      if (await storage.isLeadUnsubscribed(lead.id, req.userId)) {
+        return res.status(409).json({ message: 'unsubscribed' });
+      }
       const state = await storage.enrollLead(lead.id, campaignId, req.userId);
       if (!state) return res.status(400).json({ message: 'no_sequence_defined' });
       res.json(state);
@@ -8995,6 +9000,64 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
+  // ─── LinkedIn à envoyer à la main ─────────────────────────────────────────
+  // Brouillons LinkedIn de la campagne (Naya rédige, l'utilisatrice envoie). `bloquant` :
+  // la séquence de ce prospect attend ce message pour continuer.
+  app.get('/api/prospection/campaigns/:id/linkedin-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
+      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
+      const rows = await storage.getLinkedInDraftsForCampaign(campaign.id, req.userId);
+      res.json(rows.map(({ message, lead, sequenceStatus, currentStep }) => {
+        const rang = stepOrderFromMessageType(message.messageType);
+        return {
+          id: message.id,
+          leadId: lead.id,
+          leadName: lead.name,
+          company: lead.company ?? null,
+          linkedinUrl: lead.linkedinUrl ?? null,
+          body: message.body,
+          stepOrder: rang,
+          createdAt: message.createdAt,
+          bloquant: sequenceStatus === 'awaiting_linkedin' && rang === currentStep + 1,
+        };
+      }));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  const depsLinkedInManuel = {
+    getMessage: (id: number) => storage.getOutreachMessageById(id),
+    updateMessage: (id: number, u: any) => storage.updateOutreachMessage(id, u),
+    deleteMessage: (id: number) => storage.deleteOutreachMessage(id),
+    getState: (leadId: number) => storage.getLeadSequenceState(leadId),
+    updateState: (leadId: number, u: any) => storage.updateLeadSequenceState(leadId, u),
+    getSteps: (campaignId: number) => storage.getSequenceSteps(campaignId),
+    getSignals: (leadId: number) => storage.getLeadSignals(leadId),
+    markClaimSent: (key: any) => storage.markStepSendSent(key, 'sent'),
+  };
+  const repondreLinkedInManuel = (res: any, r: Awaited<ReturnType<typeof marquerLinkedInEnvoye>>) => {
+    if (r.ok) return res.json(r);
+    return res.status(r.raison === 'introuvable' ? 404 : 409).json({ message: r.raison });
+  };
+
+  app.post('/api/outreach/:id/linkedin-sent', isAuthenticated, async (req: any, res) => {
+    try {
+      repondreLinkedInManuel(res, await marquerLinkedInEnvoye(depsLinkedInManuel, req.userId, Number(req.params.id), new Date()));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post('/api/outreach/:id/linkedin-skip', isAuthenticated, async (req: any, res) => {
+    try {
+      repondreLinkedInManuel(res, await passerLinkedIn(depsLinkedInManuel, req.userId, Number(req.params.id), new Date()));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // Enrôlement manuel groupé : le owner choisit exactement quels prospects entrent dans la
   // séquence (contrairement à /launch, qui enrôle TOUS les prospects de la campagne). Même
   // logique de skip que /launch (états actifs/terminés/ayant répondu jamais ré-enrôlés).
@@ -9051,7 +9114,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
-  // ─── Webhook SendGrid (tracking : ouvertures / clics / bounces) ─────────────
+  // ─── Webhook SendGrid (tracking : ouvertures / clics / bounces / désinscriptions) ──
   // Pas d'auth (appelé par SendGrid). Corrélation via custom_args.leadId.
   app.post('/api/sendgrid/webhook', async (req, res) => {
     try {
@@ -9059,16 +9122,24 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       for (const ev of events) {
         const leadId = Number(ev?.leadId);
         if (!leadId) continue;
-        const msg = await storage.getLatestOutreachByLead(leadId);
+        // Désinscription ou signalement spam : TOUTE la séquence s'arrête, LinkedIn compris,
+        // et définitivement (enrollLead refuse ensuite ce prospect et sa même adresse).
+        if (['unsubscribe', 'group_unsubscribe', 'spamreport'].includes(ev.event)) {
+          await storage.updateLeadSequenceState(leadId, { status: 'unsubscribed', nextRunAt: null }).catch(() => {});
+          continue;
+        }
+        // Webhook email : seul le dernier EMAIL est concerné, jamais un message LinkedIn.
+        const msg = await storage.getLatestOutreachByLead(leadId, 'email');
         if (!msg) continue;
         const when = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
         if (ev.event === 'open') {
           if (!(msg as any).openedAt) await storage.updateOutreachMessage(msg.id, { openedAt: when } as any);
         } else if (ev.event === 'click') {
           await storage.updateOutreachMessage(msg.id, { clickedAt: when } as any);
-        } else if (['bounce', 'dropped', 'spamreport'].includes(ev.event)) {
+        } else if (['bounce', 'dropped'].includes(ev.event)) {
           await storage.updateOutreachMessage(msg.id, { bouncedAt: when } as any);
-          // Stop : ne plus envoyer à une adresse morte / plainte.
+          // Stop : ne plus envoyer à une adresse morte. Un « dropped » qui suit une
+          // désinscription ne l'efface pas (updateLeadSequenceState la protège).
           await storage.updateLeadSequenceState(leadId, { status: 'bounced', nextRunAt: null }).catch(() => {});
         }
       }
@@ -9123,6 +9194,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const userId = req.userId;
       const messageData = insertOutreachMessageSchema.parse({ ...req.body, userId });
+      // Jamais un message rattaché au prospect d'un autre compte.
+      if (!(await storage.getLead(messageData.leadId, userId))) return res.status(404).json({ message: "Lead not found" });
       const message = await storage.createOutreachMessage(messageData);
       res.json(message);
     } catch (error) {
@@ -9133,9 +9206,11 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
   app.patch('/api/outreach/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const { id } = req.params;
-      const updates = req.body;
-      const message = await storage.updateOutreachMessage(parseInt(id), updates);
+      // Seul le propriétaire du message peut le modifier, et jamais le réattribuer.
+      const existing = await storage.getOutreachMessageById(parseInt(req.params.id));
+      if (!existing || existing.userId !== req.userId) return res.status(404).json({ message: "not_found" });
+      const { id: _id, userId: _userId, leadId: _leadId, ...updates } = req.body ?? {};
+      const message = await storage.updateOutreachMessage(existing.id, updates);
       res.json(message);
     } catch (error) {
       console.error("Error updating outreach message:", error);

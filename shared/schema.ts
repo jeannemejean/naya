@@ -1851,7 +1851,9 @@ export const leadSequenceState = pgTable("lead_sequence_state", {
   leadId: integer("lead_id").notNull().unique().references(() => leads.id),
   campaignId: integer("campaign_id").notNull().references(() => prospectionCampaigns.id),
   userId: varchar("user_id").notNull().references(() => users.id),
-  // active | paused | completed | stopped_replied | bounced | failed
+  // active | awaiting_linkedin | paused | completed | stopped_replied | bounced | unsubscribed | failed
+  // awaiting_linkedin : un brouillon LinkedIn attend que l'utilisatrice l'envoie à la main.
+  // unsubscribed : définitif, le prospect ne rentre plus jamais en séquence.
   status: text("status").notNull().default("active"),
   currentStep: integer("current_step").notNull().default(0), // dernière étape envoyée (0 = aucune)
   nextRunAt: timestamp("next_run_at"),               // quand envoyer la prochaine étape

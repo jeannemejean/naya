@@ -39,3 +39,27 @@ export function decideNextStep(
   if (!evaluateCondition(step.condition, signals)) return { action: "skip", index: currentStep };
   return { action: "send", index: currentStep, done: currentStep + 1 >= steps.length };
 }
+
+/**
+ * Suite de la séquence une fois l'étape `index` traitée (envoyée, ou cochée « Envoyé » à
+ * la main pour LinkedIn). Le délai de l'étape suivante court à partir de `now`. Pure.
+ */
+export function planAfterStep(
+  index: number, steps: EngineStep[], signals: LeadSignals, now: Date,
+): { currentStep: number; lastStepSentAt: Date; status: "active" | "completed"; nextRunAt: Date | null } {
+  const done = index + 1 >= steps.length;
+  const after = decideNextStep(index + 1, steps, signals, 0);
+  const nextDelay = after.action === "send" ? 0 : after.action === "wait" ? (steps[index + 1]?.delayDays || 1) : null;
+  return {
+    currentStep: index + 1,
+    lastStepSentAt: now,
+    status: done ? "completed" : "active",
+    nextRunAt: done ? null : new Date(now.getTime() + (nextDelay || 0) * 86_400_000),
+  };
+}
+
+/** Rang de l'étape (1 = première) depuis le `messageType` d'un message (`step_2`, `step_2_invite`). */
+export function stepOrderFromMessageType(messageType: string): number | null {
+  const m = /^step_(\d+)/.exec(messageType || "");
+  return m ? Number(m[1]) : null;
+}
