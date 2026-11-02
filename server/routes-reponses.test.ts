@@ -8,6 +8,19 @@ const storageMock = {
   updateLeadSequenceState: vi.fn(async () => ({})),
   getLead: vi.fn(),
   setLeadLinkedinConnected: vi.fn(async () => {}),
+  getInboxConversationParId: vi.fn(),
+  getInboxMessages: vi.fn(async () => [] as any[]),
+  listerConversationsInbox: vi.fn(async () => [] as any[]),
+  compterInboxATraiter: vi.fn(async () => 0),
+  updateInboxConversation: vi.fn(async () => {}),
+  requalifierDernierEntrantInbox: vi.fn(async () => true),
+  restaurerEtatSequence: vi.fn(async () => ({})),
+  getLeadSequenceState: vi.fn(),
+  getOutreachMessages: vi.fn(async () => [] as any[]),
+  getProspectionCampaign: vi.fn(async () => null),
+  getTask: vi.fn(),
+  completeTask: vi.fn(async () => ({})),
+  deleteTask: vi.fn(async () => {}),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const ingestion = vi.hoisted(() => ({
@@ -16,6 +29,14 @@ const ingestion = vi.hoisted(() => ({
   depsDepuisStorage: vi.fn(() => ({ deps: true })),
 }));
 vi.mock("./services/reponses/ingestion", () => ingestion);
+const envoi = vi.hoisted(() => ({ envoyerReponse: vi.fn() }));
+vi.mock("./services/reponses/envoi-reponse", () => envoi);
+const proposition = vi.hoisted(() => ({
+  proposerReponse: vi.fn(async () => "Merci !"),
+  identiteConversation: vi.fn(),
+  ConversationIntrouvableError: class extends Error {},
+}));
+vi.mock("./services/reponses/proposition", () => proposition);
 vi.mock("./auth", () => ({ isAuthenticated: (q: any, _r: any, next: any) => { q.userId = "u1"; next(); } }));
 
 const { registerReponsesRoutes, STADES_ENGAGES } = await import("./routes-reponses");
@@ -28,7 +49,9 @@ const server = http.createServer(app);
 await new Promise<void>((r) => server.listen(0, r));
 const port = (server.address() as any).port;
 afterAll(() => server.close());
-const appel = (method: string, path: string) => fetch(`http://127.0.0.1:${port}${path}`, { method });
+const appel = (method: string, path: string, body?: unknown) => fetch(`http://127.0.0.1:${port}${path}`, {
+  method, ...(body ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
+});
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -120,5 +143,120 @@ describe("stade « connected »", () => {
   it("n'arrête plus la séquence : seuls les stades d'échange réel l'arrêtent", () => {
     expect(STADES_ENGAGES).toEqual(["in_discussion", "proposal_sent", "signed"]);
     expect(STADES_ENGAGES).not.toContain("connected");
+  });
+});
+
+describe("boîte « Réponses »", () => {
+  const conv = (o: any = {}) => ({
+    id: 11, userId: "u1", projectId: null, leadId: 7, channel: "linkedin", unipileAccountId: "acc", providerChatId: "chat",
+    statut: "a_traiter", nonLu: true, taskId: 99, lastMessageAt: new Date("2026-11-01T09:00:00Z"),
+    etatAvantReponse: { status: "active", currentStep: 2, nextRunAt: "2026-11-01T08:00:00.000Z", delayAnchorAt: "2026-10-28T08:00:00.000Z" },
+    ...o,
+  });
+
+  it("conversation d'un autre utilisateur : 404 sur chaque route, rien d'écrit ni envoyé", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(undefined);
+    const routes: Array<[string, string, unknown?]> = [
+      ["GET", "/api/reponses/11"],
+      ["POST", "/api/reponses/11/proposition"],
+      ["POST", "/api/reponses/11/envoyer", { texte: "Bonjour" }],
+      ["POST", "/api/reponses/11/traitee"],
+      ["POST", "/api/reponses/11/pas-une-reponse"],
+    ];
+    for (const [m, p, b] of routes) expect([p, (await appel(m, p, b)).status]).toEqual([p, 404]);
+    expect(storageMock.getInboxConversationParId).toHaveBeenCalledWith(11, "u1");
+    expect(storageMock.updateInboxConversation).not.toHaveBeenCalled();
+    expect(storageMock.restaurerEtatSequence).not.toHaveBeenCalled();
+    expect(storageMock.deleteTask).not.toHaveBeenCalled();
+    expect(envoi.envoyerReponse).not.toHaveBeenCalled();
+    expect(proposition.proposerReponse).not.toHaveBeenCalled();
+  });
+
+  it("pas-une-reponse : remet l'état sauvegardé (nextRunAt = max(ancien, now)), traitée, tâche supprimée, entrant requalifié « accuse »", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    const avant = Date.now();
+    const r = await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true, restaure: true });
+    const [leadId, etat] = storageMock.restaurerEtatSequence.mock.calls[0] as any;
+    expect(leadId).toBe(7);
+    expect(etat.status).toBe("active");
+    expect(etat.currentStep).toBe(2);
+    expect(etat.delayAnchorAt).toBe("2026-10-28T08:00:00.000Z");
+    expect(new Date(etat.nextRunAt).getTime()).toBeGreaterThanOrEqual(avant); // l'ancien était passé
+    expect(storageMock.requalifierDernierEntrantInbox).toHaveBeenCalledWith(11, "accuse");
+    expect(storageMock.updateInboxConversation).toHaveBeenCalledWith(11, { statut: "traitee", nonLu: false, taskId: null, etatAvantReponse: null });
+    expect(storageMock.deleteTask).toHaveBeenCalledWith(99);
+  });
+
+  it("pas-une-reponse : un nextRunAt futur est gardé tel quel", async () => {
+    const futur = "2030-01-01T08:00:00.000Z";
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: { status: "active", currentStep: 1, nextRunAt: futur, delayAnchorAt: null } }));
+    await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect((storageMock.restaurerEtatSequence.mock.calls[0] as any)[1].nextRunAt).toBe(futur);
+  });
+
+  it("pas-une-reponse sans état sauvegardé : rien restauré, conversation quand même traitée", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: null }));
+    const r = await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect(await r.json()).toEqual({ ok: true, restaure: false });
+    expect(storageMock.restaurerEtatSequence).not.toHaveBeenCalled();
+    expect(storageMock.requalifierDernierEntrantInbox).toHaveBeenCalledWith(11, "accuse");
+  });
+
+  it("traitee : conversation traitée et tâche cochée", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    storageMock.getTask.mockResolvedValue({ id: 99, completed: false });
+    expect((await appel("POST", "/api/reponses/11/traitee")).status).toBe(200);
+    expect(storageMock.updateInboxConversation).toHaveBeenCalledWith(11, { statut: "traitee", nonLu: false });
+    expect(storageMock.completeTask).toHaveBeenCalledWith(99);
+  });
+
+  it("liste : filtres projectId/statut transmis, utilisateur courant", async () => {
+    storageMock.listerConversationsInbox.mockResolvedValueOnce([{ id: 11 }]);
+    const r = await appel("GET", "/api/reponses?projectId=5&statut=a_traiter");
+    expect(await r.json()).toEqual([{ id: 11 }]);
+    expect(storageMock.listerConversationsInbox).toHaveBeenCalledWith("u1", { projectId: 5, statut: "a_traiter" });
+  });
+
+  it("compte : nombre de conversations à traiter", async () => {
+    storageMock.compterInboxATraiter.mockResolvedValueOnce(3);
+    expect(await (await appel("GET", "/api/reponses/compte")).json()).toEqual({ aTraiter: 3 });
+    expect(storageMock.compterInboxATraiter).toHaveBeenCalledWith("u1");
+  });
+
+  it("détail : fil fusionné et trié (séquence + boîte), marqué lu", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    storageMock.getLead.mockResolvedValueOnce({ id: 7, name: "Marc", prospectionCampaignId: null });
+    storageMock.getOutreachMessages.mockResolvedValueOnce([
+      { id: 1, platform: "linkedin", subject: null, body: "Bonjour", sentAt: new Date("2026-10-30T09:00:00Z") },
+      { id: 2, platform: "email", subject: "x", body: "brouillon", sentAt: null },
+    ]);
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { id: 5, sens: "entrant", nature: "reponse", subject: null, body: "Oui", sentAt: new Date("2026-10-29T09:00:00Z") },
+    ]);
+    const j = await (await appel("GET", "/api/reponses/11")).json();
+    expect(j.messages.map((m: any) => m.body)).toEqual(["Oui", "Bonjour"]);
+    expect(j.messages[1]).toMatchObject({ source: "sequence", sens: "sortant", canal: "linkedin" });
+    expect(j.lead.id).toBe(7);
+    expect(storageMock.updateInboxConversation).toHaveBeenCalledWith(11, { nonLu: false });
+  });
+
+  it("envoyer : passe le texte à envoyerReponse ; refus → 409 avec la raison", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    envoi.envoyerReponse.mockResolvedValueOnce({ ok: true });
+    expect((await appel("POST", "/api/reponses/11/envoyer", { texte: "Bonjour" })).status).toBe(200);
+    expect(envoi.envoyerReponse).toHaveBeenCalledWith(11, "u1", "Bonjour", expect.any(Object));
+    envoi.envoyerReponse.mockResolvedValueOnce({ ok: false, raison: "compte_restreint" });
+    const r = await appel("POST", "/api/reponses/11/envoyer", { texte: "Bonjour" });
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ ok: false, raison: "compte_restreint" });
+  });
+
+  it("proposition : renvoie le texte proposé", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    const r = await appel("POST", "/api/reponses/11/proposition");
+    expect(await r.json()).toEqual({ texte: "Merci !" });
+    expect(proposition.proposerReponse).toHaveBeenCalledWith("u1", 11);
   });
 });

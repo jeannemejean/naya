@@ -194,6 +194,7 @@ import {
   type EtatAvantReponse,
   type InsertInboxConversation,
   type InsertInboxMessage,
+  type InboxMessage,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { memesChiffres } from "./services/mesure/calculs";
@@ -241,6 +242,11 @@ function maintenantParis(): { aujourdhui: string; maintenantMin: number } {
  */
 export type CreditedAttribution = ConversionAttribution & { contentTitle: string | null };
 export type BrandConversionWithCredits = BrandConversion & { attributions: CreditedAttribution[] };
+/** Ligne de la boîte « Réponses » (extrait = début du dernier message). */
+export type ConversationInboxListe = {
+  id: number; leadId: number; leadName: string; company: string | null; channel: string; statut: string;
+  nonLu: boolean; extrait: string | null; lastMessageAt: Date | null; projectId: number | null;
+};
 /** Un contenu vu par les fondations : son étiquette (motivation, format) et son état. */
 export type ContenuEtiquete = {
   id: number; title: string; status: string; publishedAt: Date | null;
@@ -745,6 +751,15 @@ export interface IStorage {
   updateInboxConversation(id: number, patch: Partial<InboxConversation>): Promise<void>;
   ajouterInboxMessage(row: InsertInboxMessage): Promise<boolean>;
   dernierEntrantInboxAt(conversationId: number): Promise<Date | null>;
+  // Boîte « Réponses » (Task 10) — toutes filtrées par utilisateur.
+  getInboxConversationParId(id: number, userId: string): Promise<InboxConversation | undefined>;
+  /** Messages d'une conversation, du plus ancien au plus récent. */
+  getInboxMessages(conversationId: number): Promise<InboxMessage[]>;
+  /** Liste de la boîte : à traiter d'abord, puis du plus récent au plus ancien. */
+  listerConversationsInbox(userId: string, filtre?: { projectId?: number; statut?: string }): Promise<ConversationInboxListe[]>;
+  compterInboxATraiter(userId: string): Promise<number>;
+  /** Change la nature du dernier message entrant (faux positif → « accuse »). */
+  requalifierDernierEntrantInbox(conversationId: number, nature: string): Promise<boolean>;
   deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number>;
   marquerSuiviEmail(userId: string, leadId: number, step: number, champ: "openedAt" | "clickedAt", at: Date): Promise<void>;
   /**
@@ -3288,6 +3303,55 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(inboxMessages.conversationId, conversationId), eq(inboxMessages.sens, "entrant")))
       .orderBy(desc(inboxMessages.sentAt)).limit(1);
     return m?.at ?? null;
+  }
+
+  async getInboxConversationParId(id: number, userId: string): Promise<InboxConversation | undefined> {
+    const [c] = await db.select().from(inboxConversations)
+      .where(and(eq(inboxConversations.id, id), eq(inboxConversations.userId, userId)));
+    return c;
+  }
+
+  async getInboxMessages(conversationId: number): Promise<InboxMessage[]> {
+    return db.select().from(inboxMessages)
+      .where(eq(inboxMessages.conversationId, conversationId))
+      .orderBy(inboxMessages.sentAt, inboxMessages.id);
+  }
+
+  async listerConversationsInbox(userId: string, filtre: { projectId?: number; statut?: string } = {}): Promise<ConversationInboxListe[]> {
+    const extrait = sql<string | null>`(select left(${inboxMessages.body}, 160) from ${inboxMessages}
+      where ${inboxMessages.conversationId} = ${inboxConversations.id}
+      order by ${inboxMessages.sentAt} desc, ${inboxMessages.id} desc limit 1)`;
+    return db.select({
+      id: inboxConversations.id, leadId: inboxConversations.leadId, leadName: leads.name, company: leads.company,
+      channel: inboxConversations.channel, statut: inboxConversations.statut, nonLu: inboxConversations.nonLu,
+      extrait, lastMessageAt: inboxConversations.lastMessageAt, projectId: inboxConversations.projectId,
+    }).from(inboxConversations)
+      .innerJoin(leads, eq(leads.id, inboxConversations.leadId))
+      .where(and(
+        eq(inboxConversations.userId, userId),
+        ...(filtre.projectId != null ? [eq(inboxConversations.projectId, filtre.projectId)] : []),
+        ...(filtre.statut ? [eq(inboxConversations.statut, filtre.statut)] : []),
+      ))
+      .orderBy(
+        sql`case when ${inboxConversations.statut} = 'a_traiter' then 0 else 1 end`,
+        sql`${inboxConversations.lastMessageAt} desc nulls last`,
+        desc(inboxConversations.id),
+      );
+  }
+
+  async compterInboxATraiter(userId: string): Promise<number> {
+    const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(inboxConversations)
+      .where(and(eq(inboxConversations.userId, userId), eq(inboxConversations.statut, "a_traiter")));
+    return Number(r?.n ?? 0);
+  }
+
+  async requalifierDernierEntrantInbox(conversationId: number, nature: string): Promise<boolean> {
+    const [dernier] = await db.select({ id: inboxMessages.id }).from(inboxMessages)
+      .where(and(eq(inboxMessages.conversationId, conversationId), eq(inboxMessages.sens, "entrant")))
+      .orderBy(desc(inboxMessages.sentAt), desc(inboxMessages.id)).limit(1);
+    if (!dernier) return false;
+    await db.update(inboxMessages).set({ nature }).where(eq(inboxMessages.id, dernier.id));
+    return true;
   }
 
   async deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number> {

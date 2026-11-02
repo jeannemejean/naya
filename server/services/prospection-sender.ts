@@ -25,6 +25,7 @@ import { resolveFounderName } from "./prospection-pipeline";
 import { identiteCampagne } from "./connexions/resolution";
 import type { IdentiteEnvoi } from "./connexions/portee";
 import { sendEmailUnipile } from "./unipile-mail";
+import { persisterRestrictionLinkedIn } from "./linkedin-restriction";
 import { lienDesinscription, avertirSecretDeSecours } from "./desinscription";
 import { sendOnce, type ClaimStore, type StepSendKey } from "./prospection-idempotence";
 import {
@@ -447,9 +448,7 @@ export async function runProspectionSender(): Promise<void> {
     const traiterRestriction = async (userId: string, portee: string | number | null, cleCompte: string, error: string | null | undefined) => {
       restrictedThisTick.add(cleCompte);
       try {
-        const pause = { linkedinRestrictedAt: new Date(), linkedinRestrictedReason: error ?? null };
-        if (portee == null) await storage.updateUserPreferences(userId, pause as any);
-        else await storage.upsertConnexionProjet(userId, portee as any, pause);
+        await persisterRestrictionLinkedIn(userId, portee as number | null, error);
         console.error(
           `[ProspectionSender] compte LinkedIn de l'utilisateur ${userId} mis EN PAUSE (signal de restriction Unipile) — reprise manuelle requise.`,
         );

@@ -6,6 +6,13 @@ import { storage } from "./storage";
 import { isAuthenticated } from "./auth";
 import { leadDuJeton } from "./services/desinscription";
 import { normaliser, traiterEvenement, depsDepuisStorage } from "./services/reponses/ingestion";
+import { envoyerReponse, type DepsEnvoiReponse } from "./services/reponses/envoi-reponse";
+import { proposerReponse, identiteConversation, ConversationIntrouvableError } from "./services/reponses/proposition";
+import { SignatureClientManquanteError } from "./services/connexions/resolution";
+import { masterSendingEnabled } from "./services/prospection-sender";
+import { sendEmailUnipile, sendLinkedInChatMessage } from "./services/unipile-mail";
+import { persisterRestrictionLinkedIn } from "./services/linkedin-restriction";
+import type { EtatAvantReponse, InboxConversation } from "@shared/schema";
 
 function memeSecret(recu: string | undefined, attendu: string): boolean {
   if (!recu) return false;
@@ -20,6 +27,33 @@ const erreurSure = (e: any) => String(e?.message ?? e).split(/\bparams:/)[0].sli
  *  pas partie (une invitation acceptée n'est pas une réponse). */
 export const STADES_ENGAGES = ["in_discussion", "proposal_sent", "signed"];
 
+/** Accès réels de l'envoi d'une réponse (le service est testé sans base). */
+const depsEnvoi: DepsEnvoiReponse = {
+  now: () => new Date(),
+  envoiActif: masterSendingEnabled,
+  getConversation: (id, userId) => storage.getInboxConversationParId(id, userId),
+  getLead: (id, userId) => storage.getLead(id, userId),
+  getMessages: (cid) => storage.getInboxMessages(cid),
+  identite: async (userId, conv, lead) => identiteConversation(userId, conv, lead, await storage.getUserPreferences(userId)),
+  envoyerLinkedIn: (o) => sendLinkedInChatMessage(o),
+  envoyerEmail: (o) => sendEmailUnipile(o),
+  journaliserTentativeLinkedIn: (userId, leadId, ok, error, portee) => storage.recordLinkedInSendAttempt(userId, leadId, ok, error, portee),
+  persisterRestriction: (userId, portee, error) => persisterRestrictionLinkedIn(userId, portee, error),
+  ajouterMessage: (row) => storage.ajouterInboxMessage(row),
+  updateConversation: (id, patch) => storage.updateInboxConversation(id, patch),
+  getTask: (id) => storage.getTask(id),
+  completeTask: (id) => storage.completeTask(id),
+};
+
+/** Statut HTTP d'un refus d'envoi. */
+const STATUT_REFUS: Record<string, number> = { texte_vide: 400, introuvable: 404, echec: 502 };
+
+/** « Ce n'était pas une vraie réponse » : la séquence reprend là où elle était, jamais dans le passé. */
+export function etatARestaurer(etat: EtatAvantReponse, now: Date): EtatAvantReponse {
+  const ancien = etat.nextRunAt ? new Date(etat.nextRunAt) : null;
+  return { ...etat, nextRunAt: ancien ? new Date(Math.max(ancien.getTime(), now.getTime())).toISOString() : null };
+}
+
 const page = (titre: string, corps: string) => `<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>${titre}</title>
@@ -28,6 +62,140 @@ button{font:inherit;padding:.6rem 1.2rem;border:0;border-radius:.5rem;background
 </head><body>${corps}</body></html>`;
 
 export function registerReponsesRoutes(app: Express) {
+  // ── Boîte « Réponses » (spec §6.8). Toutes filtrées par req.userId : la conversation d'un
+  // autre utilisateur répond 404, comme une conversation inexistante.
+  app.get("/api/reponses", isAuthenticated, async (req: any, res) => {
+    const projectId = Number(req.query.projectId);
+    const statut = typeof req.query.statut === "string" && ["a_traiter", "traitee"].includes(req.query.statut) ? req.query.statut : undefined;
+    try {
+      res.json(await storage.listerConversationsInbox(req.userId, {
+        ...(Number.isInteger(projectId) && projectId > 0 ? { projectId } : {}), ...(statut ? { statut } : {}),
+      }));
+    } catch (e: any) {
+      console.error(`[Reponses] liste : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Échec du chargement des réponses" });
+    }
+  });
+
+  app.get("/api/reponses/compte", isAuthenticated, async (req: any, res) => {
+    try {
+      res.json({ aTraiter: await storage.compterInboxATraiter(req.userId) });
+    } catch (e: any) {
+      console.error(`[Reponses] compte : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Échec du comptage" });
+    }
+  });
+
+  /** Conversation de l'utilisateur courant, ou réponse 404/400 déjà envoyée (null). */
+  const conversationDe = async (req: any, res: any): Promise<InboxConversation | null> => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ message: "identifiant invalide" }); return null; }
+    const conv = await storage.getInboxConversationParId(id, req.userId);
+    if (!conv) { res.status(404).json({ message: "Conversation introuvable" }); return null; }
+    return conv;
+  };
+
+  app.get("/api/reponses/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const lead = await storage.getLead(conv.leadId, req.userId);
+      if (!lead) return res.status(404).json({ message: "Conversation introuvable" });
+      const [envoyes, recus, campagne] = await Promise.all([
+        storage.getOutreachMessages(req.userId, lead.id),
+        storage.getInboxMessages(conv.id),
+        lead.prospectionCampaignId ? storage.getProspectionCampaign(lead.prospectionCampaignId) : Promise.resolve(null),
+      ]);
+      const messages = [
+        ...envoyes.filter((m) => m.sentAt).map((m) => ({
+          id: `seq-${m.id}`, source: "sequence", sens: "sortant", nature: "nous", canal: m.platform,
+          subject: m.subject, body: m.body, sentAt: m.sentAt,
+        })),
+        ...recus.map((m) => ({
+          id: `inbox-${m.id}`, source: "boite", sens: m.sens, nature: m.nature, canal: conv.channel,
+          subject: m.subject, body: m.body, sentAt: m.sentAt,
+        })),
+      ].sort((a, b) => new Date(a.sentAt as any).getTime() - new Date(b.sentAt as any).getTime());
+      if (conv.nonLu) await storage.updateInboxConversation(conv.id, { nonLu: false });
+      res.json({
+        conversation: { ...conv, nonLu: false },
+        lead,
+        campagne: campagne && campagne.userId === req.userId
+          ? { id: campagne.id, name: campagne.name, projectId: campagne.projectId, offer: campagne.offer, messageAngle: campagne.messageAngle }
+          : null,
+        messages,
+      });
+    } catch (e: any) {
+      console.error(`[Reponses] détail : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Échec du chargement de la conversation" });
+    }
+  });
+
+  // Rédige seulement : rien ne part sans « Envoyer ».
+  app.post("/api/reponses/:id/proposition", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      res.json({ texte: await proposerReponse(req.userId, conv.id) });
+    } catch (e: any) {
+      if (e instanceof ConversationIntrouvableError) return res.status(404).json({ message: "Conversation introuvable" });
+      if (e instanceof SignatureClientManquanteError) {
+        return res.status(409).json({ code: e.code, message: "Ce projet client n'a pas de signature : renseigne-la dans ses connexions." });
+      }
+      console.error(`[Reponses] proposition : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Naya n'a pas pu proposer de réponse" });
+    }
+  });
+
+  app.post("/api/reponses/:id/envoyer", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const texte = typeof req.body?.texte === "string" ? req.body.texte : "";
+      const r = await envoyerReponse(conv.id, req.userId, texte, depsEnvoi);
+      if (r.ok) return res.json(r);
+      res.status(STATUT_REFUS[r.raison] ?? 409).json(r);
+    } catch (e: any) {
+      console.error(`[Reponses] envoi : ${erreurSure(e)}`);
+      res.status(500).json({ ok: false, raison: "echec" });
+    }
+  });
+
+  app.post("/api/reponses/:id/traitee", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      await storage.updateInboxConversation(conv.id, { statut: "traitee", nonLu: false });
+      if (conv.taskId) {
+        const t = await storage.getTask(conv.taskId);
+        if (t && !t.completed) await storage.completeTask(t.id);
+      }
+      res.json({ ok: true });
+    } catch (e: any) {
+      console.error(`[Reponses] traitée : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Échec" });
+    }
+  });
+
+  // Faux positif : la séquence reprend là où elle était (R12 : restaurerEtatSequence, seul
+  // chemin hors de stopped_replied ; une désinscription reste définitive).
+  app.post("/api/reponses/:id/pas-une-reponse", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const etat = conv.etatAvantReponse as EtatAvantReponse | null;
+      const restaure = etat ? !!(await storage.restaurerEtatSequence(conv.leadId, etatARestaurer(etat, new Date()))) : false;
+      await storage.requalifierDernierEntrantInbox(conv.id, "accuse");
+      // etatAvantReponse effacé : une prochaine vraie réponse sauvegardera l'état du moment.
+      await storage.updateInboxConversation(conv.id, { statut: "traitee", nonLu: false, taskId: null, etatAvantReponse: null });
+      if (conv.taskId) await storage.deleteTask(conv.taskId);
+      res.json({ ok: true, restaure });
+    } catch (e: any) {
+      console.error(`[Reponses] pas une réponse : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Échec" });
+    }
+  });
+
   // Invitation LinkedIn vue acceptée à la main (avant Naya). Seul point d'écriture :
   // setLeadLinkedinConnected (garde la date la plus ancienne, réveille la séquence active).
   app.post("/api/leads/:id/invitation-acceptee", isAuthenticated, async (req: any, res) => {
