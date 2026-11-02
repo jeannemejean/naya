@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { traiterEvenement, normaliser, type DepsIngestion, type EvenementNormalise } from "./ingestion";
+import { traiterEvenement, normaliser, adressesPropresDepuis, type DepsIngestion, type EvenementNormalise } from "./ingestion";
 import { planAcceptance } from "../sequence-signals";
 
 const NOW = new Date("2026-11-02T10:00:00Z");
@@ -75,6 +75,7 @@ function fausseBase() {
     reconnecterCompte: vi.fn(async (c: any) => { db.reconnexions.push({ ...c }); }),
     fuseau: vi.fn(async () => "Europe/Paris"),
     messagesConversation: vi.fn(async (cid: number) => db.messages.filter((m) => m.conversationId === cid)),
+    adressesPropres: vi.fn(async () => ["jeanne@gmail.com"]),
   };
   return { db, deps, lead };
 }
@@ -230,6 +231,57 @@ describe("traiterEvenement — notre propre email renvoyé comme « reçu »", (
     expect(db.state.status).toBe("active");
     expect(db.tasks).toHaveLength(0);
     expect(db.messages[0]).toMatchObject({ sens: "sortant", nature: "nous" });
+  });
+
+  it("I1 : réponse à tous d'un collègue (rattachée par le fil, prospect en To) : c'est une RÉPONSE, la séquence s'arrête", async () => {
+    const { db, deps } = fausseBase();
+    db.conversations.push({ id: 1, leadId: 7, channel: "email", providerChatId: "th-1", statut: "traitee", nonLu: false, taskId: null, etatAvantReponse: null });
+    await traiterEvenement({
+      kind: "mail", accountId: "acc-gm", providerMessageId: "coll-1", threadId: "th-1", fromSelf: false,
+      senderEmail: "assistante@acme.fr", destinataires: ["marc@acme.fr", "jeanne@gmail.com"],
+      subject: "Re: Acme", body: "Marc est intéressé, voici ses dispos.", sentAt: new Date("2026-11-02T09:40:00Z"),
+    }, deps);
+    expect(db.state.status).toBe("stopped_replied");
+    expect(db.conversations[0]).toMatchObject({ statut: "a_traiter", nonLu: true });
+    expect(db.messages[0]).toMatchObject({ sens: "entrant", nature: "reponse" });
+    expect(db.tasks).toHaveLength(1);
+  });
+
+  it("I1 : expéditeur = adresse du Gmail de Jeanne (casse/espaces différents) : c'est nous", async () => {
+    const { db, deps } = fausseBase();
+    db.conversations.push({ id: 1, leadId: 7, channel: "email", providerChatId: "th-1", statut: "traitee", nonLu: false, taskId: null });
+    await traiterEvenement({
+      kind: "mail", accountId: "acc-gm", providerMessageId: "moi-gm", threadId: "th-1", fromSelf: false,
+      senderEmail: " Jeanne@Gmail.com", destinataires: ["marc@acme.fr"], body: "Relance", sentAt: NOW,
+    }, deps);
+    expect(db.state.status).toBe("active");
+    expect(db.tasks).toHaveLength(0);
+    expect(db.messages[0]).toMatchObject({ sens: "sortant", nature: "nous" });
+    expect(deps.adressesPropres).toHaveBeenCalledWith({ userId: "u1", projectId: null, canal: "email" }, "acc-gm");
+  });
+
+  it("I1 : lecture des adresses propres en échec → réponse (jamais avalée)", async () => {
+    const { db, deps } = fausseBase();
+    db.conversations.push({ id: 1, leadId: 7, channel: "email", providerChatId: "th-1", statut: "traitee", nonLu: false, taskId: null, etatAvantReponse: null });
+    deps.adressesPropres = vi.fn(async () => { throw new Error("db"); });
+    await traiterEvenement({
+      kind: "mail", accountId: "acc-gm", providerMessageId: "x-1", threadId: "th-1", fromSelf: false,
+      senderEmail: "jeanne@gmail.com", destinataires: ["marc@acme.fr"], body: "Re", sentAt: NOW,
+    }, deps);
+    expect(db.state.status).toBe("stopped_replied");
+  });
+
+  it("I1 : adressesPropresDepuis — utilisatrice : expédition + Gmail ; client : senderEmail du client seulement", async () => {
+    const s: any = {
+      getUserPreferences: vi.fn(async () => ({ prospectionSenderEmail: "Jeanne@Agence.com" })),
+      getConnexionProjet: vi.fn(async () => ({ senderEmail: "contact@client.fr" })),
+    };
+    const gm = vi.fn(async () => "jeanne@gmail.com");
+    expect(await adressesPropresDepuis(s, { userId: "u1", projectId: null, canal: "email" }, "acc-gm", gm))
+      .toEqual(["jeanne@agence.com", "jeanne@gmail.com"]);
+    expect(await adressesPropresDepuis(s, { userId: "u1", projectId: 9, canal: "linkedin" }, "acc-li", gm))
+      .toEqual(["contact@client.fr"]);
+    expect(s.getConnexionProjet).toHaveBeenCalledWith("u1", 9);
   });
 
   it("écho Gmail d'une réponse envoyée depuis la boîte (autre identifiant, même texte < 10 min) : pas de doublon, conversation traitée", async () => {

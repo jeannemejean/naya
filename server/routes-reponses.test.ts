@@ -44,7 +44,7 @@ const proposition = vi.hoisted(() => ({
 vi.mock("./services/reponses/proposition", () => proposition);
 vi.mock("./auth", () => ({ isAuthenticated: (q: any, _r: any, next: any) => { q.userId = "u1"; next(); } }));
 
-const { registerReponsesRoutes, STADES_ENGAGES } = await import("./routes-reponses");
+const { registerReponsesRoutes, STADES_ENGAGES, reglagesWebhook } = await import("./routes-reponses");
 const { jetonDesinscription } = await import("./services/desinscription");
 const app = express();
 app.use(express.json());
@@ -88,16 +88,25 @@ describe("POST /api/unipile/webhook", () => {
     fetch(`http://127.0.0.1:${port}/api/unipile/webhook`, { method: "POST", headers, body });
   const corps = JSON.stringify({ event: "message_received", account_id: "acc" });
 
-  it("mauvais secret ou secret absent : 401, rien traité", async () => {
-    expect((await poster({ "content-type": "application/json", "Unipile-Auth": "faux" }, corps)).status).toBe(401);
-    expect((await poster({ "content-type": "application/json" }, corps)).status).toBe(401);
-    expect(ingestion.traiterEvenement).not.toHaveBeenCalled();
+  it("mauvais secret ou secret absent : 401, rien traité, avertissement sans secret ni corps", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect((await poster({ "content-type": "application/json", "Unipile-Auth": "faux" }, corps)).status).toBe(401);
+      expect((await poster({ "content-type": "application/json" }, corps)).status).toBe(401);
+      expect(ingestion.traiterEvenement).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(2);
+      const journal = warn.mock.calls.flat().join(" ");
+      expect(journal).toContain("401");
+      expect(journal).not.toContain("faux");
+      expect(journal).not.toContain("webhook-secret");
+      expect(journal).not.toContain("message_received");
+    } finally { warn.mockRestore(); }
   });
 
-  it("bon secret, corps en text/plain : 200 puis traiterEvenement avec le corps lu", async () => {
+  it("bon secret, corps en text/plain : traiterEvenement attendu, puis 200", async () => {
     const r = await poster({ "content-type": "text/plain", "Unipile-Auth": "webhook-secret" }, corps);
     expect(r.status).toBe(200);
-    await vi.waitFor(() => expect(ingestion.traiterEvenement).toHaveBeenCalledTimes(1));
+    expect(ingestion.traiterEvenement).toHaveBeenCalledTimes(1);
     expect(ingestion.normaliser).toHaveBeenCalledWith({ event: "message_received", account_id: "acc" });
     expect(ingestion.traiterEvenement).toHaveBeenCalledWith({ kind: "message", lu: { event: "message_received", account_id: "acc" } }, { deps: true });
   });
@@ -106,6 +115,26 @@ describe("POST /api/unipile/webhook", () => {
     ingestion.normaliser.mockReturnValueOnce(null as any);
     expect((await poster({ "content-type": "application/json", "Unipile-Auth": "webhook-secret" }, "{}")).status).toBe(200);
     expect(ingestion.traiterEvenement).not.toHaveBeenCalled();
+  });
+
+  it("traitement en échec : 500 (Unipile renverra)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      ingestion.traiterEvenement.mockRejectedValueOnce(new Error("db down") as never);
+      expect((await poster({ "content-type": "application/json", "Unipile-Auth": "webhook-secret" }, corps)).status).toBe(500);
+    } finally { err.mockRestore(); }
+  });
+
+  it("traitement trop long : 500 au bout du délai, sans attendre la fin", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const avant = reglagesWebhook.delaiMs;
+    reglagesWebhook.delaiMs = 30;
+    let finir!: () => void;
+    try {
+      ingestion.traiterEvenement.mockImplementationOnce((() => new Promise<void>((r) => { finir = r; })) as any);
+      const r = await poster({ "content-type": "application/json", "Unipile-Auth": "webhook-secret" }, corps);
+      expect(r.status).toBe(500);
+    } finally { finir?.(); reglagesWebhook.delaiMs = avant; err.mockRestore(); }
   });
 
   it("secret non configuré : 503", async () => {

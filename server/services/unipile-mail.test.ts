@@ -97,6 +97,62 @@ describe("ensureWebhooks", () => {
     expect(posts).toHaveLength(4);
   });
 
+  it("M5 : APP_URL sans https:// → rien n'est listé ni créé, un seul avertissement", async () => {
+    const f = vi.fn();
+    vi.stubGlobal("fetch", f);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await ensureWebhooks("http://naya.test", "sec");
+      expect(f).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0].join(" ")).not.toContain("sec");
+    } finally { warn.mockRestore(); }
+  });
+
+  const tous = (headersDe: (source: string) => any) => [
+    ["messaging", "message_received"], ["email", "mail_received"], ["email_tracking", "mail_opened"],
+    ["users", "new_relation"], ["account_status", "error"],
+  ].map(([source, event], i) => ({ id: `w${i}`, request_url: url, name: `naya-${source}`, events: [event], ...headersDe(source) }));
+
+  it("I2 : secret exposé et différent → supprimé puis recréé avec le secret courant", async () => {
+    const items = tous((source) => ({ headers: [{ key: "Unipile-Auth", value: source === "email" ? "ancien" : "sec" }] }));
+    const f = vi.fn().mockImplementation(async (_u: string, init: any) =>
+      init?.method === "POST" || init?.method === "DELETE" ? ok({}) : ok({ items, cursor: null }, 200));
+    vi.stubGlobal("fetch", f);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await ensureWebhooks("https://naya.test", "sec");
+      const dels = f.mock.calls.filter((c: any) => c[1]?.method === "DELETE");
+      expect(dels).toHaveLength(1);
+      expect(dels[0][0]).toBe("https://api.example.test:1/api/v1/webhooks/w1");
+      const posts = f.mock.calls.filter((c: any) => c[1]?.method === "POST").map((c: any) => JSON.parse(c[1].body));
+      expect(posts.map((p: any) => p.source)).toEqual(["email"]);
+      expect(posts[0].headers).toContainEqual({ key: "Unipile-Auth", value: "sec" });
+      expect(warn.mock.calls.flat().join(" ")).not.toMatch(/ancien|\bsec\b/);
+    } finally { warn.mockRestore(); }
+  });
+
+  it("I2 : secret identique → rien n'est touché", async () => {
+    const items = tous(() => ({ headers: [{ key: "Unipile-Auth", value: "sec" }] }));
+    const f = vi.fn().mockImplementation(async () => ok({ items, cursor: null }, 200));
+    vi.stubGlobal("fetch", f);
+    await ensureWebhooks("https://naya.test", "sec");
+    expect(f.mock.calls.filter((c: any) => c[1]?.method)).toHaveLength(0);
+  });
+
+  it("I2 : en-têtes non exposés par la liste → gardés, un seul avertissement (dashboard)", async () => {
+    const items = tous(() => ({}));
+    const f = vi.fn().mockImplementation(async () => ok({ items, cursor: null }, 200));
+    vi.stubGlobal("fetch", f);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await ensureWebhooks("https://naya.test", "sec");
+      expect(f.mock.calls.filter((c: any) => c[1]?.method)).toHaveLength(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain("tableau de bord Unipile");
+    } finally { warn.mockRestore(); }
+  });
+
   it("ne lève jamais", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("x")));
     await expect(ensureWebhooks("https://naya.test", "s")).resolves.toBeUndefined();

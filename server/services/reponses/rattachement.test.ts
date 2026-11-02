@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { rattacherLead, type DepsRattachement } from "./rattachement";
+import { rattacherLead, clesPersonne, memePersonne, type DepsRattachement } from "./rattachement";
 import type { EvenementNormalise } from "./ingestion";
 
 const base: EvenementNormalise = { kind: "message", accountId: "acc", fromSelf: false, sentAt: new Date("2026-11-02T10:00:00Z") };
@@ -57,5 +57,25 @@ describe("rattacherLead", () => {
     expect(await rattacherLead(base, d)).toBeNull();
     expect(d.leadParFil).not.toHaveBeenCalled();
     expect(d.leadParProviderId).not.toHaveBeenCalled();
+  });
+});
+
+describe("doublons de leads (M3) — clesPersonne / memePersonne", () => {
+  it("même email (casse, espaces) → même personne", () => {
+    expect(memePersonne(clesPersonne({ email: " Marc@Acme.fr" }), clesPersonne({ email: "marc@acme.fr" }))).toBe(true);
+  });
+  it("même identifiant LinkedIn interne → même personne", () => {
+    expect(memePersonne(clesPersonne({ pid: "ACo-1" }), clesPersonne({ pid: "ACo-1", email: "x@y.z" }))).toBe(true);
+  });
+  it("même profil public (URL différente, casse, slash final) → même personne", () => {
+    expect(memePersonne(
+      clesPersonne({ url: "https://www.linkedin.com/in/Marc-Dupont/" }),
+      clesPersonne({ url: "http://linkedin.com/in/marc-dupont" }),
+    )).toBe(true);
+  });
+  it("rien en commun, ou clés absentes des deux côtés → pas la même personne", () => {
+    expect(memePersonne(clesPersonne({ email: "a@b.c" }), clesPersonne({ email: "d@e.f" }))).toBe(false);
+    expect(memePersonne(clesPersonne({}), clesPersonne({}))).toBe(false);
+    expect(memePersonne(clesPersonne({ url: "https://linkedin.com/in/marc-dupont-1" }), clesPersonne({ url: "https://linkedin.com/in/marc-dupont" }))).toBe(false);
   });
 });

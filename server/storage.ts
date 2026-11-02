@@ -215,6 +215,7 @@ import type { StepSendKey } from "./services/prospection-idempotence";
 import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { publicIdFromUrl } from "./services/linkedin";
+import { clesPersonne, memePersonne } from "./services/reponses/rattachement";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
@@ -659,6 +660,12 @@ export interface IStorage {
   getLastOutreachSentAt(userId: string, platform: string): Promise<Date | null>;
   /** Désinscrit ou a signalé un spam — ce prospect OU une autre fiche de la même adresse. */
   isLeadUnsubscribed(leadId: number, userId: string): Promise<boolean>;
+  /**
+   * Une AUTRE fiche de l'utilisatrice pour la même personne (même email normalisé, même
+   * identifiant LinkedIn interne ou même profil public) a-t-elle répondu (séquence
+   * `stopped_replied` ou conversation « à traiter ») ? Lève sur erreur de lecture.
+   */
+  memePersonneARepondu(leadId: number, userId: string): Promise<boolean>;
   /** Brouillons LinkedIn (jamais envoyés) des prospects d'une campagne, à envoyer à la main. */
   getLinkedInDraftsForCampaign(campaignId: number, userId: string): Promise<Array<{ message: OutreachMessage; lead: Lead; sequenceStatus: string; currentStep: number }>>;
   deleteOutreachMessage(id: number): Promise<void>;
@@ -2564,11 +2571,25 @@ export class DatabaseStorage implements IStorage {
   // (branches if_invite_accepted / if_invite_not_accepted). Poller Unipile (Task 7).
   async setLeadLinkedinConnected(leadId: number, at: Date): Promise<void> {
     // Point d'entrée UNIQUE de l'acceptation : garde la date la plus ancienne et réveille la
-    // séquence active (nextRunAt = now) pour que le moteur re-décide avant la limite de 14 j.
+    // séquence active (nextRunAt = now) pour que le moteur re-décide avant la limite de 14 j —
+    // sauf report d'absence en cours, jamais avancé (planAcceptance).
     const now = new Date();
     const [row] = await db.select({ at: leads.linkedinConnectedAt }).from(leads).where(eq(leads.id, leadId));
     const state = await this.getLeadSequenceState(leadId);
-    const plan = planAcceptance(row?.at ?? null, at, state?.status ?? null, now);
+    // Report d'absence : une réponse automatique reçue depuis le dernier envoi (M2).
+    let reportAbsence = false;
+    if (state?.status === "active" && state.nextRunAt && state.nextRunAt > now) {
+      const depuis = state.lastStepSentAt ?? state.enrolledAt ?? new Date(0);
+      const [abs] = await db.select({ id: inboxMessages.id }).from(inboxMessages)
+        .innerJoin(inboxConversations, eq(inboxConversations.id, inboxMessages.conversationId))
+        .where(and(
+          eq(inboxConversations.leadId, leadId), eq(inboxMessages.sens, "entrant"),
+          eq(inboxMessages.nature, "absence"), gte(inboxMessages.sentAt, depuis),
+        ))
+        .limit(1);
+      reportAbsence = !!abs;
+    }
+    const plan = planAcceptance(row?.at ?? null, at, state?.status ?? null, now, { nextRunAt: state?.nextRunAt ?? null, reportAbsence });
     await db.update(leads).set({ linkedinConnectedAt: plan.linkedinConnectedAt, updatedAt: now }).where(eq(leads.id, leadId));
     if (plan.wakeSequenceAt) {
       await db.update(leadSequenceState)
@@ -2759,6 +2780,36 @@ export class DatabaseStorage implements IStorage {
       ))
       .limit(1);
     return rows.length > 0;
+  }
+
+  async memePersonneARepondu(leadId: number, userId: string): Promise<boolean> {
+    const [lead] = await db.select({ email: leads.email, pid: leads.linkedinProviderId, url: leads.linkedinUrl })
+      .from(leads).where(and(eq(leads.id, leadId), eq(leads.userId, userId)));
+    if (!lead) return false;
+    const cle = clesPersonne(lead);
+    const conditions: SQL[] = [];
+    if (cle.email) conditions.push(sql`lower(regexp_replace(${leads.email}, '\\s', '', 'g')) = ${cle.email}`);
+    if (cle.providerId) conditions.push(eq(leads.linkedinProviderId, cle.providerId));
+    if (cle.publicId) {
+      const motif = (t: string) => "%" + t.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+      conditions.push(sql`${leads.linkedinUrl} ilike ${motif(cle.publicId)}`);
+      conditions.push(sql`${leads.linkedinUrl} ilike ${motif(encodeURIComponent(cle.publicId))}`);
+    }
+    if (!conditions.length) return false;
+    const candidats = await db.select({ email: leads.email, pid: leads.linkedinProviderId, url: leads.linkedinUrl })
+      .from(leads)
+      .where(and(
+        eq(leads.userId, userId),
+        ne(leads.id, leadId),
+        or(...conditions),
+        or(
+          sql`exists (select 1 from ${leadSequenceState} where ${leadSequenceState.leadId} = ${leads.id} and ${leadSequenceState.status} = 'stopped_replied')`,
+          sql`exists (select 1 from ${inboxConversations} where ${inboxConversations.leadId} = ${leads.id} and ${inboxConversations.statut} = 'a_traiter')`,
+        ),
+      ))
+      .limit(50);
+    // Le filtre SQL sur l'URL est large (ilike) : la correspondance exacte se décide ici.
+    return candidats.some((c) => memePersonne(cle, clesPersonne(c)));
   }
 
   async getLinkedInDraftsForCampaign(campaignId: number, userId: string) {

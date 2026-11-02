@@ -36,6 +36,7 @@ vi.mock("../storage", () => ({
     isLeadUnsubscribed: vi.fn(),
     updateLead: vi.fn(),
     getLeadSequenceState: vi.fn(),
+    memePersonneARepondu: vi.fn(),
   },
 }));
 
@@ -63,6 +64,8 @@ import {
   LINKEDIN_MAX_CONSECUTIVE_FAILURES,
   emailGapMs,
   emailGapElapsed,
+  receptionReponsesEnLigne,
+  RAISON_DOUBLON_A_REPONDU,
 } from "./prospection-sender";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
@@ -177,6 +180,23 @@ describe("emailGapMs / emailGapElapsed", () => {
   });
 });
 
+describe("receptionReponsesEnLigne — envoi automatique Unipile seulement si les réponses sont reçues (spec §8)", () => {
+  it("secret + APP_URL https → en ligne", () => {
+    expect(receptionReponsesEnLigne({ UNIPILE_WEBHOOK_SECRET: "s", APP_URL: "https://hellonaya.app", NODE_ENV: "production" })).toBe(true);
+  });
+  it("secret absent ou vide → hors ligne", () => {
+    expect(receptionReponsesEnLigne({ APP_URL: "https://hellonaya.app" })).toBe(false);
+    expect(receptionReponsesEnLigne({ UNIPILE_WEBHOOK_SECRET: "  ", APP_URL: "https://hellonaya.app" })).toBe(false);
+  });
+  it("APP_URL absente → hors ligne", () => {
+    expect(receptionReponsesEnLigne({ UNIPILE_WEBHOOK_SECRET: "s" })).toBe(false);
+  });
+  it("production : APP_URL en http:// → hors ligne ; hors production : accepté", () => {
+    expect(receptionReponsesEnLigne({ UNIPILE_WEBHOOK_SECRET: "s", APP_URL: "http://hellonaya.app", NODE_ENV: "production" })).toBe(false);
+    expect(receptionReponsesEnLigne({ UNIPILE_WEBHOOK_SECRET: "s", APP_URL: "http://localhost:5000", NODE_ENV: "development" })).toBe(true);
+  });
+});
+
 describe("planNextStep", () => {
   it("currentStep=0 → envoie l'étape 0, programme l'étape 1 à +3j", () => {
     expect(planNextStep(0, steps)).toEqual({ sendIndex: 0, done: false, nextDelayDays: 3 });
@@ -198,6 +218,7 @@ describe("planNextStep", () => {
 describe("runProspectionSender — worker loop (intégration)", () => {
   const ORIGINAL_ENABLED = process.env.PROSPECTION_SENDING_ENABLED;
   const ORIGINAL_SENDGRID_KEY = process.env.SENDGRID_API_KEY;
+  const ORIGINAL_RECEPTION = { UNIPILE_WEBHOOK_SECRET: process.env.UNIPILE_WEBHOOK_SECRET, APP_URL: process.env.APP_URL };
 
   const baseState = (overrides: Record<string, any> = {}) => ({
     id: 1,
@@ -304,6 +325,9 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     vi.setSystemTime(LINKEDIN_TEST_NOW);
     process.env.PROSPECTION_SENDING_ENABLED = "true";
     process.env.SENDGRID_API_KEY = "test-sendgrid-key";
+    // Réception des réponses en ligne par défaut (I2) : les tests hors ligne l'enlèvent.
+    process.env.UNIPILE_WEBHOOK_SECRET = "webhook-secret-test";
+    process.env.APP_URL = "https://naya.test";
 
     fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);
@@ -333,9 +357,13 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.getReservedStepOrders as any).mockResolvedValue([]);
     (storage.setLeadUnreachable as any).mockResolvedValue(undefined);
     (storage.setLeadSequenceGuard as any).mockResolvedValue(undefined);
+    (storage.memePersonneARepondu as any).mockResolvedValue(false);
   });
 
   afterEach(() => {
+    for (const [k, v] of Object.entries(ORIGINAL_RECEPTION)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
     if (ORIGINAL_ENABLED === undefined) delete process.env.PROSPECTION_SENDING_ENABLED;
     else process.env.PROSPECTION_SENDING_ENABLED = ORIGINAL_ENABLED;
     if (ORIGINAL_SENDGRID_KEY === undefined) delete process.env.SENDGRID_API_KEY;
@@ -912,6 +940,59 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
       expect(storage.createOutreachMessage).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("M3 : la même personne a répondu via une autre fiche (email) : rien ne part, séquence en pause, raison visible", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.memePersonneARepondu as any).mockResolvedValue(true);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.memePersonneARepondu).toHaveBeenCalledWith(1, "u1");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_DOUBLON_A_REPONDU, stepId: 100 }));
+    });
+
+    it("M3 : doublon ayant répondu, étape LinkedIn automatique : aucun appel Unipile ni brouillon", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      (storage.memePersonneARepondu as any).mockResolvedValue(true);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+    });
+
+    it("M3 : lecture des doublons en échec → rien ne part, aucun changement d'état (réessai)", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.memePersonneARepondu as any).mockRejectedValue(new Error("db"));
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("I2 : réception des réponses hors ligne, étape LinkedIn : ni vérification ni envoi Unipile, brouillon manuel", async () => {
+      delete process.env.UNIPILE_WEBHOOK_SECRET;
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x", relationVerifieeAt: null })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      await runProspectionSender();
+      expect(checkConnection).not.toHaveBeenCalled();
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ platform: "linkedin", sentAt: null }));
+      expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "draft");
     });
 
     it("état illisible juste avant l'envoi : rien ne part (prudence)", async () => {
@@ -2314,6 +2395,30 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ leadId: 1, platform: "email" }));
       expect(storage.setOutreachProviderIds).toHaveBeenCalledWith(55, "prov-1", "thr-1");
       expect(storage.markStepSendSent).toHaveBeenCalled();
+    });
+
+    it("I2 : réception des réponses hors ligne (secret absent) : aucun email Gmail, ni SendGrid, un seul log par utilisatrice", async () => {
+      delete process.env.UNIPILE_WEBHOOK_SECRET;
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState(), baseState({ id: 2, leadId: 2 })]);
+      (storage.getLeads as any).mockResolvedValue([baseLead(), baseLead({ id: 2, email: "autre@example.com" })]);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes("hors ligne"))).toHaveLength(1);
+    });
+
+    it("I2 : production avec APP_URL en http:// : aucun email Gmail", async () => {
+      const avant = process.env.NODE_ENV;
+      process.env.NODE_ENV = "production";
+      process.env.APP_URL = "http://hellonaya.app";
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        await runProspectionSender();
+        expect(sendEmailUnipile).not.toHaveBeenCalled();
+      } finally { process.env.NODE_ENV = avant; }
     });
 
     it("Gmail relié sans clé SendGrid : l'envoi part quand même", async () => {

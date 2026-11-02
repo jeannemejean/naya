@@ -83,9 +83,46 @@ const WEBHOOK_SOURCES: Array<{ source: string; event: string }> = [
   { source: "account_status", event: "error" },
 ];
 
+/** Valeur de l'en-tête Unipile-Auth d'un webhook listé ; undefined si la liste ne donne pas ses en-têtes. */
+function enTeteAuth(w: any): string | null | undefined {
+  const h = w?.headers;
+  if (Array.isArray(h)) {
+    const x = h.find((e: any) => String(e?.key ?? e?.name ?? "").toLowerCase() === "unipile-auth");
+    return x ? String(x.value ?? "") : null;
+  }
+  if (h && typeof h === "object") {
+    const k = Object.keys(h).find((c) => c.toLowerCase() === "unipile-auth");
+    return k ? String(h[k] ?? "") : null;
+  }
+  return undefined;
+}
+
 export async function ensureWebhooks(baseUrl: string, secret: string): Promise<void> {
   if (!linkedinConfigured()) return;
-  const requestUrl = baseUrl.replace(/\/+$/, "") + "/api/unipile/webhook";
+  // Le secret voyage en en-tête : jamais vers une adresse en clair (M5).
+  if (!/^https:\/\//i.test(baseUrl.trim())) {
+    console.warn("[unipile] APP_URL n'est pas en https:// : webhooks non créés (les réponses des prospects ne seront pas reçues)");
+    return;
+  }
+  const requestUrl = baseUrl.trim().replace(/\/+$/, "") + "/api/unipile/webhook";
+  const creer = async (source: string, name: string) => {
+    const res = await fetch(`${unipileDsn}/api/v1/webhooks`, {
+      method: "POST",
+      headers: unipileHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({
+        request_url: requestUrl,
+        source,
+        name,
+        format: "json",
+        enabled: true,
+        headers: [
+          { key: "Content-Type", value: "application/json" },
+          { key: "Unipile-Auth", value: secret },
+        ],
+      }),
+    });
+    if (!res.ok) console.warn(`[unipile] création du webhook ${source} échouée (http_${res.status})`);
+  };
   try {
     const items: any[] = [];
     let cursor: string | null | undefined;
@@ -102,27 +139,29 @@ export async function ensureWebhooks(baseUrl: string, secret: string): Promise<v
       cursor = data?.cursor;
       if (!cursor) break;
     }
+    let secretInverifiable = false;
     for (const { source, event } of WEBHOOK_SOURCES) {
       const name = `naya-${source}`;
-      const exists = items.some((w) =>
+      const existant = items.find((w) =>
         w?.request_url === requestUrl && (w?.name === name || (Array.isArray(w?.events) && w.events.includes(event))));
-      if (exists) continue;
-      const res = await fetch(`${unipileDsn}/api/v1/webhooks`, {
-        method: "POST",
-        headers: unipileHeaders({ "content-type": "application/json" }),
-        body: JSON.stringify({
-          request_url: requestUrl,
-          source,
-          name,
-          format: "json",
-          enabled: true,
-          headers: [
-            { key: "Content-Type", value: "application/json" },
-            { key: "Unipile-Auth", value: secret },
-          ],
-        }),
-      });
-      if (!res.ok) console.warn(`[unipile] création du webhook ${source} échouée (http_${res.status})`);
+      if (existant) {
+        const auth = enTeteAuth(existant);
+        if (auth === undefined) { secretInverifiable = true; continue; }
+        if (auth === secret) continue;
+        // Secret tourné : l'ancien webhook serait refusé (401) à chaque livraison → recréé.
+        const id = String(existant.id ?? existant.webhook_id ?? "");
+        if (!id) { secretInverifiable = true; continue; }
+        const del = await fetch(`${unipileDsn}/api/v1/webhooks/${encodeURIComponent(id)}`, { method: "DELETE", headers: unipileHeaders() });
+        if (!del.ok) {
+          console.warn(`[unipile] webhook ${source} : secret périmé, suppression échouée (http_${del.status}) — à supprimer dans le tableau de bord Unipile`);
+          continue;
+        }
+        console.warn(`[unipile] webhook ${source} : secret périmé, recréé`);
+      }
+      await creer(source, name);
+    }
+    if (secretInverifiable) {
+      console.warn("[unipile] webhooks existants gardés sans pouvoir vérifier leur secret : si UNIPILE_WEBHOOK_SECRET a changé, supprimer les webhooks naya-* dans le tableau de bord Unipile (ils seront recréés au démarrage)");
     }
   } catch (e: any) {
     console.warn(`[unipile] ensureWebhooks : ${String(e?.message || e).slice(0, 120)}`);

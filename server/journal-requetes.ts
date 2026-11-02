@@ -8,8 +8,11 @@ export function cheminJournal(chemin: string): string {
   return chemin.replace(RAPPORT_PUBLIC, "/api/public/rapports/[jeton]");
 }
 
+/** La boîte de réponses : corps des messages des prospects, jamais dans les journaux. */
+const REPONSES = /^\/api\/reponses(\/|\?|$)/i;
+
 export function corpsJournalisable(chemin: string): boolean {
-  return !RAPPORT_PUBLIC.test(chemin);
+  return !RAPPORT_PUBLIC.test(chemin) && !REPONSES.test(chemin);
 }
 
 export function estPagePrivee(chemin: string): boolean {

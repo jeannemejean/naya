@@ -10,6 +10,13 @@ describe("journal des requêtes — un lien privé ne s'écrit jamais en clair",
     expect(corpsJournalisable("/api/public/rapports/xyz")).toBe(false);
     expect(corpsJournalisable("/api/tasks")).toBe(true);
   });
+  it("n'écrit jamais le corps des réponses de la boîte (/api/reponses et sous-chemins)", () => {
+    expect(corpsJournalisable("/api/reponses")).toBe(false);
+    expect(corpsJournalisable("/api/reponses/12")).toBe(false);
+    expect(corpsJournalisable("/api/reponses/12/messages")).toBe(false);
+    expect(corpsJournalisable("/api/reponses?statut=a_traiter")).toBe(false);
+    expect(corpsJournalisable("/api/reponsesX")).toBe(true);
+  });
 });
 
 describe("estPagePrivee — pages à ne jamais indexer", () => {

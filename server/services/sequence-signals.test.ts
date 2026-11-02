@@ -43,6 +43,15 @@ describe("planAcceptance", () => {
   it("une date donnée plus ancienne remplace l'existante", () => {
     expect(planAcceptance(day(3), day(1), "active", day(4)).linkedinConnectedAt).toEqual(day(1));
   });
+  it("M2 : séquence reportée par une absence (nextRunAt futur) → jamais avancée", () => {
+    expect(planAcceptance(null, day(3), "active", day(3), { nextRunAt: day(8), reportAbsence: true }).wakeSequenceAt).toEqual(day(8));
+  });
+  it("M2 : report d'absence déjà échu → réveil maintenant (max(existant, now))", () => {
+    expect(planAcceptance(null, day(3), "active", day(3), { nextRunAt: day(1), reportAbsence: true }).wakeSequenceAt).toEqual(day(3));
+  });
+  it("M2 : nextRunAt futur SANS absence (borne d'attente des 14 j) → réveil maintenant", () => {
+    expect(planAcceptance(null, day(3), "active", day(3), { nextRunAt: day(14), reportAbsence: false }).wakeSequenceAt).toEqual(day(3));
+  });
   it("séquence non active → pas de réveil", () => {
     expect(planAcceptance(null, day(3), "completed", day(3)).wakeSequenceAt).toBeNull();
     expect(planAcceptance(null, day(3), null, day(3)).wakeSequenceAt).toBeNull();

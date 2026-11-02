@@ -23,13 +23,23 @@ export function deriveSignals(
 /**
  * Enregistrement d'une acceptation d'invitation : garde la date la PLUS ANCIENNE (jamais
  * d'écrasement par une date plus tardive) et réveille la séquence active (nextRunAt = now)
- * pour que le moteur re-décide sans attendre la limite de 14 jours. Pure.
+ * pour que le moteur re-décide sans attendre la limite de 14 jours.
+ *
+ * Exception : une séquence REPORTÉE par une absence (réponse automatique reçue depuis le
+ * dernier envoi) n'est jamais avancée — nextRunAt = max(existant, now). Le moteur re-décide
+ * à cette date de toute façon, avec l'acceptation en main. Hors absence, le réveil reste
+ * immédiat : un nextRunAt futur est alors la borne d'attente d'acceptation (14 j), qu'il
+ * faut justement court-circuiter. Pure.
  */
 export function planAcceptance(
   existing: Date | null, given: Date, stateStatus: string | null, now: Date,
+  sequence: { nextRunAt?: Date | null; reportAbsence?: boolean } = {},
 ): { linkedinConnectedAt: Date; wakeSequenceAt: Date | null } {
   const earliest = existing && existing.getTime() <= given.getTime() ? existing : given;
-  return { linkedinConnectedAt: earliest, wakeSequenceAt: stateStatus === "active" ? now : null };
+  if (stateStatus !== "active") return { linkedinConnectedAt: earliest, wakeSequenceAt: null };
+  const prevu = sequence.nextRunAt ?? null;
+  const garde = !!sequence.reportAbsence && !!prevu && prevu.getTime() > now.getTime();
+  return { linkedinConnectedAt: earliest, wakeSequenceAt: garde ? prevu : now };
 }
 
 /** Statuts qu'une réponse ne laisse jamais redevenir « en cours ». */

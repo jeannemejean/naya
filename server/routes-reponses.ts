@@ -47,6 +47,9 @@ const depsEnvoi: DepsEnvoiReponse = {
   completeTask: (id) => storage.completeTask(id),
 };
 
+/** Délai de traitement d'un webhook avant de répondre 500 (Unipile coupe à 30 s). Modifiable en test. */
+export const reglagesWebhook = { delaiMs: 20_000 };
+
 /** Statut HTTP d'un refus d'envoi. */
 const STATUT_REFUS: Record<string, number> = { texte_vide: 400, texte_trop_long: 400, introuvable: 404, echec: 502 };
 
@@ -313,16 +316,34 @@ export function registerReponsesRoutes(app: Express) {
   // Le corps est lu en JSON quel que soit le Content-Type (index.ts monte le même parseur
   // avant express.json() global ; celui-ci ne s'applique que si le corps n'a pas été lu).
   // Jamais coupé par PROSPECTION_SENDING_ENABLED : c'est de la réception.
-  app.post("/api/unipile/webhook", express.json({ type: () => true, limit: "2mb" }), (req, res) => {
+  app.post("/api/unipile/webhook", express.json({ type: () => true, limit: "2mb" }), async (req, res) => {
     const secret = process.env.UNIPILE_WEBHOOK_SECRET;
     if (!secret) return res.status(503).json({ message: "webhook non configuré" });
-    if (!memeSecret(req.get("Unipile-Auth"), secret)) return res.status(401).json({ message: "non autorisé" });
-    // 200 tout de suite (Unipile attend une réponse en moins de 30 s), traitement ensuite.
-    res.status(200).json({ ok: true });
+    if (!memeSecret(req.get("Unipile-Auth"), secret)) {
+      // Visible dans les journaux (secret tourné, webhook à recréer) — jamais le secret ni le corps.
+      console.warn(`[Reponses] webhook Unipile refusé (401) : en-tête Unipile-Auth ${req.get("Unipile-Auth") ? "différent du secret" : "absent"}`);
+      return res.status(401).json({ message: "non autorisé" });
+    }
     const evt = normaliser(req.body);
-    if (!evt) return;
-    traiterEvenement(evt, depsDepuisStorage(storage)).catch((e: any) => {
+    if (!evt) return res.status(200).json({ ok: true });
+    // Traité AVANT de répondre (Unipile attend moins de 30 s) : en cas d'échec ou de délai
+    // dépassé, 500 → Unipile renvoie l'événement (le traitement est idempotent).
+    const traitement = Promise.resolve().then(() => traiterEvenement(evt, depsDepuisStorage(storage)));
+    let minuteur: ReturnType<typeof setTimeout> | undefined;
+    const delai = new Promise<"delai">((r) => { minuteur = setTimeout(() => r("delai"), reglagesWebhook.delaiMs); });
+    try {
+      const issue = await Promise.race([traitement.then(() => "ok" as const), delai]);
+      if (issue === "delai") {
+        console.error(`[Reponses] webhook ${evt.kind} : traitement trop long (compte ${evt.accountId}) — 500, Unipile renverra`);
+        traitement.catch((e: any) => console.error(`[Reponses] webhook ${evt.kind} non traité (compte ${evt.accountId}) : ${erreurSure(e)}`));
+        return res.status(500).json({ message: "délai dépassé" });
+      }
+      return res.status(200).json({ ok: true });
+    } catch (e: any) {
       console.error(`[Reponses] webhook ${evt.kind} non traité (compte ${evt.accountId}) : ${erreurSure(e)}`);
-    });
+      return res.status(500).json({ message: "erreur de traitement" });
+    } finally {
+      clearTimeout(minuteur);
+    }
   });
 }

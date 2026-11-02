@@ -18,7 +18,7 @@ import type {
   LeadSequenceState, OutreachMessage, Task,
 } from "@shared/schema";
 import type { IStorage } from "../../storage";
-import { publicIdFromUrl } from "../linkedin";
+import { listUnipileAccounts, publicIdFromUrl } from "../linkedin";
 import { classerMessage, type Classement } from "./tri";
 import { rattacherLead, normaliserEmail } from "./rattachement";
 
@@ -94,6 +94,13 @@ export interface DepsIngestion {
   /** Efface la marque de déconnexion de ce canal. */
   reconnecterCompte: (compte: CompteUnipile) => Promise<unknown>;
   fuseau: (userId: string) => Promise<string>;
+  /**
+   * Les adresses d'envoi PROPRES au périmètre du compte (adresse du Gmail relié, adresse
+   * d'expédition de prospection de l'utilisatrice ou du client), en minuscules. Seul critère,
+   * avec `fromSelf`, pour dire qu'un email vient de chez nous. Erreur → [] (dans le doute,
+   * l'email est une réponse).
+   */
+  adressesPropres: (compte: CompteUnipile, accountId: string) => Promise<string[]>;
 }
 
 /** Décision appliquée DANS la transaction, à partir de l'état et de la conversation lus verrouillés. */
@@ -349,9 +356,16 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
   });
   const plusRecent = (a: Date | null | undefined) => (!a || evt.sentAt > a ? evt.sentAt : a);
 
-  // Un email ADRESSÉ au prospect et qui ne vient pas de lui part de chez nous (envoi Naya ou
-  // Gmail de Jeanne que le fournisseur n'aurait pas marqué « envoyé ») : jamais une réponse.
-  const emailLead = lead.email ? normaliserEmail(lead.email) : null;
+  // Un email non marqué « envoyé » n'est de chez nous que si son expéditeur est l'une de NOS
+  // adresses (Gmail relié, adresse d'expédition du périmètre). Un collègue ou une assistante
+  // du prospect qui répond à tous (prospect en copie) est une RÉPONSE : la séquence s'arrête.
+  const adresseNous = async (): Promise<boolean> => {
+    if (evt.kind !== "mail" || !evt.senderEmail) return false;
+    const exp = normaliserEmail(evt.senderEmail);
+    let propres: string[] = [];
+    try { propres = await deps.adressesPropres(compte, evt.accountId); } catch { propres = []; }
+    return propres.some((a) => !!a && normaliserEmail(a) === exp);
+  };
   // LinkedIn, dans un chat rattaché par le fil : un expéditeur différent du prospect n'est
   // Jeanne QUE si l'identifiant stocké du prospect figure tel quel parmi les participants
   // (preuve que les formats concordent : ACo… vs ACw… Sales Nav, repli `data.id`). Sans cette
@@ -359,9 +373,9 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
   // c'est une réponse du prospect.
   const idLead = lead.linkedinProviderId;
   const deChezNous = evt.fromSelf
-    || (evt.kind === "mail" && !!emailLead && !!evt.destinataires?.includes(emailLead) && evt.senderEmail !== emailLead)
     || (evt.kind === "message" && trouve.via === "fil" && !!idLead && !!evt.senderProviderId
-      && !!evt.participants?.includes(idLead) && evt.senderProviderId !== idLead);
+      && !!evt.participants?.includes(idLead) && evt.senderProviderId !== idLead)
+    || (await adresseNous());
 
   if (deChezNous) {
     // Jeanne écrit (depuis Naya ou son téléphone) : ajouté au fil existant, jamais une réponse.
@@ -443,6 +457,40 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
   await auMieux("apprentissage (feedback)", () => deps.markFeedbackReplied(userId, lead.id));
 }
 
+/** Adresse du compte Google derrière une connexion Unipile, gardée 10 min (lecture au mieux). */
+const ADRESSE_COMPTE_TTL_MS = 10 * 60_000;
+const adressesComptes = new Map<string, { adresse: string | null; le: number }>();
+async function adresseCompteUnipile(accountId: string): Promise<string | null> {
+  const c = adressesComptes.get(accountId);
+  if (c && Date.now() - c.le < ADRESSE_COMPTE_TTL_MS) return c.adresse;
+  try {
+    // Borné à 5 s : le webhook attend ce traitement (500 au-delà de 20 s).
+    let minuteur: ReturnType<typeof setTimeout> | undefined;
+    const comptes = await Promise.race([
+      listUnipileAccounts(),
+      new Promise<never>((_r, rej) => { minuteur = setTimeout(() => rej(new Error("delai")), 5_000); }),
+    ]).finally(() => clearTimeout(minuteur));
+    const adresse = comptes.find((x) => x.id === accountId)?.adresse ?? null;
+    adressesComptes.set(accountId, { adresse, le: Date.now() });
+    return adresse;
+  } catch {
+    return c?.adresse ?? null;
+  }
+}
+
+/** Adresses d'envoi du périmètre d'un compte : Gmail relié + adresse d'expédition (utilisatrice ou client). */
+export async function adressesPropresDepuis(
+  s: Pick<IStorage, "getUserPreferences" | "getConnexionProjet">, compte: CompteUnipile, accountId: string,
+  adresseCompte: (accountId: string) => Promise<string | null> = adresseCompteUnipile,
+): Promise<string[]> {
+  const out: string[] = [];
+  const ajoute = (v: unknown) => { if (typeof v === "string" && v.trim()) out.push(normaliserEmail(v)); };
+  if (compte.projectId == null) ajoute(((await s.getUserPreferences(compte.userId)) as any)?.prospectionSenderEmail);
+  else ajoute(((await s.getConnexionProjet(compte.userId, compte.projectId)) as any)?.senderEmail);
+  if (compte.canal === "email") ajoute(await adresseCompte(accountId).catch(() => null));
+  return out;
+}
+
 /** Dépendances réelles (le stockage est passé par l'appelant pour garder ce module testable sans base). */
 export function depsDepuisStorage(s: IStorage): DepsIngestion {
   return {
@@ -475,5 +523,6 @@ export function depsDepuisStorage(s: IStorage): DepsIngestion {
     deconnecterCompte: (c, at) => s.deconnecterCompteUnipile(c.userId, c.projectId, c.canal, at),
     reconnecterCompte: (c) => s.reconnecterCompteUnipile(c.userId, c.projectId, c.canal),
     fuseau: async (u) => (await s.getUserPreferences(u))?.timezone || "UTC",
+    adressesPropres: (c, accountId) => adressesPropresDepuis(s, c, accountId),
   };
 }

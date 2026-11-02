@@ -98,6 +98,20 @@ export function masterSendingEnabled(): boolean {
   return process.env.PROSPECTION_SENDING_ENABLED === "true";
 }
 
+/**
+ * La détection des réponses (webhooks Unipile) est-elle en ligne ? Condition des envois
+ * AUTOMATIQUES par Unipile (Gmail, LinkedIn) — spec §8 : sans réception, un prospect qui
+ * répond ne serait jamais vu et recevrait la relance suivante. Exige le secret du webhook
+ * et APP_URL ; en production, APP_URL en https:// (le secret voyage en en-tête). Pure.
+ */
+export function receptionReponsesEnLigne(env: Record<string, string | undefined> = process.env): boolean {
+  const secret = env.UNIPILE_WEBHOOK_SECRET?.trim();
+  const appUrl = env.APP_URL?.trim();
+  if (!secret || !appUrl) return false;
+  if (env.NODE_ENV === "production" && !/^https:\/\//i.test(appUrl)) return false;
+  return true;
+}
+
 // Plafond d'emails / utilisateur / jour (délivrabilité). Configurable via env.
 // Ne compte QUE les emails : les messages LinkedIn ont leurs propres plafonds (garde de risque).
 const DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80;
@@ -360,6 +374,10 @@ async function sendEmail(opts: {
   return res.ok;
 }
 
+/** Raison visible dans l'aperçu quand un doublon du prospect a déjà répondu (M3). */
+export const RAISON_DOUBLON_A_REPONDU =
+  "Cette personne a déjà répondu depuis une autre fiche : séquence en pause, rien n'est envoyé.";
+
 export async function runProspectionSender(): Promise<void> {
   if (running) return;
   running = true;
@@ -478,6 +496,10 @@ export async function runProspectionSender(): Promise<void> {
     // Map ci-dessous sert à la fois à réduire ce coût et à construire, pour un
     // utilisateur donné, la liste des pays des leads dus (poids de session par VOLUME
     // de cibles, jamais par pays présent — voir `prospection-sessions.ts`).
+    // Réception des réponses en ligne ? Lue UNE fois par passage. Hors ligne : aucun envoi
+    // automatique par Unipile (Gmail attend, LinkedIn passe par le brouillon manuel).
+    const receptionActive = receptionReponsesEnLigne();
+    const gmailEnAttenteSignale = new Set<string>(); // un seul log par utilisatrice et par passage
     const leadsCache = new Map<string, Promise<any[]>>();
     const getUserLeads = (uid: string): Promise<any[]> => {
       if (!leadsCache.has(uid)) leadsCache.set(uid, storage.getLeads(uid));
@@ -610,7 +632,9 @@ export async function runProspectionSender(): Promise<void> {
         // aucune requête LinkedIn, l'étape passe par le brouillon manuel. L'identifiant reste
         // en place pour que la réception continue de rattacher les réponses.
         const linkedinDeconnecte = !!identite.linkedin?.deconnecte;
-        const liAccountId = linkedinDeconnecte ? undefined : identite.linkedin?.accountId;
+        // Réception des réponses hors ligne : même traitement (ni vérification ni envoi
+        // Unipile, brouillon manuel) — jamais d'envoi automatique qu'aucune réponse n'arrêterait.
+        const liAccountId = linkedinDeconnecte || !receptionActive ? undefined : identite.linkedin?.accountId;
         // ── Public de la campagne (à froid / relations) ───────────────────────────────
         // Avant toute génération ou envoi, une seule fois par prospect (`relationVerifieeAt`),
         // à l'entrée de la séquence : une campagne à froid ne contacte JAMAIS une relation
@@ -798,6 +822,13 @@ export async function runProspectionSender(): Promise<void> {
             console.log(`[ProspectionSender] user ${state.userId} sans adresse expéditrice configurée — étape EN ATTENTE (rien envoyé)`);
             continue; // on n'avance pas : l'utilisateur doit configurer son email d'envoi
           }
+          if (sender.via === "unipile" && !receptionActive) {
+            if (!gmailEnAttenteSignale.has(state.userId)) {
+              gmailEnAttenteSignale.add(state.userId);
+              console.warn(`[ProspectionSender] réception des réponses hors ligne (UNIPILE_WEBHOOK_SECRET / APP_URL https) — étapes Gmail EN ATTENTE pour l'utilisateur ${state.userId}`);
+            }
+            continue;
+          }
           if (sender.via === "unipile") {
             // Jamais d'email Gmail sans lien de désinscription (APP_URL / secret manquant → on n'envoie pas).
             lienDesinsc = lienDesinscription(lead.id);
@@ -927,6 +958,26 @@ export async function runProspectionSender(): Promise<void> {
         }
         if (!etatFrais || etatFrais.status !== "active") {
           console.log(`[ProspectionSender] lead ${state.leadId} n'est plus actif (${etatFrais?.status ?? "absent"}) — rien envoyé`);
+          continue;
+        }
+        // Même personne sur une AUTRE fiche (même email, même identifiant ou profil LinkedIn)
+        // qui a déjà répondu : rien ne part, ni envoi ni brouillon. La séquence est mise en
+        // `paused` (pas `stopped_replied` : CE lead n'a pas répondu, rien à défaire si la
+        // réponse est requalifiée — Jeanne relance à la main), avec la raison visible dans
+        // l'aperçu. Lecture ratée : rien ne part, réessai au prochain passage.
+        let doublonARepondu: boolean;
+        try {
+          doublonARepondu = await storage.memePersonneARepondu(state.leadId, state.userId);
+        } catch (e: any) {
+          console.error(`[ProspectionSender] doublons du lead ${state.leadId} illisibles avant envoi — rien envoyé : ${String(e?.message ?? e)}`);
+          continue;
+        }
+        if (doublonARepondu) {
+          console.warn(`[ProspectionSender] lead ${state.leadId} : la même personne a déjà répondu via une autre fiche — séquence en pause, rien envoyé`);
+          await storage.setLeadSequenceGuard(lead.id, { tropProcheConsecutifs: garde?.tropProcheConsecutifs ?? 0, stepId: step.id, attention: RAISON_DOUBLON_A_REPONDU })
+            .catch((e: any) => console.error("[ProspectionSender] écriture de la raison (doublon) échouée", e.message));
+          await storage.updateLeadSequenceState(state.leadId, { status: "paused", nextRunAt: null } as any)
+            .catch((e: any) => console.error("[ProspectionSender] mise en pause (doublon) échouée", e.message));
           continue;
         }
 

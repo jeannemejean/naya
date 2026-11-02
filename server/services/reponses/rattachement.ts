@@ -9,6 +9,7 @@
  * ne déclenche rien, et aucun email personnel n'est stocké).
  */
 import type { EvenementNormalise } from "./ingestion";
+import { publicIdFromUrl } from "../linkedin";
 
 export interface DepsRattachement {
   leadParFil: (ids: string[]) => Promise<number | null>;
@@ -45,4 +46,21 @@ export async function rattacherLead(
     }
   }
   return null;
+}
+
+/** Ce qui identifie une personne d'une fiche à l'autre (doublons de leads). */
+export interface ClesPersonne { email: string | null; providerId: string | null; publicId: string | null }
+
+export function clesPersonne(l: { email?: string | null; pid?: string | null; url?: string | null }): ClesPersonne {
+  const email = l.email ? normaliserEmail(l.email) : "";
+  const providerId = l.pid?.trim() ?? "";
+  const publicId = publicIdFromUrl(l.url ?? null)?.replace(/\/+$/, "").toLowerCase() ?? "";
+  return { email: email || null, providerId: providerId || null, publicId: publicId || null };
+}
+
+/** Deux fiches désignent-elles la même personne (même email, même identifiant ou profil LinkedIn) ? Pure. */
+export function memePersonne(a: ClesPersonne, b: ClesPersonne): boolean {
+  return (!!a.email && a.email === b.email)
+    || (!!a.providerId && a.providerId === b.providerId)
+    || (!!a.publicId && a.publicId === b.publicId);
 }
