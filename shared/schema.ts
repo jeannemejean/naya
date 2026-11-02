@@ -1228,6 +1228,55 @@ export const companionPendingMessages = pgTable("companion_pending_messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ─── Agent omniscient ───────────────────────────────────────────────────────────
+// Index de recherche sémantique sur le contenu de l'utilisatrice (réponses de tâches,
+// livrables, notes, conversations). Une ligne par source ; `contenu_md5` évite de
+// ré-embedder un contenu inchangé.
+export const rechercheEmbeddings = pgTable("recherche_embeddings", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  source: text("source").notNull(), // "tache_reponse" | "livrable" | "note" | "conversation"
+  sourceId: integer("source_id").notNull(),
+  contenuMd5: text("contenu_md5").notNull(),
+  embedding: vector("embedding", { dimensions: 1536 }),
+  indexeAt: timestamp("indexe_at").defaultNow(),
+}, (t) => ({
+  sourceIdx: uniqueIndex("recherche_source_idx").on(t.source, t.sourceId),
+  embIdx: index("recherche_emb_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
+  userIdx: index("recherche_user_idx").on(t.userId),
+}));
+
+// Journal des actions directes de l'agent : `lignes` garde l'état avant/après de chaque
+// ligne touchée, ce qui permet d'annuler (annulee_at posé quand c'est fait).
+export const agentActions = pgTable("agent_actions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  outil: text("outil").notNull(),
+  resume: text("resume").notNull(),
+  lignes: jsonb("lignes").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  annuleeAt: timestamp("annulee_at"),
+});
+
+// Propositions à valider : l'aperçu est montré, rien n'est écrit tant qu'elle n'a pas dit oui.
+// `empreinte` = pour chaque ligne concernée, les champs lus à l'aperçu (détecte un changement
+// survenu entre-temps).
+export const agentPropositions = pgTable("agent_propositions", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  outil: text("outil").notNull(),
+  arguments: jsonb("arguments"),
+  changements: jsonb("changements"),
+  empreinte: jsonb("empreinte"),
+  statut: text("statut").default("en_attente"), // "en_attente" | "validee" | "annulee" | "expiree"
+  resultat: jsonb("resultat"),
+  createdAt: timestamp("created_at").defaultNow(),
+  expireA: timestamp("expire_a").notNull(),
+});
+export type RechercheEmbedding = typeof rechercheEmbeddings.$inferSelect;
+export type AgentAction = typeof agentActions.$inferSelect;
+export type AgentProposition = typeof agentPropositions.$inferSelect;
+
 export type TaskList = typeof taskLists.$inferSelect;
 export type TaskListItem = typeof taskListItems.$inferSelect;
 export type CompanionConversation = typeof companionConversations.$inferSelect;
