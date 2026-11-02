@@ -34,6 +34,8 @@ export interface EvenementNormalise {
   /** L'INTERLOCUTEUR (le prospect) : l'expéditeur si entrant, le destinataire si `fromSelf`. */
   senderProviderId?: string;
   senderPublicId?: string;
+  /** LinkedIn : identifiants (`attendee_provider_id`) de tous les participants du chat. */
+  participants?: string[];
   senderEmail?: string;
   /** Destinataires directs (To) d'un email, normalisés. */
   destinataires?: string[];
@@ -224,9 +226,12 @@ export function normaliser(payload: any): EvenementNormalise | null {
     }
     const providerMessageId = str(payload.message_id);
     if (!providerMessageId) return null;
+    const participants = (Array.isArray(payload.attendees) ? payload.attendees : [])
+      .map((a: any) => str(a?.attendee_provider_id)).filter((x: string | undefined): x is string => !!x);
     return {
       kind: "message", accountId, providerMessageId, chatId: str(payload.chat_id), fromSelf,
       senderProviderId: str(autre?.attendee_provider_id), senderPublicId: publicId(autre?.attendee_profile_url),
+      participants: participants.length ? participants : undefined,
       body: typeof payload.message === "string" ? payload.message : "",
       sentAt: date(payload.timestamp, maintenant),
     };
@@ -337,12 +342,16 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
   // Un email ADRESSÉ au prospect et qui ne vient pas de lui part de chez nous (envoi Naya ou
   // Gmail de Jeanne que le fournisseur n'aurait pas marqué « envoyé ») : jamais une réponse.
   const emailLead = lead.email ? normaliserEmail(lead.email) : null;
-  // De même, dans un chat LinkedIn rattaché par le fil, un expéditeur qui n'est pas le
-  // prospect (identifiant LinkedIn connu et différent) est Jeanne.
+  // LinkedIn, dans un chat rattaché par le fil : un expéditeur différent du prospect n'est
+  // Jeanne QUE si l'identifiant stocké du prospect figure tel quel parmi les participants
+  // (preuve que les formats concordent : ACo… vs ACw… Sales Nav, repli `data.id`). Sans cette
+  // preuve, seuls `is_sender` / `account_info.user_id` comptent (fromSelf) : dans le doute,
+  // c'est une réponse du prospect.
+  const idLead = lead.linkedinProviderId;
   const deChezNous = evt.fromSelf
     || (evt.kind === "mail" && !!emailLead && !!evt.destinataires?.includes(emailLead) && evt.senderEmail !== emailLead)
-    || (evt.kind === "message" && trouve.via === "fil" && !!lead.linkedinProviderId && !!evt.senderProviderId
-      && evt.senderProviderId !== lead.linkedinProviderId);
+    || (evt.kind === "message" && trouve.via === "fil" && !!idLead && !!evt.senderProviderId
+      && !!evt.participants?.includes(idLead) && evt.senderProviderId !== idLead);
 
   if (deChezNous) {
     // Jeanne écrit (depuis Naya ou son téléphone) : ajouté au fil existant, jamais une réponse.

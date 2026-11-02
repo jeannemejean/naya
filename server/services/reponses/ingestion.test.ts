@@ -319,13 +319,41 @@ describe("traiterEvenement — robustesse (revue)", () => {
     expect(db.tasks).toHaveLength(0);
   });
 
-  it("chat LinkedIn rattaché par le fil, expéditeur ≠ prospect connu : c'est Jeanne, aucun arrêt", async () => {
-    const { db, deps } = fausseBase();
+  const chatExistant = (db: any) =>
     db.conversations.push({ id: 1, leadId: 7, channel: "linkedin", providerChatId: "chat-1", statut: "traitee", nonLu: false, taskId: null });
-    await traiterEvenement(reponseLinkedIn({ senderProviderId: "ACo-jeanne-autre-format" }), deps);
+
+  it("identifiant stocké dans un autre format, absent des participants : c'est une RÉPONSE (jamais avalée)", async () => {
+    const { db, deps } = fausseBase();
+    chatExistant(db);
+    // Stocké « ACo-marc », le webhook parle d'« ACw-marc » (Sales Nav) : aucune preuve que ce n'est pas lui.
+    await traiterEvenement(reponseLinkedIn({ senderProviderId: "ACw-marc", participants: ["ACw-marc", "ACw-jeanne"] }), deps);
+    expect(db.state.status).toBe("stopped_replied");
+    expect(db.messages[0]).toMatchObject({ sens: "entrant", nature: "reponse" });
+    expect(db.tasks).toHaveLength(1);
+  });
+
+  it("sans participants dans le payload : réponse aussi", async () => {
+    const { db, deps } = fausseBase();
+    chatExistant(db);
+    await traiterEvenement(reponseLinkedIn({ senderProviderId: "ACw-marc" }), deps);
+    expect(db.state.status).toBe("stopped_replied");
+  });
+
+  it("identifiant stocké présent parmi les participants et expéditeur différent : c'est Jeanne", async () => {
+    const { db, deps } = fausseBase();
+    chatExistant(db);
+    await traiterEvenement(reponseLinkedIn({ senderProviderId: "ACo-jeanne", participants: ["ACo-marc", "ACo-jeanne"] }), deps);
     expect(db.state.status).toBe("active");
     expect(db.tasks).toHaveLength(0);
     expect(db.messages[0]).toMatchObject({ sens: "sortant", nature: "nous" });
+  });
+
+  it("is_sender (fromSelf) : c'est Jeanne", async () => {
+    const { db, deps } = fausseBase();
+    chatExistant(db);
+    await traiterEvenement(reponseLinkedIn({ fromSelf: true, senderProviderId: "ACw-marc" }), deps);
+    expect(db.state.status).toBe("active");
+    expect(db.messages[0]).toMatchObject({ sens: "sortant" });
   });
 });
 
@@ -337,7 +365,7 @@ describe("normaliser", () => {
       sender: { attendee_provider_id: "ACo-marc", attendee_profile_url: "https://www.linkedin.com/in/marc-dupont/" },
       attendees: [{ attendee_provider_id: "ACo-jeanne" }, { attendee_provider_id: "ACo-marc" }],
     });
-    expect(e).toMatchObject({ kind: "message", accountId: "acc-li", providerMessageId: "msg-1", chatId: "chat-1", fromSelf: false, senderProviderId: "ACo-marc", senderPublicId: "marc-dupont", body: "Bonjour" });
+    expect(e).toMatchObject({ kind: "message", accountId: "acc-li", providerMessageId: "msg-1", chatId: "chat-1", fromSelf: false, senderProviderId: "ACo-marc", senderPublicId: "marc-dupont", body: "Bonjour", participants: ["ACo-jeanne", "ACo-marc"] });
     expect(e!.sentAt.toISOString()).toBe("2026-11-02T09:30:00.000Z");
   });
 
