@@ -30,6 +30,8 @@ vi.mock("../storage", () => ({
     getProject: vi.fn(),
     getConnexionProjet: vi.fn(),
     upsertConnexionProjet: vi.fn(),
+    excludeLeadFromCampaign: vi.fn(),
+    markRelationVerifiee: vi.fn(),
   },
 }));
 
@@ -42,6 +44,7 @@ vi.mock("./sequence-message", () => ({
 vi.mock("./linkedin", () => ({
   linkedinConfigured: vi.fn(() => false),
   sendLinkedInStep: vi.fn(),
+  checkConnection: vi.fn(async () => ({ ok: true, connected: false, error: null })),
 }));
 
 import {
@@ -57,7 +60,7 @@ import {
 } from "./prospection-sender";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
-import { linkedinConfigured, sendLinkedInStep } from "./linkedin";
+import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedin";
 
 describe("daysBetween", () => {
   it("compte les jours pleins écoulés", () => {
@@ -234,6 +237,8 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     email: "lead@example.com",
     name: "Lead Test",
     linkedinUrl: null,
+    // Public déjà vérifié par défaut : seuls les tests « public de campagne » le remettent à null.
+    relationVerifieeAt: new Date("2026-01-01T00:00:00Z"),
     outreachUnreachableReason: null,
     enrichedProfile: { linkedin: { raw: { country_code: "FR", city: null } } },
     ...overrides,
@@ -1505,6 +1510,105 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     const linkedinStep = () => [baseStep({ channel: "linkedin" })];
     const linkedinLead = (overrides: Record<string, any> = {}) =>
       baseLead({ linkedinUrl: "https://linkedin.com/in/x", ...overrides });
+
+    describe("public de la campagne (froid / relations)", () => {
+      const preparer = (campaign: any = { id: 10, name: "Campagne" }, leadOver: Record<string, any> = {}, prefs: any = linkedinPrefs()) => {
+        (linkedinConfigured as any).mockReturnValue(true);
+        (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+        (storage.getUserPreferences as any).mockResolvedValue(prefs);
+        (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
+        (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+        (storage.getLeads as any).mockResolvedValue([linkedinLead({ relationVerifieeAt: null, ...leadOver })]);
+        (storage.getBrandDna as any).mockResolvedValue(null);
+        (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+        (storage.getProspectionCampaign as any).mockResolvedValue(campaign);
+        (storage.getLinkedInAttemptTimestampsSince as any).mockResolvedValue([]);
+        (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      };
+
+      it("campagne froide, étape 0, prospect déjà en relation : aucun envoi, exclu, une tentative comptée", async () => {
+        preparer();
+        (checkConnection as any).mockResolvedValue({ ok: true, connected: true, error: null });
+        await runProspectionSender();
+        expect(checkConnection).toHaveBeenCalledWith("acc1", "https://linkedin.com/in/x");
+        expect(storage.excludeLeadFromCampaign).toHaveBeenCalledWith(1, "deja_en_relation");
+        expect(sendLinkedInStep).not.toHaveBeenCalled();
+        expect(generateStepMessage).not.toHaveBeenCalled();
+        expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledTimes(1);
+        expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, true, null, null);
+      });
+
+      it("campagne froide, prospect inconnu : vérifié (relationVerifieeAt posé), la séquence continue", async () => {
+        preparer();
+        (checkConnection as any).mockResolvedValue({ ok: true, connected: false, error: null });
+        await runProspectionSender();
+        expect(storage.markRelationVerifiee).toHaveBeenCalledWith(1, false, false);
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+      });
+
+      it("campagne relations, prospect en relation : continue et note la connexion", async () => {
+        preparer({ id: 10, name: "C", audience: "relations" });
+        (checkConnection as any).mockResolvedValue({ ok: true, connected: true, error: null });
+        await runProspectionSender();
+        expect(storage.markRelationVerifiee).toHaveBeenCalledWith(1, true, true);
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+      });
+
+      it("campagne relations, prospect pas en relation : exclu (pas_en_relation)", async () => {
+        preparer({ id: 10, name: "C", audience: "relations" });
+        (checkConnection as any).mockResolvedValue({ ok: true, connected: false, error: null });
+        await runProspectionSender();
+        expect(storage.excludeLeadFromCampaign).toHaveBeenCalledWith(1, "pas_en_relation");
+        expect(sendLinkedInStep).not.toHaveBeenCalled();
+      });
+
+      it("relationVerifieeAt déjà posé : pas de nouvelle vérification", async () => {
+        preparer(undefined, { relationVerifieeAt: new Date("2026-05-01T00:00:00Z") });
+        await runProspectionSender();
+        expect(checkConnection).not.toHaveBeenCalled();
+      });
+
+      it("compte LinkedIn non relié : pas de vérification, la séquence continue", async () => {
+        preparer(undefined, {}, openPrefs());
+        await runProspectionSender();
+        expect(checkConnection).not.toHaveBeenCalled();
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+      });
+
+      it("lead sans URL LinkedIn : pas de vérification", async () => {
+        preparer(undefined, { linkedinUrl: null });
+        await runProspectionSender();
+        expect(checkConnection).not.toHaveBeenCalled();
+      });
+
+      it("vérification en erreur : rien n'est envoyé, jamais d'exclusion, réessai au prochain passage", async () => {
+        preparer();
+        (checkConnection as any).mockResolvedValue({ ok: false, connected: false, error: "resolve_500" });
+        await runProspectionSender();
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+        expect(storage.markRelationVerifiee).not.toHaveBeenCalled();
+        expect(sendLinkedInStep).not.toHaveBeenCalled();
+        expect(generateStepMessage).not.toHaveBeenCalled();
+        expect(storage.recordLinkedInSendAttempt).toHaveBeenCalledWith("u1", 1, false, "verif_relation", null);
+      });
+
+      it("vérification sur signal de restriction : le compte est mis en pause", async () => {
+        preparer();
+        (checkConnection as any).mockResolvedValue({ ok: false, connected: false, error: "resolve_403" });
+        await runProspectionSender();
+        expect(storage.updateUserPreferences).toHaveBeenCalledWith("u1", expect.objectContaining({ linkedinRestrictedReason: "resolve_403" }));
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+      });
+
+      it("pas à l'étape 0 : pas de vérification", async () => {
+        preparer();
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState({ currentStep: 1 })]);
+        (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" }), baseStep({ id: 101, stepOrder: 2, channel: "linkedin" })]);
+        await runProspectionSender();
+        expect(checkConnection).not.toHaveBeenCalled();
+      });
+    });
 
     it("cible hors de sa fenêtre locale (outside_window, temporel) : aucun appel Unipile, PAS de signalement, séquence non avancée", async () => {
       // 03:00Z ce jour-là est bien AVANT la fenêtre FR (07:00-16:00Z) : refus

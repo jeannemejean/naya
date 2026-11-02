@@ -49,6 +49,7 @@ export default function LeadDetail({ lead, open, onOpenChange }: LeadDetailProps
 // (nouvel prospect ouvert, ou données fraîches revenues du serveur après invalidation).
 
 function LeadDetailBody({ lead }: { lead: Lead }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [localLead, setLocalLead] = useState<Lead>(lead);
   useEffect(() => setLocalLead(lead), [lead]);
@@ -151,6 +152,16 @@ function LeadDetailBody({ lead }: { lead: Lead }) {
           )}
         </div>
       </SheetHeader>
+
+      {(lead as any).exclusionRaison && (
+        <p className="text-xs text-muted-foreground rounded-lg bg-muted px-3 py-2">
+          {(lead as any).exclusionRaison === 'deja_en_relation'
+            ? t('outreach.exclusionDejaEnRelation')
+            : (lead as any).exclusionRaison === 'pas_en_relation'
+              ? t('outreach.exclusionPasEnRelation')
+              : t('outreach.audienceRetire')}
+        </p>
+      )}
 
       <Tabs defaultValue="profil">
         <TabsList className="grid grid-cols-3 h-8">

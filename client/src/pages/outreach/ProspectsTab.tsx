@@ -58,6 +58,7 @@ const STATUS_META: Record<string, { label: string; variant: NonNullable<BadgePro
   bounced: { label: 'Bounce', variant: 'destructive', Icon: AlertTriangle },
   unsubscribed: { label: 'Désinscrit', variant: 'destructive', Icon: AlertTriangle },
   failed: { label: 'Échec', variant: 'destructive', Icon: AlertTriangle },
+  excluded_audience: { label: 'Retiré (public)', variant: 'outline', Icon: Hand },
 };
 
 export default function ProspectsTab({ campaignId }: ProspectsTabProps) {

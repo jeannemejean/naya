@@ -595,6 +595,14 @@ export interface IStorage {
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
+  /** Public de campagne : retire le prospect de la séquence (état définitif `excluded_audience`). */
+  excludeLeadFromCampaign(leadId: number, raison: string): Promise<void>;
+  /**
+   * Public de campagne : note que la relation LinkedIn a été vérifiée. Pour une campagne
+   * « relations » dont le prospect est en relation, passe par `setLeadLinkedinConnected`
+   * (point d'entrée unique de la connexion).
+   */
+  markRelationVerifiee(leadId: number, enRelation: boolean, relations: boolean): Promise<void>;
   /**
    * Candidats au poller Unipile — BORNÉ par `limit` (revue post-commit f17af17, défaut
    * Critique : sans limite, un compte avec des centaines de leads en attente ferait
@@ -2457,6 +2465,20 @@ export class DatabaseStorage implements IStorage {
         .set({ nextRunAt: plan.wakeSequenceAt, updatedAt: now })
         .where(and(eq(leadSequenceState.leadId, leadId), eq(leadSequenceState.status, "active")));
     }
+  }
+
+  async excludeLeadFromCampaign(leadId: number, raison: string): Promise<void> {
+    const now = new Date();
+    await db.update(leadSequenceState)
+      .set({ status: "excluded_audience", nextRunAt: null, updatedAt: now })
+      .where(eq(leadSequenceState.leadId, leadId));
+    await db.update(leads).set({ exclusionRaison: raison, updatedAt: now }).where(eq(leads.id, leadId));
+  }
+
+  async markRelationVerifiee(leadId: number, enRelation: boolean, relations: boolean): Promise<void> {
+    const now = new Date();
+    await db.update(leads).set({ relationVerifieeAt: now, updatedAt: now }).where(eq(leads.id, leadId));
+    if (relations && enRelation) await this.setLeadLinkedinConnected(leadId, now);
   }
 
   // Marque (ou efface, avec reason: null) la raison structurelle de non-joignabilité d'un

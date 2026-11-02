@@ -33,6 +33,7 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
     targetSector: initial?.targetSector || '',
     digitalLevel: initial?.digitalLevel || 'tous',
     channel: initial?.channel || 'linkedin',
+    audience: initial?.audience === 'relations' ? 'relations' : 'froid',
     offer: initial?.offer || '',
     // Vide = Naya le calcule à partir des objectifs du projet (server: prospectsParJourDerive).
     prospectsPerDay: initial?.prospectsPerDay ? String(initial.prospectsPerDay) : '',
@@ -93,6 +94,19 @@ export default function CampaignForm({ onClose, initial }: CampaignFormProps) {
           </SelectContent>
         </Select>
         <p className="text-[11px] text-muted-foreground mt-1">{t('connexions.campagne.aide')}</p>
+      </div>
+
+      <div>
+        <Label className="text-xs">{t('outreach.audienceLabel')}</Label>
+        <Select value={form.audience} onValueChange={(v) => set('audience', v)}>
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="froid">{t('outreach.audienceFroid')}</SelectItem>
+            <SelectItem value="relations">{t('outreach.audienceRelations')}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="grid grid-cols-2 gap-3">

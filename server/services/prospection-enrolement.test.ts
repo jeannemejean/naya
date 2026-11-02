@@ -53,6 +53,17 @@ describe("enrolerEnMasse — la barrière vaut aussi pour l'enrôlement groupé"
     expect(r.skipped).toBe(2);
   });
 
+  it("ne ré-enrôle jamais un prospect écarté pour son public (excluded_audience)", async () => {
+    const enroll = vi.fn(async (_id: number) => ({ ok: true }));
+    const r = await enrolerEnMasse({
+      leads: [lead(1)],
+      getState: async () => ({ status: "excluded_audience" }),
+      enroll,
+    });
+    expect(enroll).not.toHaveBeenCalled();
+    expect(r.skipped).toBe(1);
+  });
+
   it("compte comme ignoré un enrôlement refusé par le stockage", async () => {
     const r = await enrolerEnMasse({
       leads: [lead(1)],

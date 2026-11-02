@@ -16,7 +16,8 @@
 
 import { storage } from "../storage";
 import { decryptToken } from "./token-crypto";
-import { linkedinConfigured, sendLinkedInStep } from "./linkedin";
+import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedin";
+import { decisionPublic, normaliserPublic, RAISON_EXCLUSION } from "./campagne-public";
 import { decideNextStep, planAfterStep } from "./sequence-engine";
 import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
 import { BriefIncompletError, generateStepMessage, combineInstructions } from "./sequence-message";
@@ -394,6 +395,51 @@ export async function runProspectionSender(): Promise<void> {
       return prefsCache.get(uid);
     };
 
+    // Garde de risque LinkedIn d'un compte : MÊME chemin pour l'envoi d'une étape et pour
+    // la vérification de relation (public de campagne) — même cache d'historique, même
+    // `cleCompte`, même délai minimum. Lecture d'historique échouée = `null` (fail-closed).
+    const evaluerGardeLinkedIn = async (a: {
+      userId: string; portee: string | number | null; cleCompte: string; identite: any; now: Date; timezone: string;
+    }) => {
+      if (!liHistoryCache.has(a.cleCompte)) {
+        const since = new Date(a.now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
+        const ts = await storage.getLinkedInAttemptTimestampsSince(a.userId, since, a.portee as any).catch(() => null);
+        liHistoryCache.set(a.cleCompte, ts);
+      }
+      const historique = liHistoryCache.get(a.cleCompte);
+      const derniereTentative = historique && historique.length
+        ? new Date(Math.max(...historique.map((d) => new Date(d).getTime())))
+        : null;
+      return decideLinkedInAction({
+        now: a.now,
+        timezone: a.timezone,
+        workDayStartMin: LINKEDIN_FENETRE.startMin,
+        workDayEndMin: LINKEDIN_FENETRE.endMin,
+        workDays: LINKEDIN_FENETRE.workDays,
+        accountConnectedAt: a.identite.linkedin?.connectedAt ?? null,
+        recentSendTimestamps: liHistoryCache.get(a.cleCompte)!,
+        restriction: a.identite.linkedin?.restriction ?? null,
+        minDelayMs: derniereTentative ? linkedinGapMs(derniereTentative, a.cleCompte) : 0,
+      });
+    };
+    // Signal de restriction : arrêt dur immédiat pour ce compte, pour le reste du tick, puis
+    // persistance de la pause (là où vit le compte : chez l'utilisatrice, ou chez le client).
+    const traiterRestriction = async (userId: string, portee: string | number | null, cleCompte: string, error: string | null | undefined) => {
+      restrictedThisTick.add(cleCompte);
+      try {
+        const pause = { linkedinRestrictedAt: new Date(), linkedinRestrictedReason: error ?? null };
+        if (portee == null) await storage.updateUserPreferences(userId, pause as any);
+        else await storage.upsertConnexionProjet(userId, portee as any, pause);
+        console.error(
+          `[ProspectionSender] compte LinkedIn de l'utilisateur ${userId} mis EN PAUSE (signal de restriction Unipile) — reprise manuelle requise.`,
+        );
+      } catch (e: any) {
+        console.error(
+          `[ProspectionSender] ÉCHEC DE PERSISTANCE de la restriction LinkedIn (user ${userId}) — l'arrêt en mémoire reste actif pour ce passage, nouvelle tentative de persistance dès le prochain lead concerné : ${String(e?.message ?? e)}`,
+        );
+      }
+    };
+
     // ── Fenêtre locale de la cible + sessions de prospection (ce lot) ──────────────
     //
     // Revues post-commit b97a0b6 puis d95c42a, défauts Importants successifs, même
@@ -542,6 +588,63 @@ export async function runProspectionSender(): Promise<void> {
         // Le budget, la montée en charge et la restriction LinkedIn sont ceux DU COMPTE.
         const cleCompte = `${state.userId}|${portee ?? "utilisatrice"}`;
         const liAccountId = identite.linkedin?.accountId;
+        // ── Public de la campagne (à froid / relations) ───────────────────────────────
+        // Avant toute génération ou envoi, une seule fois par prospect (`relationVerifieeAt`),
+        // à l'entrée de la séquence : une campagne à froid ne contacte JAMAIS une relation
+        // LinkedIn existante ; une campagne « relations » ne s'adresse qu'à elles. Même garde
+        // de risque que l'envoi (la vérification est une requête LinkedIn comptée). Sans
+        // compte relié ni URL, aucune vérification : la séquence continue. Une erreur de
+        // vérification n'exclut JAMAIS : rien ne part, réessai au prochain passage.
+        if (
+          state.currentStep === 0 &&
+          !(lead as any).relationVerifieeAt &&
+          linkedinConfigured() &&
+          identite.linkedin?.accountId &&
+          lead.linkedinUrl
+        ) {
+          const accountId = identite.linkedin.accountId;
+          const urlRelation = lead.linkedinUrl;
+          if (restrictedThisTick.has(cleCompte)) {
+            await storage.updateLeadSequenceState(state.leadId, {
+              nextRunAt: new Date(now.getTime() + LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS),
+            } as any).catch(() => {});
+            continue;
+          }
+          const garde = await evaluerGardeLinkedIn({ userId: state.userId, portee, cleCompte, identite, now, timezone: userTz });
+          if (!garde.allowed) {
+            console.log(
+              `[ProspectionSender] vérification de relation lead ${lead.id} refusée par la garde de risque (${garde.reason}) : ${garde.detail}`,
+            );
+            if (garde.reason === "restricted") {
+              await storage.updateLeadSequenceState(state.leadId, {
+                nextRunAt: new Date(now.getTime() + LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS),
+              } as any).catch(() => {});
+            }
+            continue;
+          }
+          const verif = await checkConnection(accountId, urlRelation);
+          try {
+            await storage.recordLinkedInSendAttempt(state.userId, lead.id, verif.ok, verif.ok ? null : "verif_relation", portee);
+          } catch (e: any) {
+            console.error(`[ProspectionSender] échec d'enregistrement de la vérification de relation (lead ${lead.id}) : ${String(e?.message ?? e)}`);
+          }
+          const hist = liHistoryCache.get(cleCompte);
+          if (hist) hist.push(new Date());
+          if (!verif.ok) {
+            console.error(`[ProspectionSender] vérification de relation lead ${lead.id} en erreur (${verif.error}) — rien envoyé, réessai au prochain passage.`);
+            if (isLinkedInRestrictionSignal(verif.error)) await traiterRestriction(state.userId, portee, cleCompte, verif.error);
+            continue;
+          }
+          const campagnePublic = await storage.getProspectionCampaign(state.campaignId);
+          const audience = normaliserPublic((campagnePublic as any)?.audience);
+          if (decisionPublic(audience, verif.connected) === "exclure") {
+            await storage.excludeLeadFromCampaign(lead.id, RAISON_EXCLUSION[audience]);
+            console.log(`[ProspectionSender] lead ${lead.id} retiré de la campagne ${state.campaignId} (${RAISON_EXCLUSION[audience]}).`);
+            continue;
+          }
+          await storage.markRelationVerifiee(lead.id, verif.connected, audience === "relations");
+          (lead as any).relationVerifieeAt = now; // le cache de leads du tick ne revérifie pas
+        }
         // Capturé après la garde : le narrowing `lead.linkedinUrl` ne survit pas à la
         // fermeture `async` de `sendOnce` plus bas (TS le retypera en nullable).
         const linkedinUrl = lead.linkedinUrl;
@@ -623,27 +726,8 @@ export async function runProspectionSender(): Promise<void> {
               .catch((e: any) => console.error("[ProspectionSender] effacement non joignable échoué", e.message));
           }
 
-          if (!liHistoryCache.has(cleCompte)) {
-            const since = new Date(now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
-            const ts = await storage.getLinkedInAttemptTimestampsSince(state.userId, since, portee).catch(() => null);
-            liHistoryCache.set(cleCompte, ts);
-          }
-          const historique = liHistoryCache.get(cleCompte);
-          const derniereTentative = historique && historique.length
-            ? new Date(Math.max(...historique.map((d) => new Date(d).getTime())))
-            : null;
-          const accountConnectedAt = identite.linkedin?.connectedAt ?? null;
-          const restriction = identite.linkedin?.restriction ?? null;
-          const guardDecision = decideLinkedInAction({
-            now,
-            timezone: userTz,
-            workDayStartMin: LINKEDIN_FENETRE.startMin,
-            workDayEndMin: LINKEDIN_FENETRE.endMin,
-            workDays: LINKEDIN_FENETRE.workDays,
-            accountConnectedAt,
-            recentSendTimestamps: liHistoryCache.get(cleCompte)!,
-            restriction,
-            minDelayMs: derniereTentative ? linkedinGapMs(derniereTentative, cleCompte) : 0,
+          const guardDecision = await evaluerGardeLinkedIn({
+            userId: state.userId, portee, cleCompte, identite, now, timezone: userTz,
           });
           if (!guardDecision.allowed) {
             console.log(
@@ -845,20 +929,7 @@ export async function runProspectionSender(): Promise<void> {
                   // IMMÉDIAT pour ce compte, pour le reste de CE tick — indépendant du
                   // succès de la persistance ci-dessous (revue post-commit 261835e, défaut
                   // Critique 1).
-                  restrictedThisTick.add(cleCompte);
-                  try {
-                    // Enregistrée là où vit le compte : chez l'utilisatrice, ou chez le client.
-                    const pause = { linkedinRestrictedAt: new Date(), linkedinRestrictedReason: result.error ?? null };
-                    if (portee == null) await storage.updateUserPreferences(state.userId, pause as any);
-                    else await storage.upsertConnexionProjet(state.userId, portee, pause);
-                    console.error(
-                      `[ProspectionSender] compte LinkedIn de l'utilisateur ${state.userId} mis EN PAUSE (signal de restriction Unipile) — reprise manuelle requise.`,
-                    );
-                  } catch (e: any) {
-                    console.error(
-                      `[ProspectionSender] ÉCHEC DE PERSISTANCE de la restriction LinkedIn (user ${state.userId}) — l'arrêt en mémoire reste actif pour ce passage, nouvelle tentative de persistance dès le prochain lead concerné : ${String(e?.message ?? e)}`,
-                    );
-                  }
+                  await traiterRestriction(state.userId, portee, cleCompte, result.error);
                 }
                 return { ok: false };
               }

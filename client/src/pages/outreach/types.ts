@@ -46,7 +46,7 @@ export type PreviewResponse = {
 // État d'enrôlement d'un prospect dans la séquence de sa campagne (GET .../enrollments).
 export type EnrollmentDTO = {
   leadId: number;
-  status: string; // active | awaiting_linkedin | paused | completed | stopped_replied | bounced | unsubscribed | failed
+  status: string; // active | awaiting_linkedin | paused | completed | stopped_replied | bounced | unsubscribed | failed | excluded_audience
 };
 
 export type StepAnalytics = {

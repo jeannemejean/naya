@@ -8340,6 +8340,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // Le projet décide de qui envoie (mode agence) : un projet à elle seulement.
       const ctl = await controleProjetCampagne({ userId, corps: req.body });
       if (!ctl.ok) return res.status(ctl.status).json({ message: ctl.message });
+      if (req.body && 'audience' in req.body && !['froid', 'relations'].includes(req.body.audience)) {
+        return res.status(400).json({ message: "audience doit être « froid » ou « relations »" });
+      }
       if (req.body && 'projectId' in req.body) req.body.projectId = req.body.projectId ? Number(req.body.projectId) : null;
       // Rythme non choisi par l'utilisatrice → dérivé de ses objectifs, jamais un défaut fixe.
       const ppd = Number(req.body?.prospectsPerDay);
@@ -8360,6 +8363,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const userId = req.userId;
       const campaignId = Number(req.params.id);
+      if (req.body && 'audience' in req.body && !['froid', 'relations'].includes(req.body.audience)) {
+        return res.status(400).json({ message: "audience doit être « froid » ou « relations »" });
+      }
       // Détecte un changement des consignes de rédaction PAR CAMPAGNE avant l'update, pour ne
       // purger le cache lead_step_messages QUE si elles changent (pas sur une édition sans rapport).
       const hasInstructions = req.body && Object.prototype.hasOwnProperty.call(req.body, 'messageInstructions');
