@@ -22,7 +22,7 @@ function deps(over: { msg?: any; state?: any; steps?: any[] } = {}) {
     getState: vi.fn(async () => state),
     updateState: vi.fn(async () => undefined),
     getSteps: vi.fn(async () => steps as any),
-    getSignals: vi.fn(async () => ({ opened: false, clicked: false, bounced: false, replied: false, inviteAccepted: false })),
+    getSignals: vi.fn(async () => ({ opened: false, clicked: false, bounced: false, replied: false, inviteAccepted: false, inviteAcceptedAt: null })),
     markClaimSent: vi.fn(async () => undefined),
   };
   return d;
@@ -36,7 +36,7 @@ describe("marquerLinkedInEnvoye", () => {
     expect(d.updateMessage).toHaveBeenCalledWith(7, { sentAt: NOW });
     expect(d.markClaimSent).toHaveBeenCalledWith({ leadId: 3, campaignId: 10, stepOrder: 1, userId: "u1", channel: "linkedin" });
     expect(d.updateState).toHaveBeenCalledWith(3, {
-      currentStep: 1, lastStepSentAt: NOW, status: "active", nextRunAt: new Date(NOW.getTime() + 2 * JOUR),
+      currentStep: 1, lastStepSentAt: NOW, delayAnchorAt: NOW, status: "active", nextRunAt: new Date(NOW.getTime() + 2 * JOUR),
     });
   });
 

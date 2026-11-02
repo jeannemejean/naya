@@ -560,9 +560,11 @@ export async function runProspectionSender(): Promise<void> {
           continue;
         }
 
-        // Le délai d'une étape court depuis le DERNIER ENVOI réel (jamais depuis un skip).
-        const lastSend = state.lastStepSentAt ? new Date(state.lastStepSentAt) : new Date(state.enrolledAt || Date.now());
-        const daysSince = daysBetween(lastSend, now);
+        // Le délai d'une étape court depuis l'ancre : fin de l'attente d'acceptation expirée,
+        // sinon dernier ENVOI réel (jamais depuis un skip simple).
+        let anchorAt = new Date(
+          (state as any).delayAnchorAt ?? state.lastStepSentAt ?? state.enrolledAt ?? Date.now(),
+        );
 
         // Rattrapage : quand une campagne est relancée, `enrollLead` remet currentStep
         // à 0 et toutes les étapes déjà envoyées seraient reparcourues une par une,
@@ -577,7 +579,7 @@ export async function runProspectionSender(): Promise<void> {
         // (un skip avance currentStep mais ne consomme PAS de délai), dépasser celles
         // déjà réservées (déjà parties, donc sans envoi ni génération IA), attendre,
         // terminer ou envoyer.
-        let decision = decideNextStep(state.currentStep, engineSteps, signals, daysSince);
+        let decision = decideNextStep(state.currentStep, engineSteps, signals, { anchorAt, now });
         while (
           decision.action === "skip" ||
           (decision.action === "send" && reservedOrders.has(decision.index + 1))
@@ -585,16 +587,26 @@ export async function runProspectionSender(): Promise<void> {
           if (decision.action === "send") {
             console.log(`[ProspectionSender] étape ${decision.index + 1} déjà réservée pour le lead ${state.leadId} — rattrapage sans envoi ni génération IA`);
           }
-          await storage.updateLeadSequenceState(state.leadId, { currentStep: decision.index + 1 });
+          const newAnchorAt = decision.action === "skip" ? decision.newAnchorAt : undefined;
+          await storage.updateLeadSequenceState(
+            state.leadId,
+            { currentStep: decision.index + 1, ...(newAnchorAt ? { delayAnchorAt: newAnchorAt } : {}) } as any,
+          );
           state.currentStep = decision.index + 1;
-          decision = decideNextStep(state.currentStep, engineSteps, signals, daysSince);
+          if (newAnchorAt) anchorAt = newAnchorAt;
+          decision = decideNextStep(state.currentStep, engineSteps, signals, { anchorAt, now });
         }
         if (decision.action === "done") {
           await storage.updateLeadSequenceState(state.leadId, { status: "completed", nextRunAt: null });
           continue;
         }
         if (decision.action === "wait") {
-          continue; // pas encore dû → nextRunAt inchangé, on réessaiera
+          // Pas encore dû : on cale nextRunAt sur l'instant prêt (sans réécrire à chaque tick).
+          const until = decision.until;
+          if (until && (!state.nextRunAt || new Date(state.nextRunAt).getTime() !== until.getTime())) {
+            await storage.updateLeadSequenceState(state.leadId, { nextRunAt: until } as any);
+          }
+          continue;
         }
 
         const step = steps[decision.index];

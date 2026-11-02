@@ -18,24 +18,61 @@ export function evaluateCondition(condition: string, s: LeadSignals): boolean {
 
 export type EngineStep = { delayDays: number; condition: string };
 
+export const INVITE_ACCEPT_WAIT_DAYS = 14;
+export const EVENT_MIN_GAP_MS = 2 * 3_600_000;
+const DAY_MS = 86_400_000;
+
 export type Decision =
   | { action: "send"; index: number; done: boolean }
-  | { action: "skip"; index: number }
-  | { action: "wait" }
+  | { action: "skip"; index: number; newAnchorAt?: Date }
+  | { action: "wait"; until: Date | null }
   | { action: "done" };
 
 /**
  * Décide quoi faire de l'enrôlement, au moment où il est "dû".
  * `currentStep` = nb d'étapes déjà TRAITÉES (envoyées ou sautées) ; l'étape candidate est steps[currentStep].
- * `daysSinceLastSend` = jours écoulés depuis le dernier ENVOI réel (0 pour l'étape 0).
- * Le délai d'une étape court depuis le dernier envoi réel : un skip ne consomme pas de délai.
+ * `timing.anchorAt` = instant de référence des délais (dernier envoi réel, ou fin d'attente d'une
+ * acceptation d'invitation expirée). Un skip ne consomme pas de délai.
+ * Les étapes conditionnées à l'invitation comptent leur délai depuis l'ACCEPTATION (jamais avant
+ * acceptation + 2 h), et l'attente d'acceptation est bornée à 14 jours.
  */
 export function decideNextStep(
-  currentStep: number, steps: EngineStep[], signals: LeadSignals, daysSinceLastSend: number,
+  currentStep: number, steps: EngineStep[], signals: LeadSignals, timing: { anchorAt: Date; now: Date },
 ): Decision {
   if (currentStep >= steps.length) return { action: "done" };
   const step = steps[currentStep];
-  if (daysSinceLastSend < (step.delayDays || 0)) return { action: "wait" };
+  const { anchorAt, now } = timing;
+  const delayMs = (step.delayDays || 0) * DAY_MS;
+  const timeout = new Date(anchorAt.getTime() + INVITE_ACCEPT_WAIT_DAYS * DAY_MS);
+  const waitOrSend = (ready: Date): Decision =>
+    now.getTime() < ready.getTime()
+      ? { action: "wait", until: ready }
+      : { action: "send", index: currentStep, done: currentStep + 1 >= steps.length };
+
+  if (step.condition === "if_invite_accepted") {
+    if (!signals.inviteAccepted) {
+      return now.getTime() < timeout.getTime()
+        ? { action: "wait", until: timeout }
+        : { action: "skip", index: currentStep, newAnchorAt: timeout };
+    }
+    const acc = signals.inviteAcceptedAt;
+    const ready = new Date(Math.max(
+      anchorAt.getTime() + delayMs,
+      acc ? acc.getTime() + delayMs : 0,
+      acc ? acc.getTime() + EVENT_MIN_GAP_MS : 0,
+    ));
+    return waitOrSend(ready);
+  }
+
+  if (step.condition === "if_invite_not_accepted") {
+    if (signals.inviteAccepted) return { action: "skip", index: currentStep };
+    const prevWaitedForAccept = steps[currentStep - 1]?.condition === "if_invite_accepted";
+    const ready = new Date(anchorAt.getTime() + (prevWaitedForAccept ? 0 : INVITE_ACCEPT_WAIT_DAYS * DAY_MS) + delayMs);
+    return waitOrSend(ready);
+  }
+
+  const ready = new Date(anchorAt.getTime() + delayMs);
+  if (now.getTime() < ready.getTime()) return { action: "wait", until: ready };
   if (!evaluateCondition(step.condition, signals)) return { action: "skip", index: currentStep };
   return { action: "send", index: currentStep, done: currentStep + 1 >= steps.length };
 }
@@ -46,16 +83,15 @@ export function decideNextStep(
  */
 export function planAfterStep(
   index: number, steps: EngineStep[], signals: LeadSignals, now: Date,
-): { currentStep: number; lastStepSentAt: Date; status: "active" | "completed"; nextRunAt: Date | null } {
+): { currentStep: number; lastStepSentAt: Date; delayAnchorAt: Date; status: "active" | "completed"; nextRunAt: Date | null } {
   const done = index + 1 >= steps.length;
-  const after = decideNextStep(index + 1, steps, signals, 0);
-  const nextDelay = after.action === "send" ? 0 : after.action === "wait" ? (steps[index + 1]?.delayDays || 1) : null;
-  return {
-    currentStep: index + 1,
-    lastStepSentAt: now,
-    status: done ? "completed" : "active",
-    nextRunAt: done ? null : new Date(now.getTime() + (nextDelay || 0) * 86_400_000),
-  };
+  const after = decideNextStep(index + 1, steps, signals, { anchorAt: now, now });
+  let nextRunAt: Date | null;
+  if (done) nextRunAt = null;
+  else if (after.action === "wait" && after.until) nextRunAt = after.until;
+  else if (after.action === "wait") nextRunAt = new Date(now.getTime() + (steps[index + 1]?.delayDays || 1) * DAY_MS);
+  else nextRunAt = new Date(now.getTime());
+  return { currentStep: index + 1, lastStepSentAt: now, delayAnchorAt: now, status: done ? "completed" : "active", nextRunAt };
 }
 
 /** Rang de l'étape (1 = première) depuis le `messageType` d'un message (`step_2`, `step_2_invite`). */

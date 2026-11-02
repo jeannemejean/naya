@@ -5,7 +5,7 @@ const d = new Date();
 describe("deriveSignals", () => {
   it("aucun signal par défaut", () => {
     expect(deriveSignals([], { linkedinConnectedAt: null }, { repliedAt: null, status: "active" }))
-      .toEqual({ opened: false, clicked: false, bounced: false, replied: false, inviteAccepted: false });
+      .toEqual({ opened: false, clicked: false, bounced: false, replied: false, inviteAccepted: false, inviteAcceptedAt: null });
   });
   it("ouverture email détectée", () => {
     const s = deriveSignals(
