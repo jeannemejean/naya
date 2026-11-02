@@ -214,6 +214,11 @@ export const userPreferences = pgTable("user_preferences", {
   aiSpendPeriod: text("ai_spend_period"), // "YYYY-MM" du compteur courant
   // Compte LinkedIn connecté via Unipile (pour l'envoi automatique de messages LinkedIn).
   linkedinUnipileAccountId: text("linkedin_unipile_account_id"),
+  // Compte Gmail connecté via Unipile (réception des réponses des prospects).
+  emailUnipileAccountId: text("email_unipile_account_id"),
+  emailAccountConnectedAt: timestamp("email_account_connected_at"), // posé au premier sync, jamais recalculé
+  // Comptes Unipile déconnectés et depuis quand : { email?: string; linkedin?: string } (dates ISO).
+  comptesDeconnectes: jsonb("comptes_deconnectes"),
   // Instant de connexion du compte LinkedIn Unipile — point de départ de la montée en
   // charge (cf. prospection-linkedin-guard.ts). Posé au moment du sync (routes.ts),
   // jamais recalculé ensuite : reconnecter le même compte ne doit pas réinitialiser
@@ -780,6 +785,7 @@ export const prospectionCampaigns = pgTable("prospection_campaigns", {
   targetSector: text("target_sector"),               // ex: "Viticulture, Oenotourisme"
   digitalLevel: text("digital_level").default("tous"), // fort | faible | tous
   channel: text("channel").default("linkedin"),       // linkedin | email | both
+  audience: text("audience").notNull().default("froid"), // froid | relations (public déjà connecté : pas d'invitation)
   offer: text("offer"),                               // l'offre proposée à ce segment
   prospectsPerDay: integer("prospects_per_day").default(3),
   buyingSignals: text("buying_signals"),              // critères de qualification
@@ -867,6 +873,9 @@ export const leads = pgTable("leads", {
   nextFollowUp: timestamp("next_follow_up"),
   enrichedAt: timestamp("enriched_at"),   // date de dernière génération IA
   linkedinConnectedAt: timestamp("linkedin_connected_at"), // invitation LinkedIn acceptée (poller Unipile)
+  linkedinProviderId: text("linkedin_provider_id"),        // identifiant LinkedIn interne (Unipile)
+  relationVerifieeAt: timestamp("relation_verifiee_at"),   // vérification du public de campagne faite
+  exclusionRaison: text("exclusion_raison"),               // pourquoi le lead est écarté de la campagne
   /**
    * Pourquoi ce lead n'est pas joignable par la fenêtre horaire (pays inconnu,
    * aucun créneau commun). `null` = joignable. JAMAIS un refus silencieux :
@@ -906,6 +915,9 @@ export const outreachMessages = pgTable("outreach_messages", {
   openedAt: timestamp("opened_at"),
   clickedAt: timestamp("clicked_at"),
   bouncedAt: timestamp("bounced_at"),
+  // Identifiants côté fournisseur (Unipile) : rattachent le message et son fil à la boîte de réponses.
+  providerMessageId: text("provider_message_id"),
+  providerThreadId: text("provider_thread_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1854,11 +1866,14 @@ export const leadSequenceState = pgTable("lead_sequence_state", {
   // active | awaiting_linkedin | paused | completed | stopped_replied | bounced | unsubscribed | failed
   // awaiting_linkedin : un brouillon LinkedIn attend que l'utilisatrice l'envoie à la main.
   // unsubscribed : définitif, le prospect ne rentre plus jamais en séquence.
+  // excluded_audience : définitif, le lead ne correspond pas au public de la campagne.
   status: text("status").notNull().default("active"),
   currentStep: integer("current_step").notNull().default(0), // dernière étape envoyée (0 = aucune)
   nextRunAt: timestamp("next_run_at"),               // quand envoyer la prochaine étape
   enrolledAt: timestamp("enrolled_at").defaultNow(),
   lastStepSentAt: timestamp("last_step_sent_at"),
+  // Point de départ du délai de l'étape courante (null = lastStepSentAt ?? enrolledAt).
+  delayAnchorAt: timestamp("delay_anchor_at"),
   repliedAt: timestamp("replied_at"),
   // Échecs LinkedIn CONSÉCUTIFS pour CE lead (pas le compte — le compte est protégé
   // séparément par la garde de risque LinkedIn). Remis à 0 dès qu'un envoi LinkedIn
@@ -1869,6 +1884,44 @@ export const leadSequenceState = pgTable("lead_sequence_state", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// ─── Boîte de réponses (chantier 2) ──────────────────────────────────────────────
+// Une conversation par (lead, canal) : les réponses des prospects, lues via Unipile.
+export const inboxConversations = pgTable("inbox_conversations", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  projectId: integer("project_id"),
+  leadId: integer("lead_id").notNull().references(() => leads.id),
+  channel: text("channel").notNull(),                  // email | linkedin
+  unipileAccountId: text("unipile_account_id").notNull(),
+  providerChatId: text("provider_chat_id"),            // chat LinkedIn ou fil Gmail
+  statut: text("statut").notNull().default("a_traiter"), // a_traiter | traitee
+  nonLu: boolean("non_lu").notNull().default(true),
+  taskId: integer("task_id"),                          // tâche créée pour traiter la réponse
+  // État de la séquence avant la réponse, pour pouvoir la reprendre : { status, currentStep, nextRunAt, delayAnchorAt }.
+  etatAvantReponse: jsonb("etat_avant_reponse"),
+  lastMessageAt: timestamp("last_message_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({
+  parLeadCanal: uniqueIndex("inbox_conversations_lead_channel_uq").on(t.leadId, t.channel),
+}));
+export type InboxConversation = typeof inboxConversations.$inferSelect;
+export type InsertInboxConversation = typeof inboxConversations.$inferInsert;
+
+// Messages d'une conversation. providerMessageId unique : l'import est idempotent.
+export const inboxMessages = pgTable("inbox_messages", {
+  id: serial("id").primaryKey(),
+  conversationId: integer("conversation_id").notNull().references(() => inboxConversations.id),
+  providerMessageId: text("provider_message_id").notNull().unique(),
+  sens: text("sens").notNull(),                        // entrant | sortant
+  nature: text("nature").notNull(),                    // reponse | absence | accuse | nous
+  subject: text("subject"),
+  body: text("body").notNull(),
+  sentAt: timestamp("sent_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+export type InboxMessage = typeof inboxMessages.$inferSelect;
+export type InsertInboxMessage = typeof inboxMessages.$inferInsert;
 
 // Message sur-mesure généré pour un couple (lead, étape). Réutilisé par l'aperçu ET l'envoi.
 export const leadStepMessages = pgTable("lead_step_messages", {
@@ -2218,6 +2271,11 @@ export const connexionsProjet = pgTable("connexions_projet", {
   senderCity: text("sender_city"),
   senderCountry: text("sender_country"),
   linkedinUnipileAccountId: text("linkedin_unipile_account_id"),
+  // Compte Gmail connecté via Unipile (réception des réponses des prospects).
+  emailUnipileAccountId: text("email_unipile_account_id"),
+  emailAccountConnectedAt: timestamp("email_account_connected_at"), // posé au premier sync, jamais recalculé
+  // Comptes Unipile déconnectés et depuis quand : { email?: string; linkedin?: string } (dates ISO).
+  comptesDeconnectes: jsonb("comptes_deconnectes"),
   linkedinAccountConnectedAt: timestamp("linkedin_account_connected_at"),
   linkedinRestrictedAt: timestamp("linkedin_restricted_at"),
   linkedinRestrictedReason: text("linkedin_restricted_reason"),

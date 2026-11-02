@@ -246,6 +246,13 @@
       "when": 1793005479252,
       "tag": "0034_absurd_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793609911476,
+      "tag": "0035_wooden_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

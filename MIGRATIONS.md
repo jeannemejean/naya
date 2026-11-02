@@ -461,3 +461,17 @@ Ce fichier a affirmé pendant deux jours un état de la production que personne 
 dépôt disait « pas de runner », le rapport d'agent disait « pas de table de suivi », et les deux
 ensemble ont produit une conclusion fausse sur un système que ni l'un ni l'autre n'avait interrogé.
 **Avant d'écrire une procédure sur une base, interroger la base.**
+
+## 8. Chantier 2 — à appliquer en prod à la main
+
+Fichier : `migrations/0035_wooden_thunderbolt_ross.sql` (appliqué sur dev-local `ep-jolly-sky`, **pas** en prod).
+Uniquement des `ADD COLUMN`, `CREATE TABLE`, clés étrangères et un `CREATE UNIQUE INDEX` — aucun `DROP`, aucun `ALTER TYPE`.
+
+- Tables : `inbox_conversations` (index unique `(lead_id, channel)`), `inbox_messages` (`provider_message_id` unique).
+- `user_preferences` et `connexions_projet` : `email_unipile_account_id`, `email_account_connected_at`, `comptes_deconnectes`.
+- `prospection_campaigns.audience` (`text NOT NULL DEFAULT 'froid'`).
+- `leads` : `linkedin_provider_id`, `relation_verifiee_at`, `exclusion_raison`.
+- `outreach_messages` : `provider_message_id`, `provider_thread_id`.
+- `lead_sequence_state.delay_anchor_at`.
+
+Procédure prod : sauvegarde Neon, relecture du fichier, `npm run db:migrate`, vérification des objets après.
