@@ -47,3 +47,10 @@ export function lienDesinscription(leadId: number): string | null {
     return null;
   }
 }
+
+/** Une seule fois au démarrage : sans UNSUBSCRIBE_SECRET, tourner SESSION_SECRET invaliderait les liens déjà envoyés. */
+export function avertirSecretDeSecours(): void {
+  if (!process.env.UNSUBSCRIBE_SECRET && process.env.SESSION_SECRET) {
+    console.warn("[Desinscription] UNSUBSCRIBE_SECRET absent : les liens de désinscription sont signés avec SESSION_SECRET — le changer invaliderait les liens déjà envoyés. Définissez UNSUBSCRIBE_SECRET.");
+  }
+}

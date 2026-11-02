@@ -33,6 +33,7 @@ vi.mock("../storage", () => ({
     excludeLeadFromCampaign: vi.fn(),
     markRelationVerifiee: vi.fn(),
     setOutreachProviderIds: vi.fn(),
+    isLeadUnsubscribed: vi.fn(),
   },
 }));
 
@@ -2224,6 +2225,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       (sendEmailUnipile as any).mockResolvedValue({ ok: true, providerId: "prov-1", threadId: "thr-1" });
       (storage.createOutreachMessage as any).mockResolvedValue({ id: 55 });
       (storage.setOutreachProviderIds as any).mockResolvedValue(undefined);
+      (storage.isLeadUnsubscribed as any).mockResolvedValue(false);
       (storage.getUserPreferences as any).mockResolvedValue(gmail());
       (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
     });
@@ -2253,6 +2255,22 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       delete process.env.SENDGRID_API_KEY;
       await runProspectionSender();
       expect(sendEmailUnipile).toHaveBeenCalledTimes(1);
+    });
+
+    it("même adresse désinscrite ailleurs : rien envoyé, état unsubscribed", async () => {
+      (storage.isLeadUnsubscribed as any).mockResolvedValue(true);
+      await runProspectionSender();
+      expect(storage.isLeadUnsubscribed).toHaveBeenCalledWith(1, "u1");
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "unsubscribed", nextRunAt: null });
+    });
+
+    it("lecture des désinscriptions en erreur : rien envoyé, état inchangé", async () => {
+      (storage.isLeadUnsubscribed as any).mockRejectedValue(new Error("db"));
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
 
     it("Gmail non relié : SendGrid comme avant, Unipile non appelé", async () => {

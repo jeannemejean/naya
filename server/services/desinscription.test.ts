@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { jetonDesinscription, leadDuJeton, lienDesinscription } from "./desinscription";
+import { vi } from "vitest";
+import { jetonDesinscription, leadDuJeton, lienDesinscription, avertirSecretDeSecours } from "./desinscription";
 
 const SAVE = { ...process.env };
 beforeEach(() => {
@@ -46,5 +47,17 @@ describe("lienDesinscription", () => {
   it("APP_URL absent → null (l'appelant n'envoie pas)", () => {
     delete process.env.APP_URL;
     expect(lienDesinscription(42)).toBeNull();
+  });
+});
+
+describe("avertirSecretDeSecours", () => {
+  it("avertit quand seul SESSION_SECRET sert, pas quand UNSUBSCRIBE_SECRET existe", () => {
+    const w = vi.spyOn(console, "warn").mockImplementation(() => {});
+    avertirSecretDeSecours();
+    expect(w).not.toHaveBeenCalled();
+    delete process.env.UNSUBSCRIBE_SECRET; process.env.SESSION_SECRET = "s";
+    avertirSecretDeSecours();
+    expect(w).toHaveBeenCalledTimes(1);
+    w.mockRestore();
   });
 });

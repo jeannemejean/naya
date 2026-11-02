@@ -25,7 +25,7 @@ import { resolveFounderName } from "./prospection-pipeline";
 import { identiteCampagne } from "./connexions/resolution";
 import type { IdentiteEnvoi } from "./connexions/portee";
 import { sendEmailUnipile } from "./unipile-mail";
-import { lienDesinscription } from "./desinscription";
+import { lienDesinscription, avertirSecretDeSecours } from "./desinscription";
 import { sendOnce, type ClaimStore, type StepSendKey } from "./prospection-idempotence";
 import {
   decideLinkedInAction,
@@ -797,6 +797,22 @@ export async function runProspectionSender(): Promise<void> {
               continue;
             }
           }
+          if (sender.via === "unipile") {
+            // Pas de suppression globale côté Gmail (SendGrid en avait une) : on applique ici celle
+            // de Naya — désinscription du lead OU d'un autre lead de même adresse. Échec de lecture
+            // → on n'envoie rien (jamais écrire à quelqu'un qui s'est peut-être désinscrit).
+            let desinscrit: boolean;
+            try {
+              desinscrit = await storage.isLeadUnsubscribed(lead.id, state.userId);
+            } catch (e: any) {
+              console.error(`[ProspectionSender] lecture des désinscriptions impossible (lead ${lead.id}) — rien envoyé : ${String(e?.message ?? e)}`);
+              continue;
+            }
+            if (desinscrit) {
+              await storage.updateLeadSequenceState(state.leadId, { status: "unsubscribed", nextRunAt: null } as any).catch(() => {});
+              continue;
+            }
+          }
           // Plafond d'envoi / jour (24h glissantes) pour préserver la délivrabilité — emails seulement.
           if (!sentCount.has(state.userId)) {
             const count = await storage.countOutreachSentSince(state.userId, new Date(Date.now() - 86400000), "email").catch(() => null);
@@ -1100,6 +1116,7 @@ export async function runProspectionSender(): Promise<void> {
 }
 
 export function scheduleProspectionSender(): void {
+  avertirSecretDeSecours();
   console.log(
     `[ProspectionSender] Worker démarré (chaque minute) — envoi global ${masterSendingEnabled() ? "ACTIVÉ" : "DÉSACTIVÉ (dry-run)"} ; chaque user envoie depuis SA propre adresse`,
   );
