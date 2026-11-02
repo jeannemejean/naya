@@ -24,6 +24,8 @@ import { BriefIncompletError, generateStepMessage, combineInstructions } from ".
 import { resolveFounderName } from "./prospection-pipeline";
 import { identiteCampagne } from "./connexions/resolution";
 import type { IdentiteEnvoi } from "./connexions/portee";
+import { sendEmailUnipile } from "./unipile-mail";
+import { lienDesinscription } from "./desinscription";
 import { sendOnce, type ClaimStore, type StepSendKey } from "./prospection-idempotence";
 import {
   decideLinkedInAction,
@@ -301,13 +303,31 @@ function targetDateStrFor(countryCode: string | null, city: string | null, now: 
 // Config d'envoi du périmètre de la campagne (l'utilisatrice, ou le client d'un projet
 // client) : adresse + clé. Jamais l'adresse de l'app ; jamais celle de l'utilisatrice pour
 // un client (voir connexions/portee.ts).
-function resolveSenderConfig(identite: IdentiteEnvoi): { apiKey: string; fromEmail: string; fromName: string; footerAddress: string } | null {
+type SenderConfig =
+  | { via: "unipile"; accountId: string; fromEmail: string; fromName: string; footerAddress: string }
+  | { via: "sendgrid"; apiKey: string; fromEmail: string; fromName: string; footerAddress: string };
+
+// Gmail relié (Unipile) d'abord : l'email part de la vraie boîte de l'utilisateur, sans clé
+// SendGrid. Sinon SendGrid comme avant (clé propre ou partagée).
+function resolveSenderConfig(identite: IdentiteEnvoi): SenderConfig | null {
   const e = identite.email;
   if (!e) return null; // pas d'adresse expéditrice → on n'envoie jamais en son nom
+  if (e.unipileAccountId) {
+    return { via: "unipile", accountId: e.unipileAccountId, fromEmail: e.fromEmail, fromName: e.fromName, footerAddress: e.footerAddress };
+  }
   const cle = e.apiKeyChiffree ? decryptToken(e.apiKeyChiffree) : null;
   const apiKey = cle || process.env.SENDGRID_API_KEY;
   if (!apiKey) return null; // ni clé propre ni clé partagée
-  return { apiKey, fromEmail: e.fromEmail, fromName: e.fromName, footerAddress: e.footerAddress };
+  return { via: "sendgrid", apiKey, fromEmail: e.fromEmail, fromName: e.fromName, footerAddress: e.footerAddress };
+}
+
+const echapperHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Corps HTML d'un email Gmail : texte, pied de mail (signature, adresse) et lien de désinscription. */
+export function corpsEmailGmail(body: string, fromName: string, footerAddress: string, lien: string): string {
+  const texte = `${body}\n\n—\n${fromName || ""}${footerAddress ? `\n${footerAddress}` : ""}`;
+  const l = echapperHtml(lien);
+  return `${echapperHtml(texte).replace(/\r?\n/g, "<br>")}<br>Se désinscrire : <a href="${l}">${l}</a>`;
 }
 
 async function sendEmail(opts: {
@@ -760,13 +780,22 @@ export async function runProspectionSender(): Promise<void> {
 
         // Email : expéditeur, plafond du jour et écart minimum vérifiés AVANT la génération
         // IA — un email qui ne peut pas partir maintenant ne coûte rien.
-        let sender: ReturnType<typeof resolveSenderConfig> = null;
+        let sender: SenderConfig | null = null;
+        let lienDesinsc: string | null = null;
         if (step.channel === "email") {
           // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
           sender = resolveSenderConfig(identite);
           if (!sender) {
             console.log(`[ProspectionSender] user ${state.userId} sans adresse expéditrice configurée — étape EN ATTENTE (rien envoyé)`);
             continue; // on n'avance pas : l'utilisateur doit configurer son email d'envoi
+          }
+          if (sender.via === "unipile") {
+            // Jamais d'email Gmail sans lien de désinscription (APP_URL / secret manquant → on n'envoie pas).
+            lienDesinsc = lienDesinscription(lead.id);
+            if (!lienDesinsc) {
+              console.error(`[ProspectionSender] APP_URL ou UNSUBSCRIBE_SECRET/SESSION_SECRET manquant — envoi Gmail suspendu pour le lead ${lead.id} (jamais d'email sans lien de désinscription)`);
+              continue;
+            }
           }
           // Plafond d'envoi / jour (24h glissantes) pour préserver la délivrabilité — emails seulement.
           if (!sentCount.has(state.userId)) {
@@ -875,11 +904,28 @@ export async function runProspectionSender(): Promise<void> {
           // Réservation AVANT tout appel à SendGrid. Réservation refusée = l'étape est
           // déjà partie (ou son sort est inconnu) : on n'envoie rien et on laisse la
           // séquence avancer plus bas.
+          const lienEmail = lienDesinsc;
           const outcome = await sendOnce(claimStore, sendKey, async () => {
-            const ok = await sendEmail({
-              apiKey: emailSender.apiKey, fromEmail: emailSender.fromEmail, fromName: emailSender.fromName, footerAddress,
-              to: toEmail, toName: lead.name || "", subject, body, leadId: lead.id,
-            });
+            let providerId: string | null = null;
+            let threadId: string | null = null;
+            let ok: boolean;
+            if (emailSender.via === "unipile") {
+              if (!lienEmail) return { ok: false }; // garde déjà passée plus haut ; narrowing de type
+              const res = await sendEmailUnipile({
+                accountId: emailSender.accountId, to: toEmail, toName: lead.name || "", subject,
+                body: corpsEmailGmail(body, emailSender.fromName, footerAddress, lienEmail),
+                trackingLabel: `lead:${lead.id}:step:${decision.index + 1}`,
+                headers: { "List-Unsubscribe": `<${lienEmail}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+              });
+              ok = res.ok;
+              providerId = res.providerId ?? null;
+              threadId = res.threadId ?? null;
+            } else {
+              ok = await sendEmail({
+                apiKey: emailSender.apiKey, fromEmail: emailSender.fromEmail, fromName: emailSender.fromName, footerAddress,
+                to: toEmail, toName: lead.name || "", subject, body, leadId: lead.id,
+              });
+            }
             if (!ok) return { ok: false };
             // À partir d'ici le message EST parti (SendGrid a répondu positivement) :
             // une exception d'écriture du journal n'est plus « dans le doute » — on SAIT
@@ -887,10 +933,11 @@ export async function runProspectionSender(): Promise<void> {
             // l'exception se propager, pour que l'étape soit quand même marquée envoyée
             // et la séquence avancée ; seule la ligne de journal manque.
             try {
-              await storage.createOutreachMessage({
+              const created = await storage.createOutreachMessage({
                 userId: state.userId, leadId: lead.id, platform: "email",
                 messageType: `step_${decision.index + 1}`, subject, body, sentAt: new Date(),
               } as any);
+              if (providerId || threadId) await storage.setOutreachProviderIds(created.id, providerId, threadId);
             } catch (e: any) {
               console.error(
                 `[ProspectionSender] email PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${String(e?.message ?? e)}`,

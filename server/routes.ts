@@ -26,6 +26,7 @@ import { registerFondationsRoutes } from "./routes-fondations";
 import { registerMesureRoutes } from "./routes-mesure";
 import { registerSocialRoutes } from "./routes-social";
 import { registerConnexionsRoutes } from "./routes-connexions";
+import { registerReponsesRoutes } from "./routes-reponses";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
 import { dansPortee } from "./services/connexions/portee";
@@ -11448,6 +11449,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerFondationsRoutes(app);
   registerMesureRoutes(app);
   registerConnexionsRoutes(app);
+  registerReponsesRoutes(app);
   registerRapportsRoutes(app);
 
   const httpServer = createServer(app);

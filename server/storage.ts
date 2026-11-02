@@ -627,6 +627,7 @@ export interface IStorage {
   getOutreachMessages(userId: string, leadId?: number): Promise<OutreachMessage[]>;
   getLeadSignals(leadId: number): Promise<LeadSignals>;
   createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage>;
+  setOutreachProviderIds(outreachId: number, providerMessageId: string | null, providerThreadId: string | null): Promise<void>;
   // Garde d'idempotence des envois de séquence (cf. services/prospection-idempotence.ts)
   claimStepSend(key: StepSendKey): Promise<boolean>;
   markStepSendSent(key: StepSendKey, status: "sent" | "draft"): Promise<void>;
@@ -2596,6 +2597,11 @@ export class DatabaseStorage implements IStorage {
   async createOutreachMessage(message: InsertOutreachMessage): Promise<OutreachMessage> {
     const [newMessage] = await db.insert(outreachMessages).values(message).returning();
     return newMessage;
+  }
+
+  async setOutreachProviderIds(outreachId: number, providerMessageId: string | null, providerThreadId: string | null): Promise<void> {
+    await db.update(outreachMessages).set({ providerMessageId, providerThreadId })
+      .where(eq(outreachMessages.id, outreachId));
   }
 
   async updateOutreachMessage(id: number, updates: Partial<OutreachMessage>): Promise<OutreachMessage> {

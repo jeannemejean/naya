@@ -32,8 +32,11 @@ vi.mock("../storage", () => ({
     upsertConnexionProjet: vi.fn(),
     excludeLeadFromCampaign: vi.fn(),
     markRelationVerifiee: vi.fn(),
+    setOutreachProviderIds: vi.fn(),
   },
 }));
+
+vi.mock("./unipile-mail", () => ({ sendEmailUnipile: vi.fn() }));
 
 vi.mock("./sequence-message", () => ({
   generateStepMessage: vi.fn(),
@@ -61,6 +64,7 @@ import {
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
 import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedin";
+import { sendEmailUnipile } from "./unipile-mail";
 
 describe("daysBetween", () => {
   it("compte les jours pleins écoulés", () => {
@@ -2209,6 +2213,99 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(sendLinkedInStep).toHaveBeenCalledWith(
         expect.objectContaining({ linkedinUrl: "https://linkedin.com/in/ny-lead" }),
       );
+    });
+  });
+  describe("email via le Gmail de l'utilisateur (Unipile)", () => {
+    const gmail = (o: Record<string, any> = {}) => openPrefs({ emailUnipileAccountId: "gm-1", ...o });
+    const ENV = { APP_URL: process.env.APP_URL, SECRET: process.env.UNSUBSCRIBE_SECRET };
+    beforeEach(() => {
+      process.env.APP_URL = "https://hellonaya.app";
+      process.env.UNSUBSCRIBE_SECRET = "secret-de-test";
+      (sendEmailUnipile as any).mockResolvedValue({ ok: true, providerId: "prov-1", threadId: "thr-1" });
+      (storage.createOutreachMessage as any).mockResolvedValue({ id: 55 });
+      (storage.setOutreachProviderIds as any).mockResolvedValue(undefined);
+      (storage.getUserPreferences as any).mockResolvedValue(gmail());
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+    });
+    afterEach(() => {
+      if (ENV.APP_URL === undefined) delete process.env.APP_URL; else process.env.APP_URL = ENV.APP_URL;
+      if (ENV.SECRET === undefined) delete process.env.UNSUBSCRIBE_SECRET; else process.env.UNSUBSCRIBE_SECRET = ENV.SECRET;
+    });
+
+    it("Gmail relié : Unipile appelé, SendGrid non, lien + en-têtes de désinscription, ids stockés", async () => {
+      await runProspectionSender();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(sendEmailUnipile).toHaveBeenCalledTimes(1);
+      const arg = (sendEmailUnipile as any).mock.calls[0][0];
+      expect(arg).toMatchObject({ accountId: "gm-1", to: "lead@example.com", subject: "Objet", trackingLabel: "lead:1:step:1" });
+      expect(arg.body).toContain("Corps du message");
+      const lien = /https:\/\/hellonaya\.app\/desinscription\/[^\s"<]+/.exec(arg.body)?.[0];
+      expect(lien).toBeTruthy();
+      expect(arg.headers["List-Unsubscribe"]).toBe(`<${lien}>`);
+      expect(arg.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+      expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ leadId: 1, platform: "email" }));
+      expect(storage.setOutreachProviderIds).toHaveBeenCalledWith(55, "prov-1", "thr-1");
+      expect(storage.markStepSendSent).toHaveBeenCalled();
+    });
+
+    it("Gmail relié sans clé SendGrid : l'envoi part quand même", async () => {
+      delete process.env.SENDGRID_API_KEY;
+      await runProspectionSender();
+      expect(sendEmailUnipile).toHaveBeenCalledTimes(1);
+    });
+
+    it("Gmail non relié : SendGrid comme avant, Unipile non appelé", async () => {
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs());
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("kill-switch coupé : aucun envoi, ni Unipile ni SendGrid", async () => {
+      delete process.env.PROSPECTION_SENDING_ENABLED;
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("plafond du jour atteint : rien ne part", async () => {
+      (storage.countOutreachSentSince as any).mockResolvedValue(80);
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+    });
+
+    it("écart de 3 à 8 min non écoulé : rien ne part", async () => {
+      (storage.getLastOutreachSentAt as any).mockResolvedValue(new Date(Date.now() - 60_000));
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+    });
+
+    it("idempotence : réservation refusée → aucun envoi", async () => {
+      (storage.claimStepSend as any).mockResolvedValue(false);
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+    });
+
+    it("échec Unipile : réservation libérée, pas de journal, étape non avancée", async () => {
+      (sendEmailUnipile as any).mockResolvedValue({ ok: false, error: "http_500" });
+      await runProspectionSender();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.releaseStepSend).toHaveBeenCalledTimes(1);
+    });
+
+    it("APP_URL absent : aucun email sans lien de désinscription, étape en attente", async () => {
+      delete process.env.APP_URL;
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+    });
+
+    it("un échec d'écriture des ids n'empêche pas l'avancement (le mail est parti)", async () => {
+      (storage.setOutreachProviderIds as any).mockRejectedValue(new Error("db"));
+      await runProspectionSender();
+      expect(storage.markStepSendSent).toHaveBeenCalled();
     });
   });
 });
