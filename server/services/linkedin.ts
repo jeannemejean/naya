@@ -28,6 +28,12 @@ function headers(extra: Record<string, string> = {}): Record<string, string> {
   return { "X-API-KEY": API_KEY, accept: "application/json", ...extra };
 }
 
+/** Réutilisés par `unipile-mail.ts` (même config Unipile). */
+export const unipileDsn = DSN;
+export function unipileHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return headers(extra);
+}
+
 /**
  * Extrait l'identifiant public LinkedIn d'une URL de profil.
  * "https://www.linkedin.com/in/solene-jaboulet-7799b9/" → "solene-jaboulet-7799b9"
@@ -44,13 +50,16 @@ export function publicIdFromUrl(linkedinUrl: string | null | undefined): string 
  * compte créé est tagué `name = nom` (l'id de l'utilisatrice, ou `<id>:projet:<n>` pour un
  * projet client — voir connexions/unipile.ts) → on le retrouve ensuite via sync.
  */
-export async function generateConnectLink(nom: string): Promise<string | null> {
+export async function generateConnectLink(
+  nom: string,
+  providers: ("LINKEDIN" | "GOOGLE")[] = ["LINKEDIN"],
+): Promise<string | null> {
   if (!linkedinConfigured()) return null;
   const expiresOn = new Date(Date.now() + 7 * 86400000).toISOString();
   const res = await fetch(`${DSN}/api/v1/hosted/accounts/link`, {
     method: "POST",
     headers: headers({ "content-type": "application/json" }),
-    body: JSON.stringify({ type: "create", providers: ["LINKEDIN"], api_url: DSN, expiresOn, name: nom }),
+    body: JSON.stringify({ type: "create", providers, api_url: DSN, expiresOn, name: nom }),
   });
   if (!res.ok) return null;
   const data: any = await res.json().catch(() => ({}));
@@ -188,6 +197,8 @@ export interface LinkedInSendResult {
   ok: boolean;
   action: "message" | "invitation" | "none";
   error?: string;
+  /** provider_id résolu (à stocker sur le lead), présent dès que la résolution a réussi. */
+  providerId?: string;
 }
 
 /**
@@ -237,7 +248,7 @@ export async function sendLinkedInStep(opts: {
   chatForm.append("attendees_ids", providerId);
   chatForm.append("text", opts.text);
   const chatRes = await fetch(`${DSN}/api/v1/chats`, { method: "POST", headers: headers(), body: chatForm });
-  if (chatRes.ok) return { ok: true, action: "message" };
+  if (chatRes.ok) return { ok: true, action: "message", providerId };
 
   // 2) Pas en relation → invitation avec note.
   const note = opts.text.slice(0, 300);
@@ -246,8 +257,8 @@ export async function sendLinkedInStep(opts: {
     headers: headers({ "content-type": "application/json" }),
     body: JSON.stringify({ account_id: opts.accountId, provider_id: providerId, message: note }),
   });
-  if (inviteRes.ok) return { ok: true, action: "invitation" };
+  if (inviteRes.ok) return { ok: true, action: "invitation", providerId };
 
   const err = await inviteRes.text().catch(() => "");
-  return { ok: false, action: "none", error: `chat_${chatRes.status}/invite_${inviteRes.status} ${err}`.slice(0, 200) };
+  return { ok: false, action: "none", providerId, error: `chat_${chatRes.status}/invite_${inviteRes.status} ${err}`.slice(0, 200) };
 }
