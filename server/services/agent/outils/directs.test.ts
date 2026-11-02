@@ -91,7 +91,9 @@ describe("creer_liste", () => {
     expect(s.createTaskListItem).toHaveBeenNthCalledWith(1, { listId: 3, title: "Lait", order: 0 });
     expect(s.createTaskListItem).toHaveBeenNthCalledWith(2, { listId: 3, title: "Pain", order: 1 });
     expect(d.ajouterAction).toHaveBeenCalledWith("u1", "creer_liste", "Liste « Courses » créée (2 éléments)", [
-      { table: "task_lists", id: 3, avant: null, apres: { title: "Courses" } },
+      { table: "task_lists", id: 3, avant: null, apres: {
+        title: "Courses", elements: [{ titre: "Lait", coche: false }, { titre: "Pain", coche: false }],
+      } },
     ]);
     expect(r.faite?.actionId).toBe(42);
   });

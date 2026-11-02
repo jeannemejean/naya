@@ -209,7 +209,9 @@ const creerListeOutil: Outil = {
     const n = elements.length;
     const resume = `Liste « ${liste.title} » créée (${n} élément${n > 1 ? "s" : ""})`;
     return journaliser(ctx, "creer_liste", resume,
-      [{ table: "task_lists", id: liste.id, avant: null, apres: { title: liste.title } }],
+      [{ table: "task_lists", id: liste.id, avant: null, apres: {
+        title: liste.title, elements: elements.map((titre) => ({ titre, coche: false })),
+      } }],
       { listeId: liste.id });
   },
 };

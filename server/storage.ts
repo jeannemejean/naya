@@ -3804,6 +3804,14 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
+  /** La tâche a-t-elle au moins un livrable de cette utilisatrice ? */
+  async tacheALivrables(taskId: number, userId: string): Promise<boolean> {
+    const [l] = await db.select({ id: livrables.id }).from(livrables)
+      .where(and(eq(livrables.taskId, taskId), eq(livrables.userId, userId)))
+      .limit(1);
+    return !!l;
+  }
+
   async getWorkspaceEntries(taskId: number): Promise<TaskWorkspaceEntry[]> {
     return await db.select().from(taskWorkspaceEntries)
       .where(eq(taskWorkspaceEntries.taskId, taskId))

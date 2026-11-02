@@ -25,7 +25,16 @@ function normaliser(v: unknown): unknown {
     const d = new Date(v);
     return Number.isNaN(d.getTime()) ? v : d.toISOString();
   }
-  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "object") return JSON.stringify(trierCles(v));
+  return v;
+}
+
+// Le JSONB de Postgres réordonne les clés d'un objet : on les trie avant de comparer.
+function trierCles(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(trierCles);
+  if (v && typeof v === "object" && !(v instanceof Date)) {
+    return Object.fromEntries(Object.keys(v as object).sort().map((k) => [k, trierCles((v as any)[k])]));
+  }
   return v;
 }
 
@@ -48,6 +57,9 @@ function versEcritureTache(avant: Record<string, unknown>): Record<string, unkno
 // Lecture TOUJOURS bornée à userId : une ligne d'une autre (ou disparue) rend undefined.
 interface Gestion {
   lire(userId: string, id: number | string): Promise<Record<string, unknown> | undefined>;
+  // Pour une ligne créée par l'action : y a-t-il ajouté quelque chose qui n'est pas dans
+  // les champs comparés (texte, fichier) ? Si oui, la supprimer l'effacerait : on refuse.
+  contenuAjoute?(userId: string, id: number | string): Promise<boolean>;
   restaurer(userId: string, ligne: LigneJournal & { avant: Record<string, unknown> }): Promise<void>;
   supprimer(userId: string, id: number | string): Promise<void>;
 }
@@ -57,6 +69,13 @@ const GESTIONS: Partial<Record<LigneJournal["table"], Gestion>> = {
     async lire(userId, id) {
       const t = await storage.getTask(Number(id));
       return t && (t as any).userId === userId ? (t as any) : undefined;
+    },
+    async contenuAjoute(userId, id) {
+      // Supprimer la tâche effacerait son espace de travail (clearTaskReferences) et
+      // détacherait ses livrables : un dépôt de l'utilisatrice compte comme une modification.
+      const entrees = await storage.getWorkspaceEntries(Number(id));
+      if (entrees.length > 0) return true;
+      return storage.tacheALivrables(Number(id), userId);
     },
     async restaurer(userId, ligne) {
       // Remise directe de l'état d'avant (pas de recherche de créneau : on revient où l'on
@@ -81,7 +100,10 @@ const GESTIONS: Partial<Record<LigneJournal["table"], Gestion>> = {
   task_lists: {
     async lire(userId, id) {
       const l = await storage.getTaskList(Number(id), userId);
-      return l ?? undefined;
+      if (!l) return undefined;
+      // Les éléments tels qu'ils sont, sous la forme journalisée par creer_liste : un élément
+      // coché, ajouté, renommé ou retiré rend la liste « modifiée ».
+      return { ...l, elements: elementsDeListe(l.items) };
     },
     async restaurer() {
       throw new Error("task_lists : seule la création est journalisée");
@@ -103,6 +125,10 @@ const GESTIONS: Partial<Record<LigneJournal["table"], Gestion>> = {
     },
   },
 };
+
+export function elementsDeListe(items: { title: string; completed: boolean | null }[]): { titre: string; coche: boolean }[] {
+  return items.map((i) => ({ titre: i.title, coche: !!i.completed }));
+}
 
 function gestion(table: LigneJournal["table"]): Gestion {
   const g = GESTIONS[table];
@@ -128,6 +154,10 @@ export async function annulerAction(userId: string, actionId: number, maintenant
     if (!actuelle) return { ok: false, raison: "modifiee" };
     for (const [champ, valeur] of Object.entries(ligne.apres ?? {})) {
       if (!memeValeur(actuelle[champ], valeur)) return { ok: false, raison: "modifiee" };
+    }
+    const g = gestion(ligne.table);
+    if (ligne.avant === null && g.contenuAjoute && (await g.contenuAjoute(userId, ligne.id))) {
+      return { ok: false, raison: "modifiee" };
     }
   }
 
