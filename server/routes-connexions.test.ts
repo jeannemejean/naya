@@ -146,7 +146,7 @@ describe("Gmail d'un projet client", () => {
   it("lien : provider GOOGLE, nom du projet", async () => {
     const r = await appel("POST", "/api/projects/7/connexions/gmail/lien");
     expect((await r.json()).url).toContain("name=user-1:projet:7");
-    expect(li.generateConnectLink).toHaveBeenCalledWith("user-1:projet:7", ["GOOGLE"]);
+    expect(li.generateConnectLink).toHaveBeenCalledWith("user-1:projet:7", ["GOOGLE"], undefined);
   });
 
   it("sync : le compte Google du projet (pas celui de l'utilisatrice), adresse reprise, alerte e-mail levée", async () => {
@@ -212,7 +212,7 @@ describe("garde : un Gmail ne sert qu'à un périmètre", () => {
 describe("Gmail de l'utilisatrice", () => {
   it("lien : provider GOOGLE, son propre nom", async () => {
     await appel("POST", "/api/prospection/gmail/connect-link");
-    expect(li.generateConnectLink).toHaveBeenCalledWith("user-1", ["GOOGLE"]);
+    expect(li.generateConnectLink).toHaveBeenCalledWith("user-1", ["GOOGLE"], undefined);
   });
   it("sync : son compte Google (pas celui du projet), adresse reprise, alerte e-mail levée", async () => {
     prefs = { comptesDeconnectes: { email: "2026-10-01", linkedin: "2026-10-02" } };
@@ -257,3 +257,72 @@ describe("DELETE /api/prospection/linkedin", () => {
   });
 });
 
+
+// Unipile ne garde pas le `name` du lien sur le compte (constaté en prod : le compte Google
+// s'appelle d'après son adresse) : le rattachement passe par `notify_url`.
+describe("notification Unipile d'un compte relié", () => {
+  const SECRET = "secret-test";
+  const reel = [
+    { id: "gm-reel", type: "GOOGLE_OAUTH", name: "jeanne@agence.com", adresse: "jeanne@agence.com" },
+    { id: "li-reel", type: "LINKEDIN", name: "Jeanne Mejean" },
+    { id: "gm-client", type: "GOOGLE_OAUTH", name: "marc@client.fr", adresse: "marc@client.fr" },
+  ];
+  const urlDe = async (nom: string, canal: "gmail" | "linkedin") => {
+    const { urlNotification } = await import("./services/connexions/rattacher-compte");
+    return new URL(urlNotification(nom, canal)!);
+  };
+  const notifier = (u: URL, body: unknown) =>
+    fetch(`http://127.0.0.1:${port}${u.pathname}${u.search}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  beforeEach(() => {
+    process.env.UNIPILE_WEBHOOK_SECRET = SECRET;
+    process.env.APP_URL = "https://naya.test";
+    prefs = {};
+  });
+  afterAll(() => { delete process.env.UNIPILE_WEBHOOK_SECRET; delete process.env.APP_URL; });
+
+  it("le lien porte une adresse de notification signée (https seulement)", async () => {
+    await appel("POST", "/api/prospection/gmail/connect-link");
+    const notif = li.generateConnectLink.mock.calls[0][2] as string;
+    expect(notif).toMatch(/^https:\/\/naya\.test\/api\/unipile\/compte-relie\?canal=gmail&sig=/);
+    process.env.APP_URL = "http://naya.test";
+    await appel("POST", "/api/prospection/gmail/connect-link");
+    expect(li.generateConnectLink.mock.calls[1][2]).toBeUndefined();
+  });
+
+  it("Gmail de l'utilisatrice : rangé à la notification, puis « Terminé » le retrouve", async () => {
+    li.listUnipileAccounts.mockResolvedValue(reel);
+    const r = await notifier(await urlDe("user-1", "gmail"), { status: "CREATION_SUCCESS", account_id: "gm-reel", name: "user-1" });
+    expect(r.status).toBe(200);
+    expect(prefs).toMatchObject({ emailUnipileAccountId: "gm-reel", prospectionSenderEmail: "jeanne@agence.com" });
+    const quand = prefs.emailAccountConnectedAt;
+    expect(quand).toBeInstanceOf(Date);
+    expect((await appel("POST", "/api/prospection/gmail/sync")).status).toBe(200);
+    expect(prefs.emailAccountConnectedAt).toBe(quand); // même compte : la date ne bouge pas
+    li.listUnipileAccounts.mockReset();
+  });
+
+  it("LinkedIn d'un projet client : rangé dans le projet, jamais chez l'utilisatrice", async () => {
+    li.listUnipileAccounts.mockResolvedValueOnce(reel);
+    await notifier(await urlDe("user-1:projet:7", "linkedin"), { status: "CREATION_SUCCESS", account_id: "li-reel", name: "user-1:projet:7" });
+    expect(storageMock.upsertConnexionProjet.mock.calls[0][1]).toBe(7);
+    expect(connexion).toMatchObject({ linkedinUnipileAccountId: "li-reel" });
+    expect(storageMock.updateUserPreferences).not.toHaveBeenCalled();
+  });
+
+  it("signature d'un autre nom ou d'un autre canal → 401, rien écrit", async () => {
+    const u = await urlDe("user-2", "gmail");
+    expect((await notifier(u, { account_id: "gm-reel", name: "user-1" })).status).toBe(401);
+    const v = await urlDe("user-1", "linkedin");
+    v.searchParams.set("canal", "gmail");
+    expect((await notifier(v, { account_id: "gm-reel", name: "user-1" })).status).toBe(401);
+    expect(storageMock.updateUserPreferences).not.toHaveBeenCalled();
+  });
+
+  it("Gmail déjà relié à un client → non rangé chez l'utilisatrice (200 quand même)", async () => {
+    li.listUnipileAccounts.mockResolvedValueOnce(reel);
+    storageMock.getConnexionsProjetDe.mockResolvedValueOnce([{ projectId: 7, emailUnipileAccountId: "gm-reel" }]);
+    const r = await notifier(await urlDe("user-1", "gmail"), { account_id: "gm-reel", name: "user-1" });
+    expect(r.status).toBe(200);
+    expect(storageMock.updateUserPreferences).not.toHaveBeenCalled();
+  });
+});

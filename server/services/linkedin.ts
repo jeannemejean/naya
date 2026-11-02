@@ -56,13 +56,16 @@ export function publicIdFromUrl(linkedinUrl: string | null | undefined): string 
 export async function generateConnectLink(
   nom: string,
   providers: ("LINKEDIN" | "GOOGLE")[] = ["LINKEDIN"],
+  /** Appelée par Unipile quand la connexion aboutit, avec `name` : seul moyen de savoir à qui
+   *  est le compte (Unipile ne garde pas `name` sur le compte). */
+  notifyUrl?: string,
 ): Promise<string | null> {
   if (!linkedinConfigured()) return null;
   const expiresOn = new Date(Date.now() + 7 * 86400000).toISOString();
   const res = await fetch(`${DSN}/api/v1/hosted/accounts/link`, {
     method: "POST",
     headers: headers({ "content-type": "application/json" }),
-    body: JSON.stringify({ type: "create", providers, api_url: DSN, expiresOn, name: nom }),
+    body: JSON.stringify({ type: "create", providers, api_url: DSN, expiresOn, name: nom, ...(notifyUrl ? { notify_url: notifyUrl } : {}) }),
   });
   if (!res.ok) return null;
   const data: any = await res.json().catch(() => ({}));

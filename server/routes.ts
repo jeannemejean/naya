@@ -26,14 +26,14 @@ import { registerProfilsVeilleRoutes } from "./routes-profils-veille";
 import { registerFondationsRoutes } from "./routes-fondations";
 import { registerMesureRoutes } from "./routes-mesure";
 import { registerSocialRoutes } from "./routes-social";
-import { registerConnexionsRoutes } from "./routes-connexions";
+import { registerConnexionsRoutes, lienUnipile, compteATrouver } from "./routes-connexions";
+import { rattacherCompte } from "./services/connexions/rattacher-compte";
 import { registerReponsesRoutes, STADES_ENGAGES } from "./routes-reponses";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
 import { dansPortee } from "./services/connexions/portee";
 import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
 import { controleProjetCampagne, controleChangementNature } from "./services/connexions/campagne";
-import { compteUnipile, profilDejaUtilise, sansDeconnexion } from "./services/connexions/unipile";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -163,7 +163,7 @@ import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
 import { serpConfigured } from "./services/serp";
 import { isAiBlocked } from "./services/usage";
-import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
+import { linkedinConfigured, listUnipileAccounts } from "./services/linkedin";
 import { deriveMilestoneDate } from "./services/milestone-dates";
 import { r2Configured, createUploadUrl } from "./services/r2-storage";
 import { analyzeStatusNote } from "./services/ritual-analyze";
@@ -8939,7 +8939,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   app.post('/api/prospection/linkedin/connect-link', isAuthenticated, async (req: any, res) => {
     try {
       if (!linkedinConfigured()) return res.status(400).json({ message: 'linkedin_not_configured' });
-      const url = await generateConnectLink(req.userId);
+      const url = await lienUnipile(req.userId, "linkedin");
       if (!url) return res.status(502).json({ message: 'link_generation_failed' });
       res.json({ url });
     } catch (e: any) {
@@ -8953,34 +8953,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (!linkedinConfigured()) return res.status(400).json({ message: 'linkedin_not_configured' });
       const accounts = await listUnipileAccounts();
       // Jamais le compte d'un projet client (mode agence), même s'il est seul chez Unipile.
-      const mine = compteUnipile(accounts, req.userId, null, "LINKEDIN");
+      // Le compte rangé à la notification d'Unipile, sinon (comptes plus anciens) celui à son nom ;
+      // jamais celui d'un projet client. Même règle d'unicité et de montée en charge : rattacher-compte.ts.
+      const mine = await compteATrouver(accounts, req.userId, null, "linkedin");
       if (!mine) return res.status(404).json({ message: 'no_linkedin_account_found' });
-      // Le même profil LinkedIn déjà connecté pour un client : un seul budget, un seul périmètre.
-      const autresProjets = (await storage.getConnexionsProjetDe(req.userId)).map((c) => c.linkedinUnipileAccountId);
-      if (profilDejaUtilise(accounts, mine.id, autresProjets)) return res.status(409).json({ message: 'linkedin_deja_utilise' });
-      const prevPrefs = await storage.getUserPreferences(req.userId);
-      const prevAccountId = (prevPrefs as any)?.linkedinUnipileAccountId;
-      // `linkedinAccountConnectedAt` est le point de départ de la montée en charge
-      // (prospection-linkedin-guard.ts) : on ne le pose QUE pour un compte réellement
-      // NOUVEAU (id différent ou jamais connecté). Reconnecter le MÊME compte (ex. après
-      // un renouvellement de session Unipile) ne doit pas réinitialiser le ramp-up.
-      const isNewAccount = prevAccountId !== mine.id;
-      // RÉTRO-REMPLISSAGE (revue post-commit 261835e, Important 2) : un compte connecté
-      // AVANT l'introduction de ce champ a `linkedinUnipileAccountId` posé et
-      // `linkedinAccountConnectedAt` NULL pour toujours — la garde refuserait alors
-      // indéfiniment (`account_connection_unknown`), en silence, sans jamais se corriger
-      // d'elle-même. On pose `now()` dès qu'on revoit ce compte au sync, MÊME s'il n'est
-      // pas nouveau, tant que la date manque encore. Choix conservateur assumé : on ne
-      // connaît pas la VRAIE date de connexion d'un compte pré-migration, donc on le
-      // traite comme flambant neuf (ramp-up reparti à zéro) plutôt que de risquer de le
-      // supposer mature à tort — c'est plus lent, jamais plus risqué.
-      const needsConnectedAtRetrofill = !isNewAccount && !(prevPrefs as any)?.linkedinAccountConnectedAt;
-      await storage.updateUserPreferences(req.userId, {
-        linkedinUnipileAccountId: mine.id,
-        ...((isNewAccount || needsConnectedAtRetrofill) ? { linkedinAccountConnectedAt: new Date() } : {}),
-        // Resynchro réussie : l'alerte « LinkedIn déconnecté » tombe.
-        comptesDeconnectes: sansDeconnexion((prevPrefs as any)?.comptesDeconnectes, 'linkedin'),
-      } as any);
+      const issue = await rattacherCompte(req.userId, null, "linkedin", mine, accounts);
+      if (!issue.ok) return res.status(issue.status).json({ message: issue.message });
       res.json({ connected: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

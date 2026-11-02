@@ -2,13 +2,16 @@
 // sociaux, expéditeur e-mail et signature, compte LinkedIn. Mêmes règles que les réglages de
 // l'utilisatrice, rangées dans `connexions_projet` ; un projet client n'utilise que celles-ci.
 // Toutes les routes : projet de l'utilisatrice sinon 404 ; projet perso → 409 `projet_perso`.
-import type { Express } from "express";
+import express, { type Express } from "express";
 import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
-import { compteUnipile, nomUnipile, profilDejaUtilise, gmailDejaUtilise, sansDeconnexion, TYPE_UNIPILE_GMAIL } from "./services/connexions/unipile";
+import { compteUnipile, nomUnipile, sansDeconnexion, TYPE_UNIPILE_GMAIL } from "./services/connexions/unipile";
+import {
+  rattacherCompte, compteDejaRange, urlNotification, notificationValide, lireNomUnipile, type CanalUnipile, type CompteListe,
+} from "./services/connexions/rattacher-compte";
 import { perimetreDemande, statutReseaux, listeComptes } from "./routes-social";
 
 const cleSendgrid = (c: any): string | undefined =>
@@ -57,7 +60,52 @@ function vueLinkedin(c: any) {
   };
 }
 
+/**
+ * Le compte à ranger pour « Terminé » : celui déjà rangé à la notification d'Unipile, sinon
+ * (comptes créés avant la notification) celui qui porte le nom du périmètre.
+ */
+export async function compteATrouver(comptes: CompteListe[], userId: string, projectId: number | null, canal: CanalUnipile) {
+  const range = await compteDejaRange(userId, projectId, canal);
+  return (range ? comptes.find((c) => c.id === range) : undefined)
+    ?? compteUnipile(comptes, userId, projectId, canal === "linkedin" ? "LINKEDIN" : TYPE_UNIPILE_GMAIL);
+}
+
+/** Lien hébergé Unipile : le compte sera rangé au nom `nom` dès que la connexion aboutit. */
+export const lienUnipile = (nom: string, canal: CanalUnipile) =>
+  generateConnectLink(nom, canal === "gmail" ? ["GOOGLE"] : ["LINKEDIN"], urlNotification(nom, canal));
+
 export function registerConnexionsRoutes(app: Express) {
+  // Unipile appelle cette adresse quand une connexion aboutit (`notify_url` du lien hébergé),
+  // avec { status, account_id, name }. Publique : la signature de l'adresse prouve que le lien
+  // a été créé par Naya pour CE nom et CE canal. Réponse 200 même en cas de refus métier
+  // (Unipile n'a rien à renvoyer) ; « Terminé » dira ensuite ce qui manque.
+  app.post("/api/unipile/compte-relie", express.json({ type: () => true, limit: "100kb" }), async (req: any, res) => {
+    const secret = process.env.UNIPILE_WEBHOOK_SECRET;
+    const nom = String(req.body?.name ?? "");
+    const canal = String(req.query.canal ?? "");
+    if (!secret || !notificationValide(nom, canal, req.query.sig ? String(req.query.sig) : undefined, secret)) {
+      console.warn("[unipile] notification de compte refusée : signature absente ou invalide");
+      return res.status(401).json({ message: "non autorisé" });
+    }
+    const qui = lireNomUnipile(nom);
+    const accountId = String(req.body?.account_id ?? "");
+    if (!qui || !accountId) return res.status(200).json({ ok: true });
+    try {
+      const comptes = await listUnipileAccounts();
+      const compte = comptes.find((c) => c.id === accountId);
+      if (!compte) {
+        console.warn(`[unipile] notification : compte ${accountId} absent de la liste Unipile`);
+        return res.status(200).json({ ok: true });
+      }
+      const issue = await rattacherCompte(qui.userId, qui.projectId, canal, compte, comptes);
+      if (!issue.ok) console.warn(`[unipile] compte ${accountId} non rangé (${canal}) : ${issue.message}`);
+      res.status(200).json({ ok: true });
+    } catch (e: any) {
+      console.error(`[unipile] notification de compte non traitée : ${e.message}`);
+      res.status(500).json({ message: "erreur" });
+    }
+  });
+
   /** Le projet client demandé, ou la réponse d'erreur déjà envoyée (null). */
   const projetClient = async (req: any, res: any): Promise<number | null> => {
     const p = await perimetreDemande(req.userId, req.params.id);
@@ -200,7 +248,7 @@ export function registerConnexionsRoutes(app: Express) {
       const projectId = await projetClient(req, res);
       if (projectId == null) return;
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
-      const url = await generateConnectLink(nomUnipile(req.userId, projectId));
+      const url = await lienUnipile(nomUnipile(req.userId, projectId), "linkedin");
       if (!url) return res.status(502).json({ message: "link_generation_failed" });
       res.json({ url });
     } catch (e: any) {
@@ -215,23 +263,12 @@ export function registerConnexionsRoutes(app: Express) {
       if (projectId == null) return;
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
       const comptes = await listUnipileAccounts();
-      const compte = compteUnipile(comptes, req.userId, projectId, "LINKEDIN");
+      const compte = await compteATrouver(comptes, req.userId, projectId, "linkedin");
       if (!compte) return res.status(404).json({ message: "no_linkedin_account_found" });
       // Le même profil LinkedIn ne sert qu'à un périmètre : sinon deux budgets pour un seul compte.
-      const prefs: any = await storage.getUserPreferences(req.userId);
-      const autres = (await storage.getConnexionsProjetDe(req.userId))
-        .filter((c) => c.projectId !== projectId).map((c) => c.linkedinUnipileAccountId);
-      if (profilDejaUtilise(comptes, compte.id, [prefs?.linkedinUnipileAccountId, ...autres])) {
-        return res.status(409).json({ message: "linkedin_deja_utilise" });
-      }
-      const avant = await storage.getConnexionProjet(req.userId, projectId);
-      // La montée en charge repart de zéro pour un compte NOUVEAU seulement.
-      const nouveau = avant?.linkedinUnipileAccountId !== compte.id || !avant?.linkedinAccountConnectedAt;
-      const c = await storage.upsertConnexionProjet(req.userId, projectId, {
-        linkedinUnipileAccountId: compte.id,
-        ...(nouveau ? { linkedinAccountConnectedAt: new Date() } : {}),
-        comptesDeconnectes: sansDeconnexion(avant?.comptesDeconnectes, "linkedin"),
-      });
+      const issue = await rattacherCompte(req.userId, projectId, "linkedin", compte, comptes);
+      if (!issue.ok) return res.status(issue.status).json({ message: issue.message });
+      const c = issue.connexion;
       res.json({ linkedin: vueLinkedin(c) });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -269,7 +306,7 @@ export function registerConnexionsRoutes(app: Express) {
       const projectId = await projetClient(req, res);
       if (projectId == null) return;
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
-      const url = await generateConnectLink(nomUnipile(req.userId, projectId), ["GOOGLE"]);
+      const url = await lienUnipile(nomUnipile(req.userId, projectId), "gmail");
       if (!url) return res.status(502).json({ message: "link_generation_failed" });
       res.json({ url });
     } catch (e: any) {
@@ -283,23 +320,12 @@ export function registerConnexionsRoutes(app: Express) {
       if (projectId == null) return;
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
       const comptes = await listUnipileAccounts();
-      const compte = compteUnipile(comptes, req.userId, projectId, TYPE_UNIPILE_GMAIL);
+      const compte = await compteATrouver(comptes, req.userId, projectId, "gmail");
       if (!compte) return res.status(404).json({ message: "no_gmail_account_found" });
       // Un même Gmail ne sert qu'à un périmètre (utilisatrice ou un seul projet).
-      const prefs: any = await storage.getUserPreferences(req.userId);
-      const autres = (await storage.getConnexionsProjetDe(req.userId))
-        .filter((x) => x.projectId !== projectId).map((x: any) => x.emailUnipileAccountId);
-      if (gmailDejaUtilise(comptes, compte.id, [prefs?.emailUnipileAccountId, ...autres])) {
-        return res.status(409).json({ message: "gmail_deja_utilise" });
-      }
-      const avant: any = await storage.getConnexionProjet(req.userId, projectId);
-      const nouveau = avant?.emailUnipileAccountId !== compte.id || !avant?.emailAccountConnectedAt;
-      const c = await storage.upsertConnexionProjet(req.userId, projectId, {
-        emailUnipileAccountId: compte.id,
-        ...(nouveau ? { emailAccountConnectedAt: new Date() } : {}),
-        ...(!avant?.senderEmail && compte.adresse ? { senderEmail: compte.adresse } : {}),
-        comptesDeconnectes: sansDeconnexion(avant?.comptesDeconnectes, "email"),
-      } as any);
+      const issue = await rattacherCompte(req.userId, projectId, "gmail", compte, comptes);
+      if (!issue.ok) return res.status(issue.status).json({ message: issue.message });
+      const c = issue.connexion;
       res.json({ gmail: vueGmail(c, comptes) });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -334,7 +360,7 @@ export function registerConnexionsRoutes(app: Express) {
   app.post("/api/prospection/gmail/connect-link", isAuthenticated, async (req: any, res) => {
     try {
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
-      const url = await generateConnectLink(nomUnipile(req.userId, null), ["GOOGLE"]);
+      const url = await lienUnipile(nomUnipile(req.userId, null), "gmail");
       if (!url) return res.status(502).json({ message: "link_generation_failed" });
       res.json({ url });
     } catch (e: any) {
@@ -347,19 +373,10 @@ export function registerConnexionsRoutes(app: Express) {
     try {
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
       const comptes = await listUnipileAccounts();
-      const mine = compteUnipile(comptes, req.userId, null, TYPE_UNIPILE_GMAIL);
+      const mine = await compteATrouver(comptes, req.userId, null, "gmail");
       if (!mine) return res.status(404).json({ message: "no_gmail_account_found" });
-      const autres = (await storage.getConnexionsProjetDe(req.userId)).map((x: any) => x.emailUnipileAccountId);
-      if (gmailDejaUtilise(comptes, mine.id, autres)) return res.status(409).json({ message: "gmail_deja_utilise" });
-      const prefs: any = await storage.getUserPreferences(req.userId);
-      const nouveau = prefs?.emailUnipileAccountId !== mine.id || !prefs?.emailAccountConnectedAt;
-      await storage.updateUserPreferences(req.userId, {
-        emailUnipileAccountId: mine.id,
-        ...(nouveau ? { emailAccountConnectedAt: new Date() } : {}),
-        // Adresse d'envoi : celle du compte, seulement si rien n'est déjà réglé.
-        ...(!prefs?.prospectionSenderEmail && mine.adresse ? { prospectionSenderEmail: mine.adresse } : {}),
-        comptesDeconnectes: sansDeconnexion(prefs?.comptesDeconnectes, "email"),
-      } as any);
+      const issue = await rattacherCompte(req.userId, null, "gmail", mine, comptes);
+      if (!issue.ok) return res.status(issue.status).json({ message: issue.message });
       res.json({ connected: true });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
