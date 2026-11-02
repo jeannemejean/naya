@@ -211,13 +211,27 @@ le message partirait immédiatement — le défaut de Lemlist. Changement :
   - pendant l'attente, **les étapes suivantes attendent aussi** (rien ne part en parallèle) ;
   - après expiration des 14 jours, le délai de l'étape `if_invite_not_accepted` court **depuis
     l'expiration** ;
-  - si le prospect était déjà en relation (pas d'invitation envoyée, message direct), Naya
-    considère l'invitation comme acceptée à la date de ce premier message (`linkedinConnectedAt`
-    rempli à ce moment) ;
+  - prospect déjà en relation : voir « Public de la campagne » ci-dessous ;
   - le délai effectif est le plus tardif entre « depuis l'acceptation » et « depuis le dernier
     envoi » ;
   - les leads déjà en séquence au moment du déploiement suivent les nouvelles règles à partir de
     leur prochaine étape, sans rattrapage.
+- **Public de la campagne** (décidé par Jeanne le 2026-11-02) : chaque campagne de prospection
+  dit si elle vise des prospects **à froid** (valeur par défaut) ou **ses relations LinkedIn**
+  existantes. Nouveau champ sur `prospection_campaigns`, choisi à la création, modifiable.
+  - **Campagne à froid : un prospect ne doit jamais faire partie des relations de Jeanne.**
+    Avant la toute première étape (quel que soit le canal), si le compte LinkedIn est relié et
+    que le lead a une URL de profil, Naya vérifie le degré de relation (la consultation de profil
+    que fait déjà `resolveProviderId`, comptée dans le budget de la garde). Déjà en relation →
+    rien n'est envoyé, le lead sort de la campagne (nouvel état de séquence définitif, par ex.
+    `excluded_connection`), et sa fiche l'explique (« déjà dans tes relations, retiré de la
+    campagne à froid »). Même règle si l'information arrive plus tard (un message LinkedIn
+    révèle qu'ils étaient déjà en relation avant l'invitation). Le sourcing du chantier 3 devra
+    les écarter en amont.
+  - **Campagne « relations »** : les prospects sont déjà en relation ; les étapes d'invitation sont
+    sautées, la relation compte comme acceptée dès l'enrôlement (`linkedinConnectedAt` rempli à
+    ce moment), les messages partent directement. Un prospect qui n'est **pas** en relation sort de
+    cette campagne de la même façon (*mon choix*, par symétrie).
 - Le minimum : une étape envoyée suite à un événement ne part jamais moins de quelques heures
   après celui-ci, même avec un délai de 0 (*mon choix : 2 h*, pour qu'aucun message ne parte
   « 1 seconde après »).
