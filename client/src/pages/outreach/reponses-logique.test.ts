@@ -44,6 +44,8 @@ describe("fil", () => {
   it("date relative", () => {
     const now = new Date("2026-11-02T12:00:00Z");
     expect(dateRelative("2026-11-02T09:00:00Z", now, "fr")).toMatch(/3\s*h/);
+    expect(dateRelative("2026-11-02T11:59:40Z", now, "fr")).toBe("à l'instant");
+    expect(dateRelative("2026-11-02T11:59:40Z", now, "en")).toBe("just now");
     expect(dateRelative(null, now, "fr")).toBe("");
   });
 });

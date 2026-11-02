@@ -107,6 +107,7 @@ describe("traiterEvenement — vraie réponse", () => {
     expect(db.tasks[0]).toMatchObject({
       userId: "u1", title: "Répondre à Marc Dupont (Acme) — LinkedIn", type: "outreach", category: "conversion",
       leadId: 7, projectId: 3, scheduledDate: "2026-11-02", estimatedDuration: 10, source: "reponse_prospect",
+      actionData: { lien: `/outreach?onglet=reponses&conversation=${conv.id}` },
     });
     expect(conv.taskId).toBe(db.tasks[0].id);
   });

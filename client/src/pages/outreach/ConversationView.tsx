@@ -110,7 +110,7 @@ export default function ConversationView({ id, onRetour, onFermee }: { id: numbe
           <h2 className="text-base font-semibold text-foreground">{lead.name}</h2>
           {lead.company && <span className="text-sm text-muted-foreground">· {lead.company}</span>}
           <CanalIcone className="h-4 w-4 text-muted-foreground" aria-label={conversation.channel === 'linkedin' ? t('outreach.reponses.canalLinkedin') : t('outreach.reponses.canalEmail')} />
-          {lead.linkedinUrl && (
+          {lead.linkedinUrl && /^https?:\/\//i.test(lead.linkedinUrl) && (
             <a href={lead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
               <ExternalLink className="h-3 w-3" />{t('outreach.reponses.ouvrirLinkedin')}
             </a>

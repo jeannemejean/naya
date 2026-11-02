@@ -435,6 +435,7 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
       scheduledDate: aujourdhuiDans(fuseau, deps.now()),
       estimatedDuration: 10,
       source: "reponse_prospect",
+      actionData: { lien: `/outreach?onglet=reponses&conversation=${conv.id}` },
     });
     // Deux réponses simultanées : la seconde perd le compare-and-set et retire sa tâche.
     if (!(await deps.attacherTache(conv.id, ancien, tache.id))) await deps.supprimerTache(tache.id);
