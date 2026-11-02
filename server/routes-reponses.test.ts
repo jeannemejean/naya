@@ -342,3 +342,18 @@ describe("boîte « Réponses »", () => {
     expect(proposition.proposerReponse).toHaveBeenCalledWith("u1", 11);
   });
 });
+
+describe("GET /api/reponses/par-lead/:leadId", () => {
+  it("renvoie la conversation à traiter du prospect (liste filtrée par utilisateur)", async () => {
+    storageMock.listerConversationsInbox.mockResolvedValueOnce([{ id: 4, leadId: 8 }, { id: 5, leadId: 9 }] as any[]);
+    const r = await appel("GET", "/api/reponses/par-lead/9");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ conversationId: 5 });
+    expect(storageMock.listerConversationsInbox).toHaveBeenCalledWith("u1", { statut: "a_traiter" });
+  });
+  it("404 quand rien n'attend pour ce prospect, 400 si l'identifiant est invalide", async () => {
+    storageMock.listerConversationsInbox.mockResolvedValueOnce([{ id: 4, leadId: 8 }] as any[]);
+    expect((await appel("GET", "/api/reponses/par-lead/9")).status).toBe(404);
+    expect((await appel("GET", "/api/reponses/par-lead/abc")).status).toBe(400);
+  });
+});

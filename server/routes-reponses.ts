@@ -105,6 +105,22 @@ export function registerReponsesRoutes(app: Express) {
     }
   });
 
+  // Conversation « à traiter » d'un prospect (tâche « Répondre à… » → fil). Propriété vérifiée
+  // par le filtre userId de la liste ; 404 si rien n'attend pour ce prospect.
+  app.get("/api/reponses/par-lead/:leadId", isAuthenticated, async (req: any, res) => {
+    const leadId = Number(req.params.leadId);
+    if (!Number.isInteger(leadId) || leadId <= 0) return res.status(400).json({ message: "identifiant invalide" });
+    try {
+      const liste = await storage.listerConversationsInbox(req.userId, { statut: "a_traiter" });
+      const conv = liste.find((c) => c.leadId === leadId);
+      if (!conv) return res.status(404).json({ message: "Aucune réponse à traiter pour ce prospect" });
+      res.json({ conversationId: conv.id });
+    } catch (e: any) {
+      console.error(`[Reponses] par lead : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Échec" });
+    }
+  });
+
   /** Conversation de l'utilisateur courant, ou réponse 404/400 déjà envoyée (null). */
   const conversationDe = async (req: any, res: any): Promise<InboxConversation | null> => {
     const id = Number(req.params.id);

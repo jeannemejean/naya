@@ -5,7 +5,11 @@ import { useTranslation } from 'react-i18next';
 import Sidebar from '@/components/sidebar';
 import OngletsEspace from '@/components/navigation/OngletsEspace';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useLocation, useSearch } from 'wouter';
+import { ongletDepuisRecherche } from '@/lib/lien-tache';
 import { useProspectionStatus } from './useOutreach';
+import { useReponsesCompte } from './useReponses';
+import ReponsesTab from './ReponsesTab';
 import ProspectionAccessBar from './dialogs/ProspectionAccessBar';
 import CampaignsGrid from './CampaignsGrid';
 import PipelineBoard from './PipelineBoard';
@@ -17,6 +21,10 @@ interface OutreachHomeProps {
 export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
   const { t } = useTranslation();
   const { data: prospectionStatus } = useProspectionStatus();
+  const { data: compte } = useReponsesCompte();
+  const aTraiter = compte?.aTraiter ?? 0;
+  const [, naviguer] = useLocation();
+  const onglet = ongletDepuisRecherche(useSearch(), ['campaigns', 'pipeline', 'reponses'] as const, 'campaigns');
 
   return (
     <div className="flex h-screen bg-background">
@@ -42,7 +50,7 @@ export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
 
         {/* Entry tabs */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          <Tabs defaultValue="campaigns" className="flex-1 overflow-hidden flex flex-col">
+          <Tabs value={onglet} onValueChange={(v) => naviguer(v === 'campaigns' ? '/outreach' : `/outreach?onglet=${v}`, { replace: true })} className="flex-1 overflow-hidden flex flex-col">
             <div className="border-b border-border bg-white px-6 flex-shrink-0">
               <TabsList className="bg-transparent h-auto p-0 gap-1">
                 <TabsTrigger
@@ -57,6 +65,17 @@ export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
                 >
                   Pipeline
                 </TabsTrigger>
+                <TabsTrigger
+                  value="reponses"
+                  className="px-4 py-3 text-sm font-medium rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:text-primary"
+                >
+                  {t('outreach.reponses.onglet')}
+                  {aTraiter > 0 && (
+                    <span className="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground" data-testid="pastille-reponses">
+                      {aTraiter}
+                    </span>
+                  )}
+                </TabsTrigger>
               </TabsList>
             </div>
 
@@ -66,6 +85,10 @@ export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
 
             <TabsContent value="pipeline" className="flex-1 overflow-hidden m-0 flex flex-col">
               <PipelineBoard />
+            </TabsContent>
+
+            <TabsContent value="reponses" className="flex-1 overflow-hidden m-0">
+              <ReponsesTab />
             </TabsContent>
           </Tabs>
         </div>

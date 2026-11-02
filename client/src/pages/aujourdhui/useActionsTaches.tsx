@@ -81,6 +81,14 @@ export function useActionsTaches() {
   const ouvrir = (tache: TacheJour) => {
     const lien = lienInterneDeTache(tache);
     if (lien) { naviguer(lien); return; }
+    // Tâche « Répondre à… » : mène à la conversation du prospect.
+    if ((tache as any).source === "reponse_prospect" && (tache as any).leadId) {
+      void fetch(`/api/reponses/par-lead/${(tache as any).leadId}`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => naviguer(d?.conversationId ? `/outreach?onglet=reponses&conversation=${d.conversationId}` : "/outreach?onglet=reponses"))
+        .catch(() => naviguer("/outreach?onglet=reponses"));
+      return;
+    }
     if (!estOuvrable(tache)) return;
     memoriserDeclencheur();
     setFocusLivrables(estTacheDeProduction(tache.title) && !tache.completed);

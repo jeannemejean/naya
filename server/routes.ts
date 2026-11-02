@@ -1,4 +1,5 @@
 import { savoirPourCampagne } from "./services/memory/savoir-campagne";
+import { lignesReponsesBrief } from './services/reponses/point-du-jour';
 import type { Express } from "express";
 import { saisonEffective, normaliserApparence } from "@shared/saisons";
 import { consigneMotDuMatin, phraseDeSecours, LONGUEUR_MAX_MOT } from "./services/brief-saison";
@@ -2641,6 +2642,19 @@ Write in clear, direct language. Be specific — reference actual offers, audien
         ? `- Energy rhythm: ${(operatingProfile as any).energyRhythm}`
         : '';
 
+      // Réponses de prospects en attente + comptes retirés (au mieux : jamais bloquant pour le brief).
+      let reponsesContext = '';
+      try {
+        const [aTraiter, connexions] = await Promise.all([
+          storage.compterInboxATraiter(userId),
+          storage.getConnexionsProjetDe(userId),
+        ]);
+        reponsesContext = lignesReponsesBrief(aTraiter, [
+          (prefs as any)?.comptesDeconnectes,
+          ...connexions.map((c: any) => c.comptesDeconnectes),
+        ]).join('\n');
+      } catch {}
+
       const briefSystemPrompt = `${NAYA_SYSTEM_VOICE}
 
 RÈGLES D'ÉNERGIE :
@@ -2671,6 +2685,7 @@ ${emotionalContext ? `- Comment elle se sent : ${emotionalContext}` : ''}
 ${personaContext}
 ${rhythmContext}
 ${avoidanceContext}
+${reponsesContext}
 - Type de business : ${brandDna.businessType || 'Entrepreneur indépendante'}
 - Tâches aujourd'hui : ${incompleteTasks.length} en attente, ${completedTasks.length} faites
 ${topTasks.length > 0 ? `\nTÂCHES DU JOUR :\n${topTasks.join('\n')}` : '\nAucune tâche planifiée pour aujourd\'hui.'}
