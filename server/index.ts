@@ -8,6 +8,7 @@ import { scheduleTokenRefresh } from "./services/social-token-refresh";
 import { scheduleEndOfDayReflection } from "./services/end-of-day-reflection";
 import { scheduleSocialPublisher } from "./services/social-publisher";
 import { scheduleProspectionSender } from "./services/prospection-sender";
+import { demarrerIndexeur } from "./services/agent/indexeur";
 import { scheduleLinkedInSync } from "./services/linkedin-sync";
 import { linkedinConfigured } from "./services/linkedin";
 import { ensureWebhooks } from "./services/unipile-mail";
@@ -210,6 +211,9 @@ function scheduleReadingRoom() {
 
   // ─── Worker d'envoi des séquences de prospection (inerte tant que non activé) ──
   scheduleProspectionSender();
+
+  // ─── Indexeur de la recherche par sens de l'agent (un lot toutes les 2 min) ─────
+  demarrerIndexeur();
 
   // ─── Poller Unipile : acceptation d'invitation LinkedIn (lecture seule, chaque 15 min) ──
   scheduleLinkedInSync();

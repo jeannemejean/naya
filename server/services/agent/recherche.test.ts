@@ -9,6 +9,10 @@ const hoisted = vi.hoisted(() => ({
   resultats: [] as any[][],
   wheres: [] as any[],
   limites: [] as number[],
+  ordres: [] as any[],
+  executes: [] as any[],
+  lignesSens: [] as any[],
+  embedText: vi.fn(),
 }));
 
 vi.mock("../../db", () => {
@@ -20,17 +24,33 @@ vi.mock("../../db", () => {
       suite[m] = (...args: any[]) => {
         if (m === "where") hoisted.wheres.push(args[0]);
         if (m === "limit") hoisted.limites.push(args[0]);
+        if (m === "orderBy") hoisted.ordres.push(args[0]);
         return suite;
       };
     }
     return suite;
   };
-  return { db: { select: () => chaine() }, pool: { query: vi.fn(), on: vi.fn() } };
+  return {
+    db: {
+      select: () => chaine(),
+      execute: async (q: any) => { hoisted.executes.push(q); return { rows: hoisted.lignesSens }; },
+    },
+    pool: { query: vi.fn(), on: vi.fn() },
+  };
 });
+
+vi.mock("../memory/embed", () => ({
+  embedText: hoisted.embedText,
+  embedTexts: vi.fn(),
+  embedTextsParLots: vi.fn(),
+  toVectorLiteral: (v: number[]) => `[${v.join(",")}]`,
+}));
 
 import {
   chercher,
   chercherParMots,
+  chercherParSens,
+  dateValide,
   lire,
   extraireMots,
   normaliser,
@@ -49,6 +69,11 @@ beforeEach(() => {
   hoisted.resultats.length = 0;
   hoisted.wheres.length = 0;
   hoisted.limites.length = 0;
+  hoisted.ordres.length = 0;
+  hoisted.executes.length = 0;
+  hoisted.lignesSens = [];
+  hoisted.embedText.mockReset();
+  hoisted.embedText.mockResolvedValue(null);
 });
 
 describe("logique pure", () => {
@@ -170,11 +195,145 @@ describe("chercherParMots", () => {
   });
 });
 
+describe("dates des filtres", () => {
+  it("dateValide : YYYY-MM-DD strict, date de calendrier réelle", () => {
+    expect(dateValide("2026-10-01")).toBe(true);
+    expect(dateValide("2024-02-29")).toBe(true);
+    expect(dateValide("2026-02-30")).toBe(false);
+    expect(dateValide("2026-13-01")).toBe(false);
+    expect(dateValide("2026-1-01")).toBe(false);
+    expect(dateValide("hier")).toBe(false);
+    expect(dateValide("2026-10-01T00:00:00Z")).toBe(false);
+  });
+
+  it("une date invalide est ignorée : elle n'entre pas en SQL, la recherche passe", async () => {
+    await chercherParMots("u1", "offre", { sources: ["note"], depuis: "la semaine dernière", jusqua: "2026-02-30" });
+    const q = rendre(hoisted.wheres[0]);
+    expect(q.sql).not.toContain("::date");
+    expect(q.params).not.toContain("la semaine dernière");
+    expect(q.params).not.toContain("2026-02-30");
+  });
+
+  it("une date valide à côté d'une invalide est gardée", async () => {
+    await chercherParMots("u1", "offre", { sources: ["note"], depuis: "2026-10-01", jusqua: "n'importe" });
+    const q = rendre(hoisted.wheres[0]);
+    expect(q.params).toContain("2026-10-01");
+    expect(q.sql).not.toContain("interval '1 day'");
+  });
+});
+
+describe("ordre par source", () => {
+  it("livrable et contenu sont triés sur coalesce(updated_at, created_at), nuls en dernier", async () => {
+    await chercherParMots("u1", "offre", { sources: ["livrable", "contenu"] });
+    const l = rendre(hoisted.ordres[0]).sql;
+    const c = rendre(hoisted.ordres[1]).sql;
+    expect(l).toBe('coalesce("livrables"."updated_at", "livrables"."created_at") desc nulls last');
+    expect(c).toBe('coalesce("content"."updated_at", "content"."created_at") desc nulls last');
+  });
+});
+
+describe("chercherParSens", () => {
+  it("sans embedding de la requête (pas de clé, service en panne) : [] sans requête", async () => {
+    expect(await chercherParSens("u1", "offre", {})).toEqual([]);
+    expect(hoisted.executes).toHaveLength(0);
+  });
+
+  it("une seule requête : 15 plus proches de recherche_embeddings + 10 de memory_entries, bornées", async () => {
+    hoisted.embedText.mockResolvedValue([0.1, 0.2]);
+    await chercherParSens("u1", "offre", {});
+    expect(hoisted.executes).toHaveLength(1);
+    const q = rendre(hoisted.executes[0]);
+    const s = q.sql.toLowerCase();
+    expect(s).toContain("from recherche_embeddings");
+    expect(s).toContain("from memory_entries");
+    expect(s).toContain("superseded_at is null");
+    expect(s).toMatch(/embedding <=> \$\d+::vector/);
+    expect(s).not.toContain("inbox");
+    expect(q.params.filter((p) => p === "u1")).toHaveLength(2);
+    expect(q.params).toEqual(expect.arrayContaining(["[0.1,0.2]", 15, 10]));
+  });
+
+  it("relit les lignes sources (titre, extrait), score = 1 - distance, sous 0.35 ignoré", async () => {
+    hoisted.embedText.mockResolvedValue([0.1]);
+    hoisted.lignesSens = [
+      { source: "note", id: 4, distance: 0.2 },
+      { source: "memoire", id: 9, distance: 0.4 },
+      { source: "livrable", id: 5, distance: 0.7 }, // score 0.3 : ignoré
+    ];
+    hoisted.resultats.push([{ id: 4, date: new Date("2026-10-01T00:00:00Z"), titre: null, projet: "Agence", texte: "Repenser l'accompagnement" }]);
+    hoisted.resultats.push([{ id: 9, date: new Date("2026-09-01T00:00:00Z"), titre: "fait", projet: null, texte: "Elle préfère les ateliers" }]);
+    const r = await chercherParSens("u1", "offre", {});
+    expect(r.map((x) => [x.source, x.id, Number(x.score.toFixed(2))])).toEqual([["note", 4, 0.8], ["memoire", 9, 0.6]]);
+    expect(r[0].titre).toBe("Note : Repenser l'accompagnement");
+    expect(r[0].extrait).toBe("Repenser l'accompagnement");
+    expect(r[0].projet).toBe("Agence");
+    // Relecture cloisonnée, une requête par source retenue.
+    expect(hoisted.wheres).toHaveLength(2);
+    for (const w of hoisted.wheres) expect(rendre(w).params).toContain("u1");
+    expect(rendre(hoisted.wheres[0]).sql).toContain('"quick_capture_entries"."id" in');
+  });
+
+  it("filtres : sources limitées, dates et projet appliqués à la relecture", async () => {
+    hoisted.embedText.mockResolvedValue([0.1]);
+    hoisted.lignesSens = [{ source: "note", id: 4, distance: 0.1 }];
+    hoisted.resultats.push([]);
+    const r = await chercherParSens("u1", "offre", { sources: ["note"], depuis: "2026-10-01", projetId: 3 });
+    expect(r).toEqual([]);
+    const s = rendre(hoisted.executes[0]).sql.toLowerCase();
+    expect(s).not.toContain("memory_entries");
+    expect(s).toContain("source in");
+    const w = rendre(hoisted.wheres[0]);
+    expect(w.params).toEqual(expect.arrayContaining(["u1", "2026-10-01", 3]));
+  });
+
+  it("sources sans rien d'embeddé (tache, contenu…) : aucune requête", async () => {
+    hoisted.embedText.mockResolvedValue([0.1]);
+    expect(await chercherParSens("u1", "offre", { sources: ["tache", "reponse_prospect"] })).toEqual([]);
+    expect(hoisted.executes).toHaveLength(0);
+  });
+});
+
 describe("chercher", () => {
-  it("rend pour l'instant les résultats par mots", async () => {
+  const motsNote = () =>
     hoisted.resultats.push([{ id: 1, date: new Date("2026-10-01T00:00:00Z"), titre: "n", projet: null, texte: "offre" }]);
+
+  it("parSens qui lève : les résultats par mots reviennent quand même", async () => {
+    motsNote();
+    const r = await chercher("u1", "offre", { sources: ["note"] }, { parSens: async () => { throw new Error("down"); } });
+    expect(r.map((x) => x.id)).toEqual([1]);
+  });
+
+  it("parSens qui renvoie [] : les résultats par mots", async () => {
+    motsNote();
+    const r = await chercher("u1", "offre", { sources: ["note"] }, { parSens: async () => [] });
+    expect(r.map((x) => x.id)).toEqual([1]);
+  });
+
+  it("sans clé OpenAI (parSens par défaut, embedText null) : les résultats par mots", async () => {
+    motsNote();
     const r = await chercher("u1", "offre", { sources: ["note"] });
     expect(r.map((x) => x.id)).toEqual([1]);
+  });
+
+  it("fusion : un même élément n'apparaît qu'une fois, score = max", async () => {
+    hoisted.resultats.push([
+      { id: 1, date: new Date("2026-10-01T00:00:00Z"), titre: null, projet: null, texte: "offre accompagnement" },
+      { id: 2, date: new Date("2026-10-02T00:00:00Z"), titre: null, projet: null, texte: "offre" },
+    ]);
+    const sens: Trouvaille[] = [
+      { source: "note", id: 1, date: "2026-10-01T00:00:00.000Z", titre: "Note : x", projet: null, extrait: "x", score: 0.9 },
+      { source: "note", id: 2, date: "2026-10-02T00:00:00.000Z", titre: "Note : y", projet: null, extrait: "y", score: 0.4 },
+      { source: "memoire", id: 7, date: "2026-09-01T00:00:00.000Z", titre: "Mémoire", projet: null, extrait: "z", score: 0.5 },
+    ];
+    const r = await chercher("u1", "offre accompagnement", { sources: ["note"] }, { parSens: async () => sens });
+    expect(r.map((x) => [x.source, x.id, x.score])).toEqual([["note", 1, 1], ["note", 2, 0.5], ["memoire", 7, 0.5]]);
+  });
+
+  it("un élément trouvé seulement par sens garde son score", async () => {
+    hoisted.resultats.push([]);
+    const sens: Trouvaille[] = [{ source: "note", id: 3, date: "", titre: "t", projet: null, extrait: "e", score: 0.95 }];
+    const r = await chercher("u1", "offre", { sources: ["note"] }, { parSens: async () => sens });
+    expect(r).toEqual(sens);
   });
 });
 
