@@ -6,17 +6,23 @@ export function nomUnipile(userId: string, projectId: number | null): string {
   return projectId == null ? userId : `${userId}:projet:${projectId}`;
 }
 
+/** Valeur `type` d'un compte Gmail/Google chez Unipile (doc : GET /api/v1/accounts, enum "GOOGLE_OAUTH"). */
+export const TYPE_UNIPILE_GMAIL = "GOOGLE_OAUTH";
+export type TypeCompteUnipile = "LINKEDIN" | typeof TYPE_UNIPILE_GMAIL;
+
 const estDeProjet = (nom: string | undefined) => !!nom && nom.includes(":projet:");
 
-export function compteUnipile<C extends { id: string; name?: string }>(
-  comptes: C[], userId: string, projectId: number | null,
+export function compteUnipile<C extends { id: string; name?: string; type?: string }>(
+  tous: C[], userId: string, projectId: number | null, type: TypeCompteUnipile,
 ): C | undefined {
+  // Un compte sans type (anciennes données) est un compte LinkedIn : Gmail est arrivé après.
+  const comptes = tous.filter((c) => (c.type ?? "LINKEDIN") === type);
   const nom = nomUnipile(userId, projectId);
   const exact = comptes.find((c) => c.name === nom);
   if (exact || projectId != null) return exact;
-  // Repli historique (comptes créés avant le nommage) : l'unique compte présent, à condition
+  // Repli historique LinkedIn (comptes créés avant le nommage), jamais pour Gmail : l'unique compte présent, à condition
   // qu'il ne soit pas celui d'un projet client.
-  return comptes.length === 1 && !estDeProjet(comptes[0].name) ? comptes[0] : undefined;
+  return type === "LINKEDIN" && comptes.length === 1 && !estDeProjet(comptes[0].name) ? comptes[0] : undefined;
 }
 
 /**
@@ -30,4 +36,15 @@ export function profilDejaUtilise(
   const profil = comptes.find((c) => c.id === choisi)?.profil;
   if (!profil) return false;
   return utilisesAilleurs.some((id) => id && id !== choisi && comptes.find((c) => c.id === id)?.profil === profil);
+}
+
+/**
+ * `comptesDeconnectes` sans la clé du canal qu'on vient de resynchroniser (une synchro réussie
+ * efface l'alerte de déconnexion de CE canal seulement). Retourne null s'il ne reste rien.
+ */
+export function sansDeconnexion(
+  actuel: unknown, canal: "email" | "linkedin",
+): { email?: string; linkedin?: string } | null {
+  const { [canal]: _retire, ...reste } = (actuel && typeof actuel === "object" ? actuel : {}) as Record<string, string>;
+  return Object.keys(reste).length ? reste : null;
 }

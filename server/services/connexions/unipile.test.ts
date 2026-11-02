@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nomUnipile, compteUnipile } from "./unipile";
+import { nomUnipile, compteUnipile, TYPE_UNIPILE_GMAIL, sansDeconnexion } from "./unipile";
 
 describe("nomUnipile", () => {
   it("nomme le compte de l'utilisatrice ou celui d'un projet", () => {
@@ -12,14 +12,35 @@ describe("compteUnipile", () => {
   const jeanne = { id: "a", name: "u1" };
   const client = { id: "b", name: "u1:projet:7" };
   it("projet : seulement le compte à son nom, jamais de repli", () => {
-    expect(compteUnipile([jeanne, client], "u1", 7)).toBe(client);
-    expect(compteUnipile([jeanne], "u1", 7)).toBeUndefined();
-    expect(compteUnipile([{ id: "c", name: "autre" }], "u1", 7)).toBeUndefined();
+    expect(compteUnipile([jeanne, client], "u1", 7, "LINKEDIN")).toBe(client);
+    expect(compteUnipile([jeanne], "u1", 7, "LINKEDIN")).toBeUndefined();
+    expect(compteUnipile([{ id: "c", name: "autre" }], "u1", 7, "LINKEDIN")).toBeUndefined();
   });
   it("utilisatrice : son nom, sinon l'unique compte s'il n'appartient pas à un projet", () => {
-    expect(compteUnipile([client, jeanne], "u1", null)).toBe(jeanne);
-    expect(compteUnipile([{ id: "c", name: "ancien" }], "u1", null)).toEqual({ id: "c", name: "ancien" });
-    expect(compteUnipile([client], "u1", null)).toBeUndefined();
+    expect(compteUnipile([client, jeanne], "u1", null, "LINKEDIN")).toBe(jeanne);
+    expect(compteUnipile([{ id: "c", name: "ancien" }], "u1", null, "LINKEDIN")).toEqual({ id: "c", name: "ancien" });
+    expect(compteUnipile([client], "u1", null, "LINKEDIN")).toBeUndefined();
+  });
+});
+
+describe("compteUnipile — filtre par type de compte", () => {
+  const li = { id: "a", name: "u1", type: "LINKEDIN" };
+  const gm = { id: "g", name: "u1", type: TYPE_UNIPILE_GMAIL };
+  const gmClient = { id: "gc", name: "u1:projet:7", type: TYPE_UNIPILE_GMAIL };
+  it("la valeur du type Gmail est celle de la doc Unipile", () => expect(TYPE_UNIPILE_GMAIL).toBe("GOOGLE_OAUTH"));
+  it("ignore un compte Google du même nom quand on demande LinkedIn, et inversement", () => {
+    expect(compteUnipile([gm, li], "u1", null, "LINKEDIN")).toBe(li);
+    expect(compteUnipile([gm, li], "u1", null, TYPE_UNIPILE_GMAIL)).toBe(gm);
+    expect(compteUnipile([gm], "u1", null, "LINKEDIN")).toBeUndefined();
+    expect(compteUnipile([li], "u1", null, TYPE_UNIPILE_GMAIL)).toBeUndefined();
+    expect(compteUnipile([gm, li], "u1", 7, "LINKEDIN")).toBeUndefined();
+  });
+  it("Gmail d'un projet : seulement son nom, jamais de repli", () => {
+    expect(compteUnipile([gm, gmClient], "u1", 7, TYPE_UNIPILE_GMAIL)).toBe(gmClient);
+    expect(compteUnipile([{ id: "x", name: "ancien", type: TYPE_UNIPILE_GMAIL }], "u1", null, TYPE_UNIPILE_GMAIL)).toBeUndefined();
+  });
+  it("le repli historique ne compte que les comptes du type demandé", () => {
+    expect(compteUnipile([{ id: "c", name: "ancien", type: "LINKEDIN" }, { id: "g", name: "autre", type: TYPE_UNIPILE_GMAIL }], "u1", null, "LINKEDIN")?.id).toBe("c");
   });
 });
 
@@ -40,5 +61,13 @@ describe("profilDejaUtilise — un même LinkedIn n'a qu'un budget", () => {
   });
   it("identité inconnue (Unipile ne la donne pas) : on ne peut pas trancher, on ne bloque pas", () => {
     expect(profilDejaUtilise([{ id: "x", profil: null }, { id: "y", profil: null }], "x", ["y"])).toBe(false);
+  });
+});
+
+describe("sansDeconnexion", () => {
+  it("n'efface que la clé du canal resynchronisé", () => {
+    expect(sansDeconnexion({ email: "2026-10-01", linkedin: "2026-10-02" }, "email")).toEqual({ linkedin: "2026-10-02" });
+    expect(sansDeconnexion({ email: "2026-10-01" }, "email")).toBeNull();
+    expect(sansDeconnexion(null, "linkedin")).toBeNull();
   });
 });

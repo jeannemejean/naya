@@ -37,7 +37,11 @@ vi.mock("./services/sendgrid-senders", () => sg);
 const li = vi.hoisted(() => ({
   linkedinConfigured: vi.fn(() => true),
   generateConnectLink: vi.fn(async (nom: string) => `https://unipile/link?name=${nom}`),
-  listUnipileAccounts: vi.fn(async () => [{ id: "acc-jeanne", name: "user-1" }, { id: "acc-client", name: "user-1:projet:7" }]),
+  listUnipileAccounts: vi.fn(async (): Promise<any[]> => [
+    { id: "acc-jeanne", name: "user-1" }, { id: "acc-client", name: "user-1:projet:7" },
+    { id: "gm-jeanne", type: "GOOGLE_OAUTH", name: "user-1", adresse: "jeanne@gmail.com" },
+    { id: "gm-client", type: "GOOGLE_OAUTH", name: "user-1:projet:7", adresse: "marc@client.fr" },
+  ]),
 }));
 vi.mock("./services/linkedin", () => li);
 
@@ -56,7 +60,7 @@ beforeEach(() => { vi.clearAllMocks(); connexion = undefined; });
 
 describe("routes des connexions d'un projet client", () => {
   it("projet d'une autre → 404 ; projet perso → 409 ; rien n'est écrit", async () => {
-    for (const [m, p] of [["GET", ""], ["PUT", "/email"], ["POST", "/email/verify"], ["POST", "/linkedin/lien"], ["POST", "/linkedin/sync"], ["POST", "/linkedin/lever-restriction"], ["DELETE", "/linkedin"]]) {
+    for (const [m, p] of [["GET", ""], ["PUT", "/email"], ["POST", "/email/verify"], ["POST", "/linkedin/lien"], ["POST", "/gmail/lien"], ["POST", "/gmail/sync"], ["DELETE", "/gmail"], ["POST", "/linkedin/sync"], ["POST", "/linkedin/lever-restriction"], ["DELETE", "/linkedin"]]) {
       expect((await appel(m, `/api/projects/8/connexions${p}`, m === "PUT" ? { senderEmail: "x@y.z" } : undefined)).status).toBe(404);
       expect((await appel(m, `/api/projects/5/connexions${p}`, m === "PUT" ? { senderEmail: "x@y.z" } : undefined)).status).toBe(409);
     }
@@ -132,6 +136,49 @@ describe("routes des connexions d'un projet client", () => {
   it("LinkedIn : reconnecter le même compte ne relance pas la montée en charge", async () => {
     connexion = { linkedinUnipileAccountId: "acc-client", linkedinAccountConnectedAt: new Date("2026-09-01") };
     await appel("POST", "/api/projects/7/connexions/linkedin/sync");
-    expect(storageMock.upsertConnexionProjet.mock.calls[0][2]).toEqual({ linkedinUnipileAccountId: "acc-client" });
+    expect(storageMock.upsertConnexionProjet.mock.calls[0][2]).toEqual({ linkedinUnipileAccountId: "acc-client", comptesDeconnectes: null });
+  });
+});
+
+describe("Gmail d'un projet client", () => {
+  it("lien : provider GOOGLE, nom du projet", async () => {
+    const r = await appel("POST", "/api/projects/7/connexions/gmail/lien");
+    expect((await r.json()).url).toContain("name=user-1:projet:7");
+    expect(li.generateConnectLink).toHaveBeenCalledWith("user-1:projet:7", ["GOOGLE"]);
+  });
+
+  it("sync : le compte Google du projet (pas celui de l'utilisatrice), adresse reprise, alerte e-mail levée", async () => {
+    connexion = { comptesDeconnectes: { email: "2026-10-01", linkedin: "2026-10-02" } };
+    const j = await (await appel("POST", "/api/projects/7/connexions/gmail/sync")).json();
+    expect(j.gmail).toMatchObject({ connected: true, address: "marc@client.fr" });
+    const patch = storageMock.upsertConnexionProjet.mock.calls[0][2];
+    expect(patch).toMatchObject({ emailUnipileAccountId: "gm-client", senderEmail: "marc@client.fr", comptesDeconnectes: { linkedin: "2026-10-02" } });
+    expect(patch.emailAccountConnectedAt).toBeInstanceOf(Date);
+  });
+
+  it("sync : adresse d'envoi déjà réglée conservée", async () => {
+    connexion = { senderEmail: "autre@client.fr" };
+    await appel("POST", "/api/projects/7/connexions/gmail/sync");
+    expect(storageMock.upsertConnexionProjet.mock.calls[0][2]).not.toHaveProperty("senderEmail");
+  });
+
+  it("sync : seul un compte Google de l'utilisatrice existe → 404, rien écrit", async () => {
+    li.listUnipileAccounts.mockResolvedValueOnce([{ id: "gm-jeanne", type: "GOOGLE_OAUTH", name: "user-1" }, { id: "acc-client", name: "user-1:projet:7" }]);
+    expect((await appel("POST", "/api/projects/7/connexions/gmail/sync")).status).toBe(404);
+    expect(storageMock.upsertConnexionProjet).not.toHaveBeenCalled();
+  });
+
+  it("sync LinkedIn : lève l'alerte linkedin seulement", async () => {
+    connexion = { comptesDeconnectes: { email: "2026-10-01", linkedin: "2026-10-02" } };
+    await appel("POST", "/api/projects/7/connexions/linkedin/sync");
+    expect(storageMock.upsertConnexionProjet.mock.calls[0][2].comptesDeconnectes).toEqual({ email: "2026-10-01" });
+  });
+
+  it("DELETE : détache Gmail seulement", async () => {
+    connexion = { emailUnipileAccountId: "gm-client", linkedinUnipileAccountId: "acc-client", comptesDeconnectes: { email: "2026-10-01" } };
+    const j = await (await appel("DELETE", "/api/projects/7/connexions/gmail")).json();
+    expect(j.gmail.connected).toBe(false);
+    expect(connexion.linkedinUnipileAccountId).toBe("acc-client");
+    expect(connexion.comptesDeconnectes).toBeNull();
   });
 });

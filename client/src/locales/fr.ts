@@ -2758,6 +2758,15 @@ const fr = {
    verificationImpossible: "Vérification impossible : complète l'adresse postale",
    statut: { verified: "Vérifiée", pending: "Vérification en attente", none: "Non vérifiée", unknown: "État inconnu" },
   },
+  gmail: {
+   titre: "Compte Gmail",
+   aide: "Connecte le Gmail du client dans la fenêtre qui s'ouvre, puis reviens ici.",
+   connecte: "Gmail du client connecté",
+   introuvable: "Compte introuvable : termine la connexion dans la fenêtre ouverte, puis réessaie",
+   actif: "Connecté ({{adresse}}). Naya lit les réponses et envoie depuis ce compte.",
+   deconnecte: "Le compte s'est déconnecté : reconnecte-le pour que Naya continue.",
+   nonConfigure: "La connexion Gmail n'est pas encore disponible sur Naya.",
+  },
   linkedin: {
    titre: "Compte LinkedIn",
    aide: "Connecte le LinkedIn du client dans la fenêtre qui s'ouvre, puis reviens ici.",

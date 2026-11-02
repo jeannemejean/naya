@@ -23,11 +23,13 @@ const RESEAUX = [
 interface Statut { connected: boolean; etat: string; accountName?: string; configured: boolean; pagesCount?: number }
 interface Email { senderEmail: string; senderName: string; address: string; city: string; country: string; hasOwnKey: boolean; verificationStatus: string }
 interface Linkedin { configured: boolean; connected: boolean; restricted: boolean; restrictedReason: string | null }
+interface Gmail { configured: boolean; connected: boolean; address: string | null; disconnectedAt: string | null }
 interface CompteListe { id: number; platform: string; accountName: string; isPage?: boolean }
 interface Connexions {
   reseaux: { statut: Record<string, Statut>; comptes: CompteListe[]; enAttente: CompteListe[] };
   email: Email;
   linkedin: Linkedin;
+  gmail?: Gmail;
 }
 
 export default function ConnexionsClientPanel({ projectId }: { projectId: number }) {
@@ -155,6 +157,7 @@ export default function ConnexionsClientPanel({ projectId }: { projectId: number
 
           <EmailClient projectId={projectId} email={data.email} onSaved={rafraichir} />
           <LinkedinClient projectId={projectId} linkedin={data.linkedin} onChange={rafraichir} />
+          {data.gmail && <GmailClient projectId={projectId} gmail={data.gmail} onChange={rafraichir} />}
         </>
       )}
     </Card>
@@ -264,6 +267,51 @@ function LinkedinClient({ projectId, linkedin, onChange }: { projectId: number; 
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">{t("connexions.linkedin.aide")}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={lien.isPending} onClick={() => lien.mutate()}>{t("connexions.connecter")}</Button>
+            {lienOuvert && (
+              <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>{t("connexions.linkedin.termine")}</Button>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function GmailClient({ projectId, gmail, onChange }: { projectId: number; gmail: Gmail; onChange: () => void }) {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const [lienOuvert, setLienOuvert] = useState(false);
+  const base = `/api/projects/${projectId}/connexions/gmail`;
+  const erreur = () => toast({ title: t("connexions.erreur"), variant: "destructive" });
+  const lien = useMutation({
+    mutationFn: async () => (await apiRequest("POST", `${base}/lien`)).json(),
+    onSuccess: (j: any) => { window.open(j.url, "_blank", "noopener"); setLienOuvert(true); },
+    onError: erreur,
+  });
+  const sync = useMutation({
+    mutationFn: () => apiRequest("POST", `${base}/sync`),
+    onSuccess: () => { setLienOuvert(false); toast({ title: t("connexions.gmail.connecte") }); onChange(); },
+    onError: () => toast({ title: t("connexions.gmail.introuvable"), variant: "destructive" }),
+  });
+  const retirer = useMutation({ mutationFn: () => apiRequest("DELETE", base), onSuccess: onChange, onError: erreur });
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold text-muted-foreground">{t("connexions.gmail.titre")}</h3>
+      {!gmail.configured ? (
+        <p className="text-xs text-muted-foreground">{t("connexions.gmail.nonConfigure")}</p>
+      ) : gmail.connected ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            {gmail.disconnectedAt ? t("connexions.gmail.deconnecte") : t("connexions.gmail.actif", { adresse: gmail.address || "" })}
+          </p>
+          <Button size="sm" variant="ghost" disabled={retirer.isPending} onClick={() => retirer.mutate()}>{t("connexions.deconnecter")}</Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">{t("connexions.gmail.aide")}</p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" disabled={lien.isPending} onClick={() => lien.mutate()}>{t("connexions.connecter")}</Button>
             {lienOuvert && (

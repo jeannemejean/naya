@@ -67,7 +67,7 @@ export async function generateConnectLink(
 }
 
 /** Liste les comptes connectés côté Unipile (admin / mapping). */
-export async function listUnipileAccounts(): Promise<Array<{ id: string; type?: string; name?: string; profil?: string | null }>> {
+export async function listUnipileAccounts(): Promise<Array<{ id: string; type?: string; name?: string; profil?: string | null; adresse?: string | null }>> {
   if (!linkedinConfigured()) return [];
   const res = await fetch(`${DSN}/api/v1/accounts`, { headers: headers() });
   if (!res.ok) return [];
@@ -78,6 +78,8 @@ export async function listUnipileAccounts(): Promise<Array<{ id: string; type?: 
   return items.map((a: any) => ({
     id: a.id, type: a.type || a.provider, name: a.name,
     profil: a.connection_params?.im?.id ?? a.connection_params?.im?.publicIdentifier ?? null,
+    // Compte Google : l'adresse e-mail derrière la connexion.
+    adresse: a.connection_params?.mail?.username ?? null,
   }));
 }
 

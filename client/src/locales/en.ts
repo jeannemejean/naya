@@ -2754,6 +2754,15 @@ const en = {
    verificationImpossible: "Can't verify: complete the postal address",
    statut: { verified: "Verified", pending: "Verification pending", none: "Not verified", unknown: "Unknown status" },
   },
+  gmail: {
+   titre: "Gmail account",
+   aide: "Connect the client's Gmail in the window that opens, then come back here.",
+   connecte: "Client's Gmail connected",
+   introuvable: "Account not found: finish connecting in the opened window, then try again",
+   actif: "Connected ({{adresse}}). Naya reads replies and sends from this account.",
+   deconnecte: "The account got disconnected: reconnect it so Naya can keep going.",
+   nonConfigure: "Gmail connection isn't available on Naya yet.",
+  },
   linkedin: {
    titre: "LinkedIn account",
    aide: "Connect the client's LinkedIn in the window that opens, then come back here.",

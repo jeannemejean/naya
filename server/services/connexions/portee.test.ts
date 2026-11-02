@@ -55,29 +55,33 @@ describe("identiteEnvoi", () => {
   const prefs = {
     prospectionSenderEmail: "jeanne@jmd.com", prospectionSenderName: "Jeanne", prospectionSendgridApiKey: "cle-j",
     prospectionSenderAddress: "1 rue", prospectionSenderCity: "Lyon", prospectionSenderCountry: "France",
-    linkedinUnipileAccountId: "uni-j", linkedinAccountConnectedAt: "2026-09-01T00:00:00Z",
+    linkedinUnipileAccountId: "uni-j", emailUnipileAccountId: "gm-j", linkedinAccountConnectedAt: "2026-09-01T00:00:00Z",
     linkedinRestrictedAt: null, linkedinRestrictedReason: null,
   };
   const connexion = {
     senderEmail: "marc@client.fr", senderName: "Marc Dupont", sendgridApiKey: "cle-c",
     senderAddress: "2 av", senderCity: "Paris", senderCountry: "France",
-    linkedinUnipileAccountId: "uni-c", linkedinAccountConnectedAt: "2026-10-01T00:00:00Z",
+    linkedinUnipileAccountId: "uni-c", emailUnipileAccountId: "gm-c", linkedinAccountConnectedAt: "2026-10-01T00:00:00Z",
     linkedinRestrictedAt: "2026-10-10T00:00:00Z", linkedinRestrictedReason: "limite",
   };
   it("périmètre utilisatrice : ses réglages, signature non imposée", () => {
     const id = identiteEnvoi(null, prefs, connexion);
-    expect(id.email).toEqual({ fromEmail: "jeanne@jmd.com", fromName: "Jeanne", apiKeyChiffree: "cle-j", footerAddress: "1 rue, Lyon, France" });
+    expect(id.email).toEqual({ fromEmail: "jeanne@jmd.com", fromName: "Jeanne", apiKeyChiffree: "cle-j", footerAddress: "1 rue, Lyon, France", unipileAccountId: "gm-j" });
     expect(id.linkedin?.accountId).toBe("uni-j");
     expect(id.linkedin?.restriction).toBeNull();
     expect(id.signature).toBeNull();
   });
   it("périmètre client : seulement la connexion du client", () => {
     const id = identiteEnvoi(7, prefs, connexion);
-    expect(id.email).toEqual({ fromEmail: "marc@client.fr", fromName: "Marc Dupont", apiKeyChiffree: "cle-c", footerAddress: "2 av, Paris, France" });
+    expect(id.email).toEqual({ fromEmail: "marc@client.fr", fromName: "Marc Dupont", apiKeyChiffree: "cle-c", footerAddress: "2 av, Paris, France", unipileAccountId: "gm-c" });
     expect(id.linkedin?.accountId).toBe("uni-c");
     expect(id.linkedin?.connectedAt?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
     expect(id.linkedin?.restriction).toEqual({ restrictedAt: new Date("2026-10-10T00:00:00Z"), reason: "limite" });
     expect(id.signature).toBe("Marc Dupont");
+  });
+  it("Gmail : jamais mélangé entre utilisatrice et client", () => {
+    expect(identiteEnvoi(null, { ...prefs, emailUnipileAccountId: null }, connexion).email?.unipileAccountId).toBeNull();
+    expect(identiteEnvoi(7, prefs, { ...connexion, emailUnipileAccountId: null }).email?.unipileAccountId).toBeNull();
   });
   it("client sans connexion : tout est absent, jamais les réglages de l'utilisatrice", () => {
     expect(identiteEnvoi(7, prefs, null)).toEqual({ email: null, linkedin: null, signature: null });
