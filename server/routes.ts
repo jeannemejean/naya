@@ -85,7 +85,7 @@ import { generateStepMessage, combineInstructions, BriefIncompletError } from ".
 import { etatGardeApercu } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
-import { processCompanionMessage } from "./services/companion";
+import { registerAgentRoutes } from "./routes-agent";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
@@ -3375,92 +3375,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   // ─── Companion IA ────────────────────────────────────────────────────────────
 
-  app.post('/api/companion/chat', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.userId;
-      if (await isAiBlocked(userId)) return res.status(429).json({ message: 'ai_monthly_limit_reached' });
-      const { message, context, conversationHistory } = req.body;
-
-      if (!message?.trim()) {
-        return res.status(400).json({ message: "message requis" });
-      }
-
-      // Enrichir le contexte avec les projets réels chargés depuis la DB
-      const userProjects = await storage.getProjects(userId);
-
-      // Injecter les tâches abandonnées (deferred 3x+) — concept 100% server-side
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10);
-      const in7Days = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-      const lookbackDate = new Date(now);
-      lookbackDate.setDate(lookbackDate.getDate() - 14);
-      const lookback = lookbackDate.toISOString().slice(0, 10);
-
-      const [recentTasks, upcomingRawTasks, prefs, brandDna] = await Promise.all([
-        storage.getTasksInRange(userId, lookback, today).catch(() => []),
-        storage.getTasksInRange(userId, today, in7Days).catch(() => []),
-        storage.getUserPreferences(userId).catch(() => null),
-        storage.getBrandDna(userId).catch(() => null),
-      ]);
-
-      const staleTasks = (recentTasks as any[])
-        .filter(t => !t.completed && (t.learnedAdjustmentCount || 0) >= 3)
-        .map(t => ({ id: t.id, title: t.title, learnedAdjustmentCount: t.learnedAdjustmentCount as number }))
-        .slice(0, 8);
-
-      const upcomingTasks = (upcomingRawTasks as any[])
-        .filter((t: any) => !t.completed && String(t.scheduledDate).slice(0, 10) > today)
-        .slice(0, 10)
-        .map((t: any) => ({ title: t.title, date: String(t.scheduledDate).slice(0, 10), time: t.scheduledTime || undefined, taskId: t.id }));
-
-      // Trouver le jalon actif du projet actif
-      const clientContext = context || {};
-      const activeProjectId = clientContext.activeProject?.id || (userProjects[0] as any)?.id;
-      let activeMilestone = null;
-      if (activeProjectId) {
-        const milestones = await storage.getMilestones(activeProjectId, userId).catch(() => []);
-        const found = (milestones as any[]).find(m => m.status === 'active' || m.status === 'unlocked');
-        if (found) activeMilestone = { id: found.id, title: found.title, status: found.status };
-      }
-
-      const enrichedContext = {
-        currentDate: today,
-        currentTime: now.toTimeString().slice(0, 5),
-        ...(clientContext),
-        availableProjects: userProjects.slice(0, 15).map((p: any) => ({ id: p.id, name: p.name, type: p.type })),
-        ...(staleTasks.length > 0 ? { staleTasks } : {}),
-        energyLevel: prefs?.currentEnergyLevel || 'high',
-        upcomingTasks,
-        activeMilestone,
-        brandDnaSummary: (brandDna as any)?.nayaIntelligenceSummary || null,
-      };
-
-      const response = await processCompanionMessage(userId, {
-        message,
-        context: enrichedContext,
-        conversationHistory: conversationHistory || [],
-      });
-
-      res.json(response);
-
-      // Mémoire (Phase 2, best-effort) : extraire de ce tour de conversation.
-      // Routage de marque (BRIEF-FIX-ROUTAGE-MARQUE) : la marque-sujet est la marque
-      // NOMMÉE dans la conversation (message + historique), PAS le projet actif (faillible).
-      const convoText = [...(conversationHistory || []).map((m: any) => m?.content || ""), message].join("\n");
-      const subject = resolveSubjectBrand(convoText, (userProjects as any[]).map((p) => ({ id: p.id, name: p.name })));
-      console.info(`[brand-routing] companion active=${activeProjectId ?? "null"} subject=${subject.projectId ?? "null"} matched=[${subject.matched.join(", ")}] ambiguous=${subject.ambiguous}`);
-      extractToMemory({
-        userId,
-        projectId: activeProjectId ?? null,        // audit only
-        subjectProjectId: subject.projectId,        // marque-sujet résolue (ou null → cap/reception sautés)
-        sourceText: `Utilisateur : ${message}\nNaya : ${(response as any)?.message ?? ""}`,
-        sourceType: "companion",
-      }).catch(() => {});
-    } catch (error: any) {
-      console.error("Companion chat error:", error?.message || error);
-      res.status(500).json({ message: "Erreur du Companion", detail: error?.message });
-    }
-  });
+  // POST /api/companion/chat : servi par l'agent omniscient (routes-agent.ts, enregistré plus bas).
 
   app.get('/api/companion/history', isAuthenticated, async (req: any, res) => {
     try {
@@ -11322,6 +11237,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerConnexionsRoutes(app);
   registerReponsesRoutes(app);
   registerRapportsRoutes(app);
+  registerAgentRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;
