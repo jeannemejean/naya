@@ -1139,6 +1139,8 @@ const en = {
 
  outreach: {
   linkedinManuel: {
+    invitationAcceptee: "Invitation accepted",
+    invitationAccepteeOk: "Noted: the sequence resumes.",
     titre_one: "{{count}} message to send on LinkedIn",
     titre_other: "{{count}} messages to send on LinkedIn",
     intro: "Naya wrote these messages. Copy them, send them from LinkedIn, then confirm here: the rest of the sequence starts from that moment.",

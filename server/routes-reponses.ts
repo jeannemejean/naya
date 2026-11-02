@@ -3,6 +3,7 @@
 import express, { type Express } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { storage } from "./storage";
+import { isAuthenticated } from "./auth";
 import { leadDuJeton } from "./services/desinscription";
 import { normaliser, traiterEvenement, depsDepuisStorage } from "./services/reponses/ingestion";
 
@@ -15,6 +16,10 @@ function memeSecret(recu: string | undefined, attendu: string): boolean {
 /** Message d'erreur sans les paramètres SQL (qui contiendraient le corps des messages). */
 const erreurSure = (e: any) => String(e?.message ?? e).split(/\bparams:/)[0].slice(0, 200);
 
+/** Stades où le prospect a réellement échangé : la séquence s'arrête. « connected » n'en fait
+ *  pas partie (une invitation acceptée n'est pas une réponse). */
+export const STADES_ENGAGES = ["in_discussion", "proposal_sent", "signed"];
+
 const page = (titre: string, corps: string) => `<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>${titre}</title>
@@ -23,6 +28,23 @@ button{font:inherit;padding:.6rem 1.2rem;border:0;border-radius:.5rem;background
 </head><body>${corps}</body></html>`;
 
 export function registerReponsesRoutes(app: Express) {
+  // Invitation LinkedIn vue acceptée à la main (avant Naya). Seul point d'écriture :
+  // setLeadLinkedinConnected (garde la date la plus ancienne, réveille la séquence active).
+  app.post("/api/leads/:id/invitation-acceptee", isAuthenticated, async (req: any, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ message: "identifiant invalide" });
+    try {
+      const lead = await storage.getLead(id, req.userId);
+      if (!lead) return res.status(404).json({ message: "Prospect introuvable" });
+      await storage.setLeadLinkedinConnected(id, new Date());
+      const apres = await storage.getLead(id, req.userId);
+      res.json({ linkedinConnectedAt: apres?.linkedinConnectedAt ?? null });
+    } catch (e: any) {
+      console.error(`[Reponses] invitation acceptée lead ${id} : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Échec de l'enregistrement" });
+    }
+  });
+
   // Publiques : pas d'isAuthenticated (le destinataire n'a pas de compte).
   // Un GET ne désinscrit jamais (les antivirus et aperçus suivent les liens).
   app.get("/desinscription/:jeton", (req, res) => {

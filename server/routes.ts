@@ -26,7 +26,7 @@ import { registerFondationsRoutes } from "./routes-fondations";
 import { registerMesureRoutes } from "./routes-mesure";
 import { registerSocialRoutes } from "./routes-social";
 import { registerConnexionsRoutes } from "./routes-connexions";
-import { registerReponsesRoutes } from "./routes-reponses";
+import { registerReponsesRoutes, STADES_ENGAGES } from "./routes-reponses";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
 import { dansPortee } from "./services/connexions/portee";
@@ -8285,7 +8285,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (avant) await tracerEditionMessages(userId, avant, updates as any);
 
       // Stop-on-reply : si le lead passe à un stade « répondu/engagé », on stoppe sa séquence.
-      const ENGAGED = ['connected', 'in_discussion', 'proposal_sent', 'signed'];
+      const ENGAGED = STADES_ENGAGES;
       if (typeof (updates as any).stage === 'string' && ENGAGED.includes((updates as any).stage)) {
         const st = await storage.getLeadSequenceState(parseInt(id));
         if (st && ['active', 'awaiting_linkedin'].includes(st.status)) {

@@ -3,11 +3,11 @@
 // chez lemlist). « Envoyé » reprend la séquence à partir de ce moment ; « Passer » saute
 // l'étape. La règle vit côté serveur (prospection-linkedin-manuel.ts).
 import { useTranslation } from 'react-i18next';
-import { Check, Copy, ExternalLink, SkipForward } from 'lucide-react';
+import { Check, Copy, UserCheck, ExternalLink, SkipForward } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { useLinkedInTasks, useLinkedInTaskAction, type LinkedInTask } from './useOutreach';
+import { useLinkedInTasks, useLinkedInTaskAction, useInvitationAcceptee, useLeads, type LinkedInTask } from './useOutreach';
 
 export default function LinkedInAEnvoyer({ campaignId }: { campaignId: number }) {
   const { t } = useTranslation();
@@ -33,6 +33,13 @@ function CarteLinkedIn({ tache, campaignId }: { tache: LinkedInTask; campaignId:
   const { t } = useTranslation();
   const { toast } = useToast();
   const action = useLinkedInTaskAction(campaignId);
+  const acceptee = useInvitationAcceptee();
+  const { data: leads = [] } = useLeads();
+  const dejaAcceptee = !!(leads.find((l) => l.id === tache.leadId) as any)?.linkedinConnectedAt;
+  const accepter = () => acceptee.mutate(tache.leadId, {
+    onSuccess: () => toast({ title: t('outreach.linkedinManuel.invitationAccepteeOk') }),
+    onError: () => toast({ title: t('outreach.linkedinManuel.erreur'), variant: 'destructive' }),
+  });
 
   const copier = async () => {
     try {
@@ -90,6 +97,12 @@ function CarteLinkedIn({ tache, campaignId }: { tache: LinkedInTask; campaignId:
           <SkipForward className="w-3.5 h-3.5" />
           {t('outreach.linkedinManuel.passer')}
         </Button>
+        {!dejaAcceptee && (
+          <Button size="sm" variant="outline" className="gap-1.5" disabled={acceptee.isPending} onClick={accepter}>
+            <UserCheck className="w-3.5 h-3.5" />
+            {t('outreach.linkedinManuel.invitationAcceptee')}
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Copy, ExternalLink, Instagram, Linkedin, Loader2, Mail, Sparkles, type LucideIcon,
+  Copy, ExternalLink, Instagram, Linkedin, Loader2, Mail, Sparkles, UserCheck, type LucideIcon,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +20,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import type { Lead } from '@shared/schema';
-import { useEnrichLead, useProspectionStatus, useUnvalidateLead, useUpdateLead, useValidateLeads } from './useOutreach';
+import { useInvitationAcceptee, useEnrichLead, useProspectionStatus, useUnvalidateLead, useUpdateLead, useValidateLeads } from './useOutreach';
 import { attendValidation, estPretAPartir } from './validation-messages';
 import { STAGES, STAGE_MAP, type StageKey } from './stages';
 import { channelMeta } from './channels';
@@ -57,6 +57,15 @@ function LeadDetailBody({ lead }: { lead: Lead }) {
   const { data: prospectionStatus } = useProspectionStatus();
   const updateLeadMutation = useUpdateLead();
   const enrichMutation = useEnrichLead();
+  const invitationMutation = useInvitationAcceptee();
+  const invitationAcceptee = !!(localLead as any).linkedinConnectedAt;
+  const marquerAcceptee = () => invitationMutation.mutate(lead.id, {
+    onSuccess: (r) => {
+      setLocalLead((prev) => ({ ...prev, linkedinConnectedAt: r.linkedinConnectedAt ? new Date(r.linkedinConnectedAt) : new Date() } as Lead));
+      toast({ title: t('outreach.linkedinManuel.invitationAccepteeOk') });
+    },
+    onError: () => toast({ title: t('outreach.linkedinManuel.erreur'), variant: 'destructive' }),
+  });
   const isEnriching = enrichMutation.isPending;
 
   const handleUpdate = (updates: Partial<Lead>) => {
@@ -196,6 +205,15 @@ function LeadDetailBody({ lead }: { lead: Lead }) {
             <InfoField label="Rôle" value={l.role || ''} onChange={(v) => handleUpdate({ role: v } as Partial<Lead>)} />
             <InfoField label="Secteur" value={l.sector || ''} onChange={(v) => handleUpdate({ sector: v } as Partial<Lead>)} />
           </div>
+
+          {!invitationAcceptee && (
+            <div className="pt-2 border-t border-naya-olive-10">
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1" disabled={invitationMutation.isPending} onClick={marquerAcceptee}>
+                <UserCheck className="w-3 h-3" />
+                {t('outreach.linkedinManuel.invitationAcceptee')}
+              </Button>
+            </div>
+          )}
 
           <div className="pt-2 border-t border-naya-olive-10">
             {hasMessages ? (

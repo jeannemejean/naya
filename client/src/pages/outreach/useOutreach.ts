@@ -267,3 +267,14 @@ export const useLinkedInTaskAction = (campaignId: number) =>
       queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${campaignId}/enrollments`] });
     },
   });
+
+// ─── Invitation LinkedIn acceptée à la main ─────────────────────────────────
+export const useInvitationAcceptee = () =>
+  useMutation<{ linkedinConnectedAt: string | null }, Error, number>({
+    mutationFn: (leadId) => apiRequest("POST", `/api/leads/${leadId}/invitation-acceptee`).then((r) => r.json()),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/prospection/status"] });
+      queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/prospection/campaigns") });
+    },
+  });

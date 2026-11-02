@@ -4,7 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 process.env.UNSUBSCRIBE_SECRET = "secret-de-test";
 process.env.UNIPILE_WEBHOOK_SECRET = "webhook-secret";
-const storageMock = { updateLeadSequenceState: vi.fn(async () => ({})) };
+const storageMock = {
+  updateLeadSequenceState: vi.fn(async () => ({})),
+  getLead: vi.fn(),
+  setLeadLinkedinConnected: vi.fn(async () => {}),
+};
 vi.mock("./storage", () => ({ storage: storageMock }));
 const ingestion = vi.hoisted(() => ({
   normaliser: vi.fn((p: any) => ({ kind: "message", lu: p })),
@@ -12,9 +16,9 @@ const ingestion = vi.hoisted(() => ({
   depsDepuisStorage: vi.fn(() => ({ deps: true })),
 }));
 vi.mock("./services/reponses/ingestion", () => ingestion);
-vi.mock("./auth", () => ({ isAuthenticated: (_q: any, res: any) => res.status(401).json({}) }));
+vi.mock("./auth", () => ({ isAuthenticated: (q: any, _r: any, next: any) => { q.userId = "u1"; next(); } }));
 
-const { registerReponsesRoutes } = await import("./routes-reponses");
+const { registerReponsesRoutes, STADES_ENGAGES } = await import("./routes-reponses");
 const { jetonDesinscription } = await import("./services/desinscription");
 const app = express();
 app.use(express.json());
@@ -82,5 +86,39 @@ describe("POST /api/unipile/webhook", () => {
     try {
       expect((await poster({ "content-type": "application/json", "Unipile-Auth": "webhook-secret" }, corps)).status).toBe(503);
     } finally { process.env.UNIPILE_WEBHOOK_SECRET = avant; }
+  });
+});
+
+describe("POST /api/leads/:id/invitation-acceptee", () => {
+  const poster = (id: number | string) => fetch(`http://127.0.0.1:${port}/api/leads/${id}/invitation-acceptee`, { method: "POST" });
+
+  it("lead d'un autre utilisateur (ou absent) : 404, rien d'écrit", async () => {
+    storageMock.getLead.mockResolvedValueOnce(undefined);
+    expect((await poster(5)).status).toBe(404);
+    expect(storageMock.getLead).toHaveBeenCalledWith(5, "u1");
+    expect(storageMock.setLeadLinkedinConnected).not.toHaveBeenCalled();
+  });
+
+  it("id invalide : 400", async () => {
+    expect((await poster("abc")).status).toBe(400);
+    expect(storageMock.setLeadLinkedinConnected).not.toHaveBeenCalled();
+  });
+
+  it("enregistre via setLeadLinkedinConnected(now) et renvoie la date relue", async () => {
+    const ancienne = new Date("2026-10-01T10:00:00Z");
+    storageMock.getLead
+      .mockResolvedValueOnce({ id: 5, linkedinConnectedAt: ancienne })
+      .mockResolvedValueOnce({ id: 5, linkedinConnectedAt: ancienne }); // date déjà plus ancienne : inchangée
+    const r = await poster(5);
+    expect(r.status).toBe(200);
+    expect(storageMock.setLeadLinkedinConnected).toHaveBeenCalledWith(5, expect.any(Date));
+    expect((await r.json()).linkedinConnectedAt).toBe(ancienne.toISOString());
+  });
+});
+
+describe("stade « connected »", () => {
+  it("n'arrête plus la séquence : seuls les stades d'échange réel l'arrêtent", () => {
+    expect(STADES_ENGAGES).toEqual(["in_discussion", "proposal_sent", "signed"]);
+    expect(STADES_ENGAGES).not.toContain("connected");
   });
 });
