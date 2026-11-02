@@ -50,8 +50,8 @@ describe("classerMessage", () => {
     expect(jour(classerMessage({ subject: "Réponse automatique : Votre message", body: "Absente, de retour le 12/11" }, now).retourLe)).toBe("2026-11-13");
     // Vendredi 13 → lundi 16.
     expect(jour(classerMessage({ body: "Je suis en congés jusqu'au vendredi 13 novembre", headers: { "Auto-Submitted": "auto-replied" } }, now).retourLe)).toBe("2026-11-16");
-    // Janvier, vu de novembre : l'année suivante.
-    expect(jour(classerMessage({ subject: "Absence", body: "En congé jusqu'au 4 janvier" }, now).retourLe)).toBe("2027-01-05");
+    // Vendredi 4 décembre → lundi 7.
+    expect(jour(classerMessage({ subject: "Absence", body: "En congé jusqu'au 4 décembre" }, now).retourLe)).toBe("2026-12-07");
   });
 
   it("en-tête technique seul (sans formule) : automatique, jamais une réponse", () => {
@@ -100,6 +100,31 @@ describe("classerMessage", () => {
       expect(classerMessage({ subject: "Auto: Acme", body: "Merci pour votre message" }, now).nature).toBe("accuse");
       expect(classerMessage({ subject: "Absente", body: "Merci" }, now).nature).toBe("absence");
       expect(classerMessage({ subject: "TR: Réponse automatique", body: "x" }, now).nature).toBe("reponse");
+    });
+  });
+
+  describe("date de retour : jamais un numéro de téléphone ou de version", () => {
+    const auto = { "Auto-Submitted": "auto-replied" };
+    it("téléphone à points après la vraie date", () => {
+      const r = classerMessage({ body: "Je suis absente jusqu'au 12 novembre.\nEn cas d'urgence : 06.12.34.56.78", headers: auto }, now);
+      expect(jour(r.retourLe)).toBe("2026-11-13");
+    });
+    it("numéro de version sans repère : pas une date (now + 7 j)", () => {
+      const r = classerMessage({ subject: "Réponse automatique", body: "Je suis absente. Version 2.3 de notre offre en pièce jointe." }, now);
+      expect(r.retourLe?.getTime()).toBe(now.getTime() + 7 * 86400000);
+    });
+    it("décembre → janvier : année suivante, prochain jour ouvré", () => {
+      const dec = new Date("2026-12-20T10:00:00Z");
+      const r = classerMessage({ body: "Je suis en congé jusqu'au 3 janvier", headers: auto }, dec);
+      expect(jour(r.retourLe)).toBe("2027-01-04");
+    });
+    it("année hors {cette année, la suivante} ignorée ; retour au-delà de 60 j → now + 7 j", () => {
+      expect(classerMessage({ body: "Je suis absente jusqu'au 12/11/2031", headers: auto }, now).retourLe?.getTime()).toBe(now.getTime() + 7 * 86400000);
+      expect(classerMessage({ body: "En congé maternité jusqu'au 15 mai", headers: auto }, now).retourLe?.getTime()).toBe(now.getTime() + 7 * 86400000);
+    });
+    it("la date la plus proche d'un repère l'emporte sur la plus tardive", () => {
+      const r = classerMessage({ body: "Je suis absente jusqu'au 12 novembre. Notre salon du 28 novembre aura bien lieu.", headers: auto }, now);
+      expect(jour(r.retourLe)).toBe("2026-11-13");
     });
   });
 });

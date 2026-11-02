@@ -31,3 +31,17 @@ export function planAcceptance(
   const earliest = existing && existing.getTime() <= given.getTime() ? existing : given;
   return { linkedinConnectedAt: earliest, wakeSequenceAt: stateStatus === "active" ? now : null };
 }
+
+/** Statuts qu'une réponse ne laisse jamais redevenir « en cours ». */
+const RESSUSCITE = new Set(["active", "awaiting_linkedin", "paused", "completed"]);
+
+/**
+ * Statuts actuels qu'une écriture vers `nouveau` ne doit PAS écraser :
+ *  - `unsubscribed` est définitif ;
+ *  - `stopped_replied` ne repasse jamais à active / awaiting_linkedin / paused / completed par
+ *    une écriture ordinaire (course worker ↔ webhook de réponse). Seule la restauration
+ *    explicite « ce n'était pas une vraie réponse » (`restaurerEtatSequence`) le peut. Pure.
+ */
+export function statutsNonEcrasables(nouveau: string | undefined | null): string[] {
+  return nouveau && RESSUSCITE.has(nouveau) ? ["unsubscribed", "stopped_replied"] : ["unsubscribed"];
+}

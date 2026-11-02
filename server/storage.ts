@@ -191,12 +191,13 @@ import {
   inboxConversations,
   inboxMessages,
   type InboxConversation,
+  type EtatAvantReponse,
   type InsertInboxConversation,
   type InsertInboxMessage,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { memesChiffres } from "./services/mesure/calculs";
-import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, ne, sql, type SQL } from "drizzle-orm";
+import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, notInArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayAvecEcheances } from "./services/schedule-repack";
 import { TYPE_ATELIER, TYPE_VALIDATION, echeanceAtelier } from "@shared/atelier";
@@ -207,13 +208,14 @@ import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
 import { blockedRangesByDate } from "./services/task-schedule-fields";
-import { deriveSignals, planAcceptance, type LeadSignals } from "./services/sequence-signals";
+import { deriveSignals, planAcceptance, statutsNonEcrasables, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
 import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { publicIdFromUrl } from "./services/linkedin";
 import { sansDeconnexion } from "./services/connexions/unipile";
+import type { PlanEntrant } from "./services/reponses/ingestion";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
@@ -522,6 +524,8 @@ export interface IStorage {
   getEnrollmentsByCampaign(campaignId: number): Promise<{ leadId: number; status: string }[]>;
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
   updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
+  /** Remet l'état d'avant la réponse (bouton « Ce n'était pas une vraie réponse ») ; seulement depuis stopped_replied. */
+  restaurerEtatSequence(leadId: number, etat: EtatAvantReponse): Promise<LeadSequenceState | null>;
   getDueEnrollments(now: Date, limit?: number): Promise<LeadSequenceState[]>;
   getLeadStepMessage(leadId: number, stepId: number): Promise<LeadStepMessage | undefined>;
   upsertLeadStepMessage(row: InsertLeadStepMessage): Promise<void>;
@@ -730,7 +734,14 @@ export interface IStorage {
   leadContacteParEmail(userId: string, email: string): Promise<number | null>;
   inboxMessageExiste(providerMessageId: string): Promise<boolean>;
   getInboxConversation(leadId: number, channel: string): Promise<InboxConversation | undefined>;
-  obtenirInboxConversation(row: InsertInboxConversation): Promise<InboxConversation>;
+  /**
+   * Message entrant, EN UNE TRANSACTION : conversation obtenue (créée si absente), message réservé
+   * (null s'il existait déjà, rien d'autre n'est écrit), état de séquence verrouillé puis `plan`
+   * appliqué à l'état (mêmes protections que updateLeadSequenceState) et à la conversation.
+   */
+  enregistrerEntrantInbox(conv: InsertInboxConversation, msg: Omit<InsertInboxMessage, "conversationId">, plan: PlanEntrant): Promise<InboxConversation | null>;
+  /** taskId = nouveau seulement si la conversation porte encore `ancien` ; false sinon. */
+  attacherTacheInbox(conversationId: number, ancien: number | null, nouveau: number): Promise<boolean>;
   updateInboxConversation(id: number, patch: Partial<InboxConversation>): Promise<void>;
   ajouterInboxMessage(row: InsertInboxMessage): Promise<boolean>;
   dernierEntrantInboxAt(conversationId: number): Promise<Date | null>;
@@ -1950,13 +1961,28 @@ export class DatabaseStorage implements IStorage {
 
   async updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null> {
     // Une désinscription est définitive : aucune écriture (pause, réponse, rebond, worker)
-    // ne fait ressortir un prospect de cet état.
+    // ne fait ressortir un prospect de cet état. Une réponse (`stopped_replied`) non plus :
+    // le worker qui finit un envoi pendant l'arrivée du webhook ne la ressuscite pas.
     const [updated] = await db.update(leadSequenceState)
       .set({ ...updates, updatedAt: new Date() })
       .where(and(
         eq(leadSequenceState.leadId, leadId),
-        ne(leadSequenceState.status, "unsubscribed"),
+        notInArray(leadSequenceState.status, statutsNonEcrasables(updates.status)),
       )).returning();
+    return updated || null;
+  }
+
+  async restaurerEtatSequence(leadId: number, etat: EtatAvantReponse): Promise<LeadSequenceState | null> {
+    // « Ce n'était pas une vraie réponse » : SEUL chemin qui fait sortir de stopped_replied.
+    const date = (v: unknown) => (v ? new Date(v as any) : null);
+    const [updated] = await db.update(leadSequenceState)
+      .set({
+        status: etat.status, currentStep: etat.currentStep,
+        nextRunAt: date(etat.nextRunAt), delayAnchorAt: date(etat.delayAnchorAt),
+        repliedAt: null, updatedAt: new Date(),
+      })
+      .where(and(eq(leadSequenceState.leadId, leadId), eq(leadSequenceState.status, "stopped_replied")))
+      .returning();
     return updated || null;
   }
 
@@ -3207,11 +3233,43 @@ export class DatabaseStorage implements IStorage {
     return c;
   }
 
-  async obtenirInboxConversation(row: InsertInboxConversation): Promise<InboxConversation> {
-    await db.insert(inboxConversations).values(row).onConflictDoNothing();
-    const c = await this.getInboxConversation(row.leadId, row.channel);
-    if (!c) throw new Error("conversation introuvable après insertion");
-    return c;
+  async enregistrerEntrantInbox(
+    convRow: InsertInboxConversation, msg: Omit<InsertInboxMessage, "conversationId">, plan: PlanEntrant,
+  ): Promise<InboxConversation | null> {
+    return db.transaction(async (tx) => {
+      await tx.insert(inboxConversations).values(convRow).onConflictDoNothing();
+      const [conv] = await tx.select().from(inboxConversations)
+        .where(and(eq(inboxConversations.leadId, convRow.leadId), eq(inboxConversations.channel, convRow.channel)))
+        .for("update");
+      if (!conv) throw new Error("conversation introuvable après insertion");
+      const ins = await tx.insert(inboxMessages).values({ ...msg, conversationId: conv.id })
+        .onConflictDoNothing().returning({ id: inboxMessages.id });
+      if (!ins.length) return null; // déjà traité par une autre livraison du webhook
+      const [state] = await tx.select().from(leadSequenceState)
+        .where(eq(leadSequenceState.leadId, convRow.leadId)).for("update");
+      const p = plan(state, conv);
+      if (p.state && state) {
+        await tx.update(leadSequenceState).set({ ...p.state, updatedAt: new Date() })
+          .where(and(
+            eq(leadSequenceState.leadId, convRow.leadId),
+            notInArray(leadSequenceState.status, statutsNonEcrasables(p.state.status)),
+          ));
+      }
+      const { id: _id, userId: _u, leadId: _l, channel: _c, createdAt: _cr, ...champs } = p.conv as any;
+      if (!Object.keys(champs).length) return conv;
+      const [maj] = await tx.update(inboxConversations).set(champs).where(eq(inboxConversations.id, conv.id)).returning();
+      return maj ?? conv;
+    });
+  }
+
+  async attacherTacheInbox(conversationId: number, ancien: number | null, nouveau: number): Promise<boolean> {
+    const res = await db.update(inboxConversations).set({ taskId: nouveau })
+      .where(and(
+        eq(inboxConversations.id, conversationId),
+        ancien == null ? isNull(inboxConversations.taskId) : eq(inboxConversations.taskId, ancien),
+      ))
+      .returning({ id: inboxConversations.id });
+    return res.length > 0;
   }
 
   async updateInboxConversation(id: number, patch: Partial<InboxConversation>): Promise<void> {

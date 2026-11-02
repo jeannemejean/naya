@@ -35,6 +35,7 @@ vi.mock("../storage", () => ({
     setOutreachProviderIds: vi.fn(),
     isLeadUnsubscribed: vi.fn(),
     updateLead: vi.fn(),
+    getLeadSequenceState: vi.fn(),
   },
 }));
 
@@ -328,6 +329,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.claimStepSend as any).mockResolvedValue(true);
     (storage.markStepSendSent as any).mockResolvedValue(undefined);
     (storage.releaseStepSend as any).mockResolvedValue(undefined);
+    (storage.getLeadSequenceState as any).mockResolvedValue({ leadId: 1, status: "active" });
     (storage.getReservedStepOrders as any).mockResolvedValue([]);
     (storage.setLeadUnreachable as any).mockResolvedValue(undefined);
     (storage.setLeadSequenceGuard as any).mockResolvedValue(undefined);
@@ -883,6 +885,41 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       const ecritures = (storage.updateLeadSequenceState as any).mock.calls.map((c: any[]) => c[1]);
       expect(ecritures).toEqual([{ status: "awaiting_linkedin", nextRunAt: null }]);
       expect(ecritures.some((u: any) => "lastStepSentAt" in u || "currentStep" in u)).toBe(false);
+    });
+
+    it("réponse arrivée pendant la rédaction (email) : rien ne part, la séquence n'est pas ressuscitée", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeadSequenceState as any).mockResolvedValue({ leadId: 1, status: "stopped_replied" });
+
+      await runProspectionSender();
+
+      expect(generateStepMessage).toHaveBeenCalledTimes(1);
+      expect(storage.getLeadSequenceState).toHaveBeenCalledWith(1);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("réponse arrivée pendant la rédaction (LinkedIn) : ni brouillon ni awaiting_linkedin", async () => {
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      (storage.getLeadSequenceState as any).mockResolvedValue({ leadId: 1, status: "stopped_replied" });
+
+      await runProspectionSender();
+
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("état illisible juste avant l'envoi : rien ne part (prudence)", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeadSequenceState as any).mockRejectedValue(new Error("db"));
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
     });
 
     it("brouillon LinkedIn : createOutreachMessage rejette → réservation libérée, la séquence n'avance pas", async () => {

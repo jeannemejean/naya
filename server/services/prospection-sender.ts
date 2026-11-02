@@ -915,6 +915,22 @@ export async function runProspectionSender(): Promise<void> {
         const subject = gen.subject || "";
         const body = gen.body;
 
+        // La rédaction IA prend du temps : une réponse (webhook) a pu arrêter ce prospect
+        // entre-temps. On relit son état JUSTE avant d'envoyer ou de créer un brouillon —
+        // un prospect qui a répondu ne reçoit plus rien (anti-objectif n° 1). Lecture ratée :
+        // rien ne part, on réessaie au prochain passage.
+        let etatFrais;
+        try {
+          etatFrais = await storage.getLeadSequenceState(state.leadId);
+        } catch (e: any) {
+          console.error(`[ProspectionSender] état du lead ${state.leadId} illisible avant envoi — rien envoyé : ${String(e?.message ?? e)}`);
+          continue;
+        }
+        if (!etatFrais || etatFrais.status !== "active") {
+          console.log(`[ProspectionSender] lead ${state.leadId} n'est plus actif (${etatFrais?.status ?? "absent"}) — rien envoyé`);
+          continue;
+        }
+
         // Repeuplé sur un envoi LinkedIn réussi (remet `linkedinConsecutiveFailures` à 0) ;
         // vide (aucun changement) pour l'email, un skip, ou un brouillon.
         let linkedinFailurePatch: Record<string, any> = {};

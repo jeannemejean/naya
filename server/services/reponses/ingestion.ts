@@ -14,12 +14,12 @@
  *  - on ne journalise jamais le sujet ni le corps d'un message.
  */
 import type {
-  InboxConversation, InsertInboxConversation, InsertInboxMessage, InsertTask, Lead,
+  EtatAvantReponse, InboxConversation, InsertInboxConversation, InsertInboxMessage, InsertTask, Lead,
   LeadSequenceState, OutreachMessage, Task,
 } from "@shared/schema";
 import type { IStorage } from "../../storage";
 import { publicIdFromUrl } from "../linkedin";
-import { classerMessage } from "./tri";
+import { classerMessage, type Classement } from "./tri";
 import { rattacherLead, normaliserEmail } from "./rattachement";
 
 export interface EvenementNormalise {
@@ -60,14 +60,21 @@ export interface DepsIngestion {
   updateLead: (leadId: number, userId: string, patch: Partial<Lead>) => Promise<unknown>;
   messageExiste: (providerMessageId: string) => Promise<boolean>;
   getConversation: (leadId: number, channel: Canal) => Promise<InboxConversation | undefined>;
-  /** Crée la conversation (lead, canal) si elle n'existe pas ; renvoie l'existante sinon (inchangée). */
-  obtenirConversation: (row: InsertInboxConversation) => Promise<InboxConversation>;
   updateConversation: (id: number, patch: Partial<InboxConversation>) => Promise<unknown>;
   /** false si le message existait déjà (course entre deux livraisons du même webhook). */
   ajouterMessage: (row: InsertInboxMessage) => Promise<boolean>;
   dernierEntrantAt: (conversationId: number) => Promise<Date | null>;
-  getState: (leadId: number) => Promise<LeadSequenceState | undefined>;
-  updateState: (leadId: number, patch: Partial<LeadSequenceState>) => Promise<unknown>;
+  /**
+   * EN UNE TRANSACTION : obtient la conversation (créée avec `conv` si absente), réserve le
+   * message (null s'il existait déjà : rien n'est écrit), lit l'état de séquence verrouillé,
+   * applique `plan` à l'état et à la conversation. Rien n'est perdu si une étape suivante échoue.
+   */
+  enregistrerEntrant: (
+    conv: InsertInboxConversation, msg: Omit<InsertInboxMessage, "conversationId">, plan: PlanEntrant,
+  ) => Promise<InboxConversation | null>;
+  /** Pose `taskId = nouveau` seulement si la conversation porte encore `ancien` (compare-and-set). */
+  attacherTache: (conversationId: number, ancien: number | null, nouveau: number) => Promise<boolean>;
+  supprimerTache: (id: number) => Promise<unknown>;
   supprimerBrouillonsLinkedIn: (leadId: number, userId: string) => Promise<unknown>;
   dernierMessageEnvoye: (leadId: number) => Promise<OutreachMessage | undefined>;
   updateOutreachMessage: (id: number, patch: Partial<OutreachMessage>) => Promise<unknown>;
@@ -83,6 +90,47 @@ export interface DepsIngestion {
   /** Efface la marque de déconnexion de ce canal. */
   reconnecterCompte: (compte: CompteUnipile) => Promise<unknown>;
   fuseau: (userId: string) => Promise<string>;
+}
+
+/** Décision appliquée DANS la transaction, à partir de l'état et de la conversation lus verrouillés. */
+export type PlanEntrant = (
+  state: LeadSequenceState | undefined, conv: InboxConversation,
+) => { state: Partial<LeadSequenceState> | null; conv: Partial<InboxConversation> };
+
+/** Ce que change un message entrant trié : séquence (arrêt, report) et conversation. Pure. */
+export function planEntrant(tri: Classement, evt: Pick<EvenementNormalise, "sentAt" | "accountId">, fil: string | null): PlanEntrant {
+  return (state, conv) => {
+    const patchConv: Partial<InboxConversation> = {
+      lastMessageAt: !conv.lastMessageAt || evt.sentAt > conv.lastMessageAt ? evt.sentAt : conv.lastMessageAt,
+    };
+    if (!conv.providerChatId && fil) patchConv.providerChatId = fil;
+    if (conv.unipileAccountId !== evt.accountId) patchConv.unipileAccountId = evt.accountId;
+
+    if (tri.nature === "absence") {
+      const report = state?.status === "active" && tri.retourLe && (!state.nextRunAt || state.nextRunAt < tri.retourLe);
+      return { state: report ? { nextRunAt: tri.retourLe } : null, conv: patchConv };
+    }
+    if (tri.nature === "accuse") return { state: null, conv: patchConv };
+
+    // Vraie réponse : arrêt sur tous les canaux, conversation à traiter.
+    patchConv.statut = "a_traiter";
+    patchConv.nonLu = true;
+    let patchState: Partial<LeadSequenceState> | null = null;
+    if (state && state.status !== "stopped_replied" && state.status !== "unsubscribed") {
+      if (!conv.etatAvantReponse) {
+        const avant: EtatAvantReponse = {
+          status: state.status, currentStep: state.currentStep,
+          nextRunAt: state.nextRunAt ? state.nextRunAt.toISOString() : null,
+          delayAnchorAt: state.delayAnchorAt ? state.delayAnchorAt.toISOString() : null,
+        };
+        patchConv.etatAvantReponse = avant;
+      }
+      patchState = { status: tri.desinscription ? "unsubscribed" : "stopped_replied", repliedAt: evt.sentAt, nextRunAt: null };
+    } else if (state?.status === "stopped_replied" && tri.desinscription) {
+      patchState = { status: "unsubscribed", nextRunAt: null };
+    }
+    return { state: patchState, conv: patchConv };
+  };
 }
 
 /** Ordre du pipeline (miroir serveur de client/src/pages/outreach/stages.ts). */
@@ -164,7 +212,9 @@ export function normaliser(payload: any): EvenementNormalise | null {
   if (event === "message_received") {
     const moi = str(payload.account_info?.user_id);
     const expediteur = payload.sender ?? {};
-    const fromSelf = !!moi && str(expediteur.attendee_provider_id) === moi;
+    // `is_sender` (si présent) : le compte connecté est l'auteur.
+    const fromSelf = payload.is_sender === true || payload.is_sender === 1
+      || (!!moi && str(expediteur.attendee_provider_id) === moi);
     // Interlocuteur : l'expéditeur, ou si c'est Jeanne, l'unique autre participant.
     let autre = expediteur;
     if (fromSelf) {
@@ -287,8 +337,12 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
   // Un email ADRESSÉ au prospect et qui ne vient pas de lui part de chez nous (envoi Naya ou
   // Gmail de Jeanne que le fournisseur n'aurait pas marqué « envoyé ») : jamais une réponse.
   const emailLead = lead.email ? normaliserEmail(lead.email) : null;
-  const deChezNous = evt.fromSelf || (evt.kind === "mail" && !!emailLead
-    && !!evt.destinataires?.includes(emailLead) && evt.senderEmail !== emailLead);
+  // De même, dans un chat LinkedIn rattaché par le fil, un expéditeur qui n'est pas le
+  // prospect (identifiant LinkedIn connu et différent) est Jeanne.
+  const deChezNous = evt.fromSelf
+    || (evt.kind === "mail" && !!emailLead && !!evt.destinataires?.includes(emailLead) && evt.senderEmail !== emailLead)
+    || (evt.kind === "message" && trouve.via === "fil" && !!lead.linkedinProviderId && !!evt.senderProviderId
+      && evt.senderProviderId !== lead.linkedinProviderId);
 
   if (deChezNous) {
     // Jeanne écrit (depuis Naya ou son téléphone) : ajouté au fil existant, jamais une réponse.
@@ -311,67 +365,43 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
 
   const tri = classerMessage({ subject: evt.subject, body: evt.body ?? "", headers: evt.headers }, evt.sentAt);
   const estReponse = tri.nature === "reponse";
-  const conv = await deps.obtenirConversation({
+  const { conversationId: _c, ...msg } = message(0, "entrant", tri.nature);
+  // Réservation du message + arrêt de la séquence + conversation : une seule transaction.
+  const conv = await deps.enregistrerEntrant({
     userId, projectId: lead.projectId ?? compte.projectId, leadId: lead.id, channel,
     unipileAccountId: evt.accountId, providerChatId: fil,
     // Une absence ou un accusé reste visible dans la fiche, sans rien demander à Jeanne.
     statut: estReponse ? "a_traiter" : "traitee", nonLu: estReponse,
     lastMessageAt: evt.sentAt,
+  }, msg, planEntrant(tri, evt, fil));
+  if (!conv || !estReponse) return;
+
+  // ── Suites d'une vraie réponse : au mieux, chacune journalisée si elle échoue. La réponse
+  // est déjà enregistrée et visible (« à traiter ») quoi qu'il arrive ici.
+  const auMieux = async (quoi: string, f: () => Promise<unknown>) => {
+    try { await f(); } catch (e: any) {
+      console.error(`[Reponses] lead ${lead.id} : ${quoi} échoué — ${String(e?.message ?? e).split(/\bparams:/)[0].slice(0, 160)}`);
+    }
+  };
+  await auMieux("suppression des brouillons LinkedIn", () => deps.supprimerBrouillonsLinkedIn(lead.id, userId));
+  await auMieux("marquage du message envoyé", async () => {
+    const dernier = await deps.dernierMessageEnvoye(lead.id);
+    if (dernier && !dernier.responseReceived) {
+      await deps.updateOutreachMessage(dernier.id, { responseReceived: true, responseDate: evt.sentAt });
+    }
   });
-  if (!(await deps.ajouterMessage(message(conv.id, "entrant", tri.nature)))) return;
-
-  const patchConv: Partial<InboxConversation> = { lastMessageAt: plusRecent(conv.lastMessageAt) };
-  if (!conv.providerChatId && fil) patchConv.providerChatId = fil;
-  if (conv.unipileAccountId !== evt.accountId) patchConv.unipileAccountId = evt.accountId;
-
-  if (tri.nature === "absence") {
-    const state = await deps.getState(lead.id);
-    if (state?.status === "active" && tri.retourLe) {
-      const actuel = state.nextRunAt;
-      if (!actuel || actuel < tri.retourLe) await deps.updateState(lead.id, { nextRunAt: tri.retourLe });
-    }
-    await deps.updateConversation(conv.id, patchConv);
-    return;
-  }
-  if (tri.nature === "accuse") {
-    await deps.updateConversation(conv.id, patchConv);
-    return;
-  }
-
-  // ── Vraie réponse ──
-  const state = await deps.getState(lead.id);
-  if (state && state.status !== "stopped_replied" && state.status !== "unsubscribed") {
-    if (!conv.etatAvantReponse) {
-      patchConv.etatAvantReponse = {
-        status: state.status, currentStep: state.currentStep,
-        nextRunAt: state.nextRunAt ? state.nextRunAt.toISOString() : null,
-        delayAnchorAt: state.delayAnchorAt ? state.delayAnchorAt.toISOString() : null,
-      };
-    }
-    await deps.updateState(lead.id, { status: tri.desinscription ? "unsubscribed" : "stopped_replied", repliedAt: evt.sentAt, nextRunAt: null });
-  } else if (state && state.status === "stopped_replied" && tri.desinscription) {
-    await deps.updateState(lead.id, { status: "unsubscribed", nextRunAt: null });
-  }
-  await deps.supprimerBrouillonsLinkedIn(lead.id, userId);
-
-  const dernier = await deps.dernierMessageEnvoye(lead.id);
-  if (dernier && !dernier.responseReceived) {
-    await deps.updateOutreachMessage(dernier.id, { responseReceived: true, responseDate: evt.sentAt });
-  }
-
-  const stade = stadeApresReponse(lead.stage);
-  if (stade) await deps.updateLead(lead.id, userId, { stage: stade });
-
-  patchConv.statut = "a_traiter";
-  patchConv.nonLu = true;
-
-  const tacheOuverte = conv.taskId ? await deps.getTask(conv.taskId) : undefined;
-  if (!tacheOuverte || tacheOuverte.completed || tacheOuverte.archivedAt) {
+  await auMieux("passage en discussion", async () => {
+    const stade = stadeApresReponse(lead.stage);
+    if (stade) await deps.updateLead(lead.id, userId, { stage: stade });
+  });
+  await auMieux("création de la tâche", async () => {
+    const ancien = conv.taskId ?? null;
+    const ouverte = ancien != null ? await deps.getTask(ancien) : undefined;
+    if (ouverte && !ouverte.completed && !ouverte.archivedAt) return; // une seule tâche à la fois
     const fuseau = await deps.fuseau(userId);
-    const projectId = lead.projectId ?? compte.projectId;
     const tache = await deps.createTask({
       userId,
-      projectId,
+      projectId: lead.projectId ?? compte.projectId,
       title: `Répondre à ${lead.name}${lead.company ? ` (${lead.company})` : ""} — ${channel === "linkedin" ? "LinkedIn" : "email"}`,
       type: "outreach",
       category: "conversion",
@@ -380,10 +410,10 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
       estimatedDuration: 10,
       source: "reponse_prospect",
     });
-    patchConv.taskId = tache.id;
-  }
-  await deps.updateConversation(conv.id, patchConv);
-  await deps.markFeedbackReplied(userId, lead.id);
+    // Deux réponses simultanées : la seconde perd le compare-and-set et retire sa tâche.
+    if (!(await deps.attacherTache(conv.id, ancien, tache.id))) await deps.supprimerTache(tache.id);
+  });
+  await auMieux("apprentissage (feedback)", () => deps.markFeedbackReplied(userId, lead.id));
 }
 
 /** Dépendances réelles (le stockage est passé par l'appelant pour garder ce module testable sans base). */
@@ -399,12 +429,12 @@ export function depsDepuisStorage(s: IStorage): DepsIngestion {
     updateLead: (id, u, p) => s.updateLead(id, u, p),
     messageExiste: (pm) => s.inboxMessageExiste(pm),
     getConversation: (l, c) => s.getInboxConversation(l, c),
-    obtenirConversation: (row) => s.obtenirInboxConversation(row),
     updateConversation: (id, p) => s.updateInboxConversation(id, p),
     ajouterMessage: (row) => s.ajouterInboxMessage(row),
     dernierEntrantAt: (cid) => s.dernierEntrantInboxAt(cid),
-    getState: (l) => s.getLeadSequenceState(l),
-    updateState: (l, p) => s.updateLeadSequenceState(l, p),
+    enregistrerEntrant: (conv, msg, plan) => s.enregistrerEntrantInbox(conv, msg, plan),
+    attacherTache: (cid, ancien, nouveau) => s.attacherTacheInbox(cid, ancien, nouveau),
+    supprimerTache: (id) => s.deleteTask(id),
     supprimerBrouillonsLinkedIn: (l, u) => s.deleteLinkedInDraftsForLead(l, u),
     dernierMessageEnvoye: (l) => s.getLatestOutreachByLead(l),
     updateOutreachMessage: (id, p) => s.updateOutreachMessage(id, p),

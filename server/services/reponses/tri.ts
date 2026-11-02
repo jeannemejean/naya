@@ -60,32 +60,58 @@ function moisDe(mot: string): number | null {
   return m ? m[1] : null;
 }
 
-/** Date (minuit UTC) ; sans année : la prochaine occurrence (une date passée de plus d'un jour → l'an prochain). */
+/**
+ * Date (minuit UTC). Sans année : la prochaine occurrence (passée de plus d'un jour → l'an
+ * prochain). Une année explicite hors {cette année, la suivante} n'est pas une date de retour.
+ */
 function dateDe(jour: number, mois: number, annee: number | null, now: Date): Date | null {
   if (mois < 0 || mois > 11 || jour < 1 || jour > 31) return null;
-  const an = annee == null ? now.getUTCFullYear() : annee < 100 ? 2000 + annee : annee;
+  const courante = now.getUTCFullYear();
+  const an = annee == null ? courante : annee < 100 ? 2000 + annee : annee;
+  if (annee != null && an !== courante && an !== courante + 1) return null;
   let d = new Date(Date.UTC(an, mois, jour));
   if (d.getUTCDate() !== jour) return null;
   if (annee == null && d.getTime() < now.getTime() - JOUR_MS) d = new Date(Date.UTC(an + 1, mois, jour));
   return d;
 }
 
-/** Toutes les dates lisibles du texte (FR « 12 novembre », « 12/11 » ; EN « November 12th », « 12 Nov »). */
-function datesDuTexte(texte: string, now: Date): Date[] {
-  const dates: Date[] = [];
-  const pousser = (d: Date | null) => { if (d) dates.push(d); };
+/**
+ * Repère de retour juste avant la date, sur la même phrase (« jusqu'au », « au », « de retour
+ * le », « until », « back on »…). Renvoie la distance repère → date, ou null sans repère.
+ */
+const REPERE = /(?:\b|')(au|retour|reprise|partir du|d[èe]s le|until|till|through|back|return(?:ing)?|to)\b([^\n.!?]{0,20})$/i;
+function distanceAuRepere(texte: string, index: number): number | null {
+  const m = REPERE.exec(texte.slice(Math.max(0, index - 40), index));
+  return m ? m[2].length : null;
+}
+
+interface DateTrouvee { date: Date; repere: number | null; index: number }
+
+/**
+ * Dates lisibles du texte : FR « 12 novembre », EN « November 12th » / « 12 Nov » (repère
+ * facultatif) ; numériques « 12/11 » ou « 12.11.26 » seulement isolées (jamais un morceau de
+ * « 06.12.34.56.78 ») ET précédées d'un repère (jamais « Version 2.3 »).
+ */
+function datesDuTexte(texte: string, now: Date): DateTrouvee[] {
+  const dates: DateTrouvee[] = [];
   const an = (s?: string) => (s ? Number(s) : null);
+  const pousser = (d: Date | null, index: number, repereObligatoire = false) => {
+    if (!d) return;
+    const repere = distanceAuRepere(texte, index);
+    if (repereObligatoire && repere == null) return;
+    dates.push({ date: d, repere, index });
+  };
   for (const m of texte.matchAll(new RegExp(`\\b(\\d{1,2})(?:er|st|nd|rd|th)?\\s+${MOT_MOIS}(?:\\s+(\\d{4}))?`, "gi"))) {
     const mois = moisDe(m[2]);
-    if (mois != null) pousser(dateDe(Number(m[1]), mois, an(m[3]), now));
+    if (mois != null) pousser(dateDe(Number(m[1]), mois, an(m[3]), now), m.index!);
   }
   for (const m of texte.matchAll(new RegExp(`\\b${MOT_MOIS}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s+(\\d{4}))?`, "gi"))) {
     const mois = moisDe(m[1]);
-    if (mois != null) pousser(dateDe(Number(m[2]), mois, an(m[3]), now));
+    if (mois != null) pousser(dateDe(Number(m[2]), mois, an(m[3]), now), m.index!);
   }
   // Numérique : ordre français jour/mois (prospects majoritairement francophones).
-  for (const m of texte.matchAll(/\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b/g)) {
-    pousser(dateDe(Number(m[1]), Number(m[2]) - 1, an(m[3]), now));
+  for (const m of texte.matchAll(/(?<![\d.,/])(\d{1,2})[/.](\d{1,2})(?:[/.](\d{4}|\d{2}))?(?![\d,/]|\.\d)/g)) {
+    pousser(dateDe(Number(m[1]), Number(m[2]) - 1, an(m[3]), now), m.index!, true);
   }
   return dates;
 }
@@ -97,12 +123,20 @@ function lendemainOuvre(d: Date): Date {
   return r;
 }
 
+const RETOUR_MAX_MS = 60 * JOUR_MS;
+
 function dateDeRetour(texte: string, now: Date): Date {
-  const futures = datesDuTexte(texte, now).filter((d) => d.getTime() >= now.getTime() - JOUR_MS);
-  if (!futures.length) return new Date(now.getTime() + 7 * JOUR_MS);
-  // « absent du 3 au 12 » : la date de retour est la plus tardive.
-  const retour = futures.reduce((a, b) => (b > a ? b : a));
-  return lendemainOuvre(retour);
+  const parDefaut = new Date(now.getTime() + 7 * JOUR_MS);
+  const futures = datesDuTexte(texte, now).filter((d) => d.date.getTime() >= now.getTime() - JOUR_MS);
+  if (!futures.length) return parDefaut;
+  // La date la plus proche d'un repère (« jusqu'au 12 ») ; sans repère, la plus tardive.
+  const avecRepere = futures.filter((d) => d.repere != null);
+  const retenue = avecRepere.length
+    ? avecRepere.reduce((a, b) => (b.repere! < a.repere! || (b.repere === a.repere && b.date > a.date) ? b : a))
+    : futures.reduce((a, b) => (b.date > a.date ? b : a));
+  const retour = lendemainOuvre(retenue.date);
+  // Au-delà de 60 jours, la lecture est trop douteuse : on revient au délai par défaut.
+  return retour.getTime() > now.getTime() + RETOUR_MAX_MS ? parDefaut : retour;
 }
 
 /**

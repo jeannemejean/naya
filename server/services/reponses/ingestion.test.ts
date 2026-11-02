@@ -19,6 +19,7 @@ function fausseBase() {
     deconnexions: [] as any[],
     reconnexions: [] as any[],
     suivis: [] as any[],
+    ecrituresEtat: [] as any[],
   };
   const deps: DepsIngestion = {
     now: () => NOW,
@@ -32,11 +33,6 @@ function fausseBase() {
     updateLead: vi.fn(async (id: number, _u: string, p: any) => { Object.assign(db.leads.get(id), p); }),
     messageExiste: vi.fn(async (pm: string) => db.messages.some((m) => m.providerMessageId === pm)),
     getConversation: vi.fn(async (leadId: number, channel: string) => db.conversations.find((c) => c.leadId === leadId && c.channel === channel)),
-    obtenirConversation: vi.fn(async (row: any) => {
-      let c = db.conversations.find((x) => x.leadId === row.leadId && x.channel === row.channel);
-      if (!c) { c = { id: db.conversations.length + 1, taskId: null, etatAvantReponse: null, statut: "a_traiter", nonLu: true, ...row }; db.conversations.push(c); }
-      return { ...c };
-    }),
     updateConversation: vi.fn(async (id: number, p: any) => { Object.assign(db.conversations.find((c) => c.id === id), p); }),
     ajouterMessage: vi.fn(async (row: any) => {
       if (db.messages.some((m) => m.providerMessageId === row.providerMessageId)) return false;
@@ -46,8 +42,23 @@ function fausseBase() {
       const d = db.messages.filter((m) => m.conversationId === cid && m.sens === "entrant").map((m) => m.sentAt.getTime());
       return d.length ? new Date(Math.max(...d)) : null;
     }),
-    getState: vi.fn(async () => db.state),
-    updateState: vi.fn(async (_l: number, p: any) => { if (db.state.status !== "unsubscribed") Object.assign(db.state, p); }),
+    // Transaction simulée : même contrat que storage.enregistrerEntrantInbox.
+    enregistrerEntrant: vi.fn(async (row: any, msg: any, plan: any) => {
+      let c = db.conversations.find((x) => x.leadId === row.leadId && x.channel === row.channel);
+      if (!c) { c = { id: db.conversations.length + 1, taskId: null, etatAvantReponse: null, ...row }; db.conversations.push(c); }
+      if (db.messages.some((m) => m.providerMessageId === msg.providerMessageId)) return null;
+      db.messages.push({ ...msg, conversationId: c.id });
+      const p = plan(db.state ? { ...db.state } : undefined, { ...c });
+      if (p.state) { db.ecrituresEtat.push(p.state); if (db.state.status !== "unsubscribed") Object.assign(db.state, p.state); }
+      Object.assign(c, p.conv);
+      return { ...c };
+    }),
+    attacherTache: vi.fn(async (cid: number, ancien: number | null, nouveau: number) => {
+      const c = db.conversations.find((x) => x.id === cid);
+      if ((c.taskId ?? null) !== ancien) return false;
+      c.taskId = nouveau; return true;
+    }),
+    supprimerTache: vi.fn(async (id: number) => { db.tasks = db.tasks.filter((t) => t.id !== id); }),
     supprimerBrouillonsLinkedIn: vi.fn(async () => { db.brouillonsSupprimes++; }),
     dernierMessageEnvoye: vi.fn(async () => db.outreach[0]),
     updateOutreachMessage: vi.fn(async (id: number, p: any) => { Object.assign(db.outreach.find((o) => o.id === id), p); }),
@@ -169,7 +180,7 @@ describe("traiterEvenement — messages de Jeanne", () => {
     await traiterEvenement(reponseLinkedIn({ fromSelf: true, providerMessageId: "note-1", body: "Ravie d'échanger, Marc." }), deps);
     expect(db.state.status).toBe("active");
     expect(db.tasks).toHaveLength(0);
-    expect(deps.updateState).not.toHaveBeenCalled();
+    expect(db.ecrituresEtat).toHaveLength(0);
   });
 
   it("Jeanne répond depuis son téléphone : conversation traitée, tâche cochée", async () => {
@@ -226,7 +237,7 @@ describe("traiterEvenement — automatiques, relations, suivi, comptes", () => {
       body: "Nous avons bien reçu votre message.", headers: { "auto-submitted": "auto-replied" }, sentAt: NOW,
     }, deps);
     expect(db.messages[0]).toMatchObject({ nature: "accuse" });
-    expect(deps.updateState).not.toHaveBeenCalled();
+    expect(db.ecrituresEtat).toHaveLength(0);
     expect(db.tasks).toHaveLength(0);
   });
 
@@ -287,6 +298,37 @@ describe("traiterEvenement — automatiques, relations, suivi, comptes", () => {
   });
 });
 
+describe("traiterEvenement — robustesse (revue)", () => {
+  it("création de tâche en échec : la réponse reste enregistrée, à traiter, séquence arrêtée", async () => {
+    const { db, deps } = fausseBase();
+    (deps.createTask as any).mockRejectedValueOnce(new Error("db down"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(db.state.status).toBe("stopped_replied");
+    expect(db.conversations[0]).toMatchObject({ statut: "a_traiter", nonLu: true, taskId: null });
+    expect(db.conversations[0].etatAvantReponse).toMatchObject({ status: "active" });
+    expect(db.messages).toHaveLength(1);
+    expect(db.feedback).toBe(1); // les suites indépendantes continuent
+  });
+
+  it("deux réponses simultanées : la tâche perdante est supprimée (une seule tâche)", async () => {
+    const { db, deps } = fausseBase();
+    (deps.attacherTache as any).mockImplementationOnce(async () => false);
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(deps.supprimerTache).toHaveBeenCalledWith(100);
+    expect(db.tasks).toHaveLength(0);
+  });
+
+  it("chat LinkedIn rattaché par le fil, expéditeur ≠ prospect connu : c'est Jeanne, aucun arrêt", async () => {
+    const { db, deps } = fausseBase();
+    db.conversations.push({ id: 1, leadId: 7, channel: "linkedin", providerChatId: "chat-1", statut: "traitee", nonLu: false, taskId: null });
+    await traiterEvenement(reponseLinkedIn({ senderProviderId: "ACo-jeanne-autre-format" }), deps);
+    expect(db.state.status).toBe("active");
+    expect(db.tasks).toHaveLength(0);
+    expect(db.messages[0]).toMatchObject({ sens: "sortant", nature: "nous" });
+  });
+});
+
 describe("normaliser", () => {
   it("message LinkedIn reçu", () => {
     const e = normaliser({
@@ -327,6 +369,15 @@ describe("normaliser", () => {
       body: "<div>Merci&nbsp;Marc</div><blockquote>vieux texte</blockquote>",
     });
     expect(e).toMatchObject({ fromSelf: true, senderEmail: "marc@acme.fr", body: "Merci Marc" });
+  });
+
+  it("is_sender présent : fromSelf même si les identifiants diffèrent", () => {
+    const e = normaliser({
+      event: "message_received", account_id: "acc-li", account_info: { user_id: "urn-x" }, chat_id: "c", message_id: "m",
+      message: "Hello", is_sender: true, sender: { attendee_provider_id: "ACo-jeanne" },
+      attendees: [{ attendee_provider_id: "ACo-marc" }],
+    });
+    expect(e).toMatchObject({ fromSelf: true, senderProviderId: "ACo-marc" });
   });
 
   it("relation, suivi, statut de compte ; inconnus → null", () => {

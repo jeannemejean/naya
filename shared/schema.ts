@@ -1905,6 +1905,8 @@ export const inboxConversations = pgTable("inbox_conversations", {
 }, (t) => ({
   parLeadCanal: uniqueIndex("inbox_conversations_lead_channel_uq").on(t.leadId, t.channel),
 }));
+/** Contenu de `inboxConversations.etatAvantReponse` (dates ISO). */
+export interface EtatAvantReponse { status: string; currentStep: number; nextRunAt: string | null; delayAnchorAt: string | null }
 export type InboxConversation = typeof inboxConversations.$inferSelect;
 export type InsertInboxConversation = typeof inboxConversations.$inferInsert;
 

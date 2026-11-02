@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveSignals, planAcceptance } from "./sequence-signals";
+import { deriveSignals, planAcceptance, statutsNonEcrasables } from "./sequence-signals";
 
 const d = new Date();
 describe("deriveSignals", () => {
@@ -46,5 +46,23 @@ describe("planAcceptance", () => {
   it("séquence non active → pas de réveil", () => {
     expect(planAcceptance(null, day(3), "completed", day(3)).wakeSequenceAt).toBeNull();
     expect(planAcceptance(null, day(3), null, day(3)).wakeSequenceAt).toBeNull();
+  });
+});
+
+describe("statutsNonEcrasables", () => {
+  it("unsubscribed n'est jamais écrasé", () => {
+    for (const st of [undefined, "active", "stopped_replied", "paused", "bounced"]) {
+      expect(statutsNonEcrasables(st)).toContain("unsubscribed");
+    }
+  });
+  it("une réponse (stopped_replied) n'est jamais ressuscitée par le worker ou une pause", () => {
+    for (const st of ["active", "awaiting_linkedin", "paused", "completed"]) {
+      expect(statutsNonEcrasables(st)).toContain("stopped_replied");
+    }
+  });
+  it("sans changement de statut, ou vers unsubscribed / stopped_replied : autorisé", () => {
+    expect(statutsNonEcrasables(undefined)).not.toContain("stopped_replied");
+    expect(statutsNonEcrasables("unsubscribed")).not.toContain("stopped_replied");
+    expect(statutsNonEcrasables("stopped_replied")).not.toContain("stopped_replied");
   });
 });

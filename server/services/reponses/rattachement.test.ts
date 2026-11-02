@@ -23,16 +23,16 @@ describe("rattacherLead", () => {
       leadContacteParEmail: vi.fn(async () => 4),
     });
     const evt = { ...base, chatId: "c", senderProviderId: "p", senderPublicId: "pub", senderEmail: "a@b.fr" };
-    expect(await rattacherLead(evt, tous)).toEqual({ leadId: 1 });
+    expect(await rattacherLead(evt, tous)).toEqual({ leadId: 1, via: "fil" });
 
     const sansFil = deps({ leadParProviderId: vi.fn(async () => 2), leadParPublicId: vi.fn(async () => 3), leadContacteParEmail: vi.fn(async () => 4) });
-    expect(await rattacherLead(evt, sansFil)).toEqual({ leadId: 2 });
+    expect(await rattacherLead(evt, sansFil)).toEqual({ leadId: 2, via: "providerId" });
 
     const parPublic = deps({ leadParPublicId: vi.fn(async () => 3), leadContacteParEmail: vi.fn(async () => 4) });
-    expect(await rattacherLead(evt, parPublic)).toEqual({ leadId: 3 });
+    expect(await rattacherLead(evt, parPublic)).toEqual({ leadId: 3, via: "publicId" });
 
     const parEmail = deps({ leadContacteParEmail: vi.fn(async () => 4) });
-    expect(await rattacherLead(evt, parEmail)).toEqual({ leadId: 4 });
+    expect(await rattacherLead(evt, parEmail)).toEqual({ leadId: 4, via: "email" });
   });
 
   it("fil : cherche par fil, chat et message auquel on répond", async () => {
@@ -49,7 +49,7 @@ describe("rattacherLead", () => {
 
   it("email avec majuscules / espaces → normalisé puis trouvé", async () => {
     const d = deps({ leadContacteParEmail: vi.fn(async (e: string) => (e === "marc@client.fr" ? 9 : null)) });
-    expect(await rattacherLead({ ...base, kind: "mail", senderEmail: "  Marc@Client.FR " }, d)).toEqual({ leadId: 9 });
+    expect(await rattacherLead({ ...base, kind: "mail", senderEmail: "  Marc@Client.FR " }, d)).toEqual({ leadId: 9, via: "email" });
   });
 
   it("rien d'identifiable → null sans appel", async () => {

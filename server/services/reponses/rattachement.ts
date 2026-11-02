@@ -19,25 +19,29 @@ export interface DepsRattachement {
 
 export const normaliserEmail = (e: string) => e.replace(/\s+/g, "").toLowerCase();
 
-export async function rattacherLead(evt: EvenementNormalise, deps: DepsRattachement): Promise<{ leadId: number } | null> {
+export type ViaRattachement = "fil" | "providerId" | "publicId" | "email";
+
+export async function rattacherLead(
+  evt: EvenementNormalise, deps: DepsRattachement,
+): Promise<{ leadId: number; via: ViaRattachement } | null> {
   const fil = [evt.threadId, evt.chatId, ...(evt.inReplyTo ?? [])].filter((x): x is string => !!x);
   if (fil.length) {
     const id = await deps.leadParFil(fil);
-    if (id != null) return { leadId: id };
+    if (id != null) return { leadId: id, via: "fil" };
   }
   if (evt.senderProviderId) {
     const id = await deps.leadParProviderId(evt.senderProviderId);
-    if (id != null) return { leadId: id };
+    if (id != null) return { leadId: id, via: "providerId" };
   }
   if (evt.senderPublicId) {
     const id = await deps.leadParPublicId(evt.senderPublicId);
-    if (id != null) return { leadId: id };
+    if (id != null) return { leadId: id, via: "publicId" };
   }
   if (evt.senderEmail) {
     const email = normaliserEmail(evt.senderEmail);
     if (email) {
       const id = await deps.leadContacteParEmail(email);
-      if (id != null) return { leadId: id };
+      if (id != null) return { leadId: id, via: "email" };
     }
   }
   return null;
