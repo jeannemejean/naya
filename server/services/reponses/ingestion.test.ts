@@ -17,6 +17,7 @@ function fausseBase() {
     brouillonsSupprimes: 0,
     feedback: 0,
     deconnexions: [] as any[],
+    reconnexions: [] as any[],
     suivis: [] as any[],
   };
   const deps: DepsIngestion = {
@@ -60,6 +61,7 @@ function fausseBase() {
     }),
     marquerSuivi: vi.fn(async (...a: any[]) => { db.suivis.push(a); }),
     deconnecterCompte: vi.fn(async (c: any, at: Date) => { db.deconnexions.push({ ...c, at }); }),
+    reconnecterCompte: vi.fn(async (c: any) => { db.reconnexions.push({ ...c }); }),
     fuseau: vi.fn(async () => "Europe/Paris"),
   };
   return { db, deps, lead };
@@ -246,13 +248,23 @@ describe("traiterEvenement — automatiques, relations, suivi, comptes", () => {
     expect(db.suivis).toHaveLength(1);
   });
 
-  it("compte en erreur : déconnecté sur son canal ; statut OK ou CONNECTING : rien", async () => {
+  it("compte en erreur : déconnecté sur son canal ; CONNECTING : rien ; OK / RECONNECTED : reconnecté", async () => {
     const { db, deps } = fausseBase();
     await traiterEvenement({ kind: "compte", accountId: "acc-li", fromSelf: false, statutCompte: "CONNECTING", sentAt: NOW }, deps);
-    await traiterEvenement({ kind: "compte", accountId: "acc-li", fromSelf: false, statutCompte: "OK", sentAt: NOW }, deps);
     expect(db.deconnexions).toHaveLength(0);
+    expect(db.reconnexions).toHaveLength(0);
     await traiterEvenement({ kind: "compte", accountId: "acc-li", fromSelf: false, statutCompte: "CREDENTIALS", sentAt: NOW }, deps);
     expect(db.deconnexions).toEqual([{ userId: "u1", projectId: null, canal: "linkedin", at: NOW }]);
+    await traiterEvenement({ kind: "compte", accountId: "acc-gm", fromSelf: false, statutCompte: "OK", sentAt: NOW }, deps);
+    await traiterEvenement({ kind: "compte", accountId: "acc-li", fromSelf: false, statutCompte: "RECONNECTED", sentAt: NOW }, deps);
+    expect(db.reconnexions).toEqual([{ userId: "u1", projectId: null, canal: "email" }, { userId: "u1", projectId: null, canal: "linkedin" }]);
+  });
+
+  it("compte déconnecté : ses webhooks restent rattachés (l'identifiant n'est pas retiré)", async () => {
+    const { db, deps } = fausseBase();
+    await traiterEvenement({ kind: "compte", accountId: "acc-li", fromSelf: false, statutCompte: "ERROR", sentAt: NOW }, deps);
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(db.state.status).toBe("stopped_replied");
   });
 
   it("compte inconnu : aucune écriture", async () => {

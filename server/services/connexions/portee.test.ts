@@ -66,14 +66,14 @@ describe("identiteEnvoi", () => {
   };
   it("périmètre utilisatrice : ses réglages, signature non imposée", () => {
     const id = identiteEnvoi(null, prefs, connexion);
-    expect(id.email).toEqual({ fromEmail: "jeanne@jmd.com", fromName: "Jeanne", apiKeyChiffree: "cle-j", footerAddress: "1 rue, Lyon, France", unipileAccountId: "gm-j" });
+    expect(id.email).toEqual({ fromEmail: "jeanne@jmd.com", fromName: "Jeanne", apiKeyChiffree: "cle-j", footerAddress: "1 rue, Lyon, France", unipileAccountId: "gm-j", deconnecte: false });
     expect(id.linkedin?.accountId).toBe("uni-j");
     expect(id.linkedin?.restriction).toBeNull();
     expect(id.signature).toBeNull();
   });
   it("périmètre client : seulement la connexion du client", () => {
     const id = identiteEnvoi(7, prefs, connexion);
-    expect(id.email).toEqual({ fromEmail: "marc@client.fr", fromName: "Marc Dupont", apiKeyChiffree: "cle-c", footerAddress: "2 av, Paris, France", unipileAccountId: "gm-c" });
+    expect(id.email).toEqual({ fromEmail: "marc@client.fr", fromName: "Marc Dupont", apiKeyChiffree: "cle-c", footerAddress: "2 av, Paris, France", unipileAccountId: "gm-c", deconnecte: false });
     expect(id.linkedin?.accountId).toBe("uni-c");
     expect(id.linkedin?.connectedAt?.toISOString()).toBe("2026-10-01T00:00:00.000Z");
     expect(id.linkedin?.restriction).toEqual({ restrictedAt: new Date("2026-10-10T00:00:00Z"), reason: "limite" });
@@ -82,6 +82,17 @@ describe("identiteEnvoi", () => {
   it("Gmail : jamais mélangé entre utilisatrice et client", () => {
     expect(identiteEnvoi(null, { ...prefs, emailUnipileAccountId: null }, connexion).email?.unipileAccountId).toBeNull();
     expect(identiteEnvoi(7, prefs, { ...connexion, emailUnipileAccountId: null }).email?.unipileAccountId).toBeNull();
+  });
+  it("compte déconnecté (comptesDeconnectes) : canal marqué, périmètre par périmètre", () => {
+    const dec = { comptesDeconnectes: { linkedin: "2026-11-02T10:00:00Z" } };
+    const u = identiteEnvoi(null, { ...prefs, ...dec }, connexion);
+    expect(u.linkedin?.deconnecte).toBe(true);
+    expect(u.linkedin?.accountId).toBe("uni-j"); // l'identifiant reste (réception)
+    expect(u.email?.deconnecte).toBe(false);
+    expect(identiteEnvoi(7, { ...prefs, ...dec }, connexion).linkedin?.deconnecte).toBe(false);
+    const c = identiteEnvoi(7, prefs, { ...connexion, comptesDeconnectes: { email: "2026-11-02T10:00:00Z" } });
+    expect(c.email?.deconnecte).toBe(true);
+    expect(c.linkedin?.deconnecte).toBe(false);
   });
   it("client sans connexion : tout est absent, jamais les réglages de l'utilisatrice", () => {
     expect(identiteEnvoi(7, prefs, null)).toEqual({ email: null, linkedin: null, signature: null });

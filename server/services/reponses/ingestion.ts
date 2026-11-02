@@ -78,7 +78,10 @@ export interface DepsIngestion {
   /** Point d'entrée UNIQUE de l'acceptation (garde la date la plus ancienne, réveille la séquence). */
   setLeadLinkedinConnected: (leadId: number, at: Date) => Promise<void>;
   marquerSuivi: (userId: string, leadId: number, step: number, champ: "openedAt" | "clickedAt", at: Date) => Promise<unknown>;
+  /** Note la déconnexion (comptesDeconnectes) SANS retirer l'identifiant : l'envoi se met en pause, la réception continue. */
   deconnecterCompte: (compte: CompteUnipile, at: Date) => Promise<unknown>;
+  /** Efface la marque de déconnexion de ce canal. */
+  reconnecterCompte: (compte: CompteUnipile) => Promise<unknown>;
   fuseau: (userId: string) => Promise<string>;
 }
 
@@ -98,6 +101,8 @@ export function stadeApresReponse(stage: string | null | undefined): string | nu
 
 /** Statuts Unipile signifiant que le compte ne synchronise plus (doc « Account status updates »). */
 const STATUTS_DECONNECTE = new Set(["ERROR", "STOPPED", "CREDENTIALS", "DELETED"]);
+/** Statuts signifiant que le compte synchronise de nouveau. */
+const STATUTS_RECONNECTE = new Set(["OK", "RECONNECTED"]);
 
 // ─── Normalisation des payloads Unipile ─────────────────────────────────────────
 
@@ -237,6 +242,8 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
     if (evt.statutCompte && STATUTS_DECONNECTE.has(evt.statutCompte)) {
       console.warn(`[Reponses] compte ${compte.canal} déconnecté (${evt.statutCompte}) — utilisatrice ${userId}${compte.projectId != null ? `, projet ${compte.projectId}` : ""} : envoi en pause sur ce canal`);
       await deps.deconnecterCompte(compte, deps.now());
+    } else if (evt.statutCompte && STATUTS_RECONNECTE.has(evt.statutCompte)) {
+      await deps.reconnecterCompte(compte);
     }
     return;
   }
@@ -408,6 +415,7 @@ export function depsDepuisStorage(s: IStorage): DepsIngestion {
     setLeadLinkedinConnected: (l, at) => s.setLeadLinkedinConnected(l, at),
     marquerSuivi: (u, l, step, champ, at) => s.marquerSuiviEmail(u, l, step, champ, at),
     deconnecterCompte: (c, at) => s.deconnecterCompteUnipile(c.userId, c.projectId, c.canal, at),
+    reconnecterCompte: (c) => s.reconnecterCompteUnipile(c.userId, c.projectId, c.canal),
     fuseau: async (u) => (await s.getUserPreferences(u))?.timezone || "UTC",
   };
 }

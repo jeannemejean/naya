@@ -33,8 +33,9 @@ export function choisirCompte<C extends CompteSocial & { projectId?: number | nu
 }
 
 export interface IdentiteEnvoi {
-  email: { fromEmail: string; fromName: string; apiKeyChiffree: string | null; footerAddress: string; unipileAccountId: string | null } | null;
-  linkedin: { accountId: string; connectedAt: Date | null; restriction: { restrictedAt: Date; reason?: string } | null } | null;
+  /** `deconnecte` : le compte Unipile du canal est en erreur (`comptesDeconnectes`) — envoi en pause sur ce canal. */
+  email: { fromEmail: string; fromName: string; apiKeyChiffree: string | null; footerAddress: string; unipileAccountId: string | null; deconnecte: boolean } | null;
+  linkedin: { accountId: string; connectedAt: Date | null; restriction: { restrictedAt: Date; reason?: string } | null; deconnecte: boolean } | null;
   /** Signature imposée des messages (client) ; null = signature habituelle de l'utilisatrice. */
   signature: string | null;
 }
@@ -44,8 +45,9 @@ const date = (v: unknown): Date | null => (v ? new Date(v as any) : null);
 
 function depuis(c: {
   email?: unknown; nom?: unknown; cle?: unknown; adresse?: unknown[];
-  gm?: unknown; li?: unknown; liLe?: unknown; restreintLe?: unknown; raison?: unknown;
+  gm?: unknown; li?: unknown; liLe?: unknown; restreintLe?: unknown; raison?: unknown; dec?: unknown;
 }): Omit<IdentiteEnvoi, "signature"> {
+  const dec = (c.dec && typeof c.dec === "object" ? c.dec : {}) as Record<string, unknown>;
   const fromEmail = texte(c.email);
   const accountId = texte(c.li);
   const restreintLe = date(c.restreintLe);
@@ -55,12 +57,14 @@ function depuis(c: {
           fromEmail, fromName: texte(c.nom) ?? "", apiKeyChiffree: texte(c.cle),
           footerAddress: (c.adresse ?? []).map(texte).filter(Boolean).join(", "),
           unipileAccountId: texte(c.gm),
+          deconnecte: !!dec.email,
         }
       : null,
     linkedin: accountId
       ? {
           accountId, connectedAt: date(c.liLe),
           restriction: restreintLe ? { restrictedAt: restreintLe, reason: texte(c.raison) ?? undefined } : null,
+          deconnecte: !!dec.linkedin,
         }
       : null,
   };
@@ -79,7 +83,7 @@ export function identiteEnvoi(portee: Portee, prefs: any, connexion: any): Ident
         email: p.prospectionSenderEmail, nom: p.prospectionSenderName, cle: p.prospectionSendgridApiKey,
         adresse: [p.prospectionSenderAddress, p.prospectionSenderCity, p.prospectionSenderCountry],
         gm: p.emailUnipileAccountId, li: p.linkedinUnipileAccountId, liLe: p.linkedinAccountConnectedAt,
-        restreintLe: p.linkedinRestrictedAt, raison: p.linkedinRestrictedReason,
+        restreintLe: p.linkedinRestrictedAt, raison: p.linkedinRestrictedReason, dec: p.comptesDeconnectes,
       }),
       signature: null,
     };
@@ -90,7 +94,7 @@ export function identiteEnvoi(portee: Portee, prefs: any, connexion: any): Ident
       email: c.senderEmail, nom: c.senderName, cle: c.sendgridApiKey,
       adresse: [c.senderAddress, c.senderCity, c.senderCountry],
       gm: c.emailUnipileAccountId, li: c.linkedinUnipileAccountId, liLe: c.linkedinAccountConnectedAt,
-      restreintLe: c.linkedinRestrictedAt, raison: c.linkedinRestrictedReason,
+      restreintLe: c.linkedinRestrictedAt, raison: c.linkedinRestrictedReason, dec: c.comptesDeconnectes,
     }),
     signature: texte(c.senderName),
   };

@@ -607,7 +607,11 @@ export async function runProspectionSender(): Promise<void> {
         }
         // Le budget, la montée en charge et la restriction LinkedIn sont ceux DU COMPTE.
         const cleCompte = `${state.userId}|${portee ?? "utilisatrice"}`;
-        const liAccountId = identite.linkedin?.accountId;
+        // Compte LinkedIn déconnecté (webhook de statut Unipile) : traité comme non relié —
+        // aucune requête LinkedIn, l'étape passe par le brouillon manuel. L'identifiant reste
+        // en place pour que la réception continue de rattacher les réponses.
+        const linkedinDeconnecte = !!identite.linkedin?.deconnecte;
+        const liAccountId = linkedinDeconnecte ? undefined : identite.linkedin?.accountId;
         // ── Public de la campagne (à froid / relations) ───────────────────────────────
         // Avant toute génération ou envoi, une seule fois par prospect (`relationVerifieeAt`),
         // à l'entrée de la séquence : une campagne à froid ne contacte JAMAIS une relation
@@ -620,10 +624,10 @@ export async function runProspectionSender(): Promise<void> {
           state.currentStep === 0 &&
           !(lead as any).relationVerifieeAt &&
           linkedinConfigured() &&
-          identite.linkedin?.accountId &&
+          liAccountId &&
           lead.linkedinUrl
         ) {
-          const accountId = identite.linkedin.accountId;
+          const accountId = liAccountId;
           const urlRelation = lead.linkedinUrl;
           // Compte restreint : prospect NON vérifiable pour l'instant (ni vérifié, ni exclu) ;
           // l'étape suit son cours (un email part, une étape LinkedIn est arrêtée par sa
@@ -783,6 +787,12 @@ export async function runProspectionSender(): Promise<void> {
         let sender: SenderConfig | null = null;
         let lienDesinsc: string | null = null;
         if (step.channel === "email") {
+          // Gmail déconnecté : l'étape attend la reconnexion. Jamais de repli silencieux sur
+          // SendGrid, qui enverrait depuis une autre adresse que celle du fil.
+          if (identite.email?.deconnecte) {
+            console.log(`[ProspectionSender] Gmail déconnecté (user ${state.userId}${portee != null ? `, projet ${portee}` : ""}) — étape email EN ATTENTE pour le lead ${lead.id}`);
+            continue;
+          }
           // Config expéditeur PROPRE à l'utilisateur (adresse + clé). Jamais l'adresse de l'app.
           sender = resolveSenderConfig(identite);
           if (!sender) {

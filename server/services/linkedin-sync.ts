@@ -106,7 +106,8 @@ export async function syncLinkedInConnections(): Promise<number> {
       }
       const { portee, identite } = resolu;
       const accountId = identite.linkedin?.accountId;
-      if (!accountId) continue;
+      // Compte déconnecté (webhook de statut) : pas de requête LinkedIn tant qu'il n'est pas reconnecté.
+      if (!accountId || identite.linkedin?.deconnecte) continue;
       const cleCompte = `${lead.userId}|${portee ?? "utilisatrice"}`;
       if (restrictedThisPass.has(cleCompte)) continue;
 

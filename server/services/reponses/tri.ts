@@ -1,8 +1,8 @@
 /**
  * Tri d'un message entrant : vraie réponse, absence ou accusé de réception (spec §6.6).
  *
- * Règle d'or (anti-objectif §4) : un message n'est « automatique » QUE sur un signal clair
- * (en-tête technique ou formule typique). Tout le reste, et tout cas douteux, est une vraie
+ * Règle d'or (anti-objectif §4, arbitrage R11) : un message n'est « automatique » QUE sur un
+ * signal technique (en-tête) ou un sujet de répondeur — jamais sur une formule seule. Tout le reste, et tout cas douteux, est une vraie
  * réponse — une relance envoyée à quelqu'un qui a répondu est le pire des deux échecs.
  *
  * Seul le texte NOUVEAU compte : une réponse cite souvent notre email, dont le pied contient
@@ -45,7 +45,6 @@ function enTetesAutomatiques(headers: Record<string, string> | undefined): boole
 
 const FORMULE_ABSENCE =
   /absente?s? du bureau|en cong[ée]s?(?![a-z])|je suis absente?(?![a-z])|\bout of (the )?office\b|\booo\b|automatic reply|auto-reply|r[ée]ponse automatique/i;
-const FORMULE_ACCUSE = /accus[ée] de r[ée]ception|nous avons bien re[çc]u/i;
 const DESINSCRIPTION = /d[ée]sinscri|\bne\s+(?:\S+\s+)?plus\s+recevoir|retirez[- ]moi|unsubscribe|remove me/i;
 const STOP_SEUL = /^\s*stop\s*[.!]*\s*$/im;
 
@@ -106,19 +105,30 @@ function dateDeRetour(texte: string, now: Date): Date {
   return lendemainOuvre(retour);
 }
 
+/**
+ * Sujet posé par un répondeur automatique. Ancré au début : « Re: » / « TR: » = un humain
+ * qui répond ou transfère, donc jamais automatique (R11).
+ */
+const SUJET_AUTO = /^\s*(r[ée]ponse automatique|automatic reply|auto\s*:|out of (the )?office|absente?s?\b|absence|accus[ée] de r[ée]ception)/i;
+const SUJET_ABSENCE = /^\s*(out of (the )?office|absente?s?\b|absence)/i;
+
 export function classerMessage(
   m: { subject?: string | null; body: string; headers?: Record<string, string> },
   now: Date,
 ): Classement {
   const nouveau = texteNouveau(m.body) || (m.body || "").trim();
-  const texte = `${m.subject ?? ""}\n${nouveau}`;
+  const sujet = m.subject ?? "";
+  const texte = `${sujet}\n${nouveau}`;
   const desinscription = DESINSCRIPTION.test(nouveau) || STOP_SEUL.test(nouveau);
 
-  if (FORMULE_ABSENCE.test(texte)) {
+  // R11 : automatique SEULEMENT sur un signal technique (en-tête) ou un sujet de répondeur.
+  // Les formules du corps ne servent ensuite qu'à distinguer absence / accusé et à lire la date.
+  // Un message LinkedIn (ni en-tête ni sujet) est donc toujours une vraie réponse.
+  const automatique = enTetesAutomatiques(m.headers) || SUJET_AUTO.test(sujet);
+  if (!automatique) return { nature: "reponse", retourLe: null, desinscription };
+
+  if (SUJET_ABSENCE.test(sujet) || FORMULE_ABSENCE.test(texte)) {
     return { nature: "absence", retourLe: dateDeRetour(texte, now), desinscription };
   }
-  if (FORMULE_ACCUSE.test(texte) || enTetesAutomatiques(m.headers)) {
-    return { nature: "accuse", retourLe: null, desinscription };
-  }
-  return { nature: "reponse", retourLe: null, desinscription };
+  return { nature: "accuse", retourLe: null, desinscription };
 }

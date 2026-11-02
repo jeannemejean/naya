@@ -213,6 +213,7 @@ import type { StepSendKey } from "./services/prospection-idempotence";
 import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { publicIdFromUrl } from "./services/linkedin";
+import { sansDeconnexion } from "./services/connexions/unipile";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
@@ -735,8 +736,13 @@ export interface IStorage {
   dernierEntrantInboxAt(conversationId: number): Promise<Date | null>;
   deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number>;
   marquerSuiviEmail(userId: string, leadId: number, step: number, champ: "openedAt" | "clickedAt", at: Date): Promise<void>;
-  /** Compte en erreur : retire son identifiant du périmètre (envoi en pause) et note la déconnexion. */
+  /**
+   * Compte en erreur : note la déconnexion dans `comptesDeconnectes` du périmètre. L'identifiant
+   * reste en place (les webhooks continuent d'être rattachés) ; le sender met ce canal en pause.
+   */
   deconnecterCompteUnipile(userId: string, projectId: number | null, canal: "email" | "linkedin", at: Date): Promise<void>;
+  /** Compte de nouveau synchronisé : efface la marque de déconnexion de ce canal (rien si absente). */
+  reconnecterCompteUnipile(userId: string, projectId: number | null, canal: "email" | "linkedin"): Promise<void>;
   // Rapports client (mode agence)
   getRapports(userId: string, projectId: number): Promise<RapportClient[]>;
   getRapport(userId: string, projectId: number, mois: string): Promise<RapportClient | undefined>;
@@ -3250,15 +3256,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deconnecterCompteUnipile(userId: string, projectId: number | null, canal: "email" | "linkedin", at: Date): Promise<void> {
-    const champ = canal === "linkedin" ? "linkedinUnipileAccountId" : "emailUnipileAccountId";
     if (projectId == null) {
       const prefs = await this.getUserPreferences(userId);
       const avant = (prefs?.comptesDeconnectes ?? {}) as Record<string, string>;
-      await this.upsertUserPreferences(userId, { [champ]: null, comptesDeconnectes: { ...avant, [canal]: at.toISOString() } } as any);
+      if (avant[canal]) return; // garde la date de la première déconnexion
+      await this.upsertUserPreferences(userId, { comptesDeconnectes: { ...avant, [canal]: at.toISOString() } } as any);
     } else {
       const c = await this.getConnexionProjet(userId, projectId);
       const avant = (c?.comptesDeconnectes ?? {}) as Record<string, string>;
-      await this.upsertConnexionProjet(userId, projectId, { [champ]: null, comptesDeconnectes: { ...avant, [canal]: at.toISOString() } } as any);
+      if (avant[canal]) return;
+      await this.upsertConnexionProjet(userId, projectId, { comptesDeconnectes: { ...avant, [canal]: at.toISOString() } } as any);
+    }
+  }
+
+  async reconnecterCompteUnipile(userId: string, projectId: number | null, canal: "email" | "linkedin"): Promise<void> {
+    if (projectId == null) {
+      const prefs = await this.getUserPreferences(userId);
+      if (!(prefs?.comptesDeconnectes as any)?.[canal]) return;
+      await this.upsertUserPreferences(userId, { comptesDeconnectes: sansDeconnexion(prefs!.comptesDeconnectes, canal) } as any);
+    } else {
+      const c = await this.getConnexionProjet(userId, projectId);
+      if (!(c?.comptesDeconnectes as any)?.[canal]) return;
+      await this.upsertConnexionProjet(userId, projectId, { comptesDeconnectes: sansDeconnexion(c!.comptesDeconnectes, canal) } as any);
     }
   }
 

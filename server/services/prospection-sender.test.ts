@@ -1602,6 +1602,14 @@ describe("runProspectionSender — worker loop (intégration)", () => {
         expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
       });
 
+      it("compte LinkedIn déconnecté (comptesDeconnectes) : ni vérification ni envoi Unipile, brouillon manuel", async () => {
+        preparer(undefined, {}, openPrefs({ linkedinUnipileAccountId: "acc1", comptesDeconnectes: { linkedin: "2026-11-02T10:00:00Z" } }));
+        await runProspectionSender();
+        expect(checkConnection).not.toHaveBeenCalled();
+        expect(sendLinkedInStep).not.toHaveBeenCalled();
+        expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ platform: "linkedin", sentAt: null }));
+      });
+
       it("lead sans URL LinkedIn : pas de vérification", async () => {
         preparer(undefined, { linkedinUrl: null });
         await runProspectionSender();
@@ -2291,6 +2299,15 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       await runProspectionSender();
       expect(sendEmailUnipile).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("Gmail déconnecté (comptesDeconnectes) : étape en attente, ni Gmail ni repli SendGrid", async () => {
+      (storage.getUserPreferences as any).mockResolvedValue(gmail({ comptesDeconnectes: { email: "2026-11-02T10:00:00Z" } }));
+      await runProspectionSender();
+      expect(sendEmailUnipile).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
     });
 
     it("Gmail non relié : SendGrid comme avant, Unipile non appelé", async () => {
