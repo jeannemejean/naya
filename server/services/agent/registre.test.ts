@@ -31,9 +31,10 @@ describe("registre des outils", () => {
     }
   });
 
-  it("les outils directs sont un sous-ensemble de la table de vérité (spec §5)", () => {
+  it("les outils directs valent exactement la table de vérité (spec §5)", () => {
     const directs = REGISTRE.filter((o) => o.classe === "direct").map((o) => o.nom);
-    for (const nom of directs) expect(DIRECTS_AUTORISES.has(nom)).toBe(true);
+    expect(new Set(directs)).toEqual(new Set(DIRECTS_AUTORISES));
+    expect(directs).toHaveLength(DIRECTS_AUTORISES.size);
   });
 
   it("aucun schéma d'outil n'a de propriété userId", () => {

@@ -5,6 +5,7 @@
 // Tout est vérifié AVANT la première écriture : soit tout est annulé, soit rien.
 import { storage } from "../../storage";
 import { dateDeRetassage } from "../repack-from";
+import { lireSouvenir, perimerSouvenir } from "../memory/ranger";
 import { depot, type LigneJournal } from "./depot";
 
 export const FENETRE_ANNULATION_MS = 24 * 3600 * 1000;
@@ -110,6 +111,31 @@ const GESTIONS: Partial<Record<LigneJournal["table"], Gestion>> = {
     },
     async supprimer(userId, id) {
       await storage.deleteTaskList(Number(id), userId);
+    },
+  },
+  quick_capture_entries: {
+    // Une note créée par l'agent : si elle a été éditée, rangée ou convertie depuis, un des
+    // champs de `apres` a bougé et l'annulation est refusée. Lecture bornée à userId.
+    async lire(userId, id) {
+      return (await storage.getCaptureEntry(Number(id), userId)) as any;
+    },
+    async restaurer() {
+      throw new Error("quick_capture_entries : seule la création est journalisée");
+    },
+    async supprimer(userId, id) {
+      await storage.deleteCaptureEntry(Number(id), userId);
+    },
+  },
+  memory_entries: {
+    async lire(userId, id) {
+      return (await lireSouvenir(userId, Number(id))) as any;
+    },
+    async restaurer() {
+      throw new Error("memory_entries : seule la création est journalisée");
+    },
+    // Jamais de suppression : le souvenir est périmé (superseded_at = now()).
+    async supprimer(userId, id) {
+      await perimerSouvenir(userId, Number(id));
     },
   },
   user_preferences: {

@@ -9,10 +9,12 @@ const s = vi.hoisted(() => ({
   getTaskList: vi.fn(), deleteTaskList: vi.fn(),
   getWorkspaceEntries: vi.fn(), tacheALivrables: vi.fn(),
   getUserPreferences: vi.fn(), upsertUserPreferences: vi.fn(),
+  getCaptureEntry: vi.fn(), deleteCaptureEntry: vi.fn(),
 }));
 const d = vi.hoisted(() => ({ getAction: vi.fn(), marquerAnnulee: vi.fn() }));
 vi.mock("../../storage", () => ({ storage: s }));
 vi.mock("./depot", () => ({ depot: d }));
+vi.mock("../memory/ranger", () => ({ lireSouvenir: vi.fn(), perimerSouvenir: vi.fn() }));
 
 const { annulerAction, memeValeur } = await import("./journal");
 
@@ -221,6 +223,44 @@ describe("annulerAction : ne jamais effacer ce que l'utilisatrice a ajouté", ()
     s.getTaskList.mockResolvedValue(l);
     expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: false, raison: "modifiee" });
     rienEcrit();
+  });
+});
+
+describe("annuler une note créée par l'agent", () => {
+  const NOTE_APRES = {
+    content: "Idée de série", captureType: "note", isProcessed: false, routingStatus: "inbox",
+    routedTo: null, convertedToTaskId: null, projectId: 3,
+  };
+  const noteIntacte = () => ({ id: 77, userId: "u1", ...NOTE_APRES, classifiedType: "note", aiSummary: null, createdAt: CREEE });
+  const ligne = { table: "quick_capture_entries", id: 77, avant: null, apres: NOTE_APRES };
+
+  it("note intacte : supprimée via deleteCaptureEntry borné à l'utilisatrice", async () => {
+    d.getAction.mockResolvedValue(action([ligne]));
+    s.getCaptureEntry.mockResolvedValue(noteIntacte());
+    s.deleteCaptureEntry.mockResolvedValue(true);
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: true });
+    expect(s.getCaptureEntry).toHaveBeenCalledWith(77, "u1");
+    expect(s.deleteCaptureEntry).toHaveBeenCalledWith(77, "u1");
+    expect(d.marquerAnnulee).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["texte édité", { content: "Autre chose" }],
+    ["rangée ailleurs", { routingStatus: "routed", routedTo: "task:42" }],
+    ["traitée", { isProcessed: true }],
+    ["convertie en tâche", { convertedToTaskId: 9 }],
+  ])("note %s depuis : modifiee, rien supprimé", async (_n, changement) => {
+    d.getAction.mockResolvedValue(action([ligne]));
+    s.getCaptureEntry.mockResolvedValue({ ...noteIntacte(), ...changement });
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: false, raison: "modifiee" });
+    expect(s.deleteCaptureEntry).not.toHaveBeenCalled();
+  });
+
+  it("note disparue ou d'une autre utilisatrice : modifiee, rien supprimé", async () => {
+    d.getAction.mockResolvedValue(action([ligne]));
+    s.getCaptureEntry.mockResolvedValue(undefined);
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: false, raison: "modifiee" });
+    expect(s.deleteCaptureEntry).not.toHaveBeenCalled();
   });
 });
 

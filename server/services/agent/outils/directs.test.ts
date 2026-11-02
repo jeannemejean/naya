@@ -5,12 +5,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const s = vi.hoisted(() => ({
   getTask: vi.fn(), getUserPreferences: vi.fn(), upsertUserPreferences: vi.fn(),
+  getProject: vi.fn(), createCaptureEntry: vi.fn(),
   createTaskList: vi.fn(), createTaskListItem: vi.fn(), deleteTaskList: vi.fn(),
 }));
 const d = vi.hoisted(() => ({ ajouterAction: vi.fn() }));
 const t = vi.hoisted(() => ({ creerTache: vi.fn(), modifierTache: vi.fn() }));
 vi.mock("../../../storage", () => ({ storage: s }));
+const m = vi.hoisted(() => ({ rangerSouvenir: vi.fn(), lireSouvenir: vi.fn(), perimerSouvenir: vi.fn() }));
 vi.mock("../depot", () => ({ depot: d }));
+vi.mock("../../memory/ranger", () => m);
 vi.mock("../../taches/ecrire-tache", () => t);
 vi.mock("../recherche", () => ({
   SOURCES: ["tache"], chercher: vi.fn(async () => []), lire: vi.fn(async () => null),
@@ -29,13 +32,13 @@ beforeEach(() => {
 });
 
 describe("classement", () => {
-  it("les sept outils directs sont présents et autorisés", () => {
-    const noms = ["creer_tache", "creer_rappel", "creer_liste", "cocher_tache", "decocher_tache", "deplacer_tache", "regler_energie"];
+  it("les neuf outils directs sont présents et autorisés", () => {
+    const noms = ["creer_tache", "creer_rappel", "creer_note", "ranger_information", "creer_liste", "cocher_tache", "decocher_tache", "deplacer_tache", "regler_energie"];
     for (const n of noms) {
       expect(outil(n)?.classe).toBe("direct");
       expect(DIRECTS_AUTORISES.has(n)).toBe(true);
     }
-    expect(REGISTRE.filter((o) => o.classe === "direct")).toHaveLength(7);
+    expect(REGISTRE.filter((o) => o.classe === "direct")).toHaveLength(9);
   });
 });
 
@@ -211,5 +214,105 @@ describe("regler_energie", () => {
     s.upsertUserPreferences.mockResolvedValue({ userId: "u1", currentEnergyLevel: "medium", energyUpdatedDate: "2026-11-03" });
     await run("regler_energie", { niveau: "medium" });
     expect(d.ajouterAction.mock.calls[0][3][0].avant).toEqual({ currentEnergyLevel: null, energyUpdatedDate: null });
+  });
+});
+
+// ── Notes et mémoire ──────────────────────────────────────────────────────────────────
+
+describe("creer_note", () => {
+  beforeEach(() => {
+    s.getProject.mockResolvedValue({ id: 3, userId: "u1", name: "JMD" });
+    s.createCaptureEntry.mockImplementation(async (x: any) => ({ id: 77, ...x }));
+  });
+
+  it("écrit comme POST /api/projects/:id/notes (note, inbox) et journalise la création", async () => {
+    const r = await run("creer_note", { contenu: "  Idée de série  ", projetId: 3 });
+    expect(s.getProject).toHaveBeenCalledWith(3, "u1");
+    expect(s.createCaptureEntry).toHaveBeenCalledWith({
+      userId: "u1", projectId: 3, content: "Idée de série", captureType: "note",
+      classifiedType: "note", isProcessed: false, routingStatus: "inbox",
+    });
+    expect(d.ajouterAction).toHaveBeenCalledWith("u1", "creer_note", "Note ajoutée aux notes de JMD", [
+      { table: "quick_capture_entries", id: 77, avant: null, apres: {
+        content: "Idée de série", captureType: "note", isProcessed: false, routingStatus: "inbox",
+        routedTo: null, convertedToTaskId: null, projectId: 3,
+      } },
+    ]);
+    expect(r.faite?.actionId).toBe(42);
+  });
+
+  it("sans projet : note libre dans la boîte de réception", async () => {
+    await run("creer_note", { contenu: "Appeler le comptable" });
+    expect(s.getProject).not.toHaveBeenCalled();
+    expect(s.createCaptureEntry).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }));
+  });
+
+  it("projet d'une autre utilisatrice : introuvable, rien écrit ni journalisé", async () => {
+    s.getProject.mockResolvedValue(undefined);
+    const r = await run("creer_note", { contenu: "x", projetId: 99 });
+    expect(r.pourModele).toEqual({ erreur: "introuvable" });
+    expect(s.createCaptureEntry).not.toHaveBeenCalled();
+    expect(d.ajouterAction).not.toHaveBeenCalled();
+  });
+
+  it("contenu vide : erreur, rien écrit", async () => {
+    const r = await run("creer_note", { contenu: "   " });
+    expect((r.pourModele as any).erreur).toBeDefined();
+    expect(d.ajouterAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("ranger_information", () => {
+  beforeEach(() => {
+    s.getProject.mockResolvedValue({ id: 3, userId: "u1", name: "JMD" });
+    s.createCaptureEntry.mockImplementation(async (x: any) => ({ id: 77, ...x }));
+    m.rangerSouvenir.mockResolvedValue({ id: 500 });
+  });
+
+  it("note_projet sans projetId : {erreur: projet_requis}, aucune écriture ni journal", async () => {
+    const r = await run("ranger_information", { contenu: "x", ou: "note_projet" });
+    expect(r.pourModele).toEqual({ erreur: "projet_requis" });
+    expect(s.createCaptureEntry).not.toHaveBeenCalled();
+    expect(d.ajouterAction).not.toHaveBeenCalled();
+  });
+
+  it("note_projet : note du projet, résumé « Rangé dans les notes de JMD »", async () => {
+    const r = await run("ranger_information", { contenu: "Tarif 800 €", ou: "note_projet", projetId: 3 });
+    expect(s.createCaptureEntry).toHaveBeenCalledWith(expect.objectContaining({ projectId: 3, captureType: "note", routingStatus: "inbox" }));
+    expect(r.faite?.resume).toBe("Rangé dans les notes de JMD");
+    expect(d.ajouterAction.mock.calls[0][3][0]).toMatchObject({ table: "quick_capture_entries", id: 77, avant: null });
+  });
+
+  it("memoire avec projet : fil cap par défaut, journalise le souvenir", async () => {
+    const r = await run("ranger_information", { contenu: "Pas de lundi", ou: "memoire", projetId: 3, type: "préférence" });
+    expect(m.rangerSouvenir).toHaveBeenCalledWith("u1", 3, "Pas de lundi", "cap", "préférence");
+    expect(r.faite?.resume).toBe("Rangé dans la mémoire de JMD");
+    expect(d.ajouterAction).toHaveBeenCalledWith("u1", "ranger_information", "Rangé dans la mémoire de JMD", [
+      { table: "memory_entries", id: 500, avant: null, apres: { content: "Pas de lundi", supersededAt: null } },
+    ]);
+  });
+
+  it("memoire sans projet : fil founder transverse, type fait", async () => {
+    await run("ranger_information", { contenu: "Matinale", ou: "memoire" });
+    expect(m.rangerSouvenir).toHaveBeenCalledWith("u1", null, "Matinale", "founder", "fait");
+  });
+
+  it("fil founder avec projet : stocké sans projet (le fil founder est lu transversalement)", async () => {
+    await run("ranger_information", { contenu: "Matinale", ou: "memoire", projetId: 3, fil: "founder" });
+    expect(m.rangerSouvenir).toHaveBeenCalledWith("u1", null, "Matinale", "founder", "fait");
+  });
+
+  it("fil cap sans projet : projet_requis, rien écrit", async () => {
+    const r = await run("ranger_information", { contenu: "x", ou: "memoire", fil: "cap" });
+    expect(r.pourModele).toEqual({ erreur: "projet_requis" });
+    expect(m.rangerSouvenir).not.toHaveBeenCalled();
+  });
+
+  it("projet d'une autre : introuvable, rien écrit", async () => {
+    s.getProject.mockResolvedValue(undefined);
+    const r = await run("ranger_information", { contenu: "x", ou: "memoire", projetId: 9 });
+    expect(r.pourModele).toEqual({ erreur: "introuvable" });
+    expect(m.rangerSouvenir).not.toHaveBeenCalled();
+    expect(d.ajouterAction).not.toHaveBeenCalled();
   });
 });

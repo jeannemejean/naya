@@ -309,6 +309,7 @@ export interface IStorage {
   createCaptureEntry(data: InsertQuickCaptureEntry): Promise<QuickCaptureEntry>;
   getCaptureEntries(userId: string, processed?: boolean): Promise<QuickCaptureEntry[]>;
   updateCaptureEntry(id: number, userId: string, data: Partial<QuickCaptureEntry>): Promise<QuickCaptureEntry | null>;
+  getCaptureEntry(id: number, userId: string): Promise<QuickCaptureEntry | undefined>;
   deleteCaptureEntry(id: number, userId: string): Promise<boolean>;
 
   // User Operating Profile operations
@@ -1234,6 +1235,12 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(quickCaptureEntries.id, id), eq(quickCaptureEntries.userId, userId)))
       .returning();
     return entry || null;
+  }
+
+  async getCaptureEntry(id: number, userId: string): Promise<QuickCaptureEntry | undefined> {
+    const [entry] = await db.select().from(quickCaptureEntries)
+      .where(and(eq(quickCaptureEntries.id, id), eq(quickCaptureEntries.userId, userId)));
+    return entry;
   }
 
   async deleteCaptureEntry(id: number, userId: string): Promise<boolean> {

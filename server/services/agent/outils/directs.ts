@@ -5,6 +5,7 @@
 // pouvoir être annulé pendant 24 h (journal.ts). Un refus n'écrit AUCUNE ligne de journal et
 // revient au modèle en {erreur}. Jamais de planificateur IA ici.
 import { storage } from "../../../storage";
+import { rangerSouvenir, type FilRange } from "../../memory/ranger";
 import { creerTache, modifierTache } from "../../taches/ecrire-tache";
 import { resolveScheduledEndTime } from "../../task-schedule-fields";
 import { dateDansFuseau } from "../consignes";
@@ -320,12 +321,129 @@ const reglerEnergieOutil: Outil = {
   },
 };
 
+// ── Notes et mémoire ───────────────────────────────────────────────────────────────────
+
+const CONTENU_MAX = 4000;
+
+function contenuPropre(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t && t.length <= CONTENU_MAX ? t : null;
+}
+
+// Le projet doit être à l'utilisatrice (getProject est borné à userId) : sinon « introuvable ».
+async function projetDe(ctx: ContexteOutil, projetId: unknown): Promise<{ id: number; name: string } | null> {
+  if (typeof projetId !== "number" || !Number.isInteger(projetId)) return null;
+  const p = await storage.getProject(projetId, ctx.userId);
+  return p ? { id: p.id, name: p.name } : null;
+}
+
+// Même écriture que POST /api/projects/:id/notes : une note « inbox » non traitée.
+async function ecrireNote(ctx: ContexteOutil, nom: string, contenu: string, projet: { id: number; name: string } | null, resume: string) {
+  const note = await storage.createCaptureEntry({
+    userId: ctx.userId,
+    projectId: projet?.id ?? null,
+    content: contenu,
+    captureType: "note",
+    classifiedType: "note",
+    isProcessed: false,
+    routingStatus: "inbox",
+  } as any);
+  // Les champs surveillés : édition, rangement ou conversion depuis rendent l'annulation
+  // impossible (elle supprimerait la note).
+  return journaliser(ctx, nom, resume, [{
+    table: "quick_capture_entries", id: note.id, avant: null,
+    apres: {
+      content: note.content, captureType: "note", isProcessed: false, routingStatus: "inbox",
+      routedTo: null, convertedToTaskId: null, projectId: projet?.id ?? null,
+    },
+  }], { noteId: note.id });
+}
+
+const creerNoteOutil: Outil = {
+  nom: "creer_note",
+  classe: "direct",
+  description: "Enregistre une note (boîte de réception de Naya), éventuellement liée à un projet.",
+  schema: {
+    type: "object",
+    properties: {
+      contenu: { type: "string", description: "Texte de la note." },
+      projetId: { type: "integer", description: "Projet auquel lier la note." },
+    },
+    required: ["contenu"],
+  },
+  async executer(ctx, args) {
+    const contenu = contenuPropre(args.contenu);
+    if (!contenu) return erreur("contenu vide ou trop long");
+    let projet = null;
+    if (args.projetId != null) {
+      projet = await projetDe(ctx, args.projetId);
+      if (!projet) return erreur("introuvable");
+    }
+    const resume = projet ? `Note ajoutée aux notes de ${projet.name}` : "Note ajoutée à la boîte de réception";
+    return ecrireNote(ctx, "creer_note", contenu, projet, resume);
+  },
+};
+
+const FILS_RANGEMENT: FilRange[] = ["cap", "founder", "savoir"];
+
+const rangerInformationOutil: Outil = {
+  nom: "ranger_information",
+  classe: "direct",
+  description:
+    "Range une information donnée par l'utilisatrice : dans les notes d'un projet (ou = note_projet, projetId requis) " +
+    "ou dans la mémoire de Naya (ou = memoire). Fil de mémoire : cap (le projet), founder (elle, transverse), " +
+    "savoir (connaissance de métier). Sans fil : cap si un projet est donné, sinon founder.",
+  schema: {
+    type: "object",
+    properties: {
+      contenu: { type: "string", description: "L'information, en une ou deux phrases." },
+      ou: { type: "string", enum: ["note_projet", "memoire"], description: "note_projet | memoire." },
+      projetId: { type: "integer", description: "Projet concerné (requis pour note_projet)." },
+      fil: { type: "string", enum: FILS_RANGEMENT, description: "Mémoire seulement : cap | founder | savoir." },
+      type: { type: "string", description: "Mémoire seulement : fait, décision, préférence, observation…" },
+    },
+    required: ["contenu", "ou"],
+  },
+  async executer(ctx, args) {
+    const contenu = contenuPropre(args.contenu);
+    if (!contenu) return erreur("contenu vide ou trop long");
+
+    if (args.ou === "note_projet") {
+      if (args.projetId == null) return erreur("projet_requis");
+      const projet = await projetDe(ctx, args.projetId);
+      if (!projet) return erreur("introuvable");
+      return ecrireNote(ctx, "ranger_information", contenu, projet, `Rangé dans les notes de ${projet.name}`);
+    }
+
+    // Mémoire. Le fil décide de la portée de lecture (retrieve.ts porteeFil) : cap est lu
+    // par marque, founder sans marque, savoir sans marque ou avec la marque active.
+    let projet = null;
+    if (args.projetId != null) {
+      projet = await projetDe(ctx, args.projetId);
+      if (!projet) return erreur("introuvable");
+    }
+    const fil: FilRange = args.fil ?? (projet ? "cap" : "founder");
+    if (fil === "cap" && !projet) return erreur("projet_requis");
+    const projectId = fil === "founder" ? null : projet?.id ?? null;
+    const type = typeof args.type === "string" && args.type.trim() ? args.type.trim().slice(0, 40) : "fait";
+
+    const { id } = await rangerSouvenir(ctx.userId, projectId, contenu, fil, type);
+    const ou = fil === "founder" || !projet ? "la mémoire" : `la mémoire de ${projet.name}`;
+    return journaliser(ctx, "ranger_information", `Rangé dans ${ou}`, [{
+      table: "memory_entries", id, avant: null, apres: { content: contenu, supersededAt: null },
+    }], { souvenirId: id, fil });
+  },
+};
+
 export const OUTILS_DIRECTS: Outil[] = [
   creerTacheOutil,
   creerRappelOutil,
+  creerNoteOutil,
   creerListeOutil,
   outilCoche("cocher_tache"),
   outilCoche("decocher_tache"),
   deplacerTacheOutil,
+  rangerInformationOutil,
   reglerEnergieOutil,
 ];
