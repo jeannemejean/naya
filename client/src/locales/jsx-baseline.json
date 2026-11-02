@@ -9,7 +9,7 @@
   "client/src/components/milestone-chain.tsx": 7,
   "client/src/components/modern-dashboard-layout.tsx": 3,
   "client/src/components/modern-task-card.tsx": 2,
-  "client/src/components/NayaCompanion.tsx": 18,
+  "client/src/components/NayaCompanion.tsx": 5,
   "client/src/components/PlanningStartBanner.tsx": 4,
   "client/src/components/reading/requetes-de-veille.tsx": 5,
   "client/src/components/reading/revue-du-matin.tsx": 13,
