@@ -230,6 +230,10 @@ function titresJalons(jalons: unknown[]): string[] | null {
   return titres.every((t): t is string => !!t) ? titres : null;
 }
 
+const STATUTS_JALON: Record<string, string> = {
+  locked: "verrouillé", unlocked: "déverrouillé", active: "actif", completed: "terminé",
+};
+
 // Le premier jalon d'une chaîne est actif, les suivants verrouillés (createMilestoneChain).
 const statutDansChaine = (i: number) => (i === 0 ? "actif" : "verrouillé");
 
@@ -338,11 +342,24 @@ const creerJalons = outilAValider<{ projetId: number; jalons: JalonDemande[] }>(
     if (args.jalons.some((j) => j.description != null && j.description.length > DESCRIPTION_MAX)) return erreur("description trop longue");
     const projet = await storage.getProject(args.projetId, ctx.userId);
     if (!projet) return erreur("introuvable");
+    // createMilestoneChain crée une chaîne NEUVE (premier jalon actif, ordre à partir de 0, sans
+    // lien avec l'existant) : sur un projet qui a déjà des jalons, elle ferait une seconde chaîne
+    // parallèle avec deux jalons actifs. Lot 1 : on refuse ; prolonger une chaîne = lot 2.
+    const existants = await storage.getMilestones(projet.id, ctx.userId);
+    if (existants.length > 0) {
+      return {
+        erreur: "projet_a_deja_des_jalons",
+        jalons: existants.slice(0, 10).map((j) => ({ titre: j.title, statut: STATUTS_JALON[j.status] ?? j.status })),
+      };
+    }
     const changements: Changement[] = titres.map((titre, i) => ({ libelle: `Jalon « ${titre} »`, avant: null, apres: statutDansChaine(i) }));
     return {
       resume: `Ajouter ${pluriel(titres.length, "jalon")} à « ${projet.name} »`,
       changements,
-      empreinte: [{ table: "projects", id: projet.id, champs: { name: projet.name } }],
+      empreinte: [
+        { table: "projects", id: projet.id, champs: { name: projet.name } },
+        { table: "jalons_du_projet", id: projet.id, champs: { nombre: 0 } },
+      ],
     };
   },
   async executer(ctx, args) {
@@ -353,10 +370,6 @@ const creerJalons = outilAValider<{ projetId: number; jalons: JalonDemande[] }>(
 });
 
 // ── confirmer_jalon ────────────────────────────────────────────────────────────────────
-
-const STATUTS_JALON: Record<string, string> = {
-  locked: "verrouillé", unlocked: "déverrouillé", active: "actif", completed: "terminé",
-};
 
 const confirmerJalonOutil = outilAValider<{ jalonId: number }>({
   nom: "confirmer_jalon",

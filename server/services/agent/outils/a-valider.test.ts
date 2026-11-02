@@ -8,7 +8,7 @@ const s = vi.hoisted(() => ({
   getTask: vi.fn(), getTasksInRange: vi.fn(), deleteTask: vi.fn(),
   getProject: vi.fn(), getProjects: vi.fn(), createProject: vi.fn(), upsertUserPreferences: vi.fn(),
   getMilestone: vi.fn(), getMilestoneTaskStats: vi.fn(), createMilestone: vi.fn(), createMilestoneCondition: vi.fn(),
-  createTask: vi.fn(), getMesures: vi.fn(),
+  createTask: vi.fn(), getMesures: vi.fn(), getMilestones: vi.fn(),
 }));
 const d = vi.hoisted(() => ({ ajouterProposition: vi.fn(), ajouterAction: vi.fn() }));
 const t = vi.hoisted(() => ({ creerTache: vi.fn(), modifierTache: vi.fn() }));
@@ -34,6 +34,7 @@ beforeEach(() => {
     id: 77, userId, outil: o, arguments: args, changements, empreinte, statut: "en_attente", expireA,
   }));
   s.getProject.mockImplementation(async (id: number, u: string) => (id === 5 && u === "u1" ? { id: 5, name: "Mouture", userId: "u1" } : undefined));
+  s.getMilestones.mockResolvedValue([]);
 });
 
 describe("classement", () => {
@@ -130,6 +131,26 @@ describe("creer_jalons", () => {
     const r = await propose("creer_jalons", { projetId: 6, jalons: [{ titre: "A" }] });
     expect(r.pourModele).toEqual({ erreur: "introuvable" });
     expect(d.ajouterProposition).not.toHaveBeenCalled();
+  });
+
+  it("projet qui a déjà des jalons : refus (ajout à une chaîne existante = lot 2), aucune proposition", async () => {
+    s.getMilestones.mockResolvedValue([
+      { id: 1, title: "Lancer", status: "completed" }, { id: 2, title: "Vendre", status: "active" },
+    ]);
+    const r = await propose("creer_jalons", { projetId: 5, jalons: [{ titre: "Fidéliser" }] });
+    expect(s.getMilestones).toHaveBeenCalledWith(5, "u1");
+    expect(r.pourModele).toEqual({
+      erreur: "projet_a_deja_des_jalons",
+      jalons: [{ titre: "Lancer", statut: "terminé" }, { titre: "Vendre", statut: "actif" }],
+    });
+    expect(r.proposition).toBeUndefined();
+    expect(d.ajouterProposition).not.toHaveBeenCalled();
+  });
+
+  it("projet sans jalon : l'empreinte surveille le nombre de jalons", async () => {
+    await propose("creer_jalons", { projetId: 5, jalons: [{ titre: "Lancer" }] });
+    const [, , , , empreinte] = d.ajouterProposition.mock.calls[0];
+    expect(empreinte).toContainEqual({ table: "jalons_du_projet", id: 5, champs: { nombre: 0 } });
   });
 
   it("ne crée jamais de tâche pour un jalon locked", async () => {

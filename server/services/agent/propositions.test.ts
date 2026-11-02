@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const s = vi.hoisted(() => ({
   getTask: vi.fn(), getTasksInRange: vi.fn(), deleteTask: vi.fn(), getProject: vi.fn(), getMilestone: vi.fn(), getMesures: vi.fn(),
+  getMilestones: vi.fn(), createMilestone: vi.fn(), createMilestoneCondition: vi.fn(),
 }));
 const t = vi.hoisted(() => ({ creerTache: vi.fn(), modifierTache: vi.fn() }));
 const table = vi.hoisted(() => ({ lignes: new Map<number, any>(), suivant: 0 }));
@@ -162,6 +163,28 @@ describe("validerProposition", () => {
     expect(await validerProposition("u1", 999, apres(1))).toEqual({ ok: false, raison: "introuvable" });
     expect(t.modifierTache).not.toHaveBeenCalled();
     expect(table.lignes.get(1).statut).toBe("en_attente");
+  });
+});
+
+describe("creer_jalons et la chaîne existante", () => {
+  it("un jalon apparaît entre l'aperçu et la validation : expiree, rien n'est créé", async () => {
+    s.getProject.mockImplementation(async (id: number, u: string) => (id === 5 && u === "u1" ? { id: 5, name: "Mouture" } : undefined));
+    s.getMilestones.mockResolvedValue([]);
+    const r = await outil("creer_jalons")!.executer(ctx, { projetId: 5, jalons: [{ titre: "Lancer" }] });
+    expect(r.proposition).toBeDefined();
+    s.getMilestones.mockResolvedValue([{ id: 1, title: "Créé ailleurs", status: "active" }]);
+    expect(await validerProposition("u1", r.proposition!.id, apres(5))).toEqual({ ok: false, raison: "expiree" });
+    expect(s.createMilestone).not.toHaveBeenCalled();
+    expect(table.lignes.get(r.proposition!.id).statut).toBe("expiree");
+  });
+
+  it("projet toujours vide à la validation : la chaîne est créée", async () => {
+    s.getProject.mockImplementation(async (id: number, u: string) => (id === 5 && u === "u1" ? { id: 5, name: "Mouture" } : undefined));
+    s.getMilestones.mockResolvedValue([]);
+    s.createMilestone.mockImplementation(async (row: any) => ({ id: 50, ...row }));
+    const r = await outil("creer_jalons")!.executer(ctx, { projetId: 5, jalons: [{ titre: "Lancer" }] });
+    expect(await validerProposition("u1", r.proposition!.id, apres(5))).toEqual({ ok: true, reussis: ["Jalon « Lancer » créé (actif)"], echecs: [] });
+    expect(s.createMilestone).toHaveBeenCalledTimes(1);
   });
 });
 

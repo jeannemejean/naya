@@ -37,8 +37,11 @@ export interface BilanExecution {
   echecs: string[];
 }
 
+// Un refus d'aperçu : `erreur`, plus d'éventuels détails utiles au modèle (renvoyés tels quels).
+export type RefusApercu = { erreur: string } & Record<string, unknown>;
+
 export interface OutilAValider<A> {
-  apercu(ctx: ContexteOutil, args: A): Promise<Apercu | { erreur: string }>;
+  apercu(ctx: ContexteOutil, args: A): Promise<Apercu | RefusApercu>;
   executer(ctx: ContexteOutil, args: A): Promise<BilanExecution>;
 }
 
@@ -60,7 +63,7 @@ export function outilAValider<A>(def: {
     aValider,
     async executer(ctx, args): Promise<ResultatOutil> {
       const a = await aValider.apercu(ctx, args as A);
-      if ("erreur" in a) return { pourModele: { erreur: a.erreur } };
+      if ("erreur" in a) return { pourModele: a };
       const expireA = new Date(ctx.maintenant.getTime() + DUREE_PROPOSITION_MS);
       const p = await depot.ajouterProposition(ctx.userId, def.nom, args, a.changements, a.empreinte, expireA);
       const proposition: PropositionVue = {
@@ -113,6 +116,13 @@ const LECTEURS: Record<string, Lecteur> = {
     if (!projet || typeof champs.mois !== "string") return undefined;
     const ligne = await lireMoisMesure(userId, id, champs.mois);
     return { ...(ligne ?? {}), id: ligne?.id ?? null, mois: champs.mois };
+  },
+  // id = projet ; champs = { nombre } : le nombre de jalons du projet. Un jalon créé depuis
+  // l'aperçu (creer_jalons ne s'applique qu'à un projet sans jalon) rend la proposition périmée.
+  async jalons_du_projet(userId, id) {
+    const projet = await storage.getProject(id, userId);
+    if (!projet) return undefined;
+    return { nombre: (await storage.getMilestones(id, userId)).length };
   },
   // id = 0 (pas une ligne) ; champs = { date, ids } : la liste des tâches à faire du jour.
   // Une tâche ajoutée, cochée ou partie depuis l'aperçu la change.
