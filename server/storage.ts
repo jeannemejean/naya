@@ -188,6 +188,11 @@ import {
   type ConversionAttribution,
   taskPrompts,
   type TaskPrompt,
+  inboxConversations,
+  inboxMessages,
+  type InboxConversation,
+  type InsertInboxConversation,
+  type InsertInboxMessage,
 } from "@shared/schema";
 import { db, type DbExecutor } from "./db";
 import { memesChiffres } from "./services/mesure/calculs";
@@ -207,6 +212,7 @@ import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
 import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
+import { publicIdFromUrl } from "./services/linkedin";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
@@ -711,6 +717,26 @@ export interface IStorage {
   getConnexionProjet(userId: string, projectId: number): Promise<ConnexionProjet | undefined>;
   getConnexionsProjetDe(userId: string): Promise<ConnexionProjet[]>;
   upsertConnexionProjet(userId: string, projectId: number, patch: Partial<ConnexionProjet>): Promise<ConnexionProjet>;
+
+  // Réception des webhooks Unipile (chantier 2, boîte « Réponses »)
+  /** Périmètre et canal d'un compte Unipile connecté (utilisatrice ou projet client) ; null si inconnu. */
+  trouverCompteUnipile(accountId: string): Promise<{ userId: string; projectId: number | null; canal: "email" | "linkedin" } | null>;
+  /** Lead dont un message envoyé (fil ou message) ou une conversation porte l'un de ces identifiants. */
+  leadParFilReponse(userId: string, ids: string[]): Promise<number | null>;
+  /** Les trois suivants ne voient que les leads non archivés DÉJÀ contactés (envoi réel) ou en conversation. */
+  leadContacteParLinkedinProviderId(userId: string, providerId: string): Promise<number | null>;
+  leadContacteParLinkedinPublicId(userId: string, publicId: string): Promise<number | null>;
+  leadContacteParEmail(userId: string, email: string): Promise<number | null>;
+  inboxMessageExiste(providerMessageId: string): Promise<boolean>;
+  getInboxConversation(leadId: number, channel: string): Promise<InboxConversation | undefined>;
+  obtenirInboxConversation(row: InsertInboxConversation): Promise<InboxConversation>;
+  updateInboxConversation(id: number, patch: Partial<InboxConversation>): Promise<void>;
+  ajouterInboxMessage(row: InsertInboxMessage): Promise<boolean>;
+  dernierEntrantInboxAt(conversationId: number): Promise<Date | null>;
+  deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number>;
+  marquerSuiviEmail(userId: string, leadId: number, step: number, champ: "openedAt" | "clickedAt", at: Date): Promise<void>;
+  /** Compte en erreur : retire son identifiant du périmètre (envoi en pause) et note la déconnexion. */
+  deconnecterCompteUnipile(userId: string, projectId: number | null, canal: "email" | "linkedin", at: Date): Promise<void>;
   // Rapports client (mode agence)
   getRapports(userId: string, projectId: number): Promise<RapportClient[]>;
   getRapport(userId: string, projectId: number, mois: string): Promise<RapportClient | undefined>;
@@ -3086,6 +3112,154 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return row;
+  }
+
+  // ─── Réception des webhooks Unipile ─────────────────────────────────────────
+
+  async trouverCompteUnipile(accountId: string) {
+    const [p] = await db.select({ userId: userPreferences.userId, li: userPreferences.linkedinUnipileAccountId, em: userPreferences.emailUnipileAccountId })
+      .from(userPreferences)
+      .where(or(eq(userPreferences.linkedinUnipileAccountId, accountId), eq(userPreferences.emailUnipileAccountId, accountId)))
+      .limit(1);
+    if (p) return { userId: p.userId, projectId: null, canal: (p.li === accountId ? "linkedin" : "email") as "linkedin" | "email" };
+    const [c] = await db.select({ userId: connexionsProjet.userId, projectId: connexionsProjet.projectId, li: connexionsProjet.linkedinUnipileAccountId })
+      .from(connexionsProjet)
+      .where(or(eq(connexionsProjet.linkedinUnipileAccountId, accountId), eq(connexionsProjet.emailUnipileAccountId, accountId)))
+      .limit(1);
+    if (c) return { userId: c.userId, projectId: c.projectId, canal: (c.li === accountId ? "linkedin" : "email") as "linkedin" | "email" };
+    return null;
+  }
+
+  /** Lead non archivé de l'utilisatrice, déjà contacté pour de vrai ou déjà en conversation. */
+  private leadContacte() {
+    return and(
+      isNull(leads.archivedAt),
+      or(
+        sql`exists (select 1 from ${outreachMessages} where ${outreachMessages.leadId} = ${leads.id} and ${outreachMessages.sentAt} is not null)`,
+        sql`exists (select 1 from ${inboxConversations} where ${inboxConversations.leadId} = ${leads.id})`,
+      ),
+    );
+  }
+
+  async leadParFilReponse(userId: string, ids: string[]): Promise<number | null> {
+    if (!ids.length) return null;
+    const [o] = await db.select({ leadId: outreachMessages.leadId }).from(outreachMessages)
+      .innerJoin(leads, eq(leads.id, outreachMessages.leadId))
+      .where(and(
+        eq(outreachMessages.userId, userId),
+        isNull(leads.archivedAt),
+        or(inArray(outreachMessages.providerThreadId, ids), inArray(outreachMessages.providerMessageId, ids)),
+      ))
+      .orderBy(desc(outreachMessages.sentAt))
+      .limit(1);
+    if (o) return o.leadId;
+    const [c] = await db.select({ leadId: inboxConversations.leadId }).from(inboxConversations)
+      .innerJoin(leads, eq(leads.id, inboxConversations.leadId))
+      .where(and(eq(inboxConversations.userId, userId), isNull(leads.archivedAt), inArray(inboxConversations.providerChatId, ids)))
+      .limit(1);
+    return c?.leadId ?? null;
+  }
+
+  async leadContacteParLinkedinProviderId(userId: string, providerId: string): Promise<number | null> {
+    const [l] = await db.select({ id: leads.id }).from(leads)
+      .where(and(eq(leads.userId, userId), eq(leads.linkedinProviderId, providerId), this.leadContacte()))
+      .orderBy(desc(leads.updatedAt)).limit(1);
+    return l?.id ?? null;
+  }
+
+  async leadContacteParLinkedinPublicId(userId: string, publicId: string): Promise<number | null> {
+    const cible = publicId.toLowerCase();
+    // L'URL en base peut être encodée (« %C3%A9 ») ou non : on cherche les deux formes.
+    const motif = (t: string) => "%" + t.replace(/[\\%_]/g, (c) => "\\" + c) + "%";
+    const candidats = await db.select({ id: leads.id, url: leads.linkedinUrl }).from(leads)
+      .where(and(
+        eq(leads.userId, userId),
+        or(sql`${leads.linkedinUrl} ilike ${motif(publicId)}`, sql`${leads.linkedinUrl} ilike ${motif(encodeURIComponent(publicId))}`),
+        this.leadContacte(),
+      ))
+      .orderBy(desc(leads.updatedAt)).limit(20);
+    const l = candidats.find((c) => publicIdFromUrl(c.url)?.replace(/\/+$/, "").toLowerCase() === cible);
+    return l?.id ?? null;
+  }
+
+  async leadContacteParEmail(userId: string, email: string): Promise<number | null> {
+    const [l] = await db.select({ id: leads.id }).from(leads)
+      .where(and(eq(leads.userId, userId), sql`lower(regexp_replace(${leads.email}, '\\s', '', 'g')) = ${email}`, this.leadContacte()))
+      .orderBy(desc(leads.updatedAt)).limit(1);
+    return l?.id ?? null;
+  }
+
+  async inboxMessageExiste(providerMessageId: string): Promise<boolean> {
+    const [m] = await db.select({ id: inboxMessages.id }).from(inboxMessages)
+      .where(eq(inboxMessages.providerMessageId, providerMessageId)).limit(1);
+    return !!m;
+  }
+
+  async getInboxConversation(leadId: number, channel: string): Promise<InboxConversation | undefined> {
+    const [c] = await db.select().from(inboxConversations)
+      .where(and(eq(inboxConversations.leadId, leadId), eq(inboxConversations.channel, channel)));
+    return c;
+  }
+
+  async obtenirInboxConversation(row: InsertInboxConversation): Promise<InboxConversation> {
+    await db.insert(inboxConversations).values(row).onConflictDoNothing();
+    const c = await this.getInboxConversation(row.leadId, row.channel);
+    if (!c) throw new Error("conversation introuvable après insertion");
+    return c;
+  }
+
+  async updateInboxConversation(id: number, patch: Partial<InboxConversation>): Promise<void> {
+    const { id: _id, userId: _u, leadId: _l, channel: _c, createdAt: _cr, ...champs } = patch as any;
+    if (!Object.keys(champs).length) return;
+    await db.update(inboxConversations).set(champs).where(eq(inboxConversations.id, id));
+  }
+
+  async ajouterInboxMessage(row: InsertInboxMessage): Promise<boolean> {
+    const ins = await db.insert(inboxMessages).values(row).onConflictDoNothing().returning({ id: inboxMessages.id });
+    return ins.length > 0;
+  }
+
+  async dernierEntrantInboxAt(conversationId: number): Promise<Date | null> {
+    const [m] = await db.select({ at: inboxMessages.sentAt }).from(inboxMessages)
+      .where(and(eq(inboxMessages.conversationId, conversationId), eq(inboxMessages.sens, "entrant")))
+      .orderBy(desc(inboxMessages.sentAt)).limit(1);
+    return m?.at ?? null;
+  }
+
+  async deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number> {
+    const res = await db.delete(outreachMessages).where(and(
+      eq(outreachMessages.leadId, leadId),
+      eq(outreachMessages.userId, userId),
+      eq(outreachMessages.platform, "linkedin"),
+      isNull(outreachMessages.sentAt),
+    ));
+    return res.rowCount ?? 0;
+  }
+
+  async marquerSuiviEmail(userId: string, leadId: number, step: number, champ: "openedAt" | "clickedAt", at: Date): Promise<void> {
+    const col = champ === "openedAt" ? outreachMessages.openedAt : outreachMessages.clickedAt;
+    // Première ouverture / premier clic seulement : jamais d'écrasement.
+    await db.update(outreachMessages).set({ [champ]: at } as Partial<OutreachMessage>).where(and(
+      eq(outreachMessages.userId, userId),
+      eq(outreachMessages.leadId, leadId),
+      eq(outreachMessages.platform, "email"),
+      eq(outreachMessages.messageType, `step_${step}`),
+      isNotNull(outreachMessages.sentAt),
+      isNull(col),
+    ));
+  }
+
+  async deconnecterCompteUnipile(userId: string, projectId: number | null, canal: "email" | "linkedin", at: Date): Promise<void> {
+    const champ = canal === "linkedin" ? "linkedinUnipileAccountId" : "emailUnipileAccountId";
+    if (projectId == null) {
+      const prefs = await this.getUserPreferences(userId);
+      const avant = (prefs?.comptesDeconnectes ?? {}) as Record<string, string>;
+      await this.upsertUserPreferences(userId, { [champ]: null, comptesDeconnectes: { ...avant, [canal]: at.toISOString() } } as any);
+    } else {
+      const c = await this.getConnexionProjet(userId, projectId);
+      const avant = (c?.comptesDeconnectes ?? {}) as Record<string, string>;
+      await this.upsertConnexionProjet(userId, projectId, { [champ]: null, comptesDeconnectes: { ...avant, [canal]: at.toISOString() } } as any);
+    }
   }
 
   private toSafeSocialAccount(account: SocialAccount): SafeSocialAccount {

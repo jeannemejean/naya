@@ -34,6 +34,7 @@ vi.mock("../storage", () => ({
     markRelationVerifiee: vi.fn(),
     setOutreachProviderIds: vi.fn(),
     isLeadUnsubscribed: vi.fn(),
+    updateLead: vi.fn(),
   },
 }));
 
@@ -805,6 +806,25 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(storage.claimStepSend).toHaveBeenCalledWith(expect.objectContaining({ channel: "linkedin", stepOrder: 1 }));
       expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
       expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "sent");
+    });
+
+    it("LinkedIn envoyé : mémorise l'identifiant LinkedIn interne du prospect (rattachement des réponses)", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation", providerId: "ACo-x" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getBrandDna as any).mockResolvedValue(null);
+      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
+      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
+      (storage.countOutreachSentSince as any).mockResolvedValue(0);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+
+      await runProspectionSender();
+
+      expect(storage.updateLead).toHaveBeenCalledWith(baseLead().id, "u1", { linkedinProviderId: "ACo-x" });
     });
 
     it("LinkedIn déjà réservé : ne rappelle pas Unipile", async () => {

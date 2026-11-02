@@ -9,6 +9,8 @@ import { scheduleEndOfDayReflection } from "./services/end-of-day-reflection";
 import { scheduleSocialPublisher } from "./services/social-publisher";
 import { scheduleProspectionSender } from "./services/prospection-sender";
 import { scheduleLinkedInSync } from "./services/linkedin-sync";
+import { linkedinConfigured } from "./services/linkedin";
+import { ensureWebhooks } from "./services/unipile-mail";
 import { computeDurationCalibration } from "./services/duration-calibration";
 import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
 import { adjustBufferForUser } from "./services/rhythm-buffer";
@@ -28,6 +30,8 @@ process.on('uncaughtException', (err) => {
 const app = express();
 // Stripe exige le corps BRUT pour vérifier la signature du webhook — monté avant express.json().
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
+// Webhook Unipile : JSON quel que soit le Content-Type, jusqu'à 2 Mo (emails volumineux).
+app.use("/api/unipile/webhook", express.json({ type: () => true, limit: "2mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -209,6 +213,14 @@ function scheduleReadingRoom() {
 
   // ─── Poller Unipile : acceptation d'invitation LinkedIn (lecture seule, chaque 15 min) ──
   scheduleLinkedInSync();
+
+  // ─── Webhooks Unipile (réception des réponses) : créés s'ils manquent ──────────
+  if (linkedinConfigured() && process.env.UNIPILE_WEBHOOK_SECRET && process.env.APP_URL) {
+    ensureWebhooks(process.env.APP_URL, process.env.UNIPILE_WEBHOOK_SECRET)
+      .catch((e: any) => console.warn(`[unipile] ensureWebhooks : ${String(e?.message || e).slice(0, 120)}`));
+  } else if (linkedinConfigured()) {
+    console.warn("[unipile] UNIPILE_WEBHOOK_SECRET ou APP_URL absent : les réponses des prospects ne seront pas reçues");
+  }
 
   // ─── Routines planifiées (sourcing quotidien des prospects par campagne active…) ──
   scheduleRoutines();

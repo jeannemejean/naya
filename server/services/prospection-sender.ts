@@ -1022,6 +1022,15 @@ export async function runProspectionSender(): Promise<void> {
                   `[ProspectionSender] LinkedIn PARTI mais NON journalisé (lead ${lead.id}, étape ${decision.index + 1}) : ${String(e?.message ?? e)}`,
                 );
               }
+              // Identifiant LinkedIn interne du prospect : c'est par lui que le webhook Unipile
+              // rattache sa réponse ou son acceptation (spec §6.5).
+              if (result.providerId && (lead as any).linkedinProviderId !== result.providerId) {
+                try {
+                  await storage.updateLead(lead.id, state.userId, { linkedinProviderId: result.providerId });
+                } catch (e: any) {
+                  console.error(`[ProspectionSender] linkedinProviderId non mémorisé (lead ${lead.id}) : ${String(e?.message ?? e)}`);
+                }
+              }
               return { ok: true, status: "sent" as const };
             });
             if (outcome.action === "failed") {
