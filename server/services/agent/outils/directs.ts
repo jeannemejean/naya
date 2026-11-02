@@ -19,24 +19,24 @@ const TITRE_MAX = 200;
 // ── Petits utilitaires ─────────────────────────────────────────────────────────────────
 
 // AAAA-MM-JJ réel (le 31 février est refusé).
-function dateValide(v: unknown): v is string {
+export function dateValide(v: unknown): v is string {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
   const d = new Date(`${v}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
-function heureValide(v: unknown): v is string {
+export function heureValide(v: unknown): v is string {
   return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 }
 
-function titrePropre(v: unknown): string | null {
+export function titrePropre(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
   return t && t.length <= TITRE_MAX ? t : null;
 }
 
 // « Aujourd'hui » dans le fuseau de l'utilisatrice (repli UTC si le fuseau est invalide).
-function dateLocale(ctx: ContexteOutil): string {
+export function dateLocale(ctx: ContexteOutil): string {
   try {
     return dateDansFuseau(ctx.maintenant, ctx.fuseau);
   } catch {
@@ -47,11 +47,11 @@ function dateLocale(ctx: ContexteOutil): string {
 const erreur = (message: string): ResultatOutil => ({ pourModele: { erreur: message } });
 
 // « le 5 nov. » / « à 10 h » / « à 9 h 30 ».
-function jourCourt(date: string): string {
+export function jourCourt(date: string): string {
   return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", timeZone: "UTC" })
     .format(new Date(`${date}T12:00:00Z`));
 }
-function heureCourte(heure: string): string {
+export function heureCourte(heure: string): string {
   const [h, m] = heure.split(":").map(Number);
   return m ? `${h} h ${String(m).padStart(2, "0")}` : `${h} h`;
 }

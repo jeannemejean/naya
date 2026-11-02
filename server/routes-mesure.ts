@@ -6,38 +6,20 @@ import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { executerUne, REGISTRE } from "./services/routines/ordonnanceur";
 import { CANAUX, INDICATEURS, KIND_BILAN } from "./services/mesure/catalogues";
-import { indicateurs, evolutions, moisPrecedent } from "./services/mesure/calculs";
+import { indicateurs, evolutions } from "./services/mesure/calculs";
 import { validerMois, moisValide, suggestionDepuisConversions } from "./services/mesure/saisie";
 import { lireImport, fusionnerImport } from "./services/mesure/import";
 import { routineBilanPour } from "./services/mesure/bilan";
-import { completerMois, lirePhrase } from "./services/mesure/phrase";
+import { lirePhrase } from "./services/mesure/phrase";
+import { assurerRoutine, cleRoutine, completerMesure } from "./services/mesure/completer";
 import { comprendrePhrase } from "./services/mesure/deps";
 
 const MAX_IMPORT = 200_000;
-const cleRoutine = (projectId: number) => `project:${projectId}`;
 
 async function projetDe(req: any) {
   const id = Number(req.params.projectId);
   if (!Number.isInteger(id) || id <= 0) return null;
   return (await storage.getProject(id, req.userId)) ?? null;
-}
-
-const AVANCE_MS = 5 * 60_000;
-const moisCourant = (d = new Date()) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-
-/**
- * Crée la routine (active) au premier mois enregistré ; une pause choisie est respectée. Si un
- * mois clos vient d'être saisi (après le passage du 2, par exemple), le prochain bilan est
- * avancé de quelques minutes plutôt que d'attendre le mois suivant.
- */
-async function assurerRoutine(userId: string, projectId: number, moisEcrits: string[]) {
-  await storage.ensureRoutine(routineBilanPour({ userId, projectId }, new Date()) as any);
-  if (!moisEcrits.some((m) => m <= moisPrecedent(moisCourant()))) return;
-  const r = await storage.getRoutineByCible(userId, KIND_BILAN, cleRoutine(projectId));
-  const bientot = new Date(Date.now() + AVANCE_MS);
-  if (r?.actif && (!r.prochainPassage || new Date(r.prochainPassage) > bientot)) {
-    await storage.updateRoutine(r.id, userId, { prochainPassage: bientot } as any);
-  }
 }
 
 export function registerMesureRoutes(app: Express) {
@@ -92,15 +74,10 @@ export function registerMesureRoutes(app: Express) {
   // Compléter un mois : seuls les chiffres envoyés sont écrits (phrase à Naya, compagnon).
   app.post("/api/mesure/:projectId/mois/:mois/completer", isAuthenticated, async (req: any, res) => {
     try {
-      const projet = await projetDe(req);
-      if (!projet) return res.status(404).json({ message: "not_found" });
-      if (!moisValide(req.params.mois)) return res.status(400).json({ message: "mois_invalide" });
-      const existant = (await storage.getMesures(req.userId, projet.id, 600)).find((l) => l.mois === req.params.mois);
-      const v = completerMois(existant as any, (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>);
-      if (!v.ok) return res.status(400).json({ message: v.erreur });
-      const ligne = await storage.upsertMesure(req.userId, projet.id, req.params.mois, { ...v.valeur, source: "manuel" });
-      await assurerRoutine(req.userId, projet.id, [req.params.mois]);
-      res.json(ligne);
+      // Logique partagée avec l'agent : voir services/mesure/completer.ts.
+      const r = await completerMesure(req.userId, Number(req.params.projectId), req.params.mois, req.body);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.ligne);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

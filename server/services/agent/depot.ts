@@ -65,4 +65,22 @@ export const depot = {
       .returning();
     return p;
   },
+
+  // Fait sortir une proposition de l'attente, ATOMIQUEMENT : la mise à jour ne touche la ligne
+  // que si elle est encore `en_attente`. Deux clics simultanés sur « Valider » : un seul
+  // obtient `true` et exécute, l'autre `false` (déjà traitée). Jamais deux exécutions.
+  async reclamerProposition(
+    id: number,
+    userId: string,
+    statut: "validee" | "annulee" | "expiree",
+  ): Promise<boolean> {
+    const lignes = await db.update(agentPropositions).set({ statut })
+      .where(and(
+        eq(agentPropositions.id, id),
+        eq(agentPropositions.userId, userId),
+        eq(agentPropositions.statut, "en_attente"),
+      ))
+      .returning({ id: agentPropositions.id });
+    return lignes.length > 0;
+  },
 };

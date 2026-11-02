@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { isAiBlocked } from "./services/usage";
 import { executerAgent } from "./services/agent/boucle";
 import { annulerAction } from "./services/agent/journal";
+import { annulerProposition, validerProposition } from "./services/agent/propositions";
 import { blocSession, dateDansFuseau, fuseauUtilisatrice } from "./services/agent/consignes";
 import { buildSuggestions } from "./services/companion";
 import { extractToMemory } from "./services/memory/extract";
@@ -41,6 +42,38 @@ export function registerAgentRoutes(app: Express): void {
       res.json({ ok: true });
     } catch (error: any) {
       console.error("Annulation d'action de l'agent :", error?.message || error);
+      res.status(500).json({ message: "Erreur lors de l'annulation" });
+    }
+  });
+
+  // Propositions à valider (spec §6.3). « Valider » exécute après avoir revérifié l'heure et
+  // l'empreinte ; « Annuler » la ferme. « Ajuster » = l'utilisatrice répond dans le fil (le
+  // client annule d'abord la proposition affichée). 409 + raison si c'est impossible.
+  app.post("/api/agent/propositions/:id/valider", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId: string = req.userId;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(409).json({ message: "introuvable" });
+      const prefs = await storage.getUserPreferences(userId).catch(() => null);
+      const r = await validerProposition(userId, id, new Date(), { fuseau: fuseauUtilisatrice((prefs as any)?.timezone) });
+      if (!r.ok) return res.status(409).json({ message: r.raison });
+      res.json({ reussis: r.reussis, echecs: r.echecs });
+    } catch (error: any) {
+      console.error("Validation de proposition de l'agent :", error?.message || error);
+      res.status(500).json({ message: "Erreur lors de la validation" });
+    }
+  });
+
+  app.post("/api/agent/propositions/:id/annuler", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId: string = req.userId;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(409).json({ message: "introuvable" });
+      const r = await annulerProposition(userId, id);
+      if (!r.ok) return res.status(409).json({ message: r.raison });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Annulation de proposition de l'agent :", error?.message || error);
       res.status(500).json({ message: "Erreur lors de l'annulation" });
     }
   });

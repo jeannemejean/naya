@@ -89,4 +89,17 @@ describe("depot de l'agent", () => {
     expect(q.sql).toContain('"user_id"');
     expect(q.params).toEqual([4, "u1"]);
   });
+
+  it("reclamerProposition : mise à jour conditionnelle (id, user_id, statut en_attente), vrai si une ligne a changé", async () => {
+    hoisted.resultats.push([{ id: 4 }]);
+    expect(await depot.reclamerProposition(4, "u1", "validee")).toBe(true);
+    expect(hoisted.sets[0]).toEqual({ statut: "validee" });
+    const q = rendre(hoisted.wheres[0]);
+    expect(q.sql).toContain('"user_id"');
+    expect(q.sql).toContain('"statut"');
+    expect(q.params).toEqual([4, "u1", "en_attente"]);
+    // Second clic concurrent : la ligne n'est plus en_attente, aucune ligne ne change.
+    hoisted.resultats.push([]);
+    expect(await depot.reclamerProposition(4, "u1", "validee")).toBe(false);
+  });
 });

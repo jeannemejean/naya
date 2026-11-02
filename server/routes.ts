@@ -57,6 +57,7 @@ import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
 import { creerTache, modifierTache } from "./services/taches/ecrire-tache";
+import { confirmerJalon, creerChaineJalons, creerProjet } from "./services/projets/ecrire-projet";
 import { refuserPost } from "./services/refus-post/service";
 import { refusPostDeps } from "./services/refus-post/deps";
 import { estRaisonRefusPost, estPublieOuEnCours } from "./services/refus-post/pur";
@@ -84,7 +85,7 @@ import { runCampaignSearch, sourcerCampagne, cibleDeCampagne, prospectsParJourDe
 import { generateStepMessage, combineInstructions, BriefIncompletError } from "./services/sequence-message";
 import { etatGardeApercu } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
-import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
+import { checkAndUnlockMilestones } from "./services/milestone-engine";
 import { registerAgentRoutes } from "./routes-agent";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
 import { runRealismValidation } from "./services/realism";
@@ -199,7 +200,6 @@ import {
   updateSocialAccountSchema,
   insertMediaLibrarySchema,
   updateMediaLibrarySchema,
-  insertProjectSchema,
   insertProjectGoalSchema,
   insertProjectStrategyProfileSchema,
   insertQuickCaptureSchema,
@@ -1842,18 +1842,9 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/projects', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const projectData = insertProjectSchema.parse({ ...req.body, userId });
-      const existingProjects = await storage.getProjects(userId);
-      if (existingProjects.length === 0) {
-        projectData.isPrimary = true;
-        projectData.priorityLevel = 'primary';
-      }
-      const project = await storage.createProject(projectData);
-      if (existingProjects.length === 0) {
-        await storage.upsertUserPreferences(userId, { activeProjectId: project.id });
-      }
-      res.json(project);
+      // Logique partagée avec l'agent : voir services/projets/ecrire-projet.ts.
+      const r = await creerProjet(req.userId, req.body);
+      res.json(r.projet);
     } catch (error) {
       console.error("Error creating project:", error);
       res.status(500).json({ message: "Failed to create project" });
@@ -3150,21 +3141,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/projects/:id/milestone-chain — création en bloc depuis le Companion
   app.post('/api/projects/:id/milestone-chain', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const projectId = parseInt(req.params.id);
-      if (isNaN(projectId)) return res.status(400).json({ message: "projectId invalide" });
-      const { milestones } = req.body;
-      if (!Array.isArray(milestones) || milestones.length === 0) {
-        return res.status(400).json({ message: "milestones[] requis" });
-      }
-      // Vérifier que chaque jalon a un title
-      const valid = milestones.every((m: any) => typeof m?.title === 'string' && m.title.trim());
-      if (!valid) return res.status(400).json({ message: "Chaque jalon doit avoir un title" });
-      // Vérifier que le projet appartient à l'utilisateur
-      const project = await storage.getProject(projectId, userId);
-      if (!project) return res.status(404).json({ message: "Projet introuvable" });
-      const chain = await createMilestoneChain(projectId, userId, milestones);
-      res.json(chain);
+      // Logique partagée avec l'agent : voir services/projets/ecrire-projet.ts.
+      const r = await creerChaineJalons(req.userId, parseInt(req.params.id), req.body);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.jalons);
     } catch (error: any) {
       console.error("Error creating milestone chain:", error);
       res.status(500).json({
@@ -3312,14 +3292,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/milestones/:id/confirm — confirmation manuelle
   app.post('/api/milestones/:id/confirm', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const id = parseInt(req.params.id);
-      const milestone = await storage.getMilestone(id);
-      if (!milestone || milestone.userId !== userId) {
-        return res.status(404).json({ message: "Jalon introuvable" });
-      }
-      const updated = await confirmMilestone(id);
-      res.json(updated);
+      // Logique partagée avec l'agent : voir services/projets/ecrire-projet.ts.
+      const r = await confirmerJalon(req.userId, parseInt(req.params.id));
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.jalon);
     } catch (error) {
       console.error("Error confirming milestone:", error);
       res.status(500).json({ message: "Échec de la confirmation du jalon" });

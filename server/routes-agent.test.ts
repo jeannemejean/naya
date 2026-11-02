@@ -9,6 +9,8 @@ const h = vi.hoisted(() => ({
   isAiBlocked: vi.fn(async () => false),
   executerAgent: vi.fn(),
   extractToMemory: vi.fn(async () => {}),
+  validerProposition: vi.fn(),
+  annulerProposition: vi.fn(),
 }));
 
 vi.mock("./auth", () => ({
@@ -27,6 +29,7 @@ vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
 vi.mock("./services/agent/boucle", () => ({ executerAgent: h.executerAgent }));
 vi.mock("./services/naya-context", () => ({ buildNayaContext: vi.fn(async () => "") }));
 vi.mock("./services/memory/extract", () => ({ extractToMemory: h.extractToMemory }));
+vi.mock("./services/agent/propositions", () => ({ validerProposition: h.validerProposition, annulerProposition: h.annulerProposition }));
 
 const { registerAgentRoutes } = await import("./routes-agent");
 const app = express();
@@ -152,5 +155,43 @@ describe("POST /api/companion/chat", () => {
     const r = await poster({ message: "Salut" });
     expect(r.status).toBe(500);
     expect(storageMock.saveCompanionMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("propositions à valider", () => {
+  const appel = (chemin: string) => fetch(`http://127.0.0.1:${port}${chemin}`, { method: "POST" });
+
+  it("valider : 200 {reussis, echecs}, l'utilisatrice vient de la session, fuseau de ses préférences", async () => {
+    h.validerProposition.mockResolvedValueOnce({ ok: true, reussis: ["« A » déplacée au 4 nov."], echecs: ["« B » : jour non travaillé"] });
+    const r = await appel("/api/agent/propositions/12/valider");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ reussis: ["« A » déplacée au 4 nov."], echecs: ["« B » : jour non travaillé"] });
+    expect(h.validerProposition).toHaveBeenCalledWith("user-1", 12, expect.any(Date), { fuseau: "Europe/Paris" });
+  });
+
+  it("valider : 409 {message: raison} si impossible", async () => {
+    h.validerProposition.mockResolvedValueOnce({ ok: false, raison: "expiree" });
+    const r = await appel("/api/agent/propositions/12/valider");
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ message: "expiree" });
+  });
+
+  it("valider : un id non numérique est introuvable, sans rien appeler", async () => {
+    const r = await appel("/api/agent/propositions/abc/valider");
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ message: "introuvable" });
+    expect(h.validerProposition).not.toHaveBeenCalled();
+  });
+
+  it("annuler : 200 {ok: true}, ou 409 {message: raison}", async () => {
+    h.annulerProposition.mockResolvedValueOnce({ ok: true });
+    const r = await appel("/api/agent/propositions/12/annuler");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true });
+    expect(h.annulerProposition).toHaveBeenCalledWith("user-1", 12);
+    h.annulerProposition.mockResolvedValueOnce({ ok: false, raison: "deja_traitee" });
+    const r2 = await appel("/api/agent/propositions/12/annuler");
+    expect(r2.status).toBe(409);
+    expect(await r2.json()).toEqual({ message: "deja_traitee" });
   });
 });
