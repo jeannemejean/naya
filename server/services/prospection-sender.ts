@@ -361,11 +361,13 @@ export function corpsEmailGmail(body: string, fromName: string, footerAddress: s
  * Retire d'un email DÉJÀ rédigé la signature finale écrite par le modèle (« … ? Jeanne, Test. »,
  * « … ? Jeanne. ») : le pied de mail signe désormais, elle ferait doublon. Prudent : seulement
  * le prénom exact de l'expéditrice de la campagne, tout à la fin, juste après une fin de
- * phrase, suivi au plus d'un court libellé sans ponctuation (« , Test »). Pure.
+ * phrase, suivi au plus d'un court libellé sans ponctuation (« , Test »). Uniquement sur un
+ * corps SANS retour à la ligne (anciennes générations à plat, les seules signées) : un texte en
+ * paragraphes n'est jamais signé par le modèle, et un texte édité à la main part tel quel. Pure.
  */
 export function retirerSignatureFinale(body: string, prenom: string | null | undefined): string {
   const nom = (prenom || "").trim();
-  if (!nom || !body) return body;
+  if (!nom || !body || /[\r\n]/.test(body)) return body;
   const echappe = nom.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`([.!?…])\\s+${echappe}(?:\\s*,\\s*[^\\s.,;:!?…][^.,;:!?…\\n]{0,40})?\\s*\\.?\\s*$`, "u");
   const m = body.match(re);

@@ -2537,13 +2537,17 @@ describe("retirerSignatureFinale — emails déjà rédigés, signés par le mod
   it("retire « Jeanne, Test. » et « Jeanne. » en fin de texte", () => {
     expect(retirerSignatureFinale(`${corps} Jeanne, Test.`, "Jeanne")).toBe(corps);
     expect(retirerSignatureFinale(`${corps} Jeanne.`, "Jeanne")).toBe(corps);
-    expect(retirerSignatureFinale(`${corps}\n\nJeanne, Agence JMD`, "Jeanne")).toBe(corps);
   });
   it("ne touche à rien si le prénom n'est pas celui de l'expéditrice, ou pas en fin de texte", () => {
     expect(retirerSignatureFinale(`${corps} Marie, Test.`, "Jeanne")).toBe(`${corps} Marie, Test.`);
     expect(retirerSignatureFinale(`${corps} Jeanne, Test. Merci.`, "Jeanne")).toBe(`${corps} Jeanne, Test. Merci.`);
     expect(retirerSignatureFinale(`${corps}`, "Jeanne")).toBe(corps);
     expect(retirerSignatureFinale(`${corps} Jeanne, Test.`, "")).toBe(`${corps} Jeanne, Test.`);
+  });
+  it("ne touche jamais un corps en plusieurs lignes (nouveau format ou édité à la main)", () => {
+    const multi = "Bonjour Claire,\n\nC'est un sujet pour vous ?\n\nJeanne, sinon je vous appelle";
+    expect(retirerSignatureFinale(multi, "Jeanne")).toBe(multi);
+    expect(retirerSignatureFinale(`${corps}\n\nJeanne.`, "Jeanne")).toBe(`${corps}\n\nJeanne.`);
   });
   it("ne retire pas un libellé long ou ponctué, ni un prénom en milieu de phrase", () => {
     const long = `${corps} Jeanne, fondatrice de l'agence qui accompagne les marques depuis dix ans.`;

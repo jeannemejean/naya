@@ -103,7 +103,12 @@ export function sanitizeEmailBody(s: string): string {
   return (s || "")
     .replace(/\r\n?/g, "\n")
     .split(/\n[ \t]*\n\s*/)
-    .map((par) => par.split("\n").map(stripEmDash).filter(Boolean).join("\n"))
+    .map((par) => par.split("\n")
+      // Un tiret en début de ligne devient « , » via stripEmDash : on le retire, et une ligne
+      // réduite à de la ponctuation disparaît.
+      .map((l) => stripEmDash(l).replace(/^,\s*/, ""))
+      .filter((l) => l && !/^[\s\p{P}]*$/u.test(l))
+      .join("\n"))
     .filter(Boolean)
     .join("\n\n");
 }

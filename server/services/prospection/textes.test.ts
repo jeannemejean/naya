@@ -22,6 +22,10 @@ describe("sanitizeEmailBody", () => {
     expect(sanitizeEmailBody("Bonjour Claire,\r\n\r\n  Un mot — puis   un autre.\nSuite.\n \n\n\nC'est un sujet ?  "))
       .toBe("Bonjour Claire,\n\nUn mot, puis un autre.\nSuite.\n\nC'est un sujet ?");
   });
+  it("un tiret en début de ligne ne laisse ni virgule en tête ni ligne de ponctuation", () => {
+    expect(sanitizeEmailBody("Bonjour,\n\n— Premier point\n– Second point\n—\n\nC'est un sujet ?"))
+      .toBe("Bonjour,\n\nPremier point\nSecond point\n\nC'est un sujet ?");
+  });
   it("un texte sans saut de ligne ressort comme sanitizeMessage", () => {
     const t = "Bonjour, un mot — puis  un autre ?";
     expect(sanitizeEmailBody(t)).toBe(sanitizeMessage(t));
