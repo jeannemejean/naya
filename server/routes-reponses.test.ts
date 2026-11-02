@@ -18,6 +18,9 @@ const storageMock = {
   getLeadSequenceState: vi.fn(),
   updateLead: vi.fn(async () => ({})),
   annulerReponseOutreach: vi.fn(async () => 1),
+  autreReponseEnAttente: vi.fn(async () => false),
+  finaliserEnvoiInbox: vi.fn(async () => {}),
+  supprimerInboxMessage: vi.fn(async () => {}),
   getOutreachMessages: vi.fn(async () => [] as any[]),
   getProspectionCampaign: vi.fn(async () => null),
   getTask: vi.fn(),
@@ -236,6 +239,51 @@ describe("boîte « Réponses »", () => {
     expect(etat).toMatchObject({ status: "active", currentStep: 2, delayAnchorAt: "2026-10-28T08:00:00.000Z" });
     expect(new Date(etat.nextRunAt).getTime()).toBeGreaterThanOrEqual(avant);
     expect(opts).toEqual({ libererBrouillonEtape: 3 }); // le brouillon attendu est l'étape currentStep + 1
+  });
+
+  it("pas-une-reponse : une autre réponse du lead attend → requalifiée et tâche retirée, mais séquence NON restaurée", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    storageMock.autreReponseEnAttente.mockResolvedValueOnce(true);
+    const r = await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true, restaure: false, raison: "autre_reponse_en_attente" });
+    expect(storageMock.autreReponseEnAttente).toHaveBeenCalledWith(7, 11);
+    // La vérification se fait APRÈS la requalification (celle-ci ne compte plus comme réponse).
+    expect(storageMock.requalifierDernierEntrantInbox.mock.invocationCallOrder[0])
+      .toBeLessThan(storageMock.autreReponseEnAttente.mock.invocationCallOrder[0]);
+    expect(storageMock.restaurerEtatSequence).not.toHaveBeenCalled();
+    expect(storageMock.annulerReponseOutreach).not.toHaveBeenCalled();
+    expect(storageMock.updateLead).not.toHaveBeenCalled();
+    // État d'avant gardé pour une restauration future.
+    expect(storageMock.updateInboxConversation).toHaveBeenCalledWith(11, { statut: "traitee", nonLu: false, taskId: null });
+    expect(storageMock.deleteTask).toHaveBeenCalledWith(99);
+  });
+
+  it("pas-une-reponse : autre conversation « à traiter » ou autre entrant « reponse » → même refus de restaurer (storage décide)", async () => {
+    // Les deux cas sont tranchés par storage.autreReponseEnAttente (testé dans storage.inbox-restauration.test.ts).
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ id: 11 }));
+    storageMock.autreReponseEnAttente.mockResolvedValueOnce(true);
+    expect((await (await appel("POST", "/api/reponses/11/pas-une-reponse")).json()).raison).toBe("autre_reponse_en_attente");
+  });
+
+  it("pas-une-reponse : Jeanne a déjà répondu après le dernier entrant → 409 deja_repondu, rien touché", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { sens: "entrant", nature: "reponse", sentAt: new Date("2026-11-01T09:00:00Z") },
+      { sens: "sortant", nature: "nous", sentAt: new Date("2026-11-01T10:00:00Z") },
+    ]);
+    const r = await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect(r.status).toBe(409);
+    expect(await r.json()).toEqual({ ok: false, raison: "deja_repondu" });
+    expect(storageMock.requalifierDernierEntrantInbox).not.toHaveBeenCalled();
+    expect(storageMock.restaurerEtatSequence).not.toHaveBeenCalled();
+    expect(storageMock.updateInboxConversation).not.toHaveBeenCalled();
+  });
+
+  it("envoyer : texte trop long → 400", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    envoi.envoyerReponse.mockResolvedValueOnce({ ok: false, raison: "texte_trop_long" });
+    expect((await appel("POST", "/api/reponses/11/envoyer", { texte: "x" })).status).toBe(400);
   });
 
   it("traitee : conversation traitée et tâche cochée", async () => {

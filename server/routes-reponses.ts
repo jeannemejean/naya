@@ -40,13 +40,15 @@ const depsEnvoi: DepsEnvoiReponse = {
   journaliserTentativeLinkedIn: (userId, leadId, ok, error, portee) => storage.recordLinkedInSendAttempt(userId, leadId, ok, error, portee),
   persisterRestriction: (userId, portee, error) => persisterRestrictionLinkedIn(userId, portee, error),
   ajouterMessage: (row) => storage.ajouterInboxMessage(row),
+  finaliserEnvoi: (cle, providerId, sentAt) => storage.finaliserEnvoiInbox(cle, providerId, sentAt),
+  supprimerMessage: (pm) => storage.supprimerInboxMessage(pm),
   updateConversation: (id, patch) => storage.updateInboxConversation(id, patch),
   getTask: (id) => storage.getTask(id),
   completeTask: (id) => storage.completeTask(id),
 };
 
 /** Statut HTTP d'un refus d'envoi. */
-const STATUT_REFUS: Record<string, number> = { texte_vide: 400, introuvable: 404, echec: 502 };
+const STATUT_REFUS: Record<string, number> = { texte_vide: 400, texte_trop_long: 400, introuvable: 404, echec: 502 };
 
 /**
  * « Ce n'était pas une vraie réponse » : la séquence reprend là où elle était, jamais dans le
@@ -200,9 +202,23 @@ export function registerReponsesRoutes(app: Express) {
     try {
       const conv = await conversationDe(req, res);
       if (!conv) return;
+      // Jeanne a déjà répondu après le dernier message entrant : c'était bien une réponse.
+      const fil = await storage.getInboxMessages(conv.id);
+      const t = (m: { sentAt: Date }) => new Date(m.sentAt).getTime();
+      const dernierEntrant = Math.max(-Infinity, ...fil.filter((m) => m.sens === "entrant").map(t));
+      if (fil.some((m) => m.sens === "sortant" && m.nature === "nous" && t(m) > dernierEntrant)) {
+        return res.status(409).json({ ok: false, raison: "deja_repondu" });
+      }
+      await storage.requalifierDernierEntrantInbox(conv.id, "accuse");
       const etat = conv.etatAvantReponse as EtatAvantReponse | null;
       let restaure = false;
-      if (etat) {
+      let raison: string | undefined;
+      // Une AUTRE vraie réponse du lead attend encore (après requalification de celle-ci) :
+      // la séquence reste arrêtée, et l'état d'avant est gardé pour une restauration future.
+      const autre = etat ? await storage.autreReponseEnAttente(conv.leadId, conv.id) : false;
+      if (etat && autre) {
+        raison = "autre_reponse_en_attente";
+      } else if (etat) {
         const plan = planRestauration(etat, new Date());
         restaure = !!(await storage.restaurerEtatSequence(conv.leadId, plan.etat, plan.opts));
         // R13 : défaire les suites de l'ingestion (au mieux : l'état est déjà restauré).
@@ -220,11 +236,13 @@ export function registerReponsesRoutes(app: Express) {
           }
         }
       }
-      await storage.requalifierDernierEntrantInbox(conv.id, "accuse");
-      // etatAvantReponse effacé : une prochaine vraie réponse sauvegardera l'état du moment.
-      await storage.updateInboxConversation(conv.id, { statut: "traitee", nonLu: false, taskId: null, etatAvantReponse: null });
+      // etatAvantReponse effacé une fois consommé : une prochaine vraie réponse sauvegardera
+      // l'état du moment. Gardé si la restauration a été différée (autre réponse en attente).
+      await storage.updateInboxConversation(conv.id, {
+        statut: "traitee", nonLu: false, taskId: null, ...(raison ? {} : { etatAvantReponse: null }),
+      });
       if (conv.taskId) await storage.deleteTask(conv.taskId);
-      res.json({ ok: true, restaure });
+      res.json({ ok: true, restaure, ...(raison ? { raison } : {}) });
     } catch (e: any) {
       console.error(`[Reponses] pas une réponse : ${erreurSure(e)}`);
       res.status(500).json({ message: "Échec" });

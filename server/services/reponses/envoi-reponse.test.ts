@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { envoyerReponse, type DepsEnvoiReponse } from "./envoi-reponse";
+import { envoyerReponse, cleEnAttente, type DepsEnvoiReponse } from "./envoi-reponse";
 
 const NOW = new Date("2026-11-02T10:00:00Z");
 
@@ -33,11 +33,13 @@ function monde(o: { channel?: "linkedin" | "email"; restriction?: any; deconnect
     journaliserTentativeLinkedIn: vi.fn(async () => {}),
     persisterRestriction: vi.fn(async () => {}),
     ajouterMessage: vi.fn(async () => true),
+    finaliserEnvoi: vi.fn(async () => {}),
+    supprimerMessage: vi.fn(async () => {}),
     updateConversation: vi.fn(async (_id: number, p: any) => { Object.assign(conv, p); }),
     getTask: vi.fn(async (id: number) => tasks.get(id)),
     completeTask: vi.fn(async (id: number) => { tasks.get(id).completed = true; }),
   };
-  return { deps, conv, tasks };
+  return { deps, conv, tasks, messages };
 }
 
 describe("envoyerReponse", () => {
@@ -96,7 +98,8 @@ describe("envoyerReponse", () => {
     expect(deps.journaliserTentativeLinkedIn).toHaveBeenCalledWith("u1", 7, false, "http_500 boom", null);
     expect(deps.persisterRestriction).not.toHaveBeenCalled();
     expect(conv.statut).toBe("a_traiter");
-    expect(deps.ajouterMessage).not.toHaveBeenCalled();
+    expect(deps.supprimerMessage).toHaveBeenCalledWith(cleEnAttente(11, "Bonjour", NOW)); // réservation retirée
+    expect(deps.finaliserEnvoi).not.toHaveBeenCalled();
   });
 
   it("email : même fil (reply_to = dernier entrant), objet « Re: … », depuis le compte Gmail du périmètre", async () => {
@@ -111,12 +114,20 @@ describe("envoyerReponse", () => {
     expect(deps.journaliserTentativeLinkedIn).not.toHaveBeenCalled();
   });
 
-  it("succès : message sortant/nous stocké, conversation traitée, tâche cochée", async () => {
+  it("succès : réservation « en_attente » AVANT l'appel, finalisée avec l'id réel, conversation traitée, tâche cochée", async () => {
     const { deps, conv, tasks } = monde();
-    await envoyerReponse(11, "u1", "Avec plaisir", deps);
-    expect(deps.ajouterMessage).toHaveBeenCalledWith(expect.objectContaining({
-      conversationId: 11, providerMessageId: "li-msg-1", sens: "sortant", nature: "nous", body: "Avec plaisir", sentAt: NOW,
-    }));
+    const cle = cleEnAttente(11, "Avec plaisir", NOW);
+    expect(cle).toMatch(/^pending:11:[0-9a-f]{64}:\d+$/);
+    (deps.envoyerLinkedIn as any).mockImplementationOnce(async () => {
+      // La réservation est déjà en base quand le fournisseur est appelé.
+      expect(deps.ajouterMessage).toHaveBeenCalledWith(expect.objectContaining({
+        conversationId: 11, providerMessageId: cle, sens: "sortant", nature: "en_attente", body: "Avec plaisir", sentAt: NOW,
+      }));
+      return { ok: true, messageId: "li-msg-1" };
+    });
+    expect(await envoyerReponse(11, "u1", "Avec plaisir", deps)).toEqual({ ok: true });
+    expect(deps.finaliserEnvoi).toHaveBeenCalledWith(cle, "li-msg-1", NOW);
+    expect(deps.supprimerMessage).not.toHaveBeenCalled();
     expect(conv.statut).toBe("traitee");
     expect(conv.nonLu).toBe(false);
     expect(conv.lastMessageAt).toEqual(NOW);
@@ -144,7 +155,44 @@ describe("envoyerReponse", () => {
 
   it("une écriture après l'envoi qui échoue ne transforme pas le succès en échec (pas de renvoi)", async () => {
     const { deps } = monde();
-    (deps.ajouterMessage as any).mockRejectedValueOnce(new Error("db down"));
+    (deps.finaliserEnvoi as any).mockRejectedValueOnce(new Error("db down"));
     expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: true });
+  });
+
+  it("même texte déjà parti il y a moins de 2 minutes : deja_envoye, rien envoyé", async () => {
+    const { deps, messages } = monde();
+    messages.push({ id: 4, conversationId: 11, providerMessageId: "li-x", sens: "sortant", nature: "nous", subject: null,
+      body: " Bonjour ", sentAt: new Date(NOW.getTime() - 60_000), createdAt: new Date(NOW.getTime() - 60_000) });
+    expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: false, raison: "deja_envoye" });
+    expect(deps.envoyerLinkedIn).not.toHaveBeenCalled();
+    expect(deps.ajouterMessage).not.toHaveBeenCalled();
+  });
+
+  it("même texte il y a plus de 2 minutes : renvoyé", async () => {
+    const { deps, messages } = monde();
+    messages.push({ id: 4, conversationId: 11, providerMessageId: "li-x", sens: "sortant", nature: "nous", subject: null,
+      body: "Bonjour", sentAt: new Date(NOW.getTime() - 3 * 60_000), createdAt: new Date(NOW.getTime() - 3 * 60_000) });
+    expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: true });
+  });
+
+  it("requête concurrente (autre instance) : la réservation bute sur l'unicité → deja_envoye, rien envoyé", async () => {
+    const { deps } = monde({ channel: "email" });
+    (deps.ajouterMessage as any).mockResolvedValueOnce(false);
+    expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: false, raison: "deja_envoye" });
+    expect(deps.envoyerEmail).not.toHaveBeenCalled();
+  });
+
+  it("email refusé par le fournisseur : réservation retirée", async () => {
+    const { deps } = monde({ channel: "email" });
+    (deps.envoyerEmail as any).mockResolvedValueOnce({ ok: false, error: "http_500" });
+    expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: false, raison: "echec" });
+    expect(deps.supprimerMessage).toHaveBeenCalledWith(cleEnAttente(11, "Bonjour", NOW));
+  });
+
+  it("plus de 8000 caractères : texte_trop_long, rien envoyé", async () => {
+    const { deps } = monde();
+    expect(await envoyerReponse(11, "u1", "a".repeat(8001), deps)).toEqual({ ok: false, raison: "texte_trop_long" });
+    expect(await envoyerReponse(11, "u1", "a".repeat(8000), deps)).toEqual({ ok: true });
+    expect(deps.envoyerLinkedIn).toHaveBeenCalledTimes(1);
   });
 });

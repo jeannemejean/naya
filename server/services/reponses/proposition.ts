@@ -63,7 +63,7 @@ export function promptProposition(a: {
     "## Tâche : répondre à un prospect qui a répondu",
     `Le prospect ${a.lead.name}${a.lead.role ? `, ${a.lead.role}` : ""}${a.lead.company ? ` chez ${a.lead.company}` : ""} a répondu à une séquence de prospection. Tu proposes la réponse suivante, que l'expéditeur relira et modifiera avant de l'envoyer lui-même.`,
     a.client
-      ? `Tu écris au nom de « ${a.signature} » (projet client), dans son identité à lui. Jamais au nom de l'utilisatrice de Naya, jamais sa signature.`
+      ? `Tu écris au nom de « ${a.signature} » (projet client), dans son identité et avec sa signature, aucune autre.`
       : `Tu écris au nom de ${a.signature || "l'utilisatrice"}.`,
     a.campagne?.offer ? `Offre de la campagne : ${a.campagne.offer}` : "",
     a.campagne?.campaignBrief ? `Proposition en une phrase : ${a.campagne.campaignBrief}` : "",
@@ -87,6 +87,14 @@ export function promptProposition(a: {
   }).join("\n");
   const message = `Voici le fil de la conversation, du plus ancien au plus récent :\n<fil>\n${fil}\n</fil>\n\nPropose la réponse au dernier message du prospect.`;
   return { system, message };
+}
+
+/**
+ * Voix d'un projet CLIENT (mode agence). VOIX_TIERS dit « au nom de l'utilisatrice » : faux ici,
+ * c'est le client qui parle — d'où cette voix dédiée, même règle (jamais Naya ni une IA).
+ */
+export function voixClient(signature: string): string {
+  return `Tu écris AU NOM de « ${signature} », la marque cliente décrite ci-dessous, à une personne qui lui a répondu. Ce n'est pas Naya qui parle : c'est ce client, avec sa voix, comme il l'écrirait lui-même. Tu ne mentionnes jamais Naya ni une IA.`;
 }
 
 /** Nettoie la sortie du modèle (guillemets, clôtures de code, balises). */
@@ -136,7 +144,10 @@ export async function proposerReponse(userId: string, conversationId: number, de
   const projectId = campagne?.projectId ?? conv.projectId ?? null;
   const focus = [campagne?.offer, campagne?.messageAngle].filter(Boolean).join(" — ") || "réponse à un prospect";
   const contexte = await deps.contexte(userId, projectId, focus);
-  const texte = nettoyerProposition(await deps.appelIA({ system: systemPromptPour("tiers", contexte, consignes), message, userId, projectId }));
+  const system = resolu.portee != null
+    ? `${voixClient(signature)}\n\n${contexte}\n\n${consignes}`
+    : systemPromptPour("tiers", contexte, consignes);
+  const texte = nettoyerProposition(await deps.appelIA({ system, message, userId, projectId }));
   if (!texte) throw new Error("proposition vide");
   return texte;
 }

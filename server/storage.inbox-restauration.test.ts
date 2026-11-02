@@ -21,6 +21,8 @@ vi.mock("./db", () => {
         set: (v: any) => { appel.set = v; return suite; },
         where: (w: any) => { appel.where = w; return suite; },
         returning: () => suite,
+        innerJoin: () => suite,
+        limit: () => suite,
         then: (ok: any, ko: any) => Promise.resolve(h.resultats.shift() ?? []).then(ok, ko),
       };
       return suite;
@@ -84,5 +86,52 @@ describe("storage.annulerReponseOutreach (R13)", () => {
     expect(w.sql).toContain('"outreach_messages"."lead_id" = $');
     expect(w.sql).toContain('"outreach_messages"."response_date" = $');
     expect(w.params).toContain(7);
+  });
+});
+
+describe("storage.autreReponseEnAttente", () => {
+  it("autre conversation du lead « à traiter » → true sans chercher plus loin", async () => {
+    h.resultats = [[{ id: 12 }]];
+    expect(await storage.autreReponseEnAttente(7, 11)).toBe(true);
+    const w = q(h.appels[0].where);
+    expect(w.sql).toContain('"inbox_conversations"."id" <> $');
+    expect(w.params).toEqual(expect.arrayContaining([7, 11, "a_traiter"]));
+    expect(h.appels).toHaveLength(1);
+  });
+
+  it("sinon : un entrant « reponse » dans n'importe quelle conversation du lead → true", async () => {
+    h.resultats = [[], [{ id: 5 }]];
+    expect(await storage.autreReponseEnAttente(7, 11)).toBe(true);
+    const w = q(h.appels[1].where);
+    expect(w.params).toEqual(expect.arrayContaining([7, "entrant", "reponse"]));
+  });
+
+  it("ni l'un ni l'autre → false", async () => {
+    h.resultats = [[], []];
+    expect(await storage.autreReponseEnAttente(7, 11)).toBe(false);
+  });
+});
+
+describe("storage.finaliserEnvoiInbox", () => {
+  it("écho déjà stocké sous l'id réel → la réservation est supprimée", async () => {
+    h.resultats = [[{ id: 9 }], []];
+    await storage.finaliserEnvoiInbox("pending:11:abc:1", "li-1", new Date());
+    expect(h.appels.map((a) => `${a.op}:${a.table}`)).toEqual(["tx:select:inbox_messages", "tx:delete:inbox_messages"]);
+    expect(q(h.appels[1].where).params).toEqual(["pending:11:abc:1"]);
+  });
+
+  it("sinon → la réservation devient « nous » avec l'id réel", async () => {
+    h.resultats = [[], []];
+    const at = new Date("2026-11-02T10:00:00Z");
+    await storage.finaliserEnvoiInbox("pending:11:abc:1", "li-1", at);
+    expect(h.appels[1].op).toBe("tx:update");
+    expect(h.appels[1].set).toEqual({ providerMessageId: "li-1", nature: "nous", sentAt: at });
+  });
+
+  it("sans id fournisseur → garde la clé de réservation", async () => {
+    h.resultats = [[]];
+    await storage.finaliserEnvoiInbox("pending:11:abc:1", null, new Date());
+    expect(h.appels.map((a) => a.op)).toEqual(["tx:update"]);
+    expect(h.appels[0].set.providerMessageId).toBe("pending:11:abc:1");
   });
 });

@@ -14,8 +14,14 @@
  *  - `compte_deconnecte`: compte Unipile du canal en erreur (`comptesDeconnectes`) ;
  *  - `compte_absent`    : aucun compte du canal dans le périmètre, ou ce n'est plus le compte
  *                         qui porte la conversation (le chat / le fil lui appartient) ;
- *  - `envoi_en_cours`   : un envoi pour cette conversation est déjà en vol (double clic) ;
- *  - `texte_vide`, `introuvable` (conversation absente ou d'un autre utilisateur) ;
+ *  - `envoi_en_cours`   : un envoi pour cette conversation est déjà en vol dans ce processus ;
+ *  - `deja_envoye`      : le même texte est déjà parti (ou part) pour cette conversation il y a
+ *                         moins de 2 minutes — garde VISIBLE EN BASE : une ligne sortante
+ *                         « en_attente » à identifiant déterministe est réservée AVANT l'appel
+ *                         au fournisseur ; une seconde requête simultanée (autre instance,
+ *                         double clic) bute sur l'unicité de providerMessageId ;
+ *  - `texte_vide`, `texte_trop_long` (> 8000 caractères), `introuvable` (conversation absente
+ *                         ou d'un autre utilisateur) ;
  *  - `echec`            : le fournisseur a refusé, ou le prospect n'a pas d'adresse email.
  *
  * Une réponse humaine n'est JAMAIS refusée par les plafonds LinkedIn (montée en charge,
@@ -27,10 +33,31 @@ import type { IdentiteEnvoi, Portee } from "../connexions/portee";
 import type { EmailSendResult } from "../unipile-mail";
 import { subjectReponse } from "../unipile-mail";
 import { isLinkedInRestrictionSignal } from "../prospection-linkedin-guard";
+import { createHash } from "node:crypto";
+
+/** Limite de longueur d'une réponse (LinkedIn ≈ 8000 caractères — à confirmer côté Unipile ; même borne pour l'email). */
+export const LONGUEUR_MAX_REPONSE = 8000;
+/** Fenêtre pendant laquelle un même texte n'est pas renvoyé dans la même conversation. */
+export const FENETRE_DOUBLON_MS = 2 * 60_000;
+/** Nature d'une ligne sortante réservée avant l'appel au fournisseur. */
+export const NATURE_EN_ATTENTE = "en_attente";
+
+/** Identifiant déterministe de la réservation : même conversation + même texte + même minute. */
+export function cleEnAttente(conversationId: number, texte: string, now: Date): string {
+  const h = createHash("sha256").update(texte).digest("hex");
+  return `pending:${conversationId}:${h}:${Math.floor(now.getTime() / 60_000)}`;
+}
+
+/** Un message sortant au même texte, envoyé ou en vol, dans la fenêtre donnée. */
+export function doublonRecent(messages: InboxMessage[], texte: string, now: Date, fenetreMs: number): boolean {
+  return messages.some((m) => m.sens === "sortant" && (m.nature === "nous" || m.nature === NATURE_EN_ATTENTE)
+    && (m.body ?? "").trim() === texte
+    && Math.abs(now.getTime() - new Date(m.createdAt ?? m.sentAt).getTime()) <= fenetreMs);
+}
 
 export type RaisonRefus =
   | "envoi_coupe" | "compte_restreint" | "compte_deconnecte" | "compte_absent"
-  | "envoi_en_cours" | "texte_vide" | "introuvable" | "echec";
+  | "envoi_en_cours" | "deja_envoye" | "texte_vide" | "texte_trop_long" | "introuvable" | "echec";
 export type ResultatEnvoi = { ok: true } | { ok: false; raison: RaisonRefus };
 
 export interface DepsEnvoiReponse {
@@ -45,7 +72,12 @@ export interface DepsEnvoiReponse {
   envoyerEmail: (o: { accountId: string; to: string; toName: string; subject: string; body: string; replyToProviderId?: string }) => Promise<EmailSendResult>;
   journaliserTentativeLinkedIn: (userId: string, leadId: number, ok: boolean, error: string | null, portee: Portee) => Promise<unknown>;
   persisterRestriction: (userId: string, portee: Portee, error: string | null) => Promise<unknown>;
+  /** false si le providerMessageId existe déjà (unicité en base). */
   ajouterMessage: (row: InsertInboxMessage) => Promise<boolean>;
+  /** Ligne « en_attente » → message envoyé (`nous`), avec l'identifiant réel du fournisseur s'il existe. */
+  finaliserEnvoi: (cleAttente: string, providerId: string | null, sentAt: Date) => Promise<unknown>;
+  /** Retire la ligne « en_attente » (envoi refusé par le fournisseur). */
+  supprimerMessage: (providerMessageId: string) => Promise<unknown>;
   updateConversation: (id: number, patch: Partial<InboxConversation>) => Promise<unknown>;
   getTask: (id: number) => Promise<Task | undefined>;
   completeTask: (id: number) => Promise<unknown>;
@@ -69,6 +101,7 @@ export async function envoyerReponse(
 ): Promise<ResultatEnvoi> {
   const texte = (texteBrut ?? "").trim();
   if (!texte) return { ok: false, raison: "texte_vide" };
+  if (texte.length > LONGUEUR_MAX_REPONSE) return { ok: false, raison: "texte_trop_long" };
   if (!deps.envoiActif()) return { ok: false, raison: "envoi_coupe" };
   if (enVol.has(conversationId)) return { ok: false, raison: "envoi_en_cours" };
   enVol.add(conversationId);
@@ -82,6 +115,19 @@ export async function envoyerReponse(
 
     let providerId: string | undefined;
     let sujet: string | null = null;
+    const messages = await deps.getMessages(conv.id);
+
+    // Réservation visible en base, posée juste avant l'appel au fournisseur (après tous les refus).
+    const cle = cleEnAttente(conv.id, texte, now);
+    const reserver = async (): Promise<boolean> => {
+      if (doublonRecent(messages, texte, now, FENETRE_DOUBLON_MS)) return false;
+      return deps.ajouterMessage({
+        conversationId: conv.id, providerMessageId: cle, sens: "sortant", nature: NATURE_EN_ATTENTE,
+        subject: sujet, body: texte, sentAt: now,
+      });
+    };
+    const liberer = () => deps.supprimerMessage(cle)
+      .catch((e: any) => console.error(`[Reponses] réservation non retirée (conversation ${conv.id}) : ${erreurSure(e)}`));
 
     if (conv.channel === "linkedin") {
       const li = identite.linkedin;
@@ -89,11 +135,13 @@ export async function envoyerReponse(
       if (li.restriction) return { ok: false, raison: "compte_restreint" };
       if (li.deconnecte) return { ok: false, raison: "compte_deconnecte" };
       if (li.accountId !== conv.unipileAccountId || !conv.providerChatId) return { ok: false, raison: "compte_absent" };
+      if (!(await reserver())) return { ok: false, raison: "deja_envoye" };
       const r = await deps.envoyerLinkedIn({ accountId: li.accountId, chatId: conv.providerChatId, text: texte });
       // Toute requête vue par LinkedIn compte, réussie ou non (garde de risque du worker).
       await deps.journaliserTentativeLinkedIn(userId, lead.id, r.ok, r.ok ? null : (r.error ?? null), portee)
         .catch((e: any) => console.error(`[Reponses] tentative LinkedIn non journalisée (lead ${lead.id}) : ${erreurSure(e)}`));
       if (!r.ok) {
+        await liberer();
         if (isLinkedInRestrictionSignal(r.error)) {
           await deps.persisterRestriction(userId, portee, r.error ?? null).catch((e: any) =>
             console.error(`[Reponses] ÉCHEC DE PERSISTANCE de la restriction LinkedIn (user ${userId}) : ${erreurSure(e)}`));
@@ -109,19 +157,21 @@ export async function envoyerReponse(
       if (!em?.unipileAccountId) return { ok: false, raison: "compte_absent" };
       if (em.deconnecte) return { ok: false, raison: "compte_deconnecte" };
       if (em.unipileAccountId !== conv.unipileAccountId) return { ok: false, raison: "compte_absent" };
+      // Destinataire : l'adresse du lead (inbox_messages ne stocke pas l'expéditeur d'un entrant).
       if (!lead.email) return { ok: false, raison: "echec" };
-      const messages = await deps.getMessages(conv.id);
       const entrant = dernierEntrant(messages);
       const avecSujet = [...messages]
         .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())
         .find((m) => m.subject && m.subject.trim());
       sujet = subjectReponse(entrant?.subject?.trim() || avecSujet?.subject?.trim() || "");
+      if (!(await reserver())) return { ok: false, raison: "deja_envoye" };
       const r = await deps.envoyerEmail({
         accountId: em.unipileAccountId, to: lead.email, toName: lead.name, subject: sujet,
         body: echapperHtml(texte).replace(/\r?\n/g, "<br>"),
         replyToProviderId: entrant?.providerMessageId,
       });
       if (!r.ok) {
+        await liberer();
         console.error(`[Reponses] envoi email refusé (conversation ${conv.id}) : ${String(r.error ?? "").slice(0, 120)}`);
         return { ok: false, raison: "echec" };
       }
@@ -133,12 +183,9 @@ export async function envoyerReponse(
     const auMieux = async (quoi: string, f: () => Promise<unknown>) => {
       try { await f(); } catch (e: any) { console.error(`[Reponses] conversation ${conv.id} : ${quoi} échoué — ${erreurSure(e)}`); }
     };
-    await auMieux("stockage du message envoyé", () => deps.ajouterMessage({
-      conversationId: conv.id,
-      // Même identifiant que l'écho du webhook (idempotent) quand le fournisseur le renvoie.
-      providerMessageId: providerId || `naya-reponse-${conv.id}-${now.getTime()}`,
-      sens: "sortant", nature: "nous", subject: sujet, body: texte, sentAt: now,
-    }));
+    // La réservation devient le message envoyé, avec l'identifiant réel du fournisseur (celui
+    // de l'écho du webhook) quand il est renvoyé.
+    await auMieux("stockage du message envoyé", () => deps.finaliserEnvoi(cle, providerId ?? null, now));
     await auMieux("conversation traitée", () => deps.updateConversation(conv.id, {
       statut: "traitee", nonLu: false,
       lastMessageAt: !conv.lastMessageAt || now > conv.lastMessageAt ? now : conv.lastMessageAt,

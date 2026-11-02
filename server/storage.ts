@@ -762,6 +762,11 @@ export interface IStorage {
   compterInboxATraiter(userId: string): Promise<number>;
   /** Change la nature du dernier message entrant (faux positif → « accuse »). */
   requalifierDernierEntrantInbox(conversationId: number, nature: string): Promise<boolean>;
+  /** Ligne sortante « en_attente » → « nous » avec l'id réel ; supprimée si l'écho du webhook l'a déjà stocké. */
+  finaliserEnvoiInbox(cleAttente: string, providerId: string | null, sentAt: Date): Promise<void>;
+  supprimerInboxMessage(providerMessageId: string): Promise<void>;
+  /** Une AUTRE réponse du lead attend : autre conversation à traiter, ou un entrant « reponse » (n'importe laquelle de ses conversations). */
+  autreReponseEnAttente(leadId: number, conversationId: number): Promise<boolean>;
   deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number>;
   marquerSuiviEmail(userId: string, leadId: number, step: number, champ: "openedAt" | "clickedAt", at: Date): Promise<void>;
   /**
@@ -3381,6 +3386,45 @@ export class DatabaseStorage implements IStorage {
     if (!dernier) return false;
     await db.update(inboxMessages).set({ nature }).where(eq(inboxMessages.id, dernier.id));
     return true;
+  }
+
+  async finaliserEnvoiInbox(cleAttente: string, providerId: string | null, sentAt: Date): Promise<void> {
+    await db.transaction(async (tx) => {
+      if (providerId) {
+        const [echo] = await tx.select({ id: inboxMessages.id }).from(inboxMessages)
+          .where(eq(inboxMessages.providerMessageId, providerId)).limit(1);
+        if (echo) {
+          // L'écho du webhook est arrivé avant : il tient lieu de message envoyé.
+          await tx.delete(inboxMessages).where(eq(inboxMessages.providerMessageId, cleAttente));
+          return;
+        }
+      }
+      await tx.update(inboxMessages)
+        .set({ providerMessageId: providerId ?? cleAttente, nature: "nous", sentAt })
+        .where(eq(inboxMessages.providerMessageId, cleAttente));
+    });
+  }
+
+  async supprimerInboxMessage(providerMessageId: string): Promise<void> {
+    await db.delete(inboxMessages).where(eq(inboxMessages.providerMessageId, providerMessageId));
+  }
+
+  async autreReponseEnAttente(leadId: number, conversationId: number): Promise<boolean> {
+    const [autreConv] = await db.select({ id: inboxConversations.id }).from(inboxConversations)
+      .where(and(
+        eq(inboxConversations.leadId, leadId),
+        ne(inboxConversations.id, conversationId),
+        eq(inboxConversations.statut, "a_traiter"),
+      )).limit(1);
+    if (autreConv) return true;
+    const [reponse] = await db.select({ id: inboxMessages.id }).from(inboxMessages)
+      .innerJoin(inboxConversations, eq(inboxConversations.id, inboxMessages.conversationId))
+      .where(and(
+        eq(inboxConversations.leadId, leadId),
+        eq(inboxMessages.sens, "entrant"),
+        eq(inboxMessages.nature, "reponse"),
+      )).limit(1);
+    return !!reponse;
   }
 
   async deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number> {

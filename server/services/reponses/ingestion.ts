@@ -14,7 +14,7 @@
  *  - on ne journalise jamais le sujet ni le corps d'un message.
  */
 import type {
-  EtatAvantReponse, InboxConversation, InsertInboxConversation, InsertInboxMessage, InsertTask, Lead,
+  EtatAvantReponse, InboxConversation, InboxMessage, InsertInboxConversation, InsertInboxMessage, InsertTask, Lead,
   LeadSequenceState, OutreachMessage, Task,
 } from "@shared/schema";
 import type { IStorage } from "../../storage";
@@ -66,6 +66,8 @@ export interface DepsIngestion {
   /** false si le message existait déjà (course entre deux livraisons du même webhook). */
   ajouterMessage: (row: InsertInboxMessage) => Promise<boolean>;
   dernierEntrantAt: (conversationId: number) => Promise<Date | null>;
+  /** Messages d'une conversation (déduplication de l'écho d'un envoi fait depuis Naya). */
+  messagesConversation: (conversationId: number) => Promise<InboxMessage[]>;
   /**
    * EN UNE TRANSACTION : obtient la conversation (créée avec `conv` si absente), réserve le
    * message (null s'il existait déjà : rien n'est écrit), lit l'état de séquence verrouillé,
@@ -139,6 +141,9 @@ export function planEntrant(
     return { state: patchState, conv: patchConv };
   };
 }
+
+/** Fenêtre de déduplication de l'écho d'un message envoyé depuis Naya. */
+export const ECHO_FENETRE_MS = 10 * 60_000;
 
 /** Ordre du pipeline (miroir serveur de client/src/pages/outreach/stages.ts). */
 export const STAGES = [
@@ -363,7 +368,14 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
     const conv = await deps.getConversation(lead.id, channel);
     if (!conv) return;
     const dernierEntrant = await deps.dernierEntrantAt(conv.id);
-    if (!(await deps.ajouterMessage(message(conv.id, "sortant", "nous")))) return;
+    // Écho d'une réponse envoyée depuis la boîte (identifiant fournisseur différent, ex. Gmail) :
+    // même texte sortant déjà stocké (ou en vol) dans les 10 minutes → pas de doublon.
+    const corps = (evt.body ?? "").trim();
+    const deja = !!corps && (await deps.messagesConversation(conv.id)).some((m) =>
+      m.sens === "sortant" && (m.nature === "nous" || m.nature === "en_attente")
+      && (m.body ?? "").trim() === corps
+      && Math.abs(new Date(m.sentAt).getTime() - evt.sentAt.getTime()) <= ECHO_FENETRE_MS);
+    if (!deja && !(await deps.ajouterMessage(message(conv.id, "sortant", "nous")))) return;
     const patch: Partial<InboxConversation> = { lastMessageAt: plusRecent(conv.lastMessageAt) };
     if (dernierEntrant && evt.sentAt > dernierEntrant) {
       patch.statut = "traitee";
@@ -445,6 +457,7 @@ export function depsDepuisStorage(s: IStorage): DepsIngestion {
     getConversation: (l, c) => s.getInboxConversation(l, c),
     updateConversation: (id, p) => s.updateInboxConversation(id, p),
     ajouterMessage: (row) => s.ajouterInboxMessage(row),
+    messagesConversation: (cid) => s.getInboxMessages(cid),
     dernierEntrantAt: (cid) => s.dernierEntrantInboxAt(cid),
     enregistrerEntrant: (conv, msg, plan) => s.enregistrerEntrantInbox(conv, msg, plan),
     attacherTache: (cid, ancien, nouveau) => s.attacherTacheInbox(cid, ancien, nouveau),

@@ -74,6 +74,7 @@ function fausseBase() {
     deconnecterCompte: vi.fn(async (c: any, at: Date) => { db.deconnexions.push({ ...c, at }); }),
     reconnecterCompte: vi.fn(async (c: any) => { db.reconnexions.push({ ...c }); }),
     fuseau: vi.fn(async () => "Europe/Paris"),
+    messagesConversation: vi.fn(async (cid: number) => db.messages.filter((m) => m.conversationId === cid)),
   };
   return { db, deps, lead };
 }
@@ -228,6 +229,30 @@ describe("traiterEvenement — notre propre email renvoyé comme « reçu »", (
     expect(db.state.status).toBe("active");
     expect(db.tasks).toHaveLength(0);
     expect(db.messages[0]).toMatchObject({ sens: "sortant", nature: "nous" });
+  });
+
+  it("écho Gmail d'une réponse envoyée depuis la boîte (autre identifiant, même texte < 10 min) : pas de doublon, conversation traitée", async () => {
+    const { db, deps } = fausseBase();
+    await traiterEvenement({
+      kind: "mail", accountId: "acc-gm", providerMessageId: "rep-1", threadId: "th-1", fromSelf: false, senderEmail: "marc@acme.fr",
+      subject: "Re: Votre offre", body: "Oui, parlons-en.", sentAt: new Date("2026-11-02T09:00:00Z"),
+    }, deps);
+    const conv = db.conversations[0];
+    // La réponse envoyée depuis Naya, stockée avec l'id renvoyé par Unipile à l'envoi.
+    db.messages.push({ conversationId: conv.id, providerMessageId: "unipile-envoi-1", sens: "sortant", nature: "nous",
+      body: "Avec plaisir, mardi ?", sentAt: new Date("2026-11-02T09:55:00Z") });
+    await traiterEvenement({
+      kind: "mail", accountId: "acc-gm", providerMessageId: "gmail-echo-1", threadId: "th-1", fromSelf: true,
+      destinataires: ["marc@acme.fr"], body: " Avec plaisir, mardi ? ", sentAt: new Date("2026-11-02T09:56:00Z"),
+    }, deps);
+    expect(db.messages.filter((m) => m.sens === "sortant")).toHaveLength(1);
+    expect(conv.statut).toBe("traitee");
+    // Même texte mais hors fenêtre : c'est un autre message, il est stocké.
+    await traiterEvenement({
+      kind: "mail", accountId: "acc-gm", providerMessageId: "gmail-2", threadId: "th-1", fromSelf: true,
+      destinataires: ["marc@acme.fr"], body: "Avec plaisir, mardi ?", sentAt: new Date("2026-11-02T10:30:00Z"),
+    }, deps);
+    expect(db.messages.filter((m) => m.sens === "sortant")).toHaveLength(2);
   });
 });
 

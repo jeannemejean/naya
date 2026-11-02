@@ -55,6 +55,10 @@ describe("proposerReponse", () => {
     const appel = d.appelIA.mock.calls[0][0] as any;
     expect(appel.system).toContain("« Studio Lune »");
     expect(appel.system).not.toContain("Jeanne");
+    // Pas de voix « au nom de l'utilisatrice » (VOIX_TIERS) pour un client : consignes cohérentes.
+    expect(appel.system.startsWith("[tiers]")).toBe(false);
+    expect(appel.system).not.toMatch(/utilisatrice/i);
+    expect(appel.system.startsWith("Tu écris AU NOM de « Studio Lune »")).toBe(true);
     expect(appel.projectId).toBe(42);
     expect(d.contexte).toHaveBeenCalledWith("u1", 42, expect.any(String));
     expect(d.signatureUtilisatrice).not.toHaveBeenCalled();
