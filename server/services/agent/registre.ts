@@ -4,6 +4,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ActionFaite, ClasseOutil, PropositionVue } from "@shared/agent";
 import { OUTILS_LECTURE } from "./outils/lecture";
+import { OUTILS_DIRECTS } from "./outils/directs";
 
 // Ce que l'outil reçoit du serveur. L'utilisatrice vient TOUJOURS de la session
 // (req.userId) : jamais d'un argument fourni par le modèle.
@@ -38,7 +39,7 @@ export const DIRECTS_AUTORISES: ReadonlySet<string> = new Set([
   "ranger_information", "regler_energie",
 ]);
 
-export const REGISTRE: Outil[] = [...OUTILS_LECTURE];
+export const REGISTRE: Outil[] = [...OUTILS_LECTURE, ...OUTILS_DIRECTS];
 
 export function outil(nom: string): Outil | undefined {
   return REGISTRE.find((o) => o.nom === nom);

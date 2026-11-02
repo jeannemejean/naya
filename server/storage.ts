@@ -4781,6 +4781,18 @@ export class DatabaseStorage implements IStorage {
     return { ...list, items };
   }
 
+  /** Supprime une liste ET ses éléments (tout ou rien), seulement si elle appartient à userId. */
+  async deleteTaskList(id: number, userId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [list] = await tx.select({ id: taskLists.id }).from(taskLists)
+        .where(and(eq(taskLists.id, id), eq(taskLists.userId, userId)));
+      if (!list) return false;
+      await tx.delete(taskListItems).where(eq(taskListItems.listId, id));
+      await tx.delete(taskLists).where(eq(taskLists.id, id));
+      return true;
+    });
+  }
+
   async updateTaskListItem(id: number, data: { completed?: boolean }): Promise<TaskListItem | null> {
     const [row] = await db.update(taskListItems).set(data).where(eq(taskListItems.id, id)).returning();
     return row || null;

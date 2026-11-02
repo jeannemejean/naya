@@ -7,6 +7,7 @@ import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { isAiBlocked } from "./services/usage";
 import { executerAgent } from "./services/agent/boucle";
+import { annulerAction } from "./services/agent/journal";
 import { blocSession, dateDansFuseau, fuseauUtilisatrice } from "./services/agent/consignes";
 import { buildSuggestions } from "./services/companion";
 import { extractToMemory } from "./services/memory/extract";
@@ -28,6 +29,22 @@ function decalerJours(jour: string, n: number): string {
 }
 
 export function registerAgentRoutes(app: Express): void {
+  // Annuler une action directe de l'agent (bouton « Annuler », 24 h). L'utilisatrice vient de
+  // la session : l'action d'une autre est « introuvable ». 409 + raison si c'est impossible.
+  app.post("/api/agent/actions/:id/annuler", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId: string = req.userId;
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) return res.status(409).json({ message: "introuvable" });
+      const r = await annulerAction(userId, id, new Date());
+      if (!r.ok) return res.status(409).json({ message: r.raison });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Annulation d'action de l'agent :", error?.message || error);
+      res.status(500).json({ message: "Erreur lors de l'annulation" });
+    }
+  });
+
   app.post("/api/companion/chat", isAuthenticated, async (req: any, res) => {
     try {
       const userId: string = req.userId;
