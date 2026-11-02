@@ -100,7 +100,9 @@ export type PlanEntrant = (
 ) => { state: Partial<LeadSequenceState> | null; conv: Partial<InboxConversation> };
 
 /** Ce que change un message entrant trié : séquence (arrêt, report) et conversation. Pure. */
-export function planEntrant(tri: Classement, evt: Pick<EvenementNormalise, "sentAt" | "accountId">, fil: string | null): PlanEntrant {
+export function planEntrant(
+  tri: Classement, evt: Pick<EvenementNormalise, "sentAt" | "accountId">, fil: string | null, stageActuel?: string | null,
+): PlanEntrant {
   return (state, conv) => {
     const patchConv: Partial<InboxConversation> = {
       lastMessageAt: !conv.lastMessageAt || evt.sentAt > conv.lastMessageAt ? evt.sentAt : conv.lastMessageAt,
@@ -124,7 +126,10 @@ export function planEntrant(tri: Classement, evt: Pick<EvenementNormalise, "sent
           status: state.status, currentStep: state.currentStep,
           nextRunAt: state.nextRunAt ? state.nextRunAt.toISOString() : null,
           delayAnchorAt: state.delayAnchorAt ? state.delayAnchorAt.toISOString() : null,
+          // R13 : de quoi défaire la réponse si Jeanne dit que ce n'en était pas une.
+          repondueLe: evt.sentAt.toISOString(),
         };
+        if (!tri.desinscription && stadeApresReponse(stageActuel)) avant.stageAvant = stageActuel || "identified";
         patchConv.etatAvantReponse = avant;
       }
       patchState = { status: tri.desinscription ? "unsubscribed" : "stopped_replied", repliedAt: evt.sentAt, nextRunAt: null };
@@ -382,7 +387,7 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
     // Une absence ou un accusé reste visible dans la fiche, sans rien demander à Jeanne.
     statut: estReponse ? "a_traiter" : "traitee", nonLu: estReponse,
     lastMessageAt: evt.sentAt,
-  }, msg, planEntrant(tri, evt, fil));
+  }, msg, planEntrant(tri, evt, fil, lead.stage));
   if (!conv || !estReponse) return;
 
   // ── Suites d'une vraie réponse : au mieux, chacune journalisée si elle échoue. La réponse

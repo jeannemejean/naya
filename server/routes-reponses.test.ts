@@ -16,6 +16,8 @@ const storageMock = {
   requalifierDernierEntrantInbox: vi.fn(async () => true),
   restaurerEtatSequence: vi.fn(async () => ({})),
   getLeadSequenceState: vi.fn(),
+  updateLead: vi.fn(async () => ({})),
+  annulerReponseOutreach: vi.fn(async () => 1),
   getOutreachMessages: vi.fn(async () => [] as any[]),
   getProspectionCampaign: vi.fn(async () => null),
   getTask: vi.fn(),
@@ -202,6 +204,38 @@ describe("boîte « Réponses »", () => {
     expect(await r.json()).toEqual({ ok: true, restaure: false });
     expect(storageMock.restaurerEtatSequence).not.toHaveBeenCalled();
     expect(storageMock.requalifierDernierEntrantInbox).toHaveBeenCalledWith(11, "accuse");
+  });
+
+  it("R13 : remet le stade d'avant (lead encore « en discussion ») et défait le marquage de réponse de l'outreach", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: {
+      status: "active", currentStep: 1, nextRunAt: null, delayAnchorAt: null, stageAvant: "connection_sent", repondueLe: "2026-11-01T09:00:00.000Z",
+    } }));
+    storageMock.getLead.mockResolvedValueOnce({ id: 7, stage: "in_discussion" });
+    expect((await appel("POST", "/api/reponses/11/pas-une-reponse")).status).toBe(200);
+    expect(storageMock.updateLead).toHaveBeenCalledWith(7, "u1", { stage: "connection_sent" });
+    expect(storageMock.annulerReponseOutreach).toHaveBeenCalledWith(7, new Date("2026-11-01T09:00:00.000Z"));
+  });
+
+  it("R13 : stade déplacé par Jeanne depuis la réponse → laissé tel quel", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: {
+      status: "active", currentStep: 1, nextRunAt: null, delayAnchorAt: null, stageAvant: "connection_sent", repondueLe: "2026-11-01T09:00:00.000Z",
+    } }));
+    storageMock.getLead.mockResolvedValueOnce({ id: 7, stage: "proposal_sent" });
+    expect((await appel("POST", "/api/reponses/11/pas-une-reponse")).status).toBe(200);
+    expect(storageMock.updateLead).not.toHaveBeenCalled();
+  });
+
+  it("R13 : état sauvegardé « awaiting_linkedin » → repris en active maintenant, brouillon de l'étape libéré", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: {
+      status: "awaiting_linkedin", currentStep: 2, nextRunAt: null, delayAnchorAt: "2026-10-28T08:00:00.000Z",
+    } }));
+    const avant = Date.now();
+    await appel("POST", "/api/reponses/11/pas-une-reponse");
+    const [leadId, etat, opts] = storageMock.restaurerEtatSequence.mock.calls[0] as any;
+    expect(leadId).toBe(7);
+    expect(etat).toMatchObject({ status: "active", currentStep: 2, delayAnchorAt: "2026-10-28T08:00:00.000Z" });
+    expect(new Date(etat.nextRunAt).getTime()).toBeGreaterThanOrEqual(avant);
+    expect(opts).toEqual({ libererBrouillonEtape: 3 }); // le brouillon attendu est l'étape currentStep + 1
   });
 
   it("traitee : conversation traitée et tâche cochée", async () => {

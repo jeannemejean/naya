@@ -531,7 +531,9 @@ export interface IStorage {
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
   updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
   /** Remet l'état d'avant la réponse (bouton « Ce n'était pas une vraie réponse ») ; seulement depuis stopped_replied. */
-  restaurerEtatSequence(leadId: number, etat: EtatAvantReponse): Promise<LeadSequenceState | null>;
+  restaurerEtatSequence(leadId: number, etat: EtatAvantReponse, opts?: { libererBrouillonEtape?: number }): Promise<LeadSequenceState | null>;
+  /** R13 : défait `responseReceived/responseDate` posés par l'ingestion pour la réponse de cet instant. */
+  annulerReponseOutreach(leadId: number, repondueLe: Date): Promise<number>;
   getDueEnrollments(now: Date, limit?: number): Promise<LeadSequenceState[]>;
   getLeadStepMessage(leadId: number, stepId: number): Promise<LeadStepMessage | undefined>;
   upsertLeadStepMessage(row: InsertLeadStepMessage): Promise<void>;
@@ -1987,18 +1989,45 @@ export class DatabaseStorage implements IStorage {
     return updated || null;
   }
 
-  async restaurerEtatSequence(leadId: number, etat: EtatAvantReponse): Promise<LeadSequenceState | null> {
+  async restaurerEtatSequence(
+    leadId: number, etat: EtatAvantReponse, opts: { libererBrouillonEtape?: number } = {},
+  ): Promise<LeadSequenceState | null> {
     // « Ce n'était pas une vraie réponse » : SEUL chemin qui fait sortir de stopped_replied.
     const date = (v: unknown) => (v ? new Date(v as any) : null);
-    const [updated] = await db.update(leadSequenceState)
-      .set({
-        status: etat.status, currentStep: etat.currentStep,
-        nextRunAt: date(etat.nextRunAt), delayAnchorAt: date(etat.delayAnchorAt),
-        repliedAt: null, updatedAt: new Date(),
-      })
-      .where(and(eq(leadSequenceState.leadId, leadId), eq(leadSequenceState.status, "stopped_replied")))
-      .returning();
-    return updated || null;
+    return db.transaction(async (tx) => {
+      const [updated] = await tx.update(leadSequenceState)
+        .set({
+          status: etat.status, currentStep: etat.currentStep,
+          nextRunAt: date(etat.nextRunAt), delayAnchorAt: date(etat.delayAnchorAt),
+          repliedAt: null, updatedAt: new Date(),
+        })
+        .where(and(eq(leadSequenceState.leadId, leadId), eq(leadSequenceState.status, "stopped_replied")))
+        .returning();
+      if (!updated) return null;
+      // R13 : le brouillon LinkedIn attendu a été supprimé par l'ingestion. On libère sa
+      // réservation pour que le worker le régénère — UNIQUEMENT une réservation « draft »
+      // (jamais un envoi réel « sent » ni une réservation « claimed » en vol).
+      if (opts.libererBrouillonEtape != null) {
+        await tx.delete(outreachStepSends).where(and(
+          eq(outreachStepSends.leadId, leadId),
+          eq(outreachStepSends.campaignId, updated.campaignId),
+          eq(outreachStepSends.stepOrder, opts.libererBrouillonEtape),
+          eq(outreachStepSends.status, "draft"),
+        ));
+      }
+      return updated;
+    });
+  }
+
+  async annulerReponseOutreach(leadId: number, repondueLe: Date): Promise<number> {
+    const rows = await db.update(outreachMessages).set({ responseReceived: false, responseDate: null })
+      .where(and(
+        eq(outreachMessages.leadId, leadId),
+        eq(outreachMessages.responseReceived, true),
+        eq(outreachMessages.responseDate, repondueLe),
+      ))
+      .returning({ id: outreachMessages.id });
+    return rows.length;
   }
 
   async getDueEnrollments(now: Date, limit: number = 50): Promise<LeadSequenceState[]> {

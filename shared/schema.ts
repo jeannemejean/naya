@@ -1906,7 +1906,13 @@ export const inboxConversations = pgTable("inbox_conversations", {
   parLeadCanal: uniqueIndex("inbox_conversations_lead_channel_uq").on(t.leadId, t.channel),
 }));
 /** Contenu de `inboxConversations.etatAvantReponse` (dates ISO). */
-export interface EtatAvantReponse { status: string; currentStep: number; nextRunAt: string | null; delayAnchorAt: string | null }
+export interface EtatAvantReponse {
+  status: string; currentStep: number; nextRunAt: string | null; delayAnchorAt: string | null;
+  /** Stade du lead avant que la réponse le passe « en discussion » (absent s'il n'a pas bougé). */
+  stageAvant?: string;
+  /** Instant de la réponse qui a arrêté la séquence (= responseDate posé sur l'outreach). */
+  repondueLe?: string;
+}
 export type InboxConversation = typeof inboxConversations.$inferSelect;
 export type InsertInboxConversation = typeof inboxConversations.$inferInsert;
 

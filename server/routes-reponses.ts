@@ -48,10 +48,27 @@ const depsEnvoi: DepsEnvoiReponse = {
 /** Statut HTTP d'un refus d'envoi. */
 const STATUT_REFUS: Record<string, number> = { texte_vide: 400, introuvable: 404, echec: 502 };
 
-/** « Ce n'était pas une vraie réponse » : la séquence reprend là où elle était, jamais dans le passé. */
-export function etatARestaurer(etat: EtatAvantReponse, now: Date): EtatAvantReponse {
+/**
+ * « Ce n'était pas une vraie réponse » : la séquence reprend là où elle était, jamais dans le
+ * passé (nextRunAt = max(ancien, now)). R13 : un lead qui attendait l'envoi d'un brouillon
+ * LinkedIn (supprimé par l'ingestion) repart en `active` maintenant, même étape, et la
+ * réservation « draft » de l'étape attendue (currentStep + 1) est libérée pour être régénérée.
+ */
+export function planRestauration(etat: EtatAvantReponse, now: Date): {
+  etat: EtatAvantReponse; opts: { libererBrouillonEtape?: number };
+} {
+  const { stageAvant: _s, repondueLe: _r, ...base } = etat;
+  if (etat.status === "awaiting_linkedin") {
+    return {
+      etat: { ...base, status: "active", nextRunAt: now.toISOString() },
+      opts: { libererBrouillonEtape: etat.currentStep + 1 },
+    };
+  }
   const ancien = etat.nextRunAt ? new Date(etat.nextRunAt) : null;
-  return { ...etat, nextRunAt: ancien ? new Date(Math.max(ancien.getTime(), now.getTime())).toISOString() : null };
+  return {
+    etat: { ...base, nextRunAt: ancien ? new Date(Math.max(ancien.getTime(), now.getTime())).toISOString() : null },
+    opts: {},
+  };
 }
 
 const page = (titre: string, corps: string) => `<!doctype html>
@@ -184,7 +201,25 @@ export function registerReponsesRoutes(app: Express) {
       const conv = await conversationDe(req, res);
       if (!conv) return;
       const etat = conv.etatAvantReponse as EtatAvantReponse | null;
-      const restaure = etat ? !!(await storage.restaurerEtatSequence(conv.leadId, etatARestaurer(etat, new Date()))) : false;
+      let restaure = false;
+      if (etat) {
+        const plan = planRestauration(etat, new Date());
+        restaure = !!(await storage.restaurerEtatSequence(conv.leadId, plan.etat, plan.opts));
+        // R13 : défaire les suites de l'ingestion (au mieux : l'état est déjà restauré).
+        if (etat.repondueLe) {
+          await storage.annulerReponseOutreach(conv.leadId, new Date(etat.repondueLe))
+            .catch((e: any) => console.error(`[Reponses] annulation du marquage outreach (lead ${conv.leadId}) : ${erreurSure(e)}`));
+        }
+        if (etat.stageAvant) {
+          const lead = await storage.getLead(conv.leadId, req.userId);
+          // Seulement si le lead est encore là où l'ingestion l'a mis : un stade choisi par
+          // Jeanne depuis la réponse n'est jamais écrasé.
+          if (lead?.stage === "in_discussion") {
+            await storage.updateLead(conv.leadId, req.userId, { stage: etat.stageAvant })
+              .catch((e: any) => console.error(`[Reponses] stade non restauré (lead ${conv.leadId}) : ${erreurSure(e)}`));
+          }
+        }
+      }
       await storage.requalifierDernierEntrantInbox(conv.id, "accuse");
       // etatAvantReponse effacé : une prochaine vraie réponse sauvegardera l'état du moment.
       await storage.updateInboxConversation(conv.id, { statut: "traitee", nonLu: false, taskId: null, etatAvantReponse: null });

@@ -110,6 +110,22 @@ describe("traiterEvenement — vraie réponse", () => {
     expect(conv.taskId).toBe(db.tasks[0].id);
   });
 
+  it("R13 : l'état d'avant garde le stade d'avant (s'il est déplacé) et l'instant de la réponse", async () => {
+    const { db, deps } = fausseBase();
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(db.conversations[0].etatAvantReponse).toMatchObject({
+      stageAvant: "connection_sent", repondueLe: "2026-11-02T09:30:00.000Z",
+    });
+  });
+
+  it("R13 : stade non déplacé (déjà en discussion ou plus loin) → pas de stageAvant", async () => {
+    const { db, deps, lead } = fausseBase();
+    lead.stage = "proposal_sent";
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(db.conversations[0].etatAvantReponse.stageAvant).toBeUndefined();
+    expect(lead.stage).toBe("proposal_sent");
+  });
+
   it("même événement deux fois : une tâche, un message", async () => {
     const { db, deps } = fausseBase();
     await traiterEvenement(reponseLinkedIn(), deps);
