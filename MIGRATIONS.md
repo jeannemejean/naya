@@ -487,4 +487,5 @@ Uniquement des `ADD COLUMN`, `CREATE TABLE`, clés étrangères et un `CREATE UN
 
 ### Ce qui reste
 
-- [ ] Supprimer `essai-0035-2026-11-02` et, quand le déploiement est stable, `sauvegarde-avant-reponses-2026-11-02`.
+- [x] `essai-0035-2026-11-02` supprimée le 2 novembre 2026.
+- [ ] Supprimer `sauvegarde-avant-reponses-2026-11-02` quand le déploiement est stable.

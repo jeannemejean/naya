@@ -16,7 +16,10 @@
  * Config requise (env) : UNIPILE_API_KEY + UNIPILE_DSN (ex: https://api49.unipile.com:17967).
  */
 
-const DSN = (process.env.UNIPILE_DSN || "").replace(/\/+$/, "");
+// Le tableau de bord Unipile affiche le DSN sans schéma (« api49.unipile.com:17967 ») : sans
+// https://, fetch échoue sur une URL invalide (« fetch failed »), constaté en prod le 2 nov. 2026.
+const DSN_BRUT = (process.env.UNIPILE_DSN || "").trim().replace(/\/+$/, "");
+const DSN = DSN_BRUT && !/^https?:\/\//.test(DSN_BRUT) ? `https://${DSN_BRUT}` : DSN_BRUT;
 const API_KEY = process.env.UNIPILE_API_KEY || "";
 
 /** Vrai si Unipile est configuré au niveau de l'app (clé + DSN). */
