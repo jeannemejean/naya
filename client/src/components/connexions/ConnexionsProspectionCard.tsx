@@ -27,6 +27,7 @@ export default function ConnexionsProspectionCard() {
             kind="linkedin" etat={li.data} onChange={rafraichir}
             routes={{
               lien: "/api/prospection/linkedin/connect-link", sync: "/api/prospection/linkedin/sync",
+              retirer: "/api/prospection/linkedin",
               lever: "/api/prospection/linkedin/clear-restriction",
             }}
             aide={t("connexions.prospection.linkedinAide")} connecte={t("connexions.prospection.linkedinConnecte")}

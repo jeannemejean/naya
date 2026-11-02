@@ -378,4 +378,19 @@ export function registerConnexionsRoutes(app: Express) {
       res.status(500).json({ message: e.message });
     }
   });
+
+  // Délier le LinkedIn de l'utilisatrice. On NE touche NI à la date de connexion (départ de la montée
+  // en charge) NI à une restriction : elles doivent survivre à un délier/relier du même compte.
+  app.delete("/api/prospection/linkedin", isAuthenticated, async (req: any, res) => {
+    try {
+      const prefs: any = await storage.getUserPreferences(req.userId);
+      await storage.updateUserPreferences(req.userId, {
+        linkedinUnipileAccountId: null,
+        comptesDeconnectes: sansDeconnexion(prefs?.comptesDeconnectes, "linkedin"),
+      } as any);
+      res.json({ connected: false });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
 }

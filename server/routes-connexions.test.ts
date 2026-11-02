@@ -239,3 +239,21 @@ describe("Gmail de l'utilisatrice", () => {
     expect(prefs).toMatchObject({ emailUnipileAccountId: null, emailAccountConnectedAt: null, comptesDeconnectes: null, linkedinUnipileAccountId: "acc-jeanne" });
   });
 });
+
+describe("DELETE /api/prospection/linkedin", () => {
+  it("délie le compte, garde la date de connexion et la restriction", async () => {
+    const quand = new Date("2026-09-01");
+    prefs = {
+      linkedinUnipileAccountId: "acc-jeanne", linkedinAccountConnectedAt: quand,
+      linkedinRestrictedAt: quand, linkedinRestrictedReason: "limite",
+      comptesDeconnectes: { linkedin: "2026-10-01", email: "2026-10-02" },
+    };
+    expect((await appel("DELETE", "/api/prospection/linkedin")).status).toBe(200);
+    expect(prefs).toMatchObject({
+      linkedinUnipileAccountId: null, linkedinAccountConnectedAt: quand,
+      linkedinRestrictedAt: quand, linkedinRestrictedReason: "limite", comptesDeconnectes: { email: "2026-10-02" },
+    });
+    expect(storageMock.updateUserPreferences.mock.calls[0][1]).not.toHaveProperty("linkedinAccountConnectedAt");
+  });
+});
+
