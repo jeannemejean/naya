@@ -29,8 +29,7 @@ import {
   isLinkedInRestrictionSignal,
   LINKEDIN_WEEKLY_WINDOW_MS,
 } from "./prospection-linkedin-guard";
-import { wallClockToInstant } from "../utils/timezone";
-import { planDailySessions, isWithinAnySession, type Session } from "./prospection-sessions";
+import { LINKEDIN_FENETRE, linkedinGapMs } from "./linkedin-rythme";
 import { isTargetReachableAt } from "./prospection-target-hours";
 // Fonctions PURES déjà exportées par les fichiers validés de ce lot — jamais
 // modifiées ici, seulement consommées (même statut que `isTargetReachableAt`
@@ -119,18 +118,11 @@ export function emailGapElapsed(lastSentAt: Date | null, now: Date): boolean {
   return now.getTime() - lastSentAt.getTime() >= emailGapMs(lastSentAt);
 }
 
-// Délai minimum ALÉATOIRE entre deux actions LinkedIn du même compte. Le worker est
-// réveillé CHAQUE MINUTE (POLL_MS) et enverrait sinon en rafale — un rythme mécanique
-// est exactement ce qui distingue un bot d'un humain aux yeux de LinkedIn. Le tirage
-// (impur, Math.random) vit ICI, jamais dans `decideLinkedInAction` qui doit rester
-// pure et déterministe. Base 3 min + dispersion 0-4 min → délai réel entre 3 et 7 min
-// selon le tirage : assez pour casser tout motif régulier, sans geler tout le débit
-// sur une fenêtre ouvrée de plusieurs heures.
-// Exportées : `linkedin-sync.ts` tire dans le MÊME budget (voir sa doc de tête) — un seul
-// jeu de constantes pour « à quel point une action LinkedIn répétée a l'air mécanique »,
-// que ce soit un envoi ou une consultation de statut.
-export const LINKEDIN_MIN_DELAY_BASE_MS = 3 * 60_000;
-export const LINKEDIN_MIN_DELAY_JITTER_MS = 4 * 60_000;
+// Délai minimum ALÉATOIRE entre deux consultations de statut du poller LinkedIn
+// (`linkedin-sync.ts`). Les ENVOIS suivent désormais le rythme de `linkedin-rythme.ts`
+// (≈ 20 min, pauses) ; ces constantes ne servent plus qu'au poller (3 à 7 min).
+export const LINKEDIN_SYNC_MIN_DELAY_BASE_MS = 3 * 60_000;
+export const LINKEDIN_SYNC_MIN_DELAY_JITTER_MS = 4 * 60_000;
 
 // Recul + abandon sur échec LinkedIn franc, PAR LEAD (pas par compte — le compte est
 // protégé séparément par la garde de risque, qui peut décider indépendamment de mettre
@@ -238,27 +230,6 @@ export function hhmmToMin(hhmm: string | null | undefined, fallback: number): nu
   if (!hhmm || !/^\d{1,2}:\d{2}$/.test(hhmm)) return fallback;
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
-}
-
-/** Inverse de `hhmmToMin` : minutes depuis minuit → "HH:MM". Pure. */
-function minToHHMM(min: number): string {
-  const h = Math.floor(min / 60).toString().padStart(2, "0");
-  const m = (min % 60).toString().padStart(2, "0");
-  return `${h}:${m}`;
-}
-
-/**
- * Graine stable sur la journée, différente le lendemain et d'un utilisateur à
- * l'autre — jamais `Math.random()` (les sessions doivent être reproductibles à
- * l'intérieur d'un même jour civil pour un même utilisateur, cf. `sessionsDe` ci-dessous).
- */
-function graineDuJour(userId: string, dateStr: string): number {
-  let h = 2166136261;
-  for (const ch of `${userId}:${dateStr}`) {
-    h ^= ch.charCodeAt(0);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
 }
 
 /**
@@ -447,103 +418,10 @@ export async function runProspectionSender(): Promise<void> {
       if (!leadsCache.has(uid)) leadsCache.set(uid, storage.getLeads(uid));
       return leadsCache.get(uid)!;
     };
-    // Cache des étapes de séquence PAR CAMPAGNE — réutilisé pour restreindre
-    // `pendingCountryCodes` (ci-dessous) aux leads réellement candidats à un envoi
-    // LinkedIn. Distinct du chargement (non mis en cache) des étapes de la campagne
-    // du lead COURANT plus bas dans la boucle : celui-ci reste inchangé.
-    const stepsCache = new Map<number, Promise<any[]>>();
-    const getCampaignSteps = (campaignId: number): Promise<any[]> => {
-      if (!stepsCache.has(campaignId)) stepsCache.set(campaignId, storage.getSequenceSteps(campaignId));
-      return stepsCache.get(campaignId)!;
-    };
-    // Sessions calculées UNE SEULE FOIS par utilisateur pour ce passage — jamais une
-    // fois par lead (le worker tourne chaque minute ; recalculer par lead ferait
-    // dériver la fenêtre choisie entre deux leads du même utilisateur au même tick).
-    const sessionsParUser = new Map<string, Session[]>();
-    const sessionsDe = async (
-      uid: string,
-      prefs: any,
-      workDayStartMin: number,
-      workDayEndMin: number,
-      todayUserDateStr: string,
-      now: Date,
-    ): Promise<Session[]> => {
-      const cached = sessionsParUser.get(uid);
-      if (cached) return cached;
-      // Cibles DUES de cet utilisateur, UNE ENTRÉE PAR LEAD (doublons attendus,
-      // jamais dédupliquées) : `planDailySessions` pondère le choix du créneau par
-      // le VOLUME de cibles qu'il dessert, pas par la simple présence d'un pays.
-      // Restreint aux leads RÉELLEMENT CANDIDATS à un envoi LinkedIn — sans quoi un
-      // lead sans `linkedinUrl`, ou dont l'étape actuellement due est de canal
-      // email, pondérerait quand même le placement des sessions LinkedIn (revue
-      // post-commit b97a0b6, mineur). Approximation délibérée et peu coûteuse :
-      // `state.currentStep` (déjà en mémoire, aucune lecture supplémentaire) plutôt
-      // que la machinerie complète de décision (skip/condition/signaux), qui
-      // exigerait de lire les signaux de CHAQUE AUTRE lead dû de l'utilisateur —
-      // coût jugé disproportionné pour une simple pondération.
-      //
-      // CHAQUE cible porte SA PROPRE date civile (`targetDateStrFor`, résolue dans
-      // SON fuseau à elle) — jamais `todayUserDateStr` (revue post-commit 3acac93,
-      // défaut Important : réutiliser le jour de l'utilisatrice pour calculer la
-      // fenêtre de CHAQUE pays de la file masquait 56 % des créneaux pourtant
-      // valides, en silence, pour une utilisatrice très décalée de ses cibles —
-      // voir task-6-report.md). `todayUserDateStr` ne sert plus ici qu'à borner la
-      // fenêtre PROPRE de l'utilisatrice (ci-dessous) et à dériver la graine — plus
-      // du tout à évaluer la fenêtre d'un pays.
-      //
-      // CHAQUE cible porte AUSSI SA PROPRE VILLE — revue finale (post-commit
-      // 2916845, défaut Important) : une première version de ce correctif
-      // transmettait `city: null` ici, alors que la vérification par lead
-      // (ci-dessous) utilisait déjà la ville. Pour un lead « New York, NY », la
-      // fenêtre de vérification (avec ville, 13h-22h UTC, 9h) et la fenêtre de
-      // placement (sans ville, intersection des 29 fuseaux US, 19h-22h UTC, 3h)
-      // divergeaient au point que 66,7 % de la fenêtre où le lead est déclaré
-      // joignable tombait structurellement hors de toute session possible —
-      // `planDailySessions` rendait `[]` SYSTÉMATIQUEMENT pour une utilisatrice
-      // Europe/Paris en horaires de bureau visant des leads new-yorkais en
-      // horaires de bureau : le cas d'usage central de l'app. La ville est
-      // désormais résolue une seule fois par lead et réutilisée pour LA date ET
-      // LA fenêtre de CETTE cible (jamais une ville pour l'une, `null` pour l'autre).
-      const leads = await getUserLeads(uid).catch(() => [] as any[]);
-      const pendingTargets: { countryCode: string; city: string | null; dateStr: string }[] = [];
-      for (const s of due) {
-        if (s.userId !== uid) continue;
-        const l = leads.find((x: any) => x.id === s.leadId);
-        if (!l?.linkedinUrl) continue; // jamais un envoi LinkedIn réel sans URL
-        const campaignSteps = await getCampaignSteps(s.campaignId).catch(() => [] as any[]);
-        if (campaignSteps[s.currentStep]?.channel !== "linkedin") continue; // étape due actuellement autre que LinkedIn
-        const cc = leadCountryCode(l);
-        if (!cc) continue;
-        const city = leadCity(l);
-        pendingTargets.push({ countryCode: cc, city, dateStr: targetDateStrFor(cc, city, now, todayUserDateStr) });
-      }
-      const tz = prefs?.timezone || DEFAULT_USER_TIMEZONE;
-      const plan = planDailySessions({
-        userWindowStart: wallClockToInstant(tz, todayUserDateStr, minToHHMM(workDayStartMin)),
-        userWindowEnd: wallClockToInstant(tz, todayUserDateStr, minToHHMM(workDayEndMin)),
-        pendingTargets,
-        seed: graineDuJour(uid, todayUserDateStr),
-      });
-      sessionsParUser.set(uid, plan);
-      return plan;
-    };
-
     for (const state of due) {
       try {
         const prefs = await getPrefs(state.userId);
         const now = new Date();
-
-        // Fenêtre d'envoi : uniquement pendant les heures ouvrées de l'utilisateur (fuseau inclus).
-        const workDayStartMin = hhmmToMin(prefs?.workDayStart, 9 * 60);
-        const workDayEndMin = hhmmToMin(prefs?.workDayEnd, 18 * 60);
-        const workDaysSet = new Set<string>((prefs?.workDays || "mon,tue,wed,thu,fri").split(",").map((d: string) => d.trim().toLowerCase()));
-        const { nowMin, dayAbbr } = localNow(prefs?.timezone || DEFAULT_USER_TIMEZONE);
-        const inWindow = withinSendingWindow(nowMin, dayAbbr, {
-          startMin: workDayStartMin,
-          endMin: workDayEndMin,
-          workDays: workDaysSet,
-        });
-        if (!inWindow) continue; // hors fenêtre → on réessaiera (nextRunAt inchangé)
 
         const steps = await storage.getSequenceSteps(state.campaignId);
         const engineSteps = steps.map((s) => ({ delayDays: s.delayDays, condition: (s as any).condition || "always" }));
@@ -610,6 +488,22 @@ export async function runProspectionSender(): Promise<void> {
         }
 
         const step = steps[decision.index];
+
+        // Fenêtre d'envoi, selon le canal de l'étape (connu seulement ici) : email → heures
+        // ouvrées de l'utilisatrice ; LinkedIn → fenêtre fixe 8 h-18 h en semaine
+        // (`LINKEDIN_FENETRE`), dans le fuseau de l'utilisatrice, sans tenir compte de ses
+        // horaires de travail.
+        const userTz = prefs?.timezone || DEFAULT_USER_TIMEZONE;
+        const { nowMin, dayAbbr } = localNow(userTz);
+        const inWindow = step.channel === "linkedin"
+          ? withinSendingWindow(nowMin, dayAbbr, LINKEDIN_FENETRE)
+          : withinSendingWindow(nowMin, dayAbbr, {
+              startMin: hhmmToMin(prefs?.workDayStart, 9 * 60),
+              endMin: hhmmToMin(prefs?.workDayEnd, 18 * 60),
+              workDays: new Set<string>((prefs?.workDays || "mon,tue,wed,thu,fri").split(",").map((d: string) => d.trim().toLowerCase())),
+            });
+        if (!inWindow) continue; // hors fenêtre → on réessaiera (nextRunAt inchangé)
+
         const lead = (await getUserLeads(state.userId)).find((l) => l.id === state.leadId);
         if (!lead) {
           await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
@@ -729,29 +623,27 @@ export async function runProspectionSender(): Promise<void> {
               .catch((e: any) => console.error("[ProspectionSender] effacement non joignable échoué", e.message));
           }
 
-          // ── Sessions de prospection : un humain ouvre LinkedIn, traite quelques
-          // personnes, referme — calculées UNE FOIS par utilisateur pour ce passage
-          // (voir `sessionsDe` plus haut), jamais par lead.
-          const sessions = await sessionsDe(state.userId, prefs, workDayStartMin, workDayEndMin, todayUserDateStr, now);
-          if (!isWithinAnySession(sessions, now)) {
-            continue; // hors session : rien à signaler sur le lead, on réessaiera plus tard
-          }
-
           if (!liHistoryCache.has(cleCompte)) {
             const since = new Date(now.getTime() - LINKEDIN_WEEKLY_WINDOW_MS);
             const ts = await storage.getLinkedInAttemptTimestampsSince(state.userId, since, portee).catch(() => null);
             liHistoryCache.set(cleCompte, ts);
           }
+          const historique = liHistoryCache.get(cleCompte);
+          const derniereTentative = historique && historique.length
+            ? new Date(Math.max(...historique.map((d) => new Date(d).getTime())))
+            : null;
           const accountConnectedAt = identite.linkedin?.connectedAt ?? null;
           const restriction = identite.linkedin?.restriction ?? null;
           const guardDecision = decideLinkedInAction({
             now,
-            timezone: prefs?.timezone || DEFAULT_USER_TIMEZONE,
-            workDayStartMin, workDayEndMin, workDays: workDaysSet,
+            timezone: userTz,
+            workDayStartMin: LINKEDIN_FENETRE.startMin,
+            workDayEndMin: LINKEDIN_FENETRE.endMin,
+            workDays: LINKEDIN_FENETRE.workDays,
             accountConnectedAt,
             recentSendTimestamps: liHistoryCache.get(cleCompte)!,
             restriction,
-            minDelayMs: LINKEDIN_MIN_DELAY_BASE_MS + Math.random() * LINKEDIN_MIN_DELAY_JITTER_MS,
+            minDelayMs: derniereTentative ? linkedinGapMs(derniereTentative, cleCompte) : 0,
           });
           if (!guardDecision.allowed) {
             console.log(

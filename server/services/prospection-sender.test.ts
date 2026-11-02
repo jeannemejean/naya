@@ -284,7 +284,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
   // (07:00-16:00Z ce jour-là, France en heure d'été) ET dans la PREMIÈRE session
   // réelle produite par `planDailySessions` pour userId "u1" à cette date avec un seul
   // pays en attente (FR) — session [07:24:27.866Z, 07:39:30.747Z).
-  const LINKEDIN_TEST_NOW = new Date("2026-06-10T07:26:27.866Z");
+  const LINKEDIN_TEST_NOW = new Date("2026-06-10T09:26:27.866Z");
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1584,33 +1584,70 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(storage.setLeadUnreachable).toHaveBeenCalledWith(2, expect.stringContaining("country_unknown"));
     });
 
-    it("MUTATION 2 — cible joignable chez elle mais HORS SESSION : aucun appel Unipile, aucun signalement (le lead n'y est pour rien), séquence non avancée", async () => {
-      // 09:00Z ce jour-là est DANS la fenêtre FR (07:00-16:00Z) mais entre les deux
-      // sessions calculées pour u1/2026-06-10/["FR"] : [07:24:27.866Z,07:39:30.747Z)
-      // et [13:06:08.081Z,13:22:19.944Z). Si ce test échouait pour la fenêtre cible
-      // plutôt que pour la session, `storage.setLeadUnreachable` serait quand même
-      // appelé pour un motif structurel — il ne l'est jamais ici, preuve que
-      // c'est bien le filtre de session qui arrête ce lead.
-      vi.setSystemTime(new Date("2026-06-10T09:00:00.000Z"));
+    // Rythme LinkedIn (chantier 2, tâche 3) : fenêtre fixe 8 h-18 h en semaine dans le
+    // fuseau de l'utilisatrice, indépendante de ses horaires de travail ; l'email garde
+    // les heures de travail. Cibles FR (joignables 07:00-16:00Z en été).
+    const horairesBureau = (tz: string, extra: Record<string, any> = {}) =>
+      linkedinPrefs_(tz, extra);
+    const linkedinPrefs_ = (tz: string, extra: Record<string, any> = {}) =>
+      openPrefs({
+        linkedinUnipileAccountId: "acc1",
+        timezone: tz,
+        workDayStart: "09:00",
+        workDayEnd: "18:00",
+        workDays: "mon,tue,wed,thu,fri",
+        ...extra,
+      });
+    const armer = (prefs: any, steps: any[]) => {
       (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
       (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
-      (storage.getUserPreferences as any).mockResolvedValue(linkedinPrefs());
-      (storage.getSequenceSteps as any).mockResolvedValue(linkedinStep());
-      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
+      (storage.getUserPreferences as any).mockResolvedValue(prefs);
+      (storage.getSequenceSteps as any).mockResolvedValue(steps);
       (storage.getLeads as any).mockResolvedValue([linkedinLead()]);
       (storage.getBrandDna as any).mockResolvedValue(null);
       (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
-      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
       (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+    };
 
+    it("rythme : étape LinkedIn à 8 h 30 un mardi avec heures de travail 9 h-18 h → tentée", async () => {
+      vi.setSystemTime(new Date("2026-06-09T15:30:00.000Z")); // 08:30 à Los Angeles (mardi)
+      armer(horairesBureau("America/Los_Angeles"), linkedinStep());
       await runProspectionSender();
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+    });
 
+    it("rythme : étape LinkedIn à 18 h 05 → non tentée", async () => {
+      vi.setSystemTime(new Date("2026-06-09T09:05:00.000Z")); // 18:05 à Tokyo (mardi)
+      armer(horairesBureau("Asia/Tokyo"), linkedinStep());
+      await runProspectionSender();
       expect(sendLinkedInStep).not.toHaveBeenCalled();
       expect(storage.claimStepSend).not.toHaveBeenCalled();
-      expect(generateStepMessage).not.toHaveBeenCalled();
-      expect(storage.setLeadUnreachable).not.toHaveBeenCalled();
-      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
+
+    it("rythme : étape LinkedIn un samedi → non tentée", async () => {
+      vi.setSystemTime(new Date("2026-06-13T10:00:00.000Z")); // samedi
+      armer(horairesBureau("UTC"), linkedinStep());
+      await runProspectionSender();
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+    });
+
+    it("rythme : une étape email à 8 h 30 → non tentée (fenêtre de travail inchangée pour l'email)", async () => {
+      vi.setSystemTime(new Date("2026-06-09T08:30:00.000Z")); // mardi 08:30 UTC
+      armer(horairesBureau("UTC"), [baseStep({ channel: "email" })]);
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+    });
+
+    it("rythme : les sessions de prospection ne bloquent plus LinkedIn", async () => {
+      // 14:00Z est hors de la session seedée (07:24-07:39Z) qui bloquait auparavant.
+      vi.setSystemTime(new Date("2026-06-10T14:00:00.000Z"));
+      armer(horairesBureau("UTC"), linkedinStep());
+      await runProspectionSender();
+      expect(sendLinkedInStep).toHaveBeenCalledTimes(1);
+    });
+
 
     it("cible reachable ET en session (LINKEDIN_TEST_NOW) : l'envoi a bien lieu — témoin positif des deux tests MUTATION ci-dessus", async () => {
       // Sans ce témoin, les deux tests MUTATION pourraient passer pour une mauvaise
@@ -1815,72 +1852,6 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     });
   });
 
-  // ─── Ronde de correction 1 : IMPORTANT 2 — la pondération par VOLUME (pas par pays
-  // présent) doit réellement déplacer le créneau retenu ───────────────────────────
-  describe("pondération des sessions par volume de cibles (pas par pays présent)", () => {
-    it("MUTATION — 20 leads HK contre 1 lead SN (créneaux disjoints [01:00,10:00) / [09:00,18:00) UTC) : le lead SN, minoritaire, n'obtient PAS de session dans sa région exclusive", async () => {
-      // Fixture reprise de prospection-sessions.test.ts (déjà vérifiée en tâche 4) :
-      // HK (Asia/Hong_Kong, UTC+8, pas d'heure d'été) et SN (Africa/Dakar, UTC+0, pas
-      // d'heure d'été) ont des fenêtres disjointes sans ambiguïté à partir de 10:00 UTC
-      // (HK s'arrête à 10:00 ; SN, lui, continue jusqu'à 18:00). `now` = 10:30 UTC est
-      // dans la région "SN seul" (>= 10:00 UTC) — la SEULE façon d'y obtenir une session
-      // est que le créneau SN ait été retenu au moins une fois. Calculé hors-ligne pour
-      // userId "u1" / 2026-07-15 (voir task-6-report.md) : avec la pondération réelle
-      // (20 HK, poids 20, contre 1 SN, poids 1), AUCUNE session n'atteint cette région —
-      // le lead SN, bien que joignable à cet instant (09:00-18:00 UTC), n'a simplement
-      // pas de session pour partir. Avec des pays dédupliqués (poids 1 contre 1, bug),
-      // une session APPARAÎT dans cette région exacte et couvre `now`.
-      vi.setSystemTime(new Date("2026-07-15T10:30:00.000Z"));
-      (linkedinConfigured as any).mockReturnValue(true);
-      (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
-
-      const hkStates = Array.from({ length: 20 }, (_, i) => baseState({ id: i + 1, leadId: i + 1 }));
-      const snState = baseState({ id: 21, leadId: 21 });
-      (storage.getDueEnrollments as any).mockResolvedValue([...hkStates, snState]);
-
-      (storage.getUserPreferences as any).mockResolvedValue(
-        openPrefs({
-          timezone: "Europe/Paris",
-          workDayStart: "09:00",
-          workDayEnd: "18:00",
-          linkedinUnipileAccountId: "acc1",
-        }),
-      );
-      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
-      (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
-      const hkLeads = Array.from({ length: 20 }, (_, i) =>
-        baseLead({
-          id: i + 1,
-          linkedinUrl: `https://linkedin.com/in/hk${i + 1}`,
-          enrichedProfile: { linkedin: { raw: { country_code: "HK", city: null } } },
-        }),
-      );
-      const snLead = baseLead({
-        id: 21,
-        linkedinUrl: "https://linkedin.com/in/sn21",
-        enrichedProfile: { linkedin: { raw: { country_code: "SN", city: null } } },
-      });
-      (storage.getLeads as any).mockResolvedValue([...hkLeads, snLead]);
-      (storage.getBrandDna as any).mockResolvedValue(null);
-      (storage.getUser as any).mockResolvedValue({ id: "u1", firstName: "Jeanne" });
-      (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne" });
-      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
-
-      await runProspectionSender();
-
-      // Les 20 leads HK sont hors de leur fenêtre locale à 10:30 UTC (fenêtre HK :
-      // 01:00-10:00 UTC) — refus TEMPOREL, jamais signalé. Le lead SN, lui, EST
-      // joignable à cet instant (fenêtre SN : 09:00-18:00 UTC) mais aucune session ne
-      // couvre `now` sous la pondération réelle : aucun appel Unipile, pour personne.
-      expect(sendLinkedInStep).not.toHaveBeenCalled();
-      expect(storage.setLeadUnreachable).not.toHaveBeenCalled();
-      // Preuve par mutation appliquée manuellement (voir task-6-report.md pour le
-      // chiffre) : dédupliquer `pendingCountryCodes` (`new Set([...])`) avant de
-      // construire les sessions fait passer cette assertion de vert à rouge —
-      // `sendLinkedInStep` serait alors appelé pour le lead SN (session parasite dans
-      // sa région exclusive, causée par l'égalisation artificielle des poids).
-    });
-  });
 
   // ─── Ronde de correction 2 : IMPORTANT — la date civile de LA CIBLE doit venir de
   // SON PROPRE fuseau, jamais de celui de l'utilisatrice (même bug que la ronde 1,

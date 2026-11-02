@@ -21,7 +21,7 @@
  * budget que les envois — même table `linkedin_send_attempts`, même fonction pure
  * `decideLinkedInAction` (ramp-up, plafond hebdomadaire glissant, fenêtre ouvrée, délai
  * minimum, restriction), mêmes constantes de délai minimum
- * (`LINKEDIN_MIN_DELAY_BASE_MS`/`LINKEDIN_MIN_DELAY_JITTER_MS`, `prospection-sender.ts`).
+ * (`LINKEDIN_SYNC_MIN_DELAY_BASE_MS`/`LINKEDIN_SYNC_MIN_DELAY_JITTER_MS`, `prospection-sender.ts`).
  * Une seule surface de risque de restriction par compte LinkedIn ; un seul budget, pas deux
  * comptabilités indépendantes qui pourraient dériver l'une de l'autre — exactement le
  * défaut déjà corrigé côté envoi (compter les succès au lieu des tentatives). `LINKEDIN_SYNC_BATCH_LIMIT`
@@ -47,8 +47,8 @@ import {
 import {
   hhmmToMin,
   masterSendingEnabled,
-  LINKEDIN_MIN_DELAY_BASE_MS,
-  LINKEDIN_MIN_DELAY_JITTER_MS,
+  LINKEDIN_SYNC_MIN_DELAY_BASE_MS,
+  LINKEDIN_SYNC_MIN_DELAY_JITTER_MS,
 } from "./prospection-sender";
 
 const SYNC_INTERVAL_MS = 15 * 60_000; // toutes les 15 minutes
@@ -131,7 +131,7 @@ export async function syncLinkedInConnections(): Promise<number> {
         accountConnectedAt,
         recentSendTimestamps: historyCache.get(cleCompte)!,
         restriction,
-        minDelayMs: LINKEDIN_MIN_DELAY_BASE_MS + Math.random() * LINKEDIN_MIN_DELAY_JITTER_MS,
+        minDelayMs: LINKEDIN_SYNC_MIN_DELAY_BASE_MS + Math.random() * LINKEDIN_SYNC_MIN_DELAY_JITTER_MS,
       });
       if (!guardDecision.allowed) {
         console.log(
