@@ -68,6 +68,8 @@ export const ACCOUNT_RESET_PLAN: ResetStep[] = [
   { table: "lead_step_messages", mode: "delete", note: "cache de messages sur-mesure" },
   { table: "outreach_step_sends", mode: "delete", note: "réservations d'envoi (garde d'idempotence)" },
   { table: "linkedin_send_attempts", mode: "delete", note: "journal des tentatives (garde de risque LinkedIn)" },
+  { table: "inbox_messages", mode: "delete", note: "messages de la boîte de réponses (enfants de inbox_conversations)" },
+  { table: "inbox_conversations", mode: "delete", note: "boîte de réponses (FK leads)" },
   { table: "lead_sequence_state", mode: "delete" },
   { table: "outreach_messages", mode: "delete" },
   { table: "leads", mode: "delete" },
