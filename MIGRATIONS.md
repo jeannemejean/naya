@@ -474,4 +474,17 @@ Uniquement des `ADD COLUMN`, `CREATE TABLE`, clés étrangères et un `CREATE UN
 - `outreach_messages` : `provider_message_id`, `provider_thread_id`.
 - `lead_sequence_state.delay_anchor_at`.
 
-Procédure prod : sauvegarde Neon, relecture du fichier, `npm run db:migrate`, vérification des objets après.
+### Production — migrée le 2 novembre 2026 (`0035`)
+
+- [x] État lu avant : suivi **35 lignes**, tables `inbox_*` absentes.
+- [x] Point de restauration : branche **`sauvegarde-avant-reponses-2026-11-02`** (`br-wandering-rain-an3941t5`).
+- [x] Répétée sur la branche d'essai `essai-0035-2026-11-02` (`br-long-tree-anean5sq`) forkée de la production :
+      suivi 35 → 36, 2 tables, 10 colonnes, campagne existante en `audience = 'froid'`.
+- [x] Garde du script vérifiée à blanc (refus sur un autre endpoint), puis appliquée avec
+      `scripts/migrate-prod.ts` (lancée par Jeanne).
+- [x] Résultat vérifié : suivi **35 → 36**, 2 tables, 10 colonnes présentes.
+- [x] Ordre respecté : migration d'abord, `main` poussé ensuite.
+
+### Ce qui reste
+
+- [ ] Supprimer `essai-0035-2026-11-02` et, quand le déploiement est stable, `sauvegarde-avant-reponses-2026-11-02`.
