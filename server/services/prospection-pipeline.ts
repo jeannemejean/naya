@@ -372,7 +372,8 @@ export async function enrichProspects(
   // Signature = PRÉNOM du créateur (jamais le nom d'agence ni "Naya") ; pour un projet
   // client, la signature du client — même résolution que l'envoi.
   const founderName = signatureCampagne(await identitePourCampagne(userId, campaign, prefs), () => resolveFounderName(user, dna));
-  const projectName = project?.name || (dna as any)?.businessName || campaign?.name || "";
+  // Jamais le nom de la campagne : c'est un libellé interne (« Test »), pas une signature.
+  const projectName = project?.name || (dna as any)?.businessName || "";
   const channel = campaign?.channel || "linkedin";
 
   let enriched = 0, failed = 0, linkedinUsed = 0;

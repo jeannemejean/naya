@@ -94,6 +94,20 @@ export function sanitizeMessage(s: string): string {
   return stripEmDash(s);
 }
 
+/**
+ * Assainit un EMAIL en gardant sa mise en page : paragraphes (ligne vide) et retours à la
+ * ligne simples survivent ; chaque ligne est assainie comme sanitizeMessage (tirets, espaces).
+ * Un email sans aucun saut de ligne ressort identique à sanitizeMessage.
+ */
+export function sanitizeEmailBody(s: string): string {
+  return (s || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n[ \t]*\n\s*/)
+    .map((par) => par.split("\n").map(stripEmDash).filter(Boolean).join("\n"))
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** Compte les phrases (séparateurs . ! ?). */
 export function countSentences(s: string): number {
   return (s || "")

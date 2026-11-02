@@ -101,3 +101,21 @@ describe("contrôle qualité, couche 1 : un bon message passe", () => {
     expect(codes(controlerMessage({ role: "invitation", canal: "linkedin", body }, ctx({ entreprise: null, premiereTouche: true })))).not.toContain("sans_entreprise");
   });
 });
+
+describe("contrôle qualité : email en paragraphes, sans signature", () => {
+  const body = [
+    "Bonjour Claire,",
+    "Estée Lauder lance une nouvelle ligne de parfums cet automne et la campagne de lancement passe beaucoup par Instagram.",
+    "Je dirige une agence de communication digitale à Lyon qui accompagne des marques de beauté sur leurs lancements.",
+    "J'ai une idée précise de série courte pour présenter la ligne, pensée pour vos formats actuels et votre ton.",
+    "Je vous l'envoie ?",
+  ].join("\n\n");
+  it("est accepté tel quel (finit sur la question, aucun prénom en signature)", () => {
+    expect(controlerMessage({ role: "email_ouverture", canal: "email", body, subject: "Estée Lauder automne" }, ctx({ premiereTouche: true }))).toEqual([]);
+  });
+  it("repère toujours l'adjectif accordé en tête de paragraphe", () => {
+    // Juste après « Bonjour Claire, » + ligne vide : aucune ponctuation forte avant.
+    const b = body.replace("Bonjour Claire,\n\nEstée", "Bonjour Claire,\n\nRavie de voir qu'Estée");
+    expect(codes(controlerMessage({ role: "email_ouverture", canal: "email", body: b, subject: "Estée Lauder automne" }, ctx()))).toContain("genre");
+  });
+});

@@ -51,8 +51,9 @@ const nettoyerLien = (u: string) => u.replace(/[.,;:!?]+$/, "").replace(/^https?
 // « Touchant de… » ne décrivent pas l'expéditrice et ne doivent pas être signalés.
 const RACINES_GENRE = "(?:ravie?s?|curieu(?:x|se)|int[ée]ress[ée]e?|surprise?|convaincue?|impressionn[ée]e?|heureu(?:x|se)|enchant[ée]e?|touch[ée]e?)\\b";
 const GENRE = new RegExp(
-  // « je suis ravie », ou en tête de phrase : « Ravie d'être connectée », « Curieuse de… ».
-  `(?:\\b(?:je\\s+suis|suis)\\s+(?:très\\s+|tres\\s+|vraiment\\s+)?${RACINES_GENRE}|(?:^|[.!?]\\s+)${RACINES_GENRE}\\s+(?:de|d['’]|que|par|pour))`,
+  // « je suis ravie », ou en tête de phrase ou de ligne (email en paragraphes) : « Ravie d'être
+  // connectée », « Curieuse de… ».
+  `(?:\\b(?:je\\s+suis|suis)\\s+(?:très\\s+|tres\\s+|vraiment\\s+)?${RACINES_GENRE}|(?:^|[.!?]\\s+|\\n\\s*)${RACINES_GENRE}\\s+(?:de|d['’]|que|par|pour))`,
   "i",
 );
 

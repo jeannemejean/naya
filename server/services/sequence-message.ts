@@ -12,7 +12,7 @@
  */
 import { storage } from "../storage";
 import { callClaudeWithContext, CLAUDE_MODELS } from "./claude";
-import { sanitizeMessage, enforceLinkedInLimit } from "./prospection-audit";
+import { sanitizeMessage, sanitizeEmailBody, enforceLinkedInLimit } from "./prospection-audit";
 import { parseJsonObject, enrichmentText } from "./prospection/textes";
 import { roleEtapeLinkedin, premierConflit, normaliserTexte, branchesExclusives } from "./sequence-distinct";
 import { blocDoctrine, limitePour, type RoleTouche, type Canal } from "./prospection/doctrine";
@@ -142,9 +142,19 @@ export function buildStepPrompt(args: {
   const preuveBlock = args.preuveTexte?.trim()
     ? `PREUVE À UTILISER (réelle, validée ; n'en change aucun fait) :\n${args.preuveTexte.trim()}\n`
     : "PREUVE : aucune preuve pour ce prospect. N'évoque aucun client, chiffre, cas ou lien.\n";
-  const signature = canal === "linkedin" ? args.founderName : `${args.founderName}${args.projectName ? `, ${args.projectName}` : ""}`;
+  // Nom du projet réel uniquement : jamais le nom interne d'une campagne (« Test »).
+  const projet = args.projectName?.trim() ? ` (${args.projectName.trim()})` : "";
+  // LinkedIn : signé du prénom comme avant. Email : jamais signé par le modèle, le pied de
+  // mail ajouté à l'envoi porte déjà le nom de l'expéditrice (sinon signature doublée).
+  const forme = canal === "linkedin"
+    ? `Signature : ${args.founderName}.`
+    : `MISE EN FORME DE L'EMAIL :
+- Un email court, en paragraphes séparés par une ligne vide.
+- La salutation seule sur sa première ligne (« Bonjour, » ou « Bonjour Prénom, »), puis 2 à 4 paragraphes courts, la question seule dans le dernier paragraphe.
+- AUCUNE signature : ni prénom, ni nom, ni formule de politesse finale. Le pied de mail ajouté à l'envoi signe déjà. Le message se termine sur la question.
+- Dans le JSON, chaque retour à la ligne s'écrit "\\n" et chaque ligne vide "\\n\\n" à l'intérieur de la chaîne "body" (exemple : "Bonjour Claire,\\n\\nPremier paragraphe.\\n\\nC'est un sujet pour vous ?").`;
 
-  return `Rédige ${canal === "linkedin" ? (args.role === "invitation" ? "la note d'invitation LinkedIn" : "le message LinkedIn") : "l'email"} de prospection de ${args.founderName || "l'expéditrice"} (${args.projectName}) pour cette touche.
+  return `Rédige ${canal === "linkedin" ? (args.role === "invitation" ? "la note d'invitation LinkedIn" : "le message LinkedIn") : "l'email"} de prospection de ${args.founderName || "l'expéditrice"}${projet} pour cette touche.
 
 DESTINATAIRE : ${args.lead?.name || ""}, ${args.lead?.role || ""} chez ${args.lead?.company || ""}
 INTENTION DE LA TOUCHE : ${args.intention?.trim() || "voir la règle de la touche"}
@@ -159,7 +169,7 @@ ${preuveBlock}
 ${contexte ? `CE QU'ON SAIT DE LA PERSONNE :\n${contexte}\n` : ""}${instructionsBlock}${exemplesBlock}${precedentsBlock}${conflitBlock}${defautsBlock}
 ${blocDoctrine(args.role, canal)}
 
-Signature : ${signature}.
+${forme}
 
 Réponds UNIQUEMENT avec ce JSON :
 {${canal === "linkedin" ? '"body":"..."' : '"subject":"...","body":"..."'}}`;
@@ -379,7 +389,14 @@ export async function redigerTouche(userId: string, a: {
   founderName: string; conflitCtx?: { neutres: string[] };
 }): Promise<{ subject: string | null; body: string; defauts: Defaut[]; aRevoir: boolean; tropProche: boolean }> {
   const projectId: number | null = a.campaign?.projectId ?? null;
-  const projectName = a.campaign?.projectName || a.campaign?.name || "";
+  // Nom du PROJET réel, jamais celui de la campagne (libellé interne : « Test »…).
+  let projectName: string = a.campaign?.projectName || "";
+  if (!projectName && projectId != null) {
+    try {
+      const p: any = await storage.getProject(projectId, userId);
+      projectName = p?.name || "";
+    } catch { /* projet illisible : pas de nom de projet, rien de plus */ }
+  }
   const audit = safeAudit(a.lead?.auditNotes);
 
   // Preuve : uniquement une preuve VALIDÉE du même projet.
@@ -413,7 +430,7 @@ export async function redigerTouche(userId: string, a: {
     const p = parseJsonObject(raw);
     const body = a.canal === "linkedin"
       ? enforceLinkedInLimit(typeof p.body === "string" ? p.body : "", limite)
-      : sanitizeMessage(typeof p.body === "string" ? p.body : "");
+      : sanitizeEmailBody(typeof p.body === "string" ? p.body : "");
     if (!body.trim()) {
       throw new Error(`redigerTouche: corps vide pour lead ${a.lead?.id} (réponse IA non parsable) — non mis en cache`);
     }

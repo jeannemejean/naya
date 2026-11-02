@@ -338,11 +338,40 @@ function resolveSenderConfig(identite: IdentiteEnvoi): SenderConfig | null {
 
 const echapperHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** Corps HTML d'un email Gmail : texte, pied de mail (signature, adresse) et lien de désinscription. */
+/**
+ * Corps HTML d'un email Gmail : paragraphes (séparés par une ligne vide dans le texte),
+ * pied de mail (nom complet de l'expéditrice, adresse) puis une petite ligne grise
+ * « Se désinscrire » cliquable — jamais l'URL brute, jamais de tiret.
+ */
 export function corpsEmailGmail(body: string, fromName: string, footerAddress: string, lien: string): string {
-  const texte = `${body}\n\n—\n${fromName || ""}${footerAddress ? `\n${footerAddress}` : ""}`;
-  const l = echapperHtml(lien);
-  return `${echapperHtml(texte).replace(/\r?\n/g, "<br>")}<br>Se désinscrire : <a href="${l}">${l}</a>`;
+  const html = (t: string) => echapperHtml(t.trim()).replace(/\n/g, "<br>");
+  const paragraphes = (body || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n[ \t]*\n\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => `<p style="margin:0 0 12px">${html(p)}</p>`);
+  const pied = [fromName, footerAddress].map((x) => (x || "").trim()).filter(Boolean).join("\n");
+  if (pied) paragraphes.push(`<p style="margin:24px 0 12px">${html(pied)}</p>`);
+  paragraphes.push(`<p style="font-size:12px;color:#888"><a href="${echapperHtml(lien)}" style="color:#888">Se désinscrire</a></p>`);
+  return paragraphes.join("");
+}
+
+/**
+ * Retire d'un email DÉJÀ rédigé la signature finale écrite par le modèle (« … ? Jeanne, Test. »,
+ * « … ? Jeanne. ») : le pied de mail signe désormais, elle ferait doublon. Prudent : seulement
+ * le prénom exact de l'expéditrice de la campagne, tout à la fin, juste après une fin de
+ * phrase, suivi au plus d'un court libellé sans ponctuation (« , Test »). Pure.
+ */
+export function retirerSignatureFinale(body: string, prenom: string | null | undefined): string {
+  const nom = (prenom || "").trim();
+  if (!nom || !body) return body;
+  const echappe = nom.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`([.!?…])\\s+${echappe}(?:\\s*,\\s*[^\\s.,;:!?…][^.,;:!?…\\n]{0,40})?\\s*\\.?\\s*$`, "u");
+  const m = body.match(re);
+  if (!m || m.index == null) return body;
+  const reste = body.slice(0, m.index) + m[1];
+  return reste.trim() ? reste : body;
 }
 
 async function sendEmail(opts: {
@@ -353,9 +382,9 @@ async function sendEmail(opts: {
   // SendGrid remplace <%unsubscribe%> par l'URL de désinscription et supprime automatiquement
   // les désinscrits des envois suivants (subscription_tracking).
   const footer =
-    `\n\n—\n${opts.fromName || ""}` +
+    `\n\n${opts.fromName || ""}` +
     (opts.footerAddress ? `\n${opts.footerAddress}` : "") +
-    `\nSe désinscrire : <%unsubscribe%>`;
+    `\n\nSe désinscrire : <%unsubscribe%>`;
   const res = await fetch("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
     headers: { Authorization: `Bearer ${opts.apiKey}`, "Content-Type": "application/json" },
@@ -993,6 +1022,9 @@ export async function runProspectionSender(): Promise<void> {
           const toEmail = lead.email;
           const emailSender = sender;
           const footerAddress = emailSender.footerAddress;
+          // Le pied de mail signe : une signature finale déjà rédigée (textes antérieurs au
+          // 2 nov. 2026, « … Jeanne, Test. ») est retirée. Le texte journalisé est celui envoyé.
+          const bodyEmail = retirerSignatureFinale(body, founderName);
           // Réservation AVANT tout appel à SendGrid. Réservation refusée = l'étape est
           // déjà partie (ou son sort est inconnu) : on n'envoie rien et on laisse la
           // séquence avancer plus bas.
@@ -1005,7 +1037,7 @@ export async function runProspectionSender(): Promise<void> {
               if (!lienEmail) return { ok: false }; // garde déjà passée plus haut ; narrowing de type
               const res = await sendEmailUnipile({
                 accountId: emailSender.accountId, to: toEmail, toName: lead.name || "", subject,
-                body: corpsEmailGmail(body, emailSender.fromName, footerAddress, lienEmail),
+                body: corpsEmailGmail(bodyEmail, emailSender.fromName, footerAddress, lienEmail),
                 trackingLabel: `lead:${lead.id}:step:${decision.index + 1}`,
                 headers: { "List-Unsubscribe": `<${lienEmail}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
               });
@@ -1015,7 +1047,7 @@ export async function runProspectionSender(): Promise<void> {
             } else {
               ok = await sendEmail({
                 apiKey: emailSender.apiKey, fromEmail: emailSender.fromEmail, fromName: emailSender.fromName, footerAddress,
-                to: toEmail, toName: lead.name || "", subject, body, leadId: lead.id,
+                to: toEmail, toName: lead.name || "", subject, body: bodyEmail, leadId: lead.id,
               });
             }
             if (!ok) return { ok: false };
@@ -1027,7 +1059,7 @@ export async function runProspectionSender(): Promise<void> {
             try {
               const created = await storage.createOutreachMessage({
                 userId: state.userId, leadId: lead.id, platform: "email",
-                messageType: `step_${decision.index + 1}`, subject, body, sentAt: new Date(),
+                messageType: `step_${decision.index + 1}`, subject, body: bodyEmail, sentAt: new Date(),
               } as any);
               if (providerId || threadId) await storage.setOutreachProviderIds(created.id, providerId, threadId);
             } catch (e: any) {

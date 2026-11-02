@@ -66,6 +66,8 @@ import {
   emailGapElapsed,
   receptionReponsesEnLigne,
   RAISON_DOUBLON_A_REPONDU,
+  corpsEmailGmail,
+  retirerSignatureFinale,
 } from "./prospection-sender";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
@@ -2504,5 +2506,48 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       await runProspectionSender();
       expect(storage.markStepSendSent).toHaveBeenCalled();
     });
+  });
+});
+
+describe("corpsEmailGmail — paragraphes et pied de mail", () => {
+  const lien = "https://hellonaya.app/desinscription/151.abc";
+  it("un paragraphe par bloc séparé d'une ligne vide, <br> pour un saut simple, texte échappé", () => {
+    const html = corpsEmailGmail("Bonjour Claire,\n\nUn <b>premier</b> paragraphe.\nSuite & fin.\n\nC'est un sujet ?", "Jeanne Méjean", "", lien);
+    expect(html).toContain('<p style="margin:0 0 12px">Bonjour Claire,</p>');
+    expect(html).toContain('<p style="margin:0 0 12px">Un &lt;b&gt;premier&lt;/b&gt; paragraphe.<br>Suite &amp; fin.</p>');
+    expect(html).toContain('<p style="margin:0 0 12px">C\'est un sujet ?</p>');
+  });
+  it("pied : nom complet et adresse, sans tiret ; lien « Se désinscrire » cliquable, jamais l'URL brute en texte", () => {
+    const html = corpsEmailGmail("Bonjour,", "Jeanne Méjean", "12 rue X, Lyon", lien);
+    expect(html).not.toMatch(/[—–]/);
+    expect(html).toContain("Jeanne Méjean<br>12 rue X, Lyon</p>");
+    expect(html).toContain(`<p style="font-size:12px;color:#888"><a href="${lien}" style="color:#888">Se désinscrire</a></p>`);
+    expect(html.replace(/href="[^"]*"/g, "")).not.toContain(lien);
+    expect(html.indexOf("Jeanne Méjean")).toBeLessThan(html.indexOf("Se désinscrire"));
+  });
+  it("sans nom ni adresse : pas de paragraphe de signature vide", () => {
+    const html = corpsEmailGmail("Bonjour,", "", "", lien);
+    expect(html).not.toContain("margin:24px");
+    expect(html).toContain("Se désinscrire</a>");
+  });
+});
+
+describe("retirerSignatureFinale — emails déjà rédigés, signés par le modèle", () => {
+  const corps = "Bonjour, Vous ouvrez Le Blanc Mélangé. C'est un sujet pour vous en ce moment ?";
+  it("retire « Jeanne, Test. » et « Jeanne. » en fin de texte", () => {
+    expect(retirerSignatureFinale(`${corps} Jeanne, Test.`, "Jeanne")).toBe(corps);
+    expect(retirerSignatureFinale(`${corps} Jeanne.`, "Jeanne")).toBe(corps);
+    expect(retirerSignatureFinale(`${corps}\n\nJeanne, Agence JMD`, "Jeanne")).toBe(corps);
+  });
+  it("ne touche à rien si le prénom n'est pas celui de l'expéditrice, ou pas en fin de texte", () => {
+    expect(retirerSignatureFinale(`${corps} Marie, Test.`, "Jeanne")).toBe(`${corps} Marie, Test.`);
+    expect(retirerSignatureFinale(`${corps} Jeanne, Test. Merci.`, "Jeanne")).toBe(`${corps} Jeanne, Test. Merci.`);
+    expect(retirerSignatureFinale(`${corps}`, "Jeanne")).toBe(corps);
+    expect(retirerSignatureFinale(`${corps} Jeanne, Test.`, "")).toBe(`${corps} Jeanne, Test.`);
+  });
+  it("ne retire pas un libellé long ou ponctué, ni un prénom en milieu de phrase", () => {
+    const long = `${corps} Jeanne, fondatrice de l'agence qui accompagne les marques depuis dix ans.`;
+    expect(retirerSignatureFinale(long, "Jeanne")).toBe(long);
+    expect(retirerSignatureFinale("Bonjour, je vois que Jeanne.", "Jeanne")).toBe("Bonjour, je vois que Jeanne.");
   });
 });

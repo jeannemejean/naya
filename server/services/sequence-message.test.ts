@@ -79,6 +79,44 @@ describe("buildStepPrompt", () => {
   });
 });
 
+describe("buildStepPrompt — signature et mise en forme", () => {
+  const base = {
+    founderName: "Jeanne", projectName: "", intention: "", audit: {},
+    lead: { name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac" },
+    brief: BRIEF as any, angle: "une idée",
+  };
+  it("email : demande des paragraphes (\\n\\n en JSON) et AUCUNE signature", () => {
+    const p = buildStepPrompt({ ...base, channel: "email", role: "email_ouverture" });
+    expect(p).toContain("MISE EN FORME DE L'EMAIL");
+    expect(p).toContain("ligne vide");
+    expect(p).toContain('"\\n\\n"');
+    expect(p).toMatch(/AUCUNE signature/);
+    expect(p).not.toContain("Signature :");
+  });
+  it("email sans projet : ni parenthèses vides ni nom de campagne", () => {
+    const p = buildStepPrompt({ ...base, channel: "email", role: "email_ouverture" });
+    expect(p).toContain("l'email de prospection de Jeanne pour cette touche");
+    expect(p).not.toContain("()");
+  });
+  it("LinkedIn : signe toujours du prénom, sans consigne de paragraphes", () => {
+    const p = buildStepPrompt({ ...base, projectName: "Agence JMD", channel: "linkedin", role: "premier_message" });
+    expect(p).toContain("Signature : Jeanne.");
+    expect(p).toContain("de Jeanne (Agence JMD)");
+    expect(p).not.toContain("MISE EN FORME DE L'EMAIL");
+  });
+  it("redigerTouche n'emploie jamais le nom de la campagne comme projet ou signature", async () => {
+    vi.clearAllMocks();
+    (storage.getLeadStepMessage as any).mockResolvedValue(undefined);
+    (storage.getOutreachMessages as any).mockResolvedValue([]);
+    (claude.callClaudeWithContext as any).mockResolvedValue('{"subject":"Petit Bivouac réparable","body":"Bonjour Fred,\\n\\nPetit Bivouac lance une collection réparable.\\n\\nC\'est un sujet pour vous ?"}');
+    const lead = { id: 43, name: "Fred Renaud", role: "Cofondateur", company: "Petit Bivouac", prospectBrief: BRIEF };
+    const res = await generateStepMessage("u1", { lead, campaign: { name: "Test", founderName: "Jeanne" }, step: { id: 8, channel: "email", intention: "" } });
+    const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage as string;
+    expect(prompt).not.toContain("Test");
+    expect(res.body).toBe("Bonjour Fred,\n\nPetit Bivouac lance une collection réparable.\n\nC'est un sujet pour vous ?");
+  });
+});
+
 describe("roleDeTouche", () => {
   it("lit le rôle porté par l'étape", () => {
     expect(roleDeTouche([{ channel: "email", role: "cloture" }] as any, 0)).toBe("cloture");
