@@ -118,6 +118,35 @@ describe("POST /api/companion/chat", () => {
     expect(h.executerAgent.mock.calls[0][0].historique).toEqual([]);
   });
 
+  it("un id de projet étranger est ignoré : aucun projet actif, rien de ce projet n'est lu", async () => {
+    const r = await poster({ message: "Où en est ce projet ?", context: { activeProject: { id: 999, name: "Projet d'une autre" } } });
+    expect(r.status).toBe(200);
+    const opts = h.executerAgent.mock.calls[0][0];
+    expect(opts.projetActifId).toBeUndefined();
+    expect(opts.contexteSession).not.toContain("999");
+    expect(opts.contexteSession).not.toContain("Projet d'une autre");
+    expect(opts.contexteSession).not.toContain("Projet actif");
+    expect(storageMock.getMilestones).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(h.extractToMemory).toHaveBeenCalled());
+    expect((h.extractToMemory.mock.calls[0] as any)[0].projectId).toBeNull();
+  });
+
+  it("sans projet envoyé, pas de repli sur un projet arbitraire", async () => {
+    await poster({ message: "Salut" });
+    expect(h.executerAgent.mock.calls[0][0].projetActifId).toBeUndefined();
+    expect(h.executerAgent.mock.calls[0][0].contexteSession).not.toContain("Projet actif");
+    expect(storageMock.getMilestones).not.toHaveBeenCalled();
+  });
+
+  it("un id de projet à elle est transmis, avec le nom venu de la base", async () => {
+    await poster({ message: "Et JMD ?", context: { activeProject: { id: 4, name: "nom falsifié" } } });
+    const opts = h.executerAgent.mock.calls[0][0];
+    expect(opts.projetActifId).toBe(4);
+    expect(opts.contexteSession).toContain("Projet actif : Agence JMD (id: 4)");
+    expect(opts.contexteSession).not.toContain("nom falsifié");
+    expect(storageMock.getMilestones).toHaveBeenCalledWith(4, "user-1");
+  });
+
   it("une panne de l'agent donne une 500, sans enregistrer de réponse", async () => {
     h.executerAgent.mockRejectedValueOnce(new Error("API indisponible"));
     const r = await poster({ message: "Salut" });

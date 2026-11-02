@@ -65,11 +65,14 @@ export function registerAgentRoutes(app: Express): void {
         .slice(0, 10)
         .map((t) => ({ title: t.title, date: String(t.scheduledDate).slice(0, 10), time: t.scheduledTime || undefined, taskId: t.id }));
 
-      // Projet actif : celui du client, sinon le premier projet. Puis son jalon actif.
-      const activeProjectId: number | undefined = clientContext.activeProject?.id || (userProjects[0] as any)?.id;
-      const projetActif = activeProjectId
-        ? (userProjects as any[]).find((p) => p.id === activeProjectId) ?? clientContext.activeProject ?? null
+      // Projet actif : celui envoyé par le client, SEULEMENT s'il appartient à l'utilisatrice
+      // (buildNayaContext lit objectifs et stratégie par projectId). Sinon, aucun projet actif :
+      // ni repli sur un projet arbitraire, ni id étranger qui passerait jusqu'aux requêtes.
+      const idClient = Number(clientContext.activeProject?.id);
+      const projetActif = Number.isInteger(idClient)
+        ? (userProjects as any[]).find((p) => p.id === idClient) ?? null
         : null;
+      const activeProjectId: number | undefined = projetActif?.id ?? undefined;
       let jalonActif: { id: number; title: string; status: string } | null = null;
       if (activeProjectId) {
         const milestones = await storage.getMilestones(activeProjectId, userId).catch(() => []);
