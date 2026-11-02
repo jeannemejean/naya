@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nomUnipile, compteUnipile, TYPE_UNIPILE_GMAIL, sansDeconnexion } from "./unipile";
+import { nomUnipile, compteUnipile, TYPE_UNIPILE_GMAIL, sansDeconnexion, gmailDejaUtilise } from "./unipile";
 
 describe("nomUnipile", () => {
   it("nomme le compte de l'utilisatrice ou celui d'un projet", () => {
@@ -69,5 +69,18 @@ describe("sansDeconnexion", () => {
     expect(sansDeconnexion({ email: "2026-10-01", linkedin: "2026-10-02" }, "email")).toEqual({ linkedin: "2026-10-02" });
     expect(sansDeconnexion({ email: "2026-10-01" }, "email")).toBeNull();
     expect(sansDeconnexion(null, "linkedin")).toBeNull();
+  });
+});
+
+describe("gmailDejaUtilise", () => {
+  const comptes = [{ id: "a", adresse: "J@x.fr" }, { id: "b", adresse: "j@x.fr" }, { id: "c", adresse: "z@x.fr" }, { id: "d" }];
+  it("même id ou même adresse ailleurs → oui", () => {
+    expect(gmailDejaUtilise(comptes, "a", ["a"])).toBe(true);
+    expect(gmailDejaUtilise(comptes, "a", [null, "b"])).toBe(true);
+  });
+  it("autre adresse, adresse inconnue ou rien ailleurs → non", () => {
+    expect(gmailDejaUtilise(comptes, "a", ["c", undefined])).toBe(false);
+    expect(gmailDejaUtilise(comptes, "d", ["c"])).toBe(false);
+    expect(gmailDejaUtilise(comptes, "a", [])).toBe(false);
   });
 });

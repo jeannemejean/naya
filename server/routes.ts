@@ -31,7 +31,7 @@ import { compteDePublication, porteeDuProjet } from "./services/connexions/compt
 import { dansPortee } from "./services/connexions/portee";
 import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
 import { controleProjetCampagne, controleChangementNature } from "./services/connexions/campagne";
-import { compteUnipile, profilDejaUtilise, nomUnipile, sansDeconnexion, TYPE_UNIPILE_GMAIL } from "./services/connexions/unipile";
+import { compteUnipile, profilDejaUtilise, sansDeconnexion } from "./services/connexions/unipile";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -8896,6 +8896,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         restricted: !!(prefs as any)?.linkedinRestrictedAt,
         restrictedAt: (prefs as any)?.linkedinRestrictedAt ?? null,
         restrictedReason: (prefs as any)?.linkedinRestrictedReason ?? null,
+        disconnectedAt: (prefs as any)?.comptesDeconnectes?.linkedin ?? null,
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -8965,67 +8966,6 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         comptesDeconnectes: sansDeconnexion((prevPrefs as any)?.comptesDeconnectes, 'linkedin'),
       } as any);
       res.json({ connected: true });
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
-  });
-
-  // ── Connexion Gmail (Unipile, même lien hébergé que LinkedIn) — le Gmail de l'utilisatrice ──
-  app.get('/api/prospection/gmail/status', isAuthenticated, async (req: any, res) => {
-    try {
-      const prefs: any = await storage.getUserPreferences(req.userId);
-      res.json({
-        configured: linkedinConfigured(),
-        connected: !!prefs?.emailUnipileAccountId,
-        address: prefs?.prospectionSenderEmail ?? null,
-        disconnectedAt: prefs?.comptesDeconnectes?.email ?? null,
-      });
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
-  });
-
-  app.post('/api/prospection/gmail/connect-link', isAuthenticated, async (req: any, res) => {
-    try {
-      if (!linkedinConfigured()) return res.status(400).json({ message: 'linkedin_not_configured' });
-      const url = await generateConnectLink(nomUnipile(req.userId, null), ['GOOGLE']);
-      if (!url) return res.status(502).json({ message: 'link_generation_failed' });
-      res.json({ url });
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
-  });
-
-  // Après connexion : retrouve le compte Google de l'utilisatrice (jamais celui d'un projet client).
-  app.post('/api/prospection/gmail/sync', isAuthenticated, async (req: any, res) => {
-    try {
-      if (!linkedinConfigured()) return res.status(400).json({ message: 'linkedin_not_configured' });
-      const accounts = await listUnipileAccounts();
-      const mine = compteUnipile(accounts, req.userId, null, TYPE_UNIPILE_GMAIL);
-      if (!mine) return res.status(404).json({ message: 'no_gmail_account_found' });
-      const prefs: any = await storage.getUserPreferences(req.userId);
-      const nouveau = prefs?.emailUnipileAccountId !== mine.id || !prefs?.emailAccountConnectedAt;
-      await storage.updateUserPreferences(req.userId, {
-        emailUnipileAccountId: mine.id,
-        ...(nouveau ? { emailAccountConnectedAt: new Date() } : {}),
-        // Adresse d'envoi : celle du compte, seulement si rien n'est déjà réglé.
-        ...(!prefs?.prospectionSenderEmail && mine.adresse ? { prospectionSenderEmail: mine.adresse } : {}),
-        comptesDeconnectes: sansDeconnexion(prefs?.comptesDeconnectes, 'email'),
-      } as any);
-      res.json({ connected: true });
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
-  });
-
-  app.delete('/api/prospection/gmail', isAuthenticated, async (req: any, res) => {
-    try {
-      const prefs: any = await storage.getUserPreferences(req.userId);
-      await storage.updateUserPreferences(req.userId, {
-        emailUnipileAccountId: null, emailAccountConnectedAt: null,
-        comptesDeconnectes: sansDeconnexion(prefs?.comptesDeconnectes, 'email'),
-      } as any);
-      res.json({ connected: false });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

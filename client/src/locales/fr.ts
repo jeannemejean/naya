@@ -2722,6 +2722,15 @@ const fr = {
   regle: "Ce projet publie et prospecte uniquement avec ces connexions, jamais avec les tiennes. Sans connexion, Naya prépare tout et tu publies ou envoies toi-même.",
   connecter: "Connecter",
   deconnecter: "Déconnecter",
+  termine: "J'ai terminé",
+  prospection: {
+   titre: "Connexions de prospection",
+   description: "Les comptes avec lesquels Naya prépare et suit tes échanges de prospection.",
+   linkedinAide: "Connecte ton LinkedIn dans la fenêtre qui s'ouvre, puis reviens ici.",
+   linkedinConnecte: "Ton LinkedIn est connecté",
+   gmailAide: "Connecte ton Gmail dans la fenêtre qui s'ouvre, puis reviens ici.",
+   gmailConnecte: "Ton Gmail est connecté",
+  },
   enregistrer: "Enregistrer",
   erreur: "L'opération n'a pas abouti.",
   reseaux: {
@@ -2759,6 +2768,7 @@ const fr = {
    statut: { verified: "Vérifiée", pending: "Vérification en attente", none: "Non vérifiée", unknown: "État inconnu" },
   },
   gmail: {
+   dejaUtilise: "Ce compte Gmail est déjà connecté ailleurs (chez toi ou pour un autre client) : un même compte ne peut servir qu'à un seul endroit.",
    titre: "Compte Gmail",
    aide: "Connecte le Gmail du client dans la fenêtre qui s'ouvre, puis reviens ici.",
    connecte: "Gmail du client connecté",
@@ -2768,6 +2778,7 @@ const fr = {
    nonConfigure: "La connexion Gmail n'est pas encore disponible sur Naya.",
   },
   linkedin: {
+   deconnecte: "Le compte LinkedIn s'est déconnecté : reconnecte-le pour que Naya continue.",
    titre: "Compte LinkedIn",
    aide: "Connecte le LinkedIn du client dans la fenêtre qui s'ouvre, puis reviens ici.",
    termine: "J'ai terminé",

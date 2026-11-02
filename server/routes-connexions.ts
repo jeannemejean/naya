@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { encryptToken, decryptToken } from "./services/token-crypto";
 import { getSenderStatus, createSingleSender } from "./services/sendgrid-senders";
 import { linkedinConfigured, generateConnectLink, listUnipileAccounts } from "./services/linkedin";
-import { compteUnipile, nomUnipile, profilDejaUtilise, sansDeconnexion, TYPE_UNIPILE_GMAIL } from "./services/connexions/unipile";
+import { compteUnipile, nomUnipile, profilDejaUtilise, gmailDejaUtilise, sansDeconnexion, TYPE_UNIPILE_GMAIL } from "./services/connexions/unipile";
 import { perimetreDemande, statutReseaux, listeComptes } from "./routes-social";
 
 const cleSendgrid = (c: any): string | undefined =>
@@ -29,13 +29,21 @@ function vueEmail(c: any, verificationStatus: string) {
   };
 }
 
-function vueGmail(c: any) {
+/** `address` = l'adresse du compte Google relié (côté Unipile), pas le champ « expéditeur ». */
+function vueGmail(c: any, comptes: Array<{ id: string; adresse?: string | null }> = []) {
+  const id = c?.emailUnipileAccountId;
   return {
     configured: linkedinConfigured(),
-    connected: !!c?.emailUnipileAccountId,
-    address: c?.senderEmail ?? null,
+    connected: !!id,
+    address: (id && comptes.find((x) => x.id === id)?.adresse) || null,
     disconnectedAt: c?.comptesDeconnectes?.email ?? null,
   };
+}
+
+/** Comptes Unipile, seulement si utile ; une panne Unipile ne casse jamais l'écran. */
+async function comptesSi(utile: boolean) {
+  if (!utile || !linkedinConfigured()) return [];
+  try { return await listUnipileAccounts(); } catch { return []; }
 }
 
 function vueLinkedin(c: any) {
@@ -45,6 +53,7 @@ function vueLinkedin(c: any) {
     restricted: !!c?.linkedinRestrictedAt,
     restrictedAt: c?.linkedinRestrictedAt ?? null,
     restrictedReason: c?.linkedinRestrictedReason ?? null,
+    disconnectedAt: c?.comptesDeconnectes?.linkedin ?? null,
   };
 }
 
@@ -77,7 +86,7 @@ export function registerConnexionsRoutes(app: Express) {
         },
         email: vueEmail(c, statut),
         linkedin: vueLinkedin(c),
-        gmail: vueGmail(c),
+        gmail: vueGmail(c, await comptesSi(!!c?.emailUnipileAccountId)),
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
@@ -273,8 +282,16 @@ export function registerConnexionsRoutes(app: Express) {
       const projectId = await projetClient(req, res);
       if (projectId == null) return;
       if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
-      const compte = compteUnipile(await listUnipileAccounts(), req.userId, projectId, TYPE_UNIPILE_GMAIL);
+      const comptes = await listUnipileAccounts();
+      const compte = compteUnipile(comptes, req.userId, projectId, TYPE_UNIPILE_GMAIL);
       if (!compte) return res.status(404).json({ message: "no_gmail_account_found" });
+      // Un même Gmail ne sert qu'à un périmètre (utilisatrice ou un seul projet).
+      const prefs: any = await storage.getUserPreferences(req.userId);
+      const autres = (await storage.getConnexionsProjetDe(req.userId))
+        .filter((x) => x.projectId !== projectId).map((x: any) => x.emailUnipileAccountId);
+      if (gmailDejaUtilise(comptes, compte.id, [prefs?.emailUnipileAccountId, ...autres])) {
+        return res.status(409).json({ message: "gmail_deja_utilise" });
+      }
       const avant: any = await storage.getConnexionProjet(req.userId, projectId);
       const nouveau = avant?.emailUnipileAccountId !== compte.id || !avant?.emailAccountConnectedAt;
       const c = await storage.upsertConnexionProjet(req.userId, projectId, {
@@ -283,7 +300,7 @@ export function registerConnexionsRoutes(app: Express) {
         ...(!avant?.senderEmail && compte.adresse ? { senderEmail: compte.adresse } : {}),
         comptesDeconnectes: sansDeconnexion(avant?.comptesDeconnectes, "email"),
       } as any);
-      res.json({ gmail: vueGmail(c) });
+      res.json({ gmail: vueGmail(c, comptes) });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
@@ -299,6 +316,64 @@ export function registerConnexionsRoutes(app: Express) {
         comptesDeconnectes: sansDeconnexion(avant?.comptesDeconnectes, "email"),
       } as any);
       res.json({ gmail: vueGmail(c) });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── Gmail de l'utilisatrice (Unipile, même lien hébergé que LinkedIn) ──
+  app.get("/api/prospection/gmail/status", isAuthenticated, async (req: any, res) => {
+    try {
+      const prefs: any = await storage.getUserPreferences(req.userId);
+      res.json(vueGmail(prefs, await comptesSi(!!prefs?.emailUnipileAccountId)));
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/prospection/gmail/connect-link", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
+      const url = await generateConnectLink(nomUnipile(req.userId, null), ["GOOGLE"]);
+      if (!url) return res.status(502).json({ message: "link_generation_failed" });
+      res.json({ url });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Le compte Google de l'utilisatrice (jamais celui d'un projet client).
+  app.post("/api/prospection/gmail/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      if (!linkedinConfigured()) return res.status(400).json({ message: "linkedin_not_configured" });
+      const comptes = await listUnipileAccounts();
+      const mine = compteUnipile(comptes, req.userId, null, TYPE_UNIPILE_GMAIL);
+      if (!mine) return res.status(404).json({ message: "no_gmail_account_found" });
+      const autres = (await storage.getConnexionsProjetDe(req.userId)).map((x: any) => x.emailUnipileAccountId);
+      if (gmailDejaUtilise(comptes, mine.id, autres)) return res.status(409).json({ message: "gmail_deja_utilise" });
+      const prefs: any = await storage.getUserPreferences(req.userId);
+      const nouveau = prefs?.emailUnipileAccountId !== mine.id || !prefs?.emailAccountConnectedAt;
+      await storage.updateUserPreferences(req.userId, {
+        emailUnipileAccountId: mine.id,
+        ...(nouveau ? { emailAccountConnectedAt: new Date() } : {}),
+        // Adresse d'envoi : celle du compte, seulement si rien n'est déjà réglé.
+        ...(!prefs?.prospectionSenderEmail && mine.adresse ? { prospectionSenderEmail: mine.adresse } : {}),
+        comptesDeconnectes: sansDeconnexion(prefs?.comptesDeconnectes, "email"),
+      } as any);
+      res.json({ connected: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/prospection/gmail", isAuthenticated, async (req: any, res) => {
+    try {
+      const prefs: any = await storage.getUserPreferences(req.userId);
+      await storage.updateUserPreferences(req.userId, {
+        emailUnipileAccountId: null, emailAccountConnectedAt: null,
+        comptesDeconnectes: sansDeconnexion(prefs?.comptesDeconnectes, "email"),
+      } as any);
+      res.json({ connected: false });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

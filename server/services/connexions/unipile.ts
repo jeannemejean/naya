@@ -48,3 +48,20 @@ export function sansDeconnexion(
   const { [canal]: _retire, ...reste } = (actuel && typeof actuel === "object" ? actuel : {}) as Record<string, string>;
   return Object.keys(reste).length ? reste : null;
 }
+
+/**
+ * Le compte Google choisi est-il déjà rattaché à un autre périmètre (utilisatrice ou autre
+ * projet) ? Même id, ou même adresse derrière deux connexions Unipile. Adresse inconnue → seul
+ * l'id compte.
+ */
+export function gmailDejaUtilise(
+  comptes: Array<{ id: string; adresse?: string | null }>, choisi: string, utilisesAilleurs: Array<string | null | undefined>,
+): boolean {
+  const adresse = comptes.find((c) => c.id === choisi)?.adresse?.toLowerCase();
+  return utilisesAilleurs.some((id) => {
+    if (!id) return false;
+    if (id === choisi) return true;
+    const autre = comptes.find((c) => c.id === id)?.adresse?.toLowerCase();
+    return !!adresse && autre === adresse;
+  });
+}

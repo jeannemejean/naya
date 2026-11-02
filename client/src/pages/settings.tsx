@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import { throwApiError, translateError, ApiError } from "@/lib/api-error";
 import Sidebar from "@/components/sidebar";
+import ConnexionsProspectionCard from "@/components/connexions/ConnexionsProspectionCard";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -626,6 +627,9 @@ export default function Settings({ onSearchClick }: SettingsProps) {
  </div>
  </CardContent>
  </Card>
+
+ {/* Connexions de prospection : LinkedIn + Gmail (Unipile) */}
+ <ConnexionsProspectionCard />
 
  {/* Schedule */}
  <Card className=" ">

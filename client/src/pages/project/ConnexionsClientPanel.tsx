@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import LigneUnipile from "@/components/connexions/LigneUnipile";
 
 const RESEAUX = [
   { id: "instagram", nom: "Instagram" },
@@ -22,7 +23,7 @@ const RESEAUX = [
 
 interface Statut { connected: boolean; etat: string; accountName?: string; configured: boolean; pagesCount?: number }
 interface Email { senderEmail: string; senderName: string; address: string; city: string; country: string; hasOwnKey: boolean; verificationStatus: string }
-interface Linkedin { configured: boolean; connected: boolean; restricted: boolean; restrictedReason: string | null }
+interface Linkedin { configured: boolean; connected: boolean; restricted: boolean; restrictedReason: string | null; disconnectedAt?: string | null }
 interface Gmail { configured: boolean; connected: boolean; address: string | null; disconnectedAt: string | null }
 interface CompteListe { id: number; platform: string; accountName: string; isPage?: boolean }
 interface Connexions {
@@ -227,99 +228,24 @@ function EmailClient({ projectId, email, onSaved }: { projectId: number; email: 
 
 function LinkedinClient({ projectId, linkedin, onChange }: { projectId: number; linkedin: Linkedin; onChange: () => void }) {
   const { t } = useTranslation();
-  const { toast } = useToast();
-  const [lienOuvert, setLienOuvert] = useState(false);
   const base = `/api/projects/${projectId}/connexions/linkedin`;
-  const erreur = () => toast({ title: t("connexions.erreur"), variant: "destructive" });
-  const lien = useMutation({
-    mutationFn: async () => (await apiRequest("POST", `${base}/lien`)).json(),
-    onSuccess: (j: any) => { window.open(j.url, "_blank", "noopener"); setLienOuvert(true); },
-    onError: erreur,
-  });
-  const sync = useMutation({
-    mutationFn: () => apiRequest("POST", `${base}/sync`),
-    onSuccess: () => { setLienOuvert(false); toast({ title: t("connexions.linkedin.connecte") }); onChange(); },
-    onError: (e: any) => toast({
-      title: String(e?.message || "").includes("linkedin_deja_utilise") ? t("connexions.linkedin.dejaUtilise") : t("connexions.linkedin.introuvable"),
-      variant: "destructive",
-    }),
-  });
-  const lever = useMutation({ mutationFn: () => apiRequest("POST", `${base}/lever-restriction`), onSuccess: onChange, onError: erreur });
-  const retirer = useMutation({ mutationFn: () => apiRequest("DELETE", base), onSuccess: onChange, onError: erreur });
-
   return (
-    <section className="space-y-2">
-      <h3 className="text-xs font-semibold text-muted-foreground">{t("connexions.linkedin.titre")}</h3>
-      {!linkedin.configured ? (
-        <p className="text-xs text-muted-foreground">{t("connexions.linkedin.nonConfigure")}</p>
-      ) : linkedin.connected ? (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
-            {linkedin.restricted ? t("connexions.linkedin.restreint", { raison: linkedin.restrictedReason || "" }) : t("connexions.linkedin.actif")}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {linkedin.restricted && (
-              <Button size="sm" variant="outline" disabled={lever.isPending} onClick={() => lever.mutate()}>{t("connexions.linkedin.lever")}</Button>
-            )}
-            <Button size="sm" variant="ghost" disabled={retirer.isPending} onClick={() => retirer.mutate()}>{t("connexions.deconnecter")}</Button>
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">{t("connexions.linkedin.aide")}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" disabled={lien.isPending} onClick={() => lien.mutate()}>{t("connexions.connecter")}</Button>
-            {lienOuvert && (
-              <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>{t("connexions.linkedin.termine")}</Button>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
+    <LigneUnipile
+      kind="linkedin" etat={linkedin} onChange={onChange}
+      routes={{ lien: `${base}/lien`, sync: `${base}/sync`, retirer: base, lever: `${base}/lever-restriction` }}
+      aide={t("connexions.linkedin.aide")} connecte={t("connexions.linkedin.connecte")}
+    />
   );
 }
 
 function GmailClient({ projectId, gmail, onChange }: { projectId: number; gmail: Gmail; onChange: () => void }) {
   const { t } = useTranslation();
-  const { toast } = useToast();
-  const [lienOuvert, setLienOuvert] = useState(false);
   const base = `/api/projects/${projectId}/connexions/gmail`;
-  const erreur = () => toast({ title: t("connexions.erreur"), variant: "destructive" });
-  const lien = useMutation({
-    mutationFn: async () => (await apiRequest("POST", `${base}/lien`)).json(),
-    onSuccess: (j: any) => { window.open(j.url, "_blank", "noopener"); setLienOuvert(true); },
-    onError: erreur,
-  });
-  const sync = useMutation({
-    mutationFn: () => apiRequest("POST", `${base}/sync`),
-    onSuccess: () => { setLienOuvert(false); toast({ title: t("connexions.gmail.connecte") }); onChange(); },
-    onError: () => toast({ title: t("connexions.gmail.introuvable"), variant: "destructive" }),
-  });
-  const retirer = useMutation({ mutationFn: () => apiRequest("DELETE", base), onSuccess: onChange, onError: erreur });
-
   return (
-    <section className="space-y-2">
-      <h3 className="text-xs font-semibold text-muted-foreground">{t("connexions.gmail.titre")}</h3>
-      {!gmail.configured ? (
-        <p className="text-xs text-muted-foreground">{t("connexions.gmail.nonConfigure")}</p>
-      ) : gmail.connected ? (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
-            {gmail.disconnectedAt ? t("connexions.gmail.deconnecte") : t("connexions.gmail.actif", { adresse: gmail.address || "" })}
-          </p>
-          <Button size="sm" variant="ghost" disabled={retirer.isPending} onClick={() => retirer.mutate()}>{t("connexions.deconnecter")}</Button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">{t("connexions.gmail.aide")}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" disabled={lien.isPending} onClick={() => lien.mutate()}>{t("connexions.connecter")}</Button>
-            {lienOuvert && (
-              <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>{t("connexions.linkedin.termine")}</Button>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
+    <LigneUnipile
+      kind="gmail" etat={gmail} onChange={onChange}
+      routes={{ lien: `${base}/lien`, sync: `${base}/sync`, retirer: base }}
+      aide={t("connexions.gmail.aide")} connecte={t("connexions.gmail.connecte")}
+    />
   );
 }

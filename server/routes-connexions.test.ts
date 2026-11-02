@@ -9,6 +9,7 @@ vi.mock("./auth", () => ({
   isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "user-1"; next(); },
 }));
 let connexion: any;
+let prefs: any = { linkedinUnipileAccountId: "acc-jeanne" };
 const storageMock = {
   getProject: vi.fn(async (id: number, u: string) => {
     if (u !== "user-1") return undefined;
@@ -26,7 +27,8 @@ const storageMock = {
   deleteSocialAccount: vi.fn(async () => true),
   getConnexionProjet: vi.fn(async () => connexion),
   upsertConnexionProjet: vi.fn(async (_u: string, _p: number, patch: any) => (connexion = { ...(connexion ?? {}), ...patch })),
-  getUserPreferences: vi.fn(async () => ({ linkedinUnipileAccountId: "acc-jeanne" })),
+  getUserPreferences: vi.fn(async (): Promise<any> => prefs),
+  updateUserPreferences: vi.fn(async (_u: string, patch: any) => { prefs = { ...prefs, ...patch }; }),
   getConnexionsProjetDe: vi.fn(async () => [] as any[]),
   getProspectionCampaigns: vi.fn(async () => [{ id: 31, projectId: 7 }, { id: 32, projectId: 9 }, { id: 33, projectId: 7 }]),
   purgeLeadStepMessagesForCampaign: vi.fn(async () => 0),
@@ -56,7 +58,7 @@ afterAll(() => server.close());
 const appel = (method: string, path: string, body?: unknown) =>
   fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
 
-beforeEach(() => { vi.clearAllMocks(); connexion = undefined; });
+beforeEach(() => { vi.clearAllMocks(); connexion = undefined; prefs = { linkedinUnipileAccountId: "acc-jeanne" }; });
 
 describe("routes des connexions d'un projet client", () => {
   it("projet d'une autre → 404 ; projet perso → 409 ; rien n'est écrit", async () => {
@@ -180,5 +182,60 @@ describe("Gmail d'un projet client", () => {
     expect(j.gmail.connected).toBe(false);
     expect(connexion.linkedinUnipileAccountId).toBe("acc-client");
     expect(connexion.comptesDeconnectes).toBeNull();
+  });
+});
+
+describe("garde : un Gmail ne sert qu'à un périmètre", () => {
+  it("projet : compte déjà celui de l'utilisatrice → 409, rien écrit", async () => {
+    prefs = { emailUnipileAccountId: "gm-client" };
+    const r = await appel("POST", "/api/projects/7/connexions/gmail/sync");
+    expect(r.status).toBe(409);
+    expect((await r.json()).message).toBe("gmail_deja_utilise");
+    expect(storageMock.upsertConnexionProjet).not.toHaveBeenCalled();
+  });
+  it("projet : même adresse déjà reliée à un autre projet → 409", async () => {
+    storageMock.getConnexionsProjetDe.mockResolvedValueOnce([{ projectId: 9, emailUnipileAccountId: "gm-autre" }]);
+    li.listUnipileAccounts.mockResolvedValueOnce([
+      { id: "gm-client", type: "GOOGLE_OAUTH", name: "user-1:projet:7", adresse: "Marc@client.fr" },
+      { id: "gm-autre", type: "GOOGLE_OAUTH", name: "user-1:projet:9", adresse: "marc@client.fr" },
+    ]);
+    expect((await appel("POST", "/api/projects/7/connexions/gmail/sync")).status).toBe(409);
+  });
+  it("utilisatrice : compte déjà relié à un client → 409, rien écrit", async () => {
+    storageMock.getConnexionsProjetDe.mockResolvedValueOnce([{ projectId: 7, emailUnipileAccountId: "gm-jeanne" }]);
+    const r = await appel("POST", "/api/prospection/gmail/sync");
+    expect(r.status).toBe(409);
+    expect(storageMock.updateUserPreferences).not.toHaveBeenCalled();
+  });
+});
+
+describe("Gmail de l'utilisatrice", () => {
+  it("lien : provider GOOGLE, son propre nom", async () => {
+    await appel("POST", "/api/prospection/gmail/connect-link");
+    expect(li.generateConnectLink).toHaveBeenCalledWith("user-1", ["GOOGLE"]);
+  });
+  it("sync : son compte Google (pas celui du projet), adresse reprise, alerte e-mail levée", async () => {
+    prefs = { comptesDeconnectes: { email: "2026-10-01", linkedin: "2026-10-02" } };
+    expect((await appel("POST", "/api/prospection/gmail/sync")).status).toBe(200);
+    const patch = storageMock.updateUserPreferences.mock.calls[0][1];
+    expect(patch).toMatchObject({ emailUnipileAccountId: "gm-jeanne", prospectionSenderEmail: "jeanne@gmail.com", comptesDeconnectes: { linkedin: "2026-10-02" } });
+    expect(patch.emailAccountConnectedAt).toBeInstanceOf(Date);
+  });
+  it("sync : adresse d'envoi déjà réglée conservée ; aucun compte Google à son nom → 404", async () => {
+    prefs = { prospectionSenderEmail: "contact@jmd.fr" };
+    await appel("POST", "/api/prospection/gmail/sync");
+    expect(storageMock.updateUserPreferences.mock.calls[0][1]).not.toHaveProperty("prospectionSenderEmail");
+    li.listUnipileAccounts.mockResolvedValueOnce([{ id: "gm-client", type: "GOOGLE_OAUTH", name: "user-1:projet:7" }]);
+    expect((await appel("POST", "/api/prospection/gmail/sync")).status).toBe(404);
+  });
+  it("status : l'adresse du compte Google relié, état déconnecté exposé", async () => {
+    prefs = { emailUnipileAccountId: "gm-jeanne", prospectionSenderEmail: "autre@x.fr", comptesDeconnectes: { email: "2026-10-05" } };
+    expect(await (await appel("GET", "/api/prospection/gmail/status")).json())
+      .toEqual({ configured: true, connected: true, address: "jeanne@gmail.com", disconnectedAt: "2026-10-05" });
+  });
+  it("DELETE : détache Gmail, garde LinkedIn", async () => {
+    prefs = { emailUnipileAccountId: "gm-jeanne", linkedinUnipileAccountId: "acc-jeanne", comptesDeconnectes: { email: "2026-10-05" } };
+    await appel("DELETE", "/api/prospection/gmail");
+    expect(prefs).toMatchObject({ emailUnipileAccountId: null, emailAccountConnectedAt: null, comptesDeconnectes: null, linkedinUnipileAccountId: "acc-jeanne" });
   });
 });
