@@ -1512,6 +1512,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       baseLead({ linkedinUrl: "https://linkedin.com/in/x", ...overrides });
 
     describe("public de la campagne (froid / relations)", () => {
+      const linkedinPrefs_restreint = () => openPrefs({ linkedinUnipileAccountId: "acc1", linkedinRestrictedAt: new Date(Date.now() - 3600_000), linkedinRestrictedReason: "resolve_403" });
       const preparer = (campaign: any = { id: 10, name: "Campagne" }, leadOver: Record<string, any> = {}, prefs: any = linkedinPrefs()) => {
         (linkedinConfigured as any).mockReturnValue(true);
         (sendLinkedInStep as any).mockResolvedValue({ ok: true, action: "invitation" });
@@ -1599,6 +1600,67 @@ describe("runProspectionSender — worker loop (intégration)", () => {
         await runProspectionSender();
         expect(storage.updateUserPreferences).toHaveBeenCalledWith("u1", expect.objectContaining({ linkedinRestrictedReason: "resolve_403" }));
         expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+      });
+
+      it("étape email en premier, prospect connecté (froid) : exclu, aucun email envoyé", async () => {
+        preparer(undefined, { email: "lead@example.com" });
+        (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "email" })]);
+        (checkConnection as any).mockResolvedValue({ ok: true, connected: true, error: null });
+        await runProspectionSender();
+        expect(storage.excludeLeadFromCampaign).toHaveBeenCalledWith(1, "deja_en_relation");
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(generateStepMessage).not.toHaveBeenCalled();
+      });
+
+      it("garde refuse (écart minimum) sur le chemin de vérification : aucun changement d'état, aucun envoi", async () => {
+        preparer();
+        (storage.getLinkedInAttemptTimestampsSince as any).mockResolvedValue([new Date(Date.now() - 1000)]);
+        await runProspectionSender();
+        expect(checkConnection).not.toHaveBeenCalled();
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+        expect(storage.markRelationVerifiee).not.toHaveBeenCalled();
+        expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+        expect(sendLinkedInStep).not.toHaveBeenCalled();
+      });
+
+      it("compte restreint : un email en premier part sans vérification (ni vérifié, ni exclu)", async () => {
+        preparer(undefined, {}, linkedinPrefs_restreint());
+        (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "email" })]);
+        (storage.claimStepSend as any).mockResolvedValue(true);
+        await runProspectionSender();
+        expect(checkConnection).not.toHaveBeenCalled();
+        expect(storage.markRelationVerifiee).not.toHaveBeenCalled();
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+        expect(fetchMock).toHaveBeenCalled();
+      });
+
+      it("restriction détectée plus tôt dans le tick : le lead suivant n'est pas vérifié", async () => {
+        preparer();
+        (storage.getDueEnrollments as any).mockResolvedValue([baseState({ id: 1, leadId: 1 }), baseState({ id: 2, leadId: 2 })]);
+        (storage.getLeads as any).mockResolvedValue([
+          linkedinLead({ id: 1, relationVerifieeAt: null }),
+          linkedinLead({ id: 2, relationVerifieeAt: null, linkedinUrl: "https://linkedin.com/in/y" }),
+        ]);
+        (checkConnection as any).mockResolvedValue({ ok: false, connected: false, error: "resolve_403" });
+        await runProspectionSender();
+        expect(checkConnection).toHaveBeenCalledTimes(1);
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+      });
+
+      it.each(["no_public_id", "resolve_404"])("erreur permanente %s : marqué vérifié sans exclusion, la séquence continue", async (code) => {
+        preparer();
+        (checkConnection as any).mockResolvedValue({ ok: false, connected: false, error: code });
+        await runProspectionSender();
+        expect(storage.markRelationVerifiee).toHaveBeenCalledWith(1, false, false);
+        expect(storage.excludeLeadFromCampaign).not.toHaveBeenCalled();
+        expect(storage.updateUserPreferences).not.toHaveBeenCalled();
+      });
+
+      it("erreur 5xx : réessai (rien de marqué)", async () => {
+        preparer();
+        (checkConnection as any).mockResolvedValue({ ok: false, connected: false, error: "check_503" });
+        await runProspectionSender();
+        expect(storage.markRelationVerifiee).not.toHaveBeenCalled();
       });
 
       it("pas à l'étape 0 : pas de vérification", async () => {

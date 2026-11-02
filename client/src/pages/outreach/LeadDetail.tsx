@@ -153,11 +153,11 @@ function LeadDetailBody({ lead }: { lead: Lead }) {
         </div>
       </SheetHeader>
 
-      {(lead as any).exclusionRaison && (
+      {lead.exclusionRaison && (
         <p className="text-xs text-muted-foreground rounded-lg bg-muted px-3 py-2">
-          {(lead as any).exclusionRaison === 'deja_en_relation'
+          {lead.exclusionRaison === 'deja_en_relation'
             ? t('outreach.exclusionDejaEnRelation')
-            : (lead as any).exclusionRaison === 'pas_en_relation'
+            : lead.exclusionRaison === 'pas_en_relation'
               ? t('outreach.exclusionPasEnRelation')
               : t('outreach.audienceRetire')}
         </p>

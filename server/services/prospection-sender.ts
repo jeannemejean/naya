@@ -594,7 +594,8 @@ export async function runProspectionSender(): Promise<void> {
         // LinkedIn existante ; une campagne « relations » ne s'adresse qu'à elles. Même garde
         // de risque que l'envoi (la vérification est une requête LinkedIn comptée). Sans
         // compte relié ni URL, aucune vérification : la séquence continue. Une erreur de
-        // vérification n'exclut JAMAIS : rien ne part, réessai au prochain passage.
+        // vérification n'exclut JAMAIS (5xx/réseau : réessai ; erreur permanente : non vérifiable, la séquence continue ;
+        // compte restreint : non vérifiable, l'étape suit sa propre garde).
         if (
           state.currentStep === 0 &&
           !(lead as any).relationVerifieeAt &&
@@ -604,24 +605,24 @@ export async function runProspectionSender(): Promise<void> {
         ) {
           const accountId = identite.linkedin.accountId;
           const urlRelation = lead.linkedinUrl;
-          if (restrictedThisTick.has(cleCompte)) {
-            await storage.updateLeadSequenceState(state.leadId, {
-              nextRunAt: new Date(now.getTime() + LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS),
-            } as any).catch(() => {});
-            continue;
-          }
-          const garde = await evaluerGardeLinkedIn({ userId: state.userId, portee, cleCompte, identite, now, timezone: userTz });
-          if (!garde.allowed) {
-            console.log(
-              `[ProspectionSender] vérification de relation lead ${lead.id} refusée par la garde de risque (${garde.reason}) : ${garde.detail}`,
-            );
-            if (garde.reason === "restricted") {
-              await storage.updateLeadSequenceState(state.leadId, {
-                nextRunAt: new Date(now.getTime() + LINKEDIN_RESTRICTED_RETRY_BACKOFF_MS),
-              } as any).catch(() => {});
+          // Compte restreint : prospect NON vérifiable pour l'instant (ni vérifié, ni exclu) ;
+          // l'étape suit son cours (un email part, une étape LinkedIn est arrêtée par sa
+          // propre garde). Refus transitoire (fenêtre, écart, plafonds) : on attend.
+          let verifiable = !restrictedThisTick.has(cleCompte);
+          if (verifiable) {
+            const garde = await evaluerGardeLinkedIn({ userId: state.userId, portee, cleCompte, identite, now, timezone: userTz });
+            if (!garde.allowed) {
+              if (garde.reason === "restricted") {
+                verifiable = false;
+              } else {
+                console.log(
+                  `[ProspectionSender] vérification de relation lead ${lead.id} refusée par la garde de risque (${garde.reason}) : ${garde.detail}`,
+                );
+                continue;
+              }
             }
-            continue;
           }
+          if (verifiable) {
           const verif = await checkConnection(accountId, urlRelation);
           try {
             await storage.recordLinkedInSendAttempt(state.userId, lead.id, verif.ok, verif.ok ? null : "verif_relation", portee);
@@ -632,9 +633,19 @@ export async function runProspectionSender(): Promise<void> {
           if (hist) hist.push(new Date());
           if (!verif.ok) {
             console.error(`[ProspectionSender] vérification de relation lead ${lead.id} en erreur (${verif.error}) — rien envoyé, réessai au prochain passage.`);
-            if (isLinkedInRestrictionSignal(verif.error)) await traiterRestriction(state.userId, portee, cleCompte, verif.error);
-            continue;
-          }
+            if (isLinkedInRestrictionSignal(verif.error)) {
+              await traiterRestriction(state.userId, portee, cleCompte, verif.error);
+              continue;
+            }
+            // Erreur PERMANENTE (profil sans identifiant public, 4xx hors restriction) : non
+            // vérifiable, jamais exclu ; marqué vérifié pour ne pas boucler, la séquence continue.
+            if (verif.error === "no_public_id" || /^resolve_4\d\d$/.test(verif.error ?? "")) {
+              await storage.markRelationVerifiee(lead.id, false, false);
+              (lead as any).relationVerifieeAt = now;
+            } else {
+              continue; // 5xx / réseau : réessai au prochain passage
+            }
+          } else {
           const campagnePublic = await storage.getProspectionCampaign(state.campaignId);
           const audience = normaliserPublic((campagnePublic as any)?.audience);
           if (decisionPublic(audience, verif.connected) === "exclure") {
@@ -644,6 +655,8 @@ export async function runProspectionSender(): Promise<void> {
           }
           await storage.markRelationVerifiee(lead.id, verif.connected, audience === "relations");
           (lead as any).relationVerifieeAt = now; // le cache de leads du tick ne revérifie pas
+          }
+          }
         }
         // Capturé après la garde : le narrowing `lead.linkedinUrl` ne survit pas à la
         // fermeture `async` de `sendOnce` plus bas (TS le retypera en nullable).

@@ -1891,6 +1891,8 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getLeadSequenceState(leadId);
     // Nouveau départ : le compteur « message trop proche » et sa raison d'arrêt aussi.
     await this.setLeadSequenceGuard(leadId, null);
+    // Nouveau départ : le public de la campagne sera revérifié (autre campagne possible).
+    await db.update(leads).set({ relationVerifieeAt: null, exclusionRaison: null, updatedAt: new Date() }).where(eq(leads.id, leadId));
     const values = {
       leadId, campaignId, userId,
       status: "active", currentStep: 0, nextRunAt,
