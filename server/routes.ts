@@ -56,7 +56,7 @@ import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
-import { filtrerEditionTache } from "./services/taches/edition";
+import { creerTache, modifierTache } from "./services/taches/ecrire-tache";
 import { refuserPost } from "./services/refus-post/service";
 import { refusPostDeps } from "./services/refus-post/deps";
 import { estRaisonRefusPost, estPublieOuEnCours } from "./services/refus-post/pur";
@@ -73,7 +73,7 @@ import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
-import { dateDeRetassage, aujourdhuiParis } from "./services/repack-from";
+import { aujourdhuiParis } from "./services/repack-from";
 import {
   apercuRepenser, lancerRepenser, registreRepenser, repenserEnCours, StatutIncompatible, DejaEnCours,
   CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
@@ -187,7 +187,6 @@ import {
 import { ObjectPermission } from "./objectAcl";
 import { 
   insertBrandDnaSchema, 
-  insertTaskSchema, 
   insertContentSchema, 
   insertLeadSchema, 
   insertOutreachMessageSchema,
@@ -215,7 +214,6 @@ import { annulerReprise, vueReprises } from "./services/reprise";
 import { depsAnnulation } from "./services/reprise/deps";
 import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
-import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import { filtrerTachesGenerees } from "./services/filtre-taches-generees";
 import { marquerTachesDesJalonsVerrouilles } from "./services/jalons-verrouilles";
 import { estPourJalonVerrouille } from "./services/marques-jalons";
@@ -4224,45 +4222,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const taskData = insertTaskSchema.parse({ ...req.body, userId });
-
-      // Weekend check — still a hard reject (don't silently move to a work day)
-      if (taskData.scheduledDate) {
-        const prefs = await storage.getUserPreferences(userId).catch(() => null);
-        const workDaySet = parseWorkDays(prefs?.workDays);
-        const dow = new Date(taskData.scheduledDate + 'T00:00:00').getDay();
-        if (!workDaySet.has(DAY_ABBRS[dow])) {
-          const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-          return res.status(400).json({ message: `${names[dow]} is not one of your work days.` });
-        }
-      }
-
-      // Auto-assign time: date définie mais pas d'heure → trouver le premier créneau libre
-      if (taskData.scheduledDate && !taskData.scheduledTime) {
-        const slot = await storage.findFirstFreeSlot(userId, taskData.scheduledDate, taskData.estimatedDuration || 30);
-        taskData.scheduledDate = slot.date;
-        taskData.scheduledTime = slot.time;
-        const [h, m] = slot.time.split(':').map(Number);
-        const endMin = h * 60 + m + (taskData.estimatedDuration || 30);
-        taskData.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
-      }
-
-      // Slot conflict — auto-shift to next available time, never reject
-      if (taskData.scheduledDate && taskData.scheduledTime && taskData.estimatedDuration) {
-        const check = await storage.checkSlotAvailability(
-          userId, taskData.scheduledDate, taskData.scheduledTime, taskData.estimatedDuration
-        );
-        if (!check.available && check.nextAvailableTime) {
-          taskData.scheduledTime = check.nextAvailableTime;
-          const [h, m] = check.nextAvailableTime.split(':').map(Number);
-          const endMin = h * 60 + m + taskData.estimatedDuration;
-          taskData.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2,'0')}:${String(endMin % 60).padStart(2,'0')}`;
-        }
-      }
-
-      const task = await storage.createTask(taskData);
-      res.json(task);
+      // Logique partagée avec l'agent : voir services/taches/ecrire-tache.ts.
+      const r = await creerTache(req.userId, req.body);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.tache);
     } catch (error) {
       console.error("Error creating task:", error);
       res.status(500).json({ message: "Failed to create task" });
@@ -4392,98 +4355,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/tasks/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
       const { id } = req.params;
-
-      // Propriété AVANT toute écriture : un identifiant fictif (événement d'agenda, jalon
-      // virtuel) ou la tâche d'un autre compte → 404, rien n'est modifié.
+      // Un identifiant non numérique (événement d'agenda, jalon virtuel) → 404 avant tout.
       if (!/^\d+$/.test(String(id))) return res.status(404).json({ message: 'task_not_found' });
-      const taskId = parseInt(id);
-      const currentTask = await storage.getTask(taskId);
-      if (!currentTask || (currentTask as any).userId !== userId) {
-        return res.status(404).json({ message: 'task_not_found' });
-      }
-
-      // Liste blanche : on n'écrit jamais `userId`, `id`, `projectId`… venus du corps.
-      const filtre = filtrerEditionTache(req.body);
-      if (!filtre.ok) return res.status(400).json({ message: filtre.erreur });
-      const updates: any = filtre.updates;
-
-      // If updating schedule-related fields, apply slot-safe logic
-      const touchesSchedule = !!(updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration);
-      let ancienneDate: string | null = null;
-      if (touchesSchedule) {
-        ancienneDate = currentTask.scheduledDate ?? null;
-
-        const merged = { ...currentTask, ...updates, userId };
-
-        // Weekend check — hard reject
-        if (merged.scheduledDate) {
-          const prefs = await storage.getUserPreferences(userId).catch(() => null);
-          const workDaySet = parseWorkDays(prefs?.workDays);
-          const dow = new Date(merged.scheduledDate + 'T00:00:00').getDay();
-          if (!workDaySet.has(DAY_ABBRS[dow])) {
-            const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-            return res.status(400).json({ message: `${names[dow]} is not one of your work days.` });
-          }
-        }
-
-        // Auto-assign time: date définie mais pas d'heure → trouver le premier créneau libre
-        if (merged.scheduledDate && !merged.scheduledTime) {
-          const slot = await storage.findFirstFreeSlot(userId, merged.scheduledDate, merged.estimatedDuration || 30);
-          updates.scheduledDate = slot.date;
-          updates.scheduledTime = slot.time;
-          merged.scheduledDate = slot.date;
-          merged.scheduledTime = slot.time;
-          // `scheduledEndTime` est dérivée plus bas, une seule fois pour tous les chemins.
-        }
-
-        // Slot conflict — auto-shift
-        if (merged.scheduledDate && merged.scheduledTime && merged.estimatedDuration) {
-          const check = await storage.checkSlotAvailability(
-            userId, merged.scheduledDate, merged.scheduledTime, merged.estimatedDuration, taskId
-          );
-          if (!check.available && check.nextAvailableTime) {
-            updates.scheduledTime = check.nextAvailableTime;
-            merged.scheduledTime = check.nextAvailableTime;
-          }
-        }
-
-        // `scheduledEndTime` est DÉRIVÉE : on la recalcule dès que l'heure ou la durée
-        // bouge, quel que soit le chemin. Sans ça, redimensionner une carte (qui n'envoie
-        // que `estimatedDuration`) laissait une heure de fin périmée en base.
-        updates.scheduledEndTime = resolveScheduledEndTime(
-          merged.scheduledTime,
-          merged.estimatedDuration,
-        );
-      }
-
-      // Normalise completedAt : si completed=true, on force un vrai Date (pas une string ISO)
-      const safeUpdates: any = { ...updates };
-      if (safeUpdates.completed === true) {
-        safeUpdates.completedAt = new Date();
-      }
-      // Retire completedAt si c'est une string (envoyée par vieux clients)
-      if (typeof safeUpdates.completedAt === 'string') {
-        safeUpdates.completedAt = new Date(safeUpdates.completedAt);
-      }
-
-      const task = await storage.updateTask(taskId, safeUpdates);
-
-      // Règle du projet : tout chemin de (re)planification se termine par le filet
-      // idempotent. Cette route ne le faisait pas — déplacer ou redimensionner une carte
-      // pouvait donc laisser la journée en chevauchement jusqu'au prochain passage d'un
-      // worker (toutes les 15 min), voire durablement si aucun worker ne tournait.
-      // On repart du MIN(ancienne, nouvelle date) : un prérequis déplacé de mardi à jeudi
-      // doit recharger le mercredi, sinon son dépendant reste devant lui.
-      const depuis = touchesSchedule ? dateDeRetassage(ancienneDate, task?.scheduledDate) : null;
-      if (depuis) {
-        await storage.fixOverlappingTasks(userId, depuis).catch((e: any) =>
-          console.error('[tasks:patch] fixOverlappingTasks:', e?.message),
-        );
-      }
-
-      res.json(task);
+      // Logique partagée avec l'agent : voir services/taches/ecrire-tache.ts.
+      const r = await modifierTache(req.userId, parseInt(id), req.body);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.tache);
     } catch (error) {
       console.error("Error updating task:", error);
       res.status(500).json({ message: "Failed to update task" });
