@@ -19,3 +19,15 @@ export function deriveSignals(
   const inviteAccepted = inviteAcceptedAt != null;
   return { opened, clicked, bounced, replied, inviteAccepted, inviteAcceptedAt };
 }
+
+/**
+ * Enregistrement d'une acceptation d'invitation : garde la date la PLUS ANCIENNE (jamais
+ * d'écrasement par une date plus tardive) et réveille la séquence active (nextRunAt = now)
+ * pour que le moteur re-décide sans attendre la limite de 14 jours. Pure.
+ */
+export function planAcceptance(
+  existing: Date | null, given: Date, stateStatus: string | null, now: Date,
+): { linkedinConnectedAt: Date; wakeSequenceAt: Date | null } {
+  const earliest = existing && existing.getTime() <= given.getTime() ? existing : given;
+  return { linkedinConnectedAt: earliest, wakeSequenceAt: stateStatus === "active" ? now : null };
+}

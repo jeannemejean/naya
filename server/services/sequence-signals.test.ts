@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveSignals } from "./sequence-signals";
+import { deriveSignals, planAcceptance } from "./sequence-signals";
 
 const d = new Date();
 describe("deriveSignals", () => {
@@ -28,5 +28,23 @@ describe("deriveSignals", () => {
   });
   it("invitation acceptée via linkedinConnectedAt", () => {
     expect(deriveSignals([], { linkedinConnectedAt: d }, { repliedAt: null, status: "active" }).inviteAccepted).toBe(true);
+  });
+});
+
+describe("planAcceptance", () => {
+  const day = (n: number) => new Date(Date.UTC(2026, 10, 2 + n));
+  it("acceptation au jour 3 sur séquence active → nextRunAt = now (re-décision avant la limite)", () => {
+    const r = planAcceptance(null, day(3), "active", day(3));
+    expect(r).toEqual({ linkedinConnectedAt: day(3), wakeSequenceAt: day(3) });
+  });
+  it("garde la date existante plus ancienne", () => {
+    expect(planAcceptance(day(1), day(3), "active", day(3)).linkedinConnectedAt).toEqual(day(1));
+  });
+  it("une date donnée plus ancienne remplace l'existante", () => {
+    expect(planAcceptance(day(3), day(1), "active", day(4)).linkedinConnectedAt).toEqual(day(1));
+  });
+  it("séquence non active → pas de réveil", () => {
+    expect(planAcceptance(null, day(3), "completed", day(3)).wakeSequenceAt).toBeNull();
+    expect(planAcceptance(null, day(3), null, day(3)).wakeSequenceAt).toBeNull();
   });
 });

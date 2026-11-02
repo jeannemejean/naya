@@ -202,7 +202,7 @@ import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
 import { BUFFER_MIN_CEILING } from "./services/rhythm-buffer";
 import { blockedRangesByDate } from "./services/task-schedule-fields";
-import { deriveSignals, type LeadSignals } from "./services/sequence-signals";
+import { deriveSignals, planAcceptance, type LeadSignals } from "./services/sequence-signals";
 import { aggregateStepAnalytics } from "./services/campaign-step-analytics";
 import type { StepSendKey } from "./services/prospection-idempotence";
 import type { LeadSequenceGuard } from "./services/sequence-distinct";
@@ -1886,7 +1886,7 @@ export class DatabaseStorage implements IStorage {
     const values = {
       leadId, campaignId, userId,
       status: "active", currentStep: 0, nextRunAt,
-      lastStepSentAt: null, repliedAt: null,
+      lastStepSentAt: null, delayAnchorAt: null, repliedAt: null,
       // Décision explicite (revue post-commit f17af17, mineur) : un enrôlement (y compris
       // une RELANCE de campagne) est un vrai nouveau départ — currentStep, nextRunAt et
       // repliedAt sont déjà remis à zéro ci-dessus. Un lead ABANDONNÉ (status:"failed" après
@@ -2445,7 +2445,18 @@ export class DatabaseStorage implements IStorage {
   // Stampe l'acceptation de l'invitation LinkedIn — signal lu par le moteur de décision
   // (branches if_invite_accepted / if_invite_not_accepted). Poller Unipile (Task 7).
   async setLeadLinkedinConnected(leadId: number, at: Date): Promise<void> {
-    await db.update(leads).set({ linkedinConnectedAt: at, updatedAt: new Date() }).where(eq(leads.id, leadId));
+    // Point d'entrée UNIQUE de l'acceptation : garde la date la plus ancienne et réveille la
+    // séquence active (nextRunAt = now) pour que le moteur re-décide avant la limite de 14 j.
+    const now = new Date();
+    const [row] = await db.select({ at: leads.linkedinConnectedAt }).from(leads).where(eq(leads.id, leadId));
+    const state = await this.getLeadSequenceState(leadId);
+    const plan = planAcceptance(row?.at ?? null, at, state?.status ?? null, now);
+    await db.update(leads).set({ linkedinConnectedAt: plan.linkedinConnectedAt, updatedAt: now }).where(eq(leads.id, leadId));
+    if (plan.wakeSequenceAt) {
+      await db.update(leadSequenceState)
+        .set({ nextRunAt: plan.wakeSequenceAt, updatedAt: now })
+        .where(and(eq(leadSequenceState.leadId, leadId), eq(leadSequenceState.status, "active")));
+    }
   }
 
   // Marque (ou efface, avec reason: null) la raison structurelle de non-joignabilité d'un

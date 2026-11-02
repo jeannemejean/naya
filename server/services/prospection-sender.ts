@@ -563,7 +563,7 @@ export async function runProspectionSender(): Promise<void> {
         // Le délai d'une étape court depuis l'ancre : fin de l'attente d'acceptation expirée,
         // sinon dernier ENVOI réel (jamais depuis un skip simple).
         let anchorAt = new Date(
-          (state as any).delayAnchorAt ?? state.lastStepSentAt ?? state.enrolledAt ?? Date.now(),
+          state.delayAnchorAt ?? state.lastStepSentAt ?? state.enrolledAt ?? Date.now(),
         );
 
         // Rattrapage : quand une campagne est relancée, `enrollLead` remet currentStep
@@ -590,7 +590,7 @@ export async function runProspectionSender(): Promise<void> {
           const newAnchorAt = decision.action === "skip" ? decision.newAnchorAt : undefined;
           await storage.updateLeadSequenceState(
             state.leadId,
-            { currentStep: decision.index + 1, ...(newAnchorAt ? { delayAnchorAt: newAnchorAt } : {}) } as any,
+            { currentStep: decision.index + 1, ...(newAnchorAt ? { delayAnchorAt: newAnchorAt } : {}) },
           );
           state.currentStep = decision.index + 1;
           if (newAnchorAt) anchorAt = newAnchorAt;
@@ -604,7 +604,7 @@ export async function runProspectionSender(): Promise<void> {
           // Pas encore dû : on cale nextRunAt sur l'instant prêt (sans réécrire à chaque tick).
           const until = decision.until;
           if (until && (!state.nextRunAt || new Date(state.nextRunAt).getTime() !== until.getTime())) {
-            await storage.updateLeadSequenceState(state.leadId, { nextRunAt: until } as any);
+            await storage.updateLeadSequenceState(state.leadId, { nextRunAt: until });
           }
           continue;
         }
