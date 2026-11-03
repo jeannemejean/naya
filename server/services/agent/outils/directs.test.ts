@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const s = vi.hoisted(() => ({
-  getTask: vi.fn(), getUserPreferences: vi.fn(), upsertUserPreferences: vi.fn(),
+  getTask: vi.fn(), getTaskDependencies: vi.fn(async () => []), getUserPreferences: vi.fn(), upsertUserPreferences: vi.fn(),
   getProject: vi.fn(), createCaptureEntry: vi.fn(),
   createTaskList: vi.fn(), createTaskListItem: vi.fn(), deleteTaskList: vi.fn(),
 }));
@@ -26,6 +26,8 @@ const CREEE = new Date("2026-11-02T23:30:00Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  s.getTask.mockReset();
+  s.getTaskDependencies.mockReset().mockResolvedValue([]);
   d.ajouterAction.mockImplementation(async (userId: string, o: string, resume: string, lignes: any[]) => ({
     id: 42, userId, outil: o, resume, lignes, createdAt: CREEE, annuleeAt: null,
   }));
@@ -115,6 +117,52 @@ describe("creer_liste", () => {
     await expect(run("creer_liste", { titre: "L", elements: ["a"] })).rejects.toThrow();
     expect(s.deleteTaskList).toHaveBeenCalledWith(3, "u1");
     expect(d.ajouterAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("cocher_tache : mêmes règles que la case du web", () => {
+  it("étape précédente pas cochée : tache_verrouillee avec la raison, aucune écriture ni journal", async () => {
+    s.getTask.mockImplementation(async (id: number) =>
+      id === 10 ? { id: 10, userId: "u1", title: "Publier l'article", completed: false }
+      : id === 9 ? { id: 9, userId: "u1", title: "Rédiger l'article", completed: false } : undefined);
+    s.getTaskDependencies.mockResolvedValueOnce([{ dependsOnTaskId: 9 }]);
+    const r = await run("cocher_tache", { tacheId: 10 });
+    expect(s.getTaskDependencies).toHaveBeenCalledWith(10);
+    expect((r.pourModele as any).erreur).toBe("tache_verrouillee");
+    expect((r.pourModele as any).raison).toContain("Rédiger l'article");
+    expect(t.modifierTache).not.toHaveBeenCalled();
+    expect(d.ajouterAction).not.toHaveBeenCalled();
+  });
+
+  it("étape précédente cochée : la coche passe", async () => {
+    s.getTask.mockImplementation(async (id: number) =>
+      id === 10 ? { id: 10, userId: "u1", title: "T", completed: false }
+      : id === 9 ? { id: 9, userId: "u1", title: "Avant", completed: true } : undefined);
+    s.getTaskDependencies.mockResolvedValueOnce([{ dependsOnTaskId: 9 }]);
+    t.modifierTache.mockResolvedValue({ ok: true, avant: { id: 10, title: "T", completed: false, completedAt: null }, tache: { id: 10, title: "T", completed: true, completedAt: new Date() } });
+    const r = await run("cocher_tache", { tacheId: 10 });
+    expect(t.modifierTache).toHaveBeenCalled();
+    expect(r.faite).toBeDefined();
+  });
+
+  it("tâche liée à un contenu (« Publier — … ») : à cocher dans l'app, aucune écriture ni journal", async () => {
+    s.getTask.mockResolvedValue({ id: 10, userId: "u1", title: "Publier — Post Garance", completed: false, contentId: 55 });
+    const r = await run("cocher_tache", { tacheId: 10 });
+    expect(r.pourModele).toEqual({
+      erreur: "a_cocher_dans_l_app",
+      message: "Cette tâche publie un contenu : coche-la dans Naya pour que le post soit marqué publié.",
+    });
+    expect(s.getTaskDependencies).not.toHaveBeenCalled();
+    expect(t.modifierTache).not.toHaveBeenCalled();
+    expect(d.ajouterAction).not.toHaveBeenCalled();
+  });
+
+  it("la tâche d'une autre : ni son contenu ni ses dépendances ne sont lus, modifierTache refuse", async () => {
+    s.getTask.mockResolvedValue({ id: 10, userId: "autre", title: "X", completed: false, contentId: 55 });
+    t.modifierTache.mockResolvedValue({ ok: false, status: 404, message: "task_not_found" });
+    const r = await run("cocher_tache", { tacheId: 10 });
+    expect((r.pourModele as any).erreur).toBe("task_not_found");
+    expect(s.getTaskDependencies).not.toHaveBeenCalled();
   });
 });
 

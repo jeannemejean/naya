@@ -97,7 +97,7 @@ import { enrolerEnMasse } from "./services/prospection-enrolement";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
 import { synchroniserValidationsProspection } from "./services/prospection-verification";
-import { verrouDeTache } from "./services/task-lock";
+import { verrouPourTache } from "./services/task-lock-verrou";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
 import { indexerManquants, depsReelles, sonderEmbeddings, compterManquants, invaliderSonde } from "./services/memory/indexer-manquants";
@@ -4258,26 +4258,6 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       res.status(500).json({ message: "Failed to update task" });
     }
   });
-
-  /**
-   * Charge les dependances d'une tache et applique le verrou de sequence.
-   *
-   * Une dependance introuvable ne bloque pas : voir task-lock.ts. Une lecture qui echoue non
-   * plus — on ne verrouille pas le travail de quelqu'un parce qu'une requete a rate.
-   */
-  async function verrouPourTache(taskId: number) {
-    const dependances = await storage.getTaskDependencies(taskId).catch(() => [] as any[]);
-    if (!dependances.length) return { verrouillee: false, bloqueePar: [] as { id: number; titre: string }[] };
-
-    const prerequis = new Map<number, { title: string | null; completed: boolean | null }>();
-    for (const d of dependances as any[]) {
-      const id = d?.dependsOnTaskId;
-      if (typeof id !== 'number') continue;
-      const t = await storage.getTask(id).catch(() => undefined);
-      if (t) prerequis.set(id, { title: (t as any).title ?? null, completed: (t as any).completed ?? null });
-    }
-    return verrouDeTache({ dependances: dependances as any[], prerequis, tacheId: taskId });
-  }
 
   app.post('/api/tasks/:id/complete', isAuthenticated, async (req: any, res) => {
     try {

@@ -8,6 +8,7 @@ import { storage } from "../../../storage";
 import { rangerSouvenir, type FilRange } from "../../memory/ranger";
 import { creerTache, modifierTache } from "../../taches/ecrire-tache";
 import { resolveScheduledEndTime } from "../../task-schedule-fields";
+import { verrouPourTache } from "../../task-lock-verrou";
 import { dateDansFuseau } from "../consignes";
 import { depot, type LigneJournal } from "../depot";
 import { FENETRE_ANNULATION_MS } from "../journal";
@@ -231,6 +232,30 @@ function outilCoche(nom: "cocher_tache" | "decocher_tache"): Outil {
       required: ["tacheId"],
     },
     async executer(ctx, args) {
+      if (cocher) {
+        // Mêmes règles que la case du web (/api/tasks/:id/toggle). Une tâche absente ou d'une
+        // autre n'est pas examinée ici : modifierTache la refuse plus bas (task_not_found).
+        const t = (await storage.getTask(args.tacheId)) as any;
+        if (t && t.userId === ctx.userId && !t.completed) {
+          // Cocher « Publier — … » marque aussi le post publié : c'est le web qui le fait.
+          if (t.contentId) {
+            return { pourModele: {
+              erreur: "a_cocher_dans_l_app",
+              message: "Cette tâche publie un contenu : coche-la dans Naya pour que le post soit marqué publié.",
+            } };
+          }
+          // Verrou de séquence : pas de coche tant que l'étape précédente ne l'est pas.
+          const verrou = await verrouPourTache(args.tacheId);
+          if (verrou.verrouillee) {
+            const noms = verrou.bloqueePar.map((b) => `« ${b.titre} »`).join(", ");
+            return { pourModele: {
+              erreur: "tache_verrouillee",
+              raison: `L'étape précédente n'est pas cochée : ${noms}.`,
+              bloqueePar: verrou.bloqueePar,
+            } };
+          }
+        }
+      }
       // Décocher remet explicitement completedAt à null (modifierTache ne le fait pas seul).
       const patch = cocher ? { completed: true } : { completed: false, completedAt: null };
       const r = await modifierTache(ctx.userId, args.tacheId, patch);
