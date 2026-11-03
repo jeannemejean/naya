@@ -17,7 +17,11 @@ export function etatProposition(p: PropositionVue, maintenant: Date): "en_attent
   return maintenant.getTime() < fin ? "en_attente" : "expiree";
 }
 
-const PREFIXES_A_INVALIDER = ["/api/tasks", "/api/projects", "/api/preferences", "/api/capture"];
+// Les jalons vivent sous /api/projects/:id/milestones (couverts par /api/projects).
+const PREFIXES_A_INVALIDER = [
+  "/api/tasks", "/api/projects", "/api/preferences", "/api/capture",
+  "/api/mesure", "/api/memory", "/api/milestone-triggers",
+];
 
 /** Prédicat d'invalidation : le client range ces données sous des clés de formes variées
  *  (["/api/tasks", date], ["/api/projects?limit=200"], ["/api/projects/5/milestones"]…). */

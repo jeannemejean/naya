@@ -55,6 +55,14 @@ describe("doitInvalider", () => {
     expect(doitInvalider(["/api/preferences"])).toBe(true);
     expect(doitInvalider(["/api/capture"])).toBe(true);
   });
+  it("vise aussi la mesure, la mémoire et les déclencheurs de jalons (clés réelles des écrans)", () => {
+    expect(doitInvalider(["/api/mesure/5"])).toBe(true);             // pages/mesure.tsx, aujourdhui/Capsules.tsx
+    expect(doitInvalider(["/api/memory"])).toBe(true);               // strategy.tsx
+    expect(doitInvalider(["/api/memory", "active"])).toBe(true);     // strategy.tsx (archivés ou non)
+    expect(doitInvalider(["/api/milestone-triggers"])).toBe(true);   // strategy.tsx, quick-capture.tsx
+    expect(doitInvalider(["/api/projects/5/milestones"])).toBe(true); // jalons : sous /api/projects
+    expect(doitInvalider(["/api/memoryX"])).toBe(false);
+  });
   it("laisse le reste", () => {
     expect(doitInvalider(["/api/companion/history"])).toBe(false);
     expect(doitInvalider(["/api/task-lists"])).toBe(false);
