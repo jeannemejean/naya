@@ -150,6 +150,50 @@ describe("POST /api/companion/chat", () => {
     expect(storageMock.getMilestones).toHaveBeenCalledWith(4, "user-1");
   });
 
+  it("todayTasks / upcomingEvents malformés (éléments nuls) : 200, éléments écartés", async () => {
+    const r = await poster({
+      message: "Salut",
+      context: {
+        todayTasks: [null, 3, { title: "Appeler Léa", completed: false }, { title: null }],
+        upcomingEvents: [null, { title: "Salon", date: "2026-11-04" }, { date: 5 }],
+      },
+    });
+    expect(r.status).toBe(200);
+    const s: string = h.executerAgent.mock.calls[0][0].contexteSession;
+    expect(s).toContain("Appeler Léa");
+    expect(s).toContain("Salon le 2026-11-04");
+  });
+
+  it("todayTasks qui n'est pas une liste : ignoré, sans planter", async () => {
+    const r = await poster({ message: "Salut", context: { todayTasks: { title: "x" }, upcomingEvents: "non" } });
+    expect(r.status).toBe(200);
+  });
+
+  it("le drapeau interne prospectLu n'est jamais envoyé au client", async () => {
+    h.executerAgent.mockResolvedValueOnce({ ...REPONSE, prospectLu: false });
+    const r = await poster({ message: "Salut" });
+    expect("prospectLu" in (await r.json())).toBe(false);
+  });
+
+  it("sans réponse de prospect lue, la mémoire reçoit le message ET la réponse de Naya", async () => {
+    h.executerAgent.mockResolvedValueOnce({ ...REPONSE, prospectLu: false });
+    await poster({ message: "Qu'est-ce que j'ai envoyé ?" });
+    await vi.waitFor(() => expect(h.extractToMemory).toHaveBeenCalled());
+    const src = (h.extractToMemory.mock.calls[0] as any)[0].sourceText as string;
+    expect(src).toContain("Utilisateur : Qu'est-ce que j'ai envoyé ?");
+    expect(src).toContain(`Naya : ${REPONSE.message}`);
+  });
+
+  it("une réponse de prospect lue : la mémoire ne reçoit QUE le message de l'utilisatrice", async () => {
+    h.executerAgent.mockResolvedValueOnce({ ...REPONSE, message: "Paul écrit : « tarif trop élevé ».", prospectLu: true });
+    const r = await poster({ message: "Paul a répondu ?" });
+    expect("prospectLu" in (await r.json())).toBe(false);
+    await vi.waitFor(() => expect(h.extractToMemory).toHaveBeenCalled());
+    const src = (h.extractToMemory.mock.calls[0] as any)[0].sourceText as string;
+    expect(src).toBe("Utilisateur : Paul a répondu ?");
+    expect(src).not.toContain("tarif");
+  });
+
   it("une panne de l'agent donne une 500, sans enregistrer de réponse", async () => {
     h.executerAgent.mockRejectedValueOnce(new Error("API indisponible"));
     const r = await poster({ message: "Salut" });

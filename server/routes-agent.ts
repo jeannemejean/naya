@@ -9,7 +9,7 @@ import { isAiBlocked } from "./services/usage";
 import { executerAgent } from "./services/agent/boucle";
 import { annulerAction } from "./services/agent/journal";
 import { annulerProposition, validerProposition } from "./services/agent/propositions";
-import { blocSession, dateDansFuseau, fuseauUtilisatrice } from "./services/agent/consignes";
+import { blocSession, dateDansFuseau, evenementsPropres, fuseauUtilisatrice, tachesDuJourPropres } from "./services/agent/consignes";
 import { buildSuggestions } from "./services/companion";
 import { extractToMemory } from "./services/memory/extract";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
@@ -91,6 +91,9 @@ export function registerAgentRoutes(app: Express): void {
       const clientContext = (context && typeof context === "object") ? context : {};
       const historique = historiquePropre(conversationHistory);
       const plateforme = clientContext.platform === "mobile" ? "mobile" : "web";
+      // Listes du client : seulement des objets bien formés (un élément nul = jamais une 500).
+      const tachesDuJour = tachesDuJourPropres(clientContext.todayTasks);
+      const evenementsAVenir = evenementsPropres(clientContext.upcomingEvents);
 
       const [userProjects, prefs, brandDna] = await Promise.all([
         storage.getProjects(userId),
@@ -139,14 +142,15 @@ export function registerAgentRoutes(app: Express): void {
         energie: (prefs as any)?.currentEnergyLevel ?? null,
         energieMiseAJourLe: (prefs as any)?.energyUpdatedDate ?? null,
         jalonActif,
-        tachesDuJour: Array.isArray(clientContext.todayTasks) ? clientContext.todayTasks : undefined,
+        tachesDuJour,
         tachesAbandonnees: staleTasks,
         tachesAVenir: upcomingTasks,
-        evenementsAVenir: Array.isArray(clientContext.upcomingEvents) ? clientContext.upcomingEvents : undefined,
+        evenementsAVenir,
         resumeBusiness: (brandDna as any)?.nayaIntelligenceSummary || null,
       });
 
-      const reponse = await executerAgent({
+      // prospectLu est interne : retiré de ce qui part au client et en base.
+      const { prospectLu, ...reponse } = await executerAgent({
         userId,
         message,
         historique,
@@ -156,7 +160,7 @@ export function registerAgentRoutes(app: Express): void {
       });
       const suggestions = buildSuggestions({
         staleTasks,
-        todayTasks: clientContext.todayTasks,
+        todayTasks: tachesDuJour,
         activeProject: projetActif ? { id: projetActif.id, name: projetActif.name } : null,
       });
 
@@ -175,6 +179,9 @@ export function registerAgentRoutes(app: Express): void {
 
       // Mémoire (best-effort) : extraire de ce tour de conversation. La marque-sujet est la
       // marque NOMMÉE dans la conversation (message + historique), pas le projet actif.
+      // Si un outil a rendu une réponse de prospect, la réponse de Naya peut la citer : on ne
+      // donne alors que le message de l'utilisatrice (des mots de tiers ne deviennent jamais
+      // des souvenirs, ni des embeddings, ni du contexte hors <donnees>).
       const convoText = [...historique.map((m) => m.content), message].join("\n");
       const subject = resolveSubjectBrand(convoText, (userProjects as any[]).map((p) => ({ id: p.id, name: p.name })));
       console.info(`[brand-routing] companion active=${activeProjectId ?? "null"} subject=${subject.projectId ?? "null"} matched=[${subject.matched.join(", ")}] ambiguous=${subject.ambiguous}`);
@@ -182,7 +189,7 @@ export function registerAgentRoutes(app: Express): void {
         userId,
         projectId: activeProjectId ?? null,
         subjectProjectId: subject.projectId,
-        sourceText: `Utilisateur : ${message}\nNaya : ${reponse.message}`,
+        sourceText: prospectLu ? `Utilisateur : ${message}` : `Utilisateur : ${message}\nNaya : ${reponse.message}`,
         sourceType: "companion",
       }).catch(() => {});
     } catch (error: any) {

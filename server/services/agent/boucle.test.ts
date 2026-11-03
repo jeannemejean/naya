@@ -10,6 +10,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("../claude", () => ({ appelerClaudeAvecOutils: h.appeler }));
+// Le libellé « Cherché dans » lit le nom du projet : stockage mocké, jamais de vraie base.
+vi.mock("../../storage", () => ({
+  storage: { getProject: vi.fn(async (id: number, uid: string) => (id === 3 && uid === "user-1" ? { id: 3, name: "Garance" } : undefined)) },
+}));
 vi.mock("../naya-context", () => ({ buildNayaContext: h.buildNayaContext }));
 vi.mock("./recherche", () => ({
   SOURCES: ["tache_reponse", "livrable", "note", "memoire", "conversation", "contenu", "tache", "reponse_prospect"],
@@ -183,8 +187,21 @@ describe("executerAgent — boucle d'outils", () => {
     expect(r.recherches[0]).toContain("« devis Garance »");
     expect(r.recherches[0]).toContain("2026-10-01");
     expect(r.recherches[0]).toContain("2026-10-31");
-    expect(r.recherches[0]).toContain("livrable");
+    expect(r.recherches[0]).toContain("dans : livrables, notes");
     expect(r.recherches[1]).toBe("« Paul »");
+  });
+
+  it("le libellé montre le NOM du projet (lu pour cette utilisatrice), jamais « projet n°… »", async () => {
+    h.appeler
+      .mockResolvedValueOnce(reponse([
+        appelOutil("chercher", { requete: "devis", projetId: 3, sources: ["reponse_prospect", "tache_reponse"] }),
+        appelOutil("chercher", { requete: "x", projetId: 99 }),
+      ], "tool_use"))
+      .mockResolvedValueOnce(reponse([texte("ok")], "end_turn"));
+    const r = await executerAgent(base);
+    expect(r.recherches[0]).toBe("« devis » · projet Garance · dans : réponses de prospects, réponses aux tâches");
+    expect(r.recherches[1]).not.toMatch(/n°|99/);
+    expect(r.recherches.join(" ")).not.toContain("projet n°");
   });
 
   it("consignes : voix de Naya, contexte complet, règles et bloc de session", async () => {
@@ -215,6 +232,73 @@ describe("executerAgent — boucle d'outils", () => {
     const msgs = h.appeler.mock.calls[0][0].messages;
     expect(msgs[0]).toEqual({ role: "user", content: "Salut" });
     expect(msgs[msgs.length - 1]).toEqual({ role: "user", content: base.message });
+  });
+});
+
+describe("executerAgent — panne de Claude en cours de route", () => {
+  const faite = { actionId: 42, resume: "Tâche « Appeler Léa » ajoutée", annulableJusqua: "2026-11-03T10:00:00.000Z" };
+  const proposition = { id: 9, resume: "Décaler la campagne", changements: [], expireA: "2026-11-03T10:00:00.000Z" };
+  const registre = [
+    { nom: "creer_tache", classe: "direct", description: "", schema: { type: "object", properties: {} },
+      executer: vi.fn(async () => ({ pourModele: { ok: true }, faite })) },
+    { nom: "proposer", classe: "a_valider", description: "", schema: { type: "object", properties: {} },
+      executer: vi.fn(async () => ({ pourModele: { ok: true }, proposition })) },
+  ] as any[];
+
+  it("le PREMIER appel échoue (rien n'est fait) : l'erreur remonte comme avant", async () => {
+    h.appeler.mockRejectedValueOnce(new Error("overloaded"));
+    await expect(executerAgent(base, { registre })).rejects.toThrow("overloaded");
+  });
+
+  it("un appel suivant échoue : réponse partielle avec ce qui est déjà fait et proposé", async () => {
+    h.appeler
+      .mockResolvedValueOnce(reponse([appelOutil("creer_tache", {}), appelOutil("proposer", {})], "tool_use"))
+      .mockRejectedValueOnce(new Error("timeout"));
+    const r = await executerAgent(base, { registre });
+    expect(r.faites).toEqual([faite]);
+    expect(r.propositions).toEqual([proposition]);
+    expect(r.message).toMatch(/pas pu finir/i);
+    expect(r.message).toMatch(/déjà fait/i);
+    expect(r.message).not.toMatch(/Il semble|Bien sûr|Certainement/);
+  });
+
+  it("un appel suivant échoue alors que rien n'a été fait : message de repli sans « voici ce que j'ai fait »", async () => {
+    h.appeler
+      .mockResolvedValueOnce(reponse([appelOutil("chercher", { requete: "x" })], "tool_use"))
+      .mockRejectedValueOnce(new Error("réseau"));
+    const r = await executerAgent(base);
+    expect(r.faites).toEqual([]);
+    expect(r.recherches).toHaveLength(1);
+    expect(r.message).toMatch(/pas pu finir/i);
+    expect(r.message).not.toMatch(/déjà fait/i);
+  });
+});
+
+describe("executerAgent — réponses de prospects (mémoire)", () => {
+  it("prospectLu reste faux sans réponse de prospect", async () => {
+    h.appeler
+      .mockResolvedValueOnce(reponse([appelOutil("chercher", { requete: "devis" })], "tool_use"))
+      .mockResolvedValueOnce(reponse([texte("ok")], "end_turn"));
+    const r = await executerAgent(base);
+    expect(r.prospectLu).toBe(false);
+  });
+
+  it("chercher qui remonte une reponse_prospect lève le drapeau", async () => {
+    h.chercher.mockResolvedValueOnce([TROUVAILLE, { ...TROUVAILLE, source: "reponse_prospect", id: 5 }]);
+    h.appeler
+      .mockResolvedValueOnce(reponse([appelOutil("chercher", { requete: "Paul" })], "tool_use"))
+      .mockResolvedValueOnce(reponse([texte("Paul a répondu.")], "end_turn"));
+    const r = await executerAgent(base);
+    expect(r.prospectLu).toBe(true);
+  });
+
+  it("lire une reponse_prospect lève le drapeau", async () => {
+    h.lire.mockResolvedValueOnce({ source: "reponse_prospect", id: 5, titre: "Réponse de Paul", contenu: "Oui, appelons-nous." });
+    h.appeler
+      .mockResolvedValueOnce(reponse([appelOutil("lire", { source: "reponse_prospect", id: 5 })], "tool_use"))
+      .mockResolvedValueOnce(reponse([texte("Paul est d'accord.")], "end_turn"));
+    const r = await executerAgent(base);
+    expect(r.prospectLu).toBe(true);
   });
 });
 

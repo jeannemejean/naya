@@ -7,14 +7,27 @@ import type { ContexteOutil, Outil } from "../registre";
 
 const LECTURE_MAX = 20000; // caractères rendus par `lire` (une réponse de tâche, un livrable…)
 
+// Les sources, en mots de tous les jours (le libellé est montré à l'utilisatrice).
+export const NOMS_SOURCES: Record<SourceRecherche, string> = {
+  tache_reponse: "réponses aux tâches",
+  livrable: "livrables",
+  note: "notes",
+  memoire: "mémoire",
+  conversation: "conversations",
+  contenu: "contenus",
+  tache: "tâches",
+  reponse_prospect: "réponses de prospects",
+};
+
 // Libellé lisible d'une recherche, montré sous la réponse (« où l'agent a cherché »).
-export function libelleRecherche(requete: string, filtres: FiltresRecherche): string {
+// `nomProjet` : le nom lu pour cette utilisatrice ; null = projet introuvable pour elle.
+export function libelleRecherche(requete: string, filtres: FiltresRecherche, nomProjet?: string | null): string {
   const morceaux = [`« ${requete} »`];
-  if (filtres.projetId !== undefined) morceaux.push(`projet n°${filtres.projetId}`);
+  if (filtres.projetId !== undefined) morceaux.push(nomProjet ? `projet ${nomProjet}` : "un projet introuvable");
   if (filtres.depuis && filtres.jusqua) morceaux.push(`du ${filtres.depuis} au ${filtres.jusqua}`);
   else if (filtres.depuis) morceaux.push(`depuis le ${filtres.depuis}`);
   else if (filtres.jusqua) morceaux.push(`jusqu'au ${filtres.jusqua}`);
-  if (filtres.sources?.length) morceaux.push(`dans : ${filtres.sources.join(", ")}`);
+  if (filtres.sources?.length) morceaux.push(`dans : ${filtres.sources.map((x) => NOMS_SOURCES[x] ?? x).join(", ")}`);
   return morceaux.join(" · ");
 }
 
@@ -50,7 +63,11 @@ const chercherOutil: Outil = {
     if (Array.isArray(args.sources) && args.sources.length > 0) filtres.sources = args.sources as SourceRecherche[];
     const requete = String(args.requete).trim();
 
-    const trouvailles = await chercher(ctx.userId, requete, filtres);
+    const [trouvailles, projet] = await Promise.all([
+      chercher(ctx.userId, requete, filtres),
+      // Le nom, borné à l'utilisatrice (getProject filtre sur userId) ; une panne n'empêche pas la recherche.
+      filtres.projetId !== undefined ? storage.getProject(filtres.projetId, ctx.userId).catch(() => undefined) : undefined,
+    ]);
     return {
       pourModele: {
         trouvailles: trouvailles.map((t) => ({
@@ -58,7 +75,7 @@ const chercherOutil: Outil = {
         })),
         ...(trouvailles.length === 0 ? { note: "Aucun résultat. Essaie d'autres mots, ou élargis la période." } : {}),
       },
-      recherche: libelleRecherche(requete, filtres),
+      recherche: libelleRecherche(requete, filtres, projet?.name ?? null),
     };
   },
 };
