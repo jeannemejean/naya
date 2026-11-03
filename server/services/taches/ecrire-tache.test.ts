@@ -80,6 +80,20 @@ describe("creerTache", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("refuse un jalon inexistant → 404 milestone_not_found, rien n'est créé", async () => {
+    storageMock.getMilestone.mockResolvedValue(undefined);
+    const r = await creerTache("user-1", { ...BASE, milestoneId: 3 });
+    expect(r).toEqual({ ok: false, status: 404, message: "milestone_not_found" });
+    expect(storageMock.createTask).not.toHaveBeenCalled();
+  });
+
+  it("refuse le jalon d'une autre utilisatrice → 404 milestone_not_found (même s'il est actif)", async () => {
+    storageMock.getMilestone.mockResolvedValue({ id: 3, userId: "user-2", status: "active" });
+    const r = await creerTache("user-1", { ...BASE, milestoneId: 3 });
+    expect(r).toEqual({ ok: false, status: 404, message: "milestone_not_found" });
+    expect(storageMock.createTask).not.toHaveBeenCalled();
+  });
+
   it("refuse un jour non travaillé (400), comme aujourd'hui", async () => {
     // 2026-10-04 est un dimanche
     const r = await creerTache("user-1", { ...BASE, scheduledDate: "2026-10-04" });

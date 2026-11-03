@@ -41,10 +41,13 @@ export async function creerTache(
     if (!projet) return { ok: false, status: 404, message: 'project_not_found' };
   }
 
-  // Règle du projet : jamais de tâche rattachée à un jalon verrouillé.
+  // Le jalon vient aussi du client (ou de l'agent) : il doit exister et être à elle
+  // (getMilestone n'est pas borné à l'utilisatrice : on vérifie project_milestones.user_id).
+  // Puis la règle du projet : jamais de tâche rattachée à un jalon verrouillé.
   if (taskData.milestoneId != null) {
     const jalon = await storage.getMilestone(taskData.milestoneId);
-    if (jalon && jalon.status === 'locked') return { ok: false, status: 409, message: 'milestone_locked' };
+    if (!jalon || jalon.userId !== userId) return { ok: false, status: 404, message: 'milestone_not_found' };
+    if (jalon.status === 'locked') return { ok: false, status: 409, message: 'milestone_locked' };
   }
 
   // Weekend check — still a hard reject (don't silently move to a work day)
