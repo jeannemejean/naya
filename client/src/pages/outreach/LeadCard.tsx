@@ -2,6 +2,8 @@
 // outreach.tsx ~579-656). Comportement de drag/sélection/enrichissement inchangé ; nouveauté :
 // hint canal + étape (voir NOTE data-limitation plus bas).
 import { Loader2, Sparkles } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { estLeadTest } from './mode-test';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -48,6 +50,7 @@ export default function LeadCard({
   onEnrich,
   isEnriching,
 }: LeadCardProps) {
+  const { t } = useTranslation();
   const hasMessages = !!((lead as any).linkedinMessage || (lead as any).emailMessage || (lead as any).message1);
 
   // Hint canal + progression — NOTE (data limitation, cf. rapport Task 8) : GET /api/leads ne
@@ -105,6 +108,11 @@ export default function LeadCard({
             >
               {shortCampaignName(campaign.name)}
             </span>
+          )}
+          {estLeadTest(lead) && (
+            <Badge variant="outline" className="px-1.5 py-0.5 text-[9px]" title={t('outreach.modeTest.badgeAide')}>
+              {t('outreach.modeTest.badge')}
+            </Badge>
           )}
           {SCORE_VARIANT[lead.score] && (
             <Badge variant={SCORE_VARIANT[lead.score]} className="px-1.5 py-0.5 text-[9px]">

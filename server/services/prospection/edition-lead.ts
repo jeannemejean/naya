@@ -7,6 +7,7 @@
 import { storage } from "../../storage";
 import { roleDeTouche } from "../sequence-message";
 import { extraireSiPret } from "./regles-apprises";
+import { estLeadTest } from "../prospection-mode-test";
 
 const CHAMPS = [
   { champ: "linkedinMessage", canal: "linkedin" },
@@ -15,6 +16,8 @@ const CHAMPS = [
 
 async function contexte(userId: string, lead: any) {
   if (!lead?.prospectionCampaignId) return null;
+  // Un prospect test (mode test) n'est jamais matière d'apprentissage.
+  if (estLeadTest(lead)) return null;
   const campaign: any = await storage.getProspectionCampaign(lead.prospectionCampaignId);
   if (!campaign || campaign.userId !== userId) return null;
   const steps: any[] = await storage.getSequenceSteps(campaign.id);

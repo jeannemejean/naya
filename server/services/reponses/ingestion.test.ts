@@ -183,6 +183,22 @@ describe("traiterEvenement — vraie réponse", () => {
     expect(db.messages[0]).toMatchObject({ subject: "Re: Acme", nature: "reponse" });
     expect(db.tasks[0].title).toBe("Répondre à Marc Dupont (Acme) — email");
   });
+
+  it("mode test : la réponse à un prospect test arrive dans Réponses comme une vraie, sans nourrir l'apprentissage", async () => {
+    const { db, deps, lead } = fausseBase();
+    lead.tags = ["naya_test"];
+    db.state.status = "completed"; // étape 1 seulement : séquence terminée dès l'envoi
+    await traiterEvenement({
+      kind: "mail", accountId: "acc-gm", providerMessageId: "mail-t", threadId: "th-t", fromSelf: false,
+      senderEmail: "marc@acme.fr", subject: "Re: Test", body: "Bien reçu.", sentAt: new Date("2026-11-02T09:00:00Z"),
+    }, deps);
+    expect(db.conversations[0]).toMatchObject({ channel: "email", statut: "a_traiter", nonLu: true });
+    expect(db.messages[0]).toMatchObject({ nature: "reponse", sens: "entrant" });
+    expect(db.tasks).toHaveLength(1);
+    expect(db.state.status).toBe("stopped_replied");
+    expect(deps.markFeedbackReplied).not.toHaveBeenCalled();
+    expect(db.feedback).toBe(0);
+  });
 });
 
 describe("traiterEvenement — messages de Jeanne", () => {

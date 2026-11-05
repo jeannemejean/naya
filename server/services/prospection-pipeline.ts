@@ -11,6 +11,7 @@ import { qualifierProspect } from "./prospection-qualify-call";
 import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qualification";
 import { genererBrief, briefActionnable, lireBrief, appliquerEditionBrief } from "./prospection/brief";
 import { redigerTouche, roleDeTouche, combineInstructions } from "./sequence-message";
+import { sansLeadsTest } from "./prospection-mode-test";
 import { ProspectionAccessError, LinkedInWeeklyLimitError, assertEnrichmentAccess, logProspectionUsage } from "./prospection-access";
 import { storage } from "../storage";
 import { callClaude, CLAUDE_MODELS } from "./claude";
@@ -214,7 +215,8 @@ export async function cibleDeCampagne(userId: string, campaign: any) {
     prospectsParJour: campaign.prospectsPerDay ?? null,
     objectifs: (objectifs || []) as any[],
     panierMoyen: panierMoyenDepuis((dna as any)?.priceRange),
-    tauxConversion: tauxConversionObserve(existing as any[]),
+    // Les prospects test (mode test) ne disent rien de la conversion réelle.
+    tauxConversion: tauxConversionObserve(sansLeadsTest(existing as any[])),
     workDays: (prefs as any)?.workDays ?? null,
     aujourdHui: new Date(),
   });

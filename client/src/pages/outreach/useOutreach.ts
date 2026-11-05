@@ -278,3 +278,16 @@ export const useInvitationAcceptee = () =>
       queryClient.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/prospection/campaigns") });
     },
   });
+
+// Mode test : un email test part tout de suite (prospect test créé, étape 1 seulement).
+export interface ResultatEnvoiTest { ok: true; leadId: number; subject: string; body: string; secours: boolean }
+export const useEnvoyerTest = (campaignId: number) =>
+  useMutation<ResultatEnvoiTest, Error, { nom: string; email: string }>({
+    mutationFn: (corps) =>
+      apiRequest("POST", `/api/prospection/campaigns/${campaignId}/test-email`, corps).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${campaignId}/enrollments`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reponses"] });
+    },
+  });

@@ -11,6 +11,7 @@
 // par une AlertDialog de confirmation.
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { prospectsApercu } from './mode-test';
 import { Search, Shuffle, Copy, RefreshCw, Clock, Rocket, Loader2, Inbox } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -70,7 +71,8 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
 
   // Prospects de CETTE campagne, hors archivés — même filtre que CampaignWorkspace pour le compteur.
   const prospects = useMemo(
-    () => (allLeads ?? []).filter((l) => l.prospectionCampaignId === campaignId && !l.archivedAt),
+    // Hors prospects test (mode test) : l'aperçu générerait un brief IA pour une fausse personne.
+    () => prospectsApercu(allLeads ?? [], campaignId),
     [allLeads, campaignId],
   );
 

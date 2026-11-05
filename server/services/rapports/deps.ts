@@ -8,6 +8,7 @@ import type { ExecuteurRoutine } from "../routines/types";
 import { preparerRapport, type DepsRapport } from "./rediger";
 import { executerRapport, KIND_RAPPORT } from "./routine";
 import { bornesMois, type EntreesRapport } from "./donnees";
+import { sansLeadsTest } from "../prospection-mode-test";
 
 /** Tout ce que le rapport du mois peut dire du projet, lu sur les bornes du mois à Paris. */
 async function lireEntrees(userId: string, projectId: number, mois: string): Promise<EntreesRapport> {
@@ -21,7 +22,8 @@ async function lireEntrees(userId: string, projectId: number, mois: string): Pro
   ]);
   const scores = await storage.getScoresReception(contenus.map((c: any) => c.id));
   const leads: any[] = [];
-  for (const c of campagnes.filter((x: any) => x.projectId === projectId)) leads.push(...await storage.getLeadsByCampaign(c.id, userId));
+  // Les prospects test (mode test) ne figurent jamais dans un rapport client.
+  for (const c of campagnes.filter((x: any) => x.projectId === projectId)) leads.push(...sansLeadsTest(await storage.getLeadsByCampaign(c.id, userId)));
   const messages = await storage.getOutreachForLeads(leads.map((l) => l.id));
   return { mesures: mesures as any, contenus: contenus as any, scores, messages: messages as any, constats: constats as any };
 }

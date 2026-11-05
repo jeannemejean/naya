@@ -68,6 +68,7 @@ import {
   RAISON_DOUBLON_A_REPONDU,
   corpsEmailGmail,
   retirerSignatureFinale,
+  envoyerEmailProspect,
 } from "./prospection-sender";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
@@ -2553,5 +2554,27 @@ describe("retirerSignatureFinale — emails déjà rédigés, signés par le mod
     const long = `${corps} Jeanne, fondatrice de l'agence qui accompagne les marques depuis dix ans.`;
     expect(retirerSignatureFinale(long, "Jeanne")).toBe(long);
     expect(retirerSignatureFinale("Bonjour, je vois que Jeanne.", "Jeanne")).toBe("Bonjour, je vois que Jeanne.");
+  });
+});
+
+describe("envoyerEmailProspect (chemin d'envoi partagé worker / mode test)", () => {
+  const GMAIL = { via: "unipile" as const, accountId: "acc", fromEmail: "j@a.fr", fromName: "Jeanne Méjean", footerAddress: "Lyon" };
+  const o = { to: "c@x.fr", toName: "Claire", subject: "Objet", body: "Bonjour,\n\nTexte.", leadId: 42, stepOrder: 1, lienDesinscription: "https://app/desinscription/t" };
+  beforeEach(() => (sendEmailUnipile as any).mockReset());
+
+  it("Gmail : corps HTML avec pied de mail, en-têtes de désinscription, suivi lead:N:step:K", async () => {
+    (sendEmailUnipile as any).mockResolvedValue({ ok: true, providerId: "p1", threadId: "t1" });
+    expect(await envoyerEmailProspect(GMAIL, o)).toEqual({ ok: true, providerId: "p1", threadId: "t1" });
+    expect(sendEmailUnipile).toHaveBeenCalledWith({
+      accountId: "acc", to: "c@x.fr", toName: "Claire", subject: "Objet",
+      body: corpsEmailGmail(o.body, "Jeanne Méjean", "Lyon", o.lienDesinscription),
+      trackingLabel: "lead:42:step:1",
+      headers: { "List-Unsubscribe": "<https://app/desinscription/t>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+    });
+  });
+
+  it("Gmail sans lien de désinscription : rien ne part", async () => {
+    expect(await envoyerEmailProspect(GMAIL, { ...o, lienDesinscription: null })).toEqual({ ok: false, providerId: null, threadId: null });
+    expect(sendEmailUnipile).not.toHaveBeenCalled();
   });
 });

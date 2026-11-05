@@ -13,6 +13,7 @@
  *  - jamais coupée par PROSPECTION_SENDING_ENABLED (c'est de la lecture) ;
  *  - on ne journalise jamais le sujet ni le corps d'un message.
  */
+import { estLeadTest } from "../prospection-mode-test";
 import type {
   EtatAvantReponse, InboxConversation, InboxMessage, InsertInboxConversation, InsertInboxMessage, InsertTask, Lead,
   LeadSequenceState, OutreachMessage, Task,
@@ -454,7 +455,8 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
     // Deux réponses simultanées : la seconde perd le compare-and-set et retire sa tâche.
     if (!(await deps.attacherTache(conv.id, ancien, tache.id))) await deps.supprimerTache(tache.id);
   });
-  await auMieux("apprentissage (feedback)", () => deps.markFeedbackReplied(userId, lead.id));
+  // Un prospect test (mode test) n'alimente jamais l'apprentissage.
+  if (!estLeadTest(lead)) await auMieux("apprentissage (feedback)", () => deps.markFeedbackReplied(userId, lead.id));
 }
 
 /** Adresse du compte Google derrière une connexion Unipile, gardée 10 min (lecture au mieux). */

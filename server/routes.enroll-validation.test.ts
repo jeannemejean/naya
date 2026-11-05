@@ -117,6 +117,18 @@ describe("POST /api/leads/:id/enroll — la validation humaine est exigée", () 
     expect(storageMock.enrollLead).toHaveBeenCalledWith(LEAD_ID, CAMPAGNE, "user-1");
   });
 
+  it("refuse un prospect TEST (mode test), même validé : jamais de séquence", async () => {
+    storageMock.getLeads.mockResolvedValue([
+      prospect({ validatedAt: new Date("2026-09-17T08:00:00Z"), tags: ["naya_test"] }),
+    ]);
+
+    const res = await enroler(port);
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).message).toBe("lead_test");
+    expect(storageMock.enrollLead).not.toHaveBeenCalled();
+  });
+
   it("refuse un prospect validé mais désinscrit, et n'enrôle pas", async () => {
     storageMock.getLeads.mockResolvedValue([
       prospect({ validatedAt: new Date("2026-09-17T08:00:00Z") }),

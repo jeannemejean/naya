@@ -1,7 +1,12 @@
 // Espace de travail d'une campagne — Sidebar + header (nom + retour) + Tabs à 4 sous-onglets
 // (Séquence, Prospects, Aperçu, Résultats), chacun branché sur sa vraie vue (Tasks 5-10).
+import { useState } from 'react';
 import { Link } from 'wouter';
-import { ArrowLeft, Users } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { ArrowLeft, Send, Users } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import EnvoiTestDialog from './dialogs/EnvoiTestDialog';
+import { estLeadTest } from './mode-test';
 import Sidebar from '@/components/sidebar';
 import OngletsEspace from '@/components/navigation/OngletsEspace';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,9 +30,12 @@ interface CampaignWorkspaceProps {
 export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspaceProps) {
   const { data: campaign, isLoading } = useCampaign(id);
   const { data: leads } = useLeads();
+  const { t } = useTranslation();
+  const [testOpen, setTestOpen] = useState(false);
 
+  // Les prospects test (mode test) ne comptent pas : ils sont listés, badgés, mais hors statistiques.
   const prospectCount = (leads ?? []).filter(
-    (lead: any) => lead.prospectionCampaignId === id && !lead.archivedAt,
+    (lead: any) => lead.prospectionCampaignId === id && !lead.archivedAt && !estLeadTest(lead),
   ).length;
 
   return (
@@ -59,7 +67,14 @@ export default function CampaignWorkspace({ id, onSearchClick }: CampaignWorkspa
             </p>
           ) : (
             <>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">{campaign.name}</h1>
+              <div className="flex items-start justify-between gap-3">
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">{campaign.name}</h1>
+                <Button size="sm" variant="outline" className="gap-1.5 flex-shrink-0" onClick={() => setTestOpen(true)}>
+                  <Send className="w-3.5 h-3.5" />
+                  {t('outreach.modeTest.bouton')}
+                </Button>
+              </div>
+              <EnvoiTestDialog campaignId={id} open={testOpen} onOpenChange={setTestOpen} />
               <div className="flex items-center gap-3 mt-1.5">
                 <div className="flex items-center gap-1.5">
                   {campaignChannels(campaign.channel).map((c) => {

@@ -18,6 +18,8 @@ import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerAtelierRoutes } from "./routes-atelier";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
+import { registerModeTestRoutes } from "./routes-mode-test";
+import { estLeadTest } from "./services/prospection-mode-test";
 import { routineSourcingPour } from "./services/routines/ordonnanceur";
 import { registerRoutinesRoutes } from "./routes-routines";
 import { registerVeilleRoutes } from "./routes-veille";
@@ -8475,6 +8477,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const lead = (await storage.getLeads(req.userId)).find(l => l.id === Number(req.params.id));
       if (!lead) return res.status(404).json({ message: 'not_found' });
+      // Un prospect test ne reçoit que sa première touche : jamais de séquence.
+      if (estLeadTest(lead)) return res.status(409).json({ message: 'lead_test' });
 
       // LA BARRIERE. L'enrolement est la porte par laquelle un prospect entre en sequence,
       // donc le dernier point ou l'on peut encore refuser. Elle exige DEUX conditions :
@@ -8719,7 +8723,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
-      const leadsForCampaign = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id);
+      // Les prospects test (mode test) ne comptent jamais dans les statistiques.
+      const leadsForCampaign = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id && !estLeadTest(l));
       const ids = leadsForCampaign.map(l => l.id);
       const msgs = await storage.getOutreachForLeads(ids);
       const sent = msgs.filter(m => m.sentAt).length;
@@ -11185,6 +11190,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerAtelierRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
+  registerModeTestRoutes(app);
   registerRoutinesRoutes(app);
   registerVeilleRoutes(app);
   registerProfilsVeilleRoutes(app);

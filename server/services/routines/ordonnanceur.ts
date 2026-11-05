@@ -8,6 +8,7 @@
  */
 import type { Routine } from "@shared/schema";
 import { storage } from "../../storage";
+import { sansLeadsTest } from "../prospection-mode-test";
 import { prochainPassageApres } from "./temps";
 import { notifierRoutine } from "./notifier";
 import { executerSourcing, KIND_SOURCING, cleSourcing } from "./sourcing";
@@ -95,7 +96,8 @@ export async function assurerRoutinesSourcing(maintenant = new Date()): Promise<
   const campagnes = await storage.getAllActiveProspectionCampaigns();
   for (const c of campagnes) {
     try {
-      const utilisee = (await storage.getLeadsByCampaign(c.id, c.userId)).length > 0;
+      // Un prospect test (« Envoyer un test ») n'est pas un usage : jamais de routine payante active pour lui.
+      const utilisee = sansLeadsTest(await storage.getLeadsByCampaign(c.id, c.userId)).length > 0;
       await storage.ensureRoutine(routineSourcingPour(c as any, maintenant, utilisee) as any);
     } catch (e: any) {
       console.error(`[routines] création de la routine de sourcing (campagne ${c.id}) :`, e?.message);
