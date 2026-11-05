@@ -499,3 +499,20 @@ Uniquement des `CREATE`, aucun `DROP`, aucun `ALTER` sur l'existant.
 - Tables : `recherche_embeddings` (`embedding vector(1536)`, index unique `(source, source_id)`, index hnsw `vector_cosine_ops`, index `(user_id)`), `agent_actions`, `agent_propositions`.
 - Clés étrangères `user_id` → `users.id` en `ON DELETE cascade` sur les trois tables.
 - À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai, garde `scripts/migrate-prod.ts`, migration **avant** de pousser `main`.
+
+### Production — migrée le 5 novembre 2026 (`0036`)
+
+- [x] État lu avant : suivi **36 lignes**, aucune table de l'agent, `unaccent` disponible mais non installée, `vector` présente.
+- [x] Point de restauration : branche **`sauvegarde-avant-agent-2026-11-05`** (`br-sparkling-thunder-an1ly9xh`).
+- [x] Répétée sur la branche d'essai `essai-0036-2026-11-05` (`br-lucky-bar-anexjems`) forkée de la production,
+      avec le migrator drizzle : suivi 36 → 37, 3 tables, 4 index sur `recherche_embeddings`,
+      `unaccent('Redéfinition')` = `Redefinition`, données intactes (3 utilisateurs, 316 tâches).
+- [x] Garde du script vérifiée à blanc (refus sur l'endpoint d'essai), puis appliquée avec
+      `scripts/migrate-prod.ts` (lancée par Jeanne).
+- [x] Résultat vérifié en prod : suivi **36 → 37**, 3 tables, 4 index, `unaccent` opérationnelle, 3 utilisateurs / 316 tâches.
+- [ ] Pousser `main` (migration d'abord : fait).
+
+### Ce qui reste
+
+- [ ] Supprimer `essai-0036-2026-11-05`.
+- [ ] Supprimer `sauvegarde-avant-agent-2026-11-05` quand le déploiement est stable.
