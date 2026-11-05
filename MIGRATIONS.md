@@ -514,5 +514,5 @@ Uniquement des `CREATE`, aucun `DROP`, aucun `ALTER` sur l'existant.
 
 ### Ce qui reste
 
-- [ ] Supprimer `essai-0036-2026-11-05`.
+- [x] `essai-0036-2026-11-05` supprimée le 5 novembre 2026.
 - [ ] Supprimer `sauvegarde-avant-agent-2026-11-05` quand le déploiement est stable.
