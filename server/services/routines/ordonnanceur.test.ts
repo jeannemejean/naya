@@ -99,6 +99,12 @@ describe("assurerRoutinesSourcing", () => {
     await assurerRoutinesSourcing(MAINTENANT);
     expect(storageMock.ensureRoutine).toHaveBeenCalledWith(expect.objectContaining({ cibleCle: "campaign:6", actif: false }));
   });
+  it("campagne qui n'a qu'un prospect TEST (mode test) : toujours jamais utilisée, routine EN PAUSE", async () => {
+    storageMock.getAllActiveProspectionCampaigns.mockResolvedValue([{ id: 8, userId: "u1", projectId: 7 }]);
+    storageMock.getLeadsByCampaign.mockResolvedValue([{ id: 3, tags: ["naya_test"] }] as any);
+    await assurerRoutinesSourcing(MAINTENANT);
+    expect(storageMock.ensureRoutine).toHaveBeenCalledWith(expect.objectContaining({ cibleCle: "campaign:8", actif: false }));
+  });
 });
 
 describe("verrou d'exécution", () => {

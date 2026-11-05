@@ -1170,6 +1170,8 @@ const en = {
       desinscrit: "This address has unsubscribed: Naya no longer writes to it.",
       lien_desinscription_manquant: "The unsubscribe link can't be built on this server: no email goes out without it.",
       echec_envoi: "Sending failed. Try again in a moment.",
+      adresse_prospect: "This address belongs to a real prospect: pick one of your own addresses.",
+      quota_test_atteint: "You've already sent 5 tests today.",
     },
   },
   reponses: {

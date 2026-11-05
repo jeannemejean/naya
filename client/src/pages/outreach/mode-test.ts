@@ -1,11 +1,20 @@
 // Mode test de la prospection (« Envoyer un test ») — logique pure du client.
-export { estLeadTest } from "@shared/mode-test";
+import { estLeadTest } from "@shared/mode-test";
+export { estLeadTest };
+
+/** Prospects proposés dans l'Aperçu : ceux de la campagne, hors archivés et hors prospects test. */
+export function prospectsApercu<T extends { prospectionCampaignId?: number | null; archivedAt?: unknown; tags?: string[] | null }>(
+  leads: T[], campaignId: number,
+): T[] {
+  return leads.filter((l) => l.prospectionCampaignId === campaignId && !l.archivedAt && !estLeadTest(l));
+}
 
 /** Codes de refus connus du serveur (server/services/prospection-mode-test.ts). */
 export const CODES_REFUS_TEST = [
   "email_invalide", "introuvable", "envoi_desactive", "signature_client_manquante",
   "gmail_deconnecte", "pas_d_expediteur", "reception_hors_ligne", "adresse_propre",
   "quota_illisible", "quota_atteint", "desinscrit", "lien_desinscription_manquant", "echec_envoi",
+  "adresse_prospect", "quota_test_atteint",
 ] as const;
 export type CodeRefusTest = (typeof CODES_REFUS_TEST)[number];
 

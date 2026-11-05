@@ -216,7 +216,7 @@ import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { publicIdFromUrl } from "./services/linkedin";
 import { clesPersonne, memePersonne } from "./services/reponses/rattachement";
-import { estLeadTest } from "./services/prospection-mode-test";
+import { estLeadTest, TAG_LEAD_TEST } from "./services/prospection-mode-test";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
@@ -533,6 +533,10 @@ export interface IStorage {
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
   /** Mode test : état de séquence créé directement « terminé » après l'étape 1 (jamais repris par le worker). */
   terminerSequenceTest(leadId: number, campaignId: number, userId: string, at: Date): Promise<void>;
+  /** Mode test : un prospect NON test de l'utilisatrice (archivé compris) porte-t-il cette adresse normalisée ? */
+  adresseDeVraiProspect(userId: string, emailNormalise: string): Promise<boolean>;
+  /** Mode test : prospects test créés depuis `depuis` (archivés compris). */
+  compterLeadsTestDepuis(userId: string, depuis: Date): Promise<number>;
   updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
   /** Remet l'état d'avant la réponse (bouton « Ce n'était pas une vraie réponse ») ; seulement depuis stopped_replied. */
   restaurerEtatSequence(leadId: number, etat: EtatAvantReponse, opts?: { libererBrouillonEtape?: number }): Promise<LeadSequenceState | null>;
@@ -1992,6 +1996,28 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(leadSequenceState).values(values).returning();
     return created || null;
+  }
+
+  async adresseDeVraiProspect(userId: string, emailNormalise: string): Promise<boolean> {
+    // Même normalisation que leadContacteParEmail (rattachement des réponses).
+    const [l] = await db.select({ id: leads.id }).from(leads)
+      .where(and(
+        eq(leads.userId, userId),
+        sql`lower(regexp_replace(${leads.email}, '\\s', '', 'g')) = ${emailNormalise}`,
+        sql`not (coalesce(${leads.tags}, '{}'::text[]) @> array[${TAG_LEAD_TEST}]::text[])`,
+      ))
+      .limit(1);
+    return !!l;
+  }
+
+  async compterLeadsTestDepuis(userId: string, depuis: Date): Promise<number> {
+    const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(leads)
+      .where(and(
+        eq(leads.userId, userId),
+        sql`${leads.tags} @> array[${TAG_LEAD_TEST}]::text[]`,
+        gte(leads.createdAt, depuis),
+      ));
+    return Number(r?.n ?? 0);
   }
 
   async terminerSequenceTest(leadId: number, campaignId: number, userId: string, at: Date): Promise<void> {

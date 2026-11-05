@@ -28,6 +28,8 @@ function deps(over: Partial<DepsModeTest> = {}) {
     resolveSender: vi.fn(() => GMAIL),
     adressesPropres: vi.fn(async () => ["jeanne@agence.fr", "jeanne.gmail@gmail.com"]),
     emailsEnvoyesDepuis: vi.fn(async () => 3),
+    adresseDeVraiProspect: vi.fn(async () => false),
+    testsCreesDepuis: vi.fn(async () => 0),
     plafondQuotidien: 80,
     signature: vi.fn(async () => "Jeanne"),
     createLead: vi.fn(async (row: any) => ({ id: 42, ...row })),
@@ -184,6 +186,10 @@ describe("envoyerEmailTest", () => {
     ["réception hors ligne (Gmail)", { receptionActive: () => false }, 409, "reception_hors_ligne"],
     ["plafond atteint", { emailsEnvoyesDepuis: vi.fn(async () => 80) }, 429, "quota_atteint"],
     ["plafond illisible", { emailsEnvoyesDepuis: vi.fn(async () => { throw new Error("db"); }) }, 503, "quota_illisible"],
+    ["adresse d'un vrai prospect", { adresseDeVraiProspect: vi.fn(async () => true) }, 409, "adresse_prospect"],
+    ["lecture des vrais prospects en échec", { adresseDeVraiProspect: vi.fn(async () => { throw new Error("db"); }) }, 409, "adresse_prospect"],
+    ["5 tests sur 24 h", { testsCreesDepuis: vi.fn(async () => 5) }, 429, "quota_test_atteint"],
+    ["compte des tests illisible", { testsCreesDepuis: vi.fn(async () => { throw new Error("db"); }) }, 503, "quota_illisible"],
   ] as const)("%s : refus clair, aucun prospect créé", async (_l, over, status, code) => {
     const { d } = deps(over as any);
     expect(await envoyerEmailTest(d, "u1", 7, { email: "claire@exemple.fr" })).toEqual({ ok: false, status, code });
@@ -226,6 +232,26 @@ describe("envoyerEmailTest", () => {
     expect(d.journaliser).not.toHaveBeenCalled();
     expect(d.terminerSequence).not.toHaveBeenCalled();
     expect(d.archiverLead).toHaveBeenCalledWith(42, "u1");
+  });
+
+  it("adresse d'un vrai prospect : vérifiée normalisée, avec l'utilisatrice", async () => {
+    const { d } = deps();
+    await envoyerEmailTest(d, "u1", 7, { email: " Claire@Exemple.FR " });
+    expect(d.adresseDeVraiProspect).toHaveBeenCalledWith("u1", "claire@exemple.fr");
+    expect(d.testsCreesDepuis).toHaveBeenCalledWith("u1", new Date("2026-11-04T21:30:00Z"));
+  });
+
+  it("4 tests sur 24 h : le 5e passe", async () => {
+    const { d } = deps({ testsCreesDepuis: vi.fn(async () => 4) });
+    expect((await envoyerEmailTest(d, "u1", 7, { email: "claire@exemple.fr" })).ok).toBe(true);
+  });
+
+  it("exception pendant l'envoi : réservation GARDÉE, prospect archivé, echec_envoi", async () => {
+    const { d, claims } = deps({ envoyer: vi.fn(async () => { throw new Error("réseau"); }) });
+    expect(await envoyerEmailTest(d, "u1", 7, { email: "claire@exemple.fr" })).toEqual({ ok: false, status: 502, code: "echec_envoi" });
+    expect(claims.map((c) => c[0])).toEqual(["claim"]); // ni libérée ni marquée : jamais renvoyée dans le doute
+    expect(d.archiverLead).toHaveBeenCalledWith(42, "u1");
+    expect(d.terminerSequence).not.toHaveBeenCalled();
   });
 
   it("journal en échec après l'envoi : le test reste un succès, la séquence est terminée", async () => {

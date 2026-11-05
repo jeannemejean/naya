@@ -91,13 +91,18 @@ export function texteDeSecours(nom: string, nomCampagne: string): { subject: str
 export type CodeRefusTest =
   | "email_invalide" | "introuvable" | "envoi_desactive" | "signature_client_manquante"
   | "gmail_deconnecte" | "pas_d_expediteur" | "reception_hors_ligne" | "adresse_propre"
-  | "quota_illisible" | "quota_atteint" | "desinscrit" | "lien_desinscription_manquant" | "echec_envoi";
+  | "quota_illisible" | "quota_atteint" | "desinscrit" | "lien_desinscription_manquant" | "echec_envoi"
+  | "adresse_prospect" | "quota_test_atteint";
+
+/** Au plus ce nombre de prospects test par utilisatrice sur 24 h glissantes. */
+export const PLAFOND_TESTS_24H = 5;
 
 const STATUT: Record<CodeRefusTest, number> = {
   email_invalide: 400, adresse_propre: 400, introuvable: 404,
   envoi_desactive: 409, signature_client_manquante: 409, gmail_deconnecte: 409, pas_d_expediteur: 409,
   reception_hors_ligne: 409, desinscrit: 409, quota_atteint: 429,
   quota_illisible: 503, lien_desinscription_manquant: 503, echec_envoi: 502,
+  adresse_prospect: 409, quota_test_atteint: 429,
 };
 
 export type ResultatTest =
@@ -117,6 +122,10 @@ export interface DepsModeTest {
   /** Adresses de l'utilisatrice (ou du client) : une réponse venant de l'une d'elles est prise pour la sienne. */
   adressesPropres: (userId: string, portee: number | null, sender: SenderConfig) => Promise<string[]>;
   emailsEnvoyesDepuis: (userId: string, depuis: Date) => Promise<number>;
+  /** Un VRAI prospect (non test) de l'utilisatrice porte-t-il cette adresse (normalisée) ? */
+  adresseDeVraiProspect: (userId: string, emailNormalise: string) => Promise<boolean>;
+  /** Prospects test créés par l'utilisatrice depuis cet instant. */
+  testsCreesDepuis: (userId: string, depuis: Date) => Promise<number>;
   plafondQuotidien: number;
   signature: (userId: string, identite: IdentiteEnvoi) => Promise<string>;
   createLead: (row: any) => Promise<{ id: number }>;
@@ -167,10 +176,25 @@ export async function envoyerEmailTest(
     .filter((a): a is string => typeof a === "string" && !!a.trim()).map(normaliserEmail);
   if (propres.includes(cible)) return refus("adresse_propre");
 
+  // Jamais l'adresse d'un vrai prospect : le test contournerait validation, contrôle qualité et
+  // doublons, et rendrait le rattachement des réponses ambigu (même adresse, deux fiches).
+  // Lecture ratée : refus par prudence.
+  try {
+    if (await deps.adresseDeVraiProspect(userId, cible)) return refus("adresse_prospect");
+  } catch {
+    return refus("adresse_prospect");
+  }
+  const depuis24h = new Date(deps.now().getTime() - 86_400_000);
+  try {
+    if ((await deps.testsCreesDepuis(userId, depuis24h)) >= PLAFOND_TESTS_24H) return refus("quota_test_atteint");
+  } catch {
+    return refus("quota_illisible");
+  }
+
   // Plafond quotidien : même compte que le worker (outreach_messages email, 24 h glissantes).
   let envoyes: number;
   try {
-    envoyes = await deps.emailsEnvoyesDepuis(userId, new Date(deps.now().getTime() - 86_400_000));
+    envoyes = await deps.emailsEnvoyesDepuis(userId, depuis24h);
   } catch {
     return refus("quota_illisible");
   }
@@ -226,25 +250,33 @@ export async function envoyerEmailTest(
   body = deps.retirerSignature(body, founderName);
 
   const sentAt = deps.now();
-  const issue = await sendOnce(deps.claimStore, {
-    leadId: lead.id, campaignId: campagne.id, stepOrder: 1, userId, channel: "email",
-  }, async () => {
-    const envoi = await deps.envoyer(sender, {
-      to: email, toName: nom, subject, body, leadId: lead.id, stepOrder: 1, lienDesinscription: lien,
-    });
-    if (!envoi.ok) return { ok: false };
-    // Parti : le journal (rattachement des réponses, plafond) est écrit au mieux.
-    try {
-      const cree = await deps.journaliser({
-        userId, projectId: campagne.projectId ?? null, leadId: lead.id, platform: "email",
-        messageType: "step_1", subject, body, sentAt,
+  let issue: Awaited<ReturnType<typeof sendOnce>>;
+  // Exception pendant l'envoi : issue inconnue, la réservation est GARDÉE (jamais renvoyer dans
+  // le doute) ; le prospect test orphelin est archivé.
+  try {
+    issue = await sendOnce(deps.claimStore, {
+      leadId: lead.id, campaignId: campagne.id, stepOrder: 1, userId, channel: "email",
+    }, async () => {
+      const envoi = await deps.envoyer(sender, {
+        to: email, toName: nom, subject, body, leadId: lead.id, stepOrder: 1, lienDesinscription: lien,
       });
-      if (envoi.providerId || envoi.threadId) await deps.setProviderIds(cree.id, envoi.providerId, envoi.threadId);
-    } catch (e: any) {
-      console.error(`[mode-test] email PARTI mais NON journalisé (lead ${lead.id}) : ${String(e?.message ?? e).slice(0, 160)}`);
-    }
-    return { ok: true, status: "sent" as const };
-  });
+      if (!envoi.ok) return { ok: false };
+      // Parti : le journal (rattachement des réponses, plafond) est écrit au mieux.
+      try {
+        const cree = await deps.journaliser({
+          userId, projectId: campagne.projectId ?? null, leadId: lead.id, platform: "email",
+          messageType: "step_1", subject, body, sentAt,
+        });
+        if (envoi.providerId || envoi.threadId) await deps.setProviderIds(cree.id, envoi.providerId, envoi.threadId);
+      } catch (e: any) {
+        console.error(`[mode-test] email PARTI mais NON journalisé (lead ${lead.id}) : ${String(e?.message ?? e).slice(0, 160)}`);
+      }
+      return { ok: true, status: "sent" as const };
+    });
+  } catch (e: any) {
+    console.error(`[mode-test] envoi en exception (lead ${lead.id}) : ${String(e?.message ?? e).slice(0, 160)} — réservation gardée, prospect test archivé`);
+    return abandonner("echec_envoi");
+  }
   if (issue.action !== "sent") return abandonner("echec_envoi");
 
   // Étape 1 seulement : la séquence du prospect test est terminée d'emblée.

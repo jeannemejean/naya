@@ -29,6 +29,8 @@ export const depsModeTest: DepsModeTest = {
     ? adressesPropresDepuis(storage, { userId, projectId: portee, canal: "email" }, sender.accountId)
     : Promise.resolve([]),
   emailsEnvoyesDepuis: (userId, depuis) => storage.countOutreachSentSince(userId, depuis, "email"),
+  adresseDeVraiProspect: (userId, email) => storage.adresseDeVraiProspect(userId, email),
+  testsCreesDepuis: (userId, depuis) => storage.compterLeadsTestDepuis(userId, depuis),
   plafondQuotidien: DAILY_CAP,
   signature: async (userId, identite) => {
     if (identite.signature) return identite.signature;

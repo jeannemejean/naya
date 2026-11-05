@@ -1174,6 +1174,8 @@ const fr = {
       desinscrit: "Cette adresse s'est désinscrite : Naya ne lui écrit plus.",
       lien_desinscription_manquant: "Le lien de désinscription ne peut pas être créé sur ce serveur : aucun email ne part sans lui.",
       echec_envoi: "L'envoi a échoué. Réessaie dans un instant.",
+      adresse_prospect: "Cette adresse est celle d'un vrai prospect : choisis une de tes adresses.",
+      quota_test_atteint: "Tu as déjà envoyé 5 tests aujourd'hui.",
     },
   },
   reponses: {
