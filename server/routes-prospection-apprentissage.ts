@@ -9,6 +9,7 @@ import { roleDeTouche } from "./services/sequence-message";
 import { controlerMessage } from "./services/prospection/qualite";
 import { appliquerEditionBrief, lireBrief } from "./services/prospection/brief";
 import { extraireSiPret, validerRaisonEcart } from "./services/prospection/regles-apprises";
+import { estLeadTest } from "./services/prospection-mode-test";
 
 const ROLES = new Set(["invitation", "premier_message", "email_ouverture", "relance", "cloture"]);
 const STATUTS_REGLE = new Set(["proposee", "acceptee", "refusee"]);
@@ -76,7 +77,9 @@ export function registerApprentissageRoutes(app: Express) {
       await storage.upsertLeadStepMessage({
         leadId: c.lead.id, stepId: e.step.id, subject, body, edited: true, qualite: "ok", defauts: defauts.length ? defauts : null,
       } as any);
-      await storage.addMessageFeedback({
+      // Un prospect test (mode test) n'est jamais matière d'apprentissage.
+      const apprendre = !estLeadTest(c.lead);
+      if (apprendre) await storage.addMessageFeedback({
         userId: req.userId, projectId: c.projectId, campaignId: c.campaign.id, leadId: c.lead.id, stepId: e.step.id,
         role, action: "modifie", original: avant?.body ?? null, final: body,
       });
@@ -85,7 +88,7 @@ export function registerApprentissageRoutes(app: Express) {
       if (premiere) {
         await storage.updateLead(c.lead.id, req.userId, (e.step.channel === "linkedin" ? { linkedinMessage: body } : { emailMessage: body }) as any);
       }
-      void extraireSiPret(req.userId, c.projectId);
+      if (apprendre) void extraireSiPret(req.userId, c.projectId);
       res.json({ stepId: e.step.id, subject, body, edited: true, defauts });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -101,13 +104,14 @@ export function registerApprentissageRoutes(app: Express) {
       if (!validerRaisonEcart(req.body?.raison)) return res.status(400).json({ message: "raison_invalide" });
       const texte = typeof req.body?.texte === "string" ? req.body.texte.trim().slice(0, 500) : "";
       const avant: any = await storage.getLeadStepMessage(c.lead.id, e.step.id);
-      await storage.addMessageFeedback({
+      const apprendre = !estLeadTest(c.lead); // prospect test : jamais matière d'apprentissage
+      if (apprendre) await storage.addMessageFeedback({
         userId: req.userId, projectId: c.projectId, campaignId: c.campaign.id, leadId: c.lead.id, stepId: e.step.id,
         role: roleDeTouche(c.steps, e.index), action: "ecarte", original: avant?.body ?? null, final: null,
         raison: texte ? `${req.body.raison} : ${texte}` : req.body.raison,
       });
       await storage.deleteLeadStepMessage(c.lead.id, e.step.id);
-      void extraireSiPret(req.userId, c.projectId);
+      if (apprendre) void extraireSiPret(req.userId, c.projectId);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

@@ -114,7 +114,7 @@ export function receptionReponsesEnLigne(env: Record<string, string | undefined>
 
 // Plafond d'emails / utilisateur / jour (délivrabilité). Configurable via env.
 // Ne compte QUE les emails : les messages LinkedIn ont leurs propres plafonds (garde de risque).
-const DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80;
+export const DAILY_CAP = Number(process.env.PROSPECTION_DAILY_CAP) || 80;
 
 // Écart minimum entre deux emails du même expéditeur : sans lui, tous les emails dus
 // partaient dans la même minute (jusqu'à 100 par passage), un rythme qu'aucun humain n'a.
@@ -221,7 +221,7 @@ const DAY_ABBRS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 // Adaptateur du protocole d'idempotence sur le storage. Le worker ne parle jamais
 // directement aux trois méthodes : il passe par `sendOnce`, qui garantit l'ordre
 // réserver → envoyer → marquer/libérer.
-const claimStore: ClaimStore = {
+export const claimStore: ClaimStore = {
   claim: (key) => storage.claimStepSend(key),
   markSent: (key, status) => storage.markStepSendSent(key, status),
   release: (key) => storage.releaseStepSend(key),
@@ -318,13 +318,13 @@ function targetDateStrFor(countryCode: string | null, city: string | null, now: 
 // Config d'envoi du périmètre de la campagne (l'utilisatrice, ou le client d'un projet
 // client) : adresse + clé. Jamais l'adresse de l'app ; jamais celle de l'utilisatrice pour
 // un client (voir connexions/portee.ts).
-type SenderConfig =
+export type SenderConfig =
   | { via: "unipile"; accountId: string; fromEmail: string; fromName: string; footerAddress: string }
   | { via: "sendgrid"; apiKey: string; fromEmail: string; fromName: string; footerAddress: string };
 
 // Gmail relié (Unipile) d'abord : l'email part de la vraie boîte de l'utilisateur, sans clé
 // SendGrid. Sinon SendGrid comme avant (clé propre ou partagée).
-function resolveSenderConfig(identite: IdentiteEnvoi): SenderConfig | null {
+export function resolveSenderConfig(identite: IdentiteEnvoi): SenderConfig | null {
   const e = identite.email;
   if (!e) return null; // pas d'adresse expéditrice → on n'envoie jamais en son nom
   if (e.unipileAccountId) {
@@ -403,6 +403,33 @@ async function sendEmail(opts: {
     }),
   });
   return res.ok;
+}
+
+/**
+ * Envoie UN email de prospection par la configuration d'envoi résolue : Gmail relié (Unipile,
+ * corps HTML `corpsEmailGmail`, en-têtes List-Unsubscribe, suivi `lead:N:step:K`) ou SendGrid.
+ * Seul chemin d'envoi d'un email de séquence, partagé par le worker et le mode test.
+ * `lienDesinscription` est obligatoire pour Gmail : sans lui, rien ne part.
+ */
+export async function envoyerEmailProspect(
+  sender: SenderConfig,
+  o: { to: string; toName: string; subject: string; body: string; leadId: number; stepOrder: number; lienDesinscription: string | null },
+): Promise<{ ok: boolean; providerId: string | null; threadId: string | null }> {
+  if (sender.via === "unipile") {
+    if (!o.lienDesinscription) return { ok: false, providerId: null, threadId: null };
+    const res = await sendEmailUnipile({
+      accountId: sender.accountId, to: o.to, toName: o.toName, subject: o.subject,
+      body: corpsEmailGmail(o.body, sender.fromName, sender.footerAddress, o.lienDesinscription),
+      trackingLabel: `lead:${o.leadId}:step:${o.stepOrder}`,
+      headers: { "List-Unsubscribe": `<${o.lienDesinscription}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+    });
+    return { ok: res.ok, providerId: res.providerId ?? null, threadId: res.threadId ?? null };
+  }
+  const ok = await sendEmail({
+    apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName, footerAddress: sender.footerAddress,
+    to: o.to, toName: o.toName, subject: o.subject, body: o.body, leadId: o.leadId,
+  });
+  return { ok, providerId: null, threadId: null };
 }
 
 /** Raison visible dans l'aperçu quand un doublon du prospect a déjà répondu (M3). */
@@ -1023,7 +1050,6 @@ export async function runProspectionSender(): Promise<void> {
           // fermeture `async` de `sendOnce` ci-dessous (TS le retypera en nullable).
           const toEmail = lead.email;
           const emailSender = sender;
-          const footerAddress = emailSender.footerAddress;
           // Le pied de mail signe : une signature finale déjà rédigée (textes antérieurs au
           // 2 nov. 2026, « … Jeanne, Test. ») est retirée. Le texte journalisé est celui envoyé.
           const bodyEmail = retirerSignatureFinale(body, founderName);
@@ -1032,26 +1058,15 @@ export async function runProspectionSender(): Promise<void> {
           // séquence avancer plus bas.
           const lienEmail = lienDesinsc;
           const outcome = await sendOnce(claimStore, sendKey, async () => {
-            let providerId: string | null = null;
-            let threadId: string | null = null;
-            let ok: boolean;
-            if (emailSender.via === "unipile") {
-              if (!lienEmail) return { ok: false }; // garde déjà passée plus haut ; narrowing de type
-              const res = await sendEmailUnipile({
-                accountId: emailSender.accountId, to: toEmail, toName: lead.name || "", subject,
-                body: corpsEmailGmail(bodyEmail, emailSender.fromName, footerAddress, lienEmail),
-                trackingLabel: `lead:${lead.id}:step:${decision.index + 1}`,
-                headers: { "List-Unsubscribe": `<${lienEmail}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
-              });
-              ok = res.ok;
-              providerId = res.providerId ?? null;
-              threadId = res.threadId ?? null;
-            } else {
-              ok = await sendEmail({
-                apiKey: emailSender.apiKey, fromEmail: emailSender.fromEmail, fromName: emailSender.fromName, footerAddress,
-                to: toEmail, toName: lead.name || "", subject, body: bodyEmail, leadId: lead.id,
-              });
-            }
+            // Même chemin d'envoi que le mode test (envoyerEmailProspect) : HTML, pied de mail,
+            // en-têtes de désinscription et suivi définis à un seul endroit.
+            const envoi = await envoyerEmailProspect(emailSender, {
+              to: toEmail, toName: lead.name || "", subject, body: bodyEmail,
+              leadId: lead.id, stepOrder: decision.index + 1, lienDesinscription: lienEmail,
+            });
+            const ok = envoi.ok;
+            const providerId = envoi.providerId;
+            const threadId = envoi.threadId;
             if (!ok) return { ok: false };
             // À partir d'ici le message EST parti (SendGrid a répondu positivement) :
             // une exception d'écriture du journal n'est plus « dans le doute » — on SAIT

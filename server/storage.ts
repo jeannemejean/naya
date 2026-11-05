@@ -216,6 +216,7 @@ import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { publicIdFromUrl } from "./services/linkedin";
 import { clesPersonne, memePersonne } from "./services/reponses/rattachement";
+import { estLeadTest } from "./services/prospection-mode-test";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
@@ -530,6 +531,8 @@ export interface IStorage {
   getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined>;
   getEnrollmentsByCampaign(campaignId: number): Promise<{ leadId: number; status: string }[]>;
   enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
+  /** Mode test : état de séquence créé directement « terminé » après l'étape 1 (jamais repris par le worker). */
+  terminerSequenceTest(leadId: number, campaignId: number, userId: string, at: Date): Promise<void>;
   updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null>;
   /** Remet l'état d'avant la réponse (bouton « Ce n'était pas une vraie réponse ») ; seulement depuis stopped_replied. */
   restaurerEtatSequence(leadId: number, etat: EtatAvantReponse, opts?: { libererBrouillonEtape?: number }): Promise<LeadSequenceState | null>;
@@ -1953,6 +1956,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null> {
+    // Un prospect test (mode test) ne reçoit que sa première touche : jamais de séquence.
+    const [cible] = await db.select({ tags: leads.tags }).from(leads).where(eq(leads.id, leadId));
+    if (estLeadTest(cible)) return null;
     const steps = await this.getSequenceSteps(campaignId);
     if (steps.length === 0) return null; // pas de séquence définie → rien à enrôler
     // Un désinscrit ne rentre plus jamais en séquence, ni par une relance de campagne,
@@ -1986,6 +1992,15 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(leadSequenceState).values(values).returning();
     return created || null;
+  }
+
+  async terminerSequenceTest(leadId: number, campaignId: number, userId: string, at: Date): Promise<void> {
+    // `completed` + nextRunAt nul : getDueEnrollments (status = active) ne le voit jamais, et
+    // l'enrôlement groupé ne ré-enrôle jamais un état terminé.
+    await db.insert(leadSequenceState).values({
+      leadId, campaignId, userId, status: "completed", currentStep: 1, nextRunAt: null,
+      lastStepSentAt: at, delayAnchorAt: null, repliedAt: null,
+    }).onConflictDoNothing();
   }
 
   async updateLeadSequenceState(leadId: number, updates: Partial<LeadSequenceState>): Promise<LeadSequenceState | null> {
@@ -2879,8 +2894,10 @@ export class DatabaseStorage implements IStorage {
     byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
     byChannel: { channel: string; sent: number; replied: number }[];
   }> {
-    const campaignLeads = await db.select().from(leads)
-      .where(and(eq(leads.prospectionCampaignId, campaignId), isNull(leads.archivedAt)));
+    // Les prospects test (mode test) ne comptent jamais dans les statistiques.
+    const campaignLeads = (await db.select().from(leads)
+      .where(and(eq(leads.prospectionCampaignId, campaignId), isNull(leads.archivedAt))))
+      .filter((l) => !estLeadTest(l));
     const leadIds = campaignLeads.map((l) => l.id);
     if (leadIds.length === 0) return { byStep: [], byChannel: [] };
 

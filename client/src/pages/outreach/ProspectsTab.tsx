@@ -41,6 +41,7 @@ import { resumeEnrolement } from './enrolement-message';
 import ValidationPanel from './ValidationPanel';
 import LinkedInAEnvoyer from './LinkedInAEnvoyer';
 import { attendValidation, estPretAPartir, prospectsAValider } from './validation-messages';
+import { estLeadTest } from './mode-test';
 
 interface ProspectsTabProps {
   campaignId: number;
@@ -387,6 +388,11 @@ function ProspectRow({
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.color }} />
           {stage.label}
         </span>
+        {estLeadTest(l) && (
+          <Badge variant="outline" className="px-1.5 py-0.5 text-[10px]" title={t('outreach.modeTest.badgeAide')}>
+            {t('outreach.modeTest.badge')}
+          </Badge>
+        )}
         {SCORE_VARIANT[lead.score] && (
           <Badge variant={SCORE_VARIANT[lead.score]} className="px-1.5 py-0.5 text-[10px]">
             {SCORE_LABEL[lead.score]}
