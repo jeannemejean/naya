@@ -253,6 +253,13 @@
       "when": 1793609911476,
       "tag": "0035_wooden_thunderbolt_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793649267389,
+      "tag": "0036_small_the_stranger",
+      "breakpoints": true
     }
   ]
 }

@@ -489,3 +489,13 @@ Uniquement des `ADD COLUMN`, `CREATE TABLE`, clés étrangères et un `CREATE UN
 
 - [x] `essai-0035-2026-11-02` supprimée le 2 novembre 2026.
 - [ ] Supprimer `sauvegarde-avant-reponses-2026-11-02` quand le déploiement est stable.
+
+## 9. Agent omniscient — `0036` à appliquer en prod à la main
+
+Fichier : `migrations/0036_small_the_stranger.sql` (appliqué sur dev-local `ep-jolly-sky`, **pas** en prod).
+Uniquement des `CREATE`, aucun `DROP`, aucun `ALTER` sur l'existant.
+
+- **Extension** : `CREATE EXTENSION IF NOT EXISTS unaccent;` (en tête du fichier, ajoutée à la main — drizzle ne la génère pas). Vérifier que Neon prod l'autorise : `select unaccent('Redéfinition')` doit rendre `Redefinition`.
+- Tables : `recherche_embeddings` (`embedding vector(1536)`, index unique `(source, source_id)`, index hnsw `vector_cosine_ops`, index `(user_id)`), `agent_actions`, `agent_propositions`.
+- Clés étrangères `user_id` → `users.id` en `ON DELETE cascade` sur les trois tables.
+- À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai, garde `scripts/migrate-prod.ts`, migration **avant** de pousser `main`.

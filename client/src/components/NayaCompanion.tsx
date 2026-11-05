@@ -2,241 +2,35 @@ import { useState, useRef, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { fetchJson } from "@/lib/fetchJson";
 import { useProject } from "@/lib/project-context";
-import { MessageCircle, X, Send, Loader2, Sparkles, ChevronDown } from "lucide-react";
+import { Send, Loader2, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
+import type { ActionFaite, PropositionVue, ReponseAgent } from "@shared/agent";
+import { ActionsFaites } from "@/components/companion/ActionsFaites";
+import { Propositions, type SuiviProposition } from "@/components/companion/Propositions";
+import { LigneRecherches } from "@/components/companion/LigneRecherches";
+import { doitInvalider, messageDepuisHistorique, propositionsAAjuster, raisonDeErreur } from "@/components/companion/companion-logique";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// L'agent agit côté serveur (POST /api/companion/chat) : le panneau affiche ce qu'il a
+// cherché, ce qu'il a fait (avec « Annuler ») et ce qu'il propose (« Valider » / « Annuler »).
+// Il n'exécute plus rien lui-même.
 interface Message {
  role: "user" | "assistant";
  content: string;
- actions?: CompanionAction[];
+ faites?: ActionFaite[];
+ propositions?: PropositionVue[];
+ recherches?: string[];
  isLoading?: boolean;
  /** Écran à ouvrir (messages des routines : « Bilan prêt » → onglet Mesure du projet). */
  lien?: string | null;
 }
 
-type CompanionAction =
- | { type: "create_task"; title: string; scheduledDate?: string; projectId?: number | null }
- | { type: "create_task_list"; title: string; items: { title: string }[]; linkedDate?: string; linkedTaskId?: number }
- | { type: "create_note"; content: string; projectId?: number | null }
- | { type: "create_reminder"; title: string; datetime: string }
- | { type: "complete_task"; taskId: number }
- | { type: "reschedule_task"; taskId: number; newDate: string; newTime?: string }
- | { type: "reschedule_day"; energyLevel?: string; reason?: string }
- | { type: "set_energy"; level: string }
- | { type: "create_project"; name: string; projectType?: string; description?: string; milestones?: { title: string; description?: string }[] }
- | { type: "create_milestone_chain"; projectId: number; milestones: any[] }
- | { type: "confirm_milestone"; milestoneId: number }
- | { type: "show_project_roadmap"; projectId: number }
- | { type: "saisir_mesure"; projectId: number; mois: string; champs: Record<string, unknown> };
-
-// ─── Action executor ─────────────────────────────────────────────────────────
-
-function useActionExecutor(activeProject: any, projects: any[]) {
- const queryClient = useQueryClient();
- const { toast } = useToast();
- const [, navigate] = useLocation();
- const { t } = useTranslation();
-
- // Résout le projectId depuis l'action, avec fallback sur projet actif ou premier projet
- const resolveProjectId = (actionProjectId?: number | null): number | null => {
- if (actionProjectId && actionProjectId > 0) return actionProjectId;
- if (activeProject?.id) return activeProject.id;
- if (projects.length > 0) return projects[0].id;
- return null;
- };
-
- return async (action: CompanionAction) => {
- try {
- switch (action.type) {
- case "create_task": {
- await apiRequest("POST", "/api/tasks", {
- title: action.title,
- type: "planning",
- category: "planning",
- priority: 3,
- scheduledDate: action.scheduledDate,
- projectId: resolveProjectId(action.projectId),
- source: "companion",
- });
- queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
- toast({ title: `Tâche créée`, description: action.title });
- break;
- }
-
- case "create_task_list": {
- await apiRequest("POST", "/api/task-lists", {
- title: action.title,
- items: action.items,
- linkedDate: action.linkedDate,
- linkedTaskId: action.linkedTaskId,
- });
- queryClient.invalidateQueries({ queryKey: ["/api/task-lists"] });
- toast({ title: `Liste créée`, description: `${action.title} — ${action.items.length} éléments` });
- break;
- }
-
- case "create_note": {
- await apiRequest("POST", "/api/capture", {
- content: action.content,
- captureType: "text",
- projectId: action.projectId,
- source: "companion",
- });
- queryClient.invalidateQueries({ queryKey: ["/api/capture"] });
- toast({ title: "Note enregistrée" });
- break;
- }
-
- case "create_reminder": {
- await apiRequest("POST", "/api/tasks", {
- title: action.title,
- type: "admin",
- category: "planning",
- priority: 2,
- scheduledDate: action.datetime?.slice(0, 10),
- scheduledTime: action.datetime?.slice(11, 16),
- source: "companion",
- });
- queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
- toast({ title: "⏰ Rappel créé", description: action.title });
- break;
- }
-
- case "complete_task": {
- await apiRequest("PATCH", `/api/tasks/${action.taskId}`, {
- completed: true,
- completedAt: new Date().toISOString(),
- });
- queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
- toast({ title: "Tâche complétée" });
- break;
- }
-
- case "saisir_mesure": {
- // Chiffres du mois dits en une phrase : seuls ceux-là sont écrits (rien n'est effacé).
- // Jamais de repli sur le projet actif ou le premier : un projet explicite, à elle ; un
- // mois au bon format (il entre dans l'adresse de la requête).
- const pid = Number(action.projectId);
- if (!projects.some((p: any) => p.id === pid) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(String(action.mois))) {
- toast({ title: t("companion.mesureProjetInconnu"), variant: "destructive" });
- break;
- }
- await apiRequest("POST", `/api/mesure/${pid}/mois/${encodeURIComponent(action.mois)}/completer`, action.champs);
- queryClient.invalidateQueries({ queryKey: [`/api/mesure/${pid}`] });
- toast({ title: t("companion.mesureEnregistree", { mois: action.mois }) });
- break;
- }
-
- case "reschedule_day": {
- // Replanifie toutes les tâches incomplètes d'aujourd'hui via l'auto-rebalance
- const today = new Date().toISOString().slice(0, 10);
- await apiRequest("POST", "/api/tasks/rebalance", {
- date: today,
- energyLevel: action.energyLevel || "medium",
- reason: action.reason,
- });
- queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
- toast({ title: "Journée réorganisée", description: action.reason || "Adapté à ton énergie du moment." });
- break;
- }
-
- case "reschedule_task": {
- await apiRequest("PATCH", `/api/tasks/${action.taskId}`, {
- scheduledDate: action.newDate,
- scheduledTime: action.newTime,
- });
- queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
- toast({ title: "Tâche replanifiée" });
- break;
- }
-
- case "create_project": {
- if (!action.name?.trim()) {
- toast({ title: "Erreur", description: "Nom du projet manquant", variant: "destructive" });
- break;
- }
- // 1. Créer le projet
- const projRes = await apiRequest("POST", "/api/projects", {
- name: action.name,
- type: action.projectType || "other",
- description: action.description || "",
- projectStatus: "active",
- });
- const newProject = await projRes.json();
- queryClient.invalidateQueries({ queryKey: ["/api/projects?limit=200"] });
- // 2. Si des jalons sont fournis, créer la chaîne
- if (Array.isArray(action.milestones) && action.milestones.length > 0 && newProject?.id) {
- await apiRequest("POST", `/api/projects/${newProject.id}/milestone-chain`, {
- milestones: action.milestones,
- });
- queryClient.invalidateQueries({ queryKey: [`/api/projects/${newProject.id}/milestones`] });
- toast({
- title: `Projet créé : ${action.name}`,
- description: `${action.milestones.length} jalons ajoutés`,
- });
- } else {
- toast({ title: `Projet créé : ${action.name}` });
- }
- break;
- }
-
- case "set_energy": {
- await apiRequest("PATCH", "/api/preferences", {
- currentEnergyLevel: action.level,
- energyUpdatedDate: new Date().toISOString().slice(0, 10),
- });
- queryClient.invalidateQueries({ queryKey: ["/api/preferences"] });
- toast({ title: `Énergie mise à jour : ${action.level}` });
- break;
- }
-
- case "create_milestone_chain": {
- const pid = resolveProjectId((action as any).projectId);
- const milestones = action.milestones;
- if (!pid) {
- toast({ title: "Erreur", description: "Aucun projet sélectionné pour créer les jalons", variant: "destructive" });
- break;
- }
- if (!Array.isArray(milestones) || milestones.length === 0) {
- toast({ title: "Erreur", description: "Aucun jalon dans la chaîne générée", variant: "destructive" });
- break;
- }
- await apiRequest("POST", `/api/projects/${pid}/milestone-chain`, { milestones });
- queryClient.invalidateQueries({ queryKey: [`/api/projects/${pid}/milestones`] });
- queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
- toast({ title: "Chaîne de jalons créée", description: `${milestones.length} jalons` });
- break;
- }
-
- case "confirm_milestone": {
- await apiRequest("POST", `/api/milestones/${action.milestoneId}/confirm`);
- queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
- toast({ title: "Jalon confirmé" });
- break;
- }
-
- case "show_project_roadmap": {
- navigate("/projects");
- break;
- }
- }
- } catch (err: any) {
- toast({
- title: "Erreur",
- description: err?.message || "Action impossible",
- variant: "destructive",
- });
- }
- };
-}
+const RAISONS_PROPOSITION = ["expiree", "deja_traitee", "introuvable"] as const;
 
 // ─── Shared hook: chat state + mutation ──────────────────────────────────────
 
@@ -251,7 +45,8 @@ function useCompanionChat() {
  const activeProject = projects.find((p: any) => p.id === activeProjectId) ?? null;
  const today = new Date().toISOString().slice(0, 10);
  const { data: todayTasks = [] } = useQuery<any[]>({ queryKey: ['/api/tasks', today], queryFn: () => fetchJson(`/api/tasks?date=${today}`) });
- const executeAction = useActionExecutor(activeProject, projects);
+ const [suiviPropositions, setSuiviPropositions] = useState<Record<number, SuiviProposition | undefined>>({});
+ const invaliderDonnees = () => queryClient.invalidateQueries({ predicate: (q) => doitInvalider(q.queryKey) });
 
  const { data: history } = useQuery<any[]>({
  queryKey: ["/api/companion/history"],
@@ -270,7 +65,7 @@ function useCompanionChat() {
 
  const pending = pendingData?.messages ?? [];
  const historyMsgs = history
- ? history.map((m: any) => ({ role: m.role as "user" | "assistant", content: m.content, actions: m.actions }))
+ ? history.map((m: any): Message => messageDepuisHistorique(m))
  : [];
 
  if (pending.length > 0 || historyMsgs.length > 0) {
@@ -313,7 +108,7 @@ function useCompanionChat() {
  }, [setOpen, queryClient]);
 
  const chatMutation = useMutation({
- mutationFn: async (message: string): Promise<{ message: string; actions?: CompanionAction[]; suggestions?: string[] }> => {
+ mutationFn: async (message: string): Promise<ReponseAgent> => {
  const now = new Date();
  const res = await apiRequest(
  "POST",
@@ -333,16 +128,20 @@ function useCompanionChat() {
  );
  return res.json();
  },
- onSuccess: async (data) => {
+ onSuccess: (data) => {
+ const faites = Array.isArray(data.faites) ? data.faites : [];
  setMessages(prev => {
  const withoutLoading = prev.filter(m => !m.isLoading);
- return [...withoutLoading, { role: "assistant", content: data.message, actions: data.actions }];
+ return [...withoutLoading, {
+ role: "assistant",
+ content: data.message,
+ faites,
+ propositions: Array.isArray(data.propositions) ? data.propositions : [],
+ recherches: Array.isArray(data.recherches) ? data.recherches : [],
+ }];
  });
- if (data.actions?.length) {
- for (const action of data.actions) {
- await executeAction(action);
- }
- }
+ // L'agent a déjà agi côté serveur : on rafraîchit ce qu'il a pu toucher.
+ if (faites.length > 0) invaliderDonnees();
  },
  onError: (err: any) => {
  const limit = String(err?.message || err).includes("ai_monthly_limit_reached");
@@ -355,10 +154,48 @@ function useCompanionChat() {
  },
  });
 
+ const validerProposition = async (id: number) => {
+ setSuiviPropositions(s => ({ ...s, [id]: { statut: "envoi" } }));
+ try {
+ const res = await apiRequest("POST", `/api/agent/propositions/${id}/valider`);
+ const r: { reussis?: string[]; echecs?: string[] } = await res.json();
+ setSuiviPropositions(s => ({ ...s, [id]: { statut: "validee", reussis: r.reussis ?? [], echecs: r.echecs ?? [] } }));
+ invaliderDonnees();
+ } catch (err) {
+ const raison = raisonDeErreur(err, RAISONS_PROPOSITION);
+ setSuiviPropositions(s => ({ ...s, [id]: { statut: "erreur", cle: `companion.proposition.${raison ?? "erreur"}` } }));
+ }
+ };
+
+ const annulerProposition = async (id: number) => {
+ setSuiviPropositions(s => ({ ...s, [id]: { statut: "envoi" } }));
+ try {
+ await apiRequest("POST", `/api/agent/propositions/${id}/annuler`);
+ setSuiviPropositions(s => ({ ...s, [id]: { statut: "annulee" } }));
+ } catch (err) {
+ const raison = raisonDeErreur(err, RAISONS_PROPOSITION);
+ setSuiviPropositions(s => ({ ...s, [id]: { statut: "erreur", cle: `companion.proposition.${raison ?? "erreur"}` } }));
+ }
+ };
+
  const handleSend = () => {
  const msg = input.trim();
  if (!msg || chatMutation.isPending) return;
  setInput("");
+ // « Ajuster » : un nouveau message met de côté les propositions encore en attente.
+ const aMettreDeCote = propositionsAAjuster(messages, Object.fromEntries(
+ Object.entries(suiviPropositions).map(([k, v]) => [k, v?.statut]),
+ ), new Date());
+ if (aMettreDeCote.length > 0) {
+ setSuiviPropositions(s => {
+ const suite = { ...s };
+ for (const id of aMettreDeCote) suite[id] = { statut: "ajustee" };
+ return suite;
+ });
+ for (const id of aMettreDeCote) {
+ apiRequest("POST", `/api/agent/propositions/${id}/annuler`).catch(() => {});
+ }
+ }
  setMessages(prev => [
  ...prev,
  { role: "user", content: msg },
@@ -380,6 +217,9 @@ function useCompanionChat() {
  messages,
  activeProject,
  chatMutation,
+ suiviPropositions,
+ validerProposition,
+ annulerProposition,
  handleSend,
  handleKeyDown,
  unreadCount: pendingData?.unreadCount ?? 0,
@@ -388,7 +228,13 @@ function useCompanionChat() {
 
 // ─── Messages panel (shared between modes) ───────────────────────────────────
 
-function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; messagesEndRef: React.RefObject<HTMLDivElement> }) {
+function MessagesPanel({ messages, messagesEndRef, suivi, onValider, onAnnuler }: {
+ messages: Message[];
+ messagesEndRef: React.RefObject<HTMLDivElement>;
+ suivi: Record<number, SuiviProposition | undefined>;
+ onValider: (id: number) => void;
+ onAnnuler: (id: number) => void;
+}) {
  const { t } = useTranslation();
  const [, navigate] = useLocation();
  return (
@@ -463,7 +309,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
  letterSpacing: '0.02em',
  }}
  >
- · · ·
+ {t('companion.cherche')}
  </span>
  ) : (
  <p
@@ -488,36 +334,17 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
  {t('companion.ouvrir')}
  </button>
  )}
- {msg.actions && msg.actions.length > 0 && (
- <div
- style={{
- marginTop: 8,
- paddingTop: 8,
- borderTop: '1px solid var(--border)',
- display: 'flex',
- flexDirection: 'column',
- gap: 3,
- }}
- >
- {msg.actions.map((a, j) => (
- <div
- key={j}
- style={{
- fontFamily: '"IBM Plex Mono", monospace',
- fontSize: '0.5625rem',
- letterSpacing: '0.02em',
- fontWeight: 300,
- color: 'var(--accent)',
- display: 'flex',
- alignItems: 'center',
- gap: 5,
- }}
- >
- <span style={{ opacity: 0.6 }}>◆</span>
- <ActionLabel action={a} />
- </div>
- ))}
- </div>
+ {!msg.isLoading && msg.role === "assistant" && (
+ <>
+ <LigneRecherches recherches={msg.recherches ?? []} />
+ <ActionsFaites faites={msg.faites ?? []} />
+ <Propositions
+ propositions={msg.propositions ?? []}
+ suivi={suivi}
+ onValider={onValider}
+ onAnnuler={onAnnuler}
+ />
+ </>
  )}
  </div>
  </div>
@@ -530,7 +357,7 @@ function MessagesPanel({ messages, messagesEndRef }: { messages: Message[]; mess
 // ─── Mode "header" — barre inline dans le dashboard ──────────────────────────
 
 export function NayaCompanionBar() {
- const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount } = useCompanionChat();
+ const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition } = useCompanionChat();
  const { t } = useTranslation();
  const messagesEndRef = useRef<HTMLDivElement>(null);
  const inputRef = useRef<HTMLInputElement>(null);
@@ -710,7 +537,7 @@ export function NayaCompanionBar() {
  </button>
  </div>
 
- <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} />
+ <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} suivi={suiviPropositions} onValider={validerProposition} onAnnuler={annulerProposition} />
 
  {/* Input dans le panel */}
  <div style={{ borderTop: '1px solid var(--border)', padding: 10 }}>
@@ -743,7 +570,7 @@ export function NayaCompanionBar() {
 // ─── Mode "floating" — bouton flottant (toutes les autres pages) ──────────────
 
 export default function NayaCompanion() {
- const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount } = useCompanionChat();
+ const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition } = useCompanionChat();
  const { t } = useTranslation();
  const messagesEndRef = useRef<HTMLDivElement>(null);
  const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -882,7 +709,7 @@ export default function NayaCompanion() {
  </button>
  </div>
 
- <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} />
+ <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} suivi={suiviPropositions} onValider={validerProposition} onAnnuler={annulerProposition} />
 
  {/* Input */}
  <div style={{ borderTop: '1px solid var(--border)', padding: 12 }}>
@@ -915,24 +742,4 @@ export default function NayaCompanion() {
  )}
  </>
  );
-}
-
-function ActionLabel({ action }: { action: CompanionAction }) {
- const { t } = useTranslation();
- switch (action.type) {
- case "create_project": return <span>Projet créé : {action.name}{action.milestones?.length ? ` · ${action.milestones.length} jalons` : ""}</span>;
- case "reschedule_day": return <span>Journée réorganisée{action.reason ? ` — ${action.reason}` : ""}</span>;
- case "create_task": return <span>Tâche créée : {action.title}</span>;
- case "create_task_list": return <span>Liste créée : {action.title}</span>;
- case "create_note": return <span>Note enregistrée</span>;
- case "create_reminder": return <span>Rappel : {action.title}</span>;
- case "complete_task": return <span>Tâche #{action.taskId} complétée</span>;
- case "reschedule_task": return <span>Tâche replanifiée au {action.newDate}</span>;
- case "set_energy": return <span>Énergie → {action.level}</span>;
- case "create_milestone_chain": return <span>{action.milestones.length} jalons créés</span>;
- case "confirm_milestone": return <span>Jalon confirmé</span>;
- case "show_project_roadmap": return <span>Ouverture roadmap</span>;
- case "saisir_mesure": return <span>{t("companion.mesureEnregistree", { mois: action.mois })}</span>;
- default: return null;
- }
 }

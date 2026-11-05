@@ -56,7 +56,8 @@ import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
-import { filtrerEditionTache } from "./services/taches/edition";
+import { creerTache, modifierTache } from "./services/taches/ecrire-tache";
+import { confirmerJalon, creerChaineJalons, creerProjet } from "./services/projets/ecrire-projet";
 import { refuserPost } from "./services/refus-post/service";
 import { refusPostDeps } from "./services/refus-post/deps";
 import { estRaisonRefusPost, estPublieOuEnCours } from "./services/refus-post/pur";
@@ -73,7 +74,7 @@ import { stripe, getOrCreateCustomer, createCheckoutSession, createPortalSession
 import { syncSubscriptionFromStripe, redeemAccessCode } from "./services/billing";
 import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
-import { dateDeRetassage, aujourdhuiParis } from "./services/repack-from";
+import { aujourdhuiParis } from "./services/repack-from";
 import {
   apercuRepenser, lancerRepenser, registreRepenser, repenserEnCours, StatutIncompatible, DejaEnCours,
   CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
@@ -84,8 +85,8 @@ import { runCampaignSearch, sourcerCampagne, cibleDeCampagne, prospectsParJourDe
 import { generateStepMessage, combineInstructions, BriefIncompletError } from "./services/sequence-message";
 import { etatGardeApercu } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
-import { checkAndUnlockMilestones, confirmMilestone, createMilestoneChain } from "./services/milestone-engine";
-import { processCompanionMessage } from "./services/companion";
+import { checkAndUnlockMilestones } from "./services/milestone-engine";
+import { registerAgentRoutes } from "./routes-agent";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
@@ -96,7 +97,7 @@ import { enrolerEnMasse } from "./services/prospection-enrolement";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
 import { synchroniserValidationsProspection } from "./services/prospection-verification";
-import { verrouDeTache } from "./services/task-lock";
+import { verrouPourTache } from "./services/task-lock-verrou";
 import { etatConnexion } from "./services/social-connection-state";
 import { deposerDossier, listerDossiers, dossierExiste, retirerDossier } from "./services/memory/deposer-dossier";
 import { indexerManquants, depsReelles, sonderEmbeddings, compterManquants, invaliderSonde } from "./services/memory/indexer-manquants";
@@ -187,7 +188,6 @@ import {
 import { ObjectPermission } from "./objectAcl";
 import { 
   insertBrandDnaSchema, 
-  insertTaskSchema, 
   insertContentSchema, 
   insertLeadSchema, 
   insertOutreachMessageSchema,
@@ -200,7 +200,6 @@ import {
   updateSocialAccountSchema,
   insertMediaLibrarySchema,
   updateMediaLibrarySchema,
-  insertProjectSchema,
   insertProjectGoalSchema,
   insertProjectStrategyProfileSchema,
   insertQuickCaptureSchema,
@@ -215,7 +214,6 @@ import { annulerReprise, vueReprises } from "./services/reprise";
 import { depsAnnulation } from "./services/reprise/deps";
 import { preferencesDeFinOnboarding } from "./services/planning-start";
 import { appliquerEtatFait, idEvenementValide, lireFaits, marquerFait, retirerFait } from "./services/agenda/faits";
-import { resolveScheduledEndTime } from "./services/task-schedule-fields";
 import { filtrerTachesGenerees } from "./services/filtre-taches-generees";
 import { marquerTachesDesJalonsVerrouilles } from "./services/jalons-verrouilles";
 import { estPourJalonVerrouille } from "./services/marques-jalons";
@@ -1844,18 +1842,9 @@ Write in clear, direct language. Be specific — reference actual offers, audien
 
   app.post('/api/projects', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const projectData = insertProjectSchema.parse({ ...req.body, userId });
-      const existingProjects = await storage.getProjects(userId);
-      if (existingProjects.length === 0) {
-        projectData.isPrimary = true;
-        projectData.priorityLevel = 'primary';
-      }
-      const project = await storage.createProject(projectData);
-      if (existingProjects.length === 0) {
-        await storage.upsertUserPreferences(userId, { activeProjectId: project.id });
-      }
-      res.json(project);
+      // Logique partagée avec l'agent : voir services/projets/ecrire-projet.ts.
+      const r = await creerProjet(req.userId, req.body);
+      res.json(r.projet);
     } catch (error) {
       console.error("Error creating project:", error);
       res.status(500).json({ message: "Failed to create project" });
@@ -3152,21 +3141,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/projects/:id/milestone-chain — création en bloc depuis le Companion
   app.post('/api/projects/:id/milestone-chain', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const projectId = parseInt(req.params.id);
-      if (isNaN(projectId)) return res.status(400).json({ message: "projectId invalide" });
-      const { milestones } = req.body;
-      if (!Array.isArray(milestones) || milestones.length === 0) {
-        return res.status(400).json({ message: "milestones[] requis" });
-      }
-      // Vérifier que chaque jalon a un title
-      const valid = milestones.every((m: any) => typeof m?.title === 'string' && m.title.trim());
-      if (!valid) return res.status(400).json({ message: "Chaque jalon doit avoir un title" });
-      // Vérifier que le projet appartient à l'utilisateur
-      const project = await storage.getProject(projectId, userId);
-      if (!project) return res.status(404).json({ message: "Projet introuvable" });
-      const chain = await createMilestoneChain(projectId, userId, milestones);
-      res.json(chain);
+      // Logique partagée avec l'agent : voir services/projets/ecrire-projet.ts.
+      const r = await creerChaineJalons(req.userId, parseInt(req.params.id), req.body);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.jalons);
     } catch (error: any) {
       console.error("Error creating milestone chain:", error);
       res.status(500).json({
@@ -3314,14 +3292,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   // POST /api/milestones/:id/confirm — confirmation manuelle
   app.post('/api/milestones/:id/confirm', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const id = parseInt(req.params.id);
-      const milestone = await storage.getMilestone(id);
-      if (!milestone || milestone.userId !== userId) {
-        return res.status(404).json({ message: "Jalon introuvable" });
-      }
-      const updated = await confirmMilestone(id);
-      res.json(updated);
+      // Logique partagée avec l'agent : voir services/projets/ecrire-projet.ts.
+      const r = await confirmerJalon(req.userId, parseInt(req.params.id));
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.jalon);
     } catch (error) {
       console.error("Error confirming milestone:", error);
       res.status(500).json({ message: "Échec de la confirmation du jalon" });
@@ -3377,92 +3351,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   // ─── Companion IA ────────────────────────────────────────────────────────────
 
-  app.post('/api/companion/chat', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.userId;
-      if (await isAiBlocked(userId)) return res.status(429).json({ message: 'ai_monthly_limit_reached' });
-      const { message, context, conversationHistory } = req.body;
-
-      if (!message?.trim()) {
-        return res.status(400).json({ message: "message requis" });
-      }
-
-      // Enrichir le contexte avec les projets réels chargés depuis la DB
-      const userProjects = await storage.getProjects(userId);
-
-      // Injecter les tâches abandonnées (deferred 3x+) — concept 100% server-side
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10);
-      const in7Days = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-      const lookbackDate = new Date(now);
-      lookbackDate.setDate(lookbackDate.getDate() - 14);
-      const lookback = lookbackDate.toISOString().slice(0, 10);
-
-      const [recentTasks, upcomingRawTasks, prefs, brandDna] = await Promise.all([
-        storage.getTasksInRange(userId, lookback, today).catch(() => []),
-        storage.getTasksInRange(userId, today, in7Days).catch(() => []),
-        storage.getUserPreferences(userId).catch(() => null),
-        storage.getBrandDna(userId).catch(() => null),
-      ]);
-
-      const staleTasks = (recentTasks as any[])
-        .filter(t => !t.completed && (t.learnedAdjustmentCount || 0) >= 3)
-        .map(t => ({ id: t.id, title: t.title, learnedAdjustmentCount: t.learnedAdjustmentCount as number }))
-        .slice(0, 8);
-
-      const upcomingTasks = (upcomingRawTasks as any[])
-        .filter((t: any) => !t.completed && String(t.scheduledDate).slice(0, 10) > today)
-        .slice(0, 10)
-        .map((t: any) => ({ title: t.title, date: String(t.scheduledDate).slice(0, 10), time: t.scheduledTime || undefined, taskId: t.id }));
-
-      // Trouver le jalon actif du projet actif
-      const clientContext = context || {};
-      const activeProjectId = clientContext.activeProject?.id || (userProjects[0] as any)?.id;
-      let activeMilestone = null;
-      if (activeProjectId) {
-        const milestones = await storage.getMilestones(activeProjectId, userId).catch(() => []);
-        const found = (milestones as any[]).find(m => m.status === 'active' || m.status === 'unlocked');
-        if (found) activeMilestone = { id: found.id, title: found.title, status: found.status };
-      }
-
-      const enrichedContext = {
-        currentDate: today,
-        currentTime: now.toTimeString().slice(0, 5),
-        ...(clientContext),
-        availableProjects: userProjects.slice(0, 15).map((p: any) => ({ id: p.id, name: p.name, type: p.type })),
-        ...(staleTasks.length > 0 ? { staleTasks } : {}),
-        energyLevel: prefs?.currentEnergyLevel || 'high',
-        upcomingTasks,
-        activeMilestone,
-        brandDnaSummary: (brandDna as any)?.nayaIntelligenceSummary || null,
-      };
-
-      const response = await processCompanionMessage(userId, {
-        message,
-        context: enrichedContext,
-        conversationHistory: conversationHistory || [],
-      });
-
-      res.json(response);
-
-      // Mémoire (Phase 2, best-effort) : extraire de ce tour de conversation.
-      // Routage de marque (BRIEF-FIX-ROUTAGE-MARQUE) : la marque-sujet est la marque
-      // NOMMÉE dans la conversation (message + historique), PAS le projet actif (faillible).
-      const convoText = [...(conversationHistory || []).map((m: any) => m?.content || ""), message].join("\n");
-      const subject = resolveSubjectBrand(convoText, (userProjects as any[]).map((p) => ({ id: p.id, name: p.name })));
-      console.info(`[brand-routing] companion active=${activeProjectId ?? "null"} subject=${subject.projectId ?? "null"} matched=[${subject.matched.join(", ")}] ambiguous=${subject.ambiguous}`);
-      extractToMemory({
-        userId,
-        projectId: activeProjectId ?? null,        // audit only
-        subjectProjectId: subject.projectId,        // marque-sujet résolue (ou null → cap/reception sautés)
-        sourceText: `Utilisateur : ${message}\nNaya : ${(response as any)?.message ?? ""}`,
-        sourceType: "companion",
-      }).catch(() => {});
-    } catch (error: any) {
-      console.error("Companion chat error:", error?.message || error);
-      res.status(500).json({ message: "Erreur du Companion", detail: error?.message });
-    }
-  });
+  // POST /api/companion/chat : servi par l'agent omniscient (routes-agent.ts, enregistré plus bas).
 
   app.get('/api/companion/history', isAuthenticated, async (req: any, res) => {
     try {
@@ -4224,45 +4113,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.post('/api/tasks', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
-      const taskData = insertTaskSchema.parse({ ...req.body, userId });
-
-      // Weekend check — still a hard reject (don't silently move to a work day)
-      if (taskData.scheduledDate) {
-        const prefs = await storage.getUserPreferences(userId).catch(() => null);
-        const workDaySet = parseWorkDays(prefs?.workDays);
-        const dow = new Date(taskData.scheduledDate + 'T00:00:00').getDay();
-        if (!workDaySet.has(DAY_ABBRS[dow])) {
-          const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-          return res.status(400).json({ message: `${names[dow]} is not one of your work days.` });
-        }
-      }
-
-      // Auto-assign time: date définie mais pas d'heure → trouver le premier créneau libre
-      if (taskData.scheduledDate && !taskData.scheduledTime) {
-        const slot = await storage.findFirstFreeSlot(userId, taskData.scheduledDate, taskData.estimatedDuration || 30);
-        taskData.scheduledDate = slot.date;
-        taskData.scheduledTime = slot.time;
-        const [h, m] = slot.time.split(':').map(Number);
-        const endMin = h * 60 + m + (taskData.estimatedDuration || 30);
-        taskData.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2, '0')}:${String(endMin % 60).padStart(2, '0')}`;
-      }
-
-      // Slot conflict — auto-shift to next available time, never reject
-      if (taskData.scheduledDate && taskData.scheduledTime && taskData.estimatedDuration) {
-        const check = await storage.checkSlotAvailability(
-          userId, taskData.scheduledDate, taskData.scheduledTime, taskData.estimatedDuration
-        );
-        if (!check.available && check.nextAvailableTime) {
-          taskData.scheduledTime = check.nextAvailableTime;
-          const [h, m] = check.nextAvailableTime.split(':').map(Number);
-          const endMin = h * 60 + m + taskData.estimatedDuration;
-          taskData.scheduledEndTime = `${String(Math.floor(endMin / 60)).padStart(2,'0')}:${String(endMin % 60).padStart(2,'0')}`;
-        }
-      }
-
-      const task = await storage.createTask(taskData);
-      res.json(task);
+      // Logique partagée avec l'agent : voir services/taches/ecrire-tache.ts.
+      const r = await creerTache(req.userId, req.body);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.tache);
     } catch (error) {
       console.error("Error creating task:", error);
       res.status(500).json({ message: "Failed to create task" });
@@ -4392,123 +4246,18 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
   app.patch('/api/tasks/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.userId;
       const { id } = req.params;
-
-      // Propriété AVANT toute écriture : un identifiant fictif (événement d'agenda, jalon
-      // virtuel) ou la tâche d'un autre compte → 404, rien n'est modifié.
+      // Un identifiant non numérique (événement d'agenda, jalon virtuel) → 404 avant tout.
       if (!/^\d+$/.test(String(id))) return res.status(404).json({ message: 'task_not_found' });
-      const taskId = parseInt(id);
-      const currentTask = await storage.getTask(taskId);
-      if (!currentTask || (currentTask as any).userId !== userId) {
-        return res.status(404).json({ message: 'task_not_found' });
-      }
-
-      // Liste blanche : on n'écrit jamais `userId`, `id`, `projectId`… venus du corps.
-      const filtre = filtrerEditionTache(req.body);
-      if (!filtre.ok) return res.status(400).json({ message: filtre.erreur });
-      const updates: any = filtre.updates;
-
-      // If updating schedule-related fields, apply slot-safe logic
-      const touchesSchedule = !!(updates.scheduledDate || updates.scheduledTime || updates.estimatedDuration);
-      let ancienneDate: string | null = null;
-      if (touchesSchedule) {
-        ancienneDate = currentTask.scheduledDate ?? null;
-
-        const merged = { ...currentTask, ...updates, userId };
-
-        // Weekend check — hard reject
-        if (merged.scheduledDate) {
-          const prefs = await storage.getUserPreferences(userId).catch(() => null);
-          const workDaySet = parseWorkDays(prefs?.workDays);
-          const dow = new Date(merged.scheduledDate + 'T00:00:00').getDay();
-          if (!workDaySet.has(DAY_ABBRS[dow])) {
-            const names = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-            return res.status(400).json({ message: `${names[dow]} is not one of your work days.` });
-          }
-        }
-
-        // Auto-assign time: date définie mais pas d'heure → trouver le premier créneau libre
-        if (merged.scheduledDate && !merged.scheduledTime) {
-          const slot = await storage.findFirstFreeSlot(userId, merged.scheduledDate, merged.estimatedDuration || 30);
-          updates.scheduledDate = slot.date;
-          updates.scheduledTime = slot.time;
-          merged.scheduledDate = slot.date;
-          merged.scheduledTime = slot.time;
-          // `scheduledEndTime` est dérivée plus bas, une seule fois pour tous les chemins.
-        }
-
-        // Slot conflict — auto-shift
-        if (merged.scheduledDate && merged.scheduledTime && merged.estimatedDuration) {
-          const check = await storage.checkSlotAvailability(
-            userId, merged.scheduledDate, merged.scheduledTime, merged.estimatedDuration, taskId
-          );
-          if (!check.available && check.nextAvailableTime) {
-            updates.scheduledTime = check.nextAvailableTime;
-            merged.scheduledTime = check.nextAvailableTime;
-          }
-        }
-
-        // `scheduledEndTime` est DÉRIVÉE : on la recalcule dès que l'heure ou la durée
-        // bouge, quel que soit le chemin. Sans ça, redimensionner une carte (qui n'envoie
-        // que `estimatedDuration`) laissait une heure de fin périmée en base.
-        updates.scheduledEndTime = resolveScheduledEndTime(
-          merged.scheduledTime,
-          merged.estimatedDuration,
-        );
-      }
-
-      // Normalise completedAt : si completed=true, on force un vrai Date (pas une string ISO)
-      const safeUpdates: any = { ...updates };
-      if (safeUpdates.completed === true) {
-        safeUpdates.completedAt = new Date();
-      }
-      // Retire completedAt si c'est une string (envoyée par vieux clients)
-      if (typeof safeUpdates.completedAt === 'string') {
-        safeUpdates.completedAt = new Date(safeUpdates.completedAt);
-      }
-
-      const task = await storage.updateTask(taskId, safeUpdates);
-
-      // Règle du projet : tout chemin de (re)planification se termine par le filet
-      // idempotent. Cette route ne le faisait pas — déplacer ou redimensionner une carte
-      // pouvait donc laisser la journée en chevauchement jusqu'au prochain passage d'un
-      // worker (toutes les 15 min), voire durablement si aucun worker ne tournait.
-      // On repart du MIN(ancienne, nouvelle date) : un prérequis déplacé de mardi à jeudi
-      // doit recharger le mercredi, sinon son dépendant reste devant lui.
-      const depuis = touchesSchedule ? dateDeRetassage(ancienneDate, task?.scheduledDate) : null;
-      if (depuis) {
-        await storage.fixOverlappingTasks(userId, depuis).catch((e: any) =>
-          console.error('[tasks:patch] fixOverlappingTasks:', e?.message),
-        );
-      }
-
-      res.json(task);
+      // Logique partagée avec l'agent : voir services/taches/ecrire-tache.ts.
+      const r = await modifierTache(req.userId, parseInt(id), req.body);
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      res.json(r.tache);
     } catch (error) {
       console.error("Error updating task:", error);
       res.status(500).json({ message: "Failed to update task" });
     }
   });
-
-  /**
-   * Charge les dependances d'une tache et applique le verrou de sequence.
-   *
-   * Une dependance introuvable ne bloque pas : voir task-lock.ts. Une lecture qui echoue non
-   * plus — on ne verrouille pas le travail de quelqu'un parce qu'une requete a rate.
-   */
-  async function verrouPourTache(taskId: number) {
-    const dependances = await storage.getTaskDependencies(taskId).catch(() => [] as any[]);
-    if (!dependances.length) return { verrouillee: false, bloqueePar: [] as { id: number; titre: string }[] };
-
-    const prerequis = new Map<number, { title: string | null; completed: boolean | null }>();
-    for (const d of dependances as any[]) {
-      const id = d?.dependsOnTaskId;
-      if (typeof id !== 'number') continue;
-      const t = await storage.getTask(id).catch(() => undefined);
-      if (t) prerequis.set(id, { title: (t as any).title ?? null, completed: (t as any).completed ?? null });
-    }
-    return verrouDeTache({ dependances: dependances as any[], prerequis, tacheId: taskId });
-  }
 
   app.post('/api/tasks/:id/complete', isAuthenticated, async (req: any, res) => {
     try {
@@ -11444,6 +11193,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerConnexionsRoutes(app);
   registerReponsesRoutes(app);
   registerRapportsRoutes(app);
+  registerAgentRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;

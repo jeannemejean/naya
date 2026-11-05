@@ -3,6 +3,7 @@
 // STRICTEMENT inchangées : aucun site d'appel ne doit être modifié.
 
 import type { Response } from "express";
+import type Anthropic from "@anthropic-ai/sdk";
 import { NAYA_SYSTEM_VOICE } from "../naya-voice";
 import { buildNayaContext } from "./naya-context";
 import { recordSpend, estimateClaudeCostEur } from "./usage";
@@ -152,6 +153,96 @@ export async function callClaudeDetailed(options: CallClaudeOptions): Promise<{ 
   });
 
   return { text: result.text, stopReason: result.stopReason, coutEur: costEur ?? 0 };
+}
+
+/**
+ * Un appel Claude AVEC OUTILS (agent omniscient). Claude uniquement, modèle choisi par le
+ * routeur (`strategic_reasoning`). Un seul appel : la boucle d'outils vit dans
+ * services/agent/boucle.ts. Journalisé (logInvocation) et compté (recordSpend) comme
+ * callClaudeDetailed. `tool_choice: {type: "none"}` sert au dernier appel de la boucle :
+ * les outils restent déclarés (l'historique contient des tool_use), mais le modèle ne peut
+ * plus en appeler.
+ */
+export async function appelerClaudeAvecOutils(opts: {
+  userId: string;
+  projectId?: number;
+  system: string;
+  messages: Anthropic.MessageParam[];
+  tools: Anthropic.Tool[];
+  max_tokens?: number;
+  tool_choice?: Anthropic.ToolChoice;
+}): Promise<Anthropic.Message> {
+  const { provider, model } = route("strategic_reasoning");
+  const started = Date.now();
+
+  // Ce qu'on journalise côté entrée : le dernier message de l'utilisatrice (texte ou
+  // résultats d'outils).
+  const dernier = opts.messages[opts.messages.length - 1];
+  const userMessage = !dernier ? undefined
+    : typeof dernier.content === "string" ? dernier.content
+    : JSON.stringify(dernier.content).slice(0, 4000);
+
+  let reponse: Anthropic.Message;
+  try {
+    reponse = await anthropic.messages.create({
+      model,
+      max_tokens: opts.max_tokens ?? 4096,
+      // Cache de prompt : les consignes (et, avant elles, les outils) sont identiques d'un
+      // appel à l'autre de la boucle (jusqu'à 10 par message) : un point de cache ici les
+      // fait relire au tarif « cache » au lieu de les refacturer à chaque tour.
+      system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
+      messages: opts.messages,
+      ...(opts.tools.length > 0 ? { tools: opts.tools } : {}),
+      ...(opts.tool_choice ? { tool_choice: opts.tool_choice } : {}),
+    });
+  } catch (e: any) {
+    // Un appel en échec (surcharge, délai, réseau) est journalisé aussi : la table n'a pas de
+    // colonne de statut, l'échec se lit dans `output` (« [erreur] … ») et zéro token / coût.
+    logInvocation({
+      userId: opts.userId,
+      projectId: opts.projectId ?? null,
+      taskKind: "strategic_reasoning",
+      provider,
+      model,
+      systemPrompt: opts.system,
+      userMessage,
+      output: `[erreur] ${e?.status ? `${e.status} ` : ""}${e?.message ?? String(e)}`.slice(0, 2000),
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - started,
+      costEur: 0,
+    });
+    throw e;
+  }
+  const latencyMs = Date.now() - started;
+
+  const inputTokens = reponse.usage?.input_tokens ?? 0;
+  const outputTokens = reponse.usage?.output_tokens ?? 0;
+  const costEur = estimateClaudeCostEur(model, inputTokens, outputTokens);
+  recordSpend(opts.userId, costEur).catch(() => {});
+
+  // La sortie journalisée : texte + noms des outils demandés.
+  const output = reponse.content
+    .map((b) => (b.type === "text" ? b.text : b.type === "tool_use" ? `[outil ${b.name} ${JSON.stringify(b.input)}]` : ""))
+    .filter(Boolean)
+    .join("\n");
+
+  logInvocation({
+    userId: opts.userId,
+    projectId: opts.projectId ?? null,
+    taskKind: "strategic_reasoning",
+    provider,
+    model,
+    systemPrompt: opts.system,
+    userMessage,
+    output,
+    inputTokens,
+    outputTokens,
+    latencyMs,
+    costEur,
+  });
+
+  return reponse;
 }
 
 // Wrapper rétro-compatible : renvoie uniquement le texte (comportement historique).

@@ -309,6 +309,7 @@ export interface IStorage {
   createCaptureEntry(data: InsertQuickCaptureEntry): Promise<QuickCaptureEntry>;
   getCaptureEntries(userId: string, processed?: boolean): Promise<QuickCaptureEntry[]>;
   updateCaptureEntry(id: number, userId: string, data: Partial<QuickCaptureEntry>): Promise<QuickCaptureEntry | null>;
+  getCaptureEntry(id: number, userId: string): Promise<QuickCaptureEntry | undefined>;
   deleteCaptureEntry(id: number, userId: string): Promise<boolean>;
 
   // User Operating Profile operations
@@ -1234,6 +1235,12 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(quickCaptureEntries.id, id), eq(quickCaptureEntries.userId, userId)))
       .returning();
     return entry || null;
+  }
+
+  async getCaptureEntry(id: number, userId: string): Promise<QuickCaptureEntry | undefined> {
+    const [entry] = await db.select().from(quickCaptureEntries)
+      .where(and(eq(quickCaptureEntries.id, id), eq(quickCaptureEntries.userId, userId)));
+    return entry;
   }
 
   async deleteCaptureEntry(id: number, userId: string): Promise<boolean> {
@@ -3804,6 +3811,14 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
+  /** La tâche a-t-elle au moins un livrable de cette utilisatrice ? */
+  async tacheALivrables(taskId: number, userId: string): Promise<boolean> {
+    const [l] = await db.select({ id: livrables.id }).from(livrables)
+      .where(and(eq(livrables.taskId, taskId), eq(livrables.userId, userId)))
+      .limit(1);
+    return !!l;
+  }
+
   async getWorkspaceEntries(taskId: number): Promise<TaskWorkspaceEntry[]> {
     return await db.select().from(taskWorkspaceEntries)
       .where(eq(taskWorkspaceEntries.taskId, taskId))
@@ -4779,6 +4794,18 @@ export class DatabaseStorage implements IStorage {
     if (!list) return null;
     const items = await db.select().from(taskListItems).where(eq(taskListItems.listId, id)).orderBy(taskListItems.order);
     return { ...list, items };
+  }
+
+  /** Supprime une liste ET ses éléments (tout ou rien), seulement si elle appartient à userId. */
+  async deleteTaskList(id: number, userId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [list] = await tx.select({ id: taskLists.id }).from(taskLists)
+        .where(and(eq(taskLists.id, id), eq(taskLists.userId, userId)));
+      if (!list) return false;
+      await tx.delete(taskListItems).where(eq(taskListItems.listId, id));
+      await tx.delete(taskLists).where(eq(taskLists.id, id));
+      return true;
+    });
   }
 
   async updateTaskListItem(id: number, data: { completed?: boolean }): Promise<TaskListItem | null> {
