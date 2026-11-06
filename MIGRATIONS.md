@@ -549,3 +549,18 @@ Aucun `DROP`, aucun `ALTER` sur une table existante.
   le plafond d'emails ne se lit plus (le worker n'envoie pas), la création de prospect renvoie 500.
 - À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai,
   garde `scripts/migrate-prod.ts`, résultat vérifié (suivi 37 → 38, 3 tables, 3 FK, 5 index).
+
+### Production — migrée le 6 novembre 2026 (`0037`)
+
+- [x] État lu avant : suivi **37 lignes**, aucune des 3 tables, 34 prospects.
+- [x] Point de restauration : branche **`sauvegarde-avant-suppression-2026-11-06`** (`br-lucky-firefly-anfrzhxo`).
+- [x] Répétée sur la branche d'essai `essai-0037-2026-11-06` (`br-dark-lake-anlxm5ni`) forkée de la production,
+      avec le migrator drizzle : suivi 37 → 38, 3 tables, 8 index (3 clés primaires + 5), données intactes.
+- [x] Appliquée avec `scripts/migrate-prod.ts` (lancée par Jeanne).
+- [x] Résultat vérifié en prod : suivi **37 → 38**, 3 tables, 8 index, 34 prospects.
+- [ ] Pousser `main` (migration d'abord : fait).
+
+### Ce qui reste
+
+- [ ] Supprimer `essai-0037-2026-11-06`.
+- [ ] Supprimer `sauvegarde-avant-suppression-2026-11-06` quand le déploiement est stable.
