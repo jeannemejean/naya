@@ -567,13 +567,52 @@ Aucun `DROP`, aucun `ALTER` sur une table existante.
 
 ## 11. Salves — `0038` à appliquer en prod à la main
 
-Fichier : `migrations/0038_curvy_spitfire.sql` (**pas** appliqué en prod). Une table neuve et une
-colonne vide : aucun `DROP`, aucune donnée réécrite.
+Fichier : `migrations/0038_curvy_spitfire.sql` (**pas** appliqué en prod, ni sur dev-local). Une table neuve
+et une colonne vide : aucun `DROP`, aucune donnée réécrite.
 
 - Table : `prospection_salves` (`user_id` et `campaign_id` en `ON DELETE cascade`, index sur `campaign_id`).
 - Colonne : `lead_sequence_state.salve_id`, nullable, clé étrangère en `ON DELETE set null`.
 - **Ordre impératif : migration AVANT de pousser `main`.** Le code lit toutes les colonnes de
   `lead_sequence_state` : déployé sans `salve_id`, il casserait toutes les séquences.
-- À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai forkée de
-  la production, garde `scripts/migrate-prod.ts`, vérification de `salve_id` et de la table après coup.
+- Répétée le 6 novembre 2026 sur une branche forkée de **dev-local** (`essai-salves-0038-dev`, suivi 38 → 39),
+  avec les vraies requêtes de `storage.ts`. Pas encore sur une copie de la production.
+- Garde de `scripts/migrate-prod.ts` vérifiée à blanc le 6 novembre 2026 : refus sur un autre endpoint et sans URL.
 
+### Déroulé, dans cet ordre
+
+1. Fusionner `claude/salves-compagnon-755de2` dans `main` **sans pousser** : le script applique les fichiers
+   de `migrations/` du dossier d'où il est lancé, `0038` doit y être.
+2. Dans la console Neon, créer depuis `production` la sauvegarde `sauvegarde-avant-salves-2026-11-06`, puis la
+   branche d'essai `essai-0038-2026-11-06`.
+3. Sur la branche d'essai, depuis le dossier de `main` :
+   `DATABASE_URL='<URL de la branche d'essai>' npm run db:migrate`, puis vérifier le suivi 38 → 39 et les données.
+4. Lire en production, avant d'appliquer, les deux comptages ci-dessous : ils disent ce que le déploiement va changer.
+5. Appliquer : `MIGRATION_DATABASE_URL='<URL de production>' npx tsx scripts/migrate-prod.ts`, sortie sous les yeux.
+6. Vérifier le suivi 38 → 39, la table, la colonne, et que le nombre de prospects n'a pas bougé.
+7. Pousser `main` : c'est lui qui déploie, avec tous les commits en attente depuis `cb3e066`.
+
+### Les deux comptages (lecture seule)
+
+Séquences que le robot mettra en pause à leur prochain envoi, faute de validation :
+
+```sql
+select count(*) from lead_sequence_state s join leads l on l.id = s.lead_id
+where s.status in ('active', 'awaiting_linkedin') and l.validated_at is null;
+```
+
+Prospects déjà contactés qui resteront affichés « Messages prêts » (pas de rattrapage automatique) :
+
+```sql
+select count(*) from lead_sequence_state s join leads l on l.id = s.lead_id
+where s.last_step_sent_at is not null and l.stage = 'messages_ready';
+```
+
+### Vérification après application
+
+```sql
+select (select count(*) from drizzle.__drizzle_migrations) as suivi,
+       to_regclass('public.prospection_salves') as table_salves,
+       (select count(*) from information_schema.columns
+        where table_name = 'lead_sequence_state' and column_name = 'salve_id') as colonne_salve,
+       (select count(*) from leads) as prospects;
+```
