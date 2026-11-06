@@ -567,9 +567,8 @@ Aucun `DROP`, aucun `ALTER` sur une table existante.
 
 ## 11. Salves — `0038` à appliquer en prod à la main
 
-Fichier : `migrations/0038_curvy_spitfire.sql` (**pas** appliqué en prod). Appliqué sur dev-local `ep-jolly-sky`
-le 6 novembre 2026 (suivi 38 → 39, table, colonne, 3 FK, index vérifiés). Une table neuve et une colonne vide :
-aucun `DROP`, aucune donnée réécrite.
+Fichier : `migrations/0038_curvy_spitfire.sql`, appliqué sur dev-local `ep-jolly-sky` et en production le
+6 novembre 2026. Une table neuve et une colonne vide : aucun `DROP`, aucune donnée réécrite.
 
 - Table : `prospection_salves` (`user_id` et `campaign_id` en `ON DELETE cascade`, index sur `campaign_id`).
 - Colonne : `lead_sequence_state.salve_id`, nullable, clé étrangère en `ON DELETE set null`.
@@ -622,3 +621,22 @@ select (select count(*) from drizzle.__drizzle_migrations) as suivi,
         where table_name = 'lead_sequence_state' and column_name = 'salve_id') as colonne_salve,
        (select count(*) from leads) as prospects;
 ```
+
+### Production — migrée le 6 novembre 2026 (`0038`)
+
+Accord de Jeanne donné le soir même, chaque geste validé par elle dans la session.
+
+- [x] État lu avant : suivi **38 lignes**, 34 prospects, 3 utilisateurs, 2 séquences, 2 campagnes, 2 messages, ni table ni colonne.
+- [x] Point de restauration : branche **`sauvegarde-avant-salves-2026-11-06`** (`br-soft-smoke-antipfg1`).
+- [x] Répétée sur la branche d'essai `essai-0038-2026-11-06` (`br-empty-wildflower-anv67i1y`) forkée de la production,
+      avec `scripts/migrate-essai.ts` : suivi 38 → 39, table, colonne, 3 FK, index, données identiques.
+- [x] Comptages lus avant d'appliquer : 0 séquence sans validation, 0 prospect contacté resté à `messages_ready`.
+- [x] Appliquée avec `scripts/migrate-prod.ts` depuis `main` (`40f9baf`).
+- [x] Résultat vérifié en prod : suivi **38 → 39**, table, colonne nullable, 3 FK, index, 34 prospects, 3 utilisateurs,
+      2 séquences, aucune rattachée à une salve.
+- [ ] Pousser `main` (migration d'abord : fait).
+
+### Ce qui reste
+
+- [ ] Supprimer `essai-0038-2026-11-06` et `essai-salves-0038-dev`.
+- [ ] Supprimer `sauvegarde-avant-salves-2026-11-06` quand le déploiement est stable.
