@@ -216,6 +216,7 @@ import type { LeadSequenceGuard } from "./services/sequence-distinct";
 import { creditSumFromAggregate } from "./services/attribution/credit-sum";
 import { publicIdFromUrl } from "./services/linkedin";
 import { clesPersonne, memePersonne } from "./services/reponses/rattachement";
+import { extraitDe } from "@shared/citation";
 import { estLeadTest, TAG_LEAD_TEST } from "./services/prospection-mode-test";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
@@ -248,6 +249,8 @@ export type BrandConversionWithCredits = BrandConversion & { attributions: Credi
 export type ConversationInboxListe = {
   id: number; leadId: number; leadName: string; company: string | null; channel: string; statut: string;
   nonLu: boolean; extrait: string | null; lastMessageAt: Date | null; projectId: number | null;
+  /** Campagne du prospect (null : prospect hors campagne). Ajout rétrocompatible. */
+  campaignId: number | null; campaignName: string | null;
 };
 /** Un contenu vu par les fondations : son étiquette (motivation, format) et son état. */
 export type ContenuEtiquete = {
@@ -3453,15 +3456,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async listerConversationsInbox(userId: string, filtre: { projectId?: number; statut?: string } = {}): Promise<ConversationInboxListe[]> {
-    const extrait = sql<string | null>`(select left(${inboxMessages.body}, 160) from ${inboxMessages}
+    // Corps assez long pour retrouver le texte nouveau sous la citation ; l'extrait (160) est
+    // calculé ensuite par extraitDe (sans l'historique cité).
+    const corps = sql<string | null>`(select left(${inboxMessages.body}, 4000) from ${inboxMessages}
       where ${inboxMessages.conversationId} = ${inboxConversations.id}
       order by ${inboxMessages.sentAt} desc, ${inboxMessages.id} desc limit 1)`;
-    return db.select({
+    const lignes = await db.select({
       id: inboxConversations.id, leadId: inboxConversations.leadId, leadName: leads.name, company: leads.company,
       channel: inboxConversations.channel, statut: inboxConversations.statut, nonLu: inboxConversations.nonLu,
-      extrait, lastMessageAt: inboxConversations.lastMessageAt, projectId: inboxConversations.projectId,
+      corps, lastMessageAt: inboxConversations.lastMessageAt, projectId: inboxConversations.projectId,
+      campaignId: prospectionCampaigns.id, campaignName: prospectionCampaigns.name,
     }).from(inboxConversations)
       .innerJoin(leads, eq(leads.id, inboxConversations.leadId))
+      .leftJoin(prospectionCampaigns, and(
+        eq(prospectionCampaigns.id, leads.prospectionCampaignId),
+        eq(prospectionCampaigns.userId, userId),
+      ))
       .where(and(
         eq(inboxConversations.userId, userId),
         ...(filtre.projectId != null ? [eq(inboxConversations.projectId, filtre.projectId)] : []),
@@ -3472,6 +3482,7 @@ export class DatabaseStorage implements IStorage {
         sql`${inboxConversations.lastMessageAt} desc nulls last`,
         desc(inboxConversations.id),
       );
+    return lignes.map(({ corps: c, ...l }) => ({ ...l, extrait: extraitDe(c) }));
   }
 
   async compterInboxATraiter(userId: string): Promise<number> {

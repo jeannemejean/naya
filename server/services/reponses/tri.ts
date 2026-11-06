@@ -15,23 +15,9 @@ export interface Classement { nature: NatureMessage; retourLe: Date | null; desi
 
 const JOUR_MS = 86400000;
 
-/** Lignes qui ouvrent une citation (FR / EN, Gmail, Outlook, Apple Mail). */
-const DEBUT_CITATION = [
-  /^\s*>/,
-  /^\s*le .{3,120}a [ée]crit\s*:\s*$/i,
-  /^\s*on .{3,160}wrote\s*:\s*$/i,
-  /^\s*-{2,}\s*(original message|message d'origine|forwarded message|message transféré)/i,
-  /^\s*(de|from)\s*:\s.+/i,
-  /^\s*se d[ée]sinscrire\s*:/i,
-];
-
-/** Le texte écrit par l'expéditeur, sans la citation du message auquel il répond. */
-export function texteNouveau(body: string): string {
-  const lignes = (body || "").split(/\r?\n/);
-  const fin = lignes.findIndex((l) => DEBUT_CITATION.some((re) => re.test(l)));
-  const garde = (fin === -1 ? lignes : lignes.slice(0, fin)).join("\n").trim();
-  return garde;
-}
+// Retrait de la citation : partagé avec le client (fil et extrait de la boîte « Réponses »).
+import { texteNouveau } from "@shared/citation";
+export { texteNouveau };
 
 function enTetesAutomatiques(headers: Record<string, string> | undefined): boolean {
   if (!headers) return false;

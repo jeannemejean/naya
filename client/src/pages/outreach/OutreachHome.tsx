@@ -79,15 +79,18 @@ export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
               </TabsList>
             </div>
 
-            <TabsContent value="campaigns" className="flex-1 overflow-y-auto m-0">
+            <TabsContent value="campaigns" className="flex-1 min-h-0 overflow-y-auto m-0">
               <CampaignsGrid />
             </TabsContent>
 
-            <TabsContent value="pipeline" className="flex-1 overflow-hidden m-0 flex flex-col">
+            {/* `data-[state=inactive]:hidden` : la classe `flex` l'emporte sur l'attribut `hidden` que
+                Radix pose sur un onglet inactif — sans elle, le panneau vide reste dans la colonne
+                et repousse l'onglet affiché vers le bas. */}
+            <TabsContent value="pipeline" className="flex-1 min-h-0 overflow-hidden m-0 flex flex-col data-[state=inactive]:hidden">
               <PipelineBoard />
             </TabsContent>
 
-            <TabsContent value="reponses" className="flex-1 overflow-hidden m-0">
+            <TabsContent value="reponses" className="flex-1 min-h-0 overflow-hidden m-0 flex flex-col data-[state=inactive]:hidden">
               <ReponsesTab />
             </TabsContent>
           </Tabs>

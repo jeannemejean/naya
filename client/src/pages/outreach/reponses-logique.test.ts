@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import fr from "@/locales/fr";
 import en from "@/locales/en";
-import { cleErreurEnvoi, cleErreurPasUneReponse, typeBulle, ordonnerFil, dateRelative } from "./reponses-logique";
+import {
+  cleErreurEnvoi, cleErreurPasUneReponse, typeBulle, ordonnerFil, dateRelative, dateHeure,
+  couleurCampagne, PALETTE_CAMPAGNES, campagneDepuisRecherche, urlReponses, filtrerParCampagne,
+  campagnesDeListe, compterATraiterParCampagne,
+} from "./reponses-logique";
 
 const lire = (o: any, cle: string) => cle.split(".").reduce((x, k) => x?.[k], o);
 
@@ -47,5 +51,63 @@ describe("fil", () => {
     expect(dateRelative("2026-11-02T11:59:40Z", now, "fr")).toBe("à l'instant");
     expect(dateRelative("2026-11-02T11:59:40Z", now, "en")).toBe("just now");
     expect(dateRelative(null, now, "fr")).toBe("");
+  });
+});
+
+describe("campagnes dans la boîte", () => {
+  const liste = [
+    { id: 1, statut: "a_traiter", campaignId: 7, campaignName: "Test" },
+    { id: 2, statut: "a_traiter", campaignId: 3, campaignName: "Archi Lyon" },
+    { id: 3, statut: "traitee", campaignId: 7, campaignName: "Test" },
+    { id: 4, statut: "a_traiter", campaignId: 7, campaignName: "Test" },
+    { id: 5, statut: "a_traiter", campaignId: null, campaignName: null },
+    { id: 6, statut: "a_traiter" }, // serveur plus ancien : pas de champ campagne
+  ];
+
+  it("couleur stable par id, prise dans la palette, sans text-white", () => {
+    expect(couleurCampagne(7)).toBe(couleurCampagne(7));
+    expect(PALETTE_CAMPAGNES).toContain(couleurCampagne(7));
+    expect(couleurCampagne(1)).not.toBe(couleurCampagne(2));
+    expect(couleurCampagne(null)).toBe(PALETTE_CAMPAGNES[3]);
+    expect(PALETTE_CAMPAGNES).toContain(couleurCampagne(-4));
+    for (const c of PALETTE_CAMPAGNES) expect(c).not.toMatch(/text-white/);
+  });
+
+  it("filtre campagne", () => {
+    expect(filtrerParCampagne(liste, null)).toHaveLength(6);
+    expect(filtrerParCampagne(liste, 7).map((c) => c.id)).toEqual([1, 3, 4]);
+    expect(filtrerParCampagne(liste, 99)).toEqual([]);
+  });
+
+  it("campagnes présentes, triées, sans doublon", () => {
+    expect(campagnesDeListe(liste)).toEqual([{ id: 3, name: "Archi Lyon" }, { id: 7, name: "Test" }]);
+  });
+
+  it("compte à traiter par campagne (traitées et hors campagne ignorées)", () => {
+    const m = compterATraiterParCampagne(liste);
+    expect(m.get(7)).toBe(2);
+    expect(m.get(3)).toBe(1);
+    expect(m.size).toBe(2);
+  });
+
+  it("URL : filtre campagne lu et gardé avec la conversation", () => {
+    expect(campagneDepuisRecherche("onglet=reponses&campagne=12")).toBe(12);
+    expect(campagneDepuisRecherche("?onglet=reponses&campagne=abc")).toBeNull();
+    expect(campagneDepuisRecherche("onglet=reponses")).toBeNull();
+    expect(urlReponses()).toBe("/outreach?onglet=reponses");
+    expect(urlReponses({ campagne: 12, conversation: 4 })).toBe("/outreach?onglet=reponses&campagne=12&conversation=4");
+    expect(urlReponses({ campagne: null, conversation: 4 })).toBe("/outreach?onglet=reponses&conversation=4");
+  });
+
+  it("date et heure absolues", () => {
+    expect(dateHeure("2026-11-05T18:10:00Z", "fr")).toMatch(/5 nov/);
+    expect(dateHeure(null, "fr")).toBe("");
+  });
+
+  it("libellés campagne en français et en anglais", () => {
+    for (const k of ["filtreCampagne", "toutesCampagnes", "videCampagne", "voirComplet", "masquerCitation", "aTraiterCampagne_one", "aTraiterCampagne_other", "aucuneATraiterCampagne"]) {
+      expect(typeof lire(fr, `outreach.reponses.${k}`)).toBe("string");
+      expect(typeof lire(en, `outreach.reponses.${k}`)).toBe("string");
+    }
   });
 });

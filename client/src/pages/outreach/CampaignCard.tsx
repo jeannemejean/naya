@@ -1,11 +1,13 @@
 // Carte de campagne — remplace l'ancienne liste dense de CampaignsTab (voir git history,
 // client/src/pages/outreach.tsx ~935-1200) par une carte cliquable qui navigue vers le nouvel
 // espace de travail dédié /outreach/campaigns/:id.
-import { Link } from 'wouter';
-import { Users, CheckCircle2 } from 'lucide-react';
+import { Link, useLocation } from 'wouter';
+import { useTranslation } from 'react-i18next';
+import { Users, CheckCircle2, MessageSquareReply } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { channelMeta, campaignChannels } from './channels';
+import { urlReponses } from './reponses-logique';
 
 export interface CampaignLeadCount {
   /** Nombre total de prospects rattachés à cette campagne (hors archivés). */
@@ -17,6 +19,8 @@ export interface CampaignLeadCount {
 interface CampaignCardProps {
   campaign: any;
   leadCount: CampaignLeadCount;
+  /** Réponses « à traiter » de cette campagne (boîte Réponses). */
+  aTraiter?: number;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -31,14 +35,18 @@ const STATUS_VARIANT: Record<string, 'default' | 'sulphur' | 'outline'> = {
   completed: 'outline',
 };
 
-export default function CampaignCard({ campaign, leadCount }: CampaignCardProps) {
+export default function CampaignCard({ campaign, leadCount, aTraiter = 0 }: CampaignCardProps) {
+  const { t } = useTranslation();
+  const [, naviguer] = useLocation();
   const channels = campaignChannels(campaign.channel);
   const statusVariant = STATUS_VARIANT[campaign.status] ?? 'outline';
   const statusLabel = STATUS_LABEL[campaign.status] ?? campaign.status;
 
   return (
-    <Link href={`/outreach/campaigns/${campaign.id}`}>
-      <Card className="p-5 cursor-pointer hover:shadow-rest hover:border-naya-olive-18 flex flex-col gap-3">
+    // Le lien couvre toute la carte (calque) : le bouton « réponses à traiter » reste un vrai
+    // bouton, jamais imbriqué dans un lien.
+    <Card className="relative p-5 cursor-pointer hover:shadow-rest hover:border-naya-olive-18 flex flex-col gap-3">
+        <Link href={`/outreach/campaigns/${campaign.id}`} aria-label={campaign.name} className="absolute inset-0 rounded-[inherit] z-0" />
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-semibold text-foreground leading-snug">{campaign.name}</h3>
           <Badge variant={statusVariant}>{statusLabel}</Badge>
@@ -75,7 +83,20 @@ export default function CampaignCard({ campaign, leadCount }: CampaignCardProps)
             {leadCount.ready} prêts / {leadCount.total} prospects
           </span>
         </div>
-      </Card>
-    </Link>
+
+        <button
+          type="button"
+          onClick={() => naviguer(urlReponses({ campagne: campaign.id }))}
+          className={`relative z-10 -mx-1 inline-flex items-center gap-1.5 self-start rounded-full px-2.5 py-1 text-xs font-medium hover:underline ${
+            aTraiter > 0 ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'
+          }`}
+          data-testid="reponses-campagne"
+        >
+          <MessageSquareReply className="w-3.5 h-3.5" />
+          {aTraiter > 0
+            ? t('outreach.reponses.aTraiterCampagne', { count: aTraiter })
+            : t('outreach.reponses.aucuneATraiterCampagne')}
+        </button>
+    </Card>
   );
 }
