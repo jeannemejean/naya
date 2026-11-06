@@ -1,6 +1,6 @@
 // Accès en base de l'agent omniscient. Isolé dans un objet `depot` pour être mockable dans
 // les tests : aucune requête ici n'échappe au filtre sur user_id.
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { db } from "../../db";
 import {
   agentActions,
@@ -43,6 +43,14 @@ export const depot = {
     if (ids.length === 0) return [];
     return db.select({ id: agentActions.id, resume: agentActions.resume }).from(agentActions)
       .where(and(eq(agentActions.userId, userId), inArray(agentActions.id, ids), isNotNull(agentActions.annuleeAt)));
+  },
+
+  // Actions annulées depuis `depuis` (bornée à l'utilisatrice), la plus récente d'abord.
+  async annuleesDepuis(userId: string, depuis: Date): Promise<{ resume: string; annuleeAt: Date }[]> {
+    const l = await db.select({ resume: agentActions.resume, annuleeAt: agentActions.annuleeAt }).from(agentActions)
+      .where(and(eq(agentActions.userId, userId), gte(agentActions.annuleeAt, depuis)))
+      .orderBy(desc(agentActions.annuleeAt)).limit(10);
+    return l.filter((x): x is { resume: string; annuleeAt: Date } => !!x.annuleeAt);
   },
 
   async ajouterProposition(

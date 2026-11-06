@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   validerProposition: vi.fn(),
   annulerProposition: vi.fn(),
   actionsAnnulees: vi.fn(async () => []),
+  annuleesDepuis: vi.fn(async () => []),
 }));
 
 vi.mock("./auth", () => ({
@@ -28,7 +29,7 @@ const storageMock = {
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
-vi.mock("./services/agent/depot", () => ({ depot: { actionsAnnulees: h.actionsAnnulees } }));
+vi.mock("./services/agent/depot", () => ({ depot: { actionsAnnulees: h.actionsAnnulees, annuleesDepuis: h.annuleesDepuis } }));
 vi.mock("./services/agent/boucle", () => ({ executerAgent: h.executerAgent }));
 vi.mock("./services/naya-context", () => ({ buildNayaContext: vi.fn(async () => "") }));
 vi.mock("./services/memory/extract", () => ({ extractToMemory: h.extractToMemory }));
@@ -134,6 +135,13 @@ describe("POST /api/companion/chat", () => {
       { role: "assistant", content: "Fait.\n(Annulé ensuite par l'utilisatrice : Tâche « Rappeler Camille Fictive »)" },
     ]);
     expect(Object.keys(await r.json()).sort()).toEqual(["actions", "faites", "message", "propositions", "recherches", "suggestions"]);
+  });
+
+  it("les gestes annulés ces 24 h arrivent dans le bloc de session", async () => {
+    h.annuleesDepuis.mockResolvedValueOnce([{ resume: "Tâche « Rappeler Camille Fictive »", annuleeAt: new Date() }] as any);
+    await poster({ message: "Et la tâche pour Camille ?" });
+    expect(h.annuleesDepuis.mock.calls[0][0]).toBe("user-1");
+    expect(h.executerAgent.mock.calls[0][0].contexteSession).toContain("Gestes annulés récemment (24 h)");
   });
 
   it("un historique malformé est filtré, sans planter", async () => {

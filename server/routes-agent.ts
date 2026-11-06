@@ -140,6 +140,7 @@ export function registerAgentRoutes(app: Express): void {
         if (found) jalonActif = { id: found.id, title: found.title, status: found.status };
       }
 
+      const gestesAnnules = await depot.annuleesDepuis(userId, new Date(maintenant.getTime() - 24 * 3600_000)).catch(() => []);
       const contexteSession = blocSession({
         maintenant,
         fuseau,
@@ -154,6 +155,7 @@ export function registerAgentRoutes(app: Express): void {
         tachesAVenir: upcomingTasks,
         evenementsAVenir,
         resumeBusiness: (brandDna as any)?.nayaIntelligenceSummary || null,
+        gestesAnnules,
       });
 
       // prospectLu est interne : retiré de ce qui part au client et en base.

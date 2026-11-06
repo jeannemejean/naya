@@ -44,6 +44,7 @@ export interface Session {
   tachesAVenir?: Array<{ title: string; date: string; time?: string; taskId: number }>;
   evenementsAVenir?: Array<{ title: string; date: string; time?: string }>;
   resumeBusiness?: string | null;
+  gestesAnnules?: Array<{ resume: string; annuleeAt: Date }>; // annulés par elle ces dernières 24 h
 }
 
 // Listes envoyées par le client (todayTasks, upcomingEvents) : on n'en garde que les objets
@@ -107,6 +108,11 @@ export function blocSession(s: Session): string {
   if (s.tachesAVenir?.length) {
     lignes.push(`Tâches à venir (7 jours) :\n${s.tachesAVenir.slice(0, 10)
       .map((t) => `- [id:${t.taskId}] ${t.title} le ${t.date}${t.time ? ` à ${t.time}` : ""}`).join("\n")}`);
+  }
+  if (s.gestesAnnules?.length) {
+    lignes.push(`Gestes annulés récemment (24 h) :\n${s.gestesAnnules.slice(0, 10)
+      .map((g) => `- ${g.resume} (annulé par l'utilisatrice à ${heureDansFuseau(g.annuleeAt, s.fuseau)})`).join("\n")}\n` +
+      "Un geste annulé n'est pas un échec : l'utilisatrice l'a annulé elle-même. Si elle en parle, dis-le simplement (« tu l'avais annulée ») et propose de la recréer ; ne parle ni de souci ni de problème de création, et ne dis pas qu'elle a disparu.");
   }
   if (s.resumeBusiness) lignes.push(`Résumé business : ${s.resumeBusiness}`);
   return lignes.join("\n");

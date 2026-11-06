@@ -66,7 +66,7 @@ export interface DepsAgent {
 
 // L'historique envoyé au modèle : les derniers échanges, qui commencent par un message de
 // l'utilisatrice (exigence de l'API), puis le message du jour.
-function construireMessages(historique: OptionsAgent["historique"], message: string): Anthropic.MessageParam[] {
+export function construireMessages(historique: OptionsAgent["historique"], message: string): Anthropic.MessageParam[] {
   const recents = historique
     .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
     .slice(-HISTORIQUE_MAX);
