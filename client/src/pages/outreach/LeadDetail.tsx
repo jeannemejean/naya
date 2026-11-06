@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Copy, ExternalLink, Instagram, Linkedin, Loader2, Mail, Sparkles, UserCheck, type LucideIcon,
+  Copy, ExternalLink, Instagram, Linkedin, Loader2, Mail, Sparkles, Trash2, UserCheck, type LucideIcon,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +26,7 @@ import { STAGES, STAGE_MAP, type StageKey } from './stages';
 import { channelMeta } from './channels';
 import AuditView from './AuditView';
 import MessagesProspect from './MessagesProspect';
+import SupprimerProspectsDialog from './dialogs/SupprimerProspectsDialog';
 
 interface LeadDetailProps {
   lead: Lead | null;
@@ -34,10 +35,32 @@ interface LeadDetailProps {
 }
 
 export default function LeadDetail({ lead, open, onOpenChange }: LeadDetailProps) {
+  const { t } = useTranslation();
+  const [confirmerSuppression, setConfirmerSuppression] = useState(false);
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
         {lead && <LeadDetailBody lead={lead} />}
+        {lead && (
+          <div className="mt-8 pt-4 border-t border-border flex justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-destructive hover:text-destructive"
+              onClick={() => setConfirmerSuppression(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5" /> {t('outreach.suppression.boutonFiche')}
+            </Button>
+          </div>
+        )}
+        {lead && (
+          <SupprimerProspectsDialog
+            ids={[lead.id]}
+            open={confirmerSuppression}
+            onOpenChange={setConfirmerSuppression}
+            onDone={(ids) => { if (ids.includes(lead.id)) onOpenChange(false); }}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );

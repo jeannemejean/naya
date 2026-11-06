@@ -212,6 +212,8 @@ vi.mock("../../db", () => {
         hoisted.txLeftJoins.push({ table, clause });
         return suite;
       },
+      // Lecture des désinscrits avant suppression des séquences (bloquerDesinscritsAvantSuppression).
+      innerJoin: () => suite,
       then: (ok: any, ko: any) =>
         Promise.resolve()
           .then(() => {
@@ -894,6 +896,7 @@ describe("rejeterCampagne — cascade vers la prospection liée", () => {
     hoisted.resultatsArticulations = [
       [], // articulations-lues
       [{ id: 55 }], // vérification de propriété, dans deleteProspectionCampaign (exécuteur = tx)
+      [], // désinscrits de la campagne (aucun) → rien à mettre sur « ne plus contacter »
       [], // stepIds vide → pas de purge de leadStepMessages
     ];
 

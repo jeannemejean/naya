@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from 'react-i18next';
 
 interface AddLeadFormProps {
   campaigns: any[];
@@ -19,6 +20,7 @@ interface AddLeadFormProps {
 }
 
 export default function AddLeadForm({ campaigns, onClose, defaultCampaignId }: AddLeadFormProps) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
@@ -35,7 +37,12 @@ export default function AddLeadForm({ campaigns, onClose, defaultCampaignId }: A
       toast({ title: 'Prospect ajouté' });
       onClose();
     },
-    onError: () => toast({ title: 'Erreur', variant: 'destructive' }),
+    onError: (e: any) => toast({
+      title: 'Erreur',
+      // 409 ne_plus_contacter : désinscrite puis supprimée, cette personne ne revient jamais.
+      description: String(e?.message ?? '').includes('ne_plus_contacter') ? t('outreach.suppression.nePlusContacter') : undefined,
+      variant: 'destructive',
+    }),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

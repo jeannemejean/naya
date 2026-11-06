@@ -33,6 +33,7 @@ const depsEnvoi: DepsEnvoiReponse = {
   envoiActif: masterSendingEnabled,
   getConversation: (id, userId) => storage.getInboxConversationParId(id, userId),
   getLead: (id, userId) => storage.getLead(id, userId),
+  estDesinscrit: (leadId, userId) => storage.isLeadUnsubscribed(leadId, userId),
   getMessages: (cid) => storage.getInboxMessages(cid),
   identite: async (userId, conv, lead) => identiteConversation(userId, conv, lead, await storage.getUserPreferences(userId)),
   envoyerLinkedIn: (o) => sendLinkedInChatMessage(o),
@@ -301,12 +302,21 @@ export function registerReponsesRoutes(app: Express) {
     if (leadId === null) {
       return res.status(404).type("html").send(page("Lien invalide", "<h1>Lien invalide</h1><p>Ce lien de désinscription n'est pas valide.</p>"));
     }
+    let issue;
     try {
-      // Même chemin que le webhook SendGrid : définitif, la séquence entière s'arrête.
-      await storage.updateLeadSequenceState(leadId, { status: "unsubscribed", nextRunAt: null } as any);
+      // Même chemin que le webhook SendGrid : définitif, la séquence entière s'arrête. Prospect
+      // supprimé depuis l'envoi : sa pierre tombale devient « ne plus contacter ».
+      issue = await storage.desinscrireProspect(leadId);
     } catch (e: any) {
       console.error(`[Desinscription] échec lead ${leadId} : ${String(e?.message ?? e)}`);
       return res.status(500).type("html").send(page("Erreur", "<h1>Une erreur est survenue</h1><p>Merci de réessayer dans un instant.</p>"));
+    }
+    if (issue === "inconnu") {
+      // Ni fiche ni pierre tombale (supprimée il y a plus de 90 jours, ou jamais contactée) :
+      // on ne prétend pas avoir enregistré ce qu'on n'a pas pu enregistrer.
+      console.error(`[Desinscription] DÉSINSCRIPTION NON ENREGISTRÉE : lead ${leadId} introuvable (ni fiche ni trace de suppression)`);
+      return res.status(404).type("html").send(page("Désinscription impossible ici",
+        "<h1>Nous n'avons pas retrouvé votre adresse</h1><p>Cette demande n'a pas pu être enregistrée automatiquement. Répondez directement à l'email reçu en demandant à ne plus être contacté : l'expéditeur la verra.</p>"));
     }
     res.type("html").send(page("Désinscription confirmée", "<h1>Vous êtes désinscrit</h1><p>Vous ne recevrez plus de messages.</p>"));
   });

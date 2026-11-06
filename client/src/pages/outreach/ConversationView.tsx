@@ -1,6 +1,6 @@
 // Fil d'une conversation de la boîte « Réponses » : messages, fiche courte du prospect, zone de
 // réponse (préremplie par « Proposer une réponse ») et actions. Rien ne part sans « Envoyer ».
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ExternalLink, Linkedin, Loader2, Mail, Send, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,37 +10,61 @@ import {
   useConversation, useProposerReponse, useEnvoyerReponse, useMarquerTraitee, usePasUneReponse,
   type ConversationDetail,
 } from './useReponses';
-import { cleErreurEnvoi, cleErreurPasUneReponse, dateRelative, ordonnerFil, typeBulle } from './reponses-logique';
+import { cleErreurEnvoi, cleErreurPasUneReponse, dateHeure, dateRelative, ordonnerFil, typeBulle } from './reponses-logique';
+import { aUneCitation, texteAffiche } from '@shared/citation';
+import EtiquetteCampagne from './EtiquetteCampagne';
 
-export function Fil({ messages }: { messages: ConversationDetail['messages'] }) {
+/** Une bulle : le texte nouveau seulement, l'original complet à un clic (rien n'est perdu). */
+function Bulle({ m, type, auteur, date }: {
+  m: ConversationDetail['messages'][number]; type: 'entrant' | 'sortant' | 'en_attente'; auteur: string; date: string;
+}) {
+  const { t } = useTranslation();
+  const [complet, setComplet] = useState(false);
+  const sortant = type !== 'entrant';
+  const cite = aUneCitation(m.body);
+  const texte = complet ? (m.body ?? '') : texteAffiche(m.body);
+  return (
+    <div className={`flex min-w-0 ${sortant ? 'justify-end' : 'justify-start'}`}>
+      <div className={`min-w-0 max-w-[85%] sm:max-w-[75%] rounded-xl px-3.5 py-2.5 text-sm border ${
+        sortant ? 'bg-primary/5 border-primary/20' : 'bg-white border-border'
+      } ${type === 'en_attente' ? 'opacity-60' : ''}`}>
+        <p className="text-xs text-muted-foreground mb-1">
+          <span className="font-semibold text-foreground">{auteur}</span>
+          {' · '}{type === 'en_attente' ? t('outreach.reponses.envoiEnCours') : date}
+        </p>
+        {m.subject && <p className="text-xs font-semibold text-foreground mb-1 break-words [overflow-wrap:anywhere]">{m.subject}</p>}
+        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-foreground">{texte}</p>
+        {cite && (
+          <button type="button" onClick={() => setComplet((v) => !v)} aria-expanded={complet}
+            className="mt-1.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground">
+            {complet ? t('outreach.reponses.masquerCitation') : t('outreach.reponses.voirComplet')}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Fil façon messagerie : envoyés et reçus dans l'ordre, le plus récent en bas. */
+export function Fil({ messages, nomProspect }: { messages: ConversationDetail['messages']; nomProspect: string }) {
   const { t, i18n } = useTranslation();
   const now = new Date();
   return (
     <div className="space-y-3" data-testid="fil-reponses">
       {ordonnerFil(messages).map((m) => {
         const type = typeBulle(m);
-        const date = dateRelative(m.sentAt, now, i18n.language);
+        const relatif = dateRelative(m.sentAt, now, i18n.language);
         if (type === 'discret') {
           return (
             <p key={m.id} className="text-xs text-muted-foreground text-center italic">
-              {m.nature === 'absence' ? t('outreach.reponses.absence') : t('outreach.reponses.accuse')} · {date}
+              {m.nature === 'absence' ? t('outreach.reponses.absence') : t('outreach.reponses.accuse')} · {relatif}
             </p>
           );
         }
-        const sortant = type !== 'entrant';
-        return (
-          <div key={m.id} className={`flex ${sortant ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] rounded-xl px-3 py-2 text-sm border ${
-              sortant ? 'bg-primary/5 border-primary/20' : 'bg-white border-border'
-            } ${type === 'en_attente' ? 'opacity-60' : ''}`}>
-              {m.subject && <p className="text-xs font-semibold text-foreground mb-1">{m.subject}</p>}
-              <p className="whitespace-pre-wrap text-foreground">{m.body}</p>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                {type === 'en_attente' ? t('outreach.reponses.envoiEnCours') : date}
-              </p>
-            </div>
-          </div>
-        );
+        const absolu = dateHeure(m.sentAt, i18n.language);
+        const date = absolu && relatif && absolu !== relatif ? `${absolu} (${relatif})` : absolu || relatif;
+        const auteur = type === 'entrant' ? nomProspect : t('outreach.reponses.vous');
+        return <Bulle key={m.id} m={m} type={type} auteur={auteur} date={date} />;
       })}
     </div>
   );
@@ -56,6 +80,14 @@ export default function ConversationView({ id, onRetour, onFermee }: { id: numbe
   const pasUne = usePasUneReponse(id);
   const [texte, setTexte] = useState('');
   const [erreur, setErreur] = useState<string | null>(null);
+  const zoneFil = useRef<HTMLDivElement>(null);
+  const nbMessages = data?.messages.length ?? 0;
+  // Le plus récent en bas, visible à l'ouverture et à chaque nouveau message. On fait défiler
+  // la zone du fil elle-même (scrollIntoView ferait aussi défiler les parents overflow-hidden).
+  useEffect(() => {
+    const el = zoneFil.current;
+    if (el && nbMessages) el.scrollTop = el.scrollHeight;
+  }, [nbMessages]);
 
   if (isLoading) return <div className="p-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
   if (isError || !data) {
@@ -101,7 +133,7 @@ export default function ConversationView({ id, onRetour, onFermee }: { id: numbe
   });
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       <header className="border-b border-border bg-white px-5 py-3 flex-shrink-0">
         <Button variant="ghost" size="sm" className="lg:hidden -ml-2 mb-1" onClick={onRetour}>
           <ArrowLeft className="h-4 w-4 mr-1" />{t('outreach.reponses.retour')}
@@ -116,16 +148,21 @@ export default function ConversationView({ id, onRetour, onFermee }: { id: numbe
             </a>
           )}
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {[lead.role, campagne ? t('outreach.reponses.campagne', { nom: campagne.name }) : null].filter(Boolean).join(' · ')}
-        </p>
+        {(lead.role || campagne) && (
+          <div className="flex items-center gap-2 flex-wrap mt-1 min-w-0">
+            {campagne && <EtiquetteCampagne id={campagne.id} nom={campagne.name} />}
+            {lead.role && <span className="text-xs text-muted-foreground">{lead.role}</span>}
+          </div>
+        )}
       </header>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 bg-muted/20"><Fil messages={messages} /></div>
+      <div ref={zoneFil} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-5 py-4 bg-muted/20">
+        <Fil messages={messages} nomProspect={lead.name} />
+      </div>
 
-      <footer className="border-t border-border bg-white px-5 py-3 space-y-2 flex-shrink-0">
+      <footer className="border-t border-border bg-white px-4 sm:px-5 py-3 space-y-2 flex-shrink-0">
         <label htmlFor="reponse-texte" className="text-xs font-medium text-muted-foreground">{t('outreach.reponses.reponseLabel')}</label>
-        <Textarea id="reponse-texte" rows={5} value={texte} onChange={(e) => setTexte(e.target.value)} placeholder={t('outreach.reponses.placeholder')} />
+        <Textarea id="reponse-texte" rows={3} className="max-h-[30vh]" value={texte} onChange={(e) => setTexte(e.target.value)} placeholder={t('outreach.reponses.placeholder')} />
         {erreur && <p role="alert" className="text-sm text-destructive">{erreur}</p>}
         <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={demanderProposition} disabled={proposer.isPending}>

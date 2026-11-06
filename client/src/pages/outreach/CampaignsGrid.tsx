@@ -9,11 +9,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useCampaigns, useLeads } from './useOutreach';
 import CampaignCard, { type CampaignLeadCount } from './CampaignCard';
 import CampaignForm from './dialogs/CampaignForm';
+import { useReponsesListe } from './useReponses';
+import { compterATraiterParCampagne } from './reponses-logique';
 
 export default function CampaignsGrid() {
   const { data: campaigns, isLoading } = useCampaigns();
   const { data: leads } = useLeads();
   const [formOpen, setFormOpen] = useState(false);
+  // Même requête que la boîte Réponses (cache partagé) : compte « à traiter » par campagne.
+  const { data: aTraiter } = useReponsesListe('a_traiter', null);
+  const reponsesParCampagne = useMemo(() => compterATraiterParCampagne(aTraiter ?? []), [aTraiter]);
 
   const leadCounts = useMemo(() => {
     const byCampaign = new Map<number, CampaignLeadCount>();
@@ -72,6 +77,7 @@ export default function CampaignsGrid() {
               key={campaign.id}
               campaign={campaign}
               leadCount={leadCounts.get(campaign.id) ?? { total: 0, ready: 0 }}
+              aTraiter={reponsesParCampagne.get(campaign.id) ?? 0}
             />
           ))}
         </div>

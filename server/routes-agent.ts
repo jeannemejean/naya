@@ -8,6 +8,8 @@ import { storage } from "./storage";
 import { isAiBlocked } from "./services/usage";
 import { executerAgent } from "./services/agent/boucle";
 import { annulerAction } from "./services/agent/journal";
+import { depot } from "./services/agent/depot";
+import { historiqueSauvegarde } from "./services/agent/historique";
 import { annulerProposition, validerProposition } from "./services/agent/propositions";
 import { blocSession, dateDansFuseau, evenementsPropres, fuseauUtilisatrice, tachesDuJourPropres } from "./services/agent/consignes";
 import { buildSuggestions } from "./services/companion";
@@ -89,7 +91,12 @@ export function registerAgentRoutes(app: Express): void {
       if (await isAiBlocked(userId)) return res.status(429).json({ message: "ai_monthly_limit_reached" });
 
       const clientContext = (context && typeof context === "object") ? context : {};
-      const historique = historiquePropre(conversationHistory);
+      const historiqueClient = historiquePropre(conversationHistory);
+      // L'historique du modèle vient des messages SAUVEGARDÉS (le client n'envoie rien après un
+      // rechargement), annotés des actions que l'utilisatrice a annulées depuis. Texte du client en secours.
+      const historique = await storage.getCompanionHistory(userId, 20)
+        .then((rows) => historiqueSauvegarde(userId, rows as any[], (u, ids) => depot.actionsAnnulees(u, ids)))
+        .catch(() => historiqueClient);
       const plateforme = clientContext.platform === "mobile" ? "mobile" : "web";
       // Listes du client : seulement des objets bien formés (un élément nul = jamais une 500).
       const tachesDuJour = tachesDuJourPropres(clientContext.todayTasks);
@@ -133,6 +140,7 @@ export function registerAgentRoutes(app: Express): void {
         if (found) jalonActif = { id: found.id, title: found.title, status: found.status };
       }
 
+      const gestesAnnules = await depot.annuleesDepuis(userId, new Date(maintenant.getTime() - 24 * 3600_000)).catch(() => []);
       const contexteSession = blocSession({
         maintenant,
         fuseau,
@@ -147,6 +155,7 @@ export function registerAgentRoutes(app: Express): void {
         tachesAVenir: upcomingTasks,
         evenementsAVenir,
         resumeBusiness: (brandDna as any)?.nayaIntelligenceSummary || null,
+        gestesAnnules,
       });
 
       // prospectLu est interne : retiré de ce qui part au client et en base.

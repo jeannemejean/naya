@@ -337,6 +337,17 @@ describe("chercher", () => {
   });
 });
 
+describe("lire — conversation", () => {
+  it("signale les actions annulées dans le message de Naya", async () => {
+    hoisted.resultats.push(
+      [{ id: 3, role: "assistant", content: "Fait.", createdAt: new Date("2026-11-02T10:00:00Z"), actions: { faites: [{ actionId: 7 }] } }],
+      [{ id: 7, resume: "Tâche « Rappeler Camille »" }],
+    );
+    const r = await lire("u1", "conversation", 3);
+    expect(r?.contenu).toBe("Fait.\n(Annulé ensuite par l'utilisatrice : Tâche « Rappeler Camille »)");
+  });
+});
+
 describe("lire", () => {
   it("tache_reponse : la tâche, sa date prévue et toutes ses réponses, bornées à l'utilisatrice", async () => {
     hoisted.resultats.push([{ id: 7, taskId: 3 }]);

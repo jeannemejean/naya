@@ -75,6 +75,17 @@ describe("classerMessage", () => {
     expect(texteNouveau("Ok\n\nOn Mon, Nov 2, 2026 at 9:00 AM Jeanne <j@x.fr> wrote:\n> hi")).toBe("Ok");
   });
 
+  it("attribution Gmail aplatie (sans retour à la ligne) : le pied « Se désinscrire » cité ne désinscrit pas", () => {
+    const body = "Ça m'intéresse  Le jeu. 5 nov. 2026 à 19:10, jeanne.mejean@agencejmd.com <jeanne.mejean@agencejmd.com> a écrit : Bonjour Marc, je vous écris au sujet de… Se désinscrire : https://naya/desinscription/abc";
+    expect(classerMessage({ body }, now)).toEqual({ nature: "reponse", retourLe: null, desinscription: false });
+    expect(texteNouveau(body)).toBe("Ça m'intéresse");
+  });
+
+  it("demande de désinscription écrite AVANT une attribution aplatie : désinscription", () => {
+    const body = "Merci de me désinscrire. Le 5 nov. 2026 à 19:10, Jeanne <j@x.fr> a écrit : Bonjour Marc, …";
+    expect(classerMessage({ body }, now)).toEqual({ nature: "reponse", retourLe: null, desinscription: true });
+  });
+
   describe("R11 : une formule seule ne rend jamais un message automatique", () => {
     const conge = "Je suis en congé jusqu'au 12 novembre";
     it("« nous avons bien reçu » sans en-tête, sujet « Re: » → réponse", () => {

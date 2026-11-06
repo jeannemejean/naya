@@ -14,7 +14,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, CheckCircle2, Circle, Hand, Loader2, PauseCircle, PlayCircle,
-  Plus, Rocket, Sparkles, Users, X,
+  Plus, Rocket, Sparkles, Trash2, Users, X,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge, type BadgeProps } from '@/components/ui/badge';
@@ -35,6 +35,7 @@ import { SCORE_LABEL, SCORE_VARIANT } from './LeadCard';
 import { STAGE_MAP, type StageKey } from './stages';
 import LeadDetail from './LeadDetail';
 import AddLeadForm from './dialogs/AddLeadForm';
+import SupprimerProspectsDialog from './dialogs/SupprimerProspectsDialog';
 import LeadFinderDialog from './dialogs/LeadFinderDialog';
 import type { Lead } from '@shared/schema';
 import { resumeEnrolement } from './enrolement-message';
@@ -64,6 +65,7 @@ const STATUS_META: Record<string, { label: string; variant: NonNullable<BadgePro
 };
 
 export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
+  const { t } = useTranslation();
   const { data: campaign } = useCampaign(campaignId);
   const { data: campaigns = [] } = useCampaigns();
   const { data: leads = [] } = useLeads();
@@ -75,6 +77,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [leadFinderOpen, setLeadFinderOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [confirmPurgeOpen, setConfirmPurgeOpen] = useState(false);
 
   const bulkEnroll = useBulkEnroll(campaignId);
   const unenrollLead = useUnenrollLead(campaignId);
@@ -269,6 +272,14 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
               Retirer de la séquence
             </Button>
           )}
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-8 gap-1.5"
+            onClick={() => setConfirmPurgeOpen(true)}
+          >
+            <Trash2 className="w-3.5 h-3.5" /> {t('outreach.suppression.bouton')}
+          </Button>
           <button
             onClick={clearSelection}
             className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
@@ -277,6 +288,16 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
           </button>
         </div>
       )}
+
+      <SupprimerProspectsDialog
+        ids={selectedList}
+        open={confirmPurgeOpen}
+        onOpenChange={setConfirmPurgeOpen}
+        onDone={(ids) => {
+          setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => !ids.includes(id))));
+          if (selectedLead && ids.includes(selectedLead.id)) setSelectedLead(null);
+        }}
+      />
 
       {/* Liste */}
       {prospects.length === 0 ? (

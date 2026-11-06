@@ -22,6 +22,26 @@ describe("REGLES_AGENT — marque-sujet", () => {
   });
 });
 
+describe("REGLES_AGENT — pas de jargon interne", () => {
+  it("interdit de parler d'outils, de fonctions, de codes d'erreur à l'utilisatrice", () => {
+    expect(REGLES_AGENT).toMatch(/Jamais de jargon interne/);
+    for (const mot of ["outils", "fonctions", "codes d'erreur", "mécanique interne"]) expect(REGLES_AGENT).toContain(mot);
+    expect(REGLES_AGENT).toMatch(/mots simples/);
+  });
+});
+
+describe("blocSession — gestes annulés", () => {
+  it("liste les gestes annulés avec l'heure et la règle « annulé n'est pas un échec »", () => {
+    const b = blocSession({ ...session, gestesAnnules: [{ resume: "Tâche « Rappeler Camille Fictive »", annuleeAt: new Date("2026-11-02T08:30:00Z") }] });
+    expect(b).toContain("Gestes annulés récemment (24 h)");
+    expect(b).toContain("Tâche « Rappeler Camille Fictive » (annulé par l'utilisatrice à 09:30)");
+    expect(b).toMatch(/n'est pas un échec/);
+  });
+  it("pas de bloc quand rien n'est annulé", () => {
+    expect(blocSession({ ...session, gestesAnnules: [] })).not.toContain("Gestes annulés");
+  });
+});
+
 describe("listes envoyées par le client : formes vérifiées", () => {
   it("tachesDuJourPropres ne garde que des objets avec un titre texte", () => {
     const brut = [null, 3, "x", [], { title: 4 }, { title: "Appeler Léa", completed: true, scheduledTime: "09:00" }, { title: "B", completed: "oui", scheduledTime: 12 }];

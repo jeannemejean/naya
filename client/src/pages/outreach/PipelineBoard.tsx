@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ArrowRightLeft, Plus, Search, Sparkles, Trash2, X,
+  Archive, ArrowRightLeft, Plus, Search, Sparkles, Trash2, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,6 +26,7 @@ import {
 import LeadCard from './LeadCard';
 import LeadDetail from './LeadDetail';
 import AddLeadForm from './dialogs/AddLeadForm';
+import SupprimerProspectsDialog from './dialogs/SupprimerProspectsDialog';
 import { STAGES, type StageKey } from './stages';
 
 export default function PipelineBoard() {
@@ -43,6 +44,7 @@ export default function PipelineBoard() {
   const [addLeadOpen, setAddLeadOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmPurgeOpen, setConfirmPurgeOpen] = useState(false);
   const [moveTarget, setMoveTarget] = useState('');
 
   const updateLeadMutation = useUpdateLead();
@@ -225,13 +227,21 @@ export default function PipelineBoard() {
             </Button>
           )}
           <Button
-            variant="destructive"
+            variant="outline"
             size="sm"
             className="h-8"
             onClick={() => setConfirmDeleteOpen(true)}
             disabled={bulkArchiveMutation.isPending}
           >
-            <Trash2 className="w-3.5 h-3.5 mr-1" /> Supprimer
+            <Archive className="w-3.5 h-3.5 mr-1" /> {t('outreach.suppression.archiver')}
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-8"
+            onClick={() => setConfirmPurgeOpen(true)}
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1" /> {t('outreach.suppression.bouton')}
           </Button>
           <button
             onClick={clearSelection}
@@ -303,35 +313,46 @@ export default function PipelineBoard() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirmation de suppression groupée (soft-delete) */}
+      {/* Confirmation de l'archivage groupé (soft-delete, réversible) */}
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Supprimer {selectedList.length} prospect{selectedList.length > 1 ? 's' : ''} ?
+              {t('outreach.suppression.archiveTitre', { count: selectedList.length })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Ils seront archivés et disparaîtront de la liste active.
+              {t('outreach.suppression.archiveDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t('outreach.suppression.annuler')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => bulkArchiveMutation.mutate(selectedList, {
                 onSuccess: (res: any) => {
                   clearSelection();
                   setConfirmDeleteOpen(false);
-                  toast({ title: `${res.archived} prospect(s) supprimé(s)` });
+                  toast({ title: t('outreach.suppression.archiveSucces', { count: res.archived }) });
                 },
-                onError: () => toast({ title: t('common.error'), description: 'Suppression impossible.', variant: 'destructive' }),
+                onError: () => toast({ title: t('common.error'), description: t('outreach.suppression.archiveErreur'), variant: 'destructive' }),
               })}
               disabled={bulkArchiveMutation.isPending}
             >
-              Supprimer
+              {t('outreach.suppression.archiver')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Suppression DÉFINITIVE de la sélection (irréversible) */}
+      <SupprimerProspectsDialog
+        ids={selectedList}
+        open={confirmPurgeOpen}
+        onOpenChange={setConfirmPurgeOpen}
+        onDone={(ids) => {
+          setSelectedIds((prev) => new Set(Array.from(prev).filter((id) => !ids.includes(id))));
+          if (selectedLead && ids.includes(selectedLead.id)) setSelectedLead(null);
+        }}
+      />
     </div>
   );
 }

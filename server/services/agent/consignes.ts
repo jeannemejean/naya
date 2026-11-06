@@ -13,6 +13,7 @@ Tu as des outils pour retrouver ce que l'utilisatrice a écrit, reçu ou décid�
 - Agir : les petits gestes (créer une tâche, une note, cocher, déplacer une tâche, régler l'énergie) se font directement ; les gros changements (décaler plusieurs tâches, supprimer, réorganiser, projets, jalons, campagnes, réglages, tout envoi vers l'extérieur) se proposent et attendent sa validation. Tu ne dis jamais qu'une action est faite si aucun outil ne l'a faite.
 - Le projet : si une demande concerne un projet et qu'il n'est pas clair (nommé, ou évident dans la conversation), demande lequel avant d'agir ou de conseiller. Utilise toujours l'id exact donné dans la session, jamais un id inventé.
 - Marque-sujet (important pour la mémoire) : quand elle parle de l'IDENTITÉ, du POSITIONNEMENT, de l'OFFRE, de la VOIX, de la STRATÉGIE ou de l'AUDIENCE d'une marque SPÉCIFIQUE, et qu'AUCUNE marque parmi les « Projets disponibles » n'est clairement nommée dans la conversation, DEMANDE simplement de quelle marque il s'agit avant de donner un conseil spécifique à cette marque (propose le projet actif en suggestion, sans le présumer). Ne devine jamais. Une fois la marque nommée dans la conversation, garde-la pour la suite — ne redemande pas. NE DEMANDE JAMAIS pour ce qui concerne SA façon de travailler à elle (rythme, énergie, habitudes, préférences d'organisation) : c'est transverse, pas lié à une marque.
+- Jamais de jargon interne : tu ne parles jamais à l'utilisatrice d'outils, de fonctions, de codes d'erreur ni de mécanique interne (« l'outil refuse », « erreur », « paramètre »). Quand tu ne peux pas faire quelque chose, explique avec des mots simples ce que tu peux ou ne peux pas faire, et pourquoi, du point de vue de son planning (par exemple « samedi n'est pas dans tes jours travaillés, je le place plutôt lundi ? »).
 - Jamais de tâche pour un jalon verrouillé (locked).
 - Dates relatives (« demain », « lundi prochain ») : calcule-les à partir de la date de la session.`;
 
@@ -43,6 +44,7 @@ export interface Session {
   tachesAVenir?: Array<{ title: string; date: string; time?: string; taskId: number }>;
   evenementsAVenir?: Array<{ title: string; date: string; time?: string }>;
   resumeBusiness?: string | null;
+  gestesAnnules?: Array<{ resume: string; annuleeAt: Date }>; // annulés par elle ces dernières 24 h
 }
 
 // Listes envoyées par le client (todayTasks, upcomingEvents) : on n'en garde que les objets
@@ -106,6 +108,11 @@ export function blocSession(s: Session): string {
   if (s.tachesAVenir?.length) {
     lignes.push(`Tâches à venir (7 jours) :\n${s.tachesAVenir.slice(0, 10)
       .map((t) => `- [id:${t.taskId}] ${t.title} le ${t.date}${t.time ? ` à ${t.time}` : ""}`).join("\n")}`);
+  }
+  if (s.gestesAnnules?.length) {
+    lignes.push(`Gestes annulés récemment (24 h) :\n${s.gestesAnnules.slice(0, 10)
+      .map((g) => `- ${g.resume} (annulé par l'utilisatrice à ${heureDansFuseau(g.annuleeAt, s.fuseau)})`).join("\n")}\n` +
+      "Un geste annulé n'est pas un échec : l'utilisatrice l'a annulé elle-même. Si elle en parle, dis-le simplement (« tu l'avais annulée ») et propose de la recréer ; ne parle ni de souci ni de problème de création, et ne dis pas qu'elle a disparu.");
   }
   if (s.resumeBusiness) lignes.push(`Résumé business : ${s.resumeBusiness}`);
   return lignes.join("\n");

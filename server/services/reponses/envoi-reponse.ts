@@ -22,6 +22,8 @@
  *                         double clic) bute sur l'unicité de providerMessageId ;
  *  - `texte_vide`, `texte_trop_long` (> 8000 caractères), `introuvable` (conversation absente
  *                         ou d'un autre utilisateur) ;
+ *  - `desinscrit`       : le prospect s'est désinscrit (ou figure sur « ne plus contacter ») ;
+ *                         lecture impossible → refus aussi (jamais écrire à quelqu'un peut-être désinscrit) ;
  *  - `echec`            : le fournisseur a refusé, ou le prospect n'a pas d'adresse email.
  *
  * Une réponse humaine n'est JAMAIS refusée par les plafonds LinkedIn (montée en charge,
@@ -57,7 +59,7 @@ export function doublonRecent(messages: InboxMessage[], texte: string, now: Date
 
 export type RaisonRefus =
   | "envoi_coupe" | "compte_restreint" | "compte_deconnecte" | "compte_absent"
-  | "envoi_en_cours" | "deja_envoye" | "texte_vide" | "texte_trop_long" | "introuvable" | "echec";
+  | "envoi_en_cours" | "deja_envoye" | "texte_vide" | "texte_trop_long" | "introuvable" | "desinscrit" | "echec";
 export type ResultatEnvoi = { ok: true } | { ok: false; raison: RaisonRefus };
 
 export interface DepsEnvoiReponse {
@@ -65,6 +67,8 @@ export interface DepsEnvoiReponse {
   envoiActif: () => boolean;
   getConversation: (id: number, userId: string) => Promise<InboxConversation | undefined>;
   getLead: (leadId: number, userId: string) => Promise<Lead | undefined>;
+  /** Désinscrit, ou sur « ne plus contacter » (storage.isLeadUnsubscribed). Lève sur erreur de lecture. */
+  estDesinscrit: (leadId: number, userId: string) => Promise<boolean>;
   getMessages: (conversationId: number) => Promise<InboxMessage[]>;
   /** Qui envoie pour ce prospect (campagne → projet → périmètre). */
   identite: (userId: string, conv: InboxConversation, lead: Lead) => Promise<{ portee: Portee; identite: IdentiteEnvoi }>;
@@ -110,6 +114,12 @@ export async function envoyerReponse(
     if (!conv) return { ok: false, raison: "introuvable" };
     const lead = await deps.getLead(conv.leadId, userId);
     if (!lead) return { ok: false, raison: "introuvable" };
+    try {
+      if (await deps.estDesinscrit(lead.id, userId)) return { ok: false, raison: "desinscrit" };
+    } catch (e: any) {
+      console.error(`[Reponses] désinscription illisible (lead ${lead.id}) — rien envoyé : ${erreurSure(e)}`);
+      return { ok: false, raison: "desinscrit" };
+    }
     const { portee, identite } = await deps.identite(userId, conv, lead);
     const now = deps.now();
 

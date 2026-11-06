@@ -12,6 +12,7 @@ import { decisionCampagne, champsMiseAJourQualification } from "./prospection-qu
 import { genererBrief, briefActionnable, lireBrief, appliquerEditionBrief } from "./prospection/brief";
 import { redigerTouche, roleDeTouche, combineInstructions } from "./sequence-message";
 import { sansLeadsTest } from "./prospection-mode-test";
+import { clesBlocage } from "./prospection-suppression";
 import { ProspectionAccessError, LinkedInWeeklyLimitError, assertEnrichmentAccess, logProspectionUsage } from "./prospection-access";
 import { storage } from "../storage";
 import { callClaude, CLAUDE_MODELS } from "./claude";
@@ -318,8 +319,16 @@ export async function sourcerCampagne(
     surAppel: () => logProspectionUsage(userId, "bright_data_search", { campaignId: campaign.id }),
   });
 
+  // « Ne plus contacter » : un désinscrit supprimé depuis n'est jamais re-sourcé. Lecture ratée :
+  // le sourcing continue — l'enrôlement et l'envoi relisent la liste et refusent, eux, sans exception.
+  const bloques = await Promise.resolve().then(() => storage.getProspectsBloques(userId))
+    .catch((e: any) => {
+      console.error(`[prospection] liste « ne plus contacter » illisible (campagne ${campaign.id}) — sourcing sans ce filtre, l'enrôlement et l'envoi refuseront : ${String(e?.message ?? e)}`);
+      return { emails: new Set<string>(), linkedinIds: new Set<string>() };
+    });
   let imported = 0;
   for (const f of r.leads) {
+    if (clesBlocage({ linkedinUrl: f.linkedinUrl }).linkedinIds.some((id) => bloques.linkedinIds.has(id))) continue;
     await storage.createLead({
       userId,
       projectId: projectId ?? undefined,
