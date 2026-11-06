@@ -1,6 +1,6 @@
 // Annotation de l'historique : sources injectées, aucun accès base.
 import { describe, it, expect, vi } from "vitest";
-import { annoterHistorique } from "./historique";
+import { annoterHistorique, historiqueSauvegarde } from "./historique";
 
 const sauv = [
   { role: "user", content: "Rappelle Camille" },
@@ -32,5 +32,16 @@ describe("annoterHistorique", () => {
     const r = await annoterHistorique("u1", [{ role: "assistant", content: "Inconnu" }], { sauvegardes: async () => sauv, annulees });
     expect(annulees).not.toHaveBeenCalled();
     expect(r[0].content).toBe("Inconnu");
+  });
+});
+
+describe("historiqueSauvegarde", () => {
+  it("construit l'historique depuis les messages sauvegardés, annoté, en une requête", async () => {
+    const annulees = vi.fn(async () => [{ id: 8, resume: "x" }]);
+    const r = await historiqueSauvegarde("u1", sauv as any, annulees);
+    expect(annulees).toHaveBeenCalledTimes(1);
+    expect(r).toHaveLength(3);
+    expect(r[1].content).toBe("C'est noté.\n(Annulé ensuite par l'utilisatrice : x)");
+    expect(r[2].content).toBe("Autre");
   });
 });

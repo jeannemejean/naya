@@ -6,6 +6,8 @@
 //
 // Sécurité : la requête de l'utilisatrice n'entre en SQL que comme paramètre lié (gabarit
 // `sql` de drizzle), jamais concaténée ; `%`, `_` et `\` sont échappés pour ILIKE.
+import { depot } from "./depot";
+import { notesPourMessages } from "./historique";
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { db } from "../../db";
@@ -395,7 +397,26 @@ export async function chercher(
       return [] as Trouvaille[];
     }),
   ]);
-  return fusionner(mots, sens);
+  return annoterConversations(userId, fusionner(mots, sens));
+}
+
+// Un message de Naya dont une action a été annulée depuis le dit (sinon l'agent croit qu'elle existe).
+async function annoterConversations(userId: string, trouvailles: Trouvaille[]): Promise<Trouvaille[]> {
+  const ids = trouvailles.filter((t) => t.source === "conversation").map((t) => t.id);
+  if (ids.length === 0) return trouvailles;
+  try {
+    const lignes = await db.select({ id: companionConversations.id, actions: companionConversations.actions })
+      .from(companionConversations)
+      .where(and(eq(companionConversations.userId, userId), inArray(companionConversations.id, ids)));
+    const notes = await notesPourMessages(userId, lignes, (u, i) => depot.actionsAnnulees(u, i));
+    const parId = new Map(lignes.map((l, k) => [l.id, notes[k]]));
+    return trouvailles.map((t) => {
+      const n = t.source === "conversation" ? parId.get(t.id) : undefined;
+      return n && n.length ? { ...t, extrait: `${t.extrait}\n${n.join("\n")}` } : t;
+    });
+  } catch {
+    return trouvailles;
+  }
 }
 
 // ── Lecture complète d'un élément ─────────────────────────────────────────────────────
@@ -462,7 +483,8 @@ export async function lire(userId: string, source: SourceRecherche, id: number):
         .where(and(eq(companionConversations.userId, userId), eq(companionConversations.id, id))).limit(1);
       if (!c) return null;
       const titre = c.role === "user" ? "Tu as dit à Naya" : "Naya t'a répondu";
-      return { titre, date: dateIso(c.createdAt), projet: null, contenu: c.content };
+      const [notes] = await notesPourMessages(userId, [c], (u, i) => depot.actionsAnnulees(u, i)).catch(() => [[] as string[]]);
+      return { titre, date: dateIso(c.createdAt), projet: null, contenu: notes?.length ? `${c.content}\n${notes.join("\n")}` : c.content };
     }
     case "contenu": {
       const [c] = await db.select({ c: content, projet: projects.name }).from(content)

@@ -9,7 +9,7 @@ import { isAiBlocked } from "./services/usage";
 import { executerAgent } from "./services/agent/boucle";
 import { annulerAction } from "./services/agent/journal";
 import { depot } from "./services/agent/depot";
-import { annoterHistorique } from "./services/agent/historique";
+import { historiqueSauvegarde } from "./services/agent/historique";
 import { annulerProposition, validerProposition } from "./services/agent/propositions";
 import { blocSession, dateDansFuseau, evenementsPropres, fuseauUtilisatrice, tachesDuJourPropres } from "./services/agent/consignes";
 import { buildSuggestions } from "./services/companion";
@@ -92,11 +92,11 @@ export function registerAgentRoutes(app: Express): void {
 
       const clientContext = (context && typeof context === "object") ? context : {};
       const historiqueClient = historiquePropre(conversationHistory);
-      // L'agent doit savoir ce que l'utilisatrice a annulé depuis (best-effort : sans effet sur la réponse).
-      const historique = await annoterHistorique(userId, historiqueClient, {
-        sauvegardes: (u) => storage.getCompanionHistory(u, 40),
-        annulees: (u, ids) => depot.actionsAnnulees(u, ids),
-      }).catch(() => historiqueClient);
+      // L'historique du modèle vient des messages SAUVEGARDÉS (le client n'envoie rien après un
+      // rechargement), annotés des actions que l'utilisatrice a annulées depuis. Texte du client en secours.
+      const historique = await storage.getCompanionHistory(userId, 20)
+        .then((rows) => historiqueSauvegarde(userId, rows as any[], (u, ids) => depot.actionsAnnulees(u, ids)))
+        .catch(() => historiqueClient);
       const plateforme = clientContext.platform === "mobile" ? "mobile" : "web";
       // Listes du client : seulement des objets bien formés (un élément nul = jamais une 500).
       const tachesDuJour = tachesDuJourPropres(clientContext.todayTasks);

@@ -77,6 +77,7 @@ describe("POST /api/companion/chat", () => {
   });
 
   it("renvoie une ReponseAgent, enregistre les deux messages et lance la mémoire", async () => {
+    storageMock.getCompanionHistory.mockRejectedValueOnce(new Error("table absente"));
     const r = await poster({
       message: "Qu'est-ce que j'ai envoyé à Garance ?",
       context: { platform: "mobile", activeProject: { id: 3, name: "Garance" } },
@@ -94,7 +95,7 @@ describe("POST /api/companion/chat", () => {
     const opts = h.executerAgent.mock.calls[0][0];
     expect(opts.userId).toBe("user-1");
     expect(opts.projetActifId).toBe(3);
-    expect(opts.historique).toEqual([{ role: "user", content: "Salut" }, { role: "assistant", content: "Bonjour" }]);
+    expect(opts.historique).toEqual([{ role: "user", content: "Salut" }, { role: "assistant", content: "Bonjour" }]); // secours : lecture sauvegardée en échec
     expect(opts.contexteSession).toContain("Garance (id: 3)");
     expect(opts.contexteSession).toContain("Plateforme : mobile");
     expect(opts.contexteSession).toContain("Lancer le site");
@@ -118,15 +119,20 @@ describe("POST /api/companion/chat", () => {
     expect(h.executerAgent.mock.calls[0][0].contexteSession).toContain("Énergie du jour : low");
   });
 
-  it("annote l'historique des actions annulées depuis, sans changer la réponse", async () => {
+  it("après rechargement (historique client vide), le modèle reçoit le tour sauvegardé annoté de l'annulation", async () => {
     storageMock.getCompanionHistory.mockResolvedValueOnce([
+      { role: "user", content: "Rappelle Camille lundi 10h" },
       { role: "assistant", content: "Fait.", actions: { faites: [{ actionId: 7, resume: "Tâche « Rappeler Camille Fictive »" }] } },
     ] as any);
     h.actionsAnnulees.mockResolvedValueOnce([{ id: 7, resume: "Tâche « Rappeler Camille Fictive »" }] as any);
-    const r = await poster({ message: "Décale tout", conversationHistory: [{ role: "assistant", content: "Fait." }] });
+    const r = await poster({ message: "Où en est la tâche pour Camille ?", conversationHistory: [] });
+    expect(storageMock.getCompanionHistory).toHaveBeenCalledWith("user-1", 20);
+    expect(h.actionsAnnulees).toHaveBeenCalledTimes(1);
     expect(h.actionsAnnulees).toHaveBeenCalledWith("user-1", [7]);
-    expect(h.executerAgent.mock.calls[0][0].historique[0].content)
-      .toContain("(Annulé ensuite par l'utilisatrice : Tâche « Rappeler Camille Fictive »)");
+    expect(h.executerAgent.mock.calls[0][0].historique).toEqual([
+      { role: "user", content: "Rappelle Camille lundi 10h" },
+      { role: "assistant", content: "Fait.\n(Annulé ensuite par l'utilisatrice : Tâche « Rappeler Camille Fictive »)" },
+    ]);
     expect(Object.keys(await r.json()).sort()).toEqual(["actions", "faites", "message", "propositions", "recherches", "suggestions"]);
   });
 

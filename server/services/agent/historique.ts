@@ -35,7 +35,37 @@ export async function annoterHistorique(userId: string, historique: Tour[], src:
 
   return historique.map((t, i) => {
     const notes = (idsParTour.get(i) ?? []).filter((id) => annulees.has(id))
-      .map((id) => `(Annulé ensuite par l'utilisatrice : ${annulees.get(id)})`);
+      .map((id) => noteAnnulation(annulees.get(id)!));
     return notes.length ? { ...t, content: `${t.content}\n${notes.join("\n")}` } : t;
   });
+}
+
+export const noteAnnulation = (resume: string) => `(Annulé ensuite par l'utilisatrice : ${resume})`;
+
+// Pour des messages sauvegardés : ids d'actions annulées -> notes, par position. Une seule requête.
+export async function notesPourMessages(
+  userId: string,
+  messages: { actions?: unknown }[],
+  annulees: SourcesHistorique["annulees"],
+): Promise<string[][]> {
+  const idsParMessage = messages.map((m) => idsDesActions(m.actions));
+  const tous = Array.from(new Set(idsParMessage.flat()));
+  if (tous.length === 0) return messages.map(() => []);
+  const resumes = new Map((await annulees(userId, tous)).map((a) => [a.id, a.resume]));
+  return idsParMessage.map((ids) => ids.filter((id) => resumes.has(id)).map((id) => noteAnnulation(resumes.get(id)!)));
+}
+
+// Historique du modèle construit depuis les messages SAUVEGARDÉS (pas depuis le texte du client :
+// il est vide après un rechargement), chaque tour assistant annoté des actions annulées depuis.
+export async function historiqueSauvegarde(
+  userId: string,
+  sauvegardes: (Sauvegarde & { role: string; content: string })[],
+  annulees: SourcesHistorique["annulees"],
+): Promise<Tour[]> {
+  const tours = sauvegardes.filter((m) => (m.role === "user" || m.role === "assistant") && m.content?.trim());
+  const notes = await notesPourMessages(userId, tours, annulees);
+  return tours.map((m, i) => ({
+    role: m.role as Tour["role"],
+    content: notes[i].length ? `${m.content}\n${notes[i].join("\n")}` : m.content,
+  }));
 }
