@@ -8,7 +8,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { estRefusARevoir } from "./validation-messages";
 import type { Lead } from "@shared/schema";
 import { lotsDe } from "./dialogs/suppression-messages";
-import type { SequenceStepDTO, PreviewResponse, StepAnalytics, EnrollmentDTO } from "./types";
+import type { SequenceStepDTO, PreviewResponse, StepAnalytics, EnrollmentDTO, ReponseLancementSalve, SalveDTO } from "./types";
 import type { ProspectionStatusDTO } from "@/lib/prospection-widget";
 import type { ReponseEnrolement } from "./enrolement-message";
 
@@ -110,6 +110,28 @@ export const useBulkEnroll = (id: number) =>
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
       queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${id}/enrollments`] });
     },
+  });
+
+export const useSalves = (id: number) =>
+  useQuery<SalveDTO[]>({ queryKey: [`/api/prospection/campaigns/${id}/salves`] });
+
+const invaliderSalves = (id: number) => {
+  queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+  queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${id}/enrollments`] });
+  queryClient.invalidateQueries({ queryKey: [`/api/prospection/campaigns/${id}/salves`] });
+};
+
+export const useLancerSalve = (id: number) =>
+  useMutation<ReponseLancementSalve, Error, { nombre: number; parJour: number }>({
+    mutationFn: (corps) =>
+      apiRequest("POST", `/api/prospection/campaigns/${id}/salves`, corps).then((r) => r.json()),
+    onSuccess: () => invaliderSalves(id),
+  });
+
+export const useArreterSalve = (id: number) =>
+  useMutation<{ arretes: number }, Error, number>({
+    mutationFn: (salveId) => apiRequest("POST", `/api/prospection/salves/${salveId}/arreter`).then((r) => r.json()),
+    onSuccess: () => invaliderSalves(id),
   });
 
 // Désenrôle (met en pause) un lead — endpoint per-lead existant, réutilisé pour le retrait

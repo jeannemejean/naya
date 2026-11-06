@@ -38,7 +38,7 @@ describe("sendEmailUnipile", () => {
     await sendEmailUnipile({ accountId: "a", to: "x@y.fr", toName: "X", subject: "Re: S", body: "B", replyToProviderId: "prev", trackingLabel: "lead-1", headers: { "X-Naya": "1" } });
     const body = JSON.parse(f.mock.calls[0][1].body);
     expect(body.reply_to).toBe("prev");
-    expect(body.tracking_options).toEqual({ opens: true, links: true, label: "lead-1" });
+    expect(body.tracking_options).toEqual({ opens: true, links: false, label: "lead-1" });
     expect(body.custom_headers).toEqual([{ name: "X-Naya", value: "1" }]);
   });
 

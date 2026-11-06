@@ -199,6 +199,8 @@ export interface StepForMessage {
 export interface StepMessageResult {
   subject: string | null;
   body: string;
+  /** true = ce texte vient d'être écrit : personne ne l'a encore vu. */
+  redige?: boolean;
   /**
    * true = le texte reste trop proche d'un message antérieur à ce prospect, même après
    * une régénération. Il n'est PAS mis en cache ; le moteur d'envoi ne doit PAS l'envoyer ;
@@ -334,7 +336,7 @@ export async function generateStepMessage(
     qualite: res.aRevoir ? "a_revoir" : "ok", defauts: res.defauts.length ? res.defauts : null,
   } as any);
   return {
-    subject: res.subject, body: res.body,
+    subject: res.subject, body: res.body, redige: true,
     ...(res.aRevoir ? { aRevoir: true, defauts: res.defauts } : {}),
   };
 }

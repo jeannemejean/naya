@@ -49,6 +49,28 @@ export type EnrollmentDTO = {
   status: string; // active | awaiting_linkedin | paused | completed | stopped_replied | bounced | unsubscribed | failed | excluded_audience
 };
 
+// Une salve et son bilan (GET .../salves). Les chiffres viennent des états de ses prospects.
+export type SalveDTO = {
+  id: number;
+  parJour: number;
+  createdAt: string | null;
+  prevus: number;
+  partis: number;
+  reponses: number;
+  enAttente: number;
+  bloques: number;
+  prochainEnvoi: string | null;
+};
+
+export type ReponseLancementSalve = {
+  salveId: number | null;
+  programmes: number;
+  ignores: number;
+  demandes: number;
+  premierEnvoi: string | null;
+  dernierEnvoi: string | null;
+};
+
 export type StepAnalytics = {
   byStep: { stepOrder: number; channel: string; sent: number; opened: number; clicked: number; bounced: number }[];
   byChannel: { channel: string; sent: number; replied: number }[];

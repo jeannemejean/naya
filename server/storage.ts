@@ -131,6 +131,8 @@ import {
   type CampaignSequenceStep,
   type InsertCampaignSequenceStep,
   leadSequenceState,
+  prospectionSalves,
+  type ProspectionSalve,
   type LeadSequenceState,
   type InsertLeadSequenceState,
   leadStepMessages,
@@ -222,6 +224,8 @@ import { extraitDe } from "@shared/citation";
 import { estLeadTest, TAG_LEAD_TEST } from "./services/prospection-mode-test";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
+import { ETAPE_EN_ATTENTE_DE_VALIDATION, ETAPE_PREMIER_CONTACT } from "./services/prospection-validation";
+import { memeEntreprise } from "./services/prospection-entreprises";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
@@ -540,7 +544,13 @@ export interface IStorage {
   saveSequencePlan(campaignId: number, userId: string, plan: { steps: { channel: string; delayDays: number; intention: string; condition: string; role?: string | null }[] }): Promise<void>;
   getLeadSequenceState(leadId: number): Promise<LeadSequenceState | undefined>;
   getEnrollmentsByCampaign(campaignId: number): Promise<{ leadId: number; status: string }[]>;
-  enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null>;
+  enrollLead(leadId: number, campaignId: number, userId: string, opts?: { salveId: number; nextRunAt: Date }): Promise<LeadSequenceState | null>;
+  creerSalve(userId: string, campaignId: number, parJour: number): Promise<ProspectionSalve>;
+  supprimerSalve(id: number, userId: string): Promise<void>;
+  /** Les salves d'une campagne, les plus récentes d'abord, avec l'état de leurs prospects. */
+  salvesDeCampagne(campaignId: number, userId: string): Promise<{ salve: ProspectionSalve; etats: LeadSequenceState[] }[]>;
+  /** Les prospects d'une salve dont une séquence est en cours. */
+  sequencesEnCoursDeSalve(id: number, userId: string): Promise<number[]>;
   /** Mode test : état de séquence créé directement « terminé » après l'étape 1 (jamais repris par le worker). */
   terminerSequenceTest(leadId: number, campaignId: number, userId: string, at: Date): Promise<void>;
   /** Mode test : un prospect NON test de l'utilisatrice (archivé compris) porte-t-il cette adresse normalisée ? */
@@ -645,6 +655,14 @@ export interface IStorage {
   /** Toute la liste « ne plus contacter » (pour filtrer un import ou un sourcing en une lecture). */
   getProspectsBloques(userId: string): Promise<{ emails: Set<string>; linkedinIds: Set<string> }>;
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
+  /** Un message vient de partir : le suivi quitte « messages prêts », sans jamais reculer. */
+  marquerPremierContact(leadId: number, userId: string): Promise<void>;
+  /** Met une séquence en pause, raison visible dans l'aperçu. */
+  suspendreSequence(leadId: number, raison: string): Promise<void>;
+  /** Les prospects de la même entreprise et du même projet dont une séquence est en cours. */
+  colleguesEnSequence(lead: Pick<Lead, "id" | "company" | "email" | "projectId">, userId: string): Promise<number[]>;
+  /** Les prospects d'un projet qui ont répondu : leurs collègues ne sont pas à recontacter en masse. */
+  prospectsAyantRepondu(userId: string, projectId: number | null): Promise<{ company: string | null; email: string | null }[]>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
   /** Public de campagne : retire le prospect de la séquence (état définitif `excluded_audience`). */
@@ -1992,7 +2010,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(leadSequenceState.campaignId, campaignId));
   }
 
-  async enrollLead(leadId: number, campaignId: number, userId: string): Promise<LeadSequenceState | null> {
+  async enrollLead(leadId: number, campaignId: number, userId: string, opts?: { salveId: number; nextRunAt: Date }): Promise<LeadSequenceState | null> {
     // Un prospect test (mode test) ne reçoit que sa première touche : jamais de séquence.
     const [cible] = await db.select({ tags: leads.tags }).from(leads).where(eq(leads.id, leadId));
     if (estLeadTest(cible)) return null;
@@ -2002,9 +2020,15 @@ export class DatabaseStorage implements IStorage {
     // ni par une autre fiche portant la même adresse.
     if (await this.isLeadUnsubscribed(leadId, userId)) return null;
     const firstDelayDays = steps[0].delayDays || 0;
-    const nextRunAt = new Date(Date.now() + firstDelayDays * 86400000);
+    const nextRunAt = new Date((opts?.nextRunAt.getTime() ?? Date.now()) + firstDelayDays * 86400000);
 
     const existing = await this.getLeadSequenceState(leadId);
+    if (existing) {
+      // Reprise : un brouillon LinkedIn jamais envoyé n'est pas une étape faite. Sa réservation
+      // ferait passer le premier message pour parti et la relance arriverait sans lui.
+      await this.deleteLinkedInDraftsForLead(leadId, userId);
+      await db.delete(outreachStepSends).where(and(eq(outreachStepSends.leadId, leadId), eq(outreachStepSends.status, "draft")));
+    }
     // Nouveau départ : le compteur « message trop proche » et sa raison d'arrêt aussi.
     await this.setLeadSequenceGuard(leadId, null);
     // Nouveau départ : le public de la campagne sera revérifié (autre campagne possible).
@@ -2012,7 +2036,9 @@ export class DatabaseStorage implements IStorage {
     const values = {
       leadId, campaignId, userId,
       status: "active", currentStep: 0, nextRunAt,
-      lastStepSentAt: null, delayAnchorAt: null, repliedAt: null,
+      // Reprise : les délais repartent de maintenant, pas de la première entrée en séquence,
+      // sinon une relance en retard partirait dans la minute.
+      lastStepSentAt: null, delayAnchorAt: existing ? new Date() : null, repliedAt: null,
       // Décision explicite (revue post-commit f17af17, mineur) : un enrôlement (y compris
       // une RELANCE de campagne) est un vrai nouveau départ — currentStep, nextRunAt et
       // repliedAt sont déjà remis à zéro ci-dessus. Un lead ABANDONNÉ (status:"failed" après
@@ -2020,6 +2046,8 @@ export class DatabaseStorage implements IStorage {
       // le tout premier échec de la relance déclencherait un abandon IMMÉDIAT (silencieux,
       // sans nouvelle chance). Remis à 0 pour la même raison que le reste de cette ligne.
       linkedinConsecutiveFailures: 0,
+      // Sans salve (reprise à la main), le prospect reste compté dans celle où il est parti.
+      ...(opts ? { salveId: opts.salveId } : {}),
     };
     if (existing) {
       const [updated] = await db.update(leadSequenceState)
@@ -2029,6 +2057,35 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(leadSequenceState).values(values).returning();
     return created || null;
+  }
+
+  async creerSalve(userId: string, campaignId: number, parJour: number): Promise<ProspectionSalve> {
+    const [salve] = await db.insert(prospectionSalves).values({ userId, campaignId, parJour }).returning();
+    return salve;
+  }
+
+  async supprimerSalve(id: number, userId: string): Promise<void> {
+    await db.delete(prospectionSalves).where(and(eq(prospectionSalves.id, id), eq(prospectionSalves.userId, userId)));
+  }
+
+  async salvesDeCampagne(campaignId: number, userId: string): Promise<{ salve: ProspectionSalve; etats: LeadSequenceState[] }[]> {
+    const salves = await db.select().from(prospectionSalves)
+      .where(and(eq(prospectionSalves.campaignId, campaignId), eq(prospectionSalves.userId, userId)))
+      .orderBy(desc(prospectionSalves.id));
+    if (salves.length === 0) return [];
+    const etats = await db.select().from(leadSequenceState)
+      .where(inArray(leadSequenceState.salveId, salves.map((s) => s.id)));
+    return salves.map((salve) => ({ salve, etats: etats.filter((e) => e.salveId === salve.id) }));
+  }
+
+  async sequencesEnCoursDeSalve(id: number, userId: string): Promise<number[]> {
+    const rows = await db.select({ leadId: leadSequenceState.leadId }).from(leadSequenceState)
+      .where(and(
+        eq(leadSequenceState.salveId, id),
+        eq(leadSequenceState.userId, userId),
+        inArray(leadSequenceState.status, ["active", "awaiting_linkedin"]),
+      ));
+    return rows.map((r) => r.leadId);
   }
 
   async adresseDeVraiProspect(userId: string, emailNormalise: string): Promise<boolean> {
@@ -2615,6 +2672,41 @@ export class DatabaseStorage implements IStorage {
     return rows.length;
   }
 
+  async marquerPremierContact(leadId: number, userId: string): Promise<void> {
+    await db.update(leads)
+      .set({ stage: ETAPE_PREMIER_CONTACT, updatedAt: new Date() })
+      .where(and(eq(leads.id, leadId), eq(leads.userId, userId), eq(leads.stage, ETAPE_EN_ATTENTE_DE_VALIDATION)));
+  }
+
+  async suspendreSequence(leadId: number, raison: string): Promise<void> {
+    await this.updateLeadSequenceState(leadId, { status: "paused", nextRunAt: null });
+    await this.setLeadSequenceGuard(leadId, { tropProcheConsecutifs: 0, stepId: null, attention: raison });
+  }
+
+  async colleguesEnSequence(lead: Pick<Lead, "id" | "company" | "email" | "projectId">, userId: string): Promise<number[]> {
+    const candidats = await db.select({ id: leads.id, company: leads.company, email: leads.email })
+      .from(leads)
+      .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
+      .where(and(
+        eq(leads.userId, userId),
+        ne(leads.id, lead.id),
+        lead.projectId == null ? isNull(leads.projectId) : eq(leads.projectId, lead.projectId),
+        inArray(leadSequenceState.status, ["active", "awaiting_linkedin"]),
+      ));
+    return candidats.filter((c) => memeEntreprise(lead, c)).map((c) => c.id);
+  }
+
+  async prospectsAyantRepondu(userId: string, projectId: number | null): Promise<{ company: string | null; email: string | null }[]> {
+    return db.select({ company: leads.company, email: leads.email })
+      .from(leads)
+      .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
+      .where(and(
+        eq(leads.userId, userId),
+        projectId == null ? isNull(leads.projectId) : eq(leads.projectId, projectId),
+        eq(leadSequenceState.status, "stopped_replied"),
+      ));
+  }
+
   async createLead(leadData: InsertLead): Promise<Lead> {
     const [newLead] = await db.insert(leads).values(leadData).returning();
     return newLead;
@@ -2711,7 +2803,9 @@ export class DatabaseStorage implements IStorage {
         .limit(1);
       reportAbsence = !!abs;
     }
-    const plan = planAcceptance(row?.at ?? null, at, state?.status ?? null, now, { nextRunAt: state?.nextRunAt ?? null, reportAbsence });
+    // Prospect programmé (salve) et pas encore contacté : sa date tient, comme un report d'absence.
+    const pasEncoreContacte = !!state && !state.lastStepSentAt;
+    const plan = planAcceptance(row?.at ?? null, at, state?.status ?? null, now, { nextRunAt: state?.nextRunAt ?? null, reportAbsence: reportAbsence || pasEncoreContacte });
     await db.update(leads).set({ linkedinConnectedAt: plan.linkedinConnectedAt, updatedAt: now }).where(eq(leads.id, leadId));
     if (plan.wakeSequenceAt) {
       await db.update(leadSequenceState)
@@ -2761,6 +2855,9 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
       .where(and(
         eq(leadSequenceState.status, "active"),
+        // Aucune invitation n'a pu partir avant le premier message : rien à vérifier, ni à compter
+        // dans le budget LinkedIn.
+        isNotNull(leadSequenceState.lastStepSentAt),
         isNull(leads.linkedinConnectedAt),
         isNull(leads.archivedAt),
       ))

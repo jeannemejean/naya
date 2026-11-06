@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  cleProfilLinkedIn,
   marcheDeRecherche,
   normaliserRequeteGoogle,
   sourcerJusquaCible,
@@ -50,6 +51,17 @@ describe("normaliserRequeteGoogle — jamais de syntaxe Sales Navigator envoyée
   });
 });
 
+describe("cleProfilLinkedIn — un même profil, quel que soit le sous-domaine", () => {
+  it("ignore le sous-domaine, la casse, les paramètres et la barre finale", () => {
+    const cle = cleProfilLinkedIn("https://www.linkedin.com/in/marie-dupont");
+    expect(cleProfilLinkedIn("https://fr.linkedin.com/in/marie-dupont?trk=abc")).toBe(cle);
+    expect(cleProfilLinkedIn("https://www.linkedin.com/in/Marie-Dupont/")).toBe(cle);
+  });
+  it("une adresse illisible reste comparable à elle-même", () => {
+    expect(cleProfilLinkedIn("https://example.com/Page/")).toBe("https://example.com/page");
+  });
+});
+
 describe("buildSerpUrl — pagination", () => {
   it("page 0 : pas de start ; page 2 : start=20", () => {
     expect(buildSerpUrl("x")).not.toContain("start=");
@@ -84,7 +96,7 @@ describe("sourcerJusquaCible — continue tant que la cible n'est pas atteinte",
     const search = vi.fn(async () => [profil("deja"), profil("neuf"), profil("neuf")]);
     const r = await sourcerJusquaCible({
       requetes: ["q1"], cible: 10, search,
-      estConnu: (url) => url.includes("/deja"),
+      estConnu: (cle) => cle.includes("deja"),
     });
     expect(r.leads.map((l) => l.linkedinUrl)).toEqual(["https://www.linkedin.com/in/neuf"]);
     expect(r.dejaConnus).toBe(1);
@@ -128,5 +140,29 @@ describe("sourcerJusquaCible — continue tant que la cible n'est pas atteinte",
     const surAppel = vi.fn();
     await sourcerJusquaCible({ requetes: ["q1"], cible: 10, search: async () => [], estConnu: () => false, surAppel });
     expect(surAppel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sourcerJusquaCible — filtres", () => {
+  it("le même profil sur fr. et www. ne compte qu'une fois", async () => {
+    const search = async (): Promise<SerpResult[]> => [
+      { link: "https://fr.linkedin.com/in/marie", title: "Marie - CEO - Acme | LinkedIn" },
+      { link: "https://www.linkedin.com/in/marie", title: "Marie - CEO - Acme | LinkedIn" },
+    ];
+    const r = await sourcerJusquaCible({ requetes: ["q1"], cible: 5, search, estConnu: () => false, pagesParRequete: 1 });
+    expect(r.leads).toHaveLength(1);
+  });
+
+  it("écarte un profil exclu sans le compter comme trouvé", async () => {
+    const search = async (): Promise<SerpResult[]> => [
+      { link: "https://www.linkedin.com/in/a", title: "Anne - Directrice - Agence Lumière | LinkedIn" },
+      { link: "https://www.linkedin.com/in/b", title: "Basile - Directeur - Maison Basile | LinkedIn" },
+    ];
+    const r = await sourcerJusquaCible({
+      requetes: ["q1"], cible: 5, search, estConnu: () => false, pagesParRequete: 1,
+      estExclu: (l) => l.company === "Agence Lumière",
+    });
+    expect(r.leads.map((l) => l.name)).toEqual(["Basile"]);
+    expect(r.exclus).toBe(1);
   });
 });

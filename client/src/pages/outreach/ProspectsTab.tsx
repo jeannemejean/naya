@@ -41,6 +41,7 @@ import type { Lead } from '@shared/schema';
 import { resumeEnrolement } from './enrolement-message';
 import ValidationPanel from './ValidationPanel';
 import LinkedInAEnvoyer from './LinkedInAEnvoyer';
+import SalvesPanel from './SalvesPanel';
 import { attendValidation, estPretAPartir, prospectsAValider } from './validation-messages';
 import { estLeadTest } from './mode-test';
 
@@ -96,6 +97,9 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
     for (const e of enrollments) m.set(e.leadId, e.status);
     return m;
   }, [enrollments]);
+
+  // Validés et jamais entrés en séquence : ce qu'une salve peut prendre.
+  const prets = prospects.filter((l) => estPretAPartir(l as any) && !statusByLead.has(l.id)).length;
 
   // Relit le prospect sélectionné depuis la liste vivante — reflète enrichissement / changement
   // d'étape sans dépendre du snapshot capturé au clic (même pattern que PipelineBoard).
@@ -234,6 +238,9 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
 
       {/* Messages à valider — là où mène la tâche « Valider les messages préparés par Naya » */}
       <ValidationPanel prospects={aValider} onOpenLead={setSelectedLead} />
+
+      {/* Salves : les prospects validés partent par lots, étalés sur plusieurs jours */}
+      <SalvesPanel campaignId={campaignId} prets={prets} hasSequence={hasSequence} />
 
       {/* Brouillons LinkedIn : la séquence attend que tu les envoies */}
       <LinkedInAEnvoyer campaignId={campaignId} />

@@ -203,7 +203,7 @@ export const userPreferences = pgTable("user_preferences", {
   // Réglages d'envoi de prospection PROPRES À L'UTILISATEUR (jamais l'adresse de l'app).
   // Chaque utilisateur envoie depuis SA propre adresse.
   prospectionSenderEmail: text("prospection_sender_email"),     // ex: jeanne@agence-jmd.com
-  prospectionSenderName: text("prospection_sender_name"),       // ex: Jeanne Méjean
+  prospectionSenderName: text("prospection_sender_name"),       // ex: Jeanne Mejean
   prospectionSendgridApiKey: text("prospection_sendgrid_api_key"), // optionnel, CHIFFRÉ — clé SendGrid de l'utilisateur
   // Adresse postale (requise par SendGrid / CAN-SPAM pour vérifier un expéditeur)
   prospectionSenderAddress: text("prospection_sender_address"),
@@ -1907,6 +1907,19 @@ export const campaignSequenceSteps = pgTable("campaign_sequence_steps", {
 });
 
 // État d'enrôlement d'un lead dans la séquence de sa campagne (1 ligne / lead).
+// Salve : un groupe de nouveaux prospects ouvert par un clic et étalé sur plusieurs jours.
+// Les prospects sont reliés par `lead_sequence_state.salve_id` ; ce qui est parti, répondu ou
+// bloqué se lit sur leurs états, jamais recopié ici (server/services/prospection-salves.ts).
+export const prospectionSalves = pgTable("prospection_salves", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  campaignId: integer("campaign_id").notNull().references(() => prospectionCampaigns.id, { onDelete: "cascade" }),
+  parJour: integer("par_jour").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [index("idx_prospection_salves_campaign").on(table.campaignId)]);
+
+export type ProspectionSalve = typeof prospectionSalves.$inferSelect;
+
 export const leadSequenceState = pgTable("lead_sequence_state", {
   id: serial("id").primaryKey(),
   leadId: integer("lead_id").notNull().unique().references(() => leads.id),
@@ -1930,6 +1943,7 @@ export const leadSequenceState = pgTable("lead_sequence_state", {
   // (`nextLinkedInFailureState` dans prospection-sender.ts) : sans lui, un lead dont le
   // profil ne se résout jamais serait retenté indéfiniment, toutes les 60 secondes.
   linkedinConsecutiveFailures: integer("linkedin_consecutive_failures").notNull().default(0),
+  salveId: integer("salve_id").references(() => prospectionSalves.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -236,7 +236,7 @@ describe("generateStepMessage — messages distincts", () => {
   it("charge le texte de l'invitation et l'injecte dans le prompt de l'étape 2", async () => {
     (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: distinct }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
-    expect(r).toEqual({ subject: null, body: distinct });
+    expect(r).toEqual({ subject: null, redige: true, body: distinct });
     const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage;
     expect(prompt).toContain(invitation);
     expect(prompt).toContain("PREMIER MESSAGE");
@@ -327,9 +327,9 @@ describe("generateStepMessage — messages distincts", () => {
     const leadM = { id: 43, name: "Marie Dupont", role: "Gérante", company: "Lumen Concept Store", prospectBrief: BRIEF,
       enrichedProfile: { linkedin: { location: "Lyon" } } };
     (storage.getLeadStepMessage as any).mockImplementation(async (_l: number, stepId: number) =>
-      stepId === 1 ? { body: "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Méjean", edited: false } : undefined);
-    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Méjean" }));
-    const r = await generateStepMessage("u1", { lead: leadM, campaign, step: steps[1], steps, senderLastName: "Méjean" });
+      stepId === 1 ? { body: "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Mejean", edited: false } : undefined);
+    (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Mejean" }));
+    const r = await generateStepMessage("u1", { lead: leadM, campaign, step: steps[1], steps, senderLastName: "Mejean" });
     expect(r.tropProche).toBeUndefined();
     expect(claude.callClaudeWithContext).toHaveBeenCalledTimes(1);
     expect(storage.upsertLeadStepMessage).toHaveBeenCalledTimes(1);
@@ -487,9 +487,9 @@ describe("neutresDuProspect", () => {
   it("nom complet et ses parties, entreprise, ville, expéditrice", () => {
     const n = neutresDuProspect(
       { name: "Marie Dupont", company: "Lumen Concept Store", enrichedProfile: { linkedin: { location: "Lyon, Auvergne-Rhône-Alpes" } } },
-      ["Jeanne", "Méjean", null],
+      ["Jeanne", "Mejean", null],
     );
-    expect(n).toEqual(expect.arrayContaining(["Marie Dupont", "Marie", "Dupont", "Lumen Concept Store", "Lyon", "Jeanne", "Méjean"]));
+    expect(n).toEqual(expect.arrayContaining(["Marie Dupont", "Marie", "Dupont", "Lumen Concept Store", "Lyon", "Jeanne", "Mejean"]));
     expect(n).not.toContain("");
   });
 });

@@ -9,6 +9,12 @@ import {
   estValide,
   transitionsHumaines,
   cheminsVersPremierContact,
+  RAISON_VALIDATION_MANQUANTE,
+  doitReprendreApresValidation,
+  peutReprendreSequence,
+  raisonDeRetenue,
+  RAISON_SANS_SUITE,
+  etapeApresEnrichissement,
 } from "./prospection-validation";
 
 /**
@@ -153,5 +159,79 @@ describe("transitionsHumaines", () => {
     // La voir grossir signalerait qu'une décision humaine vient d'être automatisée, ou
     // qu'une décision mécanique a été promue en corvée inutile.
     expect(transitionsHumaines()).toHaveLength(1);
+  });
+});
+
+describe("doitReprendreApresValidation", () => {
+  it("reprend une séquence que le robot a retenue faute de validation", () => {
+    expect(doitReprendreApresValidation({ status: "paused" }, RAISON_VALIDATION_MANQUANTE)).toBe(true);
+  });
+
+  it("ne reprend pas une pause décidée pour une autre raison", () => {
+    expect(doitReprendreApresValidation({ status: "paused" }, "Cette personne a déjà répondu.")).toBe(false);
+    expect(doitReprendreApresValidation({ status: "paused" }, null)).toBe(false);
+  });
+
+  it("ne touche pas une séquence qui n'est pas en pause, ni un prospect hors séquence", () => {
+    expect(doitReprendreApresValidation({ status: "active" }, RAISON_VALIDATION_MANQUANTE)).toBe(false);
+    expect(doitReprendreApresValidation({ status: "stopped_replied" }, RAISON_VALIDATION_MANQUANTE)).toBe(false);
+    expect(doitReprendreApresValidation(null, RAISON_VALIDATION_MANQUANTE)).toBe(false);
+  });
+});
+
+describe("peutReprendreSequence", () => {
+  const valide = new Date("2026-09-17T10:00:00Z");
+
+  it("un prospect déjà contacté, validé et en pause peut reprendre", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, { status: "paused" })).toBe(true);
+  });
+
+  it("jamais sans validation", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: null }, { status: "paused" })).toBe(false);
+  });
+
+  it("un prospect contacté dont la séquence a échoué peut repartir", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, { status: "failed" })).toBe(true);
+  });
+
+  it("jamais hors d'une séquence en pause", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, null)).toBe(false);
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, { status: "stopped_replied" })).toBe(false);
+  });
+
+  it("jamais un prospect engagé dans une discussion", () => {
+    expect(peutReprendreSequence({ stage: "in_discussion", validatedAt: valide }, { status: "paused" })).toBe(false);
+  });
+});
+
+describe("raisonDeRetenue", () => {
+  const valide = new Date("2026-09-17T10:00:00Z");
+
+  it("un prospect validé et suivi peut partir", () => {
+    expect(raisonDeRetenue({ stage: "messages_ready", validatedAt: valide })).toBeNull();
+    expect(raisonDeRetenue({ stage: "connection_sent", validatedAt: valide })).toBeNull();
+  });
+
+  it("sans validation, rien ne part", () => {
+    expect(raisonDeRetenue({ stage: "messages_ready", validatedAt: null })).toBe(RAISON_VALIDATION_MANQUANTE);
+  });
+
+  it("« Sans suite » arrête tout, même validé", () => {
+    expect(raisonDeRetenue({ stage: "no_follow", validatedAt: valide })).toBe(RAISON_SANS_SUITE);
+  });
+});
+
+describe("etapeApresEnrichissement", () => {
+  it("un prospect pas encore contacté suit ses messages", () => {
+    expect(etapeApresEnrichissement("identified", true)).toBe("messages_ready");
+    expect(etapeApresEnrichissement(null, false)).toBe("identified");
+    expect(etapeApresEnrichissement("no_follow", true)).toBe("messages_ready");
+  });
+
+  it("un prospect déjà contacté ne recule jamais", () => {
+    for (const etape of ["connection_sent", "connected", "followup1_sent", "in_discussion", "proposal_sent", "signed"]) {
+      expect(etapeApresEnrichissement(etape, true), etape).toBe(etape);
+      expect(etapeApresEnrichissement(etape, false), etape).toBe(etape);
+    }
   });
 });

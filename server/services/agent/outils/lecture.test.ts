@@ -126,13 +126,13 @@ describe("consulter_prospection", () => {
     expect(r.campagnes[0]).toMatchObject({ id: 7, nom: "Vignerons" });
   });
   it("rend au plus 50 prospects avec l'état de séquence", async () => {
-    s.getLeadsByCampaign.mockResolvedValue(Array.from({ length: 60 }, (_, i) => ({ id: i, name: `L${i}`, company: "C", status: "contacted", email: "x@y.z" })));
+    s.getLeadsByCampaign.mockResolvedValue(Array.from({ length: 60 }, (_, i) => ({ id: i, name: `L${i}`, company: "C", status: "discovered", stage: "in_discussion", email: "x@y.z" })));
     s.getLeadSequenceState.mockResolvedValue({ status: "active", currentStep: 2 });
     const r = await run("consulter_prospection", { campagneId: 7 });
     expect(s.getLeadsByCampaign).toHaveBeenCalledWith(7, "u1");
     expect(r.prospects).toHaveLength(50);
     expect(r.tronque).toBe(true);
-    expect(r.prospects[0]).toEqual({ id: 0, nom: "L0", entreprise: "C", stade: "contacted", sequence: { statut: "active", etape: 2 } });
+    expect(r.prospects[0]).toEqual({ id: 0, nom: "L0", entreprise: "C", stade: "in_discussion", sequence: { statut: "active", etape: 2 } });
   });
   it("campagne d'une autre : introuvable", async () => {
     expect(await run("consulter_prospection", { campagneId: 99 })).toEqual({ erreur: "introuvable" });

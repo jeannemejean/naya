@@ -7,6 +7,7 @@
  */
 
 import { recordSpend, SERP_COST_EUR } from "./usage";
+import { lirePosteEtEntreprise } from "./prospection-entreprises";
 
 const SERP_ENDPOINT = "https://api.brightdata.com/request";
 
@@ -128,10 +129,9 @@ export function extractLinkedInLead(result: SerpResult): ExtractedLead | null {
   const name = parts[0] || "";
   if (!name) return null;
 
-  let role: string | null = null;
-  let company: string | null = null;
-  if (parts.length >= 3) { role = parts[1]; company = parts[2]; }
-  else if (parts.length === 2) { company = parts[1]; }
+  const { role, company } = parts.length >= 3
+    ? lirePosteEtEntreprise(parts[1], parts[2])
+    : lirePosteEtEntreprise(null, parts[1] ?? null);
 
   const linkedinUrl = link.split("?")[0];
   return { name, role, company, linkedinUrl };

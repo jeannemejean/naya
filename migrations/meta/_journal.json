@@ -267,6 +267,13 @@
       "when": 1793957313725,
       "tag": "0037_tan_spencer_smythe",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793979871707,
+      "tag": "0038_curvy_spitfire",
+      "breakpoints": true
     }
   ]
 }

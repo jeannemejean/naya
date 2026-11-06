@@ -33,6 +33,7 @@ import { registerSocialRoutes } from "./routes-social";
 import { registerConnexionsRoutes, lienUnipile, compteATrouver } from "./routes-connexions";
 import { rattacherCompte } from "./services/connexions/rattacher-compte";
 import { registerReponsesRoutes, STADES_ENGAGES } from "./routes-reponses";
+import { registerSalvesRoutes } from "./routes-salves";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
 import { dansPortee } from "./services/connexions/portee";
@@ -87,7 +88,7 @@ import { lecturesRepenser, transactionRepenser } from "./services/campagne/repen
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, sourcerCampagne, cibleDeCampagne, prospectsParJourDerive, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions, BriefIncompletError } from "./services/sequence-message";
-import { etatGardeApercu } from "./services/sequence-distinct";
+import { etatGardeApercu, lireGarde } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones } from "./services/milestone-engine";
 import { registerAgentRoutes } from "./routes-agent";
@@ -96,8 +97,10 @@ import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
-import { peutEtreContacte } from "./services/prospection-validation";
-import { enrolerEnMasse } from "./services/prospection-enrolement";
+import { doitReprendreApresValidation, peutEtreContacte, peutReprendreSequence, RAISON_SANS_SUITE } from "./services/prospection-validation";
+import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE, suspendreCollegues } from "./services/prospection-enrolement";
+import { memeEntreprise } from "./services/prospection-entreprises";
+import { marquerDernierMessageRepondu } from "./services/reponses/ingestion";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
 import { synchroniserValidationsProspection } from "./services/prospection-verification";
@@ -8040,7 +8043,12 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // La campagne cible doit appartenir à l'utilisateur.
       const campaign = await storage.getProspectionCampaign(campaignId);
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'campaign_not_found' });
-      const moved = await storage.bulkMoveLeads(ids, req.userId, campaignId);
+      const { moved } = await deplacerProspects({
+        ids, userId: req.userId, campaignId,
+        getState: (id) => storage.getLeadSequenceState(id),
+        deplacer: (liste) => storage.bulkMoveLeads(liste, req.userId, campaignId),
+        suspendre: (id) => storage.suspendreSequence(id, RAISON_PROSPECT_DEPLACE),
+      });
       res.json({ moved });
     } catch (error: any) {
       console.error('Error bulk-moving leads:', error?.message);
@@ -8056,6 +8064,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // Version AVANT édition des messages : sert à tracer la correction (apprentissage).
       const touchesMessages = typeof (updates as any).linkedinMessage === 'string' || typeof (updates as any).emailMessage === 'string';
       const avant = touchesMessages ? await storage.getLead(parseInt(id), userId).catch(() => undefined) : undefined;
+      const ENGAGED = STADES_ENGAGES;
+      const devientEngage = typeof (updates as any).stage === 'string' && ENGAGED.includes((updates as any).stage);
+      const stadeAvant = devientEngage ? (await storage.getLead(parseInt(id), userId).catch(() => undefined))?.stage : undefined;
       const lead = await storage.updateLead(parseInt(id), userId, updates);
 
       if (!lead) {
@@ -8064,14 +8075,26 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (avant) await tracerEditionMessages(userId, avant, updates as any);
 
       // Stop-on-reply : si le lead passe à un stade « répondu/engagé », on stoppe sa séquence.
-      const ENGAGED = STADES_ENGAGES;
-      if (typeof (updates as any).stage === 'string' && ENGAGED.includes((updates as any).stage)) {
+      if (devientEngage) {
         const st = await storage.getLeadSequenceState(parseInt(id));
         if (st && ['active', 'awaiting_linkedin'].includes(st.status)) {
           await storage.updateLeadSequenceState(parseInt(id), { status: 'stopped_replied', repliedAt: new Date(), nextRunAt: null }).catch(() => {});
         }
         // Une réponse : les messages envoyés à ce prospect deviennent les meilleurs exemples.
         await Promise.resolve().then(() => storage.markFeedbackReplied(userId, parseInt(id))).catch(() => {});
+        // Réponse reçue hors de la boîte (téléphone, salon) : même trace que celle des rapports.
+        // Une seule fois, à l'entrée en discussion : « Signé » n'est pas une nouvelle réponse.
+        if (!ENGAGED.includes(stadeAvant ?? '')) {
+          await marquerDernierMessageRepondu({
+            dernierMessageEnvoye: (l) => storage.getLatestOutreachByLead(l),
+            updateOutreachMessage: (mid, p) => storage.updateOutreachMessage(mid, p),
+          }, parseInt(id), new Date())
+            .catch((e: any) => console.error('[lead patch] marquage de la réponse:', e?.message || e));
+          await suspendreCollegues({
+            collegues: () => storage.colleguesEnSequence(lead, userId),
+            suspendre: (l, raison) => storage.suspendreSequence(l, raison),
+          }).catch((e: any) => console.error('[lead patch] pause des collègues:', e?.message || e));
+        }
       }
 
       // Un prospect écarté (ou qui change d'étape) sort, ou entre, dans le lot à valider :
@@ -8079,6 +8102,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (typeof (updates as any).stage === 'string' && (lead as any).prospectionCampaignId) {
         synchroniserValidationsProspection(userId, undefined, { campaignId: (lead as any).prospectionCampaignId })
           .catch((e: any) => console.error('[lead patch] synchro tâche de validation:', e?.message || e));
+      }
+
+      // « Sans suite » : plus rien ne part. Le robot le revérifie aussi avant chaque envoi.
+      if ((updates as any).stage === 'no_follow') {
+        const st = await storage.getLeadSequenceState(parseInt(id));
+        if (st && ['active', 'awaiting_linkedin'].includes(st.status)) {
+          await storage.suspendreSequence(parseInt(id), RAISON_SANS_SUITE);
+        }
       }
 
       res.json(lead);
@@ -8457,6 +8488,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       } as any);
       if (!updated) return res.status(404).json({ message: 'not_found' });
       await tracerValidation(req.userId, updated);
+      // Séquence retenue par le robot faute de validation : l'accord revenu, elle repart
+      // là où elle s'était arrêtée. Sans ça, « Validé » s'afficherait et rien ne partirait.
+      const garde = lireGarde(updated);
+      const etatSequence = await storage.getLeadSequenceState(updated.id);
+      if (etatSequence?.userId === req.userId && doitReprendreApresValidation(etatSequence, garde?.attention)) {
+        await storage.updateLeadSequenceState(updated.id, { status: 'active', nextRunAt: new Date() } as any);
+        await storage.setLeadSequenceGuard(updated.id, { tropProcheConsecutifs: garde?.tropProcheConsecutifs ?? 0, stepId: garde?.stepId ?? null, attention: null });
+      }
       // Un prospect de moins à valider : le compteur de la tâche du planning suit.
       if ((updated as any).prospectionCampaignId) {
         synchroniserValidationsProspection(req.userId, undefined, { campaignId: (updated as any).prospectionCampaignId })
@@ -8501,7 +8540,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // messages : un contact part parce que quelqu'un l'a voulu, jamais parce qu'un
       // minuteur est arrive a echeance. C'est aussi la regle de ce depot depuis l'incident
       // des 14 posts publies par erreur.
-      if (!peutEtreContacte({ stage: (lead as any).stage, validatedAt: (lead as any).validatedAt })) {
+      const etatSequence = await storage.getLeadSequenceState(lead.id);
+      if (!peutEtreContacte({ stage: (lead as any).stage, validatedAt: (lead as any).validatedAt }) && !peutReprendreSequence(lead, etatSequence)) {
         return res.status(409).json({
           message: 'not_validated',
           stage: (lead as any).stage ?? null,
@@ -8509,8 +8549,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         });
       }
 
+      if (etatSequence && ['active', 'awaiting_linkedin'].includes(etatSequence.status)) {
+        return res.status(409).json({ message: 'deja_en_sequence' });
+      }
+
       const campaignId = Number(req.body?.campaignId) || lead.prospectionCampaignId;
       if (!campaignId) return res.status(400).json({ message: 'no_campaign' });
+      const campagne = await storage.getProspectionCampaign(campaignId);
+      if (campagne?.userId !== req.userId) return res.status(404).json({ message: 'campaign_not_found' });
       if (await storage.isLeadUnsubscribed(lead.id, req.userId)) {
         return res.status(409).json({ message: 'unsubscribed' });
       }
@@ -8806,6 +8852,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     getSteps: (campaignId: number) => storage.getSequenceSteps(campaignId),
     getSignals: (leadId: number) => storage.getLeadSignals(leadId),
     markClaimSent: (key: any) => storage.markStepSendSent(key, 'sent'),
+    marquerPremierContact: (leadId: number, userId: string) => storage.marquerPremierContact(leadId, userId),
   };
   const repondreLinkedInManuel = (res: any, r: Awaited<ReturnType<typeof marquerLinkedInEnvoye>>) => {
     if (r.ok) return res.json(r);
@@ -8873,10 +8920,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const campaignLeads = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id);
       // Même barrière que /api/leads/:id/enroll : un prospect dont personne n'a validé
       // les messages n'entre pas en séquence, même via « Lancer ».
+      const ontRepondu = await storage.prospectsAyantRepondu(req.userId, campaign.projectId ?? null);
       const r = await enrolerEnMasse({
-        leads: campaignLeads.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt })),
+        leads: campaignLeads.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt, company: l.company, email: l.email })),
         getState: (leadId) => storage.getLeadSequenceState(leadId),
         enroll: (leadId) => storage.enrollLead(leadId, campaign.id, req.userId),
+        respecterLesPauses: true,
+        exclure: (l) => ontRepondu.some((rep) => memeEntreprise(l, rep)),
       });
       res.json(r);
     } catch (e: any) {
@@ -11218,6 +11268,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerMesureRoutes(app);
   registerConnexionsRoutes(app);
   registerReponsesRoutes(app);
+  registerSalvesRoutes(app);
   registerRapportsRoutes(app);
   registerAgentRoutes(app);
 

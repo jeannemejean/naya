@@ -10,6 +10,8 @@ vi.mock("../storage", () => ({
     getLeadSignals: vi.fn(),
     getSequenceSteps: vi.fn(),
     getLeads: vi.fn(),
+    getLead: vi.fn(),
+    marquerPremierContact: vi.fn(),
     getBrandDna: vi.fn(),
     getUser: vi.fn(),
     getProspectionCampaign: vi.fn(),
@@ -71,6 +73,7 @@ import {
   retirerSignatureFinale,
   envoyerEmailProspect,
 } from "./prospection-sender";
+import { RAISON_SANS_SUITE, RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
 import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedin";
@@ -271,6 +274,8 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     linkedinUrl: null,
     // Public déjà vérifié par défaut : seuls les tests « public de campagne » le remettent à null.
     relationVerifieeAt: new Date("2026-01-01T00:00:00Z"),
+    // Validé par défaut : seuls les tests « validation » le remettent à null.
+    validatedAt: new Date("2026-01-01T00:00:00Z"),
     outreachUnreachableReason: null,
     enrichedProfile: { linkedin: { raw: { country_code: "FR", city: null } } },
     ...overrides,
@@ -344,6 +349,9 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
     (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
     (storage.getLeads as any).mockResolvedValue([baseLead()]);
+    (storage.getLead as any).mockResolvedValue(baseLead());
+    (storage.marquerPremierContact as any).mockResolvedValue(undefined);
+    (storage.updateLead as any).mockResolvedValue(undefined);
     (storage.getBrandDna as any).mockResolvedValue({});
     (storage.getUser as any).mockResolvedValue({ firstName: "Jeanne" });
     (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne test" });
@@ -944,6 +952,142 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       await runProspectionSender();
 
       expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("email parti : le suivi du prospect passe au premier contact", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      await runProspectionSender();
+      expect(storage.createOutreachMessage).toHaveBeenCalled();
+      expect(storage.marquerPremierContact).toHaveBeenCalledWith(1, "u1");
+    });
+
+    it("LinkedIn parti : le suivi du prospect passe au premier contact", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, providerId: "p1" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      await runProspectionSender();
+      expect(sendLinkedInStep).toHaveBeenCalled();
+      expect(storage.marquerPremierContact).toHaveBeenCalledWith(1, "u1");
+    });
+
+    it("brouillon LinkedIn : rien n'est parti, le suivi ne bouge pas", async () => {
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      await runProspectionSender();
+      expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ sentAt: null }));
+      expect(storage.marquerPremierContact).not.toHaveBeenCalled();
+    });
+
+    it("échec d'envoi : le suivi ne bouge pas", async () => {
+      fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => "boom" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.marquerPremierContact).not.toHaveBeenCalled();
+    });
+
+    it("suivi non mis à jour : l'envoi reste acquis et la séquence avance", async () => {
+      (storage.marquerPremierContact as any).mockRejectedValue(new Error("db"));
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, expect.objectContaining({ currentStep: 1 }));
+    });
+
+    it("« Sans suite » : rien ne part, séquence en pause, raison visible", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ stage: "no_follow" })]);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_SANS_SUITE }));
+    });
+
+    it("passé en « Sans suite » pendant la rédaction : rien ne part", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLead as any).mockResolvedValue(baseLead({ stage: "no_follow" }));
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+    });
+
+    it("premier message réécrit depuis la validation : rien ne part, le texte neuf attend d'être relu", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Texte neuf", redige: true });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.updateLead).toHaveBeenCalledWith(1, "u1", { validatedAt: null, emailMessage: "Texte neuf" });
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_VALIDATION_MANQUANTE }));
+    });
+
+    it("relance rédigée au dernier moment : elle part, le premier contact a déjà été validé", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState({ lastStepSentAt: new Date("2026-01-01T09:00:00Z") })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Relance", redige: true });
+      await runProspectionSender();
+      expect(storage.claimStepSend).toHaveBeenCalled();
+    });
+
+    it("validation retirée : rien ne se rédige ni ne part, séquence en pause, raison visible", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ validatedAt: null })]);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_VALIDATION_MANQUANTE, stepId: 100 }));
+    });
+
+    it("validation retirée pendant la rédaction (email) : rien ne part, séquence en pause", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLead as any).mockResolvedValue(baseLead({ validatedAt: null }));
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.getLead).toHaveBeenCalledWith(1, "u1");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_VALIDATION_MANQUANTE }));
+    });
+
+    it("validation retirée pendant la rédaction (LinkedIn) : ni envoi Unipile ni brouillon", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getLead as any).mockResolvedValue(baseLead({ linkedinUrl: "https://linkedin.com/in/x", validatedAt: null }));
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+    });
+
+    it("validation illisible juste avant l'envoi : rien ne part, aucun changement d'état (réessai)", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLead as any).mockRejectedValue(new Error("db"));
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
 
@@ -2590,18 +2734,18 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 describe("corpsEmailGmail — paragraphes et pied de mail", () => {
   const lien = "https://hellonaya.app/desinscription/151.abc";
   it("un paragraphe par bloc séparé d'une ligne vide, <br> pour un saut simple, texte échappé", () => {
-    const html = corpsEmailGmail("Bonjour Claire,\n\nUn <b>premier</b> paragraphe.\nSuite & fin.\n\nC'est un sujet ?", "Jeanne Méjean", "", lien);
+    const html = corpsEmailGmail("Bonjour Claire,\n\nUn <b>premier</b> paragraphe.\nSuite & fin.\n\nC'est un sujet ?", "Jeanne Mejean", "", lien);
     expect(html).toContain('<p style="margin:0 0 12px">Bonjour Claire,</p>');
     expect(html).toContain('<p style="margin:0 0 12px">Un &lt;b&gt;premier&lt;/b&gt; paragraphe.<br>Suite &amp; fin.</p>');
     expect(html).toContain('<p style="margin:0 0 12px">C\'est un sujet ?</p>');
   });
   it("pied : nom complet et adresse, sans tiret ; lien « Se désinscrire » cliquable, jamais l'URL brute en texte", () => {
-    const html = corpsEmailGmail("Bonjour,", "Jeanne Méjean", "12 rue X, Lyon", lien);
+    const html = corpsEmailGmail("Bonjour,", "Jeanne Mejean", "12 rue X, Lyon", lien);
     expect(html).not.toMatch(/[—–]/);
-    expect(html).toContain("Jeanne Méjean<br>12 rue X, Lyon</p>");
+    expect(html).toContain("Jeanne Mejean<br>12 rue X, Lyon</p>");
     expect(html).toContain(`<p style="font-size:12px;color:#888"><a href="${lien}" style="color:#888">Se désinscrire</a></p>`);
     expect(html.replace(/href="[^"]*"/g, "")).not.toContain(lien);
-    expect(html.indexOf("Jeanne Méjean")).toBeLessThan(html.indexOf("Se désinscrire"));
+    expect(html.indexOf("Jeanne Mejean")).toBeLessThan(html.indexOf("Se désinscrire"));
   });
   it("sans nom ni adresse : pas de paragraphe de signature vide", () => {
     const html = corpsEmailGmail("Bonjour,", "", "", lien);
@@ -2635,7 +2779,7 @@ describe("retirerSignatureFinale — emails déjà rédigés, signés par le mod
 });
 
 describe("envoyerEmailProspect (chemin d'envoi partagé worker / mode test)", () => {
-  const GMAIL = { via: "unipile" as const, accountId: "acc", fromEmail: "j@a.fr", fromName: "Jeanne Méjean", footerAddress: "Lyon" };
+  const GMAIL = { via: "unipile" as const, accountId: "acc", fromEmail: "j@a.fr", fromName: "Jeanne Mejean", footerAddress: "Lyon" };
   const o = { to: "c@x.fr", toName: "Claire", subject: "Objet", body: "Bonjour,\n\nTexte.", leadId: 42, stepOrder: 1, lienDesinscription: "https://app/desinscription/t" };
   beforeEach(() => (sendEmailUnipile as any).mockReset());
 
@@ -2644,7 +2788,7 @@ describe("envoyerEmailProspect (chemin d'envoi partagé worker / mode test)", ()
     expect(await envoyerEmailProspect(GMAIL, o)).toEqual({ ok: true, providerId: "p1", threadId: "t1" });
     expect(sendEmailUnipile).toHaveBeenCalledWith({
       accountId: "acc", to: "c@x.fr", toName: "Claire", subject: "Objet",
-      body: corpsEmailGmail(o.body, "Jeanne Méjean", "Lyon", o.lienDesinscription),
+      body: corpsEmailGmail(o.body, "Jeanne Mejean", "Lyon", o.lienDesinscription),
       trackingLabel: "lead:42:step:1",
       headers: { "List-Unsubscribe": "<https://app/desinscription/t>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
     });

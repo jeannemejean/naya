@@ -24,11 +24,32 @@ function deps(over: { msg?: any; state?: any; steps?: any[] } = {}) {
     getSteps: vi.fn(async () => steps as any),
     getSignals: vi.fn(async () => ({ opened: false, clicked: false, bounced: false, replied: false, inviteAccepted: false, inviteAcceptedAt: null })),
     markClaimSent: vi.fn(async () => undefined),
+    marquerPremierContact: vi.fn(async () => undefined),
   };
   return d;
 }
 
 describe("marquerLinkedInEnvoye", () => {
+  it("« Envoyé » : le suivi du prospect passe au premier contact, même hors séquence", async () => {
+    const d = deps({ state: null });
+    await marquerLinkedInEnvoye(d, "u1", 7, NOW);
+    expect(d.marquerPremierContact).toHaveBeenCalledWith(3, "u1");
+  });
+
+  it("suivi non mis à jour : le message reste noté parti et la séquence reprend", async () => {
+    const d = deps();
+    (d.marquerPremierContact as any).mockRejectedValue(new Error("db"));
+    const r = await marquerLinkedInEnvoye(d, "u1", 7, NOW);
+    expect(r).toEqual({ ok: true, sequenceReprise: true });
+    expect(d.updateState).toHaveBeenCalled();
+  });
+
+  it("déjà envoyé : le suivi n'est pas réécrit", async () => {
+    const d = deps({ msg: { id: 7, userId: "u1", leadId: 3, platform: "linkedin", messageType: "step_1", sentAt: NOW } });
+    await marquerLinkedInEnvoye(d, "u1", 7, NOW);
+    expect(d.marquerPremierContact).not.toHaveBeenCalled();
+  });
+
   it("le délai de l'étape suivante court à partir du clic « Envoyé »", async () => {
     const d = deps();
     const r = await marquerLinkedInEnvoye(d, "u1", 7, NOW);

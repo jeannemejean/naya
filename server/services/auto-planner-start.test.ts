@@ -10,7 +10,15 @@
 //
 // C'est le cinquième écart de ce type dans ce chantier : les fonctions disent juste, rien ne
 // vérifie que l'appelant les écoute.
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Le planificateur lit l'heure de Paris : une heure avant la fin de journée, ce qui reste du jour
+// part au lendemain. Sans horloge figée, ces tests échouaient chaque jour à partir de 17 h.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-24T08:00:00Z"));
+});
+afterEach(() => { vi.useRealTimers(); });
 
 const storageMock = {
   getActiveUserIds: vi.fn(),

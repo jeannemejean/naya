@@ -316,7 +316,7 @@ const consulterProspection: Outil = {
       pourModele: {
         campagne: vue(campagne),
         prospects: retenus.map((l, i) => ({
-          id: l.id, nom: l.name, entreprise: l.company ?? null, stade: l.status,
+          id: l.id, nom: l.name, entreprise: l.company ?? null, stade: l.stage ?? null,
           sequence: etats[i] ? { statut: etats[i]!.status, etape: etats[i]!.currentStep } : null,
         })),
         ...(leads.length > PROSPECTS_MAX ? { tronque: true, total: leads.length, note: `${PROSPECTS_MAX} prospects sur ${leads.length}.` } : {}),

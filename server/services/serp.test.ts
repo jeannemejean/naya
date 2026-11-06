@@ -22,6 +22,26 @@ describe("extractLinkedInLead", () => {
     expect(r!.role).toBeNull();
   });
 
+  it("deux parties dont la seconde est un poste : ce n'est pas une entreprise", () => {
+    const r = extractLinkedInLead({ link: "https://www.linkedin.com/in/x", title: "Marie Dupont - Directrice marketing | LinkedIn" });
+    expect(r!.role).toBe("Directrice marketing");
+    expect(r!.company).toBeNull();
+  });
+
+  it("récupère l'entreprise d'un « poste chez entreprise »", () => {
+    for (const titre of ["Marie Dupont - CEO chez Acme | LinkedIn", "Marie Dupont - CEO at Acme | LinkedIn", "Marie Dupont - CEO @ Acme | LinkedIn"]) {
+      const r = extractLinkedInLead({ link: "https://www.linkedin.com/in/x", title: titre });
+      expect(r!.role, titre).toBe("CEO");
+      expect(r!.company, titre).toBe("Acme");
+    }
+  });
+
+  it("trois parties dont la troisième n'est pas une entreprise : pas d'entreprise inventée", () => {
+    const r = extractLinkedInLead({ link: "https://www.linkedin.com/in/x", title: "Marie Dupont - Graphiste - Freelance | LinkedIn" });
+    expect(r!.role).toBe("Graphiste");
+    expect(r!.company).toBeNull();
+  });
+
   it("gère un nom seul", () => {
     const r = extractLinkedInLead({ link: "https://linkedin.com/in/x", title: "Marie Dupont | LinkedIn" });
     expect(r!.name).toBe("Marie Dupont");

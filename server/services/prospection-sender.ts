@@ -20,6 +20,7 @@ import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedi
 import { decisionPublic, normaliserPublic, RAISON_EXCLUSION } from "./campagne-public";
 import { decideNextStep, planAfterStep } from "./sequence-engine";
 import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
+import { raisonDeRetenue, RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
 import { BriefIncompletError, generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
 import { identiteCampagne } from "./connexions/resolution";
@@ -229,7 +230,7 @@ export const claimStore: ClaimStore = {
 };
 
 // "Maintenant" dans le fuseau de l'utilisateur → { nowMin, dayAbbr }.
-function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
+export function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
   const tz = timezone || "UTC";
   try {
     // hourCycle:'h23' (pas hour12:false seul) : même piège ICU documenté dans
@@ -438,6 +439,15 @@ export async function envoyerEmailProspect(
 /** Raison visible dans l'aperçu quand un doublon du prospect a déjà répondu (M3). */
 export const RAISON_DOUBLON_A_REPONDU =
   "Cette personne a déjà répondu depuis une autre fiche : séquence en pause, rien n'est envoyé.";
+
+/** Met la séquence en pause, raison visible dans l'aperçu. */
+async function retenir(lead: any, stepId: number, raison: string): Promise<void> {
+  console.warn(`[ProspectionSender] lead ${lead.id} retenu — séquence en pause, rien envoyé : ${raison}`);
+  await storage.setLeadSequenceGuard(lead.id, { tropProcheConsecutifs: lireGarde(lead)?.tropProcheConsecutifs ?? 0, stepId, attention: raison })
+    .catch((e: any) => console.error("[ProspectionSender] écriture de la raison échouée", e.message));
+  await storage.updateLeadSequenceState(lead.id, { status: "paused", nextRunAt: null } as any)
+    .catch((e: any) => console.error("[ProspectionSender] mise en pause échouée", e.message));
+}
 
 export async function runProspectionSender(): Promise<void> {
   if (running) return;
@@ -655,6 +665,14 @@ export async function runProspectionSender(): Promise<void> {
         const lead = (await getUserLeads(state.userId)).find((l) => l.id === state.leadId);
         if (!lead) {
           await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
+          continue;
+        }
+        // La validation vaut aussi après l'entrée en séquence : retirée, effacée par une nouvelle
+        // rédaction, ou prospect passé en « Sans suite », rien ne part. Vérifié ici pour ne rien
+        // payer en rédaction IA.
+        const retenue = raisonDeRetenue(lead);
+        if (retenue) {
+          await retenir(lead, step.id, retenue);
           continue;
         }
         // Étape email pour un prospect sans adresse connue : elle est SAUTÉE (comme une
@@ -967,6 +985,16 @@ export async function runProspectionSender(): Promise<void> {
           await storage.updateLeadSequenceState(state.leadId, { nextRunAt: new Date(now.getTime() + TROP_PROCHE_RETRY_BACKOFF_MS) } as any).catch(() => {});
           continue;
         }
+        if (gen.redige && !state.lastStepSentAt) {
+          // Premier contact : ce qui part est ce qui a été relu. Séquence modifiée, brief changé,
+          // cache vidé : ce texte vient d'être écrit, la validation précédente ne vaut pas pour
+          // lui. Il prend sa place dans la fiche pour que Jeanne valide bien ce qui partira.
+          const champ = step.channel === "email" ? "emailMessage" : "linkedinMessage";
+          await storage.updateLead(lead.id, state.userId, { validatedAt: null, [champ]: gen.body } as any)
+            .catch((e: any) => console.error("[ProspectionSender] retrait de la validation échoué", e.message));
+          await retenir(lead, step.id, RAISON_VALIDATION_MANQUANTE);
+          continue;
+        }
         if (gen.aRevoir) {
           // Le contrôle qualité a encore trouvé des défauts après réécriture : ce message ne
           // part pas tant que l'utilisatrice ne l'a pas corrigé (une édition lève le blocage).
@@ -1035,6 +1063,21 @@ export async function runProspectionSender(): Promise<void> {
           await storage.updateLeadSequenceState(state.leadId, { status: "unsubscribed", nextRunAt: null } as any).catch(() => {});
           continue;
         }
+        // Même raison que l'état ci-dessus : « Retirer la validation » ou « Sans suite » a pu être
+        // cliqué pendant la rédaction, et le prospect lu en début de passage ne le sait pas. Lecture ratée :
+        // rien ne part, on réessaie au prochain passage.
+        let prospectFrais;
+        try {
+          prospectFrais = await storage.getLead(state.leadId, state.userId);
+        } catch (e: any) {
+          console.error(`[ProspectionSender] validation du lead ${state.leadId} illisible avant envoi — rien envoyé : ${String(e?.message ?? e)}`);
+          continue;
+        }
+        const retenueFraiche = raisonDeRetenue({ stage: prospectFrais?.stage, validatedAt: prospectFrais?.validatedAt });
+        if (retenueFraiche) {
+          await retenir(lead, step.id, retenueFraiche);
+          continue;
+        }
         // Même personne sur une AUTRE fiche (même email, même identifiant ou profil LinkedIn)
         // qui a déjà répondu : rien ne part, ni envoi ni brouillon. La séquence est mise en
         // `paused` (pas `stopped_replied` : CE lead n'a pas répondu, rien à défaire si la
@@ -1059,6 +1102,8 @@ export async function runProspectionSender(): Promise<void> {
         // Repeuplé sur un envoi LinkedIn réussi (remet `linkedinConsecutiveFailures` à 0) ;
         // vide (aucun changement) pour l'email, un skip, ou un brouillon.
         let linkedinFailurePatch: Record<string, any> = {};
+        // Un message est réellement parti : le suivi du prospect doit le dire.
+        let contacte = false;
 
         if (step.channel === "email") {
           if (!lead.email) continue; // inatteignable (sauté plus haut) ; garde le narrowing de type
@@ -1107,6 +1152,7 @@ export async function runProspectionSender(): Promise<void> {
             console.error(`[ProspectionSender] échec envoi lead ${lead.id} — retry au prochain tick`);
             continue; // on n'avance pas → retry
           }
+          contacte = true;
           if (outcome.action === "skipped") {
             console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} — avancement sans envoi`);
           } else {
@@ -1199,6 +1245,7 @@ export async function runProspectionSender(): Promise<void> {
               }
               continue; // on n'avance pas → retry plus tard, borné (ou plus du tout si abandonné)
             }
+            contacte = true;
             if (outcome.action === "skipped") {
               console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} (LinkedIn) — avancement sans envoi`);
             } else {
@@ -1246,6 +1293,10 @@ export async function runProspectionSender(): Promise<void> {
           }
         }
 
+        if (contacte) {
+          await storage.marquerPremierContact(lead.id, state.userId)
+            .catch((e: any) => console.error(`[ProspectionSender] suivi du lead ${lead.id} non mis à jour`, e.message));
+        }
         // Étape envoyée : programmer la suite via la décision (le délai de l'étape suivante
         // court à partir de maintenant, ce dernier envoi étant la nouvelle référence).
         await storage.updateLeadSequenceState(state.leadId, {

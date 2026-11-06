@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { traiterEvenement, normaliser, adressesPropresDepuis, type DepsIngestion, type EvenementNormalise } from "./ingestion";
+import { traiterEvenement, normaliser, adressesPropresDepuis, marquerDernierMessageRepondu, type DepsIngestion, type EvenementNormalise } from "./ingestion";
 import { planAcceptance } from "../sequence-signals";
 
 const NOW = new Date("2026-11-02T10:00:00Z");
@@ -61,6 +61,8 @@ function fausseBase() {
     supprimerTache: vi.fn(async (id: number) => { db.tasks = db.tasks.filter((t) => t.id !== id); }),
     supprimerBrouillonsLinkedIn: vi.fn(async () => { db.brouillonsSupprimes++; }),
     dernierMessageEnvoye: vi.fn(async () => db.outreach[0]),
+    collegues: vi.fn(async () => [] as number[]),
+    suspendreSequence: vi.fn(async () => undefined),
     updateOutreachMessage: vi.fn(async (id: number, p: any) => { Object.assign(db.outreach.find((o) => o.id === id), p); }),
     getTask: vi.fn(async (id: number) => db.tasks.find((t) => t.id === id)),
     createTask: vi.fn(async (t: any) => { const row = { id: 100 + db.tasks.length, completed: false, archivedAt: null, ...t }; db.tasks.push(row); return row; }),
@@ -198,6 +200,32 @@ describe("traiterEvenement — vraie réponse", () => {
     expect(db.state.status).toBe("stopped_replied");
     expect(deps.markFeedbackReplied).not.toHaveBeenCalled();
     expect(db.feedback).toBe(0);
+  });
+});
+
+describe("traiterEvenement — collègues de la même entreprise", () => {
+  it("une vraie réponse met en pause les collègues en séquence", async () => {
+    const { deps, lead } = fausseBase();
+    (deps.collegues as any).mockResolvedValue([8, 9]);
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(deps.collegues).toHaveBeenCalledWith(lead, "u1");
+    expect(deps.suspendreSequence).toHaveBeenCalledTimes(2);
+    expect(deps.suspendreSequence).toHaveBeenCalledWith(8, expect.stringContaining("entreprise"));
+  });
+
+  it("un message automatique ne suspend personne", async () => {
+    const { deps } = fausseBase();
+    (deps.collegues as any).mockResolvedValue([8]);
+    await traiterEvenement(reponseLinkedIn({ body: "Je suis absente du bureau jusqu'au 12 novembre.", subject: "Réponse automatique : absence" } as any), deps);
+    expect(deps.suspendreSequence).not.toHaveBeenCalled();
+  });
+
+  it("l'échec de la pause n'empêche ni la tâche ni la réponse", async () => {
+    const { db, deps } = fausseBase();
+    (deps.collegues as any).mockRejectedValue(new Error("db"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(db.tasks).toHaveLength(1);
   });
 });
 
@@ -464,6 +492,29 @@ describe("traiterEvenement — robustesse (revue)", () => {
     await traiterEvenement(reponseLinkedIn({ fromSelf: true, senderProviderId: "ACw-marc" }), deps);
     expect(db.state.status).toBe("active");
     expect(db.messages[0]).toMatchObject({ sens: "sortant" });
+  });
+});
+
+describe("marquerDernierMessageRepondu", () => {
+  const quand = new Date("2026-11-06T09:00:00Z");
+
+  it("marque le dernier message envoyé", async () => {
+    const deps = { dernierMessageEnvoye: vi.fn(async () => ({ id: 4, responseReceived: false }) as any), updateOutreachMessage: vi.fn(async () => undefined) };
+    await marquerDernierMessageRepondu(deps, 3, quand);
+    expect(deps.dernierMessageEnvoye).toHaveBeenCalledWith(3);
+    expect(deps.updateOutreachMessage).toHaveBeenCalledWith(4, { responseReceived: true, responseDate: quand });
+  });
+
+  it("ne réécrit pas une réponse déjà notée", async () => {
+    const deps = { dernierMessageEnvoye: vi.fn(async () => ({ id: 4, responseReceived: true }) as any), updateOutreachMessage: vi.fn(async () => undefined) };
+    await marquerDernierMessageRepondu(deps, 3, quand);
+    expect(deps.updateOutreachMessage).not.toHaveBeenCalled();
+  });
+
+  it("aucun message envoyé : rien à marquer", async () => {
+    const deps = { dernierMessageEnvoye: vi.fn(async () => undefined), updateOutreachMessage: vi.fn(async () => undefined) };
+    await marquerDernierMessageRepondu(deps, 3, quand);
+    expect(deps.updateOutreachMessage).not.toHaveBeenCalled();
   });
 });
 

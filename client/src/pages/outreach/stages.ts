@@ -4,7 +4,7 @@
 export const STAGES = [
   { key: 'identified', label: 'Identifié', color: '#94a3b8', bg: 'bg-naya-olive-10 ' },
   { key: 'messages_ready', label: 'Messages prêts', color: '#6366f1', bg: 'bg-[rgba(158,126,135,0.12)] ' },
-  { key: 'connection_sent', label: 'Connexion envoyée', color: '#3b82f6', bg: 'bg-[rgba(125,143,168,0.12)] ' },
+  { key: 'connection_sent', label: 'Contacté', color: '#3b82f6', bg: 'bg-[rgba(125,143,168,0.12)] ' },
   { key: 'connected', label: 'Connecté', color: '#06b6d4', bg: 'bg-[rgba(125,143,168,0.12)] ' },
   { key: 'followup1_sent', label: 'Suivi 1 envoyé', color: '#f59e0b', bg: 'bg-[rgba(212,201,122,0.12)] ' },
   { key: 'followup2_sent', label: 'Suivi 2 envoyé', color: '#f97316', bg: 'bg-[rgba(212,201,122,0.12)] ' },
