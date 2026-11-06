@@ -22,6 +22,14 @@ describe("REGLES_AGENT — marque-sujet", () => {
   });
 });
 
+describe("REGLES_AGENT — pas de jargon interne", () => {
+  it("interdit de parler d'outils, de fonctions, de codes d'erreur à l'utilisatrice", () => {
+    expect(REGLES_AGENT).toMatch(/Jamais de jargon interne/);
+    for (const mot of ["outils", "fonctions", "codes d'erreur", "mécanique interne"]) expect(REGLES_AGENT).toContain(mot);
+    expect(REGLES_AGENT).toMatch(/mots simples/);
+  });
+});
+
 describe("listes envoyées par le client : formes vérifiées", () => {
   it("tachesDuJourPropres ne garde que des objets avec un titre texte", () => {
     const brut = [null, 3, "x", [], { title: 4 }, { title: "Appeler Léa", completed: true, scheduledTime: "09:00" }, { title: "B", completed: "oui", scheduledTime: 12 }];

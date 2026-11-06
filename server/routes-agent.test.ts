@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   extractToMemory: vi.fn(async () => {}),
   validerProposition: vi.fn(),
   annulerProposition: vi.fn(),
+  actionsAnnulees: vi.fn(async () => []),
 }));
 
 vi.mock("./auth", () => ({
@@ -23,9 +24,11 @@ const storageMock = {
   getBrandDna: vi.fn(async () => ({ nayaIntelligenceSummary: "Agence de com digitale" })),
   getMilestones: vi.fn(async () => [{ id: 9, title: "Lancer le site", status: "active" }]),
   saveCompanionMessage: vi.fn(async () => ({})),
+  getCompanionHistory: vi.fn(async () => []),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
+vi.mock("./services/agent/depot", () => ({ depot: { actionsAnnulees: h.actionsAnnulees } }));
 vi.mock("./services/agent/boucle", () => ({ executerAgent: h.executerAgent }));
 vi.mock("./services/naya-context", () => ({ buildNayaContext: vi.fn(async () => "") }));
 vi.mock("./services/memory/extract", () => ({ extractToMemory: h.extractToMemory }));
@@ -113,6 +116,18 @@ describe("POST /api/companion/chat", () => {
     storageMock.getUserPreferences.mockResolvedValueOnce({ currentEnergyLevel: "low", energyUpdatedDate: auj, timezone: "Europe/Paris" });
     await poster({ message: "Je suis crevée" });
     expect(h.executerAgent.mock.calls[0][0].contexteSession).toContain("Énergie du jour : low");
+  });
+
+  it("annote l'historique des actions annulées depuis, sans changer la réponse", async () => {
+    storageMock.getCompanionHistory.mockResolvedValueOnce([
+      { role: "assistant", content: "Fait.", actions: { faites: [{ actionId: 7, resume: "Tâche « Rappeler Camille Fictive »" }] } },
+    ] as any);
+    h.actionsAnnulees.mockResolvedValueOnce([{ id: 7, resume: "Tâche « Rappeler Camille Fictive »" }] as any);
+    const r = await poster({ message: "Décale tout", conversationHistory: [{ role: "assistant", content: "Fait." }] });
+    expect(h.actionsAnnulees).toHaveBeenCalledWith("user-1", [7]);
+    expect(h.executerAgent.mock.calls[0][0].historique[0].content)
+      .toContain("(Annulé ensuite par l'utilisatrice : Tâche « Rappeler Camille Fictive »)");
+    expect(Object.keys(await r.json()).sort()).toEqual(["actions", "faites", "message", "propositions", "recherches", "suggestions"]);
   });
 
   it("un historique malformé est filtré, sans planter", async () => {

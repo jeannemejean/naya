@@ -8,6 +8,8 @@ import { storage } from "./storage";
 import { isAiBlocked } from "./services/usage";
 import { executerAgent } from "./services/agent/boucle";
 import { annulerAction } from "./services/agent/journal";
+import { depot } from "./services/agent/depot";
+import { annoterHistorique } from "./services/agent/historique";
 import { annulerProposition, validerProposition } from "./services/agent/propositions";
 import { blocSession, dateDansFuseau, evenementsPropres, fuseauUtilisatrice, tachesDuJourPropres } from "./services/agent/consignes";
 import { buildSuggestions } from "./services/companion";
@@ -89,7 +91,12 @@ export function registerAgentRoutes(app: Express): void {
       if (await isAiBlocked(userId)) return res.status(429).json({ message: "ai_monthly_limit_reached" });
 
       const clientContext = (context && typeof context === "object") ? context : {};
-      const historique = historiquePropre(conversationHistory);
+      const historiqueClient = historiquePropre(conversationHistory);
+      // L'agent doit savoir ce que l'utilisatrice a annulé depuis (best-effort : sans effet sur la réponse).
+      const historique = await annoterHistorique(userId, historiqueClient, {
+        sauvegardes: (u) => storage.getCompanionHistory(u, 40),
+        annulees: (u, ids) => depot.actionsAnnulees(u, ids),
+      }).catch(() => historiqueClient);
       const plateforme = clientContext.platform === "mobile" ? "mobile" : "web";
       // Listes du client : seulement des objets bien formés (un élément nul = jamais une 500).
       const tachesDuJour = tachesDuJourPropres(clientContext.todayTasks);
