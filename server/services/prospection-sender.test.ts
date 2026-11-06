@@ -10,6 +10,7 @@ vi.mock("../storage", () => ({
     getLeadSignals: vi.fn(),
     getSequenceSteps: vi.fn(),
     getLeads: vi.fn(),
+    getLead: vi.fn(),
     getBrandDna: vi.fn(),
     getUser: vi.fn(),
     getProspectionCampaign: vi.fn(),
@@ -70,6 +71,7 @@ import {
   retirerSignatureFinale,
   envoyerEmailProspect,
 } from "./prospection-sender";
+import { RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
 import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedin";
@@ -270,6 +272,8 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     linkedinUrl: null,
     // Public déjà vérifié par défaut : seuls les tests « public de campagne » le remettent à null.
     relationVerifieeAt: new Date("2026-01-01T00:00:00Z"),
+    // Validé par défaut : seuls les tests « validation » le remettent à null.
+    validatedAt: new Date("2026-01-01T00:00:00Z"),
     outreachUnreachableReason: null,
     enrichedProfile: { linkedin: { raw: { country_code: "FR", city: null } } },
     ...overrides,
@@ -343,6 +347,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.getSequenceSteps as any).mockResolvedValue([baseStep()]);
     (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
     (storage.getLeads as any).mockResolvedValue([baseLead()]);
+    (storage.getLead as any).mockResolvedValue(baseLead());
     (storage.getBrandDna as any).mockResolvedValue({});
     (storage.getUser as any).mockResolvedValue({ firstName: "Jeanne" });
     (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne test" });
@@ -942,6 +947,57 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       await runProspectionSender();
 
       expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("validation retirée : rien ne se rédige ni ne part, séquence en pause, raison visible", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ validatedAt: null })]);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_VALIDATION_MANQUANTE, stepId: 100 }));
+    });
+
+    it("validation retirée pendant la rédaction (email) : rien ne part, séquence en pause", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLead as any).mockResolvedValue(baseLead({ validatedAt: null }));
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.getLead).toHaveBeenCalledWith(1, "u1");
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_VALIDATION_MANQUANTE }));
+    });
+
+    it("validation retirée pendant la rédaction (LinkedIn) : ni envoi Unipile ni brouillon", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (storage.getLead as any).mockResolvedValue(baseLead({ linkedinUrl: "https://linkedin.com/in/x", validatedAt: null }));
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(sendLinkedInStep).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+    });
+
+    it("validation illisible juste avant l'envoi : rien ne part, aucun changement d'état (réessai)", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLead as any).mockRejectedValue(new Error("db"));
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
     });
 

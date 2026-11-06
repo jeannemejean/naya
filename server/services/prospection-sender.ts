@@ -20,6 +20,7 @@ import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedi
 import { decisionPublic, normaliserPublic, RAISON_EXCLUSION } from "./campagne-public";
 import { decideNextStep, planAfterStep } from "./sequence-engine";
 import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
+import { estValide, RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
 import { BriefIncompletError, generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
 import { identiteCampagne } from "./connexions/resolution";
@@ -436,6 +437,15 @@ export async function envoyerEmailProspect(
 export const RAISON_DOUBLON_A_REPONDU =
   "Cette personne a déjà répondu depuis une autre fiche : séquence en pause, rien n'est envoyé.";
 
+/** Met la séquence en pause, raison visible dans l'aperçu. Valider de nouveau la relance. */
+async function retenirFauteDeValidation(lead: any, stepId: number): Promise<void> {
+  console.warn(`[ProspectionSender] lead ${lead.id} sans validation — séquence en pause, rien envoyé`);
+  await storage.setLeadSequenceGuard(lead.id, { tropProcheConsecutifs: lireGarde(lead)?.tropProcheConsecutifs ?? 0, stepId, attention: RAISON_VALIDATION_MANQUANTE })
+    .catch((e: any) => console.error("[ProspectionSender] écriture de la raison (validation) échouée", e.message));
+  await storage.updateLeadSequenceState(lead.id, { status: "paused", nextRunAt: null } as any)
+    .catch((e: any) => console.error("[ProspectionSender] mise en pause (validation) échouée", e.message));
+}
+
 export async function runProspectionSender(): Promise<void> {
   if (running) return;
   running = true;
@@ -652,6 +662,12 @@ export async function runProspectionSender(): Promise<void> {
         const lead = (await getUserLeads(state.userId)).find((l) => l.id === state.leadId);
         if (!lead) {
           await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
+          continue;
+        }
+        // La validation vaut aussi après l'entrée en séquence : retirée ou effacée par une
+        // nouvelle rédaction, rien ne part. Vérifié ici pour ne rien payer en rédaction IA.
+        if (!estValide(lead.validatedAt)) {
+          await retenirFauteDeValidation(lead, step.id);
           continue;
         }
         // Étape email pour un prospect sans adresse connue : elle est SAUTÉE (comme une
@@ -1016,6 +1032,20 @@ export async function runProspectionSender(): Promise<void> {
         }
         if (!etatFrais || etatFrais.status !== "active") {
           console.log(`[ProspectionSender] lead ${state.leadId} n'est plus actif (${etatFrais?.status ?? "absent"}) — rien envoyé`);
+          continue;
+        }
+        // Même raison que l'état ci-dessus : « Retirer la validation » a pu être cliqué pendant
+        // la rédaction, et le prospect lu en début de passage ne le sait pas. Lecture ratée :
+        // rien ne part, on réessaie au prochain passage.
+        let prospectFrais;
+        try {
+          prospectFrais = await storage.getLead(state.leadId, state.userId);
+        } catch (e: any) {
+          console.error(`[ProspectionSender] validation du lead ${state.leadId} illisible avant envoi — rien envoyé : ${String(e?.message ?? e)}`);
+          continue;
+        }
+        if (!estValide(prospectFrais?.validatedAt)) {
+          await retenirFauteDeValidation(lead, step.id);
           continue;
         }
         // Même personne sur une AUTRE fiche (même email, même identifiant ou profil LinkedIn)

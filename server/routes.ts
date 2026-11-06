@@ -85,7 +85,7 @@ import { lecturesRepenser, transactionRepenser } from "./services/campagne/repen
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, sourcerCampagne, cibleDeCampagne, prospectsParJourDerive, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions, BriefIncompletError } from "./services/sequence-message";
-import { etatGardeApercu } from "./services/sequence-distinct";
+import { etatGardeApercu, lireGarde } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones } from "./services/milestone-engine";
 import { registerAgentRoutes } from "./routes-agent";
@@ -94,7 +94,7 @@ import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
-import { peutEtreContacte } from "./services/prospection-validation";
+import { doitReprendreApresValidation, peutEtreContacte } from "./services/prospection-validation";
 import { enrolerEnMasse } from "./services/prospection-enrolement";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
@@ -8444,6 +8444,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       } as any);
       if (!updated) return res.status(404).json({ message: 'not_found' });
       await tracerValidation(req.userId, updated);
+      // Séquence retenue par le robot faute de validation : l'accord revenu, elle repart
+      // là où elle s'était arrêtée. Sans ça, « Validé » s'afficherait et rien ne partirait.
+      const garde = lireGarde(updated);
+      const etatSequence = await storage.getLeadSequenceState(updated.id);
+      if (etatSequence?.userId === req.userId && doitReprendreApresValidation(etatSequence, garde?.attention)) {
+        await storage.updateLeadSequenceState(updated.id, { status: 'active', nextRunAt: new Date() } as any);
+        await storage.setLeadSequenceGuard(updated.id, { tropProcheConsecutifs: garde?.tropProcheConsecutifs ?? 0, stepId: garde?.stepId ?? null, attention: null });
+      }
       // Un prospect de moins à valider : le compteur de la tâche du planning suit.
       if ((updated as any).prospectionCampaignId) {
         synchroniserValidationsProspection(req.userId, undefined, { campaignId: (updated as any).prospectionCampaignId })

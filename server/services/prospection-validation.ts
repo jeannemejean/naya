@@ -74,6 +74,25 @@ export function estValide(validatedAt: Date | null | undefined): boolean {
 }
 
 /**
+ * Raison visible dans l'aperçu quand le robot retient une séquence dont la validation manque :
+ * retirée à la main, ou effacée par une nouvelle rédaction des messages.
+ */
+export const RAISON_VALIDATION_MANQUANTE =
+  "Ce prospect n'est plus validé : séquence en pause, rien n'est envoyé. Valide ses messages pour reprendre.";
+
+/**
+ * Une nouvelle validation relance-t-elle la séquence ? Seulement si le robot l'avait retenue
+ * pour cette raison-là : une pause décidée pour un autre motif (doublon ayant répondu, message
+ * trop proche, retrait à la main) ne se lève pas parce qu'un message a été approuvé.
+ */
+export function doitReprendreApresValidation(
+  etat: { status: string } | null | undefined,
+  attention: string | null | undefined,
+): boolean {
+  return etat?.status === "paused" && attention === RAISON_VALIDATION_MANQUANTE;
+}
+
+/**
  * Transition autorisée d'une étape à l'autre.
  *
  * `validee` n'est consultée que pour le passage au premier contact — c'est le seul endroit

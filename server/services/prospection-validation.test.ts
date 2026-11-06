@@ -9,6 +9,8 @@ import {
   estValide,
   transitionsHumaines,
   cheminsVersPremierContact,
+  RAISON_VALIDATION_MANQUANTE,
+  doitReprendreApresValidation,
 } from "./prospection-validation";
 
 /**
@@ -153,5 +155,22 @@ describe("transitionsHumaines", () => {
     // La voir grossir signalerait qu'une décision humaine vient d'être automatisée, ou
     // qu'une décision mécanique a été promue en corvée inutile.
     expect(transitionsHumaines()).toHaveLength(1);
+  });
+});
+
+describe("doitReprendreApresValidation", () => {
+  it("reprend une séquence que le robot a retenue faute de validation", () => {
+    expect(doitReprendreApresValidation({ status: "paused" }, RAISON_VALIDATION_MANQUANTE)).toBe(true);
+  });
+
+  it("ne reprend pas une pause décidée pour une autre raison", () => {
+    expect(doitReprendreApresValidation({ status: "paused" }, "Cette personne a déjà répondu.")).toBe(false);
+    expect(doitReprendreApresValidation({ status: "paused" }, null)).toBe(false);
+  });
+
+  it("ne touche pas une séquence qui n'est pas en pause, ni un prospect hors séquence", () => {
+    expect(doitReprendreApresValidation({ status: "active" }, RAISON_VALIDATION_MANQUANTE)).toBe(false);
+    expect(doitReprendreApresValidation({ status: "stopped_replied" }, RAISON_VALIDATION_MANQUANTE)).toBe(false);
+    expect(doitReprendreApresValidation(null, RAISON_VALIDATION_MANQUANTE)).toBe(false);
   });
 });
