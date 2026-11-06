@@ -171,6 +171,43 @@ function scheduleReadingRoom() {
   // Seed persona archetypes on startup
   seedUserPersonaArchetypes().catch(err => console.error('Persona seed error:', err));
 
+  // Interrupteur local : NAYA_SANS_TACHES_DE_FOND=1 ouvre Naya pour la regarder sans
+  // démarrer aucune tâche de fond (publication des posts, envoi de prospection, sourcing
+  // payant, synchro LinkedIn, webhooks…), qui peuvent agir sur de vrais comptes.
+  // Ignoré en production : il ne peut jamais y arrêter les campagnes.
+  const sansTachesDeFond =
+    process.env.NAYA_SANS_TACHES_DE_FOND === "1" && process.env.NODE_ENV !== "production";
+  if (sansTachesDeFond) {
+    console.warn("[naya] NAYA_SANS_TACHES_DE_FOND=1 : aucune tâche de fond démarrée (vérification locale)");
+  } else {
+    demarrerTachesDeFond();
+  }
+
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+    console.error(`[error] ${status} — ${err.message || err}`);
+    res.status(status).json({ message });
+  });
+
+  // importantly only setup vite in development and after
+  // setting up all the other routes so the catch-all route
+  // doesn't interfere with the other routes
+  if (app.get("env") === "development") {
+    await setupVite(app, server);
+  } else {
+    serveStatic(app);
+  }
+
+  // Serve the app on the configured port
+  const port = parseInt(process.env.PORT || "3000", 10);
+  server.listen(port, "0.0.0.0", () => {
+    log(`serving on port ${port}`);
+  });
+})();
+
+// Toutes les tâches de fond du serveur (planificateur, publication, prospection, veille…).
+function demarrerTachesDeFond() {
   // Start the daily auto-planner (generates tasks at 06:00 UTC for all users)
   scheduleAutoPlanner();
   // End-of-day rollover: moves incomplete tasks to next work day at 17:00 UTC (19:00 Paris)
@@ -231,26 +268,4 @@ function scheduleReadingRoom() {
 
   // ─── Profils de veille : rattachement, collecte (lun/mer/ven), analyse (dim), tri (chaque tour) ──
   scheduleProfilsVeille();
-
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-    console.error(`[error] ${status} — ${err.message || err}`);
-    res.status(status).json({ message });
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
-
-  // Serve the app on the configured port
-  const port = parseInt(process.env.PORT || "3000", 10);
-  server.listen(port, "0.0.0.0", () => {
-    log(`serving on port ${port}`);
-  });
-})();
+}
