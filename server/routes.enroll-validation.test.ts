@@ -45,6 +45,7 @@ const storageMock = {
   markFeedbackReplied: vi.fn(),
   getProspectionCampaign: vi.fn(),
   bulkMoveLeads: vi.fn(),
+  getSequenceSteps: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const aRevoir = vi.hoisted(() => ({ liste: [] as any[] }));
@@ -347,6 +348,18 @@ describe("les données restent justes après une action manuelle", () => {
 
     expect(storageMock.updateOutreachMessage).not.toHaveBeenCalled();
     expect(storageMock.suspendreSequence).not.toHaveBeenCalled();
+  });
+
+  it("« Lancer pour tous » ne reprend pas un collègue mis en pause", async () => {
+    storageMock.getProspectionCampaign.mockResolvedValue({ id: CAMPAGNE, userId: "user-1" });
+    storageMock.getSequenceSteps.mockResolvedValue([{ id: 1 }]);
+    storageMock.getLeads.mockResolvedValue([prospect({ validatedAt: new Date("2026-10-01") })]);
+    storageMock.getLeadSequenceState.mockResolvedValue({ userId: "user-1", status: "paused" });
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/prospection/campaigns/${CAMPAGNE}/launch`, { method: "POST" });
+
+    expect(await res.json()).toMatchObject({ enrolled: 0, skipped: 1 });
+    expect(storageMock.enrollLead).not.toHaveBeenCalled();
   });
 
   it("déplacer un prospect met sa séquence en cours en pause", async () => {

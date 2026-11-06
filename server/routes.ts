@@ -8909,6 +8909,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         leads: campaignLeads.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt })),
         getState: (leadId) => storage.getLeadSequenceState(leadId),
         enroll: (leadId) => storage.enrollLead(leadId, campaign.id, req.userId),
+        respecterLesPauses: true,
       });
       res.json(r);
     } catch (e: any) {
