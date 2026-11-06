@@ -51,7 +51,7 @@ export default function SalvesPanel({ campaignId, prets, hasSequence }: { campai
         <div className="flex items-end gap-3 flex-wrap">
           <div className="space-y-1">
             <Label htmlFor="salve-nombre" className="text-xs">{t('outreach.salves.nombre')}</Label>
-            <Input id="salve-nombre" type="number" min={1} max={prets} className="h-8 w-24 text-sm" value={nombreSaisi} onChange={(e) => setNombreSaisi(e.target.value)} />
+            <Input id="salve-nombre" type="number" min={1} max={prets} className="h-8 w-24 text-sm" value={nombreSaisi === '' ? '' : nombre} onChange={(e) => setNombreSaisi(e.target.value)} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="salve-par-jour" className="text-xs">{t('outreach.salves.parJour')}</Label>
