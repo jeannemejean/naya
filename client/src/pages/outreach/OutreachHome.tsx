@@ -83,9 +83,11 @@ export default function OutreachHome({ onSearchClick }: OutreachHomeProps) {
               <CampaignsGrid />
             </TabsContent>
 
-            {/* `data-[state=inactive]:hidden` : la classe `flex` l'emporte sur l'attribut `hidden` que
-                Radix pose sur un onglet inactif — sans elle, le panneau vide reste dans la colonne
-                et repousse l'onglet affiché vers le bas. */}
+            {/* `data-[state=inactive]:hidden` : TabsContent (@radix-ui/react-tabs 1.1.4) passe une
+                fonction à Presence, qui la rend donc toujours (forceMount) : le panneau inactif reste
+                dans le DOM, vide, avec l'attribut `hidden`. La classe `flex` l'emporte sur
+                `[hidden]{display:none}` de preflight — sans ce correctif, le panneau Pipeline vide
+                garde `flex-1` et repousse l'onglet Réponses vers le bas. */}
             <TabsContent value="pipeline" className="flex-1 min-h-0 overflow-hidden m-0 flex flex-col data-[state=inactive]:hidden">
               <PipelineBoard />
             </TabsContent>

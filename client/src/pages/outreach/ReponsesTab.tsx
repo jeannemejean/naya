@@ -10,7 +10,7 @@ import EtiquetteCampagne from './EtiquetteCampagne';
 import { useReponsesListe } from './useReponses';
 import { useCampaigns } from './useOutreach';
 import {
-  campagneDepuisRecherche, campagnesDeListe, dateRelative, filtrerParCampagne, urlReponses,
+  campagneDepuisRecherche, campagnesDeListe, dateRelative, filtrerParCampagne, fusionnerCampagnes, urlReponses,
 } from './reponses-logique';
 
 const SELECT = 'min-w-0 flex-1 text-sm border border-border rounded-md px-2 py-1.5 bg-white text-foreground';
@@ -31,10 +31,12 @@ export default function ReponsesTab() {
   const liste = filtrerParCampagne(toutes, campagne);
   const now = new Date();
 
-  // Campagnes du filtre : celles de l'utilisateur (noms à jour), sinon celles vues dans la liste.
-  const options = campagnes.length
-    ? campagnes.map((c: any) => ({ id: Number(c.id), name: String(c.name ?? '') }))
-    : campagnesDeListe(toutes);
+  // Campagnes du filtre : celles de l'utilisateur (noms à jour) + celles vues dans la liste
+  // (une campagne archivée ou supprimée dont des conversations restent doit rester filtrable).
+  const options = fusionnerCampagnes(
+    campagnes.map((c: any) => ({ id: Number(c.id), name: String(c.name ?? '') })),
+    campagnesDeListe(toutes),
+  );
 
   const aller = (o: { campagne?: number | null; conversation?: number | null }) =>
     naviguer(urlReponses({ campagne, conversation: ouverte, ...o }), { replace: true });

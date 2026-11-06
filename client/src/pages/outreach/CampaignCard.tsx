@@ -46,7 +46,7 @@ export default function CampaignCard({ campaign, leadCount, aTraiter = 0 }: Camp
     // Le lien couvre toute la carte (calque) : le bouton « réponses à traiter » reste un vrai
     // bouton, jamais imbriqué dans un lien.
     <Card className="relative p-5 cursor-pointer hover:shadow-rest hover:border-naya-olive-18 flex flex-col gap-3">
-        <Link href={`/outreach/campaigns/${campaign.id}`} aria-label={campaign.name} className="absolute inset-0 rounded-[inherit] z-0" />
+        <Link href={`/outreach/campaigns/${campaign.id}`} aria-label={campaign.name} className="absolute inset-0 rounded-[inherit] z-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" />
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-semibold text-foreground leading-snug">{campaign.name}</h3>
           <Badge variant={statusVariant}>{statusLabel}</Badge>

@@ -118,6 +118,15 @@ export function campagnesDeListe(liste: AvecCampagne[]): Array<{ id: number; nam
   return Array.from(vues, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Campagnes connues + campagnes vues dans la liste, sans doublon (les premières gardent leur nom), par nom. */
+export function fusionnerCampagnes(
+  connues: Array<{ id: number; name: string }>, vues: Array<{ id: number; name: string }>,
+): Array<{ id: number; name: string }> {
+  const parId = new Map<number, string>();
+  for (const c of [...connues, ...vues]) if (!parId.has(c.id)) parId.set(c.id, c.name);
+  return Array.from(parId, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Nombre de conversations « à traiter » par campagne (carte de l'onglet Campagnes). */
 export function compterATraiterParCampagne(liste: Array<AvecCampagne & { statut?: string }>): Map<number, number> {
   const compte = new Map<number, number>();

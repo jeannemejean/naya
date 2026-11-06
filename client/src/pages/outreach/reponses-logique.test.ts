@@ -4,7 +4,7 @@ import en from "@/locales/en";
 import {
   cleErreurEnvoi, cleErreurPasUneReponse, typeBulle, ordonnerFil, dateRelative, dateHeure,
   couleurCampagne, PALETTE_CAMPAGNES, campagneDepuisRecherche, urlReponses, filtrerParCampagne,
-  campagnesDeListe, compterATraiterParCampagne,
+  campagnesDeListe, compterATraiterParCampagne, fusionnerCampagnes,
 } from "./reponses-logique";
 
 const lire = (o: any, cle: string) => cle.split(".").reduce((x, k) => x?.[k], o);
@@ -83,6 +83,12 @@ describe("campagnes dans la boîte", () => {
     expect(campagnesDeListe(liste)).toEqual([{ id: 3, name: "Archi Lyon" }, { id: 7, name: "Test" }]);
   });
 
+  it("filtre : campagnes connues + campagnes archivées encore présentes dans la liste", () => {
+    expect(fusionnerCampagnes([{ id: 7, name: "Test à jour" }], campagnesDeListe(liste)))
+      .toEqual([{ id: 3, name: "Archi Lyon" }, { id: 7, name: "Test à jour" }]);
+    expect(fusionnerCampagnes([], [{ id: 9, name: "Archivée" }])).toEqual([{ id: 9, name: "Archivée" }]);
+  });
+
   it("compte à traiter par campagne (traitées et hors campagne ignorées)", () => {
     const m = compterATraiterParCampagne(liste);
     expect(m.get(7)).toBe(2);
@@ -100,7 +106,12 @@ describe("campagnes dans la boîte", () => {
   });
 
   it("date et heure absolues", () => {
-    expect(dateHeure("2026-11-05T18:10:00Z", "fr")).toMatch(/5 nov/);
+    // Midi UTC : le même jour dans tout fuseau habité ; comparé à Intl pour ne dépendre ni de l'ICU ni du fuseau.
+    const d = "2026-11-05T12:00:00Z";
+    const attendu = new Date(d).toLocaleString("fr", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    expect(dateHeure(d, "fr")).toBe(attendu);
+    expect(dateHeure(d, "fr")).toContain(String(new Date(d).getDate()));
+    expect(dateHeure("pas une date", "fr")).toBe("");
     expect(dateHeure(null, "fr")).toBe("");
   });
 
