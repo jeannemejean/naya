@@ -562,7 +562,7 @@ Aucun `DROP`, aucun `ALTER` sur une table existante.
 
 ### Ce qui reste
 
-- [ ] Supprimer `essai-0037-2026-11-06`.
+- [x] `essai-0037-2026-11-06` supprimée le 6 novembre 2026.
 - [ ] Supprimer `sauvegarde-avant-suppression-2026-11-06` quand le déploiement est stable.
 
 ## 11. Salves — `0038` à appliquer en prod à la main
