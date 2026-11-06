@@ -567,8 +567,9 @@ Aucun `DROP`, aucun `ALTER` sur une table existante.
 
 ## 11. Salves — `0038` à appliquer en prod à la main
 
-Fichier : `migrations/0038_curvy_spitfire.sql` (**pas** appliqué en prod, ni sur dev-local). Une table neuve
-et une colonne vide : aucun `DROP`, aucune donnée réécrite.
+Fichier : `migrations/0038_curvy_spitfire.sql` (**pas** appliqué en prod). Appliqué sur dev-local `ep-jolly-sky`
+le 6 novembre 2026 (suivi 38 → 39, table, colonne, 3 FK, index vérifiés). Une table neuve et une colonne vide :
+aucun `DROP`, aucune donnée réécrite.
 
 - Table : `prospection_salves` (`user_id` et `campaign_id` en `ON DELETE cascade`, index sur `campaign_id`).
 - Colonne : `lead_sequence_state.salve_id`, nullable, clé étrangère en `ON DELETE set null`.
@@ -576,6 +577,9 @@ et une colonne vide : aucun `DROP`, aucune donnée réécrite.
   `lead_sequence_state` : déployé sans `salve_id`, il casserait toutes les séquences.
 - Répétée le 6 novembre 2026 sur une branche forkée de **dev-local** (`essai-salves-0038-dev`, suivi 38 → 39),
   avec les vraies requêtes de `storage.ts`. Pas encore sur une copie de la production.
+- ⚠️ **`npm run db:migrate` peut ne rien faire et réussir quand même.** Constaté le 6 novembre 2026 : iCloud avait
+  déchargé `node_modules/drizzle-kit/bin.cjs`, qui se lit comme vide ; la commande sort sans message, code 0, suivi
+  inchangé. D'où `scripts/migrate-essai.ts` ci-dessous. Toujours lire le suivi, jamais le code de sortie.
 - Garde de `scripts/migrate-prod.ts` vérifiée à blanc le 6 novembre 2026 : refus sur un autre endpoint et sans URL.
 
 ### Déroulé, dans cet ordre
@@ -585,7 +589,8 @@ et une colonne vide : aucun `DROP`, aucune donnée réécrite.
 2. Dans la console Neon, créer depuis `production` la sauvegarde `sauvegarde-avant-salves-2026-11-06`, puis la
    branche d'essai `essai-0038-2026-11-06`.
 3. Sur la branche d'essai, depuis le dossier de `main` :
-   `DATABASE_URL='<URL de la branche d'essai>' npm run db:migrate`, puis vérifier le suivi 38 → 39 et les données.
+   `MIGRATION_DATABASE_URL='<URL de la branche d'essai>' npx tsx scripts/migrate-essai.ts`. Le script affiche
+   `Suivi : 38 → 39` et refuse la production. Vérifier aussi que les données n'ont pas bougé.
 4. Lire en production, avant d'appliquer, les deux comptages ci-dessous : ils disent ce que le déploiement va changer.
 5. Appliquer : `MIGRATION_DATABASE_URL='<URL de production>' npx tsx scripts/migrate-prod.ts`, sortie sous les yeux.
 6. Vérifier le suivi 38 → 39, la table, la colonne, et que le nombre de prospects n'a pas bougé.
