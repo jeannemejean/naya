@@ -8,7 +8,7 @@
  *
  * Les accès au stockage sont injectés pour que la règle se teste sans base.
  */
-import { peutEtreContacte } from "./prospection-validation";
+import { peutEtreContacte, peutReprendreSequence } from "./prospection-validation";
 
 export interface ProspectEnrolable {
   id: number;
@@ -38,12 +38,12 @@ export async function enrolerEnMasse(deps: {
   let skippedNotValidated = 0;
 
   for (const lead of deps.leads) {
-    if (!peutEtreContacte({ stage: lead.stage, validatedAt: lead.validatedAt })) {
+    const existing = await deps.getState(lead.id);
+    if (!peutEtreContacte({ stage: lead.stage, validatedAt: lead.validatedAt }) && !peutReprendreSequence(lead, existing)) {
       skipped++;
       skippedNotValidated++;
       continue;
     }
-    const existing = await deps.getState(lead.id);
     if (existing && ETATS_DEFINITIFS.includes(existing.status)) {
       skipped++;
       continue;
@@ -54,4 +54,35 @@ export async function enrolerEnMasse(deps: {
   }
 
   return { enrolled, skipped, skippedNotValidated, total: deps.leads.length };
+}
+
+/** Raison visible dans l'aperçu après un déplacement de prospect. */
+export const RAISON_PROSPECT_DEPLACE =
+  "Ce prospect a changé de campagne : son ancienne séquence est en pause, rien n'est envoyé. Ajoute-le à la séquence de sa nouvelle campagne pour repartir.";
+
+/** États où le robot peut encore envoyer un message ou attend de le faire. */
+const ETATS_EN_COURS = ["active", "awaiting_linkedin"];
+
+/**
+ * Déplace des prospects vers une campagne. Une séquence en cours appartient à l'ancienne
+ * campagne : ses étapes et son expéditeur ne sont pas ceux de la nouvelle. Elle est mise en
+ * pause AVANT le déplacement : si l'écriture échoue ensuite, rien n'est parti pour autant.
+ */
+export async function deplacerProspects(deps: {
+  ids: number[];
+  userId: string;
+  campaignId: number;
+  getState: (leadId: number) => Promise<{ userId: string; campaignId: number; status: string } | null | undefined>;
+  deplacer: (ids: number[]) => Promise<number>;
+  suspendre: (leadId: number) => Promise<unknown>;
+}): Promise<{ moved: number; suspendus: number }> {
+  let suspendus = 0;
+  for (const id of deps.ids) {
+    const etat = await deps.getState(id);
+    if (etat?.userId === deps.userId && etat.campaignId !== deps.campaignId && ETATS_EN_COURS.includes(etat.status)) {
+      await deps.suspendre(id);
+      suspendus++;
+    }
+  }
+  return { moved: await deps.deplacer(deps.ids), suspendus };
 }

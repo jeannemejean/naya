@@ -94,8 +94,9 @@ import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
-import { doitReprendreApresValidation, peutEtreContacte } from "./services/prospection-validation";
-import { enrolerEnMasse } from "./services/prospection-enrolement";
+import { doitReprendreApresValidation, peutEtreContacte, peutReprendreSequence } from "./services/prospection-validation";
+import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE } from "./services/prospection-enrolement";
+import { marquerDernierMessageRepondu } from "./services/reponses/ingestion";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
 import { synchroniserValidationsProspection } from "./services/prospection-verification";
@@ -8027,7 +8028,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // La campagne cible doit appartenir à l'utilisateur.
       const campaign = await storage.getProspectionCampaign(campaignId);
       if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'campaign_not_found' });
-      const moved = await storage.bulkMoveLeads(ids, req.userId, campaignId);
+      const { moved } = await deplacerProspects({
+        ids, userId: req.userId, campaignId,
+        getState: (id) => storage.getLeadSequenceState(id),
+        deplacer: (liste) => storage.bulkMoveLeads(liste, req.userId, campaignId),
+        suspendre: async (id) => {
+          await storage.updateLeadSequenceState(id, { status: 'paused', nextRunAt: null } as any);
+          await storage.setLeadSequenceGuard(id, { tropProcheConsecutifs: 0, stepId: null, attention: RAISON_PROSPECT_DEPLACE });
+        },
+      });
       res.json({ moved });
     } catch (error: any) {
       console.error('Error bulk-moving leads:', error?.message);
@@ -8043,6 +8052,9 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // Version AVANT édition des messages : sert à tracer la correction (apprentissage).
       const touchesMessages = typeof (updates as any).linkedinMessage === 'string' || typeof (updates as any).emailMessage === 'string';
       const avant = touchesMessages ? await storage.getLead(parseInt(id), userId).catch(() => undefined) : undefined;
+      const ENGAGED = STADES_ENGAGES;
+      const devientEngage = typeof (updates as any).stage === 'string' && ENGAGED.includes((updates as any).stage);
+      const stadeAvant = devientEngage ? (await storage.getLead(parseInt(id), userId).catch(() => undefined))?.stage : undefined;
       const lead = await storage.updateLead(parseInt(id), userId, updates);
 
       if (!lead) {
@@ -8051,14 +8063,22 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       if (avant) await tracerEditionMessages(userId, avant, updates as any);
 
       // Stop-on-reply : si le lead passe à un stade « répondu/engagé », on stoppe sa séquence.
-      const ENGAGED = STADES_ENGAGES;
-      if (typeof (updates as any).stage === 'string' && ENGAGED.includes((updates as any).stage)) {
+      if (devientEngage) {
         const st = await storage.getLeadSequenceState(parseInt(id));
         if (st && ['active', 'awaiting_linkedin'].includes(st.status)) {
           await storage.updateLeadSequenceState(parseInt(id), { status: 'stopped_replied', repliedAt: new Date(), nextRunAt: null }).catch(() => {});
         }
         // Une réponse : les messages envoyés à ce prospect deviennent les meilleurs exemples.
         await Promise.resolve().then(() => storage.markFeedbackReplied(userId, parseInt(id))).catch(() => {});
+        // Réponse reçue hors de la boîte (téléphone, salon) : même trace que celle des rapports.
+        // Une seule fois, à l'entrée en discussion : « Signé » n'est pas une nouvelle réponse.
+        if (!ENGAGED.includes(stadeAvant ?? '')) {
+          await marquerDernierMessageRepondu({
+            dernierMessageEnvoye: (l) => storage.getLatestOutreachByLead(l),
+            updateOutreachMessage: (mid, p) => storage.updateOutreachMessage(mid, p),
+          }, parseInt(id), new Date())
+            .catch((e: any) => console.error('[lead patch] marquage de la réponse:', e?.message || e));
+        }
       }
 
       // Un prospect écarté (ou qui change d'étape) sort, ou entre, dans le lot à valider :
@@ -8496,7 +8516,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // messages : un contact part parce que quelqu'un l'a voulu, jamais parce qu'un
       // minuteur est arrive a echeance. C'est aussi la regle de ce depot depuis l'incident
       // des 14 posts publies par erreur.
-      if (!peutEtreContacte({ stage: (lead as any).stage, validatedAt: (lead as any).validatedAt })) {
+      const etatSequence = await storage.getLeadSequenceState(lead.id);
+      if (!peutEtreContacte({ stage: (lead as any).stage, validatedAt: (lead as any).validatedAt }) && !peutReprendreSequence(lead, etatSequence)) {
         return res.status(409).json({
           message: 'not_validated',
           stage: (lead as any).stage ?? null,
@@ -8801,6 +8822,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     getSteps: (campaignId: number) => storage.getSequenceSteps(campaignId),
     getSignals: (leadId: number) => storage.getLeadSignals(leadId),
     markClaimSent: (key: any) => storage.markStepSendSent(key, 'sent'),
+    marquerPremierContact: (leadId: number, userId: string) => storage.marquerPremierContact(leadId, userId),
   };
   const repondreLinkedInManuel = (res: any, r: Awaited<ReturnType<typeof marquerLinkedInEnvoye>>) => {
     if (r.ok) return res.json(r);

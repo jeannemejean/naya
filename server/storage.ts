@@ -219,6 +219,7 @@ import { clesPersonne, memePersonne } from "./services/reponses/rattachement";
 import { estLeadTest, TAG_LEAD_TEST } from "./services/prospection-mode-test";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
+import { ETAPE_EN_ATTENTE_DE_VALIDATION, ETAPE_PREMIER_CONTACT } from "./services/prospection-validation";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
@@ -621,6 +622,8 @@ export interface IStorage {
   updateLead(id: number, userId: string, updates: Partial<Lead>): Promise<Lead | null>;
   bulkArchiveLeads(ids: number[], userId: string): Promise<number>;
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
+  /** Un message vient de partir : le suivi quitte « messages prêts », sans jamais reculer. */
+  marquerPremierContact(leadId: number, userId: string): Promise<void>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
   /** Public de campagne : retire le prospect de la séquence (état définitif `excluded_audience`). */
@@ -2539,6 +2542,12 @@ export class DatabaseStorage implements IStorage {
       .where(and(inArray(leads.id, ids), eq(leads.userId, userId), isNull(leads.archivedAt)))
       .returning({ id: leads.id });
     return rows.length;
+  }
+
+  async marquerPremierContact(leadId: number, userId: string): Promise<void> {
+    await db.update(leads)
+      .set({ stage: ETAPE_PREMIER_CONTACT, updatedAt: new Date() })
+      .where(and(eq(leads.id, leadId), eq(leads.userId, userId), eq(leads.stage, ETAPE_EN_ATTENTE_DE_VALIDATION)));
   }
 
   async createLead(leadData: InsertLead): Promise<Lead> {

@@ -150,6 +150,18 @@ export function planEntrant(
   };
 }
 
+/** Note la réponse sur le dernier message envoyé : c'est là que les rapports la comptent. */
+export async function marquerDernierMessageRepondu(
+  deps: Pick<DepsIngestion, "dernierMessageEnvoye" | "updateOutreachMessage">,
+  leadId: number,
+  quand: Date,
+): Promise<void> {
+  const dernier = await deps.dernierMessageEnvoye(leadId);
+  if (dernier && !dernier.responseReceived) {
+    await deps.updateOutreachMessage(dernier.id, { responseReceived: true, responseDate: quand });
+  }
+}
+
 /** Fenêtre de déduplication de l'écho d'un message envoyé depuis Naya. */
 export const ECHO_FENETRE_MS = 10 * 60_000;
 
@@ -425,12 +437,7 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
     }
   };
   await auMieux("suppression des brouillons LinkedIn", () => deps.supprimerBrouillonsLinkedIn(lead.id, userId));
-  await auMieux("marquage du message envoyé", async () => {
-    const dernier = await deps.dernierMessageEnvoye(lead.id);
-    if (dernier && !dernier.responseReceived) {
-      await deps.updateOutreachMessage(dernier.id, { responseReceived: true, responseDate: evt.sentAt });
-    }
-  });
+  await auMieux("marquage du message envoyé", () => marquerDernierMessageRepondu(deps, lead.id, evt.sentAt));
   await auMieux("passage en discussion", async () => {
     const stade = stadeApresReponse(lead.stage);
     if (stade) await deps.updateLead(lead.id, userId, { stage: stade });

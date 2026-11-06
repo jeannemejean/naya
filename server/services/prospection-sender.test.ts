@@ -11,6 +11,7 @@ vi.mock("../storage", () => ({
     getSequenceSteps: vi.fn(),
     getLeads: vi.fn(),
     getLead: vi.fn(),
+    marquerPremierContact: vi.fn(),
     getBrandDna: vi.fn(),
     getUser: vi.fn(),
     getProspectionCampaign: vi.fn(),
@@ -348,6 +349,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.getLeadSignals as any).mockResolvedValue(baseSignals());
     (storage.getLeads as any).mockResolvedValue([baseLead()]);
     (storage.getLead as any).mockResolvedValue(baseLead());
+    (storage.marquerPremierContact as any).mockResolvedValue(undefined);
     (storage.getBrandDna as any).mockResolvedValue({});
     (storage.getUser as any).mockResolvedValue({ firstName: "Jeanne" });
     (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne test" });
@@ -948,6 +950,52 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
       expect(storage.createOutreachMessage).not.toHaveBeenCalled();
       expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("email parti : le suivi du prospect passe au premier contact", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      await runProspectionSender();
+      expect(storage.createOutreachMessage).toHaveBeenCalled();
+      expect(storage.marquerPremierContact).toHaveBeenCalledWith(1, "u1");
+    });
+
+    it("LinkedIn parti : le suivi du prospect passe au premier contact", async () => {
+      (linkedinConfigured as any).mockReturnValue(true);
+      (sendLinkedInStep as any).mockResolvedValue({ ok: true, providerId: "p1" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getUserPreferences as any).mockResolvedValue(openPrefs({ linkedinUnipileAccountId: "acc1" }));
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ linkedinUrl: "https://linkedin.com/in/x" })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      await runProspectionSender();
+      expect(sendLinkedInStep).toHaveBeenCalled();
+      expect(storage.marquerPremierContact).toHaveBeenCalledWith(1, "u1");
+    });
+
+    it("brouillon LinkedIn : rien n'est parti, le suivi ne bouge pas", async () => {
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      await runProspectionSender();
+      expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ sentAt: null }));
+      expect(storage.marquerPremierContact).not.toHaveBeenCalled();
+    });
+
+    it("échec d'envoi : le suivi ne bouge pas", async () => {
+      fetchMock.mockResolvedValue({ ok: false, status: 500, text: async () => "boom" });
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.marquerPremierContact).not.toHaveBeenCalled();
+    });
+
+    it("suivi non mis à jour : l'envoi reste acquis et la séquence avance", async () => {
+      (storage.marquerPremierContact as any).mockRejectedValue(new Error("db"));
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, expect.objectContaining({ currentStep: 1 }));
     });
 
     it("validation retirée : rien ne se rédige ni ne part, séquence en pause, raison visible", async () => {

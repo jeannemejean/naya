@@ -11,6 +11,7 @@ import {
   cheminsVersPremierContact,
   RAISON_VALIDATION_MANQUANTE,
   doitReprendreApresValidation,
+  peutReprendreSequence,
 } from "./prospection-validation";
 
 /**
@@ -172,5 +173,26 @@ describe("doitReprendreApresValidation", () => {
     expect(doitReprendreApresValidation({ status: "active" }, RAISON_VALIDATION_MANQUANTE)).toBe(false);
     expect(doitReprendreApresValidation({ status: "stopped_replied" }, RAISON_VALIDATION_MANQUANTE)).toBe(false);
     expect(doitReprendreApresValidation(null, RAISON_VALIDATION_MANQUANTE)).toBe(false);
+  });
+});
+
+describe("peutReprendreSequence", () => {
+  const valide = new Date("2026-09-17T10:00:00Z");
+
+  it("un prospect déjà contacté, validé et en pause peut reprendre", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, { status: "paused" })).toBe(true);
+  });
+
+  it("jamais sans validation", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: null }, { status: "paused" })).toBe(false);
+  });
+
+  it("jamais hors d'une séquence en pause", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, null)).toBe(false);
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, { status: "stopped_replied" })).toBe(false);
+  });
+
+  it("jamais un prospect engagé dans une discussion", () => {
+    expect(peutReprendreSequence({ stage: "in_discussion", validatedAt: valide }, { status: "paused" })).toBe(false);
   });
 });

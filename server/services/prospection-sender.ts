@@ -1072,6 +1072,8 @@ export async function runProspectionSender(): Promise<void> {
         // Repeuplé sur un envoi LinkedIn réussi (remet `linkedinConsecutiveFailures` à 0) ;
         // vide (aucun changement) pour l'email, un skip, ou un brouillon.
         let linkedinFailurePatch: Record<string, any> = {};
+        // Un message est réellement parti : le suivi du prospect doit le dire.
+        let contacte = false;
 
         if (step.channel === "email") {
           if (!lead.email) continue; // inatteignable (sauté plus haut) ; garde le narrowing de type
@@ -1120,6 +1122,7 @@ export async function runProspectionSender(): Promise<void> {
             console.error(`[ProspectionSender] échec envoi lead ${lead.id} — retry au prochain tick`);
             continue; // on n'avance pas → retry
           }
+          contacte = true;
           if (outcome.action === "skipped") {
             console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} — avancement sans envoi`);
           } else {
@@ -1212,6 +1215,7 @@ export async function runProspectionSender(): Promise<void> {
               }
               continue; // on n'avance pas → retry plus tard, borné (ou plus du tout si abandonné)
             }
+            contacte = true;
             if (outcome.action === "skipped") {
               console.log(`[ProspectionSender] étape ${sendKey.stepOrder} déjà envoyée au lead ${lead.id} (LinkedIn) — avancement sans envoi`);
             } else {
@@ -1259,6 +1263,10 @@ export async function runProspectionSender(): Promise<void> {
           }
         }
 
+        if (contacte) {
+          await storage.marquerPremierContact(lead.id, state.userId)
+            .catch((e: any) => console.error(`[ProspectionSender] suivi du lead ${lead.id} non mis à jour`, e.message));
+        }
         // Étape envoyée : programmer la suite via la décision (le délai de l'étape suivante
         // court à partir de maintenant, ce dernier envoi étant la nouvelle référence).
         await storage.updateLeadSequenceState(state.leadId, {

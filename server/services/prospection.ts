@@ -45,7 +45,7 @@ export interface AuditSections {
 export const PROSPECTION_STAGES = [
   { key: "identified",       label: "Identifié",           color: "#94a3b8" },
   { key: "messages_ready",   label: "Messages prêts",       color: "#6366f1" },
-  { key: "connection_sent",  label: "Connexion envoyée",    color: "#3b82f6" },
+  { key: "connection_sent",  label: "Contacté",             color: "#3b82f6" },
   { key: "connected",        label: "Connecté",             color: "#06b6d4" },
   { key: "followup1_sent",   label: "Suivi 1 envoyé",       color: "#f59e0b" },
   { key: "followup2_sent",   label: "Suivi 2 envoyé",       color: "#f97316" },

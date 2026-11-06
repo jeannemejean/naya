@@ -28,6 +28,7 @@ export interface DepsLinkedInManuel {
   getSteps: (campaignId: number) => Promise<CampaignSequenceStep[]>;
   getSignals: (leadId: number) => Promise<LeadSignals>;
   markClaimSent: (key: StepSendKey) => Promise<void>;
+  marquerPremierContact: (leadId: number, userId: string) => Promise<unknown>;
 }
 
 export type ResultatLinkedInManuel =
@@ -55,6 +56,7 @@ export async function marquerLinkedInEnvoye(
   if (!b.msg) return { ok: false, raison: b.erreur };
   const msg = b.msg;
   await deps.updateMessage(msg.id, { sentAt: now });
+  await deps.marquerPremierContact(msg.leadId, userId);
 
   const state = await deps.getState(msg.leadId);
   const rang = etapeAttendue(msg, state);

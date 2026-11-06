@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { traiterEvenement, normaliser, adressesPropresDepuis, type DepsIngestion, type EvenementNormalise } from "./ingestion";
+import { traiterEvenement, normaliser, adressesPropresDepuis, marquerDernierMessageRepondu, type DepsIngestion, type EvenementNormalise } from "./ingestion";
 import { planAcceptance } from "../sequence-signals";
 
 const NOW = new Date("2026-11-02T10:00:00Z");
@@ -464,6 +464,29 @@ describe("traiterEvenement — robustesse (revue)", () => {
     await traiterEvenement(reponseLinkedIn({ fromSelf: true, senderProviderId: "ACw-marc" }), deps);
     expect(db.state.status).toBe("active");
     expect(db.messages[0]).toMatchObject({ sens: "sortant" });
+  });
+});
+
+describe("marquerDernierMessageRepondu", () => {
+  const quand = new Date("2026-11-06T09:00:00Z");
+
+  it("marque le dernier message envoyé", async () => {
+    const deps = { dernierMessageEnvoye: vi.fn(async () => ({ id: 4, responseReceived: false }) as any), updateOutreachMessage: vi.fn(async () => undefined) };
+    await marquerDernierMessageRepondu(deps, 3, quand);
+    expect(deps.dernierMessageEnvoye).toHaveBeenCalledWith(3);
+    expect(deps.updateOutreachMessage).toHaveBeenCalledWith(4, { responseReceived: true, responseDate: quand });
+  });
+
+  it("ne réécrit pas une réponse déjà notée", async () => {
+    const deps = { dernierMessageEnvoye: vi.fn(async () => ({ id: 4, responseReceived: true }) as any), updateOutreachMessage: vi.fn(async () => undefined) };
+    await marquerDernierMessageRepondu(deps, 3, quand);
+    expect(deps.updateOutreachMessage).not.toHaveBeenCalled();
+  });
+
+  it("aucun message envoyé : rien à marquer", async () => {
+    const deps = { dernierMessageEnvoye: vi.fn(async () => undefined), updateOutreachMessage: vi.fn(async () => undefined) };
+    await marquerDernierMessageRepondu(deps, 3, quand);
+    expect(deps.updateOutreachMessage).not.toHaveBeenCalled();
   });
 });
 

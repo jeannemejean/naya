@@ -93,6 +93,18 @@ export function doitReprendreApresValidation(
 }
 
 /**
+ * Reprise d'une séquence en pause chez un prospect déjà contacté. La barrière a joué au premier
+ * message ; le robot a depuis fait avancer le prospect, donc `peutEtreContacte` ne le reconnaît
+ * plus. Seule l'étape du premier contact est concernée : au-delà, une personne a pris la main.
+ */
+export function peutReprendreSequence(
+  lead: ProspetValidable,
+  etat: { status: string } | null | undefined,
+): boolean {
+  return etat?.status === "paused" && lead.stage === ETAPE_PREMIER_CONTACT && estValide(lead.validatedAt);
+}
+
+/**
  * Transition autorisée d'une étape à l'autre.
  *
  * `validee` n'est consultée que pour le passage au premier contact — c'est le seul endroit

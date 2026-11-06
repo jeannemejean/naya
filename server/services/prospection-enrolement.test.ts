@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { enrolerEnMasse, type ProspectEnrolable } from "./prospection-enrolement";
+import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE, type ProspectEnrolable } from "./prospection-enrolement";
 
 const valide = new Date("2026-10-01T10:00:00Z");
 
@@ -23,6 +23,17 @@ describe("enrolerEnMasse — la barrière vaut aussi pour l'enrôlement groupé"
     expect(enroll).toHaveBeenCalledTimes(1);
     expect(enroll).toHaveBeenCalledWith(1);
     expect(r).toEqual({ enrolled: 1, skipped: 3, skippedNotValidated: 3, total: 4 });
+  });
+
+  it("reprend un prospect déjà contacté dont la séquence est en pause", async () => {
+    const enroll = vi.fn(async (_id: number) => ({ ok: true }));
+    const r = await enrolerEnMasse({
+      leads: [lead(1, { stage: "connection_sent" })],
+      getState: async () => ({ status: "paused" }),
+      enroll,
+    });
+    expect(enroll).toHaveBeenCalledWith(1);
+    expect(r).toEqual({ enrolled: 1, skipped: 0, skippedNotValidated: 0, total: 1 });
   });
 
   it("ne ré-enrôle jamais un état actif, terminé ou ayant répondu", async () => {
@@ -82,5 +93,51 @@ describe("enrolerEnMasse — la barrière vaut aussi pour l'enrôlement groupé"
     });
     expect(enroll).not.toHaveBeenCalled();
     expect(r.skippedNotValidated).toBe(1);
+  });
+});
+
+describe("deplacerProspects — la séquence ne continue pas dans l'ancienne campagne", () => {
+  const u = "u1";
+  function deps(states: Record<number, any>) {
+    return {
+      getState: vi.fn(async (id: number) => states[id]),
+      deplacer: vi.fn(async (ids: number[]) => ids.length),
+      suspendre: vi.fn(async (_id: number) => undefined),
+    };
+  }
+
+  it("met en pause une séquence en cours dans une autre campagne, avant de déplacer", async () => {
+    const d = deps({ 1: { userId: u, campaignId: 5, status: "active" }, 2: { userId: u, campaignId: 5, status: "awaiting_linkedin" } });
+    const ordre: string[] = [];
+    d.suspendre.mockImplementation(async () => { ordre.push("suspendre"); });
+    d.deplacer.mockImplementation(async (ids: number[]) => { ordre.push("deplacer"); return ids.length; });
+    const r = await deplacerProspects({ ...d, ids: [1, 2], userId: u, campaignId: 9 });
+    expect(d.suspendre).toHaveBeenCalledTimes(2);
+    expect(d.suspendre).toHaveBeenCalledWith(1);
+    expect(d.suspendre).toHaveBeenCalledWith(2);
+    expect(ordre).toEqual(["suspendre", "suspendre", "deplacer"]);
+    expect(r).toEqual({ moved: 2, suspendus: 2 });
+  });
+
+  it("laisse tranquille une séquence déjà dans la campagne cible, terminée ou absente", async () => {
+    const d = deps({
+      1: { userId: u, campaignId: 9, status: "active" },
+      2: { userId: u, campaignId: 5, status: "completed" },
+      3: { userId: u, campaignId: 5, status: "stopped_replied" },
+      4: undefined,
+    });
+    const r = await deplacerProspects({ ...d, ids: [1, 2, 3, 4], userId: u, campaignId: 9 });
+    expect(d.suspendre).not.toHaveBeenCalled();
+    expect(r).toEqual({ moved: 4, suspendus: 0 });
+  });
+
+  it("ne touche jamais la séquence d'une autre utilisatrice", async () => {
+    const d = deps({ 1: { userId: "autre", campaignId: 5, status: "active" } });
+    await deplacerProspects({ ...d, ids: [1], userId: u, campaignId: 9 });
+    expect(d.suspendre).not.toHaveBeenCalled();
+  });
+
+  it("dit pourquoi la séquence s'est arrêtée", () => {
+    expect(RAISON_PROSPECT_DEPLACE).toMatch(/campagne/);
   });
 });
