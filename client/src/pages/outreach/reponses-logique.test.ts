@@ -10,7 +10,7 @@ import {
 const lire = (o: any, cle: string) => cle.split(".").reduce((x, k) => x?.[k], o);
 
 describe("raison -> message", () => {
-  const raisons = ["envoi_coupe", "compte_restreint", "compte_deconnecte", "compte_absent", "envoi_en_cours", "deja_envoye", "texte_vide", "texte_trop_long", "introuvable", "echec"];
+  const raisons = ["envoi_coupe", "compte_restreint", "compte_deconnecte", "compte_absent", "envoi_en_cours", "deja_envoye", "texte_vide", "texte_trop_long", "introuvable", "desinscrit", "echec"];
   it("chaque raison a un message en français et en anglais", () => {
     for (const r of raisons) {
       const cle = cleErreurEnvoi(r);

@@ -131,6 +131,8 @@ export interface DepsModeTest {
   createLead: (row: any) => Promise<{ id: number }>;
   archiverLead: (leadId: number, userId: string) => Promise<unknown>;
   estDesinscrit: (leadId: number, userId: string) => Promise<boolean>;
+  /** Adresse (normalisée) sur la liste « ne plus contacter » (désinscrit puis supprimé) ? Lève sur erreur de lecture. */
+  adresseBloquee: (userId: string, emailNormalise: string) => Promise<boolean>;
   lienDesinscription: (leadId: number) => string | null;
   iaBloquee: (userId: string) => Promise<boolean>;
   rediger: (userId: string, a: {
@@ -141,7 +143,7 @@ export interface DepsModeTest {
   roleTouche: (steps: any[], index: number) => RoleTouche;
   retirerSignature: (body: string, prenom: string) => string;
   envoyer: (sender: SenderConfig, o: {
-    to: string; toName: string; subject: string; body: string; leadId: number; stepOrder: number; lienDesinscription: string | null;
+    to: string; toName: string; subject: string; body: string; leadId: number; stepOrder: number; lienDesinscription: string | null; userId?: string;
   }) => Promise<{ ok: boolean; providerId: string | null; threadId: string | null }>;
   claimStore: ClaimStore;
   journaliser: (row: any) => Promise<{ id: number }>;
@@ -183,6 +185,13 @@ export async function envoyerEmailTest(
     if (await deps.adresseDeVraiProspect(userId, cible)) return refus("adresse_prospect");
   } catch {
     return refus("adresse_prospect");
+  }
+  // Une personne désinscrite puis supprimée ne reste que sur « ne plus contacter » : aucune
+  // fiche ne porte plus son adresse, mais elle ne reçoit rien, pas même un test.
+  try {
+    if (await deps.adresseBloquee(userId, cible)) return refus("desinscrit");
+  } catch {
+    return refus("desinscrit");
   }
   const depuis24h = new Date(deps.now().getTime() - 86_400_000);
   try {
@@ -258,7 +267,7 @@ export async function envoyerEmailTest(
       leadId: lead.id, campaignId: campagne.id, stepOrder: 1, userId, channel: "email",
     }, async () => {
       const envoi = await deps.envoyer(sender, {
-        to: email, toName: nom, subject, body, leadId: lead.id, stepOrder: 1, lienDesinscription: lien,
+        to: email, toName: nom, subject, body, leadId: lead.id, stepOrder: 1, lienDesinscription: lien, userId,
       });
       if (!envoi.ok) return { ok: false };
       // Parti : le journal (rattachement des réponses, plafond) est écrit au mieux.

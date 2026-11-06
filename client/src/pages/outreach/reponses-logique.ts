@@ -2,11 +2,11 @@
 
 export type RaisonEnvoi =
   | "envoi_coupe" | "compte_restreint" | "compte_deconnecte" | "compte_absent"
-  | "envoi_en_cours" | "deja_envoye" | "texte_vide" | "texte_trop_long" | "introuvable" | "echec";
+  | "envoi_en_cours" | "deja_envoye" | "texte_vide" | "texte_trop_long" | "introuvable" | "desinscrit" | "echec";
 
 const RAISONS_CONNUES: readonly string[] = [
   "envoi_coupe", "compte_restreint", "compte_deconnecte", "compte_absent",
-  "envoi_en_cours", "deja_envoye", "texte_vide", "texte_trop_long", "introuvable", "echec",
+  "envoi_en_cours", "deja_envoye", "texte_vide", "texte_trop_long", "introuvable", "desinscrit", "echec",
 ];
 
 /** Clé i18n du message d'un refus d'envoi ; toute raison inconnue retombe sur « echec ». */

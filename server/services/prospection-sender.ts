@@ -43,6 +43,7 @@ import { isTargetReachableAt } from "./prospection-target-hours";
 // répète ici cette seule résolution, jamais le calcul de la fenêtre elle-même.
 import { zonesForCountry } from "./prospection-target-zones";
 import { zoneForCity } from "./prospection-target-cities";
+import { estContrainteLead } from "./prospection-suppression";
 
 const POLL_MS = 60_000;
 let running = false;
@@ -378,7 +379,7 @@ export function retirerSignatureFinale(body: string, prenom: string | null | und
 
 async function sendEmail(opts: {
   apiKey: string; fromEmail: string; fromName: string; footerAddress: string;
-  to: string; toName: string; subject: string; body: string; leadId: number;
+  to: string; toName: string; subject: string; body: string; leadId: number; userId?: string;
 }): Promise<boolean> {
   // Conformité anti-spam (CAN-SPAM / RGPD) : adresse postale + lien de désinscription.
   // SendGrid remplace <%unsubscribe%> par l'URL de désinscription et supprime automatiquement
@@ -399,7 +400,9 @@ async function sendEmail(opts: {
         open_tracking: { enable: true },
         subscription_tracking: { enable: true, substitution_tag: "<%unsubscribe%>" },
       },
-      custom_args: { leadId: String(opts.leadId) }, // corrélation webhook tracking
+      // Corrélation webhook. `userId` : une désinscription arrivée après la suppression du
+      // prospect reste rattachable à l'utilisatrice (avec l'adresse de l'événement).
+      custom_args: { leadId: String(opts.leadId), ...(opts.userId ? { userId: opts.userId } : {}) },
     }),
   });
   return res.ok;
@@ -413,7 +416,7 @@ async function sendEmail(opts: {
  */
 export async function envoyerEmailProspect(
   sender: SenderConfig,
-  o: { to: string; toName: string; subject: string; body: string; leadId: number; stepOrder: number; lienDesinscription: string | null },
+  o: { to: string; toName: string; subject: string; body: string; leadId: number; stepOrder: number; lienDesinscription: string | null; userId?: string },
 ): Promise<{ ok: boolean; providerId: string | null; threadId: string | null }> {
   if (sender.via === "unipile") {
     if (!o.lienDesinscription) return { ok: false, providerId: null, threadId: null };
@@ -427,7 +430,7 @@ export async function envoyerEmailProspect(
   }
   const ok = await sendEmail({
     apiKey: sender.apiKey, fromEmail: sender.fromEmail, fromName: sender.fromName, footerAddress: sender.footerAddress,
-    to: o.to, toName: o.toName, subject: o.subject, body: o.body, leadId: o.leadId,
+    to: o.to, toName: o.toName, subject: o.subject, body: o.body, leadId: o.leadId, userId: o.userId,
   });
   return { ok, providerId: null, threadId: null };
 }
@@ -1018,6 +1021,20 @@ export async function runProspectionSender(): Promise<void> {
           console.log(`[ProspectionSender] lead ${state.leadId} n'est plus actif (${etatFrais?.status ?? "absent"}) — rien envoyé`);
           continue;
         }
+        // « Ne plus contacter » (désinscrit puis supprimé, puis réimporté) : tous canaux, juste
+        // avant l'envoi. Lecture ratée : rien ne part (jamais écrire à quelqu'un peut-être désinscrit).
+        let bloque: boolean;
+        try {
+          bloque = await storage.estProspectBloque(state.userId, lead);
+        } catch (e: any) {
+          console.error(`[ProspectionSender] liste « ne plus contacter » illisible (lead ${state.leadId}) — rien envoyé : ${String(e?.message ?? e)}`);
+          continue;
+        }
+        if (bloque) {
+          console.warn(`[ProspectionSender] lead ${state.leadId} : personne sur la liste « ne plus contacter » — séquence arrêtée, rien envoyé`);
+          await storage.updateLeadSequenceState(state.leadId, { status: "unsubscribed", nextRunAt: null } as any).catch(() => {});
+          continue;
+        }
         // Même personne sur une AUTRE fiche (même email, même identifiant ou profil LinkedIn)
         // qui a déjà répondu : rien ne part, ni envoi ni brouillon. La séquence est mise en
         // `paused` (pas `stopped_replied` : CE lead n'a pas répondu, rien à défaire si la
@@ -1062,7 +1079,7 @@ export async function runProspectionSender(): Promise<void> {
             // en-têtes de désinscription et suivi définis à un seul endroit.
             const envoi = await envoyerEmailProspect(emailSender, {
               to: toEmail, toName: lead.name || "", subject, body: bodyEmail,
-              leadId: lead.id, stepOrder: decision.index + 1, lienDesinscription: lienEmail,
+              leadId: lead.id, stepOrder: decision.index + 1, lienDesinscription: lienEmail, userId: state.userId,
             });
             const ok = envoi.ok;
             const providerId = envoi.providerId;
@@ -1241,6 +1258,12 @@ export async function runProspectionSender(): Promise<void> {
             .catch((e: any) => console.error("[ProspectionSender] remise à zéro garde trop proche échouée", e.message));
         }
       } catch (e: any) {
+        // 23503 (clé étrangère) : le prospect a été SUPPRIMÉ pendant le passage (la réservation
+        // d'envoi ne peut plus le référencer) — rien n'est parti, rien à faire.
+        if (estContrainteLead(e)) {
+          console.log(`[ProspectionSender] lead ${state.leadId} supprimé pendant le passage — ignoré, rien envoyé`);
+          continue;
+        }
         console.error(`[ProspectionSender] lead ${state.leadId}:`, e.message);
       }
     }

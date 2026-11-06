@@ -19,6 +19,8 @@ import { registerAtelierRoutes } from "./routes-atelier";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
 import { registerModeTestRoutes } from "./routes-mode-test";
+import { registerSuppressionLeadsRoutes } from "./routes-suppression-leads";
+import { clesBlocage } from "./services/prospection-suppression";
 import { estLeadTest } from "./services/prospection-mode-test";
 import { routineSourcingPour } from "./services/routines/ordonnanceur";
 import { registerRoutinesRoutes } from "./routes-routines";
@@ -7947,6 +7949,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const userId = req.userId;
       const leadData = insertLeadSchema.parse({ ...req.body, userId });
+      // Désinscrit puis supprimé : la personne reste sur « ne plus contacter », jamais recréée.
+      if (await storage.estProspectBloque(userId, leadData as any)) {
+        return res.status(409).json({ message: 'ne_plus_contacter' });
+      }
       const lead = await storage.createLead(leadData);
       res.json(lead);
     } catch (error) {
@@ -7977,9 +7983,16 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const existing = await storage.getLeads(userId);
       const existingEmails = new Set(existing.map(l => (l.email || '').toLowerCase()).filter(Boolean));
 
-      let imported = 0, skipped = 0;
+      // « Ne plus contacter » : désinscrits supprimés depuis — jamais réimportés.
+      const bloques = await storage.getProspectsBloques(userId);
+
+      let imported = 0, skipped = 0, blocked = 0;
       for (const m of mapped) {
         const emailKey = (m.email || '').toLowerCase();
+        const cles = clesBlocage({ email: m.email ?? null, linkedinUrl: m.linkedinUrl ?? null });
+        if ((cles.email && bloques.emails.has(cles.email)) || cles.linkedinIds.some((id) => bloques.linkedinIds.has(id))) {
+          blocked++; skipped++; continue;
+        }
         if (emailKey && existingEmails.has(emailKey)) { skipped++; continue; }
         if (emailKey) existingEmails.add(emailKey);
         await storage.createLead({
@@ -7997,7 +8010,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         } as any);
         imported++;
       }
-      res.json({ imported, skipped, total: mapped.length });
+      res.json({ imported, skipped, blocked, total: mapped.length });
     } catch (e: any) {
       console.error('Error importing leads:', e.message);
       res.status(500).json({ message: 'import_failed' });
@@ -8877,14 +8890,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const events = Array.isArray(req.body) ? req.body : [];
       for (const ev of events) {
-        const leadId = Number(ev?.leadId);
-        if (!leadId) continue;
+        const leadId = Number(ev?.leadId) || null;
         // Désinscription ou signalement spam : TOUTE la séquence s'arrête, LinkedIn compris,
         // et définitivement (enrollLead refuse ensuite ce prospect et sa même adresse).
+        // Prospect supprimé depuis l'envoi : sa pierre tombale, à défaut l'adresse de
+        // l'événement (`email`) pour l'utilisatrice des custom_args (`userId`).
         if (['unsubscribe', 'group_unsubscribe', 'spamreport'].includes(ev.event)) {
-          await storage.updateLeadSequenceState(leadId, { status: 'unsubscribed', nextRunAt: null }).catch(() => {});
+          const issue = await storage.desinscrireProspect(leadId, {
+            userId: typeof ev?.userId === 'string' ? ev.userId : null,
+            email: typeof ev?.email === 'string' ? ev.email : null,
+          }).catch((e: any) => { console.error(`[SendGrid webhook] désinscription NON enregistrée (lead ${leadId}) :`, e?.message); return null; });
+          if (issue === 'inconnu') console.error(`[SendGrid webhook] DÉSINSCRIPTION NON ENREGISTRÉE : lead ${leadId} introuvable, ni utilisatrice ni adresse exploitable`);
           continue;
         }
+        if (!leadId) continue;
         // Webhook email : seul le dernier EMAIL est concerné, jamais un message LinkedIn.
         const msg = await storage.getLatestOutreachByLead(leadId, 'email');
         if (!msg) continue;
@@ -11191,6 +11210,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
   registerModeTestRoutes(app);
+  registerSuppressionLeadsRoutes(app);
   registerRoutinesRoutes(app);
   registerVeilleRoutes(app);
   registerProfilsVeilleRoutes(app);

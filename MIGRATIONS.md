@@ -516,3 +516,36 @@ Uniquement des `CREATE`, aucun `DROP`, aucun `ALTER` sur l'existant.
 
 - [x] `essai-0036-2026-11-05` supprimée le 5 novembre 2026.
 - [ ] Supprimer `sauvegarde-avant-agent-2026-11-05` quand le déploiement est stable.
+
+## 10. Suppression des prospects — `0037` à appliquer en prod à la main
+
+Fichier : `migrations/0037_tan_spencer_smythe.sql` (régénéré le 6 novembre 2026 après revue ; l'ancien
+`0037_perpetual_vargas.sql`, jamais appliqué en prod, est retiré). Appliqué sur dev-local `ep-jolly-sky`
+(suivi 37 → 38), **pas** en prod. Purement additif : 3 `CREATE TABLE`, 3 clés étrangères, 5 index.
+Aucun `DROP`, aucun `ALTER` sur une table existante.
+
+- **`prospects_bloques`** (« ne plus contacter ») : `id serial`, `user_id varchar NOT NULL`,
+  `email_normalise text`, `linkedin_id text`, `raison text NOT NULL DEFAULT 'desinscription'`,
+  `created_at timestamp NOT NULL DEFAULT now()`. Une ligne PAR CLÉ (email, ou identifiant LinkedIn).
+  - FK `prospects_bloques_user_id_users_id_fk` → `users.id` `ON DELETE cascade`.
+  - Index uniques `prospects_bloques_user_email_uq (user_id, email_normalise)`,
+    `prospects_bloques_user_linkedin_uq (user_id, linkedin_id)`.
+- **`prospects_supprimes`** (pierres tombales, 90 jours, ne bloquent rien) : `id serial`,
+  `user_id varchar NOT NULL`, `lead_id_supprime integer NOT NULL` (sans FK : la fiche n'existe plus),
+  `email_normalise text`, `linkedin_public_id text`, `linkedin_provider_id text`,
+  `expire_a timestamp NOT NULL`, `created_at timestamp NOT NULL DEFAULT now()`.
+  - FK `prospects_supprimes_user_id_users_id_fk` → `users.id` `ON DELETE cascade`.
+  - Index unique `prospects_supprimes_lead_uq (lead_id_supprime)`, index `prospects_supprimes_expire_idx (expire_a)`.
+- **`envois_plafond`** (instants d'envoi des prospects supprimés, 7 jours, pour le plafond et
+  l'espacement) : `id serial`, `user_id varchar NOT NULL`, `canal text NOT NULL`, `sent_at timestamp NOT NULL`.
+  - FK `envois_plafond_user_id_users_id_fk` → `users.id` `ON DELETE cascade`.
+  - Index `envois_plafond_user_canal_sent_idx (user_id, canal, sent_at)`.
+- **Correction faite sur dev-local** (l'ancien `0037` y était appliqué) : table `prospects_bloques`
+  vérifiée vide, puis dans une transaction `DROP TABLE prospects_bloques` + suppression de la ligne de
+  suivi `created_at = 1793954523131` (exactement 1 ligne), puis `npm run db:migrate` → suivi 37 → 38,
+  3 tables, 3 FK, 5 index + 3 clés primaires vérifiés. Rien à faire de tel en prod (jamais appliqué).
+- **Ordre impératif** : migration AVANT de pousser `main`. Le code déployé lit ces tables (désinscription,
+  envoi, plafond d'emails, création et import de prospects) : sans elles, l'envoi s'arrête par prudence,
+  le plafond d'emails ne se lit plus (le worker n'envoie pas), la création de prospect renvoie 500.
+- À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai,
+  garde `scripts/migrate-prod.ts`, résultat vérifié (suivi 37 → 38, 3 tables, 3 FK, 5 index).

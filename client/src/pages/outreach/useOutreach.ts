@@ -7,6 +7,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { estRefusARevoir } from "./validation-messages";
 import type { Lead } from "@shared/schema";
+import { lotsDe } from "./dialogs/suppression-messages";
 import type { SequenceStepDTO, PreviewResponse, StepAnalytics, EnrollmentDTO } from "./types";
 import type { ProspectionStatusDTO } from "@/lib/prospection-widget";
 import type { ReponseEnrolement } from "./enrolement-message";
@@ -184,6 +185,37 @@ export const useBulkArchiveLeads = () =>
     mutationFn: (ids) => apiRequest("POST", "/api/leads/bulk-archive", { ids }).then((r) => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+    },
+  });
+
+// Suppression DÉFINITIVE (un ou plusieurs prospects) — fiche + tout l'historique côté serveur.
+export interface ResultatSuppression {
+  supprimes: number;
+  ids: number[];
+  refuses: { id: number; raison: "introuvable" | "envoi_en_cours" | "erreur" }[];
+  bloques: number;
+}
+export { LOT_SUPPRESSION } from "./dialogs/suppression-messages";
+export const useDeleteLeads = () =>
+  useMutation<ResultatSuppression, Error, number[]>({
+    // Lots de 100, l'un après l'autre : chaque prospect a de toute façon sa propre transaction.
+    mutationFn: async (ids) => {
+      const total: ResultatSuppression = { supprimes: 0, ids: [], refuses: [], bloques: 0 };
+      for (const lot of lotsDe(ids)) {
+        const r: ResultatSuppression = await apiRequest("POST", "/api/leads/bulk-delete", { ids: lot }).then((x) => x.json());
+        total.supprimes += r.supprimes; total.ids.push(...r.ids); total.refuses.push(...r.refuses); total.bloques += r.bloques;
+      }
+      return total;
+    },
+    onSuccess: () => {
+      // Le prospect disparaît de partout : listes, campagnes (inscriptions, aperçu, brouillons), réponses.
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey[0];
+          // /api/tasks : les tâches « Répondre à X » du prospect sont supprimées avec lui.
+          return typeof k === "string" && (k.startsWith("/api/leads") || k.startsWith("/api/prospection") || k.startsWith("/api/reponses") || k.startsWith("/api/tasks"));
+        },
+      });
     },
   });
 
