@@ -229,7 +229,7 @@ export const claimStore: ClaimStore = {
 };
 
 // "Maintenant" dans le fuseau de l'utilisateur → { nowMin, dayAbbr }.
-function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
+export function localNow(timezone: string): { nowMin: number; dayAbbr: string } {
   const tz = timezone || "UTC";
   try {
     // hourCycle:'h23' (pas hour12:false seul) : même piège ICU documenté dans
