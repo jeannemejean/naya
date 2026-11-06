@@ -6,7 +6,7 @@ Sous-projet 1 sur 3 (voir « Découpage » en fin de document)
 
 ## Le problème
 
-Jeanne construit plusieurs marques en parallèle, et certaines ont des liens réels entre elles : l'Agence JMD vit de la crédibilité que Jeanne Méjean construit en son nom propre. D'autres n'en ont aucun : Encore Merci n'a rien à voir avec l'agence.
+Jeanne construit plusieurs marques en parallèle, et certaines ont des liens réels entre elles : l'Agence JMD vit de la crédibilité que Jeanne Mejean construit en son nom propre. D'autres n'en ont aucun : Encore Merci n'a rien à voir avec l'agence.
 
 Naya ignore les deux faits. Chaque projet est étanche : elle ne sait pas qu'une campagne pour JMD devrait s'articuler avec ce que Jeanne raconte au même moment, et rien ne l'empêcherait de rapprocher deux marques qui n'ont rien à voir. La conséquence est que la génération de campagnes produit des plans corrects marque par marque, et incohérents à l'échelle de la personne qui les porte.
 

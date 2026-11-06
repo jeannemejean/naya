@@ -203,7 +203,7 @@ export const userPreferences = pgTable("user_preferences", {
   // Réglages d'envoi de prospection PROPRES À L'UTILISATEUR (jamais l'adresse de l'app).
   // Chaque utilisateur envoie depuis SA propre adresse.
   prospectionSenderEmail: text("prospection_sender_email"),     // ex: jeanne@agence-jmd.com
-  prospectionSenderName: text("prospection_sender_name"),       // ex: Jeanne Méjean
+  prospectionSenderName: text("prospection_sender_name"),       // ex: Jeanne Mejean
   prospectionSendgridApiKey: text("prospection_sendgrid_api_key"), // optionnel, CHIFFRÉ — clé SendGrid de l'utilisateur
   // Adresse postale (requise par SendGrid / CAN-SPAM pour vérifier un expéditeur)
   prospectionSenderAddress: text("prospection_sender_address"),

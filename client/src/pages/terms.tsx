@@ -42,7 +42,7 @@ export default function Terms() {
               1. Acceptation
             </h2>
             <p>
-              Naya est un OS stratégique IA pour fondateurs et entrepreneurs indépendants, édité et opéré par Jeanne Méjean (Agence JMD). En créant un compte ou en utilisant Naya, vous acceptez les présentes conditions. Si vous n'êtes pas d'accord, n'utilisez pas le service. Ces conditions complètent notre{" "}
+              Naya est un OS stratégique IA pour fondateurs et entrepreneurs indépendants, édité et opéré par Jeanne Mejean (Agence JMD). En créant un compte ou en utilisant Naya, vous acceptez les présentes conditions. Si vous n'êtes pas d'accord, n'utilisez pas le service. Ces conditions complètent notre{" "}
               <Link href="/privacy" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
                 politique de confidentialité
               </Link>.

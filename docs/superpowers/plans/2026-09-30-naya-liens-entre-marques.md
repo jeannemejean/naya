@@ -242,7 +242,7 @@ describe("formaterArticulation — ce qui entre dans le prompt, et ce qui n'y en
     sens: "estNourriePar" as const,
     campagne: {
       id: 12,
-      marque: "Jeanne Méjean",
+      marque: "Jeanne Mejean",
       name: "Septembre — la méthode",
       objective: "asseoir l'autorité",
       coreMessage: "on ne vend pas une méthode, on la pratique",
@@ -252,7 +252,7 @@ describe("formaterArticulation — ce qui entre dans le prompt, et ce qui n'y en
 
   it("contient le nom de la marque liée, sa campagne, son message et ses angles", () => {
     const t = formaterArticulation(a);
-    expect(t).toContain("Jeanne Méjean");
+    expect(t).toContain("Jeanne Mejean");
     expect(t).toContain("Septembre — la méthode");
     expect(t).toContain("on ne vend pas une méthode, on la pratique");
     expect(t).toContain("montrer les coulisses");
@@ -284,7 +284,7 @@ describe("formaterArticulation — ce qui entre dans le prompt, et ce qui n'y en
       lien: { roleAmont: null, roleAval: null, nature: null },
       campagne: { ...a.campagne, coreMessage: null, angles: [] },
     });
-    expect(t).toContain("Jeanne Méjean");
+    expect(t).toContain("Jeanne Mejean");
     expect(t).not.toContain("null");
     expect(t).not.toContain("undefined");
   });
@@ -1153,7 +1153,7 @@ Créer `client/src/pages/project/BrandLinksPanel.tsx`. Reprends les conventions 
 Ce que le panneau montre :
 
 - deux listes, **les liens partant de cette marque** et **ceux arrivant vers elle**. Un lien se lit dans les deux sens même s'il n'en porte qu'un, et l'utilisatrice doit voir qu'une autre marque la nourrit sans avoir à aller sur l'autre page ;
-- pour chaque lien : le nom de l'autre marque, le sens sous forme lisible (« Jeanne Méjean nourrit cette marque »), les trois textes s'ils sont remplis, et l'état du recoupement d'audiences ;
+- pour chaque lien : le nom de l'autre marque, le sens sous forme lisible (« Jeanne Mejean nourrit cette marque »), les trois textes s'ils sont remplis, et l'état du recoupement d'audiences ;
 - modifier les trois textes et le recoupement sur place ; supprimer le lien avec une confirmation sobre ;
 - un formulaire d'ajout : choisir l'autre marque parmi les projets de l'utilisatrice (en excluant **celle-ci**, puisqu'une marque ne se lie pas à elle-même), choisir le sens, remplir les trois textes, cocher le recoupement.
 
@@ -1214,7 +1214,7 @@ Dans `client/src/pages/campaigns.tsx`, ajouter une requête sur `GET /api/campai
 
 - [ ] **Step 2: Proposer, sans imposer**
 
-Quand la liste n'est pas vide, afficher avant le bouton de génération un bloc sobre qui nomme le lien et la campagne liée — par exemple « Cette marque est liée à Jeanne Méjean, dont la campagne *Septembre — la méthode* porte l'angle *montrer les coulisses*. » — et deux choix : articuler avec cette campagne, ou faire une campagne indépendante.
+Quand la liste n'est pas vide, afficher avant le bouton de génération un bloc sobre qui nomme le lien et la campagne liée — par exemple « Cette marque est liée à Jeanne Mejean, dont la campagne *Septembre — la méthode* porte l'angle *montrer les coulisses*. » — et deux choix : articuler avec cette campagne, ou faire une campagne indépendante.
 
 Aucune option n'est présélectionnée. Naya propose, l'utilisatrice tranche : présélectionner reviendrait à imposer par défaut.
 

@@ -2513,18 +2513,18 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 describe("corpsEmailGmail — paragraphes et pied de mail", () => {
   const lien = "https://hellonaya.app/desinscription/151.abc";
   it("un paragraphe par bloc séparé d'une ligne vide, <br> pour un saut simple, texte échappé", () => {
-    const html = corpsEmailGmail("Bonjour Claire,\n\nUn <b>premier</b> paragraphe.\nSuite & fin.\n\nC'est un sujet ?", "Jeanne Méjean", "", lien);
+    const html = corpsEmailGmail("Bonjour Claire,\n\nUn <b>premier</b> paragraphe.\nSuite & fin.\n\nC'est un sujet ?", "Jeanne Mejean", "", lien);
     expect(html).toContain('<p style="margin:0 0 12px">Bonjour Claire,</p>');
     expect(html).toContain('<p style="margin:0 0 12px">Un &lt;b&gt;premier&lt;/b&gt; paragraphe.<br>Suite &amp; fin.</p>');
     expect(html).toContain('<p style="margin:0 0 12px">C\'est un sujet ?</p>');
   });
   it("pied : nom complet et adresse, sans tiret ; lien « Se désinscrire » cliquable, jamais l'URL brute en texte", () => {
-    const html = corpsEmailGmail("Bonjour,", "Jeanne Méjean", "12 rue X, Lyon", lien);
+    const html = corpsEmailGmail("Bonjour,", "Jeanne Mejean", "12 rue X, Lyon", lien);
     expect(html).not.toMatch(/[—–]/);
-    expect(html).toContain("Jeanne Méjean<br>12 rue X, Lyon</p>");
+    expect(html).toContain("Jeanne Mejean<br>12 rue X, Lyon</p>");
     expect(html).toContain(`<p style="font-size:12px;color:#888"><a href="${lien}" style="color:#888">Se désinscrire</a></p>`);
     expect(html.replace(/href="[^"]*"/g, "")).not.toContain(lien);
-    expect(html.indexOf("Jeanne Méjean")).toBeLessThan(html.indexOf("Se désinscrire"));
+    expect(html.indexOf("Jeanne Mejean")).toBeLessThan(html.indexOf("Se désinscrire"));
   });
   it("sans nom ni adresse : pas de paragraphe de signature vide", () => {
     const html = corpsEmailGmail("Bonjour,", "", "", lien);
@@ -2558,7 +2558,7 @@ describe("retirerSignatureFinale — emails déjà rédigés, signés par le mod
 });
 
 describe("envoyerEmailProspect (chemin d'envoi partagé worker / mode test)", () => {
-  const GMAIL = { via: "unipile" as const, accountId: "acc", fromEmail: "j@a.fr", fromName: "Jeanne Méjean", footerAddress: "Lyon" };
+  const GMAIL = { via: "unipile" as const, accountId: "acc", fromEmail: "j@a.fr", fromName: "Jeanne Mejean", footerAddress: "Lyon" };
   const o = { to: "c@x.fr", toName: "Claire", subject: "Objet", body: "Bonjour,\n\nTexte.", leadId: 42, stepOrder: 1, lienDesinscription: "https://app/desinscription/t" };
   beforeEach(() => (sendEmailUnipile as any).mockReset());
 
@@ -2567,7 +2567,7 @@ describe("envoyerEmailProspect (chemin d'envoi partagé worker / mode test)", ()
     expect(await envoyerEmailProspect(GMAIL, o)).toEqual({ ok: true, providerId: "p1", threadId: "t1" });
     expect(sendEmailUnipile).toHaveBeenCalledWith({
       accountId: "acc", to: "c@x.fr", toName: "Claire", subject: "Objet",
-      body: corpsEmailGmail(o.body, "Jeanne Méjean", "Lyon", o.lienDesinscription),
+      body: corpsEmailGmail(o.body, "Jeanne Mejean", "Lyon", o.lienDesinscription),
       trackingLabel: "lead:42:step:1",
       headers: { "List-Unsubscribe": "<https://app/desinscription/t>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
     });

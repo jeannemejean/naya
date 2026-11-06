@@ -42,7 +42,7 @@ export default function Privacy() {
               Qui sommes-nous
             </h2>
             <p>
-              Naya est un OS stratégique IA pour fondateurs indépendants, développé et opéré par Jeanne Méjean (Agence JMD). Pour toute question relative à vos données, contactez-nous à{" "}
+              Naya est un OS stratégique IA pour fondateurs indépendants, développé et opéré par Jeanne Mejean (Agence JMD). Pour toute question relative à vos données, contactez-nous à{" "}
               <a href="mailto:naya.ai.app@gmail.com" className="text-naya-olive border-b border-naya-olive-18 hover:border-naya-olive transition-colors">
                 naya.ai.app@gmail.com
               </a>.

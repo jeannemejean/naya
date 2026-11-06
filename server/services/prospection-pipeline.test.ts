@@ -155,7 +155,7 @@ describe("messages — tirets longs et longueur", () => {
   });
 
   it("Condition 5 — email valide = 5 à 8 phrases, pas de tiret long", () => {
-    const email = "Bonjour Marc. J'ai vu que votre domaine ouvre à l'oenotourisme. Beaucoup de visiteurs cherchent l'expérience avant de réserver. Votre site ne montre pas encore ces coulisses. On aide les domaines à raconter ça simplement. Est-ce un sujet pour vous cette saison ? Jeanne Méjean.";
+    const email = "Bonjour Marc. J'ai vu que votre domaine ouvre à l'oenotourisme. Beaucoup de visiteurs cherchent l'expérience avant de réserver. Votre site ne montre pas encore ces coulisses. On aide les domaines à raconter ça simplement. Est-ce un sujet pour vous cette saison ? Jeanne Mejean.";
     const v = validateEmailMessage(email);
     expect(v.sentences).toBeGreaterThanOrEqual(5);
     expect(v.sentences).toBeLessThanOrEqual(8);

@@ -83,10 +83,10 @@ describe("tropProche", () => {
 });
 
 describe("tropProche — noms propres et formules neutralisés (fix round 1)", () => {
-  const neutres = ["Marie Dupont", "Marie", "Dupont", "Lumen Concept Store", "Lyon", "Jeanne", "Méjean"];
+  const neutres = ["Marie Dupont", "Marie", "Dupont", "Lumen Concept Store", "Lyon", "Jeanne", "Mejean"];
   it("paire du relecteur : deux messages courts qui ne partagent que noms, entreprise, ville et signature → PAS trop proches", () => {
-    const a = "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Méjean";
-    const b = "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Méjean";
+    const a = "Bonjour Marie Dupont, votre boutique Lumen Concept Store Lyon m'intrigue. Jeanne Mejean";
+    const b = "Bonjour Marie Dupont, une question sur Lumen Concept Store Lyon : la saison ? Jeanne Mejean";
     expect(tropProche(a, b, { neutres })).toBe(false);
   });
   it("une vraie paraphrase reste signalée malgré les noms retirés", () => {
@@ -95,7 +95,7 @@ describe("tropProche — noms propres et formules neutralisés (fix round 1)", (
     expect(tropProche(a, b, { neutres })).toBe(true);
   });
   it("textes courts (< 6 mots porteurs) : seule l'égalité quasi exacte compte", () => {
-    expect(tropProche("Bonjour Marie, ravie de vous lire. Jeanne", "Merci Marie, ravie de vous lire ! Jeanne Méjean", { neutres })).toBe(true);
+    expect(tropProche("Bonjour Marie, ravie de vous lire. Jeanne", "Merci Marie, ravie de vous lire ! Jeanne Mejean", { neutres })).toBe(true);
     expect(tropProche("Marie, votre vitrine m'a arrêtée.", "Marie, votre vitrine change souvent ?", { neutres })).toBe(false);
   });
   it("texteSignifiant retire noms (expression et mots), formules de politesse, mais garde le fond", () => {

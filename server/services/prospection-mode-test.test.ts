@@ -10,7 +10,7 @@ const CAMPAGNE = {
   id: 7, userId: "u1", projectId: 3, name: "Vignerons", messageAngle: "Leur visibilité hors saison",
   offer: "Un audit de leur présence en ligne", campaignBrief: "Aider les domaines à vendre en direct",
 };
-const GMAIL = { via: "unipile" as const, accountId: "acc-gm", fromEmail: "jeanne@agence.fr", fromName: "Jeanne Méjean", footerAddress: "Lyon" };
+const GMAIL = { via: "unipile" as const, accountId: "acc-gm", fromEmail: "jeanne@agence.fr", fromName: "Jeanne Mejean", footerAddress: "Lyon" };
 
 function deps(over: Partial<DepsModeTest> = {}) {
   const claims: any[] = [];

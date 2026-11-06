@@ -50,7 +50,7 @@ describe("formaterArticulation — ce qui entre dans le prompt, et ce qui n'y en
     sens: "estNourriePar" as const,
     campagne: {
       id: 12,
-      marque: "Jeanne Méjean",
+      marque: "Jeanne Mejean",
       name: "Septembre — la méthode",
       objective: "asseoir l'autorité",
       coreMessage: "on ne vend pas une méthode, on la pratique",
@@ -60,7 +60,7 @@ describe("formaterArticulation — ce qui entre dans le prompt, et ce qui n'y en
 
   it("contient le nom de la marque liée, sa campagne, son message et ses angles", () => {
     const t = formaterArticulation(a);
-    expect(t).toContain("Jeanne Méjean");
+    expect(t).toContain("Jeanne Mejean");
     expect(t).toContain("Septembre — la méthode");
     expect(t).toContain("on ne vend pas une méthode, on la pratique");
     expect(t).toContain("montrer les coulisses");

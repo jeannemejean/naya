@@ -2187,7 +2187,7 @@ const fr = {
  howDoYouPreferToPlan: "Comment préfères-tu planifier ?",
  itVariesDependsOnTheDay: "Ça varie — ça dépend des jours",
  jeanneAgenceJmdCom: "jeanne@agence-jmd.com",
- jeanneMejean: "Jeanne Méjean",
+ jeanneMejean: "Jeanne Mejean",
  laMemoireDeNayaTesConversations: ", la mémoire de Naya, tes conversations avec le Companion, tes captures rapides, ta médiathèque, tes métriques, tes articles sauvegardés et tes disponibilités.",
  lancerLaReplanification: "Lancer la replanification",
  listBasedILoveAClean: "En listes — j'adore une checklist bien nette",
