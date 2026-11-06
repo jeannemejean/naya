@@ -34,6 +34,17 @@ const storageMock = {
   enrollLead: vi.fn(),
   updateLead: vi.fn(),
   isLeadUnsubscribed: vi.fn(),
+  getLeadSequenceState: vi.fn(),
+  updateLeadSequenceState: vi.fn(),
+  setLeadSequenceGuard: vi.fn(),
+  getLead: vi.fn(),
+  getLatestOutreachByLead: vi.fn(),
+  updateOutreachMessage: vi.fn(),
+  colleguesEnSequence: vi.fn(),
+  suspendreSequence: vi.fn(),
+  markFeedbackReplied: vi.fn(),
+  getProspectionCampaign: vi.fn(),
+  bulkMoveLeads: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const aRevoir = vi.hoisted(() => ({ liste: [] as any[] }));
@@ -45,6 +56,8 @@ vi.mock("./services/prospection/edition-lead", () => ({
 }));
 
 const { registerRoutes } = await import("./routes");
+const { RAISON_VALIDATION_MANQUANTE } = await import("./services/prospection-validation");
+const { RAISON_PROSPECT_DEPLACE } = await import("./services/prospection-enrolement");
 
 async function startServer() {
   const app = express();
@@ -166,6 +179,18 @@ describe("POST /api/leads/:id/enroll — la validation humaine est exigée", () 
     expect(storageMock.enrollLead).not.toHaveBeenCalled();
   });
 
+  it("reprend un prospect déjà contacté dont la séquence est en pause", async () => {
+    storageMock.getLeads.mockResolvedValue([prospect({ stage: "connection_sent", validatedAt: new Date("2026-10-01") })]);
+    storageMock.getLeadSequenceState.mockResolvedValue({ userId: "user-1", status: "paused" });
+    storageMock.isLeadUnsubscribed.mockResolvedValue(false);
+    storageMock.enrollLead.mockResolvedValue({ id: 1 });
+
+    const res = await enroler(port);
+
+    expect(res.status).toBe(200);
+    expect(storageMock.enrollLead).toHaveBeenCalled();
+  });
+
   it("un prospect inexistant reste un 404, pas un 409", async () => {
     // Bug visé : une garde placée avant la vérification d'existence transformerait
     // « ce prospect n'existe pas » en « ce prospect n'est pas validé ».
@@ -236,6 +261,43 @@ describe("POST /api/leads/:id/validate", () => {
     expect(updates.validatedAt).toBeNull();
   });
 
+  it("valider de nouveau relance une séquence retenue faute de validation", async () => {
+    storageMock.updateLead.mockResolvedValue(prospect({
+      validatedAt: new Date(),
+      enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 1, stepId: 9, attention: RAISON_VALIDATION_MANQUANTE } },
+    }));
+    storageMock.getLeadSequenceState.mockResolvedValue({ userId: "user-1", status: "paused" });
+
+    await fetch(`http://127.0.0.1:${port}/api/leads/${LEAD_ID}/validate`, { method: "POST" });
+
+    expect(storageMock.updateLeadSequenceState).toHaveBeenCalledWith(LEAD_ID, expect.objectContaining({ status: "active" }));
+    expect(storageMock.setLeadSequenceGuard).toHaveBeenCalledWith(LEAD_ID, { tropProcheConsecutifs: 1, stepId: 9, attention: null });
+  });
+
+  it("une pause décidée pour une autre raison ne se lève pas à la validation", async () => {
+    storageMock.updateLead.mockResolvedValue(prospect({
+      validatedAt: new Date(),
+      enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 0, stepId: 9, attention: "Cette personne a déjà répondu." } },
+    }));
+    storageMock.getLeadSequenceState.mockResolvedValue({ userId: "user-1", status: "paused" });
+
+    await fetch(`http://127.0.0.1:${port}/api/leads/${LEAD_ID}/validate`, { method: "POST" });
+
+    expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled();
+  });
+
+  it("ne relance jamais la séquence d'une autre utilisatrice", async () => {
+    storageMock.updateLead.mockResolvedValue(prospect({
+      validatedAt: new Date(),
+      enrichedProfile: { nayaSequence: { tropProcheConsecutifs: 0, stepId: 9, attention: RAISON_VALIDATION_MANQUANTE } },
+    }));
+    storageMock.getLeadSequenceState.mockResolvedValue({ userId: "autre", status: "paused" });
+
+    await fetch(`http://127.0.0.1:${port}/api/leads/${LEAD_ID}/validate`, { method: "POST" });
+
+    expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled();
+  });
+
   it("un prospect inexistant renvoie 404", async () => {
     storageMock.updateLead.mockResolvedValue(null);
 
@@ -244,5 +306,59 @@ describe("POST /api/leads/:id/validate", () => {
     });
 
     expect(res.status).toBe(404);
+  });
+});
+
+describe("les données restent justes après une action manuelle", () => {
+  let server: http.Server;
+  let port: number;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ server, port } = await startServer());
+    storageMock.updateLead.mockResolvedValue(prospect({}));
+    storageMock.getLeadSequenceState.mockResolvedValue(undefined);
+    storageMock.markFeedbackReplied.mockResolvedValue(undefined);
+    storageMock.colleguesEnSequence.mockResolvedValue([]);
+  });
+
+  afterAll(() => { server?.close(); });
+
+  const changerStade = (stage: string) => fetch(`http://127.0.0.1:${port}/api/leads/${LEAD_ID}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }),
+  });
+
+  it("passer en discussion note la réponse et suspend les collègues", async () => {
+    storageMock.getLead.mockResolvedValue(prospect({ stage: "connection_sent" }));
+    storageMock.getLatestOutreachByLead.mockResolvedValue({ id: 40, responseReceived: false });
+    storageMock.colleguesEnSequence.mockResolvedValue([102]);
+
+    await changerStade("in_discussion");
+
+    expect(storageMock.updateOutreachMessage).toHaveBeenCalledWith(40, expect.objectContaining({ responseReceived: true }));
+    expect(storageMock.suspendreSequence).toHaveBeenCalledWith(102, expect.stringContaining("entreprise"));
+  });
+
+  it("« Signé » après la discussion n'est pas une nouvelle réponse", async () => {
+    storageMock.getLead.mockResolvedValue(prospect({ stage: "in_discussion" }));
+    storageMock.getLatestOutreachByLead.mockResolvedValue({ id: 40, responseReceived: false });
+
+    await changerStade("signed");
+
+    expect(storageMock.updateOutreachMessage).not.toHaveBeenCalled();
+    expect(storageMock.suspendreSequence).not.toHaveBeenCalled();
+  });
+
+  it("déplacer un prospect met sa séquence en cours en pause", async () => {
+    storageMock.getProspectionCampaign.mockResolvedValue({ id: 9, userId: "user-1" });
+    storageMock.getLeadSequenceState.mockResolvedValue({ userId: "user-1", campaignId: CAMPAGNE, status: "active" });
+    storageMock.bulkMoveLeads.mockResolvedValue(1);
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/leads/bulk-move`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [LEAD_ID], campaignId: 9 }),
+    });
+
+    expect(await res.json()).toEqual({ moved: 1 });
+    expect(storageMock.suspendreSequence).toHaveBeenCalledWith(LEAD_ID, RAISON_PROSPECT_DEPLACE);
   });
 });

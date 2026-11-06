@@ -564,3 +564,16 @@ Aucun `DROP`, aucun `ALTER` sur une table existante.
 
 - [ ] Supprimer `essai-0037-2026-11-06`.
 - [ ] Supprimer `sauvegarde-avant-suppression-2026-11-06` quand le déploiement est stable.
+
+## 11. Salves — `0038` à appliquer en prod à la main
+
+Fichier : `migrations/0038_curvy_spitfire.sql` (**pas** appliqué en prod). Une table neuve et une
+colonne vide : aucun `DROP`, aucune donnée réécrite.
+
+- Table : `prospection_salves` (`user_id` et `campaign_id` en `ON DELETE cascade`, index sur `campaign_id`).
+- Colonne : `lead_sequence_state.salve_id`, nullable, clé étrangère en `ON DELETE set null`.
+- **Ordre impératif : migration AVANT de pousser `main`.** Le code lit toutes les colonnes de
+  `lead_sequence_state` : déployé sans `salve_id`, il casserait toutes les séquences.
+- À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai forkée de
+  la production, garde `scripts/migrate-prod.ts`, vérification de `salve_id` et de la table après coup.
+
