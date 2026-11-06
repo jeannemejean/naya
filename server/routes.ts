@@ -8890,14 +8890,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     try {
       const events = Array.isArray(req.body) ? req.body : [];
       for (const ev of events) {
-        const leadId = Number(ev?.leadId);
-        if (!leadId) continue;
+        const leadId = Number(ev?.leadId) || null;
         // Désinscription ou signalement spam : TOUTE la séquence s'arrête, LinkedIn compris,
         // et définitivement (enrollLead refuse ensuite ce prospect et sa même adresse).
+        // Prospect supprimé depuis l'envoi : sa pierre tombale, à défaut l'adresse de
+        // l'événement (`email`) pour l'utilisatrice des custom_args (`userId`).
         if (['unsubscribe', 'group_unsubscribe', 'spamreport'].includes(ev.event)) {
-          await storage.updateLeadSequenceState(leadId, { status: 'unsubscribed', nextRunAt: null }).catch(() => {});
+          const issue = await storage.desinscrireProspect(leadId, {
+            userId: typeof ev?.userId === 'string' ? ev.userId : null,
+            email: typeof ev?.email === 'string' ? ev.email : null,
+          }).catch((e: any) => { console.error(`[SendGrid webhook] désinscription NON enregistrée (lead ${leadId}) :`, e?.message); return null; });
+          if (issue === 'inconnu') console.error(`[SendGrid webhook] DÉSINSCRIPTION NON ENREGISTRÉE : lead ${leadId} introuvable, ni utilisatrice ni adresse exploitable`);
           continue;
         }
+        if (!leadId) continue;
         // Webhook email : seul le dernier EMAIL est concerné, jamais un message LinkedIn.
         const msg = await storage.getLatestOutreachByLead(leadId, 'email');
         if (!msg) continue;

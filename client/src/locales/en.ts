@@ -1160,6 +1160,7 @@ const en = {
     archiveDescription: "They leave the active list. Nothing is erased.",
     archiveSucces: "{{count}} prospect(s) archived",
     nePlusContacter: "This person unsubscribed: Naya won't contact them again, even if added by hand.",
+    parLots: "{{count}} prospects: Naya deletes them in batches of {{lot}}, one after the other. Keep this window open until it finishes.",
     archiveErreur: "Couldn't archive.",
   },
   modeTest: {
@@ -1248,6 +1249,7 @@ const en = {
       deja_envoye: "This message was already sent.",
       texte_vide: "Write a message before sending.",
       texte_trop_long: "This message is too long: shorten it.",
+      desinscrit: "This person unsubscribed: Naya no longer writes to them, not even to reply. Nothing was sent.",
       introuvable: "This conversation can't be found.",
       echec: "Sending failed. Nothing is marked as sent: you can try again.",
     },

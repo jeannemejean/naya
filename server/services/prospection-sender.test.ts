@@ -1021,11 +1021,27 @@ describe("runProspectionSender — worker loop (intégration)", () => {
 
     it("suppression : la réservation échoue sur clé étrangère (lead supprimé à l'instant) → rien ne part, passage silencieux", async () => {
       (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
-      (storage.claimStepSend as any).mockRejectedValue(Object.assign(new Error("violates foreign key"), { code: "23503" }));
+      (storage.claimStepSend as any).mockRejectedValue(Object.assign(new Error("violates foreign key"), { code: "23503", constraint: "outreach_step_sends_lead_id_fkey" }));
       await expect(runProspectionSender()).resolves.toBeUndefined();
       expect(fetchMock).not.toHaveBeenCalled();
       expect(storage.createOutreachMessage).not.toHaveBeenCalled();
       expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining("lead 1:"), expect.anything());
+    });
+
+    it("clé étrangère qui ne porte PAS sur le prospect (campagne supprimée…) : erreur journalisée, pas masquée", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.claimStepSend as any).mockRejectedValue(Object.assign(new Error("violates foreign key"), { code: "23503", constraint: "outreach_step_sends_campaign_id_fkey" }));
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("lead 1:"), "violates foreign key");
+    });
+
+    it("SendGrid : l'utilisatrice part dans custom_args (désinscription tardive après suppression)", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      await runProspectionSender();
+      const appelSendgrid = fetchMock.mock.calls.find((c: any[]) => String(c[0]).includes("sendgrid"));
+      expect(appelSendgrid).toBeTruthy();
+      expect(JSON.parse(appelSendgrid![1].body).custom_args).toEqual({ leadId: "1", userId: "u1" });
     });
 
     it("ne plus contacter : personne bloquée (désinscrite puis supprimée, réimportée) → rien ne part, séquence arrêtée", async () => {

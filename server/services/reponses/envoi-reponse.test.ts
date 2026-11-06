@@ -26,6 +26,7 @@ function monde(o: { channel?: "linkedin" | "email"; restriction?: any; deconnect
     envoiActif: () => o.envoiActif ?? true,
     getConversation: vi.fn(async (id: number, userId: string) => (id === 11 && userId === "u1" ? conv : undefined)),
     getLead: vi.fn(async () => ({ id: 7, name: "Marc Dupont", email: "marc@acme.fr" } as any)),
+    estDesinscrit: vi.fn(async () => false),
     getMessages: vi.fn(async () => messages),
     identite: vi.fn(async () => ({ portee: null, identite })),
     envoyerLinkedIn: vi.fn(async () => ({ ok: true, messageId: "li-msg-1" })),
@@ -43,6 +44,24 @@ function monde(o: { channel?: "linkedin" | "email"; restriction?: any; deconnect
 }
 
 describe("envoyerReponse", () => {
+  it.each(["linkedin", "email"] as const)("%s : prospect désinscrit (ou sur « ne plus contacter ») → desinscrit, rien envoyé ni réservé", async (channel) => {
+    const { deps } = monde({ channel });
+    (deps.estDesinscrit as any).mockResolvedValue(true);
+    expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: false, raison: "desinscrit" });
+    expect(deps.estDesinscrit).toHaveBeenCalledWith(7, "u1");
+    expect(deps.envoyerLinkedIn).not.toHaveBeenCalled();
+    expect(deps.envoyerEmail).not.toHaveBeenCalled();
+    expect(deps.ajouterMessage).not.toHaveBeenCalled();
+  });
+
+  it("désinscription illisible : refus par prudence", async () => {
+    const { deps } = monde();
+    (deps.estDesinscrit as any).mockRejectedValue(new Error("db"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: false, raison: "desinscrit" });
+    expect(deps.envoyerLinkedIn).not.toHaveBeenCalled();
+  });
+
   it("kill-switch coupé : envoi_coupe, rien envoyé ni écrit", async () => {
     const { deps } = monde({ envoiActif: false });
     expect(await envoyerReponse(11, "u1", "Bonjour", deps)).toEqual({ ok: false, raison: "envoi_coupe" });

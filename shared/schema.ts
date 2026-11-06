@@ -2124,8 +2124,11 @@ export type InsertLinkedInSendAttempt = typeof linkedinSendAttempts.$inferInsert
 // « Ne plus contacter » : ce qui reste d'un prospect DÉSINSCRIT après sa suppression
 // définitive (obligation anti-spam / RGPD : ne jamais recontacter quelqu'un qui l'a demandé,
 // même réimporté). Uniquement l'identifiant de contact — ni nom, ni historique.
-//   email_normalise : minuscules, sans espaces (`normaliserEmail`) ; nul si seul LinkedIn l'identifie.
-//   linkedin_id     : identifiant public du profil (tiré de l'URL), à défaut l'identifiant Unipile.
+// UNE LIGNE PAR CLÉ : soit un email, soit un identifiant LinkedIn (public tiré de l'URL, ou
+// Unipile) — un conflit sur l'une ne fait jamais perdre les autres.
+//   email_normalise : minuscules, sans espaces (`normaliserEmail`).
+//   linkedin_id     : identifiant public du profil, ou identifiant Unipile.
+// Toute ligne de cette table BLOQUE le contact.
 // Lu par `isLeadUnsubscribed` (enrôlement, mode test, envoi Gmail), l'envoi (tous canaux),
 // la création et l'import de prospects. Voir services/prospection-suppression.ts.
 export const prospectsBloques = pgTable("prospects_bloques", {
@@ -2141,6 +2144,38 @@ export const prospectsBloques = pgTable("prospects_bloques", {
 ]);
 export type ProspectBloque = typeof prospectsBloques.$inferSelect;
 export type InsertProspectBloque = typeof prospectsBloques.$inferInsert;
+
+// Pierre tombale d'un prospect SUPPRIMÉ qui avait reçu un message (email ou LinkedIn).
+// Ne bloque JAMAIS un contact : elle sert seulement à transformer une désinscription qui
+// arrive APRÈS la suppression (lien Naya, désinscription en un clic, webhook SendGrid — tous
+// portent l'id du prospect supprimé) en vraie ligne de `prospects_bloques`. Expire après
+// 90 jours (`expire_a`), purgée paresseusement (voir prospection-suppression.ts).
+export const prospectsSupprimes = pgTable("prospects_supprimes", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  leadIdSupprime: integer("lead_id_supprime").notNull(),
+  emailNormalise: text("email_normalise"),
+  linkedinPublicId: text("linkedin_public_id"),
+  linkedinProviderId: text("linkedin_provider_id"),
+  expireA: timestamp("expire_a").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("prospects_supprimes_lead_uq").on(t.leadIdSupprime),
+  index("prospects_supprimes_expire_idx").on(t.expireA),
+]);
+export type ProspectSupprime = typeof prospectsSupprimes.$inferSelect;
+
+// Envois RÉELS d'un prospect supprimé, sans rien qui le désigne : seulement l'instant et le
+// canal. Le plafond quotidien d'emails et l'espacement entre deux envois les comptent, pour
+// qu'une suppression ne rouvre pas de place dans le plafond du jour. Gardés 7 jours.
+export const envoisPlafond = pgTable("envois_plafond", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  canal: text("canal").notNull(), // email | linkedin (valeur d'outreach_messages.platform)
+  sentAt: timestamp("sent_at").notNull(),
+}, (t) => [
+  index("envois_plafond_user_canal_sent_idx").on(t.userId, t.canal, t.sentAt),
+]);
 
 // ─── Journal des invocations IA (Phase 1 — socle du corpus propriétaire) ────────
 // Chaque appel IA (contexte d'entrée → sortie, modèle, tokens, latence, coût) est

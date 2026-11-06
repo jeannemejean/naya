@@ -5,8 +5,8 @@ import type { Express } from "express";
 import { isAuthenticated } from "./auth";
 import { storage, type IStorage } from "./storage";
 
-/** Au-delà, la requête est refusée : une sélection plus grande se supprime en plusieurs fois. */
-export const MAX_SUPPRESSION_GROUPEE = 500;
+/** Au-delà, la requête est refusée : l'interface découpe une grande sélection en lots de 100. */
+export const MAX_SUPPRESSION_GROUPEE = 100;
 
 export type DepsSuppressionLeads = Pick<IStorage, "deleteLeads">;
 
@@ -37,7 +37,9 @@ export function registerSuppressionLeadsRoutes(app: Express, deps: DepsSuppressi
       ? Array.from(new Set<number>(req.body.ids.filter((n: any) => Number.isInteger(n) && n > 0)))
       : [];
     if (ids.length === 0) return res.status(400).json({ message: "no_ids" });
-    if (ids.length > MAX_SUPPRESSION_GROUPEE) return res.status(400).json({ message: "too_many_ids" });
+    if (ids.length > MAX_SUPPRESSION_GROUPEE) {
+      return res.status(400).json({ message: "too_many_ids", max: MAX_SUPPRESSION_GROUPEE });
+    }
     try {
       const r = await deps.deleteLeads(ids, req.userId);
       res.json({ supprimes: r.supprimes.length, ids: r.supprimes, refuses: r.refuses, bloques: r.bloques });

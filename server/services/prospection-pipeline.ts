@@ -320,7 +320,10 @@ export async function sourcerCampagne(
   // « Ne plus contacter » : un désinscrit supprimé depuis n'est jamais re-sourcé. Lecture ratée :
   // le sourcing continue — l'enrôlement et l'envoi relisent la liste et refusent, eux, sans exception.
   const bloques = await Promise.resolve().then(() => storage.getProspectsBloques(userId))
-    .catch(() => ({ emails: new Set<string>(), linkedinIds: new Set<string>() }));
+    .catch((e: any) => {
+      console.error(`[prospection] liste « ne plus contacter » illisible (campagne ${campaign.id}) — sourcing sans ce filtre, l'enrôlement et l'envoi refuseront : ${String(e?.message ?? e)}`);
+      return { emails: new Set<string>(), linkedinIds: new Set<string>() };
+    });
   let imported = 0;
   for (const f of r.leads) {
     if (clesBlocage({ linkedinUrl: f.linkedinUrl }).linkedinIds.some((id) => bloques.linkedinIds.has(id))) continue;

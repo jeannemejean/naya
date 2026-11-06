@@ -1,6 +1,16 @@
 // Ce que l'utilisatrice lit après une suppression (pur, testé).
 import type { ResultatSuppression } from '../useOutreach';
 
+/** Plafond serveur par requête (MAX_SUPPRESSION_GROUPEE) : au-delà, la sélection part en lots. */
+export const LOT_SUPPRESSION = 100;
+
+/** Découpe une sélection en lots successifs. */
+export function lotsDe<T>(ids: T[], taille = LOT_SUPPRESSION): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < ids.length; i += taille) out.push(ids.slice(i, i + taille));
+  return out;
+}
+
 export interface MessageSuppression { cle: string; count: number; erreur?: boolean }
 
 export function messagesSuppression(res: Pick<ResultatSuppression, 'supprimes' | 'refuses'>): MessageSuppression[] {

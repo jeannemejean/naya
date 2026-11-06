@@ -6,6 +6,7 @@ process.env.UNSUBSCRIBE_SECRET = "secret-de-test";
 process.env.UNIPILE_WEBHOOK_SECRET = "webhook-secret";
 const storageMock = {
   updateLeadSequenceState: vi.fn(async () => ({})),
+  desinscrireProspect: vi.fn(async () => "lead"),
   getLead: vi.fn(),
   setLeadLinkedinConnected: vi.fn(async () => {}),
   getInboxConversationParId: vi.fn(),
@@ -70,16 +71,33 @@ describe("routes publiques de désinscription", () => {
     expect(html).not.toMatch(/https?:\/\/(?!www\.w3)/);
     expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled();
   });
-  it("POST : état unsubscribed définitif + page de confirmation", async () => {
+  it("POST : désinscription enregistrée pour ce prospect + page de confirmation", async () => {
     const r = await appel("POST", `/desinscription/${jetonDesinscription(9)}`);
     expect(r.status).toBe(200);
     expect(await r.text()).toContain("désinscrit");
-    expect(storageMock.updateLeadSequenceState).toHaveBeenCalledWith(9, { status: "unsubscribed", nextRunAt: null });
+    expect(storageMock.desinscrireProspect).toHaveBeenCalledWith(9);
+  });
+  it("POST : prospect SUPPRIMÉ depuis l'envoi (pierre tombale) → confirmation aussi", async () => {
+    storageMock.desinscrireProspect.mockResolvedValueOnce("supprime");
+    const r = await appel("POST", `/desinscription/${jetonDesinscription(9)}`);
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("désinscrit");
+  });
+  it("POST : ni fiche ni trace → la page ne ment pas (404, message honnête) et l'échec est journalisé", async () => {
+    storageMock.desinscrireProspect.mockResolvedValueOnce("inconnu");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await appel("POST", `/desinscription/${jetonDesinscription(9)}`);
+    expect(r.status).toBe(404);
+    const html = await r.text();
+    expect(html).not.toContain("Vous êtes désinscrit");
+    expect(html).toContain("pas retrouvé");
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("NON ENREGISTRÉE"));
   });
   it("jeton invalide : 404 sur GET et POST, rien d'écrit", async () => {
     expect((await appel("GET", "/desinscription/bidon")).status).toBe(404);
     expect((await appel("POST", "/desinscription/9.bidon")).status).toBe(404);
     expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled();
+    expect(storageMock.desinscrireProspect).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { messagesSuppression } from "./suppression-messages";
+import { messagesSuppression, lotsDe, LOT_SUPPRESSION } from "./suppression-messages";
 
 describe("messagesSuppression", () => {
   it("un prospect supprimé", () => {
@@ -19,5 +19,16 @@ describe("messagesSuppression", () => {
   it("rien supprimé, tout refusé : pas de message de succès", () => {
     expect(messagesSuppression({ supprimes: 0, refuses: [{ id: 1, raison: "envoi_en_cours" }] }).map((m) => m.cle))
       .toEqual(["outreach.suppression.envoiEnCours"]);
+  });
+});
+
+describe("lotsDe (sélection > 100 prospects)", () => {
+  it("lots de 100 au plus, dans l'ordre, rien de perdu", () => {
+    const ids = Array.from({ length: 250 }, (_, i) => i + 1);
+    const lots = lotsDe(ids);
+    expect(LOT_SUPPRESSION).toBe(100);
+    expect(lots.map((l) => l.length)).toEqual([100, 100, 50]);
+    expect(lots.flat()).toEqual(ids);
+    expect(lotsDe([])).toEqual([]);
   });
 });

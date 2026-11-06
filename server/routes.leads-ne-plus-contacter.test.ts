@@ -31,6 +31,9 @@ const storageMock = {
   estProspectBloque: vi.fn(),
   getProspectsBloques: vi.fn(),
   getProspectionCampaign: vi.fn(),
+  desinscrireProspect: vi.fn(),
+  getLatestOutreachByLead: vi.fn(),
+  updateLeadSequenceState: vi.fn(),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const aRevoir = vi.hoisted(() => ({ liste: [] as any[] }));
@@ -101,5 +104,48 @@ describe("« ne plus contacter » — création et import de prospects", () => {
     expect(await res.json()).toEqual({ imported: 1, skipped: 2, blocked: 2, total: 3 });
     expect(storageMock.createLead).toHaveBeenCalledTimes(1);
     expect(storageMock.createLead).toHaveBeenCalledWith(expect.objectContaining({ email: "claire@ex.fr" }));
+  });
+});
+
+describe("webhook SendGrid — désinscription d'un prospect supprimé", () => {
+  let server: http.Server;
+  let port: number;
+  const webhook = (events: unknown[]) => fetch(`http://127.0.0.1:${port}/api/sendgrid/webhook`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(events),
+  });
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    storageMock.desinscrireProspect.mockResolvedValue("supprime");
+    ({ server, port } = await startServer());
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+  });
+
+  it("unsubscribe / spamreport : prospect, utilisatrice (custom_args) et adresse de l'événement transmis", async () => {
+    const res = await webhook([
+      { event: "unsubscribe", leadId: "7", userId: "user-1", email: "marie@ex.fr" },
+      { event: "spamreport", leadId: "8", email: "paul@ex.fr" },
+    ]);
+    expect(res.status).toBe(200);
+    expect(storageMock.desinscrireProspect).toHaveBeenCalledWith(7, { userId: "user-1", email: "marie@ex.fr" });
+    expect(storageMock.desinscrireProspect).toHaveBeenCalledWith(8, { userId: null, email: "paul@ex.fr" });
+    expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled();
+  });
+
+  it("sans leadId mais avec utilisatrice + adresse : la désinscription est quand même tentée", async () => {
+    storageMock.desinscrireProspect.mockResolvedValue("email");
+    await webhook([{ event: "group_unsubscribe", userId: "user-1", email: "x@y.fr" }]);
+    expect(storageMock.desinscrireProspect).toHaveBeenCalledWith(null, { userId: "user-1", email: "x@y.fr" });
+  });
+
+  it("rien de connu : journalisé bruyamment, le webhook répond quand même", async () => {
+    storageMock.desinscrireProspect.mockResolvedValue("inconnu");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await webhook([{ event: "unsubscribe", leadId: "9" }]);
+    expect(res.status).toBe(200);
+    expect(err).toHaveBeenCalledWith(expect.stringContaining("NON ENREGISTRÉE"));
   });
 });

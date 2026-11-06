@@ -29,6 +29,7 @@ function deps(over: Partial<DepsModeTest> = {}) {
     adressesPropres: vi.fn(async () => ["jeanne@agence.fr", "jeanne.gmail@gmail.com"]),
     emailsEnvoyesDepuis: vi.fn(async () => 3),
     adresseDeVraiProspect: vi.fn(async () => false),
+    adresseBloquee: vi.fn(async () => false),
     testsCreesDepuis: vi.fn(async () => 0),
     plafondQuotidien: 80,
     signature: vi.fn(async () => "Jeanne"),
@@ -127,7 +128,7 @@ describe("envoyerEmailTest", () => {
     // Même chemin d'envoi que le worker : étape 1, lien de désinscription.
     expect(d.envoyer).toHaveBeenCalledWith(GMAIL, expect.objectContaining({
       to: "claire@exemple.fr", toName: "Claire", leadId: 42, stepOrder: 1,
-      lienDesinscription: "https://hellonaya.app/desinscription/abc",
+      lienDesinscription: "https://hellonaya.app/desinscription/abc", userId: "u1",
     }));
     // Journalisé comme un vrai envoi (rattachement des réponses + plafond quotidien).
     expect(d.journaliser).toHaveBeenCalledWith(expect.objectContaining({

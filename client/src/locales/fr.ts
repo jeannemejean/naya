@@ -1164,6 +1164,7 @@ const fr = {
     archiveDescription: "Ils disparaissent de la liste active. Rien n'est effacé.",
     archiveSucces: "{{count}} prospect(s) archivé(s)",
     nePlusContacter: "Cette personne s'est désinscrite : Naya ne la recontactera pas, même ajoutée à la main.",
+    parLots: "{{count}} prospects : Naya les supprime par lots de {{lot}}, l'un après l'autre. Garde cette fenêtre ouverte jusqu'à la fin.",
     archiveErreur: "Archivage impossible.",
   },
   modeTest: {
@@ -1252,6 +1253,7 @@ const fr = {
       deja_envoye: "Ce message a déjà été envoyé.",
       texte_vide: "Écris un message avant d'envoyer.",
       texte_trop_long: "Ce message est trop long : raccourcis-le.",
+      desinscrit: "Cette personne s'est désinscrite : Naya ne lui écrit plus, même pour répondre. Rien n'est parti.",
       introuvable: "Cette conversation est introuvable.",
       echec: "L'envoi a échoué. Rien n'est marqué comme envoyé : tu peux réessayer.",
     },

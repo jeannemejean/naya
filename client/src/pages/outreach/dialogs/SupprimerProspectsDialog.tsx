@@ -7,7 +7,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { useDeleteLeads, type ResultatSuppression } from '../useOutreach';
+import { useDeleteLeads, LOT_SUPPRESSION, type ResultatSuppression } from '../useOutreach';
 import { messagesSuppression } from './suppression-messages';
 
 interface Props {
@@ -51,6 +51,9 @@ export default function SupprimerProspectsDialog({ ids, open, onOpenChange, onDo
             </span>
             <span className="block text-xs">{t('outreach.suppression.detail')}</span>
             <span className="block text-xs">{t('outreach.suppression.detailDesinscrit')}</span>
+            {n > LOT_SUPPRESSION && (
+              <span className="block text-xs">{t('outreach.suppression.parLots', { count: n, lot: LOT_SUPPRESSION })}</span>
+            )}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

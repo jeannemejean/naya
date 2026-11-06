@@ -53,10 +53,12 @@ describe("POST /api/leads/bulk-delete", () => {
     expect(await r.json()).toEqual({ supprimes: 1, ids: [1], refuses: [{ id: 2, raison: "introuvable" }], bloques: 0 });
     expect(deps.deleteLeads).toHaveBeenCalledWith([1, 2], "u1");
   });
-  it("aucun id → 400 ; trop d'ids → 400", async () => {
+  it("aucun id → 400 ; plus de 100 ids → 400 explicite (l'interface découpe en lots)", async () => {
     expect((await appel("POST", "/api/leads/bulk-delete", { ids: [] })).status).toBe(400);
     const trop = Array.from({ length: MAX_SUPPRESSION_GROUPEE + 1 }, (_, i) => i + 1);
-    expect((await appel("POST", "/api/leads/bulk-delete", { ids: trop })).status).toBe(400);
+    const r = await appel("POST", "/api/leads/bulk-delete", { ids: trop });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ message: "too_many_ids", max: 100 });
     expect(deps.deleteLeads).not.toHaveBeenCalled();
   });
   it("exception → 500 sans détail", async () => {
