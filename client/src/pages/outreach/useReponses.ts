@@ -7,6 +7,8 @@ import type { MessageFil } from "./reponses-logique";
 export interface ConversationListe {
   id: number; leadId: number; leadName: string; company: string | null; channel: string; statut: string;
   nonLu: boolean; extrait: string | null; lastMessageAt: string | null; projectId: number | null;
+  /** Absents d'un serveur plus ancien : traités comme « hors campagne ». */
+  campaignId?: number | null; campaignName?: string | null;
 }
 export interface ConversationDetail {
   conversation: { id: number; channel: string; statut: string; nonLu: boolean; leadId: number; projectId: number | null };
