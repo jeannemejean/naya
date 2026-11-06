@@ -10,6 +10,7 @@
  *  - un plafond dur d'appels SERP par passage protège le budget Bright Data.
  */
 import { extractLinkedInLead, type ExtractedLead, type SerpResult } from "./serp";
+import { publicIdFromUrl } from "./linkedin";
 
 /** Plafond dur d'appels SERP facturés par passage de sourcing. */
 export const PLAFOND_APPELS_SERP = 30;
@@ -96,6 +97,12 @@ export function normaliserRequeteGoogle(q: string): string | null {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/** Un même profil, quel que soit le sous-domaine (`fr.`, `www.`) ou les paramètres de l'adresse. */
+export function cleProfilLinkedIn(url: string): string {
+  const id = publicIdFromUrl(url)?.replace(/\/+$/, "").toLowerCase();
+  return id || url.toLowerCase().split("?")[0].replace(/\/+$/, "");
+}
+
 function cleRequete(q: string): string {
   return q.replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -108,8 +115,10 @@ export interface EntreeSourcing {
   cible: number;
   /** Un appel SERP facturé : requête + numéro de page (0 = première). */
   search: (requete: string, page: number) => Promise<SerpResult[]>;
-  /** URL LinkedIn déjà présente chez l'utilisatrice (clé normalisée en minuscules). */
-  estConnu: (urlNormalisee: string) => boolean;
+  /** Profil déjà présent chez l'utilisatrice (clé de `cleProfilLinkedIn`). */
+  estConnu: (cle: string) => boolean;
+  /** Profil hors cible : ni importé ni compté, la recherche continue pour atteindre la cible. */
+  estExclu?: (lead: ExtractedLead) => boolean;
   /** Fournit des requêtes NEUVES, sachant celles déjà utilisées. Liste vide = épuisé. */
   nouvellesRequetes?: (dejaUtilisees: string[]) => Promise<string[]>;
   /** Appelé à chaque appel SERP facturé (journal d'usage). */
@@ -123,6 +132,7 @@ export interface ResultatSourcing {
   appels: number;
   requetesUtilisees: string[];
   dejaConnus: number;
+  exclus: number;
   cibleAtteinte: boolean;
   /** Toutes les requêtes disponibles ont été parcourues avant d'atteindre la cible ou le plafond. */
   epuise: boolean;
@@ -137,6 +147,7 @@ export async function sourcerJusquaCible(e: EntreeSourcing): Promise<ResultatSou
   const clesUtilisees = new Set<string>();
   let appels = 0;
   let dejaConnus = 0;
+  let exclus = 0;
   let renouvellements = 0;
 
   const file: string[] = [];
@@ -179,10 +190,11 @@ export async function sourcerJusquaCible(e: EntreeSourcing): Promise<ResultatSou
         const lead = extractLinkedInLead(r);
         if (!lead) continue;
         profils++;
-        const cle = lead.linkedinUrl.toLowerCase().replace(/\/+$/, "");
+        const cle = cleProfilLinkedIn(lead.linkedinUrl);
         if (vues.has(cle)) continue;
         vues.add(cle);
         if (e.estConnu(cle)) { dejaConnus++; continue; }
+        if (e.estExclu?.(lead)) { exclus++; continue; }
         leads.push(lead);
         if (cibleAtteinte()) break;
       }
@@ -196,6 +208,7 @@ export async function sourcerJusquaCible(e: EntreeSourcing): Promise<ResultatSou
     appels,
     requetesUtilisees,
     dejaConnus,
+    exclus,
     cibleAtteinte: cibleAtteinte(),
     epuise: !cibleAtteinte() && !plafondAtteint(),
   };

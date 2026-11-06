@@ -95,7 +95,7 @@ import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { doitReprendreApresValidation, peutEtreContacte, peutReprendreSequence } from "./services/prospection-validation";
-import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE } from "./services/prospection-enrolement";
+import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE, suspendreCollegues } from "./services/prospection-enrolement";
 import { marquerDernierMessageRepondu } from "./services/reponses/ingestion";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
@@ -8032,10 +8032,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         ids, userId: req.userId, campaignId,
         getState: (id) => storage.getLeadSequenceState(id),
         deplacer: (liste) => storage.bulkMoveLeads(liste, req.userId, campaignId),
-        suspendre: async (id) => {
-          await storage.updateLeadSequenceState(id, { status: 'paused', nextRunAt: null } as any);
-          await storage.setLeadSequenceGuard(id, { tropProcheConsecutifs: 0, stepId: null, attention: RAISON_PROSPECT_DEPLACE });
-        },
+        suspendre: (id) => storage.suspendreSequence(id, RAISON_PROSPECT_DEPLACE),
       });
       res.json({ moved });
     } catch (error: any) {
@@ -8078,6 +8075,10 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
             updateOutreachMessage: (mid, p) => storage.updateOutreachMessage(mid, p),
           }, parseInt(id), new Date())
             .catch((e: any) => console.error('[lead patch] marquage de la réponse:', e?.message || e));
+          await suspendreCollegues({
+            collegues: () => storage.colleguesEnSequence(lead, userId),
+            suspendre: (l, raison) => storage.suspendreSequence(l, raison),
+          }).catch((e: any) => console.error('[lead patch] pause des collègues:', e?.message || e));
         }
       }
 

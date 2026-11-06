@@ -14,6 +14,7 @@
  *  - on ne journalise jamais le sujet ni le corps d'un message.
  */
 import { estLeadTest } from "../prospection-mode-test";
+import { suspendreCollegues } from "../prospection-enrolement";
 import type {
   EtatAvantReponse, InboxConversation, InboxMessage, InsertInboxConversation, InsertInboxMessage, InsertTask, Lead,
   LeadSequenceState, OutreachMessage, Task,
@@ -82,6 +83,9 @@ export interface DepsIngestion {
   supprimerTache: (id: number) => Promise<unknown>;
   supprimerBrouillonsLinkedIn: (leadId: number, userId: string) => Promise<unknown>;
   dernierMessageEnvoye: (leadId: number) => Promise<OutreachMessage | undefined>;
+  /** Les collègues de ce prospect dont une séquence est en cours. */
+  collegues: (lead: Lead, userId: string) => Promise<number[]>;
+  suspendreSequence: (leadId: number, raison: string) => Promise<unknown>;
   updateOutreachMessage: (id: number, patch: Partial<OutreachMessage>) => Promise<unknown>;
   getTask: (id: number) => Promise<Task | undefined>;
   createTask: (t: InsertTask) => Promise<Task>;
@@ -438,6 +442,10 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
   };
   await auMieux("suppression des brouillons LinkedIn", () => deps.supprimerBrouillonsLinkedIn(lead.id, userId));
   await auMieux("marquage du message envoyé", () => marquerDernierMessageRepondu(deps, lead.id, evt.sentAt));
+  await auMieux("pause des collègues", () => suspendreCollegues({
+    collegues: () => deps.collegues(lead, userId),
+    suspendre: deps.suspendreSequence,
+  }));
   await auMieux("passage en discussion", async () => {
     const stade = stadeApresReponse(lead.stage);
     if (stade) await deps.updateLead(lead.id, userId, { stage: stade });
@@ -522,6 +530,8 @@ export function depsDepuisStorage(s: IStorage): DepsIngestion {
     supprimerTache: (id) => s.deleteTask(id),
     supprimerBrouillonsLinkedIn: (l, u) => s.deleteLinkedInDraftsForLead(l, u),
     dernierMessageEnvoye: (l) => s.getLatestOutreachByLead(l),
+    collegues: (l, u) => s.colleguesEnSequence(l, u),
+    suspendreSequence: (l, raison) => s.suspendreSequence(l, raison),
     updateOutreachMessage: (id, p) => s.updateOutreachMessage(id, p),
     getTask: (id) => s.getTask(id),
     createTask: (t) => s.createTask(t),

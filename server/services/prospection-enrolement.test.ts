@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE, type ProspectEnrolable } from "./prospection-enrolement";
+import { deplacerProspects, enrolerEnMasse, suspendreCollegues, RAISON_ENTREPRISE_A_REPONDU, RAISON_PROSPECT_DEPLACE, type ProspectEnrolable } from "./prospection-enrolement";
 
 const valide = new Date("2026-10-01T10:00:00Z");
 
@@ -139,5 +139,22 @@ describe("deplacerProspects — la séquence ne continue pas dans l'ancienne cam
 
   it("dit pourquoi la séquence s'est arrêtée", () => {
     expect(RAISON_PROSPECT_DEPLACE).toMatch(/campagne/);
+  });
+});
+
+describe("suspendreCollegues — une réponse arrête les autres contacts de l'entreprise", () => {
+  it("met en pause chaque collègue, raison visible", async () => {
+    const suspendre = vi.fn(async () => undefined);
+    const n = await suspendreCollegues({ collegues: async () => [2, 3], suspendre });
+    expect(n).toBe(2);
+    expect(suspendre).toHaveBeenCalledWith(2, RAISON_ENTREPRISE_A_REPONDU);
+    expect(suspendre).toHaveBeenCalledWith(3, RAISON_ENTREPRISE_A_REPONDU);
+  });
+
+  it("un échec sur un collègue n'empêche pas de suspendre les autres", async () => {
+    const suspendre = vi.fn(async (id: number) => { if (id === 2) throw new Error("db"); });
+    const n = await suspendreCollegues({ collegues: async () => [2, 3], suspendre });
+    expect(suspendre).toHaveBeenCalledTimes(2);
+    expect(n).toBe(1);
   });
 });

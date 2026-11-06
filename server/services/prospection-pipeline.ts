@@ -31,7 +31,8 @@ import {
 // comportement strictement inchangé (simple forward des mêmes fonctions).
 export { sanitizeMessage, enforceLinkedInLimit, resolveFounderName };
 import { serpSearchStrict } from "./serp";
-import { sourcerJusquaCible, marcheDeRecherche, normaliserRequeteGoogle } from "./prospection-sourcing";
+import { cleProfilLinkedIn, sourcerJusquaCible, marcheDeRecherche, normaliserRequeteGoogle } from "./prospection-sourcing";
+import { correspondAUneExclusion } from "./prospection-entreprises";
 import { calculerCibleProspects, panierMoyenDepuis, tauxConversionObserve } from "./prospection-volume";
 import { resolveLanguage } from "@shared/language";
 import { synchroniserValidationsProspection } from "./prospection-verification";
@@ -283,7 +284,7 @@ export async function sourcerCampagne(
 
   const connus = new Set(
     (existing as any[])
-      .map((l) => String(l.linkedinUrl || "").toLowerCase().split("?")[0].replace(/\/+$/, ""))
+      .map((l) => cleProfilLinkedIn(String(l.linkedinUrl || "")))
       .filter(Boolean),
   );
 
@@ -304,7 +305,8 @@ export async function sourcerCampagne(
         return [];
       }
     },
-    estConnu: (url) => connus.has(url),
+    estConnu: (cle) => connus.has(cle),
+    estExclu: (lead) => correspondAUneExclusion(lead, icp.exclusions ?? []),
     nouvellesRequetes: async (deja) => {
       const neuf = await generateLeadCriteria(userId, campaign.id, {
         cible: besoin,
@@ -458,7 +460,8 @@ export async function enrichProspects(
       // à partir du brief. Elles sont aussi mises en cache sur la première étape de chaque
       // canal : ce que l'utilisatrice valide est exactement ce qui partira.
       const msg: { linkedinMessage?: string; emailMessage?: string } = {};
-      if (briefActionnable(brief)) {
+      // Écarté avec certitude : il quitte la campagne, un message pour lui serait payé pour rien.
+      if (decision !== "retirer" && briefActionnable(brief)) {
         const steps = await storage.getSequenceSteps(campaign.id).catch(() => [] as any[]);
         const canaux: Array<"linkedin" | "email"> = [];
         if (channel !== "email") canaux.push("linkedin");

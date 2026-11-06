@@ -186,3 +186,25 @@ describe("prospectsParJourDerive — plus de « 3 » codé en dur à la créatio
     expect(storage.getActiveGoalsForProject).not.toHaveBeenCalled();
   });
 });
+
+describe("sourcerCampagne — structures fiables", () => {
+  it("n'importe pas un profil déjà connu sous un autre sous-domaine", async () => {
+    (storage.getLeads as any).mockResolvedValue([{ linkedinUrl: "https://www.linkedin.com/in/p1", stage: "signed" }]);
+    (serp.serpSearchStrict as any).mockImplementation(async () => [
+      { link: "https://fr.linkedin.com/in/p1", title: "Personne 1 - Directrice - Maison 1 | LinkedIn" },
+    ]);
+    await sourcerCampagne("u1", campagne);
+    expect(storage.createLead).not.toHaveBeenCalled();
+  });
+
+  it("applique les exclusions du profil cible aux résultats", async () => {
+    (prospection.generateLeadCriteria as any).mockResolvedValue({ ...ICP, exclusions: ["agence"] });
+    (serp.serpSearchStrict as any).mockImplementation(async () => [
+      { link: "https://www.linkedin.com/in/a", title: "Anne - Directrice - Agence Lumière | LinkedIn" },
+      { link: "https://www.linkedin.com/in/b", title: "Basile - Directeur - Maison Basile | LinkedIn" },
+    ]);
+    await sourcerCampagne("u1", campagne);
+    const noms = (storage.createLead as any).mock.calls.map((c: any[]) => c[0].name);
+    expect(noms).toEqual(["Basile"]);
+  });
+});

@@ -60,6 +60,31 @@ export async function enrolerEnMasse(deps: {
 export const RAISON_PROSPECT_DEPLACE =
   "Ce prospect a changé de campagne : son ancienne séquence est en pause, rien n'est envoyé. Ajoute-le à la séquence de sa nouvelle campagne pour repartir.";
 
+/** Raison visible dans l'aperçu quand un collègue a répondu à sa place. */
+export const RAISON_ENTREPRISE_A_REPONDU =
+  "Quelqu'un de cette entreprise a répondu : séquence en pause, rien n'est envoyé. Ajoute ce prospect à la séquence pour reprendre.";
+
+/**
+ * Une réponse suspend les autres contacts de l'entreprise, une fois, au moment où elle arrive.
+ * Remettre un collègue en séquence reste possible : c'est alors une décision, pas un oubli.
+ * Renvoie le nombre de collègues suspendus.
+ */
+export async function suspendreCollegues(deps: {
+  collegues: () => Promise<number[]>;
+  suspendre: (leadId: number, raison: string) => Promise<unknown>;
+}): Promise<number> {
+  let suspendus = 0;
+  for (const id of await deps.collegues()) {
+    try {
+      await deps.suspendre(id, RAISON_ENTREPRISE_A_REPONDU);
+      suspendus++;
+    } catch (e: any) {
+      console.error(`[prospection] pause du collègue ${id} échouée : ${String(e?.message ?? e)}`);
+    }
+  }
+  return suspendus;
+}
+
 /** États où le robot peut encore envoyer un message ou attend de le faire. */
 const ETATS_EN_COURS = ["active", "awaiting_linkedin"];
 

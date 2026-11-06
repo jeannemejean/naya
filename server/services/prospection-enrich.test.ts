@@ -130,6 +130,23 @@ describe("enrichProspects — projet client (mode agence)", () => {
   });
 });
 
+describe("enrichProspects — prospect écarté par la qualification", () => {
+  it("écarté avec certitude : rien n'est rédigé, il quitte la campagne", async () => {
+    const appels: string[] = [];
+    const ia = (claude.callClaudeWithContext as any).getMockImplementation();
+    (claude.callClaudeWithContext as any).mockImplementation(async (a: any) => {
+      appels.push(a.userMessage);
+      if (a.userMessage.includes("audit factuel") || a.userMessage.includes("BRIEF d'une prise de contact")) return ia(a);
+      return JSON.stringify({ verdict: "ecarte", raison: "Concurrent direct.", confiance: "haute" });
+    });
+    await enrichProspects("u1", campaign, [10]);
+    expect(appels.some((m) => m.includes("DOCTRINE DE PROSPECTION"))).toBe(false);
+    const ecrit = (storage.updateLead as any).mock.calls.at(-1)[2];
+    expect(ecrit).toMatchObject({ prospectionCampaignId: null, stage: "identified" });
+    expect(ecrit.linkedinMessage).toBeUndefined();
+  });
+});
+
 describe("enrichProspects — tâche de validation dans le planning", () => {
   it("synchronise la tâche « Valider les messages » de la campagne une fois les messages prêts", async () => {
     await enrichProspects("u1", campaign, [10]);

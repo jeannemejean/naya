@@ -220,6 +220,7 @@ import { estLeadTest, TAG_LEAD_TEST } from "./services/prospection-mode-test";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
 import { ETAPE_EN_ATTENTE_DE_VALIDATION, ETAPE_PREMIER_CONTACT } from "./services/prospection-validation";
+import { memeEntreprise } from "./services/prospection-entreprises";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
@@ -624,6 +625,10 @@ export interface IStorage {
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
   /** Un message vient de partir : le suivi quitte « messages prêts », sans jamais reculer. */
   marquerPremierContact(leadId: number, userId: string): Promise<void>;
+  /** Met une séquence en pause, raison visible dans l'aperçu. */
+  suspendreSequence(leadId: number, raison: string): Promise<void>;
+  /** Les prospects de la même entreprise et du même projet dont une séquence est en cours. */
+  colleguesEnSequence(lead: Pick<Lead, "id" | "company" | "email" | "projectId">, userId: string): Promise<number[]>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
   /** Public de campagne : retire le prospect de la séquence (état définitif `excluded_audience`). */
@@ -2548,6 +2553,24 @@ export class DatabaseStorage implements IStorage {
     await db.update(leads)
       .set({ stage: ETAPE_PREMIER_CONTACT, updatedAt: new Date() })
       .where(and(eq(leads.id, leadId), eq(leads.userId, userId), eq(leads.stage, ETAPE_EN_ATTENTE_DE_VALIDATION)));
+  }
+
+  async suspendreSequence(leadId: number, raison: string): Promise<void> {
+    await this.updateLeadSequenceState(leadId, { status: "paused", nextRunAt: null });
+    await this.setLeadSequenceGuard(leadId, { tropProcheConsecutifs: 0, stepId: null, attention: raison });
+  }
+
+  async colleguesEnSequence(lead: Pick<Lead, "id" | "company" | "email" | "projectId">, userId: string): Promise<number[]> {
+    const candidats = await db.select({ id: leads.id, company: leads.company, email: leads.email })
+      .from(leads)
+      .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
+      .where(and(
+        eq(leads.userId, userId),
+        ne(leads.id, lead.id),
+        lead.projectId == null ? isNull(leads.projectId) : eq(leads.projectId, lead.projectId),
+        inArray(leadSequenceState.status, ["active", "awaiting_linkedin"]),
+      ));
+    return candidats.filter((c) => memeEntreprise(lead, c)).map((c) => c.id);
   }
 
   async createLead(leadData: InsertLead): Promise<Lead> {
