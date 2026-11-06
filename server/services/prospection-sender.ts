@@ -20,7 +20,7 @@ import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedi
 import { decisionPublic, normaliserPublic, RAISON_EXCLUSION } from "./campagne-public";
 import { decideNextStep, planAfterStep } from "./sequence-engine";
 import { nextTropProcheState, lireGarde, RAISON_TROP_PROCHE, MAX_TROP_PROCHE_CONSECUTIFS } from "./sequence-distinct";
-import { estValide, RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
+import { raisonDeRetenue, RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
 import { BriefIncompletError, generateStepMessage, combineInstructions } from "./sequence-message";
 import { resolveFounderName } from "./prospection-pipeline";
 import { identiteCampagne } from "./connexions/resolution";
@@ -440,13 +440,13 @@ export async function envoyerEmailProspect(
 export const RAISON_DOUBLON_A_REPONDU =
   "Cette personne a déjà répondu depuis une autre fiche : séquence en pause, rien n'est envoyé.";
 
-/** Met la séquence en pause, raison visible dans l'aperçu. Valider de nouveau la relance. */
-async function retenirFauteDeValidation(lead: any, stepId: number): Promise<void> {
-  console.warn(`[ProspectionSender] lead ${lead.id} sans validation — séquence en pause, rien envoyé`);
-  await storage.setLeadSequenceGuard(lead.id, { tropProcheConsecutifs: lireGarde(lead)?.tropProcheConsecutifs ?? 0, stepId, attention: RAISON_VALIDATION_MANQUANTE })
-    .catch((e: any) => console.error("[ProspectionSender] écriture de la raison (validation) échouée", e.message));
+/** Met la séquence en pause, raison visible dans l'aperçu. */
+async function retenir(lead: any, stepId: number, raison: string): Promise<void> {
+  console.warn(`[ProspectionSender] lead ${lead.id} retenu — séquence en pause, rien envoyé : ${raison}`);
+  await storage.setLeadSequenceGuard(lead.id, { tropProcheConsecutifs: lireGarde(lead)?.tropProcheConsecutifs ?? 0, stepId, attention: raison })
+    .catch((e: any) => console.error("[ProspectionSender] écriture de la raison échouée", e.message));
   await storage.updateLeadSequenceState(lead.id, { status: "paused", nextRunAt: null } as any)
-    .catch((e: any) => console.error("[ProspectionSender] mise en pause (validation) échouée", e.message));
+    .catch((e: any) => console.error("[ProspectionSender] mise en pause échouée", e.message));
 }
 
 export async function runProspectionSender(): Promise<void> {
@@ -667,10 +667,12 @@ export async function runProspectionSender(): Promise<void> {
           await storage.updateLeadSequenceState(state.leadId, { status: "failed", nextRunAt: null });
           continue;
         }
-        // La validation vaut aussi après l'entrée en séquence : retirée ou effacée par une
-        // nouvelle rédaction, rien ne part. Vérifié ici pour ne rien payer en rédaction IA.
-        if (!estValide(lead.validatedAt)) {
-          await retenirFauteDeValidation(lead, step.id);
+        // La validation vaut aussi après l'entrée en séquence : retirée, effacée par une nouvelle
+        // rédaction, ou prospect passé en « Sans suite », rien ne part. Vérifié ici pour ne rien
+        // payer en rédaction IA.
+        const retenue = raisonDeRetenue(lead);
+        if (retenue) {
+          await retenir(lead, step.id, retenue);
           continue;
         }
         // Étape email pour un prospect sans adresse connue : elle est SAUTÉE (comme une
@@ -983,6 +985,16 @@ export async function runProspectionSender(): Promise<void> {
           await storage.updateLeadSequenceState(state.leadId, { nextRunAt: new Date(now.getTime() + TROP_PROCHE_RETRY_BACKOFF_MS) } as any).catch(() => {});
           continue;
         }
+        if (gen.redige && !state.lastStepSentAt) {
+          // Premier contact : ce qui part est ce qui a été relu. Séquence modifiée, brief changé,
+          // cache vidé : ce texte vient d'être écrit, la validation précédente ne vaut pas pour
+          // lui. Il prend sa place dans la fiche pour que Jeanne valide bien ce qui partira.
+          const champ = step.channel === "email" ? "emailMessage" : "linkedinMessage";
+          await storage.updateLead(lead.id, state.userId, { validatedAt: null, [champ]: gen.body } as any)
+            .catch((e: any) => console.error("[ProspectionSender] retrait de la validation échoué", e.message));
+          await retenir(lead, step.id, RAISON_VALIDATION_MANQUANTE);
+          continue;
+        }
         if (gen.aRevoir) {
           // Le contrôle qualité a encore trouvé des défauts après réécriture : ce message ne
           // part pas tant que l'utilisatrice ne l'a pas corrigé (une édition lève le blocage).
@@ -1051,8 +1063,8 @@ export async function runProspectionSender(): Promise<void> {
           await storage.updateLeadSequenceState(state.leadId, { status: "unsubscribed", nextRunAt: null } as any).catch(() => {});
           continue;
         }
-        // Même raison que l'état ci-dessus : « Retirer la validation » a pu être cliqué pendant
-        // la rédaction, et le prospect lu en début de passage ne le sait pas. Lecture ratée :
+        // Même raison que l'état ci-dessus : « Retirer la validation » ou « Sans suite » a pu être
+        // cliqué pendant la rédaction, et le prospect lu en début de passage ne le sait pas. Lecture ratée :
         // rien ne part, on réessaie au prochain passage.
         let prospectFrais;
         try {
@@ -1061,8 +1073,9 @@ export async function runProspectionSender(): Promise<void> {
           console.error(`[ProspectionSender] validation du lead ${state.leadId} illisible avant envoi — rien envoyé : ${String(e?.message ?? e)}`);
           continue;
         }
-        if (!estValide(prospectFrais?.validatedAt)) {
-          await retenirFauteDeValidation(lead, step.id);
+        const retenueFraiche = raisonDeRetenue({ stage: prospectFrais?.stage, validatedAt: prospectFrais?.validatedAt });
+        if (retenueFraiche) {
+          await retenir(lead, step.id, retenueFraiche);
           continue;
         }
         // Même personne sur une AUTRE fiche (même email, même identifiant ou profil LinkedIn)

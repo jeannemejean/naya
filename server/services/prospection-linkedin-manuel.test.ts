@@ -36,6 +36,14 @@ describe("marquerLinkedInEnvoye", () => {
     expect(d.marquerPremierContact).toHaveBeenCalledWith(3, "u1");
   });
 
+  it("suivi non mis à jour : le message reste noté parti et la séquence reprend", async () => {
+    const d = deps();
+    (d.marquerPremierContact as any).mockRejectedValue(new Error("db"));
+    const r = await marquerLinkedInEnvoye(d, "u1", 7, NOW);
+    expect(r).toEqual({ ok: true, sequenceReprise: true });
+    expect(d.updateState).toHaveBeenCalled();
+  });
+
   it("déjà envoyé : le suivi n'est pas réécrit", async () => {
     const d = deps({ msg: { id: 7, userId: "u1", leadId: 3, platform: "linkedin", messageType: "step_1", sentAt: NOW } });
     await marquerLinkedInEnvoye(d, "u1", 7, NOW);

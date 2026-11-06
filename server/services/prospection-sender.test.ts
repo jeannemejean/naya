@@ -73,7 +73,7 @@ import {
   retirerSignatureFinale,
   envoyerEmailProspect,
 } from "./prospection-sender";
-import { RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
+import { RAISON_SANS_SUITE, RAISON_VALIDATION_MANQUANTE } from "./prospection-validation";
 import { storage } from "../storage";
 import { generateStepMessage } from "./sequence-message";
 import { linkedinConfigured, sendLinkedInStep, checkConnection } from "./linkedin";
@@ -351,6 +351,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.getLeads as any).mockResolvedValue([baseLead()]);
     (storage.getLead as any).mockResolvedValue(baseLead());
     (storage.marquerPremierContact as any).mockResolvedValue(undefined);
+    (storage.updateLead as any).mockResolvedValue(undefined);
     (storage.getBrandDna as any).mockResolvedValue({});
     (storage.getUser as any).mockResolvedValue({ firstName: "Jeanne" });
     (storage.getProspectionCampaign as any).mockResolvedValue({ id: 10, name: "Campagne test" });
@@ -998,6 +999,45 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       vi.spyOn(console, "error").mockImplementation(() => {});
       await runProspectionSender();
       expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, expect.objectContaining({ currentStep: 1 }));
+    });
+
+    it("« Sans suite » : rien ne part, séquence en pause, raison visible", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeads as any).mockResolvedValue([baseLead({ stage: "no_follow" })]);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_SANS_SUITE }));
+    });
+
+    it("passé en « Sans suite » pendant la rédaction : rien ne part", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLead as any).mockResolvedValue(baseLead({ stage: "no_follow" }));
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+    });
+
+    it("premier message réécrit depuis la validation : rien ne part, le texte neuf attend d'être relu", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Texte neuf", redige: true });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.updateLead).toHaveBeenCalledWith(1, "u1", { validatedAt: null, emailMessage: "Texte neuf" });
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "paused", nextRunAt: null });
+      expect(storage.setLeadSequenceGuard).toHaveBeenCalledWith(1, expect.objectContaining({ attention: RAISON_VALIDATION_MANQUANTE }));
+    });
+
+    it("relance rédigée au dernier moment : elle part, le premier contact a déjà été validé", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState({ lastStepSentAt: new Date("2026-01-01T09:00:00Z") })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: "Objet", body: "Relance", redige: true });
+      await runProspectionSender();
+      expect(storage.claimStepSend).toHaveBeenCalled();
     });
 
     it("validation retirée : rien ne se rédige ni ne part, séquence en pause, raison visible", async () => {

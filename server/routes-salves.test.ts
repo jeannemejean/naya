@@ -13,6 +13,7 @@ const s = vi.hoisted(() => ({
   getSequenceSteps: vi.fn(),
   getLeads: vi.fn(),
   getLeadSequenceState: vi.fn(),
+  prospectsAyantRepondu: vi.fn(),
   getUserPreferences: vi.fn(),
   creerSalve: vi.fn(),
   supprimerSalve: vi.fn(),
@@ -51,6 +52,7 @@ describe("routes des salves", () => {
     s.getSequenceSteps.mockResolvedValue([{ id: 1 }]);
     s.getLeads.mockResolvedValue([prospect(1), prospect(2), prospect(3, { validatedAt: null })]);
     s.getLeadSequenceState.mockResolvedValue(undefined);
+    s.prospectsAyantRepondu.mockResolvedValue([]);
     s.getUserPreferences.mockResolvedValue({ timezone: "UTC" });
     s.creerSalve.mockResolvedValue({ id: 40 });
     s.enrollLead.mockResolvedValue({ id: 1 });
@@ -74,6 +76,14 @@ describe("routes des salves", () => {
     expect(s.enrollLead.mock.calls.map((c: any[]) => c[0])).toEqual([1, 2]);
     expect(second.nextRunAt.getTime()).toBeGreaterThan(premier.nextRunAt.getTime());
     expect(premier.salveId).toBe(40);
+  });
+
+  it("laisse de côté le collègue de quelqu'un qui a répondu", async () => {
+    s.getLeads.mockResolvedValue([prospect(1, { company: "Acme" }), prospect(2, { company: "Globex" })]);
+    s.prospectsAyantRepondu.mockResolvedValue([{ company: "ACME SAS", email: null }]);
+    const r = await (await lancer({ nombre: 20, parJour: 5 })).json();
+    expect(r.programmes).toBe(1);
+    expect(s.enrollLead.mock.calls.map((c: any[]) => c[0])).toEqual([2]);
   });
 
   it("refuse une demande illisible, sans rien créer", async () => {

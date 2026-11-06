@@ -236,7 +236,7 @@ describe("generateStepMessage — messages distincts", () => {
   it("charge le texte de l'invitation et l'injecte dans le prompt de l'étape 2", async () => {
     (claude.callClaudeWithContext as any).mockResolvedValue(JSON.stringify({ body: distinct }));
     const r = await generateStepMessage("u1", { lead, campaign, step: steps[1], steps });
-    expect(r).toEqual({ subject: null, body: distinct });
+    expect(r).toEqual({ subject: null, redige: true, body: distinct });
     const prompt = (claude.callClaudeWithContext as any).mock.calls[0][0].userMessage;
     expect(prompt).toContain(invitation);
     expect(prompt).toContain("PREMIER MESSAGE");

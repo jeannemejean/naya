@@ -10,7 +10,7 @@ import {
 
 describe("ressembleAUnPoste", () => {
   it("reconnaît un poste, avec ou sans accent", () => {
-    for (const t of ["Directrice marketing", "Gérant", "Fondatrice", "CEO", "Head of Brand", "Co-fondateur", "Freelance", "Indépendante"]) {
+    for (const t of ["Directrice marketing", "Gérant", "Fondatrice", "CEO", "Head of Brand", "Co-fondateur", "Freelance", "Indépendante", "Avocate", "Architecte d'intérieur", "Notaire", "Expert-comptable", "Médecin", "Rédactrice"]) {
       expect(ressembleAUnPoste(t), t).toBe(true);
     }
   });
@@ -52,7 +52,7 @@ describe("domaineProfessionnel", () => {
     expect(domaineProfessionnel(" Marie@Acme.FR ")).toBe("acme.fr");
   });
   it("écarte les messageries grand public", () => {
-    for (const e of ["a@gmail.com", "a@outlook.fr", "a@orange.fr", "a@icloud.com", "pas-une-adresse", null]) {
+    for (const e of ["a@gmail.com", "a@outlook.fr", "a@orange.fr", "a@icloud.com", "a@hotmail.be", "a@yahoo.co.uk", "a@live.ca", "a@pm.me", "pas-une-adresse", null]) {
       expect(domaineProfessionnel(e), String(e)).toBeNull();
     }
   });

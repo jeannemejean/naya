@@ -12,6 +12,9 @@ import {
   RAISON_VALIDATION_MANQUANTE,
   doitReprendreApresValidation,
   peutReprendreSequence,
+  raisonDeRetenue,
+  RAISON_SANS_SUITE,
+  etapeApresEnrichissement,
 } from "./prospection-validation";
 
 /**
@@ -187,6 +190,10 @@ describe("peutReprendreSequence", () => {
     expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: null }, { status: "paused" })).toBe(false);
   });
 
+  it("un prospect contacté dont la séquence a échoué peut repartir", () => {
+    expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, { status: "failed" })).toBe(true);
+  });
+
   it("jamais hors d'une séquence en pause", () => {
     expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, null)).toBe(false);
     expect(peutReprendreSequence({ stage: "connection_sent", validatedAt: valide }, { status: "stopped_replied" })).toBe(false);
@@ -194,5 +201,37 @@ describe("peutReprendreSequence", () => {
 
   it("jamais un prospect engagé dans une discussion", () => {
     expect(peutReprendreSequence({ stage: "in_discussion", validatedAt: valide }, { status: "paused" })).toBe(false);
+  });
+});
+
+describe("raisonDeRetenue", () => {
+  const valide = new Date("2026-09-17T10:00:00Z");
+
+  it("un prospect validé et suivi peut partir", () => {
+    expect(raisonDeRetenue({ stage: "messages_ready", validatedAt: valide })).toBeNull();
+    expect(raisonDeRetenue({ stage: "connection_sent", validatedAt: valide })).toBeNull();
+  });
+
+  it("sans validation, rien ne part", () => {
+    expect(raisonDeRetenue({ stage: "messages_ready", validatedAt: null })).toBe(RAISON_VALIDATION_MANQUANTE);
+  });
+
+  it("« Sans suite » arrête tout, même validé", () => {
+    expect(raisonDeRetenue({ stage: "no_follow", validatedAt: valide })).toBe(RAISON_SANS_SUITE);
+  });
+});
+
+describe("etapeApresEnrichissement", () => {
+  it("un prospect pas encore contacté suit ses messages", () => {
+    expect(etapeApresEnrichissement("identified", true)).toBe("messages_ready");
+    expect(etapeApresEnrichissement(null, false)).toBe("identified");
+    expect(etapeApresEnrichissement("no_follow", true)).toBe("messages_ready");
+  });
+
+  it("un prospect déjà contacté ne recule jamais", () => {
+    for (const etape of ["connection_sent", "connected", "followup1_sent", "in_discussion", "proposal_sent", "signed"]) {
+      expect(etapeApresEnrichissement(etape, true), etape).toBe(etape);
+      expect(etapeApresEnrichissement(etape, false), etape).toBe(etape);
+    }
   });
 });

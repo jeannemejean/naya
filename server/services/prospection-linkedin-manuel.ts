@@ -56,7 +56,9 @@ export async function marquerLinkedInEnvoye(
   if (!b.msg) return { ok: false, raison: b.erreur };
   const msg = b.msg;
   await deps.updateMessage(msg.id, { sentAt: now });
-  await deps.marquerPremierContact(msg.leadId, userId);
+  // Le message est parti : un suivi non mis à jour ne doit pas bloquer la séquence.
+  await deps.marquerPremierContact(msg.leadId, userId)
+    .catch((e: any) => console.error(`[LinkedIn manuel] suivi du lead ${msg.leadId} non mis à jour : ${String(e?.message ?? e)}`));
 
   const state = await deps.getState(msg.leadId);
   const rang = etapeAttendue(msg, state);

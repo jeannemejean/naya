@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import type { Lead } from '@shared/schema';
 import { useInvitationAcceptee, useEnrichLead, useProspectionStatus, useUnvalidateLead, useUpdateLead, useValidateLeads } from './useOutreach';
-import { attendValidation, estPretAPartir } from './validation-messages';
+import { attendValidation, estPretAPartir, retenuSansValidation } from './validation-messages';
 import { STAGES, STAGE_MAP, type StageKey } from './stages';
 import { channelMeta } from './channels';
 import AuditView from './AuditView';
@@ -367,8 +367,8 @@ function InfoField({ label, value, onChange }: { label: string; value: string; o
 }
 
 // ─── Validation des messages ────────────────────────────────────────────────────
-// L'accord explicite avant tout contact (prospection-validation.ts). Visible seulement à
-// l'étape « Messages prêts » : avant, il n'y a rien à valider ; après, le contact est parti.
+// L'accord explicite avant tout contact (prospection-validation.ts). Visible à l'étape
+// « Messages prêts », et quand le robot retient une séquence faute de validation.
 
 function ValidationMessages({ lead }: { lead: Lead }) {
   const { t } = useTranslation();
@@ -378,7 +378,7 @@ function ValidationMessages({ lead }: { lead: Lead }) {
   const [aRevoir, setARevoir] = useState(false);
   const l = lead as any;
 
-  if (attendValidation(l)) {
+  if (attendValidation(l) || retenuSansValidation(l)) {
     return (
       <div className="rounded-lg border border-naya-mauve/40 bg-naya-mauve/5 p-3 flex items-center justify-between gap-2">
         <p className="text-xs text-foreground">{t('outreach.validation.detailAValider')}</p>

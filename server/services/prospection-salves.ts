@@ -84,7 +84,8 @@ export async function choisirProspects<T extends ProspectDeSalve>(e: {
   leads: T[];
   nombre: number;
   getState: (leadId: number) => Promise<{ status: string } | null | undefined>;
-  estTest?: (lead: T) => boolean;
+  /** Prospect à laisser de côté : prospect de test, collègue de quelqu'un qui a répondu. */
+  exclure?: (lead: T) => boolean;
 }): Promise<T[]> {
   const ordre = [...e.leads].sort(
     (a, b) => rang(a) - rang(b) || (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0),
@@ -92,7 +93,7 @@ export async function choisirProspects<T extends ProspectDeSalve>(e: {
   const choisis: T[] = [];
   for (const lead of ordre) {
     if (choisis.length >= e.nombre) break;
-    if (!peutEtreContacte(lead) || e.estTest?.(lead)) continue;
+    if (!peutEtreContacte(lead) || e.exclure?.(lead)) continue;
     if (await e.getState(lead.id)) continue;
     choisis.push(lead);
   }

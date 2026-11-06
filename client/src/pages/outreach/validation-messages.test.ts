@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  attendValidation, estPretAPartir, estValide, messagesAValider, miseAJourMessage,
+  attendValidation, estPretAPartir, estValide, messagesAValider, miseAJourMessage, retenuSansValidation,
   prospectsAValider, depasseLimite,
 } from "./validation-messages";
 
@@ -74,5 +74,20 @@ describe("estRefusARevoir", () => {
     expect(estRefusARevoir(new Error("409: {\"message\":\"autre\"}"))).toBe(false);
     expect(estRefusARevoir(new Error("500: boom"))).toBe(false);
     expect(estRefusARevoir("x")).toBe(false);
+  });
+});
+
+describe('retenuSansValidation', () => {
+  const retenu = { id: 1, stage: 'connection_sent', validatedAt: null, enrichedProfile: { nayaSequence: { attention: 'Ce prospect n\'est plus validé.' } } };
+
+  it('propose Valider à un prospect retenu, quelle que soit son étape', () => {
+    expect(retenuSansValidation(retenu)).toBe(true);
+  });
+  it('rien à proposer sans raison de pause', () => {
+    expect(retenuSansValidation({ ...retenu, enrichedProfile: null })).toBe(false);
+  });
+  it('rien à proposer si le prospect est validé ou archivé', () => {
+    expect(retenuSansValidation({ ...retenu, validatedAt: '2026-10-09T08:00:00Z' })).toBe(false);
+    expect(retenuSansValidation({ ...retenu, archivedAt: '2026-10-09T08:00:00Z' })).toBe(false);
   });
 });

@@ -97,8 +97,9 @@ import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
-import { doitReprendreApresValidation, peutEtreContacte, peutReprendreSequence } from "./services/prospection-validation";
+import { doitReprendreApresValidation, peutEtreContacte, peutReprendreSequence, RAISON_SANS_SUITE } from "./services/prospection-validation";
 import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE, suspendreCollegues } from "./services/prospection-enrolement";
+import { memeEntreprise } from "./services/prospection-entreprises";
 import { marquerDernierMessageRepondu } from "./services/reponses/ingestion";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
@@ -8103,6 +8104,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           .catch((e: any) => console.error('[lead patch] synchro tâche de validation:', e?.message || e));
       }
 
+      // « Sans suite » : plus rien ne part. Le robot le revérifie aussi avant chaque envoi.
+      if ((updates as any).stage === 'no_follow') {
+        const st = await storage.getLeadSequenceState(parseInt(id));
+        if (st && ['active', 'awaiting_linkedin'].includes(st.status)) {
+          await storage.suspendreSequence(parseInt(id), RAISON_SANS_SUITE);
+        }
+      }
+
       res.json(lead);
     } catch (error) {
       console.error("Error updating lead:", error);
@@ -8540,8 +8549,14 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         });
       }
 
+      if (etatSequence && ['active', 'awaiting_linkedin'].includes(etatSequence.status)) {
+        return res.status(409).json({ message: 'deja_en_sequence' });
+      }
+
       const campaignId = Number(req.body?.campaignId) || lead.prospectionCampaignId;
       if (!campaignId) return res.status(400).json({ message: 'no_campaign' });
+      const campagne = await storage.getProspectionCampaign(campaignId);
+      if (campagne?.userId !== req.userId) return res.status(404).json({ message: 'campaign_not_found' });
       if (await storage.isLeadUnsubscribed(lead.id, req.userId)) {
         return res.status(409).json({ message: 'unsubscribed' });
       }
@@ -8905,11 +8920,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const campaignLeads = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id);
       // Même barrière que /api/leads/:id/enroll : un prospect dont personne n'a validé
       // les messages n'entre pas en séquence, même via « Lancer ».
+      const ontRepondu = await storage.prospectsAyantRepondu(req.userId, campaign.projectId ?? null);
       const r = await enrolerEnMasse({
-        leads: campaignLeads.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt })),
+        leads: campaignLeads.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt, company: l.company, email: l.email })),
         getState: (leadId) => storage.getLeadSequenceState(leadId),
         enroll: (leadId) => storage.enrollLead(leadId, campaign.id, req.userId),
         respecterLesPauses: true,
+        exclure: (l) => ontRepondu.some((rep) => memeEntreprise(l, rep)),
       });
       res.json(r);
     } catch (e: any) {

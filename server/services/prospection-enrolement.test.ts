@@ -48,6 +48,19 @@ describe("enrolerEnMasse — la barrière vaut aussi pour l'enrôlement groupé"
     expect(r).toEqual({ enrolled: 0, skipped: 2, skippedNotValidated: 0, total: 2 });
   });
 
+  it("« Lancer pour tous » saute le collègue de quelqu'un qui a répondu", async () => {
+    const enroll = vi.fn(async (_id: number) => ({ ok: true }));
+    const r = await enrolerEnMasse({
+      leads: [lead(1), lead(2)],
+      getState: async () => undefined,
+      enroll,
+      exclure: (l) => l.id === 1,
+    });
+    expect(enroll).toHaveBeenCalledTimes(1);
+    expect(enroll).toHaveBeenCalledWith(2);
+    expect(r).toMatchObject({ enrolled: 1, skipped: 1, skippedNotValidated: 0 });
+  });
+
   it("ne ré-enrôle jamais un état actif, terminé ou ayant répondu", async () => {
     const enroll = vi.fn(async (_id: number) => ({ ok: true }));
     const states: Record<number, { status: string }> = {

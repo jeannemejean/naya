@@ -34,6 +34,7 @@ export { sanitizeMessage, enforceLinkedInLimit, resolveFounderName };
 import { serpSearchStrict } from "./serp";
 import { cleProfilLinkedIn, sourcerJusquaCible, marcheDeRecherche, normaliserRequeteGoogle } from "./prospection-sourcing";
 import { correspondAUneExclusion } from "./prospection-entreprises";
+import { etapeApresEnrichissement } from "./prospection-validation";
 import { calculerCibleProspects, panierMoyenDepuis, tauxConversionObserve } from "./prospection-volume";
 import { resolveLanguage } from "@shared/language";
 import { synchroniserValidationsProspection } from "./prospection-verification";
@@ -521,7 +522,7 @@ export async function enrichProspects(
         emailMessage: msg.emailMessage,
         enrichedProfile: data,
         prospectBrief: brief,
-        stage: hasMessage ? "messages_ready" : "identified",
+        stage: etapeApresEnrichissement((lead as any).stage, hasMessage),
         // Des messages neufs n'ont été lus par personne : une validation donnée aux
         // précédents ne vaut pas pour eux.
         validatedAt: null,

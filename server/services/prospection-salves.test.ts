@@ -74,8 +74,13 @@ describe("choisirProspects", () => {
     expect(r.map((l) => l.id)).toEqual([1]);
   });
 
+  it("jamais le collègue de quelqu'un qui a répondu", async () => {
+    const r = await choisirProspects({ leads: [prospect(1), prospect(2)], nombre: 10, getState: sansEtat, exclure: (l) => l.id === 1 });
+    expect(r.map((l) => l.id)).toEqual([2]);
+  });
+
   it("jamais un prospect de test", async () => {
-    const r = await choisirProspects({ leads: [prospect(1, { tags: ["lead-test"] })], nombre: 10, getState: sansEtat, estTest: (l) => !!l.tags?.length });
+    const r = await choisirProspects({ leads: [prospect(1, { tags: ["lead-test"] })], nombre: 10, getState: sansEtat, exclure: (l) => !!l.tags?.length });
     expect(r).toEqual([]);
   });
 

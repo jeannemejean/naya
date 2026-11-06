@@ -5,6 +5,7 @@ import type { Express } from "express";
 import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { estLeadTest } from "./services/prospection-mode-test";
+import { memeEntreprise } from "./services/prospection-entreprises";
 import { hhmmToMin, localNow } from "./services/prospection-sender";
 import {
   bilanDeSalve, choisirProspects, lancerSalve, planifierSalve,
@@ -45,10 +46,11 @@ export function registerSalvesRoutes(app: Express) {
     if ((await storage.getSequenceSteps(campagne.id)).length === 0) return res.status(400).json({ message: "no_sequence_defined" });
 
     const leads = (await storage.getLeads(req.userId)).filter((l) => l.prospectionCampaignId === campagne.id);
+    const ontRepondu = await storage.prospectsAyantRepondu(req.userId, campagne.projectId ?? null);
     const prospects = await choisirProspects({
       leads, nombre,
       getState: (id) => storage.getLeadSequenceState(id),
-      estTest: estLeadTest,
+      exclure: (l) => estLeadTest(l) || ontRepondu.some((r) => memeEntreprise(l, r)),
     });
 
     // Mêmes heures et mêmes jours que le robot d'envoi.

@@ -80,6 +80,15 @@ export function estValide(validatedAt: Date | null | undefined): boolean {
 export const RAISON_VALIDATION_MANQUANTE =
   "Ce prospect n'est plus validé : séquence en pause, rien n'est envoyé. Valide ses messages pour reprendre.";
 
+/** Raison visible dans l'aperçu quand le prospect a été passé en « Sans suite ». */
+export const RAISON_SANS_SUITE = "Ce prospect est passé en « Sans suite » : séquence en pause, rien n'est envoyé.";
+
+/** Pourquoi rien ne doit partir vers ce prospect, ou `null` s'il peut recevoir son message. */
+export function raisonDeRetenue(lead: ProspetValidable): string | null {
+  if (lead.stage === "no_follow") return RAISON_SANS_SUITE;
+  return estValide(lead.validatedAt) ? null : RAISON_VALIDATION_MANQUANTE;
+}
+
 /**
  * Une nouvelle validation relance-t-elle la séquence ? Seulement si le robot l'avait retenue
  * pour cette raison-là : une pause décidée pour un autre motif (doublon ayant répondu, message
@@ -93,7 +102,7 @@ export function doitReprendreApresValidation(
 }
 
 /**
- * Reprise d'une séquence en pause chez un prospect déjà contacté. La barrière a joué au premier
+ * Reprise d'une séquence en pause ou en échec chez un prospect déjà contacté. La barrière a joué au premier
  * message ; le robot a depuis fait avancer le prospect, donc `peutEtreContacte` ne le reconnaît
  * plus. Seule l'étape du premier contact est concernée : au-delà, une personne a pris la main.
  */
@@ -101,7 +110,18 @@ export function peutReprendreSequence(
   lead: ProspetValidable,
   etat: { status: string } | null | undefined,
 ): boolean {
-  return etat?.status === "paused" && lead.stage === ETAPE_PREMIER_CONTACT && estValide(lead.validatedAt);
+  return (etat?.status === "paused" || etat?.status === "failed")
+    && lead.stage === ETAPE_PREMIER_CONTACT && estValide(lead.validatedAt);
+}
+
+/** Étapes d'un prospect déjà contacté : un nouvel enrichissement ne les fait pas reculer. */
+const ETAPES_DEJA_CONTACTE = new Set<string>([
+  "connection_sent", "connected", "followup1_sent", "followup2_sent", "in_discussion", "proposal_sent", "signed",
+]);
+
+export function etapeApresEnrichissement(stage: string | null | undefined, messagesPrets: boolean): string {
+  if (stage && ETAPES_DEJA_CONTACTE.has(stage)) return stage;
+  return messagesPrets ? ETAPE_EN_ATTENTE_DE_VALIDATION : "identified";
 }
 
 /**

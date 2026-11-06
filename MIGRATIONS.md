@@ -596,8 +596,9 @@ et une colonne vide : aucun `DROP`, aucune donnée réécrite.
 Séquences que le robot mettra en pause à leur prochain envoi, faute de validation :
 
 ```sql
-select count(*) from lead_sequence_state s join leads l on l.id = s.lead_id
-where s.status in ('active', 'awaiting_linkedin') and l.validated_at is null;
+select l.stage, count(*) from lead_sequence_state s join leads l on l.id = s.lead_id
+where s.status in ('active', 'awaiting_linkedin') and l.validated_at is null
+group by l.stage;
 ```
 
 Prospects déjà contactés qui resteront affichés « Messages prêts » (pas de rattrapage automatique) :

@@ -24,7 +24,8 @@ const MOTS_DE_POSTE = new RegExp(
     "ceo", "cto", "cfo", "coo", "cmo", "dg", "pdg", "vp", "vice president",
     "consultant(?:e)?", "freelance", "independant(?:e)?", "auto entrepreneur(?:e)?", "entrepreneur(?:e|se)?",
     "self employed", "ingenieur(?:e)?", "developpeu(?:r|se)", "graphiste", "designer", "photographe",
-    "coach", "format(?:eur|rice)", "assistant(?:e)?", "commercial(?:e)?",
+    "coach", "format(?:eur|rice)", "assistant(?:e)?", "commercial(?:e)?", "avocat(?:e)?", "architecte",
+    "notaire", "expert(?:e)? comptable", "medecin", "redact(?:eur|rice)",
   ].join("|") + ")\\b",
 );
 
@@ -58,15 +59,17 @@ export function cleEntreprise(nom: string | null | undefined): string | null {
 }
 
 const MESSAGERIES_PUBLIQUES = new Set([
-  "gmail.com", "googlemail.com", "outlook.com", "outlook.fr", "hotmail.com", "hotmail.fr", "live.com", "live.fr",
-  "msn.com", "yahoo.com", "yahoo.fr", "icloud.com", "me.com", "mac.com", "orange.fr", "wanadoo.fr", "free.fr",
-  "sfr.fr", "neuf.fr", "laposte.net", "bbox.fr", "protonmail.com", "proton.me", "gmx.fr", "gmx.com", "aol.com",
+  "gmail.com", "googlemail.com", "msn.com", "icloud.com", "me.com", "mac.com", "orange.fr", "wanadoo.fr", "free.fr",
+  "sfr.fr", "neuf.fr", "laposte.net", "bbox.fr", "proton.me", "pm.me",
 ]);
+/** Ces marques déclinent leur messagerie par pays (hotmail.be, yahoo.co.uk…). */
+const FAMILLES_PUBLIQUES = /^(?:hotmail|outlook|live|yahoo|gmx|protonmail|aol)\./;
 
 /** Domaine d'une adresse, s'il désigne une entreprise et non une messagerie grand public. */
 export function domaineProfessionnel(email: string | null | undefined): string | null {
   const domaine = email?.trim().toLowerCase().split("@")[1];
-  return domaine && domaine.includes(".") && !MESSAGERIES_PUBLIQUES.has(domaine) ? domaine : null;
+  if (!domaine?.includes(".") || MESSAGERIES_PUBLIQUES.has(domaine) || FAMILLES_PUBLIQUES.test(domaine)) return null;
+  return domaine;
 }
 
 export interface ProspectEntreprise {

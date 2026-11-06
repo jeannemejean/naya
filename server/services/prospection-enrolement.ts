@@ -14,6 +14,8 @@ export interface ProspectEnrolable {
   id: number;
   stage: string | null | undefined;
   validatedAt: Date | null | undefined;
+  company?: string | null;
+  email?: string | null;
 }
 
 export interface ResultatEnrolement {
@@ -37,6 +39,8 @@ export async function enrolerEnMasse(deps: {
    * pause y reste (un collègue a répondu, un doublon, un arrêt). Reprendre se fait à la sélection.
    */
   respecterLesPauses?: boolean;
+  /** Prospect à laisser de côté, par exemple le collègue de quelqu'un qui a répondu. */
+  exclure?: (lead: ProspectEnrolable) => boolean;
 }): Promise<ResultatEnrolement> {
   let enrolled = 0;
   let skipped = 0;
@@ -49,7 +53,7 @@ export async function enrolerEnMasse(deps: {
       skippedNotValidated++;
       continue;
     }
-    if (existing && (ETATS_DEFINITIFS.includes(existing.status) || (deps.respecterLesPauses && existing.status === "paused"))) {
+    if (deps.exclure?.(lead) || (existing && (ETATS_DEFINITIFS.includes(existing.status) || (deps.respecterLesPauses && existing.status === "paused")))) {
       skipped++;
       continue;
     }

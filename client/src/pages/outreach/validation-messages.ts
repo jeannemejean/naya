@@ -9,6 +9,7 @@ export interface ProspectValidable {
   stage?: string | null;
   validatedAt?: string | Date | null;
   archivedAt?: string | Date | null;
+  enrichedProfile?: { nayaSequence?: { attention?: string | null } | null } | null;
   linkedinMessage?: string | null;
   emailMessage?: string | null;
   message1?: string | null;
@@ -24,6 +25,14 @@ export function estValide(validatedAt: string | Date | null | undefined): boolea
 
 export function attendValidation(l: ProspectValidable): boolean {
   return l.stage === "messages_ready" && !estValide(l.validatedAt) && !l.archivedAt;
+}
+
+/**
+ * Séquence retenue par le robot faute de validation. Le bouton Valider doit alors exister quelle
+ * que soit l'étape, sinon la raison affichée demande une action que l'écran ne propose pas.
+ */
+export function retenuSansValidation(l: ProspectValidable): boolean {
+  return !estValide(l.validatedAt) && !!l.enrichedProfile?.nayaSequence?.attention && !l.archivedAt;
 }
 
 export function prospectsAValider<T extends ProspectValidable>(leads: T[]): T[] {

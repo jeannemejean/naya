@@ -661,6 +661,8 @@ export interface IStorage {
   suspendreSequence(leadId: number, raison: string): Promise<void>;
   /** Les prospects de la même entreprise et du même projet dont une séquence est en cours. */
   colleguesEnSequence(lead: Pick<Lead, "id" | "company" | "email" | "projectId">, userId: string): Promise<number[]>;
+  /** Les prospects d'un projet qui ont répondu : leurs collègues ne sont pas à recontacter en masse. */
+  prospectsAyantRepondu(userId: string, projectId: number | null): Promise<{ company: string | null; email: string | null }[]>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
   /** Public de campagne : retire le prospect de la séquence (état définitif `excluded_audience`). */
@@ -2021,6 +2023,12 @@ export class DatabaseStorage implements IStorage {
     const nextRunAt = new Date((opts?.nextRunAt.getTime() ?? Date.now()) + firstDelayDays * 86400000);
 
     const existing = await this.getLeadSequenceState(leadId);
+    if (existing) {
+      // Reprise : un brouillon LinkedIn jamais envoyé n'est pas une étape faite. Sa réservation
+      // ferait passer le premier message pour parti et la relance arriverait sans lui.
+      await this.deleteLinkedInDraftsForLead(leadId, userId);
+      await db.delete(outreachStepSends).where(and(eq(outreachStepSends.leadId, leadId), eq(outreachStepSends.status, "draft")));
+    }
     // Nouveau départ : le compteur « message trop proche » et sa raison d'arrêt aussi.
     await this.setLeadSequenceGuard(leadId, null);
     // Nouveau départ : le public de la campagne sera revérifié (autre campagne possible).
@@ -2028,7 +2036,9 @@ export class DatabaseStorage implements IStorage {
     const values = {
       leadId, campaignId, userId,
       status: "active", currentStep: 0, nextRunAt,
-      lastStepSentAt: null, delayAnchorAt: null, repliedAt: null,
+      // Reprise : les délais repartent de maintenant, pas de la première entrée en séquence,
+      // sinon une relance en retard partirait dans la minute.
+      lastStepSentAt: null, delayAnchorAt: existing ? new Date() : null, repliedAt: null,
       // Décision explicite (revue post-commit f17af17, mineur) : un enrôlement (y compris
       // une RELANCE de campagne) est un vrai nouveau départ — currentStep, nextRunAt et
       // repliedAt sont déjà remis à zéro ci-dessus. Un lead ABANDONNÉ (status:"failed" après
@@ -2686,6 +2696,17 @@ export class DatabaseStorage implements IStorage {
     return candidats.filter((c) => memeEntreprise(lead, c)).map((c) => c.id);
   }
 
+  async prospectsAyantRepondu(userId: string, projectId: number | null): Promise<{ company: string | null; email: string | null }[]> {
+    return db.select({ company: leads.company, email: leads.email })
+      .from(leads)
+      .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
+      .where(and(
+        eq(leads.userId, userId),
+        projectId == null ? isNull(leads.projectId) : eq(leads.projectId, projectId),
+        eq(leadSequenceState.status, "stopped_replied"),
+      ));
+  }
+
   async createLead(leadData: InsertLead): Promise<Lead> {
     const [newLead] = await db.insert(leads).values(leadData).returning();
     return newLead;
@@ -2782,7 +2803,9 @@ export class DatabaseStorage implements IStorage {
         .limit(1);
       reportAbsence = !!abs;
     }
-    const plan = planAcceptance(row?.at ?? null, at, state?.status ?? null, now, { nextRunAt: state?.nextRunAt ?? null, reportAbsence });
+    // Prospect programmé (salve) et pas encore contacté : sa date tient, comme un report d'absence.
+    const pasEncoreContacte = !!state && !state.lastStepSentAt;
+    const plan = planAcceptance(row?.at ?? null, at, state?.status ?? null, now, { nextRunAt: state?.nextRunAt ?? null, reportAbsence: reportAbsence || pasEncoreContacte });
     await db.update(leads).set({ linkedinConnectedAt: plan.linkedinConnectedAt, updatedAt: now }).where(eq(leads.id, leadId));
     if (plan.wakeSequenceAt) {
       await db.update(leadSequenceState)
@@ -2832,6 +2855,9 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(leadSequenceState, eq(leadSequenceState.leadId, leads.id))
       .where(and(
         eq(leadSequenceState.status, "active"),
+        // Aucune invitation n'a pu partir avant le premier message : rien à vérifier, ni à compter
+        // dans le budget LinkedIn.
+        isNotNull(leadSequenceState.lastStepSentAt),
         isNull(leads.linkedinConnectedAt),
         isNull(leads.archivedAt),
       ))
