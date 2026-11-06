@@ -35,7 +35,9 @@ export async function sendEmailUnipile(o: {
     body: o.body,
   };
   if (o.replyToProviderId) payload.reply_to = o.replyToProviderId;
-  if (o.trackingLabel) payload.tracking_options = { opens: true, links: true, label: o.trackingLabel };
+  // Liens non réécrits : le suivi les ferait passer par un domaine tiers (lnk-fllw.com), lien de
+  // désinscription compris, ce qui nuit à la délivrabilité et à la confiance du destinataire.
+  if (o.trackingLabel) payload.tracking_options = { opens: true, links: false, label: o.trackingLabel };
   if (o.headers && Object.keys(o.headers).length) {
     payload.custom_headers = Object.entries(o.headers).map(([name, value]) => ({ name, value }));
   }
