@@ -172,6 +172,7 @@ import {
   type InsertProspectionLearnedRule,
   outreachStepSends,
   linkedinSendAttempts,
+  prospectsBloques,
   aiInvocations,
   type AiInvocation,
   type InsertAiInvocation,
@@ -222,6 +223,7 @@ import type { PlanEntrant } from "./services/reponses/ingestion";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
 import { parisDayBoundsUTC, localWallClock, wallClockToInstant } from "./utils/timezone";
 import { contenuSupprimable } from "./services/campagne/gardes-sql";
+import { supprimerLeadDansTransaction, conditionBlocage, type RaisonRefus } from "./services/prospection-suppression";
 
 /**
  * « Aujourd'hui » (YYYY-MM-DD) et « maintenant » (minutes depuis minuit) en heure de Paris —
@@ -620,6 +622,15 @@ export interface IStorage {
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: number, userId: string, updates: Partial<Lead>): Promise<Lead | null>;
   bulkArchiveLeads(ids: number[], userId: string): Promise<number>;
+  /**
+   * Suppression DÉFINITIVE (une transaction par prospect, voir prospection-suppression.ts).
+   * Les ids qui ne sont pas à l'utilisatrice sont ignorés (`refuses` : introuvable).
+   */
+  deleteLeads(ids: number[], userId: string): Promise<{ supprimes: number[]; refuses: { id: number; raison: RaisonRefus }[]; bloques: number }>;
+  /** Cette fiche (email / LinkedIn) est-elle sur la liste « ne plus contacter » de l'utilisatrice ? Lève sur erreur de lecture. */
+  estProspectBloque(userId: string, fiche: { email?: string | null; linkedinProviderId?: string | null; linkedinUrl?: string | null }): Promise<boolean>;
+  /** Toute la liste « ne plus contacter » (pour filtrer un import ou un sourcing en une lecture). */
+  getProspectsBloques(userId: string): Promise<{ emails: Set<string>; linkedinIds: Set<string> }>;
   bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number>;
   getLeadsByStatus(userId: string, status: string): Promise<Lead[]>;
   setLeadLinkedinConnected(leadId: number, at: Date): Promise<void>;
@@ -2531,6 +2542,45 @@ export class DatabaseStorage implements IStorage {
     return rows.length;
   }
 
+  async deleteLeads(ids: number[], userId: string) {
+    const supprimes: number[] = [];
+    const refuses: { id: number; raison: RaisonRefus }[] = [];
+    let bloques = 0;
+    for (const id of Array.from(new Set(ids))) {
+      // Une transaction PAR prospect : un envoi en cours sur l'un n'empêche pas les autres,
+      // et une erreur annule tout ce prospect-là (jamais à moitié supprimé).
+      let issue;
+      try {
+        issue = await db.transaction((tx) => supprimerLeadDansTransaction(tx, id, userId));
+      } catch (e: any) {
+        // Transaction annulée (dont 23503 : une réservation d'envoi est arrivée entre-temps) :
+        // ce prospect reste intact, les autres continuent.
+        console.error(`[Suppression] prospect ${id} non supprimé (transaction annulée) :`, e?.message);
+        refuses.push({ id, raison: e?.code === "23503" ? "envoi_en_cours" : "erreur" });
+        continue;
+      }
+      if (issue.ok) { supprimes.push(id); if (issue.bloque) bloques++; }
+      else refuses.push({ id, raison: issue.raison });
+    }
+    return { supprimes, refuses, bloques };
+  }
+
+  async estProspectBloque(userId: string, fiche: { email?: string | null; linkedinProviderId?: string | null; linkedinUrl?: string | null }): Promise<boolean> {
+    const cond = conditionBlocage(userId, fiche);
+    if (!cond) return false;
+    const rows = await db.select({ id: prospectsBloques.id }).from(prospectsBloques).where(cond).limit(1);
+    return rows.length > 0;
+  }
+
+  async getProspectsBloques(userId: string): Promise<{ emails: Set<string>; linkedinIds: Set<string> }> {
+    const rows = await db.select({ e: prospectsBloques.emailNormalise, l: prospectsBloques.linkedinId })
+      .from(prospectsBloques).where(eq(prospectsBloques.userId, userId));
+    return {
+      emails: new Set(rows.map((r) => r.e).filter((x): x is string => !!x)),
+      linkedinIds: new Set(rows.map((r) => r.l).filter((x): x is string => !!x)),
+    };
+  }
+
   // Déplacement groupé vers une campagne : met à jour prospection_campaign_id (scopé userId).
   async bulkMoveLeads(ids: number[], userId: string, campaignId: number): Promise<number> {
     if (ids.length === 0) return 0;
@@ -2814,7 +2864,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async isLeadUnsubscribed(leadId: number, userId: string): Promise<boolean> {
-    const [lead] = await db.select({ email: leads.email }).from(leads).where(eq(leads.id, leadId));
+    const [lead] = await db.select({ email: leads.email, linkedinProviderId: leads.linkedinProviderId, linkedinUrl: leads.linkedinUrl })
+      .from(leads).where(eq(leads.id, leadId));
+    // Un désinscrit supprimé depuis ne laisse que son identifiant dans « ne plus contacter » :
+    // une fiche réimportée de la même personne est désinscrite elle aussi.
+    if (lead && await this.estProspectBloque(userId, lead)) return true;
     const email = lead?.email?.trim().toLowerCase();
     const memeAdresse = email
       ? or(eq(leadSequenceState.leadId, leadId), sql`lower(trim(${leads.email})) = ${email}`)

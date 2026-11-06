@@ -37,6 +37,7 @@ vi.mock("../storage", () => ({
     updateLead: vi.fn(),
     getLeadSequenceState: vi.fn(),
     memePersonneARepondu: vi.fn(),
+    estProspectBloque: vi.fn(),
   },
 }));
 
@@ -361,6 +362,7 @@ describe("runProspectionSender — worker loop (intégration)", () => {
     (storage.setLeadUnreachable as any).mockResolvedValue(undefined);
     (storage.setLeadSequenceGuard as any).mockResolvedValue(undefined);
     (storage.memePersonneARepondu as any).mockResolvedValue(false);
+    (storage.estProspectBloque as any).mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -996,6 +998,65 @@ describe("runProspectionSender — worker loop (intégration)", () => {
       expect(sendLinkedInStep).not.toHaveBeenCalled();
       expect(storage.createOutreachMessage).toHaveBeenCalledWith(expect.objectContaining({ platform: "linkedin", sentAt: null }));
       expect(storage.markStepSendSent).toHaveBeenCalledWith(expect.objectContaining({ stepOrder: 1 }), "draft");
+    });
+
+    it("suppression : prospect supprimé pendant la rédaction (état disparu) → rien ne part, aucune écriture", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeadSequenceState as any).mockResolvedValue(undefined);
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).not.toHaveBeenCalled();
+    });
+
+    it("suppression : la fiche n'existe plus au moment du passage → rien n'est rédigé ni envoyé, pas de plantage", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getLeads as any).mockResolvedValue([]);
+      await expect(runProspectionSender()).resolves.toBeUndefined();
+      expect(generateStepMessage).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+    });
+
+    it("suppression : la réservation échoue sur clé étrangère (lead supprimé à l'instant) → rien ne part, passage silencieux", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.claimStepSend as any).mockRejectedValue(Object.assign(new Error("violates foreign key"), { code: "23503" }));
+      await expect(runProspectionSender()).resolves.toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining("lead 1:"), expect.anything());
+    });
+
+    it("ne plus contacter : personne bloquée (désinscrite puis supprimée, réimportée) → rien ne part, séquence arrêtée", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.estProspectBloque as any).mockResolvedValue(true);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.estProspectBloque).toHaveBeenCalledWith("u1", expect.objectContaining({ id: 1 }));
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+      expect(storage.updateLeadSequenceState).toHaveBeenCalledWith(1, { status: "unsubscribed", nextRunAt: null });
+    });
+
+    it("ne plus contacter : étape LinkedIn bloquée aussi (tous canaux)", async () => {
+      (linkedinConfigured as any).mockReturnValue(false);
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.getSequenceSteps as any).mockResolvedValue([baseStep({ channel: "linkedin" })]);
+      (generateStepMessage as any).mockResolvedValue({ subject: null, body: "Corps" });
+      (storage.estProspectBloque as any).mockResolvedValue(true);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      await runProspectionSender();
+      expect(storage.createOutreachMessage).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
+    });
+
+    it("ne plus contacter : liste illisible → rien ne part (prudence)", async () => {
+      (storage.getDueEnrollments as any).mockResolvedValue([baseState()]);
+      (storage.estProspectBloque as any).mockRejectedValue(new Error("db"));
+      await runProspectionSender();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(storage.claimStepSend).not.toHaveBeenCalled();
     });
 
     it("état illisible juste avant l'envoi : rien ne part (prudence)", async () => {

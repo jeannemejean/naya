@@ -42,7 +42,7 @@
   "client/src/pages/outreach/LeadCard.tsx": 2,
   "client/src/pages/outreach/LeadDetail.tsx": 13,
   "client/src/pages/outreach/OutreachHome.tsx": 2,
-  "client/src/pages/outreach/PipelineBoard.tsx": 18,
+  "client/src/pages/outreach/PipelineBoard.tsx": 12,
   "client/src/pages/outreach/PreviewTab.tsx": 22,
   "client/src/pages/outreach/ProspectsTab.tsx": 18,
   "client/src/pages/outreach/ResultsTab.tsx": 15,

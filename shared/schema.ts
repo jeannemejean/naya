@@ -2121,6 +2121,27 @@ export const linkedinSendAttempts = pgTable("linkedin_send_attempts", {
 export type LinkedInSendAttempt = typeof linkedinSendAttempts.$inferSelect;
 export type InsertLinkedInSendAttempt = typeof linkedinSendAttempts.$inferInsert;
 
+// « Ne plus contacter » : ce qui reste d'un prospect DÉSINSCRIT après sa suppression
+// définitive (obligation anti-spam / RGPD : ne jamais recontacter quelqu'un qui l'a demandé,
+// même réimporté). Uniquement l'identifiant de contact — ni nom, ni historique.
+//   email_normalise : minuscules, sans espaces (`normaliserEmail`) ; nul si seul LinkedIn l'identifie.
+//   linkedin_id     : identifiant public du profil (tiré de l'URL), à défaut l'identifiant Unipile.
+// Lu par `isLeadUnsubscribed` (enrôlement, mode test, envoi Gmail), l'envoi (tous canaux),
+// la création et l'import de prospects. Voir services/prospection-suppression.ts.
+export const prospectsBloques = pgTable("prospects_bloques", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emailNormalise: text("email_normalise"),
+  linkedinId: text("linkedin_id"),
+  raison: text("raison").notNull().default("desinscription"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("prospects_bloques_user_email_uq").on(t.userId, t.emailNormalise),
+  uniqueIndex("prospects_bloques_user_linkedin_uq").on(t.userId, t.linkedinId),
+]);
+export type ProspectBloque = typeof prospectsBloques.$inferSelect;
+export type InsertProspectBloque = typeof prospectsBloques.$inferInsert;
+
 // ─── Journal des invocations IA (Phase 1 — socle du corpus propriétaire) ────────
 // Chaque appel IA (contexte d'entrée → sortie, modèle, tokens, latence, coût) est
 // journalisé en best-effort. C'est le minerai du futur jeu d'entraînement (Phase 5)

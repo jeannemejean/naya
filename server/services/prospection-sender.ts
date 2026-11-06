@@ -1018,6 +1018,20 @@ export async function runProspectionSender(): Promise<void> {
           console.log(`[ProspectionSender] lead ${state.leadId} n'est plus actif (${etatFrais?.status ?? "absent"}) — rien envoyé`);
           continue;
         }
+        // « Ne plus contacter » (désinscrit puis supprimé, puis réimporté) : tous canaux, juste
+        // avant l'envoi. Lecture ratée : rien ne part (jamais écrire à quelqu'un peut-être désinscrit).
+        let bloque: boolean;
+        try {
+          bloque = await storage.estProspectBloque(state.userId, lead);
+        } catch (e: any) {
+          console.error(`[ProspectionSender] liste « ne plus contacter » illisible (lead ${state.leadId}) — rien envoyé : ${String(e?.message ?? e)}`);
+          continue;
+        }
+        if (bloque) {
+          console.warn(`[ProspectionSender] lead ${state.leadId} : personne sur la liste « ne plus contacter » — séquence arrêtée, rien envoyé`);
+          await storage.updateLeadSequenceState(state.leadId, { status: "unsubscribed", nextRunAt: null } as any).catch(() => {});
+          continue;
+        }
         // Même personne sur une AUTRE fiche (même email, même identifiant ou profil LinkedIn)
         // qui a déjà répondu : rien ne part, ni envoi ni brouillon. La séquence est mise en
         // `paused` (pas `stopped_replied` : CE lead n'a pas répondu, rien à défaire si la
@@ -1241,6 +1255,12 @@ export async function runProspectionSender(): Promise<void> {
             .catch((e: any) => console.error("[ProspectionSender] remise à zéro garde trop proche échouée", e.message));
         }
       } catch (e: any) {
+        // 23503 (clé étrangère) : le prospect a été SUPPRIMÉ pendant le passage (la réservation
+        // d'envoi ne peut plus le référencer) — rien n'est parti, rien à faire.
+        if (e?.code === "23503") {
+          console.log(`[ProspectionSender] lead ${state.leadId} supprimé pendant le passage — ignoré, rien envoyé`);
+          continue;
+        }
         console.error(`[ProspectionSender] lead ${state.leadId}:`, e.message);
       }
     }

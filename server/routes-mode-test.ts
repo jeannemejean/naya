@@ -40,6 +40,7 @@ export const depsModeTest: DepsModeTest = {
   createLead: (row) => storage.createLead(row),
   archiverLead: (leadId, userId) => storage.bulkArchiveLeads([leadId], userId),
   estDesinscrit: (leadId, userId) => storage.isLeadUnsubscribed(leadId, userId),
+  adresseBloquee: (userId, email) => storage.estProspectBloque(userId, { email }),
   lienDesinscription,
   iaBloquee: (userId) => isAiBlocked(userId),
   rediger: (userId, a) => redigerTouche(userId, a),

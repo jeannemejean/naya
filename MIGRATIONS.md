@@ -516,3 +516,21 @@ Uniquement des `CREATE`, aucun `DROP`, aucun `ALTER` sur l'existant.
 
 - [x] `essai-0036-2026-11-05` supprimée le 5 novembre 2026.
 - [ ] Supprimer `sauvegarde-avant-agent-2026-11-05` quand le déploiement est stable.
+
+## 10. Suppression des prospects — `0037` à appliquer en prod à la main
+
+Fichier : `migrations/0037_perpetual_vargas.sql` (appliqué sur dev-local `ep-jolly-sky` le 6 novembre 2026,
+suivi 37 → 38, **pas** en prod). Purement additif : un `CREATE TABLE`, une clé étrangère, deux index
+uniques. Aucun `DROP`, aucun `ALTER` sur une table existante.
+
+- Table **`prospects_bloques`** (« ne plus contacter ») : `id serial`, `user_id varchar NOT NULL`,
+  `email_normalise text` (nullable), `linkedin_id text` (nullable), `raison text NOT NULL DEFAULT 'desinscription'`,
+  `created_at timestamp NOT NULL DEFAULT now()`.
+- Clé étrangère `prospects_bloques_user_id_users_id_fk` → `users.id` en `ON DELETE cascade`.
+- Index uniques `prospects_bloques_user_email_uq (user_id, email_normalise)` et
+  `prospects_bloques_user_linkedin_uq (user_id, linkedin_id)` (les `NULL` ne se gênent pas entre eux).
+- **Ordre impératif** : migration AVANT de pousser `main`. Le code déployé lit cette table dans
+  `isLeadUnsubscribed`, l'envoi, la création et l'import de prospects : sans elle, ces lectures
+  échouent — l'envoi s'arrête alors par prudence (rien ne part), la création de prospect renvoie 500.
+- À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai,
+  garde `scripts/migrate-prod.ts`, résultat vérifié (suivi 37 → 38, table + 2 index + FK).

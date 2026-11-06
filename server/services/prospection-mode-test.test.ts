@@ -188,6 +188,8 @@ describe("envoyerEmailTest", () => {
     ["plafond illisible", { emailsEnvoyesDepuis: vi.fn(async () => { throw new Error("db"); }) }, 503, "quota_illisible"],
     ["adresse d'un vrai prospect", { adresseDeVraiProspect: vi.fn(async () => true) }, 409, "adresse_prospect"],
     ["lecture des vrais prospects en échec", { adresseDeVraiProspect: vi.fn(async () => { throw new Error("db"); }) }, 409, "adresse_prospect"],
+    ["adresse sur « ne plus contacter » (désinscrite puis supprimée)", { adresseBloquee: vi.fn(async () => true) }, 409, "desinscrit"],
+    ["liste « ne plus contacter » illisible", { adresseBloquee: vi.fn(async () => { throw new Error("db"); }) }, 409, "desinscrit"],
     ["5 tests sur 24 h", { testsCreesDepuis: vi.fn(async () => 5) }, 429, "quota_test_atteint"],
     ["compte des tests illisible", { testsCreesDepuis: vi.fn(async () => { throw new Error("db"); }) }, 503, "quota_illisible"],
   ] as const)("%s : refus clair, aucun prospect créé", async (_l, over, status, code) => {
@@ -232,6 +234,13 @@ describe("envoyerEmailTest", () => {
     expect(d.journaliser).not.toHaveBeenCalled();
     expect(d.terminerSequence).not.toHaveBeenCalled();
     expect(d.archiverLead).toHaveBeenCalledWith(42, "u1");
+  });
+
+  it("« ne plus contacter » : l'adresse est vérifiée normalisée, avant toute création", async () => {
+    const adresseBloquee = vi.fn(async () => false);
+    const { d } = deps({ adresseBloquee });
+    await envoyerEmailTest(d, "u1", 7, { email: " Claire@Exemple.FR " });
+    expect(adresseBloquee).toHaveBeenCalledWith("u1", "claire@exemple.fr");
   });
 
   it("adresse d'un vrai prospect : vérifiée normalisée, avec l'utilisatrice", async () => {

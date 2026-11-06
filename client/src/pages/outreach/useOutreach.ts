@@ -187,6 +187,27 @@ export const useBulkArchiveLeads = () =>
     },
   });
 
+// Suppression DÉFINITIVE (un ou plusieurs prospects) — fiche + tout l'historique côté serveur.
+export interface ResultatSuppression {
+  supprimes: number;
+  ids: number[];
+  refuses: { id: number; raison: "introuvable" | "envoi_en_cours" | "erreur" }[];
+  bloques: number;
+}
+export const useDeleteLeads = () =>
+  useMutation<ResultatSuppression, Error, number[]>({
+    mutationFn: (ids) => apiRequest("POST", "/api/leads/bulk-delete", { ids }).then((r) => r.json()),
+    onSuccess: () => {
+      // Le prospect disparaît de partout : listes, campagnes (inscriptions, aperçu, brouillons), réponses.
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey[0];
+          return typeof k === "string" && (k.startsWith("/api/leads") || k.startsWith("/api/prospection") || k.startsWith("/api/reponses"));
+        },
+      });
+    },
+  });
+
 // Sauvegarde les consignes de rédaction GLOBALES (toutes campagnes).
 export const useSaveWritingInstructions = () =>
   useMutation<Response, Error, { global: string }>({

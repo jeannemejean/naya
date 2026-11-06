@@ -131,6 +131,8 @@ export interface DepsModeTest {
   createLead: (row: any) => Promise<{ id: number }>;
   archiverLead: (leadId: number, userId: string) => Promise<unknown>;
   estDesinscrit: (leadId: number, userId: string) => Promise<boolean>;
+  /** Adresse (normalisée) sur la liste « ne plus contacter » (désinscrit puis supprimé) ? Lève sur erreur de lecture. */
+  adresseBloquee?: (userId: string, emailNormalise: string) => Promise<boolean>;
   lienDesinscription: (leadId: number) => string | null;
   iaBloquee: (userId: string) => Promise<boolean>;
   rediger: (userId: string, a: {
@@ -183,6 +185,15 @@ export async function envoyerEmailTest(
     if (await deps.adresseDeVraiProspect(userId, cible)) return refus("adresse_prospect");
   } catch {
     return refus("adresse_prospect");
+  }
+  // Une personne désinscrite puis supprimée ne reste que sur « ne plus contacter » : aucune
+  // fiche ne porte plus son adresse, mais elle ne reçoit rien, pas même un test.
+  if (deps.adresseBloquee) {
+    try {
+      if (await deps.adresseBloquee(userId, cible)) return refus("desinscrit");
+    } catch {
+      return refus("desinscrit");
+    }
   }
   const depuis24h = new Date(deps.now().getTime() - 86_400_000);
   try {
