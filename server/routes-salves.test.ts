@@ -68,7 +68,7 @@ describe("routes des salves", () => {
     const res = await lancer({ nombre: 20, parJour: 1 });
     const r = await res.json();
     expect(res.status).toBe(200);
-    expect(r).toMatchObject({ salveId: 40, programmes: 2, demandes: 20 });
+    expect(r).toMatchObject({ salveId: 40, programmes: 2, demandes: 20, ecartes: 18 });
     expect(s.creerSalve).toHaveBeenCalledWith("user-1", 5, 1);
     expect(s.enrollLead).toHaveBeenCalledTimes(2);
     const [, , , premier] = s.enrollLead.mock.calls[0];
@@ -102,7 +102,7 @@ describe("routes des salves", () => {
     expect(res.status).toBe(200);
     // 1 n'est pas sélectionné, 3 n'est pas validé, 9 est d'une autre campagne.
     expect(s.enrollLead.mock.calls.map((c: any[]) => c[0])).toEqual([2, 4]);
-    expect(r).toMatchObject({ programmes: 2 });
+    expect(r).toMatchObject({ programmes: 2, demandes: 4, ecartes: 2 });
   });
 
   it("refuse une sélection illisible ou trop longue, sans rien créer", async () => {

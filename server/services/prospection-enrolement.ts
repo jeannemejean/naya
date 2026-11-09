@@ -34,11 +34,6 @@ export async function enrolerEnMasse(deps: {
   leads: ProspectEnrolable[];
   getState: (leadId: number) => Promise<{ status: string } | null | undefined>;
   enroll: (leadId: number) => Promise<unknown>;
-  /**
-   * Bouton « Lancer pour tous » : personne n'a regardé ces prospects un par un, une séquence en
-   * pause y reste (un collègue a répondu, un doublon, un arrêt). Reprendre se fait à la sélection.
-   */
-  respecterLesPauses?: boolean;
   /** Prospect à laisser de côté, par exemple le collègue de quelqu'un qui a répondu. */
   exclure?: (lead: ProspectEnrolable) => boolean;
 }): Promise<ResultatEnrolement> {
@@ -53,7 +48,7 @@ export async function enrolerEnMasse(deps: {
       skippedNotValidated++;
       continue;
     }
-    if (deps.exclure?.(lead) || (existing && (ETATS_DEFINITIFS.includes(existing.status) || (deps.respecterLesPauses && existing.status === "paused")))) {
+    if (deps.exclure?.(lead) || (existing && (ETATS_DEFINITIFS.includes(existing.status)))) {
       skipped++;
       continue;
     }

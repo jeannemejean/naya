@@ -16,12 +16,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useToast } from '@/hooks/use-toast';
 import { useArreterSalve, useLancerSalve, useSalves } from './useOutreach';
 import {
-  dateCourte, joursNecessaires, nombreBorne, nombrePrerempli, raisonSalveImpossible,
+  cleErreurSalve, dateCourte, joursNecessaires, nombreBorne, nombrePrerempli, raisonSalveImpossible,
   SALVE_NOMBRE_DEFAUT, SALVE_NOMBRE_MAX, SALVE_PAR_JOUR_DEFAUT, SALVE_PAR_JOUR_MAX,
 } from './salves';
 import type { SalveDTO } from './types';
 
-export default function SalvesPanel({ campaignId, prets, hasSequence }: { campaignId: number; prets: number; hasSequence: boolean }) {
+export default function SalvesPanel({ campaignId, prets, hasSequence, campagneActive }: {
+  campaignId: number; prets: number; hasSequence: boolean; campagneActive: boolean;
+}) {
   const { t } = useTranslation();
   const { data: salves = [] } = useSalves(campaignId);
 
@@ -35,7 +37,7 @@ export default function SalvesPanel({ campaignId, prets, hasSequence }: { campai
       </div>
 
       {prets > 0 && (
-        <FormulaireSalve campaignId={campaignId} prets={prets} hasSequence={hasSequence} nombreInitial={SALVE_NOMBRE_DEFAUT} />
+        <FormulaireSalve campaignId={campaignId} prets={prets} hasSequence={hasSequence} campagneActive={campagneActive} nombreInitial={SALVE_NOMBRE_DEFAUT} />
       )}
 
       {salves.length > 0 && (
@@ -51,8 +53,8 @@ export default function SalvesPanel({ campaignId, prets, hasSequence }: { campai
  * Le formulaire d'une salve (nombre, rythme, confirmation). Le seul : le panneau l'affiche, et
  * « Lancer en salve » l'ouvre dans une fenêtre, prérempli avec tous les prospects prêts.
  */
-function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, leadIds, onLancee }: {
-  campaignId: number; prets: number; hasSequence: boolean; nombreInitial: number;
+function FormulaireSalve({ campaignId, prets, hasSequence, campagneActive, nombreInitial, leadIds, onLancee }: {
+  campaignId: number; prets: number; hasSequence: boolean; campagneActive: boolean; nombreInitial: number;
   /** Sélection explicite : la salve ne prend que ces prospects. */
   leadIds?: number[];
   onLancee?: () => void;
@@ -77,9 +79,11 @@ function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, leadId
           ? t('outreach.salves.lanceeDetail', { debut: dateCourte(r.premierEnvoi, i18n.language), fin: dateCourte(r.dernierEnvoi, i18n.language) })
           : t('outreach.salves.lanceeVide'),
       });
+      // Moins que demandé : on le dit, personne ne prend leur place en silence.
+      if (r.ecartes > 0) toast({ title: t('outreach.salves.ecartes', { count: r.ecartes }) });
       onLancee?.();
     },
-    onError: () => toast({ title: t('outreach.salves.erreur'), variant: 'destructive' }),
+    onError: (err) => toast({ title: t(`outreach.salves.${cleErreurSalve(err)}`), variant: 'destructive' }),
   });
 
   return (
@@ -94,7 +98,11 @@ function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, leadId
       </div>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button size="sm" className="h-8 gap-1.5" disabled={!hasSequence || nombre === 0 || parJour === 0 || lancer.isPending}>
+          <Button
+            size="sm" className="h-8 gap-1.5"
+            title={!campagneActive ? t('outreach.salves.campagneInactive') : undefined}
+            disabled={!hasSequence || !campagneActive || nombre === 0 || parJour === 0 || lancer.isPending}
+          >
             {lancer.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
             {t('outreach.salves.lancer')}
           </Button>
@@ -119,9 +127,9 @@ function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, leadId
  * La fenêtre qui porte le formulaire de salve, prérempli avec tous les prêts (plafonné à
  * SALVE_NOMBRE_MAX). Rien ne part avant la confirmation du formulaire.
  */
-export function FenetreSalve({ ouvert, onOuvertChange, campaignId, prets, hasSequence, leadIds, onLancee }: {
+export function FenetreSalve({ ouvert, onOuvertChange, campaignId, prets, hasSequence, campagneActive, leadIds, onLancee }: {
   ouvert: boolean; onOuvertChange: (ouvert: boolean) => void;
-  campaignId: number; prets: number; hasSequence: boolean;
+  campaignId: number; prets: number; hasSequence: boolean; campagneActive: boolean;
   /** « Ajouter la sélection » au-delà de 5 : la salve ne prend que ces prospects. */
   leadIds?: number[];
   onLancee?: () => void;
@@ -136,7 +144,7 @@ export function FenetreSalve({ ouvert, onOuvertChange, campaignId, prets, hasSeq
         </DialogHeader>
         {ouvert && (
           <FormulaireSalve
-            campaignId={campaignId} prets={prets} hasSequence={hasSequence} leadIds={leadIds}
+            campaignId={campaignId} prets={prets} hasSequence={hasSequence} campagneActive={campagneActive} leadIds={leadIds}
             nombreInitial={nombrePrerempli(prets)}
             onLancee={() => { onOuvertChange(false); onLancee?.(); }}
           />
@@ -147,12 +155,12 @@ export function FenetreSalve({ ouvert, onOuvertChange, campaignId, prets, hasSeq
 }
 
 /** « Lancer en salve » (ex-« Lancer pour tous ») : ouvre la fenêtre de salve. */
-export function BoutonLancerEnSalve({ campaignId, prets, hasSequence, className }: {
-  campaignId: number; prets: number; hasSequence: boolean; className?: string;
+export function BoutonLancerEnSalve({ campaignId, prets, hasSequence, campagneActive, className }: {
+  campaignId: number; prets: number; hasSequence: boolean; campagneActive: boolean; className?: string;
 }) {
   const { t } = useTranslation();
   const [ouvert, setOuvert] = useState(false);
-  const raison = raisonSalveImpossible({ hasSequence, prets });
+  const raison = raisonSalveImpossible({ hasSequence, prets, campagneActive });
   const explication = raison ? t(`outreach.salves.${raison}`) : undefined;
 
   return (
@@ -164,7 +172,7 @@ export function BoutonLancerEnSalve({ campaignId, prets, hasSequence, className 
           {t('outreach.salves.lancerEnSalve')}
         </Button>
       </span>
-      <FenetreSalve ouvert={ouvert} onOuvertChange={setOuvert} campaignId={campaignId} prets={prets} hasSequence={hasSequence} />
+      <FenetreSalve ouvert={ouvert} onOuvertChange={setOuvert} campaignId={campaignId} prets={prets} hasSequence={hasSequence} campagneActive={campagneActive} />
     </>
   );
 }

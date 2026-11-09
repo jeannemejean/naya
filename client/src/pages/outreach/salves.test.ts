@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ajoutSelection, ENROLEMENT_DIRECT_MAX, compterPrets, joursNecessaires, nombreBorne, nombrePrerempli, raisonSalveImpossible, SALVE_NOMBRE_MAX } from './salves';
+import { ajoutSelection, cleErreurSalve, ENROLEMENT_DIRECT_MAX, compterPrets, raisonsSelectionVide, joursNecessaires, nombreBorne, nombrePrerempli, raisonSalveImpossible, SALVE_NOMBRE_MAX } from './salves';
 import { TAG_LEAD_TEST } from '@shared/mode-test';
 
 describe('nombreBorne', () => {
@@ -57,9 +57,17 @@ describe('« Lancer en salve »', () => {
   });
 
   it('le bouton est grisé, avec sa raison, quand personne n’est prêt', () => {
-    expect(raisonSalveImpossible({ hasSequence: true, prets: 0 })).toBe('aucunPret');
-    expect(raisonSalveImpossible({ hasSequence: false, prets: 12 })).toBe('sansSequence');
-    expect(raisonSalveImpossible({ hasSequence: true, prets: 3 })).toBeNull();
+    expect(raisonSalveImpossible({ hasSequence: true, prets: 0, campagneActive: true })).toBe('aucunPret');
+    expect(raisonSalveImpossible({ hasSequence: false, prets: 12, campagneActive: true })).toBe('sansSequence');
+    expect(raisonSalveImpossible({ hasSequence: true, prets: 12, campagneActive: false })).toBe('campagneInactive');
+    expect(raisonSalveImpossible({ hasSequence: true, prets: 3, campagneActive: true })).toBeNull();
+  });
+
+  it('traduit les refus du serveur en messages clairs', () => {
+    expect(cleErreurSalve(new Error('409: {"message":"campagne_inactive"}'))).toBe('campagneInactive');
+    expect(cleErreurSalve(new Error('400: {"message":"no_sequence_defined"}'))).toBe('sansSequence');
+    expect(cleErreurSalve(new Error('500: {"message":"salves_failed"}'))).toBe('erreur');
+    expect(cleErreurSalve(new Error('réseau'))).toBe('erreur');
   });
 });
 
@@ -76,12 +84,21 @@ describe('« Ajouter la sélection à la séquence »', () => {
 
   it('plus de 5 : une salve avec exactement les prospects prêts de la sélection', () => {
     // 3 n'est pas validé, 4 est déjà en séquence, 8 n'est pas sélectionné.
-    expect(ajoutSelection([1, 2, 3, 4, 5, 6], prospects, new Set([4]))).toEqual({ mode: 'salve', idsPrets: [1, 2, 5, 6] });
+    expect(ajoutSelection([1, 2, 3, 4, 5, 6], prospects, new Set([4]))).toEqual({ mode: 'salve', idsPrets: [1, 2, 5, 6], nonValides: 1, dejaEnSequence: 1 });
   });
 
   it('plus de 5 dont aucun prêt : salve vide, rien ne part', () => {
     const pasPrets = [1, 2, 3, 4, 5, 6].map((id) => p(id, { validatedAt: null }));
-    expect(ajoutSelection([1, 2, 3, 4, 5, 6], pasPrets, new Set())).toEqual({ mode: 'salve', idsPrets: [] });
+    const r = ajoutSelection([1, 2, 3, 4, 5, 6], pasPrets, new Set());
+    expect(r).toEqual({ mode: 'salve', idsPrets: [], nonValides: 6, dejaEnSequence: 0 });
+    expect(r.mode === 'salve' && raisonsSelectionVide(r)).toEqual(['selectionVide']);
+  });
+
+  it('plus de 5 validés mais en pause : on ne dit pas « valide d’abord », on dit de reprendre par 5', () => {
+    const enPause = [1, 2, 3, 4, 5, 6].map((id) => p(id));
+    const r = ajoutSelection([1, 2, 3, 4, 5, 6], enPause, new Set([1, 2, 3, 4, 5, 6]));
+    expect(r).toEqual({ mode: 'salve', idsPrets: [], nonValides: 0, dejaEnSequence: 6 });
+    expect(r.mode === 'salve' && raisonsSelectionVide(r)).toEqual(['selectionEnSequence']);
   });
 
   it('jamais plus de 100 ids, comme le serveur', () => {

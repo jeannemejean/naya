@@ -67,6 +67,8 @@ export type ReponseLancementSalve = {
   programmes: number;
   ignores: number;
   demandes: number;
+  /** Demandés mais non programmés : collègue d'un prospect qui a répondu, ou plus prêt. */
+  ecartes: number;
   premierEnvoi: string | null;
   dernierEnvoi: string | null;
 };

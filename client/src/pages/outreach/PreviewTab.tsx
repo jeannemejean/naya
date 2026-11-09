@@ -21,7 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useToast } from '@/hooks/use-toast';
-import { useEnrollments, useLeads, usePreview, useSequence } from './useOutreach';
+import { useCampaign, useEnrollments, useLeads, usePreview, useSequence } from './useOutreach';
 import { BoutonLancerEnSalve } from './SalvesPanel';
 import { compterPrets } from './salves';
 import { channelMeta } from './channels';
@@ -53,6 +53,7 @@ function initials(name: string) {
 export default function PreviewTab({ campaignId }: PreviewTabProps) {
   const { t } = useTranslation();
   const { data: allLeads } = useLeads();
+  const { data: campaign } = useCampaign(campaignId);
   const { data: sequenceSteps = [] } = useSequence(campaignId);
   const { data: enrollments = [] } = useEnrollments(campaignId);
   const { toast } = useToast();
@@ -245,7 +246,7 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
         <p className="text-sm text-muted-foreground">
           {prospects.length} prospect{prospects.length > 1 ? 's' : ''} dans cette campagne
         </p>
-        <BoutonLancerEnSalve campaignId={campaignId} prets={prets} hasSequence={sequenceSteps.length > 0} className="gap-1.5" />
+        <BoutonLancerEnSalve campaignId={campaignId} prets={prets} hasSequence={sequenceSteps.length > 0} campagneActive={campaign?.status === 'active'} className="gap-1.5" />
       </div>
     </div>
   );

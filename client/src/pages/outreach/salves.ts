@@ -38,7 +38,9 @@ export function compterPrets(prospects: ProspectCompte[], dejaEnSequence: EnSequ
   return prospects.filter((l) => estPretPourSalve(l, dejaEnSequence)).length;
 }
 
-export type AjoutSelection = { mode: 'direct' } | { mode: 'salve'; idsPrets: number[] };
+export type AjoutSelection =
+  | { mode: 'direct' }
+  | { mode: 'salve'; idsPrets: number[]; nonValides: number; dejaEnSequence: number };
 
 /**
  * « Ajouter la sélection à la séquence » : jusqu'à 5 prospects, ajout direct ; au-delà, une salve
@@ -47,11 +49,30 @@ export type AjoutSelection = { mode: 'direct' } | { mode: 'salve'; idsPrets: num
 export function ajoutSelection(selection: number[], prospects: ProspectCompte[], dejaEnSequence: EnSequence): AjoutSelection {
   const choisis = new Set(selection);
   if (choisis.size <= ENROLEMENT_DIRECT_MAX) return { mode: 'direct' };
-  const idsPrets = prospects
-    .filter((l) => choisis.has(l.id) && estPretPourSalve(l, dejaEnSequence))
+  const selectionnes = prospects.filter((l) => choisis.has(l.id));
+  const idsPrets = selectionnes
+    .filter((l) => estPretPourSalve(l, dejaEnSequence))
     .map((l) => l.id)
     .slice(0, SALVE_NOMBRE_MAX);
-  return { mode: 'salve', idsPrets };
+  const valides = selectionnes.filter((l) => estPretAPartir(l) && !estLeadTest(l));
+  return {
+    mode: 'salve',
+    idsPrets,
+    nonValides: selectionnes.length - valides.length,
+    // Validés mais déjà en séquence (en cours ou en pause) : une salve ne les reprend pas.
+    dejaEnSequence: valides.filter((l) => dejaEnSequence.has(l.id)).length,
+  };
+}
+
+/**
+ * Pourquoi une sélection de plus de 5 ne donne aucune salve. Les pauses se reprennent par 5 au
+ * plus (ajout direct) : pas de rafale, même pour reprendre.
+ */
+export function raisonsSelectionVide(a: { nonValides: number; dejaEnSequence: number }): ('selectionVide' | 'selectionEnSequence')[] {
+  const raisons: ('selectionVide' | 'selectionEnSequence')[] = [];
+  if (a.nonValides > 0) raisons.push('selectionVide');
+  if (a.dejaEnSequence > 0) raisons.push('selectionEnSequence');
+  return raisons.length ? raisons : ['selectionVide'];
 }
 
 /** « Lancer en salve » : la salve proposée prend tous les prêts, dans la limite du serveur. */
@@ -59,11 +80,24 @@ export function nombrePrerempli(prets: number): number {
   return Math.max(0, Math.min(Math.floor(prets), SALVE_NOMBRE_MAX));
 }
 
-export type RaisonSalveImpossible = 'sansSequence' | 'aucunPret' | null;
+export type RaisonSalveImpossible = 'sansSequence' | 'campagneInactive' | 'aucunPret' | null;
 
 /** Le bouton « Lancer en salve » est grisé, avec sa raison, quand rien ne peut partir. */
-export function raisonSalveImpossible(e: { hasSequence: boolean; prets: number }): RaisonSalveImpossible {
+export function raisonSalveImpossible(e: { hasSequence: boolean; prets: number; campagneActive: boolean }): RaisonSalveImpossible {
   if (!e.hasSequence) return 'sansSequence';
+  // Le serveur refuse une salve sur une campagne en pause (409 campagne_inactive).
+  if (!e.campagneActive) return 'campagneInactive';
   if (e.prets <= 0) return 'aucunPret';
   return null;
+}
+
+/** Clé du message d'erreur d'une salve, lue dans l'erreur d'apiRequest (« 409: {"message":…} »). */
+export function cleErreurSalve(err: unknown): 'campagneInactive' | 'sansSequence' | 'erreur' {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  try {
+    const code = JSON.parse(msg.replace(/^\d{3}:\s*/, ''))?.message;
+    if (code === 'campagne_inactive') return 'campagneInactive';
+    if (code === 'no_sequence_defined') return 'sansSequence';
+  } catch { /* corps non JSON */ }
+  return 'erreur';
 }

@@ -38,7 +38,7 @@ import { resumeEnrolement } from './enrolement-message';
 import ValidationPanel from './ValidationPanel';
 import LinkedInAEnvoyer from './LinkedInAEnvoyer';
 import SalvesPanel, { BoutonLancerEnSalve, FenetreSalve } from './SalvesPanel';
-import { ajoutSelection, compterPrets } from './salves';
+import { ajoutSelection, compterPrets, raisonsSelectionVide } from './salves';
 import { attendValidation, estPretAPartir, prospectsAValider } from './validation-messages';
 import { estLeadTest } from './mode-test';
 
@@ -82,6 +82,8 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
   const unenrollLead = useUnenrollLead(campaignId);
 
   const hasSequence = sequenceSteps.length > 0;
+  // Une salve ne s'ouvre que sur une campagne active (le serveur répond 409 sinon).
+  const campagneActive = campaign?.status === 'active';
 
   const prospects = leads.filter(
     (l) => (l as any).prospectionCampaignId === campaignId && !(l as any).archivedAt,
@@ -123,7 +125,8 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
     const ajout = ajoutSelection(selectedList, prospects as any[], statusByLead);
     if (ajout.mode === 'salve') {
       if (ajout.idsPrets.length === 0) {
-        toast({ title: t('outreach.salves.selectionTitre'), description: t('outreach.salves.selectionVide') });
+        const raisons = raisonsSelectionVide(ajout).map((r) => t(`outreach.salves.${r}`));
+        toast({ title: t('outreach.salves.selectionTitre'), description: raisons.join(' ') });
       } else {
         setSalveSelection(ajout.idsPrets);
       }
@@ -193,7 +196,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
             <Plus className="w-3.5 h-3.5" />
             Ajouter un prospect
           </Button>
-          <BoutonLancerEnSalve campaignId={campaignId} prets={prets} hasSequence={hasSequence} />
+          <BoutonLancerEnSalve campaignId={campaignId} prets={prets} hasSequence={hasSequence} campagneActive={campagneActive} />
         </div>
       </div>
 
@@ -207,7 +210,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
       <ValidationPanel prospects={aValider} onOpenLead={setSelectedLead} />
 
       {/* Salves : les prospects validés partent par lots, étalés sur plusieurs jours */}
-      <SalvesPanel campaignId={campaignId} prets={prets} hasSequence={hasSequence} />
+      <SalvesPanel campaignId={campaignId} prets={prets} hasSequence={hasSequence} campagneActive={campagneActive} />
 
       {/* Brouillons LinkedIn : la séquence attend que tu les envoies */}
       <LinkedInAEnvoyer campaignId={campaignId} />
@@ -262,6 +265,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
         campaignId={campaignId}
         prets={salveSelection?.length ?? 0}
         hasSequence={hasSequence}
+        campagneActive={campagneActive}
         leadIds={salveSelection ?? undefined}
         onLancee={clearSelection}
       />

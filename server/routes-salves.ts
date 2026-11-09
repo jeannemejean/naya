@@ -71,7 +71,8 @@ export function registerSalvesRoutes(app: Express) {
       enroll: (leadId, opts) => storage.enrollLead(leadId, campagne.id, req.userId, opts),
       supprimer: (id) => storage.supprimerSalve(id, req.userId),
     });
-    res.json({ ...r, demandes: nombre });
+    // Moins que demandé : collègue d'un prospect qui a répondu, ou plus prêt entre-temps.
+    res.json({ ...r, demandes: nombre, ecartes: Math.max(0, nombre - r.programmes) });
   }));
 
   // Arrêter = mettre en pause, raison visible. Ce qui est déjà parti reste parti.
