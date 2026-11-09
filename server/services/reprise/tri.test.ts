@@ -11,6 +11,9 @@ describe("classer", () => {
   it("chaque tâche suit son propriétaire", () => {
     expect(classer({ id: 1, ritualId: 4 })).toEqual({ genre: "rituel" });
     expect(classer({ id: 1, taskType: "prospection_validation" })).toEqual({ genre: "ignorer" });
+    // Liées à un prospect : jamais archivées, fusionnées ni découpées par la reprise.
+    expect(classer({ id: 1, source: "relance_prospect" })).toEqual({ genre: "ignorer" });
+    expect(classer({ id: 1, source: "reponse_prospect" })).toEqual({ genre: "ignorer" });
     expect(classer({ id: 1, type: "milestone" })).toEqual({ genre: "ignorer" });
     expect(classer({ id: 1, contentId: 196 })).toEqual({ genre: "etapePost", contentId: 196 });
     expect(classer({ id: 1, taskType: "atelier_validation", actionData: { semaine: "2026-10-26" } })).toEqual({ genre: "atelier", semaine: "2026-10-26" });

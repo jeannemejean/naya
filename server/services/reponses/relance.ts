@@ -17,8 +17,8 @@
  */
 import type { InboxConversation, InboxMessage, Lead, LeadSequenceState, Task } from "@shared/schema";
 import { texteNouveau } from "@shared/citation";
-import { detecterRelance, jourDans, premierJourTravaille, type RelanceDetectee } from "./relance-date";
-import { relancesDe, SOURCE_TACHE_RELANCE, type DecisionRelance } from "./relance-etat";
+import { detecterRelance, HORIZON_JOURS, jourDans, premierJourTravaille, type RelanceDetectee } from "./relance-date";
+import { relancesDe, RESERVATION_RELANCE_MS, SOURCE_TACHE_RELANCE, type DecisionRelance } from "./relance-etat";
 import type { DemandeRelance } from "./proposition";
 
 export interface PrefsRelance { timezone?: string | null; workDays?: string | null }
@@ -65,12 +65,22 @@ export interface DepsVue {
   getTask: (id: number) => Promise<Task | undefined>;
 }
 
+/** Une réservation `en_cours` abandonnée (processus tombé en route) ne compte plus. */
+export function enCoursActive(d: DecisionRelance | undefined, now: Date): boolean {
+  return d?.statut === "en_cours" && !(Date.parse(d.le) < now.getTime() - RESERVATION_RELANCE_MS);
+}
+
+/** Texte nouveau sur une ligne, pour citer la phrase du prospect. */
+const extraitDe = (m: InboxMessage) => texteNouveau(m.body).replace(/\s+/g, " ").trim().slice(0, 240);
+
 /**
  * Relances à montrer pour une conversation : par message entrant (proposition, validée…), et
  * le brouillon prêt à être repris dans « Ta réponse » le jour venu.
  */
 export async function vueRelances(
   conv: Pick<InboxConversation, "etatAvantReponse">, messages: InboxMessage[], prefs: PrefsRelance | null | undefined, deps: DepsVue,
+  /** Prospect désinscrit ou sur « ne plus contacter » : aucune proposition, aucun brouillon prêt. */
+  opts: { bloque?: boolean } = {},
 ): Promise<{ parMessage: Record<number, VueRelance>; prete: RelancePrete | null }> {
   const decisions = relancesDe(conv.etatAvantReponse);
   const aujourdhui = jourDans(deps.now(), fuseauDe(prefs));
@@ -83,15 +93,17 @@ export async function vueRelances(
     if (d?.statut === "validee" && d.taskId != null) {
       const t = await deps.getTask(d.taskId);
       if (!t || t.archivedAt) continue; // tâche retirée du planning : plus rien à montrer
-      const date = t.scheduledDate ?? d.date ?? null;
+      // Jamais prête avant la date convenue, même si la tâche a été avancée dans le planning.
+      const date = [t.scheduledDate, d.date].filter((x): x is string => !!x).sort().pop() ?? null;
       parMessage[m.id] = { statut: "validee", date, taskId: t.id, faite: !!t.completed };
       const texte = (t.actionData as any)?.relance?.texte;
-      if (!t.completed && date && date <= aujourdhui && typeof texte === "string" && texte.trim()) {
+      if (!opts.bloque && !t.completed && date && date <= aujourdhui && typeof texte === "string" && texte.trim()) {
         if (!prete || date > prete.date) prete = { taskId: t.id, messageId: m.id, date, texte };
       }
       continue;
     }
-    if (d?.statut === "en_cours") { parMessage[m.id] = { statut: "en_cours", date: d.date ?? null }; continue; }
+    if (enCoursActive(d, deps.now())) { parMessage[m.id] = { statut: "en_cours", date: d!.date ?? null }; continue; }
+    if (opts.bloque) continue;
     const r = relanceDuMessage(m, prefs);
     if (r && r.date > aujourdhui) parMessage[m.id] = { statut: "proposee", date: r.date };
   }
@@ -102,7 +114,7 @@ export async function vueRelances(
 
 export type RaisonRelance =
   | "introuvable" | "pas_de_date" | "date_invalide" | "date_passee" | "jour_non_travaille"
-  | "refusee" | "en_cours" | "tache_refusee";
+  | "refusee" | "en_cours" | "tache_refusee" | "desinscrit";
 export type IssueRelance =
   | { ok: true; taskId: number; date: string; deja?: boolean }
   | { ok: false; status: number; raison: RaisonRelance; message?: string };
@@ -114,8 +126,11 @@ export interface DepsRelance {
   getLead: (leadId: number, userId: string) => Promise<Lead | undefined>;
   getPrefs: (userId: string) => Promise<PrefsRelance | null | undefined>;
   getTask: (id: number) => Promise<Task | undefined>;
+  /** Désinscrit ou sur « ne plus contacter » (storage.isLeadUnsubscribed). Lève sur erreur de lecture. */
+  estDesinscrit: (leadId: number, userId: string) => Promise<boolean>;
   reserver: (conversationId: number, messageId: number, now: Date) => Promise<boolean>;
-  ecrire: (conversationId: number, messageId: number, d: DecisionRelance | null) => Promise<unknown>;
+  /** Pose la décision ; avec `siEnCoursLe`, seulement si c'est encore CETTE réservation (`en_cours`, même `le`). */
+  ecrire: (conversationId: number, messageId: number, d: DecisionRelance | null, siEnCoursLe?: string) => Promise<unknown>;
   refuser: (conversationId: number, messageId: number, now: Date) => Promise<boolean>;
   /** creerTache (server/services/taches/ecrire-tache.ts) : jours travaillés, créneau libre. */
   creerTache: (userId: string, donnees: Record<string, unknown>) =>
@@ -158,6 +173,13 @@ export async function validerRelance(
   const prefs = await deps.getPrefs(userId);
   const now = deps.now();
 
+  // Jamais de relance pour un prospect désinscrit (lecture impossible → refus, comme l'envoi).
+  let desinscrit = true;
+  try { desinscrit = await deps.estDesinscrit(lead.id, userId); } catch (e: any) {
+    console.error(`[Relance] désinscription illisible (lead ${lead.id}) — relance refusée : ${erreurSure(e)}`);
+  }
+  if (desinscrit) return { ok: false, status: 409, raison: "desinscrit" };
+
   // Déjà validée (double clic arrivé après la fin du premier) : la même tâche.
   const deja = relancesDe(conv.etatAvantReponse)[String(messageId)];
   if (deja?.statut === "validee" && deja.taskId != null && (await deps.getTask(deja.taskId))) {
@@ -172,6 +194,8 @@ export async function validerRelance(
       return { ok: false, status: 400, raison: "jour_non_travaille" };
     }
     date = dateChoisie;
+    const ecart = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${jourDans(now, fuseauDe(prefs))}T00:00:00Z`)) / 86_400_000;
+    if (ecart > HORIZON_JOURS) return { ok: false, status: 400, raison: "date_invalide" };
   } else {
     if (!detectee) return { ok: false, status: 409, raison: "pas_de_date" };
     date = detectee.date;
@@ -188,11 +212,12 @@ export async function validerRelance(
       : { ok: false, status: 409, raison: "en_cours" };
   }
 
-  const liberer = () => deps.ecrire(conv.id, messageId, null)
+  // Ne libère que SA réservation (jamais celle d'une autre requête qui l'aurait reprise).
+  const liberer = () => deps.ecrire(conv.id, messageId, null, now.toISOString())
     .catch((e: any) => console.error(`[Relance] réservation non libérée (conversation ${conv.id}) : ${erreurSure(e)}`));
   let creee: number | null = null;
   try {
-    const extrait = detectee?.extrait || texteNouveau(msg.body).slice(0, 240);
+    const extrait = detectee?.extrait || extraitDe(msg);
     const texte = await deps.rediger(userId, conv.id, { date, extrait });
     const r = await deps.creerTache(userId, {
       title: titreRelance(lead),
@@ -253,7 +278,7 @@ export async function reformulerRelance(
   const date = t?.scheduledDate ?? d.date;
   if (!date) return { ok: false, status: 409 };
   const prefs = await deps.getPrefs(userId);
-  const extrait = relanceDuMessage(trouve.msg, prefs)?.extrait || texteNouveau(trouve.msg.body).slice(0, 240);
+  const extrait = relanceDuMessage(trouve.msg, prefs)?.extrait || extraitDe(trouve.msg);
   return { ok: true, texte: await deps.rediger(userId, trouve.conv.id, { date, extrait }) };
 }
 
@@ -274,7 +299,7 @@ export async function relancesAuRequalifier(
     if (Number(k) === requalifie) {
       if (t && !t.completed) await deps.supprimerTache(t.id);
       await deps.ecrire(conv.id, Number(k), { statut: "annulee", le: deps.now().toISOString() });
-    } else if (d.statut === "en_cours" || (t && !t.completed && !t.archivedAt)) {
+    } else if (enCoursActive(d, deps.now()) || (d.statut === "validee" && t && !t.completed && !t.archivedAt)) {
       autreEnAttente = true;
     }
   }

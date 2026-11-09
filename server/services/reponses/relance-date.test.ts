@@ -43,6 +43,16 @@ describe("detecterRelance — table des formulations", () => {
     ["Recontactez-moi après le 16 janvier 2027.", "2027-01-18"], // samedi → lundi
     ["Get back to me on January 12th.", "2027-01-12"],
     ["Revenez vers moi le 15/02.", "2027-02-15"],
+    ["Rappelez-moi après le 14 janvier.", "2027-01-15"],     // « après » : le lendemain
+    ["Get back to me after January 14.", "2027-01-15"],
+    // Numériques douteux → rien
+    ["Revenez vers moi dans 2/3 semaines.", null],          // une fraction de durée, pas le 2 mars
+    ["Revenez vers moi dans 2/3 mois.", null],
+    ["Let's talk after 1/15.", null],                       // anglais : mois/jour
+    ["Reach out around 3/14.", null],
+    ["Revenez vers moi le 05/02.", null],                   // 5 février ou 2 mai ?
+    ["Revenez vers moi le 15/13.", null],                   // pas de 13e mois
+    ["Revenez vers moi le 31/02.", null],
     // Durées
     ["Revenez vers moi dans 3 mois.", "2027-02-09"],
     ["Recontactez-moi d'ici six semaines.", "2026-12-21"],
@@ -63,6 +73,9 @@ describe("detecterRelance — table des formulations", () => {
     ["Recontactez-moi au T1 2027.", "2027-01-04"],
     ["Revenez vers moi au prochain trimestre.", "2027-01-04"],
     ["Let's touch base in Q2.", "2027-04-01"],
+    ["Revenez vers moi au T4.", null],                      // dit en plein T4 : ce trimestre ou l'an prochain ?
+    ["Let's reconnect in Q4.", null],
+    ["Revenez vers moi au T1.", "2027-01-04"],
     // Intention dans la phrase voisine
     ["Ce n'est pas le moment pour nous. Plutôt en septembre.", "2027-09-01"],
     ["Début 2027. Revenez vers moi à ce moment-là.", "2027-01-04"],
@@ -107,7 +120,7 @@ describe("detecterRelance — fuseau, jours travaillés, extrait", () => {
   });
 
   it("rend la phrase du prospect, pour la citer", () => {
-    const r = detecterRelance("Merci pour votre message.\nOn se reparle début 2027, là on est sous l'eau.", {
+    const r = detecterRelance("Merci pour votre message.\nOn se reparle début 2027,   là on est\tsous l'eau.", {
       reference: REF, fuseau: "Europe/Paris", joursTravail: SEMAINE,
     });
     expect(r).toEqual({ date: "2027-01-04", extrait: "On se reparle début 2027, là on est sous l'eau." });

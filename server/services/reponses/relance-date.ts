@@ -37,7 +37,8 @@ type Lecture = Ymd | "ambigu";
 type Position = "debut" | "mi" | "fin" | null;
 
 const JOURS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-const HORIZON_JOURS = 3 * 366;
+/** Au-delà de 3 ans, ce n'est plus une relance. */
+export const HORIZON_JOURS = 3 * 366;
 
 // ─── Calendrier (dates civiles, calculées en UTC pour éviter tout décalage) ─────────
 
@@ -163,6 +164,14 @@ function contexteAvant(texte: string, index: number): "ok" | "ambigu" | null {
   return CONTEXTE.test(avantTexte) ? "ok" : null;
 }
 
+/** « après le 15 janvier », « after the 15th » juste avant une date précise. */
+const APRES_LE = /(?:^|\s)(?:apres|after)\s+(?:le\s+|the\s+)?$/;
+/** Le passage est en anglais (mots anglais, aucun mot français courant). */
+function texteAnglais(t: string): boolean {
+  return /\b(the|you|me|us|please|after|around|back|out|at|let'?s|would|could|will|reach|get)\b/.test(t)
+    && !/\b(le|la|les|vous|moi|nous|apres|vers|dans|je|on|de|du|des|en|au|pas)\b/.test(t);
+}
+
 interface Trouvaille { debut: number; fin: number; lecture: Lecture }
 
 /** Toutes les expressions de temps d'un passage (normalisé), sans recouvrement. */
@@ -180,20 +189,29 @@ function expressions(t: string, ref: Ymd): Trouvaille[] {
   const an = (s?: string) => (s ? Number(s) : null);
 
   // 1. Dates précises : « le 15 janvier (2027) », « January 15th(, 2027) », « 15th of January », « 15/01(/2027) ».
-  const jourPrecis = (jour: number, mois: number | null, annee: number | null): Lecture | null => {
-    if (mois == null || jour < 1 || jour > 31) return null;
+  const jourPrecis = (jour: number, mois: number | null, annee: number | null, index: number): Lecture | null => {
+    if (mois == null || mois < 0 || mois > 11 || jour < 1 || jour > 31) return null;
     const x = { y: annee ?? ref.y, m: mois, d: jour };
     if (depuisDate(versDate(x)).d !== jour) return null;
-    if (annee != null) return x;
-    return avant(ref, x) ? x : { ...x, y: ref.y + 1 };
+    const date = annee != null || avant(ref, x) ? x : { ...x, y: ref.y + 1 };
+    // « après le 15 janvier » : à partir du lendemain.
+    return APRES_LE.test(t.slice(Math.max(0, index - 20), index)) ? plusJours(date, 1) : date;
   };
   ajoute(new RegExp(`\\b(\\d{1,2})(?:er|st|nd|rd|th)?\\s+(?:of\\s+)?${MOIS}(?:\\s+(20\\d{2}))?\\b`, "g"),
-    (m) => jourPrecis(Number(m[1]), moisDe(m[2]), an(m[3])));
+    (m) => jourPrecis(Number(m[1]), moisDe(m[2]), an(m[3]), m.index!));
   ajoute(new RegExp(`\\b${MOIS}\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:,?\\s+(20\\d{2}))?`, "g"),
-    (m) => jourPrecis(Number(m[2]), moisDe(m[1]), an(m[3])));
+    (m) => jourPrecis(Number(m[2]), moisDe(m[1]), an(m[3]), m.index!));
+  // Numérique « 15/02 » : ordre français jour/mois, et SEULEMENT quand il est sûr — jamais une
+  // fraction de durée (« dans 2/3 semaines »), jamais un texte anglais (« after 1/15 » est
+  // mois/jour), jamais deux nombres ≤ 12 (« 05/02 » : 5 février ou 2 mai ?).
   ajoute(/(?<![\d/.])(\d{1,2})\/(\d{1,2})(?:\/(20\d{2}|\d{2}))?(?![\d/])/g, (m) => {
+    const apres = t.slice(m.index! + m[0].length);
+    if (/^\s*(?:jours?|semaines?|mois|ans?|annees?|days?|weeks?|months?|years?)\b/.test(apres)) return "ambigu";
+    if (texteAnglais(t)) return "ambigu";
+    const a = Number(m[1]), b = Number(m[2]);
+    if (a <= 12 && b <= 12) return "ambigu";
     const y = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : null;
-    return jourPrecis(Number(m[1]), Number(m[2]) - 1, y);
+    return jourPrecis(a, b - 1, y, m.index!);
   });
 
   // 2. Durées : « dans 3 mois », « d'ici six semaines », « in two weeks », « within a year ».
@@ -223,7 +241,10 @@ function expressions(t: string, ref: Ymd): Trouvaille[] {
   // 4. Trimestres : « T1 2027 », « Q2 », « premier trimestre », « next quarter ».
   const trimestre = (q: number, annee: number | null): Lecture => {
     const x = { y: annee ?? ref.y, m: (q - 1) * 3, d: 1 };
-    return annee != null || avant(ref, x) ? x : { ...x, y: ref.y + 1 };
+    if (annee != null || avant(ref, x)) return x;
+    // « Q4 » dit en plein quatrième trimestre : celui-ci (déjà entamé) ou l'an prochain ?
+    if (Math.floor(ref.m / 3) === q - 1) return "ambigu";
+    return { ...x, y: ref.y + 1 };
   };
   ajoute(/\b(?:le |au )?(?:trimestre prochain|prochain trimestre|next quarter)\b/g,
     () => trimestre(((Math.floor(ref.m / 3) + 1) % 4) + 1, Math.floor(ref.m / 3) === 3 ? ref.y + 1 : ref.y));
@@ -314,5 +335,6 @@ export function detecterRelance(texte: string, o: OptionsRelance): RelanceDetect
   if (date <= refIso) return null;
   const ecart = (versDate(ymdDe(date)).getTime() - versDate(ref).getTime()) / 86_400_000;
   if (ecart > HORIZON_JOURS) return null;
-  return { date, extrait: (extrait ?? "").slice(0, 240) };
+  // Une seule ligne : la phrase est citée telle quelle (comme DONNÉE) dans la rédaction.
+  return { date, extrait: (extrait ?? "").replace(/\s+/g, " ").trim().slice(0, 240) };
 }

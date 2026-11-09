@@ -32,6 +32,7 @@ const storageMock = {
   reserverRelanceInbox: vi.fn(async () => true),
   ecrireRelanceInbox: vi.fn(async () => {}),
   refuserRelanceInbox: vi.fn(async () => true),
+  isLeadUnsubscribed: vi.fn(async () => false),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const ingestion = vi.hoisted(() => ({
@@ -471,13 +472,25 @@ describe("boîte « Réponses »", () => {
     expect(donnees.actionData.relance.texte).toContain("revenir vers vous");
     expect(proposition.proposerReponse).toHaveBeenCalledWith("u1", 11, undefined, expect.objectContaining({ date: j.date }));
     expect(storageMock.reserverRelanceInbox).toHaveBeenCalledWith(11, 5, expect.any(Date));
-    expect(storageMock.ecrireRelanceInbox).toHaveBeenCalledWith(11, 5, expect.objectContaining({ statut: "validee", taskId: 300 }));
+    expect(storageMock.ecrireRelanceInbox).toHaveBeenCalledWith(11, 5, expect.objectContaining({ statut: "validee", taskId: 300 }), undefined);
     expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled(); // déjà arrêtée
     expect(envoi.envoyerReponse).not.toHaveBeenCalled();
     storageMock.getInboxMessages.mockReset();
     storageMock.getInboxMessages.mockResolvedValue([]);
     storageMock.getLead.mockReset();
     taches.creerTache.mockReset();
+  });
+
+  it("détail : prospect désinscrit → aucune proposition de relance", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: null }));
+    storageMock.getLead.mockResolvedValueOnce({ id: 7, name: "Marc", prospectionCampaignId: null });
+    storageMock.isLeadUnsubscribed.mockResolvedValueOnce(true);
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { id: 5, sens: "entrant", nature: "reponse", subject: null, body: "Revenez vers moi dans 3 mois.", sentAt: new Date() },
+    ]);
+    const j = await (await appel("GET", "/api/reponses/11")).json();
+    expect(j.messages[0].relance).toBeUndefined();
+    expect(j.relancePrete).toBeNull();
   });
 
   it("relance refuser : « Non merci » persiste la décision", async () => {

@@ -57,7 +57,7 @@ export const prenom = (nom: string | null | undefined) => (nom ?? "").trim().spl
 
 /** Clé i18n d'un refus de validation de relance ; inconnue → « echec ». */
 export function cleErreurRelance(raison: unknown): string {
-  const connues = ["date_passee", "jour_non_travaille", "date_invalide", "pas_de_date", "refusee", "en_cours", "signature_client", "introuvable"];
+  const connues = ["date_passee", "jour_non_travaille", "date_invalide", "pas_de_date", "refusee", "en_cours", "signature_client", "introuvable", "desinscrit"];
   return `outreach.reponses.relance.erreurs.${typeof raison === "string" && connues.includes(raison) ? raison : "echec"}`;
 }
 

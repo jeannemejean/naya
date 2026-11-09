@@ -24,6 +24,7 @@ import { listUnipileAccounts, publicIdFromUrl } from "../linkedin";
 import { classerMessage, type Classement } from "./tri";
 import { rattacherLead, normaliserEmail } from "./rattachement";
 import { avecRelances, estEtatAvant } from "./relance-etat";
+import { vueRelances } from "./relance";
 
 export interface EvenementNormalise {
   kind: "message" | "mail" | "relation" | "suivi" | "compte";
@@ -107,6 +108,12 @@ export interface DepsIngestion {
    * l'email est une réponse).
    */
   adressesPropres: (compte: CompteUnipile, accountId: string) => Promise<string[]>;
+  /**
+   * Jeanne a écrit au prospect (depuis Naya ou son téléphone) à l'instant `at` : la relance dont
+   * le jour est arrivé est faite, sa tâche est cochée (sinon le brouillon resterait prêt à
+   * partir une seconde fois). Au mieux.
+   */
+  cocherRelancePrete?: (conv: InboxConversation, userId: string, at: Date) => Promise<unknown>;
 }
 
 /** Décision appliquée DANS la transaction, à partir de l'état et de la conversation lus verrouillés. */
@@ -419,6 +426,10 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
       }
     }
     await deps.updateConversation(conv.id, patch);
+    if (deps.cocherRelancePrete) {
+      await deps.cocherRelancePrete(conv, userId, evt.sentAt).catch((e: any) =>
+        console.error(`[Reponses] lead ${lead.id} : tâche de relance non cochée — ${String(e?.message ?? e).split(/\bparams:/)[0].slice(0, 160)}`));
+    }
     return;
   }
 
@@ -545,5 +556,10 @@ export function depsDepuisStorage(s: IStorage): DepsIngestion {
     reconnecterCompte: (c) => s.reconnecterCompteUnipile(c.userId, c.projectId, c.canal),
     fuseau: async (u) => (await s.getUserPreferences(u))?.timezone || "UTC",
     adressesPropres: (c, accountId) => adressesPropresDepuis(s, c, accountId),
+    cocherRelancePrete: async (conv, u, at) => {
+      const vue = await vueRelances(conv, await s.getInboxMessages(conv.id), await s.getUserPreferences(u),
+        { now: () => at, getTask: (id) => s.getTask(id) });
+      if (vue.prete) await s.completeTask(vue.prete.taskId);
+    },
   };
 }

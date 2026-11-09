@@ -238,7 +238,8 @@ export default function ConversationView({ id, onRetour, onFermee }: { id: numbe
     setErreur(null);
     reformuler.mutate(prete.messageId, {
       onSuccess: (r) => setTexte(r.texte),
-      onError: (e) => setErreur(/^409/.test(e.message) ? t('outreach.reponses.proposerSignature') : t('outreach.reponses.proposerErreur')),
+      // Seul le 409 « signature manquante » parle de signature (un autre 409 = plus de relance validée).
+      onError: (e) => setErreur(/signature_client_manquante/.test(e.message) ? t('outreach.reponses.proposerSignature') : t('outreach.reponses.proposerErreur')),
     });
   };
   const envoyerTexte = () => {

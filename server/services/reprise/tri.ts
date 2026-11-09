@@ -35,6 +35,9 @@ export const estTacheAtelier = (t: { taskType?: string | null }) =>
 export function classer(t: TacheTriable): Classe {
   if (t.type === "milestone" || t.source === "milestone" || t.source === "gcal") return { genre: "ignorer" };
   if (t.taskType === "prospection_validation") return { genre: "ignorer" };
+  // « Répondre à X » et « Relancer X » : liées à un prospect et à une date qu'il a choisie,
+  // le brouillon de relance est daté. Jamais archivées, fusionnées ni découpées par la reprise.
+  if (t.source === "reponse_prospect" || t.source === "relance_prospect") return { genre: "ignorer" };
   if (t.ritualId != null) return { genre: "rituel" };
   if (estTacheAtelier(t)) {
     const semaine = (t.actionData as { semaine?: unknown } | null)?.semaine;

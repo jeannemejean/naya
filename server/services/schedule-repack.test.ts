@@ -380,6 +380,16 @@ describe("tachesARebalancer", () => {
   });
 });
 
+describe("tachesARebalancer — relance de prospect", () => {
+  it("« Relancer X » garde la date demandée par le prospect : jamais déplacée", () => {
+    const taches = [
+      { id: 1, completed: false, contentId: null, source: "relance_prospect" },
+      { id: 2, completed: false, contentId: null, source: "manual" },
+    ];
+    expect(tachesARebalancer(taches).map((t) => t.id)).toEqual([2]);
+  });
+});
+
 describe("tachesARebalancer — atelier de contenu", () => {
   it("une tâche d'atelier a une échéance : le rééquilibrage ne la déplace pas", () => {
     const taches = [

@@ -62,7 +62,8 @@ const depsRelance: DepsRelance = {
   getPrefs: (userId) => storage.getUserPreferences(userId) as any,
   getTask: (id) => storage.getTask(id),
   reserver: (cid, mid, now) => storage.reserverRelanceInbox(cid, mid, now),
-  ecrire: (cid, mid, d) => storage.ecrireRelanceInbox(cid, mid, d),
+  ecrire: (cid, mid, d, siEnCoursLe) => storage.ecrireRelanceInbox(cid, mid, d, siEnCoursLe),
+  estDesinscrit: (leadId, userId) => storage.isLeadUnsubscribed(leadId, userId),
   refuser: (cid, mid, now) => storage.refuserRelanceInbox(cid, mid, now),
   creerTache: (userId, donnees) => creerTache(userId, donnees),
   rediger: (userId, cid, relance) => proposerReponse(userId, cid, undefined, relance),
@@ -168,7 +169,9 @@ export function registerReponsesRoutes(app: Express) {
         lead.prospectionCampaignId ? storage.getProspectionCampaign(lead.prospectionCampaignId) : Promise.resolve(null),
       ]);
       // Relances : au mieux (une erreur ici ne doit jamais cacher le fil).
-      const relances = await vueRelances(conv, recus, await storage.getUserPreferences(req.userId), depsRelance)
+      // Prospect désinscrit / « ne plus contacter » (ou lecture impossible) : aucune relance proposée.
+      const bloque = await storage.isLeadUnsubscribed(lead.id, req.userId).catch(() => true);
+      const relances = await vueRelances(conv, recus, await storage.getUserPreferences(req.userId), depsRelance, { bloque })
         .catch((e: any) => { console.error(`[Reponses] relances : ${erreurSure(e)}`); return { parMessage: {} as Record<number, never>, prete: null }; });
       const messages = [
         ...envoyes.filter((m) => m.sentAt).map((m) => ({
@@ -344,6 +347,10 @@ export function registerReponsesRoutes(app: Express) {
       if (etat && autre) {
         raison = "autre_reponse_en_attente";
       } else if (etat && relancePrevue) {
+        // Une relance validée attend sur un autre message : la séquence ne reprend PAS (elle
+        // relancerait le prospect avant la date qu'il a choisie). L'état d'avant est gardé :
+        // si cette relance est faite ou retirée, un nouveau « pas une vraie réponse » ne le
+        // restaurera pas tout seul — c'est voulu, le prospect a bel et bien répondu.
         raison = "relance_prevue";
       } else if (etat) {
         const plan = planRestauration(etat, new Date());

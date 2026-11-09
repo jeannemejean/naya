@@ -18,7 +18,7 @@ const msg = (o: Partial<any> = {}) => ({
 }) as any;
 
 /** Un faux stockage en mémoire, avec une réservation atomique comme en SQL. */
-function monde(o: { messages?: any[]; etat?: any; sequence?: string | null; tacheRefusee?: boolean } = {}) {
+function monde(o: { messages?: any[]; etat?: any; sequence?: string | null; tacheRefusee?: boolean; desinscrit?: boolean | "erreur" } = {}) {
   const conv: any = { id: 11, userId: "u1", leadId: 7, channel: "email", projectId: null, etatAvantReponse: o.etat ?? null };
   const taches = new Map<number, any>();
   let prochainId = 100;
@@ -42,7 +42,15 @@ function monde(o: { messages?: any[]; etat?: any; sequence?: string | null; tach
       poser(k, { statut: "en_cours", le: now.toISOString() });
       return true;
     }),
-    ecrire: vi.fn(async (_c: number, k: number, d: DecisionRelance | null) => { poser(k, d); }),
+    ecrire: vi.fn(async (_c: number, k: number, d: DecisionRelance | null, siEnCoursLe?: string) => {
+      const actuelle = decisions()[String(k)];
+      if (siEnCoursLe != null && !(actuelle?.statut === "en_cours" && actuelle.le === siEnCoursLe)) return;
+      poser(k, d);
+    }),
+    estDesinscrit: vi.fn(async () => {
+      if (o.desinscrit === "erreur") throw new Error("lecture impossible");
+      return !!o.desinscrit;
+    }),
     refuser: vi.fn(async (_c: number, k: number, now: Date) => {
       const d = decisions()[String(k)];
       if (d && (d.statut === "validee" || d.statut === "en_cours")) return false;
@@ -222,6 +230,66 @@ describe("validerRelance", () => {
 
   it("titre sans entreprise", () => {
     expect(titreRelance({ name: "Marc", company: null })).toBe("Relancer Marc");
+  });
+});
+
+describe("corrections de revue", () => {
+  it("prospect désinscrit (ou désinscription illisible) : validation refusée, aucune proposition ni brouillon prêt", async () => {
+    for (const desinscrit of [true, "erreur"] as const) {
+      const { deps } = monde({ desinscrit });
+      expect(await validerRelance("u1", 11, 31, null, deps)).toMatchObject({ ok: false, status: 409, raison: "desinscrit" });
+      expect(deps.creerTache).not.toHaveBeenCalled();
+      expect(deps.rediger).not.toHaveBeenCalled();
+    }
+    const { conv, deps, taches } = monde();
+    expect((await vueRelances(conv, [msg()], PREFS, deps, { bloque: true })).parMessage).toEqual({});
+    await validerRelance("u1", 11, 31, null, deps);
+    const jourJ = { ...deps, now: () => new Date("2027-01-04T08:00:00Z") };
+    expect((await vueRelances(conv, [msg()], PREFS, jourJ, { bloque: true })).prete).toBeNull();
+    expect((await vueRelances(conv, [msg()], PREFS, jourJ)).prete?.taskId).toBe(taches.keys().next().value);
+  });
+
+  it("tâche avancée dans le planning : le brouillon n'est prêt qu'à la date convenue", async () => {
+    const { conv, deps, taches } = monde();
+    await validerRelance("u1", 11, 31, null, deps);
+    taches.get(100).scheduledDate = "2026-11-20"; // déplacée plus tôt
+    const le20 = await vueRelances(conv, [msg()], PREFS, { ...deps, now: () => new Date("2026-11-20T09:00:00Z") });
+    expect(le20.prete).toBeNull();
+    expect(le20.parMessage[31]).toMatchObject({ statut: "validee", date: "2027-01-04" });
+    // Repoussée plus tard : prête à la nouvelle date seulement.
+    taches.get(100).scheduledDate = "2027-01-11";
+    expect((await vueRelances(conv, [msg()], PREFS, { ...deps, now: () => new Date("2027-01-05T09:00:00Z") })).prete).toBeNull();
+    expect((await vueRelances(conv, [msg()], PREFS, { ...deps, now: () => new Date("2027-01-11T09:00:00Z") })).prete).not.toBeNull();
+  });
+
+  it("réservation abandonnée (> 5 min) : la proposition revient, elle ne retient plus la séquence", async () => {
+    const vieux = new Date(NOW.getTime() - 10 * 60_000).toISOString();
+    const recent = new Date(NOW.getTime() - 60_000).toISOString();
+    const { conv, deps } = monde({ etat: { relances: { "31": { statut: "en_cours", le: vieux } } } });
+    expect((await vueRelances(conv, [msg()], PREFS, deps)).parMessage[31]).toMatchObject({ statut: "proposee" });
+    conv.etatAvantReponse = { relances: { "31": { statut: "en_cours", le: recent } } };
+    expect((await vueRelances(conv, [msg()], PREFS, deps)).parMessage[31]).toMatchObject({ statut: "en_cours" });
+    const d = { getTask: vi.fn(async () => undefined), supprimerTache: vi.fn(), ecrire: vi.fn(), now: () => NOW };
+    expect(await relancesAuRequalifier({ id: 11, etatAvantReponse: { relances: { "20": { statut: "en_cours", le: vieux } } } }, 31, d)).toBe(false);
+    expect(await relancesAuRequalifier({ id: 11, etatAvantReponse: { relances: { "20": { statut: "en_cours", le: recent } } } }, 31, d)).toBe(true);
+  });
+
+  it("libérer ne retire que SA réservation, jamais celle reprise par une autre requête", async () => {
+    const m = monde();
+    m.deps.rediger.mockImplementationOnce(async () => {
+      // Pendant la rédaction, une autre requête a repris la réservation (autre instant).
+      m.conv.etatAvantReponse = { relances: { "31": { statut: "en_cours", le: "2026-11-09T09:30:00.000Z" } } };
+      throw new Error("IA indisponible");
+    });
+    await expect(validerRelance("u1", 11, 31, null, m.deps)).rejects.toThrow();
+    expect(relancesDe(m.conv.etatAvantReponse)["31"]).toEqual({ statut: "en_cours", le: "2026-11-09T09:30:00.000Z" });
+    expect(m.deps.ecrire).toHaveBeenCalledWith(11, 31, null, NOW.toISOString());
+  });
+
+  it("« Changer la date » : au-delà de 3 ans, refusé", async () => {
+    const { deps } = monde();
+    expect(await validerRelance("u1", 11, 31, "2030-01-07", deps)).toMatchObject({ ok: false, raison: "date_invalide" });
+    expect(await validerRelance("u1", 11, 31, "2029-06-04", deps)).toMatchObject({ ok: true });
   });
 });
 

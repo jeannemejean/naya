@@ -832,8 +832,11 @@ export interface IStorage {
    * (sauf une réservation abandonnée de plus de 5 min).
    */
   reserverRelanceInbox(conversationId: number, messageId: number, now: Date): Promise<boolean>;
-  /** Pose (ou retire, avec null) la décision de relance d'un message, sans condition. */
-  ecrireRelanceInbox(conversationId: number, messageId: number, decision: DecisionRelance | null): Promise<void>;
+  /**
+   * Pose (ou retire, avec null) la décision de relance d'un message. Avec `siEnCoursLe`,
+   * seulement si la décision est encore la réservation `en_cours` posée à cet instant.
+   */
+  ecrireRelanceInbox(conversationId: number, messageId: number, decision: DecisionRelance | null, siEnCoursLe?: string): Promise<void>;
   /** « Non merci » : false si la relance est déjà validée ou en cours de validation. */
   refuserRelanceInbox(conversationId: number, messageId: number, now: Date): Promise<boolean>;
   /** État d'avant consommé : ne garde du jsonb que les décisions de relance (null s'il n'y en a pas). */
@@ -3747,10 +3750,15 @@ export class DatabaseStorage implements IStorage {
     return res.length > 0;
   }
 
-  async ecrireRelanceInbox(conversationId: number, messageId: number, decision: DecisionRelance | null): Promise<void> {
+  async ecrireRelanceInbox(conversationId: number, messageId: number, decision: DecisionRelance | null, siEnCoursLe?: string): Promise<void> {
+    const k = String(messageId);
+    const col = inboxConversations.etatAvantReponse;
     await db.update(inboxConversations)
-      .set({ etatAvantReponse: this.fusionRelance(String(messageId), decision ? JSON.stringify(decision) : null) as any })
-      .where(eq(inboxConversations.id, conversationId));
+      .set({ etatAvantReponse: this.fusionRelance(k, decision ? JSON.stringify(decision) : null) as any })
+      .where(and(
+        eq(inboxConversations.id, conversationId),
+        ...(siEnCoursLe != null ? [sql`${col}->'relances'->${k}::text->>'statut' = 'en_cours' and ${col}->'relances'->${k}::text->>'le' = ${siEnCoursLe}`] : []),
+      ));
   }
 
   async refuserRelanceInbox(conversationId: number, messageId: number, now: Date): Promise<boolean> {

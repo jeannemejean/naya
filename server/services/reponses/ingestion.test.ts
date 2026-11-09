@@ -255,6 +255,20 @@ describe("traiterEvenement — messages de Jeanne", () => {
     expect(db.tasks[0].completed).toBe(true);
   });
 
+  it("Jeanne écrit depuis son téléphone : la relance du jour est cochée (le brouillon ne repartira pas)", async () => {
+    const { db, deps } = fausseBase();
+    const cocher = vi.fn(async () => undefined);
+    deps.cocherRelancePrete = cocher;
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(cocher).not.toHaveBeenCalled(); // un message du prospect ne coche rien
+    const at = new Date("2026-11-02T10:00:00Z");
+    await traiterEvenement(reponseLinkedIn({ fromSelf: true, providerMessageId: "moi-1", sentAt: at }), deps);
+    expect(cocher).toHaveBeenCalledWith(expect.objectContaining({ id: db.conversations[0].id }), expect.any(String), at);
+    // Un échec ici ne casse jamais l'ingestion.
+    cocher.mockRejectedValueOnce(new Error("base"));
+    await expect(traiterEvenement(reponseLinkedIn({ fromSelf: true, providerMessageId: "moi-2", sentAt: new Date("2026-11-02T11:00:00Z") }), deps)).resolves.toBeUndefined();
+  });
+
   it("message de Jeanne plus ancien que la dernière réponse : la conversation reste à traiter", async () => {
     const { db, deps } = fausseBase();
     await traiterEvenement(reponseLinkedIn(), deps);

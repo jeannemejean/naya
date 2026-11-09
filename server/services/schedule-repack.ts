@@ -261,11 +261,12 @@ export function repackDayAvecEcheances(
 }
 
 /**
- * Tâches qu'un rééquilibrage de semaine a le droit de déplacer : non faites, et non liées
- * à un post — une tâche de production est tenue par la date de publication de son post,
+ * Tâches qu'un rééquilibrage de semaine a le droit de déplacer : non faites, non liées
+ * à un post, et pas une relance de prospect (sa date est celle qu'il a demandée) — une tâche de production est tenue par la date de publication de son post,
  * un plafond de charge ne doit jamais la pousser après.
  */
-export function tachesARebalancer<T extends { completed?: boolean | null; contentId?: number | null; taskType?: string | null; actionData?: unknown }>(taches: T[]): T[] {
+export function tachesARebalancer<T extends { completed?: boolean | null; contentId?: number | null; taskType?: string | null; actionData?: unknown; source?: string | null }>(taches: T[]): T[] {
   // Les tâches d'atelier de contenu ont aussi une échéance (la veille du premier post).
-  return taches.filter((t) => !t.completed && t.contentId == null && echeanceAtelier(t) == null);
+  // « Relancer X » est tenue par la date que le prospect a demandée : jamais avancée ni repoussée.
+  return taches.filter((t) => !t.completed && t.contentId == null && echeanceAtelier(t) == null && t.source !== "relance_prospect");
 }
