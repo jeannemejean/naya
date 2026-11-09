@@ -92,16 +92,9 @@ export const useSaveSequence = (id: number) =>
     },
   });
 
-export const useLaunchCampaign = (id: number) =>
-  useMutation<ReponseEnrolement, Error, void>({
-    mutationFn: () => apiRequest("POST", `/api/prospection/campaigns/${id}/launch`).then((r) => r.json()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
-    },
-  });
-
-// Enrôlement manuel groupé (sélection du owner) — contrairement à useLaunchCampaign (tous les
-// prospects), n'enrôle que les ids passés. Invalide les leads (badge "Prêt") + le statut groupé.
+// Enrôlement manuel groupé (sélection du owner) : n'enrôle que les ids passés. Le lancement
+// d'un lot passe par une salve (useLancerSalve) ; l'ancienne route /launch répond 410.
+// Invalide les leads (badge "Prêt") + le statut groupé.
 export const useBulkEnroll = (id: number) =>
   useMutation<ReponseEnrolement, Error, number[]>({
     mutationFn: (leadIds) =>

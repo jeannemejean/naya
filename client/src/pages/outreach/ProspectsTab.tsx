@@ -7,8 +7,8 @@
 //
 // Sélection manuelle des prospects à enrôler (owner-chosen) : checkbox par ligne (réutilise
 // @/lib/bulk-selection, même pattern que PipelineBoard/LeadCard) + badge de statut d'enrôlement
-// (GET .../enrollments) + barre d'actions groupées pour ajouter/retirer de la séquence. "Lancer
-// pour tous" reste disponible en raccourci (même comportement que l'onglet Aperçu).
+// (GET .../enrollments) + barre d'actions groupées pour ajouter/retirer de la séquence. L'ancien
+// « Lancer pour tous » est devenu « Lancer en salve » : il ouvre le formulaire de salve prérempli.
 import SourcingAutoCard from './SourcingAutoCard';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,15 +21,11 @@ import { Badge, type BadgeProps } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { headerCheckboxState, toggleId, setSelection, countSelectedIn } from '@/lib/bulk-selection';
 import {
   useCampaign, useCampaigns, useLeads, useSequence,
-  useEnrollments, useBulkEnroll, useUnenrollLead, useLaunchCampaign,
+  useEnrollments, useBulkEnroll, useUnenrollLead,
 } from './useOutreach';
 import { SCORE_LABEL, SCORE_VARIANT } from './LeadCard';
 import { STAGE_MAP, type StageKey } from './stages';
@@ -41,7 +37,8 @@ import type { Lead } from '@shared/schema';
 import { resumeEnrolement } from './enrolement-message';
 import ValidationPanel from './ValidationPanel';
 import LinkedInAEnvoyer from './LinkedInAEnvoyer';
-import SalvesPanel from './SalvesPanel';
+import SalvesPanel, { BoutonLancerEnSalve } from './SalvesPanel';
+import { compterPrets } from './salves';
 import { attendValidation, estPretAPartir, prospectsAValider } from './validation-messages';
 import { estLeadTest } from './mode-test';
 
@@ -81,7 +78,6 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
 
   const bulkEnroll = useBulkEnroll(campaignId);
   const unenrollLead = useUnenrollLead(campaignId);
-  const launchCampaign = useLaunchCampaign(campaignId);
 
   const hasSequence = sequenceSteps.length > 0;
 
@@ -99,7 +95,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
   }, [enrollments]);
 
   // Validés et jamais entrés en séquence : ce qu'une salve peut prendre.
-  const prets = prospects.filter((l) => estPretAPartir(l as any) && !statusByLead.has(l.id)).length;
+  const prets = compterPrets(prospects as any[], statusByLead);
 
   // Relit le prospect sélectionné depuis la liste vivante — reflète enrichissement / changement
   // d'étape sans dépendre du snapshot capturé au clic (même pattern que PipelineBoard).
@@ -146,18 +142,6 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
     }
   };
 
-  const handleLaunch = () => {
-    launchCampaign.mutate(undefined, {
-      onSuccess: (data) => {
-        toast({
-          title: 'Campagne lancée',
-          description: resumeEnrolement(data),
-        });
-      },
-      onError: () => toast({ title: 'Erreur', description: 'Impossible de lancer la campagne.', variant: 'destructive' }),
-    });
-  };
-
   return (
     <div className="p-6 space-y-4">
       <SourcingAutoCard campaignId={campaignId} />
@@ -197,36 +181,7 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
             <Plus className="w-3.5 h-3.5" />
             Ajouter un prospect
           </Button>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                disabled={!hasSequence || prospects.length === 0 || launchCampaign.isPending}
-                title={!hasSequence ? "Définis d'abord une séquence dans l'onglet Séquence." : undefined}
-              >
-                {launchCampaign.isPending ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Rocket className="w-3.5 h-3.5" />
-                )}
-                Lancer pour tous
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Lancer la campagne pour tous les prospects ?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Naya enrôlera tous les prospects de cette campagne (hors ceux déjà en séquence) et démarrera l'envoi.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Annuler</AlertDialogCancel>
-                <AlertDialogAction onClick={handleLaunch}>Lancer</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          <BoutonLancerEnSalve campaignId={campaignId} prets={prets} hasSequence={hasSequence} />
         </div>
       </div>
 

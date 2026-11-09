@@ -1,4 +1,4 @@
-/** Réponse de /enroll et /launch (server/services/prospection-enrolement.ts). */
+/** Réponse de /enroll (server/services/prospection-enrolement.ts). */
 export interface ReponseEnrolement {
   enrolled: number;
   skipped: number;

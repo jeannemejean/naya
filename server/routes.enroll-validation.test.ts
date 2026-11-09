@@ -383,17 +383,26 @@ describe("les données restent justes après une action manuelle", () => {
     expect(storageMock.suspendreSequence).not.toHaveBeenCalled();
   });
 
-  it("« Lancer pour tous » ne reprend pas un collègue mis en pause", async () => {
-    storageMock.getProspectionCampaign.mockResolvedValue({ id: CAMPAGNE, userId: "user-1" });
+  it("l'ancien « Lancer pour tous » n'enrôle plus personne : 410, renvoi vers les salves", async () => {
+    // Tout serait prêt pour un enrôlement massif : campagne, séquence, prospects validés,
+    // dont un en pause. La route ne doit ni enrôler, ni reprendre, ni ouvrir de salve.
+    storageMock.getProspectionCampaign.mockResolvedValue({ id: CAMPAGNE, userId: "user-1", status: "active" });
     storageMock.getSequenceSteps.mockResolvedValue([{ id: 1 }]);
-    storageMock.getLeads.mockResolvedValue([prospect({ validatedAt: new Date("2026-10-01") })]);
-    storageMock.getLeadSequenceState.mockResolvedValue({ userId: "user-1", status: "paused" });
+    storageMock.getLeads.mockResolvedValue([
+      prospect({ validatedAt: new Date("2026-10-01") }),
+      prospect({ id: LEAD_ID + 1, validatedAt: new Date("2026-10-01") }),
+    ]);
+    storageMock.getLeadSequenceState.mockImplementation(async (id: number) =>
+      id === LEAD_ID ? { userId: "user-1", status: "paused" } : undefined);
     storageMock.prospectsAyantRepondu.mockResolvedValue([]);
 
     const res = await fetch(`http://127.0.0.1:${port}/api/prospection/campaigns/${CAMPAGNE}/launch`, { method: "POST" });
 
-    expect(await res.json()).toMatchObject({ enrolled: 0, skipped: 1 });
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ message: "lancement_par_salve", salves: `/api/prospection/campaigns/${CAMPAGNE}/salves` });
     expect(storageMock.enrollLead).not.toHaveBeenCalled();
+    expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled();
+    expect(storageMock.getLeads).not.toHaveBeenCalled();
   });
 
   it("déplacer un prospect met sa séquence en cours en pause", async () => {

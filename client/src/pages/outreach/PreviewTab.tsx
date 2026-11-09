@@ -7,12 +7,12 @@
 // droite = ARBRE de décision complet rendu pour le prospect sélectionné — chaque branche (« si
 // invitation acceptée » / « non acceptée »…) montre le vrai message bespoke de ce prospect, en
 // lecture seule, dans le même langage visuel que l'onglet Séquence (via SequenceTreeLayout, partagé).
-// En bas, la CTA de lancement (enrôle TOUS les prospects, pas seulement celui prévisualisé), gardée
-// par une AlertDialog de confirmation.
+// En bas, « Lancer en salve » : ouvre le formulaire de salve (prospects validés et prêts, étalés
+// sur plusieurs jours), confirmé avant tout envoi. Plus jamais tout le monde d'un coup.
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { prospectsApercu } from './mode-test';
-import { Search, Shuffle, Copy, RefreshCw, Clock, Rocket, Loader2, Inbox } from 'lucide-react';
+import { Search, Shuffle, Copy, RefreshCw, Clock, Inbox } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -20,23 +20,13 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { useLeads, usePreview, useLaunchCampaign } from './useOutreach';
+import { useEnrollments, useLeads, usePreview, useSequence } from './useOutreach';
+import { BoutonLancerEnSalve } from './SalvesPanel';
+import { compterPrets } from './salves';
 import { channelMeta } from './channels';
 import SequenceTreeLayout from './SequenceTreeLayout';
 import { type PreviewStep } from './types';
-import { resumeEnrolement } from './enrolement-message';
 
 interface PreviewTabProps {
   campaignId: number;
@@ -63,7 +53,8 @@ function initials(name: string) {
 export default function PreviewTab({ campaignId }: PreviewTabProps) {
   const { t } = useTranslation();
   const { data: allLeads } = useLeads();
-  const launchCampaign = useLaunchCampaign(campaignId);
+  const { data: sequenceSteps = [] } = useSequence(campaignId);
+  const { data: enrollments = [] } = useEnrollments(campaignId);
   const { toast } = useToast();
 
   const [search, setSearch] = useState('');
@@ -74,6 +65,12 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
     // Hors prospects test (mode test) : l'aperçu générerait un brief IA pour une fausse personne.
     () => prospectsApercu(allLeads ?? [], campaignId),
     [allLeads, campaignId],
+  );
+
+  // Validés et jamais entrés en séquence : ce que « Lancer en salve » propose d'envoyer.
+  const prets = useMemo(
+    () => compterPrets(prospects, new Set(enrollments.map((e) => e.leadId))),
+    [prospects, enrollments],
   );
 
   const filtered = useMemo(() => {
@@ -109,19 +106,6 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
   // depuis le bouton global. C'est ce qui garantit un texte RÉELLEMENT différent après un clic.
   const handleRegenerate = () => {
     regenerate();
-  };
-
-  const handleLaunch = () => {
-    launchCampaign.mutate(undefined, {
-      onSuccess: (data) => {
-        toast({
-          title: 'Campagne lancée',
-          description: resumeEnrolement(data),
-        });
-      },
-      onError: () =>
-        toast({ title: 'Erreur', description: 'Impossible de lancer la campagne.', variant: 'destructive' }),
-    });
   };
 
   // La génération IA prend plusieurs secondes — on montre le skeleton tant que la requête est en
@@ -256,39 +240,12 @@ export default function PreviewTab({ campaignId }: PreviewTabProps) {
         </div>
       </div>
 
-      {/* ── CTA de lancement — enrôle TOUS les prospects de la campagne ── */}
+      {/* ── CTA de lancement — ouvre une salve (jamais tout le monde d'un coup) ── */}
       <div className="flex-shrink-0 border-t border-border bg-white px-6 py-4 flex items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {prospects.length} prospect{prospects.length > 1 ? 's' : ''} dans cette campagne
         </p>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              type="button"
-              className="gap-1.5 bg-primary text-primary-foreground"
-              disabled={prospects.length === 0 || launchCampaign.isPending}
-            >
-              {launchCampaign.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Rocket className="w-4 h-4" />
-              )}
-              Lancer la campagne
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Lancer la campagne ?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Naya enrôlera tous les prospects et démarrera la séquence.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Annuler</AlertDialogCancel>
-              <AlertDialogAction onClick={handleLaunch}>Lancer</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <BoutonLancerEnSalve campaignId={campaignId} prets={prets} hasSequence={sequenceSteps.length > 0} className="gap-1.5" />
       </div>
     </div>
   );

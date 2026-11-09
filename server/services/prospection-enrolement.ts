@@ -1,5 +1,5 @@
 /**
- * Enrôlement groupé d'une campagne (`/enroll` et `/launch`).
+ * Enrôlement groupé d'une campagne (`/enroll` ; `/launch` répond 410, le lancement passe par une salve).
  *
  * La barrière de `/api/leads/:id/enroll` (prospection-validation.ts) doit valoir AUSSI
  * pour l'enrôlement en masse : sans elle, « Lancer la séquence » faisait entrer en

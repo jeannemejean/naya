@@ -78,6 +78,13 @@ describe("routes des salves", () => {
     expect(premier.salveId).toBe(40);
   });
 
+  it("ne reprend pas une séquence en pause (ex-« Lancer pour tous »)", async () => {
+    s.getLeadSequenceState.mockImplementation(async (id: number) => (id === 1 ? { status: "paused" } : undefined));
+    const r = await (await lancer({ nombre: 20, parJour: 5 })).json();
+    expect(r.programmes).toBe(1);
+    expect(s.enrollLead.mock.calls.map((c: any[]) => c[0])).toEqual([2]);
+  });
+
   it("laisse de côté le collègue de quelqu'un qui a répondu", async () => {
     s.getLeads.mockResolvedValue([prospect(1, { company: "Acme" }), prospect(2, { company: "Globex" })]);
     s.prospectsAyantRepondu.mockResolvedValue([{ company: "ACME SAS", email: null }]);

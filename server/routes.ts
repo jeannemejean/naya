@@ -99,7 +99,6 @@ import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { doitReprendreApresValidation, peutEtreContacte, peutReprendreSequence, RAISON_SANS_SUITE } from "./services/prospection-validation";
 import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE, suspendreCollegues } from "./services/prospection-enrolement";
-import { memeEntreprise } from "./services/prospection-entreprises";
 import { marquerDernierMessageRepondu } from "./services/reponses/ingestion";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
 import { marquerLinkedInEnvoye, passerLinkedIn } from "./services/prospection-linkedin-manuel";
@@ -8876,8 +8875,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // Enrôlement manuel groupé : le owner choisit exactement quels prospects entrent dans la
-  // séquence (contrairement à /launch, qui enrôle TOUS les prospects de la campagne). Même
-  // logique de skip que /launch (états actifs/terminés/ayant répondu jamais ré-enrôlés).
+  // séquence. États actifs/terminés/ayant répondu jamais ré-enrôlés (prospection-enrolement.ts).
   app.post('/api/prospection/campaigns/:id/enroll', isAuthenticated, async (req: any, res) => {
     try {
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
@@ -8909,29 +8907,18 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     }
   });
 
-  // Lance la séquence : enrôle en masse les leads de la campagne (action "launch" lemlist)
-  app.post('/api/prospection/campaigns/:id/launch', isAuthenticated, async (req: any, res) => {
-    try {
-      const campaign = await storage.getProspectionCampaign(Number(req.params.id));
-      if (!campaign || campaign.userId !== req.userId) return res.status(404).json({ message: 'not_found' });
-      const steps = await storage.getSequenceSteps(campaign.id);
-      if (steps.length === 0) return res.status(400).json({ message: 'no_sequence_defined' });
-
-      const campaignLeads = (await storage.getLeads(req.userId)).filter(l => (l as any).prospectionCampaignId === campaign.id);
-      // Même barrière que /api/leads/:id/enroll : un prospect dont personne n'a validé
-      // les messages n'entre pas en séquence, même via « Lancer ».
-      const ontRepondu = await storage.prospectsAyantRepondu(req.userId, campaign.projectId ?? null);
-      const r = await enrolerEnMasse({
-        leads: campaignLeads.map(l => ({ id: l.id, stage: (l as any).stage, validatedAt: (l as any).validatedAt, company: l.company, email: l.email })),
-        getState: (leadId) => storage.getLeadSequenceState(leadId),
-        enroll: (leadId) => storage.enrollLead(leadId, campaign.id, req.userId),
-        respecterLesPauses: true,
-        exclure: (l) => ontRepondu.some((rep) => memeEntreprise(l, rep)),
-      });
-      res.json(r);
-    } catch (e: any) {
-      res.status(500).json({ message: e.message });
-    }
+  // Ancien « Lancer pour tous » : enrôlait d'un coup TOUS les prospects de la campagne, et
+  // l'envoi démarrait aussitôt. Retiré : un lancement passe désormais par une salve
+  // (POST /api/prospection/campaigns/:id/salves, server/routes-salves.ts), où l'utilisatrice
+  // voit et confirme le nombre et le rythme. 410 plutôt qu'une salve ouverte ici en silence :
+  // plus aucun écran n'appelle cette route, et un ancien onglet resté ouvert ne doit ni
+  // enrôler tout le monde ni ouvrir une salve que personne n'a réglée.
+  app.post('/api/prospection/campaigns/:id/launch', isAuthenticated, (req: any, res) => {
+    res.status(410).json({
+      message: 'lancement_par_salve',
+      detail: 'Le lancement pour tous a été retiré : lance une salve depuis l’onglet Prospects.',
+      salves: `/api/prospection/campaigns/${Number(req.params.id)}/salves`,
+    });
   });
 
   // ─── Webhook SendGrid (tracking : ouvertures / clics / bounces / désinscriptions) ──
