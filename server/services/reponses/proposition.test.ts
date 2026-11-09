@@ -126,12 +126,73 @@ describe("proposerReponse — mode relance", () => {
     expect(system).not.toContain("Règle :");
     expect(system).not.toContain("poème");
     expect(system).not.toContain("Bob");
-    expect(system).toContain("au plus 600 caractères");
+    expect(system).toContain("300 caractères au plus"); // limite de la doctrine (relance LinkedIn)
     // Dans le message : une seule ligne, balises neutralisées, encadrement intact.
     const phrase = /<phrase>(.*)<\/phrase>/.exec(message)![1];
     expect(phrase).not.toMatch(/\n/);
     expect(phrase).toContain("[balise retirée]");
     expect(message.match(/<\/phrase>/g)).toHaveLength(1);
     expect(message.match(/<\/fil>/g)).toHaveLength(1);
+  });
+});
+
+describe("proposerReponse — relance : doctrine et contrôle qualité", () => {
+  const relance = { date: "2027-01-04", extrait: "Revenez vers moi début 2027." };
+  const avecConv = () => {
+    const d = deps();
+    d.getConversation.mockResolvedValue({ id: 11, leadId: 7, channel: "email", projectId: null } as any);
+    return d;
+  };
+
+  it("brouillon à tiret long et observation inventée → redemandé une fois avec les défauts, puis nettoyé", async () => {
+    const d = avecConv();
+    d.appelIA
+      .mockResolvedValueOnce("Bonjour Marc,\n\nVous m'aviez dit de revenir vers vous début 2027 — nous y sommes.\n\nJ'ai une observation que j'ai faite sur la communication d'Acme à partager.\n\nOn s'appelle 15 minutes ?\n\nJeanne")
+      .mockResolvedValueOnce("Bonjour Marc,\n\nVous m'aviez dit de revenir vers vous début 2027 — c'est le moment.\n\nJe vous écrivais pour l'audit digital de votre site.\n\nOn s'appelle 15 minutes ?\n\nJeanne");
+    const texte = await proposerReponse("u1", 11, d as any, relance);
+    expect(d.appelIA).toHaveBeenCalledTimes(2);
+    const second = d.appelIA.mock.calls[1][0] as any;
+    expect(second.message).toContain("À CORRIGER");
+    expect(second.message).toMatch(/observation/);
+    // Nettoyage déterministe : plus aucun tiret long, mise en page gardée, signée.
+    expect(texte).not.toMatch(/[—–]/);
+    expect(texte).toContain("début 2027, c'est le moment.");
+    expect(texte.split("\n\n")).toHaveLength(5);
+    expect(texte.endsWith("Jeanne")).toBe(true);
+  });
+
+  it("brouillon conforme : un seul appel ; signature oubliée → ajoutée", async () => {
+    const d = avecConv();
+    d.appelIA.mockResolvedValueOnce("Bonjour Marc,\n\nVous m'aviez dit de revenir vers vous début 2027.\n\nJe vous écrivais pour l'audit digital de votre site.\n\nOn s'appelle 15 minutes ?");
+    const texte = await proposerReponse("u1", 11, d as any, relance);
+    expect(d.appelIA).toHaveBeenCalledTimes(1);
+    expect(texte.endsWith("\n\nJeanne")).toBe(true);
+  });
+
+  it("trop long (paragraphes, mots) → redemandé", async () => {
+    const d = avecConv();
+    const long = Array.from({ length: 7 }, (_, i) => `Paragraphe ${i} avec quelques mots de remplissage pour faire du volume ici.`).join("\n\n");
+    d.appelIA.mockResolvedValueOnce(`Bonjour Marc,\n\n${long}\n\nJeanne`).mockResolvedValueOnce("Bonjour Marc,\n\nVous m'aviez dit début 2027.\n\nOn s'appelle ?\n\nJeanne");
+    await proposerReponse("u1", 11, d as any, relance);
+    expect(d.appelIA).toHaveBeenCalledTimes(2);
+    expect((d.appelIA.mock.calls[1][0] as any).message).toMatch(/mots|paragraphes/);
+  });
+
+  it("le prompt porte la doctrine : aucun tiret, rien d'inventé, demande facile, court", () => {
+    const { system } = promptProposition({
+      channel: "email", lead: { name: "Marc", company: "Acme", role: null }, campagne: null, instructions: "",
+      signature: "Jeanne", client: false, fil: [], relance,
+    });
+    expect(system).toContain("aucun tiret long");
+    expect(system).toContain("RIEN D'INVENTÉ");
+    expect(system).toContain("90 mots au plus");
+    expect(system).toContain("4 au plus");
+  });
+
+  it("une réponse (pas une relance) n'est pas touchée par ce contrôle", async () => {
+    const d = deps();
+    d.appelIA.mockResolvedValueOnce("Merci Marc — mardi 10h ?");
+    expect(await proposerReponse("u1", 11, d as any)).toBe("Merci Marc — mardi 10h ?");
+    expect(d.appelIA).toHaveBeenCalledTimes(1);
   });
 });

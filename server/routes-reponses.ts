@@ -13,9 +13,9 @@ import { masterSendingEnabled } from "./services/prospection-sender";
 import { sendEmailUnipile, sendLinkedInChatMessage } from "./services/unipile-mail";
 import { persisterRestrictionLinkedIn } from "./services/linkedin-restriction";
 import type { EtatAvantReponse, InboxConversation } from "@shared/schema";
-import { creerTache } from "./services/taches/ecrire-tache";
+import { creerTache, modifierTache } from "./services/taches/ecrire-tache";
 import {
-  validerRelance, refuserRelance, reformulerRelance, relancesAuRequalifier, vueRelances, type DepsRelance,
+  validerRelance, refuserRelance, reformulerRelance, modifierRelance, deplacerRelance, relancesAuRequalifier, vueRelances, type DepsRelance,
 } from "./services/reponses/relance";
 import { estEtatAvant } from "./services/reponses/relance-etat";
 
@@ -69,6 +69,8 @@ const depsRelance: DepsRelance = {
   rediger: (userId, cid, relance) => proposerReponse(userId, cid, undefined, relance),
   etatSequence: async (leadId) => (await storage.getLeadSequenceState(leadId)) ?? undefined,
   arreterSequence: (leadId) => storage.updateLeadSequenceState(leadId, { status: "stopped_replied", nextRunAt: null }),
+  majTache: (id, patch) => storage.updateTask(id, patch),
+  deplacerTache: (userId, taskId, patch) => modifierTache(userId, taskId, patch),
 };
 
 /** Délai de traitement d'un webhook avant de répondre 500 (Unipile coupe à 30 s). Modifiable en test. */
@@ -250,6 +252,38 @@ export function registerReponsesRoutes(app: Express) {
       res.status(r.status).json(r);
     } catch (e: any) {
       console.error(`[Reponses] relance (refus) : ${erreurSure(e)}`);
+      res.status(500).json({ ok: false, raison: "echec" });
+    }
+  });
+
+  // Brouillon de relance relu et modifié : rangé dans la tâche, reste un brouillon (jamais envoyé).
+  app.post("/api/reponses/:id/relances/:messageId/texte", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const mid = idMessage(req);
+      if (mid == null) return res.status(400).json({ ok: false, raison: "introuvable" });
+      const r = await modifierRelance(req.userId, conv.id, mid, req.body?.texte, depsRelance);
+      if (r.ok) return res.json(r);
+      res.status(r.status).json(r);
+    } catch (e: any) {
+      console.error(`[Reponses] relance (modification) : ${erreurSure(e)}`);
+      res.status(500).json({ ok: false, raison: "echec" });
+    }
+  });
+
+  // Nouvelle date d'une relance validée : la tâche et la date convenue bougent ensemble.
+  app.post("/api/reponses/:id/relances/:messageId/date", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const mid = idMessage(req);
+      if (mid == null) return res.status(400).json({ ok: false, raison: "introuvable" });
+      const r = await deplacerRelance(req.userId, conv.id, mid, req.body?.date, depsRelance);
+      if (r.ok) return res.json(r);
+      res.status(r.status).json(r);
+    } catch (e: any) {
+      console.error(`[Reponses] relance (date) : ${erreurSure(e)}`);
       res.status(500).json({ ok: false, raison: "echec" });
     }
   });

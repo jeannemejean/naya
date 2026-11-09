@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   validerRelance, refuserRelance, reformulerRelance, vueRelances, relancesAuRequalifier, titreRelance, type DepsRelance,
+  modifierRelance, deplacerRelance, LONGUEUR_MAX_BROUILLON,
 } from "./relance";
 import { relancesDe, avecRelances, estEtatAvant, type DecisionRelance } from "./relance-etat";
 import { planEntrant } from "./ingestion";
@@ -68,6 +69,13 @@ function monde(o: { messages?: any[]; etat?: any; sequence?: string | null; tach
     rediger: vi.fn(async () => "Bonjour Claire,\n\nVous m'aviez dit de revenir vers vous début 2027.\n\nOn en parle 15 minutes ?"),
     etatSequence: vi.fn(async () => (o.sequence === null ? undefined : ({ status: o.sequence ?? "stopped_replied" } as any))),
     arreterSequence: vi.fn(async () => undefined),
+    majTache: vi.fn(async (id: number, patch: any) => { const t = taches.get(id); if (t) Object.assign(t, patch); }),
+    deplacerTache: vi.fn(async (userId: string, id: number, patch: any) => {
+      const t = taches.get(id);
+      if (!t || t.userId !== userId) return { ok: false as const, status: 404, message: "task_not_found" };
+      Object.assign(t, patch);
+      return { ok: true as const, tache: { ...t } };
+    }),
   };
   return { conv, taches, deps: deps as typeof deps & DepsRelance, envoyer };
 }
@@ -205,7 +213,7 @@ describe("validerRelance", () => {
     const { conv, deps, taches } = monde();
     await validerRelance("u1", 11, 31, null, deps);
     const avant = await vueRelances(conv, [msg()], PREFS, deps);
-    expect(avant.parMessage[31]).toEqual({ statut: "validee", date: "2027-01-04", taskId: 100, faite: false });
+    expect(avant.parMessage[31]).toEqual({ statut: "validee", date: "2027-01-04", taskId: 100, faite: false, texte: taches.get(100).actionData.relance.texte });
     expect(avant.prete).toBeNull();
     const jourJ = await vueRelances(conv, [msg()], PREFS, { ...deps, now: () => new Date("2027-01-04T08:00:00Z") });
     expect(jourJ.prete).toEqual({ taskId: 100, messageId: 31, date: "2027-01-04", texte: taches.get(100).actionData.relance.texte });
@@ -290,6 +298,82 @@ describe("corrections de revue", () => {
     const { deps } = monde();
     expect(await validerRelance("u1", 11, 31, "2030-01-07", deps)).toMatchObject({ ok: false, raison: "date_invalide" });
     expect(await validerRelance("u1", 11, 31, "2029-06-04", deps)).toMatchObject({ ok: true });
+  });
+});
+
+describe("après validation : relire, modifier, déplacer", () => {
+  it("le brouillon se voit dès la validation, pas seulement le jour venu", async () => {
+    const { conv, deps, taches } = monde();
+    await validerRelance("u1", 11, 31, null, deps);
+    const v = await vueRelances(conv, [msg()], PREFS, deps);
+    expect(v.parMessage[31]).toMatchObject({ statut: "validee", texte: taches.get(100).actionData.relance.texte });
+    expect(v.prete).toBeNull(); // le compositeur, lui, attend toujours le jour venu
+  });
+
+  it("« Modifier » range le texte dans la tâche, reste un brouillon", async () => {
+    const { deps, taches } = monde();
+    await validerRelance("u1", 11, 31, null, deps);
+    const r = await modifierRelance("u1", 11, 31, "  Bonjour Claire,\n\nNouveau texte.\n\nJeanne  ", deps);
+    expect(r).toEqual({ ok: true, date: "2027-01-04" });
+    expect(taches.get(100).actionData.relance).toMatchObject({ texte: "Bonjour Claire,\n\nNouveau texte.\n\nJeanne", date: "2027-01-04", messageId: 31 });
+    expect(taches.get(100).actionData.lien).toBe("/outreach?onglet=reponses&conversation=11");
+    expect(taches.get(100).completed).toBe(false);
+  });
+
+  it("« Modifier » : vide, trop long, relance non validée, autre compte, tâche faite → refusé, rien écrit", async () => {
+    const { deps, taches } = monde();
+    expect(await modifierRelance("u1", 11, 31, "texte", deps)).toMatchObject({ ok: false, status: 409, raison: "pas_validee" });
+    await validerRelance("u1", 11, 31, null, deps);
+    deps.majTache.mockClear();
+    expect(await modifierRelance("u1", 11, 31, "   ", deps)).toMatchObject({ ok: false, status: 400, raison: "texte_vide" });
+    expect(await modifierRelance("u1", 11, 31, 42, deps)).toMatchObject({ ok: false, raison: "texte_vide" });
+    expect(await modifierRelance("u1", 11, 31, "x".repeat(LONGUEUR_MAX_BROUILLON + 1), deps)).toMatchObject({ ok: false, raison: "texte_trop_long" });
+    expect(await modifierRelance("u2", 11, 31, "texte", deps)).toMatchObject({ ok: false, status: 404 });
+    taches.get(100).userId = "u2"; // tâche qui n'est plus à elle
+    expect(await modifierRelance("u1", 11, 31, "texte", deps)).toMatchObject({ ok: false, status: 404 });
+    taches.get(100).userId = "u1";
+    taches.get(100).completed = true;
+    expect(await modifierRelance("u1", 11, 31, "texte", deps)).toMatchObject({ ok: false, status: 409, raison: "deja_faite" });
+    expect(deps.majTache).not.toHaveBeenCalled();
+  });
+
+  it("« Changer la date » : la tâche, la date convenue et celle du brouillon bougent ensemble", async () => {
+    const { conv, deps, taches } = monde();
+    await validerRelance("u1", 11, 31, null, deps);
+    expect(await deplacerRelance("u1", 11, 31, "2027-01-12", deps)).toEqual({ ok: true, date: "2027-01-12" });
+    expect(deps.deplacerTache).toHaveBeenCalledWith("u1", 100, { scheduledDate: "2027-01-12" });
+    expect(taches.get(100).scheduledDate).toBe("2027-01-12");
+    expect(taches.get(100).actionData.relance.date).toBe("2027-01-12");
+    expect(relancesDe(conv.etatAvantReponse)["31"]).toMatchObject({ statut: "validee", taskId: 100, date: "2027-01-12" });
+    // Plus tôt aussi : la vue suit (date convenue = date de la tâche).
+    await deplacerRelance("u1", 11, 31, "2026-12-01", deps);
+    const v = await vueRelances(conv, [msg()], PREFS, { ...deps, now: () => new Date("2026-12-01T09:00:00Z") });
+    expect(v.parMessage[31]).toMatchObject({ date: "2026-12-01" });
+    expect(v.prete?.date).toBe("2026-12-01");
+  });
+
+  it("« Changer la date » : jour non travaillé, passé, invalide, au-delà de 3 ans, non validée → refusé", async () => {
+    const { deps } = monde();
+    expect(await deplacerRelance("u1", 11, 31, "2027-01-12", deps)).toMatchObject({ ok: false, raison: "pas_validee" });
+    await validerRelance("u1", 11, 31, null, deps);
+    deps.deplacerTache.mockClear();
+    expect(await deplacerRelance("u1", 11, 31, "2027-01-09", deps)).toMatchObject({ ok: false, raison: "jour_non_travaille" });
+    expect(await deplacerRelance("u1", 11, 31, "2026-11-09", deps)).toMatchObject({ ok: false, raison: "date_passee" });
+    expect(await deplacerRelance("u1", 11, 31, "demain", deps)).toMatchObject({ ok: false, raison: "date_invalide" });
+    expect(await deplacerRelance("u1", 11, 31, "2030-01-07", deps)).toMatchObject({ ok: false, raison: "date_invalide" });
+    expect(deps.deplacerTache).not.toHaveBeenCalled();
+  });
+
+  it("validation : si la tâche atterrit un autre jour, le brouillon et la décision prennent ce jour", async () => {
+    const { conv, deps, taches } = monde();
+    deps.creerTache.mockImplementationOnce(async (userId: string, donnees: any) => {
+      const t = { id: 100, userId, completed: false, archivedAt: null, ...donnees, scheduledDate: "2027-01-05" };
+      taches.set(100, t);
+      return { ok: true as const, tache: t };
+    });
+    expect(await validerRelance("u1", 11, 31, null, deps)).toMatchObject({ ok: true, date: "2027-01-05" });
+    expect(taches.get(100).actionData.relance.date).toBe("2027-01-05");
+    expect(relancesDe(conv.etatAvantReponse)["31"]).toMatchObject({ date: "2027-01-05" });
   });
 });
 

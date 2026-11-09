@@ -142,3 +142,17 @@ describe("relances (logique d'affichage)", () => {
     expect(prenom("Claire Martin")).toBe("Claire");
   });
 });
+
+describe("brouillon de relance (édition)", () => {
+  it("enregistrable seulement non vide, pas trop long, et changé", async () => {
+    const { peutEnregistrerBrouillon, LONGUEUR_MAX_BROUILLON, cleErreurRelance } = await import("./reponses-logique");
+    expect(peutEnregistrerBrouillon("Bonjour", "Bonjour")).toBe(false);
+    expect(peutEnregistrerBrouillon("  Bonjour  ", "Bonjour")).toBe(false);
+    expect(peutEnregistrerBrouillon("   ", "Bonjour")).toBe(false);
+    expect(peutEnregistrerBrouillon("x".repeat(LONGUEUR_MAX_BROUILLON + 1), "Bonjour")).toBe(false);
+    expect(peutEnregistrerBrouillon("Bonjour Claire", "Bonjour")).toBe(true);
+    for (const r of ["texte_vide", "texte_trop_long", "pas_validee", "deja_faite"]) {
+      expect(cleErreurRelance(r)).toBe(`outreach.reponses.relance.erreurs.${r}`);
+    }
+  });
+});

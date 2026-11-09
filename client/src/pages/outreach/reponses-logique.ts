@@ -36,7 +36,7 @@ export interface MessageFil {
 export type VueRelanceClient =
   | { statut: "proposee"; date: string }
   | { statut: "en_cours"; date: string | null }
-  | { statut: "validee"; date: string | null; taskId: number; faite: boolean };
+  | { statut: "validee"; date: string | null; taskId: number; faite: boolean; texte?: string };
 
 /** Identifiant numérique d'un message de la boîte (« inbox-42 » → 42), ou null. */
 export function idMessageBoite(id: string): number | null {
@@ -57,7 +57,10 @@ export const prenom = (nom: string | null | undefined) => (nom ?? "").trim().spl
 
 /** Clé i18n d'un refus de validation de relance ; inconnue → « echec ». */
 export function cleErreurRelance(raison: unknown): string {
-  const connues = ["date_passee", "jour_non_travaille", "date_invalide", "pas_de_date", "refusee", "en_cours", "signature_client", "introuvable", "desinscrit"];
+  const connues = [
+    "date_passee", "jour_non_travaille", "date_invalide", "pas_de_date", "refusee", "en_cours", "signature_client",
+    "introuvable", "desinscrit", "texte_vide", "texte_trop_long", "pas_validee", "deja_faite",
+  ];
   return `outreach.reponses.relance.erreurs.${typeof raison === "string" && connues.includes(raison) ? raison : "echec"}`;
 }
 
@@ -165,4 +168,13 @@ export function compterATraiterParCampagne(liste: Array<AvecCampagne & { statut?
     compte.set(c.campaignId, (compte.get(c.campaignId) ?? 0) + 1);
   }
   return compte;
+}
+
+/** Longueur maximale d'un brouillon de relance (même borne que le serveur). */
+export const LONGUEUR_MAX_BROUILLON = 8000;
+
+/** Le brouillon modifié peut-il être enregistré ? Non vide, pas trop long, et changé. */
+export function peutEnregistrerBrouillon(texte: string, original: string | null | undefined): boolean {
+  const t = texte.trim();
+  return t.length > 0 && t.length <= LONGUEUR_MAX_BROUILLON && t !== (original ?? "").trim();
 }

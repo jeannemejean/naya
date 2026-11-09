@@ -109,3 +109,23 @@ export const useReformulerRelance = (id: number) =>
   useMutation<{ texte: string }, Error, number>({
     mutationFn: async (messageId) => (await apiRequest("POST", `/api/reponses/${id}/relances/${messageId}/proposition`)).json(),
   });
+
+/** Brouillon de relance modifié : rangé dans la tâche, jamais envoyé. */
+export const useModifierRelance = (id: number) =>
+  useMutation<{ ok: boolean; raison?: string; date?: string }, Error, { messageId: number; texte: string }>({
+    mutationFn: async ({ messageId, texte }) => {
+      const { json } = await postJson(`/api/reponses/${id}/relances/${messageId}/texte`, { texte });
+      return json && typeof json.ok === "boolean" ? json : { ok: false, raison: "echec" };
+    },
+    onSettled: invalider,
+  });
+
+/** Nouvelle date d'une relance validée : la tâche et la date convenue bougent ensemble. */
+export const useDeplacerRelance = (id: number) =>
+  useMutation<{ ok: boolean; raison?: string; date?: string }, Error, { messageId: number; date: string }>({
+    mutationFn: async ({ messageId, date }) => {
+      const { json } = await postJson(`/api/reponses/${id}/relances/${messageId}/date`, { date });
+      return json && typeof json.ok === "boolean" ? json : { ok: false, raison: "echec" };
+    },
+    onSettled: () => { invalider(); queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }); },
+  });

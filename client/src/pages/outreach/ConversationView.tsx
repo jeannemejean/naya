@@ -8,12 +8,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import {
   useConversation, useProposerReponse, useEnvoyerReponse, useMarquerTraitee, usePasUneReponse,
-  useValiderRelance, useRefuserRelance, useReformulerRelance,
+  useValiderRelance, useRefuserRelance, useReformulerRelance, useModifierRelance, useDeplacerRelance,
   type ConversationDetail,
 } from './useReponses';
 import {
   cleErreurEnvoi, cleErreurPasUneReponse, cleErreurRelance, dateHeure, dateRelative, idMessageBoite, jourLisible,
-  ordonnerFil, prenom, typeBulle,
+  ordonnerFil, peutEnregistrerBrouillon, prenom, typeBulle,
 } from './reponses-logique';
 import { aUneCitation, texteAffiche } from '@shared/citation';
 import EtiquetteCampagne from './EtiquetteCampagne';
@@ -119,10 +119,15 @@ function CarteRelance({ conversationId, m, nomProspect }: {
       ? t('outreach.reponses.relance.enCours')
       : r.faite ? t('outreach.reponses.relance.faite', { date: lisible(r.date) }) : t('outreach.reponses.relance.prevue', { prenom: p, date: lisible(r.date) });
     return (
-      <div className={cadre}>
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="relance-statut">
-          <CalendarClock className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />{texte}
-        </p>
+      <div className="space-y-2">
+        <div className={cadre}>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="relance-statut">
+            <CalendarClock className="h-3.5 w-3.5 flex-shrink-0" aria-hidden />{texte}
+          </p>
+        </div>
+        {r.statut === 'validee' && !r.faite && r.texte && mid != null && (
+          <BrouillonRelance conversationId={conversationId} messageId={mid} texte={r.texte} date={r.date} />
+        )}
       </div>
     );
   }
@@ -177,6 +182,104 @@ function CarteRelance({ conversationId, m, nomProspect }: {
               {t('outreach.reponses.relance.changer')}
             </Button>
             <Button size="sm" variant="ghost" onClick={nonMerci} disabled={occupe}>{t('outreach.reponses.relance.nonMerci')}</Button>
+          </div>
+        )}
+        {erreur && <p role="alert" className="text-xs text-destructive">{erreur}</p>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Le brouillon d'une relance validée, visible dès la validation : à relire, modifier (rangé
+ * dans la tâche), reformuler ou déplacer. Toujours un brouillon : rien ne part d'ici.
+ */
+function BrouillonRelance({ conversationId, messageId, texte, date }: {
+  conversationId: number; messageId: number; texte: string; date: string | null;
+}) {
+  const { t, i18n } = useTranslation();
+  const { toast } = useToast();
+  const modifier = useModifierRelance(conversationId);
+  const deplacer = useDeplacerRelance(conversationId);
+  const reformuler = useReformulerRelance(conversationId);
+  const [mode, setMode] = useState<'lecture' | 'edition' | 'date'>('lecture');
+  const [brouillon, setBrouillon] = useState(texte);
+  const [nouvelleDate, setNouvelleDate] = useState(date ?? '');
+  const [erreur, setErreur] = useState<string | null>(null);
+  const occupe = modifier.isPending || deplacer.isPending || reformuler.isPending;
+
+  const editer = (depart: string) => { setBrouillon(depart); setErreur(null); setMode('edition'); };
+  const enregistrer = () => {
+    setErreur(null);
+    modifier.mutate({ messageId, texte: brouillon }, {
+      onSuccess: (r) => {
+        if (r.ok) { setMode('lecture'); toast({ title: t('outreach.reponses.relance.enregistreOk') }); }
+        else setErreur(t(cleErreurRelance(r.raison)));
+      },
+      onError: () => setErreur(t(cleErreurRelance('echec'))),
+    });
+  };
+  const autreVersion = () => {
+    setErreur(null);
+    reformuler.mutate(messageId, {
+      // La nouvelle version s'ouvre en édition : elle n'est rangée qu'avec « Enregistrer ».
+      onSuccess: (r) => editer(r.texte),
+      onError: (e) => setErreur(/signature_client_manquante/.test(e.message) ? t('outreach.reponses.proposerSignature') : t('outreach.reponses.proposerErreur')),
+    });
+  };
+  const changerDate = () => {
+    setErreur(null);
+    deplacer.mutate({ messageId, date: nouvelleDate }, {
+      onSuccess: (r) => {
+        if (r.ok) { setMode('lecture'); toast({ title: t('outreach.reponses.relance.dateDeplacee', { date: jourLisible(r.date, i18n.language) }) }); }
+        else setErreur(t(cleErreurRelance(r.raison)));
+      },
+      onError: () => setErreur(t(cleErreurRelance('echec'))),
+    });
+  };
+
+  return (
+    <div className="flex justify-end">
+      <div className="min-w-0 max-w-[85%] sm:max-w-[75%] rounded-xl px-3.5 py-2.5 text-sm border border-dashed border-primary/30 bg-primary/5 space-y-2" data-testid="relance-brouillon">
+        <p className="text-xs text-muted-foreground">
+          <span className="font-semibold text-foreground">{t('outreach.reponses.relance.brouillon')}</span>
+          {' · '}{t('outreach.reponses.relance.brouillonNote')}
+        </p>
+        {mode === 'edition' ? (
+          <Textarea rows={8} className="max-h-[50vh] bg-white" value={brouillon} onChange={(e) => setBrouillon(e.target.value)}
+            aria-label={t('outreach.reponses.relance.brouillon')} />
+        ) : (
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-foreground">{texte}</p>
+        )}
+        {mode === 'date' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <label htmlFor={`relance-nouvelle-date-${messageId}`} className="sr-only">{t('outreach.reponses.relance.choisirDate')}</label>
+            <input id={`relance-nouvelle-date-${messageId}`} type="date" min={demain()} value={nouvelleDate} onChange={(e) => setNouvelleDate(e.target.value)}
+              className="h-8 rounded-md border border-border bg-white px-2 text-sm text-foreground" />
+            <Button size="sm" onClick={changerDate} disabled={occupe || !nouvelleDate || nouvelleDate === date}>
+              {deplacer.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}{t('outreach.reponses.relance.confirmerDate')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setMode('lecture')} disabled={occupe}>{t('outreach.reponses.relance.annuler')}</Button>
+          </div>
+        )}
+        {mode === 'edition' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" onClick={enregistrer} disabled={occupe || !peutEnregistrerBrouillon(brouillon, texte)}>
+              {modifier.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}{t('outreach.reponses.relance.enregistrer')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setMode('lecture'); setErreur(null); }} disabled={occupe}>{t('outreach.reponses.relance.annuler')}</Button>
+          </div>
+        )}
+        {mode === 'lecture' && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" variant="outline" className="bg-white" onClick={() => editer(texte)} disabled={occupe}>{t('outreach.reponses.relance.modifier')}</Button>
+            <Button size="sm" variant="outline" className="bg-white" onClick={autreVersion} disabled={occupe}>
+              {reformuler.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Sparkles className="h-4 w-4 mr-1" />}
+              {reformuler.isPending ? t('outreach.reponses.proposerEnCours') : t('outreach.reponses.relance.autreVersion')}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setNouvelleDate(date ?? ''); setErreur(null); setMode('date'); }} disabled={occupe}>
+              {t('outreach.reponses.relance.changer')}
+            </Button>
           </div>
         )}
         {erreur && <p role="alert" className="text-xs text-destructive">{erreur}</p>}

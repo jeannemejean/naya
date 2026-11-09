@@ -55,7 +55,7 @@ export function titreRelance(lead: Pick<Lead, "name" | "company">): string {
 export type VueRelance =
   | { statut: "proposee"; date: string }
   | { statut: "en_cours"; date: string | null }
-  | { statut: "validee"; date: string | null; taskId: number; faite: boolean };
+  | { statut: "validee"; date: string | null; taskId: number; faite: boolean; texte?: string };
 
 /** Brouillon prêt pour le compositeur : relance validée, pas faite, dont le jour est arrivé. */
 export interface RelancePrete { taskId: number; messageId: number; date: string; texte: string }
@@ -95,8 +95,12 @@ export async function vueRelances(
       if (!t || t.archivedAt) continue; // tâche retirée du planning : plus rien à montrer
       // Jamais prête avant la date convenue, même si la tâche a été avancée dans le planning.
       const date = [t.scheduledDate, d.date].filter((x): x is string => !!x).sort().pop() ?? null;
-      parMessage[m.id] = { statut: "validee", date, taskId: t.id, faite: !!t.completed };
       const texte = (t.actionData as any)?.relance?.texte;
+      // Le brouillon se voit dès la validation (pas seulement le jour venu) : elle peut le relire.
+      parMessage[m.id] = {
+        statut: "validee", date, taskId: t.id, faite: !!t.completed,
+        ...(typeof texte === "string" && texte.trim() && !t.completed ? { texte } : {}),
+      };
       if (!opts.bloque && !t.completed && date && date <= aujourdhui && typeof texte === "string" && texte.trim()) {
         if (!prete || date > prete.date) prete = { taskId: t.id, messageId: m.id, date, texte };
       }
@@ -140,6 +144,11 @@ export interface DepsRelance {
   etatSequence: (leadId: number) => Promise<LeadSequenceState | undefined>;
   /** Arrête la séquence (stopped_replied, nextRunAt nul) : plus rien ne la relance seule. */
   arreterSequence: (leadId: number) => Promise<unknown>;
+  /** Écrit le brouillon / la date dans la tâche (storage.updateTask). */
+  majTache: (id: number, patch: Partial<Task>) => Promise<unknown>;
+  /** modifierTache (ecrire-tache.ts) : propriété, jours travaillés, créneau, re-tassage. */
+  deplacerTache: (userId: string, taskId: number, patch: Record<string, unknown>) =>
+    Promise<{ ok: true; tache: Task } | { ok: false; status: number; message: string }>;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -238,7 +247,12 @@ export async function validerRelance(
       return { ok: false, status: r.status, raison: r.status === 400 ? "jour_non_travaille" : "tache_refusee", message: r.message };
     }
     creee = r.tache.id;
-    await deps.ecrire(conv.id, messageId, { statut: "validee", le: now.toISOString(), taskId: r.tache.id, date: r.tache.scheduledDate ?? date });
+    // La date convenue, celle de la tâche et celle du brouillon sont toujours la même.
+    const finale = r.tache.scheduledDate ?? date;
+    if (finale !== date) {
+      await deps.majTache(r.tache.id, { actionData: { ...(r.tache.actionData as any), relance: { ...(r.tache.actionData as any)?.relance, date: finale } } } as any);
+    }
+    await deps.ecrire(conv.id, messageId, { statut: "validee", le: now.toISOString(), taskId: r.tache.id, date: finale });
 
     // La séquence reste à l'arrêt jusqu'à la relance (elle l'est déjà après une vraie réponse).
     try {
@@ -247,7 +261,7 @@ export async function validerRelance(
     } catch (e: any) {
       console.error(`[Relance] séquence du lead ${lead.id} non vérifiée : ${erreurSure(e)}`);
     }
-    return { ok: true, taskId: r.tache.id, date: r.tache.scheduledDate ?? date };
+    return { ok: true, taskId: r.tache.id, date: finale };
   } catch (e) {
     // Tâche déjà créée : on ne libère pas (une nouvelle validation en créerait une seconde).
     if (creee == null) await liberer();
@@ -304,4 +318,67 @@ export async function relancesAuRequalifier(
     }
   }
   return autreEnAttente;
+}
+
+// ─── Après validation : relire, modifier, déplacer (jamais d'envoi) ──────────────
+
+/** Longueur maximale d'un brouillon (la même que celle d'une réponse envoyée). */
+export const LONGUEUR_MAX_BROUILLON = 8000;
+
+type IssueEdition = { ok: true; date: string } | { ok: false; status: number; raison: string };
+
+/** La relance validée d'un message, et sa tâche (à l'utilisatrice, pas faite). */
+async function relanceValidee(userId: string, conversationId: number, messageId: number, deps: DepsRelance) {
+  const trouve = await messageEtContexte(userId, conversationId, messageId, deps);
+  if (!trouve) return { erreur: { ok: false as const, status: 404, raison: "introuvable" } };
+  const d = relancesDe(trouve.conv.etatAvantReponse)[String(messageId)];
+  if (d?.statut !== "validee" || d.taskId == null) return { erreur: { ok: false as const, status: 409, raison: "pas_validee" } };
+  const t = await deps.getTask(d.taskId);
+  if (!t || (t as any).userId !== userId || t.archivedAt) return { erreur: { ok: false as const, status: 404, raison: "introuvable" } };
+  if (t.completed) return { erreur: { ok: false as const, status: 409, raison: "deja_faite" } };
+  return { conv: trouve.conv, decision: d, tache: t };
+}
+
+/**
+ * « Modifier » : le brouillon relu par l'utilisatrice est rangé dans la tâche
+ * (actionData.relance.texte). Reste un brouillon : rien n'est envoyé.
+ */
+export async function modifierRelance(
+  userId: string, conversationId: number, messageId: number, texteBrut: unknown, deps: DepsRelance,
+): Promise<IssueEdition> {
+  const texte = typeof texteBrut === "string" ? texteBrut.trim() : "";
+  if (!texte) return { ok: false, status: 400, raison: "texte_vide" };
+  if (texte.length > LONGUEUR_MAX_BROUILLON) return { ok: false, status: 400, raison: "texte_trop_long" };
+  const r = await relanceValidee(userId, conversationId, messageId, deps);
+  if ("erreur" in r) return r.erreur!;
+  const ad = (r.tache.actionData as any) ?? {};
+  await deps.majTache(r.tache.id, { actionData: { ...ad, relance: { ...(ad.relance ?? {}), texte } } } as any);
+  return { ok: true, date: r.tache.scheduledDate ?? r.decision.date ?? "" };
+}
+
+/**
+ * « Changer la date » après validation : la tâche ET la date convenue bougent ensemble
+ * (mêmes règles que la validation : jour travaillé, à venir, 3 ans au plus).
+ */
+export async function deplacerRelance(
+  userId: string, conversationId: number, messageId: number, dateBrute: unknown, deps: DepsRelance,
+): Promise<IssueEdition> {
+  const date = typeof dateBrute === "string" ? dateBrute : "";
+  if (!dateValide(date)) return { ok: false, status: 400, raison: "date_invalide" };
+  const r = await relanceValidee(userId, conversationId, messageId, deps);
+  if ("erreur" in r) return r.erreur!;
+  const prefs = await deps.getPrefs(userId);
+  const aujourdhui = jourDans(deps.now(), fuseauDe(prefs));
+  if (date <= aujourdhui) return { ok: false, status: 400, raison: "date_passee" };
+  if ((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${aujourdhui}T00:00:00Z`)) / 86_400_000 > HORIZON_JOURS) {
+    return { ok: false, status: 400, raison: "date_invalide" };
+  }
+  if (premierJourTravaille(date, joursTravailDe(prefs)) !== date) return { ok: false, status: 400, raison: "jour_non_travaille" };
+  const m = await deps.deplacerTache(userId, r.tache.id, { scheduledDate: date });
+  if (!m.ok) return { ok: false, status: m.status, raison: m.status === 400 ? "jour_non_travaille" : "introuvable" };
+  const finale = m.tache.scheduledDate ?? date;
+  const ad = (m.tache.actionData as any) ?? (r.tache.actionData as any) ?? {};
+  await deps.majTache(r.tache.id, { actionData: { ...ad, relance: { ...(ad.relance ?? {}), date: finale } } } as any);
+  await deps.ecrire(r.conv.id, messageId, { ...r.decision, date: finale });
+  return { ok: true, date: finale };
 }
