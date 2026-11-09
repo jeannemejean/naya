@@ -13,6 +13,11 @@ import { masterSendingEnabled } from "./services/prospection-sender";
 import { sendEmailUnipile, sendLinkedInChatMessage } from "./services/unipile-mail";
 import { persisterRestrictionLinkedIn } from "./services/linkedin-restriction";
 import type { EtatAvantReponse, InboxConversation } from "@shared/schema";
+import { creerTache } from "./services/taches/ecrire-tache";
+import {
+  validerRelance, refuserRelance, reformulerRelance, relancesAuRequalifier, vueRelances, type DepsRelance,
+} from "./services/reponses/relance";
+import { estEtatAvant } from "./services/reponses/relance-etat";
 
 function memeSecret(recu: string | undefined, attendu: string): boolean {
   if (!recu) return false;
@@ -46,6 +51,23 @@ const depsEnvoi: DepsEnvoiReponse = {
   updateConversation: (id, patch) => storage.updateInboxConversation(id, patch),
   getTask: (id) => storage.getTask(id),
   completeTask: (id) => storage.completeTask(id),
+};
+
+/** Accès réels des relances (le service est testé sans base). Rien n'y envoie de message. */
+const depsRelance: DepsRelance = {
+  now: () => new Date(),
+  getConversation: (id, userId) => storage.getInboxConversationParId(id, userId),
+  getMessages: (cid) => storage.getInboxMessages(cid),
+  getLead: (id, userId) => storage.getLead(id, userId),
+  getPrefs: (userId) => storage.getUserPreferences(userId) as any,
+  getTask: (id) => storage.getTask(id),
+  reserver: (cid, mid, now) => storage.reserverRelanceInbox(cid, mid, now),
+  ecrire: (cid, mid, d) => storage.ecrireRelanceInbox(cid, mid, d),
+  refuser: (cid, mid, now) => storage.refuserRelanceInbox(cid, mid, now),
+  creerTache: (userId, donnees) => creerTache(userId, donnees),
+  rediger: (userId, cid, relance) => proposerReponse(userId, cid, undefined, relance),
+  etatSequence: async (leadId) => (await storage.getLeadSequenceState(leadId)) ?? undefined,
+  arreterSequence: (leadId) => storage.updateLeadSequenceState(leadId, { status: "stopped_replied", nextRunAt: null }),
 };
 
 /** Délai de traitement d'un webhook avant de répondre 500 (Unipile coupe à 30 s). Modifiable en test. */
@@ -145,6 +167,9 @@ export function registerReponsesRoutes(app: Express) {
         storage.getInboxMessages(conv.id),
         lead.prospectionCampaignId ? storage.getProspectionCampaign(lead.prospectionCampaignId) : Promise.resolve(null),
       ]);
+      // Relances : au mieux (une erreur ici ne doit jamais cacher le fil).
+      const relances = await vueRelances(conv, recus, await storage.getUserPreferences(req.userId), depsRelance)
+        .catch((e: any) => { console.error(`[Reponses] relances : ${erreurSure(e)}`); return { parMessage: {} as Record<number, never>, prete: null }; });
       const messages = [
         ...envoyes.filter((m) => m.sentAt).map((m) => ({
           id: `seq-${m.id}`, source: "sequence", sens: "sortant", nature: "nous", canal: m.platform,
@@ -153,6 +178,7 @@ export function registerReponsesRoutes(app: Express) {
         ...recus.map((m) => ({
           id: `inbox-${m.id}`, source: "boite", sens: m.sens, nature: m.nature, canal: conv.channel,
           subject: m.subject, body: m.body, sentAt: m.sentAt,
+          ...(relances.parMessage[m.id] ? { relance: relances.parMessage[m.id] } : {}),
         })),
       ].sort((a, b) => new Date(a.sentAt as any).getTime() - new Date(b.sentAt as any).getTime());
       if (conv.nonLu) await storage.updateInboxConversation(conv.id, { nonLu: false });
@@ -163,6 +189,7 @@ export function registerReponsesRoutes(app: Express) {
           ? { id: campagne.id, name: campagne.name, projectId: campagne.projectId, offer: campagne.offer, messageAngle: campagne.messageAngle }
           : null,
         messages,
+        relancePrete: relances.prete,
       });
     } catch (e: any) {
       console.error(`[Reponses] détail : ${erreurSure(e)}`);
@@ -186,13 +213,82 @@ export function registerReponsesRoutes(app: Express) {
     }
   });
 
+  // ── Relances demandées par le prospect. Valider crée une tâche datée et rédige le message ;
+  // rien n'est jamais envoyé ici (l'envoi reste le clic « Envoyer » du jour venu).
+  const idMessage = (req: any) => { const n = Number(req.params.messageId); return Number.isInteger(n) && n > 0 ? n : null; };
+
+  app.post("/api/reponses/:id/relances/:messageId/valider", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const mid = idMessage(req);
+      if (mid == null) return res.status(400).json({ ok: false, raison: "introuvable" });
+      const date = typeof req.body?.date === "string" ? req.body.date : null;
+      const r = await validerRelance(req.userId, conv.id, mid, date, depsRelance);
+      if (r.ok) return res.json(r);
+      res.status(r.status).json({ ok: false, raison: r.raison });
+    } catch (e: any) {
+      if (e instanceof SignatureClientManquanteError) {
+        return res.status(409).json({ ok: false, raison: "signature_client", message: "Ce projet client n'a pas de signature : renseigne-la dans ses connexions." });
+      }
+      console.error(`[Reponses] relance (validation) : ${erreurSure(e)}`);
+      res.status(500).json({ ok: false, raison: "echec" });
+    }
+  });
+
+  app.post("/api/reponses/:id/relances/:messageId/refuser", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const mid = idMessage(req);
+      if (mid == null) return res.status(400).json({ ok: false, raison: "introuvable" });
+      const r = await refuserRelance(req.userId, conv.id, mid, depsRelance);
+      if (r.ok) return res.json(r);
+      res.status(r.status).json(r);
+    } catch (e: any) {
+      console.error(`[Reponses] relance (refus) : ${erreurSure(e)}`);
+      res.status(500).json({ ok: false, raison: "echec" });
+    }
+  });
+
+  // « Proposer une autre version » de la relance : rédige seulement.
+  app.post("/api/reponses/:id/relances/:messageId/proposition", isAuthenticated, async (req: any, res) => {
+    try {
+      const conv = await conversationDe(req, res);
+      if (!conv) return;
+      const mid = idMessage(req);
+      if (mid == null) return res.status(400).json({ message: "identifiant invalide" });
+      const r = await reformulerRelance(req.userId, conv.id, mid, depsRelance);
+      if (r.ok) return res.json({ texte: r.texte });
+      res.status(r.status).json({ message: "Aucune relance validée pour ce message" });
+    } catch (e: any) {
+      if (e instanceof SignatureClientManquanteError) {
+        return res.status(409).json({ code: e.code, message: "Ce projet client n'a pas de signature : renseigne-la dans ses connexions." });
+      }
+      console.error(`[Reponses] relance (proposition) : ${erreurSure(e)}`);
+      res.status(500).json({ message: "Naya n'a pas pu proposer de relance" });
+    }
+  });
+
   app.post("/api/reponses/:id/envoyer", isAuthenticated, async (req: any, res) => {
     try {
       const conv = await conversationDe(req, res);
       if (!conv) return;
       const texte = typeof req.body?.texte === "string" ? req.body.texte : "";
       const r = await envoyerReponse(conv.id, req.userId, texte, depsEnvoi);
-      if (r.ok) return res.json(r);
+      if (r.ok) {
+        // La relance du jour est faite : sa tâche est cochée (au mieux, le message est parti).
+        try {
+          const fraiche = await storage.getInboxConversationParId(conv.id, req.userId);
+          const vue = fraiche
+            ? await vueRelances(fraiche, await storage.getInboxMessages(conv.id), await storage.getUserPreferences(req.userId), depsRelance)
+            : null;
+          if (vue?.prete) await storage.completeTask(vue.prete.taskId);
+        } catch (e: any) {
+          console.error(`[Reponses] tâche de relance non cochée (conversation ${conv.id}) : ${erreurSure(e)}`);
+        }
+        return res.json(r);
+      }
       res.status(STATUT_REFUS[r.raison] ?? 409).json(r);
     } catch (e: any) {
       console.error(`[Reponses] envoi : ${erreurSure(e)}`);
@@ -230,14 +326,25 @@ export function registerReponsesRoutes(app: Express) {
         return res.status(409).json({ ok: false, raison: "deja_repondu" });
       }
       await storage.requalifierDernierEntrantInbox(conv.id, "accuse");
-      const etat = conv.etatAvantReponse as EtatAvantReponse | null;
+      // Le jsonb peut ne porter que des décisions de relance : seul un `status` est un état d'avant.
+      const etat = estEtatAvant(conv.etatAvantReponse) ? conv.etatAvantReponse : null;
       let restaure = false;
       let raison: string | undefined;
+      // Relances : celle du message requalifié n'a plus d'objet (annulée, tâche retirée) ; une
+      // relance validée sur un AUTRE message garde la séquence à l'arrêt jusqu'à sa date.
+      const requalifie = [...fil].filter((m) => m.sens === "entrant")
+        .sort((a, b) => (t(b) - t(a)) || (b.id - a.id))[0]?.id ?? null;
+      const relancePrevue = await relancesAuRequalifier(conv, requalifie, {
+        getTask: (id) => storage.getTask(id), supprimerTache: (id) => storage.deleteTask(id),
+        ecrire: (cid, mid, d) => storage.ecrireRelanceInbox(cid, mid, d), now: () => new Date(),
+      });
       // Une AUTRE vraie réponse du lead attend encore (après requalification de celle-ci) :
       // la séquence reste arrêtée, et l'état d'avant est gardé pour une restauration future.
       const autre = etat ? await storage.autreReponseEnAttente(conv.leadId, conv.id) : false;
       if (etat && autre) {
         raison = "autre_reponse_en_attente";
+      } else if (etat && relancePrevue) {
+        raison = "relance_prevue";
       } else if (etat) {
         const plan = planRestauration(etat, new Date());
         restaure = !!(await storage.restaurerEtatSequence(conv.leadId, plan.etat, plan.opts));
@@ -258,9 +365,9 @@ export function registerReponsesRoutes(app: Express) {
       }
       // etatAvantReponse effacé une fois consommé : une prochaine vraie réponse sauvegardera
       // l'état du moment. Gardé si la restauration a été différée (autre réponse en attente).
-      await storage.updateInboxConversation(conv.id, {
-        statut: "traitee", nonLu: false, taskId: null, ...(raison ? {} : { etatAvantReponse: null }),
-      });
+      // (Les décisions de relance, rangées dans le même jsonb, sont toujours gardées.)
+      await storage.updateInboxConversation(conv.id, { statut: "traitee", nonLu: false, taskId: null });
+      if (!raison) await storage.effacerEtatAvantReponse(conv.id);
       if (conv.taskId) await storage.deleteTask(conv.taskId);
       res.json({ ok: true, restaure, ...(raison ? { raison } : {}) });
     } catch (e: any) {

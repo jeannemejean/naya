@@ -23,6 +23,7 @@ import type { IStorage } from "../../storage";
 import { listUnipileAccounts, publicIdFromUrl } from "../linkedin";
 import { classerMessage, type Classement } from "./tri";
 import { rattacherLead, normaliserEmail } from "./rattachement";
+import { avecRelances, estEtatAvant } from "./relance-etat";
 
 export interface EvenementNormalise {
   kind: "message" | "mail" | "relation" | "suivi" | "compte";
@@ -135,7 +136,8 @@ export function planEntrant(
     patchConv.nonLu = true;
     let patchState: Partial<LeadSequenceState> | null = null;
     if (state && state.status !== "stopped_replied" && state.status !== "unsubscribed") {
-      if (!conv.etatAvantReponse) {
+      // Le jsonb peut ne porter que des décisions de relance : seul un `status` est un état d'avant.
+      if (!estEtatAvant(conv.etatAvantReponse)) {
         const avant: EtatAvantReponse = {
           status: state.status, currentStep: state.currentStep,
           nextRunAt: state.nextRunAt ? state.nextRunAt.toISOString() : null,
@@ -144,7 +146,7 @@ export function planEntrant(
           repondueLe: evt.sentAt.toISOString(),
         };
         if (!tri.desinscription && stadeApresReponse(stageActuel)) avant.stageAvant = stageActuel || "identified";
-        patchConv.etatAvantReponse = avant;
+        patchConv.etatAvantReponse = avecRelances(conv.etatAvantReponse, avant);
       }
       patchState = { status: tri.desinscription ? "unsubscribed" : "stopped_replied", repliedAt: evt.sentAt, nextRunAt: null };
     } else if (state?.status === "stopped_replied" && tri.desinscription) {

@@ -27,6 +27,11 @@ const storageMock = {
   getTask: vi.fn(),
   completeTask: vi.fn(async () => ({})),
   deleteTask: vi.fn(async () => {}),
+  getUserPreferences: vi.fn(async () => ({ timezone: "Europe/Paris", workDays: "mon,tue,wed,thu,fri" })),
+  effacerEtatAvantReponse: vi.fn(async () => {}),
+  reserverRelanceInbox: vi.fn(async () => true),
+  ecrireRelanceInbox: vi.fn(async () => {}),
+  refuserRelanceInbox: vi.fn(async () => true),
 };
 vi.mock("./storage", () => ({ storage: storageMock }));
 const ingestion = vi.hoisted(() => ({
@@ -43,6 +48,8 @@ const proposition = vi.hoisted(() => ({
   ConversationIntrouvableError: class extends Error {},
 }));
 vi.mock("./services/reponses/proposition", () => proposition);
+const taches = vi.hoisted(() => ({ creerTache: vi.fn() }));
+vi.mock("./services/taches/ecrire-tache", () => taches);
 vi.mock("./auth", () => ({ isAuthenticated: (q: any, _r: any, next: any) => { q.userId = "u1"; next(); } }));
 
 const { registerReponsesRoutes, STADES_ENGAGES, reglagesWebhook } = await import("./routes-reponses");
@@ -214,6 +221,9 @@ describe("boîte « Réponses »", () => {
       ["POST", "/api/reponses/11/envoyer", { texte: "Bonjour" }],
       ["POST", "/api/reponses/11/traitee"],
       ["POST", "/api/reponses/11/pas-une-reponse"],
+      ["POST", "/api/reponses/11/relances/5/valider"],
+      ["POST", "/api/reponses/11/relances/5/refuser"],
+      ["POST", "/api/reponses/11/relances/5/proposition"],
     ];
     for (const [m, p, b] of routes) expect([p, (await appel(m, p, b)).status]).toEqual([p, 404]);
     expect(storageMock.getInboxConversationParId).toHaveBeenCalledWith(11, "u1");
@@ -222,6 +232,9 @@ describe("boîte « Réponses »", () => {
     expect(storageMock.deleteTask).not.toHaveBeenCalled();
     expect(envoi.envoyerReponse).not.toHaveBeenCalled();
     expect(proposition.proposerReponse).not.toHaveBeenCalled();
+    expect(taches.creerTache).not.toHaveBeenCalled();
+    expect(storageMock.reserverRelanceInbox).not.toHaveBeenCalled();
+    expect(storageMock.refuserRelanceInbox).not.toHaveBeenCalled();
   });
 
   it("pas-une-reponse : remet l'état sauvegardé (nextRunAt = max(ancien, now)), traitée, tâche supprimée, entrant requalifié « accuse »", async () => {
@@ -237,7 +250,9 @@ describe("boîte « Réponses »", () => {
     expect(etat.delayAnchorAt).toBe("2026-10-28T08:00:00.000Z");
     expect(new Date(etat.nextRunAt).getTime()).toBeGreaterThanOrEqual(avant); // l'ancien était passé
     expect(storageMock.requalifierDernierEntrantInbox).toHaveBeenCalledWith(11, "accuse");
-    expect(storageMock.updateInboxConversation).toHaveBeenCalledWith(11, { statut: "traitee", nonLu: false, taskId: null, etatAvantReponse: null });
+    expect(storageMock.updateInboxConversation).toHaveBeenCalledWith(11, { statut: "traitee", nonLu: false, taskId: null });
+    // État d'avant consommé (les décisions de relance du même jsonb sont gardées par storage).
+    expect(storageMock.effacerEtatAvantReponse).toHaveBeenCalledWith(11);
     expect(storageMock.deleteTask).toHaveBeenCalledWith(99);
   });
 
@@ -303,7 +318,49 @@ describe("boîte « Réponses »", () => {
     expect(storageMock.updateLead).not.toHaveBeenCalled();
     // État d'avant gardé pour une restauration future.
     expect(storageMock.updateInboxConversation).toHaveBeenCalledWith(11, { statut: "traitee", nonLu: false, taskId: null });
+    expect(storageMock.effacerEtatAvantReponse).not.toHaveBeenCalled();
     expect(storageMock.deleteTask).toHaveBeenCalledWith(99);
+  });
+
+  it("pas-une-reponse : une relance validée sur un AUTRE message attend → séquence NON restaurée (relance_prevue)", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: {
+      status: "active", currentStep: 2, nextRunAt: null, delayAnchorAt: null,
+      relances: { "4": { statut: "validee", le: "x", taskId: 300 } },
+    } }));
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { id: 4, sens: "entrant", nature: "reponse", sentAt: new Date("2026-11-01T09:00:00Z") },
+      { id: 5, sens: "entrant", nature: "reponse", sentAt: new Date("2026-11-02T09:00:00Z") },
+    ]);
+    storageMock.getTask.mockImplementation(async (id: number) => (id === 300 ? { id: 300, completed: false } : undefined));
+    const r = await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect(await r.json()).toEqual({ ok: true, restaure: false, raison: "relance_prevue" });
+    expect(storageMock.restaurerEtatSequence).not.toHaveBeenCalled();
+    expect(storageMock.deleteTask).not.toHaveBeenCalledWith(300);
+    expect(storageMock.effacerEtatAvantReponse).not.toHaveBeenCalled();
+    storageMock.getTask.mockReset();
+  });
+
+  it("pas-une-reponse : la relance du message requalifié est annulée, sa tâche retirée, la séquence reprend", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: {
+      status: "active", currentStep: 2, nextRunAt: null, delayAnchorAt: null,
+      relances: { "5": { statut: "validee", le: "x", taskId: 300 } },
+    } }));
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { id: 5, sens: "entrant", nature: "reponse", sentAt: new Date("2026-11-02T09:00:00Z") },
+    ]);
+    storageMock.getTask.mockImplementation(async (id: number) => (id === 300 ? { id: 300, completed: false } : undefined));
+    const r = await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect(await r.json()).toEqual({ ok: true, restaure: true });
+    expect(storageMock.deleteTask).toHaveBeenCalledWith(300);
+    expect(storageMock.ecrireRelanceInbox).toHaveBeenCalledWith(11, 5, expect.objectContaining({ statut: "annulee" }));
+    storageMock.getTask.mockReset();
+  });
+
+  it("pas-une-reponse : un jsonb qui ne porte que des relances n'est pas un état à restaurer", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: { relances: { "9": { statut: "refusee", le: "x" } } } }));
+    const r = await appel("POST", "/api/reponses/11/pas-une-reponse");
+    expect(await r.json()).toEqual({ ok: true, restaure: false });
+    expect(storageMock.restaurerEtatSequence).not.toHaveBeenCalled();
   });
 
   it("pas-une-reponse : autre conversation « à traiter » ou autre entrant « reponse » → même refus de restaurer (storage décide)", async () => {
@@ -380,6 +437,73 @@ describe("boîte « Réponses »", () => {
     const r = await appel("POST", "/api/reponses/11/envoyer", { texte: "Bonjour" });
     expect(r.status).toBe(409);
     expect(await r.json()).toEqual({ ok: false, raison: "compte_restreint" });
+  });
+
+  it("détail : la proposition de relance lue dans la réponse, rien de prêt avant la date", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: null }));
+    storageMock.getLead.mockResolvedValueOnce({ id: 7, name: "Marc", prospectionCampaignId: null });
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { id: 5, sens: "entrant", nature: "reponse", subject: null, body: "Pas maintenant. Revenez vers moi dans 3 mois.", sentAt: new Date() },
+    ]);
+    const j = await (await appel("GET", "/api/reponses/11")).json();
+    expect(j.messages[0].relance).toMatchObject({ statut: "proposee" });
+    expect(j.messages[0].relance.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(j.relancePrete).toBeNull();
+    expect(taches.creerTache).not.toHaveBeenCalled(); // une proposition ne crée rien
+  });
+
+  it("relance valider : tâche créée avec le brouillon rédigé, jamais d'envoi", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: null }));
+    storageMock.getInboxMessages.mockResolvedValue([
+      { id: 5, sens: "entrant", nature: "reponse", subject: null, body: "Revenez vers moi dans 3 mois.", sentAt: new Date() },
+    ]);
+    storageMock.getLead.mockResolvedValue({ id: 7, name: "Marc Dupont", company: "Acme", projectId: null });
+    storageMock.getLeadSequenceState.mockResolvedValue({ status: "stopped_replied" });
+    proposition.proposerReponse.mockResolvedValueOnce("Bonjour Marc,\n\nVous m'aviez dit de revenir vers vous.");
+    taches.creerTache.mockImplementation(async (_u: string, d: any) => ({ ok: true, tache: { id: 300, ...d } }));
+    const r = await appel("POST", "/api/reponses/11/relances/5/valider", {});
+    expect(r.status).toBe(200);
+    const j = await r.json();
+    expect(j).toMatchObject({ ok: true, taskId: 300 });
+    const [userId, donnees] = taches.creerTache.mock.calls[0] as any;
+    expect(userId).toBe("u1");
+    expect(donnees).toMatchObject({ title: "Relancer Marc (Acme)", source: "relance_prospect", leadId: 7, scheduledDate: j.date });
+    expect(donnees.actionData.relance.texte).toContain("revenir vers vous");
+    expect(proposition.proposerReponse).toHaveBeenCalledWith("u1", 11, undefined, expect.objectContaining({ date: j.date }));
+    expect(storageMock.reserverRelanceInbox).toHaveBeenCalledWith(11, 5, expect.any(Date));
+    expect(storageMock.ecrireRelanceInbox).toHaveBeenCalledWith(11, 5, expect.objectContaining({ statut: "validee", taskId: 300 }));
+    expect(storageMock.updateLeadSequenceState).not.toHaveBeenCalled(); // déjà arrêtée
+    expect(envoi.envoyerReponse).not.toHaveBeenCalled();
+    storageMock.getInboxMessages.mockReset();
+    storageMock.getInboxMessages.mockResolvedValue([]);
+    storageMock.getLead.mockReset();
+    taches.creerTache.mockReset();
+  });
+
+  it("relance refuser : « Non merci » persiste la décision", async () => {
+    storageMock.getInboxConversationParId.mockResolvedValue(conv());
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { id: 5, sens: "entrant", nature: "reponse", subject: null, body: "Revenez vers moi en septembre.", sentAt: new Date() },
+    ]);
+    const r = await appel("POST", "/api/reponses/11/relances/5/refuser");
+    expect(await r.json()).toEqual({ ok: true });
+    expect(storageMock.refuserRelanceInbox).toHaveBeenCalledWith(11, 5, expect.any(Date));
+    expect(envoi.envoyerReponse).not.toHaveBeenCalled();
+  });
+
+  it("envoyer : le jour de la relance, sa tâche est cochée après l'envoi", async () => {
+    const hier = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    storageMock.getInboxConversationParId.mockResolvedValue(conv({ etatAvantReponse: { relances: { "5": { statut: "validee", le: "x", taskId: 300 } } } }));
+    storageMock.getInboxMessages.mockResolvedValueOnce([
+      { id: 5, sens: "entrant", nature: "reponse", subject: null, body: "Revenez vers moi en septembre.", sentAt: new Date("2026-01-05T09:00:00Z") },
+    ]);
+    storageMock.getTask.mockImplementation(async (id: number) => (id === 300
+      ? { id: 300, completed: false, archivedAt: null, scheduledDate: hier, actionData: { relance: { texte: "Bonjour Marc," } } }
+      : undefined));
+    envoi.envoyerReponse.mockResolvedValueOnce({ ok: true });
+    expect((await appel("POST", "/api/reponses/11/envoyer", { texte: "Bonjour Marc," })).status).toBe(200);
+    expect(storageMock.completeTask).toHaveBeenCalledWith(300);
+    storageMock.getTask.mockReset();
   });
 
   it("proposition : renvoie le texte proposé", async () => {

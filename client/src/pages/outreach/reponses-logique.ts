@@ -29,6 +29,36 @@ export interface MessageFil {
   subject?: string | null;
   body: string | null;
   sentAt: string | Date;
+  /** Relance lue dans cette réponse (proposition, ou déjà validée). */
+  relance?: VueRelanceClient;
+}
+
+export type VueRelanceClient =
+  | { statut: "proposee"; date: string }
+  | { statut: "en_cours"; date: string | null }
+  | { statut: "validee"; date: string | null; taskId: number; faite: boolean };
+
+/** Identifiant numérique d'un message de la boîte (« inbox-42 » → 42), ou null. */
+export function idMessageBoite(id: string): number | null {
+  const m = /^inbox-(\d+)$/.exec(id);
+  return m ? Number(m[1]) : null;
+}
+
+/** « lundi 4 janvier » (+ l'année si ce n'est pas celle de `now`), pour une date AAAA-MM-JJ. */
+export function jourLisible(date: string | null | undefined, locale: string, now: Date = new Date()): string {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+  const d = new Date(`${date}T12:00:00Z`);
+  const annee = d.getUTCFullYear() !== now.getFullYear();
+  return d.toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", ...(annee ? { year: "numeric" } : {}), timeZone: "UTC" });
+}
+
+/** Prénom (premier mot du nom). */
+export const prenom = (nom: string | null | undefined) => (nom ?? "").trim().split(/\s+/)[0] || "";
+
+/** Clé i18n d'un refus de validation de relance ; inconnue → « echec ». */
+export function cleErreurRelance(raison: unknown): string {
+  const connues = ["date_passee", "jour_non_travaille", "date_invalide", "pas_de_date", "refusee", "en_cours", "signature_client", "introuvable"];
+  return `outreach.reponses.relance.erreurs.${typeof raison === "string" && connues.includes(raison) ? raison : "echec"}`;
 }
 
 export type TypeBulle = "entrant" | "sortant" | "en_attente" | "discret";

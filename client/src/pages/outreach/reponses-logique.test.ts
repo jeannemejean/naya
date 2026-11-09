@@ -122,3 +122,23 @@ describe("campagnes dans la boîte", () => {
     }
   });
 });
+
+describe("relances (logique d'affichage)", () => {
+  it("identifiant d'un message de la boîte, jamais d'un message de séquence", async () => {
+    const { idMessageBoite } = await import("./reponses-logique");
+    expect(idMessageBoite("inbox-42")).toBe(42);
+    expect(idMessageBoite("seq-42")).toBeNull();
+  });
+  it("jour lisible, avec l'année seulement si elle change", async () => {
+    const { jourLisible } = await import("./reponses-logique");
+    expect(jourLisible("2027-01-04", "fr-FR", new Date("2026-11-09T09:00:00Z"))).toBe("lundi 4 janvier 2027");
+    expect(jourLisible("2026-12-01", "fr-FR", new Date("2026-11-09T09:00:00Z"))).toBe("mardi 1 décembre");
+    expect(jourLisible(null, "fr-FR")).toBe("");
+  });
+  it("clé d'erreur connue, sinon « echec »", async () => {
+    const { cleErreurRelance, prenom } = await import("./reponses-logique");
+    expect(cleErreurRelance("date_passee")).toBe("outreach.reponses.relance.erreurs.date_passee");
+    expect(cleErreurRelance("n_importe_quoi")).toBe("outreach.reponses.relance.erreurs.echec");
+    expect(prenom("Claire Martin")).toBe("Claire");
+  });
+});

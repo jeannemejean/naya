@@ -224,6 +224,7 @@ import { extraitDe } from "@shared/citation";
 import { estLeadTest, TAG_LEAD_TEST } from "./services/prospection-mode-test";
 import { sansDeconnexion } from "./services/connexions/unipile";
 import type { PlanEntrant } from "./services/reponses/ingestion";
+import { RESERVATION_RELANCE_MS, type DecisionRelance } from "./services/reponses/relance-etat";
 import { ETAPE_EN_ATTENTE_DE_VALIDATION, ETAPE_PREMIER_CONTACT } from "./services/prospection-validation";
 import { memeEntreprise } from "./services/prospection-entreprises";
 import { assembleConversionsWithCredits } from "./services/attribution/credits-view";
@@ -824,6 +825,19 @@ export interface IStorage {
   supprimerInboxMessage(providerMessageId: string): Promise<void>;
   /** Une AUTRE réponse du lead attend : autre conversation à traiter, ou un entrant « reponse » (n'importe laquelle de ses conversations). */
   autreReponseEnAttente(leadId: number, conversationId: number): Promise<boolean>;
+  /**
+   * Relances (decisions dans etat_avant_reponse.relances, voir relance-etat.ts) — écritures
+   * atomiques, la clé de l'état d'avant n'est jamais touchée.
+   * Réserve la validation du message (`en_cours`) : false si une décision existe déjà
+   * (sauf une réservation abandonnée de plus de 5 min).
+   */
+  reserverRelanceInbox(conversationId: number, messageId: number, now: Date): Promise<boolean>;
+  /** Pose (ou retire, avec null) la décision de relance d'un message, sans condition. */
+  ecrireRelanceInbox(conversationId: number, messageId: number, decision: DecisionRelance | null): Promise<void>;
+  /** « Non merci » : false si la relance est déjà validée ou en cours de validation. */
+  refuserRelanceInbox(conversationId: number, messageId: number, now: Date): Promise<boolean>;
+  /** État d'avant consommé : ne garde du jsonb que les décisions de relance (null s'il n'y en a pas). */
+  effacerEtatAvantReponse(conversationId: number): Promise<void>;
   deleteLinkedInDraftsForLead(leadId: number, userId: string): Promise<number>;
   marquerSuiviEmail(userId: string, leadId: number, step: number, champ: "openedAt" | "clickedAt", at: Date): Promise<void>;
   /**
@@ -3707,6 +3721,56 @@ export class DatabaseStorage implements IStorage {
 
   async supprimerInboxMessage(providerMessageId: string): Promise<void> {
     await db.delete(inboxMessages).where(eq(inboxMessages.providerMessageId, providerMessageId));
+  }
+
+  /** `etat_avant_reponse` avec la décision `k` remplacée par `valeur` (jsonb) ou retirée (null). */
+  private fusionRelance(k: string, valeur: string | null) {
+    const col = inboxConversations.etatAvantReponse;
+    const relances = valeur == null
+      ? sql`coalesce(${col}->'relances', '{}'::jsonb) - ${k}::text`
+      : sql`coalesce(${col}->'relances', '{}'::jsonb) || jsonb_build_object(${k}::text, ${valeur}::jsonb)`;
+    return sql`coalesce(${col}, '{}'::jsonb) || jsonb_build_object('relances', ${relances})`;
+  }
+
+  async reserverRelanceInbox(conversationId: number, messageId: number, now: Date): Promise<boolean> {
+    const k = String(messageId);
+    const col = inboxConversations.etatAvantReponse;
+    const abandon = new Date(now.getTime() - RESERVATION_RELANCE_MS).toISOString();
+    const res = await db.update(inboxConversations)
+      .set({ etatAvantReponse: this.fusionRelance(k, JSON.stringify({ statut: "en_cours", le: now.toISOString() })) as any })
+      .where(and(
+        eq(inboxConversations.id, conversationId),
+        sql`(${col}->'relances'->${k}::text is null
+          or (${col}->'relances'->${k}::text->>'statut' = 'en_cours' and ${col}->'relances'->${k}::text->>'le' < ${abandon}))`,
+      ))
+      .returning({ id: inboxConversations.id });
+    return res.length > 0;
+  }
+
+  async ecrireRelanceInbox(conversationId: number, messageId: number, decision: DecisionRelance | null): Promise<void> {
+    await db.update(inboxConversations)
+      .set({ etatAvantReponse: this.fusionRelance(String(messageId), decision ? JSON.stringify(decision) : null) as any })
+      .where(eq(inboxConversations.id, conversationId));
+  }
+
+  async refuserRelanceInbox(conversationId: number, messageId: number, now: Date): Promise<boolean> {
+    const k = String(messageId);
+    const col = inboxConversations.etatAvantReponse;
+    const res = await db.update(inboxConversations)
+      .set({ etatAvantReponse: this.fusionRelance(k, JSON.stringify({ statut: "refusee", le: now.toISOString() })) as any })
+      .where(and(
+        eq(inboxConversations.id, conversationId),
+        sql`coalesce(${col}->'relances'->${k}::text->>'statut', '') not in ('validee', 'en_cours')`,
+      ))
+      .returning({ id: inboxConversations.id });
+    return res.length > 0;
+  }
+
+  async effacerEtatAvantReponse(conversationId: number): Promise<void> {
+    const col = inboxConversations.etatAvantReponse;
+    await db.update(inboxConversations)
+      .set({ etatAvantReponse: sql`case when (${col}->'relances') is not null then jsonb_build_object('relances', ${col}->'relances') else null end` as any })
+      .where(eq(inboxConversations.id, conversationId));
   }
 
   async autreReponseEnAttente(leadId: number, conversationId: number): Promise<boolean> {

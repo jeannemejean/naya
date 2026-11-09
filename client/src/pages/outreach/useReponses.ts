@@ -15,6 +15,8 @@ export interface ConversationDetail {
   lead: Lead;
   campagne: { id: number; name: string; projectId: number | null; offer?: string | null; messageAngle?: string | null } | null;
   messages: MessageFil[];
+  /** Relance validée dont le jour est arrivé : son brouillon, à reprendre dans « Ta réponse ». */
+  relancePrete?: { taskId: number; messageId: number; date: string; texte: string } | null;
 }
 export type ResultatEnvoiClient = { ok: true } | { ok: false; raison: string };
 
@@ -69,4 +71,41 @@ export const usePasUneReponse = (id: number) =>
       return corps;
     },
     onSettled: () => { invalider(); queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }); },
+  });
+
+// ── Relances demandées par le prospect (« revenez vers moi en septembre »). Valider crée une
+// tâche datée avec le message déjà rédigé ; rien n'est jamais envoyé sans « Envoyer ».
+
+export type ResultatRelance = { ok: true; taskId: number; date: string; deja?: boolean } | { ok: false; raison: string };
+
+const postJson = async (url: string, corps?: unknown) => {
+  const res = await fetch(url, {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corps ?? {}),
+  });
+  const json = await res.json().catch(() => null);
+  return { res, json };
+};
+
+export const useValiderRelance = (id: number) =>
+  useMutation<ResultatRelance, Error, { messageId: number; date?: string }>({
+    mutationFn: async ({ messageId, date }) => {
+      const { res, json } = await postJson(`/api/reponses/${id}/relances/${messageId}/valider`, date ? { date } : {});
+      if (json && typeof json.ok === "boolean") return json as ResultatRelance;
+      return { ok: false, raison: res.status === 404 ? "introuvable" : "echec" };
+    },
+    onSettled: () => { invalider(); queryClient.invalidateQueries({ queryKey: ["/api/tasks"] }); },
+  });
+
+export const useRefuserRelance = (id: number) =>
+  useMutation<{ ok: boolean; raison?: string }, Error, number>({
+    mutationFn: async (messageId) => {
+      const { json } = await postJson(`/api/reponses/${id}/relances/${messageId}/refuser`);
+      return json && typeof json.ok === "boolean" ? json : { ok: false, raison: "echec" };
+    },
+    onSettled: invalider,
+  });
+
+export const useReformulerRelance = (id: number) =>
+  useMutation<{ texte: string }, Error, number>({
+    mutationFn: async (messageId) => (await apiRequest("POST", `/api/reponses/${id}/relances/${messageId}/proposition`)).json(),
   });

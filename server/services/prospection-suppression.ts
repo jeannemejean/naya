@@ -16,7 +16,8 @@
  *     lead_sequence_state       — état dans la séquence
  *     prospection_message_feedback — corrections de rédaction SUR CE prospect (elles nourrissent
  *                                 les exemples injectés dans les prompts : le texte cite la personne)
- *     tasks (source = 'reponse_prospect') — « Répondre à X » : sans objet une fois X supprimé
+ *     tasks (source = 'reponse_prospect' | 'relance_prospect') — « Répondre à X », « Relancer X » :
+ *                                 sans objet une fois X supprimé (la relance porte un brouillon qui le cite)
  *     leads                     — la fiche, en dernier
  *
  *   DÉTACHÉ (lead_id → NULL : la ligne sert à autre chose qu'à ce prospect)
@@ -48,6 +49,7 @@ import {
 } from "@shared/schema";
 import type { DbExecutor } from "../db";
 import { clesPersonne } from "./reponses/rattachement";
+import { SOURCE_TACHE_RELANCE } from "./reponses/relance-etat";
 
 /** Une réservation `claimed` plus récente que ça = un envoi en cours chez le fournisseur. */
 export const RESERVATION_EN_COURS_MS = 15 * 60 * 1000;
@@ -57,6 +59,8 @@ export const DUREE_PIERRE_TOMBALE_MS = 90 * 86_400_000;
 export const FENETRE_ENVOIS_PLAFOND_MS = 7 * 86_400_000;
 /** Source des tâches « Répondre à X » créées par la réception des réponses. */
 export const SOURCE_TACHE_REPONSE = "reponse_prospect";
+/** Sources des tâches liées au prospect, supprimées avec lui (« Répondre à X », « Relancer X »). */
+export const SOURCES_TACHES_PROSPECT = [SOURCE_TACHE_REPONSE, SOURCE_TACHE_RELANCE] as const;
 
 export type RaisonRefus = "introuvable" | "envoi_en_cours" | "erreur";
 export type IssueSuppression =
@@ -197,7 +201,7 @@ export async function supprimerLeadDansTransaction(
   await tx.delete(leadSequenceState).where(eq(leadSequenceState.leadId, leadId));
   await tx.delete(prospectionMessageFeedback).where(eq(prospectionMessageFeedback.leadId, leadId));
   const tachesReponse = (await tx.select({ id: tasks.id }).from(tasks)
-    .where(and(eq(tasks.leadId, leadId), eq(tasks.source, SOURCE_TACHE_REPONSE)))).map((t) => t.id);
+    .where(and(eq(tasks.leadId, leadId), inArray(tasks.source, [...SOURCES_TACHES_PROSPECT])))).map((t) => t.id);
   if (tachesReponse.length) {
     await opts.clearTaskReferences(tx, tachesReponse);
     await tx.delete(tasks).where(inArray(tasks.id, tachesReponse));

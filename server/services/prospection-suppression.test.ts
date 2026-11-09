@@ -116,9 +116,11 @@ describe("supprimerLeadDansTransaction — cascade", () => {
     // Feedback : supprimé (il nourrit les exemples des prompts), plus détaché.
     expect(deletes.find((d) => d.table === "prospection_message_feedback")!.params).toEqual([7]);
 
-    // Tâches : « Répondre à X » supprimées (références nettoyées d'abord), les autres détachées.
+    // Tâches : « Répondre à X » et « Relancer X » supprimées (références nettoyées d'abord),
+    // les autres détachées.
     const selTaches = ops.filter((x) => x.op === "select" && x.table === "tasks")[0];
-    expect(selTaches.params).toEqual([7, "reponse_prospect"]);
+    expect(selTaches.params).toEqual([7, "reponse_prospect", "relance_prospect"]);
+    expect(selTaches.sql).toContain(`"tasks"."source" in ($2, $3)`);
     expect(o.clearTaskReferences).toHaveBeenCalledWith(tx, [55]);
     expect(deletes.find((d) => d.table === "tasks")!.params).toEqual([55]);
     expect(updates.find((u) => u.table === "tasks")!.set).toEqual({ leadId: null });
