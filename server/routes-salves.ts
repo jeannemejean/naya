@@ -8,7 +8,7 @@ import { estLeadTest } from "./services/prospection-mode-test";
 import { memeEntreprise } from "./services/prospection-entreprises";
 import { hhmmToMin, localNow } from "./services/prospection-sender";
 import {
-  bilanDeSalve, choisirProspects, lancerSalve, planifierSalve,
+  bilanDeSalve, choisirProspects, lancerSalve, lireIdsDeSalve, planifierSalve,
   RAISON_SALVE_ARRETEE, SALVE_NOMBRE_MAX, SALVE_PAR_JOUR_MAX,
 } from "./services/prospection-salves";
 
@@ -41,14 +41,16 @@ export function registerSalvesRoutes(app: Express) {
     if (!campagne) return res.status(404).json({ message: "not_found" });
     const nombre = entierEntre(req.body?.nombre, 1, SALVE_NOMBRE_MAX);
     const parJour = entierEntre(req.body?.parJour, 1, SALVE_PAR_JOUR_MAX);
-    if (!nombre || !parJour) return res.status(400).json({ message: "salve_invalide" });
+    // Facultatif : la sélection « Ajouter à la séquence » au-delà de ENROLEMENT_DIRECT_MAX.
+    const ids = lireIdsDeSalve(req.body?.leadIds);
+    if (!nombre || !parJour || ids === null) return res.status(400).json({ message: "salve_invalide" });
     if (campagne.status !== "active") return res.status(409).json({ message: "campagne_inactive" });
     if ((await storage.getSequenceSteps(campagne.id)).length === 0) return res.status(400).json({ message: "no_sequence_defined" });
 
     const leads = (await storage.getLeads(req.userId)).filter((l) => l.prospectionCampaignId === campagne.id);
     const ontRepondu = await storage.prospectsAyantRepondu(req.userId, campagne.projectId ?? null);
     const prospects = await choisirProspects({
-      leads, nombre,
+      leads, nombre, ids,
       getState: (id) => storage.getLeadSequenceState(id),
       exclure: (l) => estLeadTest(l) || ontRepondu.some((r) => memeEntreprise(l, r)),
     });

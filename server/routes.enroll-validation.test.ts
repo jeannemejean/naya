@@ -418,3 +418,41 @@ describe("les données restent justes après une action manuelle", () => {
     expect(storageMock.suspendreSequence).toHaveBeenCalledWith(LEAD_ID, RAISON_PROSPECT_DEPLACE);
   });
 });
+
+describe("« Ajouter la sélection à la séquence » : plus de rafale", () => {
+  let server: http.Server;
+  let port: number;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ server, port } = await startServer());
+    storageMock.getProspectionCampaign.mockResolvedValue({ id: CAMPAGNE, userId: "user-1", status: "active" });
+    storageMock.getSequenceSteps.mockResolvedValue([{ id: 1 }]);
+    storageMock.getLeads.mockResolvedValue(
+      [1, 2, 3, 4, 5, 6].map((id) => prospect({ id, validatedAt: new Date("2026-10-01") })),
+    );
+    storageMock.getLeadSequenceState.mockResolvedValue(undefined);
+    storageMock.enrollLead.mockResolvedValue({ id: 1 });
+  });
+
+  afterAll(() => { server?.close(); });
+
+  const ajouter = (leadIds: number[]) => fetch(`http://127.0.0.1:${port}/api/prospection/campaigns/${CAMPAGNE}/enroll`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadIds }),
+  });
+
+  it("6 prospects : 409, renvoi vers une salve, personne n'est enrôlé", async () => {
+    const res = await ajouter([1, 2, 3, 4, 5, 6]);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ message: "lancement_par_salve", max: 5 });
+    expect(storageMock.enrollLead).not.toHaveBeenCalled();
+    expect(storageMock.getLeads).not.toHaveBeenCalled();
+  });
+
+  it("5 prospects : ajout direct, comme avant", async () => {
+    const res = await ajouter([1, 2, 3, 4, 5]);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ enrolled: 5 });
+    expect(storageMock.enrollLead).toHaveBeenCalledTimes(5);
+  });
+});

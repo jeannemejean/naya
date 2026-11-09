@@ -93,6 +93,26 @@ describe("routes des salves", () => {
     expect(s.enrollLead.mock.calls.map((c: any[]) => c[0])).toEqual([2]);
   });
 
+  it("avec une sélection explicite, ne prend que ces prospects et saute ceux qui ne sont pas prêts", async () => {
+    s.getLeads.mockResolvedValue([
+      prospect(1), prospect(2), prospect(3, { validatedAt: null }), prospect(4), prospect(9, { prospectionCampaignId: 6 }),
+    ]);
+    const res = await lancer({ nombre: 4, parJour: 5, leadIds: [2, 3, 4, 9] });
+    const r = await res.json();
+    expect(res.status).toBe(200);
+    // 1 n'est pas sélectionné, 3 n'est pas validé, 9 est d'une autre campagne.
+    expect(s.enrollLead.mock.calls.map((c: any[]) => c[0])).toEqual([2, 4]);
+    expect(r).toMatchObject({ programmes: 2 });
+  });
+
+  it("refuse une sélection illisible ou trop longue, sans rien créer", async () => {
+    const trop = Array.from({ length: 101 }, (_, i) => i + 1);
+    for (const leadIds of [[], ["x"], [0], [-2], trop, "1,2"]) {
+      expect((await lancer({ nombre: 5, parJour: 5, leadIds })).status, JSON.stringify(leadIds).slice(0, 40)).toBe(400);
+    }
+    expect(s.creerSalve).not.toHaveBeenCalled();
+  });
+
   it("refuse une demande illisible, sans rien créer", async () => {
     for (const corps of [{ nombre: 0, parJour: 5 }, { nombre: 20, parJour: 0 }, { nombre: 1000, parJour: 5 }, { nombre: "x", parJour: 5 }, {}]) {
       expect((await lancer(corps)).status, JSON.stringify(corps)).toBe(400);

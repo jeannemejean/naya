@@ -24,12 +24,34 @@ export function dateCourte(iso: string, langue: string): string {
 /** Plafond du serveur (`SALVE_NOMBRE_MAX`, server/services/prospection-salves.ts). */
 export const SALVE_NOMBRE_MAX = 100;
 
+/** Plafond du serveur (`ENROLEMENT_DIRECT_MAX`) : au-delà, « Ajouter la sélection » passe par une salve. */
+export const ENROLEMENT_DIRECT_MAX = 5;
+
+type ProspectCompte = Pick<ProspectValidable, 'id' | 'stage' | 'validatedAt' | 'archivedAt'> & { tags?: string[] | null };
+type EnSequence = { has: (id: number) => boolean };
+
+const estPretPourSalve = (l: ProspectCompte, dejaEnSequence: EnSequence) =>
+  estPretAPartir(l) && !estLeadTest(l) && !dejaEnSequence.has(l.id);
+
 /** Ce qu'une salve peut prendre : validés, jamais entrés en séquence, hors prospects test. */
-export function compterPrets(
-  prospects: (Pick<ProspectValidable, 'id' | 'stage' | 'validatedAt' | 'archivedAt'> & { tags?: string[] | null })[],
-  dejaEnSequence: { has: (id: number) => boolean },
-): number {
-  return prospects.filter((l) => estPretAPartir(l) && !estLeadTest(l) && !dejaEnSequence.has(l.id)).length;
+export function compterPrets(prospects: ProspectCompte[], dejaEnSequence: EnSequence): number {
+  return prospects.filter((l) => estPretPourSalve(l, dejaEnSequence)).length;
+}
+
+export type AjoutSelection = { mode: 'direct' } | { mode: 'salve'; idsPrets: number[] };
+
+/**
+ * « Ajouter la sélection à la séquence » : jusqu'à 5 prospects, ajout direct ; au-delà, une salve
+ * prend exactement les prospects prêts de la sélection (au plus SALVE_NOMBRE_MAX, comme le serveur).
+ */
+export function ajoutSelection(selection: number[], prospects: ProspectCompte[], dejaEnSequence: EnSequence): AjoutSelection {
+  const choisis = new Set(selection);
+  if (choisis.size <= ENROLEMENT_DIRECT_MAX) return { mode: 'direct' };
+  const idsPrets = prospects
+    .filter((l) => choisis.has(l.id) && estPretPourSalve(l, dejaEnSequence))
+    .map((l) => l.id)
+    .slice(0, SALVE_NOMBRE_MAX);
+  return { mode: 'salve', idsPrets };
 }
 
 /** « Lancer en salve » : la salve proposée prend tous les prêts, dans la limite du serveur. */

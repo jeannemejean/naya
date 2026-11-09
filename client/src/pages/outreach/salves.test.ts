@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compterPrets, joursNecessaires, nombreBorne, nombrePrerempli, raisonSalveImpossible, SALVE_NOMBRE_MAX } from './salves';
+import { ajoutSelection, ENROLEMENT_DIRECT_MAX, compterPrets, joursNecessaires, nombreBorne, nombrePrerempli, raisonSalveImpossible, SALVE_NOMBRE_MAX } from './salves';
 import { TAG_LEAD_TEST } from '@shared/mode-test';
 
 describe('nombreBorne', () => {
@@ -60,5 +60,33 @@ describe('« Lancer en salve »', () => {
     expect(raisonSalveImpossible({ hasSequence: true, prets: 0 })).toBe('aucunPret');
     expect(raisonSalveImpossible({ hasSequence: false, prets: 12 })).toBe('sansSequence');
     expect(raisonSalveImpossible({ hasSequence: true, prets: 3 })).toBeNull();
+  });
+});
+
+describe('« Ajouter la sélection à la séquence »', () => {
+  const valide = '2026-10-01T10:00:00Z';
+  const p = (id: number, over: Record<string, unknown> = {}) =>
+    ({ id, stage: 'messages_ready', validatedAt: valide, archivedAt: null, tags: [], ...over });
+  const prospects = [p(1), p(2), p(3, { validatedAt: null }), p(4), p(5), p(6), p(7), p(8)];
+
+  it('5 prospects ou moins : ajout direct', () => {
+    expect(ENROLEMENT_DIRECT_MAX).toBe(5);
+    expect(ajoutSelection([1, 2, 3, 4, 5], prospects, new Set())).toEqual({ mode: 'direct' });
+  });
+
+  it('plus de 5 : une salve avec exactement les prospects prêts de la sélection', () => {
+    // 3 n'est pas validé, 4 est déjà en séquence, 8 n'est pas sélectionné.
+    expect(ajoutSelection([1, 2, 3, 4, 5, 6], prospects, new Set([4]))).toEqual({ mode: 'salve', idsPrets: [1, 2, 5, 6] });
+  });
+
+  it('plus de 5 dont aucun prêt : salve vide, rien ne part', () => {
+    const pasPrets = [1, 2, 3, 4, 5, 6].map((id) => p(id, { validatedAt: null }));
+    expect(ajoutSelection([1, 2, 3, 4, 5, 6], pasPrets, new Set())).toEqual({ mode: 'salve', idsPrets: [] });
+  });
+
+  it('jamais plus de 100 ids, comme le serveur', () => {
+    const beaucoup = Array.from({ length: 150 }, (_, i) => p(i + 1));
+    const r = ajoutSelection(beaucoup.map((l) => l.id), beaucoup, new Set());
+    expect(r.mode === 'salve' && r.idsPrets.length).toBe(100);
   });
 });

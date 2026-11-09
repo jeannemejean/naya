@@ -37,8 +37,8 @@ import type { Lead } from '@shared/schema';
 import { resumeEnrolement } from './enrolement-message';
 import ValidationPanel from './ValidationPanel';
 import LinkedInAEnvoyer from './LinkedInAEnvoyer';
-import SalvesPanel, { BoutonLancerEnSalve } from './SalvesPanel';
-import { compterPrets } from './salves';
+import SalvesPanel, { BoutonLancerEnSalve, FenetreSalve } from './SalvesPanel';
+import { ajoutSelection, compterPrets } from './salves';
 import { attendValidation, estPretAPartir, prospectsAValider } from './validation-messages';
 import { estLeadTest } from './mode-test';
 
@@ -75,6 +75,8 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
   const [leadFinderOpen, setLeadFinderOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmPurgeOpen, setConfirmPurgeOpen] = useState(false);
+  // Sélection de plus de 5 prospects : ses prospects prêts, proposés dans une salve.
+  const [salveSelection, setSalveSelection] = useState<number[] | null>(null);
 
   const bulkEnroll = useBulkEnroll(campaignId);
   const unenrollLead = useUnenrollLead(campaignId);
@@ -117,6 +119,16 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
   const selectedEnrolledIds = selectedList.filter((id) => statusByLead.has(id));
 
   const handleBulkEnroll = () => {
+    // Au-delà de 5 prospects, jamais de rafale : la sélection passe par une salve.
+    const ajout = ajoutSelection(selectedList, prospects as any[], statusByLead);
+    if (ajout.mode === 'salve') {
+      if (ajout.idsPrets.length === 0) {
+        toast({ title: t('outreach.salves.selectionTitre'), description: t('outreach.salves.selectionVide') });
+      } else {
+        setSalveSelection(ajout.idsPrets);
+      }
+      return;
+    }
     bulkEnroll.mutate(selectedList, {
       onSuccess: (res) => {
         clearSelection();
@@ -243,6 +255,16 @@ export default function ProspectsTab({ campaignId }: ProspectsTabProps) {
           </button>
         </div>
       )}
+
+      <FenetreSalve
+        ouvert={salveSelection !== null}
+        onOuvertChange={(ouvert) => { if (!ouvert) setSalveSelection(null); }}
+        campaignId={campaignId}
+        prets={salveSelection?.length ?? 0}
+        hasSequence={hasSequence}
+        leadIds={salveSelection ?? undefined}
+        onLancee={clearSelection}
+      />
 
       <SupprimerProspectsDialog
         ids={selectedList}

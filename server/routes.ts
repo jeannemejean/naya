@@ -98,6 +98,7 @@ import { taskPreGenerationService } from "./services/task-pre-generation";
 import { NAYA_SYSTEM_VOICE } from "./naya-voice";
 import { destinationPourTache } from "./services/task-destination";
 import { doitReprendreApresValidation, peutEtreContacte, peutReprendreSequence, RAISON_SANS_SUITE } from "./services/prospection-validation";
+import { ENROLEMENT_DIRECT_MAX } from "./services/prospection-salves";
 import { deplacerProspects, enrolerEnMasse, RAISON_PROSPECT_DEPLACE, suspendreCollegues } from "./services/prospection-enrolement";
 import { marquerDernierMessageRepondu } from "./services/reponses/ingestion";
 import { stepOrderFromMessageType } from "./services/sequence-engine";
@@ -8875,7 +8876,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   });
 
   // Enrôlement manuel groupé : le owner choisit exactement quels prospects entrent dans la
-  // séquence. États actifs/terminés/ayant répondu jamais ré-enrôlés (prospection-enrolement.ts).
+  // séquence, au plus ENROLEMENT_DIRECT_MAX d'un coup (au-delà : 409, passer par une salve).
+  // États actifs/terminés/ayant répondu jamais ré-enrôlés (prospection-enrolement.ts).
   app.post('/api/prospection/campaigns/:id/enroll', isAuthenticated, async (req: any, res) => {
     try {
       const campaign = await storage.getProspectionCampaign(Number(req.params.id));
@@ -8886,6 +8888,15 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const leadIds: number[] = Array.isArray(req.body?.leadIds)
         ? req.body.leadIds.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n))
         : [];
+      // Plus de rafale : au-delà de ENROLEMENT_DIRECT_MAX prospects, l'ajout passe par une salve
+      // (POST .../salves avec leadIds), étalée et confirmée. Rien n'est enrôlé ici.
+      if (new Set(leadIds).size > ENROLEMENT_DIRECT_MAX) {
+        return res.status(409).json({
+          message: 'lancement_par_salve',
+          max: ENROLEMENT_DIRECT_MAX,
+          salves: `/api/prospection/campaigns/${campaign.id}/salves`,
+        });
+      }
       const campaignLeads = new Map(
         (await storage.getLeads(req.userId))
           .filter(l => (l as any).prospectionCampaignId === campaign.id)

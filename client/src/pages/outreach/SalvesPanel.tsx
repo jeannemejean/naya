@@ -51,8 +51,11 @@ export default function SalvesPanel({ campaignId, prets, hasSequence }: { campai
  * Le formulaire d'une salve (nombre, rythme, confirmation). Le seul : le panneau l'affiche, et
  * « Lancer en salve » l'ouvre dans une fenêtre, prérempli avec tous les prospects prêts.
  */
-function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, onLancee }: {
-  campaignId: number; prets: number; hasSequence: boolean; nombreInitial: number; onLancee?: () => void;
+function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, leadIds, onLancee }: {
+  campaignId: number; prets: number; hasSequence: boolean; nombreInitial: number;
+  /** Sélection explicite : la salve ne prend que ces prospects. */
+  leadIds?: number[];
+  onLancee?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
@@ -66,7 +69,7 @@ function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, onLanc
   const parJour = nombreBorne(parJourSaisi, SALVE_PAR_JOUR_MAX);
   const jours = joursNecessaires(nombre, parJour);
 
-  const lancerLaSalve = () => lancer.mutate({ nombre, parJour }, {
+  const lancerLaSalve = () => lancer.mutate(leadIds ? { nombre, parJour, leadIds } : { nombre, parJour }, {
     onSuccess: (r) => {
       toast({
         title: t('outreach.salves.lancee', { count: r.programmes }),
@@ -113,9 +116,37 @@ function FormulaireSalve({ campaignId, prets, hasSequence, nombreInitial, onLanc
 }
 
 /**
- * « Lancer en salve » (ex-« Lancer pour tous ») : ouvre le formulaire de salve, prérempli avec
- * tous les prospects prêts (plafonné à SALVE_NOMBRE_MAX). Rien ne part avant la confirmation.
+ * La fenêtre qui porte le formulaire de salve, prérempli avec tous les prêts (plafonné à
+ * SALVE_NOMBRE_MAX). Rien ne part avant la confirmation du formulaire.
  */
+export function FenetreSalve({ ouvert, onOuvertChange, campaignId, prets, hasSequence, leadIds, onLancee }: {
+  ouvert: boolean; onOuvertChange: (ouvert: boolean) => void;
+  campaignId: number; prets: number; hasSequence: boolean;
+  /** « Ajouter la sélection » au-delà de 5 : la salve ne prend que ces prospects. */
+  leadIds?: number[];
+  onLancee?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={ouvert} onOpenChange={onOuvertChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t(leadIds ? 'outreach.salves.selectionTitre' : 'outreach.salves.lancerEnSalve')}</DialogTitle>
+          <DialogDescription>{t(leadIds ? 'outreach.salves.selectionIntro' : 'outreach.salves.intro', { count: prets })}</DialogDescription>
+        </DialogHeader>
+        {ouvert && (
+          <FormulaireSalve
+            campaignId={campaignId} prets={prets} hasSequence={hasSequence} leadIds={leadIds}
+            nombreInitial={nombrePrerempli(prets)}
+            onLancee={() => { onOuvertChange(false); onLancee?.(); }}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** « Lancer en salve » (ex-« Lancer pour tous ») : ouvre la fenêtre de salve. */
 export function BoutonLancerEnSalve({ campaignId, prets, hasSequence, className }: {
   campaignId: number; prets: number; hasSequence: boolean; className?: string;
 }) {
@@ -133,20 +164,7 @@ export function BoutonLancerEnSalve({ campaignId, prets, hasSequence, className 
           {t('outreach.salves.lancerEnSalve')}
         </Button>
       </span>
-      <Dialog open={ouvert} onOpenChange={setOuvert}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('outreach.salves.lancerEnSalve')}</DialogTitle>
-            <DialogDescription>{t('outreach.salves.intro', { count: prets })}</DialogDescription>
-          </DialogHeader>
-          {ouvert && (
-            <FormulaireSalve
-              campaignId={campaignId} prets={prets} hasSequence={hasSequence}
-              nombreInitial={nombrePrerempli(prets)} onLancee={() => setOuvert(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      <FenetreSalve ouvert={ouvert} onOuvertChange={setOuvert} campaignId={campaignId} prets={prets} hasSequence={hasSequence} />
     </>
   );
 }

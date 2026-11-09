@@ -115,7 +115,7 @@ const invaliderSalves = (id: number) => {
 };
 
 export const useLancerSalve = (id: number) =>
-  useMutation<ReponseLancementSalve, Error, { nombre: number; parJour: number }>({
+  useMutation<ReponseLancementSalve, Error, { nombre: number; parJour: number; leadIds?: number[] }>({
     mutationFn: (corps) =>
       apiRequest("POST", `/api/prospection/campaigns/${id}/salves`, corps).then((r) => r.json()),
     onSuccess: () => invaliderSalves(id),

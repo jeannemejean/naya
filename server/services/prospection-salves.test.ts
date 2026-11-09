@@ -3,6 +3,7 @@ import {
   bilanDeSalve,
   choisirProspects,
   lancerSalve,
+  lireIdsDeSalve,
   planifierSalve,
   type ProspectDeSalve,
 } from "./prospection-salves";
@@ -84,6 +85,16 @@ describe("choisirProspects", () => {
     expect(r).toEqual([]);
   });
 
+  it("avec une sélection explicite, ne prend que ces ids, toujours validés et jamais en séquence", async () => {
+    const r = await choisirProspects({
+      leads: [prospect(1), prospect(2), prospect(3, { validatedAt: null }), prospect(4)],
+      nombre: 10,
+      ids: [2, 3, 4, 99],
+      getState: async (id) => (id === 4 ? { status: "paused" } : undefined),
+    });
+    expect(r.map((l) => l.id)).toEqual([2]);
+  });
+
   it("les prospects chauds d'abord, puis les plus anciens, sans dépasser le nombre demandé", async () => {
     const r = await choisirProspects({
       leads: [prospect(3), prospect(1), prospect(2, { priority: "hot" })],
@@ -144,5 +155,16 @@ describe("bilanDeSalve", () => {
 
   it("sans prospect : tout à zéro", () => {
     expect(bilanDeSalve([])).toEqual({ prevus: 0, partis: 0, reponses: 0, enAttente: 0, bloques: 0, prochainEnvoi: null });
+  });
+});
+
+describe("lireIdsDeSalve", () => {
+  it("absent : pas de sélection ; valide : dédoublonnée ; illisible ou > 100 : refusée", () => {
+    expect(lireIdsDeSalve(undefined)).toBeUndefined();
+    expect(lireIdsDeSalve([3, "4", 3])).toEqual([3, 4]);
+    expect(lireIdsDeSalve([])).toBeNull();
+    expect(lireIdsDeSalve([1.5])).toBeNull();
+    expect(lireIdsDeSalve("1,2")).toBeNull();
+    expect(lireIdsDeSalve(Array.from({ length: 101 }, (_, i) => i + 1))).toBeNull();
   });
 });

@@ -14,6 +14,23 @@ import { peutEtreContacte } from "./prospection-validation";
 
 export const SALVE_NOMBRE_MAX = 100;
 export const SALVE_PAR_JOUR_MAX = 30;
+/**
+ * Au-delà de ce nombre de prospects, un ajout groupé à la séquence passe par une salve : plus
+ * aucune façon d'envoyer en rafale. Jusqu'à 5, l'ajout direct reste permis.
+ */
+export const ENROLEMENT_DIRECT_MAX = 5;
+
+/**
+ * Liste explicite de prospects pour une salve (sélection de l'utilisatrice) : des entiers
+ * positifs, sans doublon, au plus SALVE_NOMBRE_MAX. `undefined` = pas de liste ; `null` = illisible.
+ */
+export function lireIdsDeSalve(v: unknown): number[] | null | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v) || v.length === 0 || v.length > SALVE_NOMBRE_MAX) return null;
+  const ids = v.map((x) => Number(x));
+  if (!ids.every((n) => Number.isInteger(n) && n > 0)) return null;
+  return Array.from(new Set(ids));
+}
 
 /** Raison visible dans l'aperçu après l'arrêt d'une salve. */
 export const RAISON_SALVE_ARRETEE =
@@ -86,8 +103,14 @@ export async function choisirProspects<T extends ProspectDeSalve>(e: {
   getState: (leadId: number) => Promise<{ status: string } | null | undefined>;
   /** Prospect à laisser de côté : prospect de test, collègue de quelqu'un qui a répondu. */
   exclure?: (lead: T) => boolean;
+  /**
+   * Sélection explicite : la salve ne prend QUE ces prospects (mêmes règles pour chacun).
+   * Un id absent de `leads` (autre campagne, autre utilisatrice) n'est simplement pas pris.
+   */
+  ids?: number[];
 }): Promise<T[]> {
-  const ordre = [...e.leads].sort(
+  const voulus = e.ids ? new Set(e.ids) : null;
+  const ordre = e.leads.filter((l) => !voulus || voulus.has(l.id)).sort(
     (a, b) => rang(a) - rang(b) || (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0),
   );
   const choisis: T[] = [];
