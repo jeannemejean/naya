@@ -1,0 +1,326 @@
+{
+ "total_count": 5,
+ "results": [
+  {
+   "idweb": "26-108811",
+   "id": "26_108811",
+   "contractfolderid": "698f10cf-e76c-4a30-aff2-1187428a0eec",
+   "objet": "COMMERCIALISATION DES FACES PUBLICITAIRES DE CERTAINS ABRIS BUS DU RESEAU PERIBUS",
+   "filename": "26-108811",
+   "famille": "JOUE",
+   "code_departement": [
+    "24"
+   ],
+   "code_departement_prestation": null,
+   "famille_libelle": "Marchés européens",
+   "dateparution": "2026-11-10",
+   "datefindiffusion": "2026-12-04",
+   "datelimitereponse": "2026-12-04T11:00:00+00:00",
+   "nomacheteur": "EPIC Périmouv'",
+   "titulaire": null,
+   "perimetre": "DIRECTIVE-25",
+   "type_procedure": "OUVERT",
+   "soustype_procedure": null,
+   "procedure_libelle": "Procédure Ouverte",
+   "procedure_categorise": "OUVERT/",
+   "nature": "APPEL_OFFRE",
+   "sousnature": "STANDARD",
+   "nature_libelle": "Avis de marché",
+   "sousnature_libelle": null,
+   "nature_categorise": "appeloffre/standard",
+   "nature_categorise_libelle": "Avis de marché/",
+   "criteres": null,
+   "marche_public_simplifie": null,
+   "marche_public_simplifie_label": null,
+   "etat": "INITIAL",
+   "descripteur_code": [
+    "285"
+   ],
+   "dc": [
+    "285"
+   ],
+   "descripteur_libelle": [
+    "Publicité, Communication"
+   ],
+   "type_marche": [
+    "FOURNITURES"
+   ],
+   "type_marche_facette": [
+    "Fournitures"
+   ],
+   "type_avis": [
+    "5",
+    "1"
+   ],
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "source_schema": "3.2.5",
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-108811\", \"TYPE_AVIS\": {\"FAMILLE\": {\"JOUE\": \"\"}, \"PERIMETRE\": {\"DIRECTIVE-25\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": {\"STANDARD\": \"\"}}, \"STATUT\": {\"INITIAL\": \"\"}}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"EPIC Périmouv'\", \"TYPE_PROCEDURE\": {\"OUVERT\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-10\", \"DATE_LIMITE_REPONSE\": \"2026-12-04T12:00:00+01:00\", \"DATE_FIN_DIFFUSION\": \"2026-12-04\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": {\"CODE\": \"285\", \"LIBELLE\": \"Publicité, Communication\"}}, \"NATURE_MARCHE\": {\"FOURNITURES\": \"\"}, \"DEP_PUBLICATION\": \"24\", \"RESUME_OBJET\": \"COMMERCIALISATION DES FACES PUBLICITAIRES DE CERTAINS ABRIS BUS DU RESEAU PERIBUS\"}}",
+   "donnees": "{\"EFORMS\": {\"ContractNotice\": {\"ext:UBLExtensions\": {\"ext:UBLExtension\": {\"ext:ExtensionContent\": {\"efext:EformsExtension\": {\"efac:NoticeSubType\": {\"cbc:SubTypeCode\": {\"@listName\": \"notice-subtype\", \"#text\": \"17\"}}, \"efac:Organizations\": {\"efac:Organization\": [{\"efac:Company\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0001\"}}, \"cac:PartyName\": {\"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"Avenue-Web Systèmes\"}}, \"cac:PostalAddress\": {\"cbc:CityName\": \"Seyssinet-Pariset\", \"cbc:PostalZone\": \"38170\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts\", \"#text\": \"FRK24\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}, \"cac:PartyLegalEntity\": {\"cbc:CompanyID\": {\"@schemeName\": \"eu\", \"#text\": \"822775E6-B04B-01E5-B081B46CB53B77DC\"}}, \"cac:Contact\": {\"cbc:Telephone\": \"+33480041260\", \"cbc:ElectronicMail\": \"publications-joue@aws-france.com\"}}}, {\"efac:Company\": {\"cbc:WebsiteURI\": \"http://www.peribus.fr\", \"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0002\"}}, \"cac:PartyName\": {\"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"EPIC Périmouv'\"}}, \"cac:PostalAddress\": {\"cbc:StreetName\": \"16, rue du V Régiment de Chasseurs\", \"cbc:CityName\": \"Périgueux\", \"cbc:PostalZone\": \"24000\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts\", \"#text\": \"FRI11\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}, \"cac:PartyLegalEntity\": {\"cbc:CompanyID\": {\"@schemeName\": \"eu\", \"#text\": \"25523\"}}, \"cac:Contact\": {\"cbc:Name\": \"BOUILLAGUET Joannés\", \"cbc:JobTitle\": \"Directeur Général\", \"cbc:Telephone\": \"0553087600\", \"cbc:Telefax\": \"0553081630\", \"cbc:ElectronicMail\": \"jbouillaguet@perimouv.fr\"}}}, {\"efac:Company\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0003\"}}, \"cac:PartyName\": {\"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"EPIC PERIMOUV'\"}}, \"cac:PostalAddress\": {\"cbc:StreetName\": \"16 Rue Du 5eme Regiment De Chasseurs\", \"cbc:CityName\": \"Perigueux\", \"cbc:PostalZone\": \"24000\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts\", \"#text\": \"FRI11\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}, \"cac:PartyLegalEntity\": {\"cbc:CompanyID\": {\"@schemeName\": \"eu\", \"#text\": \"82277604-E5C1-A402-B23D1ABE09EBDDAD\"}}, \"cac:Contact\": {\"cbc:Name\": \"Monsieur BOUILLAGUET Joannés\", \"cbc:Telephone\": \"0686172812\", \"cbc:ElectronicMail\": \"jbouillaguet@perimouv.fr\"}}}, {\"efac:Company\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0004\"}}, \"cac:PartyName\": {\"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"Tribunal administratif de Bordeaux\"}}, \"cac:PostalAddress\": {\"cbc:Postbox\": \"947\", \"cbc:StreetName\": \"9 Rue Tastet\", \"cbc:CityName\": \"Bordeaux\", \"cbc:PostalZone\": \"33063\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts\", \"#text\": \"FRI12\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}, \"cac:PartyLegalEntity\": {\"cbc:CompanyID\": {\"@schemeName\": \"eu\", \"#text\": \"82277613-012F-5FCA-3918BA5302B94CC7\"}}, \"cac:Contact\": {\"cbc:Telephone\": \"0556993800\", \"cbc:Telefax\": \"0556243903\", \"cbc:ElectronicMail\": \"greffe.ta-bordeaux@juradm.fr\"}}}, {\"efac:Company\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0005\"}}, \"cac:PartyName\": {\"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"Tribunal administratif de Bordeaux\"}}, \"cac:PostalAddress\": {\"cbc:Postbox\": \"947\", \"cbc:StreetName\": \"9 Rue Tastet\", \"cbc:CityName\": \"Bordeaux\", \"cbc:PostalZone\": \"33000\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts\", \"#text\": \"FRI12\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}, \"cac:PartyLegalEntity\": {\"cbc:CompanyID\": {\"@schemeName\": \"eu\", \"#text\": \"82277622-CDAE-1CEC-55B75B3C5EA7DE43\"}}, \"cac:Contact\": {\"cbc:Telephone\": \"0556993800\", \"cbc:ElectronicMail\": \"greffe.ta-bordeaux@juradm.fr\"}}}]}}}}}, \"cbc:UBLVersionID\": \"2.3\", \"cbc:CustomizationID\": \"eforms-sdk-1.13\", \"cbc:ID\": {\"@schemeName\": \"notice-id\", \"#text\": \"2dc694b4-8b41-4f57-a330-734851853e94\"}, \"cbc:ContractFolderID\": \"698f10cf-e76c-4a30-aff2-1187428a0eec\", \"cbc:IssueDate\": \"2026-11-09+01:00\", \"cbc:IssueTime\": \"13:10:01+01:00\", \"cbc:VersionID\": \"01\", \"cbc:RegulatoryDomain\": \"32014L0025\", \"cbc:NoticeTypeCode\": {\"@listName\": \"competition\", \"#text\": \"cn-standard\"}, \"cbc:NoticeLanguageCode\": \"FRA\", \"cac:ContractingParty\": {\"cac:ContractingActivity\": {\"cbc:ActivityTypeCode\": {\"@listName\": \"entity-activity\", \"#text\": \"urttb\"}}, \"cac:Party\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0002\"}}, \"cac:ServiceProviderParty\": {\"cbc:ServiceTypeCode\": {\"@listName\": \"organisation-role\", \"#text\": \"ted-esen\"}, \"cac:Party\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0001\"}}}}}}, \"cac:TenderingTerms\": {\"cac:TendererQualificationRequest\": {\"cac:SpecificTendererRequirement\": {\"cbc:TendererRequirementTypeCode\": {\"@listName\": \"exclusion-grounds-source\", \"#text\": \"epo-procurement-document\"}}}}, \"cac:TenderingProcess\": {\"cbc:ProcedureCode\": {\"@languageID\": \"FRA\", \"@listName\": \"procurement-procedure-type\", \"#text\": \"open\"}, \"cac:ProcessJustification\": {\"cbc:ProcessReasonCode\": {\"@listName\": \"accelerated-procedure\", \"#text\": \"false\"}}}, \"cac:ProcurementProject\": {\"cbc:ID\": \"EPIC Perimouv\", \"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"COMMERCIALISATION DES FACES PUBLICITAIRES DE CERTAINS ABRIS BUS DU RESEAU PERIBUS\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"COMMERCIALISATION DES FACES PUBLICITAIRES DE CERTAINS ABRIS BUS DU RESEAU PERIBUS\"}, \"cbc:ProcurementTypeCode\": {\"@listName\": \"contract-nature\", \"#text\": \"supplies\"}, \"cac:MainCommodityClassification\": {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"34928400\"}}, \"cac:AdditionalCommodityClassification\": {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"34928400\"}}, \"cac:RealizedLocation\": {\"cac:Address\": {\"cbc:CountrySubentityCode\": {\"@listName\": \"nuts\", \"#text\": \"FRI11\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}}}, \"cac:ProcurementProjectLot\": {\"cbc:ID\": {\"@schemeName\": \"Lot\", \"#text\": \"LOT-0000\"}, \"cac:TenderingTerms\": {\"cbc:VariantConstraintCode\": {\"@listName\": \"permission\", \"#text\": \"allowed\"}, \"cbc:FundingProgramCode\": {\"@listName\": \"eu-funded\", \"#text\": \"no-eu-funds\"}, \"cbc:RequiredCurriculaCode\": {\"@listName\": \"requirement-stage\", \"#text\": \"not-requ\"}, \"cac:RequiredFinancialGuarantee\": {\"cbc:GuaranteeTypeCode\": {\"@listName\": \"tender-guarantee-required\", \"#text\": \"false\"}}, \"cac:CallForTendersDocumentReference\": {\"cbc:ID\": \"1866854\", \"cbc:DocumentType\": \"non-restricted-document\", \"cbc:LanguageID\": \"FRA\", \"cbc:DocumentStatusCode\": {\"@listName\": \"linguistic-status\", \"#text\": \"official\"}, \"cac:Attachment\": {\"cac:ExternalReference\": {\"cbc:URI\": \"https://www.marches-publics.info/mpiaws/index.cfm?fuseaction=dematEnt.login&amp;type=DCE&amp;IDM=1866854\"}}}, \"cac:PaymentTerms\": {\"cbc:Note\": {\"@languageID\": \"FRA\", \"#text\": \"Budget d'exploitation de l'Epic Périmouv'\"}}, \"cac:TendererQualificationRequest\": [{\"cac:SpecificTendererRequirement\": {\"cbc:TendererRequirementTypeCode\": {\"@listName\": \"selection-criteria-source\", \"#text\": \"epo-procurement-document\"}}}, {\"cac:SpecificTendererRequirement\": {\"cbc:TendererRequirementTypeCode\": {\"@listName\": \"reserved-procurement\", \"#text\": \"none\"}}}, {\"cbc:CompanyLegalFormCode\": {\"@listName\": \"required\", \"#text\": \"false\"}}], \"cac:ContractExecutionRequirement\": [{\"cbc:ExecutionRequirementCode\": {\"@listName\": \"einvoicing\", \"#text\": \"required\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"ecatalog-submission\", \"#text\": \"not-allowed\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"esignature-submission\", \"#text\": \"false\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"reserved-execution\", \"#text\": \"no\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"conditions\", \"#text\": \"performance\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Maintient en service des mobiliers urbains\"}}], \"cac:AdditionalInformationParty\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"touchpoint\", \"#text\": \"ORG-0003\"}}}, \"cac:TenderRecipientParty\": {\"cbc:EndpointID\": \"https://www.marches-publics.info/mpiaws/index.cfm?fuseaction=demat.termes&amp;IDM=1866854\"}, \"cac:TenderValidityPeriod\": {\"cbc:DurationMeasure\": {\"@unitCode\": \"MONTH\", \"#text\": \"3\"}}, \"cac:AppealTerms\": {\"cac:AppealInformationParty\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0005\"}}}, \"cac:AppealReceiverParty\": {\"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0004\"}}}}, \"cac:Language\": {\"cbc:ID\": \"FRA\"}, \"cac:PostAwardProcess\": {\"cbc:ElectronicOrderUsageIndicator\": \"false\", \"cbc:ElectronicPaymentUsageIndicator\": \"false\"}}, \"cac:TenderingProcess\": {\"ext:UBLExtensions\": {\"ext:UBLExtension\": {\"ext:ExtensionContent\": {\"efext:EformsExtension\": {\"efbc:AccessToolName\": \"AW Solutions\"}}}}, \"cbc:SubmissionMethodCode\": {\"@listName\": \"esubmission\", \"#text\": \"required\"}, \"cbc:GovernmentAgreementConstraintIndicator\": \"false\", \"cac:TenderSubmissionDeadlinePeriod\": {\"cbc:EndDate\": \"2026-12-04+01:00\", \"cbc:EndTime\": \"12:00:00+01:00\"}, \"cac:OpenTenderEvent\": {\"cbc:OccurrenceDate\": \"2026-12-07+01:00\", \"cbc:OccurrenceTime\": \"10:00:00+01:00\", \"cac:OccurenceLocation\": {\"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Epic Périmouv\"}}}, \"cac:AuctionTerms\": {\"cbc:AuctionConstraintIndicator\": \"false\"}, \"cac:ContractingSystem\": [{\"cbc:ContractingSystemTypeCode\": {\"@listName\": \"framework-agreement\", \"#text\": \"none\"}}, {\"cbc:ContractingSystemTypeCode\": {\"@listName\": \"dps-usage\", \"#text\": \"none\"}}]}, \"cac:ProcurementProject\": {\"cbc:ID\": {\"@schemeName\": \"InternalID\", \"#text\": \"F-PA-1866854\"}, \"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"COMMERCIALISATION DES FACES PUBLICITAIRES DE CERTAINS ABRIS BUS DU RESEAU PERIBUS\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"COMMERCIALISATION DES FACES PUBLICITAIRES DE CERTAINS ABRIS BUS DU RESEAU PERIBUS\"}, \"cbc:ProcurementTypeCode\": {\"@listName\": \"contract-nature\", \"#text\": \"supplies\"}, \"cac:MainCommodityClassification\": {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"34928400\"}}, \"cac:AdditionalCommodityClassification\": {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"34928400\"}}, \"cac:RealizedLocation\": {\"cac:Address\": {\"cbc:StreetName\": \"16 Rue Du 5eme Regiment De Chasseurs\", \"cbc:CityName\": \"Perigueux\", \"cbc:PostalZone\": \"24000\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts\", \"#text\": \"FRI11\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}}, \"cac:PlannedPeriod\": {\"cbc:StartDate\": \"2027-01-01+01:00\", \"cbc:DurationMeasure\": {\"@unitCode\": \"MONTH\", \"#text\": \"48\"}}, \"cac:ContractExtension\": {\"cbc:MaximumNumberNumeric\": \"0\"}}}}}}",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-108811"
+  },
+  {
+   "idweb": "26-109294",
+   "id": "26_109294",
+   "contractfolderid": null,
+   "objet": "Mission d'accompagnement pour la conception et le déploiement de la marque territoriale \"Arti e Manera\"",
+   "filename": "26-109294",
+   "famille": "MAPA",
+   "code_departement": [
+    "20A",
+    "20B"
+   ],
+   "code_departement_prestation": null,
+   "famille_libelle": "Marchés <90 k€ (MAPA)",
+   "dateparution": "2026-11-10",
+   "datefindiffusion": "2026-12-10",
+   "datelimitereponse": "2026-12-10T12:00:00+00:00",
+   "nomacheteur": "Cté Cnes de l'Alta-Rocca",
+   "titulaire": null,
+   "perimetre": "MAPA",
+   "type_procedure": "PROCEDURE_ADAPTE",
+   "soustype_procedure": null,
+   "procedure_libelle": "Procédure Adaptée",
+   "procedure_categorise": "PROCEDURE_ADAPTE/",
+   "nature": "APPEL_OFFRE",
+   "sousnature": null,
+   "nature_libelle": "Avis de marché",
+   "sousnature_libelle": null,
+   "nature_categorise": "appeloffre/standard",
+   "nature_categorise_libelle": "Avis de marché/",
+   "criteres": [
+    "environnementaux"
+   ],
+   "marche_public_simplifie": null,
+   "marche_public_simplifie_label": null,
+   "etat": "INITIAL",
+   "descripteur_code": [
+    "274",
+    "285"
+   ],
+   "dc": [
+    "274",
+    "285"
+   ],
+   "descripteur_libelle": [
+    "Prestations de services",
+    "Publicité, Communication"
+   ],
+   "type_marche": [
+    "SERVICES"
+   ],
+   "type_marche_facette": [
+    "Services"
+   ],
+   "type_avis": [
+    "5",
+    "1"
+   ],
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "source_schema": "3.2.5",
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-109294\", \"TYPE_AVIS\": {\"FAMILLE\": {\"MAPA\": \"\"}, \"PERIMETRE\": {\"MAPA\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": \"\"}, \"STATUT\": {\"INITIAL\": \"\"}}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"Cté Cnes de l'Alta-Rocca\", \"TYPE_PROCEDURE\": {\"PROCEDURE_ADAPTE\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-10\", \"DATE_LIMITE_REPONSE\": \"2026-12-10T12:00:00Z\", \"DATE_FIN_DIFFUSION\": \"2026-12-10\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": [{\"CODE\": \"274\", \"LIBELLE\": \"Prestations de services\"}, {\"CODE\": \"285\", \"LIBELLE\": \"Publicité, Communication\"}]}, \"NATURE_MARCHE\": {\"SERVICES\": \"\"}, \"CRITERES_SOCIAUX_ENV\": {\"ENVIRONNEMENTAUX\": \"\"}, \"DEP_PUBLICATION\": [\"20A\", \"20B\"], \"RESUME_OBJET\": \"Mission d'accompagnement pour la conception et le déploiement de la marque territoriale \\\"Arti e Manera\\\"\"}}",
+   "donnees": "{\"MAPA\": {\"organisme\": {\"correspondantPRM\": {\"nom\": \"PERETTI SUZANNE\"}, \"acheteurPublic\": \"Cté Cnes de l'Alta-Rocca\", \"adr\": {\"voie\": {\"nomvoie\": \"BP 07 - Rue Sorba\"}, \"cp\": \"20170\", \"ville\": \"LEVIE\"}, \"coord\": {\"tel\": \"0495784793\", \"fax\": \"0495784477\", \"mel\": \"juridique@alta-rocca.com\", \"url\": \"https://www.alta-rocca.com/\"}, \"urlProfilAcheteur\": \"https://alta-rocca.e-marchespublics.com/pack/annonce_marche_public_6532_1192742.html\", \"classificationOrganisme\": \"7\"}, \"initial\": {\"natureMarche\": {\"services\": \"\"}, \"description\": {\"objet\": \"Mission d'accompagnement pour la conception et le déploiement de la marque territoriale \\\"Arti e Manera\\\"\", \"lieuExecutionLivraison\": {\"voie\": {\"nomvoie\": \"rue Sorba -BP 07\"}, \"cp\": \"20170\", \"ville\": \"Levie\"}}, \"caracteristiques\": {\"variantes\": {\"oui\": \"\"}, \"principales\": \"Les informations sur les variantes sont détaillées au règlement de la consultation\"}, \"duree\": {\"nbMois\": \"12\"}, \"conditions\": {\"langueFR\": \"\"}, \"justifications\": {\"justificationComment\": \"Les documents à produire à l'appui de la candidature sont détaillés au règlement de la consultation\"}, \"criteres\": {\"critereCDC\": \"\"}, \"procedure\": {\"procedureAdaptee\": \"\"}, \"delais\": {\"receptionOffres\": \"2026-12-10T12:00:00Z\", \"validite\": {\"nbJours\": \"180\"}}, \"renseignements\": {\"idMarche\": \"2026-008\"}, \"adressesComplt\": {\"admEtTech\": {\"PersonnePhysique\": {\"nom\": \"Suzanne Peretti\"}, \"PersonneMorale\": \"Communauté de communes de l'Alta Rocca\", \"coord\": {\"mel\": \"juridique@alta-rocca.com\"}}}, \"marcheUnique\": \"\"}}}",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-109294"
+  },
+  {
+   "idweb": "26-108562",
+   "id": "26_108562",
+   "contractfolderid": "4fc1f961-89f1-414a-819f-775206850029",
+   "objet": "PRESTATIONS DE COMMUNICATION GLOBALE POUR LE COMPTE DE LA SPL SEINE PARK",
+   "filename": "26-108562",
+   "famille": "JOUE",
+   "code_departement": [
+    "92"
+   ],
+   "code_departement_prestation": null,
+   "famille_libelle": "Marchés européens",
+   "dateparution": "2026-11-08",
+   "datefindiffusion": "2026-12-07",
+   "datelimitereponse": "2026-12-07T22:59:00+00:00",
+   "nomacheteur": "SEINE PARK",
+   "titulaire": null,
+   "perimetre": "DIRECTIVE-24",
+   "type_procedure": "OUVERT",
+   "soustype_procedure": null,
+   "procedure_libelle": "Procédure Ouverte",
+   "procedure_categorise": "OUVERT/",
+   "nature": "APPEL_OFFRE",
+   "sousnature": "STANDARD",
+   "nature_libelle": "Avis de marché",
+   "sousnature_libelle": null,
+   "nature_categorise": "appeloffre/standard",
+   "nature_categorise_libelle": "Avis de marché/",
+   "criteres": null,
+   "marche_public_simplifie": null,
+   "marche_public_simplifie_label": null,
+   "etat": "INITIAL",
+   "descripteur_code": [
+    "285",
+    "333",
+    "171"
+   ],
+   "dc": [
+    "285",
+    "333",
+    "171"
+   ],
+   "descripteur_libelle": [
+    "Publicité, Communication",
+    "Signalétique",
+    "Site internet"
+   ],
+   "type_marche": [
+    "SERVICES"
+   ],
+   "type_marche_facette": [
+    "Services"
+   ],
+   "type_avis": [
+    "5",
+    "1"
+   ],
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "source_schema": "3.2.5",
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-108562\", \"TYPE_AVIS\": {\"FAMILLE\": {\"JOUE\": \"\"}, \"PERIMETRE\": {\"DIRECTIVE-24\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": {\"STANDARD\": \"\"}}, \"STATUT\": {\"INITIAL\": \"\"}}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"SEINE PARK\", \"TYPE_PROCEDURE\": {\"OUVERT\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-08\", \"DATE_LIMITE_REPONSE\": \"2026-12-07T23:59:00+01:00\", \"DATE_FIN_DIFFUSION\": \"2026-12-07\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": [{\"CODE\": \"285\", \"LIBELLE\": \"Publicité, Communication\"}, {\"CODE\": \"333\", \"LIBELLE\": \"Signalétique\"}, {\"CODE\": \"171\", \"LIBELLE\": \"Site internet\"}]}, \"NATURE_MARCHE\": {\"SERVICES\": \"\"}, \"DEP_PUBLICATION\": \"92\", \"RESUME_OBJET\": \"PRESTATIONS DE COMMUNICATION GLOBALE POUR LE COMPTE DE LA SPL SEINE PARK\"}}",
+   "donnees": "{\"EFORMS\": {\"ContractNotice\": {\"ext:UBLExtensions\": {\"ext:UBLExtension\": {\"ext:ExtensionContent\": {\"efext:EformsExtension\": {\"efac:NoticeSubType\": {\"cbc:SubTypeCode\": {\"@listName\": \"notice-subtype\", \"#text\": \"16\"}}, \"efac:Organizations\": {\"efac:Organization\": [{\"efac:Company\": {\"cbc:WebsiteURI\": \"https://seinepark.fr/\", \"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0001\"}}, \"cac:PartyName\": {\"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"SEINE PARK\"}}, \"cac:PostalAddress\": {\"cbc:StreetName\": \"65 rue martre\", \"cbc:CityName\": \"Clichy-la-Garenne\", \"cbc:PostalZone\": \"92110\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts-lvl3\", \"#text\": \"FR105\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}, \"cac:PartyLegalEntity\": {\"cbc:CompanyID\": \"95143618700029\"}, \"cac:Contact\": {\"cbc:Telephone\": \"+33 762271600\", \"cbc:ElectronicMail\": \"commandepublique@seinepark.fr\"}}}, {\"efac:Company\": {\"cbc:WebsiteURI\": \"https://www.justice.fr/annuaire/tribunal-judiciaire-nanterre\", \"cac:PartyIdentification\": {\"cbc:ID\": {\"@schemeName\": \"organization\", \"#text\": \"ORG-0002\"}}, \"cac:PartyName\": {\"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"TRIBUNAL JUDICIAIRE DE NANTERRE\"}}, \"cac:PostalAddress\": {\"cbc:StreetName\": \"179-191 avenue Joliot-Curie\", \"cbc:CityName\": \"Nanterre\", \"cbc:PostalZone\": \"92020\", \"cbc:CountrySubentityCode\": {\"@listName\": \"nuts-lvl3\", \"#text\": \"FR105\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}, \"cac:PartyLegalEntity\": {\"cbc:CompanyID\": \"95143618700029\"}}}]}}}}}, \"cbc:UBLVersionID\": \"2.3\", \"cbc:CustomizationID\": \"eforms-sdk-1.13\", \"cbc:ID\": {\"@schemeName\": \"notice-id\", \"#text\": \"e118a44c-945c-418e-be8f-e156f1acc1b8\"}, \"cbc:ContractFolderID\": \"4fc1f961-89f1-414a-819f-775206850029\", \"cbc:IssueDate\": \"2026-11-06+01:00\", \"cbc:IssueTime\": \"17:51:40+01:00\", \"cbc:VersionID\": \"01\", \"cbc:RegulatoryDomain\": \"32014L0024\", \"cbc:NoticeTypeCode\": {\"@listName\": \"competition\", \"#text\": \"cn-standard\"}, \"cbc:NoticeLanguageCode\": {\"@listName\": \"eu-official-language\", \"#text\": \"FRA\"}, \"cac:ContractingParty\": {\"cac:ContractingPartyType\": {\"cbc:PartyTypeCode\": {\"@listName\": \"buyer-legal-type\", \"#text\": \"pub-undert-la\"}}, \"cac:ContractingActivity\": {\"cbc:ActivityTypeCode\": {\"@listName\": \"authority-activity\", \"#text\": \"gen-pub\"}}, \"cac:Party\": {\"cac:PartyIdentification\": {\"cbc:ID\": \"ORG-0001\"}}}, \"cac:TenderingTerms\": {\"cac:TendererQualificationRequest\": {\"cac:SpecificTendererRequirement\": {\"cbc:TendererRequirementTypeCode\": {\"@listName\": \"exclusion-grounds-source\", \"#text\": \"epo-sub-espd\"}}}}, \"cac:TenderingProcess\": {\"cbc:ProcedureCode\": {\"@listName\": \"procurement-procedure-type\", \"#text\": \"open\"}, \"cac:ProcessJustification\": {\"cbc:ProcessReasonCode\": {\"@listName\": \"accelerated-procedure\", \"#text\": \"false\"}}}, \"cac:ProcurementProject\": {\"cbc:ID\": \"2600002\", \"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"PRESTATIONS DE COMMUNICATION GLOBALE POUR LE COMPTE DE LA SPL SEINE PARK\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Le présent accord-cadre a pour objet la réalisation de prestations de diverses natures de communication pour le compte de la Société Publique Locale (SPL) Seine Park. Ces prestations visent à répondre aux besoins de la SPL en matière de stratégie de communication, de signalétique au sein de ses infrastructures et équipements, de création de supports, de gestion des outils numériques, de production d’objets personnalisés promotionnels et de production de contenus visuels et audiovisuels. L’objectif est de garantir une communication cohérente, efficace et adaptée aux enjeux spécifiques de la SPL, tout en respectant les normes d’accessibilité, de durabilité et de visibilité.  Le titulaire du marché devra fournir des services de conseil, de conception, de production et de diffusion, en intégrant des solutions innovantes et adaptées aux évolutions technologiques et aux attentes de la SPL. Les prestations incluent également la gestion des relations publiques, la communication interne, ainsi que la création d’objets promotionnels écoresponsables.\"}, \"cbc:ProcurementTypeCode\": {\"@listName\": \"contract-nature\", \"#text\": \"services\"}, \"cac:MainCommodityClassification\": {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"79340000\"}}, \"cac:AdditionalCommodityClassification\": [{\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"79822500\"}}, {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"79415200\"}}, {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"72413000\"}}], \"cac:RealizedLocation\": {\"cac:Address\": {\"cbc:CountrySubentityCode\": {\"@listName\": \"nuts-lvl3\", \"#text\": \"FR105\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}}}, \"cac:ProcurementProjectLot\": {\"cbc:ID\": {\"@schemeName\": \"Lot\", \"#text\": \"LOT-0001\"}, \"cac:TenderingTerms\": {\"cbc:VariantConstraintCode\": {\"@listName\": \"permission\", \"#text\": \"not-allowed\"}, \"cbc:FundingProgramCode\": {\"@listName\": \"eu-funded\", \"#text\": \"no-eu-funds\"}, \"cbc:RecurringProcurementIndicator\": \"false\", \"cac:CallForTendersDocumentReference\": {\"cbc:ID\": \"1\", \"cbc:DocumentType\": \"non-restricted-document\", \"cac:Attachment\": {\"cac:ExternalReference\": {\"cbc:URI\": \"https://marches.maximilien.fr/entreprise/consultation/937974?orgAcronyme=a5n\"}}}, \"cac:TendererQualificationRequest\": [{\"cac:SpecificTendererRequirement\": {\"cbc:TendererRequirementTypeCode\": {\"@listName\": \"selection-criteria-source\", \"#text\": \"epo-sub-espd\"}}}, {\"cac:SpecificTendererRequirement\": {\"cbc:TendererRequirementTypeCode\": {\"@listName\": \"reserved-procurement\", \"#text\": \"none\"}}}], \"cac:ContractExecutionRequirement\": [{\"cbc:ExecutionRequirementCode\": {\"@listName\": \"reserved-execution\", \"#text\": \"no\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"conditions\", \"#text\": \"performance\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"einvoicing\", \"#text\": \"required\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"ecatalog-submission\", \"#text\": \"allowed\"}}, {\"cbc:ExecutionRequirementCode\": {\"@listName\": \"esignature-submission\", \"#text\": \"true\"}}], \"cac:AwardingTerms\": {\"cac:AwardingCriterion\": {\"cac:SubordinateAwardingCriterion\": [{\"ext:UBLExtensions\": {\"ext:UBLExtension\": {\"ext:ExtensionContent\": {\"efext:EformsExtension\": {\"efac:AwardCriterionParameter\": {\"efbc:ParameterCode\": {\"@listName\": \"number-weight\", \"#text\": \"per-exa\"}, \"efbc:ParameterNumeric\": \"30.0\"}}}}}, \"cbc:AwardingCriterionTypeCode\": {\"@listName\": \"award-criterion-type\", \"#text\": \"price\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Valeu économique\"}}, {\"ext:UBLExtensions\": {\"ext:UBLExtension\": {\"ext:ExtensionContent\": {\"efext:EformsExtension\": {\"efac:AwardCriterionParameter\": {\"efbc:ParameterCode\": {\"@listName\": \"number-weight\", \"#text\": \"per-exa\"}, \"efbc:ParameterNumeric\": \"65.0\"}}}}}, \"cbc:AwardingCriterionTypeCode\": {\"@listName\": \"award-criterion-type\", \"#text\": \"quality\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Valeur technique  - Sous-critères: \\\"Présentation du candidat\\\" valant pour 5% de la note finale - \\\"Moyens humains \\\" valant pour 15% de la note finale - \\\"Moyens techniques \\\" valant pour 10% de la note finale - \\\"Méthodologie d’exécution des prestations \\\" valant pour 10% de la note finale - \\\"Références professionnelles et réalisations similaires \\\" valant pour 10% de la note finale - \\\"Gestion des délais et des demandes urgentes\\\" valant pour 15% de la note finale\"}}, {\"ext:UBLExtensions\": {\"ext:UBLExtension\": {\"ext:ExtensionContent\": {\"efext:EformsExtension\": {\"efac:AwardCriterionParameter\": {\"efbc:ParameterCode\": {\"@listName\": \"number-weight\", \"#text\": \"per-exa\"}, \"efbc:ParameterNumeric\": \"5.0\"}}}}}, \"cbc:AwardingCriterionTypeCode\": {\"@listName\": \"award-criterion-type\", \"#text\": \"quality\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Valeur environnementale liée à l'objet du marché\"}}]}}, \"cac:AdditionalInformationParty\": {\"cac:PartyIdentification\": {\"cbc:ID\": \"ORG-0001\"}}, \"cac:DocumentProviderParty\": {\"cac:PartyIdentification\": {\"cbc:ID\": \"ORG-0001\"}}, \"cac:TenderRecipientParty\": {\"cbc:EndpointID\": \"https://marches.maximilien.fr/entreprise/consultation/937974?orgAcronyme=a5n\", \"cac:PartyIdentification\": {\"cbc:ID\": \"ORG-0001\"}}, \"cac:TenderEvaluationParty\": {\"cac:PartyIdentification\": {\"cbc:ID\": \"ORG-0001\"}}, \"cac:TenderValidityPeriod\": {\"cbc:DurationMeasure\": {\"@unitCode\": \"DAY\", \"#text\": \"120\"}}, \"cac:AppealTerms\": {\"cac:PresentationPeriod\": {\"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"voir documents de la consultation\"}}, \"cac:AppealReceiverParty\": {\"cac:PartyIdentification\": {\"cbc:ID\": \"ORG-0002\"}}}, \"cac:Language\": {\"cbc:ID\": \"FRA\"}, \"cac:PostAwardProcess\": {\"cbc:ElectronicOrderUsageIndicator\": \"false\", \"cbc:ElectronicPaymentUsageIndicator\": \"false\"}}, \"cac:TenderingProcess\": {\"cbc:SubmissionMethodCode\": {\"@listName\": \"esubmission\", \"#text\": \"required\"}, \"cbc:GovernmentAgreementConstraintIndicator\": \"true\", \"cac:TenderSubmissionDeadlinePeriod\": {\"cbc:EndDate\": \"2026-12-07+01:00\", \"cbc:EndTime\": \"23:59:00+01:00\"}, \"cac:AuctionTerms\": {\"cbc:AuctionConstraintIndicator\": \"false\"}, \"cac:FrameworkAgreement\": {\"cbc:MaximumOperatorQuantity\": \"1\"}, \"cac:ContractingSystem\": [{\"cbc:ContractingSystemTypeCode\": {\"@listName\": \"framework-agreement\", \"#text\": \"fa-wo-rc\"}}, {\"cbc:ContractingSystemTypeCode\": {\"@listName\": \"dps-usage\", \"#text\": \"none\"}}]}, \"cac:ProcurementProject\": {\"cbc:ID\": \"0\", \"cbc:Name\": {\"@languageID\": \"FRA\", \"#text\": \"PRESTATIONS DE COMMUNICATION GLOBALE POUR LE COMPTE DE LA SPL SEINE PARK\"}, \"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Le présent accord-cadre a pour objet la réalisation de prestations de diverses natures de communication pour le compte de la Société Publique Locale (SPL) Seine Park. Ces prestations visent à répondre aux besoins de la SPL en matière de stratégie de communication, de signalétique au sein de ses infrastructures et équipements, de création de supports, de gestion des outils numériques, de production d’objets personnalisés promotionnels et de production de contenus visuels et audiovisuels. L’objectif est de garantir une communication cohérente, efficace et adaptée aux enjeux spécifiques de la SPL, tout en respectant les normes d’accessibilité, de durabilité et de visibilité.  Le titulaire du marché devra fournir des services de conseil, de conception, de production et de diffusion, en intégrant des solutions innovantes et adaptées aux évolutions technologiques et aux attentes de la SPL. Les prestations incluent également la gestion des relations publiques, la communication interne, ainsi que la création d’objets promotionnels écoresponsables.\"}, \"cbc:ProcurementTypeCode\": {\"@listName\": \"contract-nature\", \"#text\": \"services\"}, \"cbc:SMESuitableIndicator\": \"true\", \"cac:RequestedTenderTotal\": {\"cbc:EstimatedOverallContractAmount\": {\"@currencyID\": \"EUR\", \"#text\": \"250000.0\"}}, \"cac:MainCommodityClassification\": {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"79340000\"}}, \"cac:AdditionalCommodityClassification\": [{\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"79822500\"}}, {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"79415200\"}}, {\"cbc:ItemClassificationCode\": {\"@listName\": \"cpv\", \"#text\": \"72413000\"}}], \"cac:RealizedLocation\": {\"cac:Address\": {\"cbc:CountrySubentityCode\": {\"@listName\": \"nuts-lvl3\", \"#text\": \"FR105\"}, \"cac:Country\": {\"cbc:IdentificationCode\": {\"@listName\": \"country\", \"#text\": \"FRA\"}}}}, \"cac:PlannedPeriod\": {\"cbc:DurationMeasure\": {\"@unitCode\": \"MONTH\", \"#text\": \"12\"}}, \"cac:ContractExtension\": {\"cbc:MaximumNumberNumeric\": \"3\", \"cac:Renewal\": {\"cac:Period\": {\"cbc:Description\": {\"@languageID\": \"FRA\", \"#text\": \"Par tacite recondution\"}}}}}}}}}",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-108562"
+  },
+  {
+   "idweb": "26-108766",
+   "id": "26_108766",
+   "contractfolderid": null,
+   "objet": "Le présent marché à prix global et forfaitaire porte sur des prestations de veille médiatique des activités du Musée National Picasso-Paris.",
+   "filename": "26-108766",
+   "famille": "FNS",
+   "code_departement": [
+    "75"
+   ],
+   "code_departement_prestation": null,
+   "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+   "dateparution": "2026-11-09",
+   "datefindiffusion": "2026-11-30",
+   "datelimitereponse": "2026-11-30T12:00:00+00:00",
+   "nomacheteur": "MUSEE NATIONAL PICASSO PARIS",
+   "titulaire": null,
+   "perimetre": "FNSimple",
+   "type_procedure": "OUVERT",
+   "soustype_procedure": null,
+   "procedure_libelle": "Procédure Ouverte",
+   "procedure_categorise": "OUVERT/",
+   "nature": "APPEL_OFFRE",
+   "sousnature": null,
+   "nature_libelle": "Avis de marché",
+   "sousnature_libelle": null,
+   "nature_categorise": "appeloffre/standard",
+   "nature_categorise_libelle": "Avis de marché/",
+   "criteres": [
+    "environnementaux"
+   ],
+   "marche_public_simplifie": null,
+   "marche_public_simplifie_label": null,
+   "etat": "INITIAL",
+   "descripteur_code": [
+    "285"
+   ],
+   "dc": [
+    "285"
+   ],
+   "descripteur_libelle": [
+    "Publicité, Communication"
+   ],
+   "type_marche": [
+    "SERVICES"
+   ],
+   "type_marche_facette": [
+    "Services"
+   ],
+   "type_avis": [
+    "5",
+    "1"
+   ],
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "source_schema": "3.2.5",
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-108766\", \"TYPE_AVIS\": {\"FAMILLE\": {\"FNS\": \"\"}, \"PERIMETRE\": {\"FNSimple\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": \"\"}, \"STATUT\": {\"INITIAL\": \"\"}}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"MUSEE NATIONAL PICASSO PARIS\", \"TYPE_PROCEDURE\": {\"OUVERT\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-09\", \"DATE_LIMITE_REPONSE\": \"2026-11-30T12:00:00.000\", \"DATE_FIN_DIFFUSION\": \"2026-11-30\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": {\"CODE\": \"285\", \"LIBELLE\": \"Publicité, Communication\"}}, \"NATURE_MARCHE\": {\"SERVICES\": \"\"}, \"CRITERES_SOCIAUX_ENV\": {\"ENVIRONNEMENTAUX\": \"\"}, \"DEP_PUBLICATION\": \"75\", \"RESUME_OBJET\": \"Le présent marché à prix global et forfaitaire porte sur des prestations de veille médiatique des activités du Musée National Picasso-Paris.\"}}",
+   "donnees": "{\"FNSimple\": {\"organisme\": {\"nomOfficiel\": \"Musée national Picasso-Paris\", \"typeIdentificationNational\": {\"siret\": \"\"}, \"codeIdentificationNational\": \"13001217200016\", \"ville\": \"Paris\", \"cp\": \"75003\", \"grpCommandes\": {\"non\": \"\"}}, \"initial\": {\"communication\": {\"urlProfilAch\": \"https://www.marches-publics.gouv.fr/entreprise\", \"identifiantInterne\": \"2026_MNPP_1183_MA\", \"docSecurite\": {\"oui\": \"\"}, \"urlSecurite\": {\"non\": \"\"}, \"nomContact\": \"dja\"}, \"procedure\": {\"procedureAdapteeO\": \"\", \"capaciteTech\": \"Voir le règlement de la consultation\", \"techAchat\": {\"autres\": \"\"}, \"dateReceptionOffres\": \"2026-11-30T12:00:00.000\", \"presOffres\": {\"autorisee\": \"\"}, \"nbCandidatReduit\": {\"non\": \"\"}, \"attributionSansNegociation\": {\"oui\": {\"@xsi:type\": \"xs:string\"}}, \"variantes\": {\"non\": {\"@xsi:type\": \"xs:string\"}}}, \"natureMarche\": {\"intitule\": \"Veille médiatique\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"92400000\"}}, \"natureMarche\": {\"services\": \"\"}, \"description\": \"Le présent marché à prix global et forfaitaire porte sur des prestations de veille médiatique des activités du Musée National Picasso-Paris.\\nIl s’agit ainsi pour le titulaire de fournir des prestations de \\n-\\tPanorama de presse papier, web et audiovisuelle France et dans les pays étrangers désignés par le MnPP (volume d'articles illimité)\\n-\\tAccès extranet personnalisé ;\", \"lieuExecution\": \"Paris\", \"tranches\": {\"non\": {\"@xsi:type\": \"xs:string\"}}, \"reservationMarche\": {\"non\": \"\"}, \"lotsMarche\": {\"non\": {\"@xsi:type\": \"xs:string\"}}}, \"informComplementaire\": {\"non\": \"\"}}}}",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-108766"
+  },
+  {
+   "idweb": "26-109228",
+   "id": "26_109228",
+   "contractfolderid": null,
+   "objet": "Assistance à maîtrise d'ouvrage pour l'animation du réseau France Rénov' sur le territoire de la région Occitanie",
+   "filename": "26-109228",
+   "famille": "FNS",
+   "code_departement": [
+    "9",
+    "11",
+    "12",
+    "30",
+    "31",
+    "34",
+    "65",
+    "66",
+    "81"
+   ],
+   "code_departement_prestation": null,
+   "famille_libelle": "Marchés entre 90 k€ et seuils européens",
+   "dateparution": "2026-11-10",
+   "datefindiffusion": "2027-01-15",
+   "datelimitereponse": "2027-01-15T12:00:00+00:00",
+   "nomacheteur": "DREAL OCCITANIE",
+   "titulaire": null,
+   "perimetre": "FNSimple",
+   "type_procedure": "OUVERT",
+   "soustype_procedure": null,
+   "procedure_libelle": "Procédure Ouverte",
+   "procedure_categorise": "OUVERT/",
+   "nature": "APPEL_OFFRE",
+   "sousnature": null,
+   "nature_libelle": "Avis de marché",
+   "sousnature_libelle": null,
+   "nature_categorise": "appeloffre/standard",
+   "nature_categorise_libelle": "Avis de marché/",
+   "criteres": [
+    "sociaux",
+    "environnementaux"
+   ],
+   "marche_public_simplifie": null,
+   "marche_public_simplifie_label": null,
+   "etat": "INITIAL",
+   "descripteur_code": [
+    "33",
+    "455",
+    "285"
+   ],
+   "dc": [
+    "33",
+    "455",
+    "285"
+   ],
+   "descripteur_libelle": [
+    "Bâtiment",
+    "Ingénierie",
+    "Publicité, Communication"
+   ],
+   "type_marche": [
+    "SERVICES"
+   ],
+   "type_marche_facette": [
+    "Services"
+   ],
+   "type_avis": [
+    "5",
+    "1"
+   ],
+   "annonce_lie": null,
+   "annonces_anterieures": null,
+   "source_schema": "3.2.5",
+   "gestion": "{\"REFERENCE\": {\"IDWEB\": \"26-109228\", \"TYPE_AVIS\": {\"FAMILLE\": {\"FNS\": \"\"}, \"PERIMETRE\": {\"FNSimple\": \"\"}, \"NATURE\": {\"APPEL_OFFRE\": \"\"}, \"STATUT\": {\"INITIAL\": \"\"}}}, \"INDEXATION\": {\"SCHEMA\": \"3.2.5\", \"NOMORGANISME\": \"DREAL OCCITANIE\", \"TYPE_PROCEDURE\": {\"OUVERT\": \"\"}, \"DATE_PUBLICATION\": \"2026-11-10\", \"DATE_LIMITE_REPONSE\": \"2027-01-15T12:00:00.000\", \"DATE_FIN_DIFFUSION\": \"2027-01-15\", \"DESCRIPTEURS\": {\"DESCRIPTEUR\": [{\"CODE\": \"33\", \"LIBELLE\": \"Bâtiment\"}, {\"CODE\": \"455\", \"LIBELLE\": \"Ingénierie\"}, {\"CODE\": \"285\", \"LIBELLE\": \"Publicité, Communication\"}]}, \"NATURE_MARCHE\": {\"SERVICES\": \"\"}, \"CRITERES_SOCIAUX_ENV\": {\"SOCIAUX\": \"\", \"ENVIRONNEMENTAUX\": \"\"}, \"DEP_PUBLICATION\": [\"09\", \"11\", \"12\", \"30\", \"31\", \"34\", \"65\", \"66\", \"81\"], \"RESUME_OBJET\": \"Assistance à maîtrise d'ouvrage pour l'animation du réseau France Rénov' sur le territoire de la région Occitanie\"}}",
+   "donnees": "{\"FNSimple\": {\"organisme\": {\"nomOfficiel\": \"DREAL Occitanie\", \"typeIdentificationNational\": {\"siret\": \"\"}, \"codeIdentificationNational\": \"13000609100016\", \"ville\": \"TOULOUSE\", \"cp\": \"31952\", \"grpCommandes\": {\"non\": \"\"}}, \"initial\": {\"communication\": {\"urlDocConsul\": \"https://www.marches-publics.gouv.fr/entreprise\", \"docSecurite\": {\"oui\": \"\"}, \"urlSecurite\": {\"oui\": {\"mesuresConfurlConfidentialite\": \"https://www.marches-publics.gouv.fr/entreprise\"}}, \"nomContact\": \"Direction de l'aménagement\", \"adresseMailContact\": \"da.dreal-occitanie@developpement-durable.gouv.fr\"}, \"procedure\": {\"procedureAdapteeO\": \"\", \"capaciteEcoFin\": \"Aucun chiffre d’affaires minimal requis pour cet accord-cadre.\", \"capaciteTech\": \"• Une liste des principales missions exécutées au cours des 5 dernières années (avec montants, dates, maîtres d’ouvrage et références contactables), similaires en nature et en importance au présent marché.\\n• Pour les entreprises soumissionnant en groupement, chaque membre doit justifier de sa part des capacités techniques requises.\", \"techAchat\": {\"accordCadre\": \"\"}, \"dateReceptionOffres\": \"2027-01-15T12:00:00.000\", \"presOffres\": {\"exigee\": \"\"}, \"nbCandidatReduit\": {\"non\": \"\"}, \"attributionSansNegociation\": {\"oui\": {\"@xsi:type\": \"xs:string\"}}, \"variantes\": {\"non\": {\"@xsi:type\": \"xs:string\"}}, \"categorieAcheteur\": \"DREAL Occitanie, service déconcentré de l'Etat\", \"criteresAttrib\": \"Prix (40%), Valeur technique (40%), Valeur environnementale (20%) selon les modalités définies au règlement de la consultation\"}, \"natureMarche\": {\"intitule\": \"Assistance à maîtrise d'ouvrage pour l'animation du réseau France Rénov' sur le territoire de la région Occitanie\", \"codeCPV\": {\"objetPrincipal\": {\"classPrincipale\": \"79952000\"}}, \"natureMarche\": {\"services\": \"\"}, \"lieuExecution\": \"France\", \"dureeMois\": \"48\", \"tranches\": {\"non\": {\"@xsi:type\": \"xs:string\"}}, \"reservationMarche\": {\"non\": \"\"}, \"lotsMarche\": {\"non\": {\"@xsi:type\": \"xs:string\"}}}, \"informComplementaire\": {\"non\": \"\", \"autresInformComplementaire\": \"Clauses sociales :\\nCette consultation comporte des conditions particulières d’exécution dont le détail sera indiqué dans le CCAP et le CCTP.\\nLe maître d’ouvrage s’est engagé dans une politique volontariste d'insertion des personnes éloignées de l’emploi. En application de l’article L2112-2 du Code de la Commande Publique, le cahier des charges comportera des clauses visant à promouvoir l'emploi de personnes rencontrant des difficultés particulières d'insertion et à lutter contre le chômage.\\nPour cela, il a été décidé de faire appel aux partenaires privilégiés que sont les entreprises par le biais de la commande publique, afin de favoriser l’accès à l’emploi de ces personnes.\\nLe détail des clauses sociales (types d’actions, volumes d’heures, modalités de suivi, etc) est défini à l’article IV du CCAP.\\nLes candidats ne sont pas autorisés à formuler de réserve dans leur offre sur la clause obligatoire d’insertion professionnelle.\\nUne offre qui ne satisferait pas à cette condition d’exécution sera déclarée irrégulière au motif de non-respect du cahier des charges.\\n\\nConflit d’intérêts :\\nDe manière qu'il ne puisse se trouver en situation de conflit d'intérêts à l'occasion de l'exécution du contrat, objet de la présente consultation, chaque opérateur économique s'engage à avertir sans délai la DREAL Occitanie, s’il se trouve en situation de détenir un marché public ou équivalent portant sur des prestations qui entreraient, directement ou indirectement, dans le champ de la présente consultation.\\nLe cas échéant, l’opérateur économique peut néanmoins candidater, objet de la présente procédure, à condition qu'il apporte la preuve à la DREAL qu'il ne dispose d'aucun avantage de nature à fausser la concurrence et à constituer une rupture d'égalité avec les autres candidats.\\nDans ces conditions, et dans l'hypothèse où les éléments d'information fournis par le candidat ne s'avéreraient pas suffisamment convaincants pour la DREAL Occitanie, sa candidature sera rejetée.\"}}}}",
+   "url_avis": "https://www.boamp.fr/pages/avis/?q=idweb:26-109228"
+  }
+ ]
+}

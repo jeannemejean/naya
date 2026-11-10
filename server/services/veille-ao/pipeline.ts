@@ -1,0 +1,167 @@
+// Veille AO : un passage complet pour une utilisatrice.
+// Collecte (BOAMP puis TED) → délais → dédoublonnage → rafraîchissement des lignes connues →
+// qualification IA des seuls nouveaux (plafonnée) → insertion. Une source qui échoue n'arrête
+// pas l'autre ; une qualification qui échoue n'est pas insérée (elle sera retentée au passage
+// suivant, la fenêtre couvrant plusieurs jours).
+import type { FaitsVeille, LigneVeilleAO } from "../appels-offres-store";
+import { joursAvant, estPasse } from "@shared/appels-offres";
+import { collecterBoamp, collecterTed, type Fetch, type FenetreVeille } from "./sources";
+import { classer, type Existant } from "./dedupe";
+import { DELAI_MIN_JOURS, jourParis, ligneQualifiee, type Qualification } from "./qualification";
+import type { AvisCollecte, SourceVeilleAO } from "./mapping";
+import { passagesEnCours } from "./etat";
+
+/** Champs factuels qu'un nouveau passage peut rafraîchir sur une ligne existante. */
+export type FaitsVeilleAO = FaitsVeille;
+
+export interface DepsVeilleAO {
+  fetch: Fetch;
+  existants(userId: string): Promise<Existant[]>;
+  inserer(userId: string, lignes: LigneVeilleAO[]): Promise<unknown>;
+  rafraichir(userId: string, id: number, faits: FaitsVeilleAO): Promise<unknown>;
+  qualifier(userId: string, avis: AvisCollecte): Promise<{ valeur: Qualification; coutEur: number }>;
+  estBloquee(userId: string): Promise<boolean>;
+}
+
+export interface OptionsVeilleAO {
+  maintenant?: Date;
+  /** Jours de publication relus à chaque passage (rattrape un passage manqué). */
+  joursFenetre?: number;
+  plafondIA?: number;
+  concurrence?: number;
+  sources?: SourceVeilleAO[];
+}
+
+export interface BilanVeilleAO {
+  examines: number;
+  nouveaux: number;
+  rafraichis: number;
+  doublons: number;
+  horsDelai: number;
+  echecsQualification: number;
+  reportesPlafond: number;
+  iaBloquee: boolean;
+  coutEur: number;
+  erreursSources: string[];
+  /** Les avis insérés (pour le journal et le rapport). */
+  inseres: Array<{ sourceId: string; source: string; objet: string; score: string }>;
+}
+
+export const PLAFOND_IA = 40;
+
+/** Faits non vides seulement : un passage ne blanchit jamais une valeur déjà connue. */
+export function faitsDe(a: AvisCollecte): FaitsVeilleAO {
+  const f: FaitsVeilleAO = {};
+  if (a.dateLimite) f.dateLimite = a.dateLimite;
+  if (a.procedure) f.procedure = a.procedure;
+  if (a.departement) f.departement = a.departement;
+  if (a.montantEstimeHt) f.montantEstimeHt = a.montantEstimeHt;
+  if (a.lienDce) f.lienDce = a.lienDce;
+  return f;
+}
+
+async function parLots<T>(elements: T[], n: number, f: (x: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const ouvrier = async () => { while (i < elements.length) { const x = elements[i++]; await f(x); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(n, elements.length)) }, ouvrier));
+}
+
+export function fenetre(maintenant: Date, jours: number): FenetreVeille {
+  return { depuis: jourParis(new Date(maintenant.getTime() - jours * 86_400_000)), aujourdhui: jourParis(maintenant) };
+}
+
+export async function passageVeilleAO(userId: string, deps: DepsVeilleAO, o: OptionsVeilleAO = {}): Promise<BilanVeilleAO> {
+  const maintenant = o.maintenant ?? new Date();
+  const plafond = o.plafondIA ?? PLAFOND_IA;
+  const sources = o.sources ?? ["boamp", "ted"];
+  const f = fenetre(maintenant, o.joursFenetre ?? 3);
+  const bilan: BilanVeilleAO = {
+    examines: 0, nouveaux: 0, rafraichis: 0, doublons: 0, horsDelai: 0, echecsQualification: 0,
+    reportesPlafond: 0, iaBloquee: false, coutEur: 0, erreursSources: [], inseres: [],
+  };
+
+  // BOAMP d'abord : un avis repris sur TED est alors reconnu comme doublon (même objet).
+  const collectes: AvisCollecte[] = [];
+  for (const s of sources) {
+    try {
+      collectes.push(...(s === "boamp" ? await collecterBoamp(deps.fetch, f) : await collecterTed(deps.fetch, f)));
+    } catch (e: any) {
+      bilan.erreursSources.push(`${s}: ${String(e?.message ?? e).slice(0, 120)}`);
+    }
+  }
+  bilan.examines = collectes.length;
+
+  // Délais (consignes) : passé ou moins de 6 jours, écarté sans appel IA ; sans date, gardé.
+  const jouables = collectes.filter((a) => {
+    const j = joursAvant(a.dateLimite, maintenant);
+    const ok = !estPasse(a.dateLimite, maintenant) && (j == null || j >= DELAI_MIN_JOURS);
+    if (!ok) bilan.horsDelai++;
+    return ok;
+  });
+
+  const { nouveaux, aRafraichir, doublons } = classer(jouables, await deps.existants(userId));
+  bilan.doublons = doublons.length;
+
+  for (const { id, avis } of aRafraichir) {
+    const faits = faitsDe(avis);
+    if (Object.keys(faits).length === 0) continue;
+    try { await deps.rafraichir(userId, id, faits); bilan.rafraichis++; } catch (e: any) {
+      console.error(`[veille-ao] rafraîchissement ${avis.sourceId} :`, e?.message ?? e);
+    }
+  }
+
+  if (nouveaux.length === 0) return bilan;
+  if (await deps.estBloquee(userId)) {
+    bilan.iaBloquee = true;
+    bilan.reportesPlafond = nouveaux.length;
+    return bilan;
+  }
+
+  // Les plus proches de leur date limite d'abord ; au-delà du plafond, au passage suivant.
+  const temps = (a: AvisCollecte) => a.dateLimite?.getTime() ?? Number.POSITIVE_INFINITY;
+  const ordonnes = [...nouveaux].sort((a, b) => temps(a) - temps(b));
+  const choisis = ordonnes.slice(0, plafond);
+  bilan.reportesPlafond = ordonnes.length - choisis.length;
+
+  await parLots(choisis, o.concurrence ?? 4, async (avis) => {
+    let ligne: LigneVeilleAO;
+    try {
+      const { valeur, coutEur } = await deps.qualifier(userId, avis);
+      bilan.coutEur += coutEur;
+      ligne = ligneQualifiee(avis, valeur, maintenant) as LigneVeilleAO;
+    } catch (e: any) {
+      bilan.echecsQualification++;
+      console.error(`[veille-ao] qualification ${avis.source} ${avis.sourceId} :`, String(e?.message ?? e).slice(0, 200));
+      return;
+    }
+    try {
+      await deps.inserer(userId, [ligne]);
+      bilan.nouveaux++;
+      bilan.inseres.push({ sourceId: avis.sourceId, source: avis.source, objet: avis.objet, score: String(ligne.scoreAdequation) });
+    } catch (e: any) {
+      console.error(`[veille-ao] insertion ${avis.sourceId} :`, e?.message ?? e);
+    }
+  });
+  return bilan;
+}
+
+// ─── Un seul passage à la fois par utilisatrice ──────────────────────────────
+
+const enCours = passagesEnCours;
+
+/** null si un passage est déjà en cours pour elle ; sinon le bilan. Ne lève jamais. */
+export async function lancerVeilleAO(userId: string, deps: DepsVeilleAO, o: OptionsVeilleAO = {}): Promise<BilanVeilleAO | null> {
+  if (enCours.has(userId)) return null;
+  enCours.add(userId);
+  try {
+    return await passageVeilleAO(userId, deps, o);
+  } catch (e: any) {
+    console.error(`[veille-ao] passage ${userId} :`, e?.message ?? e);
+    return {
+      examines: 0, nouveaux: 0, rafraichis: 0, doublons: 0, horsDelai: 0, echecsQualification: 0, reportesPlafond: 0,
+      iaBloquee: false, coutEur: 0, erreursSources: [`passage: ${String(e?.message ?? e).slice(0, 120)}`], inseres: [],
+    };
+  } finally {
+    enCours.delete(userId);
+  }
+}

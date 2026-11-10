@@ -1,0 +1,338 @@
+{
+ "notices": [
+  {
+   "title-proc": {
+    "fra": "26PI07 - Accord-cadre à bons de commandes pour la conception et mise en uvre d'actions de concertation, de médiation et de communication dans le cadre du Nouveau Programme National de Renouvellement Urbain de la Métropole Toulon Provence Méditerrané"
+   },
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-09+02:00",
+    "2026-12-09+02:00"
+   ],
+   "notice-type": "cn-standard",
+   "place-of-performance-subdiv-lot": [
+    "FRL05",
+    "FRL05"
+   ],
+   "publication-number": "769510-2026",
+   "estimated-value-lot": [
+    "88780",
+    "76500"
+   ],
+   "selection-criterion-description-lot": {
+    "fra": [
+     "Renseignements concernant la capacité économique et financière de l'entreprise : Déclaration concernant le chiffre d'affaires global du candidat et, le cas échéant, le chiffre d'affaires du domaine d'activité faisant l'objet du marché public, portant au maximum sur les trois derniers exercices disponibles en fonction de la date de création de l'entreprise ou du début d'activité de l'opérateur économique, dans la mesure où les informations sur ces chiffres d'affaires sont disponibles ; La capacité financière peut être prouvée par tout autre moyen que la remise des Chiffres d'affaires : déclaration appropriée de banques, preuve d'une assurance des risques professionnels pertinents.",
+     "Renseignements concernant la capacité économique et financière de l'entreprise : Déclaration concernant le chiffre d'affaires global du candidat et, le cas échéant, le chiffre d'affaires du domaine d'activité faisant l'objet du marché public, portant au maximum sur les trois derniers exercices disponibles en fonction de la date de création de l'entreprise ou du début d'activité de l'opérateur économique, dans la mesure où les informations sur ces chiffres d'affaires sont disponibles ; La capacité financière peut être prouvée par tout autre moyen que la remise des Chiffres d'affaires : déclaration appropriée de banques, preuve d'une assurance des risques professionnels pertinents.",
+     "Déclaration indiquant les effectifs moyens annuels du candidat au titre de la dernière année",
+     "Liste des principales prestations effectuées au cours des trois dernières années prouvées par des attestations du destinataire ou, à défaut, par une déclaration du candidat",
+     "Renseignements concernant la capacité économique et financière de l'entreprise : Déclaration concernant le chiffre d'affaires global du candidat et, le cas échéant, le chiffre d'affaires du domaine d'activité faisant l'objet du marché public, portant au maximum sur les trois derniers exercices disponibles en fonction de la date de création de l'entreprise ou du début d'activité de l'opérateur économique, dans la mesure où les informations sur ces chiffres d'affaires sont disponibles ; La capacité financière peut être prouvée par tout autre moyen que la remise des Chiffres d'affaires : déclaration appropriée de banques, preuve d'une assurance des risques professionnels pertinents.",
+     "Renseignements concernant la capacité économique et financière de l'entreprise : Déclaration concernant le chiffre d'affaires global du candidat et, le cas échéant, le chiffre d'affaires du domaine d'activité faisant l'objet du marché public, portant au maximum sur les trois derniers exercices disponibles en fonction de la date de création de l'entreprise ou du début d'activité de l'opérateur économique, dans la mesure où les informations sur ces chiffres d'affaires sont disponibles ; La capacité financière peut être prouvée par tout autre moyen que la remise des Chiffres d'affaires : déclaration appropriée de banques, preuve d'une assurance des risques professionnels pertinents.",
+     "Déclaration indiquant les effectifs moyens annuels du candidat au titre de la dernière année",
+     "Liste des principales prestations effectuées au cours des trois dernières années prouvées par des attestations du destinataire ou, à défaut, par une déclaration du candidat"
+    ]
+   },
+   "award-criterion-type-lot": [
+    "quality",
+    "price",
+    "quality",
+    "quality",
+    "price",
+    "quality"
+   ],
+   "award-criterion-name-lot": {
+    "fra": [
+     "1- Valeur Technique.",
+     "2- Prix des prestations.",
+     "3- Performances en matière de protection de l'environnement.",
+     "1- Valeur Technique.",
+     "2- Prix des prestations.",
+     "3- Performances en matière de protection de l'environnement."
+    ]
+   },
+   "estimated-value-cur-proc": "EUR",
+   "buyer-country": [
+    "FRA"
+   ],
+   "contract-duration-period-lot": [
+    {
+     "unit": "MONTH",
+     "value": "48"
+    },
+    {
+     "unit": "MONTH",
+     "value": "48"
+    }
+   ],
+   "document-url-lot": [
+    "https://www.achatpublic.com/sdm/ent/gen/ent_detail.do?PCSLID=CSL_2026_xsnOwHnFHL",
+    "https://www.achatpublic.com/sdm/ent/gen/ent_detail.do?PCSLID=CSL_2026_xsnOwHnFHL"
+   ],
+   "description-lot": {
+    "fra": [
+     "Concertation et médiation",
+     "Communication"
+    ]
+   },
+   "deadline-receipt-tender-time-lot": [
+    "16:00:00+02:00",
+    "16:00:00+02:00"
+   ],
+   "procedure-type": "open",
+   "award-criterion-number-lot": [
+    "50",
+    "40",
+    "10",
+    "50",
+    "40",
+    "10"
+   ],
+   "classification-cpv": [
+    "98133100",
+    "79340000",
+    "98133100",
+    "79340000",
+    "79419000",
+    "79320000",
+    "79952000",
+    "92312200",
+    "79950000",
+    "72224000",
+    "79315000",
+    "79822500",
+    "79823000",
+    "79952000",
+    "79950000",
+    "79416000"
+   ],
+   "buyer-name": {
+    "fra": [
+     "METROPOLE TOULON PROVENCE MEDITERRANEE"
+    ]
+   },
+   "publication-date": "2026-11-05+01:00",
+   "estimated-value-proc": "165280",
+   "links": {
+    "html": {
+     "FRA": "https://ted.europa.eu/fr/notice/-/detail/769510-2026"
+    },
+    "pdf": {
+     "FRA": "https://ted.europa.eu/fr/notice/769510-2026/pdf"
+    }
+   },
+   "description-proc": {
+    "fra": "La présente consultation concerne un accord-cadre à bons de commandes pour la conception et mise en uvre d'actions de concertation, de médiation et de communication dans le cadre du Nouveau Programme National de Renouvellement Urbain de la Métropole Toulon Provence Méditerranée"
+   }
+  },
+  {
+   "title-proc": {
+    "fra": "Conception création"
+   },
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-14+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "place-of-performance-subdiv-lot": [
+    "FR101"
+   ],
+   "publication-number": "776725-2026",
+   "buyer-country": [
+    "FRA"
+   ],
+   "contract-duration-period-lot": [
+    {
+     "unit": "YEAR",
+     "value": "2"
+    }
+   ],
+   "document-url-lot": [
+    "https://www.marches-publics.gouv.fr/"
+   ],
+   "description-lot": {
+    "fra": [
+     "Le présent accord-cadre a pour objet la conception-création et réalisation de dispositifs hors médias (supports print, web et numériques) pour la Caisse nationale de solidarité pour l’autonomie (CNSA)."
+    ]
+   },
+   "deadline-receipt-tender-time-lot": [
+    "12:00:00+01:00"
+   ],
+   "procedure-type": "open",
+   "classification-cpv": [
+    "79341100",
+    "79341100"
+   ],
+   "buyer-name": {
+    "fra": [
+     "CNSA"
+    ]
+   },
+   "publication-date": "2026-11-09+01:00",
+   "links": {
+    "html": {
+     "FRA": "https://ted.europa.eu/fr/notice/-/detail/776725-2026"
+    },
+    "pdf": {
+     "FRA": "https://ted.europa.eu/fr/notice/776725-2026/pdf"
+    }
+   },
+   "description-proc": {
+    "fra": "L'accord-cadre a pour objet la conception-création et réalisation de dispositifs hors médias (supports print, web et numériques) pour la Caisse nationale de solidarité pour l’autonomie (CNSA)."
+   }
+  },
+  {
+   "title-proc": {
+    "fra": "Production et rayonnement du Salon des Nouveaux Ensembliers 2027"
+   },
+   "deadline-receipt-tender-date-lot": [
+    "2026-11-27+01:00",
+    "2026-11-27+01:00",
+    "2026-11-27+01:00",
+    "2026-11-27+01:00",
+    "2026-11-27+01:00",
+    "2026-11-27+01:00",
+    "2026-11-27+01:00",
+    "2026-11-27+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "publication-number": "777375-2026",
+   "buyer-country": [
+    "FRA"
+   ],
+   "document-url-lot": [
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j",
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j",
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j",
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j",
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j",
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j",
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j",
+    "https://www.marches-publics.gouv.fr/entreprise/consultation/3087986?orgAcronyme=f5j"
+   ],
+   "description-lot": {
+    "fra": [
+     "Production déléguée et coordination générale du Salon. Ce lot comprend également la réalisation matérielle de la scénographie générale conçue par les Manufactures Nationales.",
+     "Définition et mise en œuvre de la stratégie de visitorat professionnel en provenance du territoire français. Ce lot comprend aussi la conception et la coordination des journées professionnelles du Salon.",
+     "Développement du visitorat professionnel en provenance de la Côte Est des États-Unis",
+     "Développement du visitorat professionnel en provenance de la Côte Ouest des États-Unis.",
+     "Développement du visitorat professionnel en provenance du territoire asiatique.",
+     "Développement du visitorat professionnel en provenance du Moyen-Orient.",
+     "Conception graphique, fabrication, impression, livraison et diffusion commerciale du catalogue du Salon. Les candidats devront remettre un échantillon par voie postale permettant d'apprécier la qualité de fabrication de leurs réalisation avant la date limite de remise des offres.",
+     "Réalisation des photographies du Salon pour illustrer le Catalogue et constituer une banque d'images de référence."
+    ]
+   },
+   "deadline-receipt-tender-time-lot": [
+    "12:00:00+01:00",
+    "12:00:00+01:00",
+    "12:00:00+01:00",
+    "12:00:00+01:00",
+    "12:00:00+01:00",
+    "12:00:00+01:00",
+    "12:00:00+01:00",
+    "12:00:00+01:00"
+   ],
+   "procedure-type": "open",
+   "classification-cpv": [
+    "92521100",
+    "79950000",
+    "79411100",
+    "79411100",
+    "79411100",
+    "79411100",
+    "79411100",
+    "79970000",
+    "79961000"
+   ],
+   "buyer-name": {
+    "fra": [
+     "MN-S&MN"
+    ]
+   },
+   "publication-date": "2026-11-09+01:00",
+   "links": {
+    "html": {
+     "FRA": "https://ted.europa.eu/fr/notice/-/detail/777375-2026"
+    },
+    "pdf": {
+     "FRA": "https://ted.europa.eu/fr/notice/777375-2026/pdf"
+    }
+   },
+   "description-proc": {
+    "fra": "La présente consultation a pour objet de confier au(x) Titulaire(s) retenu(s) les prestations nécessaires à la production et au rayonnement du Salon des Nouveaux Ensembliers présenté du 22 octobre (ouverture au public) au 12 décembre 2027 à la Galerie des Gobelins."
+   }
+  },
+  {
+   "title-proc": {
+    "fra": "PRESTATIONS DE COMMUNICATION GLOBALE POUR LE COMPTE DE LA SPL SEINE PARK"
+   },
+   "deadline-receipt-tender-date-lot": [
+    "2026-12-07+01:00"
+   ],
+   "notice-type": "cn-standard",
+   "place-of-performance-subdiv-lot": [
+    "FR105"
+   ],
+   "publication-number": "780380-2026",
+   "estimated-value-lot": [
+    "250000.0"
+   ],
+   "award-criterion-type-lot": [
+    "price",
+    "quality",
+    "quality"
+   ],
+   "buyer-country": [
+    "FRA"
+   ],
+   "contract-duration-period-lot": [
+    {
+     "unit": "MONTH",
+     "value": "12"
+    }
+   ],
+   "document-url-lot": [
+    "https://marches.maximilien.fr/entreprise/consultation/937974?orgAcronyme=a5n"
+   ],
+   "description-lot": {
+    "fra": [
+     "Le présent accord-cadre a pour objet la réalisation de prestations de diverses natures de communication pour le compte de la Société Publique Locale (SPL) Seine Park. Ces prestations visent à répondre aux besoins de la SPL en matière de stratégie de communication, de signalétique au sein de ses infrastructures et équipements, de création de supports, de gestion des outils numériques, de production d’objets personnalisés promotionnels et de production de contenus visuels et audiovisuels. L’objectif est de garantir une communication cohérente, efficace et adaptée aux enjeux spécifiques de la SPL, tout en respectant les normes d’accessibilité, de durabilité et de visibilité. Le titulaire du marché devra fournir des services de conseil, de conception, de production et de diffusion, en intégrant des solutions innovantes et adaptées aux évolutions technologiques et aux attentes de la SPL. Les prestations incluent également la gestion des relations publiques, la communication interne, ainsi que la création d’objets promotionnels écoresponsables."
+    ]
+   },
+   "deadline-receipt-tender-time-lot": [
+    "23:59:00+01:00"
+   ],
+   "procedure-type": "open",
+   "award-criterion-number-lot": [
+    "30.0",
+    "65.0",
+    "5.0"
+   ],
+   "classification-cpv": [
+    "79340000",
+    "79822500",
+    "79415200",
+    "72413000",
+    "79340000",
+    "79822500",
+    "79415200",
+    "72413000"
+   ],
+   "buyer-name": {
+    "fra": [
+     "SEINE PARK"
+    ]
+   },
+   "publication-date": "2026-11-10+01:00",
+   "links": {
+    "html": {
+     "FRA": "https://ted.europa.eu/fr/notice/-/detail/780380-2026"
+    },
+    "pdf": {
+     "FRA": "https://ted.europa.eu/fr/notice/780380-2026/pdf"
+    }
+   },
+   "description-proc": {
+    "fra": "Le présent accord-cadre a pour objet la réalisation de prestations de diverses natures de communication pour le compte de la Société Publique Locale (SPL) Seine Park. Ces prestations visent à répondre aux besoins de la SPL en matière de stratégie de communication, de signalétique au sein de ses infrastructures et équipements, de création de supports, de gestion des outils numériques, de production d’objets personnalisés promotionnels et de production de contenus visuels et audiovisuels. L’objectif est de garantir une communication cohérente, efficace et adaptée aux enjeux spécifiques de la SPL, tout en respectant les normes d’accessibilité, de durabilité et de visibilité. Le titulaire du marché devra fournir des services de conseil, de conception, de production et de diffusion, en intégrant des solutions innovantes et adaptées aux évolutions technologiques et aux attentes de la SPL. Les prestations incluent également la gestion des relations publiques, la communication interne, ainsi que la création d’objets promotionnels écoresponsables."
+   }
+  }
+ ],
+ "totalNoticeCount": 4,
+ "timedOut": false
+}

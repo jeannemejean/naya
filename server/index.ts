@@ -19,6 +19,7 @@ import { runReadingRoom } from "./services/reading/runner";
 import { storage } from "./storage";
 import { scheduleRoutines } from "./services/routines/ordonnanceur";
 import { scheduleProfilsVeille } from "./services/profils-veille/planificateur";
+import { scheduleVeilleAO } from "./services/veille-ao/planificateur";
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('unhandledRejection', (reason, promise) => {
@@ -268,4 +269,8 @@ function demarrerTachesDeFond() {
 
   // ─── Profils de veille : rattachement, collecte (lun/mer/ven), analyse (dim), tri (chaque tour) ──
   scheduleProfilsVeille();
+
+  // ─── Veille des appels d'offres publics (BOAMP + TED), chaque jour à 06:49 Paris ──
+  // Seulement pour les ids listés dans VEILLE_AO_USERS (inertes sinon).
+  scheduleVeilleAO();
 }

@@ -61,3 +61,33 @@ describe("upsertDepuisVeille", () => {
     await expect(upsertDepuisVeille("", [ligne()], {}, db)).rejects.toThrow(/userId/);
   });
 });
+
+describe("rafraichirDepuisVeille", () => {
+  function baseMaj() {
+    const maj: Array<{ table: string; set: any; where: unknown }> = [];
+    const db = {
+      update: (table: any) => ({
+        set: (set: any) => ({
+          where: (where: unknown) => ({ returning: async () => { maj.push({ table: getTableName(table), set, where }); return [{ id: 1 }]; } }),
+        }),
+      }),
+    };
+    return { db: db as any, maj };
+  }
+
+  it("n'écrit que les faits fournis : jamais statut, notes ni qualification", async () => {
+    const { rafraichirDepuisVeille } = await import("./appels-offres-store");
+    const { db, maj } = baseMaj();
+    const faits = { dateLimite: new Date("2026-12-07T22:59:00Z"), montantEstimeHt: "250000.00", lienDce: "", statut: "ecarte", notes: "x", scoreAdequation: "fort" } as any;
+    expect(await rafraichirDepuisVeille("user-1", 4, faits, db)).toBe(true);
+    expect(maj[0].table).toBe("appels_offres");
+    expect(Object.keys(maj[0].set).sort()).toEqual(["dateLimite", "montantEstimeHt", "updatedAt"]);
+  });
+
+  it("rien à écrire : aucune requête", async () => {
+    const { rafraichirDepuisVeille } = await import("./appels-offres-store");
+    const { db, maj } = baseMaj();
+    expect(await rafraichirDepuisVeille("user-1", 4, {}, db)).toBe(false);
+    expect(maj).toHaveLength(0);
+  });
+});

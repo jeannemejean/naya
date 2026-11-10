@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Landmark, Loader2, ExternalLink, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Landmark, Loader2, ExternalLink, ChevronDown, ChevronRight, X, Radar } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -36,9 +36,19 @@ type AppelOffres = {
   lienAvis: string | null;
   lienDce: string | null;
   premierJet: string | null;
+  source: string;
+  createdAt: string | null;
 };
 
+type EtatVeille = { active: boolean; enCours: boolean };
+type BilanVeille = { nouveaux: number; rafraichis: number; examines: number; reportes: number; iaBloquee: boolean; sourcesEnErreur: number };
+
+/** Avis arrivé par la veille (BOAMP, TED) dans les dernières 24 h. */
+const estNouveau = (a: AppelOffres, maintenant = Date.now()) =>
+  (a.source === "boamp" || a.source === "ted") && !!a.createdAt && maintenant - new Date(a.createdAt).getTime() < 24 * 3_600_000;
+
 const CLE = "/api/appels-offres";
+const CLE_VEILLE = "/api/appels-offres/veille";
 type Periode = "tous" | "a_venir" | "passes";
 
 // Teintes claires uniquement : le texte reste olive foncé, lisible partout.
@@ -61,6 +71,28 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
   const { t, i18n } = useTranslation();
   const locale = i18n.language?.startsWith("en") ? "en-GB" : "fr-FR";
   const { data, isLoading, isError } = useQuery<AppelOffres[]>({ queryKey: [CLE] });
+  const { data: etatVeille } = useQuery<EtatVeille>({ queryKey: [CLE_VEILLE] });
+  const { toast } = useToast();
+  const lancerVeille = useMutation({
+    // Un passage peut prendre une à deux minutes (qualification de chaque nouvel avis).
+    mutationFn: () => apiRequest("POST", CLE_VEILLE, undefined, { timeoutMs: 300_000 }).then((r) => r.json() as Promise<BilanVeille>),
+    onSuccess: (b) => {
+      queryClient.invalidateQueries({ queryKey: [CLE] });
+      const lignes = [
+        b.nouveaux === 0 ? t("appelsOffres.veille.aucunNouveau") : t("appelsOffres.veille.nouveaux", { count: b.nouveaux }),
+        t("appelsOffres.veille.detail", { examines: b.examines, rafraichis: b.rafraichis }),
+        b.reportes > 0 && !b.iaBloquee ? t("appelsOffres.veille.reportes", { count: b.reportes }) : null,
+        b.iaBloquee ? t("appelsOffres.veille.iaBloquee") : null,
+        b.sourcesEnErreur > 0 ? t("appelsOffres.veille.sourcesEnErreur") : null,
+      ].filter(Boolean);
+      toast({ title: lignes[0] as string, description: lignes.slice(1).join(" ") });
+    },
+    onError: (e: unknown) => {
+      const m = e instanceof Error ? e.message : "";
+      const cle = /^429\b/.test(m) ? "tropRecente" : /^409\b/.test(m) ? "dejaEnCours" : "echec";
+      toast({ title: t(`appelsOffres.veille.${cle}`), variant: cle === "echec" ? "destructive" : undefined });
+    },
+  });
   const [filtreStatut, setFiltreStatut] = useState<StatutAO | "tous">("tous");
   const [filtreScore, setFiltreScore] = useState<ScoreAO | "tous">("tous");
   const [periode, setPeriode] = useState<Periode>("tous");
@@ -112,7 +144,14 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground line-clamp-2">{a.objet}</p>
+              <p className="text-sm font-medium text-foreground line-clamp-2">
+                {estNouveau(a) && (
+                  <span className="mr-1.5 align-middle rounded-full bg-naya-mauve/20 border border-naya-mauve/40 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-naya-olive" data-testid={`ao-nouveau-${a.id}`}>
+                    {t("appelsOffres.nouveau")}
+                  </span>
+                )}
+                {a.objet}
+              </p>
               {a.acheteur && <p className="text-xs text-naya-olive-55 mt-0.5 truncate">{a.acheteur}</p>}
             </div>
             <span className={`shrink-0 text-[11px] rounded-full px-2 py-0.5 ${COULEUR_STATUT[a.statut]}`}>
@@ -131,6 +170,7 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
             {a.offresJmd.map((o) => (
               <span key={o} className="rounded-full bg-naya-olive-06 border border-naya-olive-10 px-2 py-0.5 text-[10px] tracking-wide text-naya-olive-70">{o}</span>
             ))}
+            <span className="text-[10px] uppercase tracking-wide text-naya-olive-55">{t(`appelsOffres.sources.${a.source}`, { defaultValue: a.source })}</span>
           </div>
         </button>
       </li>
@@ -150,7 +190,17 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
             <Landmark className="h-5 w-5 text-naya-salvia" />
             {t("appelsOffres.titre")}
           </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{t("appelsOffres.description")}</p>
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <p className="text-sm text-muted-foreground mt-0.5">{t("appelsOffres.description")}</p>
+            {etatVeille?.active && (
+              <Button size="sm" variant="outline" onClick={() => lancerVeille.mutate()}
+                disabled={lancerVeille.isPending || etatVeille.enCours} data-testid="ao-lancer-veille">
+                {lancerVeille.isPending || etatVeille.enCours
+                  ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />{t("appelsOffres.veille.enCours")}</>
+                  : <><Radar className="h-3.5 w-3.5 mr-1.5" />{t("appelsOffres.veille.lancer")}</>}
+              </Button>
+            )}
+          </div>
         </header>
 
         <main className="flex-1 overflow-hidden flex">
@@ -294,6 +344,7 @@ function Detail({ ao, locale, onFermer, formatDate, formatMontant, echeance }: {
         {champ("offres", ao.offresJmd.length ? ao.offresJmd.join(" / ") : null)}
         {champ("procedure", ao.procedure)}
         {champ("reference", ao.reference)}
+        {champ("source", t(`appelsOffres.sources.${ao.source}`, { defaultValue: ao.source }))}
         {champ("departement", ao.departement)}
         {champ("dateReperage", reperage)}
         {champ("criteres", ao.criteresPonderation)}

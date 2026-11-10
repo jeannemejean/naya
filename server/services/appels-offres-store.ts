@@ -52,6 +52,37 @@ export async function upsertDepuisVeille(
   return { ecrites: lignes.length };
 }
 
+/** Ce que la veille doit connaître pour ne rien créer en double (toutes sources). */
+export async function existantsPourVeille(userId: string, db: NodePgDatabase<any> = dbParDefaut) {
+  return db.select({
+    id: appelsOffres.id, source: appelsOffres.source, sourceId: appelsOffres.sourceId,
+    reference: appelsOffres.reference, lienAvis: appelsOffres.lienAvis, objet: appelsOffres.objet,
+    acheteur: appelsOffres.acheteur, dateLimite: appelsOffres.dateLimite,
+  }).from(appelsOffres).where(eq(appelsOffres.userId, userId));
+}
+
+/** Faits qu'un passage de veille peut rafraîchir. Jamais statut, notes ni qualification. */
+export interface FaitsVeille {
+  dateLimite?: Date;
+  procedure?: string;
+  departement?: string;
+  montantEstimeHt?: string;
+  lienDce?: string;
+}
+const CHAMPS_FAITS = ["dateLimite", "procedure", "departement", "montantEstimeHt", "lienDce"] as const;
+
+/** Met à jour les seuls faits fournis (non vides) d'une ligne de l'utilisatrice. */
+export async function rafraichirDepuisVeille(
+  userId: string, id: number, faits: FaitsVeille, db: NodePgDatabase<any> = dbParDefaut,
+): Promise<boolean> {
+  const set: Record<string, unknown> = {};
+  for (const k of CHAMPS_FAITS) if (faits[k] !== undefined && faits[k] !== null && faits[k] !== "") set[k] = faits[k];
+  if (Object.keys(set).length === 0) return false;
+  const r = await db.update(appelsOffres).set({ ...set, updatedAt: new Date() })
+    .where(and(eq(appelsOffres.id, id), eq(appelsOffres.userId, userId))).returning({ id: appelsOffres.id });
+  return r.length > 0;
+}
+
 export const appelsOffresStore: DepsAppelsOffres = {
   async listerAppelsOffres(userId) {
     return dbParDefaut.select().from(appelsOffres).where(eq(appelsOffres.userId, userId))
