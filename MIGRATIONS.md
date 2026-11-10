@@ -640,3 +640,44 @@ Accord de Jeanne donné le soir même, chaque geste validé par elle dans la ses
 
 - [ ] Supprimer `essai-0038-2026-11-06` et `essai-salves-0038-dev`.
 - [ ] Supprimer `sauvegarde-avant-salves-2026-11-06` quand le déploiement est stable.
+
+## 12. Appels d'offres — `0039` à appliquer en prod à la main
+
+Fichier : `migrations/0039_amusing_madame_web.sql` (branche `feat/appels-offres`). Une table neuve, rien
+d'autre : aucun `ALTER` sur une table existante, aucun `DROP`, aucune donnée réécrite.
+
+- Table : `appels_offres` (`user_id` → `users.id` en `ON DELETE cascade`, `project_id` → `projects.id`
+  en `ON DELETE set null`, nullable).
+- Index unique `appels_offres_user_source_uniq (user_id, source, source_id)` : clé d'upsert de l'import
+  Notion et du futur collecteur quotidien. Index `appels_offres_user_date_limite_idx (user_id, date_limite)`.
+- Appliquée sur dev-local `ep-jolly-sky` le 10 novembre 2026 avec `scripts/migrate-essai.ts` (suivi 39 → 40).
+- **Ordre impératif : migration AVANT de pousser `main`.** La page et les routes `/api/appels-offres`
+  lisent la table : sans elle, la page renvoie une erreur (le reste de l'app n'est pas touché).
+- À faire comme les précédentes : point de restauration Neon, répétition sur branche d'essai forkée de la
+  production (`scripts/migrate-essai.ts`), puis `scripts/migrate-prod.ts`, sortie sous les yeux.
+
+### Vérification après application
+
+```sql
+select (select count(*) from drizzle.__drizzle_migrations) as suivi,
+       to_regclass('public.appels_offres') as table_ao,
+       (select count(*) from pg_indexes where tablename = 'appels_offres') as index_ao; -- 3 (clé primaire + 2)
+```
+
+### Import des appels d'offres Notion en production (après la migration, décision de Jeanne)
+
+Les 85 lignes exportées sont dans `.superpowers/appels-offres-notion.json` (non versionné). Essai à blanc
+d'abord, puis écriture ; l'id utilisatrice de production est à relire avant :
+
+```bash
+IMPORT_DATABASE_URL='<URL de production>' IMPORT_USER_ID='<id de Jeanne en prod>' \
+  npx tsx scripts/import-appels-offres.ts
+IMPORT_DATABASE_URL='<URL de production>' IMPORT_USER_ID='<id de Jeanne en prod>' IMPORT_CONFIRMER_PRODUCTION=oui \
+  npx tsx scripts/import-appels-offres.ts --appliquer
+```
+
+### Production
+
+- [ ] Point de restauration, répétition, `migrate-prod.ts`, suivi vérifié.
+- [ ] Import Notion (essai à blanc puis `--appliquer`).
+- [ ] Pousser `main` (migration d'abord).

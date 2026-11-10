@@ -13,11 +13,13 @@ import {
   doublePrecision,
   vector,
   pgEnum,
+  numeric,
+  date,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { APPARENCE_DEFAUT, type Apparence } from "./saisons";
 
 // Session storage table.
@@ -2626,3 +2628,41 @@ export const reprisesTaches = pgTable("reprises_taches", {
 ]);
 export type RepriseTache = typeof reprisesTaches.$inferSelect;
 export type InsertRepriseTache = typeof reprisesTaches.$inferInsert;
+
+// ─── Appels d'offres ────────────────────────────────────────────────────────────
+// Marchés publics repérés pour l'utilisatrice (veille quotidienne, import Notion d'octobre 2026).
+// Valeurs en clair, validées côté serveur (shared/appels-offres.ts) plutôt qu'en types Postgres :
+// une migration = CREATE TABLE seulement. Un futur collecteur fera un upsert sur
+// (user_id, source, source_id) — source_id = page Notion, n° d'avis BOAMP ou URL de l'avis.
+export const appelsOffres = pgTable("appels_offres", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  objet: text("objet").notNull(),
+  acheteur: text("acheteur"),
+  reference: text("reference"),
+  procedure: text("procedure"),                         // MAPA | Appel d'offres ouvert | Concours | Autre
+  dateLimite: timestamp("date_limite"),
+  dateReperage: date("date_reperage"),
+  departement: text("departement"),
+  montantEstimeHt: numeric("montant_estime_ht", { precision: 14, scale: 2 }),
+  scoreAdequation: text("score_adequation"),            // fort | moyen | faible
+  offresJmd: text("offres_jmd").array().notNull().default(sql`ARRAY[]::text[]`), // IN SITU | IN LINEA | IN SCENA
+  statut: text("statut").notNull().default("repere"),   // repere | premier_jet_pret | en_redaction | depose | gagne | perdu | ecarte
+  criteresPonderation: text("criteres_ponderation"),
+  piecesExigees: text("pieces_exigees"),
+  bloquants: text("bloquants"),
+  notes: text("notes"),
+  lienAvis: text("lien_avis"),
+  lienDce: text("lien_dce"),
+  premierJet: text("premier_jet"),
+  source: text("source").notNull().default("manuel"),  // notion_import | boamp | manuel
+  sourceId: text("source_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("appels_offres_user_source_uniq").on(t.userId, t.source, t.sourceId),
+  index("appels_offres_user_date_limite_idx").on(t.userId, t.dateLimite),
+]);
+export type AppelOffres = typeof appelsOffres.$inferSelect;
+export type InsertAppelOffres = typeof appelsOffres.$inferInsert;
