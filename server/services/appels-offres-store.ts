@@ -71,12 +71,21 @@ export interface FaitsVeille {
 }
 const CHAMPS_FAITS = ["dateLimite", "procedure", "departement", "montantEstimeHt", "lienDce"] as const;
 
-/** Met à jour les seuls faits fournis (non vides) d'une ligne de l'utilisatrice. */
+/**
+ * Met à jour les seuls faits fournis (non vides) d'une ligne de l'utilisatrice.
+ * `seulementVides` : ne remplit que les champs encore vides en base (coalesce), sans jamais
+ * remplacer une valeur existante (lignes importées de Notion, vérifiées par Jeanne).
+ */
 export async function rafraichirDepuisVeille(
-  userId: string, id: number, faits: FaitsVeille, db: NodePgDatabase<any> = dbParDefaut,
+  userId: string, id: number, faits: FaitsVeille, opts: { seulementVides?: boolean } = {}, db: NodePgDatabase<any> = dbParDefaut,
 ): Promise<boolean> {
   const set: Record<string, unknown> = {};
-  for (const k of CHAMPS_FAITS) if (faits[k] !== undefined && faits[k] !== null && faits[k] !== "") set[k] = faits[k];
+  for (const k of CHAMPS_FAITS) {
+    const v = faits[k];
+    if (v === undefined || v === null || v === "") continue;
+    // sql.param avec la colonne : même encodage que drizzle (date en UTC, comme les insertions).
+    set[k] = opts.seulementVides ? sql`coalesce(${appelsOffres[k]}, ${sql.param(v, appelsOffres[k])})` : v;
+  }
   if (Object.keys(set).length === 0) return false;
   const r = await db.update(appelsOffres).set({ ...set, updatedAt: new Date() })
     .where(and(eq(appelsOffres.id, id), eq(appelsOffres.userId, userId))).returning({ id: appelsOffres.id });

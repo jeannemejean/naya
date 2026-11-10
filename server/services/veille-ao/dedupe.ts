@@ -1,7 +1,7 @@
 // Veille AO : ce qui est déjà connu ne repasse pas par l'IA.
 // Trois façons d'être déjà là : même (source, id) ; ligne importée de Notion dont la référence
-// ou le lien porte le même numéro BOAMP / TED ; avis repris d'une source à l'autre (même objet,
-// ou même acheteur avec la même date limite à la minute près).
+// ou le lien porte le même numéro BOAMP / TED ; avis repris d'une source à l'autre (même objet
+// avec même acheteur ou date limite proche, ou même acheteur avec la même date limite).
 import type { AvisCollecte } from "./mapping";
 
 export interface Existant {
@@ -55,38 +55,71 @@ export function cleObjet(objet: string | null | undefined): string | null {
  * reconnaître le même avis publié au BOAMP et au JOUE sous deux intitulés différents.
  */
 export function cleAcheteurDate(acheteur: string | null | undefined, dateLimite: Date | string | null | undefined): string | null {
-  if (!acheteur || !dateLimite) return null;
-  const a = acheteur.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const a = cleAcheteur(acheteur);
+  if (!a || !dateLimite) return null;
   const d = new Date(dateLimite);
-  if (a.length < 3 || Number.isNaN(d.getTime())) return null;
+  if (Number.isNaN(d.getTime())) return null;
   return `${a}|${d.toISOString()}`;
 }
+
+/** Acheteur réduit à ses lettres et chiffres ; null s'il est trop court pour être distinctif. */
+export function cleAcheteur(acheteur: string | null | undefined): string | null {
+  if (!acheteur) return null;
+  const a = acheteur.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return a.length >= 3 ? a : null;
+}
+
+const UN_JOUR_MS = 86_400_000;
+const instant = (d: Date | string | null | undefined): number | null => {
+  if (!d) return null;
+  const t = new Date(d).getTime();
+  return Number.isNaN(t) ? null : t;
+};
 
 export interface Classement {
   /** À qualifier puis insérer. */
   nouveaux: AvisCollecte[];
-  /** Déjà en base : rafraîchir les faits de cette ligne (jamais statut ni notes). */
-  aRafraichir: Array<{ id: number; avis: AvisCollecte }>;
-  /** Même avis vu par une autre source (même objet, ou même acheteur et même date limite) : ignoré. */
+  /** Déjà en base : rafraîchir les faits de cette ligne (jamais statut ni notes). `source` : celle de la ligne. */
+  aRafraichir: Array<{ id: number; source: string; avis: AvisCollecte }>;
+  /** Même avis vu par une autre source : ignoré. */
   doublons: AvisCollecte[];
 }
 
-export function classer(avis: AvisCollecte[], existants: Existant[]): Classement {
+interface Trace { source: string; acheteur: string | null; limite: number | null }
+
+/**
+ * Le même avis repris par une autre source. Un intitulé identique ne suffit pas (deux acheteurs
+ * publient souvent « Marché de communication ») : il faut une AUTRE source ET le même acheteur
+ * ou une date limite à moins d'un jour. Même acheteur + même date limite à la minute, d'une autre
+ * source, suffit aussi (intitulés différents au BOAMP et au JOUE).
+ */
+function estReprise(a: AvisCollecte, traces: Trace[]): boolean {
+  const ach = cleAcheteur(a.acheteur);
+  const lim = instant(a.dateLimite);
+  return traces.some((t) => t.source !== a.source && (
+    (!!ach && t.acheteur === ach) || (lim !== null && t.limite !== null && Math.abs(lim - t.limite) <= UN_JOUR_MS)
+  ));
+}
+
+export function classer(avis: AvisCollecte[], existants: Existant[], maintenant: Date = new Date()): Classement {
   const parSource = new Map<string, Existant>();
   const notionBoamp = new Map<string, Existant>();
   const notionTed = new Map<string, Existant>();
-  const objets = new Set<string>();
-  const acheteursDates = new Map<string, string>(); // clé → source
+  const parObjet = new Map<string, Trace[]>();
+  const acheteursDates = new Map<string, string>(); // clé acheteur|date → source
+  const ajouter = (k: string | null, t: Trace) => { if (k) parObjet.set(k, [...(parObjet.get(k) ?? []), t]); };
   for (const e of existants) {
-    const kd = cleAcheteurDate(e.acheteur, e.dateLimite);
-    if (kd) acheteursDates.set(kd, e.source);
     if (e.sourceId) parSource.set(`${e.source}:${e.sourceId}`, e);
     if (e.source === "notion_import") {
       for (const n of numerosBoamp(e.reference, e.lienAvis)) if (!notionBoamp.has(n)) notionBoamp.set(n, e);
       for (const n of numerosTed(e.reference, e.lienAvis)) if (!notionTed.has(n)) notionTed.set(n, e);
     }
-    const k = cleObjet(e.objet);
-    if (k) objets.add(k);
+    // Une ligne dont la date limite est passée ne fait plus doublon avec rien.
+    const lim = instant(e.dateLimite);
+    if (lim !== null && lim < maintenant.getTime()) continue;
+    const kd = cleAcheteurDate(e.acheteur, e.dateLimite);
+    if (kd) acheteursDates.set(kd, e.source);
+    ajouter(cleObjet(e.objet), { source: e.source, acheteur: cleAcheteur(e.acheteur), limite: lim });
   }
   const r: Classement = { nouveaux: [], aRafraichir: [], doublons: [] };
   const vus = new Set<string>();
@@ -95,14 +128,12 @@ export function classer(avis: AvisCollecte[], existants: Existant[]): Classement
     if (vus.has(cle)) continue;
     vus.add(cle);
     const meme = parSource.get(cle) ?? (a.source === "boamp" ? notionBoamp.get(a.sourceId) : notionTed.get(a.sourceId));
-    if (meme) { r.aRafraichir.push({ id: meme.id, avis: a }); continue; }
+    if (meme) { r.aRafraichir.push({ id: meme.id, source: meme.source, avis: a }); continue; }
     const k = cleObjet(a.objet);
     const kd = cleAcheteurDate(a.acheteur, a.dateLimite);
-    // Même acheteur, même date limite : doublon seulement s'il vient d'une AUTRE source (deux
-    // avis distincts d'un même acheteur au BOAMP peuvent partager une date limite).
     const autreSource = kd ? acheteursDates.get(kd) : undefined;
-    if ((k && objets.has(k)) || (autreSource && autreSource !== a.source)) { r.doublons.push(a); continue; }
-    if (k) objets.add(k);
+    if ((k && estReprise(a, parObjet.get(k) ?? [])) || (autreSource && autreSource !== a.source)) { r.doublons.push(a); continue; }
+    ajouter(k, { source: a.source, acheteur: cleAcheteur(a.acheteur), limite: instant(a.dateLimite) });
     if (kd && !acheteursDates.has(kd)) acheteursDates.set(kd, a.source);
     r.nouveaux.push(a);
   }

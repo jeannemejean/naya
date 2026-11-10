@@ -8,6 +8,7 @@ const avis = (over: Partial<AvisCollecte>): AvisCollecte => ({
   reference: "BOAMP 26-1", procedure: null, dateLimite: null, departement: null, montantEstimeHt: null,
   lienAvis: null, lienDce: null, cpv: [], texte: "", ...over,
 });
+const MAINTENANT = new Date("2026-11-10T08:00:00Z");
 const existant = (over: Partial<Existant>): Existant => ({
   id: 1, source: "notion_import", sourceId: "abc", reference: null, lienAvis: null, objet: "Autre chose sans rapport ici", ...over,
 });
@@ -34,14 +35,14 @@ describe("numéros cités", () => {
 describe("classer", () => {
   it("même source et même id : rafraîchi, pas requalifié", () => {
     const r = classer([avis({ sourceId: "26-5" })], [existant({ id: 9, source: "boamp", sourceId: "26-5" })]);
-    expect(r.aRafraichir).toEqual([{ id: 9, avis: expect.objectContaining({ sourceId: "26-5" }) }]);
+    expect(r.aRafraichir).toEqual([{ id: 9, source: "boamp", avis: expect.objectContaining({ sourceId: "26-5" }) }]);
     expect(r.nouveaux).toHaveLength(0);
   });
 
   it("ligne Notion dont la référence porte le numéro BOAMP : c'est elle qui est rafraîchie", () => {
     const notion = existant({ id: 3, reference: "BOAMP 26-96260 / A2026-035" });
     const r = classer([avis({ sourceId: "26-96260", objet: "Un objet formulé autrement par le BOAMP" })], [notion]);
-    expect(r.aRafraichir).toEqual([{ id: 3, avis: expect.objectContaining({ sourceId: "26-96260" }) }]);
+    expect(r.aRafraichir).toEqual([{ id: 3, source: "notion_import", avis: expect.objectContaining({ sourceId: "26-96260" }) }]);
     expect(r.nouveaux).toHaveLength(0);
   });
 
@@ -60,13 +61,35 @@ describe("classer", () => {
     expect(r.nouveaux).toHaveLength(1);
   });
 
-  it("même objet vu sur TED après BOAMP (même passage ou déjà en base) : doublon", () => {
+  it("même objet vu sur TED après BOAMP, date limite à moins d'un jour (même passage ou déjà en base) : doublon", () => {
     const objet = "PRESTATIONS DE COMMUNICATION GLOBALE POUR LE COMPTE DE LA SPL SEINE PARK";
-    const r = classer([avis({ sourceId: "26-108562", objet }), avis({ source: "ted", sourceId: "780380-2026", objet })], []);
+    const r = classer([
+      avis({ sourceId: "26-108562", objet, acheteur: "SEINE PARK", dateLimite: new Date("2026-12-07T22:59:00Z") }),
+      avis({ source: "ted", sourceId: "780380-2026", objet, acheteur: "SPL Seine Park", dateLimite: new Date("2026-12-07T21:00:00Z") }),
+    ], [], MAINTENANT);
     expect(r.nouveaux.map((a) => a.sourceId)).toEqual(["26-108562"]);
     expect(r.doublons.map((a) => a.sourceId)).toEqual(["780380-2026"]);
-    const r2 = classer([avis({ source: "ted", sourceId: "780380-2026", objet })], [existant({ objet: objet.toLowerCase() })]);
+    const r2 = classer([avis({ source: "ted", sourceId: "780380-2026", objet, acheteur: "Seine Park" })],
+      [existant({ source: "boamp", objet: objet.toLowerCase(), acheteur: "SEINE PARK" })], MAINTENANT);
     expect(r2.doublons).toHaveLength(1);
+  });
+
+  it("même intitulé, acheteurs différents : deux avis distincts, tous deux gardés", () => {
+    const objet = "Marché de prestations de communication institutionnelle 2027";
+    const r = classer([
+      avis({ sourceId: "26-1", objet, acheteur: "Ville de Lyon", dateLimite: new Date("2026-12-01T12:00:00Z") }),
+      avis({ sourceId: "26-2", objet, acheteur: "Ville de Nantes", dateLimite: new Date("2026-12-01T12:00:00Z") }),
+      avis({ source: "ted", sourceId: "9-2026", objet, acheteur: "Région Bretagne", dateLimite: new Date("2026-12-20T12:00:00Z") }),
+    ], [], MAINTENANT);
+    expect(r.nouveaux.map((a) => a.sourceId)).toEqual(["26-1", "26-2", "9-2026"]);
+  });
+
+  it("une ligne dont la date limite est passée ne bloque pas un nouvel avis au même intitulé", () => {
+    const objet = "Marché de prestations de communication institutionnelle 2027";
+    const r = classer([avis({ source: "ted", sourceId: "9-2026", objet, acheteur: "Ville de Lyon", dateLimite: new Date("2026-12-20T12:00:00Z") })],
+      [existant({ source: "boamp", objet, acheteur: "Ville de Lyon", dateLimite: "2026-10-01T10:00:00.000Z" })], MAINTENANT);
+    expect(r.nouveaux).toHaveLength(1);
+    expect(r.doublons).toHaveLength(0);
   });
 
   it("un objet trop court n'est jamais un critère de doublon", () => {

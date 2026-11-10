@@ -79,7 +79,7 @@ describe("rafraichirDepuisVeille", () => {
     const { rafraichirDepuisVeille } = await import("./appels-offres-store");
     const { db, maj } = baseMaj();
     const faits = { dateLimite: new Date("2026-12-07T22:59:00Z"), montantEstimeHt: "250000.00", lienDce: "", statut: "ecarte", notes: "x", scoreAdequation: "fort" } as any;
-    expect(await rafraichirDepuisVeille("user-1", 4, faits, db)).toBe(true);
+    expect(await rafraichirDepuisVeille("user-1", 4, faits, {}, db)).toBe(true);
     expect(maj[0].table).toBe("appels_offres");
     expect(Object.keys(maj[0].set).sort()).toEqual(["dateLimite", "montantEstimeHt", "updatedAt"]);
   });
@@ -87,7 +87,19 @@ describe("rafraichirDepuisVeille", () => {
   it("rien à écrire : aucune requête", async () => {
     const { rafraichirDepuisVeille } = await import("./appels-offres-store");
     const { db, maj } = baseMaj();
-    expect(await rafraichirDepuisVeille("user-1", 4, {}, db)).toBe(false);
+    expect(await rafraichirDepuisVeille("user-1", 4, {}, {}, db)).toBe(false);
     expect(maj).toHaveLength(0);
+  });
+
+  it("ligne Notion (seulementVides) : chaque fait passe par coalesce, jamais une valeur brute qui écraserait", async () => {
+    const { rafraichirDepuisVeille } = await import("./appels-offres-store");
+    const { db, maj } = baseMaj();
+    await rafraichirDepuisVeille("user-1", 4, { dateLimite: new Date("2026-12-07T22:59:00Z"), departement: "92" }, { seulementVides: true }, db);
+    const set = maj[0].set;
+    for (const k of ["dateLimite", "departement"]) {
+      expect(set[k]).not.toBeInstanceOf(Date);
+      expect(typeof set[k]).toBe("object");
+      expect(JSON.stringify(set[k].queryChunks?.map((c: any) => c?.value ?? "")) ?? "").toContain("coalesce(");
+    }
   });
 });

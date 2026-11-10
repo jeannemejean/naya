@@ -23,6 +23,9 @@ export interface AvisCollecte {
 }
 
 export const TEXTE_MAX = 9000;
+/** Objet et acheteur : bornés (une source qui déraille ne remplit pas la base). */
+export const CHAMP_COURT_MAX = 1000;
+const court = (s: string | null): string | null => (s && s.length > CHAMP_COURT_MAX ? `${s.slice(0, CHAMP_COURT_MAX - 1)}…` : s);
 
 const txt = (v: unknown): string | null => {
   if (v === null || v === undefined) return null;
@@ -107,7 +110,7 @@ export type EnregistrementBoamp = Record<string, unknown>;
 
 export function mapperBoamp(r: EnregistrementBoamp): AvisCollecte | null {
   const sourceId = txt(r.idweb);
-  const objet = txt(r.objet);
+  const objet = court(txt(r.objet));
   if (!sourceId || !objet) return null;
   let donnees: unknown = null;
   try { donnees = typeof r.donnees === "string" ? JSON.parse(r.donnees) : r.donnees ?? null; } catch { donnees = null; }
@@ -117,7 +120,7 @@ export function mapperBoamp(r: EnregistrementBoamp): AvisCollecte | null {
   const montant = montantTexte(fs.find((f) => f.cle === "EstimatedOverallContractAmount")?.valeur);
   const d = txt(r.datelimitereponse);
   const dateLimite = d ? new Date(d) : null;
-  const acheteur = txt(r.nomacheteur);
+  const acheteur = court(txt(r.nomacheteur));
   const procedure = procedureDepuisLibelle(r.procedure_libelle);
   const dep = departement(r.code_departement);
   const entete = [
@@ -184,7 +187,7 @@ export function instantTed(date: string, heure?: string | null): Date | null {
 export function mapperTed(n: AvisTed): AvisCollecte | null {
   const sourceId = txt(n["publication-number"]);
   const titre = multilingue(n["title-proc"])[0] ?? multilingue(n["notice-title"])[0]?.split(" – ").slice(2).join(" – ");
-  const objet = txt(titre);
+  const objet = court(txt(titre));
   if (!sourceId || !objet) return null;
   const dates = tableau(n["deadline-receipt-tender-date-lot"]);
   const heures = tableau(n["deadline-receipt-tender-time-lot"]);
@@ -192,7 +195,7 @@ export function mapperTed(n: AvisTed): AvisCollecte | null {
   const instants = (dates.length ? dates.map((d, i) => instantTed(d, heures[i])) : demandes.map((d) => instantTed(d)))
     .filter((d): d is Date => !!d);
   const dateLimite = instants.length ? new Date(Math.min(...instants.map((d) => d.getTime()))) : null;
-  const acheteur = txt(multilingue(n["buyer-name"])[0]);
+  const acheteur = court(txt(multilingue(n["buyer-name"])[0]));
   const cpv = Array.from(new Set(tableau(n["classification-cpv"]).filter((c) => /^\d{8}$/.test(c))));
   const montant = (txt(n["estimated-value-cur-proc"]) ?? "EUR") === "EUR" ? montantTexte(n["estimated-value-proc"]) : null;
   const procedure = n["notice-type"] === "cn-desg" ? "Concours" : n["procedure-type"] === "open" ? "Appel d'offres ouvert" : txt(n["procedure-type"]) ? "Autre" : null;

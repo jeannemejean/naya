@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { clauseBoamp, urlBoamp, corpsTed, collecterBoamp, collecterTed, BOAMP_URL, TED_URL, CPV_VEILLE, type Fetch } from "./sources";
-import { mapperBoamp, mapperTed, procedureDepuisLibelle, instantTed } from "./mapping";
+import { mapperBoamp, mapperTed, procedureDepuisLibelle, instantTed, CHAMP_COURT_MAX } from "./mapping";
 
 const fixture = (nom: string) => JSON.parse(readFileSync(path.join(__dirname, "__fixtures__", nom), "utf8"));
 const BOAMP = fixture("boamp-2026-11-10.json");
@@ -157,5 +157,46 @@ describe("collecte", () => {
   it("délai d'expiration : la requête est interrompue", async () => {
     const fetch: Fetch = (_u, init) => new Promise((_, rej) => init.signal.addEventListener("abort", () => rej(new Error("aborted"))));
     await expect(collecterTed(fetch, F, { timeoutMs: 10 })).rejects.toThrow("aborted");
+  });
+});
+
+describe("hygiène réseau et bornes", () => {
+  it("aucune redirection suivie", async () => {
+    const fetch = vi.fn<Fetch>(async () => reponse(BOAMP));
+    await collecterBoamp(fetch, F);
+    expect(fetch.mock.calls[0][1].redirect).toBe("error");
+    const fetchTed = vi.fn<Fetch>(async () => reponse(TED));
+    await collecterTed(fetchTed, F);
+    expect(fetchTed.mock.calls[0][1].redirect).toBe("error");
+  });
+
+  it("réponse annoncée trop lourde : refusée avant lecture", async () => {
+    const json = vi.fn();
+    const fetch: Fetch = async () => ({ ok: true, status: 200, headers: { get: (n: string) => (n === "content-length" ? String(11 * 1024 * 1024) : null) }, json });
+    await expect(collecterBoamp(fetch, F)).rejects.toThrow(/trop lourde/);
+    expect(json).not.toHaveBeenCalled();
+  });
+
+  it("flux qui dépasse la taille maximale : interrompu", async () => {
+    let lus = 0;
+    const flux = new ReadableStream<Uint8Array>({ pull(c) { lus++; c.enqueue(new Uint8Array(1024)); } });
+    const fetch: Fetch = async () => ({ ok: true, status: 200, body: flux, json: async () => ({}) });
+    await expect(collecterTed(fetch, F, { tailleMax: 4096 })).rejects.toThrow(/trop lourde/);
+    expect(lus).toBeLessThan(10);
+  });
+
+  it("flux de taille normale : lu et décodé", async () => {
+    const octets = new TextEncoder().encode(JSON.stringify(TED));
+    const flux = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(octets); c.close(); } });
+    const avis = await collecterTed(async () => ({ ok: true, status: 200, body: flux, json: async () => ({}) }), F);
+    expect(avis).toHaveLength(4);
+  });
+
+  it("objet et acheteur bornés à 1 000 caractères", () => {
+    const a = mapperBoamp({ ...boamp("26-109294"), objet: "o".repeat(5000), nomacheteur: "a".repeat(5000) })!;
+    expect(a.objet.length).toBe(CHAMP_COURT_MAX);
+    expect(a.acheteur!.length).toBe(CHAMP_COURT_MAX);
+    const t = mapperTed({ ...ted("776725-2026"), "title-proc": { fra: "t".repeat(3000) } })!;
+    expect(t.objet.length).toBe(CHAMP_COURT_MAX);
   });
 });

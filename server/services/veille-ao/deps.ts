@@ -11,7 +11,7 @@ export const depsVeilleAO: DepsVeilleAO = {
   fetch: (url, init) => fetch(url, init),
   existants: (userId) => existantsPourVeille(userId),
   inserer: (userId, lignes) => upsertDepuisVeille(userId, lignes),
-  rafraichir: (userId, id, faits) => rafraichirDepuisVeille(userId, id, faits),
+  rafraichir: (userId, id, faits, opts) => rafraichirDepuisVeille(userId, id, faits, opts),
   estBloquee: (userId) => isAiBlocked(userId),
   // ADN de marque plutôt que buildNayaContext complet (~6 000 caractères, mémoire et persona) :
   // seules les offres et le positionnement servent à juger un avis. Plafonné à 2 500 caractères.
@@ -23,7 +23,7 @@ export const depsVeilleAO: DepsVeilleAO = {
     system: SYSTEME_QUALIFICATION,
     prompt: promptQualification(avis, new Date(), contexte),
     model: CLAUDE_MODELS.smart,
-    maxTokens: 1500,
+    maxTokens: 2500,
     taskKind: "strategic_reasoning",
     etape: "qualification d'un appel d'offres",
     userId,

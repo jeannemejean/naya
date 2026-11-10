@@ -90,33 +90,71 @@ export function corpsTed(f: FenetreVeille, page: number, limit: number) {
   };
 }
 
-export type Fetch = (url: string, init?: any) => Promise<{ ok: boolean; status: number; json(): Promise<any> }>;
+export interface ReponseFetch {
+  ok: boolean;
+  status: number;
+  headers?: { get(nom: string): string | null };
+  body?: ReadableStream<Uint8Array> | null;
+  text?(): Promise<string>;
+  json(): Promise<any>;
+}
+export type Fetch = (url: string, init?: any) => Promise<ReponseFetch>;
 
 export interface OptionsCollecte {
   timeoutMs?: number;
   pagesMax?: number;
   parPage?: number;
+  /** Taille maximale d'une réponse (octets). */
+  tailleMax?: number;
 }
+
+export const TAILLE_MAX_REPONSE = 10 * 1024 * 1024;
 
 const ENTETES = { Accept: "application/json", "User-Agent": "Naya veille appels d'offres (hellonaya.app)" };
 
-async function lireJson(fetch: Fetch, url: string, init: any, timeoutMs: number): Promise<any> {
+/** Corps lu en flux, interrompu dès qu'il dépasse `max` octets. */
+async function lireCorps(r: ReponseFetch, max: number): Promise<string> {
+  const annonce = Number(r.headers?.get("content-length") ?? NaN);
+  if (Number.isFinite(annonce) && annonce > max) throw new Error(`réponse trop lourde (${annonce} octets)`);
+  if (r.body && typeof (r.body as any).getReader === "function") {
+    const lecteur = r.body.getReader();
+    const morceaux: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await lecteur.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) { await lecteur.cancel().catch(() => {}); throw new Error("réponse trop lourde"); }
+      morceaux.push(value);
+    }
+    return Buffer.concat(morceaux).toString("utf8");
+  }
+  if (r.text) {
+    const t = await r.text();
+    if (Buffer.byteLength(t, "utf8") > max) throw new Error("réponse trop lourde");
+    return t;
+  }
+  return JSON.stringify(await r.json());
+}
+
+async function lireJson(fetch: Fetch, url: string, init: any, timeoutMs: number, tailleMax: number): Promise<any> {
   const ctrl = new AbortController();
   const minuteur = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetch(url, { ...init, signal: ctrl.signal });
+    // Pas de redirection suivie : une source publique qui redirige est une anomalie.
+    const r = await fetch(url, { ...init, redirect: "error", signal: ctrl.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
+    return JSON.parse(await lireCorps(r, tailleMax));
   } finally {
     clearTimeout(minuteur);
   }
 }
 
 export async function collecterBoamp(fetch: Fetch, f: FenetreVeille, o: OptionsCollecte = {}): Promise<AvisCollecte[]> {
-  const parPage = o.parPage ?? 100, pagesMax = o.pagesMax ?? 3, timeoutMs = o.timeoutMs ?? 20_000;
+  const parPage = o.parPage ?? 100, pagesMax = o.pagesMax ?? 3, timeoutMs = o.timeoutMs ?? 20_000, tailleMax = o.tailleMax ?? TAILLE_MAX_REPONSE;
   const avis: AvisCollecte[] = [];
   for (let page = 0; page < pagesMax; page++) {
-    const d = await lireJson(fetch, urlBoamp(f, page * parPage, parPage), { headers: ENTETES }, timeoutMs);
+    const d = await lireJson(fetch, urlBoamp(f, page * parPage, parPage), { headers: ENTETES }, timeoutMs, tailleMax);
     const res: unknown[] = Array.isArray(d?.results) ? d.results : [];
     for (const r of res) { const a = mapperBoamp(r as any); if (a) avis.push(a); }
     if (res.length < parPage || (page + 1) * parPage >= (Number(d?.total_count) || 0)) break;
@@ -125,14 +163,14 @@ export async function collecterBoamp(fetch: Fetch, f: FenetreVeille, o: OptionsC
 }
 
 export async function collecterTed(fetch: Fetch, f: FenetreVeille, o: OptionsCollecte = {}): Promise<AvisCollecte[]> {
-  const parPage = o.parPage ?? 100, pagesMax = o.pagesMax ?? 2, timeoutMs = o.timeoutMs ?? 20_000;
+  const parPage = o.parPage ?? 100, pagesMax = o.pagesMax ?? 2, timeoutMs = o.timeoutMs ?? 20_000, tailleMax = o.tailleMax ?? TAILLE_MAX_REPONSE;
   const avis: AvisCollecte[] = [];
   for (let page = 1; page <= pagesMax; page++) {
     const d = await lireJson(fetch, TED_URL, {
       method: "POST",
       headers: { ...ENTETES, "Content-Type": "application/json" },
       body: JSON.stringify(corpsTed(f, page, parPage)),
-    }, timeoutMs);
+    }, timeoutMs, tailleMax);
     const res: unknown[] = Array.isArray(d?.notices) ? d.notices : [];
     for (const n of res) { const a = mapperTed(n as any); if (a) avis.push(a); }
     if (res.length < parPage || page * parPage >= (Number(d?.totalNoticeCount) || 0)) break;

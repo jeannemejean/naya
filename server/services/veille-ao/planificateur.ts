@@ -27,25 +27,32 @@ export function doitLancer(maintenant: Date, dernierJour: string | null): boolea
   return jour !== dernierJour && minutes >= debut && minutes < FIN_RATTRAPAGE_MINUTES;
 }
 
-let dernierJour: string | null = null;
+// Jour du dernier passage RÉELLEMENT parti, par utilisatrice. Un passage refusé (un passage
+// manuel tournait déjà) ne compte pas : il est retenté au tour suivant.
+const derniersJours = new Map<string, string>();
 let tourEnCours = false;
 
-export function _reinitialiserVeilleAO(): void { dernierJour = null; tourEnCours = false; }
+export function _reinitialiserVeilleAO(): void { derniersJours.clear(); tourEnCours = false; }
 
-/** Un tour du planificateur. Renvoie les bilans du passage s'il a eu lieu, sinon null. */
+/** Un tour du planificateur. Renvoie les bilans des passages tentés, sinon null. */
 export async function tourVeilleAO(
   maintenant: Date, deps: DepsVeilleAO, users: string[],
 ): Promise<Record<string, BilanVeilleAO | null> | null> {
-  if (tourEnCours || users.length === 0 || !doitLancer(maintenant, dernierJour)) return null;
+  if (tourEnCours) return null;
+  const aLancer = users.filter((u) => doitLancer(maintenant, derniersJours.get(u) ?? null));
+  if (aLancer.length === 0) return null;
   tourEnCours = true;
-  dernierJour = heureParis(maintenant).jour;
+  const jour = heureParis(maintenant).jour;
   const bilans: Record<string, BilanVeilleAO | null> = {};
   try {
-    for (const u of users) {
+    for (const u of aLancer) {
       try {
         const b = await lancerVeilleAO(u, deps, { maintenant });
         bilans[u] = b;
-        if (b) console.log(`[veille-ao] ${u} : ${b.nouveaux} nouveaux, ${b.rafraichis} rafraîchis, ${b.examines} examinés, ${b.coutEur.toFixed(3)} €${b.erreursSources.length ? ` (sources en erreur : ${b.erreursSources.join(" ; ")})` : ""}`);
+        if (b) {
+          derniersJours.set(u, jour);
+          console.log(`[veille-ao] ${u} : ${b.nouveaux} nouveaux, ${b.rafraichis} rafraîchis, ${b.examines} examinés, ${b.coutEur.toFixed(3)} €${b.erreursSources.length ? ` (sources en erreur : ${b.erreursSources.join(" ; ")})` : ""}`);
+        }
       } catch (e: any) {
         console.error(`[veille-ao] ${u} :`, e?.message ?? e);
       }

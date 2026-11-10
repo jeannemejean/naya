@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 vi.mock("../claude", () => ({ callClaudeDetailed: vi.fn(), assertNotTruncated: vi.fn() }));
-const { passageVeilleAO, lancerVeilleAO, faitsDe } = await import("./pipeline");
+const { passageVeilleAO, lancerVeilleAO, faitsDe, _reinitialiserEchecs, ECHECS_MAX } = await import("./pipeline");
 const { veilleEnCours } = await import("./etat");
 const { _reinitialiserVeilleAO, tourVeilleAO, doitLancer, heureParis, utilisatricesVeilleAO } = await import("./planificateur");
 import type { Existant } from "./dedupe";
@@ -32,12 +32,12 @@ const qualif = (score = "moyen") => ({
 
 function deps(existants: Existant[] = [], over: Partial<DepsVeilleAO> = {}) {
   const inseres: any[] = [];
-  const rafraichis: Array<{ id: number; faits: any }> = [];
+  const rafraichis: Array<{ id: number; faits: any; opts?: any }> = [];
   const d: DepsVeilleAO = {
     fetch: fetchFixtures,
     existants: vi.fn(async () => existants),
     inserer: vi.fn(async (_u: string, l: any[]) => { inseres.push(...l); }),
-    rafraichir: vi.fn(async (_u: string, id: number, faits: any) => { rafraichis.push({ id, faits }); }),
+    rafraichir: vi.fn(async (_u: string, id: number, faits: any, opts?: any) => { rafraichis.push({ id, faits, opts }); }),
     contexte: vi.fn(async () => "Offres : IN SITU, IN LINEA, IN SCENA"),
     qualifier: vi.fn(async () => qualif()),
     estBloquee: vi.fn(async () => false),
@@ -46,7 +46,16 @@ function deps(existants: Existant[] = [], over: Partial<DepsVeilleAO> = {}) {
   return { d, inseres, rafraichis };
 }
 
-beforeEach(() => _reinitialiserVeilleAO());
+beforeEach(() => { _reinitialiserVeilleAO(); _reinitialiserEchecs(); });
+
+/** Lance un passage « manuel » qui reste bloqué jusqu'à liberer(). */
+function passageBloquant(base: DepsVeilleAO) {
+  let liberer!: () => void;
+  const attente = new Promise<void>((r) => { liberer = r; });
+  const d = { ...base, existants: async () => { await attente; return []; } };
+  const fini = lancerVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["ted"] });
+  return { liberer, fini };
+}
 
 describe("passage de veille", () => {
   it("collecte les deux sources, écarte le doublon TED, qualifie et insère le reste", async () => {
@@ -67,6 +76,7 @@ describe("passage de veille", () => {
     const b = await passageVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["boamp"] });
     expect(b.rafraichis).toBe(1);
     expect(rafraichis[0].id).toBe(42);
+    expect(rafraichis[0].opts).toEqual({ seulementVides: true }); // Notion : on complète, on n'écrase pas
     expect(rafraichis[0].faits).toMatchObject({ montantEstimeHt: "250000.00", procedure: "Appel d'offres ouvert" });
     expect(Object.keys(rafraichis[0].faits)).not.toEqual(expect.arrayContaining(["statut"]));
     for (const k of ["statut", "notes", "scoreAdequation", "bloquants"]) expect(rafraichis[0].faits).not.toHaveProperty(k);
@@ -83,6 +93,31 @@ describe("passage de veille", () => {
     await passageVeilleAO("u1", d2, { maintenant: MAINTENANT, sources: ["ted"] });
     expect(d2.qualifier).toHaveBeenCalledWith("u1", expect.anything(), "");
     expect(inseres).toHaveLength(4);
+  });
+
+  it("ligne veille déjà connue : faits rafraîchis normalement (pas seulement les vides)", async () => {
+    const { d, rafraichis } = deps([{ id: 7, source: "boamp", sourceId: "26-108562", reference: null, lienAvis: null, objet: "x" }]);
+    await passageVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["boamp"] });
+    expect(rafraichis[0]).toMatchObject({ id: 7, opts: { seulementVides: false } });
+  });
+
+  it(`qualification qui échoue ${2} fois : plus retentée (pas refacturée)`, async () => {
+    const { d } = deps([], { qualifier: vi.fn(async () => { throw new Error("structure_invalide"); }) });
+    for (let i = 0; i < ECHECS_MAX; i++) await passageVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["ted"] });
+    expect(d.qualifier).toHaveBeenCalledTimes(4 * ECHECS_MAX);
+    const b = await passageVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["ted"] });
+    expect(d.qualifier).toHaveBeenCalledTimes(4 * ECHECS_MAX);
+    expect(b.abandonnes).toBe(4);
+  });
+
+  it("budget atteint en cours de passage : les appels suivants ne partent pas", async () => {
+    let appels = 0;
+    const { d, inseres } = deps([], { estBloquee: vi.fn(async () => appels++ >= 3) });
+    const b = await passageVeilleAO("u1", d, { maintenant: MAINTENANT, concurrence: 1 });
+    expect(d.qualifier).toHaveBeenCalledTimes(2); // 1re vérif globale + 2 appels, puis bloquée
+    expect(inseres).toHaveLength(2);
+    expect(b.iaBloquee).toBe(true);
+    expect(b.reportesPlafond).toBe(6);
   });
 
   it("faits : jamais de valeur vide qui écraserait une valeur connue", () => {
@@ -171,9 +206,26 @@ describe("planificateur", () => {
     expect(doitLancer(new Date("2026-11-10T11:30:00Z"), "2026-11-09")).toBe(false);
   });
 
-  it("inscription par VEILLE_AO_USERS", () => {
-    expect(utilisatricesVeilleAO({ VEILLE_AO_USERS: " a, b ,a,," } as any)).toEqual(["a", "b"]);
+  it("inscription par VEILLE_AO_USERS, limitée à la liste autorisée (profil JMD) avec un avertissement", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(utilisatricesVeilleAO({ VEILLE_AO_USERS: " qNCa68cbCCGcMAcLWmehk, autre ,qNCa68cbCCGcMAcLWmehk,," } as any)).toEqual(["qNCa68cbCCGcMAcLWmehk"]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("autre ignorée"));
+    expect(utilisatricesVeilleAO({ VEILLE_AO_USERS: "autre" } as any)).toEqual([]);
     expect(utilisatricesVeilleAO({} as any)).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it("le jour n'est marqué fait que si le passage est réellement parti", async () => {
+    const { d } = deps();
+    const t = new Date("2026-11-10T05:50:00Z");
+    const lancement = passageBloquant(d);
+    const bilans = await tourVeilleAO(t, d, ["u1"]); // un passage manuel tourne déjà : refusé
+    expect(bilans).toEqual({ u1: null });
+    lancement.liberer();
+    await lancement.fini;
+    const ensuite = await tourVeilleAO(new Date("2026-11-10T06:00:00Z"), d, ["u1"]);
+    expect(ensuite?.u1?.nouveaux).toBe(8);
+    expect(await tourVeilleAO(new Date("2026-11-10T06:10:00Z"), d, ["u1"])).toBeNull();
   });
 
   it("un tour : chaque inscrite une fois, puis plus rien le même jour", async () => {

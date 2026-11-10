@@ -18,7 +18,8 @@ export interface DepsVeilleAO {
   fetch: Fetch;
   existants(userId: string): Promise<Existant[]>;
   inserer(userId: string, lignes: LigneVeilleAO[]): Promise<unknown>;
-  rafraichir(userId: string, id: number, faits: FaitsVeilleAO): Promise<unknown>;
+  /** `seulementVides` : ne remplit que les champs vides (lignes importées de Notion). */
+  rafraichir(userId: string, id: number, faits: FaitsVeilleAO, opts?: { seulementVides?: boolean }): Promise<unknown>;
   /** Extrait compact du contexte réel de l'utilisatrice (offres, positionnement). */
   contexte(userId: string): Promise<string>;
   qualifier(userId: string, avis: AvisCollecte, contexte: string): Promise<{ valeur: Qualification; coutEur: number }>;
@@ -42,6 +43,8 @@ export interface BilanVeilleAO {
   horsDelai: number;
   echecsQualification: number;
   reportesPlafond: number;
+  /** Avis dont la qualification a déjà échoué ECHECS_MAX fois : plus retentés (pas refacturés). */
+  abandonnes: number;
   iaBloquee: boolean;
   coutEur: number;
   erreursSources: string[];
@@ -50,6 +53,13 @@ export interface BilanVeilleAO {
 }
 
 export const PLAFOND_IA = 40;
+export const ECHECS_MAX = 2;
+
+// Échecs de qualification par avis (« source:id » → nombre), en mémoire du processus : un avis
+// que le modèle ne sait pas qualifier n'est pas refacturé à chaque passage. Un redémarrage
+// lui redonne sa chance.
+const echecs = new Map<string, number>();
+export function _reinitialiserEchecs(): void { echecs.clear(); }
 
 /** Faits non vides seulement : un passage ne blanchit jamais une valeur déjà connue. */
 export function faitsDe(a: AvisCollecte): FaitsVeilleAO {
@@ -79,7 +89,7 @@ export async function passageVeilleAO(userId: string, deps: DepsVeilleAO, o: Opt
   const f = fenetre(maintenant, o.joursFenetre ?? 3);
   const bilan: BilanVeilleAO = {
     examines: 0, nouveaux: 0, rafraichis: 0, doublons: 0, horsDelai: 0, echecsQualification: 0,
-    reportesPlafond: 0, iaBloquee: false, coutEur: 0, erreursSources: [], inseres: [],
+    reportesPlafond: 0, abandonnes: 0, iaBloquee: false, coutEur: 0, erreursSources: [], inseres: [],
   };
 
   // BOAMP d'abord : un avis repris sur TED est alors reconnu comme doublon (même objet).
@@ -101,27 +111,31 @@ export async function passageVeilleAO(userId: string, deps: DepsVeilleAO, o: Opt
     return ok;
   });
 
-  const { nouveaux, aRafraichir, doublons } = classer(jouables, await deps.existants(userId));
+  const { nouveaux, aRafraichir, doublons } = classer(jouables, await deps.existants(userId), maintenant);
   bilan.doublons = doublons.length;
 
-  for (const { id, avis } of aRafraichir) {
+  for (const { id, source, avis } of aRafraichir) {
     const faits = faitsDe(avis);
     if (Object.keys(faits).length === 0) continue;
-    try { await deps.rafraichir(userId, id, faits); bilan.rafraichis++; } catch (e: any) {
+    // Ligne importée de Notion : ce que Jeanne y a vérifié prime, on ne fait que compléter.
+    try { await deps.rafraichir(userId, id, faits, { seulementVides: source === "notion_import" }); bilan.rafraichis++; } catch (e: any) {
       console.error(`[veille-ao] rafraîchissement ${avis.sourceId} :`, e?.message ?? e);
     }
   }
 
-  if (nouveaux.length === 0) return bilan;
+  const cleAvis = (a: AvisCollecte) => `${a.source}:${a.sourceId}`;
+  const aQualifier = nouveaux.filter((a) => (echecs.get(cleAvis(a)) ?? 0) < ECHECS_MAX);
+  bilan.abandonnes = nouveaux.length - aQualifier.length;
+  if (aQualifier.length === 0) return bilan;
   if (await deps.estBloquee(userId)) {
     bilan.iaBloquee = true;
-    bilan.reportesPlafond = nouveaux.length;
+    bilan.reportesPlafond = aQualifier.length;
     return bilan;
   }
 
   // Les plus proches de leur date limite d'abord ; au-delà du plafond, au passage suivant.
   const temps = (a: AvisCollecte) => a.dateLimite?.getTime() ?? Number.POSITIVE_INFINITY;
-  const ordonnes = [...nouveaux].sort((a, b) => temps(a) - temps(b));
+  const ordonnes = [...aQualifier].sort((a, b) => temps(a) - temps(b));
   const choisis = ordonnes.slice(0, plafond);
   bilan.reportesPlafond = ordonnes.length - choisis.length;
 
@@ -133,12 +147,19 @@ export async function passageVeilleAO(userId: string, deps: DepsVeilleAO, o: Opt
 
   await parLots(choisis, o.concurrence ?? 4, async (avis) => {
     let ligne: LigneVeilleAO;
+    // Le budget peut être atteint en cours de passage : revérifié avant chaque appel.
+    if (bilan.iaBloquee || await deps.estBloquee(userId).catch(() => true)) {
+      bilan.iaBloquee = true;
+      bilan.reportesPlafond++;
+      return;
+    }
     try {
       const { valeur, coutEur } = await deps.qualifier(userId, avis, contexte);
       bilan.coutEur += coutEur;
       ligne = ligneQualifiee(avis, valeur, maintenant) as LigneVeilleAO;
     } catch (e: any) {
       bilan.echecsQualification++;
+      echecs.set(cleAvis(avis), (echecs.get(cleAvis(avis)) ?? 0) + 1);
       console.error(`[veille-ao] qualification ${avis.source} ${avis.sourceId} :`, String(e?.message ?? e).slice(0, 200));
       return;
     }
@@ -166,7 +187,7 @@ export async function lancerVeilleAO(userId: string, deps: DepsVeilleAO, o: Opti
   } catch (e: any) {
     console.error(`[veille-ao] passage ${userId} :`, e?.message ?? e);
     return {
-      examines: 0, nouveaux: 0, rafraichis: 0, doublons: 0, horsDelai: 0, echecsQualification: 0, reportesPlafond: 0,
+      examines: 0, nouveaux: 0, rafraichis: 0, doublons: 0, horsDelai: 0, echecsQualification: 0, reportesPlafond: 0, abandonnes: 0,
       iaBloquee: false, coutEur: 0, erreursSources: [`passage: ${String(e?.message ?? e).slice(0, 120)}`], inseres: [],
     };
   } finally {

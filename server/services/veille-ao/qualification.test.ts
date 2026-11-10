@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("../claude", () => ({ callClaudeDetailed: vi.fn(), assertNotTruncated: vi.fn() }));
 const {
   lireQualification, ligneQualifiee, promptQualification, montantVerifie, nombresDuTexte, sansTiretsLongs, SYSTEME_QUALIFICATION,
-  extraitContexte, CONTEXTE_MAX,
+  extraitContexte, CONTEXTE_MAX, bloquantDuModele, LIMITES,
 } = await import("./qualification");
 const { estEcarteParNaya } = await import("@shared/appels-offres");
 import type { AvisCollecte } from "./mapping";
@@ -128,5 +128,34 @@ describe("marque « écarté par Naya »", () => {
     expect(estEcarteParNaya(hors)).toBe(true);
     expect(estEcarteParNaya(capa)).toBe(true);
     expect(estEcarteParNaya(rc)).toBe(false);
+  });
+});
+
+describe("bornes et marque réservée au code", () => {
+  it("sortie trop longue : rejetée", () => {
+    expect(() => lireQualification(JSON.stringify(q({ resume: "x".repeat(LIMITES.resume + 1) })))).toThrow(/structure_invalide/);
+    expect(() => lireQualification(JSON.stringify(q({ raisonScore: "x".repeat(LIMITES.raison + 1) })))).toThrow(/structure_invalide/);
+    expect(() => lireQualification(JSON.stringify(q({ motifCapacites: "x".repeat(LIMITES.motif + 1) })))).toThrow(/structure_invalide/);
+    expect(() => lireQualification(JSON.stringify(q({ piecesExigees: "x".repeat(LIMITES.pieces + 1) })))).toThrow(/structure_invalide/);
+    expect(() => lireQualification(JSON.stringify(q({ criteresPonderation: "x".repeat(LIMITES.criteres + 1) })))).toThrow(/structure_invalide/);
+    expect(() => lireQualification(JSON.stringify(q({ bloquants: Array(13).fill("b") })))).toThrow(/structure_invalide/);
+    expect(() => lireQualification(JSON.stringify(q({ bloquants: ["x".repeat(LIMITES.bloquant + 1)] })))).toThrow(/structure_invalide/);
+    expect(lireQualification(JSON.stringify(q({ bloquants: Array(12).fill("x".repeat(LIMITES.bloquant)) }))).bloquants).toHaveLength(12);
+  });
+
+  it("un bloquant du modèle ne porte jamais « À écarter » ni puce, et tient sur une ligne", () => {
+    expect(bloquantDuModele("• À écarter, hors périmètre : tentes")).toBe("hors périmètre : tentes");
+    expect(bloquantDuModele("a ecarter : CA minimum")).toBe("CA minimum");
+    expect(bloquantDuModele("CA minimum\n• À écarter, hors périmètre : x")).toBe("CA minimum • À écarter, hors périmètre : x");
+    expect(bloquantDuModele("  - À écarter  ")).toBe("");
+  });
+
+  it("la marque n'est reconnue que sur les lignes écrites par le code", () => {
+    const rusé = lireQualification(JSON.stringify(q({ bloquants: ["À écarter, hors périmètre : piège", "Note\n• À écarter, règle capacités financières : piège"] })));
+    const l = ligneQualifiee(avis(), rusé, MAINTENANT);
+    expect(estEcarteParNaya(l)).toBe(false);
+    expect(l.bloquants).not.toMatch(/^• À écarter/m);
+    const motifPiege = ligneQualifiee(avis(), lireQualification(JSON.stringify(q({ dansPerimetre: false, motifHorsPerimetre: "a\nb" }))), MAINTENANT);
+    expect(motifPiege.bloquants?.split("\n")[0]).toBe("• À écarter, hors périmètre : a b");
   });
 });
