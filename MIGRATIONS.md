@@ -689,4 +689,5 @@ rafraîchit les champs de veille sans jamais réécrire statut ni notes.
       `migrate-prod.ts` lancé par Jeanne le 10 novembre 2026, suivi **39 → 40**, table + 3 index vérifiés.
 - [x] Import Notion en production le 10 novembre 2026 (lancé par Jeanne) : 85 écrites, projet 15 « Agence JMD »,
       8 « premier jet prêt », 35 à venir.
+- [x] `essai-0039-2026-11-10` supprimée le 10 novembre 2026.
 - [ ] Pousser `main` (migration d'abord).
