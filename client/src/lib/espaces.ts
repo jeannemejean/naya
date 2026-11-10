@@ -43,6 +43,9 @@ export const ESPACES: Espace[] = [
     onglet("projets", "strategie", "/strategy"),
     onglet("projets", "fondations", "/fondations"),
     onglet("projets", "prospection", "/outreach"),
+    // Marchés publics de l'agence (veille appels d'offres). Propriétaire seulement : rien ne
+    // les alimente encore pour les autres comptes, l'onglet serait vide.
+    onglet("projets", "appelsOffres", "/appels-offres", { proprietaire: true }),
   ]),
   espace("creer", "/atelier", [
     onglet("creer", "atelier", "/atelier"),

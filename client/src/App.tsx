@@ -55,6 +55,7 @@ const Campaigns = lazy(() => import("@/pages/campaigns"));
 const Atelier = lazy(() => import("@/pages/atelier/AtelierPage"));
 const CampaignWorkspace = lazy(() => import("@/pages/outreach/CampaignWorkspace"));
 const ProjectPage = lazy(() => import("@/pages/project/ProjectPage"));
+const AppelsOffres = lazy(() => import("@/pages/appels-offres"));
 
 function Router() {
  const { isAuthenticated, isLoading, hasAccess } = useAuth();
@@ -153,6 +154,9 @@ function Router() {
  </Route>
  <Route path="/atelier">
  {() => <Atelier onSearchClick={openSearch} />}
+ </Route>
+ <Route path="/appels-offres">
+ {() => <AppelsOffres onSearchClick={openSearch} />}
  </Route>
  </>
  )}
