@@ -1,7 +1,7 @@
 // Page « Appels d'offres » (espace Projets, à côté de Prospection) : les marchés publics repérés,
 // triés par date limite, avec le détail d'un appel d'offres à droite. Seuls le statut et les
 // notes se modifient ici ; le reste vient de la veille (et de l'import Notion d'octobre 2026).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Landmark, Loader2, ExternalLink, ChevronDown, ChevronRight, X, Radar } from "lucide-react";
@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  STATUTS_AO, SCORES_AO, SEUIL_URGENCE_JOURS, estPasse, joursAvant, lienSur, type StatutAO, type ScoreAO,
+  STATUTS_AO, SCORES_AO, SEUIL_URGENCE_JOURS, estPasse, joursAvant, lienSur, filtrerEcartesParNaya, type StatutAO, type ScoreAO,
 } from "@shared/appels-offres";
 
 type AppelOffres = {
@@ -40,8 +40,11 @@ type AppelOffres = {
   createdAt: string | null;
 };
 
-type EtatVeille = { active: boolean; enCours: boolean };
-type BilanVeille = { nouveaux: number; rafraichis: number; examines: number; reportes: number; iaBloquee: boolean; sourcesEnErreur: number };
+type PassageVeille = {
+  id: string; statut: "en_cours" | "fini" | "erreur";
+  nouveaux?: number; misAJour?: number; examines?: number; reportes?: number; iaBloquee?: boolean; sourcesEnErreur?: number;
+};
+type EtatVeille = { active: boolean; enCours: boolean; passage: PassageVeille | null };
 
 /** Avis arrivé par la veille (BOAMP, TED) dans les dernières 24 h. */
 const estNouveau = (a: AppelOffres, maintenant = Date.now()) =>
@@ -73,35 +76,69 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
   const { data, isLoading, isError } = useQuery<AppelOffres[]>({ queryKey: [CLE] });
   const { data: etatVeille } = useQuery<EtatVeille>({ queryKey: [CLE_VEILLE] });
   const { toast } = useToast();
+  // Le passage tourne côté serveur ; la page interroge son état toutes les 3 s.
+  const [passageId, setPassageId] = useState<string | null>(null);
+  const annonce = useRef<string | null>(null);
+  useEffect(() => {
+    const p = etatVeille?.passage;
+    if (!passageId && p?.statut === "en_cours" && p.id !== annonce.current) setPassageId(p.id);
+  }, [etatVeille, passageId]);
+  const { data: passage, isError: passagePerdu } = useQuery<PassageVeille>({
+    queryKey: [`${CLE_VEILLE}/passages/${passageId}`],
+    enabled: !!passageId,
+    retry: false,
+    refetchInterval: (q) => (q.state.status === "error" ? false
+      : (q.state.data as PassageVeille | undefined)?.statut === "en_cours" || !q.state.data ? 3000 : false),
+  });
+  // Passage introuvable (serveur redémarré entre-temps) : on arrête d'interroger.
+  useEffect(() => {
+    if (!passagePerdu) return;
+    setPassageId(null);
+    toast({ title: t("appelsOffres.veille.echec"), variant: "destructive" });
+  }, [passagePerdu, t, toast]);
+  useEffect(() => {
+    if (!passage || passage.statut === "en_cours") return;
+    setPassageId(null);
+    if (annonce.current === passage.id) return;
+    annonce.current = passage.id;
+    queryClient.invalidateQueries({ queryKey: [CLE_VEILLE] });
+    if (passage.statut === "erreur") {
+      toast({ title: t("appelsOffres.veille.echec"), variant: "destructive" });
+      return;
+    }
+    queryClient.invalidateQueries({ queryKey: [CLE] });
+    const n = passage.nouveaux ?? 0;
+    const lignes = [
+      n === 0 ? t("appelsOffres.veille.aucunNouveau") : t("appelsOffres.veille.nouveaux", { count: n }),
+      t("appelsOffres.veille.detail", { examines: passage.examines ?? 0, rafraichis: passage.misAJour ?? 0 }),
+      (passage.reportes ?? 0) > 0 && !passage.iaBloquee ? t("appelsOffres.veille.reportes", { count: passage.reportes }) : null,
+      passage.iaBloquee ? t("appelsOffres.veille.iaBloquee") : null,
+      (passage.sourcesEnErreur ?? 0) > 0 ? t("appelsOffres.veille.sourcesEnErreur") : null,
+    ].filter(Boolean);
+    toast({ title: lignes[0] as string, description: lignes.slice(1).join(" ") });
+  }, [passage, t, toast]);
   const lancerVeille = useMutation({
-    // Un passage peut prendre une à deux minutes (qualification de chaque nouvel avis).
-    mutationFn: () => apiRequest("POST", CLE_VEILLE, undefined, { timeoutMs: 300_000 }).then((r) => r.json() as Promise<BilanVeille>),
-    onSuccess: (b) => {
-      queryClient.invalidateQueries({ queryKey: [CLE] });
-      const lignes = [
-        b.nouveaux === 0 ? t("appelsOffres.veille.aucunNouveau") : t("appelsOffres.veille.nouveaux", { count: b.nouveaux }),
-        t("appelsOffres.veille.detail", { examines: b.examines, rafraichis: b.rafraichis }),
-        b.reportes > 0 && !b.iaBloquee ? t("appelsOffres.veille.reportes", { count: b.reportes }) : null,
-        b.iaBloquee ? t("appelsOffres.veille.iaBloquee") : null,
-        b.sourcesEnErreur > 0 ? t("appelsOffres.veille.sourcesEnErreur") : null,
-      ].filter(Boolean);
-      toast({ title: lignes[0] as string, description: lignes.slice(1).join(" ") });
-    },
+    mutationFn: () => apiRequest("POST", CLE_VEILLE).then((r) => r.json() as Promise<PassageVeille>),
+    onSuccess: (p) => setPassageId(p.id),
     onError: (e: unknown) => {
       const m = e instanceof Error ? e.message : "";
       const cle = /^429\b/.test(m) ? "tropRecente" : /^409\b/.test(m) ? "dejaEnCours" : "echec";
       toast({ title: t(`appelsOffres.veille.${cle}`), variant: cle === "echec" ? "destructive" : undefined });
     },
   });
+  const veilleTourne = lancerVeille.isPending || !!passageId || !!etatVeille?.enCours;
+  const [voirEcartes, setVoirEcartes] = useState(false);
   const [filtreStatut, setFiltreStatut] = useState<StatutAO | "tous">("tous");
   const [filtreScore, setFiltreScore] = useState<ScoreAO | "tous">("tous");
   const [periode, setPeriode] = useState<Periode>("tous");
   const [passesOuverts, setPassesOuverts] = useState(false);
   const [choisi, setChoisi] = useState<number | null>(null);
 
-  const { aVenir, passes } = useMemo(() => {
+  const { aVenir, passes, ecartes } = useMemo(() => {
     const maintenant = new Date();
-    const filtres = (data ?? []).filter((a) =>
+    // Les avis que la veille a écartés (hors périmètre, capacités) sont cachés par défaut.
+    const { visibles, ecartes } = filtrerEcartesParNaya(data ?? [], voirEcartes);
+    const filtres = visibles.filter((a) =>
       (filtreStatut === "tous" || a.statut === filtreStatut) && (filtreScore === "tous" || a.scoreAdequation === filtreScore));
     const temps = (a: AppelOffres) => (a.dateLimite ? new Date(a.dateLimite).getTime() : Number.POSITIVE_INFINITY);
     return {
@@ -109,8 +146,9 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
       aVenir: filtres.filter((a) => !estPasse(a.dateLimite, maintenant)).sort((x, y) => temps(x) - temps(y)),
       // Passés : le plus récent d'abord.
       passes: filtres.filter((a) => estPasse(a.dateLimite, maintenant)).sort((x, y) => temps(y) - temps(x)),
+      ecartes,
     };
-  }, [data, filtreStatut, filtreScore]);
+  }, [data, filtreStatut, filtreScore, voirEcartes]);
 
   const selection = data?.find((a) => a.id === choisi) ?? null;
   const montrerAVenir = periode !== "passes";
@@ -194,8 +232,8 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
             <p className="text-sm text-muted-foreground mt-0.5">{t("appelsOffres.description")}</p>
             {etatVeille?.active && (
               <Button size="sm" variant="outline" onClick={() => lancerVeille.mutate()}
-                disabled={lancerVeille.isPending || etatVeille.enCours} data-testid="ao-lancer-veille">
-                {lancerVeille.isPending || etatVeille.enCours
+                disabled={veilleTourne} data-testid="ao-lancer-veille">
+                {veilleTourne
                   ? <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />{t("appelsOffres.veille.enCours")}</>
                   : <><Radar className="h-3.5 w-3.5 mr-1.5" />{t("appelsOffres.veille.lancer")}</>}
               </Button>
@@ -214,6 +252,13 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
                 <Filtre label={t("appelsOffres.filtres.periode")} valeur={periode} onChange={(v) => setPeriode(v as Periode)}
                   options={[["tous", t("appelsOffres.filtres.toutes")], ["a_venir", t("appelsOffres.filtres.aVenir")], ["passes", t("appelsOffres.filtres.passes")]]} />
               </div>
+
+              {ecartes > 0 && (
+                <button type="button" onClick={() => setVoirEcartes((v) => !v)} data-testid="ao-voir-ecartes"
+                  className="text-xs text-naya-olive-55 underline underline-offset-2 hover:text-foreground">
+                  {voirEcartes ? t("appelsOffres.masquerEcartes") : t("appelsOffres.voirEcartes", { count: ecartes })}
+                </button>
+              )}
 
               {isLoading && (
                 <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>

@@ -38,6 +38,7 @@ function deps(existants: Existant[] = [], over: Partial<DepsVeilleAO> = {}) {
     existants: vi.fn(async () => existants),
     inserer: vi.fn(async (_u: string, l: any[]) => { inseres.push(...l); }),
     rafraichir: vi.fn(async (_u: string, id: number, faits: any) => { rafraichis.push({ id, faits }); }),
+    contexte: vi.fn(async () => "Offres : IN SITU, IN LINEA, IN SCENA"),
     qualifier: vi.fn(async () => qualif()),
     estBloquee: vi.fn(async () => false),
     ...over,
@@ -71,6 +72,17 @@ describe("passage de veille", () => {
     for (const k of ["statut", "notes", "scoreAdequation", "bloquants"]) expect(rafraichis[0].faits).not.toHaveProperty(k);
     expect(inseres.map((l) => l.sourceId)).not.toContain("26-108562");
     expect(d.qualifier).toHaveBeenCalledTimes(4);
+  });
+
+  it("contexte réel lu une fois par passage et transmis à chaque qualification ; sans lui, on qualifie quand même", async () => {
+    const { d } = deps();
+    await passageVeilleAO("u1", d, { maintenant: MAINTENANT });
+    expect(d.contexte).toHaveBeenCalledTimes(1);
+    expect(d.qualifier).toHaveBeenCalledWith("u1", expect.anything(), "Offres : IN SITU, IN LINEA, IN SCENA");
+    const { d: d2, inseres } = deps([], { contexte: vi.fn(async () => { throw new Error("base"); }) });
+    await passageVeilleAO("u1", d2, { maintenant: MAINTENANT, sources: ["ted"] });
+    expect(d2.qualifier).toHaveBeenCalledWith("u1", expect.anything(), "");
+    expect(inseres).toHaveLength(4);
   });
 
   it("faits : jamais de valeur vide qui écraserait une valeur connue", () => {

@@ -19,7 +19,9 @@ export interface DepsVeilleAO {
   existants(userId: string): Promise<Existant[]>;
   inserer(userId: string, lignes: LigneVeilleAO[]): Promise<unknown>;
   rafraichir(userId: string, id: number, faits: FaitsVeilleAO): Promise<unknown>;
-  qualifier(userId: string, avis: AvisCollecte): Promise<{ valeur: Qualification; coutEur: number }>;
+  /** Extrait compact du contexte réel de l'utilisatrice (offres, positionnement). */
+  contexte(userId: string): Promise<string>;
+  qualifier(userId: string, avis: AvisCollecte, contexte: string): Promise<{ valeur: Qualification; coutEur: number }>;
   estBloquee(userId: string): Promise<boolean>;
 }
 
@@ -123,10 +125,16 @@ export async function passageVeilleAO(userId: string, deps: DepsVeilleAO, o: Opt
   const choisis = ordonnes.slice(0, plafond);
   bilan.reportesPlafond = ordonnes.length - choisis.length;
 
+  // Lu une fois par passage ; sans lui la qualification tourne quand même (profil du prompt).
+  const contexte = await deps.contexte(userId).catch((e: any) => {
+    console.error("[veille-ao] contexte :", e?.message ?? e);
+    return "";
+  });
+
   await parLots(choisis, o.concurrence ?? 4, async (avis) => {
     let ligne: LigneVeilleAO;
     try {
-      const { valeur, coutEur } = await deps.qualifier(userId, avis);
+      const { valeur, coutEur } = await deps.qualifier(userId, avis, contexte);
       bilan.coutEur += coutEur;
       ligne = ligneQualifiee(avis, valeur, maintenant) as LigneVeilleAO;
     } catch (e: any) {

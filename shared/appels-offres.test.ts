@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   joursAvant, lienSur, mapperLigneNotion, offresDepuisNotion, scoreDepuisNotion, statutDepuisNotion, instantDepuisNotion,
+  filtrerEcartesParNaya, estEcarteParNaya,
 } from "./appels-offres";
 
 // Forme réelle d'une ligne exportée (requête SQL du data source Notion), données inventées.
@@ -129,5 +130,35 @@ describe("joursAvant", () => {
     expect(joursAvant("2026-11-20T11:00:00Z", maintenant)).toBe(10);
     expect(joursAvant("2026-11-09T09:00:00Z", maintenant)).toBe(-1);
     expect(joursAvant(null, maintenant)).toBeNull();
+  });
+});
+
+describe("avis écartés par Naya : cachés par défaut", () => {
+  const l = (id: number, over: Record<string, unknown> = {}) =>
+    ({ id, source: "boamp", statut: "repere", bloquants: null as string | null, ...over });
+  const lignes = [
+    l(1),
+    l(2, { bloquants: "• À écarter, hors périmètre : location de tentes" }),
+    l(3, { bloquants: "• Délai serré : 8 jours\n• À écarter, règle capacités financières : CA minimum" }),
+    l(4, { bloquants: "• Capacités à vérifier dans le RC (écarter si CA minimum…)" }),
+    l(5, { bloquants: "• À écarter, hors périmètre : x", statut: "en_redaction" }), // Jeanne l'a repris
+    l(6, { bloquants: "• À écarter, hors périmètre : x", source: "notion_import" }), // jamais une ligne Notion
+    l(7, { bloquants: "• À écarter, hors périmètre : x", statut: "ecarte", source: "ted" }),
+  ];
+
+  it("par défaut : les écartés disparaissent et sont comptés", () => {
+    const r = filtrerEcartesParNaya(lignes, false);
+    expect(r.visibles.map((x) => x.id)).toEqual([1, 4, 5, 6]);
+    expect(r.ecartes).toBe(3);
+  });
+
+  it("à la demande : tout est visible", () => {
+    const r = filtrerEcartesParNaya(lignes, true);
+    expect(r.visibles).toHaveLength(7);
+    expect(r.ecartes).toBe(3);
+  });
+
+  it("la marque doit être en tête d'un bloquant, pas citée au milieu", () => {
+    expect(estEcarteParNaya(l(8, { bloquants: "• Lot 2 : À écarter, hors périmètre selon l'acheteur" }))).toBe(false);
   });
 });

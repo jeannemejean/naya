@@ -202,3 +202,24 @@ export const estPasse = (dateLimite: Date | string | null, maintenant = new Date
   !!dateLimite && new Date(dateLimite).getTime() < maintenant.getTime();
 
 export const SEUIL_URGENCE_JOURS = 10;
+
+// ─── Avis que la veille a écartés ─────────────────────────────────────────────
+// Sans migration : la veille écrit ces préfixes en tête de `bloquants`. Une ligne marquée
+// reste en base (jamais requalifiée), mais la page la cache par défaut tant que Jeanne ne l'a
+// pas sortie de « repéré » / « écarté ».
+export const MARQUE_HORS_PERIMETRE = "À écarter, hors périmètre";
+export const MARQUE_CAPACITES = "À écarter, règle capacités financières";
+const RE_ECARTE_PAR_NAYA = /^• À écarter, /m;
+
+export function estEcarteParNaya(a: { bloquants: string | null; statut: string; source?: string | null }): boolean {
+  if (a.source !== undefined && a.source !== null && a.source !== "boamp" && a.source !== "ted") return false;
+  return !!a.bloquants && RE_ECARTE_PAR_NAYA.test(a.bloquants) && (a.statut === "repere" || a.statut === "ecarte");
+}
+
+/** Liste affichée : sans les avis écartés par Naya, sauf si on demande à les voir. */
+export function filtrerEcartesParNaya<T extends { bloquants: string | null; statut: string; source?: string | null }>(
+  lignes: T[], voirEcartes: boolean,
+): { visibles: T[]; ecartes: number } {
+  const ecartes = lignes.filter(estEcarteParNaya).length;
+  return { visibles: voirEcartes ? lignes : lignes.filter((l) => !estEcarteParNaya(l)), ecartes };
+}
