@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 vi.mock("../claude", () => ({ callClaudeDetailed: vi.fn(), assertNotTruncated: vi.fn() }));
-const { passageVeilleAO, lancerVeilleAO, faitsDe, _reinitialiserEchecs, ECHECS_MAX } = await import("./pipeline");
+const { passageVeilleAO, lancerVeilleAO, faitsDe, _reinitialiserEchecs, ECHECS_MAX, DUREE_ECHECS_MS, echecDefinitif } = await import("./pipeline");
 const { veilleEnCours } = await import("./etat");
 const { _reinitialiserVeilleAO, tourVeilleAO, doitLancer, heureParis, utilisatricesVeilleAO } = await import("./planificateur");
 import type { Existant } from "./dedupe";
@@ -99,6 +99,34 @@ describe("passage de veille", () => {
     const { d, rafraichis } = deps([{ id: 7, source: "boamp", sourceId: "26-108562", reference: null, lienAvis: null, objet: "x" }]);
     await passageVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["boamp"] });
     expect(rafraichis[0]).toMatchObject({ id: 7, opts: { seulementVides: false } });
+  });
+
+  it("échec définitif = sortie invalide ou tronquée ; le reste est passager", () => {
+    expect(echecDefinitif(new Error("structure_invalide: score"))).toBe(true);
+    expect(echecDefinitif(new Error("structure_invalide: réponse non JSON"))).toBe(true);
+    expect(echecDefinitif(new Error("CAMPAIGN_TRUNCATED: l'étape … a dépassé"))).toBe(true);
+    for (const m of ["fetch failed", "The operation was aborted due to timeout", "429 rate_limit_error", "500 Internal Server Error", "529 overloaded_error", "ECONNRESET"]) {
+      expect(echecDefinitif(new Error(m))).toBe(false);
+    }
+  });
+
+  it("erreurs passagères (réseau, 429, surcharge) : jamais comptées, l'avis est retenté à chaque passage", async () => {
+    const { d } = deps([], { qualifier: vi.fn(async () => { throw new Error("529 overloaded_error"); }) });
+    for (let i = 0; i < ECHECS_MAX + 2; i++) await passageVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["ted"] });
+    expect(d.qualifier).toHaveBeenCalledTimes(4 * (ECHECS_MAX + 2));
+  });
+
+  it("les échecs définitifs expirent au bout de 3 jours", async () => {
+    const { d } = deps([], { qualifier: vi.fn(async () => { throw new Error("structure_invalide"); }) });
+    for (let i = 0; i < ECHECS_MAX; i++) await passageVeilleAO("u1", d, { maintenant: MAINTENANT, sources: ["ted"] });
+    const plusTard = new Date(MAINTENANT.getTime() + DUREE_ECHECS_MS + 60_000);
+    await passageVeilleAO("u1", d, { maintenant: new Date(MAINTENANT.getTime() + DUREE_ECHECS_MS - 60_000), sources: ["ted"] });
+    expect(d.qualifier).toHaveBeenCalledTimes(4 * ECHECS_MAX);
+    // plusTard : la fenêtre de collecte est la même (fixtures), seule l'horloge change.
+    const b = await passageVeilleAO("u1", d, { maintenant: plusTard, sources: ["ted"] });
+    expect(b.abandonnes).toBe(0);
+    expect(d.qualifier).toHaveBeenCalledTimes(4 * ECHECS_MAX + b.echecsQualification);
+    expect(b.echecsQualification).toBeGreaterThan(0);
   });
 
   it(`qualification qui échoue ${2} fois : plus retentée (pas refacturée)`, async () => {
@@ -213,6 +241,24 @@ describe("planificateur", () => {
     expect(utilisatricesVeilleAO({ VEILLE_AO_USERS: "autre" } as any)).toEqual([]);
     expect(utilisatricesVeilleAO({} as any)).toEqual([]);
     warn.mockRestore();
+  });
+
+  it("passage qui a planté : le jour n'est pas marqué, retenté au tour suivant", async () => {
+    let n = 0;
+    const { d } = deps([], { existants: vi.fn(async () => { if (n++ === 0) throw new Error("base indisponible"); return []; }) });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const premier = await tourVeilleAO(new Date("2026-11-10T05:50:00Z"), d, ["u1"]);
+    expect(premier?.u1?.erreursSources).toEqual(["passage: base indisponible"]);
+    const second = await tourVeilleAO(new Date("2026-11-10T05:55:00Z"), d, ["u1"]);
+    expect(second?.u1?.nouveaux).toBe(8);
+    expect(await tourVeilleAO(new Date("2026-11-10T06:00:00Z"), d, ["u1"])).toBeNull();
+    err.mockRestore();
+  });
+
+  it("une source en panne n'empêche pas de marquer le jour (le passage a abouti)", async () => {
+    const { d } = deps([], { fetch: async (url) => (url.startsWith("https://boamp") ? { ok: false, status: 503, json: async () => ({}) } : { ok: true, status: 200, json: async () => TED }) });
+    await tourVeilleAO(new Date("2026-11-10T05:50:00Z"), d, ["u1"]);
+    expect(await tourVeilleAO(new Date("2026-11-10T05:55:00Z"), d, ["u1"])).toBeNull();
   });
 
   it("le jour n'est marqué fait que si le passage est réellement parti", async () => {

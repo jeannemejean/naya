@@ -55,11 +55,27 @@ export interface BilanVeilleAO {
 export const PLAFOND_IA = 40;
 export const ECHECS_MAX = 2;
 
-// Échecs de qualification par avis (« source:id » → nombre), en mémoire du processus : un avis
-// que le modèle ne sait pas qualifier n'est pas refacturé à chaque passage. Un redémarrage
-// lui redonne sa chance.
-const echecs = new Map<string, number>();
+export const DUREE_ECHECS_MS = 3 * 86_400_000;
+
+// Échecs DÉFINITIFS de qualification par avis (« source:id »), en mémoire du processus : un avis
+// que le modèle ne sait pas qualifier (sortie invalide ou tronquée) n'est pas refacturé à chaque
+// passage. Les erreurs passagères (réseau, délai, 429, 5xx, surcharge) ne comptent pas. Une
+// entrée expire au bout de 3 jours ; un redémarrage efface tout.
+const echecs = new Map<string, { n: number; depuis: number }>();
 export function _reinitialiserEchecs(): void { echecs.clear(); }
+
+/** Vrai pour une sortie du modèle invalide (schéma, non-JSON) ou tronquée ; faux pour le reste. */
+export function echecDefinitif(e: unknown): boolean {
+  const m = String((e as any)?.message ?? e ?? "");
+  return /^(structure_invalide|CAMPAIGN_TRUNCATED)/.test(m);
+}
+
+function nbEchecs(cle: string, maintenant: number): number {
+  const e = echecs.get(cle);
+  if (!e) return 0;
+  if (maintenant - e.depuis > DUREE_ECHECS_MS) { echecs.delete(cle); return 0; }
+  return e.n;
+}
 
 /** Faits non vides seulement : un passage ne blanchit jamais une valeur déjà connue. */
 export function faitsDe(a: AvisCollecte): FaitsVeilleAO {
@@ -77,6 +93,10 @@ async function parLots<T>(elements: T[], n: number, f: (x: T) => Promise<void>):
   const ouvrier = async () => { while (i < elements.length) { const x = elements[i++]; await f(x); } };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(n, elements.length)) }, ouvrier));
 }
+
+/** Vrai si le passage est allé au bout (pas d'erreur de passage, seulement d'éventuelles sources). */
+export const passageAbouti = (b: BilanVeilleAO | null): boolean =>
+  !!b && !b.erreursSources.some((e) => e.startsWith("passage:"));
 
 export function fenetre(maintenant: Date, jours: number): FenetreVeille {
   return { depuis: jourParis(new Date(maintenant.getTime() - jours * 86_400_000)), aujourdhui: jourParis(maintenant) };
@@ -124,7 +144,7 @@ export async function passageVeilleAO(userId: string, deps: DepsVeilleAO, o: Opt
   }
 
   const cleAvis = (a: AvisCollecte) => `${a.source}:${a.sourceId}`;
-  const aQualifier = nouveaux.filter((a) => (echecs.get(cleAvis(a)) ?? 0) < ECHECS_MAX);
+  const aQualifier = nouveaux.filter((a) => nbEchecs(cleAvis(a), maintenant.getTime()) < ECHECS_MAX);
   bilan.abandonnes = nouveaux.length - aQualifier.length;
   if (aQualifier.length === 0) return bilan;
   if (await deps.estBloquee(userId)) {
@@ -159,7 +179,11 @@ export async function passageVeilleAO(userId: string, deps: DepsVeilleAO, o: Opt
       ligne = ligneQualifiee(avis, valeur, maintenant) as LigneVeilleAO;
     } catch (e: any) {
       bilan.echecsQualification++;
-      echecs.set(cleAvis(avis), (echecs.get(cleAvis(avis)) ?? 0) + 1);
+      if (echecDefinitif(e)) {
+        const avant = echecs.get(cleAvis(avis));
+        const n = nbEchecs(cleAvis(avis), maintenant.getTime());
+        echecs.set(cleAvis(avis), { n: n + 1, depuis: n > 0 && avant ? avant.depuis : maintenant.getTime() });
+      }
       console.error(`[veille-ao] qualification ${avis.source} ${avis.sourceId} :`, String(e?.message ?? e).slice(0, 200));
       return;
     }

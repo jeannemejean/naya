@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("../claude", () => ({ callClaudeDetailed: vi.fn(), assertNotTruncated: vi.fn() }));
 const {
   lireQualification, ligneQualifiee, promptQualification, montantVerifie, nombresDuTexte, sansTiretsLongs, SYSTEME_QUALIFICATION,
-  extraitContexte, CONTEXTE_MAX, bloquantDuModele, LIMITES,
+  extraitContexte, CONTEXTE_MAX, bloquantDuModele, LIMITES, MAX_TOKENS_QUALIFICATION, pireCasSortieCaracteres,
 } = await import("./qualification");
 const { estEcarteParNaya } = await import("@shared/appels-offres");
 import type { AvisCollecte } from "./mapping";
@@ -138,9 +138,9 @@ describe("bornes et marque réservée au code", () => {
     expect(() => lireQualification(JSON.stringify(q({ motifCapacites: "x".repeat(LIMITES.motif + 1) })))).toThrow(/structure_invalide/);
     expect(() => lireQualification(JSON.stringify(q({ piecesExigees: "x".repeat(LIMITES.pieces + 1) })))).toThrow(/structure_invalide/);
     expect(() => lireQualification(JSON.stringify(q({ criteresPonderation: "x".repeat(LIMITES.criteres + 1) })))).toThrow(/structure_invalide/);
-    expect(() => lireQualification(JSON.stringify(q({ bloquants: Array(13).fill("b") })))).toThrow(/structure_invalide/);
+    expect(() => lireQualification(JSON.stringify(q({ bloquants: Array(LIMITES.bloquants + 1).fill("b") })))).toThrow(/structure_invalide/);
     expect(() => lireQualification(JSON.stringify(q({ bloquants: ["x".repeat(LIMITES.bloquant + 1)] })))).toThrow(/structure_invalide/);
-    expect(lireQualification(JSON.stringify(q({ bloquants: Array(12).fill("x".repeat(LIMITES.bloquant)) }))).bloquants).toHaveLength(12);
+    expect(lireQualification(JSON.stringify(q({ bloquants: Array(LIMITES.bloquants).fill("x".repeat(LIMITES.bloquant)) }))).bloquants).toHaveLength(LIMITES.bloquants);
   });
 
   it("un bloquant du modèle ne porte jamais « À écarter » ni puce, et tient sur une ligne", () => {
@@ -157,5 +157,22 @@ describe("bornes et marque réservée au code", () => {
     expect(l.bloquants).not.toMatch(/^• À écarter/m);
     const motifPiege = ligneQualifiee(avis(), lireQualification(JSON.stringify(q({ dansPerimetre: false, motifHorsPerimetre: "a\nb" }))), MAINTENANT);
     expect(motifPiege.bloquants?.split("\n")[0]).toBe("• À écarter, hors périmètre : a b");
+  });
+});
+
+describe("budget de tokens", () => {
+  it("le pire cas de sortie tient dans maxTokens, même à 2,5 caractères par token", () => {
+    expect(Math.ceil(pireCasSortieCaracteres() / 2.5)).toBeLessThan(MAX_TOKENS_QUALIFICATION);
+  });
+
+  it("une sortie réelle au pire cas sérialisée reste sous le pire cas estimé", () => {
+    const pire = q({
+      motifHorsPerimetre: "é".repeat(LIMITES.motif), motifCapacites: "é".repeat(LIMITES.motif), raisonScore: "é".repeat(LIMITES.raison),
+      resume: "é".repeat(LIMITES.resume), piecesExigees: "é".repeat(LIMITES.pieces), criteresPonderation: "é".repeat(LIMITES.criteres),
+      bloquants: Array(LIMITES.bloquants).fill("é".repeat(LIMITES.bloquant)), offresJmd: ["IN SITU", "IN LINEA", "IN SCENA"], montantEstimeHt: 123456789.12,
+      dansPerimetre: false, capacites: "a_verifier_rc",
+    });
+    expect(lireQualification(JSON.stringify(pire)).resume).toHaveLength(LIMITES.resume);
+    expect(JSON.stringify(pire).length).toBeLessThanOrEqual(pireCasSortieCaracteres());
   });
 });

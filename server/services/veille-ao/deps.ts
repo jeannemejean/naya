@@ -4,7 +4,7 @@ import { genererStructure } from "../ai/structure";
 import { isAiBlocked } from "../usage";
 import { existantsPourVeille, rafraichirDepuisVeille, upsertDepuisVeille } from "../appels-offres-store";
 import { storage } from "../../storage";
-import { SCHEMA_QUALIFICATION, SYSTEME_QUALIFICATION, extraitContexte, promptQualification } from "./qualification";
+import { MAX_TOKENS_QUALIFICATION, SCHEMA_QUALIFICATION, SYSTEME_QUALIFICATION, extraitContexte, promptQualification } from "./qualification";
 import type { DepsVeilleAO } from "./pipeline";
 
 export const depsVeilleAO: DepsVeilleAO = {
@@ -23,7 +23,7 @@ export const depsVeilleAO: DepsVeilleAO = {
     system: SYSTEME_QUALIFICATION,
     prompt: promptQualification(avis, new Date(), contexte),
     model: CLAUDE_MODELS.smart,
-    maxTokens: 2500,
+    maxTokens: MAX_TOKENS_QUALIFICATION,
     taskKind: "strategic_reasoning",
     etape: "qualification d'un appel d'offres",
     userId,

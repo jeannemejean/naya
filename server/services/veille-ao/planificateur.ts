@@ -5,7 +5,7 @@
 // Un tour toutes les 5 minutes ; le passage du jour part au premier tour après 06:49 (Paris),
 // rattrapé jusqu'à midi si le serveur redémarrait pile à l'heure. Un seul tour à la fois ;
 // les erreurs sont journalisées, jamais levées.
-import { lancerVeilleAO, type BilanVeilleAO, type DepsVeilleAO } from "./pipeline";
+import { lancerVeilleAO, passageAbouti, type BilanVeilleAO, type DepsVeilleAO } from "./pipeline";
 import { utilisatricesVeilleAO } from "./etat";
 
 export { utilisatricesVeilleAO };
@@ -27,8 +27,9 @@ export function doitLancer(maintenant: Date, dernierJour: string | null): boolea
   return jour !== dernierJour && minutes >= debut && minutes < FIN_RATTRAPAGE_MINUTES;
 }
 
-// Jour du dernier passage RÉELLEMENT parti, par utilisatrice. Un passage refusé (un passage
-// manuel tournait déjà) ne compte pas : il est retenté au tour suivant.
+// Jour du dernier passage RÉELLEMENT parti et abouti, par utilisatrice. Un passage refusé (un
+// passage manuel tournait déjà) ou qui a planté ne compte pas : il est retenté au tour suivant
+// (dans la fenêtre 06:49 à midi).
 const derniersJours = new Map<string, string>();
 let tourEnCours = false;
 
@@ -49,8 +50,10 @@ export async function tourVeilleAO(
       try {
         const b = await lancerVeilleAO(u, deps, { maintenant });
         bilans[u] = b;
+        // Jour marqué fait seulement si le passage est parti ET allé au bout sans planter.
+        if (passageAbouti(b)) derniersJours.set(u, jour);
+        else if (b) console.error(`[veille-ao] ${u} : passage interrompu (${b.erreursSources.join(" ; ")}), retenté au prochain tour`);
         if (b) {
-          derniersJours.set(u, jour);
           console.log(`[veille-ao] ${u} : ${b.nouveaux} nouveaux, ${b.rafraichis} rafraîchis, ${b.examines} examinés, ${b.coutEur.toFixed(3)} €${b.erreursSources.length ? ` (sources en erreur : ${b.erreursSources.join(" ; ")})` : ""}`);
         }
       } catch (e: any) {
