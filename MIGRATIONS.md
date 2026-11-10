@@ -666,15 +666,21 @@ select (select count(*) from drizzle.__drizzle_migrations) as suivi,
 
 ### Import des appels d'offres Notion en production (après la migration, décision de Jeanne)
 
-Les 85 lignes exportées sont dans `.superpowers/appels-offres-notion.json` (non versionné). Essai à blanc
-d'abord, puis écriture ; l'id utilisatrice de production est à relire avant :
+Les 85 lignes exportées sont hors dépôt, dans
+`/Users/jeannemejean/Desktop/Naya-Build/donnees-import/appels-offres-notion.json` (jamais versionné). Essai à
+blanc d'abord, puis écriture ; l'id utilisatrice et l'id du projet « Agence JMD » de production sont à relire avant :
 
 ```bash
-IMPORT_DATABASE_URL='<URL de production>' IMPORT_USER_ID='<id de Jeanne en prod>' \
+IMPORT_FICHIER=/Users/jeannemejean/Desktop/Naya-Build/donnees-import/appels-offres-notion.json \
+IMPORT_DATABASE_URL='<URL de production>' IMPORT_USER_ID='<id de Jeanne en prod>' IMPORT_PROJECT_ID='<id du projet>' \
   npx tsx scripts/import-appels-offres.ts
-IMPORT_DATABASE_URL='<URL de production>' IMPORT_USER_ID='<id de Jeanne en prod>' IMPORT_CONFIRMER_PRODUCTION=oui \
-  npx tsx scripts/import-appels-offres.ts --appliquer
+IMPORT_FICHIER=/Users/jeannemejean/Desktop/Naya-Build/donnees-import/appels-offres-notion.json \
+IMPORT_DATABASE_URL='<URL de production>' IMPORT_USER_ID='<id de Jeanne en prod>' IMPORT_PROJECT_ID='<id du projet>' \
+IMPORT_CONFIRMER_PRODUCTION=oui npx tsx scripts/import-appels-offres.ts --appliquer
 ```
+
+L'écriture passe par `upsertDepuisVeille` (`server/services/appels-offres-store.ts`) : relancé, l'import
+rafraîchit les champs de veille sans jamais réécrire statut ni notes.
 
 ### Production
 

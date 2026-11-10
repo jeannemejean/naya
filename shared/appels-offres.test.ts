@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  joursAvant, mapperLigneNotion, offresDepuisNotion, scoreDepuisNotion, statutDepuisNotion, instantDepuisNotion,
+  joursAvant, lienSur, mapperLigneNotion, offresDepuisNotion, scoreDepuisNotion, statutDepuisNotion, instantDepuisNotion,
 } from "./appels-offres";
 
 // Forme réelle d'une ligne exportée (requête SQL du data source Notion), données inventées.
@@ -96,9 +96,28 @@ describe("valeurs Notion", () => {
     expect(offresDepuisNotion(["in scena", "AUTRE"])).toEqual(["IN SCENA"]);
     expect(offresDepuisNotion("pas du json")).toEqual([]);
   });
-  it("date sans heure : midi UTC le même jour", () => {
-    expect(instantDepuisNotion("2033-04-19", 0)!.toISOString()).toBe("2033-04-19T12:00:00.000Z");
+  it("date sans heure : 23 h 59 à Paris ce jour-là (été comme hiver)", () => {
+    expect(instantDepuisNotion("2026-12-07", 0)!.toISOString()).toBe("2026-12-07T22:59:00.000Z"); // CET
+    expect(instantDepuisNotion("2033-04-19", 0)!.toISOString()).toBe("2033-04-19T21:59:00.000Z"); // CEST
+    expect(instantDepuisNotion("2026-10-25", 0)!.toISOString()).toBe("2026-10-25T22:59:00.000Z"); // jour du passage à l'heure d'hiver
+    expect(joursAvant(instantDepuisNotion("2026-11-10", 0), new Date("2026-11-10T08:00:00Z"))).toBe(0);
     expect(instantDepuisNotion("n'importe quoi", 1)).toBeNull();
+  });
+});
+
+describe("lienSur", () => {
+  it("garde http(s), rejette le reste", () => {
+    expect(lienSur("https://www.mpe76.fr/")).toBe("https://www.mpe76.fr/");
+    expect(lienSur("  http://avis.example/1 ")).toBe("http://avis.example/1");
+    expect(lienSur("javascript:alert(1)")).toBeNull();
+    expect(lienSur("data:text/html,<script>")).toBeNull();
+    expect(lienSur("www.sans-protocole.fr")).toBeNull();
+    expect(lienSur("")).toBeNull();
+    expect(lienSur(null)).toBeNull();
+  });
+  it("le mapping n'écrit que des liens sûrs", () => {
+    const r = mapperLigneNotion(ligne({ "Lien avis": "javascript:alert(1)", "Lien DCE": "ftp://x", "Premier jet": "https://claude.ai/artifact/abc" }))!;
+    expect(r).toMatchObject({ lienAvis: null, lienDce: null, premierJet: "https://claude.ai/artifact/abc" });
   });
 });
 

@@ -5,15 +5,15 @@
 //   IMPORT_DATABASE_URL  URL de la base, passée explicitement
 //   IMPORT_USER_ID       id de l'utilisatrice propriétaire des lignes
 //   IMPORT_PROJECT_ID    (facultatif) projet de l'agence auquel rattacher les lignes
-//   IMPORT_FICHIER       (facultatif) JSON exporté ; défaut .superpowers/appels-offres-notion.json
+//   IMPORT_FICHIER       (facultatif) JSON exporté ; défaut Naya-Build/donnees-import/appels-offres-notion.json
 //
 // Sans argument : essai à blanc (lecture seule) — comptes et 3 lignes mappées.
 // Avec --appliquer : écrit. La production (ep-damp-water) exige en plus
 // IMPORT_CONFIRMER_PRODUCTION=oui.
 //
 // Idempotent : clé unique (user_id, source='notion_import', source_id = id de la page Notion).
-// Relancé, il met à jour les champs venus de la veille mais ne touche ni au statut ni aux
-// notes, qui peuvent avoir été changés dans Naya depuis.
+// L'écriture passe par upsertDepuisVeille (server/services/appels-offres-store.ts) : relancé,
+// il met à jour les champs venus de la veille mais ne touche ni au statut ni aux notes.
 import { readFileSync } from "node:fs";
 import pg from "pg";
 const { Pool } = pg;
@@ -27,7 +27,7 @@ const ENDPOINT_PRODUCTION = "ep-damp-water";
 const url = process.env.IMPORT_DATABASE_URL;
 const userId = process.env.IMPORT_USER_ID;
 const projectId = process.env.IMPORT_PROJECT_ID ? Number(process.env.IMPORT_PROJECT_ID) : null;
-const fichier = process.env.IMPORT_FICHIER ?? ".superpowers/appels-offres-notion.json";
+const fichier = process.env.IMPORT_FICHIER ?? "/Users/jeannemejean/Desktop/Naya-Build/donnees-import/appels-offres-notion.json";
 const appliquer = process.argv.includes("--appliquer");
 
 if (!url) { console.error("REFUS : IMPORT_DATABASE_URL absente. L'URL doit être passée explicitement."); process.exit(1); }
@@ -38,6 +38,11 @@ if (appliquer && estProduction && process.env.IMPORT_CONFIRMER_PRODUCTION !== "o
   console.error("REFUS : URL de production. Ajouter IMPORT_CONFIRMER_PRODUCTION=oui pour écrire en production.");
   process.exit(1);
 }
+// Le module d'accès base lit DATABASE_URL (et .env via dotenv, qui n'écrase pas une variable
+// déjà posée) : on l'aligne sur l'URL explicite AVANT de l'importer. L'écriture passe de toute
+// façon par le pool ci-dessous.
+process.env.DATABASE_URL = url;
+const { upsertDepuisVeille } = await import("../server/services/appels-offres-store");
 const hote = url.match(/@([^/:?]+)/)?.[1] ?? "?";
 
 const brut = JSON.parse(readFileSync(fichier, "utf8"));
@@ -83,18 +88,7 @@ try {
   if (!appliquer) {
     console.info("Essai à blanc terminé. Relancer avec --appliquer pour écrire.");
   } else {
-    let ecrites = 0;
-    await db.transaction(async (tx) => {
-      for (const m of mappees) {
-        const { statut, notes, ...veille } = m;
-        await tx.insert(appelsOffres).values({ ...m, userId, projectId })
-          .onConflictDoUpdate({
-            target: [appelsOffres.userId, appelsOffres.source, appelsOffres.sourceId],
-            set: { ...veille, projectId: projectId ?? sql`${appelsOffres.projectId}`, updatedAt: new Date() },
-          });
-        ecrites++;
-      }
-    });
+    const { ecrites } = await upsertDepuisVeille(userId, mappees, { projectId }, db);
     const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(appelsOffres)
       .where(and(eq(appelsOffres.userId, userId), eq(appelsOffres.source, "notion_import")));
     console.info(`Écrites : ${ecrites}. Lignes notion_import pour ${userId} : ${n}.`);

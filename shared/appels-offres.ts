@@ -59,17 +59,46 @@ export function offresDepuisNotion(v: unknown): string[] {
   return OFFRES_JMD.filter((o) => vues.includes(o));
 }
 
+/** Décalage de Paris (ms) à un instant donné : heure d'été/hiver comprise. */
+function decalageParis(instant: number): number {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(instant)).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - instant;
+}
+
+/** « AAAA-MM-JJ » → l'instant où il est 23 h 59 à Paris ce jour-là. */
+export function finDeJourParis(jour: string): Date | null {
+  const m = jour.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const local = Date.UTC(+m[1], +m[2] - 1, +m[3], 23, 59);
+  const d = new Date(local - decalageParis(local - decalageParis(local)));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /**
- * Date Notion (« 2026-11-09 09:00:00Z » ou « 2026-11-09 »). Une date sans heure devient midi UTC
- * ce jour-là : elle reste le bon jour à Paris, et le décompte « dans N jours » ne bouge pas.
+ * Date Notion (« 2026-11-09 09:00:00Z » ou « 2026-11-09 »). Une date sans heure devient 23 h 59
+ * heure de Paris ce jour-là : la journée entière reste ouverte, et le décompte ne bouge pas.
  */
 export function instantDepuisNotion(debut: unknown, avecHeure: unknown): Date | null {
   if (typeof debut !== "string" || !debut.trim()) return null;
   const s = debut.trim();
   const jourSeul = /^\d{4}-\d{2}-\d{2}$/.test(s) || avecHeure === 0;
-  const iso = jourSeul ? `${s.slice(0, 10)}T12:00:00Z` : s.replace(" ", "T");
-  const d = new Date(iso);
+  if (jourSeul) return finDeJourParis(s);
+  const d = new Date(s.replace(" ", "T"));
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Lien affichable : http(s) seulement, sinon null (pas de javascript:, data:, etc.). */
+export function lienSur(u: unknown): string | null {
+  if (typeof u !== "string" || !u.trim()) return null;
+  try {
+    const url = new URL(u.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? u.trim() : null;
+  } catch {
+    return null;
+  }
 }
 
 export function jourDepuisNotion(debut: unknown): string | null {
@@ -147,9 +176,9 @@ export function mapperLigneNotion(ligne: LigneNotionAO): AppelOffresImporte | nu
     piecesExigees: texte(ligne["Pièces exigées"]),
     bloquants: texte(ligne["Bloquants"]),
     notes: texte(ligne["Notes"]),
-    lienAvis: texte(ligne["Lien avis"]),
-    lienDce: texte(ligne["Lien DCE"]),
-    premierJet: texte(ligne["Premier jet"]),
+    lienAvis: lienSur(ligne["Lien avis"]),
+    lienDce: lienSur(ligne["Lien DCE"]),
+    premierJet: lienSur(ligne["Premier jet"]),
     source: "notion_import",
     sourceId,
   };

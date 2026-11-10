@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  STATUTS_AO, SCORES_AO, SEUIL_URGENCE_JOURS, estPasse, joursAvant, type StatutAO, type ScoreAO,
+  STATUTS_AO, SCORES_AO, SEUIL_URGENCE_JOURS, estPasse, joursAvant, lienSur, type StatutAO, type ScoreAO,
 } from "@shared/appels-offres";
 
 type AppelOffres = {
@@ -194,7 +194,7 @@ export default function AppelsOffresPage({ onSearchClick }: { onSearchClick?: ()
 
           {selection ? (
             <aside className="fixed inset-0 z-40 bg-card overflow-y-auto lg:static lg:z-auto lg:w-[440px] lg:shrink-0 lg:border-l lg:border-border">
-              <Detail key={selection.id} ao={selection} onFermer={() => setChoisi(null)} formatDate={formatDate} formatMontant={formatMontant} echeance={echeance} />
+              <Detail key={selection.id} ao={selection} locale={locale} onFermer={() => setChoisi(null)} formatDate={formatDate} formatMontant={formatMontant} echeance={echeance} />
             </aside>
           ) : (
             <aside className="hidden lg:flex lg:w-[440px] lg:shrink-0 border-l border-border items-center justify-center p-6">
@@ -223,14 +223,15 @@ function Filtre({ label, valeur, onChange, options }: {
   );
 }
 
-function Detail({ ao, onFermer, formatDate, formatMontant, echeance }: {
+function Detail({ ao, locale, onFermer, formatDate, formatMontant, echeance }: {
   ao: AppelOffres;
+  locale: string;
   onFermer: () => void;
   formatDate: (d: string) => string;
   formatMontant: (m: string | null) => string | null;
   echeance: (a: AppelOffres) => { texte: string; classe: string };
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [notes, setNotes] = useState(ao.notes ?? "");
 
@@ -239,6 +240,7 @@ function Detail({ ao, onFermer, formatDate, formatMontant, echeance }: {
       apiRequest("PATCH", `${CLE}/${ao.id}`, corps).then((r) => r.json()),
     onSuccess: (maj: AppelOffres) => {
       queryClient.setQueryData<AppelOffres[]>([CLE], (l) => l?.map((a) => (a.id === maj.id ? maj : a)));
+      setNotes(maj.notes ?? "");
       toast({ title: t("appelsOffres.enregistre") });
     },
     onError: () => toast({ title: t("appelsOffres.echec"), variant: "destructive" }),
@@ -251,8 +253,10 @@ function Detail({ ao, onFermer, formatDate, formatMontant, echeance }: {
       <dd className="text-sm text-foreground mt-0.5 whitespace-pre-wrap break-words">{valeur}</dd>
     </div>
   ) : null;
-  const liens = ([["avis", ao.lienAvis], ["dce", ao.lienDce], ["premierJet", ao.premierJet]] as const).filter(([, u]) => !!u);
-  const reperage = ao.dateReperage ? new Date(`${ao.dateReperage}T12:00:00Z`).toLocaleDateString(i18n.language, { day: "numeric", month: "long", year: "numeric" }) : null;
+  // Seuls les liens http(s) deviennent des href ; le reste n'est pas affiché.
+  const liens = ([["avis", lienSur(ao.lienAvis)], ["dce", lienSur(ao.lienDce)], ["premierJet", lienSur(ao.premierJet)]] as const)
+    .filter((x): x is readonly ["avis" | "dce" | "premierJet", string] => !!x[1]);
+  const reperage = ao.dateReperage ? new Date(`${ao.dateReperage}T12:00:00Z`).toLocaleDateString(locale, { timeZone: "Europe/Paris", day: "numeric", month: "long", year: "numeric" }) : null;
 
   return (
     <div className="p-5 space-y-5" data-testid="ao-detail">
@@ -274,7 +278,7 @@ function Detail({ ao, onFermer, formatDate, formatMontant, echeance }: {
       {liens.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {liens.map(([cle, url]) => (
-            <a key={cle} href={url!} target="_blank" rel="noopener noreferrer"
+            <a key={cle} href={url} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1 rounded-md border border-naya-olive-18 px-2.5 py-1 text-xs text-foreground hover:bg-naya-olive-06">
               {t(`appelsOffres.liens.${cle}`)}<ExternalLink className="h-3 w-3" />
             </a>
@@ -301,7 +305,8 @@ function Detail({ ao, onFermer, formatDate, formatMontant, echeance }: {
         <span className="text-[11px] uppercase tracking-wide text-naya-olive-55">{t("appelsOffres.champs.notes")}</span>
         <Textarea value={notes} onChange={(ev) => setNotes(ev.target.value)} rows={6}
           placeholder={t("appelsOffres.notesPlaceholder")} data-testid="ao-notes" />
-        <Button size="sm" onClick={() => modifier.mutate({ notes })} disabled={modifier.isPending || notes === (ao.notes ?? "")}>
+        <Button size="sm" onClick={() => modifier.mutate({ notes: notes.trim() === "" ? null : notes })}
+          disabled={modifier.isPending || (notes.trim() === "" ? null : notes) === ao.notes}>
           {t("appelsOffres.enregistrer")}
         </Button>
       </div>
