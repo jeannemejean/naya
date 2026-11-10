@@ -684,6 +684,9 @@ rafraîchit les champs de veille sans jamais réécrire statut ni notes.
 
 ### Production
 
-- [ ] Point de restauration, répétition, `migrate-prod.ts`, suivi vérifié.
-- [ ] Import Notion (essai à blanc puis `--appliquer`).
+- [x] Point de restauration `sauvegarde-avant-appels-offres-2026-11-10` (`br-misty-butterfly-anabqrwd`) ; répétition sur
+      `essai-0039-2026-11-10` (`br-broad-surf-an3zeidw`) : suivi 39 → 40, import 85 créées, 8 premiers jets ; puis
+      `migrate-prod.ts` lancé par Jeanne le 10 novembre 2026, suivi **39 → 40**, table + 3 index vérifiés.
+- [x] Import Notion en production le 10 novembre 2026 (lancé par Jeanne) : 85 écrites, projet 15 « Agence JMD »,
+      8 « premier jet prêt », 35 à venir.
 - [ ] Pousser `main` (migration d'abord).
