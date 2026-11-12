@@ -97,8 +97,9 @@ import { registerAgentRoutes } from "./routes-agent";
 import { registerFilRoutes } from "./routes-fil";
 import { filActifPour } from "./services/fil/interrupteur";
 import { avecLiens } from "./services/fil/lien";
+import { oublierCarteDe } from "./services/fil/carte";
 import { proposerEtapesPour } from "./services/fil/etapes";
-import { construireMatin, ajouterFil, blocTachesDuBrief } from "./services/fil/matin";
+import { construireMatin, blocTachesDuBrief } from "./services/fil/matin";
 import type { MatinFil } from "@shared/fil";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
 import { runRealismValidation } from "./services/realism";
@@ -579,6 +580,14 @@ export const SOUPAPE_TASK_PROMPTS_LOOKBACK = 10;
 export const INSIGHT_TASK_PROMPTS_LOOKBACK = 200;
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Fil conducteur : la carte objectifs → étapes est gardée 20 s (fil/carte.ts). Toute écriture
+  // d'une utilisatrice (cocher, déplacer, créer…) l'oublie, pour que « 3 tâches sur 7 faites »
+  // suive tout de suite. Sans carte gardée (hors interrupteur), c'est sans effet.
+  app.use((req: any, res, next) => {
+    if (req.method !== 'GET') res.on('finish', () => { if (req.userId) oublierCarteDe(req.userId); });
+    next();
+  });
+
   // Health check (Railway, monitoring)
   app.get('/api/health', async (_req, res) => {
     try {
@@ -2570,15 +2579,15 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       }
 
       const forceRefresh = req.body?.refresh === true || req.query?.refresh === 'true';
-      // Fil conducteur (sous interrupteur) : le bloc `fil` est recalculé à CHAQUE appel, hors du
-      // cache du texte (sans IA), sur tous les objectifs. Hors interrupteur : réponse inchangée.
-      const calculerFil = () => construireMatin(userId, aujourdhuiParis(now), now);
+      // Texte en cache : réponse d'avant le fil, sans le calculer (l'écran le lit par GET /api/fil/matin).
       if (!forceRefresh && prefs?.dailyBriefDate === todayStr && prefs.dailyBriefContent) {
-        return res.json(await ajouterFil(userId, { date: todayStr, content: prefs.dailyBriefContent, dismissed: prefs.dailyBriefDismissed || false }, calculerFil));
+        return res.json({ date: todayStr, content: prefs.dailyBriefContent, dismissed: prefs.dailyBriefDismissed || false });
       }
+      // Fil conducteur (sous interrupteur) : calculé seulement quand le texte est généré, pour que
+      // le prompt nomme les tâches clés et ce qui cloche. Hors interrupteur : rien de calculé.
       let filMatin: MatinFil | null = null;
       if (filActifPour(userId)) {
-        try { filMatin = await calculerFil(); } catch (e: any) { console.error("[fil] matin :", e?.message ?? e); }
+        try { filMatin = await construireMatin(userId, aujourdhuiParis(now), now); } catch (e: any) { console.error("[fil] matin :", e?.message ?? e); }
       }
       const avecFil = <T extends object>(corps: T) => (filMatin ? { ...corps, fil: filMatin } : corps);
 

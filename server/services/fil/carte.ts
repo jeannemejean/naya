@@ -9,6 +9,8 @@ export interface EtapeCarte {
   statut: string; ordre: number; faites: number; prevues: number;
   /** Début de l'étape : la plus tardive de sa création et de son activation (chantiers sans mouvement). */
   debut?: Date | null;
+  /** Date cible du jalon (« AAAA-MM-JJ… »), telle qu'en base. */
+  targetDate?: string | null;
 }
 export interface ObjectifCarte {
   id: number; projetId: number; titre: string; successMode: string; goalType: string;
@@ -65,6 +67,7 @@ function versEtape(m: ProjectMilestone, av: Map<number, { faites: number; prevue
     id: m.id, objectifId: m.goalId ?? null, projetId: m.projectId, titre: m.title, pourquoi: m.pourquoi ?? null,
     statut: m.status, ordre: m.order ?? 0, faites: a.faites, prevues: a.prevues,
     debut: plusTardive(m.createdAt ?? null, m.activatedAt ?? null),
+    targetDate: m.targetDate ?? null,
   };
 }
 
@@ -109,4 +112,50 @@ export async function chargerCarte(userId: string, depuis: Date | null): Promise
     if (sansObjectif.length > 0) chainesSansObjectif.set(projetId, sansObjectif);
   }
   return { objectifs, chainesSansObjectif, depuis };
+}
+
+// ── Mémo de la carte : un chargement pour les lectures rapprochées ─────────────────────
+// La liste des tâches (liens), le matin et le planificateur lisent la même carte à quelques
+// secondes d'écart : elle est gardée 20 s par utilisatrice et date de mise en route. Un échec
+// n'est jamais gardé ; la mémoire est bornée (les plus anciennes entrées sortent d'abord).
+
+const MEMO_CARTE_MS = 20_000;
+const MEMO_CARTE_MAX = 500;
+const memoCarte = new Map<string, { expire: number; carte: Promise<CarteFil> }>();
+
+/** Pour les tests. */
+export function viderMemoCarte(): void {
+  memoCarte.clear();
+}
+
+/** Oublie les cartes gardées d'une utilisatrice (après une écriture de sa part). */
+export function oublierCarteDe(userId: string): void {
+  memoCarte.forEach((_v, k) => { if (k.startsWith(`${userId}:`)) memoCarte.delete(k); });
+}
+
+/**
+ * La carte, gardée 20 s. `frais` recharge toujours et remplace l'entrée (le planificateur, qui
+ * place des tâches, ne lit jamais une carte vieille de quelques secondes).
+ */
+export function chargerCarteMemo(
+  userId: string, depuis: Date | null,
+  opts: { maintenant?: number; frais?: boolean; charger?: typeof chargerCarte } = {},
+): Promise<CarteFil> {
+  const maintenant = opts.maintenant ?? Date.now();
+  const cle = `${userId}:${depuis ? depuis.getTime() : "-"}`;
+  const connue = memoCarte.get(cle);
+  if (connue && !opts.frais && connue.expire > maintenant) return connue.carte;
+
+  memoCarte.forEach((v, k) => { if (v.expire <= maintenant) memoCarte.delete(k); });
+  memoCarte.delete(cle);
+  while (memoCarte.size >= MEMO_CARTE_MAX) {
+    const plusAncienne = memoCarte.keys().next().value;
+    if (plusAncienne === undefined) break;
+    memoCarte.delete(plusAncienne);
+  }
+  const carte = (opts.charger ?? chargerCarte)(userId, depuis);
+  const entree = { expire: maintenant + MEMO_CARTE_MS, carte };
+  memoCarte.set(cle, entree);
+  carte.catch(() => { if (memoCarte.get(cle) === entree) memoCarte.delete(cle); });
+  return carte;
 }

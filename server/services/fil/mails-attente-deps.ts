@@ -2,6 +2,7 @@
 // mails-attente.ts pour que ses tests n'importent ni la base ni le réseau.
 import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../../db";
+import { SOURCE_MAIL } from "./mails-attente";
 import { clients, inboxConversations, leads, mailsEnAttente, projects, tasks } from "@shared/schema";
 import { plusJours } from "@shared/atelier";
 import { storage } from "../../storage";
@@ -74,7 +75,7 @@ export const depsMails: DepsMails = {
   },
   async tacheDuFil(userId, threadId) {
     const [t] = await db.select({ id: tasks.id }).from(tasks).where(and(
-      eq(tasks.userId, userId), eq(tasks.source, "fil_mail"),
+      eq(tasks.userId, userId), eq(tasks.source, SOURCE_MAIL),
       sql`${tasks.actionData} -> 'mail' ->> 'threadId' = ${threadId}`,
     )).orderBy(desc(tasks.id)).limit(1);
     return t?.id ?? null;

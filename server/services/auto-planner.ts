@@ -36,7 +36,7 @@ import { remplacerReferencesNumerotees } from "./references-taches";
 import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
 import { synchroniserValidationsProspection } from "./prospection-verification";
-import { etapesActives, chargerCarte, type CarteFil } from "./fil/carte";
+import { etapesActives, chargerCarteMemo, type CarteFil } from "./fil/carte";
 import { filActifPour, miseEnRoute } from "./fil/interrupteur";
 import { proposerPostsPresence } from "./fil/presence";
 import { synchroniserMailsEnAttente } from "./fil/mails-attente";
@@ -718,10 +718,12 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         const workDays = parseWorkDays(prefs?.workDays);
         const dates = nextWorkingDates(debutUtilisateur, 7, workDays);
 
-        // Fil conducteur : la carte objectifs → étapes, chargée UNE fois pour les 7 jours.
+        // Fil conducteur : la carte objectifs → étapes, chargée UNE fois pour les 7 jours. Toujours
+        // relue (frais) — le planificateur ne place jamais sur une carte vieille de quelques
+        // secondes — et gardée pour les écrans qui la liront juste après.
         const fil = filActifPour(userId)
           ? {
-              carte: await chargerCarte(userId, filDepuis).catch((e: any) => {
+              carte: await chargerCarteMemo(userId, filDepuis, { frais: true }).catch((e: any) => {
                 console.error(`[AutoPlanner] Carte du fil illisible pour ${userId}:`, e?.message);
                 return null;
               }),

@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Task } from "@shared/schema";
 import type { CarteFil, ObjectifCarte } from "./carte";
-import { construireMatin, viderReprisesEnMemoire, ajouterFil, blocTachesDuBrief, type DepsMatin } from "./matin";
+import { construireMatin, echeancesDe, viderReprisesEnMemoire, blocTachesDuBrief, SOURCES_HORS_RATTACHEMENT, type DepsMatin } from "./matin";
 
 const AUJ = "2026-11-12";
 const MAINTENANT = new Date("2026-11-12T08:00:00Z");
@@ -30,13 +30,12 @@ const TACHES_EN_FORME = ["planificateur", "veille_ao", "envoi_prospection", "rev
 
 function deps(over: Partial<DepsMatin> = {}): DepsMatin & { [k: string]: any } {
   return {
-    depuis: vi.fn(async () => CARTE.depuis),
     carte: vi.fn(async () => CARTE),
     tachesDuJour: vi.fn(async () => [
       tache(1, { projectId: 10, goalId: 1, milestoneId: 100 }),
       tache(2, { projectId: 20, goalId: 2, milestoneId: 200, priority: 1 }),
     ]),
-    preferences: vi.fn(async () => ({ activeProjectId: 10, currentEnergyLevel: "high", energyUpdatedDate: AUJ, workDays: "mon,tue,wed,thu,fri" })),
+    preferences: vi.fn(async () => ({ activeProjectId: 10, currentEnergyLevel: "high", energyUpdatedDate: AUJ, workDays: "mon,tue,wed,thu,fri", filConducteurDepuis: CARTE.depuis })),
     echeances: vi.fn(async () => []),
     oublies: vi.fn(async () => []),
     etatsTachesFond: vi.fn(async () => TACHES_EN_FORME),
@@ -55,6 +54,20 @@ function deps(over: Partial<DepsMatin> = {}): DepsMatin & { [k: string]: any } {
 beforeEach(() => viderReprisesEnMemoire());
 
 describe("construireMatin", () => {
+  it("préférences lues une seule fois ; la carte est chargée depuis leur date de mise en route", async () => {
+    const d = deps();
+    await construireMatin("u1", AUJ, MAINTENANT, d);
+    expect(d.preferences).toHaveBeenCalledTimes(1);
+    expect(d.carte).toHaveBeenCalledWith("u1", CARTE.depuis);
+  });
+
+  it("échéances : date limite des tâches et date cible des étapes lues sur la carte", () => {
+    const carte: CarteFil = { ...CARTE, objectifs: [{ ...CARTE.objectifs[0], etapes: [{ ...CARTE.objectifs[0].etapes[0], targetDate: "2026-11-14" }] }] };
+    expect(echeancesDe(carte, [tache(1, { dueDate: new Date("2026-11-13T00:00:00Z") } as any)])).toEqual([
+      { tacheId: 1, date: "2026-11-13" }, { etapeId: 100, date: "2026-11-14" },
+    ]);
+  });
+
   it("projet filtré A : le matin contient les tâches clés de B (filtre de la barre latérale ignoré)", async () => {
     const d = deps();
     const fil = await construireMatin("u1", AUJ, MAINTENANT, d);
@@ -189,6 +202,20 @@ describe("construireMatin", () => {
     expect(fil.rienNeCloche).toBe(false);
   });
 
+  it("les tâches de ménage de Naya (mail en attente, clôture) ne comptent pas comme non rattachées", async () => {
+    const d = deps({
+      tachesDuJour: vi.fn(async () => [
+        tache(1, { goalId: 1, milestoneId: 100 }),
+        tache(7, { source: "fil_mail" } as any),
+        tache(8, { source: "fil_cloture" } as any),
+      ]),
+    });
+    const fil = await construireMatin("u1", AUJ, MAINTENANT, d);
+    expect(SOURCES_HORS_RATTACHEMENT).toEqual(expect.arrayContaining(["fil_mail", "fil_cloture"]));
+    expect(fil.nonRattachees).toBe(0);
+    expect(blocTachesDuBrief(fil, [])).not.toContain("rattachées à aucun objectif");
+  });
+
   it("énergie low mise à jour aujourd'hui : une proposition est créée ; rappelé, le matin ne la recrée pas", async () => {
     const proposees: any[] = [];
     const d = deps({
@@ -287,29 +314,6 @@ describe("construireMatin", () => {
     });
     const fil = await construireMatin("u1", AUJ, MAINTENANT, d);
     expect(fil.tachesCles[0].tacheId).toBe(1);
-  });
-});
-
-describe("ajouterFil (route du mot du matin)", () => {
-  const corps = { date: AUJ, content: { greeting: "x" }, dismissed: false };
-
-  it("hors interrupteur : la réponse est l'objet reçu, intact, sans calcul du fil", async () => {
-    const calculer = vi.fn();
-    const r = await ajouterFil("u1", corps, calculer, { FIL_CONDUCTEUR_USERS: "autre" } as any);
-    expect(r).toBe(corps);
-    expect(JSON.stringify(r)).toBe(JSON.stringify({ date: AUJ, content: { greeting: "x" }, dismissed: false }));
-    expect(calculer).not.toHaveBeenCalled();
-  });
-
-  it("sous interrupteur : { ...existant, fil }", async () => {
-    const fil = { tachesCles: [], objectifsOublies: [], allegement: null, nonRattachees: 0, rienNeCloche: false };
-    const r = await ajouterFil("u1", corps, async () => fil, { FIL_CONDUCTEUR_USERS: "u1" } as any);
-    expect(r).toEqual({ ...corps, fil });
-  });
-
-  it("sous interrupteur, le fil plante : la réponse existante part quand même", async () => {
-    const r = await ajouterFil("u1", corps, async () => { throw new Error("base"); }, { FIL_CONDUCTEUR_USERS: "u1" } as any);
-    expect(r).toEqual(corps);
   });
 });
 

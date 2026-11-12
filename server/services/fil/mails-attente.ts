@@ -13,6 +13,9 @@
 import type { EmailUnipile } from "../unipile-mail";
 import type { BrouillonTache, Rattachement } from "./rattachement";
 
+/** Source des tâches « répondre au mail » créées par Naya. */
+export const SOURCE_MAIL = "fil_mail";
+
 export const FENETRE_JOURS = 14;
 export const ECHEANCE_JOURS = 2;
 export const ECHEANCE_ADMIN_JOURS = 7;
@@ -273,7 +276,7 @@ export async function synchroniserMailsEnAttente(
         clientId: m?.clientId ?? null,
         leadId: m?.leadId ?? null,
         ...rattachement,
-        source: "fil_mail",
+        source: SOURCE_MAIL,
         completed: false,
         actionData: { mail: { threadId: f.threadId, expediteur: f.expediteur } },
       });

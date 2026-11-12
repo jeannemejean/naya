@@ -21,10 +21,10 @@ vi.mock("../db", () => ({
   db: { select: vi.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })) },
   pool: { query: vi.fn(), on: vi.fn() },
 }));
-const fil = vi.hoisted(() => ({ filActifPour: vi.fn(), miseEnRoute: vi.fn(), proposerRattachements: vi.fn(), chargerCarte: vi.fn() }));
+const fil = vi.hoisted(() => ({ filActifPour: vi.fn(), miseEnRoute: vi.fn(), proposerRattachements: vi.fn(), chargerCarteMemo: vi.fn() }));
 vi.mock("./fil/interrupteur", () => ({ filActifPour: fil.filActifPour, miseEnRoute: fil.miseEnRoute }));
 vi.mock("./fil/etapes", () => ({ proposerRattachements: fil.proposerRattachements }));
-vi.mock("./fil/carte", async (orig) => ({ ...(await orig<any>()), chargerCarte: fil.chargerCarte }));
+vi.mock("./fil/carte", async (orig) => ({ ...(await orig<any>()), chargerCarteMemo: fil.chargerCarteMemo }));
 const mails = vi.hoisted(() => ({ synchroniserMailsEnAttente: vi.fn() }));
 vi.mock("./fil/mails-attente", () => ({ synchroniserMailsEnAttente: mails.synchroniserMailsEnAttente }));
 const cloture = vi.hoisted(() => ({ poserTacheDeCloture: vi.fn() }));
@@ -44,7 +44,7 @@ beforeEach(() => {
   storageMock.fixOverlappingTasks.mockResolvedValue(undefined);
   fil.filActifPour.mockReturnValue(true);
   fil.proposerRattachements.mockResolvedValue([]);
-  fil.chargerCarte.mockResolvedValue({ objectifs: [], chainesSansObjectif: new Map(), depuis: null });
+  fil.chargerCarteMemo.mockResolvedValue({ objectifs: [], chainesSansObjectif: new Map(), depuis: null });
   mails.synchroniserMailsEnAttente.mockResolvedValue({ creees: 0 });
   cloture.poserTacheDeCloture.mockResolvedValue({ creee: false, n: 0 });
 });
@@ -56,7 +56,7 @@ describe("runDailyAutoPlanner — mise en route du fil", () => {
     expect(fil.miseEnRoute).toHaveBeenCalledWith("u1", expect.any(Date));
     expect(fil.proposerRattachements).toHaveBeenCalledTimes(1);
     expect(fil.proposerRattachements).toHaveBeenCalledWith("u1", expect.any(Date));
-    expect(fil.chargerCarte).toHaveBeenCalledWith("u1", DEPUIS);
+    expect(fil.chargerCarteMemo).toHaveBeenCalledWith("u1", DEPUIS, { frais: true });
   });
 
   it("date déjà posée : aucun rattachement proposé", async () => {

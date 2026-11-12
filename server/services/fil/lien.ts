@@ -3,7 +3,7 @@
 // Objectif : … ». L'étape fait foi (elle porte son objectif) ; à défaut, l'objectif de la tâche.
 import type { LienFil } from "@shared/fil";
 import { storage } from "../../storage";
-import { chargerCarte, libelleCible, type CarteFil, type EtapeCarte, type ObjectifCarte } from "./carte";
+import { chargerCarteMemo, libelleCible, type CarteFil, type EtapeCarte, type ObjectifCarte } from "./carte";
 import { filActifPour } from "./interrupteur";
 
 type TacheReliable = { goalId?: number | null; milestoneId?: number | null; _virtual?: boolean };
@@ -41,7 +41,7 @@ export interface DepsLiens {
 
 const depsParDefaut: DepsLiens = {
   filActif: (userId) => filActifPour(userId),
-  charger: chargerCarte,
+  charger: (userId, depuis) => chargerCarteMemo(userId, depuis),
   depuis: async (userId) => ((await storage.getUserPreferences(userId)) as any)?.filConducteurDepuis ?? null,
 };
 

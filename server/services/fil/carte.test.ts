@@ -31,7 +31,7 @@ const storageMock = vi.hoisted(() => ({
 }));
 vi.mock("../../storage", () => ({ storage: storageMock }));
 
-import { chargerCarte, etapesActives, libelleCible } from "./carte";
+import { chargerCarte, chargerCarteMemo, etapesActives, libelleCible, oublierCarteDe, viderMemoCarte } from "./carte";
 import { createMilestoneChain } from "../milestone-engine";
 
 const jalon = (id: number, projectId: number, goalId: number | null, order: number, status: string) =>
@@ -183,5 +183,57 @@ describe("createMilestoneChain avec goalId, pourquoi et état réel", () => {
   it("la première non faite devient active même si elle est annoncée « à venir »", async () => {
     const r = await createMilestoneChain(7, "u1", [{ title: "A", etat: "faite" }, { title: "B", etat: "a_venir" }, { title: "C", etat: "en_cours" }]);
     expect(r.map((m) => m.status)).toEqual(["completed", "active", "locked"]);
+  });
+});
+
+describe("chargerCarteMemo (20 s par utilisatrice et date de mise en route)", () => {
+  const T0 = 1_800_000_000_000;
+  const CARTE = { objectifs: [], chainesSansObjectif: new Map(), depuis: null };
+  beforeEach(() => viderMemoCarte());
+
+  it("deux appels rapprochés : un seul chargement ; après 20 s ou pour une autre clé : rechargée", async () => {
+    const charger = vi.fn(async () => CARTE);
+    const a = await chargerCarteMemo("u1", null, { maintenant: T0, charger });
+    const b = await chargerCarteMemo("u1", null, { maintenant: T0 + 5_000, charger });
+    expect(b).toBe(a);
+    expect(charger).toHaveBeenCalledTimes(1);
+    await chargerCarteMemo("u2", null, { maintenant: T0 + 5_000, charger });
+    await chargerCarteMemo("u1", new Date(T0), { maintenant: T0 + 5_000, charger });
+    expect(charger).toHaveBeenCalledTimes(3);
+    await chargerCarteMemo("u1", null, { maintenant: T0 + 20_001, charger });
+    expect(charger).toHaveBeenCalledTimes(4);
+  });
+
+  it("un échec n'est pas mémorisé : l'appel suivant recharge", async () => {
+    const charger = vi.fn().mockRejectedValueOnce(new Error("base")).mockResolvedValue(CARTE);
+    await expect(chargerCarteMemo("u1", null, { maintenant: T0, charger })).rejects.toThrow("base");
+    await expect(chargerCarteMemo("u1", null, { maintenant: T0 + 1_000, charger })).resolves.toBe(CARTE);
+    expect(charger).toHaveBeenCalledTimes(2);
+  });
+
+  it("frais : recharge toujours et remplace la carte mémorisée", async () => {
+    const autre = { ...CARTE, objectifs: [] };
+    const charger = vi.fn().mockResolvedValueOnce(CARTE).mockResolvedValue(autre);
+    await chargerCarteMemo("u1", null, { maintenant: T0, charger });
+    expect(await chargerCarteMemo("u1", null, { maintenant: T0 + 1_000, charger, frais: true })).toBe(autre);
+    expect(await chargerCarteMemo("u1", null, { maintenant: T0 + 2_000, charger })).toBe(autre);
+    expect(charger).toHaveBeenCalledTimes(2);
+  });
+
+  it("oublierCarteDe : la carte de cette utilisatrice seulement est rechargée", async () => {
+    const charger = vi.fn(async () => CARTE);
+    await chargerCarteMemo("u1", null, { maintenant: T0, charger });
+    await chargerCarteMemo("u10", null, { maintenant: T0, charger });
+    oublierCarteDe("u1");
+    await chargerCarteMemo("u1", null, { maintenant: T0 + 1_000, charger });
+    await chargerCarteMemo("u10", null, { maintenant: T0 + 1_000, charger });
+    expect(charger).toHaveBeenCalledTimes(3);
+  });
+
+  it("borné : au-delà de la limite, les plus anciennes entrées sortent", async () => {
+    const charger = vi.fn(async () => CARTE);
+    for (let i = 0; i < 600; i++) await chargerCarteMemo(`u${i}`, null, { maintenant: T0, charger });
+    await chargerCarteMemo("u0", null, { maintenant: T0, charger });
+    expect(charger).toHaveBeenCalledTimes(601);
   });
 });

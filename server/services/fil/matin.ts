@@ -15,7 +15,8 @@
 //   jour (toute proposition `alleger_journee` du jour, quel que soit son statut, compte), et
 //   seulement si le plan déplace au moins une tâche. En attente : son id ; traitée : null.
 // - nonRattachees : tâches du jour à faire, sans objectif (ni `goalId`, ni étape d'un objectif de
-//   la carte), hors rituels, heure fixe et marqueurs de jalon.
+//   la carte), hors rituels, heure fixe, marqueurs de jalon et tâches de ménage de Naya
+//   (SOURCES_HORS_RATTACHEMENT).
 // - creation : `suiviCreationEnCache` (creation.ts, 20 min par jour) — alertes par compte actif
 //   sans rien de prévu sur 7 jours, posts et phases de campagne à valider. Non vide : il sonne.
 // - cloture (vendredi, Paris) : les tâches ouvertes depuis plus de 7 jours, à trancher par Jeanne
@@ -26,8 +27,7 @@ import { ligneIndicateurs, type Indicateur, type MatinFil, type ObjectifOublie, 
 import { storage } from "../../storage";
 import { depot } from "../agent/depot";
 import { proposerHorsConversation } from "../agent/propositions";
-import { chargerCarte, etapesActives, type CarteFil } from "./carte";
-import { filActifPour } from "./interrupteur";
+import { chargerCarteMemo, etapesActives, type CarteFil } from "./carte";
 import { lienDeTache } from "./lien";
 import { classerTachesCles, type EcheanceProche } from "./priorite";
 import { chargerObjectifsOublies, tacheDeReprise, type ObjectifOublieBrut, type RepriseProposee } from "./oublis";
@@ -39,20 +39,22 @@ import { chantiersBloquesEnCache } from "./mouvements";
 import { indicateursDuJour } from "./indicateurs";
 import { depsReleve } from "./indicateurs-deps";
 import { suiviCreationEnCache, type SuiviCreation } from "./creation";
-import { clotureEnCache, reconciliationEnCache, type ATrancher, type Incoherence } from "./cloture";
+import { clotureEnCache, reconciliationEnCache, SOURCE_CLOTURE, type ATrancher, type Incoherence } from "./cloture";
+import { SOURCE_MAIL } from "./mails-attente";
 
 const JOURS_REPORT = 3;
 const HEURES_RECHERCHE_ALLEGEMENT = 48;
 
 type PrefsMatin = {
   currentEnergyLevel?: string | null; energyUpdatedDate?: string | null; workDays?: string | null;
+  filConducteurDepuis?: Date | null;
 } & Record<string, unknown>;
 
 export interface DepsMatin {
-  depuis(userId: string): Promise<Date | null>;
   carte(userId: string, depuis: Date | null): Promise<CarteFil>;
   /** Les tâches d'un jour, TOUS projets confondus. */
   tachesDuJour(userId: string, jour: string): Promise<Task[]>;
+  /** Lues UNE fois par matin : énergie, jours travaillés et date de mise en route du fil. */
   preferences(userId: string): Promise<PrefsMatin | undefined>;
   echeances(userId: string, carte: CarteFil, taches: Task[]): Promise<EcheanceProche[]>;
   oublies(userId: string, carte: CarteFil, maintenant: Date): Promise<ObjectifOublieBrut[]>;
@@ -81,27 +83,25 @@ export interface DepsMatin {
 
 const JOUR_ISO = /^\d{4}-\d{2}-\d{2}/;
 
+/** Échéances du jour : date limite des tâches, date cible des étapes de la carte (sans relecture). */
+export function echeancesDe(carte: CarteFil, taches: Task[]): EcheanceProche[] {
+  const res: EcheanceProche[] = [];
+  for (const t of taches) {
+    if (t.dueDate) res.push({ tacheId: t.id, date: new Date(t.dueDate).toISOString().slice(0, 10) });
+  }
+  for (const e of carte.objectifs.flatMap((o) => o.etapes)) {
+    if (typeof e.targetDate === "string" && JOUR_ISO.test(e.targetDate)) res.push({ etapeId: e.id, date: e.targetDate.slice(0, 10) });
+  }
+  return res;
+}
+
 const depsParDefaut: DepsMatin = {
   // Lecture seule : la mise en route (et sa proposition unique de rattachement) reste au planificateur.
-  depuis: async (userId) => ((await storage.getUserPreferences(userId)) as any)?.filConducteurDepuis ?? null,
-  carte: chargerCarte,
+  // La carte est partagée 20 s avec la liste des tâches et le planificateur (chargerCarteMemo).
+  carte: (userId, depuis) => chargerCarteMemo(userId, depuis),
   tachesDuJour: (userId, jour) => storage.getTasksInRange(userId, jour, jour),
   preferences: async (userId) => (await storage.getUserPreferences(userId)) as PrefsMatin | undefined,
-  async echeances(userId, carte, taches) {
-    const res: EcheanceProche[] = [];
-    for (const t of taches) {
-      if (t.dueDate) res.push({ tacheId: t.id, date: new Date(t.dueDate).toISOString().slice(0, 10) });
-    }
-    const etapes = new Set(carte.objectifs.flatMap((o) => o.etapes.map((e) => e.id)));
-    const projets = [...new Set(carte.objectifs.map((o) => o.projetId))];
-    const jalons = await Promise.all(projets.map((p) => storage.getMilestones(p, userId).catch(() => [])));
-    for (const m of jalons.flat()) {
-      if (etapes.has(m.id) && typeof m.targetDate === "string" && JOUR_ISO.test(m.targetDate)) {
-        res.push({ etapeId: m.id, date: m.targetDate.slice(0, 10) });
-      }
-    }
-    return res;
-  },
+  echeances: async (_userId, carte, taches) => echeancesDe(carte, taches),
   oublies: chargerObjectifsOublies,
   etatsTachesFond: lireEtatsTachesFond,
   chantiersBloques: (userId, carte, maintenant) => chantiersBloquesEnCache(userId, carte, maintenant),
@@ -167,6 +167,13 @@ function repriseDeSecours(carte: CarteFil, o: ObjectifOublieBrut): { titre: stri
 
 const estRituelOuMarqueur = (t: Task) => (t as any).ritualId != null || t.type === "milestone";
 
+/**
+ * Sources des tâches de ménage de Naya (répondre à un mail, trancher le vendredi) : elles ne
+ * servent aucun objectif par nature et ne comptent jamais comme « non rattachées ». Ajouter ici
+ * les prochaines.
+ */
+export const SOURCES_HORS_RATTACHEMENT: readonly string[] = [SOURCE_MAIL, SOURCE_CLOTURE];
+
 // Date locale du serveur : c'est ainsi que /api/user/energy écrit `energyUpdatedDate`.
 const jourServeur = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
@@ -193,10 +200,8 @@ async function allegementDuJour(
 }
 
 export async function construireMatin(userId: string, aujourdhui: string, maintenant: Date, deps: DepsMatin = depsParDefaut): Promise<MatinFil> {
-  const [depuis, prefs, tachesJour] = await Promise.all([
-    deps.depuis(userId), deps.preferences(userId), deps.tachesDuJour(userId, aujourdhui),
-  ]);
-  const carte = await deps.carte(userId, depuis);
+  const [prefs, tachesJour] = await Promise.all([deps.preferences(userId), deps.tachesDuJour(userId, aujourdhui)]);
+  const carte = await deps.carte(userId, prefs?.filConducteurDepuis ?? null);
   const taches = tachesJour.filter((t) => !estRituelOuMarqueur(t));
 
   const majLe = prefs?.energyUpdatedDate ?? null;
@@ -214,6 +219,7 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
   });
 
   const nonRattachees = taches.filter((t) => !t.completed && !t.archivedAt && t.schedulingMode !== "fixed"
+    && !SOURCES_HORS_RATTACHEMENT.includes(t.source ?? "")
     && t.goalId == null && lienDeTache(carte, t) == null).length;
 
   let allegement: { propositionId: number } | null = null;
@@ -269,22 +275,6 @@ function signalLot4(f: MatinFil): boolean {
 }
 
 // ── Branchement dans la route du mot du matin ──────────────────────────────────────────
-
-/**
- * Hors interrupteur : rend `corps` tel quel (même objet), sans rien calculer. Sous interrupteur :
- * `{ ...corps, fil }`. Si le fil plante, la réponse existante part quand même.
- */
-export async function ajouterFil<T extends object>(
-  userId: string, corps: T, calculer: () => Promise<MatinFil>, env: NodeJS.ProcessEnv = process.env,
-): Promise<T | (T & { fil: MatinFil })> {
-  if (!filActifPour(userId, env)) return corps;
-  try {
-    return { ...corps, fil: await calculer() };
-  } catch (e: any) {
-    console.error("[fil] matin :", e?.message ?? e);
-    return corps;
-  }
-}
 
 /**
  * Le bloc des tâches du prompt du mot du matin. Sans fil : exactement le bloc historique (les 3
