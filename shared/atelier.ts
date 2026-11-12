@@ -33,6 +33,9 @@ export const JOURS_AVANT_PREMIER_POST = 3;
 export const TYPE_ATELIER = "atelier_contenu";
 export const TYPE_VALIDATION = "atelier_validation";
 
+/** Lien vers l'atelier d'une semaine (lundi YYYY-MM-DD). */
+export const lienAtelier = (lundi: string) => `/atelier?semaine=${lundi}`;
+
 // ─── Dates (jours YYYY-MM-DD, calcul en UTC : aucun fuseau ne s'en mêle) ─────────────────
 
 export function plusJours(jour: string, n: number): string {

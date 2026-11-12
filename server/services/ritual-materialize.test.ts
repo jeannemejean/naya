@@ -23,6 +23,8 @@ const RITUAL = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Fil conducteur hors interrupteur : comportement historique, aucune carte lue.
+  vi.stubEnv("FIL_CONDUCTEUR_USERS", "");
   (storage.createTask as any).mockResolvedValue({ id: 99 });
 });
 

@@ -87,10 +87,11 @@ export function ordonnerComptes<C extends CompteActif>(comptes: C[], platformPri
 }
 
 const date = (v: Date | string | null | undefined): Date | null => (v ? new Date(v) : null);
-const estPublie = (p: PostPresence) =>
+/** Le post est-il publié ? (partagé avec le suivi de création, creation.ts) */
+export const estPublie = (p: PostPresence) =>
   p.publishedAt != null || p.postStatus === "posted" || (p.contentStatus ?? "").toLowerCase() === "published";
 // Le compte d'un post : celui qu'il désigne, sinon (aucun compte désigné) celui de sa plateforme.
-const couvre = (p: PostPresence, c: CompteActif) =>
+export const couvre = (p: PostPresence, c: CompteActif) =>
   p.socialAccountId != null ? p.socialAccountId === c.id : normaliser(p.platform ?? "") === normaliser(c.platform);
 
 /**

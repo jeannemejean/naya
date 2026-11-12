@@ -16,7 +16,7 @@ import {
 import { estEtapeEcran, etapesHorsAtelier, jourDeProduction, jourDuPost, postAProduire } from "../campagne/production";
 import {
   DUREE_ATELIER, TYPE_ATELIER, TYPE_VALIDATION, decouperAtelier, dureeValidation, etatPost,
-  genreDuPost, libelleSemaine, lundiDe, planAtelier, plusJours,
+  genreDuPost, libelleSemaine, lienAtelier, lundiDe, planAtelier, plusJours,
 } from "@shared/atelier";
 import { rattacheurDuPassage, type BrouillonTache, type Rattachement } from "../fil/rattachement";
 
@@ -25,7 +25,8 @@ type Tache = Record<string, any>;
 const titreAtelier = (lundi: string, partie: number, parties: number) =>
   `Atelier contenu — semaine du ${libelleSemaine(lundi)}${parties > 1 ? ` (${partie}/${parties})` : ""}`;
 const titreRattrapage = (lundi: string) => `Atelier contenu — semaine du ${libelleSemaine(lundi)} (rattrapage)`;
-export const lienAtelier = (lundi: string) => `/atelier?semaine=${lundi}`;
+// Déplacé dans @shared/atelier (partagé avec le suivi de création du fil) ; réexporté ici.
+export { lienAtelier };
 const titreValidation = (lundi: string) => `Valider la semaine — ${libelleSemaine(lundi)}`;
 
 const DESCRIPTION_ATELIER =

@@ -42,6 +42,7 @@ function deps(over: Partial<DepsMatin> = {}): DepsMatin & { [k: string]: any } {
     etatsTachesFond: vi.fn(async () => TACHES_EN_FORME),
     chantiersBloques: vi.fn(async () => []),
     indicateurs: vi.fn(async () => []),
+    creation: vi.fn(async () => ({ alertes: [], aValider: [] })),
     reprise: vi.fn(async () => null),
     allegementsDuJour: vi.fn(async () => []),
     proposerAllegement: vi.fn(async () => ({ id: 77 })),
@@ -87,6 +88,31 @@ describe("construireMatin", () => {
     const enPanne = await construireMatin("u1", AUJ, MAINTENANT, deps({ chantiersBloques: vi.fn(async () => { throw new Error("base"); }) }));
     err.mockRestore();
     expect(enPanne.chantiersBloques).toBeUndefined();
+    expect(enPanne.rienNeCloche).toBe(true);
+  });
+
+  it("création : alertes et posts à valider remplissent `creation` et font sonner le matin ; vide ou en panne, rien", async () => {
+    const suivi = {
+      alertes: ["Rien de prévu sur Instagram (Encore Merci) dans les 7 prochains jours."],
+      aValider: [{ libelle: "À valider : « Tarte » (Instagram, samedi 14 novembre)", lien: "/atelier?semaine=2026-11-09" }],
+    };
+    const d = deps({ creation: vi.fn(async () => suivi) });
+    const fil = await construireMatin("u1", AUJ, MAINTENANT, d);
+    expect(fil.creation).toEqual(suivi);
+    expect(fil.rienNeCloche).toBe(false);
+    expect(d.creation).toHaveBeenCalledWith("u1", MAINTENANT);
+
+    const seulementAValider = await construireMatin("u1", AUJ, MAINTENANT, deps({ creation: vi.fn(async () => ({ alertes: [], aValider: suivi.aValider })) }));
+    expect(seulementAValider.rienNeCloche).toBe(false);
+
+    const vide = await construireMatin("u1", AUJ, MAINTENANT, deps());
+    expect(vide.creation).toBeUndefined();
+    expect(vide.rienNeCloche).toBe(true);
+
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const enPanne = await construireMatin("u1", AUJ, MAINTENANT, deps({ creation: vi.fn(async () => { throw new Error("base"); }) }));
+    err.mockRestore();
+    expect(enPanne.creation).toBeUndefined();
     expect(enPanne.rienNeCloche).toBe(true);
   });
 

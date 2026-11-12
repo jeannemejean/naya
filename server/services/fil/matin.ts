@@ -16,6 +16,8 @@
 //   seulement si le plan déplace au moins une tâche. En attente : son id ; traitée : null.
 // - nonRattachees : tâches du jour à faire, sans objectif (ni `goalId`, ni étape d'un objectif de
 //   la carte), hors rituels, heure fixe et marqueurs de jalon.
+// - creation : `suiviCreationEnCache` (creation.ts, 20 min par jour) — alertes par compte actif
+//   sans rien de prévu sur 7 jours, posts et phases de campagne à valider. Non vide : il sonne.
 import type { Task } from "@shared/schema";
 import type { Indicateur, MatinFil, ObjectifOublie, TacheCle } from "@shared/fil";
 import { storage } from "../../storage";
@@ -33,6 +35,7 @@ import type { EtatTacheFond } from "@shared/schema";
 import { chantiersBloquesEnCache } from "./mouvements";
 import { indicateursDuJour } from "./indicateurs";
 import { depsReleve } from "./indicateurs-deps";
+import { suiviCreationEnCache, type SuiviCreation } from "./creation";
 
 const JOURS_REPORT = 3;
 const HEURES_RECHERCHE_ALLEGEMENT = 48;
@@ -61,6 +64,8 @@ export interface DepsMatin {
    * fois s'il manque (jamais un appel aux APIs extérieures à chaque chargement).
    */
   indicateurs(userId: string, aujourdhui: string, maintenant: Date): Promise<Indicateur[]>;
+  /** Le suivi de création : alertes par compte actif, posts et phases de campagne à valider. */
+  creation(userId: string, maintenant: Date): Promise<SuiviCreation>;
   proposerAllegement(userId: string, args: { date: string; deplacer: { tacheId: number; vers: string }[] }, maintenant: Date): Promise<{ id: number } | { erreur: string }>;
 }
 
@@ -94,6 +99,7 @@ const depsParDefaut: DepsMatin = {
   chantiersBloques: (userId, carte, maintenant) => chantiersBloquesEnCache(userId, carte, maintenant),
   reprise: tacheDeReprise,
   indicateurs: (userId, aujourdhui, maintenant) => indicateursDuJour(userId, aujourdhui, maintenant, depsReleve),
+  creation: (userId, maintenant) => suiviCreationEnCache(userId, maintenant),
   async allegementsDuJour(userId, jour, maintenant) {
     const depuis = new Date(maintenant.getTime() - HEURES_RECHERCHE_ALLEGEMENT * 3600_000);
     const liste = await depot.propositionsCreeesDepuis(userId, ["alleger_journee"], depuis);
@@ -216,7 +222,8 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
   // Les chantiers sans mouvement, en parallèle : une source qui plante (base, agenda) ne fait
   // jamais tomber le matin.
   // Les indicateurs, informatifs : ils ne font jamais sonner le matin (`rienNeCloche` les ignore).
-  const [pannes, chantiersBloques, indicateurs] = await Promise.all([
+  // Le suivi de création : une source qui plante n'invente rien et ne fait pas tomber le matin.
+  const [pannes, chantiersBloques, indicateurs, creation] = await Promise.all([
     deps.etatsTachesFond()
       .then((etats) => pannesDesTaches(etats, maintenant, undefined, debutDuSuivi(etats)))
       .catch((e: any) => { console.error("[fil] pannes :", e?.message ?? e); return [] as { nom: string; dernierSucces: string | null }[]; }),
@@ -224,12 +231,15 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
       .catch((e: any) => { console.error("[fil] chantiers sans mouvement :", e?.message ?? e); return []; }),
     deps.indicateurs(userId, aujourdhui, maintenant)
       .catch((e: any) => { console.error("[fil] indicateurs :", e?.message ?? e); return [] as Indicateur[]; }),
+    Promise.resolve().then(() => deps.creation(userId, maintenant))
+      .catch((e: any) => { console.error("[fil] création :", e?.message ?? e); return null; }),
   ]);
 
   const fil: MatinFil = { tachesCles, objectifsOublies, allegement, nonRattachees, rienNeCloche: false };
   if (pannes.length > 0) fil.pannes = pannes;
   if (chantiersBloques.length > 0) fil.chantiersBloques = chantiersBloques;
   if (indicateurs.length > 0) fil.indicateurs = indicateurs;
+  if (creation && (creation.alertes.length > 0 || creation.aValider.length > 0)) fil.creation = creation;
   fil.rienNeCloche = tachesCles.length > 0 && objectifsOublies.length === 0 && nonRattachees === 0 && !allegement && !signalLot4(fil);
   return fil;
 }

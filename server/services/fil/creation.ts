@@ -1,0 +1,177 @@
+// La création, version Naya (spec §8, point 6) : le suivi de ce qui vit dans Naya, pour le matin.
+// - une alerte par compte social actif sans aucun post prévu ni publié dans les 7 prochains jours
+//   (l'équivalent de l'alerte Metricool) ; la fenêtre regarde DEVANT : un post publié hier ne
+//   couvre pas la semaine qui vient ;
+// - `aValider` : les posts à l'état `brouillon` ou `a_rediger` (etatPost) prévus dans les 3 jours,
+//   avec le lien de l'atelier de leur semaine (les posts proposés par la présence en font partie) ;
+// - `aValider` aussi : les phases de campagne qui commencent dans les 7 jours et ne sont pas
+//   validées. `campaigns.phases` ne porte ni date ni validation par phase (forme figée dans
+//   creation.test.ts) : le début se calcule comme computePhaseRanges, et une phase est validée
+//   quand sa campagne est lancée (statut ≠ draft).
+// Les rituels de création (« Encore Merci : 3 recettes de la semaine », le lundi) sont les rituels
+// existants : leur rattachement se fait à la matérialisation (ritual-materialize.ts).
+//
+// Ce module n'importe ni la base ni le stockage : les sources sont injectées (creation-deps.ts).
+import { etatPost, lienAtelier, lundiDe, plusJours } from "@shared/atelier";
+import { couvre, estPublie, type CompteActif, type PostPresence } from "./presence";
+
+export const FENETRE_ALERTE_JOURS = 7;
+export const FENETRE_VALIDATION_JOURS = 3;
+export const FENETRE_PHASES_JOURS = 7;
+const JOUR_MS = 24 * 3600_000;
+
+export interface PostCreation extends PostPresence {
+  id: number; title?: string | null; autoPost?: boolean | null; consigne?: string | null;
+  campaignId?: number | null; body?: string | null; tendanceProjetId?: number | null;
+  /** Portée du post (mode agence) : l'id du projet client, ou null pour l'utilisatrice. */
+  portee?: number | null;
+}
+export interface CompteCreation extends CompteActif { nom?: string | null; projectId?: number | null }
+export interface CampagneCreation {
+  id: number; name: string; status: string | null; startDate: string | null; duration: string | null; phases: unknown;
+}
+export interface SuiviCreation { alertes: string[]; aValider: { libelle: string; lien: string }[] }
+
+// ── Les phases ─────────────────────────────────────────────────────────────────────────
+
+// Mêmes durées que /api/campaigns/:id/launch (routes.ts) et DUREE_JOURS (campagne/repenser.ts).
+const DUREE_JOURS: Record<string, number> = {
+  "1_week": 7, "2_weeks": 14, "3_weeks": 21, "1_month": 30,
+  "2_months": 60, "3_months": 90, "6_months": 180, "12_months": 365,
+};
+
+/**
+ * Le jour de début de chaque phase, du même découpage que computePhaseRanges
+ * (campagne/placement.ts) : phases triées par numéro, floor(durée / nombre) jours chacune.
+ * Sans date de début ou sans phases lisibles : rien.
+ */
+export function debutsDesPhases(c: CampagneCreation): { numero: number; nom: string; debut: string }[] {
+  if (!c.startDate || !/^\d{4}-\d{2}-\d{2}/.test(c.startDate) || !Array.isArray(c.phases)) return [];
+  const phases = (c.phases as any[])
+    .filter((p) => p && typeof p === "object" && Number.isFinite(Number(p.number)))
+    .sort((a, b) => Number(a.number) - Number(b.number));
+  if (phases.length === 0) return [];
+  const jours = DUREE_JOURS[c.duration || "3_months"] || 90;
+  const parPhase = Math.max(1, Math.floor(jours / phases.length));
+  const depart = c.startDate.slice(0, 10);
+  return phases.map((p, i) => ({
+    numero: Number(p.number),
+    nom: String(p.name || p.title || `Phase ${p.number}`),
+    debut: plusJours(depart, i * parPhase),
+  }));
+}
+
+// ── Le suivi ───────────────────────────────────────────────────────────────────────────
+
+const PLATEFORMES: Record<string, string> = {
+  instagram: "Instagram", linkedin: "LinkedIn", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube",
+  twitter: "X", x: "X", threads: "Threads", pinterest: "Pinterest",
+};
+const plateforme = (p: string | null | undefined) => {
+  const t = (p ?? "").trim();
+  return PLATEFORMES[t.toLowerCase()] ?? (t ? t.charAt(0).toUpperCase() + t.slice(1) : "un réseau");
+};
+
+const jourParis = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
+// « samedi 14 novembre » (le jour d'un instant, à Paris).
+const jourLong = (d: Date) => new Intl.DateTimeFormat("fr-FR", {
+  timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long",
+}).format(d);
+// « dimanche 15 novembre » (un jour YYYY-MM-DD, sans fuseau).
+const jourLongIso = (jour: string) => new Intl.DateTimeFormat("fr-FR", {
+  timeZone: "UTC", weekday: "long", day: "numeric", month: "long",
+}).format(new Date(`${jour}T12:00:00Z`));
+
+const date = (v: Date | string | null | undefined): Date | null => (v ? new Date(v) : null);
+
+export function suiviCreation(
+  posts: PostCreation[], comptesActifs: CompteCreation[], campagnes: CampagneCreation[], maintenant: Date,
+): SuiviCreation {
+  const t = maintenant.getTime();
+  const finAlerte = t + FENETRE_ALERTE_JOURS * JOUR_MS;
+  const finValidation = t + FENETRE_VALIDATION_JOURS * JOUR_MS;
+
+  // Un post couvre un compte : il le désigne, sinon même plateforme ET même portée (un post d'un
+  // projet client ne couvre pas le compte de la marque, et inversement).
+  const couvreCompte = (p: PostCreation, c: CompteCreation) =>
+    couvre(p, c) && (p.socialAccountId != null || (p.portee ?? null) === (c.projectId ?? null));
+  const dansLaSemaine = (p: PostCreation) => {
+    if (estPublie(p)) {
+      const d = (date(p.publishedAt) ?? date(p.scheduledFor))?.getTime();
+      return d != null && d >= t && d <= finAlerte;
+    }
+    if (p.postStatus === "failed") return false;
+    const s = date(p.scheduledFor)?.getTime();
+    return s != null && s >= t && s <= finAlerte;
+  };
+  const alertes = comptesActifs
+    .filter((c) => !posts.some((p) => couvreCompte(p, c) && dansLaSemaine(p)))
+    .map((c) => `Rien de prévu sur ${plateforme(c.platform)}${c.nom?.trim() ? ` (${c.nom.trim()})` : ""} dans les ${FENETRE_ALERTE_JOURS} prochains jours.`);
+
+  const aValider: SuiviCreation["aValider"] = posts
+    .map((p) => ({ p, s: date(p.scheduledFor) }))
+    .filter((x): x is { p: PostCreation; s: Date } => x.s != null && x.s.getTime() >= t && x.s.getTime() <= finValidation)
+    .map((x) => ({ ...x, etat: etatPost(x.p) }))
+    .filter((x) => x.etat === "brouillon" || x.etat === "a_rediger")
+    .sort((a, b) => a.s.getTime() - b.s.getTime() || a.p.id - b.p.id)
+    .map(({ p, s, etat }) => ({
+      libelle: `${etat === "a_rediger" ? "À rédiger" : "À valider"} : « ${(p.title ?? "").trim() || "Post sans titre"} » (${plateforme(p.platform)}, ${jourLong(s)})`,
+      lien: lienAtelier(lundiDe(jourParis(s))),
+    }));
+
+  const aujourdhui = jourParis(maintenant);
+  const limite = plusJours(aujourdhui, FENETRE_PHASES_JOURS);
+  for (const c of campagnes) {
+    if ((c.status ?? "draft") !== "draft") continue; // lancée = validée
+    for (const ph of debutsDesPhases(c)) {
+      if (ph.debut < aujourdhui || ph.debut > limite) continue;
+      aValider.push({
+        libelle: `Campagne « ${c.name} » : la phase « ${ph.nom} » commence le ${jourLongIso(ph.debut)}, campagne pas encore lancée`,
+        lien: "/campaigns",
+      });
+    }
+  }
+  return { alertes, aValider };
+}
+
+// ── Chargement et cache du matin ───────────────────────────────────────────────────────
+
+export interface DepsCreation {
+  /** Comptes sociaux actifs de l'utilisatrice, toutes portées (projectId = portée du compte). */
+  comptesActifs(userId: string): Promise<CompteCreation[]>;
+  /** Posts prévus ou publiés entre ces deux instants, avec leur portée. */
+  posts(userId: string, debut: Date, fin: Date): Promise<PostCreation[]>;
+  /** Campagnes de l'utilisatrice (seules les non lancées comptent). */
+  campagnes(userId: string): Promise<CampagneCreation[]>;
+}
+
+export async function chargerSuiviCreation(userId: string, maintenant: Date, deps?: DepsCreation): Promise<SuiviCreation> {
+  const d = deps ?? (await import("./creation-deps")).depsCreation;
+  const fin = new Date(maintenant.getTime() + FENETRE_ALERTE_JOURS * JOUR_MS);
+  const [comptes, posts, campagnes] = await Promise.all([d.comptesActifs(userId), d.posts(userId, maintenant, fin), d.campagnes(userId)]);
+  return suiviCreation(posts, comptes, campagnes, maintenant);
+}
+
+/** Trois lectures à chaque GET /api/fil/matin : gardées 20 min par utilisatrice et par jour (Europe/Paris). */
+export const CACHE_CREATION_MS = 20 * 60_000;
+const cacheCreation = new Map<string, { at: number; valeur: Promise<SuiviCreation> }>();
+
+/** Pour les tests. */
+export function viderCacheCreation(): void {
+  cacheCreation.clear();
+}
+
+export function suiviCreationEnCache(
+  userId: string, maintenant: Date,
+  calculer: (userId: string, maintenant: Date) => Promise<SuiviCreation> = chargerSuiviCreation,
+): Promise<SuiviCreation> {
+  const cle = `${userId}:${jourParis(maintenant)}`;
+  const connu = cacheCreation.get(cle);
+  if (connu && maintenant.getTime() - connu.at < CACHE_CREATION_MS) return connu.valeur;
+  cacheCreation.forEach((v, k) => { if (maintenant.getTime() - v.at >= CACHE_CREATION_MS) cacheCreation.delete(k); });
+  const valeur = calculer(userId, maintenant);
+  cacheCreation.set(cle, { at: maintenant.getTime(), valeur });
+  // Un échec n'est pas gardé : le prochain matin réessaie.
+  valeur.catch(() => { if (cacheCreation.get(cle)?.valeur === valeur) cacheCreation.delete(cle); });
+  return valeur;
+}
