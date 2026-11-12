@@ -367,6 +367,65 @@ export async function tiktokFinishAsync(creds: PubCredentials, publishId: string
   return { state: "processing", containerId: publishId };
 }
 
+// ─────────────────────────── Audience (indicateurs du fil conducteur) ───────────────────────────
+
+/** Compte relié dont on lit le nombre d'abonnés. Le jeton ne sort JAMAIS de cette fonction. */
+export interface CompteAudience {
+  platform: string; // instagram | linkedin | linkedin_page_<id>
+  accountId: string;
+  accessToken: string;
+  expiresAt?: Date | null;
+}
+
+/** Erreur d'audience : `message` est une raison courte, montrable telle quelle (sans jeton). */
+export class AudienceIndisponible extends Error {}
+
+const DELAI_AUDIENCE_MS = 8000;
+
+/** Raison courte d'un refus d'API, sans rien recopier de la réponse (qui peut citer la requête). */
+function raisonRefus(reseau: string, status: number, code: unknown): string {
+  if (status === 401 || code === 190) return `jeton ${reseau} expiré ou révoqué`;
+  if (status === 403 || code === 10 || code === 200) return `l'API ${reseau} ne donne pas ce chiffre`;
+  if (status === 429 || code === 4 || code === 17 || code === 32) return `${reseau} limite les lectures`;
+  return `${reseau} ne répond pas (${status})`;
+}
+
+/**
+ * Nombre d'abonnés d'un compte relié, quand l'API du réseau le permet.
+ * - Instagram (API « Instagram Login ») : `followers_count` du compte.
+ * - Page LinkedIn : `networkSizes` de l'organisation (abonnés de la page). Si l'application n'a
+ *   pas le droit de le lire, LinkedIn répond 403 → indisponible.
+ * - Profil LinkedIn personnel : les droits reliés (`r_basicprofile`) ne donnent pas les abonnés →
+ *   indisponible, sans appel.
+ * Jamais d'exception autre que `AudienceIndisponible` ; jamais le jeton dans un message.
+ */
+export async function lireAbonnes(compte: CompteAudience, maintenant: Date = new Date(), fetchFn: typeof fetch = fetch): Promise<number> {
+  const linkedin = compte.platform === "linkedin" || compte.platform.startsWith("linkedin_page");
+  const reseau = linkedin ? "LinkedIn" : compte.platform === "instagram" ? "Instagram" : compte.platform;
+  if (compte.platform === "linkedin") throw new AudienceIndisponible("l'API LinkedIn ne donne pas les abonnés d'un profil");
+  if (!linkedin && compte.platform !== "instagram") throw new AudienceIndisponible(`abonnés ${reseau} non lus`);
+  if (!compte.accessToken) throw new AudienceIndisponible(`compte ${reseau} sans jeton`);
+  if (compte.expiresAt && compte.expiresAt.getTime() <= maintenant.getTime()) throw new AudienceIndisponible(`jeton ${reseau} expiré`);
+
+  let res: Response;
+  try {
+    res = linkedin
+      ? await fetchFn(`${LI_API}/networkSizes/${encodeURIComponent(`urn:li:organization:${compte.accountId}`)}?edgeType=COMPANY_FOLLOWED_BY_COMPANY`,
+        { headers: liHeaders(compte.accessToken, false), signal: AbortSignal.timeout(DELAI_AUDIENCE_MS) })
+      // Même forme que igContainerStatus (jeton en paramètre) : l'URL n'est jamais journalisée.
+      : await fetchFn(`${IG_GRAPH}/${encodeURIComponent(compte.accountId)}?fields=followers_count&access_token=${encodeURIComponent(compte.accessToken)}`,
+        { signal: AbortSignal.timeout(DELAI_AUDIENCE_MS) });
+  } catch {
+    // Le message d'une erreur réseau peut citer l'URL : il n'est pas repris.
+    throw new AudienceIndisponible(`${reseau} ne répond pas`);
+  }
+  const data: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new AudienceIndisponible(raisonRefus(reseau, res.status, data?.error?.code ?? data?.serviceErrorCode));
+  const n = linkedin ? data?.firstDegreeSize : data?.followers_count;
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) throw new AudienceIndisponible(`${reseau} ne donne pas ce chiffre`);
+  return n;
+}
+
 // ─────────────────────────── Dispatcher ───────────────────────────
 
 /** Publie un post selon le réseau + format. */

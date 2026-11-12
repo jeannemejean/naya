@@ -17,7 +17,7 @@
 // - nonRattachees : tâches du jour à faire, sans objectif (ni `goalId`, ni étape d'un objectif de
 //   la carte), hors rituels, heure fixe et marqueurs de jalon.
 import type { Task } from "@shared/schema";
-import type { MatinFil, ObjectifOublie, TacheCle } from "@shared/fil";
+import type { Indicateur, MatinFil, ObjectifOublie, TacheCle } from "@shared/fil";
 import { storage } from "../../storage";
 import { depot } from "../agent/depot";
 import { proposerHorsConversation } from "../agent/propositions";
@@ -31,6 +31,8 @@ import { joursTravaillesSuivants, planAllegement } from "./allegement";
 import { debutDuSuivi, lireEtatsTachesFond, pannes as pannesDesTaches } from "./etat-taches-fond";
 import type { EtatTacheFond } from "@shared/schema";
 import { chantiersBloquesEnCache } from "./mouvements";
+import { indicateursDuJour } from "./indicateurs";
+import { depsReleve } from "./indicateurs-deps";
 
 const JOURS_REPORT = 3;
 const HEURES_RECHERCHE_ALLEGEMENT = 48;
@@ -54,6 +56,11 @@ export interface DepsMatin {
   etatsTachesFond(): Promise<EtatTacheFond[]>;
   /** Chantiers sans mouvement depuis 15 jours (étape, objectif ou projet actifs). */
   chantiersBloques(userId: string, carte: CarteFil, maintenant: Date): Promise<{ libelle: string; joursSansMouvement: number; prochainPas: string }[]>;
+  /**
+   * Les indicateurs avec leur valeur précédente : le relevé du jour lu en base, ou fait une seule
+   * fois s'il manque (jamais un appel aux APIs extérieures à chaque chargement).
+   */
+  indicateurs(userId: string, aujourdhui: string, maintenant: Date): Promise<Indicateur[]>;
   proposerAllegement(userId: string, args: { date: string; deplacer: { tacheId: number; vers: string }[] }, maintenant: Date): Promise<{ id: number } | { erreur: string }>;
 }
 
@@ -86,6 +93,7 @@ const depsParDefaut: DepsMatin = {
   etatsTachesFond: lireEtatsTachesFond,
   chantiersBloques: (userId, carte, maintenant) => chantiersBloquesEnCache(userId, carte, maintenant),
   reprise: tacheDeReprise,
+  indicateurs: (userId, aujourdhui, maintenant) => indicateursDuJour(userId, aujourdhui, maintenant, depsReleve),
   async allegementsDuJour(userId, jour, maintenant) {
     const depuis = new Date(maintenant.getTime() - HEURES_RECHERCHE_ALLEGEMENT * 3600_000);
     const liste = await depot.propositionsCreeesDepuis(userId, ["alleger_journee"], depuis);
@@ -207,17 +215,21 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
   // Les tâches de fond en panne : signalées, jamais refaites. Une lecture ratée n'invente pas de panne.
   // Les chantiers sans mouvement, en parallèle : une source qui plante (base, agenda) ne fait
   // jamais tomber le matin.
-  const [pannes, chantiersBloques] = await Promise.all([
+  // Les indicateurs, informatifs : ils ne font jamais sonner le matin (`rienNeCloche` les ignore).
+  const [pannes, chantiersBloques, indicateurs] = await Promise.all([
     deps.etatsTachesFond()
       .then((etats) => pannesDesTaches(etats, maintenant, undefined, debutDuSuivi(etats)))
       .catch((e: any) => { console.error("[fil] pannes :", e?.message ?? e); return [] as { nom: string; dernierSucces: string | null }[]; }),
     deps.chantiersBloques(userId, carte, maintenant)
       .catch((e: any) => { console.error("[fil] chantiers sans mouvement :", e?.message ?? e); return []; }),
+    deps.indicateurs(userId, aujourdhui, maintenant)
+      .catch((e: any) => { console.error("[fil] indicateurs :", e?.message ?? e); return [] as Indicateur[]; }),
   ]);
 
   const fil: MatinFil = { tachesCles, objectifsOublies, allegement, nonRattachees, rienNeCloche: false };
   if (pannes.length > 0) fil.pannes = pannes;
   if (chantiersBloques.length > 0) fil.chantiersBloques = chantiersBloques;
+  if (indicateurs.length > 0) fil.indicateurs = indicateurs;
   fil.rienNeCloche = tachesCles.length > 0 && objectifsOublies.length === 0 && nonRattachees === 0 && !allegement && !signalLot4(fil);
   return fil;
 }

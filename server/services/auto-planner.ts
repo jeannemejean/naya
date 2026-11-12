@@ -40,6 +40,8 @@ import { etapesActives, chargerCarte, type CarteFil } from "./fil/carte";
 import { filActifPour, miseEnRoute } from "./fil/interrupteur";
 import { proposerPostsPresence } from "./fil/presence";
 import { synchroniserMailsEnAttente } from "./fil/mails-attente";
+import { releverUneFois } from "./fil/indicateurs";
+import { depsReleve } from "./fil/indicateurs-deps";
 import { proposerRattachements } from "./fil/etapes";
 import { rattachementTacheGeneree } from "./fil/rattachement";
 import { suivrePassage } from "./fil/etat-taches-fond";
@@ -689,6 +691,17 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
           await synchroniserMailsEnAttente(userId, new Date())
             .then((r) => { if (r.creees) console.log(`[fil] mails en attente : ${r.creees} tâche(s) « Répondre à » user=${userId}`); })
             .catch((e: any) => console.error(`[AutoPlanner] Mails en attente (fil) failed for ${userId}:`, e?.message));
+        }
+
+        // 1 quinquies. Fil conducteur, indicateurs (spec §8.3) : le relevé du jour, lu ensuite par
+        //             le mot du matin avec la valeur précédente. Une source en panne est relevée
+        //             « indisponible » ; un échec complet est consigné et n'arrête rien.
+        if (filActifPour(userId)) {
+          const maintenant = new Date();
+          const jour = new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(maintenant);
+          await releverUneFois(userId, jour, depsReleve, maintenant)
+            .then((r) => console.log(`[fil] indicateurs : ${r.length} relevé(s), ${r.filter((i) => i.indisponible).length} indisponible(s) user=${userId}`))
+            .catch((e: any) => console.error(`[AutoPlanner] Indicateurs (fil) failed for ${userId}:`, e?.message));
         }
 
         // 2. Générer les 7 prochains jours de travail
