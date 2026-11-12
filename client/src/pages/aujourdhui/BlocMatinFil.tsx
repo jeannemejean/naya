@@ -1,7 +1,9 @@
-// Le matin du fil conducteur à l'écran (spec 2026-11-10, §3 et §4), en tête d'Aujourd'hui : les
-// tâches clés en cartes ; dessous, les objectifs oubliés (« Reprendre ») et la journée allégée
-// (« Alléger ma journée », puis « Annuler » pendant 24 h) ; puis, en une ligne, les tâches du
-// jour sans objectif. Si rien ne cloche : une seule phrase. Hors interrupteur, le brief ne porte
+// Le matin du fil conducteur à l'écran (spec 2026-11-10, §3, §4, §7 et §8), en tête d'Aujourd'hui :
+// les tâches clés en cartes ; dessous, les signaux dans l'ordre de la consolidation (pannes, ce qui
+// attend une suite le lundi, chantiers à l'arrêt et objectifs oubliés, la liste à trancher du
+// vendredi, la création), la journée allégée (« Alléger ma journée », puis « Annuler » pendant
+// 24 h), les tâches du jour sans objectif, et enfin la ligne des indicateurs avec son détail
+// repliable (SignauxMatin.tsx). Si rien ne cloche : une seule phrase (et la ligne des indicateurs). Hors interrupteur, le brief ne porte
 // pas de `fil` : rien n'est rendu, l'accueil reste exactement comme avant.
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
@@ -14,6 +16,10 @@ import { cn } from "@/lib/utils";
 import { annulationOuverte, resumeMatin, validationIncomplete } from "./logique";
 import { CLE_FIL_MATIN, chargerMatinFil, cleErreurAnnulation, type EtatMatinFil, cleErreurFil, codeErreur, texteNonRattachees, texteNonRemises } from "./fil-logique";
 import { TachesCles } from "./TachesCles";
+import {
+  AValider, ChantiersBloques, Cloture, CreationAlertes, Indicateurs, Pannes, Reconciliation, boutonPrincipal, boutonSecondaire,
+  type Tranchee,
+} from "./SignauxMatin";
 
 /**
  * Le matin du fil, lu par GET /api/fil/matin (à part du brief : jamais de génération du texte).
@@ -62,17 +68,15 @@ function reprisDuJour(userId: string, jour: string): number[] {
   return m?.jour === jour && Array.isArray(m.ids) ? m.ids : [];
 }
 
-const boutonPrincipal =
-  "inline-flex min-h-[44px] items-center rounded-full bg-primary px-5 text-[15px] font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50";
-const boutonSecondaire =
-  "inline-flex min-h-[44px] items-center rounded-full px-4 text-[15px] font-semibold text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
-
 export function BlocMatinFil({ className }: { className?: string }) {
   const { t } = useTranslation();
   const fil = useMatinFil();
   const userId = useAuth().user?.id;
+  // Les tâches tranchées ce matin : leur confirmation reste après le rechargement de la liste.
+  const [tranchees, setTranchees] = useState<Record<number, Tranchee>>({});
   if (!fil || !userId) return null;
-  const { phraseUnique, sections } = resumeMatin(fil);
+  const { phraseUnique, sections, indicateurs } = resumeMatin(fil);
+  const avecCloture = sections.includes("cloture") || Object.keys(tranchees).length > 0;
   const propositionId = sections.includes("allegement") ? fil.allegement?.propositionId ?? null : null;
 
   return (
@@ -83,12 +87,21 @@ export function BlocMatinFil({ className }: { className?: string }) {
         </p>
       )}
       {sections.includes("tachesCles") && <TachesCles taches={fil.tachesCles} />}
+      {sections.includes("pannes") && <Pannes pannes={fil.pannes!} />}
+      {sections.includes("reconciliation") && <Reconciliation lignes={fil.reconciliation!} />}
+      {sections.includes("chantiersBloques") && <ChantiersBloques chantiers={fil.chantiersBloques!} />}
       {sections.includes("oublis") && <ObjectifsOublies objectifs={fil.objectifsOublies} userId={String(userId)} />}
+      {avecCloture && (
+        <Cloture taches={fil.cloture ?? []} tranchees={tranchees} onTranchee={(id, r) => setTranchees((x) => ({ ...x, [id]: r }))} />
+      )}
+      {sections.includes("creationAlertes") && <CreationAlertes alertes={fil.creation!.alertes} />}
+      {sections.includes("aValider") && <AValider elements={fil.creation!.aValider} />}
       {/* Toujours monté : après validation, la proposition n'est plus dans le fil mais « Annuler » reste 24 h. */}
       <CarteAllegement propositionId={propositionId} userId={String(userId)} />
       {sections.includes("nonRattachees") && (
         <p className="px-1 text-[14px] leading-[1.5] text-muted-foreground">{texteNonRattachees(fil.nonRattachees, (cle, opts) => t(cle, opts))}</p>
       )}
+      {indicateurs && <Indicateurs indicateurs={fil.indicateurs!} />}
     </div>
   );
 }

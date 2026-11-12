@@ -123,16 +123,63 @@ describe("resumeMatin", () => {
   const oubli = { objectifId: 4, titre: "Lancer le podcast", joursSansTache: 9, reprise: { titre: "20 min sur le pilote", pourquoi: "Un premier pas remet le podcast en route." } };
 
   it("rien ne cloche : une seule phrase, aucune section", () => {
-    expect(resumeMatin(matin({ rienNeCloche: true }))).toEqual({ phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [] });
+    expect(resumeMatin(matin({ rienNeCloche: true }))).toEqual({ phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [], indicateurs: false });
   });
   it("un objectif oublié : la section « oublis », après les tâches clés", () => {
-    expect(resumeMatin(matin({ objectifsOublies: [oubli] }))).toEqual({ phraseUnique: null, sections: ["tachesCles", "oublis"] });
+    expect(resumeMatin(matin({ objectifsOublies: [oubli] }))).toEqual({ phraseUnique: null, sections: ["tachesCles", "oublis"], indicateurs: false });
   });
   it("chaque signal a sa section, dans l'ordre de l'écran ; rien de vide n'est montré", () => {
     expect(resumeMatin(matin({ objectifsOublies: [oubli], allegement: { propositionId: 3 }, nonRattachees: 2 })).sections)
       .toEqual(["tachesCles", "oublis", "allegement", "nonRattachees"]);
     expect(resumeMatin(matin({ tachesCles: [], nonRattachees: 1 })).sections).toEqual(["nonRattachees"]);
-    expect(resumeMatin(matin({ tachesCles: [] }))).toEqual({ phraseUnique: null, sections: [] });
+    expect(resumeMatin(matin({ tachesCles: [] }))).toEqual({ phraseUnique: null, sections: [], indicateurs: false });
+  });
+
+  // Le lot 4 (spec §7 et §8) : pannes, incohérences, chantiers bloqués, retards, nouveaux.
+  const panne = { nom: "Veille des appels d'offres", dernierSucces: "2026-11-10T07:04:00.000Z" };
+  const chantier = { libelle: "Être visible (JMD)", joursSansMouvement: 16, prochainPas: "Écrire le post de rentrée" };
+  const aTrancher = { tacheId: 9, titre: "Refaire la plaquette", ouverteDepuis: 12 };
+  const incoherence = { source: "reponses", libelle: "Léa (LinkedIn) à traiter : aucune tâche pour s'en occuper", lien: "/outreach?onglet=reponses&conversation=3" };
+  const creation = { alertes: ["Rien de prévu sur Instagram (JMD) dans les 7 prochains jours."], aValider: [{ libelle: "À valider : « Rentrée »", lien: "/atelier?semaine=2026-11-09" }] };
+  const indicateur = { cle: "prospection_envois_4s", libelle: "Messages envoyés (4 sem.)", valeur: 42, precedente: 30 };
+
+  it("lot 4 : pannes, incohérences, chantiers bloqués, retards, nouveaux, dans l'ordre de la spec", () => {
+    const tout = matin({
+      pannes: [panne], reconciliation: [incoherence], chantiersBloques: [chantier], cloture: [aTrancher], creation,
+      objectifsOublies: [oubli], allegement: { propositionId: 3 }, nonRattachees: 2,
+    });
+    expect(resumeMatin(tout).sections).toEqual([
+      "tachesCles", "pannes", "reconciliation", "chantiersBloques", "oublis", "cloture", "creationAlertes", "aValider",
+      "allegement", "nonRattachees",
+    ]);
+  });
+  it("lot 4 : une section par signal présent, aucune pour un signal vide", () => {
+    expect(resumeMatin(matin({ pannes: [panne] })).sections).toEqual(["tachesCles", "pannes"]);
+    expect(resumeMatin(matin({ creation: { alertes: [], aValider: creation.aValider } })).sections).toEqual(["tachesCles", "aValider"]);
+    expect(resumeMatin(matin({ creation: { alertes: creation.alertes, aValider: [] } })).sections).toEqual(["tachesCles", "creationAlertes"]);
+    expect(resumeMatin(matin({ pannes: [], chantiersBloques: [], cloture: [], reconciliation: [], creation: { alertes: [], aValider: [] } })).sections)
+      .toEqual(["tachesCles"]);
+  });
+  it("la clôture n'apparaît que le vendredi, la réconciliation que le lundi (le serveur ne les envoie que ces jours-là)", () => {
+    // Fixture d'un vendredi : `cloture` présent, pas de `reconciliation`.
+    const vendredi = resumeMatin(matin({ cloture: [aTrancher] })).sections;
+    expect(vendredi).toContain("cloture");
+    expect(vendredi).not.toContain("reconciliation");
+    // Fixture d'un lundi : `reconciliation` présent, pas de `cloture`.
+    const lundi = resumeMatin(matin({ reconciliation: [incoherence] })).sections;
+    expect(lundi).toContain("reconciliation");
+    expect(lundi).not.toContain("cloture");
+    // Un mardi : ni l'un ni l'autre.
+    const mardi = resumeMatin(matin({ chantiersBloques: [chantier] })).sections;
+    expect(mardi).not.toContain("cloture");
+    expect(mardi).not.toContain("reconciliation");
+  });
+  it("les indicateurs ne sont pas une section : la ligne se montre aussi quand rien ne cloche", () => {
+    expect(resumeMatin(matin({ rienNeCloche: true, indicateurs: [indicateur] })))
+      .toEqual({ phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [], indicateurs: true });
+    expect(resumeMatin(matin({ indicateurs: [indicateur] })).indicateurs).toBe(true);
+    expect(resumeMatin(matin({ indicateurs: [] })).indicateurs).toBe(false);
+    expect(resumeMatin(matin()).indicateurs).toBe(false);
   });
 });
 

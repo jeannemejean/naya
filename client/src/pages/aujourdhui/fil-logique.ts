@@ -1,7 +1,7 @@
 // Logique pure du fil conducteur à l'écran (spec 2026-11-10, §2 et §3) : le texte « Étape : …,
 // 3 tâches sur 7 faites. Objectif : … », l'édition en ligne d'une proposition d'étapes (Ajuster)
 // et le regroupement des étapes par objectif sur la page projet. Aucune dépendance React.
-import type { LienFil, MatinFil } from "@shared/fil";
+import { sensIndicateur, type Indicateur, type LienFil, type MatinFil } from "@shared/fil";
 
 type Traduire = (cle: string, opts?: Record<string, unknown>) => string;
 
@@ -125,6 +125,65 @@ const CODES_ANNULATION = new Set(["expiree", "deja_annulee", "modifiee"]);
 /** Clé du message d'un refus d'annulation (409) ; les autres codes passent par cleErreurFil. */
 export const cleErreurAnnulation = (code: string | null | undefined) =>
   code && CODES_ANNULATION.has(code) ? `filConducteur.matin.allegement.erreurs.${code}` : cleErreurFil(code);
+
+// ── Le lot 4 au matin (spec §8) ──────────────────────────────────────────────────────
+
+const HEURE_MS = 3600 * 1000;
+
+/**
+ * « Veille des appels d'offres : dernier passage réussi il y a 3 jours. » Une durée relative,
+ * pas une date : aucune affaire de fuseau ni d'Intl (le mobile n'a pas d'Intl). Moins de 48 h :
+ * en heures ; au-delà, en jours. Sans passage réussi connu (ou date illisible) : on le dit.
+ */
+export function textePanne(p: { nom: string; dernierSucces: string | null }, maintenant: Date, t: Traduire): string {
+  const d = p.dernierSucces ? Date.parse(p.dernierSucces) : NaN;
+  if (!Number.isFinite(d)) return t("filConducteur.matin.pannes.jamais", { nom: p.nom });
+  const heures = Math.max(0, Math.floor((maintenant.getTime() - d) / HEURE_MS));
+  if (heures < 1) return t("filConducteur.matin.pannes.recent", { nom: p.nom });
+  if (heures < 48) return t("filConducteur.matin.pannes.heures", { nom: p.nom, n: heures });
+  return t("filConducteur.matin.pannes.jours", { nom: p.nom, n: Math.floor(heures / 24) });
+}
+
+/**
+ * Le détail d'un indicateur : sa valeur avec son sens (↑ ↓ =), la valeur précédente quand il y
+ * en a une, ou « indisponible (raison) ». Jamais un chiffre inventé pour une source absente.
+ */
+export function detailIndicateur(i: Indicateur, t: Traduire): { valeur: string; avant: string | null } {
+  const avant = i.precedente == null ? null : t("filConducteur.matin.indicateurs.avant", { valeur: i.precedente });
+  if (i.indisponible || i.valeur == null) {
+    const valeur = i.indisponible
+      ? t("filConducteur.matin.indicateurs.indisponibleRaison", { raison: i.indisponible })
+      : t("filConducteur.matin.indicateurs.indisponible");
+    return { valeur, avant };
+  }
+  const sens = sensIndicateur(i);
+  return { valeur: `${i.valeur}${sens ? ` ${sens}` : ""}`, avant };
+}
+
+/** Les `n` jours ouvrés (lundi à vendredi) qui suivent `jour` (YYYY-MM-DD, calcul en UTC). */
+export function joursTravaillesApres(jour: string, n: number): string[] {
+  const res: string[] = [];
+  const d = new Date(`${jour}T12:00:00Z`);
+  while (res.length < n && Number.isFinite(d.getTime())) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const j = d.getUTCDay();
+    if (j !== 0 && j !== 6) res.push(d.toISOString().slice(0, 10));
+  }
+  return res;
+}
+
+export type GesteTrancher = "faire" | "deplacer" | "abandonner";
+
+/** Corps de POST /api/fil/trancher : la date ne part qu'avec « déplacer ». */
+export function corpsTrancher(tacheId: number, geste: GesteTrancher, date?: string): { tacheId: number; geste: GesteTrancher; date?: string } {
+  return geste === "deplacer" && date ? { tacheId, geste, date } : { tacheId, geste };
+}
+
+const CODES_TRANCHER = new Set(["deja_tranchee", "date_passee", "task_not_found"]);
+
+/** Clé du message d'un refus de trancher ; les autres codes passent par cleErreurFil. */
+export const cleErreurTrancher = (code: string | null | undefined) =>
+  code && CODES_TRANCHER.has(code) ? `filConducteur.matin.cloture.erreurs.${code}` : cleErreurFil(code);
 
 // ── Page projet ──────────────────────────────────────────────────────────────────────
 

@@ -22,7 +22,7 @@
 //   (POST /api/fil/trancher) ; reconciliation (lundi) : réponses, appels d'offres, posts et mails
 //   sans la tâche qui devrait s'en occuper (cloture.ts, cache 20 min par jour). Non vides : ils sonnent.
 import type { Task } from "@shared/schema";
-import type { Indicateur, MatinFil, ObjectifOublie, TacheCle } from "@shared/fil";
+import { ligneIndicateurs, type Indicateur, type MatinFil, type ObjectifOublie, type TacheCle } from "@shared/fil";
 import { storage } from "../../storage";
 import { depot } from "../agent/depot";
 import { proposerHorsConversation } from "../agent/propositions";
@@ -315,8 +315,42 @@ export function blocTachesDuBrief(fil: MatinFil | null, lignesHistoriques: strin
     }
   }
   if (fil.nonRattachees > 0) lignes.push(`\nTâches du jour rattachées à aucun objectif : ${fil.nonRattachees}.`);
+  lignes.push(...blocLot4(fil));
   lignes.push(fil.rienNeCloche
     ? "\nRien ne cloche aujourd'hui : si rien ne cloche, une seule phrase, sans liste."
-    : "\nConsigne : si rien ne cloche, une seule phrase ; sinon, nomme ce qui cloche (objectif oublié, tâches sans objectif) en une phrase.");
+    : "\nConsigne : si rien ne cloche, une seule phrase ; sinon, nomme ce qui cloche (panne, chantier à l'arrêt, objectif oublié, tâches sans objectif, ce qui attend une suite) en une phrase.");
   return lignes.join("\n");
+}
+
+/**
+ * Le lot 4 au prompt (spec §8), dans l'ordre de la consolidation : la ligne des indicateurs
+ * (informative), puis pannes, incohérences, chantiers bloqués, retards, nouveaux. L'écran les
+ * détaille : l'IA n'a qu'à les nommer en une phrase. Un signal absent n'ajoute rien.
+ */
+function blocLot4(fil: MatinFil): string[] {
+  const l: string[] = [];
+  const ligne = fil.indicateurs?.length ? ligneIndicateurs(fil.indicateurs) : "";
+  if (ligne) l.push(`\nINDICATEURS (valeur, sens depuis la précédente ; une source indisponible reste indisponible, n'invente aucun chiffre) :\n${ligne}`);
+  if (fil.pannes?.length) {
+    l.push("\nPANNES DES TÂCHES DE FOND (elles n'ont pas tourné, tu ne refais pas leur travail) :");
+    for (const p of fil.pannes) l.push(`- ${p.nom}${p.dernierSucces ? ` (dernier passage réussi : ${p.dernierSucces})` : " (aucun passage réussi connu)"}`);
+  }
+  if (fil.reconciliation?.length) {
+    l.push("\nSANS SUITE (réconciliation du lundi) :");
+    for (const r of fil.reconciliation) l.push(`- ${r.libelle}`);
+  }
+  if (fil.chantiersBloques?.length) {
+    l.push("\nCHANTIERS À L'ARRÊT :");
+    for (const c of fil.chantiersBloques) l.push(`- ${c.libelle} : ${c.joursSansMouvement} jours sans mouvement ; prochain pas : ${c.prochainPas}`);
+  }
+  if (fil.cloture?.length) {
+    l.push("\nÀ TRANCHER PAR ELLE AVANT LE WEEK-END (faire, déplacer ou abandonner ; tu ne tranches pas à sa place) :");
+    for (const c of fil.cloture) l.push(`- ${c.titre} (ouverte depuis ${c.ouverteDepuis} jours)`);
+  }
+  if (fil.creation?.alertes.length || fil.creation?.aValider.length) {
+    l.push("\nCRÉATION :");
+    for (const a of fil.creation.alertes) l.push(`- ${a}`);
+    for (const v of fil.creation.aValider) l.push(`- ${v.libelle}`);
+  }
+  return l;
 }

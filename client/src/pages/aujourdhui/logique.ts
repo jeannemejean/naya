@@ -145,25 +145,40 @@ export function doitAllerALOnboarding(q: { isSuccess: boolean; data: unknown }):
   return q.isSuccess && !q.data;
 }
 
-// ── Le matin du fil conducteur (spec 2026-11-10, §3 et §4) ──────────────────────────────
+// ── Le matin du fil conducteur (spec 2026-11-10, §3, §4, §7 et §8) ──────────────────────────────
 
-export type SectionMatin = "tachesCles" | "oublis" | "allegement" | "nonRattachees";
+export type SectionMatin =
+  | "tachesCles" | "pannes" | "reconciliation" | "chantiersBloques" | "oublis" | "cloture"
+  | "creationAlertes" | "aValider" | "allegement" | "nonRattachees";
 
 /** Clé i18n de la phrase unique (« Rien ne cloche… »), interpolée avec la première tâche clé. */
 export const CLE_RIEN_NE_CLOCHE = "filConducteur.matin.rienNeCloche";
 
 /**
- * Ce que le matin montre, dans l'ordre de l'écran. Si rien ne cloche : une seule phrase, sans
- * liste (le serveur ne dit « rien ne cloche » qu'en l'absence de journée allégée en attente).
+ * Ce que le matin montre, dans l'ordre de l'écran. D'abord les tâches clés (spec §3), puis les
+ * signaux dans l'ordre de la consolidation (§7) : pannes, incohérences (réconciliation du lundi),
+ * chantiers bloqués et objectifs oubliés, retards (clôture du vendredi, alertes de création),
+ * nouveaux (à valider) ; enfin la journée allégée et les tâches sans objectif. Le serveur n'envoie
+ * `cloture` que le vendredi et `reconciliation` que le lundi : on montre ce qui est reçu.
+ * Si rien ne cloche : une seule phrase, sans liste (le serveur ne dit « rien ne cloche » qu'en
+ * l'absence de journée allégée en attente et de signal du lot 4). Les indicateurs ne sont pas un
+ * signal : leur ligne courte (`indicateurs`) se montre aussi sous la phrase unique.
  */
-export function resumeMatin(fil: MatinFil): { phraseUnique: string | null; sections: SectionMatin[] } {
-  if (fil.rienNeCloche) return { phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [] };
+export function resumeMatin(fil: MatinFil): { phraseUnique: string | null; sections: SectionMatin[]; indicateurs: boolean } {
+  const indicateurs = (fil.indicateurs?.length ?? 0) > 0;
+  if (fil.rienNeCloche) return { phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [], indicateurs };
   const sections: SectionMatin[] = [];
   if (fil.tachesCles.length > 0) sections.push("tachesCles");
+  if (fil.pannes?.length) sections.push("pannes");
+  if (fil.reconciliation?.length) sections.push("reconciliation");
+  if (fil.chantiersBloques?.length) sections.push("chantiersBloques");
   if (fil.objectifsOublies.length > 0) sections.push("oublis");
+  if (fil.cloture?.length) sections.push("cloture");
+  if (fil.creation?.alertes.length) sections.push("creationAlertes");
+  if (fil.creation?.aValider.length) sections.push("aValider");
   if (fil.allegement) sections.push("allegement");
   if (fil.nonRattachees > 0) sections.push("nonRattachees");
-  return { phraseUnique: null, sections };
+  return { phraseUnique: null, sections, indicateurs };
 }
 
 /** Fenêtre d'annulation d'une action de l'agent (FENETRE_ANNULATION_MS côté serveur). */

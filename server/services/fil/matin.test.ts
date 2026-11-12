@@ -338,4 +338,37 @@ describe("blocTachesDuBrief", () => {
     expect(bloc).toContain("si rien ne cloche, une seule phrase");
     expect(bloc).not.toContain("energy: execution");
   });
+
+  const SANS_LOT4 = { tachesCles: [], objectifsOublies: [], allegement: null, nonRattachees: 0, rienNeCloche: false };
+
+  it("le lot 4 entre au prompt : indicateurs en une ligne, pannes, réconciliation, chantiers, clôture, création", () => {
+    const bloc = blocTachesDuBrief({
+      ...SANS_LOT4,
+      indicateurs: [{ cle: "prospection_envois_4s", libelle: "Messages envoyés", valeur: 42, precedente: 30 },
+        { cle: "prospection_rdv_4s", libelle: "Rendez-vous", valeur: null, precedente: null, indisponible: "agenda non relié" }],
+      pannes: [{ nom: "Veille des appels d'offres", dernierSucces: null }],
+      reconciliation: [{ source: "reponses", libelle: "Léa (LinkedIn) à traiter : aucune tâche pour s'en occuper", lien: "/outreach" }],
+      chantiersBloques: [{ libelle: "Être visible (JMD)", joursSansMouvement: 16, prochainPas: "Écrire le post de rentrée" }],
+      cloture: [{ tacheId: 9, titre: "Refaire la plaquette", ouverteDepuis: 12 }],
+      creation: { alertes: ["Rien de prévu sur Instagram (JMD) dans les 7 prochains jours."], aValider: [{ libelle: "À valider : « Rentrée »", lien: "/atelier" }] },
+    }, ANCIEN);
+    expect(bloc).toContain("42 envois ↑ · rdv indisponible");
+    expect(bloc).toContain("Veille des appels d'offres");
+    expect(bloc).toContain("Léa (LinkedIn) à traiter");
+    expect(bloc).toContain("Être visible (JMD) : 16 jours sans mouvement ; prochain pas : Écrire le post de rentrée");
+    expect(bloc).toContain("Refaire la plaquette (ouverte depuis 12 jours)");
+    expect(bloc).toContain("Rien de prévu sur Instagram (JMD)");
+    expect(bloc).toContain("À valider : « Rentrée »");
+    // L'ordre de la consolidation : pannes, incohérences, chantiers bloqués, retards, nouveaux.
+    const ordre = ["Veille des appels d'offres", "Léa (LinkedIn)", "Être visible (JMD)", "Refaire la plaquette", "Rien de prévu sur Instagram", "À valider : « Rentrée »"]
+      .map((x) => bloc.indexOf(x));
+    expect([...ordre].sort((a, b) => a - b)).toEqual(ordre);
+    // L'IA ne tranche pas : la liste du vendredi est à Jeanne.
+    expect(bloc).toContain("tu ne tranches pas à sa place");
+  });
+
+  it("sans signal du lot 4 : rien de plus (ni titres vides, ni indicateurs)", () => {
+    const bloc = blocTachesDuBrief(SANS_LOT4, ANCIEN);
+    for (const x of ["INDICATEURS", "PANNES", "À TRANCHER", "SANS SUITE", "CHANTIERS", "CRÉATION"]) expect(bloc).not.toContain(x);
+  });
 });
