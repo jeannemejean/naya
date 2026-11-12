@@ -16,7 +16,7 @@ vi.mock("../../db", () => ({
   },
 }));
 
-const { pannes, suivrePassage, ATTENDUS, debutDuSuivi, _reinitialiserEtatTachesFond } = await import("./etat-taches-fond");
+const { pannes, suivrePassage, ATTENDUS, debutDuSuivi, _reinitialiserEtatTachesFond, _autoriserEcritureEnTest } = await import("./etat-taches-fond");
 
 const MAINT = new Date("2026-11-12T08:00:00Z");
 const il = (minutes: number) => new Date(MAINT.getTime() - minutes * 60_000);
@@ -25,7 +25,7 @@ const etat = (nom: string, o: Partial<EtatTacheFond> = {}): EtatTacheFond =>
 const tousBien = () => ["planificateur", "veille_ao", "revue_du_matin"].map((n) => etat(n, { dernierSucces: il(60) }))
   .concat(["envoi_prospection", "indexeur"].map((n) => etat(n, { dernierSucces: il(2) })));
 
-beforeEach(() => { h.ecrit.length = 0; h.echec = false; _reinitialiserEtatTachesFond(); });
+beforeEach(() => { _autoriserEcritureEnTest(true); h.ecrit.length = 0; h.echec = false; _reinitialiserEtatTachesFond(); });
 
 describe("pannes", () => {
   it("tout va bien : aucune panne", () => {
@@ -95,5 +95,13 @@ describe("suivrePassage", () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await suivrePassage("indexeur", async () => "ok")).toBe("ok");
     err.mockRestore();
+  });
+});
+
+describe("sous vitest", () => {
+  it("par défaut, la persistance est un no-op (aucune écriture)", async () => {
+    _autoriserEcritureEnTest(false);
+    await suivrePassage("indexeur", async () => 1);
+    expect(h.ecrit).toHaveLength(0);
   });
 });

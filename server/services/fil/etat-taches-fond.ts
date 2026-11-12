@@ -22,6 +22,13 @@ const messageDe = (e: unknown) => String((e as any)?.message ?? e).slice(0, 500)
 
 const DELAI_ECRITURE_MS = 5000;
 const INTERVALLE_DEBUT_MS = 5 * 60_000;
+// Sous vitest (qui pose VITEST), la persistance est un no-op : server/db.ts charge dotenv, donc
+// un test qui lance une tâche suivie sans fausse DATABASE_URL écrirait dans la vraie base de dev.
+// Seuls les tests de ce module, qui mockent `db`, rétablissent l'écriture.
+let ecritureEnTest = false;
+const enTest = () => !!process.env.VITEST && !ecritureEnTest;
+export function _autoriserEcritureEnTest(oui: boolean): void { ecritureEnTest = oui; }
+
 const dernierDebutEcrit = new Map<NomTacheFond, number>();
 
 /** Pour les tests. */
@@ -30,6 +37,7 @@ export function _reinitialiserEtatTachesFond(): void { dernierDebutEcrit.clear()
 // Un échec d'écriture de l'état est journalisé et avalé : il ne doit jamais faire échouer la
 // tâche. Bornée à quelques secondes : un pool bloqué ne retarde pas la suite.
 async function noter(nom: NomTacheFond, valeurs: Partial<typeof etatTachesFond.$inferInsert>): Promise<void> {
+  if (enTest()) return;
   let minuterie: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
@@ -73,6 +81,7 @@ export async function suivrePassage<T>(nom: NomTacheFond, fn: () => Promise<T>):
 
 /** Les états enregistrés (lecture seule, pour le matin). */
 export async function lireEtatsTachesFond(): Promise<EtatTacheFond[]> {
+  if (enTest()) return [];
   return db.select().from(etatTachesFond);
 }
 

@@ -33,6 +33,9 @@ vi.mock("../../db", () => ({
   pool: { query: vi.fn(), on: vi.fn() },
 }));
 
+// Le suivi de santé ne touche jamais une vraie base dans les tests.
+vi.mock("../fil/etat-taches-fond", () => ({ suivrePassage: async (_n: string, fn: () => Promise<unknown>) => fn() }));
+
 vi.mock("../memory/embed", () => ({
   embedTextsParLots: hoisted.embedLots,
   embedText: vi.fn(),

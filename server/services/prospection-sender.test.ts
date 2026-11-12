@@ -43,6 +43,8 @@ vi.mock("../storage", () => ({
   },
 }));
 
+// Le suivi de santé ne touche jamais une vraie base dans les tests.
+vi.mock("./fil/etat-taches-fond", () => ({ suivrePassage: async (_n: string, fn: () => Promise<unknown>) => fn() }));
 vi.mock("./unipile-mail", () => ({ sendEmailUnipile: vi.fn() }));
 
 vi.mock("./sequence-message", () => ({
