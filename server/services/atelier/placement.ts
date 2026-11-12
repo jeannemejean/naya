@@ -18,6 +18,7 @@ import {
   DUREE_ATELIER, TYPE_ATELIER, TYPE_VALIDATION, decouperAtelier, dureeValidation, etatPost,
   genreDuPost, libelleSemaine, lundiDe, planAtelier, plusJours,
 } from "@shared/atelier";
+import { rattacheurDuPassage, type BrouillonTache, type Rattachement } from "../fil/rattachement";
 
 type Tache = Record<string, any>;
 
@@ -51,7 +52,15 @@ const anciensParcours = (liees: Tache[]) =>
 interface Contexte {
   deps: PlacementDeps; userId: string; aujourdhui: string; controleCreneaux: boolean;
   grille: Grille; isWorkDay: (d: string) => boolean;
+  /** Fil conducteur : objectif et étape d'une tâche, `{}` hors interrupteur (carte chargée une fois par passage). */
+  rattacher: (b: BrouillonTache) => Promise<Partial<Rattachement>>;
 }
+
+/** Le projet des posts de l'atelier s'ils en partagent un seul, sinon null (l'atelier couvre la semaine). */
+const projetCommun = (posts: PostPlacable[]): number | null => {
+  const ids = new Set(posts.map((p) => p.projectId ?? null));
+  return ids.size === 1 ? Array.from(ids)[0] : null;
+};
 
 /** Jour réellement pris : le jour prévu s'il a la place, sinon un autre jour travaillé dans [aujourdhui, échéance]. */
 function jourAvecPlace(ctx: Contexte, jour: string, echeance: string, duree: number): string {
@@ -61,9 +70,11 @@ function jourAvecPlace(ctx: Contexte, jour: string, echeance: string, duree: num
   return jour;
 }
 
-async function creer(ctx: Contexte, t: { titre: string; description: string; taskType: string; jour: string; echeance: string; duree: number; energie: string; actionData: Record<string, unknown> }) {
+async function creer(ctx: Contexte, t: { titre: string; description: string; taskType: string; jour: string; echeance: string; duree: number; energie: string; actionData: Record<string, unknown>; projetPosts: number | null }) {
   const jour = jourAvecPlace(ctx, t.jour, t.echeance, t.duree);
   const heure = await heureDeCreneau(ctx.deps, ctx.grille, ctx.userId, jour, t.duree, ctx.controleCreneaux);
+  // Le projet ne sert qu'au rattachement : la tâche d'atelier reste sans projet, comme avant.
+  const rattachement = await ctx.rattacher({ projectId: t.projetPosts, type: "content", taskType: t.taskType });
   return requis(ctx.deps, "createTask")({
     userId: ctx.userId,
     title: t.titre,
@@ -82,6 +93,7 @@ async function creer(ctx: Contexte, t: { titre: string; description: string; tas
     scheduledTime: heure,
     scheduledEndTime: minToHHMM(hhmmToMin(heure) + t.duree),
     completed: false,
+    ...rattachement,
   });
 }
 
@@ -126,6 +138,7 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
   }
 
   const duree = (p: PostPlacable) => DUREE_ATELIER[genreDuPost(p)];
+  const projetPosts = projetCommun(aFaire);
   const plan = planAtelier({
     joursPosts: aFaire.map((p) => jourDuPost(p.scheduledFor!)), durees: aFaire.map(duree), aujourdhui, estTravaille: ctx.isWorkDay,
   });
@@ -139,7 +152,7 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
       await creer(ctx, {
         titre: titreAtelier(lundi, i + 1, n), description: DESCRIPTION_ATELIER, taskType: TYPE_ATELIER,
         jour: plan.parties[i].jour, echeance, duree: plan.parties[i].duree, energie: "creative",
-        actionData: { semaine: lundi, partie: i + 1, parties: n, echeance },
+        actionData: { semaine: lundi, partie: i + 1, parties: n, echeance }, projetPosts,
       });
       creees++;
     }
@@ -147,7 +160,7 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
       await creer(ctx, {
         titre: titreValidation(lundi), description: DESCRIPTION_VALIDATION, taskType: TYPE_VALIDATION,
         jour: plan.validation.jour, echeance, duree: plan.validation.duree, energie: "execution",
-        actionData: { semaine: lundi, echeance },
+        actionData: { semaine: lundi, echeance }, projetPosts,
       });
       creees++;
     }
@@ -185,7 +198,7 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
       for (let x = plusJours(jour, 1); x <= echeance; x = plusJours(x, 1)) if (ctx.isWorkDay(x)) { jour = x; break; }
       await creer(ctx, {
         titre: titreAtelier(lundi, faits + i + 1, total), description: DESCRIPTION_ATELIER, taskType: TYPE_ATELIER,
-        jour, echeance, duree: durees[i], energie: "creative", actionData: { semaine: lundi, partie: faits + i + 1, parties: total, echeance },
+        jour, echeance, duree: durees[i], energie: "creative", actionData: { semaine: lundi, partie: faits + i + 1, parties: total, echeance }, projetPosts,
       });
       creees++;
     }
@@ -208,6 +221,7 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
     titre: titreRattrapage(lundi), description: DESCRIPTION_ATELIER, taskType: TYPE_ATELIER,
     jour: planR.parties[0].jour, echeance: planR.echeance, duree: dureeR, energie: "creative",
     actionData: { semaine: lundi, partie: ateliers.length + 1, parties: ateliers.length + 1, echeance: planR.echeance, rattrapage: true },
+    projetPosts: projetCommun(nouveaux),
   });
   return { creees: 1, jourAtelier: planR.parties[0].jour };
 }
@@ -249,7 +263,10 @@ async function placerAteliersSeul(
   const dernierJour = jourDuPost(aProduire[aProduire.length - 1].scheduledFor!);
   const existantes = await requis(deps, "getTasksInRange")(userId, aujourdhui, dernierJour);
   const { prefs, isWorkDay } = await joursTravailles(deps, userId, aujourdhui, dernierJour);
-  const ctx: Contexte = { deps, userId, aujourdhui, controleCreneaux, grille: grilleCreneaux(prefs, existantes), isWorkDay };
+  const ctx: Contexte = {
+    deps, userId, aujourdhui, controleCreneaux, grille: grilleCreneaux(prefs, existantes), isWorkDay,
+    rattacher: rattacheurDuPassage(userId),
+  };
 
   let creees = 0;
   const jourAtelier = new Map<string, string | null>();
@@ -274,6 +291,9 @@ async function placerAteliersSeul(
       plancher = jour;
       if (liees.some((t) => t.contentId === post.id && (t.title ?? "").startsWith(`${etape.cle} — `))) continue;
       const heure = await heureDeCreneau(deps, ctx.grille, userId, jour, etape.duree, controleCreneaux);
+      const rattachement = await ctx.rattacher({
+        projectId: post.projectId ?? null, contentId: post.id, campaignId: post.campaignId ?? null, type: "content",
+      });
       await requis(deps, "createTask")({
         userId,
         projectId: post.projectId ?? undefined,
@@ -291,6 +311,7 @@ async function placerAteliersSeul(
         scheduledTime: heure,
         scheduledEndTime: minToHHMM(hhmmToMin(heure) + etape.duree),
         completed: false,
+        ...rattachement,
       });
       creees++;
     }

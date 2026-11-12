@@ -168,8 +168,12 @@ export interface DailyTasksRequest {
     successMode: string;
     goalType: string;
     dueDate?: Date | null;
+    /** Fil conducteur : étapes en cours de l'objectif (jamais locked), indexées par etapeIndex. */
+    etapes?: Array<{ titre: string; pourquoi: string | null }>;
   }>;
   operatingMode?: string; // create | build | grow | explore | maintain
+  /** Fil conducteur (FIL_CONDUCTEUR_USERS) : demande etapeIndex et pourquoi par tâche. Absent : prompt inchangé. */
+  filConducteur?: boolean;
 }
 
 export interface StrategyAnalysisRequest {
@@ -349,6 +353,13 @@ Respond with JSON only:
 }
 
 // Generate daily tasks with full project, persona, and behavioral intelligence
+/** Étapes en cours d'un objectif, pour le prompt du fil conducteur (jamais une étape locked). */
+function etapesDuPrompt(etapes?: Array<{ titre: string; pourquoi: string | null }>): string {
+  if (!etapes || etapes.length === 0) return '\n    current step(s): none — no step to attach (omit etapeIndex)';
+  return '\n    current step(s):' + etapes.map((e, j) =>
+    `\n    [${j}] "${e.titre}"${e.pourquoi ? ` — why: ${e.pourquoi}` : ''}`).join('');
+}
+
 export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
   focus: string;
   reasoning: string;
@@ -367,6 +378,10 @@ export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
     workflowGroup?: string;
     activationPrompt?: string;
     goalIndex?: number;
+    /** Fil conducteur : index de l'étape dans la liste des étapes en cours de l'objectif. */
+    etapeIndex?: number;
+    /** Fil conducteur : une phrase qui nomme l'étape ou l'objectif et ce que la tâche débloque. */
+    pourquoi?: string;
   }>;
   dependencies?: Array<{
     taskIndex: number;
@@ -488,7 +503,19 @@ ${emotionalNote}${griefBlock}`,
     const goalsBlock = request.activeGoals && request.activeGoals.length > 0
       ? `\n═══ ACTIVE GOALS FOR THIS PROJECT ═══\n${request.activeGoals.map((g, i) =>
           `[${i}] "${g.title}" — type: ${g.goalType}, success mode: ${g.successMode}${g.dueDate ? `, due: ${new Date(g.dueDate).toISOString().slice(0, 10)}` : ''}`
+          + (request.filConducteur ? etapesDuPrompt(g.etapes) : '')
         ).join('\n')}\n`
+      : '';
+    // Fil conducteur : la tâche nomme son étape et dit ce qu'elle débloque. Hors fil : rien.
+    const filChamps = request.filConducteur
+      ? `\n      "etapeIndex": 0,\n      "pourquoi": "One sentence naming the step (or the goal) and what this task unblocks",`
+      : '';
+    const filRegles = request.filConducteur
+      ? `\n\n═══ STEP AND WHY — required for every task ═══
+"etapeIndex" is the ZERO-BASED index of the current step, in the list "current step(s)" under the goal chosen by "goalIndex".
+Omit "etapeIndex" when that goal lists no current step. Omit "goalIndex" when the task serves none of the listed goals — never default to 0.
+"pourquoi" is ONE sentence, in the account language, that names the step or the goal and says what this task unblocks
+(e.g. "Sans ce devis signé, l'étape « 1er client IN SCENA » reste bloquée"). Never a generic phrase like "pour avancer ton objectif".`
       : '';
 
     const operatingModeBlock = (() => {
@@ -550,7 +577,7 @@ ${exemplesTitres(langue)}
   "reasoning": "2-3 sentences: why these specific DIVERSE tasks are the right moves for the week ahead, ensuring variety and progression",
   "tasks": [
     {
-      "goalIndex": 0,
+      "goalIndex": 0,${filChamps}
       "title": "Specific first-physical-action (not the outcome)",
       "description": "Step-by-step. Must reference the actual business: offer, audience pain point, platform, brand voice. Specific enough to execute without thinking.",
       "type": "admin|planning|execution",
@@ -593,7 +620,7 @@ that depends on it.
 RULES: At most ${maxTasks} tasks — fewer is fine when the scope leaves less to do; never pad.
 scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. workflowGroup
 must be one of the 5 exact values listed above — never null. No markdown fences in output.
-goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.
+goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.${filRegles}
 
 ${consignesGenerateur(langue)}`;
 

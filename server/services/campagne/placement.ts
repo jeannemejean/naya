@@ -11,6 +11,7 @@ import {
   estTacheContenuGeneree, estTacheProspection, mapFormatToPostFormat,
 } from "./production";
 import { placerAteliers } from "../atelier/placement";
+import { rattacheurDuPassage } from "../fil/rattachement";
 
 export const DAY_ABBRS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 export const DEFAULT_WORK_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
@@ -288,6 +289,9 @@ export async function placerTachesCampagne(
 
   const sortedPhaseNums = Object.keys(tasksByPhase).map(Number).sort((a, b) => a - b);
 
+  // Fil conducteur : objectif et étape de chaque tâche, `{}` hors interrupteur (carte chargée une fois).
+  const rattacher = rattacheurDuPassage(userId);
+
   for (const phaseNum of sortedPhaseNums) {
     const phaseTasks = tasksByPhase[phaseNum];
     const phaseRange = phaseRanges[phaseNum] || { start: startDate, end: campaignAddDays(startDate, 7) };
@@ -317,6 +321,9 @@ export async function placerTachesCampagne(
       const scheduledDateStr = campaignDateToStr(scheduledDate);
       campaignDayCounts.set(scheduledDateStr, (campaignDayCounts.get(scheduledDateStr) || 0) + 1);
       const scheduledTime = await heureDeCreneau(deps, grille, userId, scheduledDateStr, duree, controleCreneaux);
+      const rattachement = await rattacher({
+        projectId: campaign.projectId ?? null, campaignId: campaign.id, type: task.type || 'planning',
+      });
 
       await requis(deps, 'createTask')({
         userId,
@@ -334,6 +341,7 @@ export async function placerTachesCampagne(
         scheduledTime,
         scheduledEndTime: minToHHMM(hhmmToMin(scheduledTime) + duree),
         completed: false,
+        ...rattachement,
       });
       tasksCreated++;
     }

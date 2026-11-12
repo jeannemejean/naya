@@ -15,6 +15,8 @@ import { storage } from "../storage";
 import { imposerLangueDuCompte, langueDuCompte } from "./garde-langue";
 import { consignesGenerateur } from "./consignes-generateur";
 import { marquerTachesDesJalonsVerrouilles } from "./jalons-verrouilles";
+import { filActifPour } from "./fil/interrupteur";
+import { rattacherAvantCreation } from "./fil/rattachement";
 
 export interface GeneratedTask {
   title: string;
@@ -139,5 +141,24 @@ ${consignesGenerateur(langue)}`;
     return tasks;
   } catch {
     return [];
+  }
+}
+
+/**
+ * Fil conducteur : les tâches du plan d'un objectif ont déjà leur `goalId` ; elles prennent
+ * l'étape en cours de sa chaîne (jamais une étape `locked`, sinon `milestoneId: null`).
+ * Calculé une fois pour tout le plan. `{}` hors interrupteur ou si la carte est illisible :
+ * les tâches sont alors créées exactement comme avant.
+ */
+export async function etapeDuPlanObjectif(
+  userId: string, goal: { id: number; projectId: number | null }, env: NodeJS.ProcessEnv = process.env,
+): Promise<{ milestoneId?: number | null }> {
+  if (!filActifPour(userId, env)) return {};
+  try {
+    const r = await rattacherAvantCreation(userId, { projectId: goal.projectId ?? null, goalId: goal.id });
+    return { milestoneId: r.milestoneId };
+  } catch (e: any) {
+    console.error(`[fil] étape du plan de l'objectif ${goal.id} illisible:`, e?.message ?? e);
+    return {};
   }
 }

@@ -25,6 +25,7 @@ import { classerMessage, type Classement } from "./tri";
 import { rattacherLead, normaliserEmail } from "./rattachement";
 import { avecRelances, estEtatAvant } from "./relance-etat";
 import { vueRelances } from "./relance";
+import { rattacheurDuPassage, type BrouillonTache, type Rattachement } from "../fil/rattachement";
 
 export interface EvenementNormalise {
   kind: "message" | "mail" | "relation" | "suivi" | "compte";
@@ -91,6 +92,8 @@ export interface DepsIngestion {
   updateOutreachMessage: (id: number, patch: Partial<OutreachMessage>) => Promise<unknown>;
   getTask: (id: number) => Promise<Task | undefined>;
   createTask: (t: InsertTask) => Promise<Task>;
+  /** Fil conducteur : objectif et étape de la tâche (`{}` hors interrupteur). Absent : rien. */
+  rattacher?: (userId: string, b: BrouillonTache) => Promise<Partial<Rattachement>>;
   completeTask: (id: number) => Promise<unknown>;
   markFeedbackReplied: (userId: string, leadId: number) => Promise<void>;
   /** Point d'entrée UNIQUE de l'acceptation (garde la date la plus ancienne, réveille la séquence). */
@@ -468,7 +471,11 @@ export async function traiterEvenement(evt: EvenementNormalise, deps: DepsIngest
     const ouverte = ancien != null ? await deps.getTask(ancien) : undefined;
     if (ouverte && !ouverte.completed && !ouverte.archivedAt) return; // une seule tâche à la fois
     const fuseau = await deps.fuseau(userId);
+    const rattachement = deps.rattacher
+      ? await deps.rattacher(userId, { projectId: lead.projectId ?? compte.projectId ?? null, leadId: lead.id, type: "outreach" })
+      : {};
     const tache = await deps.createTask({
+      ...rattachement,
       userId,
       projectId: lead.projectId ?? compte.projectId,
       title: `Répondre à ${lead.name}${lead.company ? ` (${lead.company})` : ""} — ${channel === "linkedin" ? "LinkedIn" : "email"}`,
@@ -548,6 +555,7 @@ export function depsDepuisStorage(s: IStorage): DepsIngestion {
     updateOutreachMessage: (id, p) => s.updateOutreachMessage(id, p),
     getTask: (id) => s.getTask(id),
     createTask: (t) => s.createTask(t),
+    rattacher: (u, b) => rattacheurDuPassage(u)(b),
     completeTask: (id) => s.completeTask(id),
     markFeedbackReplied: (u, l) => s.markFeedbackReplied(u, l),
     setLeadLinkedinConnected: (l, at) => s.setLeadLinkedinConnected(l, at),

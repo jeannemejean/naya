@@ -597,3 +597,20 @@ describe("normaliser", () => {
     expect(normaliser("texte")).toBeNull();
   });
 });
+
+describe("traiterEvenement — fil conducteur", () => {
+  it("avec `rattacher` (interrupteur) : la tâche « Répondre à » prend l'objectif et l'étape donnés", async () => {
+    const { db, deps } = fausseBase();
+    const rattacher = vi.fn(async () => ({ goalId: 4, milestoneId: 40 }));
+    await traiterEvenement(reponseLinkedIn(), { ...deps, rattacher });
+    expect(rattacher).toHaveBeenCalledWith("u1", { projectId: 3, leadId: 7, type: "outreach" });
+    expect(db.tasks[0]).toMatchObject({ goalId: 4, milestoneId: 40, leadId: 7, userId: "u1" });
+  });
+
+  it("sans `rattacher` : la tâche est créée comme avant, sans objectif ni étape", async () => {
+    const { db, deps } = fausseBase();
+    await traiterEvenement(reponseLinkedIn(), deps);
+    expect(db.tasks[0]).not.toHaveProperty("goalId");
+    expect(db.tasks[0]).not.toHaveProperty("milestoneId");
+  });
+});

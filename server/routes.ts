@@ -163,7 +163,7 @@ import {
   DEFAULT_WORK_DAYS, placerTachesCampagne, placerPostsCampagne, placerTachesProductionPourCampagne,
 } from "./services/campagne/placement";
 import { parisHourOf, parisTodayString } from "./utils/timezone";
-import { generateGoalTasks } from "./services/goal-tasks";
+import { generateGoalTasks, etapeDuPlanObjectif } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
 const ROLES_TOUCHE = new Set(["invitation", "premier_message", "email_ouverture", "relance", "cloture"]);
@@ -2109,12 +2109,15 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       if (!goal) return res.status(404).json({ message: "Goal not found" });
 
       const generatedTasks = await generateGoalTasks(userId, goalId);
+      // Fil conducteur : l'étape en cours de l'objectif (`{}` hors interrupteur).
+      const etape = await etapeDuPlanObjectif(userId, goal);
       const saved: any[] = [];
       for (const t of filtrerTachesGenerees(generatedTasks, `objectif ${goalId}`)) {
         const task = await storage.createTask({
           userId,
           projectId: goal.projectId,
           goalId: goalId,
+          ...etape,
           title: t.title,
           description: t.description || null,
           taskType: t.taskType || "generic",

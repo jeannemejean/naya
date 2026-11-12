@@ -13,6 +13,7 @@
  * valider — jamais de doublon.
  */
 import { storage } from "../storage";
+import { rattacheurDuPassage } from "./fil/rattachement";
 import { ETAPE_EN_ATTENTE_DE_VALIDATION, estValide } from "./prospection-validation";
 
 /** `tasks.taskType` qui identifie ces tâches. */
@@ -188,6 +189,8 @@ export async function synchroniserValidationsProspection(
     storage.getTasksInRange(userId, jourMoins(jour, RETROSPECTIVE_JOURS), jour),
   ]);
   const compte = { creees: 0, majs: 0, closes: 0 };
+  // Fil conducteur : `{}` hors interrupteur ; la carte n'est chargée qu'à la première création.
+  const rattacher = rattacheurDuPassage(userId);
 
   for (const c of campagnes as any[]) {
     if (opts.campaignId != null && c.id !== opts.campaignId) continue;
@@ -196,7 +199,11 @@ export async function synchroniserValidationsProspection(
     const plan = planTacheValidation({ campagne: c, aValider: n, taches: taches as any[], jour });
 
     if (plan.creer) {
-      await storage.createTask({ ...plan.creer, userId } as any);
+      const brouillon = plan.creer as { projectId?: number | null; campaignId?: number | null; taskType?: string | null };
+      const rattachement = await rattacher({
+        projectId: brouillon.projectId ?? null, campaignId: brouillon.campaignId ?? null, taskType: brouillon.taskType ?? null,
+      });
+      await storage.createTask({ ...plan.creer, userId, ...rattachement } as any);
       compte.creees++;
     }
     for (const m of plan.maj) {

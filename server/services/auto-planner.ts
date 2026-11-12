@@ -35,7 +35,9 @@ import { remplacerReferencesNumerotees } from "./references-taches";
 import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
 import { synchroniserValidationsProspection } from "./prospection-verification";
-import { etapesActives } from "./fil/carte";
+import { etapesActives, chargerCarte, type CarteFil } from "./fil/carte";
+import { filActifPour } from "./fil/interrupteur";
+import { rattachementTacheGeneree } from "./fil/rattachement";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -195,7 +197,12 @@ export async function rolloverStaleTasks(
 
 // ─── Core: generate tasks for one user on a given date ───────────
 
-async function generateForUser(userId: string, dateStr: string): Promise<void> {
+/**
+ * `fil` : présent seulement pour une utilisatrice du fil conducteur (FIL_CONDUCTEUR_USERS).
+ * `carte` est chargée une fois par passage (runDailyAutoPlanner), null si illisible.
+ * Absent : génération et rattachement exactement comme avant le fil.
+ */
+async function generateForUser(userId: string, dateStr: string, fil?: { carte: CarteFil | null }): Promise<void> {
   // 1. Load brand DNA — skip user if not onboarded
   const brandDna = await storage.getBrandDna(userId);
   if (!brandDna) return;
@@ -331,6 +338,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   type Candidate = {
     project: (typeof projectsToProcess)[number];
     activeGoals: any[];
+    etapesParObjectif: Map<number, Array<{ id: number }>>;
     taskData: any;
     titresLot: string[];
   };
@@ -349,6 +357,16 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
       const stratProfile = project.id
         ? await storage.getProjectStrategyProfile(project.id).catch(() => null)
         : null;
+
+      // Fil conducteur : l'étape en cours de chaque objectif (jamais une étape locked), et son
+      // « pourquoi », dans le prompt. etapeIndex de la sortie IA indexe cette liste.
+      const etapesParObjectif = new Map<number, Array<{ id: number; titre: string; pourquoi: string | null }>>();
+      if (fil) {
+        for (const g of activeGoals) {
+          const o = fil.carte?.objectifs.find((x) => x.id === g.id);
+          etapesParObjectif.set(g.id, o ? etapesActives(o.etapes).map((e) => ({ id: e.id, titre: e.titre, pourquoi: e.pourquoi })) : []);
+        }
+      }
 
       const projectContext = projectData ? {
         projectId: projectData.id,
@@ -396,7 +414,9 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
           successMode: g.successMode,
           goalType: g.goalType,
           dueDate: g.dueDate ?? null,
+          ...(fil ? { etapes: (etapesParObjectif.get(g.id) ?? []).map(({ titre, pourquoi }) => ({ titre, pourquoi })) } : {}),
         })),
+        ...(fil ? { filConducteur: true } : {}),
         weeklyGoals: {},
         completedTasksToday: [],
         workDayStart,
@@ -438,7 +458,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
       const titresLot: string[] = rawTasks.map((t: any) => t?.title ?? '');
       declaredDepsByProject.set(project.id, declaredDeps ?? []);
       for (const taskData of orderedTasks) {
-        candidates.push({ project, activeGoals, taskData, titresLot });
+        candidates.push({ project, activeGoals, etapesParObjectif, taskData, titresLot });
       }
     } catch (projectError: any) {
       console.error(`[AutoPlanner] Error generating for project ${project.id}:`, projectError.message);
@@ -449,7 +469,7 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   // Placement : projets à tour de rôle, dans la limite de la capacité restante du jour.
   const idParIndexSourceParProjet = new Map<number, Map<number, number>>();
   let places = 0;
-  for (const { project, activeGoals, taskData, titresLot } of entrelacerParProjet(candidates, (c) => String(c.project.id))) {
+  for (const { project, activeGoals, etapesParObjectif, taskData, titresLot } of entrelacerParProjet(candidates, (c) => String(c.project.id))) {
     if (places >= capaciteDuJour) break;
     try {
       const category = taskData.category || 'general';
@@ -473,13 +493,24 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
       blockedRanges.push({ start: finalSlotMin, end: finalSlotMin + duration });
       curSlot = finalSlotMin + duration + 5; // 5-min buffer
 
+      // Fil conducteur : rattachement explicite (plus de repli sur le premier objectif) et
+      // « pourquoi » stocké. Hors fil : le repli historique activeGoals[0], inchangé.
+      const rattachement = fil
+        ? rattachementTacheGeneree({
+            tache: taskData, objectifs: activeGoals, etapesParObjectif,
+            projectId: project.id ?? null, carte: fil.carte,
+          })
+        : {
+            goalId: (() => {
+              const idx = typeof (taskData as any).goalIndex === 'number' ? (taskData as any).goalIndex : 0;
+              return activeGoals[idx]?.id ?? activeGoals[0]?.id ?? undefined;
+            })(),
+          };
+
       const created = await storage.createTask({
         userId,
         projectId: project.id ?? undefined,
-        goalId: (() => {
-          const idx = typeof (taskData as any).goalIndex === 'number' ? (taskData as any).goalIndex : 0;
-          return activeGoals[idx]?.id ?? activeGoals[0]?.id ?? undefined;
-        })(),
+        ...rattachement,
         title: taskData.title,
         description: remplacerReferencesNumerotees(taskData.description || '', titresLot),
         type: taskData.type || 'planning',
@@ -614,8 +645,18 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         const workDays = parseWorkDays(prefs?.workDays);
         const dates = nextWorkingDates(debutUtilisateur, 7, workDays);
 
+        // Fil conducteur : la carte objectifs → étapes, chargée UNE fois pour les 7 jours.
+        const fil = filActifPour(userId)
+          ? {
+              carte: await chargerCarte(userId, (prefs as any)?.filConducteurDepuis ?? null).catch((e: any) => {
+                console.error(`[AutoPlanner] Carte du fil illisible pour ${userId}:`, e?.message);
+                return null;
+              }),
+            }
+          : undefined;
+
         for (const date of dates) {
-          await generateForUser(userId, date).catch(e =>
+          await generateForUser(userId, date, fil).catch(e =>
             console.error(`[AutoPlanner] Generate failed for ${userId} on ${date}:`, e.message)
           );
         }
