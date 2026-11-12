@@ -8,6 +8,7 @@
 import { sql, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import { rechercheEmbeddings } from "@shared/schema";
+import { suivrePassage } from "../fil/etat-taches-fond";
 import { embedTextsParLots, lireEtatEmbeddings } from "../memory/embed";
 
 export const TEXTE_MAX = 8000;
@@ -140,7 +141,7 @@ export async function passerIndexeur(): Promise<void> {
   if (enCours) return;
   enCours = true;
   try {
-    const { indexes, echecs } = await indexerUnLot();
+    const { indexes, echecs } = await suivrePassage("indexeur", () => indexerUnLot());
     if (indexes || echecs) console.log(`[Indexeur] ${indexes} indexé(s), ${echecs} échec(s)`);
   } catch (e: any) {
     console.error("[Indexeur]", e?.message ?? e);

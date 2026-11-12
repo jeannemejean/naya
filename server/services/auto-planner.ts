@@ -42,6 +42,7 @@ import { proposerPostsPresence } from "./fil/presence";
 import { synchroniserMailsEnAttente } from "./fil/mails-attente";
 import { proposerRattachements } from "./fil/etapes";
 import { rattachementTacheGeneree } from "./fil/rattachement";
+import { suivrePassage } from "./fil/etat-taches-fond";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -760,7 +761,7 @@ export function scheduleAutoPlanner(): void {
 
     setTimeout(async () => {
       try {
-        await runDailyAutoPlanner();
+        await suivrePassage("planificateur", () => runDailyAutoPlanner());
       } catch (err) {
         console.error('[AutoPlanner] Error during daily run:', err);
       }

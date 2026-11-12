@@ -24,6 +24,10 @@ const tache = (id: number, extra: Partial<Task> = {}): Task => ({
   schedulingMode: "flexible", taskEnergyType: "execution", pourquoi: null, estimatedDuration: 30, ...extra,
 } as unknown as Task);
 
+// Toutes les tâches de fond ont réussi à l'instant : aucune panne.
+const TACHES_EN_FORME = ["planificateur", "veille_ao", "envoi_prospection", "revue_du_matin", "indexeur"]
+  .map((nom) => ({ nom, dernierDebut: MAINTENANT, dernierSucces: MAINTENANT, derniereErreur: null, derniereErreurAt: null }));
+
 function deps(over: Partial<DepsMatin> = {}): DepsMatin & { [k: string]: any } {
   return {
     depuis: vi.fn(async () => CARTE.depuis),
@@ -35,6 +39,7 @@ function deps(over: Partial<DepsMatin> = {}): DepsMatin & { [k: string]: any } {
     preferences: vi.fn(async () => ({ activeProjectId: 10, currentEnergyLevel: "high", energyUpdatedDate: AUJ, workDays: "mon,tue,wed,thu,fri" })),
     echeances: vi.fn(async () => []),
     oublies: vi.fn(async () => []),
+    etatsTachesFond: vi.fn(async () => TACHES_EN_FORME),
     reprise: vi.fn(async () => null),
     allegementsDuJour: vi.fn(async () => []),
     proposerAllegement: vi.fn(async () => ({ id: 77 })),
@@ -59,6 +64,21 @@ describe("construireMatin", () => {
     const fil = await construireMatin("u1", AUJ, MAINTENANT, d);
     expect(fil).toMatchObject({ objectifsOublies: [], allegement: null, nonRattachees: 0, rienNeCloche: true });
     expect(d.proposerAllegement).not.toHaveBeenCalled();
+  });
+
+  it("une tâche de fond en panne : signalée avec son libellé et un succès en ISO, rienNeCloche faux", async () => {
+    const etats = TACHES_EN_FORME.map((e) => e.nom === "indexeur" ? { ...e, dernierSucces: new Date("2026-11-10T08:00:00Z") } : e);
+    const fil = await construireMatin("u1", AUJ, MAINTENANT, deps({ etatsTachesFond: vi.fn(async () => etats) }));
+    expect(fil.pannes).toEqual([{ nom: "L'indexeur de la recherche", dernierSucces: "2026-11-10T08:00:00.000Z" }]);
+    expect(fil.rienNeCloche).toBe(false);
+  });
+
+  it("la lecture de l'état des tâches de fond échoue : pas de panne inventée", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fil = await construireMatin("u1", AUJ, MAINTENANT, deps({ etatsTachesFond: vi.fn(async () => { throw new Error("x"); }) }));
+    err.mockRestore();
+    expect(fil.pannes).toBeUndefined();
+    expect(fil.rienNeCloche).toBe(true);
   });
 
   it("une tâche du jour sans objectif : comptée, rienNeCloche faux ; rituels, heure fixe et faites exclus", async () => {

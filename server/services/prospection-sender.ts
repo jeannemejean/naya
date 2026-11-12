@@ -45,6 +45,7 @@ import { isTargetReachableAt } from "./prospection-target-hours";
 import { zonesForCountry } from "./prospection-target-zones";
 import { zoneForCity } from "./prospection-target-cities";
 import { estContrainteLead } from "./prospection-suppression";
+import { suivrePassage } from "./fil/etat-taches-fond";
 
 const POLL_MS = 60_000;
 let running = false;
@@ -1329,6 +1330,6 @@ export function scheduleProspectionSender(): void {
     `[ProspectionSender] Worker démarré (chaque minute) — envoi global ${masterSendingEnabled() ? "ACTIVÉ" : "DÉSACTIVÉ (dry-run)"} ; chaque user envoie depuis SA propre adresse`,
   );
   setInterval(() => {
-    runProspectionSender().catch((e) => console.error("[ProspectionSender]", e.message));
+    suivrePassage("envoi_prospection", () => runProspectionSender()).catch((e) => console.error("[ProspectionSender]", e.message));
   }, POLL_MS);
 }

@@ -20,6 +20,7 @@ import { storage } from "./storage";
 import { scheduleRoutines } from "./services/routines/ordonnanceur";
 import { scheduleProfilsVeille } from "./services/profils-veille/planificateur";
 import { scheduleVeilleAO } from "./services/veille-ao/planificateur";
+import { suivrePassage } from "./services/fil/etat-taches-fond";
 
 // Prevent unhandled rejections and exceptions from crashing the server
 process.on('unhandledRejection', (reason, promise) => {
@@ -149,15 +150,21 @@ function scheduleReadingRoom() {
 
     setTimeout(async () => {
       console.log('[Lecture] Début de la revue du matin');
-      const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
-      for (const userId of userIds) {
-        try {
-          const { fichesEcrites } = await runReadingRoom(userId, new Date());
-          console.log(`[Lecture] ${userId} : ${fichesEcrites} fiche(s)`);
-        } catch (err: any) {
-          console.error(`[Lecture] revue échouée pour ${userId}:`, err?.message);
+      // Suivie pour le matin : une revue échouée pour une utilisatrice compte comme passage en échec.
+      await suivrePassage("revue_du_matin", async () => {
+        const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
+        let echecs = 0;
+        for (const userId of userIds) {
+          try {
+            const { fichesEcrites } = await runReadingRoom(userId, new Date());
+            console.log(`[Lecture] ${userId} : ${fichesEcrites} fiche(s)`);
+          } catch (err: any) {
+            echecs++;
+            console.error(`[Lecture] revue échouée pour ${userId}:`, err?.message);
+          }
         }
-      }
+        if (echecs > 0) throw new Error(`revue échouée pour ${echecs} utilisatrice(s)`);
+      }).catch(() => { /* déjà journalisé ci-dessus et noté dans l'état */ });
       console.log('[Lecture] Fin de la revue du matin');
       scheduleNextRun();
     }, msUntil5am);

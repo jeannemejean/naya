@@ -7,6 +7,7 @@
 // les erreurs sont journalisées, jamais levées.
 import { lancerVeilleAO, passageAbouti, type BilanVeilleAO, type DepsVeilleAO } from "./pipeline";
 import { utilisatricesVeilleAO } from "./etat";
+import { suivrePassage } from "../fil/etat-taches-fond";
 
 export { utilisatricesVeilleAO };
 
@@ -32,6 +33,11 @@ export function doitLancer(maintenant: Date, dernierJour: string | null): boolea
 // (dans la fenêtre 06:49 à midi).
 const derniersJours = new Map<string, string>();
 let tourEnCours = false;
+
+/** Un passage est-il à lancer maintenant ? (aucun tour en cours, et au moins une utilisatrice sans passage du jour) */
+export function passageDu(maintenant: Date, users: string[]): boolean {
+  return !tourEnCours && users.some((u) => doitLancer(maintenant, derniersJours.get(u) ?? null));
+}
 
 export function _reinitialiserVeilleAO(): void { derniersJours.clear(); tourEnCours = false; }
 
@@ -75,7 +81,19 @@ export function scheduleVeilleAO(): void {
   const tick = async () => {
     try {
       const { depsVeilleAO } = await import("./deps");
-      await tourVeilleAO(new Date(), depsVeilleAO, utilisatricesVeilleAO());
+      const maintenant = new Date();
+      const users = utilisatricesVeilleAO();
+      const deps = depsVeilleAO;
+      // Seuls les tours qui lancent un passage sont suivis (la plupart n'ont rien à faire) ; un
+      // passage non abouti (planté ou interrompu) reste « à lancer » et compte comme une erreur.
+      if (!passageDu(maintenant, users)) {
+        await tourVeilleAO(maintenant, deps, users);
+        return;
+      }
+      await suivrePassage("veille_ao", async () => {
+        await tourVeilleAO(maintenant, deps, users);
+        if (passageDu(new Date(), users)) throw new Error("passage de la veille AO non abouti");
+      });
     } catch (e: any) {
       console.error("[veille-ao] tour :", e?.message ?? e);
     }

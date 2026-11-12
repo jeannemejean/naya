@@ -28,6 +28,8 @@ import { classerTachesCles, type EcheanceProche } from "./priorite";
 import { chargerObjectifsOublies, tacheDeReprise, type ObjectifOublieBrut, type RepriseProposee } from "./oublis";
 import { bornerPourquoi } from "./rattachement";
 import { joursTravaillesSuivants, planAllegement } from "./allegement";
+import { lireEtatsTachesFond, pannes as pannesDesTaches } from "./etat-taches-fond";
+import type { EtatTacheFond } from "@shared/schema";
 
 const JOURS_REPORT = 3;
 const HEURES_RECHERCHE_ALLEGEMENT = 48;
@@ -47,6 +49,8 @@ export interface DepsMatin {
   reprise(userId: string, objectifId: number): Promise<RepriseProposee | null>;
   /** Propositions `alleger_journee` créées pour ce jour, quel que soit leur statut. */
   allegementsDuJour(userId: string, jour: string, maintenant: Date): Promise<{ id: number; statut: string; expireA: Date }[]>;
+  /** L'état des tâches de fond de Naya (table globale). */
+  etatsTachesFond(): Promise<EtatTacheFond[]>;
   proposerAllegement(userId: string, args: { date: string; deplacer: { tacheId: number; vers: string }[] }, maintenant: Date): Promise<{ id: number } | { erreur: string }>;
 }
 
@@ -76,6 +80,7 @@ const depsParDefaut: DepsMatin = {
     return res;
   },
   oublies: chargerObjectifsOublies,
+  etatsTachesFond: lireEtatsTachesFond,
   reprise: tacheDeReprise,
   async allegementsDuJour(userId, jour, maintenant) {
     const depuis = new Date(maintenant.getTime() - HEURES_RECHERCHE_ALLEGEMENT * 3600_000);
@@ -195,7 +200,13 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
     allegement = await enCours.catch((e: any) => { console.error("[fil] allègement :", e?.message ?? e); return null; });
   }
 
+  // Les tâches de fond en panne : signalées, jamais refaites. Une lecture ratée n'invente pas de panne.
+  const pannes = await deps.etatsTachesFond()
+    .then((etats) => pannesDesTaches(etats, maintenant))
+    .catch((e: any) => { console.error("[fil] pannes :", e?.message ?? e); return [] as { nom: string; dernierSucces: string | null }[]; });
+
   const fil: MatinFil = { tachesCles, objectifsOublies, allegement, nonRattachees, rienNeCloche: false };
+  if (pannes.length > 0) fil.pannes = pannes;
   fil.rienNeCloche = tachesCles.length > 0 && objectifsOublies.length === 0 && nonRattachees === 0 && !allegement && !signalLot4(fil);
   return fil;
 }
