@@ -27,6 +27,8 @@ vi.mock("./fil/etapes", () => ({ proposerRattachements: fil.proposerRattachement
 vi.mock("./fil/carte", async (orig) => ({ ...(await orig<any>()), chargerCarte: fil.chargerCarte }));
 const mails = vi.hoisted(() => ({ synchroniserMailsEnAttente: vi.fn() }));
 vi.mock("./fil/mails-attente", () => ({ synchroniserMailsEnAttente: mails.synchroniserMailsEnAttente }));
+const cloture = vi.hoisted(() => ({ poserTacheDeCloture: vi.fn() }));
+vi.mock("./fil/cloture", () => ({ poserTacheDeCloture: cloture.poserTacheDeCloture }));
 
 const { runDailyAutoPlanner } = await import("./auto-planner");
 
@@ -44,6 +46,7 @@ beforeEach(() => {
   fil.proposerRattachements.mockResolvedValue([]);
   fil.chargerCarte.mockResolvedValue({ objectifs: [], chainesSansObjectif: new Map(), depuis: null });
   mails.synchroniserMailsEnAttente.mockResolvedValue({ creees: 0 });
+  cloture.poserTacheDeCloture.mockResolvedValue({ creee: false, n: 0 });
 });
 
 describe("runDailyAutoPlanner — mise en route du fil", () => {
@@ -99,6 +102,31 @@ describe("runDailyAutoPlanner — mails en attente (fil)", () => {
     const r = await runDailyAutoPlanner("2026-11-12");
     expect(r).toMatchObject({ processed: 1, errors: 0 });
     expect(err.mock.calls.some((c) => String(c[0]).includes("Mails en attente"))).toBe(true);
+    err.mockRestore();
+  });
+});
+
+describe("runDailyAutoPlanner — clôture du vendredi (fil)", () => {
+  beforeEach(() => { fil.miseEnRoute.mockResolvedValue({ depuis: DEPUIS, nouveau: false }); });
+
+  it("sous l'interrupteur : poserTacheDeCloture est appelé (elle-même ne fait rien hors vendredi)", async () => {
+    vi.setSystemTime(new Date("2026-11-13T05:00:00Z"));
+    await runDailyAutoPlanner("2026-11-13");
+    expect(cloture.poserTacheDeCloture).toHaveBeenCalledWith("u1", new Date("2026-11-13T05:00:00Z"));
+  });
+
+  it("hors interrupteur : jamais appelé", async () => {
+    fil.filActifPour.mockReturnValue(false);
+    await runDailyAutoPlanner("2026-11-13");
+    expect(cloture.poserTacheDeCloture).not.toHaveBeenCalled();
+  });
+
+  it("un échec est consigné et ne casse pas le passage", async () => {
+    cloture.poserTacheDeCloture.mockRejectedValue(new Error("base"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await runDailyAutoPlanner("2026-11-13");
+    expect(r).toMatchObject({ processed: 1, errors: 0 });
+    expect(err.mock.calls.some((c) => String(c[0]).includes("Clôture du vendredi"))).toBe(true);
     err.mockRestore();
   });
 });

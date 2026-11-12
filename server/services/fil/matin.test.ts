@@ -43,6 +43,8 @@ function deps(over: Partial<DepsMatin> = {}): DepsMatin & { [k: string]: any } {
     chantiersBloques: vi.fn(async () => []),
     indicateurs: vi.fn(async () => []),
     creation: vi.fn(async () => ({ alertes: [], aValider: [] })),
+    cloture: vi.fn(async () => []),
+    reconciliation: vi.fn(async () => []),
     reprise: vi.fn(async () => null),
     allegementsDuJour: vi.fn(async () => []),
     proposerAllegement: vi.fn(async () => ({ id: 77 })),
@@ -113,6 +115,36 @@ describe("construireMatin", () => {
     const enPanne = await construireMatin("u1", AUJ, MAINTENANT, deps({ creation: vi.fn(async () => { throw new Error("base"); }) }));
     err.mockRestore();
     expect(enPanne.creation).toBeUndefined();
+    expect(enPanne.rienNeCloche).toBe(true);
+  });
+
+  it("clôture (vendredi) et réconciliation (lundi) : non vides, elles remplissent le matin et le font sonner ; vides ou en panne, rien", async () => {
+    const cloture = [{ tacheId: 3, titre: "Relancer Margaux", ouverteDepuis: 9 }];
+    const reco = [{ source: "reponses", libelle: "Réponse de Marc (LinkedIn) à traiter : aucune tâche pour s'en occuper", lien: "/outreach?onglet=reponses&conversation=7" }];
+    const d = deps({ cloture: vi.fn(async () => cloture) });
+    const fil = await construireMatin("u1", AUJ, MAINTENANT, d);
+    expect(fil.cloture).toEqual(cloture);
+    expect(fil.rienNeCloche).toBe(false);
+    expect(d.cloture).toHaveBeenCalledWith("u1", MAINTENANT);
+    expect(d.reconciliation).toHaveBeenCalledWith("u1", MAINTENANT);
+
+    const r = await construireMatin("u1", AUJ, MAINTENANT, deps({ reconciliation: vi.fn(async () => reco) }));
+    expect(r.reconciliation).toEqual(reco);
+    expect(r.cloture).toBeUndefined();
+    expect(r.rienNeCloche).toBe(false);
+
+    const vide = await construireMatin("u1", AUJ, MAINTENANT, deps());
+    expect(vide.cloture).toBeUndefined();
+    expect(vide.reconciliation).toBeUndefined();
+    expect(vide.rienNeCloche).toBe(true);
+
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const enPanne = await construireMatin("u1", AUJ, MAINTENANT, deps({
+      cloture: vi.fn(async () => { throw new Error("base"); }), reconciliation: vi.fn(() => { throw new Error("synchrone"); }),
+    }));
+    err.mockRestore();
+    expect(enPanne.cloture).toBeUndefined();
+    expect(enPanne.reconciliation).toBeUndefined();
     expect(enPanne.rienNeCloche).toBe(true);
   });
 

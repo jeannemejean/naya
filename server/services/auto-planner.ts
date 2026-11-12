@@ -45,6 +45,7 @@ import { depsReleve } from "./fil/indicateurs-deps";
 import { proposerRattachements } from "./fil/etapes";
 import { rattachementTacheGeneree } from "./fil/rattachement";
 import { suivrePassage } from "./fil/etat-taches-fond";
+import { poserTacheDeCloture } from "./fil/cloture";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -702,6 +703,15 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
           await releverUneFois(userId, jour, depsReleve, maintenant)
             .then((r) => console.log(`[fil] indicateurs : ${r.length} relevé(s), ${r.filter((i) => i.indisponible).length} indisponible(s) user=${userId}`))
             .catch((e: any) => console.error(`[AutoPlanner] Indicateurs (fil) failed for ${userId}:`, e?.message));
+        }
+
+        // 1 sexies. Fil conducteur, clôture du vendredi (spec §7, point 7) : le vendredi (Paris), une
+        //          tâche de 15 min « Trancher les {n} tâches ouvertes », une fois par semaine (clé en
+        //          base). Un autre jour, rien. Un échec est consigné et n'arrête rien.
+        if (filActifPour(userId)) {
+          await poserTacheDeCloture(userId, new Date())
+            .then((r) => { if (r.creee) console.log(`[fil] clôture du vendredi : ${r.n} tâche(s) à trancher user=${userId}`); })
+            .catch((e: any) => console.error(`[AutoPlanner] Clôture du vendredi (fil) failed for ${userId}:`, e?.message));
         }
 
         // 2. Générer les 7 prochains jours de travail

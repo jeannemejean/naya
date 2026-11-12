@@ -11,7 +11,7 @@ const h = vi.hoisted(() => ({
   proposerEtapesPour: vi.fn(), proposerRattachements: vi.fn(),
   getProjectGoal: vi.fn(), getProject: vi.fn(),
   etapesObjectif: vi.fn(() => [] as any[]), tacheDeReprise: vi.fn(), creerTache: vi.fn(), fixOverlappingTasks: vi.fn(),
-  construireMatin: vi.fn(),
+  construireMatin: vi.fn(), modifierTache: vi.fn(), archiverTache: vi.fn(), getTask: vi.fn(),
 }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "u1"; next(); } }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
@@ -28,8 +28,10 @@ vi.mock("./services/fil/etapes", () => ({
 }));
 vi.mock("./services/fil/oublis", () => ({ tacheDeReprise: h.tacheDeReprise, REPRISE_MIN: 15, REPRISE_MAX: 30 }));
 vi.mock("./services/fil/matin", () => ({ construireMatin: h.construireMatin }));
-vi.mock("./services/taches/ecrire-tache", () => ({ creerTache: h.creerTache }));
-vi.mock("./storage", () => ({ storage: { fixOverlappingTasks: h.fixOverlappingTasks } }));
+vi.mock("./services/taches/ecrire-tache", () => ({ creerTache: h.creerTache, modifierTache: h.modifierTache, archiverTache: h.archiverTache }));
+vi.mock("./storage", () => ({ storage: { fixOverlappingTasks: h.fixOverlappingTasks, getTask: h.getTask } }));
+// La clôture est pure (aucune base) ; ses vraies sources ne sont jamais chargées ici.
+vi.mock("./services/fil/cloture-deps", () => ({ depsCloture: {}, depsReconciliation: {} }));
 
 const { registerFilRoutes } = await import("./routes-fil");
 const app = express();
@@ -62,7 +64,9 @@ describe("routes du fil", () => {
     expect((await appel("POST", "/api/fil/rattachements")).status).toBe(404);
     expect((await appel("POST", "/api/fil/objectifs/1/reprendre", {})).status).toBe(404);
     expect((await appel("GET", "/api/fil/matin")).status).toBe(404);
+    expect((await appel("POST", "/api/fil/trancher", { tacheId: 5, geste: "abandonner" })).status).toBe(404);
     expect(h.construireMatin).not.toHaveBeenCalled();
+    expect(h.archiverTache).not.toHaveBeenCalled();
     expect(h.proposerEtapesPour).not.toHaveBeenCalled();
     expect(h.creerTache).not.toHaveBeenCalled();
   });
@@ -218,6 +222,51 @@ describe("routes du fil", () => {
       expect(h.creerTache).not.toHaveBeenCalled();
       h.creerTache.mockResolvedValueOnce({ ok: false, status: 400, message: "Saturday is not one of your work days." });
       expect((await appel("POST", "/api/fil/objectifs/1/reprendre", { clientToday: "2026-11-14" })).status).toBe(400);
+    });
+  });
+
+  describe("trancher une tâche ouverte (clôture du vendredi)", () => {
+    const TACHE = { id: 5, userId: "u1", title: "Relancer Margaux", completed: false, archivedAt: null };
+    beforeEach(() => {
+      h.getTask.mockImplementation(async (id: number) => (id === 5 ? { ...TACHE } : id === 6 ? { ...TACHE, id: 6, userId: "u2" } : undefined));
+      h.modifierTache.mockImplementation(async (_u: string, id: number, patch: any) => ({ ok: true, tache: { ...TACHE, id, ...patch }, avant: TACHE }));
+      h.archiverTache.mockImplementation(async (_u: string, id: number) => ({ ok: true, tache: { ...TACHE, id, archivedAt: new Date().toISOString() } }));
+    });
+
+    it("faire : aujourd'hui (Paris) par modifierTache", async () => {
+      const r = await appel("POST", "/api/fil/trancher", { tacheId: 5, geste: "faire" });
+      expect(r.status).toBe(200);
+      const [userId, id, patch] = h.modifierTache.mock.calls[0];
+      expect([userId, id]).toEqual(["u1", 5]);
+      expect(patch.scheduledDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(h.archiverTache).not.toHaveBeenCalled();
+    });
+
+    it("déplacer : la date donnée", async () => {
+      const r = await appel("POST", "/api/fil/trancher", { tacheId: 5, geste: "deplacer", date: "2099-01-05" });
+      expect(r.status).toBe(200);
+      expect(h.modifierTache).toHaveBeenCalledWith("u1", 5, { scheduledDate: "2099-01-05", scheduledTime: null, scheduledEndTime: null });
+    });
+
+    it("abandonner : archivée, jamais supprimée", async () => {
+      const r = await appel("POST", "/api/fil/trancher", { tacheId: 5, geste: "abandonner" });
+      expect(r.status).toBe(200);
+      expect((await r.json()).archivedAt).toBeTruthy();
+      expect(h.archiverTache).toHaveBeenCalledWith("u1", 5);
+      expect(h.modifierTache).not.toHaveBeenCalled();
+    });
+
+    it("corps invalide : 400 ; tâche d'une autre : 404 ; date passée : 400 ; rien d'écrit", async () => {
+      for (const corps of [{}, { tacheId: 5 }, { tacheId: 5, geste: "supprimer" }, { tacheId: "5", geste: "faire" }, { tacheId: 5, geste: "deplacer", date: "demain" }]) {
+        expect((await appel("POST", "/api/fil/trancher", corps)).status).toBe(400);
+      }
+      expect((await appel("POST", "/api/fil/trancher", { tacheId: 6, geste: "abandonner" })).status).toBe(404);
+      expect((await appel("POST", "/api/fil/trancher", { tacheId: 7, geste: "faire" })).status).toBe(404);
+      const passee = await appel("POST", "/api/fil/trancher", { tacheId: 5, geste: "deplacer", date: "2000-01-03" });
+      expect(passee.status).toBe(400);
+      expect(await passee.json()).toEqual({ message: "date_passee" });
+      expect(h.modifierTache).not.toHaveBeenCalled();
+      expect(h.archiverTache).not.toHaveBeenCalled();
     });
   });
 });

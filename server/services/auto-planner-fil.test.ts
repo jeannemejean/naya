@@ -36,6 +36,8 @@ vi.mock("./naya-context", () => ({ buildNayaContext: vi.fn(async () => "") }));
 vi.mock("./claude", () => ({ CLAUDE_MODELS: { fast: "f", smart: "s" }, callClaude: vi.fn(async () => "") }));
 vi.mock("./ritual-materialize", () => ({ materializeRituals: vi.fn(async () => {}) }));
 vi.mock("./task-intelligence", () => ({ handleTaskDeferral: vi.fn(async () => {}) }));
+// La clôture du vendredi dépend du jour réel : neutralisée ici (testée dans mise-en-route).
+vi.mock("./fil/cloture", () => ({ poserTacheDeCloture: vi.fn(async () => ({ creee: false, n: 0 })) }));
 
 const generateDailyTasksMock = vi.fn();
 vi.mock("./openai", () => ({ generateDailyTasks: generateDailyTasksMock }));

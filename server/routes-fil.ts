@@ -1,6 +1,7 @@
-// Routes du fil conducteur : propositions d'étapes (à la demande, « Refaire », « Ajuster ») et
-// rattachement des chaînes existantes. Toutes réservées à l'interrupteur (sinon 404). Valider
-// et annuler passent par les routes de l'agent (/api/agent/propositions/:id/*).
+// Routes du fil conducteur : propositions d'étapes (à la demande, « Refaire », « Ajuster »),
+// rattachement des chaînes existantes et gestes de la clôture du vendredi. Toutes réservées à
+// l'interrupteur (sinon 404). Valider et annuler passent par les routes de l'agent
+// (/api/agent/propositions/:id/*).
 import type { Express, NextFunction, Response } from "express";
 import { isAuthenticated } from "./auth";
 import { isAiBlocked } from "./services/usage";
@@ -12,7 +13,8 @@ import { etapesActives } from "./services/fil/carte";
 import { tacheDeReprise, REPRISE_MIN, REPRISE_MAX } from "./services/fil/oublis";
 import { estPourquoiCreux, bornerPourquoi } from "./services/fil/rattachement";
 import { construireMatin } from "./services/fil/matin";
-import { creerTache } from "./services/taches/ecrire-tache";
+import { archiverTache, creerTache, modifierTache } from "./services/taches/ecrire-tache";
+import { demandeTrancher, oublierClotureDe, trancher } from "./services/fil/cloture";
 import { aujourdhuiParis } from "./services/repack-from";
 import { storage } from "./storage";
 
@@ -171,6 +173,31 @@ export function registerFilRoutes(app: Express): void {
     } catch (error: any) {
       console.error("Reprise d'un objectif :", error?.message || error);
       res.status(500).json({ message: "Erreur lors de la reprise" });
+    }
+  });
+
+  // Clôture du vendredi : le geste de Jeanne sur une tâche ouverte depuis plus de 7 jours. `faire`
+  // la met aujourd'hui, `deplacer` à la date donnée (aujourd'hui ou plus tard), `abandonner`
+  // l'archive (jamais supprimée). Naya ne tranche jamais seule : rien d'autre n'appelle ceci.
+  app.post("/api/fil/trancher", isAuthenticated, reserveAuFil, async (req: any, res) => {
+    try {
+      const userId: string = req.userId;
+      const corps = demandeTrancher.safeParse(req.body ?? {});
+      if (!corps.success) return res.status(400).json({ message: "demande_invalide" });
+      const r = await trancher(userId, corps.data, new Date(), {
+        async lireTache(u, id) {
+          const t = await storage.getTask(id);
+          return t && t.userId === u ? t : undefined;
+        },
+        modifierTache,
+        archiverTache,
+      });
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      oublierClotureDe(userId);
+      res.json(r.tache);
+    } catch (error: any) {
+      console.error("Trancher une tâche :", error?.message || error);
+      res.status(500).json({ message: "Erreur lors du geste" });
     }
   });
 

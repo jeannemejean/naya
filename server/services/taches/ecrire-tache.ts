@@ -169,3 +169,21 @@ export async function modifierTache(
 
   return { ok: true, tache, avant: currentTask };
 }
+
+/**
+ * Archiver une tâche (« abandonner », « ignorer ») : `archivedAt` posé, jamais supprimée. Même
+ * chemin que POST /api/tasks/:id/archive. `archivedAt` n'est pas dans la liste blanche de
+ * `modifierTache` (le PATCH du client ne doit pas pouvoir l'écrire) : d'où cette fonction à part.
+ */
+export async function archiverTache(
+  userId: string,
+  taskId: number,
+): Promise<{ ok: true; tache: Task } | Refus> {
+  if (!Number.isInteger(taskId) || taskId <= 0) return { ok: false, status: 404, message: 'task_not_found' };
+  const currentTask = await storage.getTask(taskId);
+  if (!currentTask || (currentTask as any).userId !== userId) {
+    return { ok: false, status: 404, message: 'task_not_found' };
+  }
+  const tache = await storage.updateTask(taskId, { archivedAt: new Date() } as any);
+  return { ok: true, tache };
+}

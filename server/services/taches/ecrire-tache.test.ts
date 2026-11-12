@@ -20,7 +20,7 @@ const storageMock = {
 };
 vi.mock("../../storage", () => ({ storage: storageMock }));
 
-const { creerTache, modifierTache } = await import("./ecrire-tache");
+const { creerTache, modifierTache, archiverTache } = await import("./ecrire-tache");
 
 // Champs requis par insertTaskSchema.
 const BASE = { title: "Nouvelle", type: "admin", category: "operations" };
@@ -128,5 +128,25 @@ describe("modifierTache", () => {
   it("champ non éditable seul → 400 no_editable_fields", async () => {
     const r = await modifierTache("user-1", 42, { userId: "autre" });
     expect(r).toEqual({ ok: false, status: 400, message: "no_editable_fields" });
+  });
+});
+
+describe("archiverTache", () => {
+  it("pose archivedAt sur la tâche de l'utilisatrice, sans jamais la supprimer", async () => {
+    const r = await archiverTache("user-1", 42);
+    expect(r.ok).toBe(true);
+    expect(storageMock.updateTask).toHaveBeenCalledTimes(1);
+    const [id, patch] = storageMock.updateTask.mock.calls[0];
+    expect(id).toBe(42);
+    expect(Object.keys(patch)).toEqual(["archivedAt"]);
+    expect(patch.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it("tâche d'une autre, inconnue ou identifiant fictif : 404, rien d'écrit", async () => {
+    expect(await archiverTache("user-2", 42)).toEqual({ ok: false, status: 404, message: "task_not_found" });
+    storageMock.getTask.mockResolvedValue(undefined);
+    expect(await archiverTache("user-1", 43)).toEqual({ ok: false, status: 404, message: "task_not_found" });
+    expect(await archiverTache("user-1", -1)).toEqual({ ok: false, status: 404, message: "task_not_found" });
+    expect(storageMock.updateTask).not.toHaveBeenCalled();
   });
 });

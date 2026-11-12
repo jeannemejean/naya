@@ -67,18 +67,18 @@ const PLATEFORMES: Record<string, string> = {
   instagram: "Instagram", linkedin: "LinkedIn", facebook: "Facebook", tiktok: "TikTok", youtube: "YouTube",
   twitter: "X", x: "X", threads: "Threads", pinterest: "Pinterest",
 };
-const plateforme = (p: string | null | undefined) => {
+export const plateforme = (p: string | null | undefined) => {
   const t = (p ?? "").trim();
   return PLATEFORMES[t.toLowerCase()] ?? (t ? t.charAt(0).toUpperCase() + t.slice(1) : "un réseau");
 };
 
-const jourParis = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
+export const jourParis = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
 // « samedi 14 novembre » (le jour d'un instant, à Paris).
-const jourLong = (d: Date) => new Intl.DateTimeFormat("fr-FR", {
+export const jourLong = (d: Date) => new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long",
 }).format(d);
 // « dimanche 15 novembre » (un jour YYYY-MM-DD, sans fuseau).
-const jourLongIso = (jour: string) => new Intl.DateTimeFormat("fr-FR", {
+export const jourLongIso = (jour: string) => new Intl.DateTimeFormat("fr-FR", {
   timeZone: "UTC", weekday: "long", day: "numeric", month: "long",
 }).format(new Date(`${jour}T12:00:00Z`));
 
