@@ -90,7 +90,7 @@ Plusieurs de ces sources vivent désormais dans Naya (prospection, réponses, ap
 - **Pour qui** : d'abord le compte de Jeanne, derrière un interrupteur. Les propositions d'étapes se déclenchent à la création d'un objectif, quand toutes ses étapes sont franchies, ou à la demande. Ce sont des propositions à valider, pas une génération en masse. Les plafonds de dépense IA existants s'appliquent.
 
 ### 8. Ce que le matin de Naya reprend de la consolidation (décidé par Jeanne le 12 nov. 2026)
-Jeanne garde trois choses, et seulement celles-là :
+Jeanne garde d abord trois choses (puis tout, voir plus bas) :
 1. **Les mails qui attendent sa réponse.** Naya lit la boîte Gmail déjà reliée (Unipile, compte de l'agence). Les fils des 14 derniers jours dont le dernier message vient d'un humain identifiable, et pas d'elle, deviennent des tâches « Répondre à X : objet » (échéance sous 2 jours, 7 pour l'administratif), rattachées si possible au projet ou au prospect concerné. On exclut les envois automatiques, les newsletters, les notifications et les réponses de prospects, qui sont déjà dans « Réponses ». Pas de doublon d'un jour à l'autre. Une tâche cochée ne revient pas.
 2. **Les chantiers sans mouvement.** Dans Naya, un « chantier » est une étape active ou un objectif actif (à défaut, un projet actif). S'il n'a eu aucune tâche faite ni aucun mouvement (tâche créée par Jeanne, contenu publié, prospect contacté, réponse reçue) depuis 15 jours, Naya le signale le matin avec son prochain pas.
 3. **Les indicateurs**, calculés à partir des données de Naya :
@@ -101,9 +101,21 @@ Jeanne garde trois choses, et seulement celles-là :
 
    Ils s'affichent dans Naya (au mot du matin, en une ligne courte, et en détail là où ils trouvent leur place) avec leur valeur précédente pour montrer le sens. Une source indisponible est dite, pas inventée.
 
-Ne sont **pas** repris : le contrôle des tâches programmées extérieures (elles sont réinternalisées dans Naya), l'agenda, le suivi de création (chemin de fer, Metricool, Encore Merci, Campagne 360, calendrier éditorial Notion), la clôture du vendredi et la réconciliation du lundi.
+**Précision de Jeanne (12 nov. 2026) : elle veut finalement TOUT reprendre.** Les quatre autres points sont traduits dans Naya, sans Notion ni outil extérieur :
 
-Quand ces trois points tournent dans Naya, on arrête la consolidation de 9 h 04 (`trig_01PZVRTZWoLB3PBT132EDRJs`).
+4. **Le contrôle des tâches de fond de Naya.** Veille des appels d'offres, envoi de prospection, revue du matin, indexeur : si l'une n'a pas tourné à l'heure prévue, ou a échoué, le matin le dit (nom, dernier passage réussi). Naya ne refait pas leur travail à leur place : elle signale la panne.
+5. **L'agenda.** Le Google Agenda déjà relié à Naya compte comme preuve de mouvement : un rendez-vous dont le titre cite un client, un prospect ou un projet fait avancer le chantier concerné. Aucune tâche n'est créée depuis l'agenda.
+6. **La création, version Naya.** Le suivi porte sur ce qui vit dans Naya :
+   - les posts prévus (atelier de contenu, calendrier) et publiés par les comptes reliés à Naya, avec une alerte quand rien n'est programmé sur 7 jours pour un compte actif. C'est l'équivalent de l'alerte Metricool ;
+   - les rendez-vous récurrents de création que Jeanne définit (par exemple « Encore Merci : 3 recettes de la semaine » chaque lundi), en tâches récurrentes rattachées au bon projet ;
+   - les validations en attente : contenus « à valider » du calendrier éditorial de Naya, lots ou phases de campagne à valider avant leur date de début.
+
+   Le chemin de fer d'octobre et la Campagne 360 dans Notion ne sont pas repris tels quels. Leur équivalent est le calendrier et les campagnes de Naya.
+7. **La clôture du vendredi et la réconciliation du lundi.**
+   - **Vendredi :** la liste des tâches ouvertes depuis plus de 7 jours, à trancher (faire, déplacer, abandonner) dans un créneau court. Naya ne les clôt pas elle-même.
+   - **Lundi :** pour chaque source de Naya, ce qui devrait avoir une suite et n'en a pas. Par exemple des réponses de prospects sans réponse ni tâche, des appels d'offres forts sans décision, des posts à valider sans action, des mails en attente sans tâche. Objectif : zéro chose redécouverte trop tard.
+
+Quand ces sept points tournent dans Naya, on arrête la consolidation de 9 h 04 (`trig_01PZVRTZWoLB3PBT132EDRJs`).
 
 ## Ce qu'on ne fait pas
 
