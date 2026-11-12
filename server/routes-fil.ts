@@ -8,6 +8,12 @@ import { depot } from "./services/agent/depot";
 import { annulerProposition, proposerHorsConversation } from "./services/agent/propositions";
 import { filActifPour } from "./services/fil/interrupteur";
 import { OUTILS_FIL_PROPOSITIONS, objectifDe, proposerEtapesPour, proposerRattachements } from "./services/fil/etapes";
+import { etapesActives } from "./services/fil/carte";
+import { tacheDeReprise, REPRISE_MIN, REPRISE_MAX } from "./services/fil/oublis";
+import { estPourquoiCreux, bornerPourquoi } from "./services/fil/rattachement";
+import { creerTache } from "./services/taches/ecrire-tache";
+import { aujourdhuiParis } from "./services/repack-from";
+import { storage } from "./storage";
 
 function reserveAuFil(req: any, res: Response, next: NextFunction) {
   if (!filActifPour(req.userId)) return res.status(404).json({ message: "Not found" });
@@ -101,6 +107,56 @@ export function registerFilRoutes(app: Express): void {
     } catch (error: any) {
       console.error("Ajustement d'étapes :", error?.message || error);
       res.status(500).json({ message: "Erreur lors de l'ajustement" });
+    }
+  });
+
+  // Objectif oublié → « Reprendre » : une tâche courte (15 à 30 min) posée aujourd'hui, rattachée
+  // à l'objectif et à son étape en cours (jamais une étape verrouillée), avec son pourquoi. La
+  // reprise déjà affichée au matin (titre + pourquoi) est créée telle quelle ; sinon, un appel
+  // rapide la propose.
+  app.post("/api/fil/objectifs/:id/reprendre", isAuthenticated, reserveAuFil, async (req: any, res) => {
+    try {
+      const userId: string = req.userId;
+      const id = idValide(req.params.id);
+      const o = id ? await objectifDe(userId, id) : undefined;
+      if (!id || !o) return res.status(404).json({ message: "introuvable" });
+      if (o.objectif.status !== "active") return res.status(409).json({ message: "objectif_inactif" });
+
+      const titreRecu = typeof req.body?.titre === "string" ? req.body.titre.trim().slice(0, 200) : "";
+      const pourquoiRecu = typeof req.body?.pourquoi === "string" ? bornerPourquoi(req.body.pourquoi) : "";
+      let reprise: { titre: string; pourquoi: string; duree?: number } | null =
+        titreRecu && !estPourquoiCreux(pourquoiRecu) ? { titre: titreRecu, pourquoi: pourquoiRecu } : null;
+      if (!reprise) {
+        if (await isAiBlocked(userId)) return res.status(429).json({ message: "ai_monthly_limit_reached" });
+        reprise = await tacheDeReprise(userId, id);
+        if (!reprise) return res.status(409).json({ message: "generation_impossible" });
+      }
+
+      const etape = etapesActives([...o.etapes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)))[0];
+      const brut = req.body?.clientToday;
+      const date = typeof brut === "string" && /^\d{4}-\d{2}-\d{2}$/.test(brut) ? brut : aujourdhuiParis();
+      const duree = Math.min(REPRISE_MAX, Math.max(REPRISE_MIN, Math.round(reprise.duree ?? 20)));
+      const r = await creerTache(userId, {
+        title: reprise.titre,
+        pourquoi: reprise.pourquoi,
+        type: "planning",
+        category: "planning",
+        priority: 2,
+        estimatedDuration: duree,
+        scheduledDate: date,
+        projectId: o.objectif.projectId,
+        goalId: o.objectif.id,
+        milestoneId: etape?.id ?? null,
+        source: "fil_reprise",
+        completed: false,
+      });
+      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      await storage.fixOverlappingTasks(userId, date).catch((e: any) =>
+        console.error("[fil] reprise, retassage :", e?.message));
+      res.json(r.tache);
+    } catch (error: any) {
+      console.error("Reprise d'un objectif :", error?.message || error);
+      res.status(500).json({ message: "Erreur lors de la reprise" });
     }
   });
 

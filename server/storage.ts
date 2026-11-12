@@ -5281,6 +5281,25 @@ export class DatabaseStorage implements IStorage {
     return agregerAvancement(lignes, milestoneIds, depuis);
   }
 
+  /**
+   * Fil conducteur, objectifs oubliés : date de la dernière tâche FAITE de chaque objectif
+   * (tasks.goal_id, completed_at). Chaque id demandé a une entrée, null s'il n'en a aucune.
+   */
+  async getDerniereTacheFaiteParObjectif(userId: string, goalIds: number[]): Promise<Map<number, Date | null>> {
+    const res = new Map<number, Date | null>(goalIds.map((id) => [id, null]));
+    if (goalIds.length === 0) return res;
+    const lignes = await db.select({
+      goalId: tasks.goalId,
+      derniere: sql<string | Date | null>`max(${tasks.completedAt})`,
+    }).from(tasks)
+      .where(and(eq(tasks.userId, userId), inArray(tasks.goalId, goalIds), eq(tasks.completed, true), isNotNull(tasks.completedAt)))
+      .groupBy(tasks.goalId);
+    for (const l of lignes) {
+      if (l.goalId != null && l.derniere) res.set(l.goalId, new Date(l.derniere));
+    }
+    return res;
+  }
+
   // ─── Milestone Conditions ────────────────────────────────────────────────
 
   async getMilestoneConditions(milestoneId: number): Promise<MilestoneCondition[]> {

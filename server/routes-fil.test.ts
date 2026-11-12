@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   annulerProposition: vi.fn(), proposerHorsConversation: vi.fn(),
   proposerEtapesPour: vi.fn(), proposerRattachements: vi.fn(),
   getProjectGoal: vi.fn(), getProject: vi.fn(),
+  etapesObjectif: vi.fn(() => [] as any[]), tacheDeReprise: vi.fn(), creerTache: vi.fn(), fixOverlappingTasks: vi.fn(),
 }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "u1"; next(); } }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
@@ -21,9 +22,12 @@ vi.mock("./services/fil/etapes", () => ({
   proposerEtapesPour: h.proposerEtapesPour, proposerRattachements: h.proposerRattachements,
   objectifDe: async (userId: string, id: number) => {
     const objectif = await h.getProjectGoal(id);
-    return objectif && (await h.getProject(objectif.projectId, userId)) ? { objectif, etapes: [] } : undefined;
+    return objectif && (await h.getProject(objectif.projectId, userId)) ? { objectif, etapes: h.etapesObjectif() } : undefined;
   },
 }));
+vi.mock("./services/fil/oublis", () => ({ tacheDeReprise: h.tacheDeReprise, REPRISE_MIN: 15, REPRISE_MAX: 30 }));
+vi.mock("./services/taches/ecrire-tache", () => ({ creerTache: h.creerTache }));
+vi.mock("./storage", () => ({ storage: { fixOverlappingTasks: h.fixOverlappingTasks } }));
 
 const { registerFilRoutes } = await import("./routes-fil");
 const app = express();
@@ -42,7 +46,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.filActifPour.mockReturnValue(true);
   h.isAiBlocked.mockResolvedValue(false);
-  h.getProjectGoal.mockImplementation(async (id: number) => (id === 1 ? { id: 1, projectId: 10, title: "3 clients" } : null));
+  h.getProjectGoal.mockImplementation(async (id: number) => (id === 1 ? { id: 1, projectId: 10, title: "3 clients", status: "active" } : null));
+  h.etapesObjectif.mockReturnValue([]);
+  h.fixOverlappingTasks.mockResolvedValue(undefined);
   h.getProject.mockImplementation(async (id: number, userId: string) => (id === 10 && userId === "u1" ? { id: 10 } : undefined));
 });
 
@@ -52,7 +58,9 @@ describe("routes du fil", () => {
     expect((await appel("GET", "/api/fil/propositions")).status).toBe(404);
     expect((await appel("POST", "/api/fil/objectifs/1/proposer-etapes", {})).status).toBe(404);
     expect((await appel("POST", "/api/fil/rattachements")).status).toBe(404);
+    expect((await appel("POST", "/api/fil/objectifs/1/reprendre", {})).status).toBe(404);
     expect(h.proposerEtapesPour).not.toHaveBeenCalled();
+    expect(h.creerTache).not.toHaveBeenCalled();
   });
 
   it("GET : propositions en attente des deux outils, avec l'objectif", async () => {
@@ -139,5 +147,58 @@ describe("routes du fil", () => {
     const r = await appel("POST", "/api/fil/propositions/5/ajuster", { etapes: [] });
     expect(r.status).toBe(400);
     expect(h.annulerProposition).not.toHaveBeenCalled();
+  });
+
+  describe("reprendre un objectif oublié", () => {
+    const reprise = { titre: "Relancer Margaux sur le devis", pourquoi: "Sans réponse au devis, l'étape « 1er client » reste bloquée.", duree: 20 };
+    beforeEach(() => {
+      h.tacheDeReprise.mockResolvedValue(reprise);
+      h.creerTache.mockImplementation(async (_u: string, d: any) => ({ ok: true, tache: { id: 42, ...d } }));
+      h.etapesObjectif.mockReturnValue([
+        { id: 6, status: "locked", order: 2, projectId: 10, goalId: 1 },
+        { id: 5, status: "active", order: 1, projectId: 10, goalId: 1 },
+        { id: 4, status: "completed", order: 0, projectId: 10, goalId: 1 },
+      ]);
+    });
+
+    it("crée la tâche aujourd'hui, rattachée à l'objectif et à son étape en cours, avec son pourquoi", async () => {
+      const r = await appel("POST", "/api/fil/objectifs/1/reprendre", { clientToday: "2026-11-12" });
+      expect(r.status).toBe(200);
+      expect(h.tacheDeReprise).toHaveBeenCalledWith("u1", 1);
+      expect(h.creerTache).toHaveBeenCalledWith("u1", expect.objectContaining({
+        title: reprise.titre, pourquoi: reprise.pourquoi, estimatedDuration: 20,
+        projectId: 10, goalId: 1, milestoneId: 5, scheduledDate: "2026-11-12",
+      }));
+      expect(h.fixOverlappingTasks).toHaveBeenCalledWith("u1", "2026-11-12");
+      expect((await r.json()).id).toBe(42);
+    });
+
+    it("sans étape ouverte : rattachée à l'objectif seul, jamais à une étape verrouillée", async () => {
+      h.etapesObjectif.mockReturnValue([{ id: 6, status: "locked", order: 0, projectId: 10, goalId: 1 }]);
+      await appel("POST", "/api/fil/objectifs/1/reprendre", { clientToday: "2026-11-12" });
+      expect(h.creerTache.mock.calls[0][1]).toMatchObject({ goalId: 1, milestoneId: null });
+    });
+
+    it("reprise déjà affichée (titre + pourquoi) : créée telle quelle, sans appel IA", async () => {
+      const r = await appel("POST", "/api/fil/objectifs/1/reprendre", { clientToday: "2026-11-12", titre: "Appeler Margaux", pourquoi: reprise.pourquoi });
+      expect(r.status).toBe(200);
+      expect(h.tacheDeReprise).not.toHaveBeenCalled();
+      expect(h.creerTache.mock.calls[0][1]).toMatchObject({ title: "Appeler Margaux", pourquoi: reprise.pourquoi });
+    });
+
+    it("objectif d'une autre ou inactif, plafond IA, génération ratée, jour non travaillé", async () => {
+      expect((await appel("POST", "/api/fil/objectifs/2/reprendre", {})).status).toBe(404);
+      h.getProjectGoal.mockResolvedValueOnce({ id: 1, projectId: 10, title: "x", status: "paused" });
+      expect((await appel("POST", "/api/fil/objectifs/1/reprendre", {})).status).toBe(409);
+      h.isAiBlocked.mockResolvedValueOnce(true);
+      expect((await appel("POST", "/api/fil/objectifs/1/reprendre", {})).status).toBe(429);
+      h.tacheDeReprise.mockResolvedValueOnce(null);
+      const g = await appel("POST", "/api/fil/objectifs/1/reprendre", {});
+      expect(g.status).toBe(409);
+      expect(await g.json()).toEqual({ message: "generation_impossible" });
+      expect(h.creerTache).not.toHaveBeenCalled();
+      h.creerTache.mockResolvedValueOnce({ ok: false, status: 400, message: "Saturday is not one of your work days." });
+      expect((await appel("POST", "/api/fil/objectifs/1/reprendre", { clientToday: "2026-11-14" })).status).toBe(400);
+    });
   });
 });
