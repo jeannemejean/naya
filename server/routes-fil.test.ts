@@ -11,7 +11,7 @@ const h = vi.hoisted(() => ({
   proposerEtapesPour: vi.fn(), proposerRattachements: vi.fn(),
   getProjectGoal: vi.fn(), getProject: vi.fn(),
   etapesObjectif: vi.fn(() => [] as any[]), tacheDeReprise: vi.fn(), creerTache: vi.fn(), fixOverlappingTasks: vi.fn(),
-  construireMatin: vi.fn(), modifierTache: vi.fn(), archiverTache: vi.fn(), fusionnerActionData: vi.fn(), getTask: vi.fn(),
+  construireMatin: vi.fn(), oublierClotureDe: vi.fn(), modifierTache: vi.fn(), archiverTache: vi.fn(), fusionnerActionData: vi.fn(), getTask: vi.fn(),
 }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "u1"; next(); } }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
@@ -32,6 +32,7 @@ vi.mock("./services/taches/ecrire-tache", () => ({ creerTache: h.creerTache, mod
 vi.mock("./storage", () => ({ storage: { fixOverlappingTasks: h.fixOverlappingTasks, getTask: h.getTask } }));
 // La clôture est pure (aucune base) ; ses vraies sources ne sont jamais chargées ici.
 vi.mock("./services/fil/cloture-deps", () => ({ depsCloture: {}, depsReconciliation: {} }));
+vi.mock("./services/fil/cloture", async (orig) => ({ ...(await orig<any>()), oublierClotureDe: h.oublierClotureDe }));
 
 const { registerFilRoutes } = await import("./routes-fil");
 const app = express();
@@ -259,6 +260,15 @@ describe("routes du fil", () => {
       expect(r.status).toBe(200);
       expect((await r.json()).archivedAt).toBeTruthy();
       expect(h.archiverTache).toHaveBeenCalledWith("u1", 5);
+      expect(h.modifierTache).not.toHaveBeenCalled();
+    });
+
+    it("déjà tranchée ailleurs (cochée) : 409 deja_tranchee, et la liste du vendredi se relit", async () => {
+      h.getTask.mockResolvedValue({ ...TACHE, completed: true });
+      const r = await appel("POST", "/api/fil/trancher", { tacheId: 5, geste: "faire" });
+      expect(r.status).toBe(409);
+      expect(await r.json()).toEqual({ message: "deja_tranchee" });
+      expect(h.oublierClotureDe).toHaveBeenCalledWith("u1");
       expect(h.modifierTache).not.toHaveBeenCalled();
     });
 

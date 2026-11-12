@@ -69,7 +69,10 @@ const borneDuree = (d: number | undefined): number =>
  * invalides (JSON, « pourquoi » creux).
  */
 export async function tacheDeReprise(userId: string, objectifId: number): Promise<RepriseProposee | null> {
-  if (await isAiBlocked(userId)) return null;
+  if (await isAiBlocked(userId)) {
+    console.info(`[fil] reprise de l'objectif ${objectifId} : IA bloquée (plafond), aucune proposition user=${userId}`);
+    return null;
+  }
   const o = await objectifDe(userId, objectifId);
   if (!o || o.objectif.status !== "active") return null;
   const { objectif } = o;

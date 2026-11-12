@@ -35,12 +35,20 @@ const NOMBRES: Record<string, number> = {
 };
 const MOT_NOMBRE = "\\d+(?:[.,]\\d+)?|a few|few|quelques|une?|deux|trois|quatre|cinq|six|sept|one|two|three|four|five";
 // « 2 posts par semaine », « 2 à 3 posts / semaine », « 3x/semaine », « 1/mois », « une fois par mois »…
+// Le nombre, le mot qui en fait des posts (x, fois, posts…) et le lien vers la période (par, /…) :
+// sans l'un ni l'autre (« 3 jours par semaine »), ce n'est pas un nombre de posts.
 const RYTHME = new RegExp(
   `(?:^|[^\\w])(${MOT_NOMBRE})\\s*(?:(?:a|-|ou|to|or)\\s*(?:${MOT_NOMBRE})\\s*)?` +
-  `(?:x|fois|posts?|publications?|contenus?|times?)?\\s*(?:par|\\/|per|a|an|by|each|every|chaque|tous les|toutes les)?\\s*` +
-  `(semaines?|sem|weeks?|wk|mois|months?|jours?|days?)\\b`,
+  `(x|fois|posts?|publications?|contenus?|times?)?\\s*(par|\\/|per|a|an|by|each|every|chaque|tous les|toutes les)?\\s*` +
+  `(semaines?|sem|weeks?|wk|mois|months?|jours?|days?)\\b`, "g",
+);
+// « tous les 3 jours », « toutes les 2 semaines », « every 2 weeks » : UN post par intervalle.
+const INTERVALLE = new RegExp(
+  `(?:tous les|toutes les|every|chaque)\\s+(${MOT_NOMBRE})\\s*(semaines?|sem|weeks?|wk|mois|months?|jours?|days?)\\b`,
 );
 const FACTEUR: Array<[RegExp, number]> = [[/^(semaine|sem|week|wk)/, 1], [/^(mois|month)/, 7 / 30], [/^(jour|day)/, 7]];
+const JOURS_UNITE: Array<[RegExp, number]> = [[/^(semaine|sem|week|wk)/, 7], [/^(mois|month)/, 30], [/^(jour|day)/, 1]];
+const lireNombre = (brut: string) => NOMBRES[brut] ?? Number(brut.replace(",", "."));
 
 const normaliser = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
@@ -49,11 +57,16 @@ export function postsParSemaine(texte: string | null | undefined): number | null
   const t = normaliser(texte ?? "");
   if (!t) return null;
   if (t in CHOIX_ONBOARDING) return CHOIX_ONBOARDING[t];
-  const m = RYTHME.exec(t);
-  if (m) {
-    const brut = m[1];
-    const nombre = NOMBRES[brut] ?? Number(brut.replace(",", "."));
-    const facteur = FACTEUR.find(([re]) => re.test(m[2]))?.[1];
+  const intervalle = INTERVALLE.exec(t);
+  if (intervalle) {
+    const n = lireNombre(intervalle[1]);
+    const jours = JOURS_UNITE.find(([re]) => re.test(intervalle[2]))?.[1];
+    if (n > 0 && jours) return 7 / (n * jours);
+  }
+  for (const m of t.matchAll(RYTHME)) {
+    if (!m[2] && !m[3]) continue; // « 3 jours par semaine » : des jours, pas des posts
+    const nombre = lireNombre(m[1]);
+    const facteur = FACTEUR.find(([re]) => re.test(m[4]))?.[1];
     if (nombre > 0 && facteur) return nombre * facteur;
   }
   if (/quotidien|tous les jours|chaque jour|daily|every ?day/.test(t)) return 7;
@@ -218,7 +231,10 @@ async function proposerSeul(userId: string, maintenant: Date, deps: DepsPresence
   const estTravaille = await deps.estTravaille(userId, aujourdhui, plusJours(aujourdhui, 30));
   // Un jour non travaillé : l'atelier du jour n'aurait pas de jour ; le prochain matin travaillé s'en charge.
   if (!estTravaille(aujourdhui)) return { crees: 0 };
-  if (await deps.iaBloquee(userId)) return { crees: 0 };
+  if (await deps.iaBloquee(userId)) {
+    console.info(`[fil] présence : IA bloquée (plafond), aucun post proposé user=${userId}`);
+    return { crees: 0 };
+  }
 
   const adn = await deps.adn(userId);
   const n = seuilPresenceJours(adn?.contentBandwidth ?? null, adn?.platformPriority ?? null);

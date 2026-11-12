@@ -39,17 +39,22 @@ async function comptesRelies(userId: string): Promise<CompteRelie[]> {
   return rows;
 }
 
+/** Prospects (non archivés) qui ont répondu depuis `depuis`, avec leur stade (exportée pour les tests). */
+export function requeteReponses(userId: string, depuis: Date) {
+  return db.selectDistinct({ leadId: inboxConversations.leadId, stage: leads.stage })
+    .from(inboxMessages)
+    .innerJoin(inboxConversations, eq(inboxConversations.id, inboxMessages.conversationId))
+    .innerJoin(leads, eq(leads.id, inboxConversations.leadId))
+    .where(and(eq(inboxConversations.userId, userId), eq(inboxMessages.sens, "entrant"), eq(inboxMessages.nature, "reponse"),
+      gte(inboxMessages.sentAt, depuis), actif));
+}
+
 export const sourcesIndicateurs: SourcesIndicateurs = {
   async prospection(userId, depuis) {
     const [[envois], reponses] = await Promise.all([
       db.select({ n: count() }).from(outreachMessages)
         .where(and(eq(outreachMessages.userId, userId), gte(outreachMessages.sentAt, depuis))),
-      db.selectDistinct({ leadId: inboxConversations.leadId, stage: leads.stage })
-        .from(inboxMessages)
-        .innerJoin(inboxConversations, eq(inboxConversations.id, inboxMessages.conversationId))
-        .innerJoin(leads, eq(leads.id, inboxConversations.leadId))
-        .where(and(eq(inboxConversations.userId, userId), eq(inboxMessages.sens, "entrant"), eq(inboxMessages.nature, "reponse"),
-          gte(inboxMessages.sentAt, depuis))),
+      requeteReponses(userId, depuis),
     ]);
     return {
       envois: Number(envois?.n ?? 0),

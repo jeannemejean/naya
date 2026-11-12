@@ -374,6 +374,19 @@ describe("blocTachesDuBrief", () => {
     expect(bloc).toContain("tu ne tranches pas à sa place");
   });
 
+  it("panne au prompt : le dernier passage réussi en durée relative, comme l'écran (jamais une date UTC)", () => {
+    const fil = { ...SANS_LOT4, pannes: [
+      { nom: "L'indexeur", dernierSucces: "2026-11-12T05:00:00.000Z" },
+      { nom: "La veille", dernierSucces: "2026-11-09T08:00:00.000Z" },
+      { nom: "L'envoi", dernierSucces: "2026-11-12T07:30:00.000Z" },
+    ] };
+    const bloc = blocTachesDuBrief(fil, ANCIEN, MAINTENANT);
+    expect(bloc).toContain("- L'indexeur (dernier passage réussi il y a 3 h)");
+    expect(bloc).toContain("- La veille (dernier passage réussi il y a 3 jours)");
+    expect(bloc).toContain("- L'envoi (dernier passage réussi il y a moins d'une heure)");
+    expect(bloc).not.toContain("2026-11");
+  });
+
   it("sans signal du lot 4 : rien de plus (ni titres vides, ni indicateurs)", () => {
     const bloc = blocTachesDuBrief(SANS_LOT4, ANCIEN);
     for (const x of ["INDICATEURS", "PANNES", "À TRANCHER", "SANS SUITE", "CHANTIERS", "CRÉATION"]) expect(bloc).not.toContain(x);

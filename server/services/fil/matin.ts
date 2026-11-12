@@ -281,7 +281,7 @@ function signalLot4(f: MatinFil): boolean {
  * tâches triées par priorité). Avec fil : les tâches clés avec leur étape, leur objectif et leur
  * pourquoi, les objectifs oubliés, et la consigne « si rien ne cloche, une seule phrase ».
  */
-export function blocTachesDuBrief(fil: MatinFil | null, lignesHistoriques: string[]): string {
+export function blocTachesDuBrief(fil: MatinFil | null, lignesHistoriques: string[], maintenant: Date = new Date()): string {
   if (!fil) {
     return lignesHistoriques.length > 0 ? `\nTÂCHES DU JOUR :\n${lignesHistoriques.join('\n')}` : '\nAucune tâche planifiée pour aujourd\'hui.';
   }
@@ -305,7 +305,7 @@ export function blocTachesDuBrief(fil: MatinFil | null, lignesHistoriques: strin
     }
   }
   if (fil.nonRattachees > 0) lignes.push(`\nTâches du jour rattachées à aucun objectif : ${fil.nonRattachees}.`);
-  lignes.push(...blocLot4(fil));
+  lignes.push(...blocLot4(fil, maintenant));
   lignes.push(fil.rienNeCloche
     ? "\nRien ne cloche aujourd'hui : si rien ne cloche, une seule phrase, sans liste."
     : "\nConsigne : si rien ne cloche, une seule phrase ; sinon, nomme ce qui cloche (panne, chantier à l'arrêt, objectif oublié, tâches sans objectif, ce qui attend une suite) en une phrase.");
@@ -313,17 +313,33 @@ export function blocTachesDuBrief(fil: MatinFil | null, lignesHistoriques: strin
 }
 
 /**
+ * « il y a 3 h », « il y a 2 jours » : la durée relative de l'écran (textePanne), jamais une date
+ * UTC que l'IA recopierait. Null sans date lisible.
+ */
+function depuisQuand(iso: string | null, maintenant: Date): string | null {
+  const d = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(d)) return null;
+  const heures = Math.max(0, Math.floor((maintenant.getTime() - d) / 3600_000));
+  if (heures < 1) return "il y a moins d'une heure";
+  if (heures < 48) return `il y a ${heures} h`;
+  return `il y a ${Math.floor(heures / 24)} jours`;
+}
+
+/**
  * Le lot 4 au prompt (spec §8), dans l'ordre de la consolidation : la ligne des indicateurs
  * (informative), puis pannes, incohérences, chantiers bloqués, retards, nouveaux. L'écran les
  * détaille : l'IA n'a qu'à les nommer en une phrase. Un signal absent n'ajoute rien.
  */
-function blocLot4(fil: MatinFil): string[] {
+function blocLot4(fil: MatinFil, maintenant: Date): string[] {
   const l: string[] = [];
   const ligne = fil.indicateurs?.length ? ligneIndicateurs(fil.indicateurs) : "";
   if (ligne) l.push(`\nINDICATEURS (valeur, sens depuis la précédente ; une source indisponible reste indisponible, n'invente aucun chiffre) :\n${ligne}`);
   if (fil.pannes?.length) {
     l.push("\nPANNES DES TÂCHES DE FOND (elles n'ont pas tourné, tu ne refais pas leur travail) :");
-    for (const p of fil.pannes) l.push(`- ${p.nom}${p.dernierSucces ? ` (dernier passage réussi : ${p.dernierSucces})` : " (aucun passage réussi connu)"}`);
+    for (const p of fil.pannes) {
+      const ilYa = depuisQuand(p.dernierSucces, maintenant);
+      l.push(`- ${p.nom}${ilYa ? ` (dernier passage réussi ${ilYa})` : " (aucun passage réussi connu)"}`);
+    }
   }
   if (fil.reconciliation?.length) {
     l.push("\nSANS SUITE (réconciliation du lundi) :");

@@ -80,7 +80,10 @@ export function registerFilRoutes(app: Express): void {
         if (ancienne.statut !== "en_attente") return res.status(409).json({ message: "deja_traitee" });
         ancienneId = ancienne.id;
       }
-      if (await isAiBlocked(userId)) return res.status(429).json({ message: "ai_monthly_limit_reached" });
+      if (await isAiBlocked(userId)) {
+        console.info(`[fil] proposer des étapes (objectif ${id}) : IA bloquée (plafond) user=${userId}`);
+        return res.status(429).json({ message: "ai_monthly_limit_reached" });
+      }
       const note = typeof req.body?.note === "string" ? req.body.note.slice(0, 1000) : undefined;
       const r = ancienneId === undefined
         ? await proposerEtapesPour(userId, id, new Date(), note)
@@ -143,7 +146,10 @@ export function registerFilRoutes(app: Express): void {
       let reprise: { titre: string; pourquoi: string; duree?: number } | null =
         titreRecu && !estPourquoiCreux(pourquoiRecu) ? { titre: titreRecu, pourquoi: pourquoiRecu } : null;
       if (!reprise) {
-        if (await isAiBlocked(userId)) return res.status(429).json({ message: "ai_monthly_limit_reached" });
+        if (await isAiBlocked(userId)) {
+          console.info(`[fil] reprise de l'objectif ${id} : IA bloquée (plafond) user=${userId}`);
+          return res.status(429).json({ message: "ai_monthly_limit_reached" });
+        }
         reprise = await tacheDeReprise(userId, id);
         if (!reprise) return res.status(409).json({ message: "generation_impossible" });
       }
@@ -196,7 +202,11 @@ export function registerFilRoutes(app: Express): void {
           if (!m.ok) throw new Error(m.message);
         },
       });
-      if (!r.ok) return res.status(r.status).json({ message: r.message });
+      if (!r.ok) {
+        // Déjà tranchée ailleurs (cochée ou archivée) : la liste gardée du vendredi est périmée.
+        if (r.message === "deja_tranchee") oublierClotureDe(userId);
+        return res.status(r.status).json({ message: r.message });
+      }
       oublierClotureDe(userId);
       res.json(r.tache);
     } catch (error: any) {

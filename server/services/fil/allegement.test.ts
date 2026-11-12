@@ -176,6 +176,18 @@ describe("alleger_journee (proposition, validation, annulation)", () => {
     expect(ecrire.modifierTache).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["devenue à heure fixe", { schedulingMode: "fixed" }],
+    ["devenue un rituel", { ritualId: 9 }],
+    ["archivée", { archivedAt: new Date("2026-11-12T08:02:00Z") }],
+  ])("une tâche %s entre l'aperçu et la validation : la proposition est périmée, rien ne bouge", async (_cas, patch) => {
+    const p = await proposerHorsConversation("u1", "alleger_journee", ARGS, MATIN);
+    if ("erreur" in p) throw new Error(p.erreur);
+    Object.assign(base.taches.get(1), patch);
+    expect(await validerProposition("u1", p.id, new Date("2026-11-12T08:05:00Z"))).toEqual({ ok: false, raison: "expiree" });
+    expect(ecrire.modifierTache).not.toHaveBeenCalled();
+  });
+
   it("refuse une tâche à heure fixe, celle d'une autre, un jour passé, une cible qui n'est pas après le jour", async () => {
     const essai = (args: any) => proposerHorsConversation("u1", "alleger_journee", args, MATIN);
     expect(await essai({ date: AUJOURDHUI, deplacer: [{ tacheId: 4, vers: "2026-11-13" }] })).toEqual({ erreur: "tache_fixe" });

@@ -11,7 +11,7 @@ import {
   choisirCible, cibleNumerique, fusionnerReleve, CLES_INDICATEURS, SourceIndisponible,
   type SourcesIndicateurs, type DepsReleve, type LigneReleve,
 } from "./indicateurs";
-import { requeteEcrireReleve, requetePrecedentes } from "./indicateurs-deps";
+import { requeteEcrireReleve, requetePrecedentes, requeteReponses } from "./indicateurs-deps";
 import { lireAbonnes } from "../social-publishers";
 
 const MAINTENANT = new Date("2026-11-12T08:00:00Z");
@@ -115,10 +115,17 @@ describe("calculerIndicateurs", () => {
     expect(par(ind, "prospection_rdv_4s")).toMatchObject({ valeur: null, indisponible: "agenda non relié" });
   });
 
-  it("agenda en panne : « agenda illisible » ; les autres indicateurs restent calculés", async () => {
-    const ind = await calculerIndicateurs("u1", MAINTENANT, sources({ agenda: vi.fn(async () => { throw new Error("GCal timeout"); }) }));
-    expect(par(ind, "prospection_rdv_4s")).toMatchObject({ valeur: null, indisponible: "agenda illisible" });
-    expect(par(ind, "prospection_envois_4s")?.valeur).toBe(42);
+  it("agenda en panne : « agenda illisible », la panne est journalisée ; les autres indicateurs restent calculés", async () => {
+    const erreur = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const ind = await calculerIndicateurs("u1", MAINTENANT, sources({ agenda: vi.fn(async () => { throw new Error("GCal timeout"); }) }));
+      expect(par(ind, "prospection_rdv_4s")).toMatchObject({ valeur: null, indisponible: "agenda illisible" });
+      expect(par(ind, "prospection_envois_4s")?.valeur).toBe(42);
+      expect(erreur).toHaveBeenCalled();
+      expect(erreur.mock.calls.flat().join(" ")).toContain("GCal timeout");
+    } finally {
+      erreur.mockRestore();
+    }
   });
 
   it("jeton LinkedIn expiré : l'abonné de la page est indisponible avec sa raison, ses posts restent comptés", async () => {
@@ -347,6 +354,12 @@ describe("requêtes du relevé (SQL, sans base)", () => {
     const { sql, params } = requeteEcrireReleve("u1", AUJ, [{ cle: "prospection_rdv_4s", valeur: null, texte: null, indisponible: "agenda non relié" }]).toSQL();
     expect(sql).toMatch(/on conflict \("user_id","cle","releve_le"\) do update set/i);
     expect(sql).toMatch(/where excluded\.indisponible is null or "indicateurs_releves"\."indisponible" is not null/i);
+    expect(params).toContain("u1");
+  });
+
+  it("réponses : les prospects archivés n'en sont pas", () => {
+    const { sql, params } = requeteReponses("u1", new Date("2026-10-15T00:00:00Z")).toSQL();
+    expect(sql).toMatch(/"leads"\."archived_at" is null/);
     expect(params).toContain("u1");
   });
 

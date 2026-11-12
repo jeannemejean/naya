@@ -3,7 +3,7 @@
 // sont injectées : aucun test ne touche une vraie base ni le réseau.
 import { describe, it, expect, vi } from "vitest";
 import {
-  seuilPresenceJours, etatPresence, proposerPostsPresence, ordonnerComptes, type DepsPresence,
+  seuilPresenceJours, postsParSemaine, etatPresence, proposerPostsPresence, ordonnerComptes, type DepsPresence,
 } from "./presence";
 import { filtrerTachesGenerees } from "../filtre-taches-generees";
 
@@ -21,6 +21,22 @@ describe("seuilPresenceJours", () => {
     expect(seuilPresenceJours("3x/semaine", null)).toBe(3);
     expect(seuilPresenceJours("une fois par semaine", null)).toBe(7);
     expect(seuilPresenceJours("2 à 3 posts par semaine", "LinkedIn")).toBe(4);
+  });
+
+  it("un intervalle (« tous les N jours », « toutes les N semaines ») n'est pas un nombre par période", () => {
+    expect(postsParSemaine("toutes les 2 semaines")).toBe(0.5);
+    expect(seuilPresenceJours("toutes les 2 semaines", null)).toBe(14);
+    expect(seuilPresenceJours("un post tous les 3 jours", null)).toBe(3);
+    expect(seuilPresenceJours("tous les 15 jours", null)).toBe(14);
+    expect(seuilPresenceJours("every 2 weeks", null)).toBe(14);
+    // Des posts PAR jour restent un rythme quotidien.
+    expect(seuilPresenceJours("2 posts tous les jours", null)).toBe(2);
+  });
+
+  it("« 3 jours par semaine » n'est pas un nombre de posts", () => {
+    expect(postsParSemaine("3 jours par semaine")).toBeNull();
+    expect(seuilPresenceJours("3 jours par semaine", null)).toBe(7);
+    expect(seuilPresenceJours("je bloque 3 jours par semaine, 2 posts par semaine", null)).toBe(4);
   });
 
   it("sans rythme lisible : 7", () => {

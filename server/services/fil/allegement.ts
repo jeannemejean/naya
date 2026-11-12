@@ -160,10 +160,14 @@ export const OUTIL_ALLEGEMENT: OutilPropose = outilAValider<ArgsAllegement>({
       if (!t || String(t.scheduledDate ?? "").slice(0, 10) !== args.date || t.completed || t.archivedAt) return erreur("introuvable");
       if (estIntouchable(t)) return erreur("tache_fixe");
       changements.push({ libelle: `« ${t.title} »`, avant: placement(t.scheduledDate, t.scheduledTime), apres: placement(x.vers, t.scheduledTime) });
-      // Cochée, déplacée ou renommée depuis l'aperçu : la proposition est périmée.
+      // Cochée, déplacée, renommée, devenue fixe ou rituel, ou archivée depuis l'aperçu : la
+      // proposition est périmée.
       empreinte.push({
         table: "tasks", id: t.id,
-        champs: { title: t.title, scheduledDate: t.scheduledDate ?? null, scheduledTime: t.scheduledTime ?? null, completed: !!t.completed },
+        champs: {
+          title: t.title, scheduledDate: t.scheduledDate ?? null, scheduledTime: t.scheduledTime ?? null, completed: !!t.completed,
+          schedulingMode: t.schedulingMode ?? null, ritualId: (t as any).ritualId ?? null, archivedAt: t.archivedAt ?? null,
+        },
       });
     }
     return { resume: `Alléger ta journée du ${jourCourt(args.date)} : ${pluriel(changements.length, "tâche")} reportée${changements.length > 1 ? "s" : ""}`, changements, empreinte };

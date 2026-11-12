@@ -2718,7 +2718,7 @@ ${avoidanceContext}
 ${reponsesContext}
 - Type de business : ${brandDna.businessType || 'Entrepreneur indépendante'}
 - Tâches aujourd'hui : ${incompleteTasks.length} en attente, ${completedTasks.length} faites
-${blocTachesDuBrief(filMatin, topTasks)}
+${blocTachesDuBrief(filMatin, topTasks, now)}
 ${carryoverLines.length > 0 ? `\nRESTANT D'HIER :\n${carryoverLines.join('\n')}` : ''}
 ${upcomingMilestone ? `\nÀ VENIR :\n- ${upcomingMilestone}` : ''}
 ${memoryBlock}

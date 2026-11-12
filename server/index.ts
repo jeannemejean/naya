@@ -165,7 +165,10 @@ function scheduleReadingRoom() {
           }
         }
         if (echecs > 0) throw new Error(`revue échouée pour ${echecs} utilisatrice(s)`);
-      }).catch(() => { /* déjà journalisé ci-dessus et noté dans l'état */ });
+      }).catch((err: any) => {
+        // Les échecs par utilisatrice sont déjà journalisés ; celui-ci dit la cause du passage en erreur.
+        console.error('[Lecture] revue du matin en erreur :', err?.message ?? err);
+      });
       console.log('[Lecture] Fin de la revue du matin');
       scheduleNextRun();
     }, msUntil5am);

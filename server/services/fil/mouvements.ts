@@ -55,7 +55,6 @@ function normaliser(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-/** Le titre cite-t-il un des noms, sur des mots entiers ? Les noms de moins de 3 lettres sont ignorés. */
 /**
  * Mots trop courants pour désigner un chantier à eux seuls : un nom fait seulement de ces mots
  * (« Naya », « Agence », « Studio Atelier ») ne cite rien.
