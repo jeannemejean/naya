@@ -11,6 +11,7 @@ import { OUTILS_FIL_PROPOSITIONS, objectifDe, proposerEtapesPour, proposerRattac
 import { etapesActives } from "./services/fil/carte";
 import { tacheDeReprise, REPRISE_MIN, REPRISE_MAX } from "./services/fil/oublis";
 import { estPourquoiCreux, bornerPourquoi } from "./services/fil/rattachement";
+import { construireMatin } from "./services/fil/matin";
 import { creerTache } from "./services/taches/ecrire-tache";
 import { aujourdhuiParis } from "./services/repack-from";
 import { storage } from "./storage";
@@ -26,6 +27,19 @@ const idValide = (v: unknown): number | null => {
 };
 
 export function registerFilRoutes(app: Express): void {
+  // Le matin du fil (tâches clés, oubliés, journée allégée, non rattachées) pour l'écran : lu
+  // à part du brief, jamais de génération du texte du brief. Le plafond IA des reprises
+  // (matin.ts) s'applique comme au brief.
+  app.get("/api/fil/matin", isAuthenticated, reserveAuFil, async (req: any, res) => {
+    try {
+      const now = new Date();
+      res.json(await construireMatin(req.userId, aujourdhuiParis(now), now));
+    } catch (error: any) {
+      console.error("Matin du fil :", error?.message || error);
+      res.status(500).json({ message: "Erreur lors de la lecture du matin" });
+    }
+  });
+
   // Propositions ouvertes du fil, avec l'objectif concerné (titre) pour l'affichage.
   app.get("/api/fil/propositions", isAuthenticated, reserveAuFil, async (req: any, res) => {
     try {

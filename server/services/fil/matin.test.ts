@@ -89,6 +89,8 @@ describe("construireMatin", () => {
     });
     const premier = await construireMatin("u1", AUJ, MAINTENANT, d);
     expect(premier.allegement).toEqual({ propositionId: 77 });
+    // Une journée allégée en attente est un signal : pas « rien ne cloche ».
+    expect(premier.rienNeCloche).toBe(false);
     expect(d.proposerAllegement).toHaveBeenCalledTimes(1);
     const args = (d.proposerAllegement as any).mock.calls[0][1];
     expect(args.date).toBe(AUJ);

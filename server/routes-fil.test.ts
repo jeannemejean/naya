@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   proposerEtapesPour: vi.fn(), proposerRattachements: vi.fn(),
   getProjectGoal: vi.fn(), getProject: vi.fn(),
   etapesObjectif: vi.fn(() => [] as any[]), tacheDeReprise: vi.fn(), creerTache: vi.fn(), fixOverlappingTasks: vi.fn(),
+  construireMatin: vi.fn(),
 }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "u1"; next(); } }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
@@ -26,6 +27,7 @@ vi.mock("./services/fil/etapes", () => ({
   },
 }));
 vi.mock("./services/fil/oublis", () => ({ tacheDeReprise: h.tacheDeReprise, REPRISE_MIN: 15, REPRISE_MAX: 30 }));
+vi.mock("./services/fil/matin", () => ({ construireMatin: h.construireMatin }));
 vi.mock("./services/taches/ecrire-tache", () => ({ creerTache: h.creerTache }));
 vi.mock("./storage", () => ({ storage: { fixOverlappingTasks: h.fixOverlappingTasks } }));
 
@@ -59,8 +61,25 @@ describe("routes du fil", () => {
     expect((await appel("POST", "/api/fil/objectifs/1/proposer-etapes", {})).status).toBe(404);
     expect((await appel("POST", "/api/fil/rattachements")).status).toBe(404);
     expect((await appel("POST", "/api/fil/objectifs/1/reprendre", {})).status).toBe(404);
+    expect((await appel("GET", "/api/fil/matin")).status).toBe(404);
+    expect(h.construireMatin).not.toHaveBeenCalled();
     expect(h.proposerEtapesPour).not.toHaveBeenCalled();
     expect(h.creerTache).not.toHaveBeenCalled();
+  });
+
+  it("GET /api/fil/matin : le matin de l'utilisatrice de la session, jour de Paris, sans toucher au brief", async () => {
+    const fil = { tachesCles: [], objectifsOublies: [], allegement: null, nonRattachees: 0, rienNeCloche: false };
+    h.construireMatin.mockResolvedValue(fil);
+    const r = await appel("GET", "/api/fil/matin");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual(fil);
+    expect(h.construireMatin).toHaveBeenCalledTimes(1);
+    const [userId, jour, maintenant] = h.construireMatin.mock.calls[0];
+    expect(userId).toBe("u1");
+    expect(jour).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(maintenant).toBeInstanceOf(Date);
+    h.construireMatin.mockRejectedValue(new Error("boum"));
+    expect((await appel("GET", "/api/fil/matin")).status).toBe(500);
   });
 
   it("GET : propositions en attente des deux outils, avec l'objectif", async () => {

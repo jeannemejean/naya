@@ -196,7 +196,7 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
   }
 
   const fil: MatinFil = { tachesCles, objectifsOublies, allegement, nonRattachees, rienNeCloche: false };
-  fil.rienNeCloche = tachesCles.length > 0 && objectifsOublies.length === 0 && nonRattachees === 0 && !signalLot4(fil);
+  fil.rienNeCloche = tachesCles.length > 0 && objectifsOublies.length === 0 && nonRattachees === 0 && !allegement && !signalLot4(fil);
   return fil;
 }
 

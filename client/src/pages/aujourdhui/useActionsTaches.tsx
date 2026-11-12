@@ -16,6 +16,7 @@ import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import { estTacheDeProduction } from "@shared/livrables";
 import type { Project, Task } from "@shared/schema";
 import type { LienFil } from "@shared/fil";
+import { CLE_FIL_MATIN } from "./fil-logique";
 import type { TacheAccueil } from "./logique";
 
 // `pourquoi` et `lien` : fil conducteur (le lien n'arrive que sous interrupteur).
@@ -52,6 +53,8 @@ export function useActionsTaches() {
       qc.invalidateQueries({ queryKey: ["/api/tasks/range"] });
       qc.invalidateQueries({ queryKey: ["/api/tasks"] });
       qc.invalidateQueries({ queryKey: ["/api/dashboard/schedule-preview"] });
+      // Le matin du fil (tâches clés, avancement) ; hors interrupteur, aucune requête.
+      qc.invalidateQueries({ queryKey: CLE_FIL_MATIN });
     },
     onError: (_e, _id, ctx) => {
       ctx?.annuler();

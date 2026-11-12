@@ -154,11 +154,10 @@ export const CLE_RIEN_NE_CLOCHE = "filConducteur.matin.rienNeCloche";
 
 /**
  * Ce que le matin montre, dans l'ordre de l'écran. Si rien ne cloche : une seule phrase, sans
- * liste. Le serveur ne compte pas la journée allégée dans `rienNeCloche` : une proposition
- * d'allègement en attente passe donc toujours en sections, pour ne jamais être tue.
+ * liste (le serveur ne dit « rien ne cloche » qu'en l'absence de journée allégée en attente).
  */
 export function resumeMatin(fil: MatinFil): { phraseUnique: string | null; sections: SectionMatin[] } {
-  if (fil.rienNeCloche && !fil.allegement) return { phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [] };
+  if (fil.rienNeCloche) return { phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [] };
   const sections: SectionMatin[] = [];
   if (fil.tachesCles.length > 0) sections.push("tachesCles");
   if (fil.objectifsOublies.length > 0) sections.push("oublis");
@@ -169,6 +168,11 @@ export function resumeMatin(fil: MatinFil): { phraseUnique: string | null; secti
 
 /** Fenêtre d'annulation d'une action de l'agent (FENETRE_ANNULATION_MS côté serveur). */
 export const FENETRE_ANNULATION_MS = 24 * 3600 * 1000;
+
+/** Validation de la journée allégée sans action à annuler, ou avec des déplacements ratés. */
+export function validationIncomplete(r: { actionId?: unknown; echecs?: unknown } | null | undefined): boolean {
+  return typeof r?.actionId !== "number" || (Array.isArray(r.echecs) && r.echecs.length > 0);
+}
 
 /** « Annuler » reste proposé pendant 24 h après la validation (`valideA` : ISO). */
 export function annulationOuverte(valideA: string, maintenant: Date): boolean {

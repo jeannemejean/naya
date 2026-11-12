@@ -1,7 +1,7 @@
 // Logique pure du fil conducteur à l'écran (spec 2026-11-10, §2 et §3) : le texte « Étape : …,
 // 3 tâches sur 7 faites. Objectif : … », l'édition en ligne d'une proposition d'étapes (Ajuster)
 // et le regroupement des étapes par objectif sur la page projet. Aucune dépendance React.
-import type { LienFil } from "@shared/fil";
+import type { LienFil, MatinFil } from "@shared/fil";
 
 type Traduire = (cle: string, opts?: Record<string, unknown>) => string;
 
@@ -94,6 +94,23 @@ export const cleErreurFil = (code: string | null | undefined) =>
   `filConducteur.erreurs.${code && CODES_CONNUS.has(code) ? code : "erreur"}`;
 
 // ── Le matin ─────────────────────────────────────────────────────────────────────────
+
+/** Le matin du fil (GET /api/fil/matin) : à rafraîchir après une action du fil ou un cochage. */
+export const CLE_FIL_MATIN = ["/api/fil/matin"];
+
+export type EtatMatinFil = { actif: boolean; fil: MatinFil | null };
+
+/**
+ * Lecture du matin du fil. Hors interrupteur (404) : `actif: false`, sans erreur ; une fois
+ * cela su (`connu`), plus aucune requête, même après une invalidation.
+ */
+export async function chargerMatinFil(connu: EtatMatinFil | undefined, recuperer: () => Promise<Response>): Promise<EtatMatinFil> {
+  if (connu?.actif === false) return connu;
+  const res = await recuperer();
+  if (res.status === 404) return { actif: false, fil: null };
+  if (!res.ok) throw new Error(`${res.status}`);
+  return { actif: true, fil: (await res.json()) as MatinFil };
+}
 
 /** « 2 tâches du jour ne sont rattachées à aucun objectif. » */
 export const texteNonRattachees = (n: number, t: Traduire) =>

@@ -6,15 +6,10 @@ import { useTranslation } from "react-i18next";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { formatLocalDate } from "@/lib/dateUtils";
-import type { MatinFil } from "@shared/fil";
 
-export type Brief = { date?: string; content?: { greeting?: string } | null; fil?: MatinFil } | null;
+type Brief = { date?: string; content?: { greeting?: string } | null } | null;
 
-export const CLE_BRIEF = ["/api/tasks/daily-brief"];
-const CLE = CLE_BRIEF;
-// Le `fil` du matin (fil conducteur, sous interrupteur) : lu par BlocMatinFil. Même préfixe que
-// le brief, donc rafraîchi avec lui.
-export const CLE_FIL_MATIN = ["/api/tasks/daily-brief", "fil"];
+const CLE = ["/api/tasks/daily-brief"];
 
 // Date (locale) du dernier POST tenté, au niveau du module : revenir sur « / » le même jour ne
 // relance pas la génération (un appel IA), même si le brief est revenu vide (pause, onboarding).
@@ -31,9 +26,6 @@ export function MotDuMatin({ className }: { className?: string }) {
     apiRequest("POST", "/api/tasks/daily-brief", {})
       .then((r) => r.json())
       .then((reponse: Brief) => {
-        // Le fil d'abord : BlocMatinFil s'active quand le brief a un texte, il trouve alors son
-        // fil déjà là et ne refait pas de POST.
-        if (reponse?.fil) qc.setQueryData(CLE_FIL_MATIN, reponse.fil);
         // Onboarding absent, planification en pause : pas de contenu, la phrase de secours reste.
         if (reponse?.content) qc.setQueryData(CLE, reponse);
       })

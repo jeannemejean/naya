@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   prochaineEtape, nonCocheesPassees, indexMaintenant, trierFil, estTacheProspection, capsuleCampagne, chiffreCle,
-  capsulesAffichables, ligneEnAttente, doitAllerALOnboarding, resumeMatin, annulationOuverte, CLE_RIEN_NE_CLOCHE,
+  capsulesAffichables, ligneEnAttente, doitAllerALOnboarding, resumeMatin, annulationOuverte, validationIncomplete, CLE_RIEN_NE_CLOCHE,
   type TacheAccueil,
 } from "./logique";
 import type { MatinFil } from "@shared/fil";
@@ -134,9 +134,15 @@ describe("resumeMatin", () => {
     expect(resumeMatin(matin({ tachesCles: [], nonRattachees: 1 })).sections).toEqual(["nonRattachees"]);
     expect(resumeMatin(matin({ tachesCles: [] }))).toEqual({ phraseUnique: null, sections: [] });
   });
-  it("une journée allégée proposée n'est jamais tue, même si rien d'autre ne cloche", () => {
-    expect(resumeMatin(matin({ rienNeCloche: true, allegement: { propositionId: 3 } })))
-      .toEqual({ phraseUnique: null, sections: ["tachesCles", "allegement"] });
+});
+
+describe("validationIncomplete", () => {
+  it("sans actionId ou avec des échecs : incomplète", () => {
+    expect(validationIncomplete({ actionId: 9, echecs: [] })).toBe(false);
+    expect(validationIncomplete({ actionId: 9 })).toBe(false);
+    expect(validationIncomplete({ echecs: [] })).toBe(true);
+    expect(validationIncomplete({ actionId: 9, echecs: [{ libelle: "x" }] })).toBe(true);
+    expect(validationIncomplete(null)).toBe(true);
   });
 });
 

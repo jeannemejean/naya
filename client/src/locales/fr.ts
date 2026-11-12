@@ -3525,6 +3525,7 @@ const fr = {
     chapo: "Ton énergie est basse. Je garde au moins une tâche par objectif prioritaire et je décale le reste sur tes prochains jours.",
     alleger: "Alléger ma journée",
     pasAujourdhui: "Pas aujourd'hui",
+    incomplet: "Une partie de l'allègement n'est pas passée. Regarde ta journée.",
     fait: "Journée allégée. Tu peux revenir en arrière pendant 24 h.",
     annuler: "Annuler",
     annulee: "Ta journée est revenue comme avant.",

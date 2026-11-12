@@ -3521,6 +3521,7 @@ const en = {
     chapo: "Your energy is low. I keep at least one task per priority goal and move the rest to your next days.",
     alleger: "Lighten my day",
     pasAujourdhui: "Not today",
+    incomplet: "Part of the lightening didn't go through. Check your day.",
     fait: "Day lightened. You can undo it for 24 h.",
     annuler: "Undo",
     annulee: "Your day is back as it was.",

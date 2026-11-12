@@ -1,13 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import fr from "@/locales/fr";
 import en from "@/locales/en";
 import type { LienFil } from "@shared/fil";
 import {
   ajouter, ajustementPret, cleErreurFil, codeErreur, corpsAjustement, corpsRefaire, deplacer, etapesDeProposition,
   grouperParObjectif, objectifPeutRecevoirEtapes, renommer, supprimer, texteLien, type EtapeEditable, type PropositionFil,
-  cleErreurAnnulation, texteNonRattachees, texteNonRemises,
+  cleErreurAnnulation, texteNonRattachees, texteNonRemises, chargerMatinFil,
 } from "./fil-logique";
-import { annulationOuverte, resumeMatin } from "./logique";
+import { annulationOuverte, resumeMatin, validationIncomplete } from "./logique";
 import type { MatinFil } from "@shared/fil";
 // Le miroir mobile (sans traductions) doit dire exactement la même chose en français.
 import * as mobile from "../../../../mobile/lib/fil-logique";
@@ -173,7 +173,7 @@ describe("le matin", () => {
 
   it("le mobile montre les mêmes sections et dit la même phrase", () => {
     for (const f of [matin({ rienNeCloche: true }), matin({ objectifsOublies: [oubli] }),
-      matin({ rienNeCloche: true, allegement: { propositionId: 2 } }), matin({ tachesCles: [], nonRattachees: 3 }),
+      matin({ tachesCles: [], nonRattachees: 3 }),
       matin({ objectifsOublies: [oubli], allegement: { propositionId: 2 }, nonRattachees: 1 })]) {
       const web = resumeMatin(f);
       const mob = mobile.resumeMatin(f);
@@ -205,5 +205,42 @@ describe("le matin", () => {
     }
     expect(cleErreurAnnulation("introuvable")).toBe(cleErreurFil("introuvable"));
     expect(mobile.messageErreurAnnulation(new Error("réseau"))).toBe(fr.filConducteur.erreurs.erreur);
+  });
+});
+
+describe("chargerMatinFil", () => {
+  const rep = (status: number, corps: unknown = null) => ({ status, ok: status < 300, json: async () => corps }) as unknown as Response;
+
+  it("hors interrupteur : un seul GET (404), puis plus aucune requête", async () => {
+    const recuperer = vi.fn(async () => rep(404));
+    const premier = await chargerMatinFil(undefined, recuperer);
+    expect(premier).toEqual({ actif: false, fil: null });
+    expect(await chargerMatinFil(premier, recuperer)).toEqual({ actif: false, fil: null });
+    expect(recuperer).toHaveBeenCalledTimes(1);
+  });
+  it("sous interrupteur : le fil ; une erreur serveur remonte", async () => {
+    const fil = { tachesCles: [], objectifsOublies: [], allegement: null, nonRattachees: 0, rienNeCloche: false };
+    expect(await chargerMatinFil(undefined, async () => rep(200, fil))).toEqual({ actif: true, fil });
+    expect(await chargerMatinFil({ actif: true, fil }, async () => rep(200, fil))).toEqual({ actif: true, fil });
+    await expect(chargerMatinFil(undefined, async () => rep(500))).rejects.toThrow("500");
+  });
+});
+
+describe("le matin sur mobile : mêmes mots que le web", () => {
+  const m = mobile.TEXTES_MATIN;
+  it("chaque texte du mobile est celui de fr.filConducteur.matin", () => {
+    expect(m.titre).toBe(t("filConducteur.matin.titre"));
+    expect(m.oublis.titre).toBe(t("filConducteur.matin.oublis.titre"));
+    expect(m.oublis.ligne("Podcast", 9)).toBe(t("filConducteur.matin.oublis.ligne", { objectif: "Podcast", jours: 9 }));
+    expect(m.oublis.reprise("20 min")).toBe(t("filConducteur.matin.oublis.reprise", { titre: "20 min" }));
+    for (const k of ["reprendre", "enCours", "fait"] as const) expect(m.oublis[k]).toBe(t(`filConducteur.matin.oublis.${k}`));
+    for (const k of ["titre", "chapo", "alleger", "pasAujourdhui", "incomplet", "fait", "annuler", "annulee"] as const) {
+      expect(m.allegement[k]).toBe(t(`filConducteur.matin.allegement.${k}`));
+    }
+  });
+  it("validation incomplète : même décision", () => {
+    for (const r of [{ actionId: 1 }, { actionId: 1, echecs: [1] }, {}, null]) {
+      expect(mobile.validationIncomplete(r as any)).toBe(validationIncomplete(r as any));
+    }
   });
 });

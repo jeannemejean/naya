@@ -9,44 +9,46 @@ import { useTranslation } from "react-i18next";
 import type { MatinFil, ObjectifOublie } from "@shared/fil";
 import { apiRequest } from "@/lib/queryClient";
 import { formatLocalDate } from "@/lib/dateUtils";
+import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
-import { annulationOuverte, resumeMatin } from "./logique";
-import { cleErreurAnnulation, cleErreurFil, codeErreur, texteNonRattachees, texteNonRemises } from "./fil-logique";
-import { CLE_BRIEF, CLE_FIL_MATIN, type Brief } from "./MotDuMatin";
+import { annulationOuverte, resumeMatin, validationIncomplete } from "./logique";
+import { CLE_FIL_MATIN, chargerMatinFil, cleErreurAnnulation, type EtatMatinFil, cleErreurFil, codeErreur, texteNonRattachees, texteNonRemises } from "./fil-logique";
 import { TachesCles } from "./TachesCles";
 
 /**
- * Le `fil` du matin. Le GET du brief ne le porte pas : on le lit par le POST, mais seulement
- * quand le texte du jour existe déjà (le POST prend alors le chemin en cache, sans IA). Sinon,
- * c'est MotDuMatin qui génère et dépose le `fil` de sa réponse sous CLE_FIL_MATIN.
+ * Le matin du fil, lu par GET /api/fil/matin (à part du brief : jamais de génération du texte).
+ * Hors interrupteur, la route répond 404 : `null`, sans erreur, et on ne la rappelle plus
+ * (une invalidation rend la réponse déjà connue sans requête).
  */
 export function useMatinFil(): MatinFil | null {
-  const { data: brief } = useQuery<Brief>({ queryKey: CLE_BRIEF, retry: false, throwOnError: false });
-  const { data } = useQuery<MatinFil | null>({
+  const qc = useQueryClient();
+  const { data } = useQuery<EtatMatinFil>({
     queryKey: CLE_FIL_MATIN,
-    queryFn: async () => {
-      const reponse = await (await apiRequest("POST", "/api/tasks/daily-brief", {})).json();
-      return (reponse?.fil as MatinFil | undefined) ?? null;
-    },
-    enabled: !!brief?.content,
+    queryFn: () => chargerMatinFil(qc.getQueryData<EtatMatinFil>(CLE_FIL_MATIN),
+      () => fetch("/api/fil/matin", { credentials: "include" })),
     retry: false,
+    // Revenir sur l'écran après une minute relit le matin (énergie changée ailleurs…).
+    staleTime: 60_000,
     throwOnError: false,
   });
-  return data ?? null;
+  return data?.fil ?? null;
 }
 
-/** Après une action du matin : le brief (et son fil) et toutes les tâches. */
+/** Après une action du matin : le matin du fil et les tâches. */
 function rafraichir(qc: QueryClient) {
-  qc.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith("/api/tasks") });
+  qc.invalidateQueries({ queryKey: CLE_FIL_MATIN });
+  qc.invalidateQueries({ queryKey: ["/api/tasks/range"] });
+  qc.invalidateQueries({ queryKey: ["/api/tasks"] });
 }
 
 // ── Mémoire locale (24 h d'annulation, reprises du jour) ─────────────────────────────────
 // Le serveur ne renvoie plus la proposition une fois validée : l'action à annuler et les
 // objectifs déjà repris aujourd'hui sont gardés dans le navigateur. Stockage indisponible : on
-// continue sans (le bouton disparaît au rechargement, rien de plus).
+// continue sans (le bouton disparaît au rechargement, rien de plus). Clés propres à
+// l'utilisatrice : un navigateur partagé ne mélange rien.
 
-const CLE_ALLEGEMENT = "naya.fil.allegement";
-const CLE_REPRIS = "naya.fil.repris";
+const cleAllegement = (userId: string) => `naya.fil.${userId}.allegement`;
+const cleRepris = (userId: string) => `naya.fil.${userId}.repris`;
 type MemoAllegement = { actionId: number; valideA: string };
 
 function lire<T>(cle: string): T | null {
@@ -55,8 +57,8 @@ function lire<T>(cle: string): T | null {
 function ecrire(cle: string, valeur: unknown | null) {
   try { valeur == null ? localStorage.removeItem(cle) : localStorage.setItem(cle, JSON.stringify(valeur)); } catch { /* rien */ }
 }
-function reprisDuJour(jour: string): number[] {
-  const m = lire<{ jour: string; ids: number[] }>(CLE_REPRIS);
+function reprisDuJour(userId: string, jour: string): number[] {
+  const m = lire<{ jour: string; ids: number[] }>(cleRepris(userId));
   return m?.jour === jour && Array.isArray(m.ids) ? m.ids : [];
 }
 
@@ -68,7 +70,8 @@ const boutonSecondaire =
 export function BlocMatinFil({ className }: { className?: string }) {
   const { t } = useTranslation();
   const fil = useMatinFil();
-  if (!fil) return null;
+  const userId = useAuth().user?.id;
+  if (!fil || !userId) return null;
   const { phraseUnique, sections } = resumeMatin(fil);
   const propositionId = sections.includes("allegement") ? fil.allegement?.propositionId ?? null : null;
 
@@ -80,9 +83,9 @@ export function BlocMatinFil({ className }: { className?: string }) {
         </p>
       )}
       {sections.includes("tachesCles") && <TachesCles taches={fil.tachesCles} />}
-      {sections.includes("oublis") && <ObjectifsOublies objectifs={fil.objectifsOublies} />}
+      {sections.includes("oublis") && <ObjectifsOublies objectifs={fil.objectifsOublies} userId={String(userId)} />}
       {/* Toujours monté : après validation, la proposition n'est plus dans le fil mais « Annuler » reste 24 h. */}
-      <CarteAllegement propositionId={propositionId} />
+      <CarteAllegement propositionId={propositionId} userId={String(userId)} />
       {sections.includes("nonRattachees") && (
         <p className="px-1 text-[14px] leading-[1.5] text-muted-foreground">{texteNonRattachees(fil.nonRattachees, (cle, opts) => t(cle, opts))}</p>
       )}
@@ -90,30 +93,30 @@ export function BlocMatinFil({ className }: { className?: string }) {
   );
 }
 
-function ObjectifsOublies({ objectifs }: { objectifs: ObjectifOublie[] }) {
+function ObjectifsOublies({ objectifs, userId }: { objectifs: ObjectifOublie[]; userId: string }) {
   const { t } = useTranslation();
   return (
     <section aria-labelledby="oublis-titre" className="rounded-carte bg-card p-5 shadow-cocon sm:p-6">
       <h2 id="oublis-titre" className="text-[22px] font-semibold leading-tight text-foreground">{t("filConducteur.matin.oublis.titre")}</h2>
       <ul className="mt-3 divide-y divide-border">
-        {objectifs.map((o) => <LigneOubli key={o.objectifId} objectif={o} />)}
+        {objectifs.map((o) => <LigneOubli key={o.objectifId} objectif={o} userId={userId} />)}
       </ul>
     </section>
   );
 }
 
-function LigneOubli({ objectif }: { objectif: ObjectifOublie }) {
+function LigneOubli({ objectif, userId }: { objectif: ObjectifOublie; userId: string }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const jour = formatLocalDate(new Date());
-  const [repris, setRepris] = useState(() => reprisDuJour(jour).includes(objectif.objectifId));
+  const [repris, setRepris] = useState(() => reprisDuJour(userId, jour).includes(objectif.objectifId));
   const [erreur, setErreur] = useState<string | null>(null);
   // La reprise affichée part telle quelle : le serveur la crée sans appel IA.
   const reprendre = useMutation({
     mutationFn: () => apiRequest("POST", `/api/fil/objectifs/${objectif.objectifId}/reprendre`,
       { titre: objectif.reprise.titre, pourquoi: objectif.reprise.pourquoi, clientToday: jour }),
     onSuccess: () => {
-      ecrire(CLE_REPRIS, { jour, ids: [...reprisDuJour(jour), objectif.objectifId] });
+      ecrire(cleRepris(userId), { jour, ids: [...reprisDuJour(userId, jour), objectif.objectifId] });
       setRepris(true);
       rafraichir(qc);
     },
@@ -142,22 +145,24 @@ function LigneOubli({ objectif }: { objectif: ObjectifOublie }) {
 }
 
 /** Proposée (énergie basse) → « Alléger ma journée » ; validée → « Annuler » pendant 24 h ; annulée → une ligne. */
-function CarteAllegement({ propositionId }: { propositionId: number | null }) {
+function CarteAllegement({ propositionId, userId }: { propositionId: number | null; userId: string }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const [memo, setMemo] = useState<MemoAllegement | null>(() => lire<MemoAllegement>(CLE_ALLEGEMENT));
+  const [memo, setMemo] = useState<MemoAllegement | null>(() => lire<MemoAllegement>(cleAllegement(userId)));
   const [annulee, setAnnulee] = useState<{ nonRemises: number } | null>(null);
   const [erreur, setErreur] = useState<string | null>(null);
-  const oublier = () => { ecrire(CLE_ALLEGEMENT, null); setMemo(null); };
+  const oublier = () => { ecrire(cleAllegement(userId), null); setMemo(null); };
 
   const alleger = useMutation({
     mutationFn: async () => (await apiRequest("POST", `/api/agent/propositions/${propositionId}/valider`)).json(),
-    onSuccess: (r: { actionId?: number }) => {
+    onSuccess: (r: { actionId?: number; echecs?: unknown[] }) => {
       if (typeof r?.actionId === "number") {
         const m = { actionId: r.actionId, valideA: new Date().toISOString() };
-        ecrire(CLE_ALLEGEMENT, m);
+        ecrire(cleAllegement(userId), m);
         setMemo(m);
       }
+      // Sans action à annuler, ou avec des déplacements ratés : on le dit, en une ligne.
+      if (validationIncomplete(r)) setErreur("filConducteur.matin.allegement.incomplet");
       setAnnulee(null);
       rafraichir(qc);
     },
