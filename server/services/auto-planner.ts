@@ -36,7 +36,8 @@ import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
 import { synchroniserValidationsProspection } from "./prospection-verification";
 import { etapesActives, chargerCarte, type CarteFil } from "./fil/carte";
-import { filActifPour } from "./fil/interrupteur";
+import { filActifPour, miseEnRoute } from "./fil/interrupteur";
+import { proposerRattachements } from "./fil/etapes";
 import { rattachementTacheGeneree } from "./fil/rattachement";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
@@ -613,6 +614,23 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
       try {
         const prefs = await storage.getUserPreferences(userId);
 
+        // Fil conducteur : la mise en route pose sa date une seule fois. Ce passage-là, Naya
+        // propose de rattacher les chaînes de jalons existantes à leurs objectifs (tâche détachée).
+        let filDepuis: Date | null = (prefs as any)?.filConducteurDepuis ?? null;
+        if (filActifPour(userId)) {
+          const route = await miseEnRoute(userId, new Date()).catch((e: any) => {
+            console.error(`[AutoPlanner] Mise en route du fil impossible pour ${userId}:`, e?.message);
+            return null;
+          });
+          if (route) {
+            filDepuis = route.depuis;
+            if (route.nouveau) {
+              void proposerRattachements(userId, new Date()).catch((e: any) =>
+                console.error(`[AutoPlanner] Rattachement des chaînes failed for ${userId}:`, e?.message));
+            }
+          }
+        }
+
         // Une date de depart FUTURE deplace le point de depart — elle ne fait plus sauter
         // la planification.
         //
@@ -648,7 +666,7 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         // Fil conducteur : la carte objectifs → étapes, chargée UNE fois pour les 7 jours.
         const fil = filActifPour(userId)
           ? {
-              carte: await chargerCarte(userId, (prefs as any)?.filConducteurDepuis ?? null).catch((e: any) => {
+              carte: await chargerCarte(userId, filDepuis).catch((e: any) => {
                 console.error(`[AutoPlanner] Carte du fil illisible pour ${userId}:`, e?.message);
                 return null;
               }),

@@ -1,6 +1,6 @@
 // Accès en base de l'agent omniscient. Isolé dans un objet `depot` pour être mockable dans
 // les tests : aucune requête ici n'échappe au filtre sur user_id.
-import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNotNull } from "drizzle-orm";
 import { db } from "../../db";
 import {
   agentActions,
@@ -65,6 +65,19 @@ export const depot = {
       userId, outil, arguments: args, changements, empreinte, statut: "en_attente", expireA,
     }).returning();
     return p;
+  },
+
+  // Propositions encore ouvertes de ces outils (en attente et pas expirées), la plus récente d'abord.
+  async propositionsEnAttente(userId: string, outils: string[], maintenant: Date): Promise<AgentProposition[]> {
+    if (outils.length === 0) return [];
+    return db.select().from(agentPropositions)
+      .where(and(
+        eq(agentPropositions.userId, userId),
+        eq(agentPropositions.statut, "en_attente"),
+        inArray(agentPropositions.outil, outils),
+        gt(agentPropositions.expireA, maintenant),
+      ))
+      .orderBy(desc(agentPropositions.createdAt));
   },
 
   async getProposition(id: number, userId: string): Promise<AgentProposition | undefined> {

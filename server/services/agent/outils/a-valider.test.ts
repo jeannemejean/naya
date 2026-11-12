@@ -42,7 +42,10 @@ describe("classement", () => {
     for (const n of ["deplacer_taches", "decaler_journee", "supprimer_taches", "creer_projet", "creer_jalons", "confirmer_jalon", "saisir_mesure"]) {
       expect(outil(n)?.classe).toBe("a_valider");
     }
-    expect(REGISTRE.filter((o) => o.classe === "a_valider")).toHaveLength(7);
+    // + les deux propositions du fil conducteur (étapes, rattachement).
+    expect(REGISTRE.filter((o) => o.classe === "a_valider").map((o) => o.nom).sort()).toEqual(
+      ["confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "saisir_mesure", "supprimer_taches"],
+    );
   });
 });
 

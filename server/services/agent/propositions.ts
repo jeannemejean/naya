@@ -49,11 +49,23 @@ export interface OutilAValider<A> {
 // l'aperçu et enregistre la proposition ; l'exécution réelle est dans `aValider.executer`.
 export type OutilPropose = Outil & { aValider: OutilAValider<any> };
 
+// « 1 h », « 7 jours » : la durée de vie d'une proposition, pour la consigne au modèle.
+function dureeLisible(ms: number): string {
+  const heures = Math.round(ms / 3600_000);
+  if (heures < 24) return `${heures} h`;
+  const jours = Math.round(heures / 24);
+  return `${jours} jour${jours > 1 ? "s" : ""}`;
+}
+
+// `dureeMs` : durée de vie de la proposition (défaut 1 h, celle de l'agent). Le fil conducteur
+// laisse 7 jours à ses propositions d'étapes, que Jeanne voit au matin et pas dans une conversation.
 export function outilAValider<A>(def: {
   nom: string;
   description: string;
   schema: Outil["schema"];
+  dureeMs?: number;
 } & OutilAValider<A>): OutilPropose {
+  const dureeMs = def.dureeMs ?? DUREE_PROPOSITION_MS;
   const aValider: OutilAValider<A> = { apercu: def.apercu, executer: def.executer };
   return {
     nom: def.nom,
@@ -64,7 +76,7 @@ export function outilAValider<A>(def: {
     async executer(ctx, args): Promise<ResultatOutil> {
       const a = await aValider.apercu(ctx, args as A);
       if ("erreur" in a) return { pourModele: a };
-      const expireA = new Date(ctx.maintenant.getTime() + DUREE_PROPOSITION_MS);
+      const expireA = new Date(ctx.maintenant.getTime() + dureeMs);
       const p = await depot.ajouterProposition(ctx.userId, def.nom, args, a.changements, a.empreinte, expireA);
       const proposition: PropositionVue = {
         id: p.id, resume: a.resume, changements: a.changements, expireA: expireA.toISOString(),
@@ -75,7 +87,7 @@ export function outilAValider<A>(def: {
           propositionId: p.id,
           resume: a.resume,
           changements: a.changements.length,
-          consigne: "Rien n'est fait : la proposition attend que l'utilisatrice la valide (1 h au plus).",
+          consigne: `Rien n'est fait : la proposition attend que l'utilisatrice la valide (${dureeLisible(dureeMs)} au plus).`,
         },
         proposition,
       };
@@ -94,6 +106,9 @@ export async function tachesNonFaitesDuJour(userId: string, date: string): Promi
       && String(t.scheduledDate ?? "").slice(0, 10) === date && Number.isInteger(t.id) && t.id > 0)
     .sort((a, b) => a.id - b.id);
 }
+
+// Statuts d'une étape franchie : faite, ou sautée.
+export const ETAPE_CLOSE: ReadonlySet<string> = new Set(["completed", "skipped"]);
 
 type Lecteur = (userId: string, id: number, champs: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
 
@@ -124,6 +139,20 @@ const LECTEURS: Record<string, Lecteur> = {
     if (!projet) return undefined;
     return { nombre: (await storage.getMilestones(id, userId)).length };
   },
+  // Objectif du fil conducteur : appartient à l'utilisatrice par son projet.
+  async project_goals(userId, id) {
+    const objectif = await storage.getProjectGoal(id);
+    if (!objectif || !(await storage.getProject(objectif.projectId, userId))) return undefined;
+    return objectif as any;
+  },
+  // id = objectif ; champs = { nombre, ouvertes } : ses étapes (jalons reliés) et celles qui ne
+  // sont ni faites ni sautées. Une chaîne posée depuis l'aperçu rend la proposition périmée.
+  async etapes_objectif(userId, id) {
+    const objectif = await storage.getProjectGoal(id);
+    if (!objectif || !(await storage.getProject(objectif.projectId, userId))) return undefined;
+    const etapes = (await storage.getMilestones(objectif.projectId, userId)).filter((j) => j.goalId === id);
+    return { nombre: etapes.length, ouvertes: etapes.filter((j) => !ETAPE_CLOSE.has(j.status)).length };
+  },
   // id = 0 (pas une ligne) ; champs = { date, ids } : la liste des tâches à faire du jour.
   // Une tâche ajoutée, cochée ou partie depuis l'aperçu la change.
   async taches_du_jour(userId, _id, champs) {
@@ -145,6 +174,32 @@ async function empreinteIntacte(userId: string, empreinte: unknown): Promise<boo
     }
   }
   return true;
+}
+
+// ── Proposer hors conversation ─────────────────────────────────────────────────────────
+
+/**
+ * Crée une proposition sans passer par la conversation (fil conducteur : étapes proposées à la
+ * création d'un objectif, rattachement des chaînes). Même chemin que le modèle : arguments
+ * vérifiés contre le schéma, aperçu, proposition `en_attente` avec la durée de l'outil.
+ */
+export async function proposerHorsConversation(
+  userId: string,
+  nomOutil: string,
+  args: unknown,
+  maintenant: Date,
+  options: { fuseau?: string; outils?: Outil[] } = {},
+): Promise<PropositionVue | { erreur: string }> {
+  const registre = await import("./registre");
+  const outils = options.outils ?? registre.REGISTRE;
+  const o = outils.find((x) => x.nom === nomOutil) as OutilPropose | undefined;
+  if (!o?.aValider) return { erreur: "outil_inconnu" };
+  const raison = registre.validerArgs(o.schema, args);
+  if (raison) return { erreur: raison };
+  const r = await o.executer({ userId, maintenant, fuseau: options.fuseau ?? "Europe/Paris" }, args);
+  if (r.proposition) return r.proposition;
+  const refus = r.pourModele as { erreur?: unknown } | undefined;
+  return { erreur: typeof refus?.erreur === "string" ? refus.erreur : "refusee" };
 }
 
 // ── Valider / annuler ──────────────────────────────────────────────────────────────────

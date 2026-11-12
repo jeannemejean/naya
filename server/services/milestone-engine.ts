@@ -1,5 +1,6 @@
 import { storage } from "../storage";
 import type { ProjectMilestone, MilestoneCondition } from "@shared/schema";
+import { filActifPour } from "./fil/interrupteur";
 
 /**
  * NB : les jalons ne sont PLUS des tâches horaires dans le planning.
@@ -79,9 +80,28 @@ export async function confirmMilestone(milestoneId: number): Promise<ProjectMile
     await storage.unblockTasksForMilestone(milestoneId);
     // Déclencher le déverrouillage des jalons suivants
     await checkAndUnlockMilestones(milestone.projectId, milestone.userId);
+    // Tâche détachée (ne lève jamais) : la confirmation n'attend ni la lecture ni l'IA.
+    if (updated.goalId != null) void proposerSuiteSiChaineFranchie(updated.projectId, updated.userId, updated.goalId);
   }
 
   return updated;
+}
+
+/**
+ * Fil conducteur : quand toutes les étapes d'un objectif sont faites (ou sautées), Naya propose
+ * la suite. Ne lève jamais : appelée en tâche détachée, la confirmation du jalon n'échoue pas à cause d'elle.
+ */
+export async function proposerSuiteSiChaineFranchie(projectId: number, userId: string, goalId: number): Promise<void> {
+  if (!filActifPour(userId)) return;
+  try {
+    const etapes = (await storage.getMilestones(projectId, userId)).filter((m) => m.goalId === goalId);
+    if (etapes.length === 0 || !etapes.every((m) => m.status === 'completed' || m.status === 'skipped')) return;
+    // Import différé : etapes.ts importe ce module (createMilestoneChain).
+    const { proposerEtapesPour } = await import("./fil/etapes");
+    await proposerEtapesPour(userId, goalId, new Date());
+  } catch (e: any) {
+    console.error(`[fil] proposition d'étapes après la chaîne de l'objectif ${goalId} :`, e?.message ?? e);
+  }
 }
 
 /**
@@ -89,7 +109,8 @@ export async function confirmMilestone(milestoneId: number): Promise<ProjectMile
  * Chaque jalon peut dire où il en est (`etat`) : `faite` → completed (avec completedAt). La
  * première étape non faite devient active ; les suivantes non faites sont locked, chacune avec
  * UNE condition sur la précédente. Sans `etat`, comportement historique : le premier jalon est
- * actif, tous les autres verrouillés. `opts.goalId` relie toute la chaîne à un objectif.
+ * actif, tous les autres verrouillés. `opts.goalId` relie toute la chaîne à un objectif ;
+ * `opts.ordreDepart` la place après les étapes déjà franchies de cet objectif.
  */
 export async function createMilestoneChain(
   projectId: number,
@@ -104,7 +125,7 @@ export async function createMilestoneChain(
     pourquoi?: string;
     etat?: "faite" | "en_cours" | "a_venir";
   }>,
-  opts: { goalId?: number } = {},
+  opts: { goalId?: number; ordreDepart?: number } = {},
 ): Promise<ProjectMilestone[]> {
   const created: ProjectMilestone[] = [];
   let activeDejaPosee = false;
@@ -123,7 +144,7 @@ export async function createMilestoneChain(
       userId,
       title: m.title,
       description: m.description || null,
-      order: i,
+      order: (opts.ordreDepart ?? 0) + i,
       status,
       milestoneType: (m.milestoneType as any) || 'action',
       activatedAt: status === 'locked' ? null : maintenant,

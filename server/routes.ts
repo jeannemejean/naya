@@ -93,6 +93,9 @@ import { etatGardeApercu, lireGarde } from "./services/sequence-distinct";
 import { requireActiveSubscription, gateNayaAccess } from "./middleware/require-subscription";
 import { checkAndUnlockMilestones } from "./services/milestone-engine";
 import { registerAgentRoutes } from "./routes-agent";
+import { registerFilRoutes } from "./routes-fil";
+import { filActifPour } from "./services/fil/interrupteur";
+import { proposerEtapesPour } from "./services/fil/etapes";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
@@ -2033,6 +2036,11 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       );
       const goalData = insertProjectGoalSchema.parse(cleaned);
       const goal = await storage.createProjectGoal(goalData);
+      // Fil conducteur : Naya propose les étapes du nouvel objectif (tâche détachée, à valider).
+      if (filActifPour(userId) && goal.status === 'active') {
+        void proposerEtapesPour(userId, goal.id, new Date()).catch((e: any) =>
+          console.error(`[fil] proposition d'étapes pour l'objectif ${goal.id} :`, e?.message ?? e));
+      }
       res.json(goal);
     } catch (error) {
       console.error("Error creating goal:", error);
@@ -11276,6 +11284,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerAppelsOffresRoutes(app);
   registerRapportsRoutes(app);
   registerAgentRoutes(app);
+  registerFilRoutes(app);
 
   const httpServer = createServer(app);
   return httpServer;
