@@ -5,7 +5,10 @@ import type { LienFil } from "@shared/fil";
 import {
   ajouter, ajustementPret, cleErreurFil, codeErreur, corpsAjustement, corpsRefaire, deplacer, etapesDeProposition,
   grouperParObjectif, objectifPeutRecevoirEtapes, renommer, supprimer, texteLien, type EtapeEditable, type PropositionFil,
+  cleErreurAnnulation, texteNonRattachees, texteNonRemises,
 } from "./fil-logique";
+import { annulationOuverte, resumeMatin } from "./logique";
+import type { MatinFil } from "@shared/fil";
 // Le miroir mobile (sans traductions) doit dire exactement la même chose en français.
 import * as mobile from "../../../../mobile/lib/fil-logique";
 
@@ -153,5 +156,54 @@ describe("page projet", () => {
     expect(objectifPeutRecevoirEtapes(objectifs[1], jalons, [])).toBe(true);  // toutes franchies
     expect(objectifPeutRecevoirEtapes(objectifs[1], jalons, enAttente)).toBe(false);
     expect(objectifPeutRecevoirEtapes(objectifs[2], jalons, [])).toBe(false); // pas actif
+  });
+});
+
+describe("le matin", () => {
+  const cle = { tacheId: 1, titre: "Relancer Léa", pourquoi: "Elle attend ta proposition.", lien: lien(), score: 80 };
+  const oubli = { objectifId: 4, titre: "Lancer le podcast", joursSansTache: 9, reprise: { titre: "20 min sur le pilote", pourquoi: "Un premier pas remet le podcast en route." } };
+  const matin = (p: Partial<MatinFil> = {}): MatinFil => ({
+    tachesCles: [cle], objectifsOublies: [], allegement: null, nonRattachees: 0, rienNeCloche: false, ...p,
+  });
+
+  it("la phrase unique : « Rien ne cloche », avec la première tâche clé", () => {
+    const r = resumeMatin(matin({ rienNeCloche: true }));
+    expect(t(r.phraseUnique!, { titre: cle.titre })).toBe("Rien ne cloche ce matin. Commence par « Relancer Léa ».");
+  });
+
+  it("le mobile montre les mêmes sections et dit la même phrase", () => {
+    for (const f of [matin({ rienNeCloche: true }), matin({ objectifsOublies: [oubli] }),
+      matin({ rienNeCloche: true, allegement: { propositionId: 2 } }), matin({ tachesCles: [], nonRattachees: 3 }),
+      matin({ objectifsOublies: [oubli], allegement: { propositionId: 2 }, nonRattachees: 1 })]) {
+      const web = resumeMatin(f);
+      const mob = mobile.resumeMatin(f);
+      expect(mob.sections).toEqual(web.sections);
+      expect(mob.phraseUnique).toBe(web.phraseUnique ? t(web.phraseUnique, { titre: f.tachesCles[0]?.titre }) : null);
+    }
+  });
+
+  it("tâches non rattachées et tâches non remises : une ligne, au singulier comme au pluriel, même texte sur mobile", () => {
+    expect(texteNonRattachees(1, t)).toBe("1 tâche du jour n'est rattachée à aucun objectif.");
+    expect(texteNonRattachees(3, t)).toBe("3 tâches du jour ne sont rattachées à aucun objectif.");
+    expect(texteNonRemises(2, t)).toBe("2 tâches que tu as déplacées entre-temps restent où tu les as mises.");
+    for (const n of [1, 2, 5]) {
+      expect(mobile.texteNonRattachees(n)).toBe(texteNonRattachees(n, t));
+      expect(mobile.texteNonRemises(n)).toBe(texteNonRemises(n, t));
+      expect(typeof lire(en, n < 2 ? "filConducteur.matin.nonRattacheesUn" : "filConducteur.matin.nonRattachees")).toBe("string");
+    }
+  });
+
+  it("annulation : 24 h, mêmes bornes sur mobile ; ses refus ont leur message, les autres passent par le fil", () => {
+    const valideA = "2026-11-12T08:00:00.000Z";
+    for (const h of ["2026-11-12T20:00:00.000Z", "2026-11-13T08:00:00.000Z"]) {
+      expect(mobile.annulationOuverte(valideA, new Date(h))).toBe(annulationOuverte(valideA, new Date(h)));
+    }
+    for (const c of ["expiree", "deja_annulee", "modifiee"]) {
+      expect(typeof lire(fr, cleErreurAnnulation(c))).toBe("string");
+      expect(typeof lire(en, cleErreurAnnulation(c))).toBe("string");
+      expect(mobile.messageErreurAnnulation({ response: { data: { message: c } } })).toBe(t(cleErreurAnnulation(c)));
+    }
+    expect(cleErreurAnnulation("introuvable")).toBe(cleErreurFil("introuvable"));
+    expect(mobile.messageErreurAnnulation(new Error("réseau"))).toBe(fr.filConducteur.erreurs.erreur);
   });
 });

@@ -18,6 +18,7 @@ import { Capsules } from "./Capsules";
 import { FilDuJour } from "./FilDuJour";
 import { CarteReprise } from "./CarteReprise";
 import { PropositionsFil } from "./PropositionEtapes";
+import { BlocMatinFil } from "./BlocMatinFil";
 import { estAgenda, sansJalons, useActionsTaches, type TacheJour } from "./useActionsTaches";
 
 function semaineDe(d: Date): { lundi: string; dimanche: string } {
@@ -119,6 +120,8 @@ export default function Aujourdhui({ onSearchClick }: { onSearchClick?: () => vo
 
             <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
               <div className="min-w-0">
+                {/* Fil conducteur : le matin (tâches clés, oublis, journée allégée) en tête ; rien hors interrupteur. */}
+                <BlocMatinFil className="mb-6" />
                 {/* Fil conducteur : les étapes proposées par Naya attendent ta réponse en tête. */}
                 <PropositionsFil className="mb-6" />
                 <CarteReprise />

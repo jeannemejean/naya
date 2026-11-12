@@ -93,6 +93,22 @@ const CODES_CONNUS = new Set([
 export const cleErreurFil = (code: string | null | undefined) =>
   `filConducteur.erreurs.${code && CODES_CONNUS.has(code) ? code : "erreur"}`;
 
+// ── Le matin ─────────────────────────────────────────────────────────────────────────
+
+/** « 2 tâches du jour ne sont rattachées à aucun objectif. » */
+export const texteNonRattachees = (n: number, t: Traduire) =>
+  t(n < 2 ? "filConducteur.matin.nonRattacheesUn" : "filConducteur.matin.nonRattachees", { n });
+
+/** Après « Annuler » la journée allégée : les tâches déplacées à la main entre-temps restent. */
+export const texteNonRemises = (n: number, t: Traduire) =>
+  t(n < 2 ? "filConducteur.matin.allegement.nonRemisesUn" : "filConducteur.matin.allegement.nonRemises", { n });
+
+const CODES_ANNULATION = new Set(["expiree", "deja_annulee", "modifiee"]);
+
+/** Clé du message d'un refus d'annulation (409) ; les autres codes passent par cleErreurFil. */
+export const cleErreurAnnulation = (code: string | null | undefined) =>
+  code && CODES_ANNULATION.has(code) ? `filConducteur.matin.allegement.erreurs.${code}` : cleErreurFil(code);
+
 // ── Page projet ──────────────────────────────────────────────────────────────────────
 
 type ObjectifMin = { id: number; title: string; status: string };

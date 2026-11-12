@@ -3505,6 +3505,36 @@ const en = {
    ai_monthly_limit_reached: "Monthly AI limit reached: I can't suggest steps right now.",
    erreur: "That didn't go through. Try again.",
   },
+  matin: {
+   titre: "What matters today",
+   rienNeCloche: "Nothing's off this morning. Start with “{{titre}}”.",
+   oublis: {
+    titre: "What has stalled",
+    ligne: "Nothing has moved on “{{objectif}}” for {{jours}} days.",
+    reprise: "To pick it back up: {{titre}}",
+    reprendre: "Pick it up",
+    enCours: "Adding…",
+    fait: "It's in your day.",
+   },
+   allegement: {
+    titre: "A lighter day?",
+    chapo: "Your energy is low. I keep at least one task per priority goal and move the rest to your next days.",
+    alleger: "Lighten my day",
+    pasAujourdhui: "Not today",
+    fait: "Day lightened. You can undo it for 24 h.",
+    annuler: "Undo",
+    annulee: "Your day is back as it was.",
+    nonRemisesUn: "{{n}} task you moved in the meantime stays where you put it.",
+    nonRemises: "{{n}} tasks you moved in the meantime stay where you put them.",
+    erreurs: {
+     expiree: "More than 24 h have passed: I can't undo it anymore.",
+     deja_annulee: "It's already undone.",
+     modifiee: "These tasks have all moved since: I'm leaving them where you put them.",
+    },
+   },
+   nonRattacheesUn: "{{n}} task today isn't linked to any goal.",
+   nonRattachees: "{{n}} tasks today aren't linked to any goal.",
+  },
  },
 };
 

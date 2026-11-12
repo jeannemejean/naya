@@ -1,4 +1,5 @@
 // Logique pure de l'accueil « Aujourd'hui » : aucune dépendance React, aucune requête.
+import type { MatinFil } from "@shared/fil";
 import { lienInterneDeTache } from "@/lib/lien-tache";
 
 export type TacheAccueil = {
@@ -142,4 +143,35 @@ export function ligneEnAttente(n: number): string | null {
  */
 export function doitAllerALOnboarding(q: { isSuccess: boolean; data: unknown }): boolean {
   return q.isSuccess && !q.data;
+}
+
+// ── Le matin du fil conducteur (spec 2026-11-10, §3 et §4) ──────────────────────────────
+
+export type SectionMatin = "tachesCles" | "oublis" | "allegement" | "nonRattachees";
+
+/** Clé i18n de la phrase unique (« Rien ne cloche… »), interpolée avec la première tâche clé. */
+export const CLE_RIEN_NE_CLOCHE = "filConducteur.matin.rienNeCloche";
+
+/**
+ * Ce que le matin montre, dans l'ordre de l'écran. Si rien ne cloche : une seule phrase, sans
+ * liste. Le serveur ne compte pas la journée allégée dans `rienNeCloche` : une proposition
+ * d'allègement en attente passe donc toujours en sections, pour ne jamais être tue.
+ */
+export function resumeMatin(fil: MatinFil): { phraseUnique: string | null; sections: SectionMatin[] } {
+  if (fil.rienNeCloche && !fil.allegement) return { phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [] };
+  const sections: SectionMatin[] = [];
+  if (fil.tachesCles.length > 0) sections.push("tachesCles");
+  if (fil.objectifsOublies.length > 0) sections.push("oublis");
+  if (fil.allegement) sections.push("allegement");
+  if (fil.nonRattachees > 0) sections.push("nonRattachees");
+  return { phraseUnique: null, sections };
+}
+
+/** Fenêtre d'annulation d'une action de l'agent (FENETRE_ANNULATION_MS côté serveur). */
+export const FENETRE_ANNULATION_MS = 24 * 3600 * 1000;
+
+/** « Annuler » reste proposé pendant 24 h après la validation (`valideA` : ISO). */
+export function annulationOuverte(valideA: string, maintenant: Date): boolean {
+  const debut = Date.parse(valideA);
+  return Number.isFinite(debut) && maintenant.getTime() - debut < FENETRE_ANNULATION_MS;
 }

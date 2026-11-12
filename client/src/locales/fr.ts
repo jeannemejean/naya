@@ -3509,6 +3509,36 @@ const fr = {
    ai_monthly_limit_reached: "Plafond IA du mois atteint : je ne peux pas proposer d'étapes pour l'instant.",
    erreur: "Ça n'est pas passé. Réessaie.",
   },
+  matin: {
+   titre: "Ce qui compte aujourd'hui",
+   rienNeCloche: "Rien ne cloche ce matin. Commence par « {{titre}} ».",
+   oublis: {
+    titre: "Ce qui n'avance plus",
+    ligne: "Rien n'a avancé sur « {{objectif}} » depuis {{jours}} jours.",
+    reprise: "Pour reprendre : {{titre}}",
+    reprendre: "Reprendre",
+    enCours: "J'ajoute…",
+    fait: "C'est dans ta journée.",
+   },
+   allegement: {
+    titre: "Une journée plus légère ?",
+    chapo: "Ton énergie est basse. Je garde au moins une tâche par objectif prioritaire et je décale le reste sur tes prochains jours.",
+    alleger: "Alléger ma journée",
+    pasAujourdhui: "Pas aujourd'hui",
+    fait: "Journée allégée. Tu peux revenir en arrière pendant 24 h.",
+    annuler: "Annuler",
+    annulee: "Ta journée est revenue comme avant.",
+    nonRemisesUn: "{{n}} tâche que tu as déplacée entre-temps reste où tu l'as mise.",
+    nonRemises: "{{n}} tâches que tu as déplacées entre-temps restent où tu les as mises.",
+    erreurs: {
+     expiree: "Plus de 24 h ont passé : je ne peux plus revenir en arrière.",
+     deja_annulee: "C'est déjà annulé.",
+     modifiee: "Ces tâches ont toutes bougé depuis : je les laisse où tu les as mises.",
+    },
+   },
+   nonRattacheesUn: "{{n}} tâche du jour n'est rattachée à aucun objectif.",
+   nonRattachees: "{{n}} tâches du jour ne sont rattachées à aucun objectif.",
+  },
  },
 };
 

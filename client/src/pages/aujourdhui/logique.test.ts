@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   prochaineEtape, nonCocheesPassees, indexMaintenant, trierFil, estTacheProspection, capsuleCampagne, chiffreCle,
-  capsulesAffichables, ligneEnAttente, doitAllerALOnboarding, type TacheAccueil,
+  capsulesAffichables, ligneEnAttente, doitAllerALOnboarding, resumeMatin, annulationOuverte, CLE_RIEN_NE_CLOCHE,
+  type TacheAccueil,
 } from "./logique";
+import type { MatinFil } from "@shared/fil";
 
 const t = (id: number, o: Partial<TacheAccueil> = {}): TacheAccueil =>
   ({ id, title: `T${id}`, completed: false, scheduledTime: null, priority: 3, estimatedDuration: 30, ...o });
@@ -111,4 +113,38 @@ describe("doitAllerALOnboarding", () => {
   // Même un null (dernière valeur connue) ne doit pas suffire sans réponse réussie.
   it("requête en erreur → on reste", () =>
     expect(doitAllerALOnboarding({ isSuccess: false, data: null })).toBe(false));
+});
+
+describe("resumeMatin", () => {
+  const cle = { tacheId: 1, titre: "Relancer Léa", pourquoi: "Elle attend ta proposition.", lien: null, score: 80 };
+  const matin = (p: Partial<MatinFil> = {}): MatinFil => ({
+    tachesCles: [cle], objectifsOublies: [], allegement: null, nonRattachees: 0, rienNeCloche: false, ...p,
+  });
+  const oubli = { objectifId: 4, titre: "Lancer le podcast", joursSansTache: 9, reprise: { titre: "20 min sur le pilote", pourquoi: "Un premier pas remet le podcast en route." } };
+
+  it("rien ne cloche : une seule phrase, aucune section", () => {
+    expect(resumeMatin(matin({ rienNeCloche: true }))).toEqual({ phraseUnique: CLE_RIEN_NE_CLOCHE, sections: [] });
+  });
+  it("un objectif oublié : la section « oublis », après les tâches clés", () => {
+    expect(resumeMatin(matin({ objectifsOublies: [oubli] }))).toEqual({ phraseUnique: null, sections: ["tachesCles", "oublis"] });
+  });
+  it("chaque signal a sa section, dans l'ordre de l'écran ; rien de vide n'est montré", () => {
+    expect(resumeMatin(matin({ objectifsOublies: [oubli], allegement: { propositionId: 3 }, nonRattachees: 2 })).sections)
+      .toEqual(["tachesCles", "oublis", "allegement", "nonRattachees"]);
+    expect(resumeMatin(matin({ tachesCles: [], nonRattachees: 1 })).sections).toEqual(["nonRattachees"]);
+    expect(resumeMatin(matin({ tachesCles: [] }))).toEqual({ phraseUnique: null, sections: [] });
+  });
+  it("une journée allégée proposée n'est jamais tue, même si rien d'autre ne cloche", () => {
+    expect(resumeMatin(matin({ rienNeCloche: true, allegement: { propositionId: 3 } })))
+      .toEqual({ phraseUnique: null, sections: ["tachesCles", "allegement"] });
+  });
+});
+
+describe("annulationOuverte", () => {
+  const valideA = "2026-11-12T08:00:00.000Z";
+  it("pendant 24 h après la validation, pas au-delà", () => {
+    expect(annulationOuverte(valideA, new Date("2026-11-13T07:59:00.000Z"))).toBe(true);
+    expect(annulationOuverte(valideA, new Date("2026-11-13T08:00:00.000Z"))).toBe(false);
+    expect(annulationOuverte("pas une date", new Date(valideA))).toBe(false);
+  });
 });
