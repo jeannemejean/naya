@@ -174,6 +174,10 @@ export interface DailyTasksRequest {
   operatingMode?: string; // create | build | grow | explore | maintain
   /** Fil conducteur (FIL_CONDUCTEUR_USERS) : demande etapeIndex et pourquoi par tâche. Absent : prompt inchangé. */
   filConducteur?: boolean;
+  /** Le jour généré (YYYY-MM-DD) : les tâches sont pour CE jour, pas pour la semaine. */
+  date: string;
+  /** Titres déjà planifiés dans la semaine de `date` : à ne pas répéter. */
+  dejaPlanifieesSemaine: string[];
 }
 
 export interface StrategyAnalysisRequest {
@@ -360,6 +364,206 @@ function etapesDuPrompt(etapes?: Array<{ titre: string; pourquoi: string | null 
     `\n    [${j}] "${e.titre}"${e.pourquoi ? ` — why: ${e.pourquoi}` : ''}`).join('');
 }
 
+/**
+ * Prompt de génération d'UNE journée (pur). La journée est générée pour SON jour
+ * (`request.date`) : plus de « semaine à venir » répartie du lundi au vendredi, posée ensuite
+ * sur un seul jour (défaut corrigé le 12 nov. 2026, pour toutes les utilisatrices). Les titres
+ * déjà prévus dans la semaine sont listés pour ne pas être répétés.
+ */
+export function construirePromptJournee(request: DailyTasksRequest, langue: Language = 'fr'): string {
+  const workspaceSection = request.recentWorkspaceNotes
+    ? `\nRECENT THINKING NOTES (use for continuity):\n${request.recentWorkspaceNotes}\n`
+    : '';
+  const rejectedSection = request.rejectedTasksContext
+    ? `\nREJECTED/REMOVED TASKS — Do NOT regenerate similar patterns:\n${request.rejectedTasksContext}\n`
+    : '';
+  const positiveSection = request.positiveEffectivenessContext
+    ? `\nPOSITIVE COMPLETION PATTERNS — Bias toward these when relevant:\n${request.positiveEffectivenessContext}\n`
+    : '';
+
+  // Le jour visé, en clair (« Thursday 2026-11-12 ») : la date seule laisse le modèle deviner.
+  const jour = request.date
+    ? `${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(`${request.date}T12:00:00Z`).getUTCDay()]} ${request.date}`
+    : 'today';
+  const dejaPrevues = Array.from(new Set((request.dejaPlanifieesSemaine ?? []).map((t) => t.trim()).filter(Boolean)));
+  const dejaPrevuesSection = dejaPrevues.length > 0
+    ? `\n═══ ALREADY PLANNED THIS WEEK — déjà prévues cette semaine, ne pas répéter ═══\nDo not generate these again, nor a reworded version of them:\n${dejaPrevues.map((t) => `- ${t}`).join('\n')}\n`
+    : '';
+
+  const workDayStart = request.workDayStart || '09:00';
+  const workDayEnd = request.workDayEnd || '18:00';
+  const maxTasks = request.maxTasks || 5;
+
+  const energyBlock = (() => {
+    const el = request.energyLevel;
+    if (!el || el === 'high') return '';
+    const emotionalNote = request.emotionalContext
+      ? `- Emotional context: "${request.emotionalContext}"`
+      : '';
+    const isGriefOrRecovery = request.emotionalContext &&
+      /grief|recovery|loss|mourning|burnout/i.test(request.emotionalContext);
+    const griefBlock = isGriefOrRecovery
+      ? `\nGRIEF/RECOVERY MODE ACTIVE:
+- Use reduced urgency in ALL task descriptions. Remove words like "urgent", "critical", "must".
+- Suggest only 1-2 anchor tasks that feel safe and grounding.
+- Frame tasks as invitations, not obligations: "When you're ready…", "If it feels right…"
+- Include at least one reflection or self-care task.`
+      : '';
+    const rules: Record<string, string> = {
+      medium: `\nENERGY LEVEL: MEDIUM — User has moderate energy today.
+- Reduce deep_work tasks to max 1-2. Bias toward admin, creative, and execution tasks.
+- Keep descriptions practical and grounded. No ambitious language.
+${emotionalNote}`,
+      low: `\nENERGY LEVEL: LOW — User has limited energy today.
+- Maximum ${maxTasks} tasks total. Bias toward admin and creative taskEnergyType over deep_work.
+- Use gentle, supportive language. Frame as "just this one thing" or "start small."
+- Avoid deep_work tasks entirely unless absolutely critical.
+${emotionalNote}${griefBlock}`,
+      depleted: `\nENERGY LEVEL: DEPLETED — User needs rest.
+- Maximum ${maxTasks} tasks. Prioritize admin and creative taskEnergyType. No deep_work.
+- Use compassionate language. Give explicit permission to rest. Frame tasks as optional.
+- Include at least one self-care or reflection task.
+${emotionalNote}${griefBlock}`,
+    };
+    return rules[el] || '';
+  })();
+  const breaksBlock = request.breaks && request.breaks.length > 0
+    ? `Scheduled breaks:\n${request.breaks.map(b => `- ${b.start}–${b.end}${b.label ? ` (${b.label})` : ''}`).join('\n')}`
+    : 'No scheduled breaks.';
+
+  const goalsBlock = request.activeGoals && request.activeGoals.length > 0
+    ? `\n═══ ACTIVE GOALS FOR THIS PROJECT ═══\n${request.activeGoals.map((g, i) =>
+        `[${i}] "${g.title}" — type: ${g.goalType}, success mode: ${g.successMode}${g.dueDate ? `, due: ${new Date(g.dueDate).toISOString().slice(0, 10)}` : ''}`
+        + (request.filConducteur ? etapesDuPrompt(g.etapes) : '')
+      ).join('\n')}\n`
+    : '';
+  // Fil conducteur : la tâche nomme son étape et dit ce qu'elle débloque. Hors fil : rien.
+  // Sous le fil, l'exemple et la règle de goalIndex sont REMPLACÉS (pas de « 0 par défaut ») ;
+  // hors fil, texte d'origine au caractère près.
+  const exempleGoalIndex = request.filConducteur
+    ? `"goalIndex": "<integer index of the goal this task serves — omit this key if none>",`
+    : `"goalIndex": 0,`;
+  const regleGoalIndex = request.filConducteur
+    ? `goalIndex must be the ZERO-BASED integer index of the goal the task serves (0 to N-1). Omit goalIndex when the task serves none of the listed goals or when no goals are provided — never default to 0.`
+    : `goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.`;
+  const filChamps = request.filConducteur
+    ? `\n      "etapeIndex": 0,\n      "pourquoi": "One sentence naming the step (or the goal) and what this task unblocks",`
+    : '';
+  const filRegles = request.filConducteur
+    ? `\n\n═══ STEP AND WHY — required for every task ═══
+"etapeIndex" is the ZERO-BASED index of the current step, in the list "current step(s)" under the goal chosen by "goalIndex".
+Omit "etapeIndex" when that goal lists no current step, or when goalIndex is omitted.
+"pourquoi" is ONE sentence, in the account language, that names the step or the goal and says what this task unblocks
+(e.g. "Sans ce devis signé, l'étape « 1er client IN SCENA » reste bloquée"). Never a generic phrase like "pour avancer ton objectif".`
+    : '';
+
+  const operatingModeBlock = (() => {
+    const mode = request.operatingMode?.toLowerCase();
+    if (!mode) return '';
+    const mixes: Record<string, string> = {
+      create:   'Task mix for CREATE mode: 40% deep creation (building, designing the offer or product), 30% strategy & planning, 30% research. Minimize admin this week.',
+      build:    'Task mix for BUILD mode: 60% execution (implementing, producing, delivering), 40% planning & coordination. Ship things.',
+      grow:     'Task mix for GROW mode: 40% offer & sales-process refinement, 30% client relationships and delivery, 30% partnerships and growth strategy. Zero exploration or major new features.',
+      explore:  'Task mix for EXPLORE mode: 40% research & discovery, 40% small experiments & prototypes, 20% documentation. No premature execution of unvalidated ideas.',
+      maintain: 'Task mix for MAINTAIN mode: 50% client & customer relationships, 30% operational & admin, 20% selective visibility content. No major new initiatives.',
+    };
+    return mixes[mode]
+      ? `\n═══ PROJECT OPERATING MODE: ${mode.toUpperCase()} ═══\n${mixes[mode]}\nThis directive overrides generic task variety — optimize the task mix for the current mode.\n`
+      : '';
+  })();
+
+  return `Your job is NOT to generate a generic to-do list. Your job is to identify the highest-leverage moves for this specific business for ONE DAY — ${jour} — expressed as concrete, executable actions that reference the founder's actual offers, audience, voice, and positioning.
+
+IMPORTANT: Generate the tasks for THIS DAY ONLY (tâches pour CE jour : ${jour}). Every task you return is done on that day — never a plan for the whole week. Each task should be unique and different. DO NOT repeat similar tasks. Ensure variety in types of actions (strategy, offer, product, client delivery, planning, admin, etc.).
+${dejaPrevuesSection}
+Every task must be so specific it could only apply to THIS person. If a task could apply to any business, it is wrong.
+
+═══ WORKING HOURS ═══
+Work day: ${workDayStart} – ${workDayEnd}
+${breaksBlock}
+
+═══ CURRENT STATE ═══
+- Content created recently: ${request.recentContent.length} | Outreach sent: ${request.recentOutreach.length} | Completed recently: ${request.completedTasksToday.length}
+${workspaceSection}
+${rejectedSection}
+${positiveSection}
+${energyBlock}
+
+═══ NAYA'S 5-STEP STRATEGIC REASONING ═══
+
+Before generating tasks, work through each step:
+
+STEP 1 — GOAL ANCHOR: Review the active goals indexed below.${goalsBlock}For each task, decide which goal index [0–N] it primarily advances. Tasks that don't advance any listed goal are NOT acceptable. What does a winning day look like for each goal?
+
+STEP 2 — HIGHEST LEVERAGE: Given this business's offers, audience pain point, and platform, what action categories move the needle most ON THIS DAY? Ensure variety across: offer refinement | product | client delivery | relationship nurturing with existing clients and partners | operational | strategy.${operatingModeBlock}
+
+STEP 3 — TASK SELECTION: Pick up to ${maxTasks} DIVERSE tasks for this day. Each task must: (a) directly advance the goal, (b) reference the actual offer or positioning, (c) serve the actual audience or clients, (d) be DIFFERENT from other tasks, (e) be neither content creation nor prospecting (see scope below). Ensure variety in task types and approaches. If any answer is no — rewrite.
+
+STEP 4 — SPECIFICITY CHECK: Every task title must name WHAT specifically (which offer, which client, which decision, which deliverable). Tasks that could apply to any business fail this check.
+
+STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${workDayEnd}. Deep work first (morning). Each task starts exactly when the previous ends (scheduledTime + estimatedDuration). Zero overlaps.
+
+═══ WHAT NOT TO GENERATE ═══
+
+${exemplesTitres(langue)}
+❌ Any content-creation task (post, carousel, reel, script, newsletter, visual) — the content calendar handles it.
+❌ Any prospecting task (identify prospects, DMs, outreach messages, follow-ups) — the prospecting pipeline handles it.
+
+═══ OUTPUT FORMAT — JSON only ═══
+
+{
+  "focus": "Strategic focus — name the exact goal move and who it serves",
+  "reasoning": "2-3 sentences: why these specific DIVERSE tasks are the right moves for this day, ensuring variety and progression",
+  "tasks": [
+    {
+      ${exempleGoalIndex}${filChamps}
+      "title": "Specific first-physical-action (not the outcome)",
+      "description": "Step-by-step. Must reference the actual business: offer, audience pain point, platform, brand voice. Specific enough to execute without thinking.",
+      "type": "admin|planning|execution",
+      "category": "trust|conversion|engagement|planning|visibility",
+      "priority": 1,
+      "estimatedDuration": 45,
+      "taskEnergyType": "deep_work|creative|admin|social|logistics|execution",
+      "setupCost": "low|medium|high",
+      "canBeFragmented": false,
+      "recommendedTimeOfDay": "morning|afternoon|evening|flexible",
+      "scheduledTime": "09:00",
+      "workflowGroup": "strategy|product|client|admin|general",
+      "activationPrompt": "One sentence that gets them started in 30 seconds"
+    }
+  ],
+  "dependencies": [{ "taskIndex": 1, "dependsOnIndex": 0, "relationType": "blocked_by" }],
+  "workflowSuggestions": []
+}
+
+═══ DEPENDENCIES — read this, it is not optional ═══
+
+"dependencies" declares which tasks CANNOT start before another one is done. Both fields are
+ZERO-BASED INDEXES into the "tasks" array you just wrote above — not titles, not ids.
+"taskIndex" is the task that is blocked; "dependsOnIndex" is its prerequisite.
+
+Example: if tasks[0] is "Send the proposal" and tasks[1] is "Price the proposal",
+then sending depends on pricing, so you emit:
+  { "taskIndex": 0, "dependsOnIndex": 1, "relationType": "blocked_by" }
+
+Declare a dependency EVERY time one task produces what another one consumes: draft before
+send, research before decide, quote before invoice, deliver before invoice.
+An empty array means every task is genuinely independent — say so only when it is true.
+Never make a task depend on itself. Every index must exist in the tasks array.
+
+Each description must be understandable on its own. Never refer to another task by number
+("Task 2", "task #1"); if you refer to another task, quote its exact title.
+A prerequisite (dependsOnIndex) must have an EARLIER scheduledDate/scheduledTime than the task
+that depends on it.
+
+RULES: At most ${maxTasks} tasks — fewer is fine when the scope leaves less to do; never pad.
+scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. workflowGroup
+must be one of the 5 exact values listed above — never null. No markdown fences in output.
+${regleGoalIndex}${filRegles}
+
+${consignesGenerateur(langue)}`;
+}
+
 export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
   focus: string;
   reasoning: string;
@@ -401,15 +605,6 @@ export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
     const monetizationIntent = request.projectContext?.monetizationIntent;
     const langue = await langueDuCompte(request.userId);
 
-    const workspaceSection = request.recentWorkspaceNotes
-      ? `\nRECENT THINKING NOTES (use for continuity):\n${request.recentWorkspaceNotes}\n`
-      : '';
-    const rejectedSection = request.rejectedTasksContext
-      ? `\nREJECTED/REMOVED TASKS — Do NOT regenerate similar patterns:\n${request.rejectedTasksContext}\n`
-      : '';
-    const positiveSection = request.positiveEffectivenessContext
-      ? `\nPOSITIVE COMPLETION PATTERNS — Bias toward these when relevant:\n${request.positiveEffectivenessContext}\n`
-      : '';
     const profileSection = request.operatingProfileSummary
       ? `\nUSER BEHAVIORAL PROFILE:\n${request.operatingProfileSummary}\n`
       : '';
@@ -459,178 +654,7 @@ export async function generateDailyTasks(request: DailyTasksRequest): Promise<{
       return '';
     })();
 
-    const workDayStart = request.workDayStart || '09:00';
-    const workDayEnd = request.workDayEnd || '18:00';
-    const maxTasks = request.maxTasks || 5;
-
-    const energyBlock = (() => {
-      const el = request.energyLevel;
-      if (!el || el === 'high') return '';
-      const emotionalNote = request.emotionalContext
-        ? `- Emotional context: "${request.emotionalContext}"`
-        : '';
-      const isGriefOrRecovery = request.emotionalContext &&
-        /grief|recovery|loss|mourning|burnout/i.test(request.emotionalContext);
-      const griefBlock = isGriefOrRecovery
-        ? `\nGRIEF/RECOVERY MODE ACTIVE:
-- Use reduced urgency in ALL task descriptions. Remove words like "urgent", "critical", "must".
-- Suggest only 1-2 anchor tasks that feel safe and grounding.
-- Frame tasks as invitations, not obligations: "When you're ready…", "If it feels right…"
-- Include at least one reflection or self-care task.`
-        : '';
-      const rules: Record<string, string> = {
-        medium: `\nENERGY LEVEL: MEDIUM — User has moderate energy today.
-- Reduce deep_work tasks to max 1-2. Bias toward admin, creative, and execution tasks.
-- Keep descriptions practical and grounded. No ambitious language.
-${emotionalNote}`,
-        low: `\nENERGY LEVEL: LOW — User has limited energy today.
-- Maximum ${maxTasks} tasks total. Bias toward admin and creative taskEnergyType over deep_work.
-- Use gentle, supportive language. Frame as "just this one thing" or "start small."
-- Avoid deep_work tasks entirely unless absolutely critical.
-${emotionalNote}${griefBlock}`,
-        depleted: `\nENERGY LEVEL: DEPLETED — User needs rest.
-- Maximum ${maxTasks} tasks. Prioritize admin and creative taskEnergyType. No deep_work.
-- Use compassionate language. Give explicit permission to rest. Frame tasks as optional.
-- Include at least one self-care or reflection task.
-${emotionalNote}${griefBlock}`,
-      };
-      return rules[el] || '';
-    })();
-    const breaksBlock = request.breaks && request.breaks.length > 0
-      ? `Scheduled breaks:\n${request.breaks.map(b => `- ${b.start}–${b.end}${b.label ? ` (${b.label})` : ''}`).join('\n')}`
-      : 'No scheduled breaks.';
-
-    const goalsBlock = request.activeGoals && request.activeGoals.length > 0
-      ? `\n═══ ACTIVE GOALS FOR THIS PROJECT ═══\n${request.activeGoals.map((g, i) =>
-          `[${i}] "${g.title}" — type: ${g.goalType}, success mode: ${g.successMode}${g.dueDate ? `, due: ${new Date(g.dueDate).toISOString().slice(0, 10)}` : ''}`
-          + (request.filConducteur ? etapesDuPrompt(g.etapes) : '')
-        ).join('\n')}\n`
-      : '';
-    // Fil conducteur : la tâche nomme son étape et dit ce qu'elle débloque. Hors fil : rien.
-    // Sous le fil, l'exemple et la règle de goalIndex sont REMPLACÉS (pas de « 0 par défaut ») ;
-    // hors fil, texte d'origine au caractère près.
-    const exempleGoalIndex = request.filConducteur
-      ? `"goalIndex": "<integer index of the goal this task serves — omit this key if none>",`
-      : `"goalIndex": 0,`;
-    const regleGoalIndex = request.filConducteur
-      ? `goalIndex must be the ZERO-BASED integer index of the goal the task serves (0 to N-1). Omit goalIndex when the task serves none of the listed goals or when no goals are provided — never default to 0.`
-      : `goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.`;
-    const filChamps = request.filConducteur
-      ? `\n      "etapeIndex": 0,\n      "pourquoi": "One sentence naming the step (or the goal) and what this task unblocks",`
-      : '';
-    const filRegles = request.filConducteur
-      ? `\n\n═══ STEP AND WHY — required for every task ═══
-"etapeIndex" is the ZERO-BASED index of the current step, in the list "current step(s)" under the goal chosen by "goalIndex".
-Omit "etapeIndex" when that goal lists no current step, or when goalIndex is omitted.
-"pourquoi" is ONE sentence, in the account language, that names the step or the goal and says what this task unblocks
-(e.g. "Sans ce devis signé, l'étape « 1er client IN SCENA » reste bloquée"). Never a generic phrase like "pour avancer ton objectif".`
-      : '';
-
-    const operatingModeBlock = (() => {
-      const mode = request.operatingMode?.toLowerCase();
-      if (!mode) return '';
-      const mixes: Record<string, string> = {
-        create:   'Task mix for CREATE mode: 40% deep creation (building, designing the offer or product), 30% strategy & planning, 30% research. Minimize admin this week.',
-        build:    'Task mix for BUILD mode: 60% execution (implementing, producing, delivering), 40% planning & coordination. Ship things.',
-        grow:     'Task mix for GROW mode: 40% offer & sales-process refinement, 30% client relationships and delivery, 30% partnerships and growth strategy. Zero exploration or major new features.',
-        explore:  'Task mix for EXPLORE mode: 40% research & discovery, 40% small experiments & prototypes, 20% documentation. No premature execution of unvalidated ideas.',
-        maintain: 'Task mix for MAINTAIN mode: 50% client & customer relationships, 30% operational & admin, 20% selective visibility content. No major new initiatives.',
-      };
-      return mixes[mode]
-        ? `\n═══ PROJECT OPERATING MODE: ${mode.toUpperCase()} ═══\n${mixes[mode]}\nThis directive overrides generic task variety — optimize the task mix for the current mode.\n`
-        : '';
-    })();
-
-    const prompt = `Your job is NOT to generate a generic to-do list. Your job is to identify the highest-leverage moves for this specific business for THE WEEK AHEAD — expressed as concrete, executable actions that reference the founder's actual offers, audience, voice, and positioning.
-
-IMPORTANT: Generate DIVERSE tasks that will be distributed across the week (Monday-Friday). Each task should be unique and different. DO NOT repeat similar tasks. Ensure variety in types of actions (strategy, offer, product, client delivery, planning, admin, etc.).
-
-Every task must be so specific it could only apply to THIS person. If a task could apply to any business, it is wrong.
-
-═══ WORKING HOURS ═══
-Work day: ${workDayStart} – ${workDayEnd}
-${breaksBlock}
-
-═══ CURRENT STATE ═══
-- Content created recently: ${request.recentContent.length} | Outreach sent: ${request.recentOutreach.length} | Completed recently: ${request.completedTasksToday.length}
-${workspaceSection}
-${rejectedSection}
-${positiveSection}
-${energyBlock}
-
-═══ NAYA'S 5-STEP STRATEGIC REASONING ═══
-
-Before generating tasks, work through each step:
-
-STEP 1 — GOAL ANCHOR: Review the active goals indexed below.${goalsBlock}For each task, decide which goal index [0–N] it primarily advances. Tasks that don't advance any listed goal are NOT acceptable. What does a winning week look like for each goal?
-
-STEP 2 — HIGHEST LEVERAGE: Given this business's offers, audience pain point, and platform, what action categories move the needle most THIS WEEK? Ensure variety across: offer refinement | product | client delivery | relationship nurturing with existing clients and partners | operational | strategy.${operatingModeBlock}
-
-STEP 3 — TASK SELECTION: Pick up to ${maxTasks} DIVERSE tasks that will be spread across the week. Each task must: (a) directly advance the goal, (b) reference the actual offer or positioning, (c) serve the actual audience or clients, (d) be DIFFERENT from other tasks, (e) be neither content creation nor prospecting (see scope below). Ensure variety in task types and approaches. If any answer is no — rewrite.
-
-STEP 4 — SPECIFICITY CHECK: Every task title must name WHAT specifically (which offer, which client, which decision, which deliverable). Tasks that could apply to any business fail this check.
-
-STEP 5 — SCHEDULE: Assign scheduledTime values within ${workDayStart}–${workDayEnd}. Deep work first (morning). Each task starts exactly when the previous ends (scheduledTime + estimatedDuration). Zero overlaps.
-
-═══ WHAT NOT TO GENERATE ═══
-
-${exemplesTitres(langue)}
-❌ Any content-creation task (post, carousel, reel, script, newsletter, visual) — the content calendar handles it.
-❌ Any prospecting task (identify prospects, DMs, outreach messages, follow-ups) — the prospecting pipeline handles it.
-
-═══ OUTPUT FORMAT — JSON only ═══
-
-{
-  "focus": "Strategic focus — name the exact goal move and who it serves",
-  "reasoning": "2-3 sentences: why these specific DIVERSE tasks are the right moves for the week ahead, ensuring variety and progression",
-  "tasks": [
-    {
-      ${exempleGoalIndex}${filChamps}
-      "title": "Specific first-physical-action (not the outcome)",
-      "description": "Step-by-step. Must reference the actual business: offer, audience pain point, platform, brand voice. Specific enough to execute without thinking.",
-      "type": "admin|planning|execution",
-      "category": "trust|conversion|engagement|planning|visibility",
-      "priority": 1,
-      "estimatedDuration": 45,
-      "taskEnergyType": "deep_work|creative|admin|social|logistics|execution",
-      "setupCost": "low|medium|high",
-      "canBeFragmented": false,
-      "recommendedTimeOfDay": "morning|afternoon|evening|flexible",
-      "scheduledTime": "09:00",
-      "workflowGroup": "strategy|product|client|admin|general",
-      "activationPrompt": "One sentence that gets them started in 30 seconds"
-    }
-  ],
-  "dependencies": [{ "taskIndex": 1, "dependsOnIndex": 0, "relationType": "blocked_by" }],
-  "workflowSuggestions": []
-}
-
-═══ DEPENDENCIES — read this, it is not optional ═══
-
-"dependencies" declares which tasks CANNOT start before another one is done. Both fields are
-ZERO-BASED INDEXES into the "tasks" array you just wrote above — not titles, not ids.
-"taskIndex" is the task that is blocked; "dependsOnIndex" is its prerequisite.
-
-Example: if tasks[0] is "Send the proposal" and tasks[1] is "Price the proposal",
-then sending depends on pricing, so you emit:
-  { "taskIndex": 0, "dependsOnIndex": 1, "relationType": "blocked_by" }
-
-Declare a dependency EVERY time one task produces what another one consumes: draft before
-send, research before decide, quote before invoice, deliver before invoice.
-An empty array means every task is genuinely independent — say so only when it is true.
-Never make a task depend on itself. Every index must exist in the tasks array.
-
-Each description must be understandable on its own. Never refer to another task by number
-("Task 2", "task #1"); if you refer to another task, quote its exact title.
-A prerequisite (dependsOnIndex) must have an EARLIER scheduledDate/scheduledTime than the task
-that depends on it.
-
-RULES: At most ${maxTasks} tasks — fewer is fine when the scope leaves less to do; never pad.
-scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. workflowGroup
-must be one of the 5 exact values listed above — never null. No markdown fences in output.
-${regleGoalIndex}${filRegles}
-
-${consignesGenerateur(langue)}`;
+    const prompt = construirePromptJournee(request, langue);
 
     const raw = await callClaudeWithContext({
       userId: request.userId,

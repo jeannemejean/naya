@@ -18,6 +18,7 @@ import { passageAtelierMatin, preRedactionMatin } from './atelier/deps';
 import { storage } from '../storage';
 import { ajouterDependance } from './dependances';
 import { generateDailyTasks } from './openai';
+import { bornesSemaine, titresDejaPlanifies } from './semaine-planifiee';
 import { buildNayaContext } from './naya-context';
 import { CLAUDE_MODELS, callClaude } from './claude';
 import { getCalendarBlockedRanges } from './google-calendar';
@@ -318,6 +319,13 @@ async function generateForUser(userId: string, dateStr: string, fil?: { carte: C
   if (capaciteDuJour === 0) return;
   const capsParProjet = repartirCapaciteDuJour(projectsToProcess as any[], capaciteDuJour);
 
+  // Titres déjà posés dans la semaine (lundi → dimanche) de ce jour : les journées sont
+  // générées l'une après l'autre, celles d'avant y figurent déjà. Le modèle ne les répète pas.
+  const [lundi, dimanche] = bornesSemaine(dateStr);
+  const dejaPlanifieesSemaine = titresDejaPlanifies(
+    await storage.getTasksInRange(userId, lundi, dimanche).catch(() => existingForDate as any[]) as any[],
+  );
+
   // 9. Slot-collision guard: tâches existantes + pause déjeuner + calendrier Google
   const blockedRanges = buildBlockedRanges(scheduledForToday, prefs);
   const calBlocked = await getCalendarBlockedRanges(userId, dateStr).catch(() => []);
@@ -418,6 +426,8 @@ async function generateForUser(userId: string, dateStr: string, fil?: { carte: C
           ...(fil ? { etapes: (etapesParObjectif.get(g.id) ?? []).map(({ titre, pourquoi }) => ({ titre, pourquoi })) } : {}),
         })),
         ...(fil ? { filConducteur: true } : {}),
+        date: dateStr,
+        dejaPlanifieesSemaine,
         weeklyGoals: {},
         completedTasksToday: [],
         workDayStart,

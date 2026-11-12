@@ -40,6 +40,7 @@ import { compteDePublication, porteeDuProjet } from "./services/connexions/compt
 import { dansPortee } from "./services/connexions/portee";
 import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
 import { controleProjetCampagne, controleChangementNature } from "./services/connexions/campagne";
+import { titresDejaPlanifies } from "./services/semaine-planifiee";
 import { tracerEditionMessages, tracerValidation, messagesARevoir, accepterMessagesARevoir } from "./services/prospection/edition-lead";
 import { 
   generateContent, 
@@ -4838,6 +4839,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       maxTasks?: number,
       founderEnergyLevel?: string,
       founderEmotionalContext?: string,
+      date?: string,
+      dejaPlanifieesSemaine: string[] = [],
     ) {
       const brandDnaInput = {
         businessType: brandDna.businessType,
@@ -4904,6 +4907,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           maxTasks,
           energyLevel: founderEnergyLevel,
           emotionalContext: founderEmotionalContext,
+          // La journée générée est celle de `date` ; la semaine déjà posée n'est pas répétée.
+          date: date ?? parseClientToday({}),
+          dejaPlanifieesSemaine,
         });
       } catch (aiError: any) {
         console.error("Claude AI error lors de la génération de tâches:", aiError.message);
@@ -5193,6 +5199,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             rejectedTasksContext, operatingProfileSummary, positiveEffectivenessContext,
             workDayStartStr, workDayEndStr, todayBreaks, capForProject(proj),
             energyLevel, isEnergyStale ? undefined : (prefs?.currentEmotionalContext || undefined),
+            todayStr, titresDejaPlanifies(existingWeekTasks),
           );
         } catch (projError: any) {
           console.error(`Task generation failed for project ${proj.id} (${proj.name}):`, projError.message);
@@ -6561,6 +6568,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         personaContext,
         recentWorkspaceNotes: replanSignal,
         rejectedTasksContext: replanInstruction,
+        date: today,
+        dejaPlanifieesSemaine: titresDejaPlanifies(pendingTasks as any[]),
       });
 
       res.json({
