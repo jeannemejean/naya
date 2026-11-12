@@ -691,3 +691,22 @@ rafraîchit les champs de veille sans jamais réécrire statut ni notes.
       8 « premier jet prêt », 35 à venir.
 - [x] `essai-0039-2026-11-10` supprimée le 10 novembre 2026.
 - [ ] Pousser `main` (migration d'abord).
+
+## 13. Fil conducteur — `0040` à appliquer en prod à la main
+
+Fichier : `migrations/0040_massive_chimera.sql` (branche `feat/fil-conducteur`). Quatre `ADD COLUMN` nullables,
+une clé étrangère, un index : aucun `DROP`, aucune donnée réécrite.
+
+- `project_milestones.goal_id` (integer, FK `project_goals.id` en `ON DELETE set null`, index `project_milestones_goal_idx`),
+  `project_milestones.pourquoi` (text), `tasks.pourquoi` (text), `user_preferences.fil_conducteur_depuis` (timestamp).
+- Appliquée sur dev-local `ep-jolly-sky` ; pas encore en production.
+- **Ordre impératif : migration AVANT de pousser `main`** (le schéma Drizzle sélectionne ces colonnes).
+- Procédure habituelle : point de restauration Neon, répétition sur branche d'essai, puis `scripts/migrate-prod.ts`.
+
+### Vérification après application
+
+```sql
+select table_name, column_name from information_schema.columns
+ where (table_name, column_name) in (('project_milestones','goal_id'),('project_milestones','pourquoi'),
+       ('tasks','pourquoi'),('user_preferences','fil_conducteur_depuis'));  -- 4 lignes
+```

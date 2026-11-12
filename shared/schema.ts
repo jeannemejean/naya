@@ -233,6 +233,8 @@ export const userPreferences = pgTable("user_preferences", {
   linkedinRestrictedReason: text("linkedin_restricted_reason"),
   // Consignes de rédaction GLOBALES pour la génération de messages de prospection (toutes campagnes).
   messageInstructions: text("message_instructions"),
+  // Fil conducteur : date de mise en route (posée une seule fois, jamais recalculée).
+  filConducteurDepuis: timestamp("fil_conducteur_depuis"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -540,6 +542,7 @@ export const tasks = pgTable("tasks", {
   completedAt: timestamp("completed_at"),
   archivedAt: timestamp("archived_at"), // « ignorer/archiver » une tâche en retard non planifiée
   clientId: integer("client_id").references(() => clients.id),
+  pourquoi: text("pourquoi"), // fil conducteur : en quoi cette tâche sert l'étape
 }, (t) => [
   uniqueIndex("tasks_ritual_date_uq").on(t.ritualId, t.scheduledDate),
 ]);
@@ -1153,8 +1156,11 @@ export const projectMilestones = pgTable("project_milestones", {
   activatedAt: timestamp("activated_at"),
   completedAt: timestamp("completed_at"),
   targetDate: text("target_date"),
+  // Fil conducteur : objectif que cette étape sert, et la raison d'être de l'étape.
+  goalId: integer("goal_id").references(() => projectGoals.id, { onDelete: "set null" }),
+  pourquoi: text("pourquoi"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [index("project_milestones_goal_idx").on(t.goalId)]);
 
 export const milestoneConditions = pgTable("milestone_conditions", {
   id: serial("id").primaryKey(),
