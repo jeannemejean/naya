@@ -1,7 +1,8 @@
 // Clôture du vendredi et réconciliation du lundi (spec §7, point 7, et §8 « Le message »).
 //
 // Clôture du vendredi (jour de Paris) : les tâches ouvertes depuis plus de 7 jours (non faites,
-// non archivées, créées avant le début du jour d'il y a 7 jours) sont listées au matin pour être
+// non archivées, créées avant le début du jour d'il y a 7 jours, sans date ou prévues au plus tard
+// aujourd'hui, pas déjà tranchées cette semaine) sont listées au matin pour être
 // tranchées : faire aujourd'hui, déplacer, abandonner. Naya ne tranche JAMAIS seule : chaque geste
 // vient de Jeanne (POST /api/fil/trancher). Jamais listées : les rituels (`ritualId`), les marqueurs
 // de jalon (`type: milestone`), les tâches à heure fixe (`schedulingMode: fixed` : rituels et
@@ -10,7 +11,11 @@
 // Le vendredi, le passage du matin pose aussi UNE tâche de 15 min « Trancher les {n} tâches
 // ouvertes », rattachée à rien, une fois par semaine ISO : la clé est en base (source
 // `fil_cloture` + `actionData.cloture.semaine` = le lundi), donc un redémarrage n'en crée pas
-// une deuxième, même cochée ou archivée (supprimée, la clé disparaît avec elle).
+// une deuxième, même cochée ou archivée (supprimée, la clé disparaît avec elle). Deux passages
+// simultanés ne sont pas gardés en base : le planificateur ne tourne qu'une fois à la fois
+// (`isAutoplannerRunning`, garde du processus) et c'est son seul appelant.
+// Chaque geste (faire, déplacer, abandonner) pose `actionData.cloture.tranchee` = le lundi de la
+// semaine : la tâche sort de la liste de ce vendredi, et peut revenir le suivant si elle reste ouverte.
 //
 // Réconciliation du lundi : les incohérences entre ce qui attend et les tâches censées s'en occuper.
 // - reponses : une conversation `a_traiter` sans tâche (aucune, supprimée ou archivée), ou dont
@@ -47,17 +52,29 @@ const jourDeSemaine = (jour: string) => new Date(`${jour}T12:00:00Z`).getUTCDay(
 const ecartJours = (de: string, a: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / JOUR_MS);
 
 /** Ce qui n'est jamais à trancher : rituels, marqueurs de jalon, heure fixe, la clôture elle-même. */
-const horsCloture = (t: Task) => (t as any).ritualId != null || t.type === "milestone"
+const horsCloture = (t: Task) => t.ritualId != null || t.type === "milestone"
   || t.schedulingMode === "fixed" || t.source === SOURCE_CLOTURE;
+
+/** Le lundi de la semaine où la tâche a déjà été tranchée (`actionData.cloture.tranchee`), ou null. */
+export const trancheeLaSemaine = (t: Pick<Task, "actionData">): string | null => {
+  const v = (t.actionData as any)?.cloture?.tranchee;
+  return typeof v === "string" ? v : null;
+};
 
 // ── Clôture du vendredi ────────────────────────────────────────────────────────────────
 
-/** Les tâches ouvertes depuis plus de 7 jours (jours de Paris), le vendredi seulement ; sinon []. */
+/**
+ * Les tâches ouvertes depuis plus de 7 jours (jours de Paris), le vendredi seulement ; sinon [].
+ * Jamais : une tâche prévue après aujourd'hui (déjà placée plus tard : rien à trancher), ni une
+ * tâche déjà tranchée cette semaine (elle peut revenir la semaine suivante si elle reste ouverte).
+ */
 export function aTrancher(taches: Task[], maintenant: Date): ATrancher[] {
   const aujourdhui = parisTodayString(maintenant);
   if (jourDeSemaine(aujourdhui) !== VENDREDI) return [];
+  const semaine = lundiDe(aujourdhui);
   return taches
-    .filter((t) => !t.completed && !t.archivedAt && t.createdAt && !horsCloture(t))
+    .filter((t) => !t.completed && !t.archivedAt && t.createdAt && !horsCloture(t)
+      && !(t.scheduledDate && t.scheduledDate > aujourdhui) && trancheeLaSemaine(t) !== semaine)
     .map((t) => ({ tacheId: t.id, titre: t.title, ouverteDepuis: ecartJours(parisTodayString(new Date(t.createdAt!)), aujourdhui) }))
     .filter((x) => x.ouverteDepuis > JOURS_OUVERTE)
     .sort((a, b) => b.ouverteDepuis - a.ouverteDepuis || a.tacheId - b.tacheId);
@@ -66,8 +83,8 @@ export function aTrancher(taches: Task[], maintenant: Date): ATrancher[] {
 export const titreCloture = (n: number) => (n === 1 ? "Trancher la tâche ouverte" : `Trancher les ${n} tâches ouvertes`);
 
 export interface DepsCloture {
-  /** Tâches non faites, non archivées, créées avant cet instant (tous projets). */
-  tachesOuvertes(userId: string, creeesAvant: Date): Promise<Task[]>;
+  /** Tâches non faites, non archivées, créées avant cet instant, sans date ou prévues au plus tard ce jour (tous projets). */
+  tachesOuvertes(userId: string, creeesAvant: Date, aujourdhui: string): Promise<Task[]>;
   /** Une tâche de clôture existe-t-elle déjà pour cette semaine (lundi YYYY-MM-DD), quel que soit son état ? */
   clotureDejaPosee(userId: string, semaine: string): Promise<boolean>;
   creerTache(userId: string, donnees: Record<string, unknown>): Promise<{ ok: true; tache: Task } | Refus>;
@@ -82,7 +99,7 @@ export async function clotureDuVendredi(userId: string, maintenant: Date, deps?:
   const d = deps ?? (await depsClotureParDefaut());
   // Ouverte depuis plus de 7 jours = créée avant le début (Paris) du jour d'il y a 7 jours.
   const avant = parisDayBoundsUTC(plusJours(aujourdhui, -JOURS_OUVERTE)).start;
-  return aTrancher(await d.tachesOuvertes(userId, avant), maintenant);
+  return aTrancher(await d.tachesOuvertes(userId, avant, aujourdhui), maintenant);
 }
 
 /**
@@ -132,6 +149,8 @@ export interface DepsTrancher {
   lireTache(userId: string, id: number): Promise<Task | undefined>;
   modifierTache(userId: string, id: number, patch: Record<string, unknown>): Promise<{ ok: true; tache: Task } | Refus>;
   archiverTache(userId: string, id: number): Promise<{ ok: true; tache: Task } | Refus>;
+  /** Pose `actionData.cloture.tranchee = semaine` (fusion, le reste d'actionData intact). */
+  marquerTranchee(userId: string, id: number, semaine: string): Promise<void>;
 }
 
 /**
@@ -151,9 +170,19 @@ export async function trancher(userId: string, demande: DemandeTrancher, mainten
   const t = await deps.lireTache(userId, demande.tacheId);
   if (!t) return { ok: false, status: 404, message: "task_not_found" };
   if (t.completed || t.archivedAt) return { ok: false, status: 409, message: "deja_tranchee" };
-  if (demande.geste === "abandonner") return deps.archiverTache(userId, t.id);
-  const r = await deps.modifierTache(userId, t.id, { scheduledDate: date, scheduledTime: null, scheduledEndTime: null });
-  return r.ok ? { ok: true, tache: r.tache } : r;
+  const r = demande.geste === "abandonner"
+    ? await deps.archiverTache(userId, t.id)
+    : await deps.modifierTache(userId, t.id, { scheduledDate: date, scheduledTime: null, scheduledEndTime: null });
+  if (!r.ok) return r;
+  // Tranchée cette semaine : elle sort de la liste du vendredi (même faite « aujourd'hui »). Le
+  // geste est fait : une marque ratée est consignée, jamais présentée comme un échec du geste.
+  const semaine = lundiDe(aujourdhui);
+  try {
+    await deps.marquerTranchee(userId, t.id, semaine);
+  } catch (e: any) {
+    console.error(`[fil] clôture : tâche ${t.id} tranchée mais non marquée user=${userId} :`, e?.message ?? e);
+  }
+  return { ok: true, tache: r.tache };
 }
 
 // ── Réconciliation du lundi ────────────────────────────────────────────────────────────
@@ -194,7 +223,9 @@ function reponses(convs: ConversationATraiter[]): Incoherence[] {
     const canal = CANAUX[c.canal] ?? c.canal;
     const lien = `/outreach?onglet=reponses&conversation=${c.id}`;
     const sansTache = !c.tache || !!c.tache.archivedAt;
-    if (sansTache) res.push({ source: "reponses", libelle: `${qui} (${canal}) à traiter : aucune tâche pour s'en occuper`, lien });
+    if (sansTache && c.dernierSens === "sortant") {
+      res.push({ source: "reponses", libelle: `${qui} (${canal}) : marquée à traiter alors que tu as répondu`, lien });
+    } else if (sansTache) res.push({ source: "reponses", libelle: `${qui} (${canal}) à traiter : aucune tâche pour s'en occuper`, lien });
     else if (c.tache!.completed && c.dernierSens !== "sortant") {
       res.push({ source: "reponses", libelle: `${qui} (${canal}) : tâche cochée, aucune réponse envoyée`, lien });
     }
@@ -241,7 +272,7 @@ async function mails(userId: string, maintenant: Date, d: DepsReconciliation): P
   const lignes = await d.mailsSansTache(userId, new Date(maintenant.getTime() - FENETRE_MAILS_JOURS * JOUR_MS));
   return lignes.map((m) => ({
     source: "mails",
-    libelle: `${m.expediteur?.trim() ? `Mail de ${m.expediteur.trim()}` : "Mail d'un expéditeur inconnu"}${m.sujet?.trim() ? ` (« ${m.sujet.trim()} »)` : ""} : sa tâche « Répondre » a disparu, le mail attend toujours`,
+    libelle: `${m.expediteur?.trim() ? `Mail de ${m.expediteur.trim()}` : "Mail d'un expéditeur inconnu"}${m.sujet?.trim() ? ` (« ${m.sujet.trim()} »)` : ""} : sa tâche « Répondre » a été supprimée`,
     // Aucune page de l'app ne montre un fil Gmail : le planning, où vivent les « Répondre à ».
     lien: "/planning",
   }));

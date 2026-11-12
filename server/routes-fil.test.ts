@@ -11,7 +11,7 @@ const h = vi.hoisted(() => ({
   proposerEtapesPour: vi.fn(), proposerRattachements: vi.fn(),
   getProjectGoal: vi.fn(), getProject: vi.fn(),
   etapesObjectif: vi.fn(() => [] as any[]), tacheDeReprise: vi.fn(), creerTache: vi.fn(), fixOverlappingTasks: vi.fn(),
-  construireMatin: vi.fn(), modifierTache: vi.fn(), archiverTache: vi.fn(), getTask: vi.fn(),
+  construireMatin: vi.fn(), modifierTache: vi.fn(), archiverTache: vi.fn(), fusionnerActionData: vi.fn(), getTask: vi.fn(),
 }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "u1"; next(); } }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
@@ -28,7 +28,7 @@ vi.mock("./services/fil/etapes", () => ({
 }));
 vi.mock("./services/fil/oublis", () => ({ tacheDeReprise: h.tacheDeReprise, REPRISE_MIN: 15, REPRISE_MAX: 30 }));
 vi.mock("./services/fil/matin", () => ({ construireMatin: h.construireMatin }));
-vi.mock("./services/taches/ecrire-tache", () => ({ creerTache: h.creerTache, modifierTache: h.modifierTache, archiverTache: h.archiverTache }));
+vi.mock("./services/taches/ecrire-tache", () => ({ creerTache: h.creerTache, modifierTache: h.modifierTache, archiverTache: h.archiverTache, fusionnerActionData: h.fusionnerActionData }));
 vi.mock("./storage", () => ({ storage: { fixOverlappingTasks: h.fixOverlappingTasks, getTask: h.getTask } }));
 // La clôture est pure (aucune base) ; ses vraies sources ne sont jamais chargées ici.
 vi.mock("./services/fil/cloture-deps", () => ({ depsCloture: {}, depsReconciliation: {} }));
@@ -231,6 +231,7 @@ describe("routes du fil", () => {
       h.getTask.mockImplementation(async (id: number) => (id === 5 ? { ...TACHE } : id === 6 ? { ...TACHE, id: 6, userId: "u2" } : undefined));
       h.modifierTache.mockImplementation(async (_u: string, id: number, patch: any) => ({ ok: true, tache: { ...TACHE, id, ...patch }, avant: TACHE }));
       h.archiverTache.mockImplementation(async (_u: string, id: number) => ({ ok: true, tache: { ...TACHE, id, archivedAt: new Date().toISOString() } }));
+      h.fusionnerActionData.mockResolvedValue({ ok: true, tache: TACHE });
     });
 
     it("faire : aujourd'hui (Paris) par modifierTache", async () => {
@@ -240,6 +241,11 @@ describe("routes du fil", () => {
       expect([userId, id]).toEqual(["u1", 5]);
       expect(patch.scheduledDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(h.archiverTache).not.toHaveBeenCalled();
+      // Tranchée cette semaine : marquée dans actionData.cloture (lundi de la semaine de Paris).
+      const [u, mid, cle, valeur] = h.fusionnerActionData.mock.calls[0];
+      expect([u, mid, cle]).toEqual(["u1", 5, "cloture"]);
+      expect(valeur.tranchee).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(new Date(`${valeur.tranchee}T12:00:00Z`).getUTCDay()).toBe(1);
     });
 
     it("déplacer : la date donnée", async () => {

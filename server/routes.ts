@@ -63,7 +63,7 @@ import { extractToMemory } from "./services/memory/extract";
 import { refuserTache } from "./services/refus/service";
 import { refusDeps } from "./services/refus/deps";
 import { estRaisonRefus, ligneContexteRefus } from "./services/refus/pur";
-import { creerTache, modifierTache } from "./services/taches/ecrire-tache";
+import { archiverTache, creerTache, modifierTache } from "./services/taches/ecrire-tache";
 import { confirmerJalon, creerChaineJalons, creerProjet } from "./services/projets/ecrire-projet";
 import { refuserPost } from "./services/refus-post/service";
 import { refusPostDeps } from "./services/refus-post/deps";
@@ -4817,9 +4817,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const userId = req.userId;
       const id = parseInt(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
-      const task = await storage.getTask(id);
-      if (!task || task.userId !== userId) return res.status(404).json({ message: 'Task not found' });
-      await storage.updateTask(id, { archivedAt: new Date() } as any);
+      // Chemin partagé avec la clôture du vendredi (« abandonner ») : services/taches/ecrire-tache.ts.
+      const r = await archiverTache(userId, id);
+      if (!r.ok) return res.status(404).json({ message: 'Task not found' });
       res.json({ ok: true });
     } catch (error: any) {
       console.error('POST /api/tasks/:id/archive error:', error?.message);

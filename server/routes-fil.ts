@@ -13,7 +13,7 @@ import { etapesActives } from "./services/fil/carte";
 import { tacheDeReprise, REPRISE_MIN, REPRISE_MAX } from "./services/fil/oublis";
 import { estPourquoiCreux, bornerPourquoi } from "./services/fil/rattachement";
 import { construireMatin } from "./services/fil/matin";
-import { archiverTache, creerTache, modifierTache } from "./services/taches/ecrire-tache";
+import { archiverTache, creerTache, fusionnerActionData, modifierTache } from "./services/taches/ecrire-tache";
 import { demandeTrancher, oublierClotureDe, trancher } from "./services/fil/cloture";
 import { aujourdhuiParis } from "./services/repack-from";
 import { storage } from "./storage";
@@ -191,6 +191,10 @@ export function registerFilRoutes(app: Express): void {
         },
         modifierTache,
         archiverTache,
+        async marquerTranchee(u, id, semaine) {
+          const m = await fusionnerActionData(u, id, "cloture", { tranchee: semaine });
+          if (!m.ok) throw new Error(m.message);
+        },
       });
       if (!r.ok) return res.status(r.status).json({ message: r.message });
       oublierClotureDe(userId);

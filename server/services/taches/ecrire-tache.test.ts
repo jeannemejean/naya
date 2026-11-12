@@ -20,7 +20,7 @@ const storageMock = {
 };
 vi.mock("../../storage", () => ({ storage: storageMock }));
 
-const { creerTache, modifierTache, archiverTache } = await import("./ecrire-tache");
+const { creerTache, modifierTache, archiverTache, fusionnerActionData } = await import("./ecrire-tache");
 
 // Champs requis par insertTaskSchema.
 const BASE = { title: "Nouvelle", type: "admin", category: "operations" };
@@ -147,6 +147,25 @@ describe("archiverTache", () => {
     storageMock.getTask.mockResolvedValue(undefined);
     expect(await archiverTache("user-1", 43)).toEqual({ ok: false, status: 404, message: "task_not_found" });
     expect(await archiverTache("user-1", -1)).toEqual({ ok: false, status: 404, message: "task_not_found" });
+    expect(storageMock.updateTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("fusionnerActionData", () => {
+  it("fusionne dans la clé demandée, le reste d'actionData intact", async () => {
+    storageMock.getTask.mockResolvedValue({ ...TACHE, actionData: { lien: "/x", cloture: { autre: 1 } } });
+    const r = await fusionnerActionData("user-1", 42, "cloture", { tranchee: "2026-11-09" });
+    expect(r.ok).toBe(true);
+    expect(storageMock.updateTask).toHaveBeenCalledTimes(1);
+    expect(storageMock.updateTask).toHaveBeenCalledWith(42, { actionData: { lien: "/x", cloture: { autre: 1, tranchee: "2026-11-09" } } });
+  });
+
+  it("sans actionData : la crée ; tâche d'une autre : 404, rien d'écrit", async () => {
+    storageMock.getTask.mockResolvedValue({ ...TACHE, actionData: null });
+    await fusionnerActionData("user-1", 42, "cloture", { tranchee: "2026-11-09" });
+    expect(storageMock.updateTask).toHaveBeenCalledWith(42, { actionData: { cloture: { tranchee: "2026-11-09" } } });
+    storageMock.updateTask.mockClear();
+    expect(await fusionnerActionData("user-2", 42, "cloture", { tranchee: "x" })).toEqual({ ok: false, status: 404, message: "task_not_found" });
     expect(storageMock.updateTask).not.toHaveBeenCalled();
   });
 });

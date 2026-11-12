@@ -19,7 +19,7 @@ const MARDI = new Date("2026-11-17T07:00:00Z");
 
 const tache = (id: number, creeeLe: string, extra: Partial<Task> = {}): Task => ({
   id, userId: "u1", projectId: 10, title: `Tâche ${id}`, type: "planning", category: "planning", priority: 3,
-  completed: false, archivedAt: null, scheduledDate: "2026-11-13", goalId: null, milestoneId: null, ritualId: null,
+  completed: false, archivedAt: null, scheduledDate: "2026-11-10", goalId: null, milestoneId: null, ritualId: null,
   schedulingMode: "flexible", source: "manual", createdAt: new Date(creeeLe), ...extra,
 } as unknown as Task);
 
@@ -58,6 +58,27 @@ describe("aTrancher", () => {
     expect(r.map((t) => t.tacheId)).toEqual([8]);
   });
 
+  it("prévue après aujourd'hui : pas à trancher (déjà placée) ; prévue aujourd'hui, avant ou sans date : oui", () => {
+    const vieux = "2026-11-03T10:00:00Z"; // 10 jours
+    const r = aTrancher([
+      tache(1, vieux, { scheduledDate: "2026-11-18" }), // la semaine prochaine
+      tache(2, vieux, { scheduledDate: "2026-11-14" }), // demain
+      tache(3, vieux, { scheduledDate: "2026-11-13" }), // aujourd'hui
+      tache(4, vieux, { scheduledDate: "2026-10-28" }), // en retard
+      tache(5, vieux, { scheduledDate: null }),
+    ], VENDREDI);
+    expect(r.map((t) => t.tacheId)).toEqual([3, 4, 5]);
+  });
+
+  it("déjà tranchée cette semaine : sortie de la liste ; tranchée une semaine passée : elle revient", () => {
+    const vieux = "2026-10-20T10:00:00Z";
+    const r = aTrancher([
+      tache(1, vieux, { actionData: { cloture: { tranchee: "2026-11-09" } } } as any),
+      tache(2, vieux, { actionData: { cloture: { tranchee: "2026-11-02" } } } as any),
+    ], VENDREDI);
+    expect(r.map((t) => t.tacheId)).toEqual([2]);
+  });
+
   it("les plus anciennes d'abord", () => {
     const r = aTrancher([tache(1, "2026-11-01T10:00:00Z"), tache(2, "2026-10-01T10:00:00Z"), tache(3, "2026-11-01T10:00:00Z")], VENDREDI);
     expect(r.map((t) => t.tacheId)).toEqual([2, 1, 3]);
@@ -78,7 +99,7 @@ describe("clotureDuVendredi", () => {
     const d = depsCloture();
     expect((await clotureDuVendredi("u1", VENDREDI, d)).map((t) => t.tacheId)).toEqual([2, 1]);
     // Début du 6 novembre à Paris = 5 novembre 23 h UTC.
-    expect(d.tachesOuvertes).toHaveBeenCalledWith("u1", new Date("2026-11-05T23:00:00Z"));
+    expect(d.tachesOuvertes).toHaveBeenCalledWith("u1", new Date("2026-11-05T23:00:00Z"), "2026-11-13");
   });
   it("un autre jour : [], sans rien lire", async () => {
     const d = depsCloture();
@@ -139,6 +160,7 @@ describe("trancher", () => {
       lireTache: vi.fn(async (userId: string, id: number) => (userId === "u1" && id === 5 ? tache(5, "2026-10-01T10:00:00Z") : undefined)),
       modifierTache: vi.fn(async (_u: string, id: number, patch: any) => ({ ok: true as const, tache: { ...tache(id, "2026-10-01T10:00:00Z"), ...patch }, avant: tache(id, "2026-10-01T10:00:00Z") })),
       archiverTache: vi.fn(async (_u: string, id: number) => ({ ok: true as const, tache: { ...tache(id, "2026-10-01T10:00:00Z"), archivedAt: VENDREDI } as Task })),
+      marquerTranchee: vi.fn(async () => {}),
       ...over,
     } as any;
   }
@@ -149,6 +171,34 @@ describe("trancher", () => {
     expect(r.ok).toBe(true);
     expect(d.modifierTache).toHaveBeenCalledWith("u1", 5, { scheduledDate: "2026-11-13", scheduledTime: null, scheduledEndTime: null });
     expect(d.archiverTache).not.toHaveBeenCalled();
+    expect(d.marquerTranchee).toHaveBeenCalledWith("u1", 5, "2026-11-09");
+  });
+
+  it("faire puis recalcul : la tâche sort de la liste de ce vendredi ; encore ouverte le vendredi suivant, elle revient", async () => {
+    // Une petite base en mémoire : la tâche telle que les gestes la laissent.
+    let t = tache(5, "2026-10-01T10:00:00Z");
+    const d = depsTrancher({
+      lireTache: vi.fn(async () => t),
+      modifierTache: vi.fn(async (_u: string, _id: number, patch: any) => { t = { ...t, ...patch }; return { ok: true as const, tache: t, avant: t }; }),
+      marquerTranchee: vi.fn(async (_u: string, _id: number, semaine: string) => {
+        t = { ...t, actionData: { ...(t.actionData as any), cloture: { tranchee: semaine } } } as Task;
+      }),
+    });
+    const ouvertes = depsCloture({ tachesOuvertes: vi.fn(async () => [t]) });
+    expect((await clotureDuVendredi("u1", VENDREDI, ouvertes)).map((x) => x.tacheId)).toEqual([5]);
+    await trancher("u1", { tacheId: 5, geste: "faire" }, VENDREDI, d);
+    expect(t.scheduledDate).toBe("2026-11-13");
+    expect(await clotureDuVendredi("u1", VENDREDI, ouvertes)).toEqual([]);
+    const vendrediSuivant = new Date("2026-11-20T07:00:00Z");
+    expect((await clotureDuVendredi("u1", vendrediSuivant, ouvertes)).map((x) => x.tacheId)).toEqual([5]);
+  });
+
+  it("une marque ratée ne fait pas échouer le geste (consignée)", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = depsTrancher({ marquerTranchee: vi.fn(async () => { throw new Error("base"); }) });
+    expect((await trancher("u1", { tacheId: 5, geste: "faire" }, VENDREDI, d)).ok).toBe(true);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
   });
 
   it("déplacer : la date donnée ; une date passée ou absente est refusée", async () => {
@@ -166,6 +216,7 @@ describe("trancher", () => {
     const r = await trancher("u1", { tacheId: 5, geste: "abandonner" }, VENDREDI, d);
     expect(r).toMatchObject({ ok: true, tache: { id: 5, archivedAt: VENDREDI } });
     expect(d.archiverTache).toHaveBeenCalledWith("u1", 5);
+    expect(d.marquerTranchee).toHaveBeenCalledWith("u1", 5, "2026-11-09");
     expect(d.modifierTache).not.toHaveBeenCalled();
     expect(Object.keys(d)).not.toContain("supprimerTache");
   });
@@ -180,6 +231,7 @@ describe("trancher", () => {
     expect(await trancher("u1", { tacheId: 5, geste: "abandonner" }, VENDREDI, d)).toEqual({ ok: false, status: 409, message: "deja_tranchee" });
     expect(d.modifierTache).not.toHaveBeenCalled();
     expect(d.archiverTache).not.toHaveBeenCalled();
+    expect(d.marquerTranchee).not.toHaveBeenCalled();
   });
 
   it("un refus de modifierTache (jour non travaillé) remonte tel quel", async () => {
@@ -237,6 +289,7 @@ describe("reconciliation", () => {
       conv(4, { taskId: 14, tache: null }),
       conv(5, { taskId: 15, tache: { completed: false, archivedAt: new Date() } }),
       conv(6, { nom: null }),
+      conv(8, { dernierSens: "sortant" }),
     ]) });
     const r = await reconciliation("u1", LUNDI, d);
     expect(r.map((x) => x.libelle)).toEqual([
@@ -244,6 +297,7 @@ describe("reconciliation", () => {
       "Réponse de Prospect 4 (LinkedIn) à traiter : aucune tâche pour s'en occuper",
       "Réponse de Prospect 5 (LinkedIn) à traiter : aucune tâche pour s'en occuper",
       "Réponse d'un prospect (LinkedIn) à traiter : aucune tâche pour s'en occuper",
+      "Réponse de Prospect 8 (LinkedIn) : marquée à traiter alors que tu as répondu",
     ]);
   });
 
@@ -295,8 +349,8 @@ describe("reconciliation", () => {
     const d = depsReco({ mailsSansTache: vi.fn(async () => [{ threadId: "t1", expediteur: "marc@acme.fr", sujet: "Devis" }, { threadId: "t2", expediteur: null, sujet: null }]) });
     const r = await reconciliation("u1", LUNDI, d);
     expect(r).toEqual([
-      { source: "mails", libelle: "Mail de marc@acme.fr (« Devis ») : sa tâche « Répondre » a disparu, le mail attend toujours", lien: "/planning" },
-      { source: "mails", libelle: "Mail d'un expéditeur inconnu : sa tâche « Répondre » a disparu, le mail attend toujours", lien: "/planning" },
+      { source: "mails", libelle: "Mail de marc@acme.fr (« Devis ») : sa tâche « Répondre » a été supprimée", lien: "/planning" },
+      { source: "mails", libelle: "Mail d'un expéditeur inconnu : sa tâche « Répondre » a été supprimée", lien: "/planning" },
     ]);
     const [, depuis] = d.mailsSansTache.mock.calls[0];
     expect(LUNDI.getTime() - depuis.getTime()).toBe(14 * 24 * 3600_000);

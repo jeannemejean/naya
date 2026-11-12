@@ -187,3 +187,27 @@ export async function archiverTache(
   const tache = await storage.updateTask(taskId, { archivedAt: new Date() } as any);
   return { ok: true, tache };
 }
+
+/**
+ * Fusionne `valeur` dans `actionData[cle]` d'une tâche de l'utilisatrice (le reste d'actionData
+ * intact). `actionData` n'est pas dans la liste blanche de `modifierTache` (le PATCH du client ne
+ * l'écrit pas) : chemin à part, propriété vérifiée comme partout.
+ */
+export async function fusionnerActionData(
+  userId: string,
+  taskId: number,
+  cle: string,
+  valeur: Record<string, unknown>,
+): Promise<{ ok: true; tache: Task } | Refus> {
+  if (!Number.isInteger(taskId) || taskId <= 0) return { ok: false, status: 404, message: 'task_not_found' };
+  const currentTask = await storage.getTask(taskId);
+  if (!currentTask || (currentTask as any).userId !== userId) {
+    return { ok: false, status: 404, message: 'task_not_found' };
+  }
+  const ad: Record<string, any> = currentTask.actionData && typeof currentTask.actionData === 'object' && !Array.isArray(currentTask.actionData)
+    ? { ...(currentTask.actionData as Record<string, any>) } : {};
+  const avant = ad[cle] && typeof ad[cle] === 'object' && !Array.isArray(ad[cle]) ? ad[cle] : {};
+  ad[cle] = { ...avant, ...valeur };
+  const tache = await storage.updateTask(taskId, { actionData: ad } as any);
+  return { ok: true, tache };
+}

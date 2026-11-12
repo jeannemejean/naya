@@ -1,6 +1,6 @@
 // Les vraies sources de la clôture du vendredi et de la réconciliation du lundi (base, tâches).
 // Séparées de cloture.ts pour que ses tests n'importent pas la base.
-import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { appelsOffres, inboxConversations, inboxMessages, leads, mailsEnAttente, tasks } from "@shared/schema";
 import { TYPE_ATELIER, TYPE_VALIDATION } from "@shared/atelier";
@@ -9,9 +9,11 @@ import { depsCreation } from "./creation-deps";
 import { SOURCE_CLOTURE, type DepsCloture, type DepsReconciliation } from "./cloture";
 
 export const depsCloture: DepsCloture = {
-  async tachesOuvertes(userId, creeesAvant) {
+  async tachesOuvertes(userId, creeesAvant, aujourdhui) {
     return db.select().from(tasks).where(and(
       eq(tasks.userId, userId), eq(tasks.completed, false), isNull(tasks.archivedAt), lt(tasks.createdAt, creeesAvant),
+      // Une tâche déjà placée plus tard n'est pas à trancher.
+      or(isNull(tasks.scheduledDate), lte(tasks.scheduledDate, aujourdhui)),
     ));
   },
   async clotureDejaPosee(userId, semaine) {
