@@ -10,10 +10,10 @@ vi.mock("../linkedin", () => ({
   linkedinConfigured: () => true,
 }));
 
-import { listerEmailsRecus, versEmailUnipile, type EmailUnipile } from "../unipile-mail";
+import { listerEmailsRecus, versEmailUnipile, EMAILS_PAGES_MAX, type EmailUnipile } from "../unipile-mail";
 import {
-  filsEnAttente, synchroniserMailsEnAttente, correspondanceMail, estAdministratif,
-  type DepsMails, type CandidatsRattachement,
+  filsEnAttente, synchroniserMailsEnAttente, correspondanceMail, estAdministratif, ligneLibre,
+  type DepsMails, type CandidatsRattachement, type LigneMail,
 } from "./mails-attente";
 
 const brut = JSON.parse(readFileSync(path.join(__dirname, "__fixtures__", "unipile-emails.json"), "utf8"));
@@ -31,7 +31,7 @@ describe("versEmailUnipile (forme de la doc, figée dans la fixture)", () => {
     expect(m).toMatchObject({
       threadId: "t-humain", role: "inbox", date: "2026-11-10T14:30:00.000Z",
       from: { email: "claire@studio-lumen.fr", nom: "Claire Martin" },
-      to: ["jeanne@agence-jmd.com"], sujet: "Re: Devis refonte site",
+      to: ["jeanne@agence-jmd.com"], cc: [], sujet: "Re: Devis refonte site",
     });
     expect(m.headers).toEqual({ from: "Claire Martin <claire@studio-lumen.fr>", "auto-submitted": "no" });
     expect(m).not.toHaveProperty("body");
@@ -65,6 +65,23 @@ describe("listerEmailsRecus", () => {
     });
     expect(fetchMock.mock.calls[0][1].method ?? "GET").toBe("GET");
     expect(new URL(fetchMock.mock.calls[1][0]).searchParams.get("cursor")).toBe("c2");
+  });
+  it("un 200 au corps illisible lève aussi (jamais une page vide)", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("<html>oups</html>", { status: 200 }));
+    await expect(listerEmailsRecus("acc-gmail", MAINTENANT)).rejects.toThrow(/illisible/);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ object: "EmailList" }), { status: 200 }));
+    await expect(listerEmailsRecus("acc-gmail", MAINTENANT)).rejects.toThrow(/illisible/);
+  });
+  it("plafond de pages atteint avec un cursor : avertissement chiffré seulement", async () => {
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ...brut, items: brut.items.slice(0, 1), cursor: "encore" }), { status: 200 }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const r = await listerEmailsRecus("acc-gmail", MAINTENANT);
+    expect(fetchMock).toHaveBeenCalledTimes(EMAILS_PAGES_MAX);
+    expect(r).toHaveLength(EMAILS_PAGES_MAX);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/tronquée à 30 pages \(30 mails lus\)/);
+    expect(String(warn.mock.calls[0][0])).not.toMatch(/@|Devis/);
+    warn.mockRestore();
   });
   it("une erreur HTTP lève (jamais « boîte vide » d'une boîte illisible)", async () => {
     fetchMock.mockResolvedValueOnce(new Response("{}", { status: 503 }));
@@ -115,6 +132,20 @@ describe("filsEnAttente (pur)", () => {
     expect(variante({ from: { email: "no-reply@marque.fr", nom: null } })).toEqual([]);
     expect(variante({ headers: null })).toHaveLength(1);
   });
+  it("tirets bas : no_reply@, noreply_x@, do_not_reply@, mailer_daemon@ exclus", () => {
+    const base = emails.find((e) => e.id === "m-a2")!;
+    for (const email of ["no_reply@marque.fr", "noreply_factures@marque.fr", "do_not_reply@marque.fr", "mailer_daemon@marque.fr"]) {
+      expect(filsEnAttente([{ ...base, from: { email, nom: null } }], PROPRES, PROSPECTS, MAINTENANT)).toEqual([]);
+    }
+    // Un prénom qui contient « no » n'est pas un robot.
+    expect(filsEnAttente([{ ...base, from: { email: "noemie_r@marque.fr", nom: null } }], PROPRES, PROSPECTS, MAINTENANT)).toHaveLength(1);
+  });
+  it("Jeanne seulement en copie : exclu ; destinataires absents des données : jugé comme avant", () => {
+    const base = emails.find((e) => e.id === "m-a2")!;
+    expect(filsEnAttente([{ ...base, to: ["paul@studio-lumen.fr"], cc: ["jeanne@agence-jmd.com"] }], PROPRES, PROSPECTS, MAINTENANT)).toEqual([]);
+    expect(filsEnAttente([{ ...base, to: [], cc: [] }], PROPRES, PROSPECTS, MAINTENANT)).toHaveLength(1);
+    expect(filsEnAttente([{ ...base, to: ["paul@studio-lumen.fr", "JEANNE@agence-jmd.com"], cc: [] }], PROPRES, PROSPECTS, MAINTENANT)).toHaveLength(1);
+  });
   it("un fil de 13 jours est encore retenu", () => {
     const base = emails.find((e) => e.id === "m-a2")!;
     const d = new Date(MAINTENANT.getTime() - 13 * JOUR).toISOString();
@@ -164,28 +195,35 @@ describe("correspondanceMail", () => {
 
 describe("synchroniserMailsEnAttente", () => {
   function monde(o: { compte?: string | null; mails?: EmailUnipile[]; jourOff?: string; threadsProspects?: string[] } = {}) {
-    const lignes = new Map<string, { taskId: number | null }>();
+    const lignes = new Map<string, LigneMail>();
     const taches: any[] = [];
+    const rattacheur = vi.fn(async () => ({ goalId: 11, milestoneId: null }));
     const deps: DepsMails = {
       compteEmail: vi.fn(async () => (o.compte === undefined ? "acc-gmail" : o.compte)),
       listerEmails: vi.fn(async () => o.mails ?? emails),
       adressesPropres: vi.fn(async () => new Set(PROPRES)),
       adressesProspects: vi.fn(async () => new Set(PROSPECTS)),
       threadsProspects: vi.fn(async () => new Set(o.threadsProspects ?? [])),
-      threadsConnus: vi.fn(async (_u, t: string[]) => new Set(t.filter((x) => lignes.has(x)))),
-      reserver: vi.fn(async (_u, l) => { if (lignes.has(l.threadId)) return false; lignes.set(l.threadId, { taskId: null }); return true; }),
-      liberer: vi.fn(async (_u, t) => { lignes.delete(t); }),
+      threadsConnus: vi.fn(async (_u, t: string[]) => t.filter((x) => lignes.has(x)).map((x) => ({ ...lignes.get(x)! }))),
+      // Même règle que l'upsert SQL : ligne absente, ou sans tâche et périmée.
+      reserver: vi.fn(async (_u, l, maintenant: Date) => {
+        if (!ligneLibre(lignes.get(l.threadId), maintenant)) return false;
+        lignes.set(l.threadId, { threadId: l.threadId, taskId: null, createdAt: maintenant });
+        return true;
+      }),
+      liberer: vi.fn(async (_u, t) => { if (lignes.get(t)?.taskId == null) lignes.delete(t); }),
+      tacheDuFil: vi.fn(async (_u, t: string) => taches.find((x) => x.actionData?.mail?.threadId === t)?.id ?? null),
       lierTache: vi.fn(async (_u, t, id) => { lignes.get(t)!.taskId = id; }),
       candidats: vi.fn(async () => ({ clients: [{ id: 7, email: "contact@studio-lumen.fr", projectId: 3 }], projets: [], leads: [] })),
-      rattacher: vi.fn(async () => ({ goalId: 11, milestoneId: null })),
+      rattacheur: vi.fn(() => rattacheur),
       premierJourTravaille: vi.fn(async (_u, j: string) => (j === o.jourOff ? "2026-11-13" : j)),
       creerTache: vi.fn(async (_u, d) => { const t = { id: 100 + taches.length, completed: false, ...d }; taches.push(t); return { ok: true as const, tache: t }; }),
     };
-    return { deps, lignes, taches };
+    return { deps, lignes, taches, rattacheur };
   }
 
   it("crée « Répondre à {nom} : {sujet} », +2 jours, rattachée au client du domaine ; +7 si administratif", async () => {
-    const { deps, taches, lignes } = monde();
+    const { deps, taches, lignes, rattacheur } = monde();
     expect(await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).toEqual({ creees: 2 });
     const claire = taches.find((t) => t.title.includes("Claire"));
     expect(claire).toMatchObject({
@@ -200,8 +238,11 @@ describe("synchroniserMailsEnAttente", () => {
     // Pas de correspondance : sans projet, et le rattachement n'est pas demandé.
     expect(facture).toMatchObject({ projectId: null, clientId: null, leadId: null });
     expect(facture).not.toHaveProperty("goalId");
-    expect(deps.rattacher).toHaveBeenCalledTimes(1);
-    expect(lignes.get("t-humain")).toEqual({ taskId: claire.id });
+    // Un rattacheur par passage, appelé seulement quand il y a une correspondance.
+    expect(deps.rattacheur).toHaveBeenCalledTimes(1);
+    expect(rattacheur).toHaveBeenCalledTimes(1);
+    expect(rattacheur).toHaveBeenCalledWith({ projectId: 3, leadId: null });
+    expect(lignes.get("t-humain")!.taskId).toBe(claire.id);
     expect(deps.listerEmails).toHaveBeenCalledWith("acc-gmail", new Date(MAINTENANT.getTime() - 14 * JOUR));
   });
 
@@ -240,6 +281,51 @@ describe("synchroniserMailsEnAttente", () => {
     expect(lignes.size).toBe(1);
     expect((await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).creees).toBe(1);
     expect(lignes.size).toBe(2);
+  });
+
+  it("lierTache échoue après création : la ligne reste, 0 création au passage suivant, ni 2 h après (lien réparé)", async () => {
+    const { deps, taches, lignes } = monde();
+    (deps.lierTache as any).mockRejectedValueOnce(new Error("base indisponible"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).toEqual({ creees: 2 });
+    err.mockRestore();
+    expect(deps.liberer).not.toHaveBeenCalled();
+    expect(lignes.size).toBe(2);
+    expect(await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).toEqual({ creees: 0 });
+    expect(await synchroniserMailsEnAttente("u1", new Date(MAINTENANT.getTime() + 2 * 3600_000), deps)).toEqual({ creees: 0 });
+    expect(taches).toHaveLength(2);
+    expect(Array.from(lignes.values()).every((l) => l.taskId != null)).toBe(true);
+  });
+
+  it("creerTache lève : la réservation est rendue, le fil est repris au passage suivant", async () => {
+    const { deps, lignes, taches } = monde();
+    (deps.creerTache as any).mockRejectedValueOnce(new Error("panne"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect((await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).creees).toBe(1);
+    err.mockRestore();
+    expect(deps.liberer).toHaveBeenCalledTimes(1);
+    expect(lignes.size).toBe(1);
+    expect((await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).creees).toBe(1);
+    expect(taches).toHaveLength(2);
+  });
+
+  it("réservation sans tâche : prise pendant 1 h, libre après (passage interrompu)", async () => {
+    const { deps, lignes, taches } = monde();
+    const pose = (l: LigneMail) => lignes.set(l.threadId, l);
+    pose({ threadId: "t-humain", taskId: null, createdAt: new Date(MAINTENANT.getTime() - 30 * 60_000) });
+    pose({ threadId: "t-facture", taskId: null, createdAt: new Date(MAINTENANT.getTime() - 61 * 60_000) });
+    expect(await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).toEqual({ creees: 1 });
+    expect(taches.map((t) => t.actionData.mail.threadId)).toEqual(["t-facture"]);
+    expect(lignes.get("t-humain")!.taskId).toBeNull();
+  });
+
+  it("ligneLibre : une ligne avec tâche n'est jamais libre, même très ancienne", () => {
+    const vieux = new Date(MAINTENANT.getTime() - 30 * JOUR);
+    expect(ligneLibre(undefined, MAINTENANT)).toBe(true);
+    expect(ligneLibre({ threadId: "t", taskId: 5, createdAt: vieux }, MAINTENANT)).toBe(false);
+    expect(ligneLibre({ threadId: "t", taskId: null, createdAt: vieux }, MAINTENANT)).toBe(true);
+    expect(ligneLibre({ threadId: "t", taskId: null, createdAt: new Date(MAINTENANT.getTime() - 59 * 60_000) }, MAINTENANT)).toBe(false);
+    expect(ligneLibre({ threadId: "t", taskId: null, createdAt: null }, MAINTENANT)).toBe(false);
   });
 
   it("jour non travaillé : posée au premier jour travaillé", async () => {

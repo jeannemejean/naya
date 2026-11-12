@@ -18,6 +18,8 @@ export const ECHEANCE_JOURS = 2;
 export const ECHEANCE_ADMIN_JOURS = 7;
 // Pas de journée surchargée : le reste est repris au passage suivant (tant qu'il a moins de 14 jours).
 export const PLAFOND_PAR_PASSAGE = 10;
+// Une réservation restée sans tâche (passage interrompu) se libère au bout d'une heure.
+export const RESERVATION_PERIMEE_MS = 3600_000;
 
 const JOUR_MS = 24 * 3600_000;
 
@@ -26,7 +28,8 @@ const normaliser = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toL
 // ── Le tri ───────────────────────────────────────────────────────────────────────────
 
 // Adresses de robots, lues dans la partie locale (avant @).
-const LOCAL_ROBOT = /(^|[._+-])(no-?reply|do-?not-?reply|notifications?|newsletters?|mailer-daemon)([._+-]|$)/i;
+// Séparateurs . _ + - (no-reply, no_reply, noreply_x…).
+const LOCAL_ROBOT = /(^|[._+-])(no[-_]?reply|do[-_]?not[-_]?reply|notifications?|newsletters?|mailer[-_]?daemon)([._+-]|$)/i;
 
 /** Vrai si les en-têtes disent un envoi automatique ou de masse. */
 function enTetesDeMasse(h: Record<string, string> | null): boolean {
@@ -64,7 +67,8 @@ export interface FilEnAttente {
 /**
  * Les fils qui attendent une réponse (PUR). Le dernier message d'un fil (brouillons ignorés)
  * décide : moins de 14 jours, pas envoyé par l'utilisatrice ni depuis une de ses adresses, pas
- * à la corbeille ni en spam, d'un humain (adresse et en-têtes), pas d'un prospect. Les plus
+ * à la corbeille ni en spam, d'un humain (adresse et en-têtes), pas d'un prospect, adressé à
+ * elle (pas seulement en copie) quand les destinataires sont connus. Les plus
  * récents d'abord.
  */
 export function filsEnAttente(
@@ -89,6 +93,8 @@ export function filsEnAttente(
     if (m.folders.some((f) => /(^|\/)(sent|trash|spam)$/i.test(f))) return;
     const email = m.from?.email;
     if (!email || propres.has(email) || prospects.has(email)) return;
+    // Jeanne seulement en copie : on ne lui demande rien. Sans destinataires dans les données, on ne juge pas.
+    if (m.to.length > 0 && !m.to.some((a) => propres.has(a.toLowerCase()))) return;
     if (LOCAL_ROBOT.test(email.split("@")[0] ?? "")) return;
     if (enTetesDeMasse(m.headers)) return;
     const sujet = sujetPropre(m.sujet);
@@ -158,6 +164,18 @@ export function correspondanceMail(
 
 // ── Le passage du matin ────────────────────────────────────────────────────────────────
 
+export interface LigneMail { threadId: string; taskId: number | null; createdAt: Date | null }
+
+/**
+ * Vrai si le fil peut (re)donner une tâche : aucune ligne, ou une réservation sans tâche de plus
+ * d'une heure. Une ligne qui porte une tâche ne se libère JAMAIS (tâche cochée ou supprimée comprise).
+ */
+export function ligneLibre(l: LigneMail | undefined, maintenant: Date): boolean {
+  if (!l) return true;
+  if (l.taskId != null) return false;
+  return l.createdAt != null && maintenant.getTime() - l.createdAt.getTime() > RESERVATION_PERIMEE_MS;
+}
+
 export interface DepsMails {
   /** Le compte Gmail Unipile de l'utilisatrice ; null s'il est absent ou déconnecté. */
   compteEmail(userId: string): Promise<string | null>;
@@ -168,14 +186,20 @@ export interface DepsMails {
   adressesProspects(userId: string): Promise<Set<string>>;
   /** Les fils Gmail déjà suivis dans « Réponses » (inbox_conversations, canal email). */
   threadsProspects(userId: string): Promise<Set<string>>;
-  threadsConnus(userId: string, threadIds: string[]): Promise<Set<string>>;
-  /** Insère la ligne (sans tâche) ; faux si le fil y est déjà (index unique). */
-  reserver(userId: string, ligne: { threadId: string; expediteur: string; sujet: string; dernierMessageAt: Date }): Promise<boolean>;
+  /** Les lignes `mails_en_attente` existantes pour ces fils. */
+  threadsConnus(userId: string, threadIds: string[]): Promise<LigneMail[]>;
+  /**
+   * Insère la ligne (sans tâche), à `maintenant` ; sur une ligne existante, ne la reprend que si
+   * `ligneLibre` (sans tâche et périmée), atomiquement. Faux si le fil est pris.
+   */
+  reserver(userId: string, ligne: { threadId: string; expediteur: string; sujet: string; dernierMessageAt: Date }, maintenant: Date): Promise<boolean>;
   liberer(userId: string, threadId: string): Promise<void>;
+  /** La tâche déjà créée pour ce fil (source fil_mail, actionData.mail.threadId), ou null. */
+  tacheDuFil(userId: string, threadId: string): Promise<number | null>;
   lierTache(userId: string, threadId: string, taskId: number): Promise<void>;
   candidats(userId: string): Promise<CandidatsRattachement>;
-  /** rattacherAvantCreation (le passage entier est déjà sous filActifPour). */
-  rattacher(userId: string, b: BrouillonTache): Promise<Partial<Rattachement>>;
+  /** Le rattacheur d'un passage (rattacheurDuPassage : carte chargée une fois, erreurs absorbées). */
+  rattacheur(userId: string): (b: BrouillonTache) => Promise<Partial<Rattachement>>;
   /** Le premier jour travaillé à partir de `jour` (YYYY-MM-DD). */
   premierJourTravaille(userId: string, jour: string): Promise<string>;
   creerTache(userId: string, donnees: Record<string, unknown>): Promise<{ ok: true; tache: { id: number } } | { ok: false; status: number; message: string }>;
@@ -211,19 +235,32 @@ export async function synchroniserMailsEnAttente(
   const fils = filsEnAttente(emails, propres, await d.adressesProspects(userId), maintenant)
     .filter((f) => !suivis.has(f.threadId));
   if (fils.length === 0) return { creees: 0 };
-  const connus = await d.threadsConnus(userId, fils.map((f) => f.threadId));
-  const nouveaux = fils.filter((f) => !connus.has(f.threadId)).slice(0, PLAFOND_PAR_PASSAGE);
+  const lignes = new Map((await d.threadsConnus(userId, fils.map((f) => f.threadId))).map((l) => [l.threadId, l]));
+  const nouveaux = fils.filter((f) => ligneLibre(lignes.get(f.threadId), maintenant)).slice(0, PLAFOND_PAR_PASSAGE);
   if (nouveaux.length === 0) return { creees: 0 };
 
   const candidats = await d.candidats(userId);
   const domainesPropres = new Set(Array.from(propres, (a) => domaineDe(a)));
   const jour = await d.premierJourTravaille(userId, jourParis(maintenant));
+  const rattacher = d.rattacheur(userId);
   let creees = 0;
   for (const f of nouveaux) {
-    if (!(await d.reserver(userId, { threadId: f.threadId, expediteur: f.expediteur, sujet: f.sujet, dernierMessageAt: f.dernierAt }))) continue;
+    if (!(await d.reserver(userId, { threadId: f.threadId, expediteur: f.expediteur, sujet: f.sujet, dernierMessageAt: f.dernierAt }, maintenant))) continue;
+    // Réservation périmée reprise : une tâche a pu être créée sans que le lien soit écrit.
+    // On la cherche, on répare le lien, et on n'en crée pas une deuxième.
+    if (lignes.has(f.threadId)) {
+      const existante = await d.tacheDuFil(userId, f.threadId);
+      if (existante != null) {
+        await d.lierTache(userId, f.threadId, existante).catch((e: any) =>
+          console.error(`[fil] mail en attente : lien non réparé user=${userId}:`, e?.message ?? e));
+        continue;
+      }
+    }
+    // Dès qu'une tâche existe, la ligne n'est plus rendue (voir plus bas).
+    let tacheCreee: number | null = null;
     try {
       const m = correspondanceMail(f.expediteur, candidats, domainesPropres);
-      const rattachement = m ? await d.rattacher(userId, { projectId: m.projectId, leadId: m.leadId }) : {};
+      const rattachement = m ? await rattacher({ projectId: m.projectId, leadId: m.leadId }) : {};
       const r = await d.creerTache(userId, {
         title: borner(`Répondre à ${f.nom} : ${f.sujet || "(sans objet)"}`, 200),
         type: m?.leadId != null ? "outreach" : "admin",
@@ -245,9 +282,16 @@ export async function synchroniserMailsEnAttente(
         await d.liberer(userId, f.threadId);
         continue;
       }
-      await d.lierTache(userId, f.threadId, r.tache.id);
+      tacheCreee = r.tache.id;
       creees++;
+      await d.lierTache(userId, f.threadId, r.tache.id);
     } catch (e: any) {
+      if (tacheCreee != null) {
+        // Tâche créée, lien non écrit : la ligne reste ; le passage qui la trouverait périmée
+        // retrouve la tâche par `tacheDuFil` et répare le lien.
+        console.error(`[fil] mail en attente : tâche ${tacheCreee} créée, lien non écrit user=${userId}:`, e?.message ?? e);
+        continue;
+      }
       console.error(`[fil] mail en attente : création impossible user=${userId}:`, e?.message ?? e);
       await d.liberer(userId, f.threadId).catch(() => {});
     }

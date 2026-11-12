@@ -1,16 +1,16 @@
 // Les vraies dépendances des mails en attente (base, Unipile, tâches). Séparées de
 // mails-attente.ts pour que ses tests n'importent ni la base ni le réseau.
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { clients, inboxConversations, leads, mailsEnAttente, projects } from "@shared/schema";
+import { clients, inboxConversations, leads, mailsEnAttente, projects, tasks } from "@shared/schema";
 import { plusJours } from "@shared/atelier";
 import { storage } from "../../storage";
 import { listerEmailsRecus } from "../unipile-mail";
 import { listUnipileAccounts } from "../linkedin";
 import { joursTravailles } from "../campagne/placement";
 import { creerTache } from "../taches/ecrire-tache";
-import { rattacherAvantCreation } from "./rattachement";
-import type { DepsMails } from "./mails-attente";
+import { rattacheurDuPassage } from "./rattachement";
+import { RESERVATION_PERIMEE_MS, type DepsMails } from "./mails-attente";
 
 const adresse = (v: unknown): string | null =>
   typeof v === "string" && v.includes("@") ? v.trim().toLowerCase() : null;
@@ -51,16 +51,33 @@ export const depsMails: DepsMails = {
     return new Set(rows.map((r) => r.t).filter((x): x is string => !!x));
   },
   async threadsConnus(userId, threadIds) {
-    if (threadIds.length === 0) return new Set();
-    const rows = await db.select({ t: mailsEnAttente.threadId }).from(mailsEnAttente)
+    if (threadIds.length === 0) return [];
+    return db.select({ threadId: mailsEnAttente.threadId, taskId: mailsEnAttente.taskId, createdAt: mailsEnAttente.createdAt })
+      .from(mailsEnAttente)
       .where(and(eq(mailsEnAttente.userId, userId), inArray(mailsEnAttente.threadId, threadIds)));
-    return new Set(rows.map((r) => r.t));
   },
-  async reserver(userId, l) {
-    const r = await db.insert(mailsEnAttente).values({
-      userId, threadId: l.threadId, expediteur: l.expediteur, sujet: l.sujet, dernierMessageAt: l.dernierMessageAt,
-    }).onConflictDoNothing().returning({ id: mailsEnAttente.id });
+  async reserver(userId, l, maintenant) {
+    // Une ligne existante n'est reprise que sans tâche et périmée (même règle que ligneLibre),
+    // dans la même instruction : deux passages ne peuvent pas la prendre tous les deux.
+    const valeurs = { expediteur: l.expediteur, sujet: l.sujet, dernierMessageAt: l.dernierMessageAt, createdAt: maintenant };
+    const r = await db.insert(mailsEnAttente).values({ userId, threadId: l.threadId, ...valeurs })
+      .onConflictDoUpdate({
+        target: [mailsEnAttente.userId, mailsEnAttente.threadId],
+        set: valeurs,
+        setWhere: and(
+          isNull(mailsEnAttente.taskId),
+          lt(mailsEnAttente.createdAt, new Date(maintenant.getTime() - RESERVATION_PERIMEE_MS)),
+        ),
+      })
+      .returning({ id: mailsEnAttente.id });
     return r.length > 0;
+  },
+  async tacheDuFil(userId, threadId) {
+    const [t] = await db.select({ id: tasks.id }).from(tasks).where(and(
+      eq(tasks.userId, userId), eq(tasks.source, "fil_mail"),
+      sql`${tasks.actionData} -> 'mail' ->> 'threadId' = ${threadId}`,
+    )).orderBy(desc(tasks.id)).limit(1);
+    return t?.id ?? null;
   },
   async liberer(userId, threadId) {
     // Seulement une réservation restée sans tâche.
@@ -83,14 +100,8 @@ export const depsMails: DepsMails = {
     ]);
     return { clients: c.filter((x) => x.actif !== false), projets: p, leads: l };
   },
-  async rattacher(userId, b) {
-    try {
-      return await rattacherAvantCreation(userId, b);
-    } catch (e: any) {
-      console.error(`[fil] mails en attente : rattachement impossible user=${userId}:`, e?.message ?? e);
-      return {};
-    }
-  },
+  // Carte chargée une fois par passage ; hors interrupteur ou carte illisible : {} (consigné).
+  rattacheur: (userId) => rattacheurDuPassage(userId),
   async premierJourTravaille(userId, jour) {
     const { isWorkDay } = await joursTravailles(storage as any, userId, jour, plusJours(jour, 30));
     for (let j = jour, i = 0; i <= 30; j = plusJours(j, 1), i++) if (isWorkDay(j)) return j;

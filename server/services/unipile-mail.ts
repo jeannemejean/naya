@@ -77,7 +77,9 @@ export interface EmailUnipile {
   role: string | null;
   folders: string[];
   from: { email: string; nom: string | null } | null;
+  /** Destinataires directs (to) ; la copie est dans `cc`. */
   to: string[];
+  cc: string[];
   sujet: string;
   /** En-têtes en minuscules ; null quand Unipile ne les a pas renvoyés (mail « meta » ou « ref »). */
   headers: Record<string, string> | null;
@@ -106,10 +108,7 @@ export function versEmailUnipile(item: any): EmailUnipile | null {
       if (k) headers[k.toLowerCase()] = String(h?.value ?? "");
     }
   }
-  const destinataires = [
-    ...(Array.isArray(item?.to_attendees) ? item.to_attendees : []),
-    ...(Array.isArray(item?.cc_attendees) ? item.cc_attendees : []),
-  ].map(adresseDe).filter((x): x is string => !!x);
+  const adresses = (l: unknown) => (Array.isArray(l) ? l : []).map(adresseDe).filter((x): x is string => !!x);
   return {
     id,
     threadId: chaine(item?.thread_id),
@@ -117,7 +116,8 @@ export function versEmailUnipile(item: any): EmailUnipile | null {
     role: chaine(item?.role)?.toLowerCase() ?? null,
     folders: Array.isArray(item?.folders) ? item.folders.map(String) : [],
     from: email ? { email, nom: chaine(item?.from_attendee?.display_name) } : null,
-    to: destinataires,
+    to: adresses(item?.to_attendees),
+    cc: adresses(item?.cc_attendees),
     sujet: typeof item?.subject === "string" ? item.subject : "",
     headers,
   };
@@ -148,14 +148,18 @@ export async function listerEmailsRecus(accountId: string, depuis: Date): Promis
       throw new Error(`network ${String(e?.message || e)}`.slice(0, 200));
     }
     if (!res.ok) throw new Error(`liste des mails : http_${res.status}`);
-    const data: any = await res.json().catch(() => ({}));
-    for (const item of Array.isArray(data?.items) ? data.items : []) {
+    // Un corps illisible n'est pas une page vide : on lève, comme pour une erreur HTTP.
+    const data: any = await res.json().catch(() => null);
+    if (!data || !Array.isArray(data.items)) throw new Error("liste des mails : réponse illisible");
+    for (const item of data.items) {
       const m = versEmailUnipile(item);
       if (m) mails.push(m);
     }
-    cursor = chaine(data?.cursor);
+    cursor = chaine(data.cursor);
     if (!cursor) break;
   }
+  // Plafond atteint avec encore des pages : on le dit (un compte seulement, rien du contenu).
+  if (cursor) console.warn(`[unipile] liste des mails tronquée à ${EMAILS_PAGES_MAX} pages (${mails.length} mails lus)`);
   return mails;
 }
 
