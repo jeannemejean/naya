@@ -743,6 +743,9 @@ existante touchée.
   `indicateurs_releves_user_cle_jour_uq (user_id, cle, releve_le)`.
 - Appliquée sur dev-local `ep-jolly-sky` ; pas encore en production.
 - **Ordre impératif : migration AVANT de pousser `main`** (le planificateur du matin lit et écrit `mails_en_attente`).
+  De plus, dès le déploiement, TOUTES les tâches de fond (planificateur, veille AO, envoi de prospection, revue du
+  matin, indexeur) écrivent `etat_taches_fond` à chaque passage, pour tout le monde et sans interrupteur : sans la
+  table, chaque passage journalise une erreur d'écriture (avalée, la tâche continue). Donc `0042` avant le push.
 - Procédure habituelle : point de restauration Neon, répétition sur branche d'essai, puis `scripts/migrate-prod.ts`.
 
 ### Vérification après application

@@ -3,6 +3,9 @@
 // appels Claude sont mockés : aucun test ne touche une vraie base ni le réseau.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// La base est factice : les modules du fil la chargent, aucun test ne la touche.
+vi.mock("../../db", async () => await import("./__fixtures__/db-factice"));
+
 const s = vi.hoisted(() => ({
   getProjectGoal: vi.fn(), getProject: vi.fn(), getProjects: vi.fn(), getActiveGoalsForProject: vi.fn(),
   getMilestones: vi.fn(), getMilestone: vi.fn(), createMilestone: vi.fn(), createMilestoneCondition: vi.fn(),

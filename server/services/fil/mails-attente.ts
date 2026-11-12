@@ -12,6 +12,7 @@
 // (`include_headers=true`) ; un mail renvoyé sans en-têtes n'est jugé que sur son adresse.
 import type { EmailUnipile } from "../unipile-mail";
 import type { BrouillonTache, Rattachement } from "./rattachement";
+import { parisTodayString } from "../../utils/timezone";
 
 /** Source des tâches « répondre au mail » créées par Naya. */
 export const SOURCE_MAIL = "fil_mail";
@@ -208,14 +209,6 @@ export interface DepsMails {
   creerTache(userId: string, donnees: Record<string, unknown>): Promise<{ ok: true; tache: { id: number } } | { ok: false; status: number; message: string }>;
 }
 
-// Paris : le jour de l'utilisatrice (le serveur tourne en UTC).
-function jourParis(d: Date): string {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(d).map((x) => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day}`;
-}
-
 const borner = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
 
 /**
@@ -244,7 +237,7 @@ export async function synchroniserMailsEnAttente(
 
   const candidats = await d.candidats(userId);
   const domainesPropres = new Set(Array.from(propres, (a) => domaineDe(a)));
-  const jour = await d.premierJourTravaille(userId, jourParis(maintenant));
+  const jour = await d.premierJourTravaille(userId, parisTodayString(maintenant));
   const rattacher = d.rattacheur(userId);
   let creees = 0;
   for (const f of nouveaux) {

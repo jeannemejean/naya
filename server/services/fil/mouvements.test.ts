@@ -2,9 +2,14 @@
 // signalé le matin avec son prochain pas ; un rendez-vous de l'agenda qui le cite compte comme
 // mouvement. Toutes les sources sont injectées : aucun test ne touche une vraie base ni l'agenda.
 import { describe, it, expect, vi } from "vitest";
+
+// La base est factice : les modules du fil la chargent, aucun test ne la touche.
+vi.mock("../../db", async () => await import("./__fixtures__/db-factice"));
+const agendaMock = vi.hoisted(() => ({ getCalendarEvents: vi.fn() }));
+vi.mock("../google-calendar", () => agendaMock);
 import type { CarteFil, EtapeCarte, ObjectifCarte } from "./carte";
 import {
-  chantiersDe, evenementCite, chantiersSansMouvement, collecterMouvements, chantiersBloquesEnCache, viderCacheChantiers, requeteTachesFaites,
+  chantiersDe, evenementCite, chantiersSansMouvement, collecterMouvements, chantiersBloquesEnCache, viderCacheChantiers, requeteTachesFaites, sourcesParDefaut,
   type Chantier, type SourcesMouvements,
 } from "./mouvements";
 
@@ -204,5 +209,21 @@ describe("chantiersBloquesEnCache", () => {
     const calculer = vi.fn().mockRejectedValueOnce(new Error("base")).mockResolvedValue([]);
     await expect(chantiersBloquesEnCache("u1", carte, MAINTENANT, calculer)).rejects.toThrow("base");
     await expect(chantiersBloquesEnCache("u1", carte, MAINTENANT, calculer)).resolves.toEqual([]);
+  });
+});
+
+describe("agenda par défaut : jours et heures de Paris", () => {
+  it("bornes en jours de Paris ; l'heure murale d'un rendez-vous lue à Paris, pas dans le fuseau du serveur", async () => {
+    agendaMock.getCalendarEvents.mockResolvedValue([
+      { title: "Point Garance", date: "2026-11-10", startTime: "09:30", allDay: false },
+      { title: "Salon", date: "2026-11-11", startTime: "00:00", allDay: true },
+    ]);
+    // 23 h 30 UTC le 11 = 0 h 30 le 12 à Paris.
+    const r = await sourcesParDefaut.agenda("u1", new Date("2026-10-28T23:30:00Z"), new Date("2026-11-11T23:30:00Z"));
+    expect(agendaMock.getCalendarEvents).toHaveBeenCalledWith("u1", "2026-10-29", "2026-11-12");
+    expect(r).toEqual([
+      { titre: "Point Garance", at: new Date("2026-11-10T08:30:00Z") },
+      { titre: "Salon", at: new Date("2026-11-11T11:00:00Z") },
+    ]);
   });
 });

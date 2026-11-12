@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import {
-  suiviCreation, debutsDesPhases, suiviCreationEnCache, viderCacheCreation, chargerSuiviCreation,
+  suiviCreation, debutsDesPhases, suiviCreationEnCache, viderCacheCreation, chargerSuiviCreation, oublierCreationDe,
   CACHE_CREATION_MS, type CampagneCreation, type CompteCreation, type PostCreation, type DepsCreation,
 } from "./creation";
 
@@ -168,5 +168,16 @@ describe("chargerSuiviCreation et cache", () => {
     await expect(suiviCreationEnCache("u2", MAINTENANT, plante)).rejects.toThrow("base");
     await suiviCreationEnCache("u2", MAINTENANT, plante);
     expect(plante).toHaveBeenCalledTimes(2);
+  });
+
+  it("oublierCreationDe : après un geste de Jeanne, son suivi se relit (les autres restent gardés)", async () => {
+    viderCacheCreation();
+    const calculer = vi.fn(async () => ({ alertes: [], aValider: [] }));
+    await suiviCreationEnCache("u1", MAINTENANT, calculer);
+    await suiviCreationEnCache("u10", MAINTENANT, calculer);
+    oublierCreationDe("u1");
+    await suiviCreationEnCache("u1", MAINTENANT, calculer);
+    await suiviCreationEnCache("u10", MAINTENANT, calculer);
+    expect(calculer).toHaveBeenCalledTimes(3);
   });
 });

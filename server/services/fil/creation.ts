@@ -17,6 +17,7 @@ import { etatPost, lienAtelier, lundiDe, plusJours } from "@shared/atelier";
 import { couvre, estPublie, type CompteActif, type PostPresence } from "./presence";
 import { computePhaseRanges, DUREE_JOURS } from "../campagne/phases";
 import { formatDate } from "../../utils/dateUtils";
+import { parisTodayString } from "../../utils/timezone";
 
 export const FENETRE_ALERTE_JOURS = 7;
 export const FENETRE_VALIDATION_JOURS = 3;
@@ -72,7 +73,8 @@ export const plateforme = (p: string | null | undefined) => {
   return PLATEFORMES[t.toLowerCase()] ?? (t ? t.charAt(0).toUpperCase() + t.slice(1) : "un réseau");
 };
 
-export const jourParis = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
+/** Le jour (YYYY-MM-DD) d'un instant, à Paris. */
+export const jourParis = parisTodayString;
 // « samedi 14 novembre » (le jour d'un instant, à Paris).
 export const jourLong = (d: Date) => new Intl.DateTimeFormat("fr-FR", {
   timeZone: "Europe/Paris", weekday: "long", day: "numeric", month: "long",
@@ -170,6 +172,11 @@ const cacheCreation = new Map<string, { at: number; valeur: Promise<SuiviCreatio
 /** Pour les tests. */
 export function viderCacheCreation(): void {
   cacheCreation.clear();
+}
+
+/** Après un geste de Jeanne dans l'atelier (post rédigé, validé, noté…) : le suivi se relit au prochain matin. */
+export function oublierCreationDe(userId: string): void {
+  cacheCreation.forEach((_v, k) => { if (k.startsWith(`${userId}:`)) cacheCreation.delete(k); });
 }
 
 export function suiviCreationEnCache(

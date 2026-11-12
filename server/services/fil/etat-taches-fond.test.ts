@@ -88,7 +88,31 @@ describe("suivrePassage", () => {
     await suivrePassage("indexeur", async () => 1);
     await suivrePassage("indexeur", async () => 2);
     expect(h.ecrit.filter((e) => "dernierDebut" in e)).toHaveLength(1);
-    expect(h.ecrit.filter((e) => "dernierSucces" in e)).toHaveLength(2);
+    expect(h.ecrit.filter((e) => "dernierSucces" in e)).toHaveLength(1);
+  });
+  it("le succès aussi : au plus un par 5 minutes ; un succès après une erreur s'écrit tout de suite", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(MAINT);
+      const succes = () => h.ecrit.filter((e) => "dernierSucces" in e).length;
+      await suivrePassage("envoi_prospection", async () => 1);
+      vi.setSystemTime(new Date(MAINT.getTime() + 60_000));
+      await suivrePassage("envoi_prospection", async () => 1);
+      expect(succes()).toBe(1);
+      vi.setSystemTime(new Date(MAINT.getTime() + 2 * 60_000));
+      await expect(suivrePassage("envoi_prospection", async () => { throw new Error("x"); })).rejects.toThrow("x");
+      vi.setSystemTime(new Date(MAINT.getTime() + 3 * 60_000));
+      await suivrePassage("envoi_prospection", async () => 1);
+      expect(succes()).toBe(2); // juste après l'erreur : écrit
+      vi.setSystemTime(new Date(MAINT.getTime() + 4 * 60_000));
+      await suivrePassage("envoi_prospection", async () => 1);
+      expect(succes()).toBe(2);
+      vi.setSystemTime(new Date(MAINT.getTime() + 8 * 60_000));
+      await suivrePassage("envoi_prospection", async () => 1);
+      expect(succes()).toBe(3); // 5 minutes passées
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("un échec d'écriture ne fait pas échouer fn", async () => {
     h.echec = true;

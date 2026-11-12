@@ -26,6 +26,7 @@ import {
   clients, content, inboxConversations, inboxMessages, leads, outreachMessages, projects, tasks,
 } from "@shared/schema";
 import { getCalendarEvents } from "../google-calendar";
+import { parisTodayString, parisWallClockToInstant } from "../../utils/timezone";
 import { etapesActives, type CarteFil } from "./carte";
 
 export const SEUIL_JOURS = 15;
@@ -229,7 +230,6 @@ export async function collecterMouvements(
 
 // ── Sources par défaut (base, agenda) ──────────────────────────────────────────────────
 
-const jourIso = (d: Date) => d.toISOString().slice(0, 10);
 const brut = (r: { projetId: number | null; objectifId?: number | null; etapeId?: number | null; at: Date | null }): MouvementBrut[] =>
   r.at ? [{ projetId: r.projetId, objectifId: r.objectifId ?? null, etapeId: r.etapeId ?? null, at: r.at }] : [];
 
@@ -277,8 +277,9 @@ export const sourcesParDefaut: SourcesMouvements = {
   },
   async agenda(userId, debut, fin) {
     // getCalendarEvents rend [] sans agenda relié ou en cas d'erreur : jamais de panne du matin.
-    const evenements = await getCalendarEvents(userId, jourIso(debut), jourIso(fin));
-    return evenements.map((e) => ({ titre: e.title, at: new Date(`${e.date}T${e.allDay ? "12:00" : e.startTime}:00`) }));
+    // Bornes et heures en Europe/Paris (le serveur tourne en UTC ; l'agenda rend l'heure murale).
+    const evenements = await getCalendarEvents(userId, parisTodayString(debut), parisTodayString(fin));
+    return evenements.map((e) => ({ titre: e.title, at: parisWallClockToInstant(e.date, e.allDay ? "12:00" : e.startTime) }));
   },
 };
 
@@ -322,7 +323,6 @@ export async function chargerChantiersBloques(
 export const CACHE_CHANTIERS_MS = 20 * 60_000;
 type Bloques = { libelle: string; joursSansMouvement: number; prochainPas: string }[];
 const cacheChantiers = new Map<string, { at: number; valeur: Promise<Bloques> }>();
-const jourParis = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
 
 /** Pour les tests. */
 export function viderCacheChantiers(): void {
@@ -333,7 +333,7 @@ export function chantiersBloquesEnCache(
   userId: string, carte: CarteFil, maintenant: Date,
   calculer: (userId: string, carte: CarteFil, maintenant: Date) => Promise<Bloques> = chargerChantiersBloques,
 ): Promise<Bloques> {
-  const cle = `${userId}:${jourParis(maintenant)}`;
+  const cle = `${userId}:${parisTodayString(maintenant)}`;
   const connu = cacheChantiers.get(cle);
   if (connu && maintenant.getTime() - connu.at < CACHE_CHANTIERS_MS) return connu.valeur;
   // Les jours passés et les entrées périmées ne servent plus.

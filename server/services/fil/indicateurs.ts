@@ -39,6 +39,7 @@ import { ligneIndicateurs, nombreIndicateur, type Indicateur } from "@shared/fil
 import { estEcarteParNaya, estPasse } from "@shared/appels-offres";
 import { evenementCite } from "./mouvements";
 import { classeObjectif } from "./rattachement";
+import { parisTodayString } from "../../utils/timezone";
 
 export { ligneIndicateurs };
 
@@ -167,7 +168,6 @@ export const texteSignes = (n: number, cible: number | null) => (cible != null ?
 
 // ── Le calcul ──────────────────────────────────────────────────────────────────────────
 
-const jourParis = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
 
 function raisonDe(e: unknown, defaut: string = RAISONS.lecture): string {
   return e instanceof SourceIndisponible && e.message ? e.message : defaut;
@@ -179,7 +179,7 @@ function raisonDe(e: unknown, defaut: string = RAISONS.lecture): string {
  */
 export async function calculerIndicateurs(userId: string, maintenant: Date, deps: SourcesIndicateurs): Promise<Indicateur[]> {
   const depuis = new Date(maintenant.getTime() - FENETRE_INDICATEURS_JOURS * JOUR_MS);
-  const aujourdhui = jourParis(maintenant);
+  const aujourdhui = parisTodayString(maintenant);
   let comptes: CompteRelie[] = [];
 
   const dispo = (cle: string, valeur: number | string): Indicateur =>

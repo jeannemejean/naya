@@ -23,6 +23,7 @@ import type { ProjectGoal, ProjectMilestone } from "@shared/schema";
 import { filActifPour } from "./interrupteur";
 import { chargerCarte } from "./carte";
 import { bornerPourquoi, estPourquoiCreux } from "./rattachement";
+import { jsonDe } from "./json-ia";
 
 export const DUREE_PROPOSITION_FIL_MS = 7 * 24 * 3600_000;
 export const ETAPES_MIN = 3;
@@ -252,13 +253,6 @@ const SortieEtapes = z.object({
     etat: z.enum(["faite", "en_cours", "a_venir"]),
   })).min(ETAPES_MIN).max(ETAPES_MAX),
 });
-
-// Le premier objet JSON du texte, ou undefined.
-function jsonDe(texte: string): unknown {
-  const bloc = texte.match(/\{[\s\S]*\}/)?.[0];
-  if (!bloc) return undefined;
-  try { return JSON.parse(bloc); } catch { return undefined; }
-}
 
 const jour = (d: Date | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : "?");
 

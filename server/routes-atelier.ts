@@ -19,6 +19,8 @@ import { creerLivrable } from "./services/livrables/service";
 import { depsComptesMemorisees, type DepsComptes } from "./services/connexions/comptes";
 import { livrablesDeps } from "./services/livrables/deps";
 import { estUrlMediaDe } from "./services/livrables/urls";
+import { oublierCreationDe } from "./services/fil/creation";
+import { oublierReconciliationDe } from "./services/fil/cloture";
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -69,6 +71,18 @@ async function vuePost(userId: string, p: any, noms: Map<number, string>, compte
 }
 
 export function registerAtelierRoutes(app: Express): void {
+  // Fil conducteur : un geste réussi dans l'atelier (rédiger, enregistrer, valider, noter…) change
+  // ce que le matin signale en création et en réconciliation ; leurs caches (20 min) sont oubliés.
+  // Hors interrupteur, rien n'est jamais gardé : sans effet.
+  app.use("/api/atelier", (req: any, res, next) => {
+    if (req.method !== "GET") {
+      res.on("finish", () => {
+        if (req.userId && res.statusCode < 400) { oublierCreationDe(req.userId); oublierReconciliationDe(req.userId); }
+      });
+    }
+    next();
+  });
+
   // La semaine (lundi YYYY-MM-DD) : ses posts et ses tâches d'atelier.
   app.get("/api/atelier/:semaine", isAuthenticated, async (req: any, res) => {
     try {

@@ -3,6 +3,9 @@
 // par jour sur énergie basse, tâches non rattachées. Toutes les dépendances sont injectées :
 // aucun test ne touche une vraie base, l'IA ni le réseau.
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// La base est factice : les modules du fil la chargent, aucun test ne la touche.
+vi.mock("../../db", async () => await import("./__fixtures__/db-factice"));
 import type { Task } from "@shared/schema";
 import type { CarteFil, ObjectifCarte } from "./carte";
 import { construireMatin, echeancesDe, viderReprisesEnMemoire, blocTachesDuBrief, SOURCES_HORS_RATTACHEMENT, type DepsMatin } from "./matin";

@@ -7,9 +7,10 @@ vi.mock("../../db", () => ({ db: {}, pool: {} }));
 
 import {
   aTrancher, clotureDuVendredi, poserTacheDeCloture, trancher, demandeTrancher, reconciliation,
-  clotureEnCache, reconciliationEnCache, viderCachesCloture, oublierClotureDe, titreCloture,
+  clotureEnCache, reconciliationEnCache, viderCachesCloture, oublierClotureDe, oublierReconciliationDe, titreCloture,
   type DepsCloture, type DepsTrancher, type DepsReconciliation,
 } from "./cloture";
+import { suiviCreation } from "./creation";
 
 // Jeudi 12, vendredi 13, lundi 16, mardi 17 novembre 2026, 8 h à Paris.
 const JEUDI = new Date("2026-11-12T07:00:00Z");
@@ -321,6 +322,20 @@ describe("reconciliation", () => {
     ]);
   });
 
+  it("un brouillon déjà dans la création (prévu dans les 3 jours) n'est pas répété dans la réconciliation", async () => {
+    const post = (id: number, scheduledFor: string) => ({
+      id, title: `Post ${id}`, platform: "instagram", scheduledFor: new Date(scheduledFor), publishedAt: null,
+      postStatus: "scheduled", contentStatus: "draft", autoPost: false, consigne: null, campaignId: 1, body: null, tendanceProjetId: null,
+    });
+    const lus = [post(1, "2026-11-17T09:00:00Z"), post(2, "2026-11-20T09:00:00Z")];
+    const d = depsReco({ posts: vi.fn(async () => lus), tachesDeProduction: vi.fn(async () => []) });
+    const creation = suiviCreation(lus as any, [], [], LUNDI);
+    expect(creation.aValider.map((v) => v.libelle)).toEqual(["À valider : « Post 1 » (Instagram, mardi 17 novembre)"]);
+    expect((await reconciliation("u1", LUNDI, d)).map((x) => x.libelle)).toEqual([
+      "Post « Post 2 » (Instagram, vendredi 20 novembre) à valider : aucune tâche d'atelier",
+    ]);
+  });
+
   it("posts à valider sans tâche d'atelier ouverte (ni tâche du post) : listés avec le lien de l'atelier de leur semaine", async () => {
     const post = (id: number, scheduledFor: string, extra: any = {}) => ({
       id, title: `Post ${id}`, platform: "instagram", scheduledFor: new Date(scheduledFor), publishedAt: null,
@@ -328,7 +343,7 @@ describe("reconciliation", () => {
     });
     const d = depsReco({
       posts: vi.fn(async () => [
-        post(1, "2026-11-18T09:00:00Z"),                          // semaine du 16, aucun atelier ouvert
+        post(1, "2026-11-20T09:00:00Z"),                          // semaine du 16, aucun atelier ouvert
         post(2, "2026-11-25T09:00:00Z"),                          // semaine du 23, atelier ouvert
         post(3, "2026-11-19T09:00:00Z"),                          // tâche propre au post
         post(4, "2026-11-19T09:00:00Z", { contentStatus: "ready" }), // validé
@@ -337,7 +352,7 @@ describe("reconciliation", () => {
     });
     const r = await reconciliation("u1", LUNDI, d);
     expect(r).toEqual([{
-      source: "posts", libelle: "Post « Post 1 » (Instagram, mercredi 18 novembre) à valider : aucune tâche d'atelier", lien: "/atelier?semaine=2026-11-16",
+      source: "posts", libelle: "Post « Post 1 » (Instagram, vendredi 20 novembre) à valider : aucune tâche d'atelier", lien: "/atelier?semaine=2026-11-16",
     }]);
     const [, debut, fin] = d.posts.mock.calls[0];
     expect(debut).toEqual(new Date("2026-11-15T23:00:00Z")); // minuit à Paris
@@ -380,6 +395,16 @@ describe("caches du matin (20 min par utilisatrice et jour de Paris)", () => {
     await clotureEnCache("u1", new Date(VENDREDI.getTime() + 11 * 60_000), calc);
     expect(calc).toHaveBeenCalledTimes(2);
     await clotureEnCache("u1", new Date(VENDREDI.getTime() + 40 * 60_000), calc);
+    expect(calc).toHaveBeenCalledTimes(3);
+  });
+
+  it("oublierReconciliationDe : la réconciliation de Jeanne se relit, celle des autres reste gardée", async () => {
+    const calc = vi.fn(async () => []);
+    await reconciliationEnCache("u1", LUNDI, calc);
+    await reconciliationEnCache("u10", LUNDI, calc);
+    oublierReconciliationDe("u1");
+    await reconciliationEnCache("u1", LUNDI, calc);
+    await reconciliationEnCache("u10", LUNDI, calc);
     expect(calc).toHaveBeenCalledTimes(3);
   });
 

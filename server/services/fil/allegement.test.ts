@@ -3,6 +3,9 @@
 // dépôt (propositions et actions en mémoire) et modifierTache sont mockés : aucune vraie base.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// La base est factice : les modules du fil la chargent, aucun test ne la touche.
+vi.mock("../../db", async () => await import("./__fixtures__/db-factice"));
+
 const base = vi.hoisted(() => ({ taches: new Map<number, any>() }));
 const s = vi.hoisted(() => ({
   getTask: vi.fn(async (id: number) => (base.taches.has(id) ? { ...base.taches.get(id) } : undefined)),

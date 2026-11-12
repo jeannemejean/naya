@@ -9,6 +9,7 @@ import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
 import { etapesActives, type CarteFil } from "./carte";
 import { objectifDe } from "./etapes";
 import { bornerPourquoi, estPourquoiCreux } from "./rattachement";
+import { jsonDe } from "./json-ia";
 
 export const JOURS_SANS_TACHE = 7;
 export const JOURS_DE_GRACE = 8;
@@ -57,13 +58,6 @@ const SortieReprise = z.object({
   pourquoi: z.string().trim().min(1),
   duree: z.number().optional(),
 });
-
-// Le premier objet JSON du texte, ou undefined.
-function jsonDe(texte: string): unknown {
-  const bloc = texte.match(/\{[\s\S]*\}/)?.[0];
-  if (!bloc) return undefined;
-  try { return JSON.parse(bloc); } catch { return undefined; }
-}
 
 const borneDuree = (d: number | undefined): number =>
   typeof d === "number" && Number.isFinite(d) ? Math.min(REPRISE_MAX, Math.max(REPRISE_MIN, Math.round(d))) : 20;

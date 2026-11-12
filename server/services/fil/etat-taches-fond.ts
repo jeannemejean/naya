@@ -21,7 +21,7 @@ export const ATTENDUS: Record<NomTacheFond, { libelle: string; tolereMinutes: nu
 const messageDe = (e: unknown) => String((e as any)?.message ?? e).slice(0, 500);
 
 const DELAI_ECRITURE_MS = 5000;
-const INTERVALLE_DEBUT_MS = 5 * 60_000;
+const INTERVALLE_ECRITURE_MS = 5 * 60_000;
 // Sous vitest (qui pose VITEST), la persistance est un no-op : server/db.ts charge dotenv, donc
 // un test qui lance une tâche suivie sans fausse DATABASE_URL écrirait dans la vraie base de dev.
 // Seuls les tests de ce module, qui mockent `db`, rétablissent l'écriture.
@@ -30,9 +30,14 @@ const enTest = () => !!process.env.VITEST && !ecritureEnTest;
 export function _autoriserEcritureEnTest(oui: boolean): void { ecritureEnTest = oui; }
 
 const dernierDebutEcrit = new Map<NomTacheFond, number>();
+const dernierSuccesEcrit = new Map<NomTacheFond, number>();
+// Vrai si la dernière écriture de la tâche était une erreur : le succès suivant s'écrit aussitôt.
+const derniereEcritureErreur = new Map<NomTacheFond, boolean>();
 
 /** Pour les tests. */
-export function _reinitialiserEtatTachesFond(): void { dernierDebutEcrit.clear(); }
+export function _reinitialiserEtatTachesFond(): void {
+  dernierDebutEcrit.clear(); dernierSuccesEcrit.clear(); derniereEcritureErreur.clear();
+}
 
 // Un échec d'écriture de l'état est journalisé et avalé : il ne doit jamais faire échouer la
 // tâche. Bornée à quelques secondes : un pool bloqué ne retarde pas la suite.
@@ -59,21 +64,29 @@ async function noter(nom: NomTacheFond, valeurs: Partial<typeof etatTachesFond.$
 export async function suivrePassage<T>(nom: NomTacheFond, fn: () => Promise<T>): Promise<T> {
   // Le début s'écrit en parallèle : `fn` démarre tout de suite, sans attendre la base. Les
   // écritures suivantes l'attendent, pour que le succès ne soit jamais écrasé par le début.
-  // Pas plus d'une écriture de début toutes les 5 minutes par tâche (l'envoi passe chaque minute).
+  // Pas plus d'une écriture de début, ni de succès, toutes les 5 minutes par tâche (l'envoi passe
+  // chaque minute) ; un succès qui suit une erreur s'écrit tout de suite (la panne se lève).
   const maintenant = Date.now();
   const dernier = dernierDebutEcrit.get(nom);
   let debut: Promise<void> = Promise.resolve();
-  if (dernier === undefined || maintenant - dernier >= INTERVALLE_DEBUT_MS) {
+  if (dernier === undefined || maintenant - dernier >= INTERVALLE_ECRITURE_MS) {
     dernierDebutEcrit.set(nom, maintenant);
     debut = noter(nom, { dernierDebut: new Date(maintenant) });
   }
   try {
     const r = await fn();
     await debut;
-    await noter(nom, { dernierSucces: new Date() });
+    const fin = Date.now();
+    const dernierSucces = dernierSuccesEcrit.get(nom);
+    if (derniereEcritureErreur.get(nom) || dernierSucces === undefined || fin - dernierSucces >= INTERVALLE_ECRITURE_MS) {
+      dernierSuccesEcrit.set(nom, fin);
+      derniereEcritureErreur.set(nom, false);
+      await noter(nom, { dernierSucces: new Date(fin) });
+    }
     return r;
   } catch (e) {
     await debut;
+    derniereEcritureErreur.set(nom, true);
     await noter(nom, { derniereErreur: messageDe(e), derniereErreurAt: new Date() });
     throw e;
   }

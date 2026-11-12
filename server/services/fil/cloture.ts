@@ -24,6 +24,7 @@
 //   la rédaction ni écarté), date limite à venir, hors avis écartés par la veille ;
 // - posts : posts à valider (etatPost brouillon / a_rediger) prévus d'aujourd'hui à J+14, sans
 //   tâche d'atelier (ou de validation) ouverte pour leur semaine, ni tâche ouverte du post lui-même ;
+//   ceux des 3 prochains jours sont déjà dans `creation.aValider` et ne sont pas répétés ;
 // - mails : `mails_en_attente` dont la tâche a disparu (supprimée), mail des 14 derniers jours. Une
 //   tâche seulement cochée ou archivée ne remonte pas (la source filtre).
 //
@@ -33,7 +34,7 @@ import type { Task } from "@shared/schema";
 import { estEcarteParNaya, estPasse } from "@shared/appels-offres";
 import { etatPost, lienAtelier, lundiDe, plusJours } from "@shared/atelier";
 import { parisDayBoundsUTC, parisTodayString } from "../../utils/timezone";
-import { debutJourParis, jourLong, jourParis, plateforme } from "./creation";
+import { debutJourParis, FENETRE_VALIDATION_JOURS, jourLong, jourParis, plateforme } from "./creation";
 
 export const JOURS_OUVERTE = 7;
 export const SOURCE_CLOTURE = "fil_cloture";
@@ -248,11 +249,14 @@ function appelsOffres(lignes: AOReconciliation[], maintenant: Date): Incoherence
 async function posts(userId: string, maintenant: Date, d: DepsReconciliation): Promise<Incoherence[]> {
   const debut = debutJourParis(maintenant);
   const fin = new Date(maintenant.getTime() + FENETRE_POSTS_JOURS * JOUR_MS);
+  const finCreation = maintenant.getTime() + FENETRE_VALIDATION_JOURS * JOUR_MS;
   const aValider = (await d.posts(userId, debut, fin))
     .map((p) => ({ p, s: p.scheduledFor ? new Date(p.scheduledFor) : null }))
     .filter((x): x is { p: PostReconciliation; s: Date } => x.s != null && x.s.getTime() >= debut.getTime() && x.s.getTime() <= fin.getTime())
     .map((x) => ({ ...x, semaine: lundiDe(jourParis(x.s)) }))
     .filter((x) => { const e = etatPost(x.p); return e === "brouillon" || e === "a_rediger"; })
+    // Prévu dans les 3 jours : déjà dans `creation.aValider` du même matin, pas deux fois.
+    .filter((x) => x.s.getTime() > finCreation)
     .sort((a, b) => a.s.getTime() - b.s.getTime() || a.p.id - b.p.id);
   if (aValider.length === 0) return [];
   const semaines = [...new Set(aValider.map((x) => x.semaine))].sort();
@@ -331,6 +335,11 @@ export function reconciliationEnCache(
 /** Après un geste de Jeanne : la liste du vendredi se relit au prochain matin. */
 export function oublierClotureDe(userId: string): void {
   cacheCloture.forEach((_v, k) => { if (k.startsWith(`${userId}:`)) cacheCloture.delete(k); });
+}
+
+/** Après un geste de Jeanne sur ce qui attend (post de l'atelier…) : la réconciliation se relit au prochain matin. */
+export function oublierReconciliationDe(userId: string): void {
+  cacheReconciliation.forEach((_v, k) => { if (k.startsWith(`${userId}:`)) cacheReconciliation.delete(k); });
 }
 
 /** Pour les tests. */

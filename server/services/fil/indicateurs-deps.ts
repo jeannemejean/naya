@@ -8,6 +8,7 @@ import {
   projectGoals, projects, socialAccounts, tasks,
 } from "@shared/schema";
 import { storage } from "../../storage";
+import { parisTodayString } from "../../utils/timezone";
 import { lireEvenementsAgenda } from "../google-calendar";
 import { AudienceIndisponible, lireAbonnes } from "../social-publishers";
 import { SOURCE_TACHE_RELANCE } from "../reponses/relance-etat";
@@ -23,7 +24,6 @@ const STADES_ENGAGES = ["in_discussion", "proposal_sent", "signed"];
 /** 4 semaines d'agenda tiennent largement en 8 pages de 250 ; au-delà, « indisponible ». */
 const PAGES_AGENDA_MAX = 8;
 
-const jourIso = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
 const actif = isNull(leads.archivedAt);
 
 /** Comptes dont on suit l'audience : Instagram, profil et pages LinkedIn, actifs. */
@@ -63,7 +63,7 @@ export const sourcesIndicateurs: SourcesIndicateurs = {
     return [...new Set(rows.flatMap((r) => [r.name, r.company ?? ""]).map((n) => n.trim()).filter(Boolean))];
   },
   async agenda(userId, debut, fin) {
-    const evenements = await lireEvenementsAgenda(userId, jourIso(debut), jourIso(fin), PAGES_AGENDA_MAX)
+    const evenements = await lireEvenementsAgenda(userId, parisTodayString(debut), parisTodayString(fin), PAGES_AGENDA_MAX)
       .catch(() => { throw new SourceIndisponible("agenda illisible"); });
     if (evenements == null) return null;
     return evenements.map((e) => ({ titre: e.title, at: new Date(`${e.date}T${e.allDay ? "12:00" : e.startTime}:00`) }));

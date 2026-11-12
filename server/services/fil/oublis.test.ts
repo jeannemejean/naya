@@ -3,6 +3,9 @@
 // test ne touche une vraie base ni le réseau.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// La base est factice : les modules du fil la chargent, aucun test ne la touche.
+vi.mock("../../db", async () => await import("./__fixtures__/db-factice"));
+
 const h = vi.hoisted(() => ({
   objectifDe: vi.fn(), isAiBlocked: vi.fn(), callClaudeWithContext: vi.fn(), getDerniereTacheFaiteParObjectif: vi.fn(),
 }));

@@ -37,6 +37,7 @@ import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
 import { synchroniserValidationsProspection } from "./prospection-verification";
 import { etapesActives, chargerCarteMemo, type CarteFil } from "./fil/carte";
+import { parisTodayString } from "../utils/timezone";
 import { filActifPour, miseEnRoute } from "./fil/interrupteur";
 import { proposerPostsPresence } from "./fil/presence";
 import { synchroniserMailsEnAttente } from "./fil/mails-attente";
@@ -699,7 +700,7 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         //             « indisponible » ; un échec complet est consigné et n'arrête rien.
         if (filActifPour(userId)) {
           const maintenant = new Date();
-          const jour = new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(maintenant);
+          const jour = parisTodayString(maintenant);
           await releverUneFois(userId, jour, depsReleve, maintenant)
             .then((r) => console.log(`[fil] indicateurs : ${r.length} relevé(s), ${r.filter((i) => i.indisponible).length} indisponible(s) user=${userId}`))
             .catch((e: any) => console.error(`[AutoPlanner] Indicateurs (fil) failed for ${userId}:`, e?.message));

@@ -9,6 +9,8 @@
 // toujours pas de tâches de contenu en vrac (filtre-taches-generees.ts) ; c'est un circuit dédié.
 import { z } from "zod";
 import { plusJours } from "@shared/atelier";
+import { parisTodayString } from "../../utils/timezone";
+import { jsonDe } from "./json-ia";
 
 export const SEUIL_DEFAUT = 7;
 export const SEUIL_MIN = 2;
@@ -164,21 +166,6 @@ const SortiePosts = z.object({
   })).min(1).max(POSTS_MAX),
 });
 
-// Le premier objet JSON du texte, ou undefined.
-function jsonDe(texte: string): unknown {
-  const bloc = texte.match(/\{[\s\S]*\}/)?.[0];
-  if (!bloc) return undefined;
-  try { return JSON.parse(bloc); } catch { return undefined; }
-}
-
-// Paris : le jour de l'utilisatrice (le serveur tourne en UTC).
-function jourParis(d: Date): string {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(d).map((x) => [x.type, x.value]));
-  return `${p.year}-${p.month}-${p.day}`;
-}
-
 const formatPour = (plateforme: string) => (normaliser(plateforme) === "linkedin" ? "text" : "feed_image");
 
 function promptPresence(a: {
@@ -227,7 +214,7 @@ export async function proposerPostsPresence(
 }
 
 async function proposerSeul(userId: string, maintenant: Date, deps: DepsPresence): Promise<{ crees: number }> {
-  const aujourdhui = jourParis(maintenant);
+  const aujourdhui = parisTodayString(maintenant);
   const estTravaille = await deps.estTravaille(userId, aujourdhui, plusJours(aujourdhui, 30));
   // Un jour non travaillé : l'atelier du jour n'aurait pas de jour ; le prochain matin travaillé s'en charge.
   if (!estTravaille(aujourdhui)) return { crees: 0 };

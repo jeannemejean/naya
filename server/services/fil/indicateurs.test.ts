@@ -2,6 +2,9 @@
 // les sources sont simulées, le relevé vit dans une table en mémoire qui suit `fusionnerReleve`
 // (le miroir du ON CONFLICT … WHERE de la vraie requête, vérifiée plus bas par son SQL).
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// La base est factice : les modules du fil la chargent, aucun test ne la touche.
+vi.mock("../../db", async () => await import("./__fixtures__/db-factice"));
 import type { Indicateur } from "@shared/fil";
 import {
   calculerIndicateurs, releverEtComparer, indicateursDuJour, releverUneFois, viderRelevesEnMemoire, ligneIndicateurs,
