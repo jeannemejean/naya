@@ -1,11 +1,13 @@
 // Les tâches d'une journée, dans l'ordre des heures : un rond pour cocher, la ligne pour
 // ouvrir. Partagée par le fil d'Aujourd'hui et chaque jour de la Semaine. Sur la journée en
-// cours, une ligne « maintenant » sépare ce qui est passé de ce qui vient.
+// cours, une ligne « maintenant » sépare ce qui est passé de ce qui vient. Sous chaque titre,
+// le pourquoi de la tâche et son étape (fil conducteur), quand ils existent.
 import { useTranslation } from "react-i18next";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { estTacheProspection, indexMaintenant, trierFil } from "./logique";
 import type { TacheJour } from "./useActionsTaches";
+import { LigneFil } from "./LigneFil";
 
 export function ListeTaches({ taches, maintenant, miseEnAvant, projets, onCocher, onOuvrir, estOuvrable }: {
   taches: TacheJour[];
@@ -78,6 +80,8 @@ export function ListeTaches({ taches, maintenant, miseEnAvant, projets, onCocher
                 >
                   {tache.title}
                 </span>
+                {/* Fil conducteur : à quoi sert la tâche, et l'étape qu'elle fait avancer. */}
+                <LigneFil pourquoi={tache.pourquoi} lien={tache.lien} barree={tache.completed} />
                 {(projet || estTacheProspection(tache) || enCours) && (
                   <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground">
                     {enCours && (

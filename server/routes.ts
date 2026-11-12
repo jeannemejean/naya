@@ -95,6 +95,7 @@ import { checkAndUnlockMilestones } from "./services/milestone-engine";
 import { registerAgentRoutes } from "./routes-agent";
 import { registerFilRoutes } from "./routes-fil";
 import { filActifPour } from "./services/fil/interrupteur";
+import { avecLiens } from "./services/fil/lien";
 import { proposerEtapesPour } from "./services/fil/etapes";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
 import { runRealismValidation } from "./services/realism";
@@ -3915,17 +3916,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const startStr = (start as string).slice(0, 10);
         const endStr = (end as string).slice(0, 10);
         const tasks = await storage.getTasksInRange(userId, startStr, endStr, pid);
-        return res.json(await avecVerrous(tasks as any[]));
+        return res.json(await avecLiens(userId, await avecVerrous(tasks as any[])));
       }
       // Date unique (onglet Aujourd'hui)
       if (date && !cid) {
         const dateStr = (date as string).slice(0, 10);
         const tasks = await storage.getTasksInRange(userId, dateStr, dateStr, pid);
-        return res.json(await avecVerrous(tasks as any[]));
+        return res.json(await avecLiens(userId, await avecVerrous(tasks as any[])));
       }
       const dueDate = cid ? undefined : new Date();
       const tasks = await storage.getTasks(userId, dueDate, pid, cid);
-      res.json(await avecVerrous(tasks as any[]));
+      res.json(await avecLiens(userId, await avecVerrous(tasks as any[])));
     } catch (error) {
       console.error("Error fetching tasks:", error);
       res.status(500).json({ message: "Failed to fetch tasks" });
@@ -6030,10 +6031,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           console.error('[tasks/range] Calendar injection error:', calErr.message);
         }
 
-        res.json(finalTasks);
+        // Fil conducteur (sous interrupteur) : l'étape et l'objectif de chaque tâche.
+        res.json(await avecLiens(userId, finalTasks));
       } catch (milestoneErr: any) {
         console.error('[tasks/range] Milestone injection error:', milestoneErr?.message || milestoneErr);
-        res.json((tasks as any[]).filter(t => t.type !== 'milestone')); // fallback silencieux
+        res.json(await avecLiens(userId, (tasks as any[]).filter(t => t.type !== 'milestone'))); // fallback silencieux
       }
     } catch (error) {
       console.error("Error fetching tasks in range:", error);

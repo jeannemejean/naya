@@ -15,9 +15,14 @@ import { CLE_MUTATION_COCHAGE, cocherDansLeCache, derniereCocheEnVol } from "@/l
 import { basculerEvenementAgenda, estEvenementAgenda } from "@/lib/agenda-api";
 import { estTacheDeProduction } from "@shared/livrables";
 import type { Project, Task } from "@shared/schema";
+import type { LienFil } from "@shared/fil";
 import type { TacheAccueil } from "./logique";
 
-export type TacheJour = TacheAccueil & { source?: string | null; type?: string | null; scheduledDate?: string | null };
+// `pourquoi` et `lien` : fil conducteur (le lien n'arrive que sous interrupteur).
+export type TacheJour = TacheAccueil & {
+  source?: string | null; type?: string | null; scheduledDate?: string | null;
+  pourquoi?: string | null; lien?: LienFil | null;
+};
 
 /** Ni les jalons virtuels du planning ni leurs anciennes tâches ne sont des tâches du fil. */
 export const sansJalons = <T extends { type?: string | null; source?: string | null }>(ts: T[]) =>
