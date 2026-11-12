@@ -6,14 +6,17 @@
 //   avec le lien de l'atelier de leur semaine (les posts proposés par la présence en font partie) ;
 // - `aValider` aussi : les phases de campagne qui commencent dans les 7 jours et ne sont pas
 //   validées. `campaigns.phases` ne porte ni date ni validation par phase (forme figée dans
-//   creation.test.ts) : le début se calcule comme computePhaseRanges, et une phase est validée
-//   quand sa campagne est lancée (statut ≠ draft).
+//   creation.test.ts) : le début se calcule par computePhaseRanges, et une phase est validée
+//   quand sa campagne est lancée (statut ≠ draft). Une campagne déjà finie est ignorée.
+// Les fenêtres commencent à minuit (Paris) : un brouillon prévu plus tôt aujourd'hui reste visible.
 // Les rituels de création (« Encore Merci : 3 recettes de la semaine », le lundi) sont les rituels
 // existants : leur rattachement se fait à la matérialisation (ritual-materialize.ts).
 //
 // Ce module n'importe ni la base ni le stockage : les sources sont injectées (creation-deps.ts).
 import { etatPost, lienAtelier, lundiDe, plusJours } from "@shared/atelier";
 import { couvre, estPublie, type CompteActif, type PostPresence } from "./presence";
+import { computePhaseRanges, DUREE_JOURS } from "../campagne/phases";
+import { formatDate } from "../../utils/dateUtils";
 
 export const FENETRE_ALERTE_JOURS = 7;
 export const FENETRE_VALIDATION_JOURS = 3;
@@ -34,30 +37,27 @@ export interface SuiviCreation { alertes: string[]; aValider: { libelle: string;
 
 // ── Les phases ─────────────────────────────────────────────────────────────────────────
 
-// Mêmes durées que /api/campaigns/:id/launch (routes.ts) et DUREE_JOURS (campagne/repenser.ts).
-const DUREE_JOURS: Record<string, number> = {
-  "1_week": 7, "2_weeks": 14, "3_weeks": 21, "1_month": 30,
-  "2_months": 60, "3_months": 90, "6_months": 180, "12_months": 365,
-};
-
 /**
- * Le jour de début de chaque phase, du même découpage que computePhaseRanges
- * (campagne/placement.ts) : phases triées par numéro, floor(durée / nombre) jours chacune.
- * Sans date de début ou sans phases lisibles : rien.
+ * Le jour de début de chaque phase et le dernier jour de la campagne, par `computePhaseRanges`
+ * (campagne/phases.ts), avec la date de départ lue comme au lancement (`startDate + "T00:00:00"`,
+ * /api/campaigns/:id/launch). Sans date de début ou sans phases lisibles : rien.
  */
-export function debutsDesPhases(c: CampagneCreation): { numero: number; nom: string; debut: string }[] {
+export function debutsDesPhases(c: CampagneCreation): { numero: number; nom: string; debut: string; finCampagne: string }[] {
   if (!c.startDate || !/^\d{4}-\d{2}-\d{2}/.test(c.startDate) || !Array.isArray(c.phases)) return [];
   const phases = (c.phases as any[])
     .filter((p) => p && typeof p === "object" && Number.isFinite(Number(p.number)))
-    .sort((a, b) => Number(a.number) - Number(b.number));
+    .map((p) => ({ ...p, number: Number(p.number) }));
   if (phases.length === 0) return [];
   const jours = DUREE_JOURS[c.duration || "3_months"] || 90;
-  const parPhase = Math.max(1, Math.floor(jours / phases.length));
-  const depart = c.startDate.slice(0, 10);
-  return phases.map((p, i) => ({
-    numero: Number(p.number),
+  const plages = computePhaseRanges(phases, new Date(`${c.startDate.slice(0, 10)}T00:00:00`), jours);
+  const triees = [...phases].sort((a, b) => a.number - b.number);
+  // Fin de la campagne : la fin de la dernière phase (durée − 1 jours après le départ).
+  const finCampagne = formatDate(plages[triees[triees.length - 1].number].end);
+  return triees.map((p) => ({
+    numero: p.number,
     nom: String(p.name || p.title || `Phase ${p.number}`),
-    debut: plusJours(depart, i * parPhase),
+    debut: formatDate(plages[p.number].start),
+    finCampagne,
   }));
 }
 
@@ -84,12 +84,22 @@ const jourLongIso = (jour: string) => new Intl.DateTimeFormat("fr-FR", {
 
 const date = (v: Date | string | null | undefined): Date | null => (v ? new Date(v) : null);
 
+/** Minuit à Paris, le jour de `maintenant` : un brouillon en retard d'aujourd'hui reste visible. */
+export function debutJourParis(maintenant: Date): Date {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  }).formatToParts(maintenant).map((x) => [x.type, x.value]));
+  const ecoule = (Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second)) * 1000 + maintenant.getUTCMilliseconds();
+  return new Date(maintenant.getTime() - ecoule);
+}
+
 export function suiviCreation(
   posts: PostCreation[], comptesActifs: CompteCreation[], campagnes: CampagneCreation[], maintenant: Date,
 ): SuiviCreation {
-  const t = maintenant.getTime();
-  const finAlerte = t + FENETRE_ALERTE_JOURS * JOUR_MS;
-  const finValidation = t + FENETRE_VALIDATION_JOURS * JOUR_MS;
+  // Les fenêtres partent de minuit (Paris) et finissent 7 ou 3 jours après maintenant.
+  const t = debutJourParis(maintenant).getTime();
+  const finAlerte = maintenant.getTime() + FENETRE_ALERTE_JOURS * JOUR_MS;
+  const finValidation = maintenant.getTime() + FENETRE_VALIDATION_JOURS * JOUR_MS;
 
   // Un post couvre un compte : il le désigne, sinon même plateforme ET même portée (un post d'un
   // projet client ne couvre pas le compte de la marque, et inversement).
@@ -124,6 +134,7 @@ export function suiviCreation(
   for (const c of campagnes) {
     if ((c.status ?? "draft") !== "draft") continue; // lancée = validée
     for (const ph of debutsDesPhases(c)) {
+      if (ph.finCampagne < aujourdhui) continue; // campagne déjà finie : plus rien à valider
       if (ph.debut < aujourdhui || ph.debut > limite) continue;
       aValider.push({
         libelle: `Campagne « ${c.name} » : la phase « ${ph.nom} » commence le ${jourLongIso(ph.debut)}, campagne pas encore lancée`,
@@ -148,7 +159,7 @@ export interface DepsCreation {
 export async function chargerSuiviCreation(userId: string, maintenant: Date, deps?: DepsCreation): Promise<SuiviCreation> {
   const d = deps ?? (await import("./creation-deps")).depsCreation;
   const fin = new Date(maintenant.getTime() + FENETRE_ALERTE_JOURS * JOUR_MS);
-  const [comptes, posts, campagnes] = await Promise.all([d.comptesActifs(userId), d.posts(userId, maintenant, fin), d.campagnes(userId)]);
+  const [comptes, posts, campagnes] = await Promise.all([d.comptesActifs(userId), d.posts(userId, debutJourParis(maintenant), fin), d.campagnes(userId)]);
   return suiviCreation(posts, comptes, campagnes, maintenant);
 }
 

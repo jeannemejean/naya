@@ -1,7 +1,7 @@
 // Matérialise les rituels d'un utilisateur en tâches concrètes pour une date donnée.
 // Appelée AVANT toute génération IA : le créneau du rituel est ainsi déjà occupé.
 import { storage } from "../storage";
-import { ritualOccursOn, buildRitualTask } from "./rituals";
+import { ritualOccursOn, buildRitualTask, estRituelDeCreation } from "./rituals";
 import { rattacheurDuPassage } from "./fil/rattachement";
 
 /**
@@ -12,10 +12,11 @@ import { rattacheurDuPassage } from "./fil/rattachement";
 export async function materializeRituals(userId: string, date: string): Promise<number> {
   const rituals = await storage.getActiveRituals(userId);
   let created = 0;
-  // Fil conducteur (spec §8, point 6) : un rituel de création (« Encore Merci : 3 recettes de la
-  // semaine ») est rattaché à l'objectif de visibilité de SON projet (règle « contenu »). Hors
-  // interrupteur, le rattacheur rend `{}` : la tâche est créée exactement comme avant. Un rituel
-  // transverse (sans projet) n'est pas rattaché : on ne devine pas l'objectif sur toute la carte.
+  // Fil conducteur (spec §8, point 6) : un rituel de CRÉATION (titre reconnu par
+  // estRituelDeCreation, ex. « Encore Merci : 3 recettes de la semaine ») est rattaché à l'objectif
+  // de visibilité de SON projet (règle « contenu »). Les autres rituels restent sans objectif.
+  // Hors interrupteur, le rattacheur rend `{}` : la tâche est créée exactement comme avant. Un
+  // rituel transverse (sans projet) n'est pas rattaché : on ne devine pas l'objectif sur toute la carte.
   const rattacher = rattacheurDuPassage(userId);
 
   for (const ritual of rituals) {
@@ -26,7 +27,7 @@ export async function materializeRituals(userId: string, date: string): Promise<
 
     const draft = buildRitualTask(ritual, date);
     try {
-      const rattachement = ritual.projectId != null
+      const rattachement = ritual.projectId != null && estRituelDeCreation(ritual.title)
         ? await rattacher({ projectId: ritual.projectId, type: "content" })
         : {};
       await storage.createTask({

@@ -1,20 +1,11 @@
 // La création, version Naya (spec §8, point 6) : alerte par compte actif sans rien de prévu sur
 // 7 jours, posts à valider dans les 3 jours (lien vers l'atelier), phases de campagne non
 // validées qui commencent dans les 7 jours, et rituels de création rattachés à l'objectif de
-// visibilité du projet. Toutes les dépendances sont injectées ou simulées : aucun test ne touche
-// une vraie base, l'IA ni le réseau.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// visibilité du projet (testés dans ritual-materialize.test.ts). Toutes les dépendances sont
+// injectées : aucun test ne touche une vraie base, l'IA ni le réseau. creation.ts n'importe ni la
+// base ni le stockage.
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Le rituel passe par storage et par la carte : tout est simulé (aucune requête réelle).
-vi.mock("../../db", () => ({ db: {} }));
-vi.mock("../../storage", () => ({
-  storage: { getActiveRituals: vi.fn(), getRitualTaskForDate: vi.fn(), createTask: vi.fn() },
-}));
-vi.mock("./carte", async (importOriginal) => ({ ...(await importOriginal<typeof import("./carte")>()), chargerCarte: vi.fn() }));
-
-import { storage } from "../../storage";
-import { chargerCarte, type CarteFil } from "./carte";
-import { materializeRituals } from "../ritual-materialize";
 import {
   suiviCreation, debutsDesPhases, suiviCreationEnCache, viderCacheCreation, chargerSuiviCreation,
   CACHE_CREATION_MS, type CampagneCreation, type CompteCreation, type PostCreation, type DepsCreation,
@@ -80,6 +71,13 @@ describe("suiviCreation : posts à valider", () => {
     expect(r.aValider.map((x) => x.libelle)).toEqual(["À rédiger : « Proposition » (Instagram, vendredi 13 novembre)"]);
   });
 
+  it("brouillon prévu plus tôt aujourd'hui (en retard) : visible ; prévu hier : non", () => {
+    const retard = post({ id: 13, title: "Retard", scheduledFor: new Date("2026-11-12T06:00:00Z"), contentStatus: "draft", autoPost: false });
+    const hier = post({ id: 14, title: "Hier", scheduledFor: new Date("2026-11-11T20:00:00Z"), contentStatus: "draft", autoPost: false });
+    expect(suiviCreation([retard, hier], [INSTA], [], MAINTENANT).aValider.map((x) => x.libelle))
+      .toEqual(["À valider : « Retard » (Instagram, jeudi 12 novembre)"]);
+  });
+
   it("post `origine='presence'` avec sa consigne : brouillon, donc à valider", () => {
     const p = post({ id: 12, title: "Coulisses", scheduledFor: dans(1), contentStatus: "idea", autoPost: false, body: "", consigne: "Angle coulisses" });
     expect(suiviCreation([p], [INSTA], [], MAINTENANT).aValider).toHaveLength(1);
@@ -103,9 +101,9 @@ const campagne = (extra: Partial<CampagneCreation>): CampagneCreation => ({
 describe("suiviCreation : phases de campagne", () => {
   it("débuts des phases : même découpage que computePhaseRanges (30 jours / 3 phases = 10 jours)", () => {
     expect(debutsDesPhases(campagne({}))).toEqual([
-      { numero: 1, nom: "Fondations", debut: "2026-11-15" },
-      { numero: 2, nom: "Accélération", debut: "2026-11-25" },
-      { numero: 3, nom: "Conversion", debut: "2026-12-05" },
+      { numero: 1, nom: "Fondations", debut: "2026-11-15", finCampagne: "2026-12-14" },
+      { numero: 2, nom: "Accélération", debut: "2026-11-25", finCampagne: "2026-12-14" },
+      { numero: 3, nom: "Conversion", debut: "2026-12-05", finCampagne: "2026-12-14" },
     ]);
     // Sans date de début, ou sans phases lisibles : rien.
     expect(debutsDesPhases(campagne({ startDate: null }))).toEqual([]);
@@ -125,6 +123,18 @@ describe("suiviCreation : phases de campagne", () => {
     ]);
     expect(suiviCreation([], [], [campagne({ startDate: "2026-12-01" })], MAINTENANT).aValider).toEqual([]);
   });
+
+  it("campagne non lancée déjà finie : ignorée (même si une phase « commence » dans la fenêtre)", () => {
+    // 1 semaine pour 10 phases (computePhaseRanges : 1 jour chacune, la campagne finit au 7e) :
+    // partie le 3 nov., finie le 9 ; la phase 10 « commencerait » le 12, aujourd'hui.
+    const phases10 = Array.from({ length: 10 }, (_, i) => ({ ...PHASES[0], number: i + 1, name: `P${i + 1}` }));
+    expect(debutsDesPhases(campagne({ startDate: "2026-11-03", duration: "1_week", phases: phases10 }))[9])
+      .toMatchObject({ debut: "2026-11-12", finCampagne: "2026-11-09" });
+    expect(suiviCreation([], [], [campagne({ startDate: "2026-11-03", duration: "1_week", phases: phases10 })], MAINTENANT).aValider).toEqual([]);
+    const phases7 = phases10.slice(0, 7);
+    // Encore en cours (finit le 18 nov.) : la phase 7 commence le 18, dans la fenêtre.
+    expect(suiviCreation([], [], [campagne({ startDate: "2026-11-12", duration: "1_week", phases: phases7 })], MAINTENANT).aValider).toHaveLength(7);
+  });
 });
 
 describe("chargerSuiviCreation et cache", () => {
@@ -141,7 +151,8 @@ describe("chargerSuiviCreation et cache", () => {
     const d = deps();
     const r = await chargerSuiviCreation("u1", MAINTENANT, d);
     expect(r.alertes).toHaveLength(1);
-    expect(d.posts).toHaveBeenCalledWith("u1", MAINTENANT, dans(7));
+    // Depuis minuit à Paris (08:00Z = 09:00 Paris → 23:00Z la veille).
+    expect(d.posts).toHaveBeenCalledWith("u1", new Date("2026-11-11T23:00:00Z"), dans(7));
   });
 
   it("gardé 20 min par utilisatrice et par jour ; un échec n'est pas gardé", async () => {
@@ -157,69 +168,5 @@ describe("chargerSuiviCreation et cache", () => {
     await expect(suiviCreationEnCache("u2", MAINTENANT, plante)).rejects.toThrow("base");
     await suiviCreationEnCache("u2", MAINTENANT, plante);
     expect(plante).toHaveBeenCalledTimes(2);
-  });
-});
-
-// ── Rituels de création ────────────────────────────────────────────────────────────────
-
-const ENCORE_MERCI = {
-  id: 21, userId: "u1", projectId: 30, title: "Encore Merci : 3 recettes de la semaine",
-  days: "mon", startTime: "09:00", durationMinutes: 60, active: true, createdAt: null,
-};
-const CARTE: CarteFil = {
-  objectifs: [
-    { id: 5, projetId: 30, titre: "Être visible", successMode: "visibility", goalType: "visibility", cible: null, dueDate: null,
-      etapes: [{ id: 500, objectifId: 5, projetId: 30, titre: "Publier chaque semaine", pourquoi: null, statut: "active", ordre: 0, faites: 0, prevues: 0 }] },
-    { id: 6, projetId: 30, titre: "3 clients", successMode: "revenue", goalType: "revenue", cible: null, dueDate: null, etapes: [] },
-  ],
-  chainesSansObjectif: new Map(), depuis: null,
-};
-const LUNDI = "2026-11-16";
-
-describe("materializeRituals : rattachement des rituels de création", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (storage.getActiveRituals as any).mockResolvedValue([ENCORE_MERCI]);
-    (storage.getRitualTaskForDate as any).mockResolvedValue(undefined);
-    (storage.createTask as any).mockResolvedValue({ id: 99 });
-    (chargerCarte as any).mockResolvedValue(CARTE);
-  });
-  afterEach(() => vi.unstubAllEnvs());
-
-  it("sous interrupteur : la tâche « Encore Merci » est rattachée à l'objectif de visibilité du projet", async () => {
-    vi.stubEnv("FIL_CONDUCTEUR_USERS", "u1");
-    expect(await materializeRituals("u1", LUNDI)).toBe(1);
-    expect((storage.createTask as any).mock.calls[0][0]).toMatchObject({
-      projectId: 30, ritualId: 21, title: "Encore Merci : 3 recettes de la semaine", goalId: 5, milestoneId: 500,
-    });
-  });
-
-  it("hors interrupteur : la tâche est créée exactement comme avant, sans lire la carte", async () => {
-    vi.stubEnv("FIL_CONDUCTEUR_USERS", "");
-    expect(await materializeRituals("u1", LUNDI)).toBe(1);
-    expect((storage.createTask as any).mock.calls[0][0]).toEqual({
-      userId: "u1", projectId: 30, ritualId: 21, type: "admin", category: "planning", taskEnergyType: "execution", priority: 1,
-      title: "Encore Merci : 3 recettes de la semaine", scheduledDate: LUNDI, scheduledTime: "09:00", scheduledEndTime: "10:00",
-      estimatedDuration: 60, schedulingMode: "fixed", source: "ritual",
-    });
-    expect(chargerCarte).not.toHaveBeenCalled();
-  });
-
-  it("sous interrupteur, rituel transverse (sans projet) : aucun rattachement deviné", async () => {
-    vi.stubEnv("FIL_CONDUCTEUR_USERS", "u1");
-    (storage.getActiveRituals as any).mockResolvedValue([{ ...ENCORE_MERCI, projectId: null }]);
-    await materializeRituals("u1", LUNDI);
-    const cree = (storage.createTask as any).mock.calls[0][0];
-    expect(cree.goalId).toBeUndefined();
-    expect(cree.milestoneId).toBeUndefined();
-  });
-
-  it("sous interrupteur, carte illisible : la tâche est créée quand même, sans rattachement", async () => {
-    vi.stubEnv("FIL_CONDUCTEUR_USERS", "u1");
-    (chargerCarte as any).mockRejectedValue(new Error("base"));
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await materializeRituals("u1", LUNDI)).toBe(1);
-    err.mockRestore();
-    expect((storage.createTask as any).mock.calls[0][0].goalId).toBeUndefined();
   });
 });

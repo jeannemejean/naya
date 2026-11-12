@@ -14,6 +14,7 @@
 import { CampagneIntrouvable, tacheEstFaite } from "../campaign-reject/rejeter";
 import { estPublieOuEnCours } from "../refus-post/pur";
 import { placerTachesCampagne, placerPostsCampagne, type PlacementDeps } from "./placement";
+import { DUREE_JOURS } from "./phases";
 import { formatDate, addDays } from "../../utils/dateUtils";
 import type { CampaignGenerationRequest, CampaignStrategy, GeneratedCampaign } from "../openai";
 import type { Articulation } from "../brand-links/links";
@@ -75,10 +76,8 @@ export function placementPourStatut(statut: string | null | undefined): Placemen
 export const CONSIGNE_MAX = 1000;
 export const DELAI_GENERATION_MS = 240_000;
 
-export const DUREE_JOURS: Record<string, number> = {
-  '1_week': 7, '2_weeks': 14, '3_weeks': 21, '1_month': 30,
-  '2_months': 60, '3_months': 90, '6_months': 180, '12_months': 365,
-};
+// Déplacé dans ./phases (pur) ; réexporté ici pour les appelants existants.
+export { DUREE_JOURS };
 
 export interface CampagneRepensable {
   id: number;

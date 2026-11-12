@@ -67,3 +67,22 @@ export function buildRitualTask(ritual: RecurringRitual, date: string): RitualTa
     source: "ritual",
   };
 }
+
+// Mots d'un rituel de CRÉATION (fil conducteur : seuls ces rituels sont rattachés à l'objectif de
+// visibilité du projet). Liste fermée, comparée mot entier après normalisation (sans accents,
+// minuscules) : jamais de sous-chaîne (« poste comptable » ne correspond pas).
+// « recettes » au pluriel seulement : « recette » au singulier est aussi le jargon logiciel de la
+// recette (tests d'acceptation, « Recette Naya »). Cas limite accepté : « Publication des comptes
+// annuels » est pris pour un rituel de création.
+const MOTS_CREATION = new Set([
+  "post", "posts", "reel", "reels", "story", "stories", "carrousel", "carrousels", "carousel", "carousels",
+  "contenu", "contenus", "video", "videos", "newsletter", "newsletters", "article", "articles",
+  "publication", "publications", "podcast", "podcasts", "shooting", "shootings", "tournage", "tournages",
+  "montage", "montages", "legende", "legendes", "recettes", "live", "lives", "tiktok", "instagram", "linkedin",
+]);
+
+/** Le titre du rituel désigne-t-il un rituel de création ? (mots entiers de MOTS_CREATION) */
+export function estRituelDeCreation(titre: string): boolean {
+  const mots = titre.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(/[^a-z0-9]+/);
+  return mots.some((m) => MOTS_CREATION.has(m));
+}

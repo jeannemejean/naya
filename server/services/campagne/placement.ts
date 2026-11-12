@@ -12,6 +12,7 @@ import {
 } from "./production";
 import { placerAteliers } from "../atelier/placement";
 import { rattacheurDuPassage } from "../fil/rattachement";
+import { computePhaseRanges } from "./phases";
 
 export const DAY_ABBRS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 export const DEFAULT_WORK_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri']);
@@ -32,30 +33,8 @@ export function minToHHMM(mins: number): string {
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 }
 
-export function computePhaseRanges(
-  phases: Array<{ number: number }>,
-  startDate: Date,
-  campaignDurationDays: number
-): Record<number, { start: Date; end: Date }> {
-  const sorted = [...phases].sort((a, b) => a.number - b.number);
-  const totalPhases = sorted.length;
-  if (totalPhases === 0) return {};
-  const daysPerPhase = Math.max(1, Math.floor(campaignDurationDays / totalPhases));
-  const result: Record<number, { start: Date; end: Date }> = {};
-
-  sorted.forEach((phase, idx) => {
-    const phaseStartDay = idx * daysPerPhase;
-    const isLast = idx === totalPhases - 1;
-    const phaseEndDay = isLast ? campaignDurationDays - 1 : (idx + 1) * daysPerPhase - 1;
-
-    result[phase.number] = {
-      start: campaignAddDays(startDate, phaseStartDay),
-      end: campaignAddDays(startDate, phaseEndDay),
-    };
-  });
-
-  return result;
-}
+// Déplacé dans ./phases (pur) ; réexporté ici pour les appelants existants.
+export { computePhaseRanges };
 
 export function assignPublicationDates(
   phaseTasks: Array<any>,
