@@ -87,12 +87,12 @@ describe("dans l'interrupteur", () => {
     expect(chargerCarteMock).toHaveBeenCalledTimes(1);
   });
 
-  it("tâches de campagne (canal autre) : rattachement explicite à rien, jamais le premier objectif", async () => {
+  it("tâches de campagne : l'unique objectif de classe visibility du projet de la campagne, jamais le premier objectif", async () => {
     const deps = depsPlacement();
     await placerTachesCampagne(deps as any, { userId: "u1", campaign: campagne, debut: d("2026-10-12"), fin: d("2026-10-26") });
     const t = creees(deps);
     expect(t.length).toBeGreaterThan(0);
-    for (const x of t) expect(x).toMatchObject({ goalId: null, milestoneId: null });
+    for (const x of t) expect(x).toMatchObject({ goalId: 2, milestoneId: 21 });
     expect(chargerCarteMock).toHaveBeenCalledTimes(1);
   });
 

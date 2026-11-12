@@ -507,13 +507,21 @@ ${emotionalNote}${griefBlock}`,
         ).join('\n')}\n`
       : '';
     // Fil conducteur : la tâche nomme son étape et dit ce qu'elle débloque. Hors fil : rien.
+    // Sous le fil, l'exemple et la règle de goalIndex sont REMPLACÉS (pas de « 0 par défaut ») ;
+    // hors fil, texte d'origine au caractère près.
+    const exempleGoalIndex = request.filConducteur
+      ? `"goalIndex": "<integer index of the goal this task serves — omit this key if none>",`
+      : `"goalIndex": 0,`;
+    const regleGoalIndex = request.filConducteur
+      ? `goalIndex must be the ZERO-BASED integer index of the goal the task serves (0 to N-1). Omit goalIndex when the task serves none of the listed goals or when no goals are provided — never default to 0.`
+      : `goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.`;
     const filChamps = request.filConducteur
       ? `\n      "etapeIndex": 0,\n      "pourquoi": "One sentence naming the step (or the goal) and what this task unblocks",`
       : '';
     const filRegles = request.filConducteur
       ? `\n\n═══ STEP AND WHY — required for every task ═══
 "etapeIndex" is the ZERO-BASED index of the current step, in the list "current step(s)" under the goal chosen by "goalIndex".
-Omit "etapeIndex" when that goal lists no current step. Omit "goalIndex" when the task serves none of the listed goals — never default to 0.
+Omit "etapeIndex" when that goal lists no current step, or when goalIndex is omitted.
 "pourquoi" is ONE sentence, in the account language, that names the step or the goal and says what this task unblocks
 (e.g. "Sans ce devis signé, l'étape « 1er client IN SCENA » reste bloquée"). Never a generic phrase like "pour avancer ton objectif".`
       : '';
@@ -577,7 +585,7 @@ ${exemplesTitres(langue)}
   "reasoning": "2-3 sentences: why these specific DIVERSE tasks are the right moves for the week ahead, ensuring variety and progression",
   "tasks": [
     {
-      "goalIndex": 0,${filChamps}
+      ${exempleGoalIndex}${filChamps}
       "title": "Specific first-physical-action (not the outcome)",
       "description": "Step-by-step. Must reference the actual business: offer, audience pain point, platform, brand voice. Specific enough to execute without thinking.",
       "type": "admin|planning|execution",
@@ -620,7 +628,7 @@ that depends on it.
 RULES: At most ${maxTasks} tasks — fewer is fine when the scope leaves less to do; never pad.
 scheduledTime must not overlap. taskEnergyType must be one of the 6 exact values. workflowGroup
 must be one of the 5 exact values listed above — never null. No markdown fences in output.
-goalIndex must be a valid index into the goals list (0 to N-1), or 0 if no goals provided.${filRegles}
+${regleGoalIndex}${filRegles}
 
 ${consignesGenerateur(langue)}`;
 

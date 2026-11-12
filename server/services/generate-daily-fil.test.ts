@@ -36,6 +36,10 @@ describe("generateDailyTasks — fil conducteur", () => {
     expect(prompt()).toContain(`"etapeIndex": 0`);
     expect(prompt()).toContain(`"pourquoi":`);
     expect(prompt()).toContain("never default to 0");
+    // La règle et l'exemple d'origine sont REMPLACÉS, pas contredits par une ligne de plus.
+    expect(prompt()).not.toContain("or 0 if no goals provided");
+    expect(prompt()).not.toContain(`"goalIndex": 0,`);
+    expect(prompt()).toContain(`"goalIndex": "<integer index of the goal this task serves — omit this key if none>",`);
     expect(r.tasks[0]).toMatchObject({ goalIndex: 0, etapeIndex: 0 });
     expect(r.tasks[0].pourquoi).toMatch(/devis/);
   });

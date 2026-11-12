@@ -32,7 +32,14 @@ const etapeEnCours = (o: ObjectifCarte): number | null => etapesActives(o.etapes
 
 const versObjectif = (o: ObjectifCarte): Rattachement => ({ goalId: o.id, milestoneId: etapeEnCours(o) });
 
-const correspond = (o: ObjectifCarte, mode: string) => o.successMode === mode || o.goalType === mode;
+// Une seule classe par objectif : `goalType` s'il est explicite (revenue, visibility,
+// consistency), sinon `successMode`. `successMode` vaut `visibility` PAR DÉFAUT (schéma) :
+// un objectif « revenue » au successMode laissé par défaut ne doit pas capter le contenu.
+const CLASSES_EXPLICITES = new Set(["revenue", "visibility", "consistency"]);
+export const classeObjectif = (o: Pick<ObjectifCarte, "goalType" | "successMode">): string =>
+  CLASSES_EXPLICITES.has(o.goalType) ? o.goalType : o.successMode;
+
+const correspond = (o: ObjectifCarte, classe: string) => classeObjectif(o) === classe;
 
 /**
  * L'UNIQUE objectif du périmètre qui correspond au premier mode trouvé dans `modes`.
@@ -67,6 +74,9 @@ function trouverEtape(carte: CarteFil, id: number): EtapeCarte | undefined {
  * 3. Canal contenu : l'unique objectif actif du projet en `visibility` (à défaut `consistency`).
  *    Sans projet (atelier de contenu, qui couvre la semaine entière) : sur toute la carte.
  * 4. Canal prospection : l'unique objectif actif du projet en `revenue`.
+ * 4 bis. Tâche de campagne (campaignId) hors contenu et prospection : l'unique objectif de
+ *    classe `visibility` du projet de la campagne.
+ * La classe d'un objectif : `goalType` s'il vaut revenue|visibility|consistency, sinon `successMode`.
  * 5. Sinon, ou si plusieurs objectifs correspondent : rien.
  * 6. Jamais une étape `locked` (etapesActives ne renvoie que active|unlocked).
  */
@@ -80,11 +90,14 @@ export function choisirRattachement(b: BrouillonTache, carte: CarteFil): Rattach
     return { goalId: b.goalId, milestoneId: o ? etapeEnCours(o) : null };
   }
   const canal = canalDe(b);
-  if (canal === "autre") return AUCUN;
+  // Tâche de campagne hors contenu et hors prospection : la campagne sert la visibilité du projet.
+  if (canal === "autre" && b.campaignId == null) return AUCUN;
   const perimetre = b.projectId != null ? carte.objectifs.filter((o) => o.projetId === b.projectId) : carte.objectifs;
   const o = canal === "contenu"
     ? uniqueObjectif(perimetre, ["visibility", "consistency"])
-    : uniqueObjectif(perimetre, ["revenue"]);
+    : canal === "prospection"
+      ? uniqueObjectif(perimetre, ["revenue"])
+      : uniqueObjectif(perimetre, ["visibility"]);
   return o ? versObjectif(o) : AUCUN;
 }
 
@@ -158,12 +171,12 @@ export function rattachementTacheGeneree(args: {
   carte: CarteFil | null;
 }): Rattachement & { pourquoi: string | null } {
   const { tache, objectifs, etapesParObjectif, projectId, carte } = args;
-  const pourquoi = typeof tache.pourquoi === "string" && !estPourquoiCreux(tache.pourquoi) ? tache.pourquoi.trim() : null;
-  const gi = tache.goalIndex;
+  const pourquoi = typeof tache.pourquoi === "string" && !estPourquoiCreux(tache.pourquoi) ? bornerPourquoi(tache.pourquoi) : null;
+  const gi = entierOuRien(tache.goalIndex);
   const objectif = typeof gi === "number" && Number.isInteger(gi) ? objectifs[gi] : undefined;
   if (objectif) {
     const etapes = etapesParObjectif.get(objectif.id) ?? [];
-    const ei = tache.etapeIndex;
+    const ei = entierOuRien(tache.etapeIndex);
     const etape = typeof ei === "number" && Number.isInteger(ei) ? etapes[ei] : undefined;
     if (etape) return { goalId: objectif.id, milestoneId: etape.id, pourquoi };
     const r = carte ? choisirRattachement({ projectId, goalId: objectif.id }, carte) : { goalId: objectif.id, milestoneId: null };
@@ -171,4 +184,24 @@ export function rattachementTacheGeneree(args: {
   }
   const r = carte ? choisirRattachement({ projectId, type: tache.type ?? null, taskType: tache.taskType ?? null }, carte) : AUCUN;
   return { ...r, pourquoi };
+}
+
+/** Index renvoyé par le modèle : un entier, ou une chaîne d'entier (« "1" »), sinon rien. */
+function entierOuRien(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isInteger(v)) return v;
+  if (typeof v === "string" && /^\s*\d+\s*$/.test(v)) return Number(v);
+  return undefined;
+}
+
+export const POURQUOI_MAX = 300;
+
+/** « pourquoi » d'au plus 300 caractères : coupé à la fin de la première phrase, sinon au dernier mot. */
+export function bornerPourquoi(p: string): string {
+  const t = p.trim().replace(/\s+/g, " ");
+  if (t.length <= POURQUOI_MAX) return t;
+  const fin = t.search(/[.!?…](\s|$)/);
+  if (fin >= 0 && fin + 1 <= POURQUOI_MAX) return t.slice(0, fin + 1);
+  const coupe = t.slice(0, POURQUOI_MAX - 1);
+  const espace = coupe.lastIndexOf(" ");
+  return `${(espace > 0 ? coupe.slice(0, espace) : coupe).replace(/[\s,;:]+$/, "")}…`;
 }

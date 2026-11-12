@@ -12,7 +12,7 @@ vi.mock("./carte", async (importOriginal) => {
 vi.mock("../../storage", () => ({ storage: {} }));
 vi.mock("../../db", () => ({ db: {}, pool: { query: vi.fn(), on: vi.fn() } }));
 
-import { canalDe, choisirRattachement, estPourquoiCreux, rattacherAvantCreation, rattacheurDuPassage } from "./rattachement";
+import { bornerPourquoi, canalDe, choisirRattachement, classeObjectif, estPourquoiCreux, rattachementTacheGeneree, rattacherAvantCreation, rattacheurDuPassage } from "./rattachement";
 
 const etape = (id: number, objectifId: number | null, projetId: number, ordre: number, statut: string): EtapeCarte =>
   ({ id, objectifId, projetId, titre: `E${id}`, pourquoi: null, statut, ordre, faites: 0, prevues: 0 });
@@ -124,6 +124,70 @@ describe("choisirRattachement", () => {
       const r = choisirRattachement(b, c);
       if (r.milestoneId != null) expect(verrouillees.has(r.milestoneId)).toBe(false);
     }
+  });
+});
+
+describe("classe d'un objectif (correctif I1 : successMode vaut visibility par défaut)", () => {
+  const projet = (objectifs: ObjectifCarte[]): CarteFil => ({ objectifs, chainesSansObjectif: new Map(), depuis: null });
+
+  it("goalType explicite (revenue|visibility|consistency) l'emporte, sinon successMode", () => {
+    expect(classeObjectif({ goalType: "revenue", successMode: "visibility" })).toBe("revenue");
+    expect(classeObjectif({ goalType: "monthly", successMode: "visibility" })).toBe("visibility");
+    expect(classeObjectif({ goalType: "quarterly", successMode: "revenue" })).toBe("revenue");
+  });
+
+  it("goalType revenue + successMode par défaut : PAS une cible de contenu", () => {
+    const c = projet([objectif(1, 7, "visibility", "revenue", [etape(10, 1, 7, 0, "active")])]);
+    expect(choisirRattachement({ projectId: 7, contentId: 1 }, c)).toEqual({ goalId: null, milestoneId: null });
+    expect(choisirRattachement({ projectId: 7, leadId: 1 }, c)).toEqual({ goalId: 1, milestoneId: 10 });
+  });
+
+  it("objectif revenue (successMode par défaut) à côté d'un vrai objectif visibility : le contenu va sans ambiguïté au second", () => {
+    const c = projet([
+      objectif(1, 7, "visibility", "revenue", [etape(10, 1, 7, 0, "active")]),
+      objectif(2, 7, "visibility", "monthly", [etape(20, 2, 7, 0, "active")]),
+    ]);
+    expect(choisirRattachement({ projectId: 7, contentId: 1 }, c)).toEqual({ goalId: 2, milestoneId: 20 });
+    expect(choisirRattachement({ projectId: 7, leadId: 1 }, c)).toEqual({ goalId: 1, milestoneId: 10 });
+  });
+});
+
+describe("tâches de campagne (correctif I2)", () => {
+  it("hors contenu : l'unique objectif de classe visibility du projet de la campagne", () => {
+    expect(choisirRattachement({ projectId: 7, campaignId: 3, type: "planning" }, carte())).toEqual({ goalId: 2, milestoneId: 20 });
+  });
+  it("contenu : la règle de contenu", () => {
+    expect(choisirRattachement({ projectId: 10, campaignId: 3, type: "content" }, carte())).toEqual({ goalId: 6, milestoneId: 60 });
+  });
+  it("aucun objectif visibility (pas de repli consistency), ou plusieurs : {null, null}", () => {
+    expect(choisirRattachement({ projectId: 10, campaignId: 3, type: "planning" }, carte())).toEqual({ goalId: null, milestoneId: null });
+    expect(choisirRattachement({ projectId: 8, campaignId: 3, type: "planning" }, carte())).toEqual({ goalId: null, milestoneId: null });
+  });
+  it("jamais une étape locked : objectif visibility dont l'étape restante est verrouillée → milestoneId null", () => {
+    const c: CarteFil = { objectifs: [objectif(1, 7, "visibility", "monthly", [etape(10, 1, 7, 0, "locked")])], chainesSansObjectif: new Map(), depuis: null };
+    expect(choisirRattachement({ projectId: 7, campaignId: 3, type: "planning" }, c)).toEqual({ goalId: 1, milestoneId: null });
+  });
+});
+
+describe("bornerPourquoi (300 caractères)", () => {
+  it("court : inchangé (espaces normalisés)", () => {
+    expect(bornerPourquoi("  Sans ce devis,  l'étape reste bloquée. ")).toBe("Sans ce devis, l'étape reste bloquée.");
+  });
+  it("long : coupé à la fin de la première phrase", () => {
+    const p = "Sans ce devis signé, l'étape « 1er client » reste bloquée. " + "x ".repeat(200);
+    expect(bornerPourquoi(p)).toBe("Sans ce devis signé, l'étape « 1er client » reste bloquée.");
+  });
+  it("long sans fin de phrase avant 300 : coupé au dernier mot, avec une ellipse", () => {
+    const r = bornerPourquoi("mot ".repeat(120));
+    expect(r.length).toBeLessThanOrEqual(300);
+    expect(r.endsWith("mot…")).toBe(true);
+  });
+  it("appliqué au pourquoi d'une tâche générée", () => {
+    const r = rattachementTacheGeneree({
+      tache: { goalIndex: "0", etapeIndex: 0, pourquoi: "Sans ce devis signé, l'étape reste bloquée. " + "y".repeat(400) },
+      objectifs: [{ id: 1 }], etapesParObjectif: new Map([[1, [{ id: 11 }]]]), projectId: 7, carte: null,
+    });
+    expect(r).toEqual({ goalId: 1, milestoneId: 11, pourquoi: "Sans ce devis signé, l'étape reste bloquée." });
   });
 });
 
