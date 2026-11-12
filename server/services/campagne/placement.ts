@@ -364,6 +364,8 @@ export interface PostPlacable {
   publishedAt?: unknown;
   postStatus?: string | null;
   contentStatus?: string | null;
+  /** `presence` : post proposé par Naya pour la cadence de présence (ouvre un atelier). */
+  origine?: string | null;
 }
 
 const aujourdhuiLocal = () => campaignDateToStr(new Date());

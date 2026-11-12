@@ -677,6 +677,9 @@ export const content = pgTable("content", {
   // les tendances ne sont jamais supprimées, et le post ne doit jamais dépendre d'elles.
   tendanceId: integer("tendance_id"),
   tendanceProjetId: integer("tendance_projet_id"),
+  // Fil conducteur : le circuit qui a créé le post. `presence` = proposé par Naya pour garder
+  // la cadence minimale de présence (fil/presence.ts) ; null = tout autre post.
+  origine: text("origine"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

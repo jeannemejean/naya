@@ -142,6 +142,13 @@ describe("placerTachesProductionPosts — l'atelier de la semaine", () => {
     expect(resume(d2)[0]).toBe("2026-10-19 30 Atelier contenu — semaine du 19 oct.");
   });
 
+  it("posts proposés pour la présence (hors campagne) : ils ouvrent l'atelier, le jour même s'ils sont pour demain", async () => {
+    const proposes = [post(1, "2026-10-15", { campaignId: null, origine: "presence", consigne: "Idée", postFormat: "text" })];
+    const deps = fabrique(proposes);
+    await placerTachesProductionPosts(deps, { userId: "u", posts: proposes, aujourdhui: "2026-10-14" });
+    expect(resume(deps)).toEqual(["2026-10-14 10 Atelier contenu — semaine du 12 oct."]);
+  });
+
   it("vidéo : Tourner et Monter restent des tâches du post, jamais avant l'atelier ; pas de doublon au 2e passage", async () => {
     const posts = [post(1, "2026-10-23", { postFormat: "reel" })];
     const deps = fabrique(posts);

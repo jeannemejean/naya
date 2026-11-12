@@ -710,3 +710,22 @@ select table_name, column_name from information_schema.columns
  where (table_name, column_name) in (('project_milestones','goal_id'),('project_milestones','pourquoi'),
        ('tasks','pourquoi'),('user_preferences','fil_conducteur_depuis'));  -- 4 lignes
 ```
+
+## 14. Fil conducteur — `0041` à appliquer en prod à la main
+
+Fichier : `migrations/0041_ambiguous_earthquake.sql` (branche `feat/fil-conducteur`). Un seul `ADD COLUMN` nullable :
+aucun `DROP`, aucune donnée réécrite.
+
+- `content.origine` (text) : le circuit qui a créé le post ; `presence` = proposé par Naya pour la cadence
+  minimale de présence (`server/services/fil/presence.ts`), null pour tous les autres.
+- Appliquée sur dev-local `ep-jolly-sky` ; pas encore en production.
+- **Ordre impératif : migration AVANT de pousser `main`** (le schéma Drizzle sélectionne cette colonne
+  dans toutes les lectures de `content`).
+- Procédure habituelle : point de restauration Neon, répétition sur branche d'essai, puis `scripts/migrate-prod.ts`.
+
+### Vérification après application
+
+```sql
+select table_name, column_name from information_schema.columns
+ where (table_name, column_name) in (('content','origine'));  -- 1 ligne
+```

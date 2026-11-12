@@ -38,6 +38,7 @@ import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } f
 import { synchroniserValidationsProspection } from "./prospection-verification";
 import { etapesActives, chargerCarte, type CarteFil } from "./fil/carte";
 import { filActifPour, miseEnRoute } from "./fil/interrupteur";
+import { proposerPostsPresence } from "./fil/presence";
 import { proposerRattachements } from "./fil/etapes";
 import { rattachementTacheGeneree } from "./fil/rattachement";
 
@@ -668,6 +669,15 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         await passageAtelierMatin(userId).catch((e: any) =>
           console.error(`[AutoPlanner] Atelier (matin) failed for ${userId}:`, e?.message),
         );
+
+        // 1 ter. Fil conducteur, présence (spec §5) : rien de publié ni de prévu depuis N jours →
+        //        1 à 3 posts proposés à l'atelier, et l'atelier du jour. Jamais publiés sans
+        //        validation ; un échec est consigné et n'arrête jamais le planificateur.
+        if (filActifPour(userId)) {
+          await proposerPostsPresence(userId, new Date())
+            .then((r) => { if (r.crees) console.log(`[fil] présence : ${r.crees} post(s) proposé(s) à l'atelier user=${userId}`); })
+            .catch((e: any) => console.error(`[AutoPlanner] Présence (fil) failed for ${userId}:`, e?.message));
+        }
 
         // 2. Générer les 7 prochains jours de travail
         const workDays = parseWorkDays(prefs?.workDays);

@@ -133,7 +133,8 @@ async function assurerAtelierSemaine(ctx: Contexte, lundi: string): Promise<{ cr
   const premierNonFait = ateliers.find((t) => !t.completed)?.scheduledDate ?? null;
 
   // Un post manuel ne crée pas d'atelier à lui seul (spec : arbitrage) ; il compte dans un atelier qui existe.
-  if (aFaire.length === 0 || (ateliers.length === 0 && !aFaire.some((p) => p.campaignId != null))) {
+  // Un post proposé par Naya pour la présence (fil/presence.ts) en ouvre un, comme un post de campagne.
+  if (aFaire.length === 0 || (ateliers.length === 0 && !aFaire.some((p) => p.campaignId != null || p.origine === "presence"))) {
     return { creees: 0, jourAtelier: premierNonFait };
   }
 

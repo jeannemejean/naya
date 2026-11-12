@@ -288,6 +288,13 @@
       "when": 1794472107857,
       "tag": "0040_massive_chimera",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794478917508,
+      "tag": "0041_ambiguous_earthquake",
+      "breakpoints": true
     }
   ]
 }
