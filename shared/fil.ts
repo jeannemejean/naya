@@ -42,7 +42,14 @@ const COURTS: Record<string, string> = {
   ao_en_redaction_ou_deposes: "AO en cours",
 };
 
+// Au singulier quand la valeur vaut exactement 1 (« 1 réponse », pas « 1 réponses »).
+const SINGULIERS: Record<string, string> = {
+  prospection_envois_4s: "envoi", prospection_reponses_4s: "réponse", prospection_interesses_4s: "intéressé",
+  pipeline_relances_echues: "relance échue", pipeline_signes: "signé", ao_premiers_jets_sans_decision: "premier jet AO",
+};
+
 function court(i: Indicateur): string | null {
+  if (i.valeur === 1 && SINGULIERS[i.cle]) return SINGULIERS[i.cle];
   if (COURTS[i.cle]) return COURTS[i.cle];
   // « Abonnés Instagram JMD » → « abonnés Instagram JMD ». Les posts par compte restent au détail.
   if (i.cle.startsWith("audience_abonnes_")) return i.libelle.charAt(0).toLowerCase() + i.libelle.slice(1);

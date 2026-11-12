@@ -286,7 +286,12 @@ describe("ligneIndicateurs", () => {
       i("prospection_envois_4s", 42, 30), i("prospection_reponses_4s", 5, 5), i("prospection_rdv_4s", null, 2, { indisponible: "agenda non relié" }),
       i("pipeline_relances_echues", 1, 3), i("pipeline_signes", "1 / 2", "0 / 2"), i("pipeline_en_discussion", 3, null),
     ]);
-    expect(l).toBe("42 envois ↑ · 5 réponses = · rdv indisponible · 1 relances échues ↓ · 1 / 2 signés ↑ · 3 en discussion");
+    expect(l).toBe("42 envois ↑ · 5 réponses = · rdv indisponible · 1 relance échue ↓ · 1 / 2 signés ↑ · 3 en discussion");
+  });
+
+  it("met au singulier une valeur de 1, garde le pluriel ailleurs", () => {
+    expect(ligneIndicateurs([i("prospection_reponses_4s", 1, 0), i("prospection_envois_4s", 0, 0), i("pipeline_signes", "1 / 2", null)]))
+      .toBe("1 réponse ↑ · 0 envois = · 1 / 2 signés");
   });
 
   it("ne dépasse jamais 140 caractères", () => {
