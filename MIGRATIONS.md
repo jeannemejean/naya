@@ -729,3 +729,27 @@ aucun `DROP`, aucune donnée réécrite.
 select table_name, column_name from information_schema.columns
  where (table_name, column_name) in (('content','origine'));  -- 1 ligne
 ```
+
+## 15. Fil conducteur — `0042` à appliquer en prod à la main
+
+Fichier : `migrations/0042_whole_vivisector.sql` (branche `feat/fil-conducteur`). Trois `CREATE TABLE`, deux clés
+étrangères (`user_id` → `users.id` en `ON DELETE cascade`), deux index uniques : aucun `DROP`, aucune table
+existante touchée.
+
+- `mails_en_attente` : les fils Gmail devenus une tâche « Répondre à … » (`server/services/fil/mails-attente.ts`) ;
+  index unique `mails_en_attente_user_thread_uq (user_id, thread_id)`, la clé de non-doublon.
+- `etat_taches_fond` : dernier passage de chaque tâche de fond (clé primaire `nom`).
+- `indicateurs_releves` : relevé quotidien des indicateurs du matin ; index unique
+  `indicateurs_releves_user_cle_jour_uq (user_id, cle, releve_le)`.
+- Appliquée sur dev-local `ep-jolly-sky` ; pas encore en production.
+- **Ordre impératif : migration AVANT de pousser `main`** (le planificateur du matin lit et écrit `mails_en_attente`).
+- Procédure habituelle : point de restauration Neon, répétition sur branche d'essai, puis `scripts/migrate-prod.ts`.
+
+### Vérification après application
+
+```sql
+select table_name from information_schema.tables
+ where table_name in ('mails_en_attente','etat_taches_fond','indicateurs_releves');  -- 3 lignes
+select indexname from pg_indexes
+ where indexname in ('mails_en_attente_user_thread_uq','indicateurs_releves_user_cle_jour_uq');  -- 2 lignes
+```

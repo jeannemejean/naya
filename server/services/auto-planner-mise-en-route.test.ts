@@ -25,6 +25,8 @@ const fil = vi.hoisted(() => ({ filActifPour: vi.fn(), miseEnRoute: vi.fn(), pro
 vi.mock("./fil/interrupteur", () => ({ filActifPour: fil.filActifPour, miseEnRoute: fil.miseEnRoute }));
 vi.mock("./fil/etapes", () => ({ proposerRattachements: fil.proposerRattachements }));
 vi.mock("./fil/carte", async (orig) => ({ ...(await orig<any>()), chargerCarte: fil.chargerCarte }));
+const mails = vi.hoisted(() => ({ synchroniserMailsEnAttente: vi.fn() }));
+vi.mock("./fil/mails-attente", () => ({ synchroniserMailsEnAttente: mails.synchroniserMailsEnAttente }));
 
 const { runDailyAutoPlanner } = await import("./auto-planner");
 
@@ -41,6 +43,7 @@ beforeEach(() => {
   fil.filActifPour.mockReturnValue(true);
   fil.proposerRattachements.mockResolvedValue([]);
   fil.chargerCarte.mockResolvedValue({ objectifs: [], chainesSansObjectif: new Map(), depuis: null });
+  mails.synchroniserMailsEnAttente.mockResolvedValue({ creees: 0 });
 });
 
 describe("runDailyAutoPlanner — mise en route du fil", () => {
@@ -73,5 +76,29 @@ describe("runDailyAutoPlanner — mise en route du fil", () => {
     const r = await runDailyAutoPlanner("2026-11-12");
     expect(r.errors).toBe(0);
     expect(r.processed).toBe(1);
+  });
+});
+
+describe("runDailyAutoPlanner — mails en attente (fil)", () => {
+  beforeEach(() => { fil.miseEnRoute.mockResolvedValue({ depuis: DEPUIS, nouveau: false }); });
+
+  it("sous l'interrupteur : synchroniserMailsEnAttente est appelé pour l'utilisatrice", async () => {
+    await runDailyAutoPlanner("2026-11-12");
+    expect(mails.synchroniserMailsEnAttente).toHaveBeenCalledWith("u1", expect.any(Date));
+  });
+
+  it("hors interrupteur : jamais appelé", async () => {
+    fil.filActifPour.mockReturnValue(false);
+    await runDailyAutoPlanner("2026-11-12");
+    expect(mails.synchroniserMailsEnAttente).not.toHaveBeenCalled();
+  });
+
+  it("une boîte illisible est consignée et ne casse pas le passage", async () => {
+    mails.synchroniserMailsEnAttente.mockRejectedValue(new Error("liste des mails : http_503"));
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await runDailyAutoPlanner("2026-11-12");
+    expect(r).toMatchObject({ processed: 1, errors: 0 });
+    expect(err.mock.calls.some((c) => String(c[0]).includes("Mails en attente"))).toBe(true);
+    err.mockRestore();
   });
 });

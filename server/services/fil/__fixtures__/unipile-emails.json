@@ -1,0 +1,134 @@
+{
+  "_doc": "Réponse de GET /api/v1/emails?account_id=…&after=…&limit=100&include_headers=true, forme lue le 12 nov. 2026 sur https://developer.unipile.com/reference/mailscontroller_listmails.md (variante « 2_full » : headers [{name,value}]). Données inventées ; corps vidés. Instant de référence des tests : 2026-11-12T08:00:00.000Z.",
+  "object": "EmailList",
+  "cursor": null,
+  "items": [
+    {
+      "object": "Email", "kind": "2_full", "id": "m-a1", "deprecated_id": "m-a1", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-08T09:00:00.000Z", "role": "sent", "folders": ["SENT"], "folderIds": ["SENT"], "read_date": null,
+      "message_id": "<a1@agence-jmd.com>", "provider_id": "p-a1", "thread_id": "t-humain",
+      "from_attendee": { "display_name": "Jeanne Mejean", "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "display_name": "Claire Martin", "identifier": "claire@studio-lumen.fr", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Devis refonte site", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": [{ "name": "From", "value": "Jeanne Mejean <jeanne@agence-jmd.com>" }]
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-a2", "deprecated_id": "m-a2", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-10T14:30:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<a2@studio-lumen.fr>", "provider_id": "p-a2", "thread_id": "t-humain",
+      "in_reply_to": { "message_id": "<a1@agence-jmd.com>", "id": "m-a1" },
+      "from_attendee": { "display_name": "Claire Martin", "identifier": "Claire@Studio-Lumen.fr", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "display_name": "Jeanne Mejean", "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Re: Devis refonte site", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": [{ "name": "From", "value": "Claire Martin <claire@studio-lumen.fr>" }, { "name": "Auto-Submitted", "value": "no" }]
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-b", "deprecated_id": "m-b", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T07:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<b@notion.so>", "provider_id": "p-b", "thread_id": "t-noreply",
+      "from_attendee": { "display_name": "Notion", "identifier": "noreply@notion.so", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Jeanne, tu as été mentionnée", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-c", "deprecated_id": "m-c", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T06:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<c@lettre-du-lundi.fr>", "provider_id": "p-c", "thread_id": "t-liste",
+      "from_attendee": { "display_name": "Lucie de La Lettre", "identifier": "lucie@lettre-du-lundi.fr", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "La lettre du lundi #42", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": [{ "name": "List-Unsubscribe", "value": "<mailto:desinscription@lettre-du-lundi.fr>" }]
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-d", "deprecated_id": "m-d", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T10:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<d@boulangerie-dupont.fr>", "provider_id": "p-d", "thread_id": "t-prospect",
+      "from_attendee": { "display_name": "Marc Dupont", "identifier": "marc@boulangerie-dupont.fr", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Re: Votre présence sur Instagram", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-e1", "deprecated_id": "m-e1", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-09T08:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<e1@atelier-k.fr>", "provider_id": "p-e1", "thread_id": "t-jeanne-dernier",
+      "from_attendee": { "display_name": "Sophie K", "identifier": "sophie@atelier-k.fr", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Shooting de décembre", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-e2", "deprecated_id": "m-e2", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-10T08:00:00.000Z", "role": "sent", "folders": ["SENT"], "folderIds": ["SENT"], "read_date": null,
+      "message_id": "<e2@agence-jmd.com>", "provider_id": "p-e2", "thread_id": "t-jeanne-dernier",
+      "from_attendee": { "display_name": "Jeanne Mejean", "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "sophie@atelier-k.fr", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Re: Shooting de décembre", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-f", "deprecated_id": "m-f", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-10-28T07:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<f@cabinet-r.fr>", "provider_id": "p-f", "thread_id": "t-vieux",
+      "from_attendee": { "display_name": "Paul R", "identifier": "paul@cabinet-r.fr", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Point sur la mission", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-g", "deprecated_id": "m-g", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T16:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<g@expert-compta.fr>", "provider_id": "p-g", "thread_id": "t-facture",
+      "from_attendee": { "display_name": "Isabelle Roux", "identifier": "isabelle@expert-compta.fr", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "TR: Votre Facture d'octobre", "body": "", "body_plain": "", "has_attachments": true, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-h", "deprecated_id": "m-h", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T05:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<h@banque-exemple.fr>", "provider_id": "p-h", "thread_id": "t-auto",
+      "from_attendee": { "display_name": "Votre conseiller", "identifier": "conseiller@banque-exemple.fr", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Votre relevé est disponible", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": [{ "name": "Auto-Submitted", "value": "auto-generated" }]
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-i", "deprecated_id": "m-i", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T04:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<i@outil-saas.io>", "provider_id": "p-i", "thread_id": "t-bulk",
+      "from_attendee": { "display_name": "Tom de Outil", "identifier": "tom@outil-saas.io", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Une question rapide", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": [{ "name": "Precedence", "value": "bulk" }]
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-j", "deprecated_id": "m-j", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T03:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<j@github.com>", "provider_id": "p-j", "thread_id": "t-notif",
+      "from_attendee": { "display_name": "GitHub", "identifier": "notifications@github.com", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "[naya] Nouveau commentaire", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-k", "deprecated_id": "m-k", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T12:00:00.000Z", "role": "drafts", "folders": ["DRAFT"], "folderIds": ["DRAFT"], "read_date": null,
+      "message_id": "<k@agence-jmd.com>", "provider_id": "p-k", "thread_id": "t-humain",
+      "from_attendee": { "display_name": "Jeanne Mejean", "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "claire@studio-lumen.fr", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Re: Devis refonte site", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    },
+    {
+      "object": "Email", "kind": "2_full", "id": "m-l", "deprecated_id": "m-l", "account_id": "acc-gmail", "type": "GOOGLE_OAUTH",
+      "date": "2026-11-11T09:00:00.000Z", "role": "inbox", "folders": ["INBOX"], "folderIds": ["INBOX"], "read_date": null,
+      "message_id": "<l@agence-jmd.com>", "provider_id": "p-l", "thread_id": "t-jeanne-copie",
+      "from_attendee": { "display_name": "Jeanne Mejean", "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" },
+      "to_attendees": [{ "identifier": "jeanne@agence-jmd.com", "identifier_type": "EMAIL_ADDRESS" }],
+      "subject": "Note pour moi", "body": "", "body_plain": "", "has_attachments": false, "origin": "external", "attachments": [],
+      "headers": []
+    }
+  ]
+}

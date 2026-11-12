@@ -39,6 +39,7 @@ import { synchroniserValidationsProspection } from "./prospection-verification";
 import { etapesActives, chargerCarte, type CarteFil } from "./fil/carte";
 import { filActifPour, miseEnRoute } from "./fil/interrupteur";
 import { proposerPostsPresence } from "./fil/presence";
+import { synchroniserMailsEnAttente } from "./fil/mails-attente";
 import { proposerRattachements } from "./fil/etapes";
 import { rattachementTacheGeneree } from "./fil/rattachement";
 
@@ -677,6 +678,16 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
           await proposerPostsPresence(userId, new Date())
             .then((r) => { if (r.crees) console.log(`[fil] présence : ${r.crees} post(s) proposé(s) à l'atelier user=${userId}`); })
             .catch((e: any) => console.error(`[AutoPlanner] Présence (fil) failed for ${userId}:`, e?.message));
+        }
+
+        // 1 quater. Fil conducteur, mails qui attendent une réponse (spec §8.1) : un fil Gmail
+        //           dont le dernier message vient d'un humain devient « Répondre à … », une seule
+        //           fois. Avant la génération, pour qu'elle tienne compte de ces tâches. Un échec
+        //           (boîte illisible, Unipile en panne) est consigné et n'arrête jamais le planificateur.
+        if (filActifPour(userId)) {
+          await synchroniserMailsEnAttente(userId, new Date())
+            .then((r) => { if (r.creees) console.log(`[fil] mails en attente : ${r.creees} tâche(s) « Répondre à » user=${userId}`); })
+            .catch((e: any) => console.error(`[AutoPlanner] Mails en attente (fil) failed for ${userId}:`, e?.message));
         }
 
         // 2. Générer les 7 prochains jours de travail

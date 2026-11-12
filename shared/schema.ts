@@ -2675,3 +2675,50 @@ export const appelsOffres = pgTable("appels_offres", {
 ]);
 export type AppelOffres = typeof appelsOffres.$inferSelect;
 export type InsertAppelOffres = typeof appelsOffres.$inferInsert;
+
+// ─── Fil conducteur, lot 4 (migration 0042) ──────────────────────────────────────
+
+// Les fils Gmail qui attendaient une réponse de l'utilisatrice et sont devenus une tâche
+// « Répondre à … ». La ligne est la clé de non-doublon : un `thread_id` déjà présent ne crée
+// plus jamais de tâche, même si la tâche a été cochée ou supprimée (d'où `task_id` sans FK).
+export const mailsEnAttente = pgTable("mails_en_attente", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  threadId: text("thread_id").notNull(),
+  taskId: integer("task_id"),
+  expediteur: text("expediteur"),
+  sujet: text("sujet"),
+  dernierMessageAt: timestamp("dernier_message_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("mails_en_attente_user_thread_uq").on(t.userId, t.threadId),
+]);
+export type MailEnAttente = typeof mailsEnAttente.$inferSelect;
+export type InsertMailEnAttente = typeof mailsEnAttente.$inferInsert;
+
+// Dernier passage de chaque tâche de fond de Naya (veille AO, envoi de prospection, revue du
+// matin, indexeur…) : le matin signale celle qui n'a pas tourné ou a échoué.
+export const etatTachesFond = pgTable("etat_taches_fond", {
+  nom: text("nom").primaryKey(),
+  dernierDebut: timestamp("dernier_debut"),
+  dernierSucces: timestamp("dernier_succes"),
+  derniereErreur: text("derniere_erreur"),
+  derniereErreurAt: timestamp("derniere_erreur_at"),
+});
+export type EtatTacheFond = typeof etatTachesFond.$inferSelect;
+
+// Relevé quotidien des indicateurs du matin, pour montrer la valeur précédente. `valeur` nulle
+// avec `indisponible` renseigné : la source manquait ce jour-là (jamais un zéro inventé).
+export const indicateursReleves = pgTable("indicateurs_releves", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  cle: text("cle").notNull(),
+  valeur: doublePrecision("valeur"),
+  texte: text("texte"),
+  indisponible: text("indisponible"),
+  releveLe: date("releve_le").notNull(),
+}, (t) => [
+  uniqueIndex("indicateurs_releves_user_cle_jour_uq").on(t.userId, t.cle, t.releveLe),
+]);
+export type IndicateurReleve = typeof indicateursReleves.$inferSelect;
+export type InsertIndicateurReleve = typeof indicateursReleves.$inferInsert;

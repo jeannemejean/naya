@@ -7,6 +7,7 @@
  *  - POST /api/v1/emails : https://developer.unipile.com/reference/mailscontroller_sendmail.md
  *  - POST /api/v1/chats/{id}/messages : .../chatscontroller_sendmessageinchat.md
  *  - POST|GET /api/v1/webhooks : .../webhookscontroller_createwebhook.md / _listwebhooks.md
+ *  - GET /api/v1/emails (lecture) : https://developer.unipile.com/reference/mailscontroller_listmails.md
  */
 import { unipileDsn, unipileHeaders, linkedinConfigured } from "./linkedin";
 
@@ -54,6 +55,108 @@ export async function sendEmailUnipile(o: {
   } catch (e: any) {
     return { ok: false, error: `network ${String(e?.message || e)}`.slice(0, 200) };
   }
+}
+
+// ─── Lecture des mails reçus (fil conducteur, « mails qui attendent une réponse ») ──────
+//
+// GET /api/v1/emails, lu dans la doc le 12 nov. 2026 (forme figée dans
+// server/services/fil/__fixtures__/unipile-emails.json) :
+//  - `account_id` (requis) ; `after` / `before` en ISO 8601 UTC, bornes EXCLUSIVES ; `limit` de 1 à
+//    250 ; `cursor` pour la page suivante ; `include_headers=true` (exige `meta_only` à faux, donc
+//    des mails complets : le corps arrive, on ne le garde pas) ;
+//  - réponse `{ object: "EmailList", items, cursor }` ; un mail porte `id`, `thread_id`, `date`,
+//    `role` (inbox | sent | drafts | trash | spam | …), `folders`, `from_attendee` et
+//    `to_attendees` / `cc_attendees` (`{ display_name, identifier, identifier_type }`), `subject`,
+//    `in_reply_to`, `message_id` et, mail complet seulement, `headers: [{ name, value }]`.
+// Rien n'est journalisé du sujet, du corps ni des adresses.
+
+export interface EmailUnipile {
+  id: string;
+  threadId: string | null;
+  date: string;
+  role: string | null;
+  folders: string[];
+  from: { email: string; nom: string | null } | null;
+  to: string[];
+  sujet: string;
+  /** En-têtes en minuscules ; null quand Unipile ne les a pas renvoyés (mail « meta » ou « ref »). */
+  headers: Record<string, string> | null;
+}
+
+export const EMAILS_PAR_PAGE = 100;
+export const EMAILS_PAGES_MAX = 30;
+
+const chaine = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
+const adresseDe = (a: any): string | null => {
+  const id = chaine(a?.identifier);
+  return id && id.includes("@") ? id.toLowerCase() : null;
+};
+
+/** Un élément de la liste Unipile → EmailUnipile (sans corps), ou null s'il est illisible. */
+export function versEmailUnipile(item: any): EmailUnipile | null {
+  const id = chaine(item?.id) ?? chaine(item?.provider_id);
+  const date = chaine(item?.date);
+  if (!id || !date || Number.isNaN(Date.parse(date))) return null;
+  const email = adresseDe(item?.from_attendee);
+  let headers: Record<string, string> | null = null;
+  if (Array.isArray(item?.headers)) {
+    headers = {};
+    for (const h of item.headers) {
+      const k = chaine(h?.name ?? h?.key);
+      if (k) headers[k.toLowerCase()] = String(h?.value ?? "");
+    }
+  }
+  const destinataires = [
+    ...(Array.isArray(item?.to_attendees) ? item.to_attendees : []),
+    ...(Array.isArray(item?.cc_attendees) ? item.cc_attendees : []),
+  ].map(adresseDe).filter((x): x is string => !!x);
+  return {
+    id,
+    threadId: chaine(item?.thread_id),
+    date,
+    role: chaine(item?.role)?.toLowerCase() ?? null,
+    folders: Array.isArray(item?.folders) ? item.folders.map(String) : [],
+    from: email ? { email, nom: chaine(item?.from_attendee?.display_name) } : null,
+    to: destinataires,
+    sujet: typeof item?.subject === "string" ? item.subject : "",
+    headers,
+  };
+}
+
+/**
+ * Les mails du compte depuis `depuis` (tous dossiers), page après page (au plus
+ * EMAILS_PAGES_MAX pages de EMAILS_PAR_PAGE). Contrairement aux envois, une erreur HTTP ou
+ * réseau LÈVE : l'appelant (le passage du matin) la consigne, et on ne conclut jamais « aucun
+ * mail en attente » d'une boîte qu'on n'a pas pu lire.
+ */
+export async function listerEmailsRecus(accountId: string, depuis: Date): Promise<EmailUnipile[]> {
+  if (!linkedinConfigured()) throw new Error("unipile_not_configured");
+  const mails: EmailUnipile[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < EMAILS_PAGES_MAX; page++) {
+    const q = new URLSearchParams({
+      account_id: accountId,
+      after: depuis.toISOString(),
+      limit: String(EMAILS_PAR_PAGE),
+      include_headers: "true",
+    });
+    if (cursor) q.set("cursor", cursor);
+    let res: Response;
+    try {
+      res = await fetch(`${unipileDsn}/api/v1/emails?${q}`, { headers: unipileHeaders() });
+    } catch (e: any) {
+      throw new Error(`network ${String(e?.message || e)}`.slice(0, 200));
+    }
+    if (!res.ok) throw new Error(`liste des mails : http_${res.status}`);
+    const data: any = await res.json().catch(() => ({}));
+    for (const item of Array.isArray(data?.items) ? data.items : []) {
+      const m = versEmailUnipile(item);
+      if (m) mails.push(m);
+    }
+    cursor = chaine(data?.cursor);
+    if (!cursor) break;
+  }
+  return mails;
 }
 
 export async function sendLinkedInChatMessage(o: {
