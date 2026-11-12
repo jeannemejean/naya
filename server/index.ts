@@ -152,7 +152,8 @@ function scheduleReadingRoom() {
       console.log('[Lecture] Début de la revue du matin');
       // Suivie pour le matin : une revue échouée pour une utilisatrice compte comme passage en échec.
       await suivrePassage("revue_du_matin", async () => {
-        const userIds = await storage.getActiveUserIds().catch(() => [] as string[]);
+        // Une lecture ratée lève : la revue est notée en erreur, pas en succès.
+        const userIds = await storage.getActiveUserIds();
         let echecs = 0;
         for (const userId of userIds) {
           try {

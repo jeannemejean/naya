@@ -28,7 +28,7 @@ import { classerTachesCles, type EcheanceProche } from "./priorite";
 import { chargerObjectifsOublies, tacheDeReprise, type ObjectifOublieBrut, type RepriseProposee } from "./oublis";
 import { bornerPourquoi } from "./rattachement";
 import { joursTravaillesSuivants, planAllegement } from "./allegement";
-import { lireEtatsTachesFond, pannes as pannesDesTaches } from "./etat-taches-fond";
+import { debutDuSuivi, lireEtatsTachesFond, pannes as pannesDesTaches } from "./etat-taches-fond";
 import type { EtatTacheFond } from "@shared/schema";
 
 const JOURS_REPORT = 3;
@@ -202,7 +202,7 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
 
   // Les tâches de fond en panne : signalées, jamais refaites. Une lecture ratée n'invente pas de panne.
   const pannes = await deps.etatsTachesFond()
-    .then((etats) => pannesDesTaches(etats, maintenant))
+    .then((etats) => pannesDesTaches(etats, maintenant, undefined, debutDuSuivi(etats)))
     .catch((e: any) => { console.error("[fil] pannes :", e?.message ?? e); return [] as { nom: string; dernierSucces: string | null }[]; });
 
   const fil: MatinFil = { tachesCles, objectifsOublies, allegement, nonRattachees, rienNeCloche: false };

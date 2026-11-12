@@ -36,7 +36,12 @@ let tourEnCours = false;
 
 /** Un passage est-il à lancer maintenant ? (aucun tour en cours, et au moins une utilisatrice sans passage du jour) */
 export function passageDu(maintenant: Date, users: string[]): boolean {
-  return !tourEnCours && users.some((u) => doitLancer(maintenant, derniersJours.get(u) ?? null));
+  return !tourEnCours && usersDus(maintenant, users).length > 0;
+}
+
+/** Les utilisatrices dont le passage du jour reste à faire à cet instant. */
+export function usersDus(maintenant: Date, users: string[]): string[] {
+  return users.filter((u) => doitLancer(maintenant, derniersJours.get(u) ?? null));
 }
 
 export function _reinitialiserVeilleAO(): void { derniersJours.clear(); tourEnCours = false; }
@@ -90,9 +95,11 @@ export function scheduleVeilleAO(): void {
         await tourVeilleAO(maintenant, deps, users);
         return;
       }
+      // Jugé sur celles qui étaient dues AVANT le tour et à la même heure (pas de faux succès à midi).
+      const dues = usersDus(maintenant, users);
       await suivrePassage("veille_ao", async () => {
         await tourVeilleAO(maintenant, deps, users);
-        if (passageDu(new Date(), users)) throw new Error("passage de la veille AO non abouti");
+        if (usersDus(maintenant, dues).length > 0) throw new Error("passage de la veille AO non abouti");
       });
     } catch (e: any) {
       console.error("[veille-ao] tour :", e?.message ?? e);

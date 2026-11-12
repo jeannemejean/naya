@@ -20,13 +20,27 @@ export const ATTENDUS: Record<NomTacheFond, { libelle: string; tolereMinutes: nu
 
 const messageDe = (e: unknown) => String((e as any)?.message ?? e).slice(0, 500);
 
-// Un échec d'écriture de l'état est journalisé et avalé : il ne doit jamais faire échouer la tâche.
+const DELAI_ECRITURE_MS = 5000;
+const INTERVALLE_DEBUT_MS = 5 * 60_000;
+const dernierDebutEcrit = new Map<NomTacheFond, number>();
+
+/** Pour les tests. */
+export function _reinitialiserEtatTachesFond(): void { dernierDebutEcrit.clear(); }
+
+// Un échec d'écriture de l'état est journalisé et avalé : il ne doit jamais faire échouer la
+// tâche. Bornée à quelques secondes : un pool bloqué ne retarde pas la suite.
 async function noter(nom: NomTacheFond, valeurs: Partial<typeof etatTachesFond.$inferInsert>): Promise<void> {
+  let minuterie: NodeJS.Timeout | undefined;
   try {
-    await db.insert(etatTachesFond).values({ nom, ...valeurs })
-      .onConflictDoUpdate({ target: etatTachesFond.nom, set: valeurs });
+    await Promise.race([
+      db.insert(etatTachesFond).values({ nom, ...valeurs })
+        .onConflictDoUpdate({ target: etatTachesFond.nom, set: valeurs }),
+      new Promise<never>((_, rejeter) => { minuterie = setTimeout(() => rejeter(new Error("écriture trop lente")), DELAI_ECRITURE_MS); }),
+    ]);
   } catch (e) {
     console.error(`[etat-taches-fond] ${nom} :`, messageDe(e));
+  } finally {
+    if (minuterie) clearTimeout(minuterie);
   }
 }
 
@@ -37,7 +51,14 @@ async function noter(nom: NomTacheFond, valeurs: Partial<typeof etatTachesFond.$
 export async function suivrePassage<T>(nom: NomTacheFond, fn: () => Promise<T>): Promise<T> {
   // Le début s'écrit en parallèle : `fn` démarre tout de suite, sans attendre la base. Les
   // écritures suivantes l'attendent, pour que le succès ne soit jamais écrasé par le début.
-  const debut = noter(nom, { dernierDebut: new Date() });
+  // Pas plus d'une écriture de début toutes les 5 minutes par tâche (l'envoi passe chaque minute).
+  const maintenant = Date.now();
+  const dernier = dernierDebutEcrit.get(nom);
+  let debut: Promise<void> = Promise.resolve();
+  if (dernier === undefined || maintenant - dernier >= INTERVALLE_DEBUT_MS) {
+    dernierDebutEcrit.set(nom, maintenant);
+    debut = noter(nom, { dernierDebut: new Date(maintenant) });
+  }
   try {
     const r = await fn();
     await debut;
@@ -55,12 +76,22 @@ export async function lireEtatsTachesFond(): Promise<EtatTacheFond[]> {
   return db.select().from(etatTachesFond);
 }
 
+/** Début du suivi : le plus ancien `dernierDebut` connu (null s'il n'y a aucune ligne). */
+export function debutDuSuivi(etats: EtatTacheFond[]): Date | null {
+  const t = etats.map((e) => (e.dernierDebut ? new Date(e.dernierDebut).getTime() : NaN)).filter((n) => !isNaN(n));
+  return t.length ? new Date(Math.min(...t)) : null;
+}
+
 /**
- * Les tâches en panne : pas de succès depuis la tolérance (ou jamais), ou une erreur plus récente
- * que le dernier succès. La veille AO n'est attendue que si des utilisatrices y sont inscrites.
+ * Les tâches en panne : pas de succès depuis la tolérance, ou une erreur plus récente que le
+ * dernier succès. Une tâche sans succès connu n'est en panne qu'une fois la tolérance écoulée
+ * depuis `debutSuivi` (sinon, juste après un déploiement, tout serait en panne) ; sans
+ * `debutSuivi`, rien n'est reproché. La veille AO n'est attendue que si des utilisatrices y
+ * sont inscrites.
  */
 export function pannes(
   etats: EtatTacheFond[], maintenant: Date, veilleAOAttendue: boolean = utilisatricesVeilleAO().length > 0,
+  debutSuivi: Date | null = null,
 ): { nom: string; dernierSucces: string | null }[] {
   const res: { nom: string; dernierSucces: string | null }[] = [];
   for (const nom of Object.keys(ATTENDUS) as NomTacheFond[]) {
@@ -68,7 +99,8 @@ export function pannes(
     const etat = etats.find((e) => e.nom === nom);
     const succes = etat?.dernierSucces ? new Date(etat.dernierSucces) : null;
     const erreur = etat?.derniereErreurAt ? new Date(etat.derniereErreurAt) : null;
-    const enRetard = !succes || maintenant.getTime() - succes.getTime() > ATTENDUS[nom].tolereMinutes * 60_000;
+    const reference = succes ?? debutSuivi;
+    const enRetard = !!reference && maintenant.getTime() - reference.getTime() > ATTENDUS[nom].tolereMinutes * 60_000;
     const enErreur = !!erreur && (!succes || erreur.getTime() > succes.getTime());
     if (enRetard || enErreur) res.push({ nom: ATTENDUS[nom].libelle, dernierSucces: succes ? succes.toISOString() : null });
   }

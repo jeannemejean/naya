@@ -16,7 +16,7 @@ vi.mock("../../db", () => ({
   },
 }));
 
-const { pannes, suivrePassage, ATTENDUS } = await import("./etat-taches-fond");
+const { pannes, suivrePassage, ATTENDUS, debutDuSuivi, _reinitialiserEtatTachesFond } = await import("./etat-taches-fond");
 
 const MAINT = new Date("2026-11-12T08:00:00Z");
 const il = (minutes: number) => new Date(MAINT.getTime() - minutes * 60_000);
@@ -25,15 +25,28 @@ const etat = (nom: string, o: Partial<EtatTacheFond> = {}): EtatTacheFond =>
 const tousBien = () => ["planificateur", "veille_ao", "revue_du_matin"].map((n) => etat(n, { dernierSucces: il(60) }))
   .concat(["envoi_prospection", "indexeur"].map((n) => etat(n, { dernierSucces: il(2) })));
 
-beforeEach(() => { h.ecrit.length = 0; h.echec = false; });
+beforeEach(() => { h.ecrit.length = 0; h.echec = false; _reinitialiserEtatTachesFond(); });
 
 describe("pannes", () => {
   it("tout va bien : aucune panne", () => {
     expect(pannes(tousBien(), MAINT, true)).toEqual([]);
   });
-  it("jamais passé : en panne, sans dernier succès", () => {
-    const p = pannes(tousBien().filter((e) => e.nom !== "indexeur"), MAINT, true);
-    expect(p).toEqual([{ nom: ATTENDUS.indexeur.libelle, dernierSucces: null }]);
+  it("jamais passé : en panne seulement une fois la tolérance écoulée depuis le début du suivi", () => {
+    const etats = tousBien().filter((e) => e.nom !== "indexeur");
+    expect(pannes(etats, MAINT, true, il(10))).toEqual([]);
+    expect(pannes(etats, MAINT, true, il(45))).toEqual([{ nom: ATTENDUS.indexeur.libelle, dernierSucces: null }]);
+  });
+  it("juste déployé : aucune ligne, ou seulement des débuts récents, ne fait pas de fausse panne", () => {
+    expect(pannes([], MAINT, true, debutDuSuivi([]))).toEqual([]);
+    const recents = ["planificateur", "indexeur"].map((n) => etat(n, { dernierDebut: il(5) }));
+    expect(pannes(recents, MAINT, true, debutDuSuivi(recents))).toEqual([]);
+    // Même état, tolérance écoulée : ce qui n'a toujours rien produit est en panne.
+    const plus = new Date(MAINT.getTime() + 27 * 3600_000);
+    expect(pannes(recents, plus, false, debutDuSuivi(recents)).map((p) => p.nom)).toContain(ATTENDUS.indexeur.libelle);
+  });
+  it("plusieurs pannes à la fois", () => {
+    const etats = tousBien().map((e) => ["indexeur", "envoi_prospection"].includes(e.nom) ? etat(e.nom, { dernierSucces: il(90) }) : e);
+    expect(pannes(etats, MAINT, true).map((p) => p.nom)).toEqual([ATTENDUS.envoi_prospection.libelle, ATTENDUS.indexeur.libelle]);
   });
   it("en retard : plus de tolérance depuis le dernier succès, date en ISO", () => {
     const etats = tousBien().map((e) => e.nom === "envoi_prospection" ? etat(e.nom, { dernierSucces: il(45) }) : e);
@@ -50,7 +63,7 @@ describe("pannes", () => {
   it("la veille AO n'est attendue que si des utilisatrices y sont inscrites", () => {
     const sansVeille = tousBien().filter((e) => e.nom !== "veille_ao");
     expect(pannes(sansVeille, MAINT, false)).toEqual([]);
-    expect(pannes(sansVeille, MAINT, true).map((p) => p.nom)).toEqual([ATTENDUS.veille_ao.libelle]);
+    expect(pannes(sansVeille, MAINT, true, il(30 * 60)).map((p) => p.nom)).toEqual([ATTENDUS.veille_ao.libelle]);
   });
 });
 
@@ -63,6 +76,19 @@ describe("suivrePassage", () => {
     const boum = new Error("boum");
     await expect(suivrePassage("indexeur", async () => { throw boum; })).rejects.toBe(boum);
     expect(h.ecrit.at(-1)).toMatchObject({ nom: "indexeur", derniereErreur: "boum" });
+  });
+  it("début en échec pendant que fn lève : l'erreur de fn est relancée", async () => {
+    h.echec = true;
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const boum = new Error("boum");
+    await expect(suivrePassage("indexeur", async () => { throw boum; })).rejects.toBe(boum);
+    err.mockRestore();
+  });
+  it("le début n'est écrit qu'une fois par tranche de 5 minutes", async () => {
+    await suivrePassage("indexeur", async () => 1);
+    await suivrePassage("indexeur", async () => 2);
+    expect(h.ecrit.filter((e) => "dernierDebut" in e)).toHaveLength(1);
+    expect(h.ecrit.filter((e) => "dernierSucces" in e)).toHaveLength(2);
   });
   it("un échec d'écriture ne fait pas échouer fn", async () => {
     h.echec = true;

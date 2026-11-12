@@ -454,7 +454,18 @@ export async function runProspectionSender(): Promise<void> {
   if (running) return;
   running = true;
   try {
-    const due = await storage.getDueEnrollments(new Date(), 100).catch(() => []);
+    // Suivi seulement d'un vrai passage (jamais d'un tour bloqué par `running`) ; l'erreur est
+    // notée puis relancée, l'intervalle la journalise et continue.
+    await suivrePassage("envoi_prospection", passerProspection);
+  } finally {
+    running = false;
+  }
+}
+
+async function passerProspection(): Promise<void> {
+  {
+    // Une lecture ratée lève : le suivi note l'erreur (plus de faux succès sur base en panne).
+    const due = await storage.getDueEnrollments(new Date(), 100);
     if (due.length === 0) return;
 
     if (!masterSendingEnabled()) {
@@ -1319,8 +1330,6 @@ export async function runProspectionSender(): Promise<void> {
         console.error(`[ProspectionSender] lead ${state.leadId}:`, e.message);
       }
     }
-  } finally {
-    running = false;
   }
 }
 
@@ -1330,6 +1339,6 @@ export function scheduleProspectionSender(): void {
     `[ProspectionSender] Worker démarré (chaque minute) — envoi global ${masterSendingEnabled() ? "ACTIVÉ" : "DÉSACTIVÉ (dry-run)"} ; chaque user envoie depuis SA propre adresse`,
   );
   setInterval(() => {
-    suivrePassage("envoi_prospection", () => runProspectionSender()).catch((e) => console.error("[ProspectionSender]", e.message));
+    runProspectionSender().catch((e) => console.error("[ProspectionSender]", e.message));
   }, POLL_MS);
 }
