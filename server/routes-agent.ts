@@ -15,6 +15,7 @@ import { blocSession, dateDansFuseau, evenementsPropres, fuseauUtilisatrice, tac
 import { buildSuggestions } from "./services/companion";
 import { extractToMemory } from "./services/memory/extract";
 import { resolveSubjectBrand } from "./services/memory/brand-resolve";
+import { etapesActives } from "./services/fil/carte";
 
 type Tour = { role: "user" | "assistant"; content: string };
 
@@ -136,7 +137,8 @@ export function registerAgentRoutes(app: Express): void {
       let jalonActif: { id: number; title: string; status: string } | null = null;
       if (activeProjectId) {
         const milestones = await storage.getMilestones(activeProjectId, userId).catch(() => []);
-        const found = (milestones as any[]).find((m) => m.status === "active" || m.status === "unlocked");
+        // Plusieurs chaînes possibles (une par objectif) : la première étape en cours, comme avant.
+        const found = etapesActives(milestones)[0];
         if (found) jalonActif = { id: found.id, title: found.title, status: found.status };
       }
 

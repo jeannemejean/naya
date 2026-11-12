@@ -208,6 +208,7 @@ import { repackDayAvecEcheances } from "./services/schedule-repack";
 import { TYPE_ATELIER, TYPE_VALIDATION, echeanceAtelier } from "@shared/atelier";
 import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, majEtape, postAProduire, rangEtape } from "./services/campagne/production";
 import { clesRetirees } from "./services/fondations/sections";
+import { agregerAvancement } from "./services/fil/avancement";
 import { chevauchements, heurePublicationLibre, peutDeplacerPublication } from "./services/publication-libre";
 import { respecterPrecedences } from "./services/precedence";
 import { stabiliserPlanning, calendrierDepuisPreferences, deplacementsAdmissibles } from "./services/stabiliser-planning";
@@ -5252,6 +5253,32 @@ export class DatabaseStorage implements IStorage {
     const result = await db.delete(projectMilestones)
       .where(and(eq(projectMilestones.id, id), eq(projectMilestones.userId, userId)));
     return (result.rowCount ?? 0) > 0;
+  }
+
+  /**
+   * Fil conducteur : avancement de chaque étape (jalon), en tâches faites sur tâches prévues.
+   * Seulement les tâches de `userId`, non archivées, créées à partir de `depuis` (mise en route
+   * du fil ; null = tout l'historique). Chaque id demandé a une entrée, à 0/0 s'il n'a rien.
+   */
+  async getAvancementEtapes(
+    userId: string,
+    milestoneIds: number[],
+    depuis: Date | null,
+  ): Promise<Map<number, { faites: number; prevues: number }>> {
+    if (milestoneIds.length === 0) return new Map();
+    const filtres: SQL[] = [
+      eq(tasks.userId, userId),
+      inArray(tasks.milestoneId, milestoneIds),
+      isNull(tasks.archivedAt),
+    ];
+    if (depuis) filtres.push(gte(tasks.createdAt, depuis));
+    const lignes = await db.select({
+      milestoneId: tasks.milestoneId,
+      completed: tasks.completed,
+      createdAt: tasks.createdAt,
+      archivedAt: tasks.archivedAt,
+    }).from(tasks).where(and(...filtres));
+    return agregerAvancement(lignes, milestoneIds, depuis);
   }
 
   // ─── Milestone Conditions ────────────────────────────────────────────────

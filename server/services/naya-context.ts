@@ -9,6 +9,7 @@ import { retrieveMemories } from "./memory/retrieve";
 import { blocVeille } from "./veille/contexte";
 import { blocFondations } from "./fondations/contexte";
 import { blocMesure } from "./mesure/bilan";
+import { formaterJalonsDuProjet } from "./fil/contexte-jalons";
 
 const TYPES_VOC_CONTEXTE = ["objection", "vocabulaire", "attente", "sujet"];
 
@@ -162,20 +163,10 @@ Mode opératoire : ${stratProfile?.operatingMode || 'Non renseigné'}${statusNot
       sections.push(`## Objectifs actifs (triés par urgence)\n${formatGoalsWithUrgency(sortedGoals)}\n\nInstruction absolue : génère des tâches proportionnellement aux scores d'urgence. Un objectif 🚨 CRITIQUE doit représenter au moins 50% des tâches générées aujourd'hui.`);
     }
 
-    // Section 3 : Jalons du projet (règle absolue : jamais de tâches pour un jalon locked)
+    // Section 3 : Jalons du projet, groupés par objectif (règle absolue : jamais de tâches pour un jalon locked)
     if (!tiers && projectMilestonesList && projectMilestonesList.length > 0) {
-      const active = projectMilestonesList.filter((m: any) => ['unlocked', 'active', 'completed'].includes(m.status));
-      const locked = projectMilestonesList.filter((m: any) => m.status === 'locked');
-      const lines: string[] = [];
-      if (active.length > 0) {
-        lines.push(`Jalons actifs/débloqués (tu PEUX générer des tâches pour ces jalons) :\n${active.map((m: any) => `- ✅ ${m.title}`).join('\n')}`);
-      }
-      if (locked.length > 0) {
-        lines.push(`Jalons BLOQUÉS (tu NE DOIS PAS générer de tâches pour ces jalons) :\n${locked.map((m: any) => `- 🔒 ${m.title} (bloqué — condition non remplie)`).join('\n')}`);
-      }
-      if (lines.length > 0) {
-        sections.push(`## Jalons du projet\n${lines.join('\n\n')}`);
-      }
+      const bloc = formaterJalonsDuProjet(projectMilestonesList as any[], activeGoals);
+      if (bloc) sections.push(bloc);
     }
 
     // Section 4 : Archétype utilisateur

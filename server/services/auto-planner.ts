@@ -35,6 +35,7 @@ import { remplacerReferencesNumerotees } from "./references-taches";
 import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
 import { synchroniserValidationsProspection } from "./prospection-verification";
+import { etapesActives } from "./fil/carte";
 
 // Guard: prevents concurrent auto-planner runs from exhausting the DB pool
 let isAutoplannerRunning = false;
@@ -238,9 +239,8 @@ async function generateForUser(userId: string, dateStr: string): Promise<void> {
   const milestonesByProjectId = new Map(projects.map((p, i) => [p.id, allMilestones[i]]));
   projects.forEach((project, i) => {
     const milestones = allMilestones[i];
-    const hasActiveMilestone = milestones.some((m: any) =>
-      ['unlocked', 'active'].includes(m.status)
-    );
+    // Au moins une étape active|unlocked (quelle que soit la chaîne), ou aucune chaîne.
+    const hasActiveMilestone = etapesActives(milestones).length > 0;
     if (hasActiveMilestone || milestones.length === 0) {
       activeMilestoneProjectIds.add(project.id);
     }

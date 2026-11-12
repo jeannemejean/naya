@@ -242,6 +242,7 @@ import multer from "multer";
 import { tachesARebalancer } from "./services/schedule-repack";
 import { assainirPatchPreferences } from "./services/apparence";
 import { publicationManuelle } from "./services/atelier/validation";
+import { etapesActives } from "./services/fil/carte";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Helper: fetch project + persona context for AI generation
@@ -3392,7 +3393,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       let activeMilestone = null;
       if (activeProject) {
         const milestones = await storage.getMilestones(activeProject.id, userId);
-        activeMilestone = (milestones as any[]).find(m => m.status === 'active' || m.status === 'unlocked') || null;
+        // Plusieurs chaînes possibles (une par objectif) : on garde la première étape en cours, comme avant.
+        activeMilestone = (etapesActives(milestones)[0] as any) || null;
         if (activeMilestone) {
           activeMilestone = { id: activeMilestone.id, title: activeMilestone.title, status: activeMilestone.status };
         }

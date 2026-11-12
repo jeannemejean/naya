@@ -85,8 +85,11 @@ export async function confirmMilestone(milestoneId: number): Promise<ProjectMile
 }
 
 /**
- * Crée une chaîne de jalons en bloc depuis le Companion.
- * Chaque jalon est locked sauf le premier (qui est unlocked/active).
+ * Crée une chaîne de jalons en bloc (Companion, propositions d'étapes du fil conducteur).
+ * Chaque jalon peut dire où il en est (`etat`) : `faite` → completed (avec completedAt). La
+ * première étape non faite devient active ; les suivantes non faites sont locked, chacune avec
+ * UNE condition sur la précédente. Sans `etat`, comportement historique : le premier jalon est
+ * actif, tous les autres verrouillés. `opts.goalId` relie toute la chaîne à un objectif.
  */
 export async function createMilestoneChain(
   projectId: number,
@@ -98,13 +101,22 @@ export async function createMilestoneChain(
     conditionType?: string;
     conditionLabel?: string;
     requiredDays?: number;
-  }>
+    pourquoi?: string;
+    etat?: "faite" | "en_cours" | "a_venir";
+  }>,
+  opts: { goalId?: number } = {},
 ): Promise<ProjectMilestone[]> {
   const created: ProjectMilestone[] = [];
+  let activeDejaPosee = false;
 
   for (let i = 0; i < milestones.length; i++) {
     const m = milestones[i];
     const isFirst = i === 0;
+    const maintenant = new Date();
+    const faite = m.etat === "faite";
+    // Règle absolue : seule la première étape non faite est active, jamais deux dans la chaîne.
+    const status = faite ? 'completed' : (!activeDejaPosee ? 'active' : 'locked');
+    if (status === 'active') activeDejaPosee = true;
 
     const milestone = await storage.createMilestone({
       projectId,
@@ -112,26 +124,32 @@ export async function createMilestoneChain(
       title: m.title,
       description: m.description || null,
       order: i,
-      status: isFirst ? 'active' : 'locked',
+      status,
       milestoneType: (m.milestoneType as any) || 'action',
-      activatedAt: isFirst ? new Date() : null,
+      activatedAt: status === 'locked' ? null : maintenant,
+      completedAt: faite ? maintenant : null,
+      goalId: opts.goalId ?? null,
+      pourquoi: m.pourquoi?.trim() || null,
     });
 
     created.push(milestone);
 
-    // Le premier jalon est immédiatement actif → créer sa tâche dans le planning
-    if (isFirst) await createMilestoneTask(milestone);
+    // L'étape devenue active → créer sa tâche dans le planning (no-op, voir createMilestoneTask)
+    if (status === 'active') await createMilestoneTask(milestone);
 
-    // Créer la condition de dépendance au jalon précédent (sauf pour le premier)
+    // Créer la condition de dépendance au jalon précédent (sauf pour le premier). Elle est déjà
+    // remplie quand la précédente est faite.
     if (!isFirst) {
       const prevMilestone = created[i - 1];
+      const remplie = prevMilestone.status === 'completed';
       await storage.createMilestoneCondition({
         milestoneId: milestone.id,
         conditionType: m.conditionType || 'milestone_completed',
         label: m.conditionLabel || `${prevMilestone.title} doit être complété`,
         blockedByMilestoneId: prevMilestone.id,
         requiredDays: m.requiredDays || null,
-        isFulfilled: false,
+        isFulfilled: remplie,
+        ...(remplie ? { fulfilledAt: maintenant } : {}),
       });
     }
   }
