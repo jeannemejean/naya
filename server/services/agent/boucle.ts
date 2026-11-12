@@ -7,7 +7,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { ActionFaite, PropositionVue, ReponseAgent } from "@shared/agent";
 import { appelerClaudeAvecOutils } from "../claude";
 import { construireConsignes } from "./consignes";
-import { REGISTRE, outilsPourClaude, validerArgs, type ContexteOutil, type Outil } from "./registre";
+import { REGISTRE, outilsDeConversation, outilsPourClaude, validerArgs, type ContexteOutil, type Outil } from "./registre";
 
 export const MAX_APPELS_OUTILS = 8;
 // Garde-fou de la boucle elle-même : 8 tours d'outils, le tour qui touche la limite, puis le
@@ -88,7 +88,8 @@ export type ResultatAgent = ReponseAgent & { prospectLu: boolean };
 
 export async function executerAgent(opts: OptionsAgent, deps: DepsAgent = {}): Promise<ResultatAgent> {
   const appeler = deps.appeler ?? appelerClaudeAvecOutils;
-  const registre = deps.registre ?? REGISTRE;
+  // Les outils hors conversation (propositions du fil) ne sont ni offerts ni exécutables ici.
+  const registre = outilsDeConversation(deps.registre ?? REGISTRE);
   const ctx: ContexteOutil = {
     userId: opts.userId,
     maintenant: deps.maintenant?.() ?? new Date(),

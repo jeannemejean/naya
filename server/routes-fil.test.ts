@@ -12,7 +12,6 @@ const h = vi.hoisted(() => ({
   getProjectGoal: vi.fn(), getProject: vi.fn(),
 }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "u1"; next(); } }));
-vi.mock("./storage", () => ({ storage: { getProjectGoal: h.getProjectGoal, getProject: h.getProject } }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
 vi.mock("./services/agent/depot", () => ({ depot: { propositionsEnAttente: h.propositionsEnAttente, getProposition: h.getProposition } }));
 vi.mock("./services/agent/propositions", () => ({ annulerProposition: h.annulerProposition, proposerHorsConversation: h.proposerHorsConversation }));
@@ -20,6 +19,10 @@ vi.mock("./services/fil/interrupteur", () => ({ filActifPour: h.filActifPour }))
 vi.mock("./services/fil/etapes", () => ({
   OUTILS_FIL_PROPOSITIONS: ["proposer_etapes", "rattacher_chaine"],
   proposerEtapesPour: h.proposerEtapesPour, proposerRattachements: h.proposerRattachements,
+  objectifDe: async (userId: string, id: number) => {
+    const objectif = await h.getProjectGoal(id);
+    return objectif && (await h.getProject(objectif.projectId, userId)) ? { objectif, etapes: [] } : undefined;
+  },
 }));
 
 const { registerFilRoutes } = await import("./routes-fil");

@@ -42,8 +42,17 @@ export const DIRECTS_AUTORISES: ReadonlySet<string> = new Set([
 ]);
 
 // OUTILS_FIL : propositions du fil conducteur (étapes d'un objectif, rattachement d'une chaîne),
-// valables 7 jours et refusées hors interrupteur.
+// valables 7 jours et refusées hors interrupteur. Ils sont au registre pour que
+// validerProposition les retrouve, mais ne sont JAMAIS offerts au modèle de la conversation :
+// ce sont des propositions faites hors conversation (proposerHorsConversation).
 export const REGISTRE: Outil[] = [...OUTILS_LECTURE, ...OUTILS_DIRECTS, ...OUTILS_A_VALIDER, ...OUTILS_FIL];
+
+export const HORS_CONVERSATION: ReadonlySet<string> = new Set(OUTILS_FIL.map((o) => o.nom));
+
+/** Les outils que la conversation peut offrir et appeler : le registre moins les outils hors conversation. */
+export function outilsDeConversation(registre: Outil[] = REGISTRE): Outil[] {
+  return registre.filter((o) => !HORS_CONVERSATION.has(o.nom));
+}
 
 export function outil(nom: string): Outil | undefined {
   return REGISTRE.find((o) => o.nom === nom);

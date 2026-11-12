@@ -119,6 +119,7 @@ describe("proposer_etapes", () => {
     expect("erreur" in p).toBe(false);
     expect(DUREE_PROPOSITION_FIL_MS).toBe(7 * 24 * 3600_000);
     expect(table.lignes.get(1).expireA).toEqual(jours(7));
+    // Sans `outils` : validerProposition retrouve l'outil dans le REGISTRE par défaut (hors conversation, mais présent).
     const r = await validerProposition("u1", 1, jours(6));
     expect(r).toEqual({ ok: true, reussis: expect.any(Array), echecs: [] });
     expect(s.createMilestone).toHaveBeenCalledTimes(3);
@@ -216,6 +217,23 @@ describe("proposer_etapes", () => {
     expect(s.createMilestone).not.toHaveBeenCalled();
   });
 
+  it("objectif non actif, ou qui a déjà une étape ouverte : aucun appel IA, aucune proposition", async () => {
+    objectifs.get(1).status = "paused";
+    expect(await genererEtapes("u1", 1)).toBeNull();
+    expect(await proposerEtapesPour("u1", 1, DEBUT)).toEqual({ erreur: "generation_impossible" });
+    objectifs.get(1).status = "active";
+    jalons.set(50, { id: 50, projectId: 10, userId: "u1", goalId: 1, status: "locked", order: 0, title: "Ouverte" });
+    expect(await genererEtapes("u1", 1)).toBeNull();
+    expect(await proposerEtapesPour("u1", 1, DEBUT)).toEqual({ erreur: "generation_impossible" });
+    expect(ia.callClaudeWithContext).not.toHaveBeenCalled();
+    expect(table.lignes.size).toBe(0);
+  });
+
+  it("les posts publiés sont comptés sur les 30 jours avant le `maintenant` de l'appelant", async () => {
+    await proposerEtapesPour("u1", 1, jours(3));
+    expect(s.getPostsEntre).toHaveBeenCalledWith("u1", new Date(jours(3).getTime() - 30 * 24 * 3600_000), jours(3));
+  });
+
   it("deuxième appel avec une proposition déjà en attente : aucun nouvel appel IA", async () => {
     await proposerEtapesPour("u1", 1, DEBUT);
     expect(await proposerEtapesPour("u1", 1, jours(1))).toEqual({ erreur: "deja_en_attente" });
@@ -293,6 +311,19 @@ describe("rattacher_chaine", () => {
     jalons.set(61, { ...jalons.get(61), goalId: 1 });
     expect(await validerProposition("u1", 1, jours(1))).toEqual({ ok: false, raison: "expiree" });
     expect(s.updateMilestone).not.toHaveBeenCalled();
+  });
+
+  it("l'objectif a reçu une étape ouverte depuis l'aperçu (proposer_etapes validée) : rattachement périmé", async () => {
+    await proposerHorsConversation("u1", "rattacher_chaine", { projetId: 10, objectifId: 2, jalonIds: [60, 61, 62] }, DEBUT);
+    expect(table.lignes.get(1).empreinte).toEqual(expect.arrayContaining([
+      { table: "etapes_objectif", id: 2, champs: { nombre: 0, ouvertes: 0 } },
+    ]));
+    const etapes = await proposerEtapesPour("u1", 2, DEBUT);
+    expect(await validerProposition("u1", (etapes as any).id, jours(1))).toMatchObject({ ok: true });
+    expect(await validerProposition("u1", 1, jours(1))).toEqual({ ok: false, raison: "expiree" });
+    expect(s.updateMilestone).not.toHaveBeenCalled();
+    const ouvertes = Array.from(jalons.values()).filter((j) => j.goalId === 2 && !["completed", "skipped"].includes(j.status));
+    expect(ouvertes.filter((j) => j.status === "active")).toHaveLength(1);
   });
 
   it("proposerRattachements, plusieurs objectifs : l'appel rapide choisit", async () => {

@@ -68,7 +68,7 @@ export function normaliserEtats<T extends { etat: EtatEtape }>(etapes: T[]): T[]
 }
 
 // L'objectif s'il est à l'utilisatrice (par son projet), avec ses étapes déjà posées.
-async function objectifDe(userId: string, objectifId: unknown): Promise<{ objectif: ProjectGoal; etapes: ProjectMilestone[] } | undefined> {
+export async function objectifDe(userId: string, objectifId: unknown): Promise<{ objectif: ProjectGoal; etapes: ProjectMilestone[] } | undefined> {
   if (typeof objectifId !== "number" || !Number.isInteger(objectifId) || objectifId <= 0) return undefined;
   const objectif = await storage.getProjectGoal(objectifId);
   if (!objectif || !(await storage.getProject(objectif.projectId, userId))) return undefined;
@@ -208,8 +208,14 @@ const rattacherChaine = outilAValider<ArgsRattachement>({
     }));
     // L'empreinte porte le goalId (goal_id) et le statut de chaque jalon : rattaché ailleurs ou
     // avancé depuis l'aperçu, la proposition est périmée.
+    // L'état des étapes de l'objectif en fait partie : une chaîne posée pour lui depuis l'aperçu
+    // (proposer_etapes validée) rendrait deux étapes ouvertes ; la proposition est alors périmée.
     const empreinte: Empreinte = [
       { table: "project_goals", id: o.objectif.id, champs: { status: "active" } },
+      {
+        table: "etapes_objectif", id: o.objectif.id,
+        champs: { nombre: o.etapes.length, ouvertes: o.etapes.filter((j) => !ETAPE_CLOSE.has(j.status)).length },
+      },
       ...jalons.map((j) => ({ table: "project_milestones", id: j.id, champs: { goalId: null, status: j.status } })),
     ];
     return {
@@ -283,16 +289,23 @@ async function etatReel(userId: string, objectif: ProjectGoal, etapesFaites: Pro
 }
 
 /**
- * Demande à l'IA 3 à 6 étapes pour l'objectif, avec leur état réel. Rend null si l'IA est
- * bloquée (plafond), si l'objectif n'est pas à l'utilisatrice, ou si deux réponses de suite
+ * Demande à l'IA 3 à 6 étapes pour l'objectif, avec leur état réel (posts publiés comptés sur les
+ * 30 jours avant `maintenant`). Rend null, sans appel IA, si l'IA est bloquée (plafond), si
+ * l'objectif n'est pas à l'utilisatrice, n'est pas actif ou a déjà une étape ouverte ; null aussi si deux réponses de suite
  * sont invalides (JSON, nombre, ordre des états, « pourquoi » creux).
  */
-export async function genererEtapes(userId: string, objectifId: number, note?: string): Promise<EtapeProposee[] | null> {
+export async function genererEtapes(
+  userId: string,
+  objectifId: number,
+  note?: string,
+  maintenant: Date = new Date(),
+): Promise<EtapeProposee[] | null> {
   if (await isAiBlocked(userId)) return null;
   const o = await objectifDe(userId, objectifId);
-  if (!o) return null;
+  // Aucun appel IA pour une proposition que l'aperçu refuserait : objectif non actif, ou qui a
+  // déjà une étape ouverte.
+  if (!o || o.objectif.status !== "active" || o.etapes.some((j) => !ETAPE_CLOSE.has(j.status))) return null;
   const { objectif } = o;
-  const maintenant = new Date();
   const contexte = await etatReel(userId, objectif, o.etapes, maintenant);
 
   const consigne = [
@@ -339,7 +352,7 @@ export async function proposerEtapesPour(
 ): Promise<PropositionVue | { erreur: string }> {
   const enAttente = await depot.propositionsEnAttente(userId, ["proposer_etapes"], maintenant);
   if (enAttente.some((p) => Number((p.arguments as any)?.objectifId) === objectifId)) return erreur("deja_en_attente");
-  const etapes = await genererEtapes(userId, objectifId, note);
+  const etapes = await genererEtapes(userId, objectifId, note, maintenant);
   if (!etapes) return erreur("generation_impossible");
   return proposerHorsConversation(userId, "proposer_etapes", { objectifId, etapes }, maintenant);
 }

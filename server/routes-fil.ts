@@ -3,12 +3,11 @@
 // et annuler passent par les routes de l'agent (/api/agent/propositions/:id/*).
 import type { Express, NextFunction, Response } from "express";
 import { isAuthenticated } from "./auth";
-import { storage } from "./storage";
 import { isAiBlocked } from "./services/usage";
 import { depot } from "./services/agent/depot";
 import { annulerProposition, proposerHorsConversation } from "./services/agent/propositions";
 import { filActifPour } from "./services/fil/interrupteur";
-import { OUTILS_FIL_PROPOSITIONS, proposerEtapesPour, proposerRattachements } from "./services/fil/etapes";
+import { OUTILS_FIL_PROPOSITIONS, objectifDe, proposerEtapesPour, proposerRattachements } from "./services/fil/etapes";
 
 function reserveAuFil(req: any, res: Response, next: NextFunction) {
   if (!filActifPour(req.userId)) return res.status(404).json({ message: "Not found" });
@@ -20,13 +19,6 @@ const idValide = (v: unknown): number | null => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
-// L'objectif s'il est à l'utilisatrice (par son projet).
-async function objectifDe(userId: string, id: number) {
-  const objectif = await storage.getProjectGoal(id);
-  if (!objectif || !(await storage.getProject(objectif.projectId, userId))) return null;
-  return objectif;
-}
-
 export function registerFilRoutes(app: Express): void {
   // Propositions ouvertes du fil, avec l'objectif concerné (titre) pour l'affichage.
   app.get("/api/fil/propositions", isAuthenticated, reserveAuFil, async (req: any, res) => {
@@ -35,7 +27,7 @@ export function registerFilRoutes(app: Express): void {
       const liste = await depot.propositionsEnAttente(userId, OUTILS_FIL_PROPOSITIONS, new Date());
       const sortie = await Promise.all(liste.map(async (p) => {
         const objectifId = idValide((p.arguments as any)?.objectifId);
-        const objectif = objectifId ? await objectifDe(userId, objectifId) : null;
+        const objectif = objectifId ? (await objectifDe(userId, objectifId))?.objectif : null;
         return {
           id: p.id, outil: p.outil, arguments: p.arguments, changements: p.changements, expireA: p.expireA,
           objectif: objectif ? { id: objectif.id, titre: objectif.title, projetId: objectif.projectId } : null,

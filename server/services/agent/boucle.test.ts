@@ -235,6 +235,27 @@ describe("executerAgent — boucle d'outils", () => {
   });
 });
 
+describe("executerAgent — outils hors conversation (fil conducteur)", () => {
+  for (const [qui, env] of [["dans l'interrupteur", "user-1"], ["hors interrupteur", "quelqu-une-d-autre"]] as const) {
+    it(`${qui} : ni proposer_etapes ni rattacher_chaine ne sont offerts, ni exécutables`, async () => {
+      vi.stubEnv("FIL_CONDUCTEUR_USERS", env);
+      try {
+        h.appeler
+          .mockResolvedValueOnce(reponse([appelOutil("proposer_etapes", { objectifId: 1, etapes: [] })], "tool_use"))
+          .mockResolvedValueOnce(reponse([texte("ok")], "end_turn"));
+        const r = await executerAgent(base);
+        const noms = h.appeler.mock.calls[0][0].tools.map((t: any) => t.name);
+        expect(noms).not.toContain("proposer_etapes");
+        expect(noms).not.toContain("rattacher_chaine");
+        expect(noms).toContain("deplacer_taches");
+        expect(r.propositions).toEqual([]);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+  }
+});
+
 describe("executerAgent — panne de Claude en cours de route", () => {
   const faite = { actionId: 42, resume: "Tâche « Appeler Léa » ajoutée", annulableJusqua: "2026-11-03T10:00:00.000Z" };
   const proposition = { id: 9, resume: "Décaler la campagne", changements: [], expireA: "2026-11-03T10:00:00.000Z" };
