@@ -40,16 +40,38 @@ export function registerFilRoutes(app: Express): void {
     }
   });
 
-  // À la demande, et « Refaire » (le client annule l'ancienne avant).
+  // À la demande, et « Refaire » avec `remplace` : la proposition en attente que la nouvelle
+  // remplace. Elle n'est annulée qu'une fois la nouvelle créée : plafond IA, génération ratée
+  // ou autre échec, l'ancienne reste intacte et Jeanne peut toujours la valider.
   app.post("/api/fil/objectifs/:id/proposer-etapes", isAuthenticated, reserveAuFil, async (req: any, res) => {
     try {
       const userId: string = req.userId;
       const id = idValide(req.params.id);
       if (!id || !(await objectifDe(userId, id))) return res.status(404).json({ message: "introuvable" });
+      let ancienneId: number | undefined;
+      if (req.body?.remplace !== undefined) {
+        const rid = idValide(req.body.remplace);
+        const ancienne = rid ? await depot.getProposition(rid, userId) : undefined;
+        if (!ancienne || ancienne.outil !== "proposer_etapes" || Number((ancienne.arguments as any)?.objectifId) !== id) {
+          return res.status(404).json({ message: "introuvable" });
+        }
+        if (ancienne.statut !== "en_attente") return res.status(409).json({ message: "deja_traitee" });
+        ancienneId = ancienne.id;
+      }
       if (await isAiBlocked(userId)) return res.status(429).json({ message: "ai_monthly_limit_reached" });
       const note = typeof req.body?.note === "string" ? req.body.note.slice(0, 1000) : undefined;
-      const r = await proposerEtapesPour(userId, id, new Date(), note);
+      const r = ancienneId === undefined
+        ? await proposerEtapesPour(userId, id, new Date(), note)
+        : await proposerEtapesPour(userId, id, new Date(), note, { ignorer: ancienneId });
       if ("erreur" in r) return res.status(409).json({ message: r.erreur });
+      if (ancienneId !== undefined) {
+        const a = await annulerProposition(userId, ancienneId);
+        if (!a.ok) {
+          // L'ancienne a été validée ou annulée entre-temps : on retire la nouvelle.
+          await annulerProposition(userId, r.id);
+          return res.status(409).json({ message: a.raison });
+        }
+      }
       res.json(r);
     } catch (error: any) {
       console.error("Proposition d'étapes :", error?.message || error);

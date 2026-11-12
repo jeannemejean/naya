@@ -241,6 +241,15 @@ describe("proposer_etapes", () => {
     expect(table.lignes.size).toBe(1);
   });
 
+  it("« Refaire » : la proposition remplacée est ignorée du dédoublonnage, pas une autre", async () => {
+    const premiere = await proposerEtapesPour("u1", 1, DEBUT);
+    if ("erreur" in premiere) throw new Error(premiere.erreur);
+    expect(await proposerEtapesPour("u1", 1, jours(1), undefined, { ignorer: premiere.id + 1000 })).toEqual({ erreur: "deja_en_attente" });
+    const seconde = await proposerEtapesPour("u1", 1, jours(1), "plus court", { ignorer: premiere.id });
+    expect("erreur" in seconde).toBe(false);
+    expect(table.lignes.size).toBe(2);
+  });
+
   it("isAiBlocked vrai : aucun appel IA, aucune proposition", async () => {
     ia.isAiBlocked.mockResolvedValue(true);
     expect(await proposerEtapesPour("u1", 1, DEBUT)).toEqual({ erreur: "generation_impossible" });

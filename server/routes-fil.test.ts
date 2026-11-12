@@ -82,6 +82,57 @@ describe("routes du fil", () => {
     expect(h.proposerEtapesPour).not.toHaveBeenCalled();
   });
 
+  describe("Refaire (remplace)", () => {
+    const ancienne = { id: 5, outil: "proposer_etapes", statut: "en_attente", arguments: { objectifId: 1 } };
+
+    it("succès : la nouvelle d'abord, puis l'ancienne annulée", async () => {
+      h.getProposition.mockResolvedValue(ancienne);
+      h.proposerEtapesPour.mockResolvedValue({ id: 8, resume: "x", changements: [], expireA: "" });
+      h.annulerProposition.mockResolvedValue({ ok: true });
+      const r = await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { note: "plus court", remplace: 5 });
+      expect(r.status).toBe(200);
+      expect((await r.json()).id).toBe(8);
+      expect(h.getProposition).toHaveBeenCalledWith(5, "u1");
+      expect(h.proposerEtapesPour).toHaveBeenCalledWith("u1", 1, expect.any(Date), "plus court", { ignorer: 5 });
+      expect(h.annulerProposition).toHaveBeenCalledTimes(1);
+      expect(h.annulerProposition).toHaveBeenCalledWith("u1", 5);
+      expect(h.proposerEtapesPour.mock.invocationCallOrder[0]).toBeLessThan(h.annulerProposition.mock.invocationCallOrder[0]);
+    });
+
+    it("génération ratée ou plafond IA : l'ancienne reste en attente", async () => {
+      h.getProposition.mockResolvedValue(ancienne);
+      h.proposerEtapesPour.mockResolvedValue({ erreur: "generation_impossible" });
+      const r = await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { remplace: 5 });
+      expect(r.status).toBe(409);
+      expect(await r.json()).toEqual({ message: "generation_impossible" });
+      h.isAiBlocked.mockResolvedValue(true);
+      expect((await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { remplace: 5 })).status).toBe(429);
+      expect(h.annulerProposition).not.toHaveBeenCalled();
+    });
+
+    it("proposition d'une autre utilisatrice, d'un autre objectif ou d'un autre outil : refusée, rien généré", async () => {
+      h.getProposition.mockResolvedValueOnce(undefined); // getProposition est borné à l'utilisatrice
+      expect((await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { remplace: 99 })).status).toBe(404);
+      h.getProposition.mockResolvedValueOnce({ ...ancienne, arguments: { objectifId: 2 } });
+      expect((await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { remplace: 5 })).status).toBe(404);
+      h.getProposition.mockResolvedValueOnce({ ...ancienne, outil: "rattacher_chaine" });
+      expect((await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { remplace: 5 })).status).toBe(404);
+      h.getProposition.mockResolvedValueOnce({ ...ancienne, statut: "annulee" });
+      expect((await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { remplace: 5 })).status).toBe(409);
+      expect(h.proposerEtapesPour).not.toHaveBeenCalled();
+      expect(h.annulerProposition).not.toHaveBeenCalled();
+    });
+
+    it("ancienne traitée entre-temps : la nouvelle est retirée", async () => {
+      h.getProposition.mockResolvedValue(ancienne);
+      h.proposerEtapesPour.mockResolvedValue({ id: 8, resume: "x", changements: [], expireA: "" });
+      h.annulerProposition.mockResolvedValueOnce({ ok: false, raison: "deja_traitee" }).mockResolvedValueOnce({ ok: true });
+      const r = await appel("POST", "/api/fil/objectifs/1/proposer-etapes", { remplace: 5 });
+      expect(r.status).toBe(409);
+      expect(h.annulerProposition).toHaveBeenLastCalledWith("u1", 8);
+    });
+  });
+
   it("ajuster refusé (nombre d'étapes) : l'ancienne reste en attente", async () => {
     h.getProposition.mockResolvedValue({ id: 5, outil: "proposer_etapes", statut: "en_attente", arguments: { objectifId: 1 } });
     h.proposerHorsConversation.mockResolvedValue({ erreur: "nombre_etapes" });

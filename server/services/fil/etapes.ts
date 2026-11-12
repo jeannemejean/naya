@@ -349,9 +349,12 @@ export async function proposerEtapesPour(
   objectifId: number,
   maintenant: Date,
   note?: string,
+  opts: { ignorer?: number } = {},
 ): Promise<PropositionVue | { erreur: string }> {
+  // `ignorer` : la proposition que celle-ci va remplacer (« Refaire ») ; la route ne l'annule
+  // qu'après la création de la nouvelle, pour qu'un échec la laisse intacte.
   const enAttente = await depot.propositionsEnAttente(userId, ["proposer_etapes"], maintenant);
-  if (enAttente.some((p) => Number((p.arguments as any)?.objectifId) === objectifId)) return erreur("deja_en_attente");
+  if (enAttente.some((p) => p.id !== opts.ignorer && Number((p.arguments as any)?.objectifId) === objectifId)) return erreur("deja_en_attente");
   const etapes = await genererEtapes(userId, objectifId, note, maintenant);
   if (!etapes) return erreur("generation_impossible");
   return proposerHorsConversation(userId, "proposer_etapes", { objectifId, etapes }, maintenant);

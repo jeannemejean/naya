@@ -11,7 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
-  ajouter, ajustementPret, cleErreurFil, codeErreur, corpsAjustement, deplacer, etapesDeProposition,
+  ajouter, ajustementPret, cleErreurFil, codeErreur, corpsAjustement, corpsRefaire, deplacer, etapesDeProposition,
   renommer, supprimer, type EtapeEditable, type PropositionFil,
 } from "./fil-logique";
 
@@ -30,7 +30,8 @@ export function usePropositionsFil() {
     retry: false,
     throwOnError: false,
     staleTime: 30_000,
-    refetchInterval: 2 * 60 * 1000,
+    // Hors interrupteur (404) : on cesse d'interroger le fil.
+    refetchInterval: (q) => (q.state.data?.actif === false ? false : 2 * 60 * 1000),
   });
   return { actif: data?.actif ?? false, propositions: data?.propositions ?? [] };
 }
@@ -87,15 +88,13 @@ function CartePropositionEtapes({ proposition }: { proposition: PropositionFil }
     onSuccess: () => { setMode("lecture"); rafraichir(qc); },
     onError: surErreur,
   });
-  // « Refaire » : l'ancienne est annulée d'abord (le serveur refuse une seconde proposition en attente).
-  // Si la nouvelle échoue ensuite, cette carte disparaît avec l'ancienne : l'erreur passe en toast.
+  // « Refaire » : un seul appel, avec `remplace`. Le serveur crée la nouvelle puis seulement
+  // annule celle-ci : en cas d'échec, cette carte reste et affiche l'erreur.
   const refaire = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", `/api/agent/propositions/${proposition.id}/annuler`);
-      await apiRequest("POST", `/api/fil/objectifs/${objectifId}/proposer-etapes`, note.trim() ? { note: note.trim() } : {});
-    },
-    onError: (e) => { surErreur(e); toast({ title: t(cleErreurFil(codeErreur(e))) }); },
-    onSettled: () => rafraichir(qc),
+    mutationFn: () => apiRequest("POST", `/api/fil/objectifs/${objectifId}/proposer-etapes`,
+      corpsRefaire(proposition.id, note)),
+    onSuccess: () => rafraichir(qc),
+    onError: surErreur,
   });
   const occupe = valider.isPending || ajuster.isPending || refaire.isPending;
 

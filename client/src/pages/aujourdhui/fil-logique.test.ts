@@ -3,7 +3,7 @@ import fr from "@/locales/fr";
 import en from "@/locales/en";
 import type { LienFil } from "@shared/fil";
 import {
-  ajouter, ajustementPret, cleErreurFil, codeErreur, corpsAjustement, deplacer, etapesDeProposition,
+  ajouter, ajustementPret, cleErreurFil, codeErreur, corpsAjustement, corpsRefaire, deplacer, etapesDeProposition,
   grouperParObjectif, objectifPeutRecevoirEtapes, renommer, supprimer, texteLien, type EtapeEditable, type PropositionFil,
 } from "./fil-logique";
 // Le miroir mobile (sans traductions) doit dire exactement la même chose en français.
@@ -72,6 +72,13 @@ describe("ajuster la liste", () => {
     expect(depart[0].titre).toBe("Poser l'offre"); // jamais modifiée en place
   });
 
+  it("« Refaire » : un seul appel qui nomme la proposition remplacée, note seulement si elle dit quelque chose", () => {
+    expect(corpsRefaire(5, "  plus court ")).toEqual({ remplace: 5, note: "plus court" });
+    expect(corpsRefaire(5, "   ")).toEqual({ remplace: 5 });
+    expect(mobile.corpsRefaire(5, "  plus court ")).toEqual(corpsRefaire(5, "  plus court "));
+    expect(mobile.corpsRefaire(5, "")).toEqual(corpsRefaire(5, ""));
+  });
+
   it("déplacer hors des bornes ne change rien", () => {
     expect(deplacer(depart, 0, -1)).toEqual(depart);
     expect(deplacer(depart, 3, 1)).toEqual(depart);
@@ -133,10 +140,15 @@ describe("page projet", () => {
     const g = grouperParObjectif(jalons, objectifs);
     expect(g.groupes.map((x) => [x.objectif.id, x.jalons.map((j) => j.id)])).toEqual([[1, [10, 11]], [2, [20]]]);
     expect(g.sansObjectif.map((j) => j.id)).toEqual([30, 40]);
+    expect(mobile.grouperParObjectif(jalons, objectifs)).toEqual(g); // miroir mobile
   });
 
   it("« Proposer des étapes » : objectif actif, sans étape ouverte, sans proposition en attente", () => {
     const enAttente = [{ outil: "proposer_etapes", objectif: { id: 2, titre: "Visible", projetId: 7 } }] as unknown as PropositionFil[];
+    // Le mobile décide exactement pareil.
+    for (const o of objectifs) for (const p of [[], enAttente]) {
+      expect(mobile.objectifPeutRecevoirEtapes(o, jalons, p as any)).toBe(objectifPeutRecevoirEtapes(o, jalons, p));
+    }
     expect(objectifPeutRecevoirEtapes(objectifs[0], jalons, [])).toBe(false); // étape 11 ouverte
     expect(objectifPeutRecevoirEtapes(objectifs[1], jalons, [])).toBe(true);  // toutes franchies
     expect(objectifPeutRecevoirEtapes(objectifs[1], jalons, enAttente)).toBe(false);

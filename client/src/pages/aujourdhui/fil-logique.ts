@@ -64,6 +64,12 @@ export const ajustementPret = (l: EtapeEditable[]) =>
 /** Corps de POST /api/fil/propositions/:id/ajuster : la liste éditée, telle quelle (le serveur juge l'ordre). */
 export const corpsAjustement = (l: EtapeEditable[]) => ({ etapes: l });
 
+/** Corps de « Refaire » : la proposition remplacée, et la note si elle n'est pas vide. */
+export function corpsRefaire(remplace: number, note: string): { remplace: number; note?: string } {
+  const n = note.trim();
+  return n ? { remplace, note: n } : { remplace };
+}
+
 // ── Erreurs ──────────────────────────────────────────────────────────────────────────
 
 /** Code d'erreur d'une réponse d'apiRequest (« 409: {"message":"ordre_etats"} »), ou null. */
