@@ -80,6 +80,19 @@ export const depot = {
       .orderBy(desc(agentPropositions.createdAt));
   },
 
+  // Propositions de ces outils créées depuis `depuis`, QUEL QUE SOIT leur statut (en attente,
+  // validées, annulées, expirées), la plus récente d'abord : « déjà proposée aujourd'hui ? ».
+  async propositionsCreeesDepuis(userId: string, outils: string[], depuis: Date): Promise<AgentProposition[]> {
+    if (outils.length === 0) return [];
+    return db.select().from(agentPropositions)
+      .where(and(
+        eq(agentPropositions.userId, userId),
+        inArray(agentPropositions.outil, outils),
+        gte(agentPropositions.createdAt, depuis),
+      ))
+      .orderBy(desc(agentPropositions.createdAt));
+  },
+
   async getProposition(id: number, userId: string): Promise<AgentProposition | undefined> {
     const [p] = await db.select().from(agentPropositions)
       .where(and(eq(agentPropositions.id, id), eq(agentPropositions.userId, userId)))

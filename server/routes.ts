@@ -98,6 +98,8 @@ import { registerFilRoutes } from "./routes-fil";
 import { filActifPour } from "./services/fil/interrupteur";
 import { avecLiens } from "./services/fil/lien";
 import { proposerEtapesPour } from "./services/fil/etapes";
+import { construireMatin, ajouterFil, blocTachesDuBrief } from "./services/fil/matin";
+import type { MatinFil } from "@shared/fil";
 import { contextualRecommendationsEngine } from "./services/contextual-recommendations";
 import { runRealismValidation } from "./services/realism";
 import { taskPreGenerationService } from "./services/task-pre-generation";
@@ -2568,9 +2570,17 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       }
 
       const forceRefresh = req.body?.refresh === true || req.query?.refresh === 'true';
+      // Fil conducteur (sous interrupteur) : le bloc `fil` est recalculé à CHAQUE appel, hors du
+      // cache du texte (sans IA), sur tous les objectifs. Hors interrupteur : réponse inchangée.
+      const calculerFil = () => construireMatin(userId, aujourdhuiParis(now), now);
       if (!forceRefresh && prefs?.dailyBriefDate === todayStr && prefs.dailyBriefContent) {
-        return res.json({ date: todayStr, content: prefs.dailyBriefContent, dismissed: prefs.dailyBriefDismissed || false });
+        return res.json(await ajouterFil(userId, { date: todayStr, content: prefs.dailyBriefContent, dismissed: prefs.dailyBriefDismissed || false }, calculerFil));
       }
+      let filMatin: MatinFil | null = null;
+      if (filActifPour(userId)) {
+        try { filMatin = await calculerFil(); } catch (e: any) { console.error("[fil] matin :", e?.message ?? e); }
+      }
+      const avecFil = <T extends object>(corps: T) => (filMatin ? { ...corps, fil: filMatin } : corps);
 
       const [todayTasks, recentContent, activeCampaigns] = await Promise.all([
         storage.getTasksInRange(userId, todayStr, todayStr),
@@ -2699,7 +2709,7 @@ ${avoidanceContext}
 ${reponsesContext}
 - Type de business : ${brandDna.businessType || 'Entrepreneur indépendante'}
 - Tâches aujourd'hui : ${incompleteTasks.length} en attente, ${completedTasks.length} faites
-${topTasks.length > 0 ? `\nTÂCHES DU JOUR :\n${topTasks.join('\n')}` : '\nAucune tâche planifiée pour aujourd\'hui.'}
+${blocTachesDuBrief(filMatin, topTasks)}
 ${carryoverLines.length > 0 ? `\nRESTANT D'HIER :\n${carryoverLines.join('\n')}` : ''}
 ${upcomingMilestone ? `\nÀ VENIR :\n- ${upcomingMilestone}` : ''}
 ${memoryBlock}
@@ -2746,11 +2756,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           dailyBriefDismissed: false,
         });
 
-        res.json({ date: todayStr, content: briefContent, dismissed: false });
+        res.json(avecFil({ date: todayStr, content: briefContent, dismissed: false }));
       } catch (aiError: any) {
         const fallbackBrief = {
           greeting: phraseDeSecours(energyLevel, saisonBrief),
-          topTasks: briefCandidates.slice(0, 3).map((t: any) => t.title),
+          topTasks: filMatin ? filMatin.tachesCles.map((c) => c.titre) : briefCandidates.slice(0, 3).map((t: any) => t.title),
           carryovers: carryoverTasks.slice(0, 1).map((t: any) => t.title),
           strategicReminder: "Every small step compounds. Stay focused on what moves the needle.",
           energyAdvice: energyLevel === 'depleted'
@@ -2766,7 +2776,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           dailyBriefDismissed: false,
         });
 
-        res.json({ date: todayStr, content: fallbackBrief, dismissed: false });
+        res.json(avecFil({ date: todayStr, content: fallbackBrief, dismissed: false }));
       }
     } catch (error) {
       console.error("Error generating daily brief:", error);
