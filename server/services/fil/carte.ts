@@ -7,10 +7,13 @@ import type { ProjectGoal, ProjectMilestone } from "@shared/schema";
 export interface EtapeCarte {
   id: number; objectifId: number | null; projetId: number; titre: string; pourquoi: string | null;
   statut: string; ordre: number; faites: number; prevues: number;
+  /** Début de l'étape : la plus tardive de sa création et de son activation (chantiers sans mouvement). */
+  debut?: Date | null;
 }
 export interface ObjectifCarte {
   id: number; projetId: number; titre: string; successMode: string; goalType: string;
   cible: string | null; dueDate: Date | null; etapes: EtapeCarte[]; // triées par order
+  creeLe?: Date | null;
 }
 export interface CarteFil { objectifs: ObjectifCarte[]; chainesSansObjectif: Map<number, EtapeCarte[]>; depuis: Date | null }
 
@@ -61,7 +64,14 @@ function versEtape(m: ProjectMilestone, av: Map<number, { faites: number; prevue
   return {
     id: m.id, objectifId: m.goalId ?? null, projetId: m.projectId, titre: m.title, pourquoi: m.pourquoi ?? null,
     statut: m.status, ordre: m.order ?? 0, faites: a.faites, prevues: a.prevues,
+    debut: plusTardive(m.createdAt ?? null, m.activatedAt ?? null),
   };
+}
+
+function plusTardive(a: Date | null, b: Date | null): Date | null {
+  if (!a) return b;
+  if (!b) return a;
+  return a.getTime() >= b.getTime() ? a : b;
 }
 
 const parOrdre = (a: EtapeCarte, b: EtapeCarte) => a.ordre - b.ordre;
@@ -91,7 +101,7 @@ export async function chargerCarte(userId: string, depuis: Date | null): Promise
     for (const g of goals) {
       objectifs.push({
         id: g.id, projetId, titre: g.title, successMode: g.successMode, goalType: g.goalType,
-        cible: g.targetValue ?? null, dueDate: g.dueDate ?? null,
+        cible: g.targetValue ?? null, dueDate: g.dueDate ?? null, creeLe: g.createdAt ?? null,
         etapes: etapes.filter((e) => e.objectifId === g.id).sort(parOrdre),
       });
     }

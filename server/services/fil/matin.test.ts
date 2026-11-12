@@ -40,6 +40,7 @@ function deps(over: Partial<DepsMatin> = {}): DepsMatin & { [k: string]: any } {
     echeances: vi.fn(async () => []),
     oublies: vi.fn(async () => []),
     etatsTachesFond: vi.fn(async () => TACHES_EN_FORME),
+    chantiersBloques: vi.fn(async () => []),
     reprise: vi.fn(async () => null),
     allegementsDuJour: vi.fn(async () => []),
     proposerAllegement: vi.fn(async () => ({ id: 77 })),
@@ -71,6 +72,21 @@ describe("construireMatin", () => {
     const fil = await construireMatin("u1", AUJ, MAINTENANT, deps({ etatsTachesFond: vi.fn(async () => etats) }));
     expect(fil.pannes).toEqual([{ nom: "L'indexeur de la recherche", dernierSucces: "2026-11-10T08:00:00.000Z" }]);
     expect(fil.rienNeCloche).toBe(false);
+  });
+
+  it("un chantier sans mouvement : signalé avec son prochain pas, rienNeCloche faux ; une erreur n'invente rien", async () => {
+    const bloque = { libelle: "Rendez-vous (Garance)", joursSansMouvement: 16, prochainPas: "Appeler Paul" };
+    const d = deps({ chantiersBloques: vi.fn(async () => [bloque]) });
+    const fil = await construireMatin("u1", AUJ, MAINTENANT, d);
+    expect(fil.chantiersBloques).toEqual([bloque]);
+    expect(fil.rienNeCloche).toBe(false);
+    expect(d.chantiersBloques).toHaveBeenCalledWith("u1", CARTE, MAINTENANT);
+
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const enPanne = await construireMatin("u1", AUJ, MAINTENANT, deps({ chantiersBloques: vi.fn(async () => { throw new Error("base"); }) }));
+    err.mockRestore();
+    expect(enPanne.chantiersBloques).toBeUndefined();
+    expect(enPanne.rienNeCloche).toBe(true);
   });
 
   it("la lecture de l'état des tâches de fond échoue : pas de panne inventée", async () => {

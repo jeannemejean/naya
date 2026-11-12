@@ -30,6 +30,7 @@ import { bornerPourquoi } from "./rattachement";
 import { joursTravaillesSuivants, planAllegement } from "./allegement";
 import { debutDuSuivi, lireEtatsTachesFond, pannes as pannesDesTaches } from "./etat-taches-fond";
 import type { EtatTacheFond } from "@shared/schema";
+import { chargerChantiersBloques } from "./mouvements";
 
 const JOURS_REPORT = 3;
 const HEURES_RECHERCHE_ALLEGEMENT = 48;
@@ -51,6 +52,8 @@ export interface DepsMatin {
   allegementsDuJour(userId: string, jour: string, maintenant: Date): Promise<{ id: number; statut: string; expireA: Date }[]>;
   /** L'état des tâches de fond de Naya (table globale). */
   etatsTachesFond(): Promise<EtatTacheFond[]>;
+  /** Chantiers sans mouvement depuis 15 jours (étape, objectif ou projet actifs). */
+  chantiersBloques(userId: string, carte: CarteFil, maintenant: Date): Promise<{ libelle: string; joursSansMouvement: number; prochainPas: string }[]>;
   proposerAllegement(userId: string, args: { date: string; deplacer: { tacheId: number; vers: string }[] }, maintenant: Date): Promise<{ id: number } | { erreur: string }>;
 }
 
@@ -81,6 +84,7 @@ const depsParDefaut: DepsMatin = {
   },
   oublies: chargerObjectifsOublies,
   etatsTachesFond: lireEtatsTachesFond,
+  chantiersBloques: chargerChantiersBloques,
   reprise: tacheDeReprise,
   async allegementsDuJour(userId, jour, maintenant) {
     const depuis = new Date(maintenant.getTime() - HEURES_RECHERCHE_ALLEGEMENT * 3600_000);
@@ -205,8 +209,13 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
     .then((etats) => pannesDesTaches(etats, maintenant, undefined, debutDuSuivi(etats)))
     .catch((e: any) => { console.error("[fil] pannes :", e?.message ?? e); return [] as { nom: string; dernierSucces: string | null }[]; });
 
+  // Les chantiers sans mouvement : une source qui plante (base, agenda) ne fait jamais tomber le matin.
+  const chantiersBloques = await deps.chantiersBloques(userId, carte, maintenant)
+    .catch((e: any) => { console.error("[fil] chantiers sans mouvement :", e?.message ?? e); return []; });
+
   const fil: MatinFil = { tachesCles, objectifsOublies, allegement, nonRattachees, rienNeCloche: false };
   if (pannes.length > 0) fil.pannes = pannes;
+  if (chantiersBloques.length > 0) fil.chantiersBloques = chantiersBloques;
   fil.rienNeCloche = tachesCles.length > 0 && objectifsOublies.length === 0 && nonRattachees === 0 && !allegement && !signalLot4(fil);
   return fil;
 }
