@@ -30,7 +30,7 @@ import { bornerPourquoi } from "./rattachement";
 import { joursTravaillesSuivants, planAllegement } from "./allegement";
 import { debutDuSuivi, lireEtatsTachesFond, pannes as pannesDesTaches } from "./etat-taches-fond";
 import type { EtatTacheFond } from "@shared/schema";
-import { chargerChantiersBloques } from "./mouvements";
+import { chantiersBloquesEnCache } from "./mouvements";
 
 const JOURS_REPORT = 3;
 const HEURES_RECHERCHE_ALLEGEMENT = 48;
@@ -84,7 +84,7 @@ const depsParDefaut: DepsMatin = {
   },
   oublies: chargerObjectifsOublies,
   etatsTachesFond: lireEtatsTachesFond,
-  chantiersBloques: chargerChantiersBloques,
+  chantiersBloques: (userId, carte, maintenant) => chantiersBloquesEnCache(userId, carte, maintenant),
   reprise: tacheDeReprise,
   async allegementsDuJour(userId, jour, maintenant) {
     const depuis = new Date(maintenant.getTime() - HEURES_RECHERCHE_ALLEGEMENT * 3600_000);
@@ -205,13 +205,15 @@ export async function construireMatin(userId: string, aujourdhui: string, mainte
   }
 
   // Les tâches de fond en panne : signalées, jamais refaites. Une lecture ratée n'invente pas de panne.
-  const pannes = await deps.etatsTachesFond()
-    .then((etats) => pannesDesTaches(etats, maintenant, undefined, debutDuSuivi(etats)))
-    .catch((e: any) => { console.error("[fil] pannes :", e?.message ?? e); return [] as { nom: string; dernierSucces: string | null }[]; });
-
-  // Les chantiers sans mouvement : une source qui plante (base, agenda) ne fait jamais tomber le matin.
-  const chantiersBloques = await deps.chantiersBloques(userId, carte, maintenant)
-    .catch((e: any) => { console.error("[fil] chantiers sans mouvement :", e?.message ?? e); return []; });
+  // Les chantiers sans mouvement, en parallèle : une source qui plante (base, agenda) ne fait
+  // jamais tomber le matin.
+  const [pannes, chantiersBloques] = await Promise.all([
+    deps.etatsTachesFond()
+      .then((etats) => pannesDesTaches(etats, maintenant, undefined, debutDuSuivi(etats)))
+      .catch((e: any) => { console.error("[fil] pannes :", e?.message ?? e); return [] as { nom: string; dernierSucces: string | null }[]; }),
+    deps.chantiersBloques(userId, carte, maintenant)
+      .catch((e: any) => { console.error("[fil] chantiers sans mouvement :", e?.message ?? e); return []; }),
+  ]);
 
   const fil: MatinFil = { tachesCles, objectifsOublies, allegement, nonRattachees, rienNeCloche: false };
   if (pannes.length > 0) fil.pannes = pannes;

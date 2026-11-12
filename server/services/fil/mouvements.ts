@@ -8,10 +8,13 @@
 // LU, jamais écrit : aucune tâche n'est créée depuis l'agenda. Sans agenda relié (ou s'il ne
 // répond pas), on continue sans cette source.
 //
-// Rattachement d'un mouvement : par étape, objectif et projet. Un champ ne départage que s'il est
-// connu des deux côtés : une tâche d'une AUTRE étape ne compte pas, mais un mouvement qui ne
-// connaît que son projet (contenu, prospect, réponse) compte pour tous les chantiers du projet —
-// mieux vaut un chantier signalé trop tard qu'un signal à tort.
+// Rattachement d'un mouvement, du plus précis au moins précis :
+// - il connaît son étape : il compte pour le chantier de CETTE étape, ou pour le chantier de son
+//   objectif quand celui-ci n'a pas d'étape en cours ; jamais pour un objectif voisin ;
+// - il connaît son objectif (sans étape) : il compte pour les chantiers de cet objectif ;
+// - il ne connaît que son projet (contenu, prospect, réponse, tâche sans objectif) : il ne compte
+//   que si le projet n'a qu'UN chantier — sinon on ne sait pas lequel il fait avancer, et le
+//   compter partout masquerait un chantier endormi.
 //
 // Les jours sans mouvement sont comptés depuis le plus récent de : le dernier mouvement, le début
 // du chantier (étape : la plus tardive de sa création et de son activation ; objectif, projet :
@@ -52,11 +55,30 @@ function normaliser(s: string): string {
 }
 
 /** Le titre cite-t-il un des noms, sur des mots entiers ? Les noms de moins de 3 lettres sont ignorés. */
+/**
+ * Mots trop courants pour désigner un chantier à eux seuls : un nom fait seulement de ces mots
+ * (« Naya », « Agence », « Studio Atelier ») ne cite rien.
+ */
+export const MOTS_GENERIQUES = new Set([
+  "agence", "studio", "atelier", "cafe", "maison", "projet", "projets", "client", "clients", "naya",
+  "business", "entreprise", "societe", "boutique", "shop", "restaurant", "bureau", "groupe", "marque",
+  "perso", "personnel", "prospection", "rdv", "point", "reunion", "call", "visio", "meeting",
+]);
+
+/**
+ * Le titre cite-t-il un des noms ? Sans accents ni casse, sur des mots entiers. Ignorés : les
+ * noms de moins de 3 lettres, les noms d'un seul mot de moins de 4 lettres, et les noms faits
+ * uniquement de mots génériques (`MOTS_GENERIQUES`).
+ */
 export function evenementCite(titre: string, noms: string[]): boolean {
   const t = ` ${normaliser(titre)} `;
   return noms.some((n) => {
     const nom = normaliser(n);
-    return nom.replace(/ /g, "").length >= 3 && t.includes(` ${nom} `);
+    if (nom.replace(/ /g, "").length < 3) return false;
+    const mots = nom.split(" ");
+    if (mots.length === 1 && nom.length < 4) return false;
+    if (mots.every((m) => MOTS_GENERIQUES.has(m))) return false;
+    return t.includes(` ${nom} `);
   });
 }
 
@@ -155,22 +177,32 @@ export interface SourcesMouvements {
   prospectsContactes(userId: string, depuis: Date): Promise<MouvementBrut[]>;
   reponsesRecues(userId: string, depuis: Date): Promise<MouvementBrut[]>;
   /** Rendez-vous de l'agenda (lecture seule). */
-  agenda(userId: string, depuis: Date): Promise<{ titre: string; at: Date }[]>;
+  agenda(userId: string, debut: Date, fin: Date): Promise<{ titre: string; at: Date }[]>;
 }
 
 const differe = (a: number | null | undefined, b: number | null | undefined) => a != null && b != null && a !== b;
 
-function rattache(m: MouvementBrut, c: Chantier): boolean {
-  if (m.projetId == null && m.objectifId == null && m.etapeId == null) return false;
-  if (differe(m.projetId, c.projetId) || differe(m.objectifId, c.objectifId) || differe(m.etapeId, c.etapeId)) return false;
-  // Sans projet connu, il faut au moins l'objectif ou l'étape en commun.
-  if (m.projetId == null) return (m.etapeId != null && m.etapeId === c.etapeId) || (m.objectifId != null && m.objectifId === c.objectifId);
-  return true;
+function rattache(m: MouvementBrut, c: Chantier, chantiersDuProjet: Map<number, number>): boolean {
+  if (differe(m.projetId, c.projetId)) return false;
+  if (m.etapeId != null) {
+    if (c.etapeId != null) return c.etapeId === m.etapeId;
+    // Chantier d'objectif (objectif sans étape en cours) : seulement le sien.
+    return c.objectifId != null && c.objectifId === m.objectifId;
+  }
+  if (m.objectifId != null) return c.objectifId === m.objectifId;
+  if (m.projetId != null) return c.projetId === m.projetId && chantiersDuProjet.get(c.projetId) === 1;
+  return false;
 }
 
+/**
+ * L'agenda n'est lu que sur les `SEUIL_JOURS` derniers jours : un rendez-vous plus ancien ne peut
+ * pas ramener un chantier sous le seuil, et la lecture de l'agenda est plafonnée (250 événements).
+ */
 export async function collecterMouvements(
   userId: string, chantiers: Chantier[], depuis: Date, sources: SourcesMouvements = sourcesParDefaut,
+  maintenant: Date = new Date(),
 ): Promise<{ cle: string; at: Date }[]> {
+  const debutAgenda = new Date(Math.max(depuis.getTime(), maintenant.getTime() - SEUIL_JOURS * JOUR_MS));
   const lire = <T>(nom: string, p: () => Promise<T[]>) => p().catch((e: any) => {
     console.error(`[fil] mouvements (${nom}) :`, e?.message ?? e);
     return [] as T[];
@@ -181,11 +213,13 @@ export async function collecterMouvements(
     lire("contenus publiés", () => sources.contenusPublies(userId, depuis)),
     lire("prospects contactés", () => sources.prospectsContactes(userId, depuis)),
     lire("réponses reçues", () => sources.reponsesRecues(userId, depuis)),
-    lire("agenda", () => sources.agenda(userId, depuis)),
+    lire("agenda", () => sources.agenda(userId, debutAgenda, maintenant)),
   ]);
+  const chantiersDuProjet = new Map<number, number>();
+  for (const c of chantiers) chantiersDuProjet.set(c.projetId, (chantiersDuProjet.get(c.projetId) ?? 0) + 1);
   const res: { cle: string; at: Date }[] = [];
   for (const m of [...faites, ...creees, ...publies, ...contactes, ...reponses]) {
-    for (const c of chantiers) if (rattache(m, c)) res.push({ cle: c.cle, at: m.at });
+    for (const c of chantiers) if (rattache(m, c, chantiersDuProjet)) res.push({ cle: c.cle, at: m.at });
   }
   for (const ev of agenda) {
     for (const c of chantiers) if (evenementCite(ev.titre, c.noms)) res.push({ cle: c.cle, at: ev.at });
@@ -199,12 +233,17 @@ const jourIso = (d: Date) => d.toISOString().slice(0, 10);
 const brut = (r: { projetId: number | null; objectifId?: number | null; etapeId?: number | null; at: Date | null }): MouvementBrut[] =>
   r.at ? [{ projetId: r.projetId, objectifId: r.objectifId ?? null, etapeId: r.etapeId ?? null, at: r.at }] : [];
 
+/** Tâches faites depuis `depuis`, hors rituels et marqueurs de jalon (exportée pour les tests). */
+export function requeteTachesFaites(userId: string, depuis: Date) {
+  return db.select({ projetId: tasks.projectId, objectifId: tasks.goalId, etapeId: tasks.milestoneId, at: tasks.completedAt })
+    .from(tasks)
+    .where(and(eq(tasks.userId, userId), eq(tasks.completed, true), gte(tasks.completedAt, depuis),
+      isNull(tasks.ritualId), ne(tasks.type, "milestone")));
+}
+
 export const sourcesParDefaut: SourcesMouvements = {
   async tachesFaites(userId, depuis) {
-    const rows = await db.select({ projetId: tasks.projectId, objectifId: tasks.goalId, etapeId: tasks.milestoneId, at: tasks.completedAt })
-      .from(tasks)
-      .where(and(eq(tasks.userId, userId), eq(tasks.completed, true), gte(tasks.completedAt, depuis)));
-    return rows.flatMap(brut);
+    return (await requeteTachesFaites(userId, depuis)).flatMap(brut);
   },
   async tachesCreees(userId, depuis) {
     // Créée par Jeanne : `source = manual`. Les rituels et les marqueurs de jalon, posés par Naya, n'en sont pas.
@@ -236,9 +275,9 @@ export const sourcesParDefaut: SourcesMouvements = {
         gte(inboxMessages.sentAt, depuis)));
     return rows.flatMap(brut);
   },
-  async agenda(userId, depuis) {
+  async agenda(userId, debut, fin) {
     // getCalendarEvents rend [] sans agenda relié ou en cas d'erreur : jamais de panne du matin.
-    const evenements = await getCalendarEvents(userId, jourIso(depuis), jourIso(new Date()));
+    const evenements = await getCalendarEvents(userId, jourIso(debut), jourIso(fin));
     return evenements.map((e) => ({ titre: e.title, at: new Date(`${e.date}T${e.allDay ? "12:00" : e.startTime}:00`) }));
   },
 };
@@ -272,7 +311,36 @@ export async function chargerChantiersBloques(
 
   const chantiers = chantiersDe(carte, projetsActifs, clientsLies, leadsActifs, ouvertes);
   if (chantiers.length === 0) return [];
-  const mouvements = await collecterMouvements(userId, chantiers, fenetre);
+  const mouvements = await collecterMouvements(userId, chantiers, fenetre, sourcesParDefaut, maintenant);
   const observeDepuis = carte.depuis.getTime() > fenetre.getTime() ? carte.depuis : fenetre;
   return chantiersSansMouvement(chantiers, mouvements, maintenant, SEUIL_JOURS, observeDepuis);
+}
+
+// ── Cache du matin ─────────────────────────────────────────────────────────────────────
+
+/** Le calcul lit 6 sources et l'agenda : gardé 20 min par utilisatrice et par jour (Europe/Paris). */
+export const CACHE_CHANTIERS_MS = 20 * 60_000;
+type Bloques = { libelle: string; joursSansMouvement: number; prochainPas: string }[];
+const cacheChantiers = new Map<string, { at: number; valeur: Promise<Bloques> }>();
+const jourParis = (d: Date) => new Intl.DateTimeFormat("fr-CA", { timeZone: "Europe/Paris" }).format(d);
+
+/** Pour les tests. */
+export function viderCacheChantiers(): void {
+  cacheChantiers.clear();
+}
+
+export function chantiersBloquesEnCache(
+  userId: string, carte: CarteFil, maintenant: Date,
+  calculer: (userId: string, carte: CarteFil, maintenant: Date) => Promise<Bloques> = chargerChantiersBloques,
+): Promise<Bloques> {
+  const cle = `${userId}:${jourParis(maintenant)}`;
+  const connu = cacheChantiers.get(cle);
+  if (connu && maintenant.getTime() - connu.at < CACHE_CHANTIERS_MS) return connu.valeur;
+  // Les jours passés et les entrées périmées ne servent plus.
+  cacheChantiers.forEach((v, k) => { if (maintenant.getTime() - v.at >= CACHE_CHANTIERS_MS) cacheChantiers.delete(k); });
+  const valeur = calculer(userId, carte, maintenant);
+  cacheChantiers.set(cle, { at: maintenant.getTime(), valeur });
+  // Un échec n'est pas gardé : le prochain matin réessaie.
+  valeur.catch(() => { if (cacheChantiers.get(cle)?.valeur === valeur) cacheChantiers.delete(cle); });
+  return valeur;
 }

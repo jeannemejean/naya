@@ -4,7 +4,8 @@
 import { describe, it, expect, vi } from "vitest";
 import type { CarteFil, EtapeCarte, ObjectifCarte } from "./carte";
 import {
-  chantiersDe, evenementCite, chantiersSansMouvement, collecterMouvements, type Chantier, type SourcesMouvements,
+  chantiersDe, evenementCite, chantiersSansMouvement, collecterMouvements, chantiersBloquesEnCache, viderCacheChantiers, requeteTachesFaites,
+  type Chantier, type SourcesMouvements,
 } from "./mouvements";
 
 const JOUR = 24 * 3600_000;
@@ -31,6 +32,14 @@ describe("evenementCite", () => {
     expect(evenementCite("Appel l'Épicerie fine", ["L'épicerie"])).toBe(true);
     expect(evenementCite("RDV JM", ["JM"])).toBe(false);
     expect(evenementCite("Point Garance", ["", "  "])).toBe(false);
+  });
+
+  it("noms d'un mot de moins de 4 lettres et noms génériques ignorés : « Naya » seul ne cite rien", () => {
+    expect(evenementCite("Point Naya", ["Naya"])).toBe(false);
+    expect(evenementCite("Visio agence", ["Agence"])).toBe(false);
+    expect(evenementCite("Café Lou", ["Lou"])).toBe(false);
+    expect(evenementCite("Point Agence JMD", ["Agence JMD"])).toBe(true);
+    expect(evenementCite("Déj Lune", ["Lune"])).toBe(true);
   });
 });
 
@@ -122,14 +131,42 @@ describe("collecterMouvements", () => {
     expect(s.tachesFaites).toHaveBeenCalledWith("u1", ilYA(60));
   });
 
-  it("un mouvement du projet seul compte pour tous les chantiers du projet ; une autre étape ne compte pas", async () => {
+  it("un mouvement qui ne connaît que son projet ne compte pas quand le projet a deux chantiers", async () => {
     const s = sources({
+      tachesFaites: vi.fn(async () => [{ projetId: 10, at: ilYA(1) }]),
       contenusPublies: vi.fn(async () => [{ projetId: 10, at: ilYA(1) }]),
-      tachesFaites: vi.fn(async () => [{ etapeId: 999, objectifId: 1, projetId: 10, at: ilYA(2) }]),
     });
-    const m = await collecterMouvements("u1", chantiers, ilYA(60), s);
-    expect(m.filter((x) => x.at.getTime() === ilYA(1).getTime()).map((x) => x.cle).sort()).toEqual(["etape:101", "objectif:2"]);
-    expect(m.filter((x) => x.at.getTime() === ilYA(2).getTime())).toEqual([]);
+    expect(await collecterMouvements("u1", chantiers, ilYA(60), s)).toEqual([]);
+  });
+
+  it("… et compte quand le projet n'a qu'un chantier", async () => {
+    const s = sources({ tachesFaites: vi.fn(async () => [{ projetId: 10, at: ilYA(1) }]) });
+    expect(await collecterMouvements("u1", [chantiers[0]], ilYA(60), s)).toEqual([{ cle: "etape:101", at: ilYA(1) }]);
+  });
+
+  it("une tâche d'étape ne compte que pour son étape, ou l'objectif sans étape en cours ; jamais un objectif voisin", async () => {
+    const s = sources({
+      tachesFaites: vi.fn(async () => [
+        { etapeId: 999, objectifId: 1, projetId: 10, at: ilYA(2) }, // autre étape de l'objectif 1
+        { etapeId: 101, objectifId: null, projetId: 10, at: ilYA(3) }, // objectif inconnu
+        { etapeId: 250, objectifId: 2, projetId: 10, at: ilYA(4) }, // étape (non en cours) de l'objectif 2
+      ]),
+    });
+    expect(await collecterMouvements("u1", chantiers, ilYA(60), s)).toEqual([
+      { cle: "etape:101", at: ilYA(3) }, { cle: "objectif:2", at: ilYA(4) },
+    ]);
+  });
+
+  it("une tâche de rituel faite ne compte jamais (filtrée dans la requête)", () => {
+    const { sql } = requeteTachesFaites("u1", ilYA(60)).toSQL();
+    expect(sql).toMatch(/"ritual_id" is null/);
+    expect(sql).toMatch(/"type" <> /);
+  });
+
+  it("l'agenda n'est lu que sur les 15 derniers jours, jusqu'à maintenant", async () => {
+    const s = sources();
+    await collecterMouvements("u1", chantiers, ilYA(60), s, MAINTENANT);
+    expect(s.agenda).toHaveBeenCalledWith("u1", ilYA(15), MAINTENANT);
   });
 
   it("un rendez-vous qui cite le chantier compte ; aucun autre ; sans agenda relié, on continue", async () => {
@@ -143,5 +180,29 @@ describe("collecterMouvements", () => {
     });
     expect(await collecterMouvements("u1", chantiers, ilYA(60), enPanne)).toEqual([{ cle: "projet:20", at: ilYA(6) }]);
     err.mockRestore();
+  });
+});
+
+describe("chantiersBloquesEnCache", () => {
+  const carte: CarteFil = { objectifs: [], chainesSansObjectif: new Map(), depuis: ANCIEN };
+
+  it("deux appels en moins de 20 min ne recalculent pas ; après 20 min, si", async () => {
+    viderCacheChantiers();
+    const calculer = vi.fn(async () => [{ libelle: "X", joursSansMouvement: 16, prochainPas: "Y" }]);
+    await chantiersBloquesEnCache("u1", carte, MAINTENANT, calculer);
+    const r = await chantiersBloquesEnCache("u1", carte, new Date(MAINTENANT.getTime() + 19 * 60_000), calculer);
+    expect(r).toEqual([{ libelle: "X", joursSansMouvement: 16, prochainPas: "Y" }]);
+    expect(calculer).toHaveBeenCalledTimes(1);
+    await chantiersBloquesEnCache("u2", carte, MAINTENANT, calculer);
+    expect(calculer).toHaveBeenCalledTimes(2);
+    await chantiersBloquesEnCache("u1", carte, new Date(MAINTENANT.getTime() + 21 * 60_000), calculer);
+    expect(calculer).toHaveBeenCalledTimes(3);
+  });
+
+  it("un échec n'est pas gardé", async () => {
+    viderCacheChantiers();
+    const calculer = vi.fn().mockRejectedValueOnce(new Error("base")).mockResolvedValue([]);
+    await expect(chantiersBloquesEnCache("u1", carte, MAINTENANT, calculer)).rejects.toThrow("base");
+    await expect(chantiersBloquesEnCache("u1", carte, MAINTENANT, calculer)).resolves.toEqual([]);
   });
 });
