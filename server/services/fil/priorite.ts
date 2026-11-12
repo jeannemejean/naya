@@ -39,7 +39,8 @@ const JOUR_MS = 86400000;
 type TacheLue = Pick<Task, "id" | "title" | "priority" | "completed" | "archivedAt" | "taskEnergyType" | "goalId" | "milestoneId" | "pourquoi">;
 type Candidate = { tache: TacheLue; objectif: ObjectifCarte | null; etape: EtapeCarte | null; score: number; classement: number; cle: TacheCle };
 
-function urgence(o: ObjectifCarte, aujourdhui: string): number {
+/** Urgence d'un objectif (0..1) au jour `aujourdhui` ; reprise par l'allègement (objectifs prioritaires). */
+export function urgenceObjectif(o: ObjectifCarte, aujourdhui: string): number {
   const decalage = Date.now() - Date.parse(`${aujourdhui}T12:00:00Z`);
   const echeance = o.dueDate ? new Date(o.dueDate.getTime() + decalage) : null;
   const faites = o.etapes.reduce((s, e) => s + e.faites, 0);
@@ -66,7 +67,7 @@ export function classerTachesCles(
 
     let score = 0;
     if (objectif) {
-      if (!urgences.has(objectif.id)) urgences.set(objectif.id, urgence(objectif, aujourdhui));
+      if (!urgences.has(objectif.id)) urgences.set(objectif.id, urgenceObjectif(objectif, aujourdhui));
       score += 40 * urgences.get(objectif.id)!;
     }
     if (objectif && etape && etapesActives(objectif.etapes).some((e) => e.id === etape.id)

@@ -7,6 +7,7 @@ import { OUTILS_LECTURE } from "./outils/lecture";
 import { OUTILS_DIRECTS } from "./outils/directs";
 import { OUTILS_A_VALIDER } from "./outils/a-valider";
 import { OUTILS_FIL } from "../fil/etapes";
+import { OUTIL_ALLEGEMENT } from "../fil/allegement";
 
 // Ce que l'outil reçoit du serveur. L'utilisatrice vient TOUJOURS de la session
 // (req.userId) : jamais d'un argument fourni par le modèle.
@@ -41,13 +42,13 @@ export const DIRECTS_AUTORISES: ReadonlySet<string> = new Set([
   "ranger_information", "regler_energie",
 ]);
 
-// OUTILS_FIL : propositions du fil conducteur (étapes d'un objectif, rattachement d'une chaîne),
-// valables 7 jours et refusées hors interrupteur. Ils sont au registre pour que
+// OUTILS_FIL : propositions du fil conducteur (étapes d'un objectif, rattachement d'une chaîne,
+// valables 7 jours ; journée allégée, valable jusqu'à la fin du jour), refusées hors interrupteur. Ils sont au registre pour que
 // validerProposition les retrouve, mais ne sont JAMAIS offerts au modèle de la conversation :
 // ce sont des propositions faites hors conversation (proposerHorsConversation).
-export const REGISTRE: Outil[] = [...OUTILS_LECTURE, ...OUTILS_DIRECTS, ...OUTILS_A_VALIDER, ...OUTILS_FIL];
+export const REGISTRE: Outil[] = [...OUTILS_LECTURE, ...OUTILS_DIRECTS, ...OUTILS_A_VALIDER, ...OUTILS_FIL, OUTIL_ALLEGEMENT];
 
-export const HORS_CONVERSATION: ReadonlySet<string> = new Set(OUTILS_FIL.map((o) => o.nom));
+export const HORS_CONVERSATION: ReadonlySet<string> = new Set([...OUTILS_FIL, OUTIL_ALLEGEMENT].map((o) => o.nom));
 
 /** Les outils que la conversation peut offrir et appeler : le registre moins les outils hors conversation. */
 export function outilsDeConversation(registre: Outil[] = REGISTRE): Outil[] {

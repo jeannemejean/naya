@@ -3,6 +3,9 @@
 // « Modifiée entre-temps » = un des champs listés dans `apres` n'a plus la valeur que l'action
 // lui avait donnée. Les autres champs (un titre changé après un « cocher ») ne bloquent pas.
 // Tout est vérifié AVANT la première écriture : soit tout est annulé, soit rien.
+// Exception, les actions de ANNULATION_PAR_LIGNE (journée allégée : une action, plusieurs tâches
+// déplacées) : chaque ligne est jugée seule. Une tâche déplacée à la main depuis reste où elle est
+// (`nonRemises`), les autres reviennent. Si aucune ne peut revenir : « modifiee », rien n'est écrit.
 import { storage } from "../../storage";
 import { dateDeRetassage } from "../repack-from";
 import { lireSouvenir, perimerSouvenir } from "../memory/ranger";
@@ -10,8 +13,10 @@ import { depot, type LigneJournal } from "./depot";
 
 export const FENETRE_ANNULATION_MS = 24 * 3600 * 1000;
 
+export const ANNULATION_PAR_LIGNE: ReadonlySet<string> = new Set(["alleger_journee"]);
+
 export type ResultatAnnulation =
-  | { ok: true }
+  | { ok: true; nonRemises?: { table: LigneJournal["table"]; id: number | string; raison: "modifiee" }[] }
   | { ok: false; raison: "introuvable" | "deja_annulee" | "expiree" | "modifiee" };
 
 // ── Comparaison robuste ────────────────────────────────────────────────────────────────
@@ -173,27 +178,38 @@ export async function annulerAction(userId: string, actionId: number, maintenant
   }
 
   const lignes = (Array.isArray(action.lignes) ? action.lignes : []) as LigneJournal[];
+  const parLigne = ANNULATION_PAR_LIGNE.has(action.outil);
 
   // 1. Vérifier TOUTES les lignes avant d'écrire quoi que ce soit.
+  const aRemettre: LigneJournal[] = [];
+  const nonRemises: NonNullable<Extract<ResultatAnnulation, { ok: true }>["nonRemises"]> = [];
   for (const ligne of lignes) {
-    const actuelle = await gestion(ligne.table).lire(userId, ligne.id);
-    if (!actuelle) return { ok: false, raison: "modifiee" };
-    for (const [champ, valeur] of Object.entries(ligne.apres ?? {})) {
-      if (!memeValeur(actuelle[champ], valeur)) return { ok: false, raison: "modifiee" };
-    }
-    const g = gestion(ligne.table);
-    if (ligne.avant === null && g.contenuAjoute && (await g.contenuAjoute(userId, ligne.id))) {
-      return { ok: false, raison: "modifiee" };
-    }
+    if (await ligneIntacte(userId, ligne)) { aRemettre.push(ligne); continue; }
+    if (!parLigne) return { ok: false, raison: "modifiee" };
+    nonRemises.push({ table: ligne.table, id: ligne.id, raison: "modifiee" });
   }
+  if (parLigne && lignes.length > 0 && aRemettre.length === 0) return { ok: false, raison: "modifiee" };
 
   // 2. Rejouer l'état d'avant, de la dernière ligne touchée à la première.
-  for (const ligne of [...lignes].reverse()) {
+  for (const ligne of [...aRemettre].reverse()) {
     const g = gestion(ligne.table);
     if (ligne.avant === null) await g.supprimer(userId, ligne.id);
     else await g.restaurer(userId, ligne as LigneJournal & { avant: Record<string, unknown> });
   }
 
   await depot.marquerAnnulee(actionId, userId, maintenant);
-  return { ok: true };
+  return nonRemises.length ? { ok: true, nonRemises } : { ok: true };
+}
+
+// La ligne est-elle telle que l'action l'a laissée ? (champs de `apres`, et rien d'ajouté à
+// une ligne créée par l'action)
+async function ligneIntacte(userId: string, ligne: LigneJournal): Promise<boolean> {
+  const g = gestion(ligne.table);
+  const actuelle = await g.lire(userId, ligne.id);
+  if (!actuelle) return false;
+  for (const [champ, valeur] of Object.entries(ligne.apres ?? {})) {
+    if (!memeValeur(actuelle[champ], valeur)) return false;
+  }
+  if (ligne.avant === null && g.contenuAjoute && (await g.contenuAjoute(userId, ligne.id))) return false;
+  return true;
 }

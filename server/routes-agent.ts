@@ -42,7 +42,8 @@ export function registerAgentRoutes(app: Express): void {
       if (!Number.isInteger(id) || id <= 0) return res.status(409).json({ message: "introuvable" });
       const r = await annulerAction(userId, id, new Date());
       if (!r.ok) return res.status(409).json({ message: r.raison });
-      res.json({ ok: true });
+      // Annulation ligne à ligne (journée allégée) : les tâches modifiées depuis restent où elles sont.
+      res.json({ ok: true, ...(r.nonRemises?.length ? { nonRemises: r.nonRemises } : {}) });
     } catch (error: any) {
       console.error("Annulation d'action de l'agent :", error?.message || error);
       res.status(500).json({ message: "Erreur lors de l'annulation" });
@@ -60,7 +61,8 @@ export function registerAgentRoutes(app: Express): void {
       const prefs = await storage.getUserPreferences(userId).catch(() => null);
       const r = await validerProposition(userId, id, new Date(), { fuseau: fuseauUtilisatrice((prefs as any)?.timezone) });
       if (!r.ok) return res.status(409).json({ message: r.raison });
-      res.json({ reussis: r.reussis, echecs: r.echecs });
+      // `actionId` : l'exécution s'annule 24 h par /api/agent/actions/:id/annuler (journée allégée).
+      res.json({ reussis: r.reussis, echecs: r.echecs, ...(r.actionId != null ? { actionId: r.actionId } : {}) });
     } catch (error: any) {
       console.error("Validation de proposition de l'agent :", error?.message || error);
       res.status(500).json({ message: "Erreur lors de la validation" });

@@ -35,6 +35,8 @@ export interface Apercu {
 export interface BilanExecution {
   reussis: string[];
   echecs: string[];
+  // L'action de journal écrite par l'exécution, quand elle s'annule (journée allégée : 24 h).
+  actionId?: number;
 }
 
 // Un refus d'aperçu : `erreur`, plus d'éventuels détails utiles au modèle (renvoyés tels quels).
@@ -59,13 +61,15 @@ function dureeLisible(ms: number): string {
 
 // `dureeMs` : durée de vie de la proposition (défaut 1 h, celle de l'agent). Le fil conducteur
 // laisse 7 jours à ses propositions d'étapes, que Jeanne voit au matin et pas dans une conversation.
+// `expireA` (prioritaire) : une échéance qui dépend des arguments, comme la fin du jour pour la
+// journée allégée.
 export function outilAValider<A>(def: {
   nom: string;
   description: string;
   schema: Outil["schema"];
   dureeMs?: number;
+  expireA?: (ctx: ContexteOutil, args: A) => Date;
 } & OutilAValider<A>): OutilPropose {
-  const dureeMs = def.dureeMs ?? DUREE_PROPOSITION_MS;
   const aValider: OutilAValider<A> = { apercu: def.apercu, executer: def.executer };
   return {
     nom: def.nom,
@@ -76,7 +80,10 @@ export function outilAValider<A>(def: {
     async executer(ctx, args): Promise<ResultatOutil> {
       const a = await aValider.apercu(ctx, args as A);
       if ("erreur" in a) return { pourModele: a };
-      const expireA = new Date(ctx.maintenant.getTime() + dureeMs);
+      const expireA = def.expireA
+        ? def.expireA(ctx, args as A)
+        : new Date(ctx.maintenant.getTime() + (def.dureeMs ?? DUREE_PROPOSITION_MS));
+      const dureeMs = expireA.getTime() - ctx.maintenant.getTime();
       const p = await depot.ajouterProposition(ctx.userId, def.nom, args, a.changements, a.empreinte, expireA);
       const proposition: PropositionVue = {
         id: p.id, resume: a.resume, changements: a.changements, expireA: expireA.toISOString(),
@@ -205,7 +212,7 @@ export async function proposerHorsConversation(
 // ── Valider / annuler ──────────────────────────────────────────────────────────────────
 
 export type ResultatValidation =
-  | { ok: true; reussis: string[]; echecs: string[] }
+  | { ok: true; reussis: string[]; echecs: string[]; actionId?: number }
   | { ok: false; raison: "introuvable" | "deja_traitee" | "expiree" };
 
 export async function validerProposition(
@@ -246,7 +253,10 @@ export async function validerProposition(
     bilan = { reussis: [], echecs: ["L'exécution s'est interrompue sur une erreur imprévue."] };
   }
   await depot.majProposition(id, userId, { resultat: bilan });
-  return { ok: true, reussis: bilan.reussis, echecs: bilan.echecs };
+  return {
+    ok: true, reussis: bilan.reussis, echecs: bilan.echecs,
+    ...(bilan.actionId != null ? { actionId: bilan.actionId } : {}),
+  };
 }
 
 export async function annulerProposition(
