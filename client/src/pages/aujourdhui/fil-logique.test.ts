@@ -12,7 +12,14 @@ import { ligneIndicateurs, type Indicateur } from "@shared/fil";
 import { annulationOuverte, resumeMatin, validationIncomplete } from "./logique";
 import type { MatinFil } from "@shared/fil";
 // Le miroir mobile (sans traductions) doit dire exactement la même chose en français.
-import * as mobile from "../../../../mobile/lib/fil-logique";
+// Le sous-module mobile est privé : le CI GitHub ne le récupère pas. Là, ces comparaisons sont
+// sautées (le web reste testé) ; en local, où mobile/ est présent, elles tournent toutes.
+import { existsSync } from "node:fs";
+const mobile: any = existsSync(new URL("../../../../mobile/lib/fil-logique.ts", import.meta.url))
+  ? await import("../../../../mobile/lib/fil-logique")
+  : null;
+const itMiroir = mobile ? it : it.skip;
+const describeMiroir = mobile ? describe : describe.skip;
 
 const lire = (o: any, cle: string) => cle.split(".").reduce((x, k) => x?.[k], o);
 // Un t minimal sur le dictionnaire : clé pointée et interpolation {{x}}.
@@ -41,7 +48,7 @@ describe("texteLien", () => {
   it("une seule tâche faite : au singulier", () => {
     expect(texteLien(lien({ etapeFaites: 1 }), t)).toContain("1 tâche sur 7 faite.");
   });
-  it("le mobile écrit le même texte que le web", () => {
+  itMiroir("le mobile écrit le même texte que le web", () => {
     for (const l of [lien(), lien({ etapeFaites: 1 }), lien({ etapeFaites: 0, etapePrevues: 0 }),
       lien({ etapeId: null, etapeTitre: null }), lien({ etapeId: null, etapeTitre: null, cible: null })]) {
       expect(mobile.texteLien(l)).toBe(texteLien(l, t));
@@ -80,8 +87,8 @@ describe("ajuster la liste", () => {
   it("« Refaire » : un seul appel qui nomme la proposition remplacée, note seulement si elle dit quelque chose", () => {
     expect(corpsRefaire(5, "  plus court ")).toEqual({ remplace: 5, note: "plus court" });
     expect(corpsRefaire(5, "   ")).toEqual({ remplace: 5 });
-    expect(mobile.corpsRefaire(5, "  plus court ")).toEqual(corpsRefaire(5, "  plus court "));
-    expect(mobile.corpsRefaire(5, "")).toEqual(corpsRefaire(5, ""));
+    if (mobile) expect(mobile.corpsRefaire(5, "  plus court ")).toEqual(corpsRefaire(5, "  plus court "));
+    if (mobile) expect(mobile.corpsRefaire(5, "")).toEqual(corpsRefaire(5, ""));
   });
 
   it("déplacer hors des bornes ne change rien", () => {
@@ -123,8 +130,8 @@ describe("erreurs", () => {
     expect(cleErreurFil("zzz")).toBe("filConducteur.erreurs.erreur");
     expect(cleErreurFil(null)).toBe("filConducteur.erreurs.erreur");
     // Mobile : mêmes messages en français, lus dans la réponse axios.
-    expect(mobile.messageErreurFil({ response: { status: 409, data: { message: "ordre_etats" } } })).toBe(fr.filConducteur.erreurs.ordre_etats);
-    expect(mobile.messageErreurFil(new Error("réseau"))).toBe(fr.filConducteur.erreurs.erreur);
+    if (mobile) expect(mobile.messageErreurFil({ response: { status: 409, data: { message: "ordre_etats" } } })).toBe(fr.filConducteur.erreurs.ordre_etats);
+    if (mobile) expect(mobile.messageErreurFil(new Error("réseau"))).toBe(fr.filConducteur.erreurs.erreur);
   });
 });
 
@@ -145,14 +152,14 @@ describe("page projet", () => {
     const g = grouperParObjectif(jalons, objectifs);
     expect(g.groupes.map((x) => [x.objectif.id, x.jalons.map((j) => j.id)])).toEqual([[1, [10, 11]], [2, [20]]]);
     expect(g.sansObjectif.map((j) => j.id)).toEqual([30, 40]);
-    expect(mobile.grouperParObjectif(jalons, objectifs)).toEqual(g); // miroir mobile
+    if (mobile) expect(mobile.grouperParObjectif(jalons, objectifs)).toEqual(g); // miroir mobile
   });
 
   it("« Proposer des étapes » : objectif actif, sans étape ouverte, sans proposition en attente", () => {
     const enAttente = [{ outil: "proposer_etapes", objectif: { id: 2, titre: "Visible", projetId: 7 } }] as unknown as PropositionFil[];
     // Le mobile décide exactement pareil.
     for (const o of objectifs) for (const p of [[], enAttente]) {
-      expect(mobile.objectifPeutRecevoirEtapes(o, jalons, p as any)).toBe(objectifPeutRecevoirEtapes(o, jalons, p));
+      if (mobile) expect(mobile.objectifPeutRecevoirEtapes(o, jalons, p as any)).toBe(objectifPeutRecevoirEtapes(o, jalons, p));
     }
     expect(objectifPeutRecevoirEtapes(objectifs[0], jalons, [])).toBe(false); // étape 11 ouverte
     expect(objectifPeutRecevoirEtapes(objectifs[1], jalons, [])).toBe(true);  // toutes franchies
@@ -173,7 +180,7 @@ describe("le matin", () => {
     expect(t(r.phraseUnique!, { titre: cle.titre })).toBe("Rien ne cloche ce matin. Commence par « Relancer Léa ».");
   });
 
-  it("le mobile montre les mêmes sections et dit la même phrase", () => {
+  itMiroir("le mobile montre les mêmes sections et dit la même phrase", () => {
     for (const f of [matin({ rienNeCloche: true }), matin({ objectifsOublies: [oubli] }),
       matin({ tachesCles: [], nonRattachees: 3 }),
       matin({ objectifsOublies: [oubli], allegement: { propositionId: 2 }, nonRattachees: 1 })]) {
@@ -189,8 +196,8 @@ describe("le matin", () => {
     expect(texteNonRattachees(3, t)).toBe("3 tâches du jour ne sont rattachées à aucun objectif.");
     expect(texteNonRemises(2, t)).toBe("2 tâches que tu as déplacées entre-temps restent où tu les as mises.");
     for (const n of [1, 2, 5]) {
-      expect(mobile.texteNonRattachees(n)).toBe(texteNonRattachees(n, t));
-      expect(mobile.texteNonRemises(n)).toBe(texteNonRemises(n, t));
+      if (mobile) expect(mobile.texteNonRattachees(n)).toBe(texteNonRattachees(n, t));
+      if (mobile) expect(mobile.texteNonRemises(n)).toBe(texteNonRemises(n, t));
       expect(typeof lire(en, n < 2 ? "filConducteur.matin.nonRattacheesUn" : "filConducteur.matin.nonRattachees")).toBe("string");
     }
   });
@@ -198,15 +205,15 @@ describe("le matin", () => {
   it("annulation : 24 h, mêmes bornes sur mobile ; ses refus ont leur message, les autres passent par le fil", () => {
     const valideA = "2026-11-12T08:00:00.000Z";
     for (const h of ["2026-11-12T20:00:00.000Z", "2026-11-13T08:00:00.000Z"]) {
-      expect(mobile.annulationOuverte(valideA, new Date(h))).toBe(annulationOuverte(valideA, new Date(h)));
+      if (mobile) expect(mobile.annulationOuverte(valideA, new Date(h))).toBe(annulationOuverte(valideA, new Date(h)));
     }
     for (const c of ["expiree", "deja_annulee", "modifiee"]) {
       expect(typeof lire(fr, cleErreurAnnulation(c))).toBe("string");
       expect(typeof lire(en, cleErreurAnnulation(c))).toBe("string");
-      expect(mobile.messageErreurAnnulation({ response: { data: { message: c } } })).toBe(t(cleErreurAnnulation(c)));
+      if (mobile) expect(mobile.messageErreurAnnulation({ response: { data: { message: c } } })).toBe(t(cleErreurAnnulation(c)));
     }
     expect(cleErreurAnnulation("introuvable")).toBe(cleErreurFil("introuvable"));
-    expect(mobile.messageErreurAnnulation(new Error("réseau"))).toBe(fr.filConducteur.erreurs.erreur);
+    if (mobile) expect(mobile.messageErreurAnnulation(new Error("réseau"))).toBe(fr.filConducteur.erreurs.erreur);
   });
 });
 
@@ -228,8 +235,8 @@ describe("chargerMatinFil", () => {
   });
 });
 
-describe("le matin sur mobile : mêmes mots que le web", () => {
-  const m = mobile.TEXTES_MATIN;
+describeMiroir("le matin sur mobile : mêmes mots que le web", () => {
+  const m = mobile?.TEXTES_MATIN;
   it("chaque texte du mobile est celui de fr.filConducteur.matin", () => {
     expect(m.titre).toBe(t("filConducteur.matin.titre"));
     expect(m.oublis.titre).toBe(t("filConducteur.matin.oublis.titre"));
@@ -297,7 +304,7 @@ describe("le lot 4 au matin", () => {
     expect(cleErreurTrancher("autre")).toBe(cleErreurFil("autre"));
   });
 
-  describe("le mobile dit la même chose", () => {
+  describeMiroir("le mobile dit la même chose", () => {
     const ind: Indicateur[] = [
       { cle: "prospection_envois_4s", libelle: "Messages envoyés", valeur: 42, precedente: 30 },
       { cle: "prospection_reponses_4s", libelle: "Réponses", valeur: 5, precedente: 5 },
@@ -353,7 +360,7 @@ describe("le lot 4 au matin", () => {
     });
 
     it("chaque texte du lot 4 sur mobile est celui de fr.filConducteur.matin", () => {
-      const m = mobile.TEXTES_MATIN;
+      const m = mobile?.TEXTES_MATIN;
       for (const k of ["titre", "voirDetail", "masquerDetail"] as const) expect(m.indicateurs[k]).toBe(t(`filConducteur.matin.indicateurs.${k}`));
       expect(m.pannes.titre).toBe(t("filConducteur.matin.pannes.titre"));
       expect(m.reconciliation.titre).toBe(t("filConducteur.matin.reconciliation.titre"));
