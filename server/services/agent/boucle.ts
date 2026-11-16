@@ -5,6 +5,7 @@
 // une 500.
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ActionFaite, PropositionVue, ReponseAgent } from "@shared/agent";
+import { affirmeUneActionFaite } from "@shared/consentement";
 import { appelerClaudeAvecOutils } from "../claude";
 import { construireConsignes } from "./consignes";
 import { REGISTRE, outilsDeConversation, outilsPourClaude, validerArgs, type ContexteOutil, type Outil } from "./registre";
@@ -86,6 +87,18 @@ function texteDe(reponse: Anthropic.Message): string {
 // outil a rendu une réponse de prospect pendant ce tour.
 export type ResultatAgent = ReponseAgent & { prospectLu: boolean };
 
+/**
+ * Le modèle ne peut pas annoncer comme fait ce qu'il vient seulement de PROPOSER (16 nov. 2026 :
+ * « 11 tâches supprimées. Planning nettoyé. » alors que la proposition attendait un clic). Si la
+ * réponse porte des propositions, aucune action faite, et affirme un geste accompli, son texte
+ * est remplacé par une phrase exacte.
+ */
+export function corrigerAffirmation(texte: string, faites: ActionFaite[], propositions: PropositionVue[]): string {
+  if (propositions.length === 0 || faites.length > 0 || !affirmeUneActionFaite(texte)) return texte;
+  const quoi = propositions.map((p) => p.resume).filter(Boolean).join(" ; ");
+  return `Je te propose : ${quoi || "les changements ci-dessous"}. Rien n'est encore appliqué : valide la carte, ou réponds « oui ».`;
+}
+
 export async function executerAgent(opts: OptionsAgent, deps: DepsAgent = {}): Promise<ResultatAgent> {
   const appeler = deps.appeler ?? appelerClaudeAvecOutils;
   // Les outils hors conversation (propositions du fil) ne sont ni offerts ni exécutables ici.
@@ -132,7 +145,8 @@ export async function executerAgent(opts: OptionsAgent, deps: DepsAgent = {}): P
 
     const demandes = reponse.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (reponse.stop_reason !== "tool_use" || demandes.length === 0 || sansOutils) {
-      return { message: texteDe(reponse) || REPONSE_VIDE, faites, propositions, recherches, actions: [], prospectLu: collecte.prospectLu };
+      const texte = corrigerAffirmation(texteDe(reponse) || REPONSE_VIDE, faites, propositions);
+      return { message: texte, faites, propositions, recherches, actions: [], prospectLu: collecte.prospectLu };
     }
 
     // Tous les résultats d'une réponse repartent dans UN SEUL message (outils en parallèle).

@@ -9,6 +9,7 @@ import { Send, Loader2, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import type { ActionFaite, PropositionVue, ReponseAgent } from "@shared/agent";
+import { estConsentement } from "@shared/consentement";
 import { ActionsFaites } from "@/components/companion/ActionsFaites";
 import { Propositions, type SuiviProposition } from "@/components/companion/Propositions";
 import { LigneRecherches } from "@/components/companion/LigneRecherches";
@@ -107,6 +108,9 @@ function useCompanionChat() {
  return () => window.removeEventListener('naya:open-companion', handler);
  }, [setOpen, queryClient]);
 
+ // Propositions validées par un « oui » écrit, en attente de la réponse du serveur.
+ const consentementEnCours = useRef<number[]>([]);
+
  const chatMutation = useMutation({
  mutationFn: async (message: string): Promise<ReponseAgent> => {
  const now = new Date();
@@ -130,6 +134,20 @@ function useCompanionChat() {
  },
  onSuccess: (data) => {
  const faites = Array.isArray(data.faites) ? data.faites : [];
+ // « oui » : le serveur a validé les propositions affichées (ou dit qu'elles ont expiré).
+ const consenties = consentementEnCours.current;
+ consentementEnCours.current = [];
+ if (consenties.length > 0) {
+ const expiree = String(data.message || "").startsWith("Rien n'a été appliqué");
+ setSuiviPropositions(s => {
+ const suite = { ...s };
+ for (const id of consenties) suite[id] = expiree
+ ? { statut: "erreur", cle: "companion.proposition.expiree" }
+ : { statut: "validee", reussis: [], echecs: [] };
+ return suite;
+ });
+ invaliderDonnees();
+ }
  setMessages(prev => {
  const withoutLoading = prev.filter(m => !m.isLoading);
  return [...withoutLoading, {
@@ -144,6 +162,11 @@ function useCompanionChat() {
  if (faites.length > 0) invaliderDonnees();
  },
  onError: (err: any) => {
+ if (consentementEnCours.current.length > 0) {
+ const ids = consentementEnCours.current;
+ consentementEnCours.current = [];
+ setSuiviPropositions(s => { const suite = { ...s }; for (const id of ids) delete suite[id]; return suite; });
+ }
  const limit = String(err?.message || err).includes("ai_monthly_limit_reached");
  setMessages(prev => {
  const withoutLoading = prev.filter(m => !m.isLoading);
@@ -186,7 +209,15 @@ function useCompanionChat() {
  const aMettreDeCote = propositionsAAjuster(messages, Object.fromEntries(
  Object.entries(suiviPropositions).map(([k, v]) => [k, v?.statut]),
  ), new Date());
- if (aMettreDeCote.length > 0) {
+ if (aMettreDeCote.length > 0 && estConsentement(msg)) {
+ // « oui » : on ne met rien de côté, le serveur valide la proposition en attente.
+ consentementEnCours.current = aMettreDeCote;
+ setSuiviPropositions(s => {
+ const suite = { ...s };
+ for (const id of aMettreDeCote) suite[id] = { statut: "envoi" };
+ return suite;
+ });
+ } else if (aMettreDeCote.length > 0) {
  setSuiviPropositions(s => {
  const suite = { ...s };
  for (const id of aMettreDeCote) suite[id] = { statut: "ajustee" };

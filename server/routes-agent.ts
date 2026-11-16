@@ -11,6 +11,7 @@ import { annulerAction } from "./services/agent/journal";
 import { depot } from "./services/agent/depot";
 import { historiqueSauvegarde } from "./services/agent/historique";
 import { annulerProposition, validerProposition } from "./services/agent/propositions";
+import { repondreAuConsentement } from "./services/agent/consentement";
 import { blocSession, dateDansFuseau, evenementsPropres, fuseauUtilisatrice, tachesDuJourPropres } from "./services/agent/consignes";
 import { buildSuggestions } from "./services/companion";
 import { extractToMemory } from "./services/memory/extract";
@@ -113,6 +114,24 @@ export function registerAgentRoutes(app: Express): void {
       const maintenant = new Date();
       const fuseau = fuseauUtilisatrice((prefs as any)?.timezone);
       const aujourdHui = dateDansFuseau(maintenant, fuseau);
+
+      // « oui » à une proposition en attente : elle est validée ici, comme le bouton « Valider »,
+      // sans repasser par le modèle (qui la refaisait, puis prétendait avoir agi).
+      const lignesRecentes = await Promise.resolve().then(() => storage.getCompanionHistory(userId, 4)).catch(() => [] as any[]);
+      const parConsentement = await repondreAuConsentement({ userId, message, historique: lignesRecentes as any[], maintenant, fuseau })
+        .catch((e: any) => { console.error("[agent] validation par « oui » :", e?.message ?? e); return null; });
+      if (parConsentement) {
+        try {
+          await storage.saveCompanionMessage({ userId, role: "user", content: message, platform: plateforme });
+          await storage.saveCompanionMessage({
+            userId, role: "assistant", content: parConsentement.message, platform: plateforme,
+            actions: { faites: parConsentement.faites, propositions: [], recherches: [] },
+          });
+        } catch (dbErr) {
+          console.warn("saveCompanionMessage ignoré :", dbErr);
+        }
+        return res.json({ ...parConsentement, suggestions: [], actions: [] });
+      }
 
       // Tâches abandonnées (reportées 3 fois ou plus) et tâches des 7 prochains jours.
       const [recentTasks, upcomingRawTasks] = await Promise.all([
