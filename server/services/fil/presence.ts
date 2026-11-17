@@ -152,6 +152,8 @@ export interface DepsPresence {
   adn(userId: string): Promise<AdnPresence | null>;
   /** Le projet de l'unique objectif de visibilité (règle « contenu » du rattachement), ou null. */
   projetVisibilite(userId: string): Promise<number | null>;
+  /** Rythme retenu pour la marque (posts par semaine, campagne/rythme.ts), prioritaire sur l'ADN. */
+  rythme?(userId: string, projectId: number | null): Promise<number | null>;
   /** Comptes sociaux actifs dans le périmètre du projet (ceux de l'utilisatrice si null). */
   comptesActifs(userId: string, projectId: number | null): Promise<CompteActif[]>;
   /**
@@ -237,12 +239,16 @@ async function proposerSeul(userId: string, maintenant: Date, deps: DepsPresence
   }
 
   const adn = await deps.adn(userId);
-  const n = seuilPresenceJours(adn?.contentBandwidth ?? null, adn?.platformPriority ?? null);
+  const projectId = await deps.projetVisibilite(userId);
+  // Le rythme convenu pour la marque l'emporte : la présence ne comble pas les trous voulus.
+  const rythme = deps.rythme ? await deps.rythme(userId, projectId).catch(() => null) : null;
+  const n = rythme != null && rythme > 0
+    ? Math.min(SEUIL_MAX, Math.max(SEUIL_MIN, Math.ceil(7 / rythme)))
+    : seuilPresenceJours(adn?.contentBandwidth ?? null, adn?.platformPriority ?? null);
   const debut = new Date(maintenant.getTime() - n * JOUR_MS);
   const fin = new Date(maintenant.getTime() + n * JOUR_MS);
   if ((await deps.propositionsEnAttente(userId, debut, fin)) > 0) return { crees: 0 };
 
-  const projectId = await deps.projetVisibilite(userId);
   const comptes = ordonnerComptes(await deps.comptesActifs(userId, projectId), adn?.platformPriority ?? null);
   if (comptes.length === 0) return { crees: 0 };
   // Assez loin en arrière pour dater la dernière publication et lire les sujets récents.

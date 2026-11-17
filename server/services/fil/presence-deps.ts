@@ -36,6 +36,8 @@ export const depsPresence: DepsPresence = {
     const { goalId } = choisirRattachement({ projectId: null, type: "content" }, carte);
     return carte.objectifs.find((o) => o.id === goalId)?.projetId ?? null;
   },
+  // Import paresseux : rythme.ts importe presence.ts (postsParSemaine).
+  rythme: async (userId, projectId) => (await import("../campagne/rythme")).plafondDeLaMarque(userId, projectId),
   async comptesActifs(userId, projectId) {
     const portee = projectId != null ? porteeDe(await storage.getProject(projectId, userId)) : null;
     return (await storage.getSocialAccounts(userId))

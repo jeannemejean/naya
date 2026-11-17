@@ -143,6 +143,22 @@ function fabrique(over: Partial<DepsPresence> = {}) {
 }
 
 describe("proposerPostsPresence", () => {
+  describe("rythme retenu pour la marque (campagne/rythme.ts)", () => {
+    const publieIlYA5Jours = { id: 1, socialAccountId: 5, platform: "linkedin", publishedAt: new Date("2026-11-07T08:00:00Z"), postStatus: "posted" };
+    const quotidien = { adn: vi.fn(async () => ({ contentBandwidth: "quotidien", platformPriority: null, contentPillars: [] })) };
+    it("1 post par semaine : un post publié il y a 5 jours suffit, rien n'est proposé", async () => {
+      const deps = fabrique({ ...quotidien, rythme: vi.fn(async () => 1) });
+      deps.base.push(publieIlYA5Jours);
+      expect(await proposerPostsPresence("u", MAINTENANT, deps)).toEqual({ crees: 0 });
+      expect(deps.rythme).toHaveBeenCalledWith("u", 9);
+    });
+    it("sans rythme retenu : le rythme de l'ADN (quotidien) fait proposer", async () => {
+      const deps = fabrique({ ...quotidien, rythme: vi.fn(async () => null) });
+      deps.base.push(publieIlYA5Jours);
+      expect((await proposerPostsPresence("u", MAINTENANT, deps)).crees).toBeGreaterThan(0);
+    });
+  });
+
   it("crée 1 à 3 posts origine presence, sans campagne, consigne posée, sur les prochains jours travaillés, puis place l'atelier", async () => {
     const deps = fabrique();
     const r = await proposerPostsPresence("u", MAINTENANT, deps);
