@@ -87,6 +87,7 @@ import {
   CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
 } from "./services/campagne/repenser";
 import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
+import { plafondDeLaMarque } from "./services/campagne/rythme";
 import { getProspectionPlan, getLinkedInRequestsThisWeek, buildProspectionStatus } from "./services/prospection-access";
 import { runCampaignSearch, sourcerCampagne, cibleDeCampagne, prospectsParJourDerive, enrichProspects, prospectionErrorResponse, resolveFounderName } from "./services/prospection-pipeline";
 import { generateStepMessage, combineInstructions, BriefIncompletError } from "./services/sequence-message";
@@ -10338,6 +10339,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   // /tasks) : marque, préférences, savoir, articulation existante, revues passées. Rien
   // n'est créé : ni nouvelle campagne, ni prospection.
   const depsRepenser: RepenserDeps = {
+    plafondParSemaine: (userId, projectId) => plafondDeLaMarque(userId, projectId),
     getCampaign: (id, userId) => storage.getCampaign(id, userId) as any,
     lireContenus: lecturesRepenser.lireContenus,
     lireTaches: lecturesRepenser.lireTaches,
@@ -10710,7 +10712,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       // Les posts d'abord, avec leurs tâches de production (elles ont une échéance), puis
       // les autres tâches du plan, qui se rangent autour.
       const { crees: contentCreated, tachesProduction } = await placerPostsCampagne(storage, {
-        userId, campaign, debut: startDate, fin: endDate,
+        userId, campaign, debut: startDate, fin: endDate, plafondParSemaine: await plafondDeLaMarque(userId, campaign.projectId),
       });
       const { creees: autresTaches } = await placerTachesCampagne(storage, {
         userId, campaign, debut: startDate, fin: endDate,
@@ -10771,6 +10773,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
       const { crees: contentCreated, tachesProduction } = await placerPostsCampagne(storage, {
         userId, campaign, debut: startDate,
         fin: campaign.endDate ? new Date(campaign.endDate + 'T00:00:00') : campaignAddDays(startDate, 365),
+        plafondParSemaine: await plafondDeLaMarque(userId, campaign.projectId),
       });
       await storage.fixOverlappingTasks(userId, campaignDateToStr(new Date())).catch(() => {});
 

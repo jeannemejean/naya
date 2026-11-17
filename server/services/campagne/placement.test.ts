@@ -119,6 +119,28 @@ describe("placerPostsCampagne", () => {
     expect(deps.getDayAvailabilityRange).toHaveBeenCalledWith("u", "2026-10-12", "2027-10-12");
   });
 
+  it("plafond du rythme de la marque : 1 par semaine → un seul post la semaine 1", async () => {
+    const deps = fabrique();
+    const plan = { ...campaign, contentPlan: ["a1", "a2", "a3", "a4", "a5"].map((a) => piece("Week 1", a)) };
+    const r = await placerPostsCampagne(deps, { userId: "u", campaign: plan, debut: d("2026-10-12"), plafondParSemaine: 1 });
+    expect(r.crees).toBe(1);
+  });
+
+  it("plafond 2 : deux posts, pas le même jour, pris dans tout le plan de la semaine", async () => {
+    const deps = fabrique();
+    const plan = { ...campaign, contentPlan: ["a1", "a2", "a3", "a4", "a5"].map((a) => piece("Week 1", a)) };
+    await placerPostsCampagne(deps, { userId: "u", campaign: plan, debut: d("2026-10-12"), plafondParSemaine: 2 });
+    const crees = deps.createContent.mock.calls.map(([c]: any[]) => c);
+    expect(crees.map((c: any) => c.title)).toEqual(["a1", "a3"]);
+    expect(local(crees[0].scheduledFor).slice(0, 10)).not.toBe(local(crees[1].scheduledFor).slice(0, 10));
+  });
+
+  it("sans plafond : les 5 posts", async () => {
+    const deps = fabrique();
+    const plan = { ...campaign, contentPlan: ["a1", "a2", "a3", "a4", "a5"].map((a) => piece("Week 1", a)) };
+    expect((await placerPostsCampagne(deps, { userId: "u", campaign: plan, debut: d("2026-10-12"), plafondParSemaine: null })).crees).toBe(5);
+  });
+
   it("aucun jour travaillé dans la semaine : repli sur le mercredi", async () => {
     const deps = fabrique({ getUserPreferences: vi.fn(async () => ({ workDays: "" })) });
     await placerPostsCampagne(deps, { userId: "u", campaign: { ...campaign, contentPlan: [piece("Week 1", "x")] }, debut: d("2026-10-12") });
