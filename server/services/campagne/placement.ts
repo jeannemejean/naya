@@ -398,9 +398,11 @@ export async function placerTachesProductionPourCampagne(
  */
 export async function placerPostsCampagne(
   deps: PlacementDeps,
-  { userId, campaign, debut, fin, bornerA, aujourdhui, controleCreneaux = true }: {
+  { userId, campaign, debut, fin, bornerA, aujourdhui, controleCreneaux = true, plafondParSemaine = null }: {
     userId: string; campaign: CampagnePlacable; debut: Date; fin?: Date; bornerA?: Date;
     aujourdhui?: string; controleCreneaux?: boolean;
+    /** Rythme retenu pour la marque (campagne/rythme.ts) : au plus round(n) posts par semaine. */
+    plafondParSemaine?: number | null;
   },
 ): Promise<{ crees: number; tachesProduction: number }> {
   const borneStr = bornerA ? campaignDateToStr(bornerA) : null;
@@ -429,7 +431,12 @@ export async function placerPostsCampagne(
   const postsCrees: PostPlacable[] = [];
   // Les heures varient pour éviter les doublons exacts : 9h, 11h, 14h, 16h
   const HOURS = [9, 11, 14, 16];
-  for (const [weekNum, pieces] of Array.from(contentByWeek.entries())) {
+  const plafond = plafondParSemaine != null && plafondParSemaine > 0 ? Math.max(1, Math.round(plafondParSemaine)) : null;
+  for (const [weekNum, planSemaine] of Array.from(contentByWeek.entries())) {
+    // Au-delà du rythme de la marque : on garde des pièces prises dans tout le plan de la semaine.
+    const pieces = plafond != null && planSemaine.length > plafond
+      ? Array.from({ length: plafond }, (_, j) => planSemaine[Math.floor((j * planSemaine.length) / plafond)])
+      : planSemaine;
     const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);
     const workDaysInWeek: string[] = [];
     for (let d = 0; d < 7; d++) {
@@ -444,7 +451,10 @@ export async function placerPostsCampagne(
     const dayUsageCounts = new Map<string, number>();
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i];
-      const dayStr = workDaysInWeek[i % workDaysInWeek.length];
+      // Sous plafond, les posts gardés s'étalent sur la semaine (« pour ne pas noyer le flux »).
+      const dayStr = plafond != null
+        ? workDaysInWeek[Math.floor((i * workDaysInWeek.length) / pieces.length)]
+        : workDaysInWeek[i % workDaysInWeek.length];
       if (borneStr !== null && dayStr > borneStr) continue;
       const usageCount = dayUsageCounts.get(dayStr) || 0;
       dayUsageCounts.set(dayStr, usageCount + 1);

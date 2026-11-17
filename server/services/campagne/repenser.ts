@@ -157,6 +157,8 @@ export interface RepenserDeps {
   aujourdhuiParis(): string;
   /** Délai par étape de génération (défaut 240 s) — réduit dans les tests. */
   delaiGenerationMs?: number;
+  /** Rythme retenu pour la marque (posts par semaine), qui plafonne le nouveau plan. */
+  plafondParSemaine?: (userId: string, projectId: number | null) => Promise<number | null>;
 }
 
 // ─── Pur ─────────────────────────────────────────────────────────────────────
@@ -388,8 +390,14 @@ async function executer(
     // Les posts d'abord, avec leurs tâches de production (elles ont une échéance), puis
     // les autres tâches du plan, qui se rangent autour.
     let tachesProduction: number;
+    const plafondParSemaine = deps.plafondParSemaine
+      ? await deps.plafondParSemaine(userId, (campagneRepensee as any).projectId ?? null).catch((e: any) => {
+        console.error("[repenser] rythme de la marque non lu :", e?.message ?? e);
+        return null;
+      })
+      : null;
     ({ crees: postsCrees, tachesProduction } = await placerPostsCampagne(deps.placement, {
-      userId, campaign: campagneRepensee, debut, fin, bornerA: fin, aujourdhui: deps.aujourdhuiParis(),
+      userId, campaign: campagneRepensee, debut, fin, bornerA: fin, aujourdhui: deps.aujourdhuiParis(), plafondParSemaine,
     }));
     const { creees: autres } = await placerTachesCampagne(deps.placement, {
       userId, campaign: campagneRepensee, debut, fin, bornerA: fin,
