@@ -23,6 +23,8 @@ export function getSession() {
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
+    // La session web se prolonge à chaque requête : on ne perd pas la connexion en l'utilisant.
+    rolling: true,
     cookie: {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -54,11 +56,20 @@ export function generateJWT(userId: string): string {
   return jwt.sign({ userId }, secret, { expiresIn: "30d" });
 }
 
-export function verifyJWT(token: string): { userId: string } | null {
+// Renouvellement glissant (18 nov. 2026) : le jeton mobile durait 30 jours sans jamais se
+// renouveler ; à son expiration, l'app recevait des 401 partout et montrait des écrans vides.
+// Un jeton valide qui expire dans moins de 15 jours est remplacé à la volée (en-tête
+// X-Naya-Token, que l'app enregistre) : tant que l'app sert, la connexion tient.
+export const RENOUVELER_SOUS_S = 15 * 24 * 3600;
+export function jetonARenouveler(exp: number | undefined, maintenantS: number): boolean {
+  return typeof exp === "number" && exp - maintenantS < RENOUVELER_SOUS_S;
+}
+
+export function verifyJWT(token: string): { userId: string; exp?: number } | null {
   try {
     const secret = process.env.JWT_SECRET;
     if (!secret) return null;
-    return jwt.verify(token, secret) as { userId: string };
+    return jwt.verify(token, secret) as { userId: string; exp?: number };
   } catch {
     return null;
   }
@@ -100,6 +111,9 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
         const user = await storage.getUser(payload.userId);
         if (!user) return res.status(401).json({ message: "Unauthorized" });
         (req as any).userId = payload.userId;
+        if (jetonARenouveler(payload.exp, Math.floor(Date.now() / 1000))) {
+          try { res.setHeader("X-Naya-Token", generateJWT(payload.userId)); } catch { /* sans secret : on garde l'ancien */ }
+        }
         // Rétrocompatibilité : les routes existantes lisent req.session.userId
         req.session.userId = payload.userId;
         (req as any).user = user;
