@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { repackDay, repackDayAvecEcheances, tachesARebalancer, type RepackTask } from "./schedule-repack";
+import { repackDay, repackDayAvecEcheances, repackDayParRang, tachesARebalancer, type RepackTask } from "./schedule-repack";
 
 const opts = {
   dayStartMin: 9 * 60,    // 09:00
@@ -398,5 +398,63 @@ describe("tachesARebalancer — atelier de contenu", () => {
       { id: 3, completed: false, contentId: null, taskType: "generic", actionData: null },
     ];
     expect(tachesARebalancer(taches).map((t) => t.id)).toEqual([3]);
+  });
+});
+
+// Chef d'orchestre (spec 2026-11-19, §2) : qui déborde se choisit au rang, pas à l'heure.
+describe("repackDayParRang", () => {
+  // Journée 09:00–18:00, pause 12–13 : 480 min de travail.
+  it("sans débordement : identique à repackDayAvecEcheances", () => {
+    const tasks = [
+      { id: 1, startMin: 9 * 60, durationMin: 60, rang: 1 },
+      { id: 2, startMin: 10 * 60, durationMin: 60, rang: 0 },
+    ];
+    expect(repackDayParRang(tasks, opts, "2026-11-19", "2026-11-20")).toEqual(repackDayAvecEcheances(tasks, opts, "2026-11-19", "2026-11-20"));
+  });
+  it("journée trop pleine : c'est le moins bien classé qui part, même s'il est tôt", () => {
+    const tasks = [
+      { id: 10, startMin: 9 * 60, durationMin: 240, rang: 2 },   // vieille tâche le matin
+      { id: 11, startMin: 13 * 60, durationMin: 240, rang: 1 },
+      { id: 12, startMin: 17 * 60, durationMin: 60, rang: 0, unplaced: true as const }, // urgente arrivée en fin
+    ];
+    const r = repackDayParRang(tasks, opts, "2026-11-19", "2026-11-20");
+    expect(r.overflow).toEqual([10]);
+    expect(r.forcees).toEqual([]);
+    const placees = tasks.filter((t) => !r.overflow.includes(t.id)).map((t) => ({ ...t, startMin: r.moves.find((m) => m.id === t.id)?.newStartMin ?? t.startMin }));
+    assertNoOverlap(placees);
+    for (const t of placees) expect(t.startMin + t.durationMin).toBeLessThanOrEqual(18 * 60);
+  });
+  it("les tâches qui restent gardent l'ordre de la journée", () => {
+    const tasks = [
+      { id: 20, startMin: 9 * 60, durationMin: 120, rang: 1 },
+      { id: 21, startMin: 11 * 60, durationMin: 60, rang: 3 },
+      { id: 22, startMin: 13 * 60, durationMin: 240, rang: 0 },
+      { id: 23, startMin: 17 * 60, durationMin: 120, rang: 2 },
+    ];
+    const r = repackDayParRang(tasks, opts, "2026-11-19", "2026-11-20");
+    // 23 (rang 2) part ; 21 (rang 3, 1 h) se glisse dans la matinée qui reste libre.
+    expect(r.overflow).toEqual([23]);
+    const debut = (id: number) => r.moves.find((m) => m.id === id)?.newStartMin ?? tasks.find((t) => t.id === id)!.startMin;
+    expect(debut(20)).toBeLessThan(debut(21));
+    expect(debut(21)).toBeLessThan(debut(22));
+  });
+  it("une échéance dure qui ne tient pas est forcée, pas reportée", () => {
+    const tasks = [
+      { id: 30, startMin: 13 * 60, durationMin: 300, rang: 0, echeance: "2026-11-19" },
+      { id: 31, startMin: 9 * 60, durationMin: 240, rang: 1, echeance: "2026-11-19" },
+    ];
+    const r = repackDayParRang(tasks, opts, "2026-11-19", "2026-11-20");
+    expect(r.overflow).toEqual([]);
+    expect(r.forcees).toEqual([31]);
+  });
+  it("une ancre ne bouge jamais et ne part pas pour un rang", () => {
+    const tasks = [
+      { id: 40, startMin: 10 * 60, durationMin: 60, rang: 9, anchored: true as const },
+      { id: 41, startMin: 9 * 60, durationMin: 420, rang: 0 },
+      { id: 42, startMin: 9 * 60, durationMin: 60, rang: 1 },
+    ];
+    const r = repackDayParRang(tasks, opts, "2026-11-19", "2026-11-20");
+    expect(r.overflow).not.toContain(40);
+    expect(r.moves.find((m) => m.id === 40)).toBeUndefined();
   });
 });

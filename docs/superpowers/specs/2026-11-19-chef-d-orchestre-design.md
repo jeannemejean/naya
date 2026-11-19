@@ -57,9 +57,12 @@ assez court pour que le planning ne se bouche pas un mois.
 
 ### 2. Qui garde sa place quand la journée déborde (`retasserJours` / `repackDay`)
 
-- Les échéances dures et souples non dépassées alimentent le mécanisme existant
-  `repackDayAvecEcheances` (une tâche dont l'échéance tombe avant le jour suivant passe devant).
-  Aujourd'hui il ne reçoit que les échéances du contenu ; il reçoit désormais celles de §1.
+- Les échéances DURES de §1 alimentent le mécanisme existant `repackDayAvecEcheances` (une tâche
+  dont l'échéance tombe avant le jour suivant n'est jamais reportée ; si elle ne tient pas, elle
+  est « forcée »). Aujourd'hui il ne reçoit que les échéances du contenu ; il reçoit désormais
+  toutes les dures. Les échéances SOUPLES passent devant par le rang, sans forcer (décision prise
+  en construisant : forcer une échéance souple créerait des chevauchements pour une date
+  négociable).
 - **Le choix de ce qui déborde se fait au rang, pas à l'heure.** `rangDe(tache, contrainte)` trie :
   échéance la plus proche d'abord (dure avant souple à date égale), puis `priority` (1 avant 2
   avant 3), puis la plus ancienne tâche planifiée. Les tâches qui tiennent gardent l'ordre de la

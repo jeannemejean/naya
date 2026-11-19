@@ -204,7 +204,8 @@ import { db, type DbExecutor } from "./db";
 import { memesChiffres } from "./services/mesure/calculs";
 import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, notInArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
-import { repackDayAvecEcheances } from "./services/schedule-repack";
+import { repackDayParRang } from "./services/schedule-repack";
+import { contrainteDe, comparerRang } from "./services/orchestre/contrainte";
 import { TYPE_ATELIER, TYPE_VALIDATION, echeanceAtelier } from "@shared/atelier";
 import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, majEtape, postAProduire, rangEtape } from "./services/campagne/production";
 import { clesRetirees } from "./services/fondations/sections";
@@ -4618,7 +4619,7 @@ export class DatabaseStorage implements IStorage {
     const estPublierFixe = (t: typeof toFix[number]) =>
       t.contentId != null && estTachePublier(t.title) && !!t.scheduledTime && /^\d{2}:\d{2}$/.test(t.scheduledTime);
 
-    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean; anchored?: boolean; echeance?: string | null; apres?: number[]; depend?: number[]; auPlusTot?: boolean }>>();
+    const byDate = new Map<string, Array<{ id: number; startMin: number; durationMin: number; unplaced?: boolean; anchored?: boolean; echeance?: string | null; apres?: number[]; depend?: number[]; auPlusTot?: boolean; rang?: number }>>();
     for (const t of toFix) {
       if (!t.scheduledDate) continue;
       if (estPublierFixe(t)) continue;
@@ -4630,7 +4631,12 @@ export class DatabaseStorage implements IStorage {
         durationMin: t.estimatedDuration || 30,
         ...(hasTime ? {} : { unplaced: true as const }),
         ...(hasTime && t.schedulingMode === 'fixed' ? { anchored: true as const } : {}),
-        echeance: t.contentId != null ? echeanceTache(t.title, jourParPost.get(t.contentId)) : echeanceAtelier(t),
+        // Chef d'orchestre (spec 2026-11-19 §2) : seule une échéance DURE retient une tâche dans
+        // une journée pleine ; une échéance souple passe devant par son rang (calculé par jour).
+        echeance: (() => {
+          const c = contrainteDe(t, { aujourdhui: parisToday, jourPost: t.contentId != null ? jourParPost.get(t.contentId) : null });
+          return c.durete === "dure" ? c.echeance : null;
+        })(),
       });
     }
 
@@ -4744,8 +4750,17 @@ export class DatabaseStorage implements IStorage {
       if (dayTasks.length === 0) continue;
       // Calculé ici, pas avant la boucle : le débordement de la veille vient d'y arriver.
       ordonnerJour(dayTasks);
+      // Rang commun : qui garde sa place si la journée déborde (échéance, priorité, ancienneté).
+      const rangs = dayTasks
+        .map((x) => {
+          const t = parId.get(x.id)!;
+          return { id: x.id, priority: t.priority, scheduledDate: t.scheduledDate,
+            contrainte: contrainteDe(t, { aujourdhui: parisToday, jourPost: t.contentId != null ? jourParPost.get(t.contentId) : null }) };
+        })
+        .sort(comparerRang);
+      rangs.forEach((r, i) => { const x = dayTasks.find((d) => d.id === r.id); if (x) x.rang = i; });
 
-      const { moves, overflow, forcees } = repackDayAvecEcheances(dayTasks, {
+      const { moves, overflow, forcees } = repackDayParRang(dayTasks, {
         dayStartMin, dayEndMin, lunchStartMin, lunchEndMin, lunchEnabled,
         floorMin: date === parisToday ? parisNowMin : undefined,
         blockedRanges: blockedByDate.get(date) ?? [],

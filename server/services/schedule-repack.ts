@@ -260,6 +260,59 @@ export function repackDayAvecEcheances(
   return { moves: second.moves, overflow: second.overflow.filter((id) => !forceesSet.has(id)), forcees };
 }
 
+export interface RepackTaskRang extends RepackTaskEcheance {
+  /** Rang commun (orchestre/contrainte.ts, comparerRang) : 0 = garde sa place en premier. */
+  rang?: number;
+}
+
+/**
+ * Chef d'orchestre (spec 2026-11-19-chef-d-orchestre-design.md §2). Quand la journée déborde, QUI
+ * part se choisit au rang et non à l'heure : les tâches flexibles sont admises une à une, de la
+ * mieux classée à la moins bien classée, tant que la journée tient dans son ordre habituel (les
+ * tâches gardées ne sont donc pas chamboulées). Une tâche n'est admise qu'après les étapes dont
+ * elle dépend. Ce qui reste déborde ; une échéance qui tombe avant `jourSuivant` n'est pas
+ * reportée mais « forcée » (comme repackDayAvecEcheances). Sans débordement : repackDayAvecEcheances.
+ */
+export function repackDayParRang(
+  tasks: RepackTaskRang[],
+  opts: RepackOptions,
+  date?: string,
+  jourSuivant?: string,
+): RepackResultEcheances {
+  const base = repackDayAvecEcheances(tasks, opts, date, jourSuivant);
+  if (base.overflow.length === 0 && base.forcees.length === 0) return base;
+
+  const ancres = tasks.filter((t) => t.anchored);
+  const parRang = tasks
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) => !t.anchored)
+    .sort((a, b) => (a.t.rang ?? Number.MAX_SAFE_INTEGER) - (b.t.rang ?? Number.MAX_SAFE_INTEGER) || a.i - b.i)
+    .map(({ t }) => t);
+  const presents = new Set(tasks.map((t) => t.id));
+  const gardees = new Set<number>();
+  const essai = (ids: Set<number>) => repackDay(tasks.filter((t) => t.anchored || ids.has(t.id)), opts);
+  const tient = (r: RepackResult) => r.overflow.every((id) => ancres.some((a) => a.id === id));
+
+  // Plusieurs passes : une étape refusée parce que celle dont elle dépend n'était pas encore
+  // admise retente sa chance au tour suivant.
+  for (let change = true; change;) {
+    change = false;
+    for (const t of parRang) {
+      if (gardees.has(t.id)) continue;
+      if ((t.depend ?? []).some((id) => presents.has(id) && !gardees.has(id))) continue;
+      const avec = new Set(gardees).add(t.id);
+      if (tient(essai(avec))) { gardees.add(t.id); change = true; }
+    }
+  }
+
+  const final = essai(gardees);
+  const bloquee = (t: RepackTaskEcheance) => !!jourSuivant && !!t.echeance && t.echeance < jourSuivant;
+  const parti = parRang.filter((t) => !gardees.has(t.id));
+  const forcees = parti.filter(bloquee).map((t) => t.id);
+  const overflow = [...final.overflow, ...parti.filter((t) => !bloquee(t)).map((t) => t.id)];
+  return { moves: final.moves, overflow, forcees };
+}
+
 /**
  * Tâches qu'un rééquilibrage de semaine a le droit de déplacer : non faites, non liées
  * à un post, et pas une relance de prospect (sa date est celle qu'il a demandée) — une tâche de production est tenue par la date de publication de son post,
