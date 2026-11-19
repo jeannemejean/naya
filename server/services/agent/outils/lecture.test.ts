@@ -11,6 +11,8 @@ const s = vi.hoisted(() => ({
   getUserPreferences: vi.fn(),
 }));
 vi.mock("../../../storage", () => ({ storage: s }));
+const ry = vi.hoisted(() => ({ rythmeDeLaMarque: vi.fn(async () => null) }));
+vi.mock("../../campagne/rythme", () => ry);
 vi.mock("../recherche", () => ({
   SOURCES: ["tache"], chercher: vi.fn(async () => []), lire: vi.fn(async () => null),
 }));
@@ -111,6 +113,19 @@ describe("consulter_contenus", () => {
     expect(r.contenus).toHaveLength(1);
     expect(r.contenus[0].body).toBeUndefined();
     expect(r.campagnes[0]).toMatchObject({ id: 3, nom: "Camp" });
+  });
+  it("relie chaque post à sa campagne, dit s'il part seul, et donne les rythmes retenus", async () => {
+    s.getContent.mockResolvedValue([
+      { id: 1, title: "P1", platform: "instagram", status: "draft", scheduledFor: new Date("2026-11-10T08:00:00Z"), publishedAt: null, projectId: 1, campaignId: 3, postFormat: "reel", autoPost: false },
+      { id: 2, title: "News", platform: "linkedin", status: "scheduled", scheduledFor: new Date("2026-11-11T08:00:00Z"), publishedAt: null, projectId: 1, campaignId: null, autoPost: true },
+    ]);
+    s.getCampaigns.mockResolvedValue([{ id: 3, name: "Saisons", objective: "o", status: "active", projectId: 1, channels: [{ platform: "instagram", frequency: "3 posts par semaine" }] }]);
+    ry.rythmeDeLaMarque.mockImplementation(async (u: string, p: number) => (u === "u1" && p === 1 ? { id: 9, texte: "Rythme de publication dans Naya : 2 posts par semaine.", parSemaine: 2 } : null));
+    const r = await run("consulter_contenus");
+    expect(r.contenus[0]).toMatchObject({ id: 1, campagneId: 3, format: "reel", auto: false });
+    expect(r.contenus[1]).toMatchObject({ id: 2, campagneId: null, auto: true });
+    expect(r.campagnes[0]).toMatchObject({ id: 3, projetId: 1, rythme: "3 posts par semaine" });
+    expect(r.rythmes).toEqual([{ projetId: 1, texte: "Rythme de publication dans Naya : 2 posts par semaine." }]);
   });
   it("projet d'une autre : introuvable ; date invalide : erreur", async () => {
     expect(await run("consulter_contenus", { projetId: 99 })).toEqual({ erreur: "introuvable" });

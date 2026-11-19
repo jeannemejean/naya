@@ -67,3 +67,11 @@ describe("listes envoyées par le client : formes vérifiées", () => {
     expect(s).toContain("- E le 2026-11-04");
   });
 });
+
+describe("REGLES_AGENT — contenu et campagnes", () => {
+  it("raisonne en campagnes et nomme les trois propositions", () => {
+    expect(REGLES_AGENT).toMatch(/raisonne d'abord en campagnes/);
+    expect(REGLES_AGENT).toMatch(/au plus trois questions/);
+    for (const o of ["supprimer_posts", "repenser_campagne", "retenir_rythme"]) expect(REGLES_AGENT).toContain(o);
+  });
+});

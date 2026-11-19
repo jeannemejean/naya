@@ -36,12 +36,12 @@ export function estConsentement(message: string): boolean {
   return mots.every((x) => ACCORD.has(x) || LIANTS.has(x));
 }
 
-const PARTICIPES = "(?:supprimée?s?|déplacée?s?|décalée?s?|archivée?s?|nettoyée?s?|repositionnée?s?|déprogrammée?s?|reprogrammée?s?|retirée?s?|annulée?s?)";
+const PARTICIPES = "(?:supprimée?s?|déplacée?s?|décalée?s?|archivée?s?|nettoyée?s?|repositionnée?s?|déprogrammée?s?|reprogrammée?s?|retirée?s?|annulée?s?|repensée?s?)";
 
 const AFFIRMATIONS: RegExp[] = [
   // « C'est fait », en tête de phrase (pas « confirme et c'est fait »).
   /(?:^|[.!:\n—–-]\s*)c'est fait/,
-  /\bj'ai (?:bien )?(?:supprimé|déplacé|décalé|archivé|nettoyé|repositionné|déprogrammé|reprogrammé|retiré|annulé)/,
+  /\bj'ai (?:bien )?(?:supprimé|déplacé|décalé|archivé|nettoyé|repositionné|déprogrammé|reprogrammé|retiré|annulé|repensé)/,
   new RegExp(`\\b(?:sont|est|ont été|a été) (?:bien |toutes |tous )?${PARTICIPES}`),
   new RegExp(`\\b\\d+ (?:\\S+ )?(?:tâches?|posts?|publications?|ateliers?) ${PARTICIPES}`),
   /\bplanning (?:est )?nettoyé/,

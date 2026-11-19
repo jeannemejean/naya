@@ -40,3 +40,13 @@ describe("affirmeUneActionFaite", () => {
     expect(affirmeUneActionFaite(t)).toBe(false);
   });
 });
+
+describe("affirmeUneActionFaite — campagnes repensées", () => {
+  it("« repensée » et « j'ai repensé » annoncent un geste fait", () => {
+    expect(affirmeUneActionFaite("La campagne est repensée.")).toBe(true);
+    expect(affirmeUneActionFaite("J'ai repensé la campagne JMD.")).toBe(true);
+  });
+  it("proposer de repenser n'est pas l'annoncer", () => {
+    expect(affirmeUneActionFaite("Je te propose de repenser la campagne.")).toBe(false);
+  });
+});

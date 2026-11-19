@@ -247,7 +247,7 @@ const consulterContenus: Outil = {
   classe: "lecture",
   description:
     "Liste les contenus (posts, newsletters…) et les campagnes de contenu : titre, plateforme, statut, " +
-    "dates. Filtres facultatifs : projet, période (du / au), statut. Pour le texte d'un contenu, utilise `lire`.",
+    "dates, campagne, format, publication automatique ; les rythmes retenus des marques. Filtres facultatifs : projet, période (du / au), statut. Pour le texte d'un contenu, utilise `lire`.",
   schema: {
     type: "object",
     properties: {
@@ -278,11 +278,26 @@ const consulterContenus: Outil = {
       .map(({ c }) => ({
         id: c.id, titre: c.title, plateforme: c.platform, statut: c.status,
         programmeLe: jour(c.scheduledFor), publieLe: jour(c.publishedAt), projetId: c.projectId ?? null,
+        campagneId: (c as any).campaignId ?? null, format: (c as any).postFormat ?? null, auto: !!(c as any).autoPost,
       }));
+    // Les rythmes retenus des marques présentes (spec cadence-contenu) : import différé, la base.
+    const projets = Array.from(new Set(
+      [...contenus.map((c) => c.projetId), ...campagnes.map((k: any) => k.projectId ?? null)]
+        .filter((id): id is number => typeof id === "number"),
+    ));
+    const { rythmeDeLaMarque } = await import("../../campagne/rythme");
+    const rythmes = (await Promise.all(projets.map(async (projetId) => {
+      const r = await rythmeDeLaMarque(ctx.userId, projetId).catch(() => null);
+      return r ? { projetId, texte: r.texte } : null;
+    }))).filter((r): r is { projetId: number; texte: string } => r !== null);
     return {
       pourModele: {
         contenus,
-        campagnes: campagnes.map((k) => ({ id: k.id, nom: k.name, objectif: k.objective, statut: k.status ?? null })),
+        campagnes: campagnes.map((k: any) => ({
+          id: k.id, nom: k.name, objectif: k.objective, statut: k.status ?? null, projetId: k.projectId ?? null,
+          rythme: (Array.isArray(k.channels) && typeof k.channels[0]?.frequency === "string") ? k.channels[0].frequency : null,
+        })),
+        rythmes,
         ...(lignes.length >= CONTENUS_MAX ? { note: `Les ${CONTENUS_MAX} contenus les plus récents seulement.` } : {}),
       },
     };
