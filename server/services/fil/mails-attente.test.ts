@@ -146,6 +146,34 @@ describe("filsEnAttente (pur)", () => {
     expect(filsEnAttente([{ ...base, to: [], cc: [] }], PROPRES, PROSPECTS, MAINTENANT)).toHaveLength(1);
     expect(filsEnAttente([{ ...base, to: ["paul@studio-lumen.fr", "JEANNE@agence-jmd.com"], cc: [] }], PROPRES, PROSPECTS, MAINTENANT)).toHaveLength(1);
   });
+  // 19 nov. 2026 : pubs et newsletters sans List-Unsubscribe, devenues des tâches « Répondre à ».
+  // En-têtes relevés sur les vrais mails (noms seulement) : chaque outil d'envoi de masse laisse sa marque.
+  it.each([
+    ["Alibaba (AliDM)", { "x-alidm-rcptto": "x", "x-envid": "x", "feedback-id": "x" }],
+    ["KaffeK (Mailgun + Customer.io)", { "x-mailgun-sid": "x", "x-report-abuse-to": "x", "x-mailer": "Customer.io (abc)" }],
+    ["Dematis (Adobe Campaign)", { "x-kumoref": "x", "x-mailer": "nlserver, Build 8.9.3" }],
+    ["Metricool (Mandrill + SES)", { "x-mc-user": "x", "feedback-id": "x", "x-ses-outgoing": "x" }],
+    ["Waffo (SES)", { "feedback-id": "x", "x-ses-outgoing": "x" }],
+    ["SendGrid", { "x-sg-eid": "x" }],
+    ["campagne", { "x-campaign-id": "x" }],
+    ["plainte CSA", { "x-csa-complaints": "x" }],
+    ["List-Id", { "list-id": "<x.liste>" }],
+  ])("envoi de masse exclu : %s", (_nom, headers) => {
+    const base = emails.find((e) => e.id === "m-a2")!;
+    expect(filsEnAttente([{ ...base, headers }], PROPRES, PROSPECTS, MAINTENANT)).toEqual([]);
+  });
+  it("les en-têtes d'un humain (Gmail, Outlook, Apple Mail, Proton) ne l'excluent pas", () => {
+    const base = emails.find((e) => e.id === "m-a2")!;
+    for (const headers of [
+      { "dkim-signature": "x", "x-received": "x", "message-id": "x" },
+      { "x-ms-exchange-organization-scl": "1", "x-ms-has-attach": "" },
+      { "x-mailer": "iPhone Mail (22A3354)" },
+      { "x-mailer": "Apple Mail (2.3826)" },
+      { "x-pm-message-id": "x", "x-pm-spamscore": "0" },
+    ]) {
+      expect(filsEnAttente([{ ...base, headers }], PROPRES, PROSPECTS, MAINTENANT)).toHaveLength(1);
+    }
+  });
   it("un fil de 13 jours est encore retenu", () => {
     const base = emails.find((e) => e.id === "m-a2")!;
     const d = new Date(MAINTENANT.getTime() - 13 * JOUR).toISOString();

@@ -35,10 +35,20 @@ const normaliser = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toL
 // Séparateurs . _ + - (no-reply, no_reply, noreply_x…).
 const LOCAL_ROBOT = /(^|[._+-])(no[-_]?reply|do[-_]?not[-_]?reply|notifications?|newsletters?|mailer[-_]?daemon)([._+-]|$)/i;
 
+// 19 nov. 2026 : beaucoup de pubs n'ont pas List-Unsubscribe (Alibaba, Dematis, KaffeK…) mais
+// portent la marque de leur outil d'envoi. Relevé sur la vraie boîte : aucun mail écrit par une
+// personne (Gmail, Outlook, Apple Mail) n'en porte. Pas de « x-pm- » : Proton Mail l'emploie
+// pour ses mails ordinaires.
+const EN_TETE_D_OUTIL = /^(x-mailgun-|x-sg-|x-sendgrid|x-mc-|x-mandrill|x-ses-|x-mailjet|x-sib-|x-brevo|x-alidm-|x-kumoref|x-sfmc|x-hs-|x-mailchimp|x-campaign|x-csa-complaints|x-report-abuse|x-feedback-id$|feedback-id$|list-id$)/;
+// X-Mailer des outils d'envoi de masse (Apple Mail, Outlook… n'y sont pas).
+const MAILER_DE_MASSE = /nlserver|customer\.io|aweber|mailchimp|sendinblue|brevo|hubspot|klaviyo|marketo|salesforce|mailjet|sendgrid|sarbacane|mailerlite|activecampaign/i;
+
 /** Vrai si les en-têtes disent un envoi automatique ou de masse. */
 function enTetesDeMasse(h: Record<string, string> | null): boolean {
   if (!h) return false;
   if ("list-unsubscribe" in h) return true;
+  if (Object.keys(h).some((k) => EN_TETE_D_OUTIL.test(k))) return true;
+  if (MAILER_DE_MASSE.test(h["x-mailer"] ?? "")) return true;
   const auto = (h["auto-submitted"] ?? "").trim().toLowerCase();
   if ("auto-submitted" in h && auto !== "no") return true;
   if (/^(bulk|list|junk|auto_reply)$/.test((h["precedence"] ?? "").trim().toLowerCase())) return true;
