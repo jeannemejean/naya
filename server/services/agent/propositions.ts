@@ -124,6 +124,13 @@ const LECTEURS: Record<string, Lecteur> = {
     const t = await storage.getTask(id);
     return t && (t as any).userId === userId ? (t as any) : undefined;
   },
+  // Un post, dates en ISO pour se comparer à l'aperçu.
+  async content(userId, id) {
+    const p = await storage.getContentById(id, userId);
+    if (!p) return undefined;
+    const iso = (v: unknown) => (v ? new Date(v as any).toISOString() : null);
+    return { ...(p as any), scheduledFor: iso(p.scheduledFor), publishedAt: iso(p.publishedAt), autoPost: !!p.autoPost };
+  },
   async projects(userId, id) {
     return (await storage.getProject(id, userId)) as any;
   },

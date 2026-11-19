@@ -9,13 +9,17 @@ const s = vi.hoisted(() => ({
   getProject: vi.fn(), getProjects: vi.fn(), createProject: vi.fn(), upsertUserPreferences: vi.fn(),
   getMilestone: vi.fn(), getMilestoneTaskStats: vi.fn(), createMilestone: vi.fn(), createMilestoneCondition: vi.fn(),
   createTask: vi.fn(), getMesures: vi.fn(), getMilestones: vi.fn(),
+  getContentById: vi.fn(), deleteContent: vi.fn(),
 }));
-const d = vi.hoisted(() => ({ ajouterProposition: vi.fn(), ajouterAction: vi.fn() }));
+const d = vi.hoisted(() => ({ ajouterProposition: vi.fn(), ajouterAction: vi.fn(), getProposition: vi.fn(), reclamerProposition: vi.fn() }));
+const ra = vi.hoisted(() => ({ reajusterAteliers: vi.fn() }));
 const t = vi.hoisted(() => ({ creerTache: vi.fn(), modifierTache: vi.fn() }));
 vi.mock("../../../storage", () => ({ storage: s }));
 vi.mock("../depot", () => ({ depot: d }));
 vi.mock("../../taches/ecrire-tache", () => t);
 vi.mock("../../memory/ranger", () => ({ rangerSouvenir: vi.fn(), lireSouvenir: vi.fn(), perimerSouvenir: vi.fn() }));
+vi.mock("../../atelier/reajuster", async (orig) => ({ ...(await orig<any>()), reajusterAteliers: ra.reajusterAteliers }));
+vi.mock("../../atelier/deps", () => ({ depsQuotidien: {} }));
 vi.mock("../recherche", () => ({ SOURCES: ["tache"], chercher: vi.fn(async () => []), lire: vi.fn(async () => null) }));
 
 const { outil, REGISTRE } = await import("../registre");
@@ -44,7 +48,7 @@ describe("classement", () => {
     }
     // + les trois propositions du fil conducteur (étapes, rattachement, journée allégée).
     expect(REGISTRE.filter((o) => o.classe === "a_valider").map((o) => o.nom).sort()).toEqual(
-      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "saisir_mesure", "supprimer_taches"],
+      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "saisir_mesure", "supprimer_posts", "supprimer_taches"],
     );
   });
 });
@@ -221,5 +225,92 @@ describe("saisir_mesure", () => {
   it("projet d'une autre : introuvable", async () => {
     const r = await propose("saisir_mesure", { projetId: 6, mois: "2026-09", champs: { ca: 1 } });
     expect(r.pourModele).toEqual({ erreur: "introuvable" });
+  });
+});
+
+describe("supprimer_posts", () => {
+  const post = (id: number, extra: any = {}) => ({
+    id, userId: "u1", title: `Post ${id}`, projectId: 5, scheduledFor: new Date("2026-11-04T09:00:00Z"),
+    publishedAt: null, postStatus: "pending", contentStatus: "draft", autoPost: false, ...extra,
+  });
+  const posts = (table: Record<number, any>) =>
+    s.getContentById.mockImplementation(async (id: number, u: string) => (u === "u1" ? table[id] : undefined));
+
+  it("un post d'une autre : introuvable, aucune proposition", async () => {
+    posts({ 1: post(1) });
+    const r = await propose("supprimer_posts", { postIds: [1, 9] });
+    expect(r.pourModele).toEqual({ erreur: "introuvable" });
+    expect(d.ajouterProposition).not.toHaveBeenCalled();
+  });
+
+  it("un post publié ne se supprime pas", async () => {
+    posts({ 1: post(1, { publishedAt: new Date("2026-11-01T09:00:00Z"), postStatus: "posted" }) });
+    const r = await propose("supprimer_posts", { postIds: [1] });
+    expect(r.pourModele).toEqual({ erreur: "« Post 1 » est déjà publié" });
+  });
+
+  it("un post qui part seul ne se supprime pas d'ici", async () => {
+    posts({ 1: post(1, { autoPost: true }) });
+    const r = await propose("supprimer_posts", { postIds: [1] });
+    expect(r.pourModele).toEqual({ erreur: "« Post 1 » est programmé pour partir seul : il ne se supprime pas d'ici" });
+  });
+
+  it("aperçu de deux brouillons : résumé, changements, empreinte, rien supprimé", async () => {
+    posts({ 1: post(1), 2: post(2, { scheduledFor: null, projectId: null }) });
+    const r = await propose("supprimer_posts", { postIds: [1, 2, 1] });
+    expect(r.proposition?.resume).toBe("Supprimer 2 posts");
+    expect(r.proposition?.changements).toEqual([
+      { libelle: "« Post 1 » (Mouture)", avant: "4 nov.", apres: null },
+      { libelle: "« Post 2 »", avant: "sans date", apres: null },
+    ]);
+    const [, , , , empreinte] = d.ajouterProposition.mock.calls[0];
+    expect(empreinte[0]).toEqual({ table: "content", id: 1, champs: {
+      title: "Post 1", scheduledFor: "2026-11-04T09:00:00.000Z", publishedAt: null, postStatus: "pending", autoPost: false,
+    } });
+    expect(s.deleteContent).not.toHaveBeenCalled();
+  });
+
+  it("validation après que le post est passé en publication auto : expirée, rien supprimé", async () => {
+    posts({ 1: post(1) });
+    await propose("supprimer_posts", { postIds: [1] });
+    const [, , args, , empreinte] = d.ajouterProposition.mock.calls[0];
+    d.getProposition.mockResolvedValue({ id: 77, userId: "u1", outil: "supprimer_posts", arguments: args, empreinte,
+      statut: "en_attente", expireA: new Date("2026-11-02T10:00:00Z") });
+    d.reclamerProposition.mockResolvedValue(true);
+    posts({ 1: post(1, { autoPost: true }) });
+    const { validerProposition } = await import("../propositions");
+    const v = await validerProposition("u1", 77, new Date("2026-11-02T09:10:00Z"));
+    expect(v).toEqual({ ok: false, raison: "expiree" });
+    expect(s.deleteContent).not.toHaveBeenCalled();
+  });
+
+  it("validation intacte : l'empreinte relue est la même que l'aperçu", async () => {
+    posts({ 1: post(1) });
+    await propose("supprimer_posts", { postIds: [1] });
+    const [, , args, , empreinte] = d.ajouterProposition.mock.calls[0];
+    d.getProposition.mockResolvedValue({ id: 77, userId: "u1", outil: "supprimer_posts", arguments: args, empreinte,
+      statut: "en_attente", expireA: new Date("2026-11-02T10:00:00Z") });
+    d.reclamerProposition.mockResolvedValue(false); // un autre clic a gagné : prouve qu'on a dépassé l'empreinte
+    const { validerProposition } = await import("../propositions");
+    expect(await validerProposition("u1", 77, new Date("2026-11-02T09:10:00Z"))).toEqual({ ok: false, raison: "deja_traitee" });
+  });
+
+  it("exécution : supprime, puis réajuste l'atelier des semaines touchées une fois", async () => {
+    posts({ 1: post(1), 2: post(2, { scheduledFor: new Date("2026-11-12T09:00:00Z") }) });
+    const b = await aValider("supprimer_posts").executer(ctx, { postIds: [1, 2] });
+    expect(s.deleteContent).toHaveBeenCalledWith(1);
+    expect(s.deleteContent).toHaveBeenCalledWith(2);
+    expect(b).toEqual({ reussis: ["« Post 1 » supprimé", "« Post 2 » supprimé"], echecs: [] });
+    expect(ra.reajusterAteliers).toHaveBeenCalledTimes(1);
+    expect(ra.reajusterAteliers.mock.calls[0].slice(1)).toEqual(["u1", ["2026-11-02", "2026-11-09"], "2026-11-02"]);
+  });
+
+  it("exécution : un post devenu publié entre-temps n'est pas supprimé ; l'échec de l'atelier n'ajoute pas d'échec", async () => {
+    posts({ 1: post(1, { postStatus: "posted" }), 2: post(2) });
+    ra.reajusterAteliers.mockRejectedValueOnce(new Error("boom"));
+    const b = await aValider("supprimer_posts").executer(ctx, { postIds: [1, 2] });
+    expect(s.deleteContent).toHaveBeenCalledTimes(1);
+    expect(b.echecs).toEqual(["« Post 1 » est déjà publié"]);
+    expect(b.reussis).toEqual(["« Post 2 » supprimé"]);
   });
 });

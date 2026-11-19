@@ -13,6 +13,9 @@ import { completerMois } from "../../mesure/phrase";
 import { moisValide } from "../../mesure/saisie";
 import { CLES_CANAUX } from "../../mesure/catalogues";
 import { memeValeur } from "../journal";
+import { estPublieOuEnCours } from "../../refus-post/pur";
+import { jourDuPost } from "../../campagne/production";
+import { lundiDuPost } from "../../atelier/reajuster";
 import {
   outilAValider, tachesNonFaitesDuJour,
   type Apercu, type BilanExecution, type Empreinte, type OutilPropose,
@@ -215,6 +218,89 @@ const supprimerTaches = outilAValider<{ tacheIds: number[] }>({
       } catch (e: any) {
         console.error(`[agent] suppression de la tâche ${id} :`, e?.message ?? e);
         bilan.echecs.push(`Tâche n° ${id} : erreur imprévue`);
+      }
+    }
+    return bilan;
+  },
+});
+
+// ── supprimer_posts ────────────────────────────────────────────────────────────────────
+// Les brouillons de l'atelier en trop (spec cadence-contenu §4). deleteContent emporte déjà les
+// tâches de production non faites ; l'atelier des semaines touchées est ensuite réajusté.
+
+// Pourquoi ce post ne se supprime pas d'ici, ou null.
+function refusPost(p: any): string | null {
+  if (estPublieOuEnCours(p)) return `« ${p.title} » est déjà publié`;
+  if (p.autoPost) return `« ${p.title} » est programmé pour partir seul : il ne se supprime pas d'ici`;
+  return null;
+}
+
+const isoOuNull = (v: unknown): string | null => (v ? new Date(v as any).toISOString() : null);
+
+async function postDe(userId: string, id: unknown): Promise<any | undefined> {
+  if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return undefined;
+  return (await storage.getContentById(id, userId)) ?? undefined;
+}
+
+const supprimerPosts = outilAValider<{ postIds: number[] }>({
+  nom: "supprimer_posts",
+  description: "Propose de supprimer des posts non publiés (brouillons de l'atelier). Rien n'est fait avant que l'utilisatrice valide.",
+  schema: {
+    type: "object",
+    properties: { postIds: { type: "array", items: { type: "integer" }, description: "Ids des posts (consulter_contenus)." } },
+    required: ["postIds"],
+  },
+  async apercu(ctx, args) {
+    const ids = Array.from(new Set(args.postIds ?? []));
+    if (!ids.length) return erreur("aucun post");
+    if (ids.length > ELEMENTS_MAX) return erreur(`${ELEMENTS_MAX} posts au plus`);
+    const changements: Changement[] = [];
+    const empreinte: Empreinte = [];
+    for (const id of ids) {
+      const p = await postDe(ctx.userId, id);
+      if (!p) return erreur("introuvable");
+      const refus = refusPost(p);
+      if (refus) return erreur(refus);
+      const projet = p.projectId ? await storage.getProject(p.projectId, ctx.userId) : undefined;
+      changements.push({
+        libelle: projet ? `« ${p.title} » (${projet.name})` : `« ${p.title} »`,
+        avant: p.scheduledFor ? jourCourt(jourDuPost(p.scheduledFor)) : "sans date",
+        apres: null,
+      });
+      empreinte.push({ table: "content", id: p.id, champs: {
+        title: p.title, scheduledFor: isoOuNull(p.scheduledFor), publishedAt: null,
+        postStatus: p.postStatus ?? null, autoPost: !!p.autoPost,
+      } });
+    }
+    return { resume: `Supprimer ${pluriel(ids.length, "post")}`, changements, empreinte };
+  },
+  async executer(ctx, args) {
+    const bilan: BilanExecution = { reussis: [], echecs: [] };
+    const lundis: string[] = [];
+    for (const id of Array.from(new Set(args.postIds ?? []))) {
+      try {
+        const p = await postDe(ctx.userId, id);
+        if (!p) { bilan.echecs.push(`Post n° ${id} : introuvable`); continue; }
+        const refus = refusPost(p);
+        if (refus) { bilan.echecs.push(refus); continue; }
+        await storage.deleteContent(p.id);
+        bilan.reussis.push(`« ${p.title} » supprimé`);
+        const lundi = lundiDuPost(p.scheduledFor);
+        if (lundi) lundis.push(lundi);
+      } catch (e: any) {
+        console.error(`[agent] suppression du post ${id} :`, e?.message ?? e);
+        bilan.echecs.push(`Post n° ${id} : erreur imprévue`);
+      }
+    }
+    if (lundis.length) {
+      try {
+        // Import différé : les dépendances de l'atelier tirent la base et la rédaction.
+        const [{ reajusterAteliers }, { depsQuotidien }] = await Promise.all([
+          import("../../atelier/reajuster"), import("../../atelier/deps"),
+        ]);
+        await reajusterAteliers(depsQuotidien, ctx.userId, Array.from(new Set(lundis)).sort(), dateLocale(ctx));
+      } catch (e: any) {
+        console.error("[agent] réajustement de l'atelier après suppression :", e?.message ?? e);
       }
     }
     return bilan;
@@ -494,6 +580,6 @@ const saisirMesure = outilAValider<{ projetId: number; mois: string; champs: Rec
 });
 
 export const OUTILS_A_VALIDER: OutilPropose[] = [
-  deplacerTaches, decalerJournee, supprimerTaches,
+  deplacerTaches, decalerJournee, supprimerTaches, supprimerPosts,
   creerProjetOutil, creerJalons, confirmerJalonOutil, saisirMesure,
 ];
