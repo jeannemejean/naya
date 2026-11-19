@@ -131,6 +131,10 @@ const LECTEURS: Record<string, Lecteur> = {
     const iso = (v: unknown) => (v ? new Date(v as any).toISOString() : null);
     return { ...(p as any), scheduledFor: iso(p.scheduledFor), publishedAt: iso(p.publishedAt), autoPost: !!p.autoPost };
   },
+  async campaigns(userId, id) {
+    const c: any = await storage.getCampaign(id, userId);
+    return c ? { ...c, updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null } : undefined;
+  },
   async projects(userId, id) {
     return (await storage.getProject(id, userId)) as any;
   },

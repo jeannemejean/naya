@@ -9,7 +9,7 @@ const s = vi.hoisted(() => ({
   getProject: vi.fn(), getProjects: vi.fn(), createProject: vi.fn(), upsertUserPreferences: vi.fn(),
   getMilestone: vi.fn(), getMilestoneTaskStats: vi.fn(), createMilestone: vi.fn(), createMilestoneCondition: vi.fn(),
   createTask: vi.fn(), getMesures: vi.fn(), getMilestones: vi.fn(),
-  getContentById: vi.fn(), deleteContent: vi.fn(),
+  getContentById: vi.fn(), deleteContent: vi.fn(), getCampaign: vi.fn(), getContent: vi.fn(),
 }));
 const d = vi.hoisted(() => ({ ajouterProposition: vi.fn(), ajouterAction: vi.fn(), getProposition: vi.fn(), reclamerProposition: vi.fn() }));
 const ra = vi.hoisted(() => ({ reajusterAteliers: vi.fn() }));
@@ -48,7 +48,7 @@ describe("classement", () => {
     }
     // + les trois propositions du fil conducteur (étapes, rattachement, journée allégée).
     expect(REGISTRE.filter((o) => o.classe === "a_valider").map((o) => o.nom).sort()).toEqual(
-      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "saisir_mesure", "supprimer_posts", "supprimer_taches"],
+      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "repenser_campagne", "saisir_mesure", "supprimer_posts", "supprimer_taches"],
     );
   });
 });
@@ -312,5 +312,37 @@ describe("supprimer_posts", () => {
     expect(s.deleteContent).toHaveBeenCalledTimes(1);
     expect(b.echecs).toEqual(["« Post 1 » est déjà publié"]);
     expect(b.reussis).toEqual(["« Post 2 » supprimé"]);
+  });
+});
+
+describe("repenser_campagne", () => {
+  const campagne = { id: 3, userId: "u1", name: "Saisons", status: "active", updatedAt: new Date("2026-11-01T08:00:00Z"), projectId: 5 };
+  const post = (id: number, extra: any = {}) => ({ id, title: `Post ${id}`, campaignId: 3, publishedAt: null, postStatus: "pending", autoPost: false, ...extra });
+  beforeEach(() => {
+    s.getCampaign.mockImplementation(async (id: number, u: string) => (id === 3 && u === "u1" ? campagne : undefined));
+    s.getContent.mockResolvedValue([post(1), post(2), post(4, { publishedAt: new Date("2026-10-30T09:00:00Z"), postStatus: "posted" })]);
+  });
+
+  it("refuse si un post non publié part seul", async () => {
+    s.getContent.mockResolvedValue([post(1, { autoPost: true })]);
+    const r = await propose("repenser_campagne", { campagneId: 3, consigne: "moins de posts" });
+    expect(r.pourModele).toEqual({ erreur: "« Post 1 » est programmé pour partir seul : Repenser le supprimerait" });
+    expect(d.ajouterProposition).not.toHaveBeenCalled();
+  });
+
+  it("refuse sans consigne, et pour une campagne d'une autre", async () => {
+    expect((await propose("repenser_campagne", { campagneId: 3, consigne: "  " })).pourModele).toHaveProperty("erreur");
+    expect((await propose("repenser_campagne", { campagneId: 8, consigne: "x" })).pourModele).toEqual({ erreur: "introuvable" });
+  });
+
+  it("aperçu : un changement, résumé exact, empreinte sur la campagne", async () => {
+    const r = await propose("repenser_campagne", { campagneId: 3, consigne: "  deux posts par semaine  " });
+    expect(s.getContent).toHaveBeenCalledWith("u1", expect.any(Number), undefined, 3);
+    expect(r.proposition?.resume).toBe("Repenser « Saisons »");
+    expect(r.proposition?.changements).toEqual([
+      { libelle: "Campagne « Saisons »", avant: "2 posts à venir", apres: "plan réécrit : deux posts par semaine" },
+    ]);
+    const [, , , , empreinte] = d.ajouterProposition.mock.calls[0];
+    expect(empreinte).toEqual([{ table: "campaigns", id: 3, champs: { status: "active", updatedAt: "2026-11-01T08:00:00.000Z" } }]);
   });
 });

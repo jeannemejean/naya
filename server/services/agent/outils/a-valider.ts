@@ -17,6 +17,10 @@ import { estPublieOuEnCours } from "../../refus-post/pur";
 import { jourDuPost } from "../../campagne/production";
 import { lundiDuPost } from "../../atelier/reajuster";
 import {
+  CONSIGNE_MAX, DejaEnCours, depsRepenserBranchees, lancerRepenser, normaliserConsigne,
+  repenserEnCours, statutRepensable,
+} from "../../campagne/repenser";
+import {
   outilAValider, tachesNonFaitesDuJour,
   type Apercu, type BilanExecution, type Empreinte, type OutilPropose,
 } from "../propositions";
@@ -307,6 +311,64 @@ const supprimerPosts = outilAValider<{ postIds: number[] }>({
   },
 });
 
+// ── repenser_campagne ──────────────────────────────────────────────────────────────────
+// Le bouton « Repenser » avec une consigne (spec cadence-contenu §5) : stratégie et plan de posts
+// réécrits ; posts non publiés et tâches non faites de la campagne remplacés. Non annulable.
+
+const POSTS_LUS_MAX = 500;
+
+const repenserCampagne = outilAValider<{ campagneId: number; consigne: string }>({
+  nom: "repenser_campagne",
+  description: "Propose de repenser une campagne comme le bouton Repenser : stratégie et plan de posts réécrits avec la consigne, posts non publiés et tâches non faites de la campagne remplacés. Rien n'est fait avant validation.",
+  schema: {
+    type: "object",
+    properties: {
+      campagneId: { type: "integer", description: "Id de la campagne (consulter_contenus)." },
+      consigne: { type: "string", description: `Ce que le nouveau plan doit changer, dans les mots de l'utilisatrice (${CONSIGNE_MAX} caractères au plus).` },
+    },
+    required: ["campagneId", "consigne"],
+  },
+  async apercu(ctx, args) {
+    const consigne = normaliserConsigne(args.consigne);
+    if (!consigne) return erreur("consigne vide : demander à l'utilisatrice ce que le nouveau plan doit changer");
+    if (consigne.length > CONSIGNE_MAX) return erreur(`consigne de ${CONSIGNE_MAX} caractères au plus`);
+    const id = args.campagneId;
+    if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) return erreur("introuvable");
+    const c: any = await storage.getCampaign(id, ctx.userId);
+    if (!c) return erreur("introuvable");
+    if (!statutRepensable(c.status)) return erreur(`« ${c.name} » est ${c.status === "completed" ? "terminée" : `au statut « ${c.status} »`} : elle ne se repense plus`);
+    if (repenserEnCours(ctx.userId, id)) return erreur(`« ${c.name} » est déjà en train d'être repensée`);
+    const posts = (await storage.getContent(ctx.userId, POSTS_LUS_MAX, undefined, id)) as any[];
+    const aVenir = posts.filter((p) => !estPublieOuEnCours(p));
+    const automatique = aVenir.find((p) => p.autoPost);
+    if (automatique) return erreur(`« ${automatique.title} » est programmé pour partir seul : Repenser le supprimerait`);
+    return {
+      resume: `Repenser « ${c.name} »`,
+      changements: [{ libelle: `Campagne « ${c.name} »`, avant: `${pluriel(aVenir.length, "post")} à venir`, apres: `plan réécrit : ${consigne}` }],
+      empreinte: [{ table: "campaigns", id, champs: { status: c.status ?? null, updatedAt: isoOuNull(c.updatedAt) } }],
+    };
+  },
+  async executer(ctx, args) {
+    const bilan: BilanExecution = { reussis: [], echecs: [] };
+    const deps = depsRepenserBranchees();
+    if (!deps) { bilan.echecs.push("Repenser n'est pas disponible pour le moment"); return bilan; }
+    const c: any = await storage.getCampaign(args.campagneId, ctx.userId);
+    const nom = c?.name ?? `Campagne n° ${args.campagneId}`;
+    try {
+      // Lancé en arrière-plan, comme le bouton : on n'attend pas `termine`.
+      await lancerRepenser(deps, ctx.userId, args.campagneId, { consigne: normaliserConsigne(args.consigne) });
+      bilan.reussis.push(`Repenser « ${nom} » est lancé : le nouveau plan arrive dans quelques minutes, dans la campagne`);
+    } catch (e: any) {
+      if (e instanceof DejaEnCours) bilan.echecs.push(`« ${nom} » est déjà en train d'être repensée`);
+      else {
+        console.error(`[agent] repenser la campagne ${args.campagneId} :`, e?.message ?? e);
+        bilan.echecs.push(`« ${nom} » : ${e?.message ?? "erreur imprévue"}`);
+      }
+    }
+    return bilan;
+  },
+});
+
 // ── creer_projet ───────────────────────────────────────────────────────────────────────
 
 const TYPES_PROJET = ["Business", "Personal Brand", "Passion Project", "Client Project", "Agency", "Internal", "Lifestyle"];
@@ -580,6 +642,6 @@ const saisirMesure = outilAValider<{ projetId: number; mois: string; champs: Rec
 });
 
 export const OUTILS_A_VALIDER: OutilPropose[] = [
-  deplacerTaches, decalerJournee, supprimerTaches, supprimerPosts,
+  deplacerTaches, decalerJournee, supprimerTaches, supprimerPosts, repenserCampagne,
   creerProjetOutil, creerJalons, confirmerJalonOutil, saisirMesure,
 ];

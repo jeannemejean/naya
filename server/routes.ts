@@ -83,7 +83,7 @@ import { hasNayaAccess } from "./services/access";
 import { ajouterDependance } from "./services/dependances";
 import { aujourdhuiParis } from "./services/repack-from";
 import {
-  apercuRepenser, lancerRepenser, registreRepenser, repenserEnCours, StatutIncompatible, DejaEnCours,
+  apercuRepenser, brancherRepenser, lancerRepenser, registreRepenser, repenserEnCours, StatutIncompatible, DejaEnCours,
   CONSIGNE_MAX as CONSIGNE_REPENSER_MAX, type RepenserDeps,
 } from "./services/campagne/repenser";
 import { lecturesRepenser, transactionRepenser } from "./services/campagne/repenser-db";
@@ -10375,6 +10375,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
     fixOverlappingTasks: (userId, fromDate) => storage.fixOverlappingTasks(userId, fromDate),
     aujourdhuiParis: () => aujourdhuiParis(),
   };
+  // L'agent (outil repenser_campagne) lance Repenser avec ces mêmes dépendances.
+  brancherRepenser(depsRepenser);
 
   // GET /api/campaigns/:id/repenser-apercu → { postsRemplaces, postsConserves,
   // tachesRemplacees, tachesConservees }. 404 si la campagne n'est pas à l'utilisatrice.

@@ -532,6 +532,16 @@ export function repenserEnCours(userId: string, campaignId: number, registre: Re
   return registre.enCours(cle) || verrous.has(cle);
 }
 
+// Les dépendances de la route, branchées par routes.ts au démarrage : l'agent (outil
+// `repenser_campagne`) lance Repenser exactement comme le bouton.
+let depsBranchees: RepenserDeps | null = null;
+export function brancherRepenser(d: RepenserDeps | null): void {
+  depsBranchees = d;
+}
+export function depsRepenserBranchees(): RepenserDeps | null {
+  return depsBranchees;
+}
+
 export function erreurPublique(e: unknown): NonNullable<EtatRepenser["erreur"]> {
   if (e instanceof GenerationEchouee) return { code: "generation_echouee", etape: e.etape };
   if (e instanceof PlacementEchoue) return { code: "placement_echoue", ...e.partiel };
