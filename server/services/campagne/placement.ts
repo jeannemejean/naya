@@ -431,10 +431,15 @@ export async function placerPostsCampagne(
   const postsCrees: PostPlacable[] = [];
   // Les heures varient pour éviter les doublons exacts : 9h, 11h, 14h, 16h
   const HOURS = [9, 11, 14, 16];
-  const plafond = plafondParSemaine != null && plafondParSemaine > 0 ? Math.max(1, Math.round(plafondParSemaine)) : null;
+  // Rythme de la marque (posts par semaine, peut être fractionnaire) : la semaine w reçoit
+  // ceil(w·n) − ceil((w−1)·n) posts. Le total suit exactement le rythme (0,5 → 1 post toutes les
+  // deux semaines, dès la première ; 2,5 → 3, 2, 3, 2…). Plafond par campagne.
+  const rythme = plafondParSemaine != null && plafondParSemaine > 0 ? plafondParSemaine : null;
+  const quota = (w: number) => Math.ceil(w * rythme! - 1e-9) - Math.ceil((w - 1) * rythme! - 1e-9);
   for (const [weekNum, planSemaine] of Array.from(contentByWeek.entries())) {
+    const plafond = rythme != null ? quota(Math.max(1, weekNum)) : null;
     // Au-delà du rythme de la marque : on garde des pièces prises dans tout le plan de la semaine.
-    const pieces = plafond != null && planSemaine.length > plafond
+    const pieces = plafond === 0 ? [] : plafond != null && planSemaine.length > plafond
       ? Array.from({ length: plafond }, (_, j) => planSemaine[Math.floor((j * planSemaine.length) / plafond)])
       : planSemaine;
     const weekStart = campaignAddDays(startDate, (weekNum - 1) * 7);

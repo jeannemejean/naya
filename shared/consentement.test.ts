@@ -50,3 +50,14 @@ describe("affirmeUneActionFaite — campagnes repensées", () => {
     expect(affirmeUneActionFaite("Je te propose de repenser la campagne.")).toBe(false);
   });
 });
+
+describe("affirmeUneActionFaite — rythme retenu, Repenser lancé", () => {
+  it("annonces d'un geste fait", () => {
+    for (const t of ["C'est noté, ton rythme est retenu : 2 posts par semaine.", "J'ai enregistré le rythme.", "Repenser est lancé.", "J'ai lancé Repenser sur Saisons."]) {
+      expect(affirmeUneActionFaite(t)).toBe(true);
+    }
+  });
+  it("« j'ai repensé à ce que tu disais » n'annonce rien", () => {
+    expect(affirmeUneActionFaite("J'ai repensé à ce que tu disais hier.")).toBe(false);
+  });
+});

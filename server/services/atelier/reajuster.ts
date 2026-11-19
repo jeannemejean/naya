@@ -2,7 +2,7 @@
 // chaque semaine touchée suit. S'il reste des posts, le placement habituel redimensionne l'atelier
 // (les parties en trop sont archivées) ; s'il n'en reste aucun, l'atelier et la validation non
 // faits de la semaine sont archivés. Archiver, jamais supprimer (règle de atelier/placement.ts).
-import { lundiDe, plusJours } from "@shared/atelier";
+import { etatPost, lundiDe, plusJours } from "@shared/atelier";
 import { jourDuPost, postAProduire } from "../campagne/production";
 
 export interface ReajusterDeps {
@@ -26,7 +26,10 @@ export async function reajusterAteliers(
     const debut = new Date(`${plusJours(lundi, -1)}T00:00:00.000Z`);
     const fin = new Date(`${plusJours(lundi, 8)}T00:00:00.000Z`);
     const restants = (await deps.postsEntre(userId, debut, fin))
-      .filter((p) => lundiDuPost(p.scheduledFor) === lundi && postAProduire(p, aujourdhui));
+      .filter((p) => lundiDuPost(p.scheduledFor) === lundi && postAProduire(p, aujourdhui))
+      // Seuls les posts encore à écrire font vivre un atelier (même règle que atelier/placement.ts) :
+      // un post déjà validé n'a plus besoin de séance.
+      .filter((p) => ["a_rediger", "brouillon"].includes(etatPost(p)));
     if (restants.length > 0) {
       await deps.placer(userId, restants);
       continue;

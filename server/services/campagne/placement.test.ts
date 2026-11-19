@@ -135,6 +135,21 @@ describe("placerPostsCampagne", () => {
     expect(local(crees[0].scheduledFor).slice(0, 10)).not.toBe(local(crees[1].scheduledFor).slice(0, 10));
   });
 
+  it("rythme d'un post toutes les deux semaines : 4 posts sur 8 semaines, dès la première", async () => {
+    const deps = fabrique();
+    const plan = { ...campaign, contentPlan: [1, 2, 3, 4, 5, 6, 7, 8].flatMap((w) => [piece(`Week ${w}`, `w${w}a`), piece(`Week ${w}`, `w${w}b`)]) };
+    const r = await placerPostsCampagne(deps, { userId: "u", campaign: plan, debut: d("2026-10-12"), plafondParSemaine: 0.5 });
+    expect(r.crees).toBe(4);
+    expect(deps.createContent.mock.calls.map(([c]: any[]) => c.title)).toContain("w1a");
+  });
+
+  it("rythme de 2,5 par semaine : jamais plus de 3, 5 sur deux semaines", async () => {
+    const deps = fabrique();
+    const plan = { ...campaign, contentPlan: [1, 2].flatMap((w) => ["a", "b", "c", "d", "e"].map((x) => piece(`Week ${w}`, `w${w}${x}`))) };
+    const r = await placerPostsCampagne(deps, { userId: "u", campaign: plan, debut: d("2026-10-12"), plafondParSemaine: 2.5 });
+    expect(r.crees).toBe(5);
+  });
+
   it("sans plafond : les 5 posts", async () => {
     const deps = fabrique();
     const plan = { ...campaign, contentPlan: ["a1", "a2", "a3", "a4", "a5"].map((a) => piece("Week 1", a)) };

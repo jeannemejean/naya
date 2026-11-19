@@ -27,6 +27,14 @@ describe("reajusterAteliers", () => {
     expect(d.archiverTaches).not.toHaveBeenCalled();
   });
 
+  it("il ne reste qu'un post déjà validé : l'atelier n'a plus rien à écrire, il est archivé", async () => {
+    const valide = { id: 7, scheduledFor: new Date("2026-11-11T09:00:00Z"), publishedAt: null, postStatus: "pending", contentStatus: "ready", body: "texte" };
+    const d = deps([valide], [{ id: 1, completed: false }, { id: 2, completed: true }]);
+    await reajusterAteliers(d, "u1", ["2026-11-09"], "2026-11-02");
+    expect(d.placer).not.toHaveBeenCalled();
+    expect(d.archiverTaches).toHaveBeenCalledWith("u1", [1]);
+  });
+
   it("un post du lundi tôt à Paris (dimanche soir UTC) compte dans sa semaine", async () => {
     const d = deps([], []);
     await reajusterAteliers(d, "u1", ["2026-11-09"], "2026-11-02");

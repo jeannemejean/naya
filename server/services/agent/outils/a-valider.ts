@@ -275,6 +275,8 @@ const supprimerPosts = outilAValider<{ postIds: number[] }>({
       empreinte.push({ table: "content", id: p.id, champs: {
         title: p.title, scheduledFor: isoOuNull(p.scheduledFor), publishedAt: null,
         postStatus: p.postStatus ?? null, autoPost: !!p.autoPost,
+        // Écrit ou validé depuis l'aperçu : la proposition expire (son texte ne part pas sans elle).
+        contentStatus: p.contentStatus ?? null, updatedAt: isoOuNull(p.updatedAt),
       } });
     }
     return { resume: `Supprimer ${pluriel(ids.length, "post")}`, changements, empreinte };
@@ -318,6 +320,12 @@ const supprimerPosts = outilAValider<{ postIds: number[] }>({
 
 const POSTS_LUS_MAX = 500;
 
+/** Les posts non publiés de la campagne qui partent seuls (Repenser les supprimerait). */
+export async function postsAutoDeCampagne(userId: string, campagneId: number): Promise<any[]> {
+  const posts = (await storage.getContent(userId, POSTS_LUS_MAX, undefined, campagneId)) as any[];
+  return posts.filter((p) => !estPublieOuEnCours(p) && p.autoPost).sort((a, b) => a.id - b.id);
+}
+
 const repenserCampagne = outilAValider<{ campagneId: number; consigne: string }>({
   nom: "repenser_campagne",
   description: "Propose de repenser une campagne comme le bouton Repenser : stratégie et plan de posts réécrits avec la consigne, posts non publiés et tâches non faites de la campagne remplacés. Rien n'est fait avant validation.",
@@ -346,7 +354,11 @@ const repenserCampagne = outilAValider<{ campagneId: number; consigne: string }>
     return {
       resume: `Repenser « ${c.name} »`,
       changements: [{ libelle: `Campagne « ${c.name} »`, avant: `${pluriel(aVenir.length, "post")} à venir`, apres: `plan réécrit : ${consigne}` }],
-      empreinte: [{ table: "campaigns", id, champs: { status: c.status ?? null, updatedAt: isoOuNull(c.updatedAt) } }],
+      empreinte: [
+        { table: "campaigns", id, champs: { status: c.status ?? null, updatedAt: isoOuNull(c.updatedAt) } },
+        // Un post passé en publication auto depuis l'aperçu : Repenser le supprimerait, la proposition expire.
+        { table: "posts_auto_campagne", id, champs: { ids: [] } },
+      ],
     };
   },
   async executer(ctx, args) {
@@ -355,6 +367,11 @@ const repenserCampagne = outilAValider<{ campagneId: number; consigne: string }>
     if (!deps) { bilan.echecs.push("Repenser n'est pas disponible pour le moment"); return bilan; }
     const c: any = await storage.getCampaign(args.campagneId, ctx.userId);
     const nom = c?.name ?? `Campagne n° ${args.campagneId}`;
+    const automatique = (await postsAutoDeCampagne(ctx.userId, args.campagneId))[0];
+    if (automatique) {
+      bilan.echecs.push(`« ${automatique.title} » est programmé pour partir seul : Repenser le supprimerait`);
+      return bilan;
+    }
     try {
       // Lancé en arrière-plan, comme le bouton : on n'attend pas `termine`.
       await lancerRepenser(deps, ctx.userId, args.campagneId, { consigne: normaliserConsigne(args.consigne) });
@@ -393,6 +410,7 @@ const retenirRythme = outilAValider<{ projetId: number; postsParSemaine: number;
     const projet = typeof args.projetId === "number" ? await storage.getProject(args.projetId, ctx.userId) : undefined;
     if (!projet) return erreur("introuvable");
     if (!rythmeValide(args.postsParSemaine)) return erreur("un rythme entre 0,25 et 14 posts par semaine");
+    if (args.precision !== undefined && args.precision !== null && typeof args.precision !== "string") return erreur("la précision doit être une phrase");
     if (args.precision && args.precision.length > PRECISION_MAX) return erreur(`précision de ${PRECISION_MAX} caractères au plus`);
     const actuel = await rythmeDeLaMarque(ctx.userId, projet.id);
     return {

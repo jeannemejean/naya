@@ -129,7 +129,16 @@ const LECTEURS: Record<string, Lecteur> = {
     const p = await storage.getContentById(id, userId);
     if (!p) return undefined;
     const iso = (v: unknown) => (v ? new Date(v as any).toISOString() : null);
-    return { ...(p as any), scheduledFor: iso(p.scheduledFor), publishedAt: iso(p.publishedAt), autoPost: !!p.autoPost };
+    return {
+      ...(p as any), scheduledFor: iso(p.scheduledFor), publishedAt: iso(p.publishedAt), autoPost: !!p.autoPost,
+      contentStatus: p.contentStatus ?? null, updatedAt: iso((p as any).updatedAt),
+    };
+  },
+  // id = campagne ; champs = { ids } : ses posts non publiés qui partent seuls.
+  async posts_auto_campagne(userId, id) {
+    if (!(await storage.getCampaign(id, userId))) return undefined;
+    const { postsAutoDeCampagne } = await import("./outils/a-valider");
+    return { ids: (await postsAutoDeCampagne(userId, id)).map((p) => p.id) };
   },
   async campaigns(userId, id) {
     const c: any = await storage.getCampaign(id, userId);

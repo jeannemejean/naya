@@ -14,6 +14,7 @@ const executer = (args: any) => (outil("repenser_campagne") as any).aValider.exe
 beforeEach(() => {
   vi.clearAllMocks();
   s.getCampaign.mockResolvedValue({ id: 3, userId: "u1", name: "Saisons", status: "active" });
+  s.getContent.mockResolvedValue([]);
   repenser.brancherRepenser(null);
 });
 
@@ -35,5 +36,15 @@ describe("repenser_campagne — exécution", () => {
     lr.mockRejectedValue(new repenser.DejaEnCours(3));
     repenser.brancherRepenser({} as any);
     expect(await executer({ campagneId: 3, consigne: "x" })).toEqual({ reussis: [], echecs: ["« Saisons » est déjà en train d'être repensée"] });
+  });
+});
+
+describe("repenser_campagne — garde au moment du oui", () => {
+  it("un post passé en publication auto : rien n'est lancé", async () => {
+    s.getContent.mockResolvedValue([{ id: 1, title: "Post 1", publishedAt: null, postStatus: "pending", autoPost: true }]);
+    repenser.brancherRepenser({} as any);
+    const b = await executer({ campagneId: 3, consigne: "x" });
+    expect(lr).not.toHaveBeenCalled();
+    expect(b.echecs).toEqual(["« Post 1 » est programmé pour partir seul : Repenser le supprimerait"]);
   });
 });

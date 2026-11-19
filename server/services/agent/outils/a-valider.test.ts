@@ -268,6 +268,7 @@ describe("supprimer_posts", () => {
     const [, , , , empreinte] = d.ajouterProposition.mock.calls[0];
     expect(empreinte[0]).toEqual({ table: "content", id: 1, champs: {
       title: "Post 1", scheduledFor: "2026-11-04T09:00:00.000Z", publishedAt: null, postStatus: "pending", autoPost: false,
+      contentStatus: "draft", updatedAt: null,
     } });
     expect(s.deleteContent).not.toHaveBeenCalled();
   });
@@ -283,6 +284,19 @@ describe("supprimer_posts", () => {
     const { validerProposition } = await import("../propositions");
     const v = await validerProposition("u1", 77, new Date("2026-11-02T09:10:00Z"));
     expect(v).toEqual({ ok: false, raison: "expiree" });
+    expect(s.deleteContent).not.toHaveBeenCalled();
+  });
+
+  it("validation après qu'elle a écrit le post : expirée, rien supprimé", async () => {
+    posts({ 1: post(1, { updatedAt: new Date("2026-11-02T08:00:00Z") }) });
+    await propose("supprimer_posts", { postIds: [1] });
+    const [, , args, , empreinte] = d.ajouterProposition.mock.calls[0];
+    d.getProposition.mockResolvedValue({ id: 77, userId: "u1", outil: "supprimer_posts", arguments: args, empreinte,
+      statut: "en_attente", expireA: new Date("2026-11-02T10:00:00Z") });
+    d.reclamerProposition.mockResolvedValue(true);
+    posts({ 1: post(1, { contentStatus: "ready", updatedAt: new Date("2026-11-02T09:05:00Z") }) });
+    const { validerProposition } = await import("../propositions");
+    expect(await validerProposition("u1", 77, new Date("2026-11-02T09:10:00Z"))).toEqual({ ok: false, raison: "expiree" });
     expect(s.deleteContent).not.toHaveBeenCalled();
   });
 
@@ -332,6 +346,17 @@ describe("repenser_campagne", () => {
     expect(d.ajouterProposition).not.toHaveBeenCalled();
   });
 
+  it("un post passé en publication auto depuis l'aperçu : la proposition expire", async () => {
+    await propose("repenser_campagne", { campagneId: 3, consigne: "moins" });
+    const [, , args, , empreinte] = d.ajouterProposition.mock.calls[0];
+    d.getProposition.mockResolvedValue({ id: 77, userId: "u1", outil: "repenser_campagne", arguments: args, empreinte,
+      statut: "en_attente", expireA: new Date("2026-11-02T10:00:00Z") });
+    d.reclamerProposition.mockResolvedValue(true);
+    s.getContent.mockResolvedValue([post(1, { autoPost: true }), post(2)]);
+    const { validerProposition } = await import("../propositions");
+    expect(await validerProposition("u1", 77, new Date("2026-11-02T09:10:00Z"))).toEqual({ ok: false, raison: "expiree" });
+  });
+
   it("refuse sans consigne, et pour une campagne d'une autre", async () => {
     expect((await propose("repenser_campagne", { campagneId: 3, consigne: "  " })).pourModele).toHaveProperty("erreur");
     expect((await propose("repenser_campagne", { campagneId: 8, consigne: "x" })).pourModele).toEqual({ erreur: "introuvable" });
@@ -345,7 +370,10 @@ describe("repenser_campagne", () => {
       { libelle: "Campagne « Saisons »", avant: "2 posts à venir", apres: "plan réécrit : deux posts par semaine" },
     ]);
     const [, , , , empreinte] = d.ajouterProposition.mock.calls[0];
-    expect(empreinte).toEqual([{ table: "campaigns", id: 3, champs: { status: "active", updatedAt: "2026-11-01T08:00:00.000Z" } }]);
+    expect(empreinte).toEqual([
+      { table: "campaigns", id: 3, champs: { status: "active", updatedAt: "2026-11-01T08:00:00.000Z" } },
+      { table: "posts_auto_campagne", id: 3, champs: { ids: [] } },
+    ]);
   });
 });
 
@@ -385,6 +413,10 @@ describe("retenir_rythme", () => {
     const { validerProposition } = await import("../propositions");
     expect(await validerProposition("u1", 77, new Date("2026-11-02T09:10:00Z"))).toEqual({ ok: false, raison: "expiree" });
     expect(ry.ecrireRythme).not.toHaveBeenCalled();
+  });
+
+  it("une précision qui n'est pas du texte est refusée, sans planter", async () => {
+    expect((await propose("retenir_rythme", { projetId: 5, postsParSemaine: 2, precision: 42 })).pourModele).toHaveProperty("erreur");
   });
 
   it("exécution : écrit le rythme et rend la ligne du bilan", async () => {
