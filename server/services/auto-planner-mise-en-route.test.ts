@@ -21,8 +21,8 @@ vi.mock("../db", () => ({
   db: { select: vi.fn(() => ({ from: () => ({ where: () => Promise.resolve([]) }) })) },
   pool: { query: vi.fn(), on: vi.fn() },
 }));
-const fil = vi.hoisted(() => ({ filActifPour: vi.fn(), miseEnRoute: vi.fn(), proposerRattachements: vi.fn(), chargerCarteMemo: vi.fn() }));
-vi.mock("./fil/interrupteur", () => ({ filActifPour: fil.filActifPour, miseEnRoute: fil.miseEnRoute }));
+const fil = vi.hoisted(() => ({ filActifPour: vi.fn(), mailsActifsPour: vi.fn(), miseEnRoute: vi.fn(), proposerRattachements: vi.fn(), chargerCarteMemo: vi.fn() }));
+vi.mock("./fil/interrupteur", () => ({ filActifPour: fil.filActifPour, mailsActifsPour: fil.mailsActifsPour, miseEnRoute: fil.miseEnRoute }));
 vi.mock("./fil/etapes", () => ({ proposerRattachements: fil.proposerRattachements }));
 vi.mock("./fil/carte", async (orig) => ({ ...(await orig<any>()), chargerCarteMemo: fil.chargerCarteMemo }));
 const mails = vi.hoisted(() => ({ synchroniserMailsEnAttente: vi.fn() }));
@@ -43,6 +43,7 @@ beforeEach(() => {
   storageMock.getProjects.mockResolvedValue([]);
   storageMock.fixOverlappingTasks.mockResolvedValue(undefined);
   fil.filActifPour.mockReturnValue(true);
+  fil.mailsActifsPour.mockReturnValue(true);
   fil.proposerRattachements.mockResolvedValue([]);
   fil.chargerCarteMemo.mockResolvedValue({ objectifs: [], chainesSansObjectif: new Map(), depuis: null });
   mails.synchroniserMailsEnAttente.mockResolvedValue({ creees: 0 });
@@ -90,8 +91,8 @@ describe("runDailyAutoPlanner — mails en attente (fil)", () => {
     expect(mails.synchroniserMailsEnAttente).toHaveBeenCalledWith("u1", expect.any(Date));
   });
 
-  it("hors interrupteur : jamais appelé", async () => {
-    fil.filActifPour.mockReturnValue(false);
+  it("mails coupés (FIL_MAILS_USERS) : jamais appelé, même sous l'interrupteur du fil", async () => {
+    fil.mailsActifsPour.mockReturnValue(false);
     await runDailyAutoPlanner("2026-11-12");
     expect(mails.synchroniserMailsEnAttente).not.toHaveBeenCalled();
   });

@@ -26,7 +26,7 @@ vi.mock("../../db", () => ({
   },
 }));
 
-import { filActifPour, miseEnRoute } from "./interrupteur";
+import { filActifPour, mailsActifsPour, miseEnRoute } from "./interrupteur";
 
 describe("filActifPour", () => {
   it("reconnaît les ids de la liste, espaces tolérés", () => {
@@ -38,6 +38,19 @@ describe("filActifPour", () => {
   it("faux quand la variable est vide ou absente", () => {
     expect(filActifPour("a", { FIL_CONDUCTEUR_USERS: "" } as NodeJS.ProcessEnv)).toBe(false);
     expect(filActifPour("a", {} as NodeJS.ProcessEnv)).toBe(false);
+  });
+});
+
+// 19 nov. 2026 : Jeanne coupe les tâches « Répondre à » ; on les rallume par FIL_MAILS_USERS.
+describe("mailsActifsPour", () => {
+  it("faux par défaut, même pour une utilisatrice du fil", () => {
+    expect(mailsActifsPour("a", { FIL_CONDUCTEUR_USERS: "a" } as NodeJS.ProcessEnv)).toBe(false);
+  });
+  it("vrai seulement si elle est aussi dans FIL_MAILS_USERS", () => {
+    const env = { FIL_CONDUCTEUR_USERS: "a,b", FIL_MAILS_USERS: " a " } as NodeJS.ProcessEnv;
+    expect(mailsActifsPour("a", env)).toBe(true);
+    expect(mailsActifsPour("b", env)).toBe(false);
+    expect(mailsActifsPour("c", { FIL_MAILS_USERS: "c" } as NodeJS.ProcessEnv)).toBe(false);
   });
 });
 

@@ -38,7 +38,7 @@ import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } f
 import { synchroniserValidationsProspection } from "./prospection-verification";
 import { etapesActives, chargerCarteMemo, type CarteFil } from "./fil/carte";
 import { parisTodayString } from "../utils/timezone";
-import { filActifPour, miseEnRoute } from "./fil/interrupteur";
+import { filActifPour, mailsActifsPour, miseEnRoute } from "./fil/interrupteur";
 import { proposerPostsPresence } from "./fil/presence";
 import { synchroniserMailsEnAttente } from "./fil/mails-attente";
 import { releverUneFois } from "./fil/indicateurs";
@@ -689,7 +689,8 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
         //           dont le dernier message vient d'un humain devient « Répondre à … », une seule
         //           fois. Avant la génération, pour qu'elle tienne compte de ces tâches. Un échec
         //           (boîte illisible, Unipile en panne) est consigné et n'arrête jamais le planificateur.
-        if (filActifPour(userId)) {
+        //           Coupé par défaut depuis le 19 nov. 2026 (FIL_MAILS_USERS pour rallumer).
+        if (mailsActifsPour(userId)) {
           await synchroniserMailsEnAttente(userId, new Date())
             .then((r) => { if (r.creees) console.log(`[fil] mails en attente : ${r.creees} tâche(s) « Répondre à » user=${userId}`); })
             .catch((e: any) => console.error(`[AutoPlanner] Mails en attente (fil) failed for ${userId}:`, e?.message));

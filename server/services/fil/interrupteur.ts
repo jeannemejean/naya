@@ -11,6 +11,16 @@ export function filActifPour(userId: string, env: NodeJS.ProcessEnv = process.en
 }
 
 /**
+ * Tâches « Répondre à » tirées des mails : coupées par défaut (Jeanne, 19 nov. 2026 : « pour
+ * l'instant on s'en fout des mails »). Rallumées pour une utilisatrice du fil listée dans
+ * FIL_MAILS_USERS.
+ */
+export function mailsActifsPour(userId: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const ids = (env.FIL_MAILS_USERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return filActifPour(userId, env) && ids.includes(userId);
+}
+
+/**
  * Pose `filConducteurDepuis` s'il est vide et renvoie la valeur en base. `nouveau` n'est vrai que
  * si CET appel a posé la date (sert à déclencher une proposition unique). La mise à jour est
  * conditionnée à « encore vide » : deux appels concurrents ne se piétinent pas.
