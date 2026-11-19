@@ -20,6 +20,7 @@ import {
   CONSIGNE_MAX, DejaEnCours, depsRepenserBranchees, lancerRepenser, normaliserConsigne,
   repenserEnCours, statutRepensable,
 } from "../../campagne/repenser";
+import { ecrireRythme, PREFIXE_RYTHME, rythmeDeLaMarque, rythmeValide, texteRythme } from "../../campagne/rythme";
 import {
   outilAValider, tachesNonFaitesDuJour,
   type Apercu, type BilanExecution, type Empreinte, type OutilPropose,
@@ -369,6 +370,57 @@ const repenserCampagne = outilAValider<{ campagneId: number; consigne: string }>
   },
 });
 
+// ── retenir_rythme ─────────────────────────────────────────────────────────────────────
+// Le rythme convenu pour une marque (spec cadence-contenu §3) : préférence « suivre » lue par la
+// génération de campagne, Repenser et la présence.
+
+const PRECISION_MAX = 300;
+const sansPrefixe = (texte: string) => (texte.startsWith(PREFIXE_RYTHME) ? texte.slice(PREFIXE_RYTHME.length) : texte);
+
+const retenirRythme = outilAValider<{ projetId: number; postsParSemaine: number; precision?: string }>({
+  nom: "retenir_rythme",
+  description: "Propose de retenir le rythme de publication d'une marque dans Naya (posts par semaine, et ce qui sort ailleurs, comme des news automatisées). Il s'appliquera aux campagnes, à Repenser et à la présence.",
+  schema: {
+    type: "object",
+    properties: {
+      projetId: { type: "integer", description: "Id du projet (la marque)." },
+      postsParSemaine: { type: "number", description: "Posts par semaine publiés depuis Naya (0,25 à 14)." },
+      precision: { type: "string", description: `Ce qui complète le rythme, en une phrase (${PRECISION_MAX} caractères au plus).` },
+    },
+    required: ["projetId", "postsParSemaine"],
+  },
+  async apercu(ctx, args) {
+    const projet = typeof args.projetId === "number" ? await storage.getProject(args.projetId, ctx.userId) : undefined;
+    if (!projet) return erreur("introuvable");
+    if (!rythmeValide(args.postsParSemaine)) return erreur("un rythme entre 0,25 et 14 posts par semaine");
+    if (args.precision && args.precision.length > PRECISION_MAX) return erreur(`précision de ${PRECISION_MAX} caractères au plus`);
+    const actuel = await rythmeDeLaMarque(ctx.userId, projet.id);
+    return {
+      resume: `Retenir le rythme de « ${projet.name} »`,
+      changements: [{
+        libelle: `Rythme de « ${projet.name} »`,
+        avant: actuel ? sansPrefixe(actuel.texte) : null,
+        apres: sansPrefixe(texteRythme(args.postsParSemaine, args.precision)),
+      }],
+      empreinte: [{ table: "rythme_projet", id: projet.id, champs: { texte: actuel?.texte ?? null } }],
+    };
+  },
+  async executer(ctx, args) {
+    const bilan: BilanExecution = { reussis: [], echecs: [] };
+    try {
+      const projet = await storage.getProject(args.projetId, ctx.userId);
+      if (!projet) { bilan.echecs.push(`Projet n° ${args.projetId} : introuvable`); return bilan; }
+      await ecrireRythme(ctx.userId, projet.id, texteRythme(args.postsParSemaine, args.precision));
+      const n = args.postsParSemaine;
+      bilan.reussis.push(`Rythme de « ${projet.name} » retenu : ${n.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} post${n > 1 ? "s" : ""} par semaine`);
+    } catch (e: any) {
+      console.error(`[agent] rythme du projet ${args.projetId} :`, e?.message ?? e);
+      bilan.echecs.push(`Rythme du projet n° ${args.projetId} : erreur imprévue`);
+    }
+    return bilan;
+  },
+});
+
 // ── creer_projet ───────────────────────────────────────────────────────────────────────
 
 const TYPES_PROJET = ["Business", "Personal Brand", "Passion Project", "Client Project", "Agency", "Internal", "Lifestyle"];
@@ -642,6 +694,6 @@ const saisirMesure = outilAValider<{ projetId: number; mois: string; champs: Rec
 });
 
 export const OUTILS_A_VALIDER: OutilPropose[] = [
-  deplacerTaches, decalerJournee, supprimerTaches, supprimerPosts, repenserCampagne,
+  deplacerTaches, decalerJournee, supprimerTaches, supprimerPosts, repenserCampagne, retenirRythme,
   creerProjetOutil, creerJalons, confirmerJalonOutil, saisirMesure,
 ];

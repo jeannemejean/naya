@@ -12,6 +12,7 @@ const s = vi.hoisted(() => ({
   getContentById: vi.fn(), deleteContent: vi.fn(), getCampaign: vi.fn(), getContent: vi.fn(),
 }));
 const d = vi.hoisted(() => ({ ajouterProposition: vi.fn(), ajouterAction: vi.fn(), getProposition: vi.fn(), reclamerProposition: vi.fn() }));
+const ry = vi.hoisted(() => ({ rythmeDeLaMarque: vi.fn(), ecrireRythme: vi.fn() }));
 const ra = vi.hoisted(() => ({ reajusterAteliers: vi.fn() }));
 const t = vi.hoisted(() => ({ creerTache: vi.fn(), modifierTache: vi.fn() }));
 vi.mock("../../../storage", () => ({ storage: s }));
@@ -19,6 +20,7 @@ vi.mock("../depot", () => ({ depot: d }));
 vi.mock("../../taches/ecrire-tache", () => t);
 vi.mock("../../memory/ranger", () => ({ rangerSouvenir: vi.fn(), lireSouvenir: vi.fn(), perimerSouvenir: vi.fn() }));
 vi.mock("../../atelier/reajuster", async (orig) => ({ ...(await orig<any>()), reajusterAteliers: ra.reajusterAteliers }));
+vi.mock("../../campagne/rythme", async (orig) => ({ ...(await orig<any>()), ...ry }));
 vi.mock("../../atelier/deps", () => ({ depsQuotidien: {} }));
 vi.mock("../recherche", () => ({ SOURCES: ["tache"], chercher: vi.fn(async () => []), lire: vi.fn(async () => null) }));
 
@@ -48,7 +50,7 @@ describe("classement", () => {
     }
     // + les trois propositions du fil conducteur (étapes, rattachement, journée allégée).
     expect(REGISTRE.filter((o) => o.classe === "a_valider").map((o) => o.nom).sort()).toEqual(
-      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "repenser_campagne", "saisir_mesure", "supprimer_posts", "supprimer_taches"],
+      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "repenser_campagne", "retenir_rythme", "saisir_mesure", "supprimer_posts", "supprimer_taches"],
     );
   });
 });
@@ -344,5 +346,50 @@ describe("repenser_campagne", () => {
     ]);
     const [, , , , empreinte] = d.ajouterProposition.mock.calls[0];
     expect(empreinte).toEqual([{ table: "campaigns", id: 3, champs: { status: "active", updatedAt: "2026-11-01T08:00:00.000Z" } }]);
+  });
+});
+
+describe("retenir_rythme", () => {
+  const actuel = { id: 40, texte: "Rythme de publication dans Naya : 5 posts par semaine.", parSemaine: 5 };
+
+  it("refuse 0 et 50 posts par semaine, et le projet d'une autre", async () => {
+    for (const n of [0, 50]) {
+      expect((await propose("retenir_rythme", { projetId: 5, postsParSemaine: n })).pourModele)
+        .toEqual({ erreur: "un rythme entre 0,25 et 14 posts par semaine" });
+    }
+    expect((await propose("retenir_rythme", { projetId: 8, postsParSemaine: 2 })).pourModele).toEqual({ erreur: "introuvable" });
+    expect(d.ajouterProposition).not.toHaveBeenCalled();
+  });
+
+  it("aperçu : l'ancien rythme et le nouveau, sans préfixe ; rien n'est écrit", async () => {
+    ry.rythmeDeLaMarque.mockResolvedValue(actuel);
+    const r = await propose("retenir_rythme", { projetId: 5, postsParSemaine: 2, precision: "les news sortent en automatique" });
+    expect(r.proposition?.changements).toEqual([{
+      libelle: "Rythme de « Mouture »",
+      avant: "5 posts par semaine.",
+      apres: expect.stringMatching(/^2 posts par semaine\. .*news/),
+    }]);
+    const [, , , , empreinte] = d.ajouterProposition.mock.calls[0];
+    expect(empreinte).toEqual([{ table: "rythme_projet", id: 5, champs: { texte: actuel.texte } }]);
+    expect(ry.ecrireRythme).not.toHaveBeenCalled();
+  });
+
+  it("un rythme écrit entre l'aperçu et la validation : expirée, rien écrit", async () => {
+    ry.rythmeDeLaMarque.mockResolvedValue(null);
+    await propose("retenir_rythme", { projetId: 5, postsParSemaine: 2 });
+    const [, , args, , empreinte] = d.ajouterProposition.mock.calls[0];
+    d.getProposition.mockResolvedValue({ id: 77, userId: "u1", outil: "retenir_rythme", arguments: args, empreinte,
+      statut: "en_attente", expireA: new Date("2026-11-02T10:00:00Z") });
+    d.reclamerProposition.mockResolvedValue(true);
+    ry.rythmeDeLaMarque.mockResolvedValue(actuel);
+    const { validerProposition } = await import("../propositions");
+    expect(await validerProposition("u1", 77, new Date("2026-11-02T09:10:00Z"))).toEqual({ ok: false, raison: "expiree" });
+    expect(ry.ecrireRythme).not.toHaveBeenCalled();
+  });
+
+  it("exécution : écrit le rythme et rend la ligne du bilan", async () => {
+    const b = await aValider("retenir_rythme").executer(ctx, { projetId: 5, postsParSemaine: 1 });
+    expect(ry.ecrireRythme).toHaveBeenCalledWith("u1", 5, "Rythme de publication dans Naya : 1 post par semaine.");
+    expect(b).toEqual({ reussis: ["Rythme de « Mouture » retenu : 1 post par semaine"], echecs: [] });
   });
 });

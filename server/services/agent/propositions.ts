@@ -135,6 +135,12 @@ const LECTEURS: Record<string, Lecteur> = {
     const c: any = await storage.getCampaign(id, userId);
     return c ? { ...c, updatedAt: c.updatedAt ? new Date(c.updatedAt).toISOString() : null } : undefined;
   },
+  // id = projet ; champs = { texte } : le rythme retenu (null s'il n'y en a pas).
+  async rythme_projet(userId, id) {
+    if (!(await storage.getProject(id, userId))) return undefined;
+    const { rythmeDeLaMarque } = await import("../campagne/rythme"); // la base, seulement ici
+    return { texte: (await rythmeDeLaMarque(userId, id))?.texte ?? null };
+  },
   async projects(userId, id) {
     return (await storage.getProject(id, userId)) as any;
   },
