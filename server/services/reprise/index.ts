@@ -15,6 +15,7 @@ import { normaliserDecisions, decisionParDefaut, type Decision, type EntreePromp
 import { placerElements, type ElementAPlacer } from "./placement";
 import { deciderJoursPosts, estPostManque, type Campagne, type PostManque, type SortiePosts } from "./posts";
 import { wallClockToInstant } from "../../utils/timezone";
+import { estPerimee } from "../orchestre/contrainte";
 
 type Tache = Record<string, any> & { id: number; title: string; taskType: string; scheduledDate: string | null };
 
@@ -93,6 +94,12 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
     deps.getTasksInRange(userId, cible, fin),
   ]);
   const enRetard = (anciennes as Tache[]).filter((t) => !t.completed && !t.archivedAt && t.scheduledDate && t.scheduledDate <= finRetard);
+  // Le vivier (chef d'orchestre, spec 2026-11-19 §3) : une tâche à venir dont l'échéance souple est
+  // dépassée de plus de 14 jours a été repoussée sans fin vers l'avant ; elle n'est jamais « en
+  // retard » et bouchait les semaines suivantes. Naya la juge avec les tâches en retard.
+  const idsEnRetard = new Set(enRetard.map((t) => t.id));
+  const perimees = (aVenir as Tache[]).filter((t) => !t.completed && !t.archivedAt && !idsEnRetard.has(t.id) && estPerimee(t, aujourdhui));
+  const idsPerimees = new Set(perimees.map((t) => t.id));
 
   const { isWorkDay } = await joursTravailles(deps, userId, cible, fin);
   const jours: string[] = [];
@@ -170,10 +177,11 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
   const aEcrire = new Map<string, { tache?: Tache; decision?: Decision; action: string; raison: string; nouvelle?: Tache & { rang: number; parent: Tache } }>();
   const semaines = new Set<string>();
 
-  for (const t of enRetard) {
+  for (const t of [...enRetard, ...perimees]) {
     if (dejaTraitees.has(t.id)) continue;
     const c = classer(t);
     if (c.genre === "ignorer") continue;
+    if (idsPerimees.has(t.id) && c.genre !== "libre") continue;
     if (c.genre === "rituel") { await archiver(t, "Rituel manqué : il revient à sa prochaine date."); continue; }
     if (c.genre === "atelier") { semaines.add(c.semaine); continue; }
     if (c.genre === "etapePost") {
@@ -316,6 +324,9 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
     // Une tâche « auto » reprise sur un autre jour n'est plus la génération de ce jour-là :
     // marquée « auto », elle empêcherait la génération d'y poser la suite (capaciteRestanteDuJour).
     if (t.source === "auto") patch.source = "replan";
+    // Vivier : l'échéance périmée est remplacée par celle de Naya, ou retirée (sinon la tâche
+    // reviendrait au tri chaque jour).
+    if (idsPerimees.has(t.id)) patch.dueDate = d?.auPlusTard ? wallClockToInstant("Europe/Paris", d.auPlusTard, "23:59") : null;
     if (change) {
       if (d!.titre) patch.title = d!.titre;
       if (d!.description) patch.description = d!.description;

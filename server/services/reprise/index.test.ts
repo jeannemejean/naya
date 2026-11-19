@@ -144,6 +144,42 @@ describe("reprendreTaches", () => {
     expect(deps.placerAteliers).toHaveBeenCalledWith("u", [expect.objectContaining({ id: 216 })], AUJ);
   });
 
+  // Chef d'orchestre (spec 2026-11-19 §3) : le vieux retard repoussé vers l'avant n'est jamais
+  // « en retard » ; il bouchait les semaines à venir. Naya le trie maintenant.
+  it("vivier : une tâche à venir dont l'échéance est dépassée de plus de 14 jours passe au jugement de Naya", async () => {
+    const { deps, t, journal, decider } = base([
+      { id: 40, title: "Cartographier les 5 objections", scheduledDate: "2026-11-05", estimatedDuration: 45, priority: 1, dueDate: new Date("2026-10-08T21:59:00Z") },
+      { id: 41, title: "Rédiger la promesse centrale", scheduledDate: "2026-11-06", estimatedDuration: 45, priority: 1, dueDate: new Date("2026-10-08T21:59:00Z") },
+      { id: 42, title: "Répondre à Karima", scheduledDate: "2026-11-04", estimatedDuration: 10, priority: 2, dueDate: new Date("2026-10-20T21:59:00Z") }, // 6 jours : pas au vivier
+      { id: 43, title: "Relancer Paul", source: "relance_prospect", scheduledDate: "2026-11-05", estimatedDuration: 10, dueDate: new Date("2026-09-01T21:59:00Z") }, // dure : jamais
+    ], { avis: { taches: [
+      { id: 40, action: "abandonner", titre: null, description: null, duree: null, fusionAvec: [], priorite: 3, auPlusTard: null, sousTaches: [], raison: "Plus d'actualité." },
+      { id: 41, action: "garder", titre: null, description: null, duree: null, fusionAvec: [], priorite: 1, auPlusTard: "2026-10-30", sousTaches: [], raison: "Toujours utile." },
+    ] } });
+
+    await reprendreTaches(deps, opts);
+
+    const vues = (decider.mock.calls[0] as any)[1].taches.map((x: any) => x.id).sort();
+    expect(vues).toEqual([40, 41]);
+    expect(t.get(40)!.archivedAt).toBeInstanceOf(Date);
+    expect(t.get(41)!.archivedAt).toBeNull();
+    // Gardée : sa nouvelle échéance est celle de Naya (fin de journée à Paris), elle ne revient pas au tri.
+    expect(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(t.get(41)!.dueDate)).toBe("2026-10-30");
+    expect(t.get(41)!.scheduledDate <= "2026-10-30").toBe(true);
+    expect(t.get(42)!.scheduledDate).toBe("2026-11-04");
+    expect(t.get(43)!.scheduledDate).toBe("2026-11-05");
+    expect(journal.find((l) => l.taskId === 40)?.action).toBe("abandonner");
+  });
+
+  it("vivier, gardée sans date de Naya : son échéance périmée est retirée", async () => {
+    const { deps, t } = base([
+      { id: 50, title: "Lister 8 marques", scheduledDate: "2026-11-05", estimatedDuration: 30, dueDate: new Date("2026-10-08T21:59:00Z") },
+    ]);
+    await reprendreTaches(deps, opts); // sans avis : tout est gardé
+    expect(t.get(50)!.archivedAt).toBeNull();
+    expect(t.get(50)!.dueDate).toBeNull();
+  });
+
   it("planification en pause : rien ne bouge", async () => {
     const { deps, t } = base([{ id: 40, title: "x", scheduledDate: AUJ }]);
     deps.getUserPreferences = async () => ({ planningStatus: "paused" });
