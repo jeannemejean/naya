@@ -86,3 +86,16 @@ export function comparerRang(a: Rangeable, b: Rangeable): number {
   if (pa !== pb) return pa - pb;
   return String(a.scheduledDate ?? "9999").localeCompare(String(b.scheduledDate ?? "9999"));
 }
+
+/**
+ * Une tâche planifiée APRÈS son échéance (dure ou souple non périmée) revient à `aujourdhui` ; le
+ * rangement par rang décide ensuite ce qui reste. Sans ça, une tâche partie loin n'en revenait
+ * jamais (le re-tassage ne fait que pousser vers l'avant). Étapes de posts et ateliers exclus :
+ * ils ont leur propre placement. Rend le jour cible, ou null.
+ */
+export function aRamener(t: TacheContrainte, aujourdhui: string): string | null {
+  if (t.contentId != null || echeanceAtelier({ taskType: t.taskType, actionData: t.actionData })) return null;
+  if (!t.scheduledDate || t.scheduledDate <= aujourdhui) return null;
+  const { echeance } = contrainteDe(t, { aujourdhui });
+  return echeance && t.scheduledDate > echeance ? aujourdhui : null;
+}
