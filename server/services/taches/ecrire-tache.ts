@@ -8,6 +8,7 @@
 // exactement comme avant le déplacement.
 
 import { storage } from "../../storage";
+import { parisTodayString, wallClockToInstant } from "../../utils/timezone";
 import { insertTaskSchema, type Task } from "@shared/schema";
 import { DAY_ABBRS, parseWorkDays } from "../campagne/placement";
 import { filtrerEditionTache } from "./edition";
@@ -134,6 +135,13 @@ export async function modifierTache(
         updates.scheduledTime = check.nextAvailableTime;
         merged.scheduledTime = check.nextAvailableTime;
       }
+    }
+
+    // Chef d'orchestre : reporter une tâche après son échéance, c'est repousser l'échéance au
+    // nouveau jour (sinon le re-tassage la ramènerait aussitôt avant).
+    if (updates.scheduledDate && !('dueDate' in updates) && (currentTask as any).dueDate) {
+      const echeance = parisTodayString(new Date((currentTask as any).dueDate));
+      if (updates.scheduledDate > echeance) updates.dueDate = wallClockToInstant('Europe/Paris', updates.scheduledDate, '23:59');
     }
 
     // `scheduledEndTime` est DÉRIVÉE : on la recalcule dès que l'heure ou la durée

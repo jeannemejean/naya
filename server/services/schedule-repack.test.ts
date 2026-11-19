@@ -457,4 +457,28 @@ describe("repackDayParRang", () => {
     expect(r.overflow).not.toContain(40);
     expect(r.moves.find((m) => m.id === 40)).toBeUndefined();
   });
+  it("une échéance dure du jour passe devant une échéance souple déjà dépassée (mieux classée)", () => {
+    const tasks = [
+      { id: 1, startMin: 9 * 60, durationMin: 180, rang: 0 },                           // souple d'hier
+      { id: 2, startMin: 13 * 60, durationMin: 300, rang: 1 },
+      { id: 3, startMin: 9 * 60, durationMin: 180, rang: 2, echeance: "2026-11-19" },   // dure du jour
+    ];
+    const r = repackDayParRang(tasks, opts, "2026-11-19", "2026-11-20");
+    // Avant la correction : 1 et 2 remplissaient la journée, 3 (dure) était forcée en chevauchement.
+    expect(r.forcees).toEqual([]);
+    expect(r.overflow).toEqual([2]);
+  });
+  it("une tâche forcée sans créneau reçoit une heure (en fin de journée), jamais aucune", () => {
+    const tasks = [
+      { id: 60, startMin: 9 * 60, durationMin: 180, rang: 0, echeance: "2026-11-19" },
+      { id: 61, startMin: 13 * 60, durationMin: 300, rang: 1, echeance: "2026-11-19" },
+      { id: 62, startMin: 0, durationMin: 30, rang: 2, echeance: "2026-11-19", unplaced: true as const },
+    ];
+    const r = repackDayParRang(tasks, opts, "2026-11-19", "2026-11-20");
+    expect(r.forcees).toEqual([62]);
+    const mv = r.moves.find((m) => m.id === 62);
+    expect(mv).toBeDefined();
+    expect(mv!.newStartMin).toBeGreaterThanOrEqual(17 * 60);
+    expect(mv!.newEndMin).toBeLessThanOrEqual(24 * 60);
+  });
 });

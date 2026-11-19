@@ -125,6 +125,25 @@ describe("modifierTache", () => {
     expect(r.tache.scheduledDate).toBe("2026-10-07");
   });
 
+  // Chef d'orchestre (relecture du 19 nov.) : reporter une tâche après son échéance, c'est
+  // décider de repousser l'échéance ; sinon le re-tassage la ramènerait aussitôt.
+  it("reporter après l'échéance repousse l'échéance au nouveau jour (fin de journée à Paris)", async () => {
+    storageMock.getTask.mockResolvedValue({ ...TACHE, dueDate: new Date("2026-10-07T21:59:00Z") });
+    const r = await modifierTache("user-1", 42, { scheduledDate: "2026-10-14", scheduledTime: "10:00" });
+    expect(r.ok).toBe(true);
+    const patch = storageMock.updateTask.mock.calls[0][1];
+    expect(new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(patch.dueDate)).toBe("2026-10-14");
+  });
+  it("reporter avant l'échéance, ou sans échéance : l'échéance ne bouge pas", async () => {
+    storageMock.getTask.mockResolvedValue({ ...TACHE, dueDate: new Date("2026-10-20T21:59:00Z") });
+    await modifierTache("user-1", 42, { scheduledDate: "2026-10-14", scheduledTime: "10:00" });
+    expect("dueDate" in storageMock.updateTask.mock.calls[0][1]).toBe(false);
+    storageMock.updateTask.mockClear();
+    storageMock.getTask.mockResolvedValue({ ...TACHE });
+    await modifierTache("user-1", 42, { scheduledDate: "2026-10-14", scheduledTime: "10:00" });
+    expect("dueDate" in storageMock.updateTask.mock.calls[0][1]).toBe(false);
+  });
+
   it("champ non éditable seul → 400 no_editable_fields", async () => {
     const r = await modifierTache("user-1", 42, { userId: "autre" });
     expect(r).toEqual({ ok: false, status: 400, message: "no_editable_fields" });

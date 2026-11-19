@@ -283,10 +283,14 @@ export function repackDayParRang(
   if (base.overflow.length === 0 && base.forcees.length === 0) return base;
 
   const ancres = tasks.filter((t) => t.anchored);
+  const bloquee = (t: RepackTaskEcheance) => !!jourSuivant && !!t.echeance && t.echeance < jourSuivant;
+  // Une échéance dure qui tombe avant demain est admise AVANT tout le reste : un rang meilleur
+  // (une échéance souple déjà dépassée, par exemple) ne doit jamais la faire forcer.
   const parRang = tasks
     .map((t, i) => ({ t, i }))
     .filter(({ t }) => !t.anchored)
-    .sort((a, b) => (a.t.rang ?? Number.MAX_SAFE_INTEGER) - (b.t.rang ?? Number.MAX_SAFE_INTEGER) || a.i - b.i)
+    .sort((a, b) => Number(bloquee(b.t)) - Number(bloquee(a.t))
+      || (a.t.rang ?? Number.MAX_SAFE_INTEGER) - (b.t.rang ?? Number.MAX_SAFE_INTEGER) || a.i - b.i)
     .map(({ t }) => t);
   const presents = new Set(tasks.map((t) => t.id));
   const gardees = new Set<number>();
@@ -306,11 +310,21 @@ export function repackDayParRang(
   }
 
   const final = essai(gardees);
-  const bloquee = (t: RepackTaskEcheance) => !!jourSuivant && !!t.echeance && t.echeance < jourSuivant;
   const parti = parRang.filter((t) => !gardees.has(t.id));
-  const forcees = parti.filter(bloquee).map((t) => t.id);
+  const forceesT = parti.filter(bloquee);
   const overflow = [...final.overflow, ...parti.filter((t) => !bloquee(t)).map((t) => t.id)];
-  return { moves: final.moves, overflow, forcees };
+  // Une tâche forcée garde son créneau ; sans créneau (arrivée en débordement), elle en reçoit un
+  // en fin de journée, au-delà de l'horaire si besoin : jamais de tâche sans heure.
+  const moves = [...final.moves];
+  let fin = Math.max(opts.floorMin ?? opts.dayStartMin, ...tasks.filter((t) => !t.unplaced && (t.anchored || gardees.has(t.id)))
+    .map((t) => (moves.find((m) => m.id === t.id)?.newEndMin ?? t.startMin + t.durationMin)),
+    ...moves.map((m) => m.newEndMin));
+  for (const t of forceesT.filter((x) => x.unplaced)) {
+    const debut = Math.min(fin, 24 * 60 - t.durationMin);
+    moves.push({ id: t.id, newStartMin: debut, newEndMin: debut + t.durationMin });
+    fin = debut + t.durationMin;
+  }
+  return { moves, overflow, forcees: forceesT.map((t) => t.id) };
 }
 
 /**

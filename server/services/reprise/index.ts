@@ -122,7 +122,9 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
   const noter = (t: Tache, action: string, raison: string, apres: Record<string, unknown>) =>
     journal.push({ userId, lot, taskId: t.id, action, raison, avant: etat(t), apres });
   const archiver = async (t: Tache, raison: string, action = "perimee") => {
-    await deps.updateTask(t.id, { archivedAt: new Date() });
+    // Vivier : l'échéance périmée part avec l'archive ; sinon une annulation renverrait la tâche
+    // au tri dès le lendemain.
+    await deps.updateTask(t.id, idsPerimees.has(t.id) ? { archivedAt: new Date(), dueDate: null } : { archivedAt: new Date() });
     noter(t, action, raison, { ...etat(t), archive: true });
     bilan.archivees++;
   };
@@ -319,7 +321,8 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
     const t = w.tache!;
     const d = w.decision;
     const change = !!d && (d.action === "reformuler" || d.action === "fusionner");
-    const reports = o.reinitialiserReports || change ? 0 : (t.learnedAdjustmentCount ?? 0) + 1;
+    // Une tâche du vivier n'était pas en retard : pas de report compté.
+    const reports = o.reinitialiserReports || change ? 0 : (t.learnedAdjustmentCount ?? 0) + (idsPerimees.has(t.id) ? 0 : 1);
     const patch: Record<string, unknown> = { ...creneau, learnedAdjustmentCount: reports };
     // Une tâche « auto » reprise sur un autre jour n'est plus la génération de ce jour-là :
     // marquée « auto », elle empêcherait la génération d'y poser la suite (capaciteRestanteDuJour).
@@ -337,7 +340,7 @@ export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Pro
     if (change) bilan.modifiees++; else bilan.replacees++;
   }
   for (const { parent, decision, ids, titres, premier } of Array.from(creeesParParent.values())) {
-    await deps.updateTask(parent.id, { archivedAt: new Date() });
+    await deps.updateTask(parent.id, idsPerimees.has(parent.id) ? { archivedAt: new Date(), dueDate: null } : { archivedAt: new Date() });
     noter(parent, "decouper", decision.raison, { ...etat(parent), scheduledDate: premier?.jour ?? null, creees: ids, sousTaches: titres, archive: true });
     bilan.modifiees++;
   }

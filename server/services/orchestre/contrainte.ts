@@ -99,3 +99,16 @@ export function aRamener(t: TacheContrainte, aujourdhui: string): string | null 
   const { echeance } = contrainteDe(t, { aujourdhui });
   return echeance && t.scheduledDate > echeance ? aujourdhui : null;
 }
+
+/**
+ * Le jour où revient une tâche ramenée : aujourd'hui s'il est travaillé, sinon le prochain jour
+ * travaillé. Null quand le re-tassage part d'un jour plus tard (`depuis` > aujourd'hui : reprise
+ * du soir, semaine, campagne…) : les tâches d'aujourd'hui ne sont alors pas chargées, et une
+ * tâche ramenée y tomberait sur des créneaux occupés.
+ */
+export function jourDeRamenee(
+  aujourdhui: string, depuis: string, estTravaille: (j: string) => boolean, prochainJourTravaille: (j: string) => string,
+): string | null {
+  if (depuis > aujourdhui) return null;
+  return estTravaille(aujourdhui) ? aujourdhui : prochainJourTravaille(aujourdhui);
+}

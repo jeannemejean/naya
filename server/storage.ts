@@ -205,7 +205,7 @@ import { memesChiffres } from "./services/mesure/calculs";
 import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, notInArray, ne, sql, type SQL } from "drizzle-orm";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayParRang } from "./services/schedule-repack";
-import { aRamener, contrainteDe, comparerRang } from "./services/orchestre/contrainte";
+import { aRamener, contrainteDe, comparerRang, jourDeRamenee } from "./services/orchestre/contrainte";
 import { TYPE_ATELIER, TYPE_VALIDATION, echeanceAtelier } from "@shared/atelier";
 import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, majEtape, postAProduire, rangEtape } from "./services/campagne/production";
 import { clesRetirees } from "./services/fondations/sections";
@@ -4595,18 +4595,20 @@ export class DatabaseStorage implements IStorage {
     // Chef d'orchestre (spec 2026-11-19) : une tâche partie après son échéance revient aujourd'hui ;
     // le rangement par rang ci-dessous décide ensuite si elle garde sa place.
     let ramenees = 0;
+    const jourRamenee = jourDeRamenee(parisToday, fromDate,
+      (j) => workDaySet.has(DAY_ABBRS_FIX[new Date(`${j}T12:00:00Z`).getUTCDay()]), nextWorkDay);
     for (const t of toFix) {
-      if (t.schedulingMode === 'fixed') continue;
-      const jour = aRamener(t, parisToday);
+      if (!jourRamenee || t.schedulingMode === 'fixed') continue;
       // Au-delà du prochain jour ouvré seulement : une tâche ramenée qui déborde à demain ne
       // repart pas en boucle à chaque tour du re-tassage.
-      if (!jour || (t.scheduledDate ?? '') <= nextWorkDay(parisToday)) continue;
+      if (!aRamener(t, parisToday) || (t.scheduledDate ?? '') <= nextWorkDay(jourRamenee)) continue;
+      const jour = jourRamenee;
       await db.update(tasks).set({ scheduledDate: jour, scheduledTime: null, scheduledEndTime: null })
         .where(and(eq(tasks.id, t.id), eq(tasks.userId, userId)));
       t.scheduledDate = jour; t.scheduledTime = null; t.scheduledEndTime = null;
       ramenees++;
     }
-    if (ramenees > 0) console.log(`[orchestre] ${ramenees} tâche(s) partie(s) après leur échéance ramenée(s) au ${parisToday} user=${userId}`);
+    if (ramenees > 0) console.log(`[orchestre] ${ramenees} tâche(s) partie(s) après leur échéance ramenée(s) au ${jourRamenee} user=${userId}`);
 
     // Grouper par date. Les tâches SANS créneau sont incluses (marquées `unplaced`) :
     // exigence produit — aucune tâche ne doit rester « non planifiée ».

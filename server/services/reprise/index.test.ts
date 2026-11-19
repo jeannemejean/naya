@@ -171,6 +171,19 @@ describe("reprendreTaches", () => {
     expect(journal.find((l) => l.taskId === 40)?.action).toBe("abandonner");
   });
 
+  it("vivier abandonné : l'échéance périmée part avec l'archive (une annulation ne la renvoie pas au tri) ; pas de report compté", async () => {
+    const { deps, t } = base([
+      { id: 60, title: "Vieille idée", scheduledDate: "2026-11-05", estimatedDuration: 30, dueDate: new Date("2026-10-08T21:59:00Z"), learnedAdjustmentCount: 0 },
+      { id: 61, title: "Autre vieille", scheduledDate: "2026-11-06", estimatedDuration: 30, dueDate: new Date("2026-10-08T21:59:00Z"), learnedAdjustmentCount: 0 },
+    ], { avis: { taches: [
+      { id: 60, action: "abandonner", titre: null, description: null, duree: null, fusionAvec: [], priorite: 3, auPlusTard: null, sousTaches: [], raison: "x" },
+    ] } });
+    await reprendreTaches(deps, opts);
+    expect(t.get(60)!.archivedAt).toBeInstanceOf(Date);
+    expect(t.get(60)!.dueDate).toBeNull();
+    expect(t.get(61)!.learnedAdjustmentCount).toBe(0);
+  });
+
   it("vivier, gardée sans date de Naya : son échéance périmée est retirée", async () => {
     const { deps, t } = base([
       { id: 50, title: "Lister 8 marques", scheduledDate: "2026-11-05", estimatedDuration: 30, dueDate: new Date("2026-10-08T21:59:00Z") },

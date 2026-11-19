@@ -1,6 +1,6 @@
 // Le langage commun du planning (spec 2026-11-19-chef-d-orchestre-design.md §1-2).
 import { describe, it, expect } from "vitest";
-import { contrainteDe, comparerRang, PEREMPTION_JOURS, estPerimee, aRamener } from "./contrainte";
+import { contrainteDe, comparerRang, PEREMPTION_JOURS, estPerimee, aRamener, jourDeRamenee } from "./contrainte";
 
 const AUJ = "2026-11-19";
 const due = (jour: string) => new Date(`${jour}T22:59:00.000Z`); // 23 h 59 à Paris
@@ -81,5 +81,19 @@ describe("aRamener (une tâche partie après son échéance revient)", () => {
   it("étapes de posts et ateliers : jamais (ils ont leur propre placement)", () => {
     expect(aRamener({ scheduledDate: "2026-12-04", contentId: 3, title: "Rédiger — x", dueDate: due("2026-11-21") }, AUJ)).toBeNull();
     expect(aRamener({ scheduledDate: "2026-12-04", taskType: "atelier_contenu", actionData: { echeance: "2026-11-21" } }, AUJ)).toBeNull();
+  });
+});
+
+describe("jourDeRamenee (où revient une tâche ramenée)", () => {
+  const ouvre = (j: string) => ![0, 6].includes(new Date(`${j}T12:00:00Z`).getUTCDay());
+  const suivant = (j: string) => { const d = new Date(`${j}T12:00:00Z`); do d.setUTCDate(d.getUTCDate() + 1); while (!ouvre(d.toISOString().slice(0, 10))); return d.toISOString().slice(0, 10); };
+  it("aujourd'hui quand c'est un jour travaillé et que le re-tassage part d'aujourd'hui", () => {
+    expect(jourDeRamenee("2026-11-19", "2026-11-19", ouvre, suivant)).toBe("2026-11-19");
+  });
+  it("le week-end : le prochain jour travaillé", () => {
+    expect(jourDeRamenee("2026-11-21", "2026-11-21", ouvre, suivant)).toBe("2026-11-23");
+  });
+  it("re-tassage qui part d'un jour plus tard (reprise du soir, semaine…) : pas de ramenée", () => {
+    expect(jourDeRamenee("2026-11-19", "2026-11-20", ouvre, suivant)).toBeNull();
   });
 });
