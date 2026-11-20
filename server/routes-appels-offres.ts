@@ -55,7 +55,21 @@ const veilleParDefaut: DepsVeilleRoutes = {
   },
 };
 
-export function registerAppelsOffresRoutes(app: Express, deps: DepsAppelsOffres = appelsOffresStore, veille: DepsVeilleRoutes = veilleParDefaut) {
+/** Après un changement de statut : jalons de l'AO (chef d'orchestre, étape 2) puis re-tassage. */
+export type ApresStatut = (userId: string) => Promise<void>;
+const apresStatutParDefaut: ApresStatut = async (userId) => {
+  const [{ synchroniserJalonsAO }, { depsJalonsAO }, { storage }, { parisTodayString }] = await Promise.all([
+    import("./services/orchestre/jalons-ao"), import("./services/orchestre/jalons-ao-deps"),
+    import("./storage"), import("./utils/timezone"),
+  ]);
+  const r = await synchroniserJalonsAO(userId, new Date(), depsJalonsAO);
+  if (r.crees || r.archivees || r.reEcheancees) await storage.fixOverlappingTasks(userId, parisTodayString(new Date()));
+};
+
+export function registerAppelsOffresRoutes(
+  app: Express, deps: DepsAppelsOffres = appelsOffresStore, veille: DepsVeilleRoutes = veilleParDefaut,
+  apresStatut: ApresStatut = apresStatutParDefaut,
+) {
   // Express 4 n'achemine pas un rejet async : sans ce garde-fou la requête pend.
   const sur = (h: (req: any, res: any) => Promise<any>) => async (req: any, res: any) => {
     try { await h(req, res); } catch (e: any) {
@@ -139,6 +153,10 @@ export function registerAppelsOffresRoutes(app: Express, deps: DepsAppelsOffres 
     if (Object.keys(modif).length === 0) return res.status(400).json({ message: "rien_a_modifier" });
     const ligne = await deps.modifierAppelOffres(id, req.userId, modif);
     if (!ligne) return res.status(404).json({ message: "not_found" });
+    // Les jalons ne doivent jamais faire échouer le changement de statut : consigné, avalé.
+    if (modif.statut) {
+      await apresStatut(req.userId).catch((e: any) => console.error("[AppelsOffres] jalons :", e?.message));
+    }
     res.json(ligne);
   }));
 }

@@ -716,6 +716,16 @@ export async function runDailyAutoPlanner(dateStr?: string): Promise<{ processed
             .catch((e: any) => console.error(`[AutoPlanner] Clôture du vendredi (fil) failed for ${userId}:`, e?.message));
         }
 
+        // 1 septies. Chef d'orchestre, étape 2 : les appels d'offres en rédaction posent leurs
+        //           jalons (rétro-planifiés depuis la date limite), un « premier jet prêt » pose sa
+        //           décision. Avant la génération : elle tient compte de ce temps. Un échec est
+        //           consigné et n'arrête rien.
+        if (filActifPour(userId)) {
+          await import("./orchestre/jalons-ao-deps")
+            .then(async ({ depsJalonsAO }) => (await import("./orchestre/jalons-ao")).synchroniserJalonsAO(userId, new Date(), depsJalonsAO))
+            .catch((e: any) => console.error(`[AutoPlanner] Jalons AO failed for ${userId}:`, e?.message));
+        }
+
         // 2. Générer les 7 prochains jours de travail
         const workDays = parseWorkDays(prefs?.workDays);
         const dates = nextWorkingDates(debutUtilisateur, 7, workDays);

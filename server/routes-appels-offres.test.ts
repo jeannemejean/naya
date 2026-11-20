@@ -32,12 +32,15 @@ describe("routes des appels d'offres", () => {
     }),
   };
 
+  const apresStatut = vi.fn(async (_userId: string) => {});
+
   beforeEach(async () => {
     vi.clearAllMocks();
+    apresStatut.mockImplementation(async () => {});
     donnees = lignes();
     const app = express();
     app.use(express.json());
-    registerAppelsOffresRoutes(app, deps as any);
+    registerAppelsOffresRoutes(app, deps as any, undefined, apresStatut);
     server = http.createServer(app);
     await new Promise<void>((r) => server.listen(0, r));
     base = `http://127.0.0.1:${(server.address() as any).port}`;
@@ -87,5 +90,20 @@ describe("routes des appels d'offres", () => {
   it("des notes vides redeviennent null", async () => {
     await patch(1, { notes: "   " });
     expect(deps.modifierAppelOffres).toHaveBeenCalledWith(1, "user-1", { notes: null });
+  });
+
+  it("un changement de statut pose les jalons de l'AO (étape 2 du chef d'orchestre) ; des notes seules, non", async () => {
+    expect((await patch(1, { statut: "en_redaction" })).status).toBe(200);
+    expect(apresStatut).toHaveBeenCalledWith("user-1");
+    apresStatut.mockClear();
+    expect((await patch(1, { notes: "x" })).status).toBe(200);
+    expect(apresStatut).not.toHaveBeenCalled();
+  });
+
+  it("un échec des jalons ne fait jamais échouer le changement de statut", async () => {
+    apresStatut.mockRejectedValueOnce(new Error("base indisponible"));
+    const r = await patch(1, { statut: "en_redaction" });
+    expect(r.status).toBe(200);
+    expect((await r.json()).statut).toBe("en_redaction");
   });
 });
