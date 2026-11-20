@@ -338,7 +338,7 @@ describe("le lot 4 au matin", () => {
     it("un lien du matin mène à l'écran mobile qui le montre, sinon au web", () => {
       expect(mobile.routeMobileDuLien("/outreach?onglet=reponses&conversation=31")).toBe("/conversation/31");
       expect(mobile.routeMobileDuLien("/outreach")).toBe("/prospection");
-      expect(mobile.routeMobileDuLien("/atelier?semaine=2026-11-09")).toBe("/(tabs)/content");
+      expect(mobile.routeMobileDuLien("/atelier?semaine=2026-11-09")).toBe("/atelier?semaine=2026-11-09");
       expect(mobile.routeMobileDuLien("/planning")).toBe("/(tabs)/calendar");
       expect(mobile.routeMobileDuLien("/appels-offres")).toBeNull();
       expect(mobile.routeMobileDuLien("/campaigns")).toBeNull();
