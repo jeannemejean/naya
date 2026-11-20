@@ -4,7 +4,7 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["server/**/*.test.ts", "shared/**/*.test.ts", "client/**/*.test.{ts,tsx}"],
+    include: ["server/**/*.test.ts", "shared/**/*.test.ts", "client/**/*.test.{ts,tsx}", "mobile/lib/**/*.test.ts"],
     // `default` garde la sortie console habituelle ; le second n'écrit QUE sur échec,
     // en AJOUTANT à `.vitest-echecs.log`. Il existe parce qu'un échec du 4 octobre 2026
     // a été perdu faute d'avoir son nom (sortie tronquée par la commande qui l'a vu),
