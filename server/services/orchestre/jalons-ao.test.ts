@@ -34,8 +34,8 @@ describe("jalonsDe", () => {
     expect(j.filter((x) => x.jalon === "redaction")).toHaveLength(4);
   });
 
-  it("pris tard : les échéances se tassent sur aujourd'hui, jamais avant ; jamais après le jour limite", () => {
-    const j = jalonsDe(ao({ dateLimite: limite("2026-11-23") }), AUJ, ouvre); // lundi
+  it("pris tard, fort potentiel : les échéances se tassent sur aujourd'hui, jamais avant ; jamais après le jour limite", () => {
+    const j = jalonsDe(ao({ dateLimite: limite("2026-11-23"), scoreAdequation: "fort" }), AUJ, ouvre); // lundi
     for (const x of j) {
       expect(x.echeance >= AUJ).toBe(true);
       expect(x.echeance <= "2026-11-23").toBe(true);
@@ -46,8 +46,21 @@ describe("jalonsDe", () => {
   });
 
   it("aujourd'hui un samedi : le plancher est le prochain jour travaillé", () => {
-    const j = jalonsDe(ao({ dateLimite: limite("2026-11-24") }), "2026-11-21", ouvre);
+    const j = jalonsDe(ao({ dateLimite: limite("2026-11-24"), scoreAdequation: "fort" }), "2026-11-21", ouvre);
     expect(Math.min(...j.map((x) => Date.parse(x.jourPlanifie)))).toBe(Date.parse("2026-11-23"));
+  });
+
+  it("pris tard, potentiel moyen, faible ou inconnu : on n'empile pas ; une seule tâche pour décider d'écarter", () => {
+    for (const scoreAdequation of ["moyen", "faible", null]) {
+      const j = jalonsDe(ao({ dateLimite: limite("2026-11-23"), scoreAdequation }), AUJ, ouvre);
+      expect(j).toHaveLength(1);
+      expect(j[0]).toMatchObject({ jalon: "delai_court", echeance: AUJ, jourPlanifie: AUJ, duree: 15 });
+      expect(j[0].titre).toBe("Délai trop court pour « Refonte du site de la mairie » : l'écarter ?");
+    }
+  });
+
+  it("délai suffisant : toutes les étapes, quel que soit le potentiel", () => {
+    expect(jalonsDe(ao({ scoreAdequation: "faible" }), AUJ, ouvre)).toHaveLength(6);
   });
 
   it("premier jet prêt : une seule décision, échéance = le jour où l'analyse doit commencer", () => {
@@ -175,7 +188,7 @@ describe("relecture : cas limites de la synchro", () => {
     const replacees: [number, string][] = [];
     let n = 100;
     await synchroniserJalonsAO("u", new Date("2026-11-19T08:00:00Z"), {
-      listerAO: async () => [ao({ dateLimite: limite("2026-11-24") })],
+      listerAO: async () => [ao({ dateLimite: limite("2026-11-24"), scoreAdequation: "fort" })],
       tachesAO: async () => [],
       estTravaille: async () => ouvre,
       creer: async (_u, d) => ({ id: n++, scheduledDate: d.actionData.ao.jalon === "depot" ? "2026-11-30" : d.scheduledDate }),

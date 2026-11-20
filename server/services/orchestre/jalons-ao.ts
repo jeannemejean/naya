@@ -11,7 +11,7 @@ export const TASK_TYPE_AO = "ao_jalon";
 export const PARTIE_REDACTION_MIN = 120;
 const LONGUEUR_OBJET = 60;
 
-export type Jalon = "decision" | "analyse" | "redaction" | "pieces" | "relecture" | "depot";
+export type Jalon = "decision" | "delai_court" | "analyse" | "redaction" | "pieces" | "relecture" | "depot";
 
 export interface AOJalonnable {
   id: number;
@@ -21,6 +21,8 @@ export interface AOJalonnable {
   dateLimite: Date | string | null;
   lienAvis?: string | null;
   projectId?: number | null;
+  /** fort | moyen | faible : seul un AO à fort potentiel a ses étapes tassées quand le délai est court. */
+  scoreAdequation?: string | null;
 }
 
 export interface JalonPlanifie {
@@ -100,6 +102,14 @@ export function jalonsDe(ao: AOJalonnable, aujourdhui: string, estTravaille: (j:
   if (ao.statut === "premier_jet_pret") {
     return [jalon("decision", analyse, 15, `Décider : répondre à « ${objetCourt(ao.objet)} » ?`,
       "Le premier jet est prêt. Lire et décider : lancer la rédaction (statut « en rédaction ») ou écarter. Naya pose ensuite les étapes jusqu'au dépôt.",
+      "admin")];
+  }
+  // Délai trop court pour le rétro-planning complet (la première étape tomberait avant aujourd'hui) :
+  // Naya ne tasse toutes les étapes sur les jours restants que pour un AO à fort potentiel (décision
+  // de Jeanne, 20 nov. 2026). Sinon, une seule tâche : décider de l'écarter.
+  if (analyse < plancher && ao.scoreAdequation !== "fort") {
+    return [jalon("delai_court", plancher, 15, `Délai trop court pour « ${objetCourt(ao.objet)} » : l'écarter ?`,
+      "Il ne reste pas assez de jours pour préparer l'offre sans empiler toutes les étapes, et cet appel d'offres n'est pas à fort potentiel. Naya ne remplit pas tes journées pour lui : l'écarter (statut « écarté »), ou le mener hors planning.",
       "admin")];
   }
   return [
@@ -220,7 +230,7 @@ export async function synchroniserJalonsAO(userId: string, maintenant: Date, dep
     await sur(`création ${a.jalon}`, async () => {
       const t = await deps.creer(userId, {
         title: a.titre, description: a.description,
-        type: "admin", category: "conversion", priority: a.jalon === "depot" || a.jalon === "decision" ? 1 : 2,
+        type: "admin", category: "conversion", priority: a.jalon === "depot" || a.jalon === "decision" || a.jalon === "delai_court" ? 1 : 2,
         estimatedDuration: a.duree, scheduledDate: a.jourPlanifie,
         dueDate: wallClockToInstant("Europe/Paris", a.echeance, "23:59"), taskEnergyType: a.energie,
         canBeFragmented: false, projectId: ao.projectId ?? null,

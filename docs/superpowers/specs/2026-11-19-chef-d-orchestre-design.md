@@ -196,5 +196,7 @@ l'API et l'agent ; un écran viendra si Jeanne le demande.
   tâches) et le lundi matin pose les ateliers. Ce qui reste est idempotent.
 - Agenda compté seulement dans les heures de travail, hors déjeuner, chevauchements fusionnés.
 - Report groupé d'une journée : l'échéance souple suit, comme pour un report à l'unité.
-- Reportés : re-tassage en arrière-plan plutôt qu'avant la réponse du PATCH d'un AO (latence) ;
-  empilement en fin de journée quand tous les jalons tombent le jour même (comportement existant).
+- Délai trop court pour le rétro-planning complet (Jeanne, 20 nov.) : les étapes ne sont tassées sur
+  les jours restants QUE pour un AO à fort potentiel (`scoreAdequation = fort`). Sinon, une seule
+  tâche de 15 min « Délai trop court pour … : l'écarter ? » (jalon `delai_court`).
+- Reporté : re-tassage en arrière-plan plutôt qu'avant la réponse du PATCH d'un AO (latence).
