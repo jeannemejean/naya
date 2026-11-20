@@ -58,12 +58,14 @@ const veilleParDefaut: DepsVeilleRoutes = {
 /** Après un changement de statut : jalons de l'AO (chef d'orchestre, étape 2) puis re-tassage. */
 export type ApresStatut = (userId: string) => Promise<void>;
 const apresStatutParDefaut: ApresStatut = async (userId) => {
-  const [{ synchroniserJalonsAO }, { depsJalonsAO }, { storage }, { parisTodayString }] = await Promise.all([
+  const [{ synchroniserJalonsAO }, { depsJalonsAO }, { storage }, { parisTodayString }, { filActifPour }] = await Promise.all([
     import("./services/orchestre/jalons-ao"), import("./services/orchestre/jalons-ao-deps"),
-    import("./storage"), import("./utils/timezone"),
+    import("./storage"), import("./utils/timezone"), import("./services/fil/interrupteur"),
   ]);
+  // Même interrupteur que le passage du matin.
+  if (!filActifPour(userId)) return;
   const r = await synchroniserJalonsAO(userId, new Date(), depsJalonsAO);
-  if (r.crees || r.archivees || r.reEcheancees) await storage.fixOverlappingTasks(userId, parisTodayString(new Date()));
+  if (Object.values(r).some((n) => n > 0)) await storage.fixOverlappingTasks(userId, parisTodayString(new Date()));
 };
 
 export function registerAppelsOffresRoutes(

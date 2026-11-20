@@ -50,10 +50,12 @@ describe("bilanSemaine", () => {
 });
 
 describe("estMomentDeLaRevue", () => {
-  it("le dimanche à partir de 18 h à Paris, et seulement alors", async () => {
+  it("le dimanche à partir de 20 h à Paris (après la reprise de 17 h UTC, été comme hiver), et seulement alors", async () => {
     const { estMomentDeLaRevue } = await import("./revue-semaine");
-    expect(estMomentDeLaRevue(new Date("2026-11-22T17:00:00Z"))).toBe(true);  // dimanche 18 h Paris
-    expect(estMomentDeLaRevue(new Date("2026-11-22T16:59:00Z"))).toBe(false); // dimanche 17 h 59
+    expect(estMomentDeLaRevue(new Date("2026-11-22T19:00:00Z"))).toBe(true);  // dimanche 20 h Paris
+    expect(estMomentDeLaRevue(new Date("2026-11-22T18:59:00Z"))).toBe(false); // dimanche 19 h 59
+    expect(estMomentDeLaRevue(new Date("2026-06-21T17:30:00Z"))).toBe(false); // été : 19 h 30, la reprise tourne
+    expect(estMomentDeLaRevue(new Date("2026-06-21T18:00:00Z"))).toBe(true);  // été : 20 h
     expect(estMomentDeLaRevue(new Date("2026-11-22T22:30:00Z"))).toBe(true);  // dimanche 23 h 30
     expect(estMomentDeLaRevue(new Date("2026-11-22T23:30:00Z"))).toBe(false); // lundi 0 h 30
     expect(estMomentDeLaRevue(new Date("2026-11-21T18:00:00Z"))).toBe(false); // samedi

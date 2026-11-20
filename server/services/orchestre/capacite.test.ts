@@ -43,3 +43,14 @@ describe("fluxDe (à quelle entité appartient une tâche)", () => {
     expect(fluxDe(t as any)).toBe(flux);
   });
 });
+
+describe("minutesAgendaDansJournee (relecture)", () => {
+  it("rognée aux heures de travail, hors déjeuner, chevauchements fusionnés", async () => {
+    const { minutesAgendaDansJournee } = await import("./capacite");
+    const j = { debut: 540, fin: 1080, pauses: [{ start: 720, end: 780 }] }; // 9 h-18 h, déjeuner 12 h-13 h
+    expect(minutesAgendaDansJournee([{ start: 1200, end: 1350 }], j)).toBe(0);            // dîner à 20 h
+    expect(minutesAgendaDansJournee([{ start: 600, end: 660 }, { start: 630, end: 690 }], j)).toBe(90); // 10 h-11 h 30
+    expect(minutesAgendaDansJournee([{ start: 690, end: 810 }], j)).toBe(60);             // 11 h 30-13 h 30 moins le déjeuner
+    expect(minutesAgendaDansJournee([{ start: 480, end: 570 }], j)).toBe(30);             // 8 h-9 h 30
+  });
+});

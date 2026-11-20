@@ -62,3 +62,32 @@ export function fluxDe(t: TacheClassable): Flux {
   if (t.goalId != null || t.milestoneId != null || ["generated", "auto", "goal", "milestone"].includes(t.source ?? "")) return "objectifs";
   return "autre";
 }
+
+type Plage = { start: number; end: number };
+
+const fusionner = (plages: Plage[]): Plage[] => {
+  const tri = plages.filter((p) => p.end > p.start).sort((a, b) => a.start - b.start);
+  const out: Plage[] = [];
+  for (const p of tri) {
+    const d = out[out.length - 1];
+    if (d && p.start <= d.end) d.end = Math.max(d.end, p.end);
+    else out.push({ ...p });
+  }
+  return out;
+};
+
+/**
+ * Minutes d'agenda qui prennent vraiment du temps de travail : rognées à [debut, fin], sans les
+ * pauses (déjeuner), chevauchements fusionnés. Un dîner le soir ne vide pas la journée.
+ */
+export function minutesAgendaDansJournee(plages: Plage[], j: { debut: number; fin: number; pauses?: Plage[] }): number {
+  const dansJournee = fusionner(plages.map((p) => ({ start: Math.max(p.start, j.debut), end: Math.min(p.end, j.fin) })));
+  const pauses = fusionner(j.pauses ?? []);
+  let total = 0;
+  for (const p of dansJournee) {
+    let m = p.end - p.start;
+    for (const q of pauses) m -= Math.max(0, Math.min(p.end, q.end) - Math.max(p.start, q.start));
+    total += m;
+  }
+  return total;
+}

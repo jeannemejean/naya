@@ -38,6 +38,9 @@ export function classer(t: TacheTriable): Classe {
   // « Répondre à X » et « Relancer X » : liées à un prospect et à une date qu'il a choisie,
   // le brouillon de relance est daté. Jamais archivées, fusionnées ni découpées par la reprise.
   if (t.source === "reponse_prospect" || t.source === "relance_prospect") return { genre: "ignorer" };
+  // Jalons d'appel d'offres : échéances dures tenues par la synchro des jalons (orchestre/jalons-ao.ts),
+  // qui les ramène aussi quand ils sont en retard. Jamais archivés, fusionnés ni découpés ici.
+  if (t.source === "appel_offres") return { genre: "ignorer" };
   if (t.ritualId != null) return { genre: "rituel" };
   if (estTacheAtelier(t)) {
     const semaine = (t.actionData as { semaine?: unknown } | null)?.semaine;

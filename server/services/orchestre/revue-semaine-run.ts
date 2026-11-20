@@ -27,12 +27,14 @@ export async function calculerBilanSemaine(userId: string, semaine: string, main
 }
 
 /**
- * La revue : jalons d'AO, tri du vivier (reprise vers lundi), ateliers, re-tassage depuis lundi,
- * puis le bilan journalisé. Chaque étape est consignée en cas d'échec et n'arrête pas la suivante.
+ * La revue : jalons d'AO, re-tassage depuis lundi, puis le bilan journalisé. Le tri du vivier
+ * (reprise) et les ateliers n'y sont pas : la reprise de 17 h UTC tourne aussi le dimanche, et le
+ * passage du lundi matin pose les ateliers. Deux reprises en parallèle prendraient deux décisions
+ * IA sur les mêmes tâches. Tout ce qui reste est idempotent : relancée (redémarrage), la revue ne
+ * refait rien de travers.
  */
 export async function revueDeLaSemaine(userId: string, maintenant = new Date()): Promise<BilanSemaine> {
-  const aujourdhui = parisTodayString(maintenant);
-  const lundi = semaineARevoir(aujourdhui);
+  const lundi = semaineARevoir(parisTodayString(maintenant));
   const etape = async (nom: string, f: () => Promise<unknown>) => {
     try { await f(); } catch (e: any) { console.error(`[orchestre] revue de la semaine, ${nom} user=${userId} :`, e?.message); }
   };
@@ -40,11 +42,6 @@ export async function revueDeLaSemaine(userId: string, maintenant = new Date()):
     const [{ synchroniserJalonsAO }, { depsJalonsAO }] = await Promise.all([import("./jalons-ao"), import("./jalons-ao-deps")]);
     await synchroniserJalonsAO(userId, maintenant, depsJalonsAO);
   });
-  await etape("vivier", async () => {
-    const [{ reprendreTaches }, { depsReprise }] = await Promise.all([import("../reprise"), import("../reprise/deps")]);
-    await reprendreTaches(await depsReprise(), { userId, aujourdhui, cible: lundi, inclureAujourdhui: true });
-  });
-  await etape("ateliers", async () => (await import("../atelier/deps")).passageAtelierMatin(userId));
   await etape("re-tassage", () => storage.fixOverlappingTasks(userId, lundi));
   const bilan = await calculerBilanSemaine(userId, lundi, maintenant);
   console.log(`[orchestre] revue de la semaine du ${lundi} user=${userId} : ${bilan.occupeMin}/${bilan.capaciteMin} min, ${bilan.risques.length} risque(s)`, JSON.stringify(bilan.parFlux));
@@ -53,7 +50,7 @@ export async function revueDeLaSemaine(userId: string, maintenant = new Date()):
 
 const faites = new Set<string>(); // `${userId}:${lundi}` : une revue par semaine et par processus
 
-/** Toutes les 15 min : le dimanche à partir de 18 h (Paris), une revue par utilisatrice du fil. */
+/** Toutes les 15 min : le dimanche à partir de 20 h (Paris), une revue par utilisatrice du fil. */
 export function scheduleRevueSemaine(): void {
   const tour = async () => {
     const maintenant = new Date();

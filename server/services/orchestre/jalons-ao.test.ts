@@ -79,7 +79,7 @@ describe("planDeSynchro", () => {
   });
 
   it("rien en base : tout est à créer", () => {
-    const p = planDeSynchro(attendus, []);
+    const p = planDeSynchro(attendus, [], AUJ);
     expect(p.aCreer).toHaveLength(6);
     expect(p.aArchiver).toEqual([]);
   });
@@ -87,7 +87,7 @@ describe("planDeSynchro", () => {
   it("une tâche cochée ou archivée n'est jamais recréée ni touchée", () => {
     const faite = tache("analyse", undefined, { completed: true, actionData: { ao: { id: 7, jalon: "analyse" }, echeanceDure: "2026-11-01" } });
     const archivee = tache("depot", undefined, { archivedAt: new Date() });
-    const p = planDeSynchro(attendus, [faite, archivee]);
+    const p = planDeSynchro(attendus, [faite, archivee], AUJ);
     expect(p.aCreer.map((x) => x.jalon)).not.toContain("analyse");
     expect(p.aCreer.map((x) => x.jalon)).not.toContain("depot");
     expect(p.aModifier).toEqual([]);
@@ -95,12 +95,12 @@ describe("planDeSynchro", () => {
 
   it("ouverte et plus attendue (statut avancé, limite passée) : archivée", () => {
     const orpheline = tache("decision", undefined);
-    expect(planDeSynchro(attendus, [orpheline]).aArchiver).toEqual([orpheline.id]);
+    expect(planDeSynchro(attendus, [orpheline], AUJ).aArchiver).toEqual([orpheline.id]);
   });
 
   it("ouverte, échéance changée (date limite repoussée) : l'échéance suit", () => {
     const t = tache("analyse", undefined, { actionData: { ao: { id: 7, jalon: "analyse" }, echeanceDure: "2026-11-20" } });
-    const p = planDeSynchro(attendus, [t]);
+    const p = planDeSynchro(attendus, [t], AUJ);
     expect(p.aModifier).toEqual([{ id: t.id, echeance: "2026-11-27" }]);
   });
 
@@ -119,15 +119,16 @@ describe("synchroniserJalonsAO", () => {
     const r = await synchroniserJalonsAO("u", new Date("2026-11-19T08:00:00Z"), {
       listerAO: async () => [ao(), ao({ id: 8, statut: "depose" })],
       tachesAO: async () => [
-        { id: 50, completed: false, archivedAt: null, actionData: { ao: { id: 8, jalon: "depot" }, echeanceDure: "2026-11-25" } },
-        { id: 51, completed: false, archivedAt: null, actionData: { ao: { id: 7, jalon: "depot" }, echeanceDure: "2026-12-01" } },
+        { id: 50, completed: false, archivedAt: null, scheduledDate: "2026-11-24", actionData: { ao: { id: 8, jalon: "depot" }, echeanceDure: "2026-11-25" } },
+        { id: 51, completed: false, archivedAt: null, scheduledDate: "2026-11-30", actionData: { ao: { id: 7, jalon: "depot" }, echeanceDure: "2026-12-01" } },
       ],
       estTravaille: async () => ouvre,
-      creer: async (_u, d) => { creees.push(d); return true; },
+      creer: async (_u, d) => { creees.push(d); return { id: creees.length, scheduledDate: d.scheduledDate }; },
       archiver: async (_u, id) => { archivees.push(id); },
       reEcheancer: async (_u, id, e) => { reEch.push([id, e]); },
+      rouvrir: async () => {}, replacer: async () => {},
     });
-    expect(r).toEqual({ crees: 5, archivees: 1, reEcheancees: 1 });
+    expect(r).toMatchObject({ crees: 5, archivees: 1, reEcheancees: 1 });
     expect(archivees).toEqual([50]);
     expect(reEch).toEqual([[51, "2026-12-03"]]);
     expect(creees[0]).toMatchObject({
@@ -135,5 +136,68 @@ describe("synchroniserJalonsAO", () => {
       actionData: { ao: { id: 7, jalon: "analyse" }, echeanceDure: "2026-11-27", lien: "/appels-offres", externalUrl: "https://exemple.fr/avis" },
     });
     expect(creees[0].dueDate.toISOString()).toBe("2026-11-27T22:59:00.000Z");
+  });
+});
+
+describe("relecture : cas limites de la synchro", () => {
+  const attendus = jalonsDe(ao(), AUJ, ouvre).map((j) => ({ aoId: 7, ...j }));
+  const base = (o: Partial<TacheAO>): TacheAO => ({ id: 1, completed: false, archivedAt: null, scheduledDate: "2026-11-26", actionData: { ao: { id: 7, jalon: "analyse" }, echeanceDure: "2026-11-27" }, ...o });
+
+  it("archivée par la synchro (statut aller-retour) : rouverte quand l'AO repasse en rédaction", () => {
+    const t = base({ archivedAt: new Date(), actionData: { ao: { id: 7, jalon: "analyse" }, echeanceDure: "2026-11-27", archiveParSynchro: true } });
+    const p = planDeSynchro(attendus, [t], AUJ);
+    expect(p.aRouvrir).toEqual([{ id: 1, echeance: "2026-11-27", jour: "2026-11-26" }]);
+    expect(p.aCreer.map((x) => x.jalon)).not.toContain("analyse");
+  });
+
+  it("archivée par elle (sans marque de la synchro) : jamais rouverte", () => {
+    const p = planDeSynchro(attendus, [base({ archivedAt: new Date() })], AUJ);
+    expect(p.aRouvrir).toEqual([]);
+  });
+
+  it("doublon ouvert d'une même clé : le second est archivé", () => {
+    const p = planDeSynchro(attendus, [base({ id: 1 }), base({ id: 2 })], AUJ);
+    expect(p.aArchiver).toEqual([2]);
+  });
+
+  it("ouverte mais en retard, ou planifiée après son échéance : replacée au jour prévu", () => {
+    expect(planDeSynchro(attendus, [base({ scheduledDate: "2026-11-17" })], AUJ).aReplacer).toEqual([{ id: 1, jour: "2026-11-26" }]);
+    expect(planDeSynchro(attendus, [base({ scheduledDate: "2026-11-30" })], AUJ).aReplacer).toEqual([{ id: 1, jour: "2026-11-26" }]);
+    expect(planDeSynchro(attendus, [base({ scheduledDate: "2026-11-24" })], AUJ).aReplacer).toEqual([]);
+  });
+
+  it("plus aucun jour travaillé avant la date limite (limite dimanche, samedi) : aucun jalon", () => {
+    expect(jalonsDe(ao({ dateLimite: limite("2026-11-22") }), "2026-11-21", ouvre)).toEqual([]);
+  });
+
+  it("créée par le moteur de créneaux après son échéance (journée pleine) : ramenée au jour prévu", async () => {
+    const { synchroniserJalonsAO } = await import("./jalons-ao");
+    const replacees: [number, string][] = [];
+    let n = 100;
+    await synchroniserJalonsAO("u", new Date("2026-11-19T08:00:00Z"), {
+      listerAO: async () => [ao({ dateLimite: limite("2026-11-24") })],
+      tachesAO: async () => [],
+      estTravaille: async () => ouvre,
+      creer: async (_u, d) => ({ id: n++, scheduledDate: d.actionData.ao.jalon === "depot" ? "2026-11-30" : d.scheduledDate }),
+      archiver: async () => {}, reEcheancer: async () => {}, rouvrir: async () => {},
+      replacer: async (_u, id, j) => { replacees.push([id, j]); },
+    });
+    expect(replacees).toHaveLength(1);
+    expect(replacees[0][1] <= "2026-11-23").toBe(true);
+  });
+
+  it("une création qui lève n'arrête pas le reste de la synchro", async () => {
+    const { synchroniserJalonsAO } = await import("./jalons-ao");
+    const archivees: number[] = [];
+    let appels = 0;
+    const r = await synchroniserJalonsAO("u", new Date("2026-11-19T08:00:00Z"), {
+      listerAO: async () => [ao()],
+      tachesAO: async () => [base({ id: 9, actionData: { ao: { id: 99, jalon: "depot" }, echeanceDure: "2026-11-25" } })],
+      estTravaille: async () => ouvre,
+      creer: async (_u, d) => { if (appels++ === 0) throw new Error("schéma"); return { id: appels, scheduledDate: d.scheduledDate }; },
+      archiver: async (_u, id) => { archivees.push(id); }, reEcheancer: async () => {}, rouvrir: async () => {}, replacer: async () => {},
+    });
+    expect(r.crees).toBe(5);
+    expect(archivees).toEqual([9]);
   });
 });

@@ -35,7 +35,7 @@ import { debutEffectifDePlanification } from './planning-start';
 import { remplacerReferencesNumerotees } from "./references-taches";
 import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
-import { tachesEncorePossibles } from "./orchestre/capacite";
+import { minutesAgendaDansJournee, tachesEncorePossibles } from "./orchestre/capacite";
 import { synchroniserValidationsProspection } from "./prospection-verification";
 import { etapesActives, chargerCarteMemo, type CarteFil } from "./fil/carte";
 import { parisTodayString } from "../utils/timezone";
@@ -329,7 +329,10 @@ async function generateForUser(userId: string, dateStr: string, fil?: { carte: C
   const calBlocked = await getCalendarBlockedRanges(userId, dateStr).catch(() => [] as Array<{ start: number; end: number }>);
   const enMinutes = tachesEncorePossibles({
     disponibles: availableMin, energie: energyFactor, tampon: bufferMin, taches: scheduledForToday,
-    agendaMin: calBlocked.reduce((s, r) => s + Math.max(0, r.end - r.start), 0),
+    agendaMin: minutesAgendaDansJournee(calBlocked, {
+      debut: workStartMin, fin: workEndMin,
+      pauses: lunchEnabled ? [{ start: lunchStartMin, end: lunchEndMin }] : [],
+    }),
   });
   const capaciteDuJour = Math.min(capaciteRestanteDuJour(existingForDate as any[], dynamicMaxTotal), enMinutes);
   if (capaciteDuJour === 0) return;

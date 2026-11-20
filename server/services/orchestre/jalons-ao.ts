@@ -75,6 +75,8 @@ export function jalonsDe(ao: AOJalonnable, aujourdhui: string, estTravaille: (j:
   if (jourLimite < aujourdhui) return [];
 
   const plancher = travailleDesLe(aujourdhui, estTravaille);
+  // Plus aucun jour travaillé d'ici la date limite : rien à poser (un jour non travaillé serait refusé).
+  if (plancher > jourLimite || !estTravaille(plancher)) return [];
   // Borné à [plancher, jour limite] : un AO pris tard se tasse, jamais avant aujourd'hui.
   const borne = (j: string) => (j < plancher ? (plancher > jourLimite ? jourLimite : plancher) : j);
 
@@ -121,6 +123,7 @@ export interface TacheAO {
   id: number;
   completed: boolean | null;
   archivedAt: Date | string | null;
+  scheduledDate?: string | null;
   actionData: unknown;
 }
 
@@ -132,24 +135,51 @@ const cleDeTache = (t: TacheAO): string | null => {
   return cleJalon(a.id, a.jalon, typeof a.partie === "number" ? a.partie : undefined);
 };
 
+/** Marque posée sur une tâche archivée par la synchro (et non par l'utilisatrice). */
+export const MARQUE_ARCHIVE = "archiveParSynchro";
+
 /**
- * Ce qu'il faut créer, archiver et ré-échéancer. Une tâche cochée ou archivée compte comme
- * existante (jamais recréée) et n'est jamais touchée.
+ * Ce qu'il faut créer, archiver, rouvrir, ré-échéancer et replacer.
+ * - Une tâche cochée, ou archivée par l'utilisatrice, compte comme existante : jamais recréée ni touchée.
+ * - Archivée par la synchro (statut avancé puis revenu) : rouverte.
+ * - Ouverte en double sur une même clé : les suivantes sont archivées.
+ * - Ouverte en retard (avant aujourd'hui) ou planifiée après son échéance : replacée au jour prévu
+ *   (la reprise ne touche pas aux jalons d'AO : c'est ici qu'ils reviennent).
  */
-export function planDeSynchro(attendus: Attendu[], existantes: TacheAO[]) {
-  const parCle = new Map<string, TacheAO>();
-  for (const t of existantes) { const c = cleDeTache(t); if (c) parCle.set(c, t); }
-  const cles = new Set(attendus.map((a) => cleJalon(a.aoId, a.jalon, a.partie)));
+export function planDeSynchro(attendus: Attendu[], existantes: TacheAO[], aujourdhui: string) {
   const ouverte = (t: TacheAO) => !t.completed && !t.archivedAt;
+  const parCle = new Map<string, TacheAO>();
+  const doublons: number[] = [];
+  for (const t of existantes) {
+    const c = cleDeTache(t);
+    if (!c) continue;
+    const deja = parCle.get(c);
+    if (!deja) { parCle.set(c, t); continue; }
+    // On garde une ouverte de préférence ; une ouverte en trop est un doublon.
+    if (ouverte(t) && ouverte(deja)) doublons.push(t.id);
+    else if (ouverte(t)) parCle.set(c, t);
+  }
+  const cles = new Set(attendus.map((a) => cleJalon(a.aoId, a.jalon, a.partie)));
 
   const aCreer = attendus.filter((a) => !parCle.has(cleJalon(a.aoId, a.jalon, a.partie)));
-  const aArchiver = existantes.filter((t) => ouverte(t) && !cles.has(cleDeTache(t) ?? "")).map((t) => t.id);
+  const aArchiver = [
+    ...existantes.filter((t) => ouverte(t) && !doublons.includes(t.id) && !cles.has(cleDeTache(t) ?? "")).map((t) => t.id),
+    ...doublons,
+  ];
   const aModifier: { id: number; echeance: string }[] = [];
+  const aRouvrir: { id: number; echeance: string; jour: string }[] = [];
+  const aReplacer: { id: number; jour: string }[] = [];
   for (const a of attendus) {
     const t = parCle.get(cleJalon(a.aoId, a.jalon, a.partie));
-    if (t && ouverte(t) && (t.actionData as any)?.echeanceDure !== a.echeance) aModifier.push({ id: t.id, echeance: a.echeance });
+    if (!t || t.completed) continue;
+    if (t.archivedAt) {
+      if ((t.actionData as any)?.[MARQUE_ARCHIVE] === true) aRouvrir.push({ id: t.id, echeance: a.echeance, jour: a.jourPlanifie });
+      continue;
+    }
+    if ((t.actionData as any)?.echeanceDure !== a.echeance) aModifier.push({ id: t.id, echeance: a.echeance });
+    if (t.scheduledDate && (t.scheduledDate < aujourdhui || t.scheduledDate > a.echeance)) aReplacer.push({ id: t.id, jour: a.jourPlanifie });
   }
-  return { aCreer, aArchiver, aModifier };
+  return { aCreer, aArchiver, aModifier, aRouvrir, aReplacer };
 }
 
 export interface DepsJalonsAO {
@@ -157,10 +187,16 @@ export interface DepsJalonsAO {
   /** Toutes les tâches `source = appel_offres` de l'utilisatrice, cochées et archivées comprises. */
   tachesAO(userId: string): Promise<TacheAO[]>;
   estTravaille(userId: string): Promise<(jour: string) => boolean>;
-  creer(userId: string, donnees: Record<string, unknown>): Promise<boolean>;
+  /** La tâche créée (id et jour où le moteur de créneaux l'a posée), ou null si refusée. */
+  creer(userId: string, donnees: Record<string, any>): Promise<{ id: number; scheduledDate: string | null } | null>;
+  /** Archive et pose la marque MARQUE_ARCHIVE. */
   archiver(userId: string, id: number): Promise<void>;
   /** Pose la nouvelle échéance dure (actionData.echeanceDure, dueDate fin du jour). */
   reEcheancer(userId: string, id: number, echeance: string): Promise<void>;
+  /** Désarchive, retire la marque, pose l'échéance et le jour (heure laissée au re-tassage). */
+  rouvrir(userId: string, id: number, echeance: string, jour: string): Promise<void>;
+  /** Pose le jour, heure laissée au re-tassage. */
+  replacer(userId: string, id: number, jour: string): Promise<void>;
 }
 
 export async function synchroniserJalonsAO(userId: string, maintenant: Date, deps: DepsJalonsAO) {
@@ -168,28 +204,47 @@ export async function synchroniserJalonsAO(userId: string, maintenant: Date, dep
   const [aos, existantes, estTravaille] = await Promise.all([deps.listerAO(userId), deps.tachesAO(userId), deps.estTravaille(userId)]);
   const parId = new Map(aos.map((a) => [a.id, a]));
   const attendus: Attendu[] = aos.flatMap((ao) => jalonsDe(ao, aujourdhui, estTravaille).map((j) => ({ aoId: ao.id, ...j })));
-  const plan = planDeSynchro(attendus, existantes);
+  const plan = planDeSynchro(attendus, existantes, aujourdhui);
 
+  // Chaque écriture est isolée : une erreur est consignée et n'arrête pas les suivantes.
+  const sur = async (quoi: string, f: () => Promise<unknown>) => {
+    try { await f(); return true; } catch (e: any) {
+      console.error(`[orchestre] jalons AO, ${quoi} user=${userId} :`, e?.message);
+      return false;
+    }
+  };
   let crees = 0;
+  let replacees = 0;
   for (const a of plan.aCreer) {
     const ao = parId.get(a.aoId)!;
-    const ok = await deps.creer(userId, {
-      title: a.titre, description: a.description,
-      type: "admin", category: "conversion", priority: a.jalon === "depot" || a.jalon === "decision" ? 1 : 2,
-      estimatedDuration: a.duree, scheduledDate: a.jourPlanifie,
-      dueDate: wallClockToInstant("Europe/Paris", a.echeance, "23:59"), taskEnergyType: a.energie,
-      canBeFragmented: false, projectId: ao.projectId ?? null,
-      source: SOURCE_AO, taskType: TASK_TYPE_AO, completed: false,
-      actionData: {
-        ao: { id: a.aoId, jalon: a.jalon, ...(a.partie ? { partie: a.partie } : {}) },
-        echeanceDure: a.echeance, lien: "/appels-offres", ...(ao.lienAvis ? { externalUrl: ao.lienAvis } : {}),
-      },
+    await sur(`création ${a.jalon}`, async () => {
+      const t = await deps.creer(userId, {
+        title: a.titre, description: a.description,
+        type: "admin", category: "conversion", priority: a.jalon === "depot" || a.jalon === "decision" ? 1 : 2,
+        estimatedDuration: a.duree, scheduledDate: a.jourPlanifie,
+        dueDate: wallClockToInstant("Europe/Paris", a.echeance, "23:59"), taskEnergyType: a.energie,
+        canBeFragmented: false, projectId: ao.projectId ?? null,
+        source: SOURCE_AO, taskType: TASK_TYPE_AO, completed: false,
+        actionData: {
+          ao: { id: a.aoId, jalon: a.jalon, ...(a.partie ? { partie: a.partie } : {}) },
+          echeanceDure: a.echeance, lien: "/appels-offres", ...(ao.lienAvis ? { externalUrl: ao.lienAvis } : {}),
+        },
+      });
+      if (!t) return;
+      crees++;
+      // Journée pleine : le moteur de créneaux a pu la pousser après son échéance. Ramenée au
+      // jour prévu ; le re-tassage la place (échéance dure : elle force sa place).
+      if (t.scheduledDate && t.scheduledDate > a.echeance) { await deps.replacer(userId, t.id, a.jourPlanifie); replacees++; }
     });
-    if (ok) crees++;
   }
-  for (const id of plan.aArchiver) await deps.archiver(userId, id);
-  for (const m of plan.aModifier) await deps.reEcheancer(userId, m.id, m.echeance);
-  const bilan = { crees, archivees: plan.aArchiver.length, reEcheancees: plan.aModifier.length };
-  if (crees || bilan.archivees || bilan.reEcheancees) console.log(`[orchestre] jalons AO user=${userId}`, bilan);
+  let archivees = 0;
+  for (const id of plan.aArchiver) if (await sur("archivage", () => deps.archiver(userId, id))) archivees++;
+  let reEcheancees = 0;
+  for (const m of plan.aModifier) if (await sur("échéance", () => deps.reEcheancer(userId, m.id, m.echeance))) reEcheancees++;
+  let rouvertes = 0;
+  for (const r of plan.aRouvrir) if (await sur("réouverture", () => deps.rouvrir(userId, r.id, r.echeance, r.jour))) rouvertes++;
+  for (const r of plan.aReplacer) if (await sur("replacement", () => deps.replacer(userId, r.id, r.jour))) replacees++;
+  const bilan = { crees, archivees, reEcheancees, rouvertes, replacees };
+  if (Object.values(bilan).some((n) => n > 0)) console.log(`[orchestre] jalons AO user=${userId}`, bilan);
   return bilan;
 }

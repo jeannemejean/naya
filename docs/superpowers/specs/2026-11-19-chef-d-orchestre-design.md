@@ -171,11 +171,30 @@ utilise la capacité en minutes (§3) au lieu du nombre de tâches.
 
 ### Étape 5 — la revue de la semaine
 
-Dimanche à 18 h (Paris), `revueDeLaSemaine(userId)` : jalons d'AO synchronisés, tri du vivier
-(reprise), ateliers de la semaine posés, re-tassage des deux semaines à venir, puis le bilan
+Dimanche à 20 h (Paris), `revueDeLaSemaine(userId)` : jalons d'AO synchronisés, re-tassage depuis
+lundi, puis le bilan
 de la semaine journalisé. Le bilan est CALCULÉ à la demande (pur, `bilanSemaine(taches, capacite)`,
 route `GET /api/orchestre/semaine`), jamais stocké : il est toujours à jour, et aucune migration
 n'est nécessaire. Il donne les minutes par flux contre la capacité de chaque jour et les échéances
 dures à risque (tâche planifiée après son échéance, ou journée chargée au-delà de sa capacité).
 Le matin ne fait ensuite que des ajustements locaux. Pas de nouvel écran : le bilan est lisible par
 l'API et l'agent ; un écran viendra si Jeanne le demande.
+
+### Décisions de la relecture (20 nov. 2026)
+
+- La reprise ne touche jamais aux jalons d'AO (`classer` → ignorer) : l'IA pouvait archiver
+  « déposer l'offre » ou la découper en tâches sans échéance. La synchro des jalons ramène elle-même
+  un jalon en retard, ou planifié après son échéance, au jour prévu.
+- Archivé par la synchro (statut qui avance) : marqué `archiveParSynchro`, rouvert si l'AO revient
+  en rédaction. Archivé par Jeanne : jamais rouvert. Supprimer un jalon l'archive (sinon la synchro
+  le recréerait). Doublons d'une même clé archivés.
+- Un jalon que le moteur de créneaux pose après son échéance (journée pleine) est ramené au jour
+  prévu ; le re-tassage le force à sa place (échéance dure).
+- Plus aucun jour travaillé avant la date limite : aucun jalon (un jour non travaillé serait refusé).
+- La revue du dimanche passe à 20 h et ne lance plus la reprise ni les ateliers : la reprise de
+  17 h UTC tourne aussi le dimanche (deux reprises en parallèle = deux décisions IA sur les mêmes
+  tâches) et le lundi matin pose les ateliers. Ce qui reste est idempotent.
+- Agenda compté seulement dans les heures de travail, hors déjeuner, chevauchements fusionnés.
+- Report groupé d'une journée : l'échéance souple suit, comme pour un report à l'unité.
+- Reportés : re-tassage en arrière-plan plutôt qu'avant la réponse du PATCH d'un AO (latence) ;
+  empilement en fin de journée quand tous les jalons tombent le jour même (comportement existant).

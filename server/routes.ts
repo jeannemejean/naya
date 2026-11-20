@@ -172,7 +172,7 @@ import {
   DAY_ABBRS, parseWorkDays, hhmmToMin,
   DEFAULT_WORK_DAYS, placerTachesCampagne, placerPostsCampagne, placerTachesProductionPourCampagne,
 } from "./services/campagne/placement";
-import { parisHourOf, parisTodayString } from "./utils/timezone";
+import { parisHourOf, parisTodayString, wallClockToInstant } from "./utils/timezone";
 import { generateGoalTasks, etapeDuPlanObjectif } from "./services/goal-tasks";
 import { generateSearchBrief, generateSequence, generateLeadCriteria } from "./services/prospection";
 import { generateSequencePlan, CONDITIONS as SEQUENCE_STEP_CONDITIONS } from "./services/sequence-plan";
@@ -4291,7 +4291,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
 
       let updated = 0;
       for (const task of toMove) {
-        await storage.updateTask(task.id, { scheduledDate: toDate });
+        // Report explicite : l'échéance souple suit (même règle que modifierTache), sinon le
+        // re-tassage ramènerait aussitôt la tâche avant son échéance.
+        const echeance = task.dueDate ? parisTodayString(new Date(task.dueDate)) : null;
+        const patch: Record<string, unknown> = { scheduledDate: toDate };
+        if (echeance && toDate > echeance) patch.dueDate = wallClockToInstant('Europe/Paris', toDate, '23:59');
+        await storage.updateTask(task.id, patch as any);
         updated++;
       }
 
@@ -5858,7 +5863,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         } as any);
         feedbackId = fb.id;
       }
-      await storage.deleteTask(taskId);
+      // Jalon d'appel d'offres : archivé, pas effacé. Effacé, la synchro des jalons le recréerait
+      // au passage suivant ; archivé par elle, il compte comme tranché (orchestre/jalons-ao.ts).
+      if (task.source === 'appel_offres') await storage.updateTask(taskId, { archivedAt: new Date() } as any);
+      else await storage.deleteTask(taskId);
       res.json({ deleted: true, feedbackId });
     } catch (error) {
       console.error("Error deleting task:", error);

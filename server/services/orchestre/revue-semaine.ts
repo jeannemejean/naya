@@ -78,9 +78,9 @@ export function bilanSemaine(taches: TacheBilan[], o: { jours: string[]; capacit
   };
 }
 
-export const HEURE_REVUE = 18;
+export const HEURE_REVUE = 20;
 
-/** Le dimanche, à partir de 18 h (Paris). */
+/** Le dimanche, à partir de 20 h (Paris) : après la reprise de 17 h UTC (18 h l'hiver, 19 h l'été). */
 export function estMomentDeLaRevue(maintenant: Date): boolean {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
     timeZone: "Europe/Paris", weekday: "short", hour: "2-digit", hourCycle: "h23",
