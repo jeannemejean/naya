@@ -37,6 +37,14 @@ describe("lireQualification", () => {
     expect(() => lireQualification(JSON.stringify(sansResume))).toThrow(/structure_invalide/);
     expect(() => lireQualification("Voici mon analyse : fort")).toThrow(/non JSON/);
   });
+
+  it("un bloquant trop long est raccourci, pas une raison de jeter toute l'analyse (6 avis perdus le 20 nov.)", () => {
+    const long = "Les relations presse institutionnelles supposent un réseau ".repeat(8);
+    const r = lireQualification(JSON.stringify(q({ bloquants: [long, "court"] })));
+    expect(r.bloquants[0].length).toBeLessThanOrEqual(250);
+    expect(r.bloquants[0].endsWith("…")).toBe(true);
+    expect(r.bloquants[1]).toBe("court");
+  });
 });
 
 describe("ligneQualifiee", () => {
@@ -95,6 +103,13 @@ describe("garde-fous", () => {
     expect(SYSTEME_QUALIFICATION).toContain("RÈGLE CAPACITÉS FINANCIÈRES");
   });
 
+  it("le secteur de l'acheteur n'est jamais un malus : on juge le métier (règle des consignes de Jeanne)", () => {
+    expect(SYSTEME_QUALIFICATION).toContain("SECTEUR DE L'ACHETEUR");
+    expect(SYSTEME_QUALIFICATION).toMatch(/jamais un bloquant ni une raison de baisser le score/);
+    // Le contexte ne prime plus sur le périmètre des marchés publics (seulement sur les offres et savoir-faire).
+    expect(SYSTEME_QUALIFICATION).not.toMatch(/il prime\. Il ne change jamais/);
+  });
+
   it("tirets longs et demi-cadratins retirés", () => {
     expect(sansTiretsLongs("a — b – c")).toBe("a, b, c");
   });
@@ -139,7 +154,8 @@ describe("bornes et marque réservée au code", () => {
     expect(() => lireQualification(JSON.stringify(q({ piecesExigees: "x".repeat(LIMITES.pieces + 1) })))).toThrow(/structure_invalide/);
     expect(() => lireQualification(JSON.stringify(q({ criteresPonderation: "x".repeat(LIMITES.criteres + 1) })))).toThrow(/structure_invalide/);
     expect(() => lireQualification(JSON.stringify(q({ bloquants: Array(LIMITES.bloquants + 1).fill("b") })))).toThrow(/structure_invalide/);
-    expect(() => lireQualification(JSON.stringify(q({ bloquants: ["x".repeat(LIMITES.bloquant + 1)] })))).toThrow(/structure_invalide/);
+    // Un bloquant trop long n'est plus rejeté : il est raccourci (voir lireQualification).
+    expect(lireQualification(JSON.stringify(q({ bloquants: ["x".repeat(LIMITES.bloquant + 1)] }))).bloquants[0]).toHaveLength(LIMITES.bloquant);
     expect(lireQualification(JSON.stringify(q({ bloquants: Array(LIMITES.bloquants).fill("x".repeat(LIMITES.bloquant)) }))).bloquants).toHaveLength(LIMITES.bloquants);
   });
 
