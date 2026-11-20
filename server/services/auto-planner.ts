@@ -35,6 +35,7 @@ import { debutEffectifDePlanification } from './planning-start';
 import { remplacerReferencesNumerotees } from "./references-taches";
 import { filtrerTachesGenerees } from "./filtre-taches-generees";
 import { entrelacerParProjet, repartirCapaciteDuJour, capaciteRestanteDuJour } from "./repartition-projets";
+import { tachesEncorePossibles } from "./orchestre/capacite";
 import { synchroniserValidationsProspection } from "./prospection-verification";
 import { etapesActives, chargerCarteMemo, type CarteFil } from "./fil/carte";
 import { parisTodayString } from "../utils/timezone";
@@ -322,7 +323,15 @@ async function generateForUser(userId: string, dateStr: string, fil?: { carte: C
   const dynamicMaxTotal = maxTasksForDay({ availableMin, energyFactor, bufferMin });
   // Capacité RESTANTE du jour (les tâches déjà posées occupent leur place), répartie entre
   // projets au prorata du budget temps, une tâche au moins par projet quand c'est possible.
-  const capaciteDuJour = capaciteRestanteDuJour(existingForDate as any[], dynamicMaxTotal);
+  // Chef d'orchestre, étape 3 : la capacité se compte aussi en MINUTES, avec 70 % seulement du
+  // temps planifiable. Ce que les autres entités ont posé (atelier, campagne, prospection, jalons
+  // d'AO) et l'agenda occupent leur place ; les tâches d'objectifs ne prennent que le reste.
+  const calBlocked = await getCalendarBlockedRanges(userId, dateStr).catch(() => [] as Array<{ start: number; end: number }>);
+  const enMinutes = tachesEncorePossibles({
+    disponibles: availableMin, energie: energyFactor, tampon: bufferMin, taches: scheduledForToday,
+    agendaMin: calBlocked.reduce((s, r) => s + Math.max(0, r.end - r.start), 0),
+  });
+  const capaciteDuJour = Math.min(capaciteRestanteDuJour(existingForDate as any[], dynamicMaxTotal), enMinutes);
   if (capaciteDuJour === 0) return;
   const capsParProjet = repartirCapaciteDuJour(projectsToProcess as any[], capaciteDuJour);
 
@@ -335,7 +344,6 @@ async function generateForUser(userId: string, dateStr: string, fil?: { carte: C
 
   // 9. Slot-collision guard: tâches existantes + pause déjeuner + calendrier Google
   const blockedRanges = buildBlockedRanges(scheduledForToday, prefs);
-  const calBlocked = await getCalendarBlockedRanges(userId, dateStr).catch(() => []);
   blockedRanges.push(...calBlocked);
   // Depart au DEBUT de la journee de travail, jamais apres le dernier bloc.
   //

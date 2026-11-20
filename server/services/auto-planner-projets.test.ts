@@ -141,4 +141,29 @@ describe("auto-planner — tous les projets, journée entamée complétée, proj
     await runDailyAutoPlanner(LUNDI);
     expect(creees()).toHaveLength(0);
   });
+
+  it("chef d'orchestre, étape 3 : une journée déjà prise par l'atelier et une campagne ne reçoit plus de tâches d'objectifs", async () => {
+    storageMock.getTasksInRange.mockImplementation(async (_u: string, debut: string) =>
+      debut === LUNDI
+        ? [
+            { id: 1, title: "Atelier de contenu", source: "campaign", taskType: "atelier_contenu", type: "content", scheduledDate: LUNDI, scheduledTime: "09:00", estimatedDuration: 240 },
+            { id: 2, title: "Préparer le brief", source: "campaign", campaignId: 3, type: "admin", scheduledDate: LUNDI, scheduledTime: "14:00", estimatedDuration: 90 },
+          ]
+        : [],
+    );
+    await runDailyAutoPlanner(LUNDI);
+    expect(creees()).toHaveLength(0);
+  });
+
+  it("chef d'orchestre, étape 3 : à moitié prise, elle reçoit ce qui tient dans les 70 %", async () => {
+    storageMock.getTasksInRange.mockImplementation(async (_u: string, debut: string) =>
+      debut === LUNDI
+        ? [{ id: 1, title: "Atelier de contenu", source: "campaign", taskType: "atelier_contenu", type: "content", scheduledDate: LUNDI, scheduledTime: "09:00", estimatedDuration: 120 }]
+        : [],
+    );
+    await runDailyAutoPlanner(LUNDI);
+    // 480 × 0,7 = 336 ; − 130 (atelier + tampon) = 206 ; / 55 = 3.
+    expect(creees().length).toBeLessThanOrEqual(3);
+    expect(creees().length).toBeGreaterThan(0);
+  });
 });
