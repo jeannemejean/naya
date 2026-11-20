@@ -580,6 +580,19 @@ export const SOUPAPE_TASK_PROMPTS_LOOKBACK = 10;
 // réponses de chaque côté une fois l'usage installé. DÉFAUT RÉVISABLE.
 export const INSIGHT_TASK_PROMPTS_LOOKBACK = 200;
 
+/**
+ * Chef d'orchestre, étape 4 (un seul arbitre) : tout chemin qui écrit une date repasse par le
+ * re-tassage commun (rang, échéances dures, capacité). Depuis aujourd'hui (Paris). Un échec est
+ * consigné et ne fait jamais échouer la requête : les tâches sont déjà écrites.
+ */
+async function arbitrerApres(userId: string, origine: string): Promise<void> {
+  try {
+    await storage.fixOverlappingTasks(userId, parisTodayString(new Date()));
+  } catch (e: any) {
+    console.error(`[orchestre] re-tassage après ${origine} :`, e?.message);
+  }
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Fil conducteur : la carte objectifs → étapes est gardée 20 s (fil/carte.ts). Toute écriture
   // d'une utilisatrice (cocher, déplacer, créer…) l'oublie, pour que « 3 tâches sur 7 faites »
@@ -2155,6 +2168,7 @@ Write in clear, direct language. Be specific — reference actual offers, audien
         } as any);
         saved.push(task);
       }
+      await arbitrerApres(userId, 'goals/generate-tasks');
       res.json({ tasks: saved, count: saved.length });
     } catch (e: any) {
       console.error('[goals/generate-tasks]', e.message);
@@ -4280,6 +4294,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         updated++;
       }
 
+      await arbitrerApres(userId, 'bulk-reschedule');
       res.json({ updated });
     } catch (error) {
       console.error('PATCH /api/tasks/bulk-reschedule error:', error);
@@ -4678,6 +4693,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         } catch { /* non-fatal */ }
       }
 
+      await arbitrerApres(userId, 'generate-weekly');
       res.json({ reschedules: rescheduled, newTasks: newTasksSaved, weeklyRationale: aiResult.weeklyRationale });
     } catch (error) {
       console.error("Error generating weekly refinement:", error);
@@ -6178,6 +6194,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         count++;
       }
 
+      await arbitrerApres(userId, 'rebalance');
       res.json({ rebalanced: count });
     } catch (error: any) {
       console.error("Rebalance error:", error);
@@ -10921,6 +10938,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
 
       await storage.updateCampaign(id, userId, { tasksGenerated: true });
       const updatedCampaign = await storage.getCampaign(id, userId);
+      await arbitrerApres(userId, 'campaign redeploy');
       res.json({ campaign: updatedCampaign, tasksCreated: rdTasksCreated, tasksRemoved });
     } catch (error) {
       console.error("Error redeploying campaign:", error);
