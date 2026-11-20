@@ -37,7 +37,7 @@ exports[`placement de campagne : caractérisation des routes > launch : un crén
 ]
 `;
 
-exports[`placement de campagne : caractérisation des routes > redeploy : tâches replacées depuis aujourd'hui, sans contrôle de créneau en base > redeploy tâches 1`] = `
+exports[`placement de campagne : caractérisation des routes > redeploy : tâches replacées depuis aujourd'hui, sans contrôle de créneau en base, puis re-tassage commun (chef d'orchestre, étape 4) > redeploy tâches 1`] = `
 [
   "2026-10-19 09:00-09:30 Plan review [campaign/3/9]",
   "2026-11-03 09:00-09:30 Wrap up [campaign/3/9]",

@@ -224,6 +224,10 @@ function demarrerTachesDeFond() {
   scheduleAutoPlanner();
   // End-of-day rollover: moves incomplete tasks to next work day at 17:00 UTC (19:00 Paris)
   scheduleEndOfDayRollover();
+  // Chef d'orchestre, étape 5 : la revue de la semaine, le dimanche à partir de 18 h (Paris).
+  import("./services/orchestre/revue-semaine-run")
+    .then(({ scheduleRevueSemaine }) => scheduleRevueSemaine())
+    .catch((e: any) => console.error("[orchestre] revue de la semaine non démarrée :", e?.message));
   // Re-tassage intra-journee : ARRETE (arbitrage de Jeanne, 17 septembre 2026).
   //
   // Il deplacait toutes les 15 minutes, de 7h a 22h, chaque tache dont l'heure etait depassee

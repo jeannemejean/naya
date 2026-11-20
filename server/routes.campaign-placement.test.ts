@@ -211,7 +211,7 @@ describe("placement de campagne : caractérisation des routes", () => {
     expect(storageMock.getDayAvailabilityRange).toHaveBeenCalledWith("user-1", "2026-10-12", "2027-10-12");
   });
 
-  it("redeploy : tâches replacées depuis aujourd'hui, sans contrôle de créneau en base", async () => {
+  it("redeploy : tâches replacées depuis aujourd'hui, sans contrôle de créneau en base, puis re-tassage commun (chef d'orchestre, étape 4)", async () => {
     storageMock.getCampaign.mockResolvedValue(campagne({ status: "paused" }));
     const res = await call("redeploy");
     const json: any = await res.json();
@@ -220,7 +220,7 @@ describe("placement de campagne : caractérisation des routes", () => {
     expect(tasksCreated()).toMatchSnapshot("redeploy tâches");
     expect(storageMock.checkSlotAvailability).not.toHaveBeenCalled();
     expect(storageMock.createContent).not.toHaveBeenCalled();
-    expect(storageMock.fixOverlappingTasks).not.toHaveBeenCalled();
+    expect(storageMock.fixOverlappingTasks).toHaveBeenCalledWith("user-1", expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
     expect(storageMock.updateCampaign.mock.calls.map((c: any[]) => c[2])).toEqual([
       { status: "active", tasksGenerated: false, startDate: "2026-10-12", endDate: "2026-11-11" },
       { tasksGenerated: true },
