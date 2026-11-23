@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { estTacheProspection, indexMaintenant, trierFil } from "./logique";
 import type { TacheJour } from "./useActionsTaches";
 import { LigneFil } from "./LigneFil";
+import { estTachePerso } from "@shared/vie-perso";
 
 export function ListeTaches({ taches, maintenant, miseEnAvant, projets, onCocher, onOuvrir, estOuvrable }: {
   taches: TacheJour[];
@@ -79,6 +80,9 @@ export function ListeTaches({ taches, maintenant, miseEnAvant, projets, onCocher
                   )}
                 >
                   {tache.title}
+                  {estTachePerso(tache) && (
+                    <span className="ml-2 align-middle rounded-full bg-naya-sulphur/30 px-2 py-px text-[11px] font-semibold text-naya-olive">{t("viePerso.badge")}</span>
+                  )}
                 </span>
                 {/* Fil conducteur : à quoi sert la tâche, et l'étape qu'elle fait avancer. */}
                 <LigneFil pourquoi={tache.pourquoi} lien={tache.lien} barree={tache.completed} />

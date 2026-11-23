@@ -73,6 +73,13 @@ describe("espaces", () => {
     expect(ongletsVisibles(veille, false).map((o) => o.id)).toEqual(["tendances", "lecture"]);
     expect(ongletsVisibles(veille, true).map((o) => o.id)).toEqual(["tendances", "lecture", "savoir", "profils"]);
   });
+
+  it("l'onglet Vie perso n'apparaît qu'avec l'option", () => {
+    const auj = ESPACES.find((e) => e.id === "aujourdhui")!;
+    expect(ongletsVisibles(auj, true).map((o) => o.id)).toEqual(["aujourdhui", "semaine"]);
+    expect(ongletsVisibles(auj, false, new Set(["viePerso"])).map((o) => o.id)).toEqual(["aujourdhui", "semaine", "viePerso"]);
+    expect(espaceDuChemin("/vie-perso")).toEqual({ espace: "aujourdhui", onglet: "viePerso" });
+  });
 });
 
 // Les clés sont fabriquées (`espaces.<espace>...`) : keys-exist.test ne les voit pas.

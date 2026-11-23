@@ -3,6 +3,7 @@
 // projet actif s'y ajoute.
 import { Link, useLocation, useSearch } from "wouter";
 import { useTranslation } from "react-i18next";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { ESPACES, espaceDuChemin, estPageProjet, ongletsVisibles } from "@/lib/espaces";
 import { cn } from "@/lib/utils";
@@ -13,12 +14,13 @@ export default function OngletsEspace() {
   const [location] = useLocation();
   const { user } = useAuth();
   const recherche = useSearch();
+  const { data: viePerso } = useQuery<{ active: boolean }>({ queryKey: ["/api/vie-perso/etat"], throwOnError: false, staleTime: 10 * 60_000 });
   // La requête compte : /projects/4?onglet=veille appartient à l'espace Veille.
   const position = espaceDuChemin(recherche ? `${location}?${recherche}` : location);
   const espace = position ? ESPACES.find((e) => e.id === position.espace) : undefined;
   if (!position || !espace) return null;
 
-  const onglets = ongletsVisibles(espace, user?.role === "owner");
+  const onglets = ongletsVisibles(espace, user?.role === "owner", new Set(viePerso?.active ? ["viePerso"] : []));
 
   return (
     <div className="flex shrink-0 items-center gap-3 px-4 pb-2 pt-4 sm:px-6">

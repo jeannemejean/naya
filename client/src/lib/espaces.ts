@@ -8,6 +8,7 @@ export interface Onglet {
   href: string;
   prefixes: string[]; // adresses (et leurs sous-adresses) qui activent l'onglet
   proprietaire?: true; // visible seulement par la propriétaire
+  option?: "viePerso"; // visible seulement si l'option est active pour l'utilisatrice
 }
 
 export interface Espace {
@@ -37,6 +38,8 @@ export const ESPACES: Espace[] = [
     onglet("aujourdhui", "aujourdhui", "/"),
     // La vue horaire (/planning) s'ouvre depuis la Semaine : l'onglet reste allumé.
     onglet("aujourdhui", "semaine", "/semaine", { prefixes: ["/semaine", "/planning"] }),
+    // Option Vie perso (repas, courses, activités) : seulement si elle est active.
+    onglet("aujourdhui", "viePerso", "/vie-perso", { option: "viePerso" }),
   ]),
   espace("projets", "/projects", [
     onglet("projets", "projets", "/projects"),
@@ -106,8 +109,8 @@ export function espaceDuChemin(chemin: string): { espace: EspaceId; onglet: stri
   return meilleur ? { espace: meilleur.espace, onglet: meilleur.onglet } : null;
 }
 
-export function ongletsVisibles(espace: Espace, estProprietaire: boolean): Onglet[] {
-  return espace.onglets.filter((o) => !o.proprietaire || estProprietaire);
+export function ongletsVisibles(espace: Espace, estProprietaire: boolean, options: ReadonlySet<string> = new Set()): Onglet[] {
+  return espace.onglets.filter((o) => (!o.proprietaire || estProprietaire) && (!o.option || options.has(o.option)));
 }
 
 // Anciennes adresses qui redirigent vers un onglet du projet actif (pages/project/onglets.ts),
