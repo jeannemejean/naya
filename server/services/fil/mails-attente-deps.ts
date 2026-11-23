@@ -109,4 +109,17 @@ export const depsMails: DepsMails = {
     return jour;
   },
   creerTache: (userId, donnees) => creerTache(userId, donnees),
+  async tachesOuvertes(userId) {
+    const rows = await db.select({
+      taskId: tasks.id, threadId: mailsEnAttente.threadId, expediteur: mailsEnAttente.expediteur, dernierMessageAt: mailsEnAttente.dernierMessageAt,
+    }).from(mailsEnAttente).innerJoin(tasks, eq(tasks.id, mailsEnAttente.taskId)).where(and(
+      eq(mailsEnAttente.userId, userId), eq(tasks.userId, userId), eq(tasks.completed, false), isNull(tasks.archivedAt),
+    ));
+    return rows.filter((r) => r.dernierMessageAt != null && r.expediteur)
+      .map((r) => ({ taskId: r.taskId, threadId: r.threadId, expediteur: r.expediteur!, dernierMessageAt: new Date(r.dernierMessageAt!) }));
+  },
+  async cocherTache(userId, taskId) {
+    await db.update(tasks).set({ completed: true, completedAt: new Date() } as any)
+      .where(and(eq(tasks.id, taskId), eq(tasks.userId, userId), eq(tasks.completed, false)));
+  },
 };

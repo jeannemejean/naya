@@ -12,7 +12,7 @@ vi.mock("../linkedin", () => ({
 
 import { listerEmailsRecus, versEmailUnipile, EMAILS_PAGES_MAX, type EmailUnipile } from "../unipile-mail";
 import {
-  filsEnAttente, synchroniserMailsEnAttente, correspondanceMail, estAdministratif, ligneLibre,
+  filsEnAttente, synchroniserMailsEnAttente, correspondanceMail, estAdministratif, ligneLibre, tachesRepondues,
   type DepsMails, type CandidatsRattachement, type LigneMail,
 } from "./mails-attente";
 
@@ -246,6 +246,8 @@ describe("synchroniserMailsEnAttente", () => {
       rattacheur: vi.fn(() => rattacheur),
       premierJourTravaille: vi.fn(async (_u, j: string) => (j === o.jourOff ? "2026-11-13" : j)),
       creerTache: vi.fn(async (_u, d) => { const t = { id: 100 + taches.length, completed: false, ...d }; taches.push(t); return { ok: true as const, tache: t }; }),
+      tachesOuvertes: vi.fn(async () => []),
+      cocherTache: vi.fn(async () => {}),
     };
     return { deps, lignes, taches, rattacheur };
   }
@@ -372,5 +374,57 @@ describe("synchroniserMailsEnAttente", () => {
     expect(await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).toEqual({ creees: 10 });
     expect(taches[0].title).toContain("P0");
     expect(await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).toEqual({ creees: 3 });
+  });
+});
+
+
+// 23 nov. 2026 : Jeanne a répondu à Stéphanie et à Karima, mais Gmail a rangé ses réponses dans
+// un AUTRE fil que leur message. Naya leur demandait encore de répondre.
+describe("déjà répondu, même dans un autre fil", () => {
+  const mail = (o: Partial<EmailUnipile>): EmailUnipile => ({
+    id: Math.random().toString(36), threadId: "t", date: "2026-11-05T11:24:33.000Z", role: "inbox", folders: ["INBOX"],
+    from: { email: "stephanie@sothys.net", nom: "Stéphanie" }, to: ["jeanne@agence-jmd.com"], cc: [], sujet: "Les 20 ans", headers: null, ...o,
+  });
+  const recu = mail({ threadId: "t-stephanie" });
+  const reponseAutreFil = mail({
+    threadId: "t-autre", date: "2026-11-12T08:06:52.000Z", role: "sent", folders: ["SENT"],
+    from: { email: "jeanne@agence-jmd.com", nom: "Jeanne" }, to: ["stephanie@sothys.net"], sujet: "RE: [EXTERNE] Les 20 ans",
+  });
+
+  it("filsEnAttente : pas de tâche si elle a écrit à l'expéditeur après son message", () => {
+    expect(filsEnAttente([recu, reponseAutreFil], PROPRES, new Set(), MAINTENANT)).toEqual([]);
+    expect(ids(filsEnAttente([recu], PROPRES, new Set(), MAINTENANT))).toEqual(["t-stephanie"]);
+  });
+
+  it("une réponse en copie compte aussi ; un envoi AVANT son message ne compte pas", () => {
+    const enCopie = { ...reponseAutreFil, to: ["autre@x.fr"], cc: ["stephanie@sothys.net"] };
+    expect(filsEnAttente([recu, enCopie], PROPRES, new Set(), MAINTENANT)).toEqual([]);
+    const avant = { ...reponseAutreFil, date: "2026-11-01T08:00:00.000Z" };
+    expect(ids(filsEnAttente([recu, avant], PROPRES, new Set(), MAINTENANT))).toEqual(["t-stephanie"]);
+  });
+
+  it("tachesRepondues : réponse dans le fil, ou à l'expéditeur dans un autre fil ; sinon la tâche reste", () => {
+    const ouvertes = [
+      { taskId: 1, threadId: "t-stephanie", expediteur: "Stephanie@Sothys.net", dernierMessageAt: new Date(recu.date) },
+      { taskId: 2, threadId: "t-benoit", expediteur: "b@tahome.fr", dernierMessageAt: new Date("2026-11-04T15:07:31.000Z") },
+      { taskId: 3, threadId: "t-karima", expediteur: "k@scoping.fr", dernierMessageAt: new Date("2026-11-10T10:00:00.000Z") },
+    ];
+    const dansLeFil = mail({ threadId: "t-karima", date: "2026-11-10T12:00:00.000Z", role: "sent", folders: ["SENT"],
+      from: { email: "jeanne@agence-jmd.com", nom: "Jeanne" }, to: ["autre@scoping.fr"] });
+    expect(tachesRepondues(ouvertes, [recu, reponseAutreFil, dansLeFil], PROPRES)).toEqual([1, 3]);
+  });
+
+  it("le passage coche les tâches répondues depuis", async () => {
+    const deps: any = {
+      compteEmail: vi.fn(async () => "acc"), listerEmails: vi.fn(async () => [recu, reponseAutreFil]),
+      adressesPropres: vi.fn(async () => new Set(PROPRES)), adressesProspects: vi.fn(async () => new Set()),
+      threadsProspects: vi.fn(async () => new Set()),
+      tachesOuvertes: vi.fn(async () => [{ taskId: 9, threadId: "t-stephanie", expediteur: "stephanie@sothys.net", dernierMessageAt: new Date(recu.date) }]),
+      cocherTache: vi.fn(async () => {}),
+    };
+    expect(await synchroniserMailsEnAttente("u1", MAINTENANT, deps)).toEqual({ creees: 0 });
+    expect(deps.cocherTache).toHaveBeenCalledWith("u1", 9);
+    // Lecture élargie jusqu'au message de la tâche ouverte (plus vieux que 14 jours ? non ici : 14 jours).
+    expect(deps.listerEmails).toHaveBeenCalledWith("acc", new Date(MAINTENANT.getTime() - 14 * JOUR));
   });
 });
