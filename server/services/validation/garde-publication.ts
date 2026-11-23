@@ -11,9 +11,15 @@ import { decisionPublication, GRACE_VALIDATION_MIN } from "@shared/validation-cl
 /** Vrai pour une ligne de `content` bloquée par la validation client de sa marque. */
 export const sqlBloqueParValidation: SQL = sql`(coalesce(${content.validationStatut}, '') in ('a_valider', 'refusee') and exists (select 1 from validation_projet vp where vp.project_id = ${content.projectId} and vp.actif = true))`;
 
-/** Un post validé par le client pendant la grâce reste publiable jusqu'à 3 h après son heure. */
+/** Vrai quand la validation client de la marque du post est active. */
+const sqlValidationActive: SQL = sql`exists (select 1 from validation_projet vp where vp.project_id = ${content.projectId} and vp.actif = true)`;
+
+/**
+ * Un post validé par le client pendant la grâce reste publiable jusqu'à 3 h après son heure —
+ * seulement si la validation de sa marque est active ; sinon, les règles normales (120 min).
+ */
 export function sqlValideDansLaGrace(maintenant: Date): SQL {
-  return sql`(${content.validationStatut} = 'validee' and ${content.scheduledFor} >= ${new Date(maintenant.getTime() - GRACE_VALIDATION_MIN * 60_000)})`;
+  return sql`(${content.validationStatut} = 'validee' and ${content.scheduledFor} >= ${new Date(maintenant.getTime() - GRACE_VALIDATION_MIN * 60_000)} and ${sqlValidationActive})`;
 }
 
 export interface PostEnAttente { id: number; userId: string; title: string | null; platform: string | null; scheduledFor: Date | null; validationStatut: string | null }

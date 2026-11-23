@@ -3,7 +3,8 @@
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../../db", () => ({ db: {} }));
-const { traiterAttentesValidation, sqlBloqueParValidation } = await import("./garde-publication");
+const { traiterAttentesValidation, sqlBloqueParValidation, sqlValideDansLaGrace } = await import("./garde-publication");
+const { PgDialect } = await import("drizzle-orm/pg-core");
 
 const MAINTENANT = new Date("2026-11-23T12:00:00Z");
 const ilYa = (min: number) => new Date(MAINTENANT.getTime() - min * 60_000);
@@ -51,5 +52,14 @@ describe("sqlBloqueParValidation", () => {
     expect(chunks).toContain("'a_valider', 'refusee'");
     expect(chunks).toContain("validation_projet");
     expect(chunks).toContain("vp.actif = true");
+  });
+});
+
+describe("sqlValideDansLaGrace", () => {
+  it("la grâce de 3 h ne vaut que si la validation de la marque est active", () => {
+    const q = new PgDialect().sqlToQuery(sqlValideDansLaGrace(MAINTENANT)).sql;
+    expect(q).toContain("'validee'");
+    expect(q).toContain("validation_projet");
+    expect(q).toContain("vp.actif = true");
   });
 });

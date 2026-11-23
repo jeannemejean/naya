@@ -49,3 +49,10 @@ describe("contenuTelephone", () => {
     expect(lireContenuTelephone(null)).toBeNull();
   });
 });
+
+describe("contenuTelephone — nom de fichier mal encodé", () => {
+  it("une adresse au pourcentage invalide ne fait pas planter : nom brut gardé", () => {
+    const c = contenuTelephone({ post: { body: "x", platform: "Instagram" }, medias: [{ url: "https://cdn/v/photo%E0%A4.jpg", genre: "image" }], raisons: [] });
+    expect(c.medias[0].nom).toBe("photo%E0%A4.jpg");
+  });
+});

@@ -1617,7 +1617,7 @@ export class DatabaseStorage implements IStorage {
    */
   async getContentBySourceTask(userId: string, taskId: number): Promise<Content | undefined> {
     const [row] = await db.select().from(content)
-      .where(and(eq(content.userId, userId), eq(content.sourceTaskId, taskId)))
+      .where(and(eq(content.userId, userId), eq(content.sourceTaskId, taskId), isNull(content.supprimeLe)))
       .limit(1);
     return row;
   }
@@ -1885,6 +1885,8 @@ export class DatabaseStorage implements IStorage {
         isNull(content.publishedAt),
         // Un post dans la corbeille ne part JAMAIS, même programmé.
         isNull(content.supprimeLe),
+        // « À finir sur le téléphone » (lot 10) : jamais lu comme dû par le worker.
+        sql`coalesce(${content.finirSurTelephone}, false) = false`,
         isNotNull(content.scheduledFor),
         lte(content.scheduledFor, now),
         // Validé par le client pendant la grâce de validation (3 h) : il part quand même.
@@ -2565,7 +2567,7 @@ export class DatabaseStorage implements IStorage {
 
   async getContenusAEtiqueter(userId: string, projectId: number, depuis: Date, limite: number): Promise<Array<{ id: number; title: string; body: string }>> {
     return db.select({ id: content.id, title: content.title, body: content.body }).from(content)
-      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), isNull(content.angle), isNull(content.etiquetage), gte(content.createdAt, depuis)))
+      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), isNull(content.angle), isNull(content.etiquetage), gte(content.createdAt, depuis), isNull(content.supprimeLe)))
       .orderBy(desc(content.id)).limit(limite);
   }
 
@@ -2586,7 +2588,7 @@ export class DatabaseStorage implements IStorage {
       id: content.id, title: content.title, status: content.status, publishedAt: content.publishedAt,
       angle: content.angle, formatCreatif: content.formatCreatif, etiquetage: content.etiquetage, createdAt: content.createdAt,
     }).from(content)
-      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), gte(content.createdAt, depuis)))
+      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), gte(content.createdAt, depuis), isNull(content.supprimeLe)))
       .orderBy(desc(content.id)).limit(500);
   }
 

@@ -138,3 +138,11 @@ describe("repenser-db", () => {
     expect(h.appels.map((a) => a.table)).toEqual(["content", "tasks"]);
   });
 });
+
+describe("repenser-db — corbeille", () => {
+  it("les posts de la corbeille ne sont ni comptés ni remplacés", async () => {
+    await lecturesRepenser.lireContenus("u1", 7);
+    const sel = h.appels.find((a) => a.table === "content")!;
+    expect(texte(sel.where)).toContain('"content"."supprime_le" is null');
+  });
+});

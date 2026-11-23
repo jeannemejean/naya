@@ -314,6 +314,8 @@ async function rattraperOublies(now: Date): Promise<void> {
   const manques = await db.select(cols).from(content)
     .where(and(eq(content.autoPost, true), eq(content.postStatus, 'pending'), isNull(content.publishedAt),
       isNull(content.supprimeLe), lt(content.scheduledFor, limite), gte(content.scheduledFor, debut),
+      // « À finir sur le téléphone » : il attend la main de l'utilisatrice, jamais un échec du worker.
+      sql`coalesce(${content.finirSurTelephone}, false) = false`,
       // Validation client : les posts en attente ont leur propre délai (3 h) et leur raison.
       sql`not ${sqlBloqueParValidation}`, sql`not coalesce(${sqlValideDansLaGrace(now)}, false)`));
   let n = 0;

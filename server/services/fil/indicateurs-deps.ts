@@ -113,7 +113,7 @@ export const sourcesIndicateurs: SourcesIndicateurs = {
   },
   async postsPublies(userId, compteId, depuis) {
     const [r] = await db.select({ n: count() }).from(content)
-      .where(and(eq(content.userId, userId), eq(content.socialAccountId, compteId), gte(content.publishedAt, depuis)));
+      .where(and(eq(content.userId, userId), eq(content.socialAccountId, compteId), gte(content.publishedAt, depuis), isNull(content.supprimeLe)));
     return Number(r?.n ?? 0);
   },
   async appelsOffres(userId) {

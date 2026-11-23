@@ -68,7 +68,10 @@ export function raisonsTelephone(post: Pick<PostTelephone, "finirSurTelephone">,
 
 /** Nom de fichier d'un média : son nom d'origine, sinon la fin de son adresse, sinon « media-N ». */
 function nomDe(m: { url: string; nom?: string | null }, ordre: number): string {
-  const brut = (m.nom ?? "").trim() || decodeURIComponent((m.url.split("?")[0].split("/").pop() ?? "").trim());
+  const fin = (m.url.split("?")[0].split("/").pop() ?? "").trim();
+  let decode = fin;
+  try { decode = decodeURIComponent(fin); } catch { /* pourcentage invalide : nom brut */ }
+  const brut = (m.nom ?? "").trim() || decode;
   return brut || `media-${ordre}`;
 }
 

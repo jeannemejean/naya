@@ -10372,7 +10372,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           contentStatus: content.contentStatus,
         })
         .from(content)
-        .where(and(eq(content.userId, userId), eq(content.campaignId, id)));
+        // La corbeille n'est pas annoncée : ces posts ont déjà disparu pour l'utilisatrice.
+        .where(and(eq(content.userId, userId), eq(content.campaignId, id), isNull(content.supprimeLe)));
 
       const tachesBrutes = await db
         .select({ id: tasks.id, completed: tasks.completed })

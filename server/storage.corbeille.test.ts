@@ -83,3 +83,21 @@ describe("corbeille — exclusion des posts supprimés", () => {
     expect(new PgDialect().sqlToQuery(taches.where).params).toContain(quand.toISOString());
   });
 });
+
+describe("corbeille et téléphone — revue de branche", () => {
+  it("le contenu issu d'une tâche ignore la corbeille (sinon le brouillon supprimé bloque la recréation)", async () => {
+    await storage.getContentBySourceTask("u1", 9);
+    expect(sqlDe(h.appels[0].where)).toContain('"content"."supprime_le" is null');
+  });
+
+  it("étiquetage : un post de la corbeille n'est ni à étiqueter ni compté", async () => {
+    await storage.getContenusAEtiqueter("u1", 2, new Date(), 10);
+    await storage.getContenusEtiquetes("u1", 2, new Date());
+    for (const a of h.appels) expect(sqlDe(a.where)).toContain('"content"."supprime_le" is null');
+  });
+
+  it("le worker ne lit jamais un post « à finir sur le téléphone » comme dû", async () => {
+    await storage.getDueScheduledContent(new Date());
+    expect(sqlDe(h.appels[0].where)).toContain('"content"."finir_sur_telephone"');
+  });
+});

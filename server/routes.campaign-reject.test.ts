@@ -163,6 +163,14 @@ const RESULTAT_REJET_STUB = {
 // ─── GET /api/campaigns/:id/reject-preview ──────────────────────────────────
 
 describe("GET /api/campaigns/:id/reject-preview", () => {
+  it("les posts de la corbeille ne sont pas annoncés", async () => {
+    storageMock.getCampaign.mockResolvedValue(campagne());
+    hoisted.resultats = [[], [], []];
+    await fetch(`http://127.0.0.1:${port}/api/campaigns/1/reject-preview`);
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    expect(new PgDialect().sqlToQuery(hoisted.wheres[0]).sql).toContain('"content"."supprime_le" is null');
+  });
+
   it("une campagne d'autrui ou inexistante → 404, jamais 403, et AUCUNE opération base n'est émise", async () => {
     storageMock.getCampaign.mockResolvedValue(undefined);
     const res = await fetch(`http://127.0.0.1:${port}/api/campaigns/999/reject-preview`);
