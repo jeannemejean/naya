@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fenetreDuJour, placer, tachesDuPlan, placerActivite, jourAvant } from "./placement";
+import { fenetreDuJour, placer, tachesDuPlan, placerActivite, jourAvant, placerDemandes } from "./placement";
 import { PROFIL_DEFAUT, type PlanRepas } from "@shared/vie-perso";
 
 const P = PROFIL_DEFAUT;
@@ -132,7 +132,6 @@ describe("placerActivite", () => {
 
 describe("placerDemandes", () => {
   it("ignore ce qui est déjà passé, et deux demandes au même moment ne se chevauchent pas", () => {
-    const { placerDemandes } = require("./placement") as typeof import("./placement");
     const d = [
       { cle: "a", titre: "A", description: "", jour: "2026-11-28", heure: "10:00", duree: 60, fenetre: "weekend" as const },
       { cle: "b", titre: "B", description: "", jour: "2026-11-28", heure: "10:00", duree: 30, fenetre: "weekend" as const },
