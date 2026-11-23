@@ -7,6 +7,7 @@ import { appelsOffresStore, type DepsAppelsOffres, type ModifAppelOffres } from 
 import { estStatutAO } from "@shared/appels-offres";
 import type { BilanVeilleAO } from "./services/veille-ao/pipeline";
 import { veilleActivePour, veilleEnCours } from "./services/veille-ao/etat";
+import { RC_MAX, refusPremierJet, type ResultatPremierJet } from "./services/veille-ao/premier-jet";
 
 export const NOTES_MAX = 20_000;
 /** Un lancement manuel de la veille au plus toutes les 10 minutes, par utilisatrice. */
@@ -68,9 +69,23 @@ const apresStatutParDefaut: ApresStatut = async (userId) => {
   if (Object.values(r).some((n) => n > 0)) await storage.fixOverlappingTasks(userId, parisTodayString(new Date()));
 };
 
+/** Premier jet préparé à la demande (bouton) : état d'une préparation, en mémoire. */
+export interface EtatPremierJet { statut: "en_cours" | "fini" | "erreur"; erreur?: string }
+export interface DepsRoutesPremierJet {
+  preparer(userId: string, id: number, rc: string | null): Promise<ResultatPremierJet>;
+}
+const premierJetParDefaut: DepsRoutesPremierJet = {
+  preparer: async (userId, id, rc) => {
+    const [{ preparerPremierJet }, { depsPremierJet }] = await Promise.all([
+      import("./services/veille-ao/premier-jet"), import("./services/veille-ao/premier-jet-deps"),
+    ]);
+    return preparerPremierJet(userId, id, { rc }, depsPremierJet);
+  },
+};
+
 export function registerAppelsOffresRoutes(
   app: Express, deps: DepsAppelsOffres = appelsOffresStore, veille: DepsVeilleRoutes = veilleParDefaut,
-  apresStatut: ApresStatut = apresStatutParDefaut,
+  apresStatut: ApresStatut = apresStatutParDefaut, premierJet: DepsRoutesPremierJet = premierJetParDefaut,
 ) {
   // Express 4 n'achemine pas un rejet async : sans ce garde-fou la requête pend.
   const sur = (h: (req: any, res: any) => Promise<any>) => async (req: any, res: any) => {
@@ -123,6 +138,41 @@ export function registerAppelsOffresRoutes(
         passages.set(userId, { id: passage.id, statut: "erreur", erreur: "veille_echec" });
       });
     res.status(202).json(passage);
+  }));
+
+  // ─── Premier jet (bouton) ─────────────────────────────────────────────────────
+  // 2 à 3 minutes de rédaction : réponse 202 tout de suite, la page interroge l'état toutes les
+  // 3 s. Une préparation à la fois par utilisatrice. Un redémarrage oublie l'état (« aucun »).
+  const jets = new Map<string, Map<number, EtatPremierJet>>(); // userId → id AO → état
+  const jetsDe = (userId: string) => { let m = jets.get(userId); if (!m) { m = new Map(); jets.set(userId, m); } return m; };
+
+  app.get("/api/appels-offres/:id/premier-jet", isAuthenticated, sur(async (req, res) => {
+    const id = idValide(req.params.id);
+    if (!id) return res.status(400).json({ message: "invalid_id" });
+    res.json(jets.get(req.userId)?.get(id) ?? { statut: "aucun" });
+  }));
+
+  app.post("/api/appels-offres/:id/premier-jet", isAuthenticated, sur(async (req, res) => {
+    const userId: string = req.userId;
+    const id = idValide(req.params.id);
+    if (!id) return res.status(400).json({ message: "invalid_id" });
+    const rc = req.body?.rc ?? null;
+    if (rc !== null && typeof rc !== "string") return res.status(400).json({ message: "rc_invalide" });
+    if (typeof rc === "string" && rc.length > RC_MAX) return res.status(400).json({ message: "rc_trop_long" });
+    const ligne = await deps.lireAppelOffres(id, userId);
+    if (!ligne) return res.status(404).json({ message: "not_found" });
+    const refus = refusPremierJet(ligne as any, new Date());
+    if (refus) return res.status(400).json({ message: refus });
+    const mes = jetsDe(userId);
+    if (Array.from(mes.values()).some((e) => e.statut === "en_cours")) return res.status(409).json({ message: "premier_jet_en_cours" });
+    mes.set(id, { statut: "en_cours" });
+    premierJet.preparer(userId, id, typeof rc === "string" && rc.trim() ? rc : null)
+      .then((r) => mes.set(id, r.ok ? { statut: "fini" } : { statut: "erreur", erreur: r.erreur }))
+      .catch((e: any) => {
+        console.error("[premier-jet] bouton :", e?.message ?? e);
+        mes.set(id, { statut: "erreur", erreur: "premier_jet_echec" });
+      });
+    res.status(202).json({ statut: "en_cours" });
   }));
 
   app.get("/api/appels-offres", isAuthenticated, sur(async (req, res) => {

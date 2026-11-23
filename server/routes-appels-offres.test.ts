@@ -107,3 +107,66 @@ describe("routes des appels d'offres", () => {
     expect((await r.json()).statut).toBe("en_redaction");
   });
 });
+
+describe("routes du premier jet", () => {
+  let server: http.Server;
+  let base: string;
+  const ao = (over: Record<string, unknown> = {}) => ({ id: 1, userId: "user-1", objet: "AO", statut: "repere", dateLimite: new Date(Date.now() + 20 * 86_400_000), ...over });
+  let donnees: any[];
+  const deps = {
+    listerAppelsOffres: vi.fn(),
+    lireAppelOffres: vi.fn(async (id: number, userId: string) => donnees.find((l) => l.id === id && l.userId === userId)),
+    modifierAppelOffres: vi.fn(),
+  };
+  let finir: (r: any) => void;
+  const premierJet = { preparer: vi.fn(() => new Promise<any>((r) => { finir = r; })) };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    donnees = [ao(), ao({ id: 2 }), ao({ id: 3, statut: "ecarte" }), ao({ id: 4, userId: "user-2" })];
+    const app = express();
+    app.use(express.json({ limit: "1mb" }));
+    registerAppelsOffresRoutes(app, deps as any, undefined, vi.fn(async () => {}), premierJet);
+    server = http.createServer(app);
+    await new Promise<void>((r) => server.listen(0, r));
+    base = `http://127.0.0.1:${(server.address() as any).port}`;
+  });
+  afterEach(() => { server.close(); });
+
+  const post = (id: number, corps: unknown = {}, user = "user-1") => fetch(`${base}/api/appels-offres/${id}/premier-jet`, {
+    method: "POST", headers: { "Content-Type": "application/json", "x-user": user }, body: JSON.stringify(corps),
+  });
+  const etat = async (id: number) => (await fetch(`${base}/api/appels-offres/${id}/premier-jet`)).json();
+
+  it("202, préparation en arrière-plan avec le RC collé, état en_cours puis fini", async () => {
+    const r = await post(1, { rc: "Article 1" });
+    expect(r.status).toBe(202);
+    expect(premierJet.preparer).toHaveBeenCalledWith("user-1", 1, "Article 1");
+    expect(await etat(1)).toEqual({ statut: "en_cours" });
+    finir({ ok: true, coutEur: 0.3 });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await etat(1)).toEqual({ statut: "fini" });
+  });
+
+  it("une seule préparation à la fois par utilisatrice", async () => {
+    await post(1);
+    expect((await post(2)).status).toBe(409);
+    finir({ ok: false, erreur: "ia_bloquee" });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(await etat(1)).toEqual({ statut: "erreur", erreur: "ia_bloquee" });
+  });
+
+  it("refus immédiats : AO d'une autre, AO écarté, RC invalide ou trop long", async () => {
+    expect((await post(4)).status).toBe(404);
+    expect((await post(3)).status).toBe(400);
+    expect((await post(1, { rc: 12 })).status).toBe(400);
+    expect((await post(1, { rc: "a".repeat(60_001) })).status).toBe(400);
+    expect(premierJet.preparer).not.toHaveBeenCalled();
+  });
+
+  it("RC vide : traité comme absent ; état inconnu : « aucun »", async () => {
+    expect(await etat(2)).toEqual({ statut: "aucun" });
+    await post(1, { rc: "   " });
+    expect(premierJet.preparer).toHaveBeenCalledWith("user-1", 1, null);
+  });
+});

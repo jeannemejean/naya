@@ -35,6 +35,8 @@ const app = express();
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
 // Webhook Unipile : JSON quel que soit le Content-Type, jusqu'à 2 Mo (emails volumineux).
 app.use("/api/unipile/webhook", express.json({ type: () => true, limit: "2mb" }));
+// Premier jet d'appel d'offres : le RC collé peut faire 60 000 caractères (accents, sauts de ligne échappés).
+app.use(/^\/api\/appels-offres\/\d+\/premier-jet$/, express.json({ limit: "512kb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

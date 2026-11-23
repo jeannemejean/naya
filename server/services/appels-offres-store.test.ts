@@ -103,3 +103,26 @@ describe("rafraichirDepuisVeille", () => {
     }
   });
 });
+
+describe("premier jet", () => {
+  it("l'upsert de la veille ne réécrit jamais un premier jet existant", async () => {
+    const { db, appels } = fausseBase();
+    await upsertDepuisVeille("user-1", [ligne({ premierJet: "https://claude.ai/design/x" })], {}, db);
+    expect(appels[0].values.premierJet).toBe("https://claude.ai/design/x");
+    expect(appels[0].conflit.set).not.toHaveProperty("premierJet");
+  });
+
+  it("enregistrerPremierJet : écrit le texte, statut « premier jet prêt » seulement depuis « repéré », filtré par userId", async () => {
+    const { enregistrerPremierJet } = await import("./appels-offres-store");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    let set: any; let where: SQL | undefined;
+    const db = { update: () => ({ set: (s: any) => { set = s; return { where: (w: SQL) => { where = w; return { returning: async () => [{ id: 5 }] }; } }; } }) };
+    expect(await enregistrerPremierJet(5, "user-1", "# AO", db as any)).toBe(true);
+    expect(set.premierJet).toBe("# AO");
+    const d = new PgDialect();
+    const statut = d.sqlToQuery(set.statut);
+    expect(statut.sql).toMatch(/case when "appels_offres"."statut" = 'repere' then 'premier_jet_pret' else "appels_offres"."statut" end/);
+    const w = d.sqlToQuery(where!);
+    expect(w.params).toEqual([5, "user-1"]);
+  });
+});

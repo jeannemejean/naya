@@ -24,6 +24,21 @@ export interface DepsAppelsOffres {
 }
 
 /**
+ * Premier jet écrit par Naya. Le statut passe à « premier jet prêt » seulement depuis « repéré » :
+ * un AO déjà en rédaction (ou plus loin) garde le sien.
+ */
+export async function enregistrerPremierJet(
+  id: number, userId: string, texte: string, db: NodePgDatabase<any> = dbParDefaut,
+): Promise<boolean> {
+  const r = await db.update(appelsOffres).set({
+    premierJet: texte,
+    statut: sql`case when ${appelsOffres.statut} = 'repere' then 'premier_jet_pret' else ${appelsOffres.statut} end`,
+    updatedAt: new Date(),
+  }).where(and(eq(appelsOffres.id, id), eq(appelsOffres.userId, userId))).returning({ id: appelsOffres.id });
+  return r.length > 0;
+}
+
+/**
  * Upsert sur (user_id, source, source_id). Une ligne neuve prend tout ce qui vient de la veille ;
  * une ligne existante voit ses champs de veille rafraîchis, mais jamais son statut ni ses notes,
  * qui vivent dans Naya. Une seule transaction : tout ou rien.
@@ -41,7 +56,8 @@ export async function upsertDepuisVeille(
   const projectId = opts.projectId ?? null;
   await db.transaction(async (tx) => {
     for (const l of lignes) {
-      const { statut: _statut, notes: _notes, ...veille } = l;
+      // Statut, notes et premier jet vivent dans Naya : jamais réécrits par la veille (ni un ré-import).
+      const { statut: _statut, notes: _notes, premierJet: _premierJet, ...veille } = l;
       await tx.insert(appelsOffres).values({ ...l, userId, projectId })
         .onConflictDoUpdate({
           target: [appelsOffres.userId, appelsOffres.source, appelsOffres.sourceId],

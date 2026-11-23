@@ -11,6 +11,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { PremierJet } from "@/components/appels-offres/PremierJet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   STATUTS_AO, SCORES_AO, SEUIL_URGENCE_JOURS, estPasse, joursAvant, lienSur, filtrerEcartesParNaya, type StatutAO, type ScoreAO,
@@ -396,6 +397,8 @@ function Detail({ ao, locale, onFermer, formatDate, formatMontant, echeance }: {
         {champ("pieces", ao.piecesExigees)}
         {champ("bloquants", ao.bloquants)}
       </dl>
+
+      <PremierJet ao={ao} />
 
       <div className="space-y-2">
         <span className="text-[11px] uppercase tracking-wide text-naya-olive-55">{t("appelsOffres.champs.notes")}</span>

@@ -49,6 +49,8 @@ export function _reinitialiserVeilleAO(): void { derniersJours.clear(); tourEnCo
 /** Un tour du planificateur. Renvoie les bilans des passages tentés, sinon null. */
 export async function tourVeilleAO(
   maintenant: Date, deps: DepsVeilleAO, users: string[],
+  /** Après un passage abouti (premiers jets du jour). Ses erreurs ne touchent pas le passage. */
+  apresPassage?: (userId: string, maintenant: Date) => Promise<unknown>,
 ): Promise<Record<string, BilanVeilleAO | null> | null> {
   if (tourEnCours) return null;
   const aLancer = users.filter((u) => doitLancer(maintenant, derniersJours.get(u) ?? null));
@@ -62,8 +64,12 @@ export async function tourVeilleAO(
         const b = await lancerVeilleAO(u, deps, { maintenant });
         bilans[u] = b;
         // Jour marqué fait seulement si le passage est parti ET allé au bout sans planter.
-        if (passageAbouti(b)) derniersJours.set(u, jour);
-        else if (b) console.error(`[veille-ao] ${u} : passage interrompu (${b.erreursSources.join(" ; ")}), retenté au prochain tour`);
+        if (passageAbouti(b)) {
+          derniersJours.set(u, jour);
+          if (apresPassage) {
+            await apresPassage(u, maintenant).catch((e: any) => console.error(`[veille-ao] ${u} : premiers jets :`, e?.message ?? e));
+          }
+        } else if (b) console.error(`[veille-ao] ${u} : passage interrompu (${b.erreursSources.join(" ; ")}), retenté au prochain tour`);
         if (b) {
           console.log(`[veille-ao] ${u} : ${b.nouveaux} nouveaux, ${b.rafraichis} rafraîchis, ${b.examines} examinés, ${b.coutEur.toFixed(3)} €${b.erreursSources.length ? ` (sources en erreur : ${b.erreursSources.join(" ; ")})` : ""}`);
         }
@@ -89,16 +95,24 @@ export function scheduleVeilleAO(): void {
       const maintenant = new Date();
       const users = utilisatricesVeilleAO();
       const deps = depsVeilleAO;
+      // Étape 5 de l'ancienne routine : au plus 2 premiers jets par jour, après le passage.
+      const premiersJets = async (userId: string, m: Date) => {
+        const [{ premiersJetsDuJour }, { depsPremierJet }] = await Promise.all([import("./premier-jet"), import("./premier-jet-deps")]);
+        const b = await premiersJetsDuJour(userId, depsPremierJet, m);
+        if (b.prepares.length || b.echecs.length) {
+          console.log(`[veille-ao] ${userId} : premiers jets ${b.prepares.join(", ") || "aucun"}${b.echecs.length ? `, échecs ${b.echecs.join(", ")}` : ""}, ${b.coutEur.toFixed(3)} €`);
+        }
+      };
       // Seuls les tours qui lancent un passage sont suivis (la plupart n'ont rien à faire) ; un
       // passage non abouti (planté ou interrompu) reste « à lancer » et compte comme une erreur.
       if (!passageDu(maintenant, users)) {
-        await tourVeilleAO(maintenant, deps, users);
+        await tourVeilleAO(maintenant, deps, users, premiersJets);
         return;
       }
       // Jugé sur celles qui étaient dues AVANT le tour et à la même heure (pas de faux succès à midi).
       const dues = usersDus(maintenant, users);
       await suivrePassage("veille_ao", async () => {
-        await tourVeilleAO(maintenant, deps, users);
+        await tourVeilleAO(maintenant, deps, users, premiersJets);
         if (usersDus(maintenant, dues).length > 0) throw new Error("passage de la veille AO non abouti");
       });
     } catch (e: any) {

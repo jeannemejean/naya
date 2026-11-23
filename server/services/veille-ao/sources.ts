@@ -177,3 +177,30 @@ export async function collecterTed(fetch: Fetch, f: FenetreVeille, o: OptionsCol
   }
   return avis;
 }
+
+/** Identifiants attendus (n° BOAMP « 26-123456 », n° TED « 123456-2026 ») : rien d'autre ne part dans une requête. */
+const ID_SUR = /^[A-Za-z0-9-]{3,40}$/;
+
+/**
+ * Premier jet : relit UN avis à sa source officielle (API publiques documentées, comme la veille)
+ * et rend son texte complet. null si la source n'est pas relisible ou l'avis introuvable.
+ */
+export async function relireAvis(fetch: Fetch, source: string, sourceId: string, timeoutMs = 20_000): Promise<string | null> {
+  if (!ID_SUR.test(sourceId)) return null;
+  if (source === "boamp") {
+    const p = new URLSearchParams({ where: `idweb="${sourceId}"`, limit: "1" });
+    const d = await lireJson(fetch, `${BOAMP_URL}?${p.toString()}`, { headers: ENTETES }, timeoutMs, TAILLE_MAX_REPONSE);
+    const r = Array.isArray(d?.results) ? d.results[0] : null;
+    return r ? mapperBoamp(r)?.texte ?? null : null;
+  }
+  if (source === "ted") {
+    const d = await lireJson(fetch, TED_URL, {
+      method: "POST",
+      headers: { ...ENTETES, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: `publication-number=${sourceId}`, fields: [...CHAMPS_TED], limit: 1, page: 1, scope: "ALL" }),
+    }, timeoutMs, TAILLE_MAX_REPONSE);
+    const n = Array.isArray(d?.notices) ? d.notices[0] : null;
+    return n ? mapperTed(n)?.texte ?? null : null;
+  }
+  return null;
+}

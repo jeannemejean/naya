@@ -3,7 +3,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { clauseBoamp, urlBoamp, corpsTed, collecterBoamp, collecterTed, BOAMP_URL, TED_URL, CPV_VEILLE, type Fetch } from "./sources";
+import { clauseBoamp, urlBoamp, corpsTed, collecterBoamp, collecterTed, relireAvis, BOAMP_URL, TED_URL, CPV_VEILLE, type Fetch } from "./sources";
 import { mapperBoamp, mapperTed, procedureDepuisLibelle, instantTed, CHAMP_COURT_MAX } from "./mapping";
 
 const fixture = (nom: string) => JSON.parse(readFileSync(path.join(__dirname, "__fixtures__", nom), "utf8"));
@@ -198,5 +198,32 @@ describe("hygiène réseau et bornes", () => {
     expect(a.acheteur!.length).toBe(CHAMP_COURT_MAX);
     const t = mapperTed({ ...ted("776725-2026"), "title-proc": { fra: "t".repeat(3000) } })!;
     expect(t.objet.length).toBe(CHAMP_COURT_MAX);
+  });
+});
+
+describe("relireAvis (premier jet : texte complet à la source)", () => {
+  it("BOAMP : une requête par idweb, texte de l'avis", async () => {
+    const r = BOAMP.results[0];
+    const fetch = vi.fn(async () => reponse({ total_count: 1, results: [r] })) as unknown as Fetch;
+    const t = await relireAvis(fetch, "boamp", r.idweb);
+    const u = new URL((fetch as any).mock.calls[0][0]);
+    expect(u.searchParams.get("where")).toBe(`idweb="${r.idweb}"`);
+    expect(t).toBe(mapperBoamp(r)!.texte);
+  });
+  it("TED : recherche par numéro de publication, toutes périodes", async () => {
+    const n = TED.notices[0];
+    const fetch = vi.fn(async () => reponse({ totalNoticeCount: 1, notices: [n] })) as unknown as Fetch;
+    const t = await relireAvis(fetch, "ted", n["publication-number"]);
+    const corps = JSON.parse((fetch as any).mock.calls[0][1].body);
+    expect(corps.query).toBe(`publication-number=${n["publication-number"]}`);
+    expect(corps.scope).toBe("ALL");
+    expect(t).toBe(mapperTed(n)!.texte);
+  });
+  it("introuvable, autre source, identifiant douteux : null sans appel réseau inutile", async () => {
+    const fetch = vi.fn(async () => reponse({ total_count: 0, results: [] })) as unknown as Fetch;
+    expect(await relireAvis(fetch, "boamp", "26-999")).toBeNull();
+    expect(await relireAvis(fetch, "notion_import", "abc")).toBeNull();
+    expect(await relireAvis(fetch, "boamp", '26-1" OR idweb is not null')).toBeNull();
+    expect((fetch as any).mock.calls).toHaveLength(1);
   });
 });

@@ -282,4 +282,26 @@ describe("planificateur", () => {
     expect(await tourVeilleAO(new Date("2026-11-10T06:00:00Z"), d, ["u1", "u2"])).toBeNull();
     expect(await tourVeilleAO(t, d, [])).toBeNull();
   });
+
+  it("après un passage abouti : premiers jets du jour ; leur échec ne change rien au passage", async () => {
+    const { d } = deps();
+    const apres = vi.fn(async () => { throw new Error("IA en panne"); });
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const t = new Date("2026-11-10T05:50:00Z");
+    const bilans = await tourVeilleAO(t, d, ["u1"], apres);
+    expect(apres).toHaveBeenCalledWith("u1", t);
+    expect(bilans?.u1?.nouveaux).toBe(8);
+    expect(await tourVeilleAO(new Date("2026-11-10T06:00:00Z"), d, ["u1"], apres)).toBeNull();
+    expect(apres).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+  });
+
+  it("passage non abouti : pas de premiers jets", async () => {
+    const { d } = deps([], { existants: vi.fn(async () => { throw new Error("base indisponible"); }) });
+    const apres = vi.fn(async () => {});
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await tourVeilleAO(new Date("2026-11-10T05:50:00Z"), d, ["u1"], apres);
+    expect(apres).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
 });
