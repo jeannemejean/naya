@@ -2722,3 +2722,78 @@ export const indicateursReleves = pgTable("indicateurs_releves", {
 ]);
 export type IndicateurReleve = typeof indicateursReleves.$inferSelect;
 export type InsertIndicateurReleve = typeof indicateursReleves.$inferInsert;
+
+// ─── Vie perso (spec 2026-11-23) ─────────────────────────────────────────────────────────
+// Option par utilisatrice (VIE_PERSO_USERS) : repas, courses, activités perso, placés hors
+// heures de travail. Les tâches créées portent `source = 'vie_perso'`.
+
+/** Réglages : créneaux perso, repas, batch, courses, équipement, magasins, cycle (facultatif). */
+export const viePersoProfil = pgTable("vie_perso_profil", {
+  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  reglages: jsonb("reglages").$type<import("./vie-perso").ProfilViePerso>().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/** Membres du foyer : ce que chacun mange ou pas. */
+export const viePersoMembres = pgTable("vie_perso_membres", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  prenom: text("prenom").notNull(),
+  estMoi: boolean("est_moi").notNull().default(false),
+  regime: text("regime").notNull().default(""),
+  exclusions: text("exclusions").notNull().default(""),
+  aime: text("aime").notNull().default(""),
+  aimePas: text("aime_pas").notNull().default(""),
+  /** dejeuner | diner | les_deux */
+  repasMaison: text("repas_maison").notNull().default("les_deux"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type ViePersoMembre = typeof viePersoMembres.$inferSelect;
+
+/** Inspirations recettes (lien Pinterest, blog, ou simple titre) et l'avis porté. */
+export const viePersoRecettes = pgTable("vie_perso_recettes", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  titre: text("titre").notNull(),
+  lien: text("lien"),
+  notes: text("notes"),
+  /** aime | bof | non */
+  avis: text("avis").notNull().default("aime"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type ViePersoRecette = typeof viePersoRecettes.$inferSelect;
+
+/** Plan de repas d'une semaine (lundi), brouillon puis validé. */
+export const viePersoPlans = pgTable("vie_perso_plans", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  semaine: date("semaine").notNull(),
+  /** brouillon | valide */
+  statut: text("statut").notNull().default("brouillon"),
+  contenu: jsonb("contenu").$type<import("./vie-perso").PlanRepas>().notNull(),
+  coches: jsonb("coches").$type<number[]>().notNull().default([]),
+  coutEur: numeric("cout_eur", { precision: 10, scale: 4 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex("vie_perso_plans_user_semaine_uq").on(t.userId, t.semaine),
+]);
+export type ViePersoPlan = typeof viePersoPlans.$inferSelect;
+
+/** Activités perso : description, découpage (achats, étapes), statut. */
+export const viePersoActivites = pgTable("vie_perso_activites", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  titre: text("titre").notNull(),
+  description: text("description").notNull().default(""),
+  avecQui: text("avec_qui").notNull().default(""),
+  /** soir | weekend | indifferent */
+  quand: text("quand").notNull().default("indifferent"),
+  dateCible: date("date_cible"),
+  /** a_planifier | planifiee | faite */
+  statut: text("statut").notNull().default("a_planifier"),
+  contenu: jsonb("contenu").$type<import("./vie-perso").ContenuActivite>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type ViePersoActivite = typeof viePersoActivites.$inferSelect;
