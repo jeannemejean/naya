@@ -34,7 +34,10 @@ export type ResultatValidation =
   | { statut: "manques"; manques: Array<Manque | "trop_de_visuels"> }
   | { statut: "introuvable" | "en_cours" | "deja_publie" | "deja_valide" | "invalide" };
 
-export interface Modifications { body?: unknown; title?: unknown; scheduledFor?: unknown; postFormat?: unknown }
+export interface Modifications { body?: unknown; title?: unknown; scheduledFor?: unknown; postFormat?: unknown; premierCommentaire?: unknown; couvertureOffsetMs?: unknown }
+
+/** Limite d'Instagram pour un commentaire. */
+export const COMMENTAIRE_MAX = 2200;
 
 /** Modifications acceptées, ou null si l'une est invalide. */
 export function lireModifications(m: Modifications): Record<string, unknown> | null {
@@ -52,6 +55,17 @@ export function lireModifications(m: Modifications): Record<string, unknown> | n
   if (m.postFormat !== undefined) {
     if (!(FORMATS_POST as readonly unknown[]).includes(m.postFormat)) return null;
     patch.postFormat = m.postFormat;
+  }
+  if (m.premierCommentaire !== undefined) {
+    if (m.premierCommentaire !== null && typeof m.premierCommentaire !== "string") return null;
+    const t = (m.premierCommentaire ?? "").trim();
+    if (t.length > COMMENTAIRE_MAX) return null;
+    patch.premierCommentaire = t || null;
+  }
+  if (m.couvertureOffsetMs !== undefined) {
+    const n = m.couvertureOffsetMs;
+    if (n !== null && (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 15 * 60_000)) return null;
+    patch.couvertureOffsetMs = n;
   }
   return patch;
 }

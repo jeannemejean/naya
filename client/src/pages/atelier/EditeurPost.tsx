@@ -21,6 +21,8 @@ const FORMATS = ["feed_image", "text", "carousel", "reel", "story"] as const;
 const RETOUCHES = ["court", "percutant", "personnel", "angle"] as const;
 const MOTIFS: MotifNote[] = ["deja_programme", "plus_actuel"];
 const LIMITES: Record<string, number> = { linkedin: 3000, instagram: 2200, facebook: 5000 };
+/** Réseaux où Naya poste le premier commentaire juste après la publication. */
+const RESEAUX_COMMENTAIRE = new Set(["instagram", "linkedin", "facebook"]);
 
 /** « 2026-10-22T07:00:00.000Z » → valeur d'un champ datetime-local, à l'heure de l'appareil. */
 function versChampLocal(iso: string): string {
@@ -86,6 +88,9 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
   const changerFormat = async (f: string) => {
     setFormat(f);
     try { await enregistrer(post.id, { postFormat: f }); onChange(); } catch (e) { erreur(e); }
+  };
+  const changerChamp = async (patch: { premierCommentaire?: string | null; couvertureOffsetMs?: number | null }) => {
+    try { await enregistrer(post.id, patch); onChange(); } catch (e) { erreur(e); }
   };
   const changerDate = async (v: string) => {
     const d = new Date(v);
@@ -403,6 +408,33 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
             key={date} defaultValue={versChampLocal(date)} onBlur={(e) => { if (e.target.value !== versChampLocal(date)) void changerDate(e.target.value); }} />
         </div>
       </section>
+
+      {RESEAUX_COMMENTAIRE.has(post.platform.toLowerCase()) && (
+        <section className="space-y-1">
+          <Label htmlFor={`commentaire-${post.id}`} className="text-xs">{t("atelier.premierCommentaire")}</Label>
+          <Textarea id={`commentaire-${post.id}`} rows={2} className="text-sm" disabled={!modifiable} maxLength={2200}
+            key={`c-${post.premierCommentaire ?? ""}`} defaultValue={post.premierCommentaire ?? ""}
+            placeholder={t("atelier.premierCommentaireAide")}
+            onBlur={(e) => { if (e.target.value.trim() !== (post.premierCommentaire ?? "")) void changerChamp({ premierCommentaire: e.target.value }); }} />
+        </section>
+      )}
+
+      {(format === "reel" || format === "feed_video") && genresMedias.includes("video") && post.platform.toLowerCase() === "instagram" && (
+        <section className="space-y-1">
+          <Label htmlFor={`couverture-${post.id}`} className="text-xs">{t("atelier.couverture")}</Label>
+          <div className="flex items-center gap-2">
+            <Input id={`couverture-${post.id}`} type="number" min={0} step={0.5} className="h-8 w-24 text-sm" disabled={!modifiable}
+              key={`v-${post.couvertureOffsetMs ?? ""}`} defaultValue={post.couvertureOffsetMs != null ? post.couvertureOffsetMs / 1000 : ""}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                const ms = v === "" ? null : Math.round(Number(v) * 1000);
+                if (ms !== null && (!Number.isFinite(ms) || ms < 0)) return;
+                if (ms !== (post.couvertureOffsetMs ?? null)) void changerChamp({ couvertureOffsetMs: ms });
+              }} />
+            <span className="text-[11px] text-muted-foreground">{t("atelier.couvertureAide")}</span>
+          </div>
+        </section>
+      )}
 
       {modifiable && (
         <footer className="space-y-2 border-t border-border pt-4">

@@ -20,6 +20,8 @@ export interface PostAtelier {
   etat: EtatPost;
   programme: boolean;
   erreurPublication: string | null;
+  premierCommentaire: string | null;
+  couvertureOffsetMs: number | null;
   medias: MediaAtelier[];
   manques: Manque[];
   compteConnecte: boolean;
@@ -60,7 +62,7 @@ export async function refaire(id: number, consigne: string): Promise<string> {
   return data.body as string;
 }
 
-export async function enregistrer(id: number, patch: { body?: string; scheduledFor?: string; postFormat?: string }): Promise<void> {
+export async function enregistrer(id: number, patch: { body?: string; scheduledFor?: string; postFormat?: string; premierCommentaire?: string | null; couvertureOffsetMs?: number | null }): Promise<void> {
   const { status, data } = await envoyer("PATCH", `/api/atelier/posts/${id}`, patch);
   if (status >= 400) throw echec(status, data);
 }

@@ -3095,6 +3095,10 @@ const fr = {
   },
  },
  atelier: {
+  premierCommentaire: "Premier commentaire (facultatif)",
+  premierCommentaireAide: "Posté par Naya juste après la publication : lien, hashtags, question…",
+  couverture: "Couverture du Reel",
+  couvertureAide: "secondes : l'image de la vidéo à cet instant (vide : choix d'Instagram)",
   titre: "Atelier contenu",
   sousTitre: "Tes posts de la semaine, au même endroit. Naya rédige, tu corriges, tu valides : un post validé part tout seul.",
   semainePrecedente: "Semaine précédente",

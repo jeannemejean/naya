@@ -202,3 +202,17 @@ describe("publicationManuelle — cocher « Publier », c'est publier", () => {
     expect(publicationManuelle({ ...publier, contentId: null }, { publishedAt: null }, m)).toBeNull();
   });
 });
+
+
+describe("lireModifications — premier commentaire et couverture", () => {
+  it("texte gardé (vide → null), trop long refusé ; instant de couverture en ms entier", async () => {
+    const { lireModifications, COMMENTAIRE_MAX } = await import("./validation");
+    expect(lireModifications({ premierCommentaire: "  Lien en bio  " })).toEqual({ premierCommentaire: "Lien en bio" });
+    expect(lireModifications({ premierCommentaire: "  " })).toEqual({ premierCommentaire: null });
+    expect(lireModifications({ premierCommentaire: "x".repeat(COMMENTAIRE_MAX + 1) })).toBeNull();
+    expect(lireModifications({ couvertureOffsetMs: 2500 })).toEqual({ couvertureOffsetMs: 2500 });
+    expect(lireModifications({ couvertureOffsetMs: null })).toEqual({ couvertureOffsetMs: null });
+    expect(lireModifications({ couvertureOffsetMs: -1 })).toBeNull();
+    expect(lireModifications({ couvertureOffsetMs: 1.5 })).toBeNull();
+  });
+});

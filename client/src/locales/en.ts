@@ -3091,6 +3091,10 @@ const en = {
   },
  },
  atelier: {
+  premierCommentaire: "First comment (optional)",
+  premierCommentaireAide: "Posted by Naya right after publishing: link, hashtags, question…",
+  couverture: "Reel cover",
+  couvertureAide: "seconds: the video frame at that moment (empty: Instagram decides)",
   titre: "Content workshop",
   sousTitre: "Your posts for the week, in one place. Naya drafts, you edit, you approve: an approved post goes out on its own.",
   semainePrecedente: "Previous week",
