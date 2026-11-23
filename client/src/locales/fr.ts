@@ -742,6 +742,9 @@ const fr = {
  failedToCreate: "Échec de la création du contenu",
  contentDeleted: "Contenu supprimé avec succès !",
  aiContentGenerated: "Contenu IA généré avec succès !",
+ publicationEnCours: "Publication en cours : le réseau traite le post, il apparaîtra publié dans quelques minutes.",
+ dejaPublie: "Ce post est publié (ou en train de partir) : sa date ne change plus.",
+ failedToUpdate: "La modification n'a pas été enregistrée.",
  contentPublished: "Contenu publié avec succès !",
  failedToPublish: "Échec de la publication du contenu",
  connectAccount: "Connecter un compte",
@@ -1966,6 +1969,9 @@ const fr = {
  social_account_not_connected: "Aucun compte {{platform}} connecté. Connecte-le d'abord dans les réglages.",
  social_token_expired: "Ta connexion {{platform}} a expiré. Reconnecte le compte.",
  content_publish_failed: "La publication a échoué. Vérifie la connexion du compte.",
+ publication_echouee: "La publication a échoué : {{raison}}",
+ publication_occupee: "Ce post est déjà en train de partir (ou déjà publié) : rien n'a été relancé.",
+ publication_impossible: "Publication impossible : {{raison}}",
  },
 
  auth: {

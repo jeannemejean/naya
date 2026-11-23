@@ -738,6 +738,9 @@ const en = {
  failedToCreate: "Failed to create content",
  contentDeleted: "Content deleted successfully!",
  aiContentGenerated: "AI content generated successfully!",
+ publicationEnCours: "Publishing in progress: the network is processing the post, it will show as published in a few minutes.",
+ dejaPublie: "This post is published (or being published): its date can no longer change.",
+ failedToUpdate: "The change was not saved.",
  contentPublished: "Content published successfully!",
  failedToPublish: "Failed to publish content",
  connectAccount: "Connect Account",
@@ -1962,6 +1965,9 @@ const en = {
  social_account_not_connected: "No {{platform}} account connected. Connect it in settings first.",
  social_token_expired: "Your {{platform}} connection has expired. Reconnect the account.",
  content_publish_failed: "Publishing failed. Check the account connection.",
+ publication_echouee: "Publishing failed: {{raison}}",
+ publication_occupee: "This post is already being published (or already published): nothing was restarted.",
+ publication_impossible: "Cannot publish: {{raison}}",
  },
 
  auth: {

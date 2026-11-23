@@ -53,7 +53,8 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [scheduledFor, setScheduledFor] = useState("");
-  const [autoPost, setAutoPost] = useState(true);
+  // Publication automatique sur demande seulement (le serveur ne l'active plus par défaut).
+  const [autoPost, setAutoPost] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const mediaInputs: MediaInput[] = media.map((m) => ({ kind: m.kind, durationSec: m.durationSec }));
@@ -120,7 +121,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           autoPost, projectId: projectId || null,
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.message || "cross_post_failed");
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.texte || e?.message || "cross_post_failed"); }
       return res.json();
     },
     onSuccess: (data: any) => {

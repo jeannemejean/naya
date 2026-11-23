@@ -134,3 +134,23 @@ describe("comptesARafraichir", () => {
     expect(comptesARafraichir([], MAINTENANT)).toEqual([]);
   });
 });
+
+describe("Instagram et reconnexion", async () => {
+  const { instagramARafraichir, comptesAReconnecter } = await import("./social-token-refresh");
+  const now = new Date("2026-11-23T12:00:00Z");
+  const jours = (n: number) => new Date(now.getTime() + n * 86_400_000);
+  const ig = (expiresAt: Date | null, o = {}) => ({ id: 1, platform: "instagram", accessToken: "t", refreshToken: null, isActive: true, expiresAt, ...o });
+
+  it("Instagram vivant à moins de 30 jours : renouvelé sans refresh_token", () => {
+    expect(instagramARafraichir(ig(jours(20)), now)).toBe(true);
+    expect(comptesARafraichir([ig(jours(20))], now)).toHaveLength(1);
+  });
+  it("Instagram loin de l'échéance, mort, ou sans échéance : pas d'appel", () => {
+    expect(instagramARafraichir(ig(jours(45)), now)).toBe(false);
+    expect(instagramARafraichir(ig(jours(-1)), now)).toBe(false);
+    expect(instagramARafraichir(ig(null), now)).toBe(false);
+  });
+  it("compte mort : à reconnecter ; vivant ou désactivé : non", () => {
+    expect(comptesAReconnecter([ig(jours(-90)), ig(jours(10)), ig(jours(-5), { isActive: false })], now)).toHaveLength(1);
+  });
+});

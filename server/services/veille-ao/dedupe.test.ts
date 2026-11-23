@@ -1,5 +1,5 @@
 // Veille AO : ce qui est déjà en base, y compris importé de Notion, ne repasse pas par l'IA.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
 import { classer, cleObjet, numerosBoamp, numerosTed, type Existant } from "./dedupe";
 import type { AvisCollecte } from "./mapping";
 
@@ -9,6 +9,9 @@ const avis = (over: Partial<AvisCollecte>): AvisCollecte => ({
   lienAvis: null, lienDce: null, cpv: [], texte: "", ...over,
 });
 const MAINTENANT = new Date("2026-11-10T08:00:00Z");
+// Horloge figée : les dates limites des avis de test ne « passent » jamais avec le temps.
+beforeAll(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(MAINTENANT); });
+afterAll(() => { vi.useRealTimers(); });
 const existant = (over: Partial<Existant>): Existant => ({
   id: 1, source: "notion_import", sourceId: "abc", reference: null, lienAvis: null, objet: "Autre chose sans rapport ici", ...over,
 });
