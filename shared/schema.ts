@@ -628,6 +628,12 @@ export const content = pgTable("content", {
   // ── Refonte publication sociale (Metricool/Later) ──
   postFormat: text("post_format").default("feed_image"), // feed_image|feed_video|carousel|story|reel|short|text
   crossPostGroupId: text("cross_post_group_id"),         // regroupe les lignes d'un même post multi-réseaux
+  // Premier commentaire posté juste après la publication (Instagram, LinkedIn, Facebook), et
+  // quand il l'a été (jamais deux fois). Couverture d'un Reel : image, ou instant de la vidéo.
+  premierCommentaire: text("premier_commentaire"),
+  premierCommentaireAt: timestamp("premier_commentaire_at"),
+  couvertureUrl: text("couverture_url"),
+  couvertureOffsetMs: integer("couverture_offset_ms"),
   videoMeta: jsonb("video_meta"),                        // { durationSec, width, height, thumbnailUrl }
   providerContainerId: text("provider_container_id"),    // conteneur média IG/FB / publish_id TikTok (async)
   lastError: text("last_error"),                         // dernier message d'échec de publication

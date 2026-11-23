@@ -14,7 +14,7 @@
  */
 import { storage } from '../storage';
 import { socialMediaService } from './social-integrations';
-import { publishPost, igFinishAsync, tiktokFinishAsync } from './social-publishers';
+import { publishPost, igFinishAsync, tiktokFinishAsync, publierPremierCommentaire } from './social-publishers';
 import { formatDePublication, plateformeDe } from '@shared/programmation';
 import { compteDePublication } from './connexions/comptes';
 import { db } from '../db';
@@ -62,6 +62,36 @@ export async function signalerEchec(item: { id: number; userId: string; title?: 
     } as any);
   } catch (e: any) {
     console.error(`[SocialPublisher] alerte du post ${item.id} non créée:`, e?.message || e);
+  }
+}
+
+/**
+ * Après une publication réussie : le premier commentaire, une seule fois. Un raté ne touche pas
+ * au post (il est parti) : une tâche porte le texte à coller.
+ */
+export async function apresPublication(item: any, compte: { platform: string; accessToken: string; accountId: string }, platformPostId: string | null | undefined): Promise<void> {
+  const texte = (item.premierCommentaire ?? '').trim();
+  if (!texte || item.premierCommentaireAt || !platformPostId) return;
+  const r = await publierPremierCommentaire({
+    platform: plateformeDe(item.platform), platformPostId, texte,
+    credentials: { accessToken: compte.accessToken, accountId: compte.accountId, accountPlatform: compte.platform },
+  });
+  if (r.ok) {
+    await storage.updateContent(item.id, { premierCommentaireAt: new Date() } as any).catch(() => {});
+    return;
+  }
+  console.error(`[SocialPublisher] premier commentaire du post ${item.id} non posté: ${r.erreur}`);
+  try {
+    await storage.createTask({
+      userId: item.userId, title: `Poster le premier commentaire : ${(item.title || 'post').slice(0, 70)}`,
+      description: `Le post est publié, mais Naya n'a pas pu poster le premier commentaire (${r.erreur.slice(0, 120)}). À coller sous le post :\n\n${texte}`,
+      type: 'content', category: 'planning', priority: 1, source: 'premier_commentaire', contentId: item.id,
+      scheduledDate: jourParis(new Date()), estimatedDuration: 5,
+    } as any);
+    // Marqué traité : jamais de deuxième tentative qui doublerait un commentaire passé malgré l'erreur.
+    await storage.updateContent(item.id, { premierCommentaireAt: new Date() } as any);
+  } catch (e: any) {
+    console.error(`[SocialPublisher] tâche du premier commentaire ${item.id}:`, e?.message || e);
   }
 }
 
@@ -150,6 +180,7 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
     const result = await publishPost({
       platform, format, caption: item.body, media,
       credentials: { accessToken: credentials.accessToken, accountId: credentials.accountId, accountPlatform: account.platform },
+      couverture: { url: item.couvertureUrl ?? null, offsetMs: item.couvertureOffsetMs ?? null },
     });
 
     if (result.state === 'processing') {
@@ -167,6 +198,7 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
     } as any);
     await cocherTachePublier(item.id);
     console.log(`[SocialPublisher] ✅ publié id=${item.id} sur ${platform} (postId=${result.platformPostId})`);
+    await apresPublication(item, account as any, result.platformPostId).catch(() => {});
     return 'posted';
   } catch (err: any) {
     console.error(`[SocialPublisher] ❌ échec id=${item.id} sur ${platform}: ${err?.message || err}`);
@@ -210,6 +242,7 @@ async function finishProcessing(): Promise<number> {
       if (r.state === 'posted') {
         await storage.updateContent(item.id, { status: 'published', publishedAt: new Date(), platformPostId: r.platformPostId, postStatus: 'posted', contentStatus: 'published', lastError: null } as any);
         await cocherTachePublier(item.id);
+        await apresPublication(item, account as any, r.platformPostId).catch(() => {});
         done++;
       } else if (r.state === 'failed') {
         await storage.updateContent(item.id, { postStatus: 'failed', lastError: (r.error || '').slice(0, 300) } as any);

@@ -767,3 +767,14 @@ existante touchée. Migration AVANT le push de `main` (les routes `/api/vie-pers
 ```sql
 select table_name from information_schema.tables where table_name like 'vie_perso_%';  -- 5 lignes
 ```
+
+## 17. Premier commentaire et couverture — `0044` à appliquer en prod à la main
+
+Fichier : `migrations/0044_puzzling_maximus.sql` (branche `feat/commentaire-couverture`). Quatre `ADD COLUMN`
+nullables sur `content` (`premier_commentaire`, `premier_commentaire_at`, `couverture_url`, `couverture_offset_ms`).
+Aucun `DROP`, aucune donnée touchée. Migration AVANT le push (le worker et les routes lisent ces colonnes).
+
+```sql
+select column_name from information_schema.columns where table_name='content' and column_name in
+ ('premier_commentaire','premier_commentaire_at','couverture_url','couverture_offset_ms');  -- 4 lignes
+```

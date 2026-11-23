@@ -31,6 +31,8 @@ export interface PubInput {
   caption: string;
   media: PubMedia[];
   credentials: PubCredentials;
+  /** Couverture d'une vidéo (Reel Instagram) : image, ou instant de la vidéo en ms. */
+  couverture?: { url?: string | null; offsetMs?: number | null };
 }
 export interface PubResult {
   state: "posted" | "processing" | "failed";
@@ -65,12 +67,18 @@ export function igContainerParams(
   item: PubMedia,
   caption: string,
   asChild = false,
+  couverture?: PubInput["couverture"],
 ): Record<string, any> {
   const params: Record<string, any> = {};
   const type = igMediaType(format, item.kind);
   if (item.kind === "video") {
     params.video_url = item.url;
     if (type !== "IMAGE") params.media_type = type; // REELS / STORIES
+    // Couverture d'un Reel : une image (cover_url) prime sur l'instant choisi (thumb_offset, ms).
+    if (type === "REELS" && !asChild) {
+      if (couverture?.url) params.cover_url = couverture.url;
+      else if (couverture?.offsetMs != null && couverture.offsetMs >= 0) params.thumb_offset = Math.round(couverture.offsetMs);
+    }
   } else {
     params.image_url = item.url;
     if (format === "story") params.media_type = "STORIES";
@@ -163,7 +171,7 @@ async function publishInstagram(input: PubInput): Promise<PubResult> {
 
   const item = media[0];
   if (!item) return { state: "failed", error: "no_media" };
-  const containerId = await igCreateContainer(creds, igContainerParams(format, item, caption));
+  const containerId = await igCreateContainer(creds, igContainerParams(format, item, caption, false, input.couverture));
 
   if (igIsAsync(format, media)) {
     // Vidéo : traitement long → le worker poll le statut puis publie.
@@ -429,6 +437,42 @@ export async function lireAbonnes(compte: CompteAudience, maintenant: Date = new
 // ─────────────────────────── Dispatcher ───────────────────────────
 
 /** Publie un post selon le réseau + format. */
+// ─────────────────────────── Premier commentaire ───────────────────────────
+
+/**
+ * Poste le premier commentaire sous un post publié. Jamais réessayé seul ni bloquant : le post
+ * est parti, un commentaire raté devient une tâche (le texte à coller). Instagram demande la
+ * permission instagram_business_manage_comments (reconnexion après son ajout).
+ */
+export async function publierPremierCommentaire(o: {
+  platform: string; credentials: PubCredentials; platformPostId: string; texte: string;
+}): Promise<{ ok: true } | { ok: false; erreur: string }> {
+  const texte = o.texte.trim();
+  if (!texte || !o.platformPostId || o.platformPostId === "posted") return { ok: false, erreur: "commentaire_impossible" };
+  try {
+    if (o.platform === "instagram") {
+      await igPost(`${o.platformPostId}/comments`, { message: texte }, o.credentials.accessToken);
+      return { ok: true };
+    }
+    if (o.platform === "facebook") {
+      await graphPost(`${o.platformPostId}/comments`, { message: texte }, o.credentials.accessToken);
+      return { ok: true };
+    }
+    if (o.platform === "linkedin") {
+      const actor = linkedinAuthorUrn(o.credentials.accountPlatform, o.credentials.accountId);
+      const res = await fetch(`${LI_API}/socialActions/${encodeURIComponent(o.platformPostId)}/comments`, {
+        method: "POST", headers: liHeaders(o.credentials.accessToken),
+        body: JSON.stringify({ actor, object: o.platformPostId, message: { text: texte } }),
+      });
+      if (!res.ok) return { ok: false, erreur: `li_comment_${res.status}: ${(await res.text()).slice(0, 150)}` };
+      return { ok: true };
+    }
+    return { ok: false, erreur: "commentaire_non_supporte" };
+  } catch (e: any) {
+    return { ok: false, erreur: String(e?.message || e).slice(0, 200) };
+  }
+}
+
 export async function publishPost(input: PubInput): Promise<PubResult> {
   try {
     if (input.platform === "instagram") return await publishInstagram(input);

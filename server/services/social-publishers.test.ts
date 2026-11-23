@@ -23,6 +23,20 @@ describe("igIsAsync", () => {
     expect(igIsAsync("carousel", [{ url: "i", kind: "image" }, { url: "v", kind: "video" }])).toBe(true));
 });
 
+describe("igContainerParams : couverture d'un Reel", () => {
+  const video = { url: "https://x/v.mp4", kind: "video" as const };
+  it("image de couverture prioritaire, sinon instant en ms", () => {
+    expect(igContainerParams("reel", video, "t", false, { url: "https://x/c.jpg", offsetMs: 3000 })).toMatchObject({ cover_url: "https://x/c.jpg" });
+    expect(igContainerParams("reel", video, "t", false, { url: "https://x/c.jpg", offsetMs: 3000 })).not.toHaveProperty("thumb_offset");
+    expect(igContainerParams("reel", video, "t", false, { offsetMs: 2500 })).toMatchObject({ thumb_offset: 2500 });
+  });
+  it("pas de couverture sur une story, un élément de carrousel ou une image", () => {
+    expect(igContainerParams("story", video, "t", false, { offsetMs: 1000 })).not.toHaveProperty("thumb_offset");
+    expect(igContainerParams("carousel", video, "t", true, { offsetMs: 1000 })).not.toHaveProperty("thumb_offset");
+    expect(igContainerParams("feed_image", { url: "https://x/i.jpg", kind: "image" }, "t", false, { url: "https://x/c.jpg" })).not.toHaveProperty("cover_url");
+  });
+});
+
 describe("igContainerParams", () => {
   it("photo feed : image_url + caption", () => {
     const p = igContainerParams("feed_image", { url: "https://x/i.jpg", kind: "image" }, "Bonjour");

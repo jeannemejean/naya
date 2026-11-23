@@ -11,7 +11,11 @@ const storage = {
 };
 vi.mock("../storage", () => ({ storage }));
 const publishPost = vi.fn();
-vi.mock("./social-publishers", () => ({ publishPost: (...a: any[]) => publishPost(...a), igFinishAsync: vi.fn(), tiktokFinishAsync: vi.fn() }));
+const publierPremierCommentaire = vi.fn();
+vi.mock("./social-publishers", () => ({
+  publishPost: (...a: any[]) => publishPost(...a), igFinishAsync: vi.fn(), tiktokFinishAsync: vi.fn(),
+  publierPremierCommentaire: (...a: any[]) => publierPremierCommentaire(...a),
+}));
 vi.mock("./social-integrations", () => ({ socialMediaService: {} }));
 vi.mock("./connexions/comptes", () => ({
   compteDePublication: vi.fn(async () => ({ compte: { platform: "instagram", accessToken: "t", accountId: "a", expiresAt: null } })),
@@ -73,5 +77,33 @@ describe("publishDueContent", () => {
     const r = await publishDueContent();
     expect(r.posted).toBe(1);
     expect(storage.createTask).not.toHaveBeenCalled();
+  });
+
+  it("publié avec un premier commentaire : posté une fois, marqué", async () => {
+    storage.getDueScheduledContent.mockResolvedValue([post({ premierCommentaire: "Lien en bio 👇" })]);
+    publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });
+    publierPremierCommentaire.mockResolvedValue({ ok: true });
+    await publishDueContent();
+    expect(publierPremierCommentaire).toHaveBeenCalledWith(expect.objectContaining({ platform: "instagram", platformPostId: "p1", texte: "Lien en bio 👇" }));
+    expect(storage.updateContent).toHaveBeenCalledWith(7, expect.objectContaining({ premierCommentaireAt: expect.any(Date) }));
+    expect(storage.createTask).not.toHaveBeenCalled();
+  });
+
+  it("commentaire raté : le post reste publié, une tâche porte le texte à coller", async () => {
+    storage.getDueScheduledContent.mockResolvedValue([post({ premierCommentaire: "Lien en bio" })]);
+    publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });
+    publierPremierCommentaire.mockResolvedValue({ ok: false, erreur: "ig_403: permission" });
+    const r = await publishDueContent();
+    expect(r.posted).toBe(1);
+    expect(storage.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Poster le premier commentaire : Post de lundi", source: "premier_commentaire", description: expect.stringContaining("Lien en bio"),
+    }));
+  });
+
+  it("couverture transmise au publieur", async () => {
+    storage.getDueScheduledContent.mockResolvedValue([post({ couvertureOffsetMs: 2000 })]);
+    publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });
+    await publishDueContent();
+    expect(publishPost).toHaveBeenCalledWith(expect.objectContaining({ couverture: { url: null, offsetMs: 2000 } }));
   });
 });
