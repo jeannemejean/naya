@@ -7,6 +7,7 @@
 import type { GenreMedia } from "@shared/programmation";
 import { problemesProgrammation, plateformeDe } from "@shared/programmation";
 import { etatPost, genreDuPost, lundiDe, manquesPourValider, plusJours, type Manque } from "@shared/atelier";
+import { lireOptionsPost } from "@shared/options-post";
 import { estEtapeEcran, estTachePublier, jourDuPost, postAProduire } from "../campagne/production";
 
 const EN_COURS = ["posting", "uploading", "processing"];
@@ -34,7 +35,8 @@ export type ResultatValidation =
   | { statut: "manques"; manques: Array<Manque | "trop_de_visuels"> }
   | { statut: "introuvable" | "en_cours" | "deja_publie" | "deja_valide" | "invalide" };
 
-export interface Modifications { body?: unknown; title?: unknown; scheduledFor?: unknown; postFormat?: unknown; premierCommentaire?: unknown; couvertureOffsetMs?: unknown }
+export interface Modifications { body?: unknown; title?: unknown; scheduledFor?: unknown; postFormat?: unknown; premierCommentaire?: unknown; couvertureOffsetMs?: unknown;
+  texteAlternatif?: unknown; collaborateurs?: unknown; reelDansLeFil?: unknown; nomAudio?: unknown; linkedinDocument?: unknown }
 
 /** Limite d'Instagram pour un commentaire. */
 export const COMMENTAIRE_MAX = 2200;
@@ -67,6 +69,13 @@ export function lireModifications(m: Modifications): Record<string, unknown> | n
     if (n !== null && (typeof n !== "number" || !Number.isInteger(n) || n < 0 || n > 15 * 60_000)) return null;
     patch.couvertureOffsetMs = n;
   }
+  // Options de publication (alt, collaborateurs, Reel, document LinkedIn).
+  const options = lireOptionsPost({
+    texteAlternatif: m.texteAlternatif, collaborateurs: m.collaborateurs, reelDansLeFil: m.reelDansLeFil,
+    nomAudio: m.nomAudio, linkedinDocument: m.linkedinDocument,
+  });
+  if (!options) return null;
+  Object.assign(patch, options);
   return patch;
 }
 

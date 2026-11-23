@@ -8,7 +8,9 @@
  * Modèle async (vidéo IG) : on crée le conteneur → l'API renvoie un container id en cours de
  * traitement → le worker re-vérifie le statut puis publie quand FINISHED.
  */
+import { PDFDocument } from "pdf-lib";
 import { socialMediaService } from "./social-integrations";
+import { TITRE_DOCUMENT_MAX, type OptionsPost } from "@shared/options-post";
 
 const GRAPH = "https://graph.facebook.com/v23.0";          // Facebook (Pages)
 const IG_GRAPH = "https://graph.instagram.com/v23.0";      // Instagram (API « Instagram Login »)
@@ -33,7 +35,10 @@ export interface PubInput {
   credentials: PubCredentials;
   /** Couverture d'une vidéo (Reel Instagram) : image, ou instant de la vidéo en ms. */
   couverture?: { url?: string | null; offsetMs?: number | null };
+  /** Options du post (alt, collaborateurs, Reel, document LinkedIn) et titre du post. */
+  options?: OptionsPub;
 }
+export type OptionsPub = Partial<OptionsPost> & { titre?: string | null };
 export interface PubResult {
   state: "posted" | "processing" | "failed";
   platformPostId?: string;
@@ -68,6 +73,7 @@ export function igContainerParams(
   caption: string,
   asChild = false,
   couverture?: PubInput["couverture"],
+  options?: OptionsPub,
 ): Record<string, any> {
   const params: Record<string, any> = {};
   const type = igMediaType(format, item.kind);
@@ -85,6 +91,32 @@ export function igContainerParams(
   }
   if (asChild) params.is_carousel_item = true;
   else if (caption && format !== "story") params.caption = caption;
+
+  // Options (doc Instagram) : jamais en story.
+  if (format === "story" || type === "STORIES") return params;
+  const alt = options?.texteAlternatif?.trim();
+  if (alt && item.kind === "image") params.alt_text = alt; // image du fil ou image de carrousel
+  if (asChild) return params; // collaborateurs : sur le conteneur carrousel ; Reel : pas d'enfant
+  const collab = collaborateursDe(options);
+  if (collab) params.collaborators = collab;
+  if (type === "REELS") {
+    if (options?.reelDansLeFil != null) params.share_to_feed = options.reelDansLeFil;
+    const audio = options?.nomAudio?.trim();
+    if (audio) params.audio_name = audio;
+  }
+  return params;
+}
+
+function collaborateursDe(options?: OptionsPub): string[] | null {
+  const c = (options?.collaborateurs ?? []).filter((x) => typeof x === "string" && x.trim());
+  return c.length ? c.slice(0, 3) : null;
+}
+
+/** Conteneur carrousel Instagram : enfants, légende, collaborateurs. */
+export function igCarouselParams(childIds: string[], caption: string, options?: OptionsPub): Record<string, any> {
+  const params: Record<string, any> = { media_type: "CAROUSEL", children: childIds.join(","), caption };
+  const collab = collaborateursDe(options);
+  if (collab) params.collaborators = collab;
   return params;
 }
 
@@ -158,11 +190,11 @@ async function publishInstagram(input: PubInput): Promise<PubResult> {
   if (format === "carousel") {
     const childIds: string[] = [];
     for (const m of media) {
-      const childId = await igCreateContainer(creds, igContainerParams(format, m, caption, true));
+      const childId = await igCreateContainer(creds, igContainerParams(format, m, caption, true, undefined, input.options));
       await igWaitReady(creds, childId); // chaque enfant doit être prêt avant le conteneur carrousel
       childIds.push(childId);
     }
-    const carouselId = await igCreateContainer(creds, { media_type: "CAROUSEL", children: childIds.join(","), caption });
+    const carouselId = await igCreateContainer(creds, igCarouselParams(childIds, caption, input.options));
     const ready = await igWaitReady(creds, carouselId);
     if (ready === "ERROR") return { state: "failed", error: "carousel_container_error" };
     if (ready === "PENDING") return { state: "processing", containerId: carouselId };
@@ -171,7 +203,7 @@ async function publishInstagram(input: PubInput): Promise<PubResult> {
 
   const item = media[0];
   if (!item) return { state: "failed", error: "no_media" };
-  const containerId = await igCreateContainer(creds, igContainerParams(format, item, caption, false, input.couverture));
+  const containerId = await igCreateContainer(creds, igContainerParams(format, item, caption, false, input.couverture, input.options));
 
   if (igIsAsync(format, media)) {
     // Vidéo : traitement long → le worker poll le statut puis publie.
@@ -252,6 +284,49 @@ async function liUploadVideo(token: string, owner: string, mediaUrl: string): Pr
   return video;
 }
 
+/** Genre d'image d'après ses premiers octets (pdf-lib ne lit que JPEG et PNG). */
+function genreImage(b: Uint8Array): "jpg" | "png" | null {
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpg";
+  if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "png";
+  return null;
+}
+
+/** PDF d'un carrousel : une page par image, à la taille de l'image, dans l'ordre. */
+export async function imagesVersPdf(images: Uint8Array[]): Promise<Uint8Array> {
+  const pdf = await PDFDocument.create();
+  for (const b of images) {
+    const genre = genreImage(b);
+    if (!genre) throw new Error("li_document_image_non_supportee");
+    const img = genre === "jpg" ? await pdf.embedJpg(b) : await pdf.embedPng(b);
+    const page = pdf.addPage([img.width, img.height]);
+    page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+  }
+  return pdf.save();
+}
+
+/** Carrousel LinkedIn en document : PDF → Documents API → URN document. */
+async function liUploadDocument(token: string, owner: string, pdf: Uint8Array): Promise<string> {
+  const init = await fetch(`${LI_API}/documents?action=initializeUpload`, {
+    method: "POST",
+    headers: liHeaders(token),
+    body: JSON.stringify({ initializeUploadRequest: { owner } }),
+  });
+  const ij: any = await init.json().catch(() => ({}));
+  if (!init.ok) throw new Error(`li_doc_init_${init.status}: ${JSON.stringify(ij).slice(0, 150)}`);
+  const uploadUrl = ij?.value?.uploadUrl;
+  const documentUrn = ij?.value?.document;
+  if (!uploadUrl || !documentUrn) throw new Error("li_doc_init_no_url");
+  const up = await fetch(uploadUrl, { method: "PUT", headers: { Authorization: `Bearer ${token}` }, body: Buffer.from(pdf) });
+  if (!up.ok) throw new Error(`li_doc_upload_${up.status}`);
+  return documentUrn;
+}
+
+/** Titre du document : le titre du post, sinon la première ligne de la légende (≤ 200). */
+function titreDocument(input: PubInput): string {
+  const t = (input.options?.titre ?? "").trim() || (input.caption ?? "").split("\n")[0].trim() || "Carrousel";
+  return t.slice(0, TITRE_DOCUMENT_MAX);
+}
+
 async function publishLinkedIn(input: PubInput): Promise<PubResult> {
   const token = input.credentials.accessToken;
   const author = linkedinAuthorUrn(input.credentials.accountPlatform, input.credentials.accountId);
@@ -259,7 +334,16 @@ async function publishLinkedIn(input: PubInput): Promise<PubResult> {
   let content: any;
   const video = input.media.find((m) => m.kind === "video");
   const images = input.media.filter((m) => m.kind === "image");
-  if (video) {
+  if (!video && images.length > 0 && input.format === "carousel" && input.options?.linkedinDocument === true) {
+    const octets: Uint8Array[] = [];
+    for (const m of images) {
+      const r = await fetch(m.url);
+      if (!r.ok) throw new Error(`li_doc_image_${r.status}`);
+      octets.push(new Uint8Array(await r.arrayBuffer()));
+    }
+    const doc = await liUploadDocument(token, author, await imagesVersPdf(octets));
+    content = { media: { id: doc, title: titreDocument(input) } };
+  } else if (video) {
     content = { media: { id: await liUploadVideo(token, author, video.url) } };
   } else if (images.length === 1) {
     content = { media: { id: await liUploadImage(token, author, images[0].url) } };

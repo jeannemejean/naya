@@ -634,6 +634,14 @@ export const content = pgTable("content", {
   premierCommentaireAt: timestamp("premier_commentaire_at"),
   couvertureUrl: text("couverture_url"),
   couvertureOffsetMs: integer("couverture_offset_ms"),
+  // Options de publication (API officielles). Instagram : texte alternatif des images, comptes
+  // collaborateurs (≤ 3), Reel affiché dans le fil (null = choix d'Instagram), nom de l'audio
+  // original du Reel. LinkedIn : carrousel publié en document PDF (une image par page).
+  texteAlternatif: text("texte_alternatif"),
+  collaborateurs: jsonb("collaborateurs"),                  // string[] (noms Instagram, ≤ 3)
+  reelDansLeFil: boolean("reel_dans_le_fil"),
+  nomAudio: text("nom_audio"),
+  linkedinDocument: boolean("linkedin_document"),
   videoMeta: jsonb("video_meta"),                        // { durationSec, width, height, thumbnailUrl }
   providerContainerId: text("provider_container_id"),    // conteneur média IG/FB / publish_id TikTok (async)
   lastError: text("last_error"),                         // dernier message d'échec de publication

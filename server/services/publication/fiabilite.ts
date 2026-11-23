@@ -75,6 +75,7 @@ const RAISONS: Record<string, string> = {
   media_required: "Ce réseau demande un visuel, le post n'en a pas.",
   plateforme_non_supportee: "Naya ne publie pas encore seule sur ce réseau : publie-le toi-même.",
   publication_manquee: "Le post n'a pas pu partir à l'heure (Naya était indisponible). Publie-le toi-même ou reprogramme-le.",
+  li_document_image_non_supportee: "Le carrousel PDF LinkedIn n'accepte que des images JPEG ou PNG : remplace les autres visuels, ou publie-le en images.",
   publication_a_verifier: "La publication a été interrompue : vérifie sur le réseau si le post est parti avant de le republier.",
 };
 

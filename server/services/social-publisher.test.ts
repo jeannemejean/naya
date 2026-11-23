@@ -106,4 +106,15 @@ describe("publishDueContent", () => {
     await publishDueContent();
     expect(publishPost).toHaveBeenCalledWith(expect.objectContaining({ couverture: { url: null, offsetMs: 2000 } }));
   });
+
+  it("options de post transmises au publieur", async () => {
+    storage.getDueScheduledContent.mockResolvedValue([post({
+      texteAlternatif: "alt", collaborateurs: ["a.b"], reelDansLeFil: false, nomAudio: "Son", linkedinDocument: true,
+    })]);
+    publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });
+    await publishDueContent();
+    expect(publishPost).toHaveBeenCalledWith(expect.objectContaining({ options: {
+      texteAlternatif: "alt", collaborateurs: ["a.b"], reelDansLeFil: false, nomAudio: "Son", linkedinDocument: true, titre: "Post de lundi",
+    } }));
+  });
 });

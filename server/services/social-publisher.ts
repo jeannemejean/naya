@@ -181,6 +181,11 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
       platform, format, caption: item.body, media,
       credentials: { accessToken: credentials.accessToken, accountId: credentials.accountId, accountPlatform: account.platform },
       couverture: { url: item.couvertureUrl ?? null, offsetMs: item.couvertureOffsetMs ?? null },
+      options: {
+        texteAlternatif: item.texteAlternatif ?? null, collaborateurs: item.collaborateurs ?? null,
+        reelDansLeFil: item.reelDansLeFil ?? null, nomAudio: item.nomAudio ?? null,
+        linkedinDocument: item.linkedinDocument ?? null, titre: item.title ?? null,
+      },
     });
 
     if (result.state === 'processing') {

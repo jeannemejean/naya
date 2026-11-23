@@ -216,3 +216,37 @@ describe("lireModifications — premier commentaire et couverture", () => {
     expect(lireModifications({ couvertureOffsetMs: 1.5 })).toBeNull();
   });
 });
+
+describe("lireModifications — options de post", () => {
+  it("texte alternatif : nettoyé, vide → null, > 1000 refusé", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ texteAlternatif: "  Une tasse  " })).toEqual({ texteAlternatif: "Une tasse" });
+    expect(lireModifications({ texteAlternatif: "" })).toEqual({ texteAlternatif: null });
+    expect(lireModifications({ texteAlternatif: null })).toEqual({ texteAlternatif: null });
+    expect(lireModifications({ texteAlternatif: "x".repeat(1001) })).toBeNull();
+    expect(lireModifications({ texteAlternatif: 3 })).toBeNull();
+  });
+  it("collaborateurs : ≤ 3 noms Instagram valides, @ retiré, doublons fusionnés, [] → null", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ collaborateurs: ["@Mouture.cafe", "jeanne_m", "mouture.cafe"] })).toEqual({ collaborateurs: ["mouture.cafe", "jeanne_m"] });
+    expect(lireModifications({ collaborateurs: [] })).toEqual({ collaborateurs: null });
+    expect(lireModifications({ collaborateurs: null })).toEqual({ collaborateurs: null });
+    expect(lireModifications({ collaborateurs: ["a", "b", "c", "d"] })).toBeNull();
+    expect(lireModifications({ collaborateurs: ["pas valide"] })).toBeNull();
+    expect(lireModifications({ collaborateurs: ["x".repeat(31)] })).toBeNull();
+    expect(lireModifications({ collaborateurs: "jeanne" })).toBeNull();
+  });
+  it("Reel dans le fil et LinkedIn document : booléen ou null", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ reelDansLeFil: false, linkedinDocument: true })).toEqual({ reelDansLeFil: false, linkedinDocument: true });
+    expect(lireModifications({ reelDansLeFil: null })).toEqual({ reelDansLeFil: null });
+    expect(lireModifications({ reelDansLeFil: "oui" })).toBeNull();
+    expect(lireModifications({ linkedinDocument: 1 })).toBeNull();
+  });
+  it("nom de l'audio : nettoyé, vide → null, trop long refusé", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ nomAudio: " Son original " })).toEqual({ nomAudio: "Son original" });
+    expect(lireModifications({ nomAudio: "" })).toEqual({ nomAudio: null });
+    expect(lireModifications({ nomAudio: "x".repeat(101) })).toBeNull();
+  });
+});

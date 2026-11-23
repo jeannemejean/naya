@@ -778,3 +778,15 @@ Aucun `DROP`, aucune donnée touchée. Migration AVANT le push (le worker et les
 select column_name from information_schema.columns where table_name='content' and column_name in
  ('premier_commentaire','premier_commentaire_at','couverture_url','couverture_offset_ms');  -- 4 lignes
 ```
+
+## 18. Options de post (alt, collaborateurs, Reel, PDF LinkedIn) — `0045` à appliquer en prod à la main
+
+Fichier : `migrations/0045_fluffy_sasquatch.sql` (branche `feat/reseaux-par-projet`). Cinq `ADD COLUMN`
+nullables sur `content` (`texte_alternatif`, `collaborateurs` jsonb, `reel_dans_le_fil`, `nom_audio`,
+`linkedin_document`). Aucun `DROP`, aucune donnée touchée. Migration AVANT le push (le worker et les routes
+lisent ces colonnes).
+
+```sql
+select column_name from information_schema.columns where table_name='content' and column_name in
+ ('texte_alternatif','collaborateurs','reel_dans_le_fil','nom_audio','linkedin_document');  -- 5 lignes
+```
