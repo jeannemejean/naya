@@ -35,6 +35,7 @@ import { rattacherCompte } from "./services/connexions/rattacher-compte";
 import { registerReponsesRoutes, STADES_ENGAGES } from "./routes-reponses";
 import { registerSalvesRoutes } from "./routes-salves";
 import { registerAppelsOffresRoutes } from "./routes-appels-offres";
+import { registerViePersoRoutes } from "./routes-vie-perso";
 import { registerOrchestreRoutes } from "./routes-orchestre";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
@@ -11344,6 +11345,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerReponsesRoutes(app);
   registerSalvesRoutes(app);
   registerAppelsOffresRoutes(app);
+  registerViePersoRoutes(app);
   registerOrchestreRoutes(app);
   registerRapportsRoutes(app);
   registerAgentRoutes(app);
