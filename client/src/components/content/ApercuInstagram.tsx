@@ -1,18 +1,29 @@
 // Aperçu de la grille Instagram d'une marque (lot 4, inspiré de Metricool) : 3 colonnes, les
 // prochains posts du fil en tête (comme Instagram les empilera), puis les publiés depuis Naya.
 // Brouillon ou non validé : pâle ; à venir : petit badge de date. Un clic ouvre le post.
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Clapperboard, Copy as IconeCarrousel, ImageOff, Loader2 } from "lucide-react";
 import { DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 import { tuilePale, type TuileInstagram } from "@shared/apercu-instagram";
 
 interface Apercu { compte: { id: number; accountName: string | null } | null; tuiles: TuileInstagram[] }
 
-export default function ApercuInstagram({ projectId, onOuvrir }: { projectId: number | null; onOuvrir: (id: number) => void }) {
+/**
+ * `marques` (groupe de marques, lot 9) : la grille reste celle d'UNE marque (un compte
+ * Instagram) ; on choisit laquelle parmi les marques du groupe.
+ */
+export default function ApercuInstagram({ projectId: projetInitial, marques, onOuvrir }: {
+  projectId: number | null; marques?: Array<{ id: number; name: string }>; onOuvrir: (id: number) => void;
+}) {
   const { t } = useTranslation();
+  const [choix, setChoix] = useState<number | null>(() =>
+    marques && marques.length > 0 ? (marques.some((m) => m.id === projetInitial) ? projetInitial : marques[0].id) : projetInitial);
+  const projectId = marques ? choix : projetInitial;
   const { data, isLoading, isError } = useQuery<Apercu>({
     queryKey: ["/api/content", "apercu-instagram", projectId],
     queryFn: async () => (await apiRequest("GET", `/api/content/apercu-instagram${projectId ? `?projectId=${projectId}` : ""}`)).json(),
@@ -24,6 +35,14 @@ export default function ApercuInstagram({ projectId, onOuvrir }: { projectId: nu
       <DialogHeader>
         <DialogTitle>{t("apercuInstagram.titre")}</DialogTitle>
       </DialogHeader>
+      {marques && marques.length > 0 && (
+        <Select value={projectId != null ? String(projectId) : undefined} onValueChange={(v) => setChoix(Number(v))}>
+          <SelectTrigger className="h-8 text-sm" aria-label={t("groupesMarques.apercuMarque")} data-testid="apercu-marque"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {marques.map((m) => <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
       <p className="text-xs text-naya-olive-55">
         {data?.compte?.accountName ? t("apercuInstagram.compte", { nom: data.compte.accountName }) : t("apercuInstagram.sansCompte")}
       </p>

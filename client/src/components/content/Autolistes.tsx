@@ -330,9 +330,11 @@ function DetailListe({ id, projets, projetCourantId, onSupprimee }: { id: number
   );
 }
 
-export default function Autolistes({ projets, projetCourantId }: { projets: ProjetMin[]; projetCourantId: number | null }) {
+/** `marquesFiltre` (groupe de marques, lot 9) : seules les listes de ces marques ; null = toutes. */
+export default function Autolistes({ projets, projetCourantId, marquesFiltre = null }: { projets: ProjetMin[]; projetCourantId: number | null; marquesFiltre?: number[] | null }) {
   const { t } = useTranslation();
-  const { data: listes = [], isLoading } = useListes();
+  const { data: toutes = [], isLoading } = useListes();
+  const listes = marquesFiltre ? toutes.filter((l) => l.projectId != null && marquesFiltre.includes(l.projectId)) : toutes;
   const [vue, setVue] = useState<number | "nouvelle" | null>(null);
   const nomMarque = (id: number | null) => (id == null ? t("autolistes.sansMarque") : projets.find((p) => p.id === id)?.name ?? `#${id}`);
 
@@ -344,7 +346,10 @@ export default function Autolistes({ projets, projetCourantId }: { projets: Proj
       {vue == null ? (
         <div className="space-y-2">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-xs text-naya-olive-55">{t("autolistes.aide")}</p>
+            <div className="space-y-1">
+              <p className="text-xs text-naya-olive-55">{t("autolistes.aide")}</p>
+              {marquesFiltre && <p className="text-[11px] text-naya-olive-55">{t("groupesMarques.autolistesDuGroupe")}</p>}
+            </div>
             <Button size="sm" variant="outline" type="button" onClick={() => setVue("nouvelle")} data-testid="autoliste-nouvelle">
               <Plus className="h-3.5 w-3.5 mr-1" />{t("autolistes.nouvelle")}
             </Button>

@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +17,13 @@ import {
 } from "@shared/social-capabilities";
 
 interface Account { id: number; platform: string; basePlatform: string; accountName: string; isPage: boolean }
+/**
+ * Un compte proposé dans le composeur. `cle` : identifiant de la case (un compte des Réglages
+ * peut servir à deux marques d'un groupe : une case par marque) ; `marqueId` : la marque où le
+ * post sera rangé (groupe de marques, lot 9).
+ */
+interface Choix extends Account { cle: string; marqueId: number | null }
+export interface GroupeComposer { id: number; marques: Array<{ id: number; name: string; color?: string | null }> }
 interface MediaAsset { id: number; url: string; kind: "image" | "video"; durationSec?: number; name: string }
 
 /** Un instant → valeur d'un champ datetime-local, à l'heure de l'appareil. */
@@ -50,21 +57,33 @@ function defaultFormat(platform: Platform, media: MediaAsset[]): PostFormat {
   return available[0];
 }
 
-export function SocialComposer({ open, onClose, projectId }: { open: boolean; onClose: () => void; projectId?: number | null }) {
+export function SocialComposer({ open, onClose, projectId, groupe = null }: {
+  open: boolean; onClose: () => void; projectId?: number | null; groupe?: GroupeComposer | null;
+}) {
   const { toast } = useToast();
   const { t } = useTranslation();
   const qc = useQueryClient();
   // Comptes du périmètre du projet : un projet client ne propose que les comptes du client.
-  const { data: accounts = [] } = useQuery<Account[]>({
+  const { data: comptesProjet = [] } = useQuery<Account[]>({
     queryKey: [projectId ? `/api/social/accounts?projectId=${projectId}` : "/api/social/accounts"],
-    enabled: open,
+    enabled: open && !groupe,
   });
+  // Groupe de marques : les comptes de CHAQUE marque, selon son périmètre (client : les siens ;
+  // perso : les siens, puis ceux des Réglages pour les réseaux qu'elle n'a pas).
+  const parMarque = useQueries({
+    queries: (groupe?.marques ?? []).map((m) => ({ queryKey: [`/api/social/accounts?projectId=${m.id}`], enabled: open })),
+  });
+  const accounts: Choix[] = useMemo(() => {
+    if (!groupe) return comptesProjet.map((a) => ({ ...a, cle: String(a.id), marqueId: projectId ?? null }));
+    return groupe.marques.flatMap((m, i) => ((parMarque[i]?.data as Account[] | undefined) ?? []).map((a) => ({ ...a, cle: `${m.id}:${a.id}`, marqueId: m.id })));
+  }, [groupe, comptesProjet, projectId, parMarque]);
+  const nomMarque = (id: number | null) => groupe?.marques.find((m) => m.id === id)?.name ?? "";
 
-  const [selected, setSelected] = useState<Record<number, PostFormat>>({}); // accountId -> format
+  const [selected, setSelected] = useState<Record<string, PostFormat>>({}); // cle du compte -> format
   const [caption, setCaption] = useState("");
   // Légende adaptée par réseau (Metricool) : vide = la légende commune.
   const [adapter, setAdapter] = useState(false);
-  const [legendes, setLegendes] = useState<Record<number, string>>({});
+  const [legendes, setLegendes] = useState<Record<string, string>>({});
   const [premierCommentaire, setPremierCommentaire] = useState("");
   const zoneLegende = useRef<HTMLTextAreaElement>(null);
   const zoneCommentaire = useRef<HTMLTextAreaElement>(null);
@@ -75,7 +94,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
   const [reelDansLeFil, setReelDansLeFil] = useState<"defaut" | "oui" | "non">("defaut");
   const [nomAudio, setNomAudio] = useState("");
   const [linkedinDocument, setLinkedinDocument] = useState(false);
-  const legendeDe = (accId: number) => (adapter && legendes[accId]?.trim() ? legendes[accId] : caption);
+  const legendeDe = (cle: string) => (adapter && legendes[cle]?.trim() ? legendes[cle] : caption);
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [scheduledFor, setScheduledFor] = useState("");
   // Publication automatique sur demande seulement (le serveur ne l'active plus par défaut).
@@ -84,25 +103,29 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
 
   const mediaInputs: MediaInput[] = media.map((m) => ({ kind: m.kind, durationSec: m.durationSec }));
 
-  function toggleAccount(acc: Account) {
+  function toggleAccount(acc: Choix) {
     setSelected((prev) => {
       const next = { ...prev };
-      if (next[acc.id]) delete next[acc.id];
-      else next[acc.id] = defaultFormat(acc.basePlatform as Platform, media);
+      if (next[acc.cle]) delete next[acc.cle];
+      else next[acc.cle] = defaultFormat(acc.basePlatform as Platform, media);
       return next;
     });
   }
 
   // Validation par cible
   const validations = useMemo(() => {
-    return Object.entries(selected).map(([accId, format]) => {
-      const acc = accounts.find((a) => a.id === Number(accId))!;
-      const r = validatePost({ platform: acc.basePlatform as Platform, format, media: mediaInputs, caption: legendeDe(acc.id) });
-      return { acc, format, ...r };
+    return Object.entries(selected).flatMap(([cle, format]) => {
+      const acc = accounts.find((a) => a.cle === cle);
+      if (!acc) return [];
+      const r = validatePost({ platform: acc.basePlatform as Platform, format, media: mediaInputs, caption: legendeDe(acc.cle) });
+      return [{ acc, format, ...r }];
     });
   }, [selected, accounts, media, caption, adapter, legendes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allValid = validations.length > 0 && validations.every((v) => v.ok);
+  // La marque de référence (textes enregistrés, meilleures heures) : en groupe, celle du premier
+  // compte choisi, sinon la première marque du groupe.
+  const projetReference = groupe ? (validations[0]?.acc.marqueId ?? groupe.marques[0]?.id ?? null) : projectId;
 
   async function handleUpload(result: any) {
     setUploading(true);
@@ -134,10 +157,11 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
 
   const submit = useMutation({
     mutationFn: async () => {
-      const targets = Object.entries(selected).map(([accId, format]) => {
-        const acc = accounts.find((a) => a.id === Number(accId))!;
-        return { basePlatform: acc.basePlatform, socialAccountId: acc.id, format, caption: legendeDe(acc.id) };
-      });
+      // Groupe : chaque cible porte sa marque ; le serveur vérifie marque, groupe et périmètre.
+      const targets = validations.map(({ acc, format }) => ({
+        basePlatform: acc.basePlatform, socialAccountId: acc.id, format, caption: legendeDe(acc.cle),
+        ...(groupe ? { projectId: acc.marqueId } : {}),
+      }));
       const sec = couvertureSec.trim() === "" ? null : Number(couvertureSec);
       const collab = lireCollaborateurs(collaborateurs.split(/[\s,;]+/));
       if (collab === undefined) throw new Error(t("atelier.collaborateursInvalides"));
@@ -146,7 +170,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
         body: JSON.stringify({
           targets, caption, mediaIds: media.map((m) => m.id),
           scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
-          autoPost, projectId: projectId || null,
+          autoPost, ...(groupe ? { groupeId: groupe.id } : { projectId: projectId || null }),
           premierCommentaire: premierCommentaire.trim() || null,
           couvertureOffsetMs: sec != null && Number.isFinite(sec) && sec >= 0 ? Math.round(sec * 1000) : null,
           options: {
@@ -181,14 +205,41 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           {/* Réseaux */}
           <div>
             <p className="text-xs text-naya-olive-35 mb-2 font-mono">Réseaux</p>
-            {accounts.length === 0 ? (
+            {groupe ? (
+              <div className="space-y-2" data-testid="composer-marques">
+                <p className="text-[11px] text-naya-olive-55">{t("groupesMarques.composerAide")}</p>
+                {groupe.marques.map((m) => {
+                  const siens = accounts.filter((a) => a.marqueId === m.id);
+                  return (
+                    <div key={m.id}>
+                      <p className="flex items-center gap-1.5 text-xs font-medium text-naya-olive-70 mb-1">
+                        <span className="h-2 w-2 rounded-full" style={{ background: m.color || "var(--accent)" }} />{m.name}
+                      </p>
+                      {siens.length === 0 ? <p className="text-xs text-naya-olive-35">{t("groupesMarques.composerSansCompte")}</p> : (
+                        <div className="flex flex-wrap gap-2">
+                          {siens.map((acc) => {
+                            const on = !!selected[acc.cle];
+                            return (
+                              <button key={acc.cle} onClick={() => toggleAccount(acc)} data-testid={`compte-${acc.cle}`}
+                                className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${on ? "bg-naya-olive text-naya-cream border-naya-olive" : "bg-white text-naya-olive border-naya-olive-18 hover:bg-naya-olive-06"}`}>
+                                {PLATFORM_LABEL[acc.basePlatform] || acc.basePlatform}{acc.isPage ? ` ${t("composer.page")}` : ""} · {acc.accountName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : accounts.length === 0 ? (
               <p className="text-sm text-naya-olive-35">Aucun compte connecté — connecte tes réseaux dans Réglages.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {accounts.map((acc) => {
-                  const on = !!selected[acc.id];
+                  const on = !!selected[acc.cle];
                   return (
-                    <button key={acc.id} onClick={() => toggleAccount(acc)}
+                    <button key={acc.cle} onClick={() => toggleAccount(acc)}
                       className={`px-3 py-1.5 rounded-full text-xs border transition-colors ${on ? "bg-naya-olive text-naya-cream border-naya-olive" : "bg-white text-naya-olive border-naya-olive-18 hover:bg-naya-olive-06"}`}>
                       {PLATFORM_LABEL[acc.basePlatform] || acc.basePlatform}
                       {acc.isPage ? " (page)" : ""} · {acc.accountName}
@@ -231,9 +282,9 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
             <div className="space-y-2">
               <p className="text-xs text-naya-olive-35 font-mono">Format par réseau</p>
               {validations.map((v) => (
-                <div key={v.acc.id} className="flex items-center gap-3 text-sm">
-                  <span className="w-40 shrink-0 truncate">{PLATFORM_LABEL[v.acc.basePlatform]}{v.acc.isPage ? " (page)" : ""}</span>
-                  <select value={v.format} onChange={(e) => setSelected((p) => ({ ...p, [v.acc.id]: e.target.value as PostFormat }))}
+                <div key={v.acc.cle} className="flex items-center gap-3 text-sm">
+                  <span className="w-40 shrink-0 truncate">{groupe ? `${nomMarque(v.acc.marqueId)} · ` : ""}{PLATFORM_LABEL[v.acc.basePlatform]}{v.acc.isPage ? " (page)" : ""}</span>
+                  <select value={v.format} onChange={(e) => setSelected((p) => ({ ...p, [v.acc.cle]: e.target.value as PostFormat }))}
                     className="border border-naya-olive-18 rounded-md px-2 py-1 text-xs bg-white">
                     {formatsFor(v.acc.basePlatform as Platform).map((f) => <option key={f.format} value={f.format}>{f.label}</option>)}
                   </select>
@@ -278,17 +329,17 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           <div>
             <p className="text-xs text-naya-olive-35 mb-2 font-mono">Légende</p>
             <Textarea ref={zoneLegende} value={caption} onChange={(e) => setCaption(e.target.value)} rows={5} placeholder="Écris ta légende…" />
-            <TextesEnregistres zone={zoneLegende} valeur={caption} onChange={setCaption} projectId={projectId} reseau={validations[0]?.acc.basePlatform} testId="textes-legende" />
+            <TextesEnregistres zone={zoneLegende} valeur={caption} onChange={setCaption} projectId={projetReference} reseau={validations[0]?.acc.basePlatform} testId="textes-legende" />
             {validations.length > 1 && (
               <label className="mt-2 flex items-center gap-2 text-xs text-naya-olive-70">
                 <Switch checked={adapter} onCheckedChange={setAdapter} /> {t("composer.adapterParReseau")}
               </label>
             )}
             {adapter && validations.map(({ acc }) => (
-              <div key={acc.id} className="mt-2">
-                <p className="text-[11px] text-naya-olive-55 mb-1">{t("composer.legendePour", { reseau: acc.accountName || acc.basePlatform })}</p>
-                <Textarea rows={3} value={legendes[acc.id] ?? ""} placeholder={t("composer.legendeCommune")}
-                  onChange={(e) => setLegendes((l) => ({ ...l, [acc.id]: e.target.value }))} />
+              <div key={acc.cle} className="mt-2">
+                <p className="text-[11px] text-naya-olive-55 mb-1">{t("composer.legendePour", { reseau: groupe ? `${nomMarque(acc.marqueId)} · ${acc.accountName || acc.basePlatform}` : acc.accountName || acc.basePlatform })}</p>
+                <Textarea rows={3} value={legendes[acc.cle] ?? ""} placeholder={t("composer.legendeCommune")}
+                  onChange={(e) => setLegendes((l) => ({ ...l, [acc.cle]: e.target.value }))} />
               </div>
             ))}
           </div>
@@ -299,7 +350,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
               <p className="text-xs text-naya-olive-35 mb-2 font-mono">{t("atelier.premierCommentaire")}</p>
               <Textarea ref={zoneCommentaire} rows={2} maxLength={2200} value={premierCommentaire} onChange={(e) => setPremierCommentaire(e.target.value)}
                 placeholder={t("atelier.premierCommentaireAide")} />
-              <TextesEnregistres zone={zoneCommentaire} valeur={premierCommentaire} onChange={(v) => setPremierCommentaire(v.slice(0, 2200))} projectId={projectId} reseau={validations[0]?.acc.basePlatform} testId="textes-commentaire" />
+              <TextesEnregistres zone={zoneCommentaire} valeur={premierCommentaire} onChange={(v) => setPremierCommentaire(v.slice(0, 2200))} projectId={projetReference} reseau={validations[0]?.acc.basePlatform} testId="textes-commentaire" />
             </div>
           )}
           {validations.some(({ acc, format }) => acc.basePlatform === "instagram" && (format === "reel" || format === "feed_video")) && media.some((m) => m.kind === "video") && (
@@ -367,7 +418,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           </div>
           {/* Meilleures heures du premier réseau choisi (lot 7) : un clic fixe la date. */}
           {validations.length > 0 && (
-            <MeilleursCreneaux projectId={projectId} reseau={validations[0].acc.basePlatform} onChoisir={(d) => setScheduledFor(versChampLocal(d))} />
+            <MeilleursCreneaux projectId={projetReference} reseau={validations[0].acc.basePlatform} onChoisir={(d) => setScheduledFor(versChampLocal(d))} />
           )}
 
           <div className="flex justify-end gap-2 pt-2">

@@ -945,6 +945,32 @@ export const autolistePosts = pgTable("autoliste_posts", {
 export type AutolistePost = typeof autolistePosts.$inferSelect;
 
 /**
+ * Groupes de marques (lot 9, inspiré des « brand groups » de Metricool) : un paquet de projets
+ * pour piloter la communication de plusieurs marques ensemble (calendrier, composeur). Un projet
+ * peut appartenir à plusieurs groupes. Supprimer un groupe ne touche à aucun projet ni post.
+ */
+export const groupesMarques = pgTable("groupes_marques", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  nom: varchar("nom", { length: 80 }).notNull(),
+  couleur: varchar("couleur", { length: 7 }).notNull().default("#6366f1"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("groupes_marques_user_idx").on(t.userId),
+}));
+export type GroupeMarques = typeof groupesMarques.$inferSelect;
+
+export const groupeMarquesProjets = pgTable("groupe_marques_projets", {
+  id: serial("id").primaryKey(),
+  groupeId: integer("groupe_id").notNull().references(() => groupesMarques.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+}, (t) => ({
+  paireUnique: uniqueIndex("groupe_marques_projets_paire_idx").on(t.groupeId, t.projectId),
+  parProjet: index("groupe_marques_projets_project_idx").on(t.projectId),
+}));
+
+/**
  * Réception par contenu — signaux RAPIDES (SCHEMA-TRIANGULATION.md §C.2).
  *
  * RGPD par construction : cette table ne porte QUE des compteurs agrégés et un score.

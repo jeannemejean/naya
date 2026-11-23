@@ -22,6 +22,10 @@ import { registerAutolistesRoutes } from "./routes-autolistes";
 import { registerLiensPublics, registerLiensRoutes } from "./routes-liens";
 import { registerValidationPublique, registerValidationRoutes } from "./routes-validation";
 import { registerMeilleuresHeuresRoutes } from "./routes-meilleures-heures";
+import { registerGroupesMarquesRoutes } from "./routes-groupes-marques";
+import { depsGroupesMarques } from "./services/groupes-marques/deps";
+import { attribuerMarques } from "./services/groupes-marques/attribution";
+import { filtreMarquesDeRequete } from "@shared/groupes-marques";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
 import { relancerValidationSiEdite } from "./services/validation/relance";
 import { registerPreuvesRoutes } from "./routes-preuves";
@@ -6706,11 +6710,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const userId = req.userId;
       const { status, limit } = req.query;
 
-      let projectId: number | undefined;
-      if (req.query.projectId !== undefined) {
-        projectId = Number(req.query.projectId);
-        if (!Number.isFinite(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid projectId" });
-      }
+      // Une marque (`projectId`, inchangé) ou un groupe de marques (`groupeId`, lot 9 : les
+      // projets du groupe qui sont à l'utilisatrice ; groupe d'un autre compte → 404).
+      const filtre = await filtreMarquesDeRequete(req.query, (g) => depsGroupesMarques.projetsDuGroupe(userId, g));
+      if (!filtre.ok) return res.status(filtre.status).json({ message: filtre.message });
+      const projectId = filtre.projectIds;
 
       let campaignId: number | undefined;
       if (req.query.campaignId !== undefined) {
@@ -6805,17 +6809,39 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const commentaire = typeof premierCommentaire === 'string' && premierCommentaire.trim() ? premierCommentaire.trim().slice(0, 2200) : null;
       const couverture = Number.isInteger(couvertureOffsetMs) && couvertureOffsetMs >= 0 && couvertureOffsetMs <= 15 * 60_000 ? couvertureOffsetMs : null;
       if (!Array.isArray(targets) || targets.length === 0) return res.status(400).json({ message: 'no_targets' });
-      // Mode agence : chaque compte cible doit appartenir au périmètre du projet (client → ses
-      // comptes seulement ; perso ou aucun projet → ceux de l'utilisatrice).
-      if (projectId && !(await storage.getProject(Number(projectId), userId))) return res.status(404).json({ message: 'not_found' });
-      // Comptes du projet (perso : les siens, puis ceux des Réglages ; client : les siens seulement).
-      const perimetre = await porteeReseauxDuProjet(userId, projectId ? Number(projectId) : null);
+      const groupeId = req.body?.groupeId;
       const comptes = await storage.getSocialAccounts(userId);
-      const permis = new Set(comptesDuPerimetre(comptes as any[], perimetre).map((c: any) => c.id));
-      for (const tgt of targets) {
-        if (tgt?.socialAccountId == null) continue;
-        const compte = comptes.find((c: any) => c.id === Number(tgt.socialAccountId));
-        if (!compte || !permis.has(compte.id)) return res.status(400).json({ message: 'compte_hors_projet' });
+      // La marque de chaque cible (index des cibles) et son périmètre réseaux.
+      let marqueDe: (i: number) => number | null;
+      let perimetreDe: (i: number) => Awaited<ReturnType<typeof porteeReseauxDuProjet>>;
+      if (groupeId != null && groupeId !== '') {
+        // Groupe de marques (lot 9) : chaque cible désigne sa marque ; la marque doit être du
+        // groupe (groupe et projets de l'utilisatrice), le compte dans le périmètre de la marque.
+        if (projectId) return res.status(400).json({ message: 'projectId_ou_groupeId' });
+        const gid = Number(groupeId);
+        const ids = Number.isInteger(gid) && gid > 0 ? await depsGroupesMarques.projetsDuGroupe(userId, gid) : null;
+        if (!ids) return res.status(404).json({ message: 'not_found' });
+        const marques = (await Promise.all(ids.map((id) => storage.getProject(id, userId)))).filter(Boolean) as any[];
+        const a = attribuerMarques(targets, marques, comptes as any[]);
+        if (!a.ok) return res.status(400).json({ message: a.message, index: a.index });
+        const perimetres = new Map<number, Awaited<ReturnType<typeof porteeReseauxDuProjet>>>();
+        for (const id of new Set(a.projectIds)) perimetres.set(id, await porteeReseauxDuProjet(userId, id));
+        marqueDe = (i) => a.projectIds[i];
+        perimetreDe = (i) => perimetres.get(a.projectIds[i])!;
+      } else {
+        // Mode agence : chaque compte cible doit appartenir au périmètre du projet (client → ses
+        // comptes seulement ; perso ou aucun projet → ceux de l'utilisatrice).
+        if (projectId && !(await storage.getProject(Number(projectId), userId))) return res.status(404).json({ message: 'not_found' });
+        // Comptes du projet (perso : les siens, puis ceux des Réglages ; client : les siens seulement).
+        const perimetre = await porteeReseauxDuProjet(userId, projectId ? Number(projectId) : null);
+        const permis = new Set(comptesDuPerimetre(comptes as any[], perimetre).map((c: any) => c.id));
+        for (const tgt of targets) {
+          if (tgt?.socialAccountId == null) continue;
+          const compte = comptes.find((c: any) => c.id === Number(tgt.socialAccountId));
+          if (!compte || !permis.has(compte.id)) return res.status(400).json({ message: 'compte_hors_projet' });
+        }
+        marqueDe = () => projectId || null;
+        perimetreDe = () => perimetre;
       }
       const groupId = randomUUID();
       const when = scheduledFor ? new Date(scheduledFor) : null;
@@ -6836,12 +6862,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const maintenant = new Date();
         const reference = when.getTime() < maintenant.getTime() - 5 * 60_000 ? maintenant : new Date(when.getTime() - 3 * 60_000);
         const problemes = [];
-        for (const tgt of targets) {
+        for (const [i, tgt] of targets.entries()) {
           const plateforme = plateformeDe(tgt.basePlatform || tgt.platform);
           // Même choix de compte que le worker : plateforme exacte, actif, dans le périmètre.
           const compte = tgt.socialAccountId != null
             ? comptes.find((c: any) => c.id === Number(tgt.socialAccountId)) ?? null
-            : comptesDuPerimetre(comptes as any[], perimetre).find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false) ?? null;
+            : comptesDuPerimetre(comptes as any[], perimetreDe(i)).find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false) ?? null;
           // La date est jugée à l'heure de publication ; le compte, MAINTENANT (il se renouvelle seul).
           const p = problemesProgrammation({
             post: { body: legendeDe(tgt), platform: plateforme, scheduledFor: when }, medias: genres,
@@ -6862,10 +6888,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
       const created = [];
-      for (const tgt of targets) {
+      for (const [i, tgt] of targets.entries()) {
         const row = await storage.createContent({
           userId,
-          projectId: projectId || null,
+          projectId: marqueDe(i),
           title,
           body: legendeDe(tgt),
           platform: tgt.basePlatform || tgt.platform,        // instagram|facebook|linkedin|tiktok
@@ -11421,6 +11447,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerLiensRoutes(app);
   registerValidationRoutes(app);
   registerMeilleuresHeuresRoutes(app);
+  registerGroupesMarquesRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
   registerModeTestRoutes(app);

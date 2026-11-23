@@ -893,3 +893,23 @@ select column_name from information_schema.columns
 select indexname from pg_indexes
  where indexname in ('validation_projet_project_idx','portails_validation_token_idx');  -- 2 lignes
 ```
+
+## 25. Groupes de marques — `0052` à appliquer en prod à la main
+
+Fichier : `migrations/0052_sturdy_hellfire_club.sql` (branche `feat/reseaux-par-projet`). Additive :
+deux tables nouvelles — `groupes_marques` (id, user_id en cascade, nom ≤ 80, couleur, dates ;
+index `groupes_marques_user_idx`) et `groupe_marques_projets` (groupe_id et project_id en
+cascade ; index unique `groupe_marques_projets_paire_idx` sur la paire, index sur project_id).
+Aucune colonne ajoutée ailleurs, aucun `DROP`, aucune donnée touchée.
+
+Sans la migration : seules les routes nouvelles échouent (`/api/groupes-marques`, et `groupeId`
+sur `/api/content`, `/api/meilleures-heures`, `/api/content/cross-post`) ; le calendrier d'une
+marque seule, le composeur et le worker ne lisent pas ces tables. Appliquer `0052` avant de
+déployer quand même (l'écran charge la liste des groupes).
+
+```sql
+select table_name from information_schema.tables
+ where table_name in ('groupes_marques','groupe_marques_projets');  -- 2 lignes
+select indexname from pg_indexes
+ where indexname in ('groupes_marques_user_idx','groupe_marques_projets_paire_idx','groupe_marques_projets_project_idx');  -- 3 lignes
+```

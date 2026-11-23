@@ -441,7 +441,8 @@ export interface IStorage {
   getTomorrowPreviewData(userId: string, projectId?: number): Promise<{ carryover: Task[]; scheduledTomorrow: Task[]; approachingDeadlines: any[] }>;
   
   // Content operations
-  getContent(userId: string, limit?: number, projectId?: number): Promise<Content[]>;
+  /** `projectId` : une marque, ou les marques d'un groupe (liste ; vide → aucun post). */
+  getContent(userId: string, limit?: number, projectId?: number | number[], campaignId?: number): Promise<Content[]>;
   getContentById(id: number, userId: string): Promise<Content | undefined>;
   createContent(content: InsertContent): Promise<Content>;
   /** Contenu deja issu de cette tache, s'il existe. Evite de creer un doublon a chaque enregistrement. */
@@ -478,7 +479,7 @@ export interface IStorage {
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
   deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number>;
-  getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
+  getContentByStatus(userId: string, status: string, projectId?: number | number[]): Promise<Content[]>;
   getDueScheduledContent(now: Date): Promise<Content[]>;
   claimContentForPosting(id: number, opts?: { malgreValidation?: boolean }): Promise<boolean>;
 
@@ -1523,9 +1524,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Content operations
-  async getContent(userId: string, limit = 50, projectId?: number, campaignId?: number): Promise<Content[]> {
+  async getContent(userId: string, limit = 50, projectId?: number | number[], campaignId?: number): Promise<Content[]> {
     const conditions = [eq(content.userId, userId), isNull(content.supprimeLe)];
-    if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
+    if (Array.isArray(projectId)) {
+      if (projectId.length === 0) return [];
+      conditions.push(inArray(content.projectId, projectId));
+    } else if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
     if (campaignId !== undefined) conditions.push(eq((content as any).campaignId, campaignId));
     return await db.select().from(content)
       .where(and(...conditions))
@@ -1753,9 +1757,12 @@ export class DatabaseStorage implements IStorage {
     return creditSumFromAggregate(row?.sum);
   }
 
-  async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
+  async getContentByStatus(userId: string, status: string, projectId?: number | number[]): Promise<Content[]> {
     const conditions = [eq(content.userId, userId), eq(content.status, status), isNull(content.supprimeLe)];
-    if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
+    if (Array.isArray(projectId)) {
+      if (projectId.length === 0) return [];
+      conditions.push(inArray(content.projectId, projectId));
+    } else if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
     return await db.select().from(content)
       .where(and(...conditions))
       .orderBy(desc(content.createdAt));

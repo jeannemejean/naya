@@ -13,6 +13,7 @@ import Autolistes from "@/components/content/Autolistes";
 import ApercuInstagram from "@/components/content/ApercuInstagram";
 import { PanneauMeilleuresHeures } from "@/components/content/MeilleuresHeures";
 import ActionsGroupees from "@/components/content/ActionsGroupees";
+import { GestionGroupesMarques, marquesDuGroupe, useGroupesMarques } from "@/components/groupes/GroupesMarques";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
 import { throwApiError, translateError } from '@/lib/api-error';
@@ -25,7 +26,7 @@ import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { fr } from 'date-fns/locale/fr';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine, Library, LayoutGrid, Repeat, Clock } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine, Library, LayoutGrid, Repeat, Clock, Layers } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -235,6 +236,13 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
 
  const { data: projects = [] } = useQuery<Project[]>({ queryKey: ['/api/projects?limit=200'] });
  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+ // Groupe de marques (lot 9) : quand il est choisi, le calendrier montre toutes ses marques ;
+ // `selectedProjectId` reste la marque des nouveaux posts (une marque du groupe).
+ const [selectedGroupeId, setSelectedGroupeId] = useState<number | null>(null);
+ const { data: groupes = [] } = useGroupesMarques();
+ const groupe = selectedGroupeId != null ? groupes.find(g => g.id === selectedGroupeId) ?? null : null;
+ const marquesGroupe = useMemo(() => marquesDuGroupe(groupe, projects), [groupe, projects]);
+ const marqueDe = (id: number | null | undefined) => projects.find(p => p.id === id);
 
  useEffect(() => {
  if (projects.length > 0 && selectedProjectId === null) {
@@ -250,21 +258,31 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
 
  const selectedProject = projects.find(p => p.id === selectedProjectId);
 
+ // Un groupe disparu (supprimé ailleurs) : retour à la marque. Une marque hors du groupe choisi :
+ // la première du groupe devient la marque des nouveaux posts.
+ useEffect(() => {
+ if (selectedGroupeId != null && groupes.length > 0 && !groupe) setSelectedGroupeId(null);
+ }, [selectedGroupeId, groupes, groupe]);
+ useEffect(() => {
+ if (groupe && marquesGroupe.length > 0 && !marquesGroupe.some(m => m.id === selectedProjectId)) setSelectedProjectId(marquesGroupe[0].id);
+ }, [groupe, marquesGroupe, selectedProjectId]);
+
  const now = new Date();
  const currentWeek = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-W' + Math.ceil(now.getDate() / 7);
 
  const { data: content = [], isLoading } = useQuery<Content[]>({
- queryKey: ['/api/content', selectedProjectId, campaignFilter],
+ queryKey: ['/api/content', selectedGroupeId != null ? `groupe-${selectedGroupeId}` : selectedProjectId, campaignFilter],
  queryFn: () => {
  const params = new URLSearchParams();
- if (selectedProjectId) params.set('projectId', String(selectedProjectId));
+ if (selectedGroupeId != null) params.set('groupeId', String(selectedGroupeId));
+ else if (selectedProjectId) params.set('projectId', String(selectedProjectId));
  if (campaignFilter) params.set('campaignId', String(campaignFilter));
  // Le plafond serveur est maintenant explicite (voir server/routes.ts) : on
  // demande ce qu'il accepte au maximum, plutôt que le défaut silencieux de 50.
  params.set('limit', String(LIMITE_CONTENUS_PAGE));
  return fetchJson(`/api/content?${params}`);
  },
- enabled: !!selectedProjectId,
+ enabled: !!selectedProjectId || selectedGroupeId != null,
  });
 
  // `true` seulement quand la réponse rend EXACTEMENT le plafond demandé — signe
@@ -292,7 +310,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  body: JSON.stringify({ ...data, intent: data.intent || null, projectId: selectedProjectId }),
  }).then(res => res.json()),
  onSuccess: (data) => {
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  setShowCreateDialog(false);
  resetForm();
  // L'alerte de collision (Tâche 7 : POST /api/content peut rendre un champ `collision`)
@@ -319,12 +337,12 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  return res.json();
  }),
  onError: (e: unknown) => {
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  const m = e instanceof Error ? e.message : '';
  toast({ title: t(m === 'post_deja_publie_ou_en_cours' ? 'contentCalendar.dejaPublie' : 'contentCalendar.failedToUpdate'), variant: 'destructive' });
  },
  onSuccess: (data) => {
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  // Alerte de collision : informative, jamais bloquante — la mise à jour (donc une
  // reprogrammation éventuelle) est déjà appliquée quand ce toast s'affiche. Rien ne
  // s'affiche si le serveur n'a rien trouvé, ou si la réponse n'a pas la forme attendue.
@@ -369,7 +387,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  }),
  onMutate: ({ id }) => setRegeneratingId(id),
  onSuccess: () => {
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId, campaignFilter] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  setShowRegenerateFor(null);
  setRegenerateFeedback('');
  setRegeneratingId(null);
@@ -502,7 +520,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  return response.json();
  },
  onSuccess: (data: { platform: string; enCours?: boolean }) => {
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  const collision = collisionEnAttentePublication.current;
  collisionEnAttentePublication.current = null;
  // Vidéo en traitement côté réseau, ou réessai prévu : pas encore publié, on le dit.
@@ -600,7 +618,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  },
  onSuccess: (data) => {
  setReceptionResult(data);
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  queryClient.invalidateQueries({ queryKey: ['/api/content', data.contentId, 'reception'] });
  },
  onError: () => {
@@ -623,7 +641,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  },
  onSuccess: (data) => {
  setReceptionImportResult(data);
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  // Un import peut avoir mesuré le contenu dont la fiche est ouverte : son verdict doit
  // se rafraîchir, pas rester sur ce qu'il montrait avant.
  if (receptionFor) queryClient.invalidateQueries({ queryKey: ['/api/content', receptionFor.id, 'reception'] });
@@ -775,7 +793,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  // définition) : la publication est le seul appel de ce chemin qui montre un toast.
  collisionEnAttentePublication.current = messageCollision(createdContent?.collision);
  publishContentMutation.mutate(createdContent.id);
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
  setShowCreateDialog(false);
  resetForm();
  } catch {
@@ -979,6 +997,12 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </span>
  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: platform.dotColor }} />
  <span className="text-xs text-naya-cream0">{platform.label}</span>
+ {groupe && marqueDe(item.projectId) && (
+ <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-naya-olive-70 max-w-[50%]" data-testid={`marque-${item.id}`}>
+ <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: marqueDe(item.projectId)!.color || 'var(--accent)' }} />
+ <span className="truncate">{marqueDe(item.projectId)!.name}</span>
+ </span>
+ )}
  </div>
  <h4 className="text-sm text-foreground line-clamp-1 mb-2">{item.title}</h4>
  <VignettesMedias medias={mediasDuPost(item as any, mediaLibrary)} />
@@ -1118,6 +1142,18 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </DialogHeader>
  <div className="grid grid-cols-2 gap-6 h-full">
  <div className="space-y-4">
+ {/* Groupe de marques : un nouveau post se range dans la marque choisie ici. */}
+ {groupe && !selectedPost && marquesGroupe.length > 0 && (
+ <div>
+ <Label>{t('groupesMarques.marqueDuPost')}</Label>
+ <Select value={selectedProjectId != null ? String(selectedProjectId) : undefined} onValueChange={(v) => setSelectedProjectId(Number(v))}>
+ <SelectTrigger className="mt-1.5" data-testid="marque-nouveau-post"><SelectValue /></SelectTrigger>
+ <SelectContent>
+ {marquesGroupe.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+ </SelectContent>
+ </Select>
+ </div>
+ )}
  {/* Le titre (l'accroche du post) en tête : c'est ce qui dit de quoi parle le post.
  Sur plusieurs lignes — les accroches générées sont longues et l'ancien champ
  d'une ligne les coupait. */}
@@ -1563,7 +1599,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <div className="flex items-center justify-between">
  <div>
  <h1 className="text-2xl font-bold tracking-tight text-foreground">
- {t('contentCalendar.title')}{selectedProject ? ` — ${selectedProject.name}` : ''}
+ {t('contentCalendar.title')}{groupe ? ` — ${groupe.nom}` : selectedProject ? ` — ${selectedProject.name}` : ''}
  </h1>
  <p className="text-sm text-muted-foreground mt-1">{t('contentCalendar.subtitle')}</p>
  </div>
@@ -1587,7 +1623,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {t('bibliotheque.ouvrir')}
  </Button>
  </DialogTrigger>
- {showBibliotheque && <Bibliotheque projets={projects.map(p => ({ id: p.id, name: p.name }))} projetCourantId={selectedProjectId} />}
+ {showBibliotheque && <Bibliotheque projets={projects.map(p => ({ id: p.id, name: p.name }))} projetCourantId={selectedProjectId} marquesFiltre={groupe ? groupe.projectIds : null} />}
  </Dialog>
  <Dialog open={showAutolistes} onOpenChange={setShowAutolistes}>
  <DialogTrigger asChild>
@@ -1596,7 +1632,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {t('autolistes.ouvrir')}
  </Button>
  </DialogTrigger>
- {showAutolistes && <Autolistes projets={projects.map(p => ({ id: p.id, name: p.name }))} projetCourantId={selectedProjectId} />}
+ {showAutolistes && <Autolistes projets={projects.map(p => ({ id: p.id, name: p.name }))} projetCourantId={selectedProjectId} marquesFiltre={groupe ? groupe.projectIds : null} />}
  </Dialog>
  <Dialog open={showApercuInstagram} onOpenChange={setShowApercuInstagram}>
  <DialogTrigger asChild>
@@ -1608,6 +1644,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {showApercuInstagram && (
  <ApercuInstagram
  projectId={selectedProjectId}
+ marques={groupe ? marquesGroupe.map(p => ({ id: p.id, name: p.name })) : undefined}
  onOuvrir={(id) => {
  const post = content.find((c: Content) => c.id === id);
  if (!post) { toast({ title: t('apercuInstagram.horsVue') }); return; }
@@ -1624,7 +1661,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {t('meilleuresHeures.ouvrir')}
  </Button>
  </DialogTrigger>
- {showMeilleuresHeures && <PanneauMeilleuresHeures projectId={selectedProjectId} />}
+ {showMeilleuresHeures && <PanneauMeilleuresHeures projectId={selectedProjectId} groupeId={groupe ? groupe.id : null} />}
  </Dialog>
  <Dialog open={showCorbeille} onOpenChange={setShowCorbeille}>
  <DialogTrigger asChild>
@@ -1646,7 +1683,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </Dialog>
  </div>
  </div>
- <SocialComposer open={showComposer} onClose={() => setShowComposer(false)} projectId={selectedProjectId} />
+ <SocialComposer open={showComposer} onClose={() => setShowComposer(false)} projectId={selectedProjectId}
+ groupe={groupe ? { id: groupe.id, marques: marquesGroupe.map(p => ({ id: p.id, name: p.name, color: p.color })) } : null} />
 
  <RefusPostModal
  post={refusFor}
@@ -1770,9 +1808,9 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {projects.slice(0, 5).map(p => (
  <button
  key={p.id}
- onClick={() => setSelectedProjectId(p.id)}
+ onClick={() => { setSelectedGroupeId(null); setSelectedProjectId(p.id); }}
  className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
- selectedProjectId === p.id
+ selectedGroupeId == null && selectedProjectId === p.id
  ? 'bg-primary text-white'
  : 'bg-naya-olive-10 text-naya-olive-55 hover:bg-naya-olive-18'
  }`}
@@ -1783,8 +1821,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {projects.length > 5 && (
  <select
  className="px-2 py-1 text-sm rounded-lg border border-naya-olive-18 bg-white text-naya-olive-70"
- value={selectedProjectId && projects.findIndex(p => p.id === selectedProjectId) >= 5 ? selectedProjectId : ''}
- onChange={e => setSelectedProjectId(parseInt(e.target.value))}
+ value={selectedGroupeId == null && selectedProjectId && projects.findIndex(p => p.id === selectedProjectId) >= 5 ? selectedProjectId : ''}
+ onChange={e => { setSelectedGroupeId(null); setSelectedProjectId(parseInt(e.target.value)); }}
  >
  <option value="" disabled>{t('common.more')}</option>
  {projects.slice(5).map(p => (
@@ -1792,7 +1830,29 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  ))}
  </select>
  )}
+ {/* Groupes de marques (lot 9) : un clic montre toutes les marques du groupe. */}
+ {groupes.map(g => (
+ <button
+ key={`g-${g.id}`}
+ onClick={() => setSelectedGroupeId(g.id)}
+ aria-pressed={selectedGroupeId === g.id}
+ aria-label={t('groupesMarques.filtre', { nom: g.nom })}
+ data-testid={`filtre-groupe-${g.id}`}
+ className={`px-3 py-1.5 rounded-full text-sm transition-colors inline-flex items-center gap-1.5 border ${
+ selectedGroupeId === g.id
+ ? 'bg-primary text-white border-primary'
+ : 'bg-white text-naya-olive-70 border-naya-olive-18 hover:bg-naya-olive-06'
+ }`}
+ >
+ <Layers className="h-3.5 w-3.5" style={{ color: selectedGroupeId === g.id ? undefined : g.couleur }} />
+ {g.nom}
+ </button>
+ ))}
+ <GestionGroupesMarques projets={projects.map(p => ({ id: p.id, name: p.name, color: p.color }))} compact />
  </div>
+ )}
+ {groupe && marquesGroupe.length === 0 && (
+ <p className="text-xs text-naya-olive-55 mt-2">{t('groupesMarques.groupeVide')}</p>
  )}
  </header>
 
@@ -1913,6 +1973,12 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <div className="text-xs p-1">
  <div className="font-medium truncate">{ce.title}</div>
  <div className="text-xs opacity-75 flex items-center gap-1">{ce.resource.platform}<BadgeValidation statut={(ce.resource as any).validationStatut} compact /></div>
+ {groupe && marqueDe(ce.resource.projectId) && (
+ <div className="text-[10px] flex items-center gap-1 truncate">
+ <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white" style={{ boxShadow: `0 0 0 1.5px ${marqueDe(ce.resource.projectId)!.color || '#fff'}` }} />
+ <span className="truncate">{marqueDe(ce.resource.projectId)!.name}</span>
+ </div>
+ )}
  </div>
  );
  },

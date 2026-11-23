@@ -19,6 +19,7 @@ beforeEach(async () => {
   deps = {
     projet: vi.fn(async (id: number, userId: string) => (id === 3 && userId === "u1" ? { id: 3 } : undefined)),
     mesures: vi.fn(async () => [] as any[]),
+    projetsDuGroupe: vi.fn(async (userId: string, g: number) => (userId === "u1" && g === 7 ? [3, 5] : null)),
     maintenant: () => new Date("2026-11-23T10:00:00Z"),
   };
   const app = express();
@@ -58,5 +59,15 @@ describe("GET /api/meilleures-heures", () => {
     expect(deps.mesures).not.toHaveBeenCalled();
     expect((await get("?reseau=myspace")).status).toBe(400);
     expect((await get("?reseau=instagram&projectId=abc")).status).toBe(400);
+  });
+
+  it("groupe de marques : les mesures de chacune de ses marques ; groupe d'un autre compte : 404", async () => {
+    deps.mesures.mockImplementation(async (_u: string, pid: number) => (pid === 3 ? [mesure(0), mesure(1)] : [mesure(2)]));
+    const j: any = await (await get("?reseau=instagram&groupeId=7")).json();
+    expect(deps.mesures.mock.calls.map((c: any[]) => c[1])).toEqual([3, 5]);
+    expect(j.n).toBe(3);
+    expect(deps.projetsDuGroupe).toHaveBeenCalledWith("u1", 7);
+    expect((await get("?reseau=instagram&groupeId=8")).status).toBe(404);
+    expect((await get("?reseau=instagram&groupeId=x")).status).toBe(400);
   });
 });

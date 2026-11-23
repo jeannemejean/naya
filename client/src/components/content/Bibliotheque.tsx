@@ -80,7 +80,11 @@ function UtiliserModele({ modele, projets, projetCourantId, onFini }: { modele: 
   );
 }
 
-export default function Bibliotheque({ projets, projetCourantId }: { projets: ProjetMin[]; projetCourantId: number | null }) {
+/**
+ * `marquesFiltre` (groupe de marques, lot 9) : seuls les textes et modèles de ces marques, et
+ * ceux de toutes les marques, sont montrés ; null = tout.
+ */
+export default function Bibliotheque({ projets, projetCourantId, marquesFiltre = null }: { projets: ProjetMin[]; projetCourantId: number | null; marquesFiltre?: number[] | null }) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -88,11 +92,14 @@ export default function Bibliotheque({ projets, projetCourantId }: { projets: Pr
   const [enUsage, setEnUsage] = useState<number | null>(null);
   const [versAutoliste, setVersAutoliste] = useState<number | null>(null);
   const [nouveau, setNouveau] = useState<{ titre: string; texte: string; marque: string } | null>(null);
-  const { data: textes = [], isLoading: chargeTextes } = useTextesEnregistres();
-  const { data: modeles = [], isLoading: chargeModeles } = useQuery<ModeleClient[]>({
+  const { data: textesTous = [], isLoading: chargeTextes } = useTextesEnregistres();
+  const { data: modelesTous = [], isLoading: chargeModeles } = useQuery<ModeleClient[]>({
     queryKey: CLE_MODELES,
     queryFn: async () => (await apiRequest("GET", "/api/bibliotheque/modeles")).json(),
   });
+  const duGroupe = (id: number | null) => !marquesFiltre || id == null || marquesFiltre.includes(id);
+  const textes = textesTous.filter((x) => duGroupe(x.projectId ?? null));
+  const modeles = modelesTous.filter((m) => duGroupe(m.projectId));
   const nomMarque = (id: number | null) => (id == null ? t("bibliotheque.toutesMarques") : projets.find((p) => p.id === id)?.name ?? `#${id}`);
 
   const supprimerTexte = useMutation({
@@ -126,6 +133,7 @@ export default function Bibliotheque({ projets, projetCourantId }: { projets: Pr
         <DialogTitle>{t("bibliotheque.titre")}</DialogTitle>
       </DialogHeader>
       <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("bibliotheque.rechercherNom")} className="h-9 text-sm" data-testid="bibliotheque-recherche" />
+      {marquesFiltre && <p className="text-[11px] text-naya-olive-55">{t("groupesMarques.listesDuGroupe")}</p>}
       <Tabs defaultValue="modeles">
         <TabsList>
           <TabsTrigger value="modeles" className="flex items-center gap-1.5"><LayoutTemplate className="h-3.5 w-3.5" />{t("bibliotheque.onglets.modeles")}</TabsTrigger>

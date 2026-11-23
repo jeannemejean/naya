@@ -19,14 +19,18 @@ interface Grille { reseau: string; matrice: Matrice; source: Source; n: number }
 const JOURS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"] as const;
 const NOMS_RESEAUX: Record<string, string> = { instagram: "Instagram", linkedin: "LinkedIn", facebook: "Facebook", tiktok: "TikTok" };
 
-/** La grille d'une marque (null = marque des Réglages) pour un réseau ; rien si le réseau n'a pas de grille. */
-export function useMeilleuresHeures(projectId: number | null | undefined, reseau: string | null | undefined) {
+/**
+ * La grille d'une marque (null = marque des Réglages) pour un réseau ; rien si le réseau n'a pas
+ * de grille. `groupeId` (groupe de marques, lot 9) : les mesures de toutes ses marques ensemble.
+ */
+export function useMeilleuresHeures(projectId: number | null | undefined, reseau: string | null | undefined, groupeId: number | null = null) {
   const r = reseauMeilleuresHeures(reseau);
+  const portee = groupeId != null ? `&groupeId=${groupeId}` : projectId ? `&projectId=${projectId}` : "";
   return useQuery<Grille>({
-    queryKey: ["/api/meilleures-heures", projectId ?? null, r],
+    queryKey: ["/api/meilleures-heures", groupeId != null ? `groupe-${groupeId}` : projectId ?? null, r],
     enabled: !!r,
     staleTime: 10 * 60_000,
-    queryFn: async () => (await apiRequest("GET", `/api/meilleures-heures?reseau=${r}${projectId ? `&projectId=${projectId}` : ""}`)).json(),
+    queryFn: async () => (await apiRequest("GET", `/api/meilleures-heures?reseau=${r}${portee}`)).json(),
   });
 }
 
@@ -114,10 +118,10 @@ export function MeilleursCreneaux({ projectId, reseau, onChoisir, disabled = fal
 }
 
 /** Le panneau du calendrier : un réseau au choix, sa grille, sa source et ses meilleurs créneaux. */
-export function PanneauMeilleuresHeures({ projectId }: { projectId: number | null }) {
+export function PanneauMeilleuresHeures({ projectId, groupeId = null }: { projectId: number | null; groupeId?: number | null }) {
   const { t, i18n } = useTranslation();
   const [reseau, setReseau] = useState<string>("instagram");
-  const { data, isLoading, isError } = useMeilleuresHeures(projectId, reseau);
+  const { data, isLoading, isError } = useMeilleuresHeures(projectId, reseau, groupeId);
   const creneaux = useMemo(() => (data ? meilleursCreneaux(data.matrice, new Date()) : []), [data]);
   return (
     <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
