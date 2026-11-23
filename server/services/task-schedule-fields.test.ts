@@ -47,6 +47,13 @@ describe("blockedRangesByDate", () => {
     expect(map.size).toBe(0);
   });
 
+  it("réserve aussi le créneau d'une tâche perso non terminée (le travail l'évite)", () => {
+    const map = blockedRangesByDate([
+      { completed: false, source: "vie_perso", scheduledDate: "2026-08-27", scheduledTime: "12:00", estimatedDuration: 30 },
+    ]);
+    expect(map.get("2026-08-27")).toEqual([{ start: 720, end: 750 }]);
+  });
+
   it("ignore une tâche terminée sans créneau", () => {
     const map = blockedRangesByDate([
       { completed: true, scheduledDate: "2026-08-27", scheduledTime: null, estimatedDuration: 45 },

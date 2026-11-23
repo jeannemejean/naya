@@ -100,6 +100,12 @@ describe("creerTache", () => {
     expect(r).toEqual({ ok: false, status: 400, message: "Sunday is not one of your work days." });
     expect(storageMock.createTask).not.toHaveBeenCalled();
   });
+
+  it("accepte un jour non travaillé pour une tâche perso", async () => {
+    const r = await creerTache("user-1", { ...BASE, source: "vie_perso", schedulingMode: "fixed", scheduledDate: "2026-10-04", scheduledTime: "10:00", estimatedDuration: 60 });
+    expect(r.ok).toBe(true);
+    expect(storageMock.createTask).toHaveBeenCalled();
+  });
 });
 
 describe("modifierTache", () => {

@@ -8,6 +8,10 @@ const atelier = (id: number, jour: string | null, partie = 1) => ({ id, taskType
 const validation = (id: number, jour: string | null) => ({ id, taskType: "atelier_validation", scheduledDate: jour, actionData: { semaine: "2026-10-26" } });
 
 describe("classer", () => {
+  it("une tâche perso n'est jamais reprise", () => {
+    expect(classer({ id: 1, source: "vie_perso" })).toEqual({ genre: "ignorer" });
+  });
+
   it("chaque tâche suit son propriétaire", () => {
     expect(classer({ id: 1, ritualId: 4 })).toEqual({ genre: "rituel" });
     expect(classer({ id: 1, taskType: "prospection_validation" })).toEqual({ genre: "ignorer" });

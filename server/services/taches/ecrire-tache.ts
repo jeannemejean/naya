@@ -14,6 +14,7 @@ import { DAY_ABBRS, parseWorkDays } from "../campagne/placement";
 import { filtrerEditionTache } from "./edition";
 import { resolveScheduledEndTime } from "../task-schedule-fields";
 import { dateDeRetassage } from "../repack-from";
+import { estTachePerso } from "@shared/vie-perso";
 
 export type Refus = { ok: false; status: number; message: string };
 
@@ -51,8 +52,9 @@ export async function creerTache(
     if (jalon.status === 'locked') return { ok: false, status: 409, message: 'milestone_locked' };
   }
 
-  // Weekend check — still a hard reject (don't silently move to a work day)
-  if (taskData.scheduledDate) {
+  // Weekend check — still a hard reject (don't silently move to a work day).
+  // Sauf la vie perso : soirs et week-ends sont précisément son terrain.
+  if (taskData.scheduledDate && !estTachePerso(taskData)) {
     const refus = await refusJourNonTravaille(userId, taskData.scheduledDate);
     if (refus) return refus;
   }
@@ -110,8 +112,8 @@ export async function modifierTache(
 
     const merged: any = { ...currentTask, ...updates, userId };
 
-    // Weekend check — hard reject
-    if (merged.scheduledDate) {
+    // Weekend check — hard reject (sauf vie perso)
+    if (merged.scheduledDate && !estTachePerso(merged)) {
       const refus = await refusJourNonTravaille(userId, merged.scheduledDate);
       if (refus) return refus;
     }

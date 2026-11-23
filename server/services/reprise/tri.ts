@@ -6,6 +6,7 @@
 // a sa propre règle (rituel, étape d'un post, atelier) la suit ; seul le reste est confié à
 // Naya. PUR.
 import { TYPE_ATELIER, TYPE_VALIDATION, plusJours } from "@shared/atelier";
+import { SOURCE_VIE_PERSO } from "@shared/vie-perso";
 
 export type Classe =
   /** Géré ailleurs (validation de prospection, jalon virtuel, agenda) : on n'y touche pas. */
@@ -41,6 +42,8 @@ export function classer(t: TacheTriable): Classe {
   // Jalons d'appel d'offres : échéances dures tenues par la synchro des jalons (orchestre/jalons-ao.ts),
   // qui les ramène aussi quand ils sont en retard. Jamais archivés, fusionnés ni découpés ici.
   if (t.source === "appel_offres") return { genre: "ignorer" };
+  // Vie perso : posée par sa propre logique (repas, activités), jamais reprise par le travail.
+  if (t.source === SOURCE_VIE_PERSO) return { genre: "ignorer" };
   if (t.ritualId != null) return { genre: "rituel" };
   if (estTacheAtelier(t)) {
     const semaine = (t.actionData as { semaine?: unknown } | null)?.semaine;

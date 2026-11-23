@@ -4,6 +4,7 @@
 // `bilanSemaine` et `semaineARevoir` sont purs.
 import { contrainteDe } from "./contrainte";
 import { fluxDe, type Flux, type TacheClassable } from "./capacite";
+import { estTachePerso } from "@shared/vie-perso";
 
 const plus = (jour: string, n: number) => {
   const d = new Date(`${jour}T12:00:00Z`);
@@ -56,7 +57,8 @@ export function bilanSemaine(taches: TacheBilan[], o: { jours: string[]; capacit
   const parFlux: ParFlux = {};
   const risques: Risque[] = [];
   for (const t of taches) {
-    if (t.completed || t.archivedAt || t.type === "milestone" || !t.scheduledDate) continue;
+    // Vie perso : hors capacité de travail.
+    if (t.completed || t.archivedAt || t.type === "milestone" || !t.scheduledDate || estTachePerso(t)) continue;
     const j = parJour.get(t.scheduledDate);
     if (!j) continue;
     const min = t.estimatedDuration ?? DUREE_DEFAUT;

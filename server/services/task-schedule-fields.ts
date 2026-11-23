@@ -8,6 +8,8 @@
  * périmée, et la grille affichait une carte qui ne correspondait plus à ses données.
  */
 
+import { SOURCE_VIE_PERSO } from "@shared/vie-perso";
+
 const HHMM = /^\d{2}:\d{2}$/;
 const LAST_MINUTE_OF_DAY = 23 * 60 + 59;
 
@@ -34,6 +36,7 @@ export interface SchedulableTaskRow {
   scheduledDate: string | null;
   scheduledTime: string | null;
   estimatedDuration: number | null;
+  source?: string | null;
 }
 
 /**
@@ -51,7 +54,8 @@ export function blockedRangesByDate(
   const byDate = new Map<string, { start: number; end: number }[]>();
 
   for (const row of rows) {
-    if (!row.completed || !row.scheduledDate) continue;
+    // Tâche perso (vie perso) : jamais déplacée par le travail, son créneau est donc occupé.
+    if ((!row.completed && row.source !== SOURCE_VIE_PERSO) || !row.scheduledDate) continue;
     if (!row.scheduledTime || !HHMM.test(row.scheduledTime)) continue;
 
     const [h, m] = row.scheduledTime.split(':').map(Number);

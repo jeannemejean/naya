@@ -22,6 +22,7 @@ describe("bilanSemaine", () => {
       t({ id: 3, scheduledDate: "2026-11-23", source: "generated", completed: true }),
       t({ id: 4, scheduledDate: "2026-11-24", type: "milestone" }),
       t({ id: 5, scheduledDate: "2026-11-24", source: "appel_offres", estimatedDuration: 45 }),
+      t({ id: 6, scheduledDate: "2026-11-24", source: "vie_perso", estimatedDuration: 90 }),
     ], { jours: JOURS, capaciteMin: 480, aujourdhui: "2026-11-22" });
     expect(b.semaine).toBe("2026-11-23");
     expect(b.jours[0]).toEqual({ jour: "2026-11-23", capaciteMin: 480, occupeMin: 180, parFlux: { atelier: 120, objectifs: 60 } });

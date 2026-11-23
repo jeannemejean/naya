@@ -6145,7 +6145,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const minToHHMM = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 
       const tasks = await storage.getTasksInRange(userId, targetDate, targetDate);
-      const pending = (tasks as any[]).filter(t => !t.completed);
+      const pending = (tasks as any[]).filter(t => !t.completed && t.source !== 'vie_perso');
 
       if (!pending.length) return res.json({ rebalanced: 0 });
 
@@ -6551,7 +6551,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         storage.getBrandDna(userId),
       ]);
 
-      const pending = pendingTasks.filter((t: any) => !t.completed);
+      const pending = pendingTasks.filter((t: any) => !t.completed && t.source !== 'vie_perso');
       const completed = completedTasks.filter((t: any) => t.completed);
 
       // Build blocked task set from dependency chains

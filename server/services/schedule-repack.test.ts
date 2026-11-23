@@ -369,6 +369,10 @@ describe("repackDayAvecEcheances", () => {
 });
 
 describe("tachesARebalancer", () => {
+  it("laisse les tâches perso à leur place", () => {
+    expect(tachesARebalancer([{ id: 1, completed: false, source: "vie_perso" }, { id: 2, completed: false, source: "manual" }]).map((t) => t.id)).toEqual([2]);
+  });
+
   it("écarte les tâches faites et celles liées à un post (tenues par sa date de publication)", () => {
     const r = tachesARebalancer([
       { id: 1, completed: false, contentId: null },
