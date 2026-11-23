@@ -12,7 +12,8 @@ interface PostPortail {
 }
 interface Portail {
   marque: string; langue: "fr" | "en"; regle: "un" | "tous";
-  relecteurs: Array<{ nom: string; email: string }>; posts: PostPortail[];
+  // Jamais d'adresse : un identifiant opaque et un nom (homonymes départagés par le serveur).
+  relecteurs: Array<{ id: string; nom: string }>; posts: PostPortail[];
 }
 
 const CLE_RELECTEUR = "naya-portail-relecteur";
@@ -20,8 +21,8 @@ const CLE_RELECTEUR = "naya-portail-relecteur";
 function lireRelecteur(token: string): string {
   try { return window.localStorage.getItem(`${CLE_RELECTEUR}:${token}`) ?? ""; } catch { return ""; }
 }
-function garderRelecteur(token: string, email: string) {
-  try { window.localStorage.setItem(`${CLE_RELECTEUR}:${token}`, email); } catch { /* navigation privée */ }
+function garderRelecteur(token: string, id: string) {
+  try { window.localStorage.setItem(`${CLE_RELECTEUR}:${token}`, id); } catch { /* navigation privée */ }
 }
 
 function CartePost({ p, t, langue, relecteur, onDecision }: {
@@ -111,7 +112,7 @@ export default function PortailValidation({ params }: { params: { token: string 
     );
   }
   const p = etat;
-  const connu = p.relecteurs.some((r) => r.email === relecteur);
+  const connu = p.relecteurs.some((r) => r.id === relecteur);
   const choisi = connu ? relecteur : "";
 
   const decider = async (id: number, decision: "validee" | "refusee" | "commentaire", commentaire: string): Promise<boolean> => {
@@ -119,7 +120,7 @@ export default function PortailValidation({ params }: { params: { token: string 
     try {
       const r = await fetch(`/api/portail-validation/${encodeURIComponent(params.token)}/posts/${id}/decision`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ relecteurEmail: choisi, decision, commentaire: commentaire.trim() || null }),
+        body: JSON.stringify({ relecteurId: choisi, decision, commentaire: commentaire.trim() || null }),
       });
       if (r.ok) { setMessage(t("validationClient.public.merci")); charger(); return true; }
       setMessage(r.status === 429 ? t("validationClient.public.trop") : r.status === 409 ? t("validationClient.public.dejaDecide") : t("validationClient.public.erreur"));
@@ -147,7 +148,7 @@ export default function PortailValidation({ params }: { params: { token: string 
           <select id="relecteur" value={choisi} className="w-full rounded border border-neutral-300 p-2 text-sm"
             onChange={(e) => { setRelecteur(e.target.value); garderRelecteur(params.token, e.target.value); }}>
             <option value="">{t("validationClient.public.choisir")}</option>
-            {p.relecteurs.map((r) => <option key={r.email} value={r.email}>{r.nom === r.email ? r.email : `${r.nom} (${r.email})`}</option>)}
+            {p.relecteurs.map((r) => <option key={r.id} value={r.id}>{r.nom}</option>)}
           </select>
           {!choisi && <p className="text-xs text-neutral-500">{t("validationClient.public.identifieAvant")}</p>}
         </section>

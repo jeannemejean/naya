@@ -9,13 +9,13 @@
 //  - AUTHENTIFIÉES : réglages de la marque, lien du portail, envoi en validation. Tout passe par
 //    req.userId ; la marque ou le post d'un autre compte est introuvable (404).
 import type { Express, Response } from "express";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { isAuthenticated } from "./auth";
 import { depsValidation, decisionsDeLaDemande, type DepsValidation, type PostValidation } from "./services/validation/deps";
 import { postVerrouille } from "@shared/gestion-posts";
 import {
-  creerLimiteur, lireDecision, lireReglagesValidation, relecteursDe, statutApresDecisions,
-  type RegleValidation, type StatutValidation,
+  creerLimiteur, lireDecision, lireReglagesValidation, nomPublic, relecteurParId, relecteursDe, relecteursPublics,
+  statutApresDecisions, type RegleValidation, type StatutValidation,
 } from "@shared/validation-client";
 
 const JETON_RE = /^[A-Za-z0-9_-]{32,100}$/;
@@ -34,6 +34,15 @@ function memeJeton(a: string, b: string): boolean {
 }
 
 const lienPortail = (token: string) => `/v/${token}`;
+
+/**
+ * Identifiant opaque d'un relecteur sur le portail public : HMAC (secret du serveur) de
+ * l'adresse et du jeton du lien. Stable pour un lien, sans rien révéler de l'adresse ; un lien
+ * régénéré change les identifiants.
+ */
+export function idRelecteurPortail(token: string, secret = process.env.SESSION_SECRET || "naya-portail-validation") {
+  return (email: string) => createHmac("sha256", secret).update(`relecteur:${token}:${email.toLowerCase()}`).digest("base64url").slice(0, 22);
+}
 
 /** Ce qu'on montre d'un post : texte, visuels (https seulement), date, statut, décisions. */
 async function vuePosts(deps: DepsValidation, userId: string, posts: PostValidation[], nomDe: (email: string) => string) {
@@ -90,15 +99,17 @@ export function registerValidationPublique(app: Express, deps: DepsValidation = 
     try {
       const o = await portailOuvert(req.params.token, res);
       if (!o) return;
-      const nomDe = (email: string) => o.relecteurs.find((r) => r.email === email)?.nom ?? email;
+      const idDe = idRelecteurPortail(o.portail.token);
+      const nomDe = (email: string) => nomPublic(o.relecteurs, email, idDe);
       const posts = await deps.postsDuProjet(o.portail.userId, o.portail.projectId, new Date(deps.maintenant().getTime() - RECENTS_MS));
       const vues = await vuePosts(deps, o.portail.userId, posts, nomDe);
       res.json({
         marque: o.projet.clientName || o.projet.name || "",
         langue: await deps.langue(o.portail.userId),
         regle: o.reglages.regle,
-        relecteurs: o.relecteurs,
-        // Les adresses ne sortent que dans la liste des relecteurs (le relecteur s'y choisit).
+        // Aucune adresse ne sort du portail : un nom (homonymes départagés par l'adresse masquée)
+        // et un identifiant opaque, que le serveur ramène à l'adresse au moment de décider.
+        relecteurs: relecteursPublics(o.relecteurs, idDe),
         posts: vues.map(({ decisions, ...v }) => ({ ...v, decisions: decisions.map(({ relecteurEmail: _e, ...d }) => d) })),
       });
     } catch (e: any) {
@@ -112,9 +123,13 @@ export function registerValidationPublique(app: Express, deps: DepsValidation = 
       const o = await portailOuvert(req.params.token, res);
       if (!o) return;
       if (!limiter(o.portail.token, deps.maintenant().getTime())) return res.status(429).json({ message: "trop_de_decisions" });
-      const d = lireDecision(req.body);
+      const body = req.body;
+      if (!body || typeof body !== "object" || typeof body.relecteurId !== "string") return res.status(400).json({ message: "invalide" });
+      const idDe = idRelecteurPortail(o.portail.token);
+      const relecteur = relecteurParId(o.relecteurs, body.relecteurId, idDe);
+      if (!relecteur) return res.status(403).json({ message: "relecteur_inconnu" });
+      const d = lireDecision({ ...body, relecteurEmail: relecteur.email });
       if (!d) return res.status(400).json({ message: "invalide" });
-      if (!o.relecteurs.some((r) => r.email === d.relecteurEmail)) return res.status(403).json({ message: "relecteur_inconnu" });
       const id = idPositif(req.params.contentId);
       const [post] = id == null ? [] : await deps.posts(o.portail.userId, [id]);
       if (!post || post.projectId !== o.portail.projectId || !post.validationStatut) return res.status(404).json({ message: "not_found" });
@@ -123,7 +138,8 @@ export function registerValidationPublique(app: Express, deps: DepsValidation = 
       }
       await deps.ajouterDecision({ contentId: post.id, relecteurEmail: d.relecteurEmail, decision: d.decision, commentaire: d.commentaire });
       const userId = o.portail.userId;
-      const nom = o.relecteurs.find((r) => r.email === d.relecteurEmail)?.nom ?? d.relecteurEmail;
+      // L'historique est lu par l'utilisatrice : le vrai nom (ou l'adresse) du relecteur.
+      const nom = relecteur.nom || relecteur.email;
       if (d.decision === "commentaire") {
         await deps.journaliser(userId, post.id, "validation_commentaire", { relecteur: nom });
         return res.json({ statut: post.validationStatut });

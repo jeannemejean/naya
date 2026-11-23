@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   creerLimiteur, decisionPublication, editionRelanceValidation, lireDecision, lireReglagesValidation,
-  relecteursDe, statutApresDecisions, GRACE_VALIDATION_MIN,
+  masquerEmail, nomPublic, relecteurParId, relecteursDe, relecteursPublics, statutApresDecisions, GRACE_VALIDATION_MIN,
 } from "./validation-client";
 
 const A = { nom: "Anne", email: "anne@client.fr" };
@@ -103,5 +103,26 @@ describe("creerLimiteur", () => {
     expect(ok("t", 20)).toBe(false);
     expect(ok("autre", 20)).toBe(true);
     expect(ok("t", 1500)).toBe(true);
+  });
+});
+
+describe("portail public : pas d'adresse en clair", () => {
+  const idDe = (e: string) => `id-${e.length}-${e[0]}`;
+  it("masquerEmail", () => {
+    expect(masquerEmail("claire@domaine.fr")).toBe("c***@d***.fr");
+    expect(masquerEmail("x@localhost")).toBe("x***@l***");
+  });
+  it("relecteursPublics : nom seul ; homonymes et sans nom départagés par l'adresse masquée", () => {
+    const l = [{ nom: "Anne", email: "anne@a.fr" }, { nom: "anne", email: "anne@b.com" }, { nom: "Bruno", email: "b@c.fr" }, { nom: "d@e.fr", email: "d@e.fr" }];
+    expect(relecteursPublics(l, idDe).map((r) => r.nom)).toEqual(["Anne (a***@a***.fr)", "anne (a***@b***.com)", "Bruno", "d***@e***.fr"]);
+  });
+  it("relecteurParId et nomPublic", () => {
+    const l = [{ nom: "Anne", email: "anne@a.fr" }];
+    const id = (e: string) => `h:${e}`;
+    expect(relecteurParId(l, "h:anne@a.fr", id)).toEqual(l[0]);
+    expect(relecteurParId(l, "anne@a.fr", id)).toBeNull();
+    expect(relecteurParId(l, 3, id)).toBeNull();
+    expect(nomPublic(l, "ANNE@a.fr", id)).toBe("Anne");
+    expect(nomPublic(l, "parti@x.fr", id)).toBe("p***@x***.fr");
   });
 });

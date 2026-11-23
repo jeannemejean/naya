@@ -8,7 +8,7 @@ vi.mock("./db", () => ({ db: {}, pool: { query: vi.fn(), on: vi.fn() } }));
 vi.mock("./storage", () => ({ storage: {} }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "u1"; next(); } }));
 
-const { registerValidationPublique, registerValidationRoutes } = await import("./routes-validation");
+const { registerValidationPublique, registerValidationRoutes, idRelecteurPortail } = await import("./routes-validation");
 
 const TOKEN = "a".repeat(43);
 const ANNE = { nom: "Anne", email: "anne@client.fr" };
@@ -76,7 +76,10 @@ afterEach(async () => { server.closeAllConnections?.(); await new Promise<void>(
 const req = (method: string, path: string, body?: any) => fetch(`http://127.0.0.1:${port}${path}`, {
   method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined,
 });
-const decider = (body: any, id = 50, token = TOKEN) => req("POST", `/api/portail-validation/${token}/posts/${id}/decision`, body);
+// Le portail ne connaît que l'identifiant opaque du relecteur : on le calcule depuis l'adresse.
+const idDe = idRelecteurPortail(TOKEN);
+const decider = ({ relecteurEmail, ...body }: any, id = 50, token = TOKEN) =>
+  req("POST", `/api/portail-validation/${token}/posts/${id}/decision`, { ...body, relecteurId: idDe(String(relecteurEmail).toLowerCase()) });
 
 describe("portail public", () => {
   it("lien valide : la marque, les relecteurs et les posts à valider (aperçu), sans adresse dans les décisions", async () => {
@@ -86,7 +89,8 @@ describe("portail public", () => {
     expect(r.headers.get("x-robots-tag")).toMatch(/noindex/);
     const j = await r.json();
     expect(j.marque).toBe("Client SA");
-    expect(j.relecteurs).toEqual([ANNE, BRUNO]);
+    expect(j.relecteurs).toEqual([{ id: idDe(ANNE.email), nom: "Anne" }, { id: idDe(BRUNO.email), nom: "Bruno" }]);
+    expect(JSON.stringify(j)).not.toContain("@client.fr");
     expect(j.posts.map((p: any) => p.id)).toEqual([50]);
     expect(j.posts[0].visuels).toEqual([{ url: "https://cdn.x/i.jpg", type: "image", vignette: null }]);
     expect(j.posts[0].decisions[0]).toMatchObject({ relecteur: "Anne", commentaire: "Joli" });
@@ -107,10 +111,22 @@ describe("portail public", () => {
     deps.d.reglages.actif = false;
     expect((await decider({ relecteurEmail: ANNE.email, decision: "validee" })).status).toBe(404);
   });
-  it("relecteur hors liste : 403, rien d'écrit", async () => {
+  it("relecteur hors liste : 403, rien d'écrit ; une adresse en clair n'est plus acceptée (400)", async () => {
     const r = await decider({ relecteurEmail: "intrus@x.fr", decision: "validee" });
     expect(r.status).toBe(403);
+    const brut = await req("POST", `/api/portail-validation/${TOKEN}/posts/50/decision`, { relecteurEmail: ANNE.email, decision: "validee" });
+    expect(brut.status).toBe(400);
+    const autreLien = await req("POST", `/api/portail-validation/${TOKEN}/posts/50/decision`, { relecteurId: idRelecteurPortail("b".repeat(43))(ANNE.email), decision: "validee" });
+    expect(autreLien.status).toBe(403);
     expect(deps.ajouterDecision).not.toHaveBeenCalled();
+  });
+  it("homonymes et relecteur sans nom : départagés par l'adresse masquée, jamais en clair", async () => {
+    deps.d.reglages.relecteurs = [ANNE, { nom: "Anne", email: "anne.b@autre.com" }, { nom: "cyril@client.fr", email: "cyril@client.fr" }];
+    deps.d.decisions.push({ id: 98, contentId: 50, relecteurEmail: "retire@ancien.fr", decision: "commentaire", commentaire: "Vu", createdAt: new Date() });
+    const j = await (await req("GET", `/api/portail-validation/${TOKEN}`)).json();
+    expect(j.relecteurs.map((r: any) => r.nom)).toEqual(["Anne (a***@c***.fr)", "Anne (a***@a***.com)", "c***@c***.fr"]);
+    expect(j.posts[0].decisions[0].relecteur).toBe("r***@a***.fr");
+    expect(JSON.stringify(j)).not.toMatch(/[a-z]+@[a-z]+\.(fr|com)/);
   });
   it("règle « un » : la première validation valide le post (décision enregistrée, historique)", async () => {
     const r = await decider({ relecteurEmail: "Anne@Client.fr", decision: "validee", commentaire: "Parfait" });

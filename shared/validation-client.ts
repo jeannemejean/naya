@@ -172,3 +172,49 @@ export function creerLimiteur(max = DECISIONS_PAR_FENETRE, fenetreMs = FENETRE_D
   };
 }
 
+
+// ── Portail public : jamais d'adresse email ──────────────────────────────────────────
+
+/** « claire@domaine.fr » → « c***@d***.fr » : assez pour départager deux homonymes, pas pour écrire. */
+export function masquerEmail(email: string): string {
+  const [local = "", domaine = ""] = String(email ?? "").split("@");
+  const point = domaine.lastIndexOf(".");
+  const nomDomaine = point > 0 ? domaine.slice(0, point) : domaine;
+  const tld = point > 0 ? domaine.slice(point) : "";
+  return `${local.slice(0, 1)}***@${nomDomaine.slice(0, 1)}***${tld}`;
+}
+
+export interface RelecteurPublic { id: string; nom: string }
+
+/**
+ * Les relecteurs tels que le portail public les montre : un identifiant opaque (calculé par le
+ * serveur, `idDe`) et un nom. Un relecteur sans nom (nom = adresse) ou deux homonymes sont
+ * départagés par l'adresse MASQUÉE — l'adresse en clair ne sort jamais.
+ */
+export function relecteursPublics(relecteurs: Relecteur[], idDe: (email: string) => string): RelecteurPublic[] {
+  const sansAdresse = (r: Relecteur) => (r.nom && r.nom.toLowerCase() !== r.email.toLowerCase() && !r.nom.includes("@") ? r.nom : "");
+  const compte = new Map<string, number>();
+  for (const r of relecteurs) {
+    const n = sansAdresse(r).toLowerCase();
+    if (n) compte.set(n, (compte.get(n) ?? 0) + 1);
+  }
+  return relecteurs.map((r) => {
+    const nom = sansAdresse(r);
+    const affiche = !nom ? masquerEmail(r.email) : (compte.get(nom.toLowerCase()) ?? 0) > 1 ? `${nom} (${masquerEmail(r.email)})` : nom;
+    return { id: idDe(r.email), nom: affiche };
+  });
+}
+
+/** Le nom public d'une adresse (décisions du portail) : celui de la liste, sinon l'adresse masquée. */
+export function nomPublic(relecteurs: Relecteur[], email: string, idDe: (email: string) => string): string {
+  const e = String(email ?? "").toLowerCase();
+  const publics = relecteursPublics(relecteurs, idDe);
+  const i = relecteurs.findIndex((r) => r.email.toLowerCase() === e);
+  return i >= 0 ? publics[i].nom : masquerEmail(e);
+}
+
+/** L'adresse d'un relecteur d'après l'identifiant opaque choisi sur le portail ; null s'il est inconnu. */
+export function relecteurParId(relecteurs: Relecteur[], id: unknown, idDe: (email: string) => string): Relecteur | null {
+  if (typeof id !== "string" || !id || id.length > 100) return null;
+  return relecteurs.find((r) => idDe(r.email) === id) ?? null;
+}
