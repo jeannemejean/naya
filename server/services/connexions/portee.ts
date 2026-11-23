@@ -99,3 +99,32 @@ export function identiteEnvoi(portee: Portee, prefs: any, connexion: any): Ident
     signature: texte(c.senderName),
   };
 }
+
+
+// ─── Réseaux sociaux par projet (« marques », 23 nov. 2026) ──────────────────────────────
+// Chaque projet peut avoir ses propres comptes de réseaux. Un projet CLIENT n'utilise que les
+// siens (inchangé). Un projet PERSO (Agence JMD, Personal branding…) utilise les siens d'abord,
+// et, pour un réseau qu'il n'a pas connecté, le compte des Réglages (repli).
+
+export interface PorteeReseaux { portee: number | null; repli: boolean }
+
+export function porteeReseauxDe(projet: { id: number; projectKind?: string | null } | null | undefined): PorteeReseaux {
+  if (!projet) return { portee: null, repli: false };
+  return { portee: projet.id, repli: projet.projectKind !== "client" };
+}
+
+/** Comptes utilisables dans ce périmètre : les siens, puis (perso) ceux des Réglages pour les réseaux manquants. */
+export function comptesDuPerimetre<C extends { platform: string; projectId?: number | null }>(comptes: C[], p: PorteeReseaux): C[] {
+  const propres = comptes.filter((c) => (c.projectId ?? null) === p.portee);
+  if (!p.repli || p.portee == null) return propres;
+  const couverts = new Set(propres.map((c) => c.platform.toLowerCase()));
+  return [...propres, ...comptes.filter((c) => (c.projectId ?? null) === null && !couverts.has(c.platform.toLowerCase()))];
+}
+
+export function choisirCompteReseaux<C extends CompteSocial & { projectId?: number | null }>(
+  comptes: C[], post: { platform: string; socialAccountId?: number | null }, p: PorteeReseaux,
+): ChoixCompte<C> {
+  const compte = compteDuPost(post, comptesDuPerimetre(comptes, p));
+  if (compte) return { compte };
+  return { erreur: post.socialAccountId != null ? "compte_hors_projet" : "compte_absent" };
+}

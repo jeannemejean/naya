@@ -1,12 +1,14 @@
 // Onglets de la page projet : tout ce qui concerne un projet vit dans sa page. L'onglet est dans
 // l'URL (?onglet=…) : Retour, un lien copié ou une notification ouvrent exactement le bon écran.
-export const ONGLETS = ["ensemble", "fondations", "veille", "mesure", "client"] as const;
+export const ONGLETS = ["ensemble", "fondations", "veille", "mesure", "reseaux", "client"] as const;
 export type Onglet = (typeof ONGLETS)[number];
 
 export function ongletDe(recherche: string, estClient: boolean): Onglet {
   const o = new URLSearchParams(recherche.startsWith("?") ? recherche.slice(1) : recherche).get("onglet");
   if (!o || !(ONGLETS as readonly string[]).includes(o)) return "ensemble";
   if (o === "client" && !estClient) return "ensemble";
+  // Les réseaux d'un projet client sont dans son onglet Client.
+  if (o === "reseaux" && estClient) return "client";
   return o as Onglet;
 }
 
@@ -15,7 +17,9 @@ export function lienOnglet(projectId: number, onglet: Onglet): string {
 }
 
 export function ongletPourAutreProjet(onglet: Onglet, autreEstClient: boolean): Onglet {
-  return onglet === "client" && !autreEstClient ? "ensemble" : onglet;
+  if (onglet === "client" && !autreEstClient) return "ensemble";
+  if (onglet === "reseaux" && autreEstClient) return "client";
+  return onglet;
 }
 
 /** Où envoyer une ancienne adresse (/fondations…) ; null tant que le serveur n'a pas répondu. */

@@ -40,8 +40,8 @@ import { horsViePerso } from "@shared/vie-perso";
 import { plateformeDe, problemesProgrammation, type GenreMedia } from "@shared/programmation";
 import { registerOrchestreRoutes } from "./routes-orchestre";
 import { registerRapportsRoutes } from "./routes-rapports";
-import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
-import { dansPortee } from "./services/connexions/portee";
+import { compteDePublication, porteeReseauxDuProjet } from "./services/connexions/comptes";
+import { comptesDuPerimetre } from "./services/connexions/portee";
 import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
 import { controleProjetCampagne, controleChangementNature } from "./services/connexions/campagne";
 import { titresDejaPlanifies } from "./services/semaine-planifiee";
@@ -6788,12 +6788,14 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // Mode agence : chaque compte cible doit appartenir au périmètre du projet (client → ses
       // comptes seulement ; perso ou aucun projet → ceux de l'utilisatrice).
       if (projectId && !(await storage.getProject(Number(projectId), userId))) return res.status(404).json({ message: 'not_found' });
-      const portee = await porteeDuProjet(userId, projectId ? Number(projectId) : null);
+      // Comptes du projet (perso : les siens, puis ceux des Réglages ; client : les siens seulement).
+      const perimetre = await porteeReseauxDuProjet(userId, projectId ? Number(projectId) : null);
       const comptes = await storage.getSocialAccounts(userId);
+      const permis = new Set(comptesDuPerimetre(comptes as any[], perimetre).map((c: any) => c.id));
       for (const tgt of targets) {
         if (tgt?.socialAccountId == null) continue;
         const compte = comptes.find((c: any) => c.id === Number(tgt.socialAccountId));
-        if (!compte || !dansPortee(compte as any, portee)) return res.status(400).json({ message: 'compte_hors_projet' });
+        if (!compte || !permis.has(compte.id)) return res.status(400).json({ message: 'compte_hors_projet' });
       }
       const groupId = randomUUID();
       const when = scheduledFor ? new Date(scheduledFor) : null;
@@ -6819,7 +6821,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           // Même choix de compte que le worker : plateforme exacte, actif, dans le périmètre.
           const compte = tgt.socialAccountId != null
             ? comptes.find((c: any) => c.id === Number(tgt.socialAccountId)) ?? null
-            : comptes.find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false && dansPortee(c as any, portee)) ?? null;
+            : comptesDuPerimetre(comptes as any[], perimetre).find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false) ?? null;
           // La date est jugée à l'heure de publication ; le compte, MAINTENANT (il se renouvelle seul).
           const p = problemesProgrammation({
             post: { body: legendeDe(tgt), platform: plateforme, scheduledFor: when }, medias: genres,

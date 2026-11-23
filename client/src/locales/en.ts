@@ -3037,7 +3037,7 @@ const en = {
   client: "Client",
   resume: "Summary",
   feuilleDeRoute: "Roadmap (done / to do)",
-  onglets: { ensemble: "Overview", fondations: "Foundations", veille: "Watch", mesure: "Measure", client: "Client" },
+  onglets: { ensemble: "Overview", fondations: "Foundations", veille: "Watch", mesure: "Measure", reseaux: "Networks", client: "Client" },
  },
  rapports: {
   titre: "Client reports",
@@ -3365,6 +3365,21 @@ const en = {
   vueHoraire: "Hourly view",
   jours: "Days of the week",
   aujourdhui: "Today",
+ },
+
+ reseauxProjet: {
+  titre: "{{projet}} networks",
+  regle: "Connect this project's own accounts here (its Instagram, its LinkedIn page…). Its posts go out from these accounts. A network not connected here uses the account from Settings.",
+  herite: "Uses the account from Settings: {{compte}}",
+  badgeHerite: "Settings",
+  connecterPropre: "Connect the project's account",
+  reconnecter: "Reconnect",
+  connecte: "{{reseau}} connected for {{projet}}",
+  astuce: "For Instagram: first log in on instagram.com with the project's account, then click Connect (Instagram uses the account open in the browser).",
+  raisons: {
+   compte_de_l_utilisatrice: "This account is already the one from Settings: log in with this project's own account.",
+   compte_d_un_autre_projet: "This account already belongs to another project.",
+  },
  },
 
  composer: {

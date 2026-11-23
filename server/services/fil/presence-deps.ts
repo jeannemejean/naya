@@ -9,7 +9,7 @@ import { callClaudeWithContext, CLAUDE_MODELS } from "../claude";
 import { tendancesPourLeContenu } from "../profils-veille/tri";
 import { depsQuotidien } from "../atelier/deps";
 import { joursTravailles } from "../campagne/placement";
-import { dansPortee, porteeDe } from "../connexions/portee";
+import { comptesDuPerimetre, porteeDe, porteeReseauxDe } from "../connexions/portee";
 import { chargerCarte } from "./carte";
 import { choisirRattachement } from "./rattachement";
 import type { DepsPresence } from "./presence";
@@ -39,9 +39,10 @@ export const depsPresence: DepsPresence = {
   // Import paresseux : rythme.ts importe presence.ts (postsParSemaine).
   rythme: async (userId, projectId) => (await import("../campagne/rythme")).plafondDeLaMarque(userId, projectId),
   async comptesActifs(userId, projectId) {
-    const portee = projectId != null ? porteeDe(await storage.getProject(projectId, userId)) : null;
-    return (await storage.getSocialAccounts(userId))
-      .filter((c: any) => c.isActive !== false && dansPortee(c, portee))
+    // Les réseaux de la marque : ses comptes, puis (projet perso) ceux des Réglages.
+    const p = projectId != null ? porteeReseauxDe(await storage.getProject(projectId, userId) as any) : { portee: null, repli: false };
+    return comptesDuPerimetre(await storage.getSocialAccounts(userId) as any[], p)
+      .filter((c: any) => c.isActive !== false)
       .map((c: any) => ({ id: c.id, platform: c.platform }));
   },
   async postsEntre(userId, debut, fin, projectId) {

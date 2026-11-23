@@ -3041,7 +3041,7 @@ const fr = {
   client: "Client",
   resume: "Résumé",
   feuilleDeRoute: "Feuille de route (ce qui est fait / à faire)",
-  onglets: { ensemble: "Vue d'ensemble", fondations: "Fondations", veille: "Veille", mesure: "Mesure", client: "Client" },
+  onglets: { ensemble: "Vue d'ensemble", fondations: "Fondations", veille: "Veille", mesure: "Mesure", reseaux: "Réseaux", client: "Client" },
  },
  rapports: {
   titre: "Rapports du client",
@@ -3369,6 +3369,21 @@ const fr = {
   vueHoraire: "Vue horaire",
   jours: "Jours de la semaine",
   aujourdhui: "Aujourd'hui",
+ },
+
+ reseauxProjet: {
+  titre: "Réseaux de {{projet}}",
+  regle: "Connecte ici les comptes de ce projet (sa page Instagram, sa page LinkedIn…). Ses posts partent de ces comptes. Un réseau non connecté ici utilise le compte des Réglages.",
+  herite: "Utilise le compte des Réglages : {{compte}}",
+  badgeHerite: "Réglages",
+  connecterPropre: "Connecter le compte du projet",
+  reconnecter: "Reconnecter",
+  connecte: "{{reseau}} connecté pour {{projet}}",
+  astuce: "Pour Instagram : connecte-toi d'abord sur instagram.com avec le compte du projet, puis clique sur Connecter (Instagram utilise le compte ouvert dans le navigateur).",
+  raisons: {
+   compte_de_l_utilisatrice: "Ce compte est déjà celui des Réglages : connecte-toi avec le compte propre à ce projet.",
+   compte_d_un_autre_projet: "Ce compte est déjà celui d'un autre projet.",
+  },
  },
 
  composer: {

@@ -47,11 +47,12 @@ const appel = (method: string, path: string) =>
 beforeEach(() => { vi.clearAllMocks(); session = {}; });
 
 describe("routes des comptes sociaux", () => {
-  it("projet d'une autre ou inconnu → 404 ; projet perso → 409", async () => {
+  it("projet d'une autre ou inconnu → 404 ; projet perso : ses propres réseaux se connectent (marques)", async () => {
     expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=8")).status).toBe(404);
     expect((await appel("GET", "/api/social/accounts?projectId=abc")).status).toBe(404);
-    expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=5")).status).toBe(409);
-    expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=5")).status).toBe(409);
+    expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=5")).status).toBe(200);
+    // Aucun compte PROPRE au projet perso : rien à déconnecter (jamais celui des Réglages).
+    expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=5")).status).toBe(404);
     expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=8")).status).toBe(404);
     expect(storageMock.deleteSocialAccount).not.toHaveBeenCalled();
   });
@@ -83,7 +84,7 @@ describe("routes des comptes sociaux", () => {
     expect(session.socialOAuthProjectId).toBe(7);
     const r = await appel("GET", `/api/social/oauth/instagram/callback?code=abc&state=${encodeURIComponent(state)}`);
     expect(r.status).toBe(302);
-    expect(r.headers.get("location")).toBe("/projects/7?social=instagram&status=connected");
+    expect(r.headers.get("location")).toBe("/projects/7?onglet=reseaux&social=instagram&status=connected");
     expect(oauth.exchangeInstagramCode).toHaveBeenCalledWith("user-1", "abc", 7);
     expect(session.socialOAuthProjectId).toBeUndefined();
   });
@@ -99,7 +100,7 @@ describe("routes des comptes sociaux", () => {
   it("state différent de celui de la session → refus, aucun échange", async () => {
     await appel("GET", "/api/social/oauth/instagram/url?projectId=7");
     const r = await appel("GET", "/api/social/oauth/instagram/callback?code=abc&state=user-2:1");
-    expect(r.headers.get("location")).toBe("/projects/7?social=instagram&status=error&reason=state_invalide");
+    expect(r.headers.get("location")).toBe("/projects/7?onglet=reseaux&social=instagram&status=error&reason=state_invalide");
     expect(oauth.exchangeInstagramCode).not.toHaveBeenCalled();
   });
 

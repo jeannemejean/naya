@@ -99,3 +99,32 @@ describe("identiteEnvoi", () => {
     expect(identiteEnvoi(7, prefs, { senderEmail: "  ", senderName: " " })).toEqual({ email: null, linkedin: null, signature: null });
   });
 });
+
+describe("réseaux par projet (marques)", async () => {
+  const { porteeReseauxDe, comptesDuPerimetre, choisirCompteReseaux } = await import("./portee");
+  const c = (id: number, platform: string, projectId: number | null) => ({ id, platform, projectId, isActive: true, accessToken: "t", accountId: String(id) });
+  const comptes = [c(1, "instagram", null), c(2, "linkedin", null), c(3, "instagram", 15), c(4, "instagram", 99)];
+
+  it("projet perso : son compte d'abord, les Réglages pour les réseaux qu'il n'a pas", () => {
+    const p = porteeReseauxDe({ id: 15, projectKind: "personal" });
+    expect(comptesDuPerimetre(comptes, p).map((x) => x.id)).toEqual([3, 2]);
+    expect(choisirCompteReseaux(comptes, { platform: "Instagram" }, p)).toEqual({ compte: comptes[2] });
+    expect(choisirCompteReseaux(comptes, { platform: "linkedin" }, p)).toEqual({ compte: comptes[1] });
+  });
+  it("projet perso sans compte propre : exactement comme avant (Réglages)", () => {
+    const p = porteeReseauxDe({ id: 16, projectKind: "personal" });
+    expect(choisirCompteReseaux(comptes, { platform: "instagram" }, p)).toEqual({ compte: comptes[0] });
+  });
+  it("projet client : jamais les comptes des Réglages", () => {
+    const p = porteeReseauxDe({ id: 99, projectKind: "client" });
+    expect(comptesDuPerimetre(comptes, p).map((x) => x.id)).toEqual([4]);
+    expect(choisirCompteReseaux(comptes, { platform: "linkedin" }, p)).toEqual({ erreur: "compte_absent" });
+  });
+  it("sans projet : les Réglages", () => {
+    expect(comptesDuPerimetre(comptes, porteeReseauxDe(null)).map((x) => x.id)).toEqual([1, 2]);
+  });
+  it("le compte d'un autre projet, même lié au post, n'est jamais pris", () => {
+    const p = porteeReseauxDe({ id: 15, projectKind: "personal" });
+    expect(choisirCompteReseaux(comptes, { platform: "instagram", socialAccountId: 4 }, p)).toEqual({ erreur: "compte_hors_projet" });
+  });
+});
