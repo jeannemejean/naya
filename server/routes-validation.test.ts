@@ -160,6 +160,13 @@ describe("portail public", () => {
   it("corps illisible : 400", async () => {
     expect((await decider({ relecteurEmail: ANNE.email, decision: "publier" })).status).toBe(400);
   });
+  it("lecture du portail limitée par lien : 429 au-delà de 120 par minute, avant toute lecture en base", async () => {
+    const statuts: number[] = [];
+    for (let i = 0; i < 121; i++) statuts.push((await req("GET", `/api/portail-validation/${TOKEN}`)).status);
+    expect(statuts.slice(0, 120).every((s) => s === 200)).toBe(true);
+    expect(statuts[120]).toBe(429);
+    expect(deps.portailParJeton).toHaveBeenCalledTimes(120);
+  });
   it("décisions limitées par lien : 429 au-delà de 60 en 10 minutes", async () => {
     let dernier = 0;
     for (let i = 0; i < 61; i++) dernier = (await decider({ relecteurEmail: ANNE.email, decision: "commentaire", commentaire: `c${i}` })).status;

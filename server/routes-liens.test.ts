@@ -96,6 +96,12 @@ describe("GET /l/:code", () => {
     expect((await req("GET", "/l/abcDEF1", undefined, { "Sec-Purpose": "prefetch" })).status).toBe(302);
     expect(deps.compterClic).not.toHaveBeenCalled();
   });
+  it("clics comptés au plus 30 par minute et par lien ; la redirection, elle, n'est jamais limitée", async () => {
+    const statuts: number[] = [];
+    for (let i = 0; i < 35; i++) statuts.push((await req("GET", "/l/abcDEF1")).status);
+    expect(statuts.every((s) => s === 302)).toBe(true);
+    expect(deps.compterClic).toHaveBeenCalledTimes(30);
+  });
   it("un comptage en échec ne bloque pas la redirection", async () => {
     deps.compterClic.mockRejectedValueOnce(new Error("db"));
     expect((await req("GET", "/l/abcDEF1")).status).toBe(302);

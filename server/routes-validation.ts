@@ -72,10 +72,14 @@ async function vuePosts(deps: DepsValidation, userId: string, posts: PostValidat
   });
 }
 
+const LECTURES_PORTAIL_PAR_MINUTE = 120;
+
 // ── Routes publiques ─────────────────────────────────────────────────────────────────
 
 export function registerValidationPublique(app: Express, deps: DepsValidation = depsValidation): void {
   const limiter = creerLimiteur();
+  // Lecture du portail : 120 par minute et par lien, avant toute lecture en base.
+  const limiteurLecture = creerLimiteur(LECTURES_PORTAIL_PAR_MINUTE, 60_000);
 
   const indisponible = (res: Response) => res.status(404).json({ message: "indisponible" });
 
@@ -97,6 +101,11 @@ export function registerValidationPublique(app: Express, deps: DepsValidation = 
 
   app.get("/api/portail-validation/:token", async (req, res) => {
     try {
+      const jeton = String(req.params.token ?? "");
+      if (JETON_RE.test(jeton) && !limiteurLecture(jeton, deps.maintenant().getTime())) {
+        res.setHeader("Cache-Control", "no-store");
+        return res.status(429).json({ message: "trop_de_requetes" });
+      }
       const o = await portailOuvert(req.params.token, res);
       if (!o) return;
       const idDe = idRelecteurPortail(o.portail.token);

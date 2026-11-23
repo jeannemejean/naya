@@ -306,6 +306,21 @@ export async function imagesVersPdf(images: Uint8Array[]): Promise<Uint8Array> {
   return pdf.save();
 }
 
+/**
+ * Le serveur ne télécharge lui-même (carrousel en PDF) que les images de la médiathèque : https,
+ * sur l'hôte public du stockage des envois (R2_PUBLIC_BASE_URL, celui de /api/media/upload-url).
+ * Toute autre adresse (autre site, réseau interne, http) est refusée.
+ */
+export function estMediaDeLaMediatheque(url: string, base: string = process.env.R2_PUBLIC_BASE_URL || ""): boolean {
+  try {
+    const u = new URL(url);
+    const hote = base ? new URL(base).host : "";
+    return u.protocol === "https:" && !!hote && u.host === hote && !u.username && !u.password;
+  } catch {
+    return false;
+  }
+}
+
 /** Carrousel LinkedIn en document : PDF → Documents API → URN document. */
 async function liUploadDocument(token: string, owner: string, pdf: Uint8Array): Promise<string> {
   const init = await fetch(`${LI_API}/documents?action=initializeUpload`, {
@@ -339,6 +354,7 @@ async function publishLinkedIn(input: PubInput): Promise<PubResult> {
   if (!video && images.length > 0 && input.format === "carousel" && input.options?.linkedinDocument === true) {
     const octets: Uint8Array[] = [];
     for (const m of images) {
+      if (!estMediaDeLaMediatheque(m.url)) throw new Error("li_document_media_hors_mediatheque : image hors de la médiathèque de Naya");
       const r = await fetch(m.url);
       if (!r.ok) throw new Error(`li_doc_image_${r.status}`);
       octets.push(new Uint8Array(await r.arrayBuffer()));

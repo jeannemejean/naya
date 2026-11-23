@@ -121,9 +121,10 @@ describe("imagesVersPdf", () => {
 });
 
 describe("publishPost LinkedIn : carrousel en document PDF", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   function stubFetch() {
+    vi.stubEnv("R2_PUBLIC_BASE_URL", "https://cdn");
     const appels: { url: string; init?: any }[] = [];
     const f = vi.fn(async (url: string, init?: any) => {
       appels.push({ url, init });
@@ -165,6 +166,17 @@ describe("publishPost LinkedIn : carrousel en document PDF", () => {
     await publishPost({ ...base, options: { linkedinDocument: true, titre: "t".repeat(250) } });
     const post = JSON.parse(appels.find((a) => a.url.endsWith("/rest/posts"))!.init.body);
     expect(post.content.media.title).toHaveLength(200);
+  });
+
+  it("image hors de la médiathèque (autre hôte, ou http) : refusée, jamais téléchargée par le serveur", async () => {
+    const appels = stubFetch();
+    for (const url of ["https://ailleurs.example/1.png", "http://cdn/1.png", "https://169.254.169.254/latest"]) {
+      const r = await publishPost({ ...base, media: [{ url, kind: "image" as const }, base.media[1]], options: { linkedinDocument: true } });
+      expect(r.state).toBe("failed");
+      expect((r as any).error).toMatch(/li_document_media_hors_mediatheque/);
+    }
+    expect(appels.some((a) => !a.url.startsWith("https://cdn/") && !a.url.includes("linkedin"))).toBe(false);
+    expect(appels.some((a) => a.url.startsWith("https://ailleurs") || a.url.startsWith("http://") || a.url.includes("169.254"))).toBe(false);
   });
 
   it("sans l'option : multi-images comme avant (pas de document)", async () => {

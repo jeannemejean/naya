@@ -15,6 +15,9 @@ import { depsLiens, type DepsLiens, type PublicationTuile } from "./services/lie
 import { CSP_PAGE, pageIntrouvable, rendrePageSmartlink } from "./services/liens/page-smartlink";
 import { urlDeBase } from "./services/url-publique";
 import { parisTodayString } from "./utils/timezone";
+import { creerLimiteur } from "@shared/validation-client";
+
+const CLICS_PAR_MINUTE = 30;
 import {
   CODE_RE, codeDepuisOctets, doitCompter, estUrlSure, fusionnerUtm, lienRepris, LIENS_PAR_JOUR, lireSmartlink,
   lireUtm, SLUG_RE, TUILES_MAX, type BoutonSmartlink, type LienTuile, type Utm,
@@ -107,12 +110,15 @@ function envoyerHtml(res: Response, statut: number, html: string, cache: string)
 // ── Routes publiques ─────────────────────────────────────────────────────────────────
 
 export function registerLiensPublics(app: Express, deps: DepsLiens = depsLiens): void {
+  // Clics comptés : 30 par minute et par lien au plus (un script ne gonfle pas les statistiques
+  // ni n'écrit en boucle en base). La redirection, elle, n'est jamais limitée.
+  const limiteurClics = creerLimiteur(CLICS_PAR_MINUTE, 60_000);
   app.get("/l/:code", async (req, res) => {
     try {
       const code = String(req.params.code ?? "");
       const lien = CODE_RE.test(code) ? await deps.lienParCode(code) : undefined;
       if (!lien || !estUrlSure(lien.urlCible)) return envoyerHtml(res, 404, pageIntrouvable(), "no-store");
-      if (doitCompter(req.method, req.headers as Record<string, unknown>)) {
+      if (doitCompter(req.method, req.headers as Record<string, unknown>) && limiteurClics(code, deps.maintenant().getTime())) {
         const quand = deps.maintenant();
         // Un comptage raté ne bloque jamais la redirection.
         await deps.compterClic(lien.id, parisTodayString(quand), quand)
