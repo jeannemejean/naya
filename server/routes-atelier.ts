@@ -21,6 +21,7 @@ import { livrablesDeps } from "./services/livrables/deps";
 import { estUrlMediaDe } from "./services/livrables/urls";
 import { oublierCreationDe } from "./services/fil/creation";
 import { oublierReconciliationDe } from "./services/fil/cloture";
+import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -165,6 +166,7 @@ export function registerAtelierRoutes(app: Express): void {
       await db.update(content).set({ ...(patch as any), updatedAt: new Date() })
         // Jamais sous un post validé entre-temps (il part tel que validé).
         .where(and(eq(content.id, post.id), eq(content.userId, req.userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`, sql`coalesce(${content.autoPost}, false) = false`));
+      await journaliserChangement(req.userId, post, patch);
       res.json({ ok: true });
     } catch (e: any) {
       console.error("[Atelier] enregistrement:", e?.message);
@@ -181,6 +183,7 @@ export function registerAtelierRoutes(app: Express): void {
       if (r.statut === "invalide") return res.status(400).json({ message: "invalide" });
       if (r.statut === "en_cours" || r.statut === "deja_publie" || r.statut === "deja_valide") return res.status(409).json({ message: r.statut });
       if (r.statut === "manques") return res.status(422).json(r);
+      await journaliser(req.userId, id, "valide", null);
       res.json(r);
     } catch (e: any) {
       console.error("[Atelier] validation:", e?.message);
@@ -195,6 +198,7 @@ export function registerAtelierRoutes(app: Express): void {
       const r = await devaliderPost(depsValidation, req.userId, id);
       if (r.statut === "introuvable") return res.status(404).json({ message: "not_found" });
       if (r.statut !== "brouillon") return res.status(409).json({ message: r.statut });
+      await journaliser(req.userId, id, "devalide", null);
       res.json(r);
     } catch (e: any) {
       console.error("[Atelier] dévalidation:", e?.message);

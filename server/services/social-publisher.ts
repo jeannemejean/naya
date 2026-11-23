@@ -20,6 +20,7 @@ import { compteDePublication } from './connexions/comptes';
 import { db } from '../db';
 import { content, tasks } from '@shared/schema';
 import { and, eq, gte, inArray, isNull, like, lt, notInArray, or } from 'drizzle-orm';
+import { journaliser } from './gestion-posts/historique';
 import { apresEchec, DELAI_BLOQUE_MIN, erreurDuReessai, raisonLisible, reessaiDu } from './publication/fiabilite';
 
 /** États où un envoi est peut-être déjà parti : on n'y touche jamais. */
@@ -104,6 +105,7 @@ async function echouer(item: any, erreur: string): Promise<'failed' | 'skipped'>
     return 'skipped';
   }
   await storage.updateContent(item.id, { postStatus: 'failed', lastError: r.lastError } as any);
+  await journaliser(item.userId, item.id, 'echec', { raison: r.lastError });
   await signalerEchec(item, r.lastError);
   return 'failed';
 }
@@ -202,6 +204,7 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
       contentStatus: 'published', lastError: null,
     } as any);
     await cocherTachePublier(item.id);
+    await journaliser(item.userId, item.id, 'publie', { plateforme: platform, platformPostId: result.platformPostId ?? null });
     console.log(`[SocialPublisher] ✅ publié id=${item.id} sur ${platform} (postId=${result.platformPostId})`);
     await apresPublication(item, account as any, result.platformPostId).catch(() => {});
     return 'posted';
@@ -220,7 +223,7 @@ export async function publierMaintenant(contentId: number, userId: string):
   // Atomique : jamais sur un post publié ou en train de partir (sinon double publication).
   const [pris] = await db.update(content)
     .set({ autoPost: true, postStatus: 'pending', lastError: null, scheduledFor: new Date(), updatedAt: new Date() } as any)
-    .where(and(eq(content.id, contentId), eq(content.userId, userId), isNull(content.publishedAt),
+    .where(and(eq(content.id, contentId), eq(content.userId, userId), isNull(content.publishedAt), isNull(content.supprimeLe),
       or(isNull(content.postStatus), notInArray(content.postStatus, EN_COURS_OU_PUBLIE))))
     .returning({ id: content.id });
   if (!pris) return (await storage.getContentById(contentId, userId)) ? 'occupe' : 'introuvable';
@@ -238,7 +241,7 @@ async function finishProcessing(): Promise<number> {
     if (!item.providerContainerId || (plateforme !== 'instagram' && plateforme !== 'tiktok')) continue;
     try {
       const choix = await compteDePublication(item);
-      if ('erreur' in choix) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: choix.erreur } as any); await signalerEchec(item, choix.erreur); continue; }
+      if ('erreur' in choix) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: choix.erreur } as any); await journaliser(item.userId, item.id, 'echec', { raison: choix.erreur }); await signalerEchec(item, choix.erreur); continue; }
       const account = choix.compte;
       const creds = { accessToken: account.accessToken, accountId: account.accountId };
       const r = plateforme === 'tiktok'
@@ -247,10 +250,12 @@ async function finishProcessing(): Promise<number> {
       if (r.state === 'posted') {
         await storage.updateContent(item.id, { status: 'published', publishedAt: new Date(), platformPostId: r.platformPostId, postStatus: 'posted', contentStatus: 'published', lastError: null } as any);
         await cocherTachePublier(item.id);
+        await journaliser(item.userId, item.id, 'publie', { plateforme, platformPostId: r.platformPostId ?? null });
         await apresPublication(item, account as any, r.platformPostId).catch(() => {});
         done++;
       } else if (r.state === 'failed') {
         await storage.updateContent(item.id, { postStatus: 'failed', lastError: (r.error || '').slice(0, 300) } as any);
+        await journaliser(item.userId, item.id, 'echec', { raison: (r.error || 'echec_inconnu').slice(0, 300) });
         await signalerEchec(item, r.error || 'echec_inconnu');
       }
       // 'processing' → on laisse, retry au prochain cycle
@@ -298,13 +303,13 @@ async function rattraperOublies(now: Date): Promise<void> {
   // réessai garde la vraie raison de son échec.
   const manques = await db.select(cols).from(content)
     .where(and(eq(content.autoPost, true), eq(content.postStatus, 'pending'), isNull(content.publishedAt),
-      lt(content.scheduledFor, limite), gte(content.scheduledFor, debut)));
+      isNull(content.supprimeLe), lt(content.scheduledFor, limite), gte(content.scheduledFor, debut)));
   let n = 0;
   for (const p of manques) {
     const raison = erreurDuReessai(p.lastError) ?? 'publication_manquee';
     const [fait] = await db.update(content).set({ postStatus: 'failed', lastError: raison, updatedAt: now } as any)
       .where(and(eq(content.id, p.id), eq(content.postStatus, 'pending'))).returning({ id: content.id });
-    if (fait) { n++; await signalerEchec(p as any, raison); }
+    if (fait) { n++; await journaliser(p.userId, p.id, 'echec', { raison }); await signalerEchec(p as any, raison); }
   }
   // Bloqués : en cours d'envoi depuis 15 min, ou vidéo en traitement depuis 2 h. Ils ont pu
   // partir : jamais republiés seuls.
@@ -314,7 +319,7 @@ async function rattraperOublies(now: Date): Promise<void> {
       and(eq(content.postStatus, 'processing'), lt(content.updatedAt, new Date(now.getTime() - DELAI_TRAITEMENT_MAX_MIN * 60_000))),
     ))
     .returning(cols);
-  for (const p of bloques) await signalerEchec(p as any, 'publication_a_verifier');
+  for (const p of bloques) { await journaliser(p.userId, p.id, 'echec', { raison: 'publication_a_verifier' }); await signalerEchec(p as any, 'publication_a_verifier'); }
   if (n || bloques.length) console.warn(`[SocialPublisher] rattrapage : ${n} manqué(s), ${bloques.length} bloqué(s)`);
 }
 

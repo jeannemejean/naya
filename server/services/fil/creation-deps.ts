@@ -1,6 +1,6 @@
 // Les vraies sources du suivi de création (base, stockage). Séparées de creation.ts pour que ses
 // tests n'importent pas la base.
-import { and, eq, gte, lte, or } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { db } from "../../db";
 import { content } from "@shared/schema";
 import { storage } from "../../storage";
@@ -20,7 +20,7 @@ export const depsCreation: DepsCreation = {
         contentStatus: content.contentStatus, autoPost: content.autoPost, consigne: content.consigne,
         campaignId: content.campaignId, body: content.body, tendanceProjetId: content.tendanceProjetId, projectId: content.projectId,
       }).from(content).where(and(
-        eq(content.userId, userId),
+        eq(content.userId, userId), isNull(content.supprimeLe),
         or(and(gte(content.scheduledFor, debut), lte(content.scheduledFor, fin)), and(gte(content.publishedAt, debut), lte(content.publishedAt, fin))),
       )),
       storage.getProjects(userId, 1000),

@@ -790,3 +790,17 @@ lisent ces colonnes).
 select column_name from information_schema.columns where table_name='content' and column_name in
  ('texte_alternatif','collaborateurs','reel_dans_le_fil','nom_audio','linkedin_document');  -- 5 lignes
 ```
+
+## 19. Gestion des posts (notes, historique, corbeille) — `0046` à appliquer en prod à la main
+
+Fichier : `migrations/0046_powerful_wither.sql` (branche `feat/reseaux-par-projet`). Un `ADD COLUMN` nullable
+sur `content` (`supprime_le`, la corbeille) et deux tables nouvelles, `notes_post` et `historique_post`
+(clés étrangères en cascade vers `users` et `content`, un index sur `content_id` chacune). Aucun `DROP`,
+aucune donnée touchée. Migration AVANT le push : le worker de publication, le calendrier, l'atelier et la
+présence filtrent sur `supprime_le` (sans la colonne, ces lectures échouent). L'historique s'écrit au mieux :
+sans sa table, les gestes passent quand même.
+
+```sql
+select column_name from information_schema.columns where table_name='content' and column_name='supprime_le';  -- 1 ligne
+select table_name from information_schema.tables where table_name in ('notes_post','historique_post');       -- 2 lignes
+```

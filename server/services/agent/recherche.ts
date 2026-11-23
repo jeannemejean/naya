@@ -218,7 +218,7 @@ const DEFINITIONS: Record<SourceRecherche, DefinitionSource> = {
     colProjet: content.projectId,
     texte: joindre(content.title, content.body),
     titre: (l) => l.titre ?? "Contenu",
-    cloison: (u) => [eq(content.userId, u)],
+    cloison: (u) => [eq(content.userId, u), isNull(content.supprimeLe)],
     requete: (c, ou) => db.select({ ...c, titre: content.title }).from(content)
       .leftJoin(projects, eq(projects.id, content.projectId))
       .where(ou).orderBy(sql`${DATE_CONTENU} desc nulls last`).limit(LIGNES_PAR_SOURCE),

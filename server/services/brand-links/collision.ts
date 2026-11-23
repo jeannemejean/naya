@@ -1,5 +1,5 @@
 import { db } from "../../db";
-import { and, eq, gte, lte, or, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, or, inArray, isNull } from "drizzle-orm";
 import { projectLinks, content, projects } from "@shared/schema";
 import { callClaude, callClaudeDetailed, CLAUDE_MODELS } from "../claude";
 
@@ -136,6 +136,7 @@ async function voisinsProgrammes(
     .from(content)
     .where(and(
       eq(content.userId, userId),
+      isNull(content.supprimeLe),
       // `content.projectId` est NULLABLE (vérifié dans le schéma) : `inArray` écarte
       // déjà les lignes nulles, mais on ne s'appuie pas sur ce détail de drizzle —
       // `autresIds` ne contient que des identifiants réels, donc un contenu sans

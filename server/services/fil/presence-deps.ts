@@ -47,7 +47,7 @@ export const depsPresence: DepsPresence = {
   },
   async postsEntre(userId, debut, fin, projectId) {
     const posts = await db.select().from(content).where(and(
-      eq(content.userId, userId),
+      eq(content.userId, userId), isNull(content.supprimeLe),
       or(and(gte(content.scheduledFor, debut), lte(content.scheduledFor, fin)), and(gte(content.publishedAt, debut), lte(content.publishedAt, fin))),
     )).orderBy(content.scheduledFor);
     // Mode agence : seuls les posts du même périmètre (marque ou client) que le projet visé.
@@ -58,7 +58,7 @@ export const depsPresence: DepsPresence = {
   },
   async propositionsEnAttente(userId, debut, fin) {
     const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(content).where(and(
-      eq(content.userId, userId), eq(content.origine, "presence"), isNull(content.publishedAt),
+      eq(content.userId, userId), eq(content.origine, "presence"), isNull(content.publishedAt), isNull(content.supprimeLe),
       sql`coalesce(${content.postStatus}, '') <> 'posted'`,
       or(gte(content.createdAt, debut), and(gte(content.scheduledFor, debut), lte(content.scheduledFor, fin))),
     ));

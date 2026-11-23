@@ -694,9 +694,45 @@ export const content = pgTable("content", {
   // Fil conducteur : le circuit qui a créé le post. `presence` = proposé par Naya pour garder
   // la cadence minimale de présence (fil/presence.ts) ; null = tout autre post.
   origine: text("origine"),
+  // Corbeille : un post supprimé depuis le calendrier y reste 30 jours avant de disparaître
+  // des vues, restaurable. null = vivant. Un post dans la corbeille ne part JAMAIS (le worker
+  // l'exclut) et sort de toutes les listes (calendrier, atelier, présence).
+  supprimeLe: timestamp("supprime_le"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+/**
+ * Notes internes d'un post : un fil de notes courtes, visibles seulement dans Naya (jamais
+ * publiées). L'autrice est l'utilisatrice.
+ */
+export const notesPost = pgTable("notes_post", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contentId: integer("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  texte: text("texte").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parPost: index("notes_post_content_idx").on(t.contentId),
+}));
+export type NotePost = typeof notesPost.$inferSelect;
+
+/**
+ * Historique d'un post : journal en ajout seul des événements qui comptent (créé, texte
+ * modifié, date déplacée, programmé, publié, échec, dupliqué, corbeille…). Écrit au mieux :
+ * un journal qui échoue ne fait jamais échouer le geste.
+ */
+export const historiquePost = pgTable("historique_post", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contentId: integer("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  evenement: text("evenement").notNull(),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parPost: index("historique_post_content_idx").on(t.contentId),
+}));
+export type HistoriquePost = typeof historiquePost.$inferSelect;
 
 /**
  * Réception par contenu — signaux RAPIDES (SCHEMA-TRIANGULATION.md §C.2).
@@ -1590,6 +1626,7 @@ export const insertContentSchema = createInsertSchema(content).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  supprimeLe: true,
 });
 
 export const insertLeadSchema = createInsertSchema(leads).omit({

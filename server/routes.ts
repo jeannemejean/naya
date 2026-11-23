@@ -16,6 +16,8 @@ import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserI
 import { registerLivrablesRoutes } from "./routes-livrables";
 import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerAtelierRoutes } from "./routes-atelier";
+import { registerGestionPostsRoutes } from "./routes-gestion-posts";
+import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
 import { registerModeTestRoutes } from "./routes-mode-test";
@@ -6748,6 +6750,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       requestBody.autoPost = requestBody.autoPost === true;
       const contentData = insertContentSchema.parse(requestBody);
       const content = await storage.createContent(contentData);
+      await journaliser(userId, content?.id, 'cree', null);
 
       // Alerte de collision : informative, jamais bloquante. Elle s'exécute APRÈS
       // l'écriture, pour qu'un échec de jugement ne puisse jamais empêcher la
@@ -6872,6 +6875,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           crossPostGroupId: groupId,
         } as any);
         created.push(row);
+        await journaliser(userId, row?.id, 'cree', { plateforme: plateformeDe(tgt.basePlatform || tgt.platform) });
       }
       res.json({ groupId, count: created.length, items: created });
     } catch (error: any) {
@@ -6887,7 +6891,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const existing = await storage.getContentById(parseInt(id), userId);
       if (!existing) return res.status(404).json({ message: "Content not found" });
 
-      const updates = req.body;
+      // La corbeille a ses propres routes : jamais un `supprimeLe` posé par un PATCH.
+      const { supprimeLe: _corbeille, ...updates } = req.body ?? {};
       // Un post publié, ou en train de partir, ne se déplace plus (glisser-déposer du calendrier) :
       // changer sa date ne le dépublierait pas, et l'écran mentirait.
       const verrouille = !!existing.publishedAt || ['posted', 'posting', 'processing', 'uploading'].includes((existing as any).postStatus ?? '');
@@ -6908,6 +6913,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       }
       
       const content = await storage.updateContent(parseInt(id), updates);
+      await journaliserChangement(userId, existing, content);
 
       // Alerte de collision : informative, jamais bloquante — même garantie que sur
       // la création (voir POST /api/content). On relit l'état final (`content`,
@@ -6941,8 +6947,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const existing = await storage.getContentById(parseInt(id), userId);
       if (!existing) return res.status(404).json({ message: "Content not found" });
 
-      await storage.deleteContent(parseInt(id));
-      res.json({ message: "Content deleted successfully" });
+      // Corbeille (30 jours, restaurable) : la suppression définitive passe par
+      // DELETE /api/content/:id/definitif. Jamais un post en train de partir.
+      if (!(await storage.mettreALaCorbeille(existing.id, userId))) {
+        return res.status(409).json({ message: 'publication_en_cours' });
+      }
+      await journaliser(userId, existing.id, 'supprime', { etaitProgramme: (existing as any).autoPost === true });
+      res.json({ message: "Content deleted successfully", corbeille: true });
     } catch (error) {
       console.error("Error deleting content:", error);
       res.status(500).json({ message: "Failed to delete content" });
@@ -11387,6 +11398,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerLivrablesRoutes(app);
   registerProgrammationRoutes(app);
   registerAtelierRoutes(app);
+  registerGestionPostsRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
   registerModeTestRoutes(app);
