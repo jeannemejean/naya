@@ -74,6 +74,29 @@ function sujetPropre(s: string): string {
   return t.trim();
 }
 
+/** Vrai si le message vient de l'utilisatrice (dossier envoyés, ou une de ses adresses). */
+const estDeMoi = (m: EmailUnipile, propres: Set<string>) =>
+  m.role === "sent" || m.folders.some((f) => /(^|\/)sent$/i.test(f)) || (!!m.from?.email && propres.has(m.from.email.toLowerCase()));
+
+/**
+ * Dernier envoi de l'utilisatrice à chaque adresse, TOUS FILS CONFONDUS (PUR). Gmail range
+ * parfois une réponse dans un autre fil que le message reçu (objet retouché, « RE: [EXTERNE] ») :
+ * 23 nov. 2026, les réponses à Stéphanie et à Karima n'étaient pas dans le fil de leur message.
+ */
+export function envoisParAdresse(emails: EmailUnipile[], adressesPropres: Set<string>): Map<string, number> {
+  const propres = new Set(Array.from(adressesPropres, (a) => a.toLowerCase()));
+  const envois = new Map<string, number>();
+  for (const m of emails) {
+    if (m.role === "drafts" || !estDeMoi(m, propres)) continue;
+    const at = Date.parse(m.date);
+    for (const a of [...m.to, ...m.cc]) {
+      const x = a.toLowerCase();
+      if ((envois.get(x) ?? 0) < at) envois.set(x, at);
+    }
+  }
+  return envois;
+}
+
 export interface FilEnAttente {
   threadId: string; expediteur: string; nom: string; sujet: string; dernierAt: Date; administratif: boolean;
 }
@@ -90,6 +113,7 @@ export function filsEnAttente(
 ): FilEnAttente[] {
   const propres = new Set(Array.from(adressesPropres, (a) => a.toLowerCase()));
   const prospects = new Set(Array.from(adressesProspects, (a) => a.toLowerCase()));
+  const envois = envoisParAdresse(emails, propres);
   const derniers = new Map<string, EmailUnipile>();
   for (const e of emails) {
     if (e.role === "drafts") continue;
@@ -107,6 +131,8 @@ export function filsEnAttente(
     if (m.folders.some((f) => /(^|\/)(sent|trash|spam)$/i.test(f))) return;
     const email = m.from?.email;
     if (!email || propres.has(email) || prospects.has(email)) return;
+    // Déjà répondu à cette personne après son message, même dans un autre fil.
+    if ((envois.get(email.toLowerCase()) ?? 0) > at) return;
     // Jeanne seulement en copie : on ne lui demande rien. Sans destinataires dans les données, on ne juge pas.
     if (m.to.length > 0 && !m.to.some((a) => propres.has(a.toLowerCase()))) return;
     if (LOCAL_ROBOT.test(email.split("@")[0] ?? "")) return;
@@ -190,6 +216,31 @@ export function ligneLibre(l: LigneMail | undefined, maintenant: Date): boolean 
   return l.createdAt != null && maintenant.getTime() - l.createdAt.getTime() > RESERVATION_PERIMEE_MS;
 }
 
+export interface TacheMailOuverte { taskId: number; threadId: string; expediteur: string; dernierMessageAt: Date }
+
+/**
+ * Les tâches « Répondre à » auxquelles l'utilisatrice a répondu depuis (PUR) : le dernier
+ * message du fil est d'elle et postérieur, ou elle a écrit à l'expéditeur après son message,
+ * dans n'importe quel fil.
+ */
+export function tachesRepondues(ouvertes: TacheMailOuverte[], emails: EmailUnipile[], adressesPropres: Set<string>): number[] {
+  const propres = new Set(Array.from(adressesPropres, (a) => a.toLowerCase()));
+  const envois = envoisParAdresse(emails, propres);
+  const dernierDeMoiParFil = new Map<string, number>();
+  for (const m of emails) {
+    if (!m.threadId || m.role === "drafts" || !estDeMoi(m, propres)) continue;
+    const at = Date.parse(m.date);
+    if ((dernierDeMoiParFil.get(m.threadId) ?? 0) < at) dernierDeMoiParFil.set(m.threadId, at);
+  }
+  return ouvertes.filter((o) => {
+    const recu = o.dernierMessageAt.getTime();
+    return (dernierDeMoiParFil.get(o.threadId) ?? 0) > recu || (envois.get(o.expediteur.toLowerCase()) ?? 0) > recu;
+  }).map((o) => o.taskId);
+}
+
+/** Les tâches de mail ouvertes peuvent remonter plus loin que 14 jours : la lecture va jusqu'à 45. */
+export const FENETRE_MAX_JOURS = 45;
+
 export interface DepsMails {
   /** Le compte Gmail Unipile de l'utilisatrice ; null s'il est absent ou déconnecté. */
   compteEmail(userId: string): Promise<string | null>;
@@ -217,6 +268,10 @@ export interface DepsMails {
   /** Le premier jour travaillé à partir de `jour` (YYYY-MM-DD). */
   premierJourTravaille(userId: string, jour: string): Promise<string>;
   creerTache(userId: string, donnees: Record<string, unknown>): Promise<{ ok: true; tache: { id: number } } | { ok: false; status: number; message: string }>;
+  /** Les tâches « Répondre à » encore ouvertes (ni cochées ni archivées), avec leur fil. */
+  tachesOuvertes(userId: string): Promise<TacheMailOuverte[]>;
+  /** Coche une tâche : l'utilisatrice a répondu. */
+  cocherTache(userId: string, taskId: number): Promise<void>;
 }
 
 const borner = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
@@ -234,8 +289,16 @@ export async function synchroniserMailsEnAttente(
   const compte = await d.compteEmail(userId);
   if (!compte) return { creees: 0 };
 
-  const emails = await d.listerEmails(compte, new Date(maintenant.getTime() - FENETRE_JOURS * JOUR_MS));
+  // Lecture : 14 jours, ou jusqu'au plus ancien message d'une tâche encore ouverte (45 au plus).
+  const ouvertes = await d.tachesOuvertes(userId);
+  const plusAncien = Math.min(maintenant.getTime() - FENETRE_JOURS * JOUR_MS, ...ouvertes.map((o) => o.dernierMessageAt.getTime()));
+  const depuis = new Date(Math.max(plusAncien, maintenant.getTime() - FENETRE_MAX_JOURS * JOUR_MS));
+  const emails = await d.listerEmails(compte, depuis);
   const propres = await d.adressesPropres(userId, compte);
+  // Déjà répondu depuis : la tâche se coche seule (jamais « réponds » à quelqu'un à qui c'est fait).
+  for (const id of tachesRepondues(ouvertes, emails, propres)) {
+    await d.cocherTache(userId, id).catch((e: any) => console.error(`[fil] mail répondu : tâche ${id} non cochée user=${userId}:`, e?.message ?? e));
+  }
   // Une réponse de prospect est déjà dans « Réponses » : exclue par son adresse, ou par son fil.
   const suivis = await d.threadsProspects(userId);
   const fils = filsEnAttente(emails, propres, await d.adressesProspects(userId), maintenant)
