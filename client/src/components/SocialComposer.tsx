@@ -53,7 +53,8 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
   const [caption, setCaption] = useState("");
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [scheduledFor, setScheduledFor] = useState("");
-  const [autoPost, setAutoPost] = useState(true);
+  // Publication automatique sur demande seulement (le serveur ne l'active plus par défaut).
+  const [autoPost, setAutoPost] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const mediaInputs: MediaInput[] = media.map((m) => ({ kind: m.kind, durationSec: m.durationSec }));

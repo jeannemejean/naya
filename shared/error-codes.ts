@@ -21,6 +21,10 @@ export const ERROR_CODES = [
   "social_account_not_connected",
   "social_token_expired",
   "content_publish_failed",
+  // publication fiable (23 nov. 2026)
+  "publication_echouee",
+  "publication_occupee",
+  "publication_impossible",
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

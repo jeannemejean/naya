@@ -295,7 +295,16 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  method: 'PATCH',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify(data),
- }).then(res => res.json()),
+ }).then(async (res) => {
+ // Refus du serveur (post publié ou en train de partir) : une erreur, jamais un faux succès.
+ if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.message || 'update_failed');
+ return res.json();
+ }),
+ onError: (e: unknown) => {
+ queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
+ const m = e instanceof Error ? e.message : '';
+ toast({ title: t(m === 'post_deja_publie_ou_en_cours' ? 'contentCalendar.dejaPublie' : 'contentCalendar.failedToUpdate'), variant: 'destructive' });
+ },
  onSuccess: (data) => {
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
  // Alerte de collision : informative, jamais bloquante — la mise à jour (donc une
@@ -466,10 +475,12 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  }
  return response.json();
  },
- onSuccess: (data: { platform: string }) => {
+ onSuccess: (data: { platform: string; enCours?: boolean }) => {
  queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
  const collision = collisionEnAttentePublication.current;
  collisionEnAttentePublication.current = null;
+ // Vidéo en traitement côté réseau, ou réessai prévu : pas encore publié, on le dit.
+ if (data.enCours) { toast({ title: t('contentCalendar.publicationEnCours') }); return; }
  // Alerte de collision, même formulation qu'ailleurs sur ce fichier, ajoutée au SEUL
  // toast de ce chemin plutôt que dans un second appel (voir le commentaire sur la ref
  // ci-dessus) : ne bloque rien (le contenu est déjà publié), ne s'affiche que si

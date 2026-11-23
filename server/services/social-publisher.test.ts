@@ -7,6 +7,7 @@ const storage = {
   updateContent: vi.fn(async () => ({})),
   getMediaItemById: vi.fn(async () => ({ url: "https://x/img.jpg", mimeType: "image/jpeg" })),
   createTask: vi.fn(async (t: any) => ({ id: 1, ...t })),
+  getContentById: vi.fn(async (): Promise<any> => undefined),
 };
 vi.mock("../storage", () => ({ storage }));
 const publishPost = vi.fn();
@@ -29,9 +30,9 @@ const post = (o: Record<string, unknown> = {}) => ({
 beforeEach(() => vi.clearAllMocks());
 
 describe("publishDueContent", () => {
-  it("erreur passagère : réessai prévu, pas d'alerte", async () => {
+  it("refus explicite du réseau (limite) : réessai prévu, pas d'alerte", async () => {
     storage.getDueScheduledContent.mockResolvedValue([post()]);
-    publishPost.mockResolvedValue({ state: "failed", error: "fetch failed" });
+    publishPost.mockResolvedValue({ state: "failed", error: "ig_429: Too many calls" });
     await publishDueContent();
     const maj = storage.updateContent.mock.calls.at(-1)![1] as any;
     expect(maj.postStatus).toBe("pending");
@@ -55,6 +56,15 @@ describe("publishDueContent", () => {
     await publishDueContent();
     expect(storage.claimContentForPosting).not.toHaveBeenCalled();
     expect(publishPost).not.toHaveBeenCalled();
+  });
+
+  it("coupure réseau : jamais réessayée (le post a pu partir), alerte « à vérifier »", async () => {
+    storage.getDueScheduledContent.mockResolvedValue([post()]);
+    publishPost.mockRejectedValue(new Error("fetch failed"));
+    await publishDueContent();
+    const maj = storage.updateContent.mock.calls.at(-1)![1] as any;
+    expect(maj.postStatus).toBe("failed");
+    expect(storage.createTask).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringMatching(/peut-être parti/) }));
   });
 
   it("réussite : publié, pas d'alerte", async () => {

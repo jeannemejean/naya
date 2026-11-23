@@ -65,13 +65,6 @@ export interface CompteRafraichissable {
   expiresAt?: Date | null;
 }
 
-/**
- * Comptes à renouveler, les plus urgents d'abord. PURE.
- *
- * Un compte sans jeton de rafraîchissement est écarté : c'est le cas d'Instagram en
- * production, et tenter quand même consommerait un appel pour un échec certain, à chaque
- * passage du worker.
- */
 /** Instagram (connexion Instagram) : renouvelé tant qu'il vit, dès 30 jours avant l'échéance. */
 export const MARGE_INSTAGRAM_JOURS = 30;
 export function instagramARafraichir(c: CompteRafraichissable, now: Date): boolean {
@@ -86,6 +79,13 @@ export function comptesAReconnecter<T extends CompteRafraichissable>(comptes: T[
     && etatConnexion({ accessToken: c.accessToken, isActive: c.isActive, expiresAt: c.expiresAt ?? null, now }) === "expiree");
 }
 
+/**
+ * Comptes à renouveler, les plus urgents d'abord. PURE.
+ *
+ * Instagram (sans refresh_token) passe par instagramARafraichir : renouvelé tant qu'il vit.
+ * Les autres sans jeton de rafraîchissement sont écartés : tenter consommerait un appel pour
+ * un échec certain, à chaque passage du worker.
+ */
 export function comptesARafraichir<T extends CompteRafraichissable>(comptes: T[], now: Date): T[] {
   return (comptes ?? [])
     .filter((c) => {

@@ -19,12 +19,25 @@ import { formatDePublication, plateformeDe } from '@shared/programmation';
 import { compteDePublication } from './connexions/comptes';
 import { db } from '../db';
 import { content, tasks } from '@shared/schema';
-import { and, eq, isNull, like, lt } from 'drizzle-orm';
-import { apresEchec, DELAI_BLOQUE_MIN, raisonLisible, reessaiDu } from './publication/fiabilite';
+import { and, eq, gte, inArray, isNull, like, lt, notInArray, or } from 'drizzle-orm';
+import { apresEchec, DELAI_BLOQUE_MIN, erreurDuReessai, raisonLisible, reessaiDu } from './publication/fiabilite';
+
+/** États où un envoi est peut-être déjà parti : on n'y touche jamais. */
+export const EN_COURS_OU_PUBLIE = ['posting', 'processing', 'uploading', 'posted'];
+/** Le rattrapage ne regarde que les 48 dernières heures : l'historique ancien n'est pas réveillé. */
+const FENETRE_RATTRAPAGE_H = 48;
+/** Une vidéo en traitement au-delà de 2 h ne finira plus seule. */
+const DELAI_TRAITEMENT_MAX_MIN = 120;
 
 const SOURCE_ALERTE = 'publication_echec';
 const GRACE_MIN = () => parseInt(process.env.SOCIAL_PUBLISH_GRACE_MINUTES || '120', 10);
 
+const heureProche = (): string | null => {
+  const [h, m] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hour12: false })
+    .format(new Date()).split(':').map(Number);
+  const min = Math.ceil((h * 60 + m + 1) / 15) * 15;
+  return min >= 8 * 60 && min <= 18 * 60 ? `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}` : null;
+};
 const jourParis = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 
 /**
@@ -35,6 +48,7 @@ export async function signalerEchec(item: { id: number; userId: string; title?: 
   try {
     const [deja] = await db.select({ id: tasks.id }).from(tasks).where(and(
       eq(tasks.userId, item.userId), eq(tasks.contentId, item.id), eq(tasks.source, SOURCE_ALERTE), eq(tasks.completed, false),
+      isNull(tasks.archivedAt),
     ));
     if (deja) return;
     const titre = (item.title || 'post').slice(0, 80);
@@ -43,6 +57,8 @@ export async function signalerEchec(item: { id: number; userId: string; title?: 
       description: `${plateformeDe(item.platform) || 'réseau'} : ${raisonLisible(lastError)}`,
       type: 'content', category: 'planning', priority: 1, source: SOURCE_ALERTE,
       contentId: item.id, scheduledDate: jourParis(new Date()), estimatedDuration: 10,
+      // Tout de suite (au prochain quart d'heure) si la journée n'est pas finie, sinon Naya la place.
+      ...(heureProche() ? { scheduledTime: heureProche() } : {}),
     } as any);
   } catch (e: any) {
     console.error(`[SocialPublisher] alerte du post ${item.id} non créée:`, e?.message || e);
@@ -66,7 +82,8 @@ async function echouer(item: any, erreur: string): Promise<'failed' | 'skipped'>
 async function cocherTachePublier(contentId: number): Promise<void> {
   await db.update(tasks)
     .set({ completed: true, completedAt: new Date() } as any)
-    .where(and(eq(tasks.contentId, contentId), eq(tasks.completed, false), like(tasks.title, 'Publier — %')))
+    // « Publier — … » n'a plus lieu d'être, et une alerte d'échec antérieure non plus.
+    .where(and(eq(tasks.contentId, contentId), eq(tasks.completed, false), or(like(tasks.title, 'Publier — %'), eq(tasks.source, 'publication_echec'))))
     .catch((e: any) => console.error(`[SocialPublisher] tâche Publier du post ${contentId} non cochée:`, e?.message || e));
 }
 
@@ -76,6 +93,13 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
   // 1. Claim atomique — si un autre passage l'a déjà pris, on saute.
   const claimed = await storage.claimContentForPosting(item.id);
   if (!claimed) return 'skipped';
+  // Relu APRÈS le claim : un autre passage a pu prévoir un réessai entre-temps.
+  const frais = await storage.getContentById(item.id, item.userId).catch(() => undefined);
+  if (frais) item = frais;
+  if (!reessaiDu(item.lastError, new Date())) {
+    await storage.updateContent(item.id, { postStatus: 'pending' } as any);
+    return 'skipped';
+  }
 
   // « Instagram » et « instagram » : la casse varie selon l'origine du post.
   const platform: string = plateformeDe(item.platform);
@@ -154,10 +178,15 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
  * « Publier maintenant » : même chemin que la publication programmée (formats, carrousels,
  * vidéos, réessais), au lieu de l'ancien appel qui ne prenait que la première image.
  */
-export async function publierMaintenant(contentId: number, userId: string): Promise<'posted' | 'failed' | 'skipped'> {
-  const avant = await storage.getContentById(contentId, userId);
-  if (!avant) return 'failed';
-  await storage.updateContent(contentId, { autoPost: true, postStatus: 'pending', lastError: null, scheduledFor: new Date() } as any);
+export async function publierMaintenant(contentId: number, userId: string):
+  Promise<'posted' | 'failed' | 'skipped' | 'occupe' | 'introuvable'> {
+  // Atomique : jamais sur un post publié ou en train de partir (sinon double publication).
+  const [pris] = await db.update(content)
+    .set({ autoPost: true, postStatus: 'pending', lastError: null, scheduledFor: new Date(), updatedAt: new Date() } as any)
+    .where(and(eq(content.id, contentId), eq(content.userId, userId), isNull(content.publishedAt),
+      or(isNull(content.postStatus), notInArray(content.postStatus, EN_COURS_OU_PUBLIE))))
+    .returning({ id: content.id });
+  if (!pris) return (await storage.getContentById(contentId, userId)) ? 'occupe' : 'introuvable';
   const item = await storage.getContentById(contentId, userId);
   return publishOne(item);
 }
@@ -225,22 +254,43 @@ export async function publishDueContent(): Promise<{ posted: number; failed: num
  */
 async function rattraperOublies(now: Date): Promise<void> {
   const limite = new Date(now.getTime() - GRACE_MIN() * 60_000);
-  const manques = await db.update(content).set({ postStatus: 'failed', lastError: 'publication_manquee', updatedAt: now } as any)
-    .where(and(eq(content.autoPost, true), eq(content.postStatus, 'pending'), isNull(content.publishedAt), lt(content.scheduledFor, limite)))
-    .returning({ id: content.id, userId: content.userId, title: content.title, platform: content.platform });
+  const debut = new Date(now.getTime() - FENETRE_RATTRAPAGE_H * 3_600_000);
+  const cols = { id: content.id, userId: content.userId, title: content.title, platform: content.platform, lastError: content.lastError };
+  // Manqués : passés la marge, dans les 48 dernières heures seulement. Un post qui attendait un
+  // réessai garde la vraie raison de son échec.
+  const manques = await db.select(cols).from(content)
+    .where(and(eq(content.autoPost, true), eq(content.postStatus, 'pending'), isNull(content.publishedAt),
+      lt(content.scheduledFor, limite), gte(content.scheduledFor, debut)));
+  let n = 0;
+  for (const p of manques) {
+    const raison = erreurDuReessai(p.lastError) ?? 'publication_manquee';
+    const [fait] = await db.update(content).set({ postStatus: 'failed', lastError: raison, updatedAt: now } as any)
+      .where(and(eq(content.id, p.id), eq(content.postStatus, 'pending'))).returning({ id: content.id });
+    if (fait) { n++; await signalerEchec(p as any, raison); }
+  }
+  // Bloqués : en cours d'envoi depuis 15 min, ou vidéo en traitement depuis 2 h. Ils ont pu
+  // partir : jamais republiés seuls.
   const bloques = await db.update(content).set({ postStatus: 'failed', lastError: 'publication_a_verifier', updatedAt: now } as any)
-    .where(and(eq(content.postStatus, 'posting'), lt(content.updatedAt, new Date(now.getTime() - DELAI_BLOQUE_MIN * 60_000))))
-    .returning({ id: content.id, userId: content.userId, title: content.title, platform: content.platform });
-  for (const p of manques) await signalerEchec(p as any, 'publication_manquee');
+    .where(or(
+      and(eq(content.postStatus, 'posting'), lt(content.updatedAt, new Date(now.getTime() - DELAI_BLOQUE_MIN * 60_000))),
+      and(eq(content.postStatus, 'processing'), lt(content.updatedAt, new Date(now.getTime() - DELAI_TRAITEMENT_MAX_MIN * 60_000))),
+    ))
+    .returning(cols);
   for (const p of bloques) await signalerEchec(p as any, 'publication_a_verifier');
-  if (manques.length || bloques.length) console.warn(`[SocialPublisher] rattrapage : ${manques.length} manqué(s), ${bloques.length} bloqué(s)`);
+  if (n || bloques.length) console.warn(`[SocialPublisher] rattrapage : ${n} manqué(s), ${bloques.length} bloqué(s)`);
 }
 
 /** Démarre le worker : vérifie les posts à publier toutes les 60 secondes. */
 export function scheduleSocialPublisher(): void {
   const INTERVAL_MS = 60 * 1000;
   console.log('[SocialPublisher] Worker d\'auto-publication démarré (vérif. chaque minute)');
+  // Jamais deux passages en même temps : un passage lent (vidéos, alertes) ne se fait pas doubler.
+  let enCours = false;
   setInterval(() => {
-    publishDueContent().catch(err => console.error('[SocialPublisher] erreur cycle:', err?.message || err));
+    if (enCours) return;
+    enCours = true;
+    publishDueContent()
+      .catch(err => console.error('[SocialPublisher] erreur cycle:', err?.message || err))
+      .finally(() => { enCours = false; });
   }, INTERVAL_MS);
 }

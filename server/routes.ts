@@ -6799,7 +6799,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // jamais un post qui part en échec à l'heure dite.
       const auto = autoPost === true;
       if (auto) {
-        if (!when || Number.isNaN(when.getTime())) return res.status(422).json({ message: 'programmation_impossible', problemes: [{ cible: null, problemes: ['date_manquante'] }] });
+        if (!when || Number.isNaN(when.getTime())) return res.status(422).json({ message: 'programmation_impossible', texte: 'Choisis une date pour la publication automatique.', problemes: [{ cible: null, problemes: ['date_manquante'] }] });
         const genres: GenreMedia[] = [];
         for (const mid of (Array.isArray(mediaIds) ? mediaIds : [])) {
           const m = await storage.getMediaItemById(Number(mid), userId);
@@ -6812,13 +6812,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const problemes = [];
         for (const tgt of targets) {
           const plateforme = plateformeDe(tgt.basePlatform || tgt.platform);
+          // Même choix de compte que le worker : plateforme exacte, actif, dans le périmètre.
           const compte = tgt.socialAccountId != null
             ? comptes.find((c: any) => c.id === Number(tgt.socialAccountId)) ?? null
-            : comptes.find((c: any) => plateformeDe(c.platform).startsWith(plateforme) && dansPortee(c as any, portee)) ?? null;
+            : comptes.find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false && dansPortee(c as any, portee)) ?? null;
+          // La date est jugée à l'heure de publication ; le compte, MAINTENANT (il se renouvelle seul).
           const p = problemesProgrammation({
             post: { body: caption, platform: plateforme, scheduledFor: when }, medias: genres,
             compte: compte as any, maintenant: reference,
-          });
+          }).filter((x) => x !== 'compte_expire') as string[];
+          if (compte && (compte as any).expiresAt && new Date((compte as any).expiresAt).getTime() <= Date.now()) p.push('compte_expire');
           if (p.length) problemes.push({ cible: plateforme, problemes: p });
         }
         if (problemes.length) {
@@ -6872,10 +6875,16 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const updates = req.body;
       // Un post publié, ou en train de partir, ne se déplace plus (glisser-déposer du calendrier) :
       // changer sa date ne le dépublierait pas, et l'écran mentirait.
-      const verrouille = !!existing.publishedAt || ['posted', 'posting', 'processing'].includes((existing as any).postStatus ?? '');
-      if (verrouille && ('scheduledFor' in (updates ?? {}) || 'autoPost' in (updates ?? {}))) {
+      const verrouille = !!existing.publishedAt || ['posted', 'posting', 'processing', 'uploading'].includes((existing as any).postStatus ?? '');
+      const instant = (v: unknown) => (v == null || v === '' ? null : new Date(v as any).getTime());
+      const dateChange = 'scheduledFor' in (updates ?? {}) && instant(updates.scheduledFor) !== instant(existing.scheduledFor);
+      const autoChange = 'autoPost' in (updates ?? {}) && !!updates.autoPost !== !!(existing as any).autoPost;
+      // Seul un VRAI changement est refusé : l'édition d'un post publié renvoie sa date telle quelle.
+      if (verrouille && (dateChange || autoChange)) {
         return res.status(409).json({ message: 'post_deja_publie_ou_en_cours' });
       }
+      // Reprogrammé : un réessai en attente repart de zéro.
+      if (dateChange && String((existing as any).lastError ?? '').startsWith('reessai:')) updates.lastError = null;
       if (updates.scheduledFor && typeof updates.scheduledFor === 'string') {
         updates.scheduledFor = new Date(updates.scheduledFor);
       }
@@ -9947,15 +9956,36 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         });
       }
       
-      // Même chemin que la publication programmée (tous formats, réessais, alerte).
+      // Vérifié AVANT de toucher au post (réseau publiable, visuels) : un refus ne le déplace pas.
+      const genres: GenreMedia[] = [];
+      for (const mid of (Array.isArray(content.mediaIds) ? content.mediaIds : []) as any[]) {
+        const m = await storage.getMediaItemById(Number(mid), userId);
+        if (m) genres.push((m.mimeType || '').startsWith('video/') ? 'video' : 'image');
+      }
+      if (genres.length === 0 && content.mediaUrl) genres.push('image');
+      const bloquants = problemesProgrammation({
+        post: { body: content.body, platform: content.platform, scheduledFor: new Date(Date.now() + 10 * 60_000) },
+        medias: genres, compte: socialAccount as any, maintenant: new Date(),
+      });
+      if (bloquants.length) {
+        const { raisonLisible } = await import('./services/publication/fiabilite');
+        const raison = bloquants.map((b) => raisonLisible(b === 'visuel_requis' ? 'media_required' : b)).join(' ');
+        return res.status(400).json({ error: 'publication_impossible', params: { raison }, message: raison });
+      }
+
+      // Même chemin que la publication programmée (tous formats, alerte), atomique.
       const { publierMaintenant } = await import('./services/social-publisher');
       const r = await publierMaintenant(contentId, userId);
+      if (r === 'occupe') return res.status(409).json({ error: 'publication_occupee', message: 'publication_occupee' });
+      if (r === 'introuvable') return res.status(404).json({ error: 'content_not_found', message: 'content_not_found' });
       const apres = await storage.getContentById(contentId, userId);
       if (r === 'failed') {
-        return res.status(502).json({ error: 'publication_echouee', message: (apres as any)?.lastError || 'publication_echouee' });
+        const { raisonLisible } = await import('./services/publication/fiabilite');
+        const raison = raisonLisible((apres as any)?.lastError);
+        return res.status(502).json({ error: 'publication_echouee', params: { raison }, message: raison });
       }
       res.json({
-        success: true, platformPostId: (apres as any)?.platformPostId ?? null, content: apres,
+        success: true, platform: content.platform, platformPostId: (apres as any)?.platformPostId ?? null, content: apres,
         // 'skipped' : vidéo en traitement côté réseau, ou réessai prévu dans quelques minutes.
         enCours: r !== 'posted',
         message: r === 'posted' ? `Successfully published to ${content.platform}` : 'publication_en_cours',
