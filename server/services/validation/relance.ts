@@ -10,17 +10,21 @@
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../../db";
 import { content } from "@shared/schema";
-import { editionRelanceValidation, editionTouchePublication, STATUTS_VALIDATION } from "@shared/validation-client";
+import { editionRelanceValidation, STATUTS_VALIDATION } from "@shared/validation-client";
 import { journaliser } from "../gestion-posts/historique";
 
 const EN_VALIDATION = sql.raw(STATUTS_VALIDATION.map((s) => `'${s}'`).join(", "));
 
-/** Champs à ajouter au `set` de la modification ; vide si rien de ce qui part ne change. */
+/**
+ * Champs à ajouter au `set` de la modification ; vide si le post n'était pas en validation (lu
+ * avant l'écriture) ou si rien de ce qui part ne change. Le CASE garde la décision juste si le
+ * statut a bougé entre la lecture et l'écriture (validé entre-temps → repasse « à valider »).
+ */
 export function champsRelanceValidation(
   avant: Record<string, any> | null | undefined,
   patch: Record<string, any> | null | undefined,
 ): { validationStatut?: SQL; validationDemandeeAt?: SQL } {
-  if (!avant || !editionTouchePublication(avant, patch)) return {};
+  if (!avant || !editionRelanceValidation(avant, patch)) return {};
   return {
     validationStatut: sql`case when ${content.validationStatut} in (${EN_VALIDATION}) then 'a_valider' else ${content.validationStatut} end`,
     validationDemandeeAt: sql`case when ${content.validationStatut} in (${EN_VALIDATION}) then now() else ${content.validationDemandeeAt} end`,

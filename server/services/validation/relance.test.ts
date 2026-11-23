@@ -13,7 +13,10 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("champsRelanceValidation", () => {
   it("rien de ce qui part ne change : aucun champ ajouté", () => {
-    expect(champsRelanceValidation({ id: 1, body: "a" }, { body: "a", pillar: "x" })).toEqual({});
+    expect(champsRelanceValidation({ id: 1, body: "a", validationStatut: "validee" }, { body: "a", pillar: "x" })).toEqual({});
+  });
+  it("post hors validation : aucun champ ajouté (l'écriture reste celle d'avant)", () => {
+    expect(champsRelanceValidation({ id: 1, body: "a", validationStatut: null }, { body: "b" })).toEqual({});
   });
   it("texte changé : statut et date de demande dans la même écriture, conditionnés en SQL", () => {
     const c: any = champsRelanceValidation({ id: 1, body: "a", validationStatut: "validee" }, { body: "b" });
