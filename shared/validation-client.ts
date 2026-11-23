@@ -113,14 +113,31 @@ export function statutApresDecisions(
   return liste.size > 0 && Array.from(liste).every((e) => derniere.get(e)?.decision === "validee") ? "validee" : "a_valider";
 }
 
-/** Champs dont la modification remet un post en validation (texte, médias, date). */
-const CHAMPS_RELANCE = ["body", "title", "mediaIds", "mediaUrl", "couvertureUrl", "scheduledFor"] as const;
+/**
+ * Champs dont la modification remet un post en validation : tout ce qui change ce qui partira
+ * (texte, médias, date, options du post, compte de publication).
+ */
+export const CHAMPS_RELANCE = [
+  "body", "title", "mediaIds", "mediaUrl", "couvertureUrl", "scheduledFor",
+  "premierCommentaire", "collaborateurs", "texteAlternatif", "postFormat", "socialAccountId",
+  "couvertureOffsetMs", "nomAudio", "linkedinDocument", "reelDansLeFil",
+] as const;
 
 const memeValeur = (k: string, a: unknown, b: unknown): boolean => {
   if (k === "scheduledFor") return instant(a) === instant(b);
-  if (k === "mediaIds") return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+  if (k === "mediaIds" || k === "collaborateurs") return JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+  // Le compte posé pour la première fois (programmation d'un post validé) ne change pas ce que
+  // le client a vu ; en changer, si.
+  if (k === "socialAccountId") return a == null || (a ?? null) === (b ?? null);
+  if (a !== null && typeof a === "object") return JSON.stringify(a) === JSON.stringify(b ?? null);
   return (a ?? null) === (b ?? null);
 };
+
+/** Le patch change-t-il un champ que le client doit revoir ? (Sans regarder le statut.) */
+export function editionTouchePublication(avant: Record<string, any>, patch: Record<string, any> | null | undefined): boolean {
+  if (!avant || !patch) return false;
+  return CHAMPS_RELANCE.some((k) => k in patch && !memeValeur(k, avant[k], patch[k]));
+}
 
 /**
  * Une modification d'un post en validation, validé ou refusé le remet « à valider » : le client
@@ -129,7 +146,7 @@ const memeValeur = (k: string, a: unknown, b: unknown): boolean => {
 export function editionRelanceValidation(avant: Record<string, any>, patch: Record<string, any> | null | undefined): boolean {
   if (!avant || !patch) return false;
   if (!(STATUTS_VALIDATION as readonly string[]).includes(avant.validationStatut)) return false;
-  return CHAMPS_RELANCE.some((k) => k in patch && !memeValeur(k, avant[k], patch[k]));
+  return editionTouchePublication(avant, patch);
 }
 
 /** Un post dont le statut empêche la publication (marque avec validation active). */

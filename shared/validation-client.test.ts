@@ -50,6 +50,19 @@ describe("editionRelanceValidation", () => {
   it("refusé puis modifié → repasse à valider", () => {
     expect(editionRelanceValidation({ ...avant, validationStatut: "refusee" }, { title: "Nouveau" })).toBe(true);
   });
+  it("options du post (commentaire, collaborateurs, alt, format, couverture, audio, document, fil) → relance", () => {
+    const v = { ...avant, premierCommentaire: "a", collaborateurs: ["x"], texteAlternatif: "alt", postFormat: "reel",
+      couvertureOffsetMs: 1000, couvertureUrl: "u", nomAudio: "son", linkedinDocument: false, reelDansLeFil: true };
+    for (const patch of [{ premierCommentaire: "b" }, { collaborateurs: ["x", "y"] }, { texteAlternatif: "autre" }, { postFormat: "carousel" },
+      { couvertureOffsetMs: 2000 }, { couvertureUrl: "v" }, { nomAudio: "autre" }, { linkedinDocument: true }, { reelDansLeFil: false }]) {
+      expect(editionRelanceValidation(v, patch)).toBe(true);
+    }
+    expect(editionRelanceValidation(v, { collaborateurs: ["x"], premierCommentaire: "a", reelDansLeFil: true })).toBe(false);
+  });
+  it("compte : en changer relance, le poser la première fois (programmation) non", () => {
+    expect(editionRelanceValidation({ ...avant, socialAccountId: 3 }, { socialAccountId: 4 })).toBe(true);
+    expect(editionRelanceValidation({ ...avant, socialAccountId: null }, { socialAccountId: 4 })).toBe(false);
+  });
 });
 
 describe("decisionPublication", () => {

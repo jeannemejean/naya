@@ -8,7 +8,7 @@ import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { compteDePublication } from "./services/connexions/comptes";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
-import { relancerValidationSiEdite } from "./services/validation/relance";
+import { champsRelanceValidation, journaliserRelanceSiEdite } from "./services/validation/relance";
 import {
   formatDePublication, plateformeDe, problemesProgrammation, type GenreMedia,
 } from "@shared/programmation";
@@ -83,9 +83,10 @@ export function registerProgrammationRoutes(app: Express): void {
       }
       if (Object.keys(maj).length) {
         const avant = post;
-        post = await storage.updateContent(post.id, maj as any);
+        // Relance de la validation client dans la même écriture que la modification.
+        post = await storage.updateContent(post.id, { ...maj, ...champsRelanceValidation(avant, maj) } as any);
         await journaliserChangement(req.userId, avant, maj);
-        await relancerValidationSiEdite(req.userId, avant, maj);
+        await journaliserRelanceSiEdite(req.userId, avant, maj);
       }
 
       const etat = await etatProgrammation(req.userId, post);

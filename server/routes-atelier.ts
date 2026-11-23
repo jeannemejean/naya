@@ -22,7 +22,7 @@ import { estUrlMediaDe } from "./services/livrables/urls";
 import { oublierCreationDe } from "./services/fil/creation";
 import { oublierReconciliationDe } from "./services/fil/cloture";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
-import { relancerValidationSiEdite } from "./services/validation/relance";
+import { champsRelanceValidation, journaliserRelanceSiEdite } from "./services/validation/relance";
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -165,11 +165,15 @@ export function registerAtelierRoutes(app: Express): void {
         // Jamais une consigne vide : elle sert de verrou (« déjà rédigé »).
         if (post.consigne == null) patch.consigne = (post.body ?? "").trim() || post.title || "—";
       }
-      await db.update(content).set({ ...(patch as any), updatedAt: new Date() })
+      // Relance de la validation client dans la même écriture que la modification.
+      const ecrit = await db.update(content).set({ ...(patch as any), ...champsRelanceValidation(post, patch), updatedAt: new Date() })
         // Jamais sous un post validé entre-temps (il part tel que validé).
-        .where(and(eq(content.id, post.id), eq(content.userId, req.userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`, sql`coalesce(${content.autoPost}, false) = false`));
+        .where(and(eq(content.id, post.id), eq(content.userId, req.userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`, sql`coalesce(${content.autoPost}, false) = false`))
+        .returning({ id: content.id });
+      // Rien d'écrit (validé entre la lecture et l'écriture) : ni historique ni relance.
+      if (ecrit.length === 0) return res.status(409).json({ message: "post_valide" });
       await journaliserChangement(req.userId, post, patch);
-      await relancerValidationSiEdite(req.userId, post, patch);
+      await journaliserRelanceSiEdite(req.userId, post, patch);
       res.json({ ok: true });
     } catch (e: any) {
       console.error("[Atelier] enregistrement:", e?.message);

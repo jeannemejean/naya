@@ -11,8 +11,10 @@ const h = vi.hoisted(() => ({
     getTachesAtelier: vi.fn(async () => [] as any[]),
     getProject: vi.fn(async () => ({ name: "Projet" })),
   },
-  db: { update: vi.fn(() => ({ set: () => ({ where: async () => {} }) })), execute: vi.fn(async () => ({})) },
+  db: { update: vi.fn(() => ({ set: () => ({ where: () => ({ returning: async () => [{ id: 9 }] }) }) })), execute: vi.fn(async () => ({})) },
+  historique: { journaliser: vi.fn(async () => {}), journaliserChangement: vi.fn(async () => {}) },
 }));
+vi.mock("./services/gestion-posts/historique", () => h.historique);
 vi.mock("./db", () => ({ db: h.db, pool: { query: vi.fn(), on: vi.fn() } }));
 vi.mock("./storage", () => ({ storage: h.storage }));
 vi.mock("./auth", () => ({ isAuthenticated: (req: any, _res: any, next: any) => { req.userId = "user-1"; next(); } }));
@@ -90,10 +92,30 @@ describe("routes de l'atelier", () => {
 
   it("écrire soi-même un post « à rédiger » en fait un brouillon et met la consigne de côté", async () => {
     let ecrit: any = null;
-    h.db.update.mockReturnValueOnce({ set: (p: any) => { ecrit = p; return { where: async () => {} }; } } as any);
+    h.db.update.mockReturnValueOnce({ set: (p: any) => { ecrit = p; return { where: () => ({ returning: async () => [{ id: 9 }] }) }; } } as any);
     h.storage.getContentById.mockResolvedValue({ id: 9, body: "L'idée", campaignId: 3, contentStatus: "idea", autoPost: false, consigne: null, postStatus: "pending" });
     expect((await req("PATCH", "/api/atelier/posts/9", { body: "Mon texte" })).status).toBe(200);
     expect(ecrit).toMatchObject({ body: "Mon texte", contentStatus: "draft", consigne: "L'idée" });
+  });
+
+  it("post en validation modifié : la relance part dans la MÊME écriture", async () => {
+    let ecrit: any = null;
+    h.db.update.mockReturnValueOnce({ set: (p: any) => { ecrit = p; return { where: () => ({ returning: async () => [{ id: 9 }] }) }; } } as any);
+    h.storage.getContentById.mockResolvedValue({ id: 9, body: "Avant", contentStatus: "draft", autoPost: false, postStatus: "pending", validationStatut: "validee" });
+    expect((await req("PATCH", "/api/atelier/posts/9", { body: "Après" })).status).toBe(200);
+    expect(h.db.update).toHaveBeenCalledTimes(1);
+    expect(ecrit.body).toBe("Après");
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    expect(new PgDialect().sqlToQuery(ecrit.validationStatut).sql).toContain("then 'a_valider'");
+    expect(h.historique.journaliser).toHaveBeenCalledWith("user-1", 9, "validation_relancee", { avant: "validee" });
+  });
+
+  it("validé entre la lecture et l'écriture (rien d'écrit) : 409, ni historique ni relance", async () => {
+    h.db.update.mockReturnValueOnce({ set: () => ({ where: () => ({ returning: async () => [] }) }) } as any);
+    h.storage.getContentById.mockResolvedValue({ id: 9, body: "Avant", contentStatus: "draft", autoPost: false, postStatus: "pending", validationStatut: "validee" });
+    expect((await req("PATCH", "/api/atelier/posts/9", { body: "Après" })).status).toBe(409);
+    expect(h.historique.journaliserChangement).not.toHaveBeenCalled();
+    expect(h.historique.journaliser).not.toHaveBeenCalled();
   });
 
   it("format inconnu : 400", async () => {

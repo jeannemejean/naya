@@ -27,7 +27,7 @@ import { depsGroupesMarques } from "./services/groupes-marques/deps";
 import { attribuerMarques } from "./services/groupes-marques/attribution";
 import { filtreMarquesDeRequete } from "@shared/groupes-marques";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
-import { relancerValidationSiEdite } from "./services/validation/relance";
+import { champsRelanceValidation, journaliserRelanceSiEdite } from "./services/validation/relance";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
 import { registerModeTestRoutes } from "./routes-mode-test";
@@ -4280,9 +4280,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               // creer un second. Sans cela, chaque clic sur Enregistrer ajouterait un
               // brouillon identique au calendrier.
               const existant = await storage.getContentBySourceTask(userId, taskId);
+              // Un post en validation dont la note réécrit le texte repasse « à valider », dans la
+              // même écriture.
               const enregistre = existant
-                ? await storage.updateContent(existant.id, ligne as any)
+                ? await storage.updateContent(existant.id, { ...(ligne as any), ...champsRelanceValidation(existant, ligne as any) })
                 : await storage.createContent({ ...ligne, userId, autoPost: false } as any); // brouillon issu d'une tâche : jamais publié seul
+              if (existant) await journaliserRelanceSiEdite(userId, existant, ligne as any);
               routage = { destination, contentId: enregistre.id };
             }
           }
@@ -6951,12 +6954,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         updates.publishedAt = new Date(updates.publishedAt);
       }
       
-      const content = await storage.updateContent(parseInt(id), updates);
+      // Texte, médias, date ou options modifiés : le client revoit le post (repasse « à valider »),
+      // dans la MÊME écriture que la modification.
+      const content = await storage.updateContent(parseInt(id), { ...updates, ...champsRelanceValidation(existing, updates) });
       await journaliserChangement(userId, existing, content);
-      // Texte, médias ou date modifiés : le client revoit le post (repasse « à valider »).
-      if (await relancerValidationSiEdite(userId, existing, updates)) {
-        (content as any).validationStatut = 'a_valider';
-      }
+      await journaliserRelanceSiEdite(userId, existing, updates);
 
       // Alerte de collision : informative, jamais bloquante — même garantie que sur
       // la création (voir POST /api/content). On relit l'état final (`content`,
