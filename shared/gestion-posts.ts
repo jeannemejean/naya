@@ -6,7 +6,7 @@ export const EVENEMENTS_POST = [
   "cree", "texte_modifie", "date_modifiee", "programme", "deprogramme", "valide", "devalide",
   "publie", "echec", "duplique", "supprime", "restaure", "note_ajoutee",
   "validation_demandee", "validation_relancee", "validation_validee", "validation_refusee", "validation_commentaire",
-  "validation_retiree",
+  "validation_retiree", "compte_change",
 ] as const;
 export type EvenementPost = typeof EVENEMENTS_POST[number];
 export type Evenement = { evenement: EvenementPost; details?: Record<string, unknown> | null };

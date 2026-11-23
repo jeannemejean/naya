@@ -133,7 +133,10 @@ export function getLinkedInAuthUrl(state: string): string {
   return `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirect}&state=${state}&scope=${scope}`;
 }
 
-export async function exchangeLinkedInCode(userId: string, code: string, projectId: number | null = null): Promise<void> {
+// `opts.repli` : le projet est PERSO (« marque » de l'utilisatrice) — ses pages arrivent
+// utilisées tout de suite ; pour un client (défaut), une page nouvelle attend le choix.
+export async function exchangeLinkedInCode(userId: string, code: string, projectId: number | null = null, opts: { repli?: boolean } = {}): Promise<void> {
+  const pagesActives = projectId == null || opts.repli === true;
   const clientId = process.env.LINKEDIN_CLIENT_ID!;
   const clientSecret = process.env.LINKEDIN_CLIENT_SECRET!;
   const redirectUri = `${getBaseUrl()}/api/social/oauth/linkedin/callback`;
@@ -247,7 +250,7 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
         accountName: page.name,
         expiresAt,
         // Pour un client, l'état choisi (en attente ou utilisée) est gardé.
-        ...(projectId == null ? { isActive: true } : {}),
+        ...(pagesActives ? { isActive: true } : {}),
         lastSyncAt: new Date(),
       });
     } else {
@@ -260,7 +263,7 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
         accessToken: tokenData.access_token,
         expiresAt,
         permissions: ['w_organization_social', 'r_organization_social'],
-        isActive: projectId == null,
+        isActive: pagesActives,
         lastSyncAt: new Date(),
       });
     }

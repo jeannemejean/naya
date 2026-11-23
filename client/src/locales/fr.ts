@@ -1845,6 +1845,7 @@ const fr = {
  validation_refusee: "Refusé par le client",
  validation_commentaire: "Commentaire du client",
  validation_retiree: "Retiré de la validation",
+    compte_change: "Compte de publication changé (connexion de la marque)",
  },
  },
  dupliquer: {

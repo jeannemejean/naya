@@ -1841,6 +1841,7 @@ const en = {
  validation_refusee: "Rejected by the client",
  validation_commentaire: "Client comment",
  validation_retiree: "Removed from approval",
+    compte_change: "Publishing account changed (brand connection)",
  },
  },
  dupliquer: {

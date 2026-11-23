@@ -13,6 +13,7 @@ import {
   isPlatformConfigured,
 } from "./services/social-oauth";
 import { comptesDuPerimetre, dansPortee, porteeDe, porteeReseauxDe, type Portee, type PorteeReseaux } from "./services/connexions/portee";
+import { depsRepointage, repointerApresConnexion, repointerAvantDeconnexion } from "./services/connexions/repointage";
 
 export type Perimetre = { ok: true; portee: Portee } | { ok: false; status: number; message: string };
 
@@ -67,8 +68,10 @@ export function statutReseaux(comptes: any[], perimetre: Portee | PorteeReseaux,
   const status: Record<string, { connected: boolean; etat: string; accountName?: string; expiresAt?: Date; configured: boolean; pagesCount?: number; herite?: boolean }> = {};
   for (const platform of ["instagram", "linkedin", "tiktok"] as const) {
     const linkedinPages = platform === "linkedin" ? permis.filter((a) => a.platform.startsWith("linkedin_page_") && a.isActive) : [];
-    // Un client n'a jamais de profil LinkedIn personnel : sa page choisie fait la connexion.
-    const account = permis.find((a) => a.platform === platform && a.isActive) ?? (portee != null ? linkedinPages[0] : undefined);
+    // Un client n'a jamais de profil LinkedIn personnel : sa page choisie fait la connexion. Un
+    // projet perso qui a sa propre page la montre avant le profil des Réglages (repli).
+    const pagePropre = portee != null ? linkedinPages.find((a) => (a.projectId ?? null) === portee) : undefined;
+    const account = pagePropre ?? permis.find((a) => a.platform === platform && a.isActive) ?? (portee != null ? linkedinPages[0] : undefined);
     // `is_active` dit que la connexion n'a pas été révoquée, pas qu'elle marche (jetons morts
     // affichés « Connecté » le 18 septembre) : on qualifie le jeton.
     const etat = account
@@ -154,15 +157,18 @@ export function registerSocialRoutes(app: Express) {
     if (!userId) return res.redirect(retour(sessionProjectId, `social=${platform}&status=error&reason=missing_session`));
 
     try {
-      // Le projet est revérifié au retour : toujours à elle, toujours client.
+      // Le projet est revérifié au retour : toujours à elle.
       let projectId: number | null = null;
+      let perimetre: PorteeReseaux = { portee: null, repli: false };
       if (sessionProjectId != null) {
         const p = await perimetreReseaux(userId, sessionProjectId);
         if (!p.ok) return res.redirect(`/settings?social=${platform}&status=error&reason=${p.message}`);
         projectId = p.p.portee;
+        perimetre = p.p;
       }
       if (platform === "instagram") await exchangeInstagramCode(userId, code, projectId);
-      else if (platform === "linkedin") await exchangeLinkedInCode(userId, code, projectId);
+      // Projet perso : ses pages arrivent utilisées (pas de choix comme chez un client).
+      else if (platform === "linkedin") await exchangeLinkedInCode(userId, code, projectId, { repli: perimetre.repli });
       else if (platform === "tiktok") await exchangeTikTokCode(userId, code, projectId);
       else if (platform === "twitter") {
         await exchangeTwitterCode(userId, code, session.twitterCodeVerifier || "", projectId);
@@ -171,6 +177,12 @@ export function registerSocialRoutes(app: Express) {
       delete session.socialOAuthState;
       delete session.socialOAuthUserId;
       delete session.socialOAuthProjectId;
+      // Les posts programmés du projet qui visaient un compte sorti du périmètre (celui des
+      // Réglages, remplacé par le nouveau) suivent le nouveau compte. Au mieux.
+      if (projectId != null) {
+        await repointerApresConnexion(depsRepointage, userId, perimetre, platform)
+          .catch((e: any) => console.error(`[Social OAuth] ${platform} : posts non re-pointés :`, e?.message || e));
+      }
       res.redirect(retour(projectId, `social=${platform}&status=connected`));
     } catch (err: any) {
       console.error(`[Social OAuth] ${platform} callback error:`, err.message);
@@ -206,9 +218,18 @@ export function registerSocialRoutes(app: Express) {
       const p = await perimetreReseaux(req.userId, req.query.projectId);
       if (!p.ok) return res.status(p.status).json({ message: p.message });
       // Seul un compte PROPRE au périmètre se déconnecte ici (jamais celui des Réglages hérité).
-      const account = await storage.getSocialAccountByPlatform(req.userId, req.params.platform, p.p.portee);
-      if (!account) return res.status(404).json({ message: "Compte non trouvé" });
-      await storage.deleteSocialAccount(account.id, req.userId);
+      // LinkedIn d'un projet perso : ce sont ses pages (jamais de profil dans un projet).
+      const comptes: any[] = req.params.platform === "linkedin" && p.p.portee != null && p.p.repli
+        ? (await storage.getSocialAccounts(req.userId)).filter((a: any) => a.platform.startsWith("linkedin_page_") && (a.projectId ?? null) === p.p.portee)
+        : [await storage.getSocialAccountByPlatform(req.userId, req.params.platform, p.p.portee)].filter(Boolean);
+      if (comptes.length === 0) return res.status(404).json({ message: "Compte non trouvé" });
+      for (const account of comptes) {
+        // Ses posts programmés repartent sur le compte des Réglages (projet perso), sinon la
+        // suppression les arrête avec l'alerte habituelle.
+        await repointerAvantDeconnexion(depsRepointage, req.userId, p.p, account)
+          .catch((e: any) => console.error(`[Social] posts du compte ${account.id} non re-pointés :`, e?.message || e));
+        await storage.deleteSocialAccount(account.id, req.userId);
+      }
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
