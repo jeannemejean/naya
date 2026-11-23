@@ -913,3 +913,14 @@ select table_name from information_schema.tables
 select indexname from pg_indexes
  where indexname in ('groupes_marques_user_idx','groupe_marques_projets_paire_idx','groupe_marques_projets_project_idx');  -- 3 lignes
 ```
+
+## 26. Premier commentaire Instagram — variable `INSTAGRAM_COMMENTS_SCOPE` (aucune migration)
+
+Le premier commentaire automatique sur Instagram exige la portée
+`instagram_business_manage_comments`. Elle n'est demandée à la connexion Instagram **que si**
+`INSTAGRAM_COMMENTS_SCOPE=1` (une portée que l'app Meta n'a pas casserait toute connexion
+Instagram : vérifier d'abord dans la console Meta que l'app l'a). Sans la variable, le worker
+n'appelle jamais l'API des commentaires Instagram : après la publication, une tâche « Poster le
+premier commentaire » porte le texte à coller, et le post est marqué traité
+(`premier_commentaire_at`). Après avoir mis la variable, chaque compte Instagram doit être
+reconnecté pour que son jeton porte la portée ; d'ici là, l'échec de l'appel crée la même tâche.

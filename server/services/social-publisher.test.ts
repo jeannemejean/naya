@@ -31,7 +31,7 @@ const post = (o: Record<string, unknown> = {}) => ({
   body: "texte", mediaIds: [1], lastError: null, scheduledFor: new Date(), ...o,
 });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); vi.unstubAllEnvs(); });
 
 describe("publishDueContent", () => {
   it("refus explicite du réseau (limite) : réessai prévu, pas d'alerte", async () => {
@@ -90,6 +90,7 @@ describe("publishDueContent", () => {
   });
 
   it("publié avec un premier commentaire : posté une fois, marqué", async () => {
+    vi.stubEnv("INSTAGRAM_COMMENTS_SCOPE", "1");
     storage.getDueScheduledContent.mockResolvedValue([post({ premierCommentaire: "Lien en bio 👇" })]);
     publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });
     publierPremierCommentaire.mockResolvedValue({ ok: true });
@@ -99,7 +100,21 @@ describe("publishDueContent", () => {
     expect(storage.createTask).not.toHaveBeenCalled();
   });
 
+  it("Instagram sans la portée des commentaires : aucun appel, la tâche porte le texte, marqué traité", async () => {
+    vi.stubEnv("INSTAGRAM_COMMENTS_SCOPE", "");
+    storage.getDueScheduledContent.mockResolvedValue([post({ premierCommentaire: "Lien en bio" })]);
+    publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });
+    await publishDueContent();
+    vi.unstubAllEnvs();
+    expect(publierPremierCommentaire).not.toHaveBeenCalled();
+    expect(storage.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Poster le premier commentaire : Post de lundi", source: "premier_commentaire", description: expect.stringContaining("Lien en bio"),
+    }));
+    expect(storage.updateContent).toHaveBeenCalledWith(7, expect.objectContaining({ premierCommentaireAt: expect.any(Date) }));
+  });
+
   it("commentaire raté : le post reste publié, une tâche porte le texte à coller", async () => {
+    vi.stubEnv("INSTAGRAM_COMMENTS_SCOPE", "1");
     storage.getDueScheduledContent.mockResolvedValue([post({ premierCommentaire: "Lien en bio" })]);
     publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });
     publierPremierCommentaire.mockResolvedValue({ ok: false, erreur: "ig_403: permission" });

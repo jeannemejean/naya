@@ -34,13 +34,23 @@ function getBaseUrl(): string {
 // consentement sur instagram.com, jeton échangé sur api.instagram.com puis long-lived sur
 // graph.instagram.com. Permet de PUBLIER sans Page Facebook ni vérification d'entreprise.
 // Réf : https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
-const INSTAGRAM_SCOPES = ['instagram_business_basic', 'instagram_business_content_publish'].join(',');
+//
+// Premier commentaire automatique : portée `instagram_business_manage_comments`, demandée
+// SEULEMENT quand INSTAGRAM_COMMENTS_SCOPE=1 (l'app Meta doit l'avoir ; une portée inconnue
+// casserait toute connexion Instagram). Sans elle, le worker n'appelle jamais l'API des
+// commentaires Instagram : le texte part directement dans une tâche « Poster le premier
+// commentaire » (server/services/social-publisher.ts, apresPublication). Voir MIGRATIONS.md.
+export const commentairesInstagramActifs = (): boolean => process.env.INSTAGRAM_COMMENTS_SCOPE === '1';
+const instagramScopes = (): string => [
+  'instagram_business_basic', 'instagram_business_content_publish',
+  ...(commentairesInstagramActifs() ? ['instagram_business_manage_comments'] : []),
+].join(',');
 
 export function getInstagramAuthUrl(state: string): string {
   const appId = process.env.IG_APP_ID;
   if (!appId) throw new Error('IG_APP_ID non configuré');
   const redirect = encodeURIComponent(`${getBaseUrl()}/api/social/oauth/instagram/callback`);
-  const scope = encodeURIComponent(INSTAGRAM_SCOPES);
+  const scope = encodeURIComponent(instagramScopes());
   return `https://www.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${redirect}&response_type=code&scope=${scope}&state=${state}`;
 }
 
@@ -99,7 +109,7 @@ export async function exchangeInstagramCode(userId: string, code: string, projec
   } else {
     await storage.createSocialAccount({
       userId, projectId, platform: 'instagram', accountId, platformUserId: accountId, accountName,
-      accessToken: longToken, expiresAt, permissions: INSTAGRAM_SCOPES.split(','), isActive: true, lastSyncAt: new Date(),
+      accessToken: longToken, expiresAt, permissions: instagramScopes().split(','), isActive: true, lastSyncAt: new Date(),
     });
   }
 }

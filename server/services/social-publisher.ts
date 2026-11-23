@@ -17,6 +17,7 @@ import { socialMediaService } from './social-integrations';
 import { publishPost, igFinishAsync, tiktokFinishAsync, publierPremierCommentaire } from './social-publishers';
 import { formatDePublication, plateformeDe } from '@shared/programmation';
 import { compteDePublication } from './connexions/comptes';
+import { commentairesInstagramActifs } from './social-oauth';
 import { db } from '../db';
 import { content, tasks } from '@shared/schema';
 import { and, eq, gte, inArray, isNull, like, lt, notInArray, or, sql } from 'drizzle-orm';
@@ -74,10 +75,15 @@ export async function signalerEchec(item: { id: number; userId: string; title?: 
 export async function apresPublication(item: any, compte: { platform: string; accessToken: string; accountId: string }, platformPostId: string | null | undefined): Promise<void> {
   const texte = (item.premierCommentaire ?? '').trim();
   if (!texte || item.premierCommentaireAt || !platformPostId) return;
-  const r = await publierPremierCommentaire({
-    platform: plateformeDe(item.platform), platformPostId, texte,
-    credentials: { accessToken: compte.accessToken, accountId: compte.accountId, accountPlatform: compte.platform },
-  });
+  const plateforme = plateformeDe(item.platform);
+  // Instagram sans la portée des commentaires (INSTAGRAM_COMMENTS_SCOPE) : aucun appel voué à
+  // l'échec, la tâche porte directement le texte à coller.
+  const r = plateforme === 'instagram' && !commentairesInstagramActifs()
+    ? { ok: false as const, erreur: 'commentaires Instagram non autorisés' }
+    : await publierPremierCommentaire({
+      platform: plateforme, platformPostId, texte,
+      credentials: { accessToken: compte.accessToken, accountId: compte.accountId, accountPlatform: compte.platform },
+    });
   if (r.ok) {
     await storage.updateContent(item.id, { premierCommentaireAt: new Date() } as any).catch(() => {});
     return;
