@@ -3367,6 +3367,12 @@ const en = {
   aujourdhui: "Today",
  },
 
+ composer: {
+  adapterParReseau: "Adapt the caption per network",
+  legendePour: "Caption for {{reseau}}",
+  legendeCommune: "Empty: the shared caption",
+ },
+
  viePerso: {
   titre: "Personal life",
   badge: "personal",

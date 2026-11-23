@@ -6779,7 +6779,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   app.post('/api/content/cross-post', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const { targets, caption, mediaIds, scheduledFor, autoPost, projectId, pillar, goal } = req.body || {};
+      const { targets, caption, mediaIds, scheduledFor, autoPost, projectId, pillar, goal, premierCommentaire, couvertureOffsetMs } = req.body || {};
+      // Légende par réseau (facultative) : la cible la porte, sinon la légende commune.
+      const legendeDe = (tgt: any): string => (typeof tgt?.caption === 'string' && tgt.caption.trim() ? tgt.caption : (caption || ''));
+      const commentaire = typeof premierCommentaire === 'string' && premierCommentaire.trim() ? premierCommentaire.trim().slice(0, 2200) : null;
+      const couverture = Number.isInteger(couvertureOffsetMs) && couvertureOffsetMs >= 0 && couvertureOffsetMs <= 15 * 60_000 ? couvertureOffsetMs : null;
       if (!Array.isArray(targets) || targets.length === 0) return res.status(400).json({ message: 'no_targets' });
       // Mode agence : chaque compte cible doit appartenir au périmètre du projet (client → ses
       // comptes seulement ; perso ou aucun projet → ceux de l'utilisatrice).
@@ -6818,7 +6822,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
             : comptes.find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false && dansPortee(c as any, portee)) ?? null;
           // La date est jugée à l'heure de publication ; le compte, MAINTENANT (il se renouvelle seul).
           const p = problemesProgrammation({
-            post: { body: caption, platform: plateforme, scheduledFor: when }, medias: genres,
+            post: { body: legendeDe(tgt), platform: plateforme, scheduledFor: when }, medias: genres,
             compte: compte as any, maintenant: reference,
           }).filter((x) => x !== 'compte_expire') as string[];
           if (compte && (compte as any).expiresAt && new Date((compte as any).expiresAt).getTime() <= Date.now()) p.push('compte_expire');
@@ -6841,8 +6845,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           userId,
           projectId: projectId || null,
           title,
-          body: caption || '',
+          body: legendeDe(tgt),
           platform: tgt.basePlatform || tgt.platform,        // instagram|facebook|linkedin|tiktok
+          premierCommentaire: commentaire,
+          couvertureOffsetMs: couverture,
           contentType: tgt.format || 'feed_image',
           postFormat: tgt.format || 'feed_image',
           pillar: pillar || 'general',

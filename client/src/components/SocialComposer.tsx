@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ function defaultFormat(platform: Platform, media: MediaAsset[]): PostFormat {
 
 export function SocialComposer({ open, onClose, projectId }: { open: boolean; onClose: () => void; projectId?: number | null }) {
   const { toast } = useToast();
+  const { t } = useTranslation();
   const qc = useQueryClient();
   // Comptes du périmètre du projet : un projet client ne propose que les comptes du client.
   const { data: accounts = [] } = useQuery<Account[]>({
@@ -51,6 +53,12 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
 
   const [selected, setSelected] = useState<Record<number, PostFormat>>({}); // accountId -> format
   const [caption, setCaption] = useState("");
+  // Légende adaptée par réseau (Metricool) : vide = la légende commune.
+  const [adapter, setAdapter] = useState(false);
+  const [legendes, setLegendes] = useState<Record<number, string>>({});
+  const [premierCommentaire, setPremierCommentaire] = useState("");
+  const [couvertureSec, setCouvertureSec] = useState("");
+  const legendeDe = (accId: number) => (adapter && legendes[accId]?.trim() ? legendes[accId] : caption);
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [scheduledFor, setScheduledFor] = useState("");
   // Publication automatique sur demande seulement (le serveur ne l'active plus par défaut).
@@ -72,10 +80,10 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
   const validations = useMemo(() => {
     return Object.entries(selected).map(([accId, format]) => {
       const acc = accounts.find((a) => a.id === Number(accId))!;
-      const r = validatePost({ platform: acc.basePlatform as Platform, format, media: mediaInputs, caption });
+      const r = validatePost({ platform: acc.basePlatform as Platform, format, media: mediaInputs, caption: legendeDe(acc.id) });
       return { acc, format, ...r };
     });
-  }, [selected, accounts, media, caption]);
+  }, [selected, accounts, media, caption, adapter, legendes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allValid = validations.length > 0 && validations.every((v) => v.ok);
 
@@ -111,14 +119,17 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
     mutationFn: async () => {
       const targets = Object.entries(selected).map(([accId, format]) => {
         const acc = accounts.find((a) => a.id === Number(accId))!;
-        return { basePlatform: acc.basePlatform, socialAccountId: acc.id, format };
+        return { basePlatform: acc.basePlatform, socialAccountId: acc.id, format, caption: legendeDe(acc.id) };
       });
+      const sec = couvertureSec.trim() === "" ? null : Number(couvertureSec);
       const res = await fetch("/api/content/cross-post", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           targets, caption, mediaIds: media.map((m) => m.id),
           scheduledFor: scheduledFor ? new Date(scheduledFor).toISOString() : null,
           autoPost, projectId: projectId || null,
+          premierCommentaire: premierCommentaire.trim() || null,
+          couvertureOffsetMs: sec != null && Number.isFinite(sec) && sec >= 0 ? Math.round(sec * 1000) : null,
         }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.texte || e?.message || "cross_post_failed"); }
@@ -128,6 +139,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
       qc.invalidateQueries({ queryKey: ["/api/content"] });
       toast({ title: `Programmé sur ${data.count} réseau(x) ✅` });
       setSelected({}); setCaption(""); setMedia([]); setScheduledFor("");
+      setLegendes({}); setAdapter(false); setPremierCommentaire(""); setCouvertureSec("");
       onClose();
     },
     onError: (e: any) => toast({ title: "Échec", description: String(e?.message || e), variant: "destructive" }),
@@ -241,7 +253,36 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           <div>
             <p className="text-xs text-naya-olive-35 mb-2 font-mono">Légende</p>
             <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={5} placeholder="Écris ta légende…" />
+            {validations.length > 1 && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-naya-olive-70">
+                <Switch checked={adapter} onCheckedChange={setAdapter} /> {t("composer.adapterParReseau")}
+              </label>
+            )}
+            {adapter && validations.map(({ acc }) => (
+              <div key={acc.id} className="mt-2">
+                <p className="text-[11px] text-naya-olive-55 mb-1">{t("composer.legendePour", { reseau: acc.accountName || acc.basePlatform })}</p>
+                <Textarea rows={3} value={legendes[acc.id] ?? ""} placeholder={t("composer.legendeCommune")}
+                  onChange={(e) => setLegendes((l) => ({ ...l, [acc.id]: e.target.value }))} />
+              </div>
+            ))}
           </div>
+
+          {/* Premier commentaire (Instagram, LinkedIn, Facebook) et couverture d'un Reel */}
+          {validations.some(({ acc }) => ["instagram", "linkedin", "facebook"].includes(acc.basePlatform)) && (
+            <div>
+              <p className="text-xs text-naya-olive-35 mb-2 font-mono">{t("atelier.premierCommentaire")}</p>
+              <Textarea rows={2} maxLength={2200} value={premierCommentaire} onChange={(e) => setPremierCommentaire(e.target.value)}
+                placeholder={t("atelier.premierCommentaireAide")} />
+            </div>
+          )}
+          {validations.some(({ acc, format }) => acc.basePlatform === "instagram" && (format === "reel" || format === "feed_video")) && media.some((m) => m.kind === "video") && (
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-naya-olive-35 font-mono">{t("atelier.couverture")}</p>
+              <input type="number" min={0} step={0.5} value={couvertureSec} onChange={(e) => setCouvertureSec(e.target.value)}
+                className="w-20 border border-naya-olive-18 rounded-md px-2 py-1 text-sm" />
+              <span className="text-[11px] text-naya-olive-55">{t("atelier.couvertureAide")}</span>
+            </div>
+          )}
 
           {/* Programmation */}
           <div className="flex items-center gap-4 flex-wrap">

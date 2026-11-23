@@ -3371,6 +3371,12 @@ const fr = {
   aujourdhui: "Aujourd'hui",
  },
 
+ composer: {
+  adapterParReseau: "Adapter la légende par réseau",
+  legendePour: "Légende pour {{reseau}}",
+  legendeCommune: "Vide : la légende commune",
+ },
+
  viePerso: {
   titre: "Vie perso",
   badge: "perso",
