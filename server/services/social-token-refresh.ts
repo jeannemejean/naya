@@ -72,9 +72,24 @@ export interface CompteRafraichissable {
  * production, et tenter quand même consommerait un appel pour un échec certain, à chaque
  * passage du worker.
  */
+/** Instagram (connexion Instagram) : renouvelé tant qu'il vit, dès 30 jours avant l'échéance. */
+export const MARGE_INSTAGRAM_JOURS = 30;
+export function instagramARafraichir(c: CompteRafraichissable, now: Date): boolean {
+  if (c.platform !== "instagram" || c.isActive === false || !c.accessToken || !c.expiresAt) return false;
+  const reste = new Date(c.expiresAt).getTime() - now.getTime();
+  return reste > 0 && reste < MARGE_INSTAGRAM_JOURS * 86_400_000;
+}
+
+/** Comptes morts (échéance passée) : seule une reconnexion par l'utilisatrice les ramène. PURE. */
+export function comptesAReconnecter<T extends CompteRafraichissable>(comptes: T[], now: Date): T[] {
+  return (comptes ?? []).filter((c) => c.isActive !== false
+    && etatConnexion({ accessToken: c.accessToken, isActive: c.isActive, expiresAt: c.expiresAt ?? null, now }) === "expiree");
+}
+
 export function comptesARafraichir<T extends CompteRafraichissable>(comptes: T[], now: Date): T[] {
   return (comptes ?? [])
     .filter((c) => {
+      if (instagramARafraichir(c, now)) return true;
       if (!c.refreshToken || !String(c.refreshToken).trim()) return false;
       const etat = etatConnexion({
         accessToken: c.accessToken,
@@ -126,10 +141,16 @@ async function demanderRenouvellement(compte: CompteRafraichissable): Promise<un
     return res.json();
   }
 
-  // Instagram n'utilise PAS de refresh_token : il échange le jeton d'accès lui-même, et
-  // seulement tant qu'il est vivant. Un compte Instagram n'arrive donc jamais ici —
-  // `comptesARafraichir` l'écarte faute de refresh_token. C'est documenté plutôt que tenté :
-  // un jeton Instagram mort exige une reconnexion manuelle, quoi qu'on écrive.
+  // Instagram (API avec connexion Instagram) n'a pas de refresh_token : le jeton longue durée
+  // s'échange lui-même contre un nouveau (60 jours), tant qu'il est vivant et vieux d'au moins
+  // 24 h. Un jeton mort exige une reconnexion (voir comptesAReconnecter).
+  if (base === "instagram" && compte.accessToken) {
+    const url = new URL("https://graph.instagram.com/refresh_access_token");
+    url.searchParams.set("grant_type", "ig_refresh_token");
+    url.searchParams.set("access_token", String(compte.accessToken));
+    const res = await fetch(url);
+    return res.json();
+  }
   return null;
 }
 
@@ -181,12 +202,40 @@ export async function rafraichirJetonsSociaux(now: Date = new Date()): Promise<{
           console.error(`[TokenRefresh] ${compte.platform} (compte ${compte.id}):`, e?.message ?? e);
         }
       }
+      // Ce qui est mort ne revient que par l'utilisatrice : une tâche, une seule par compte.
+      const relus = await storage.getSocialAccounts(userId).catch(() => [] as any[]);
+      for (const mort of comptesAReconnecter(relus as any[], now)) {
+        await demanderReconnexion(userId, mort.platform, now).catch((e: any) =>
+          console.error(`[TokenRefresh] alerte de reconnexion ${mort.platform}:`, e?.message ?? e));
+      }
     }
   } catch (e: any) {
     console.error("[TokenRefresh] passage interrompu:", e?.message ?? e);
   }
 
   return { tentes, renouveles };
+}
+
+const NOMS: Record<string, string> = { instagram: "Instagram", linkedin: "LinkedIn", tiktok: "TikTok", facebook: "Facebook", twitter: "X" };
+
+async function demanderReconnexion(userId: string, plateforme: string, now: Date): Promise<void> {
+  const nom = NOMS[plateforme.startsWith("linkedin") ? "linkedin" : plateforme] ?? plateforme;
+  const titre = `Reconnecter ${nom} dans Naya`;
+  // Une seule fois par semaine au plus : ni doublon, ni retour toutes les 6 h d'une alerte ignorée.
+  const { db } = await import("../db");
+  const { tasks } = await import("@shared/schema");
+  const { and, eq, gte, or } = await import("drizzle-orm");
+  const [deja] = await db.select({ id: tasks.id }).from(tasks).where(and(
+    eq(tasks.userId, userId), eq(tasks.title, titre),
+    or(eq(tasks.completed, false), gte(tasks.createdAt, new Date(now.getTime() - 7 * 86_400_000))),
+  ));
+  if (deja) return;
+  const jour = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  await storage.createTask({
+    userId, title: titre,
+    description: `La connexion ${nom} a expiré : Naya ne peut plus publier ni lire ce compte. Réglages, Comptes, Reconnecter (2 minutes).`,
+    type: "admin", category: "planning", priority: 1, source: "reconnexion_compte", scheduledDate: jour, estimatedDuration: 5,
+  } as any);
 }
 
 /** Toutes les six heures : bien avant la marge de sept jours, sans marteler les plateformes. */
