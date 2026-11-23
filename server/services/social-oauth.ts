@@ -19,8 +19,11 @@ async function garderIdentite(userId: string, platform: string, accountId: strin
 
 // ─── URL de base de l'app ───────────────────────────────────────────────────
 
+// Adresse de retour des connexions OAuth. L'apex hellonaya.app n'est qu'un transfert GoDaddy
+// vers www, qui répond 404 à tout chemin (23 nov. 2026 : « Not Found » au retour d'Instagram).
+// OAUTH_BASE_URL (https://www.hellonaya.app) prime ; APP_URL reste le repli.
 function getBaseUrl(): string {
-  return process.env.APP_URL ||
+  return process.env.OAUTH_BASE_URL?.trim() || process.env.APP_URL ||
     (process.env.NODE_ENV === 'production'
       ? 'https://naya-production-64ac.up.railway.app'
       : 'http://localhost:3000');
