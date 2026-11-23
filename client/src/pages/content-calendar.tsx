@@ -5,6 +5,10 @@ import { tenterUneFois } from '@/lib/one-shot-guard';
 import { mediasDuPost, estVideo, type MediaDuPost } from "./content-calendar-medias";
 import VisuelsDuPost from "@/components/content/VisuelsDuPost";
 import ProgrammationPost from "@/components/content/ProgrammationPost";
+import GestionPost from "@/components/content/GestionPost";
+import CorbeillePosts from "@/components/content/CorbeillePosts";
+import ActionsGroupees from "@/components/content/ActionsGroupees";
+import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
 import { throwApiError, translateError } from '@/lib/api-error';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
@@ -203,6 +207,9 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const [showCreateDialog, setShowCreateDialog] = useState(false);
  const [showComposer, setShowComposer] = useState(false);
  const [selectedPost, setSelectedPost] = useState<Content | null>(null);
+ // Actions groupées (vue pipeline) : les posts cochés, et la corbeille.
+ const [selection, setSelection] = useState<number[]>([]);
+ const [showCorbeille, setShowCorbeille] = useState(false);
  const [showStrategyRecs, setShowStrategyRecs] = useState(false);
  const [formData, setFormData] = useState<PostFormData>({
  title: '',
@@ -317,12 +324,20 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  },
  });
 
+ // Supprimer = mettre à la corbeille (restaurable 30 jours). Un post en train de partir est refusé.
  const deleteContentMutation = useMutation({
  mutationFn: (id: number) =>
- fetch(`/api/content/${id}`, { method: 'DELETE' }).then(res => res.json()),
+ fetch(`/api/content/${id}`, { method: 'DELETE' }).then(async (res) => {
+ if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.message || 'delete_failed');
+ return res.json();
+ }),
  onSuccess: () => {
- queryClient.invalidateQueries({ queryKey: ['/api/content', selectedProjectId] });
- toast({ title: t('contentCalendar.contentDeleted') });
+ queryClient.invalidateQueries({ queryKey: ['/api/content'] });
+ toast({ title: t('gestionPost.misALaCorbeille') });
+ },
+ onError: (e: unknown) => {
+ const m = e instanceof Error ? e.message : '';
+ toast({ title: t(m === 'publication_en_cours' ? 'gestionPost.enCours' : 'gestionPost.corbeille.erreur'), variant: 'destructive' });
  },
  });
 
@@ -684,6 +699,10 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  );
  // ---- fin Réception (Fil 3) --------------------------------------------------------
 
+ // Les cochés encore présents (un post supprimé ou d'une autre marque sort de la sélection).
+ const selectionVisible = selection.filter(id => content.some((c: Content) => c.id === id));
+ const basculerSelection = (id: number) => setSelection(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]));
+
  const filteredContent = content.filter((item: Content) => {
  if (searchQuery && !item.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
  !item.body.toLowerCase().includes(searchQuery.toLowerCase())) return false;
@@ -939,6 +958,14 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  style={{ cursor: showRegenForm ? 'default' : 'pointer' }}
  >
  <div className="flex items-center gap-2 mb-2">
+ <span onClick={e => e.stopPropagation()} className="flex items-center">
+ <Checkbox
+ checked={selection.includes(item.id)}
+ onCheckedChange={() => basculerSelection(item.id)}
+ aria-label={t('gestionPost.groupe.selectionner')}
+ data-testid={`selection-${item.id}`}
+ />
+ </span>
  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: platform.dotColor }} />
  <span className="text-xs text-naya-cream0">{platform.label}</span>
  </div>
@@ -1351,6 +1378,14 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  />
  )}
 
+ {selectedPost && (
+ <GestionPost
+ postId={selectedPost.id}
+ projets={projects.map(p => ({ id: p.id, name: p.name }))}
+ projetCourantId={selectedPost.projectId ?? null}
+ />
+ )}
+
  <div className="flex flex-wrap justify-end gap-2 pt-4">
  {/* Refuser depuis la fenêtre d'édition : c'est là qu'on arrive en cliquant sur un post
      (la barre d'actions de la carte n'apparaît qu'au survol). */}
@@ -1531,6 +1566,15 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {t('contentCalendar.reception.openImport')}
  </Button>
  <ImportCalendrier projectId={selectedProjectId} />
+ <Dialog open={showCorbeille} onOpenChange={setShowCorbeille}>
+ <DialogTrigger asChild>
+ <Button variant="outline" className="flex items-center gap-2" data-testid="ouvrir-corbeille">
+ <Trash2 className="h-4 w-4" />
+ {t('gestionPost.corbeille.ouvrir')}
+ </Button>
+ </DialogTrigger>
+ {showCorbeille && <CorbeillePosts />}
+ </Dialog>
  <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) resetForm(); }}>
  <DialogTrigger asChild>
  <Button variant="outline" className="flex items-center gap-2">
@@ -1754,11 +1798,20 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900" />
  </div>
  ) : (
- <div className="flex gap-4 h-full overflow-x-auto">
+ <div className="flex flex-col h-full">
+ {selectionVisible.length > 0 && (
+ <ActionsGroupees
+ ids={selectionVisible}
+ projets={projects.map(p => ({ id: p.id, name: p.name }))}
+ onFini={() => setSelection([])}
+ />
+ )}
+ <div className="flex gap-4 flex-1 min-h-0 overflow-x-auto">
  {CONTENT_STATUS_STEPS.map(status => {
  const items = filteredContent.filter(c => (c.contentStatus || 'idea') === status);
  return <PipelineColumn key={status} status={status} items={items} />;
  })}
+ </div>
  </div>
  )}
  </div>
