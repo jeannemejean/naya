@@ -4,7 +4,7 @@ import { PROFIL_DEFAUT, type PlanRepas } from "@shared/vie-perso";
 
 const repas = (titre: string, prep = 20) => ({ titre, detail: "d", kcal: 500, proteines: 30, lipides: 10, glucides: 40, variantes: [], preparationMin: prep });
 const PLAN: PlanRepas = {
-  jours: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"].map((date) => ({ date, dejeuner: repas("Déj — bowl", 0), diner: repas("Dîner"), dessert: null })),
+  jours: ["x1", "x2", "x3", "x4", "x5", "x6", "x7"].map((date) => ({ date, dejeuner: repas("Déj — bowl", 0), diner: repas("Dîner"), dessert: { ...repas(""), kcal: 0 } })),
   batch: { dureeMin: 90, etapes: [{ appareil: "Four", action: "Rôtir" }] },
   courses: [{ article: "Saumon", quantite: "x4", magasin: "Picard", rayon: "Surgelés", pour: "tous" }],
   regles: [], snacks: [],
@@ -40,6 +40,7 @@ describe("preparerPlan", () => {
     expect(contenu.jours.map((j: any) => j.date)).toEqual(["2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04", "2026-12-05", "2026-12-06"]);
     expect(contenu.jours[0].dejeuner.titre).toBe("Déj, bowl");
     expect(o.statut).toBe("brouillon");
+    expect(contenu.jours[0].dessert).toBeNull();
     expect((d.generer as any).mock.calls[0][0].rapide).toBe(false);
   });
 });

@@ -2,7 +2,7 @@
 // activité (spec 2026-11-23). Dépendances injectées (base, IA, agenda) : testable sans rien.
 import type { z } from "zod/v4";
 import {
-  joursDeSemaine, SCHEMA_ACTIVITE, SCHEMA_PLAN_REPAS, REPAS,
+  joursDeSemaine, planDepuisGenere, repasDepuisGenere, SCHEMA_ACTIVITE, SCHEMA_PLAN_GENERE, SCHEMA_PLAN_REPAS, REPAS,
   type ContenuActivite, type Fenetre, type PlanRepas, type ProfilViePerso, type Repas,
 } from "@shared/vie-perso";
 import {
@@ -54,10 +54,10 @@ function recaler(plan: PlanRepas, semaine: string): PlanRepas {
 export async function preparerPlan(userId: string, semaine: string, deps: DepsViePerso): Promise<Resultat<{ coutEur: number }>> {
   const [profil, membres, recettes] = await Promise.all([deps.profil(userId), deps.membres(userId), deps.recettes(userId)]);
   const { valeur, coutEur } = await deps.generer({
-    schema: SCHEMA_PLAN_REPAS, system: SYSTEME_REPAS, prompt: promptPlan({ profil, membres, recettes, semaine }),
+    schema: SCHEMA_PLAN_GENERE, system: SYSTEME_REPAS, prompt: promptPlan({ profil, membres, recettes, semaine }),
     maxTokens: MAX_TOKENS_PLAN, rapide: false, userId, etape: "vie_perso_plan",
   });
-  await deps.ecrirePlan(userId, semaine, recaler(nettoyerProfond(valeur), semaine), { statut: "brouillon", coutEur });
+  await deps.ecrirePlan(userId, semaine, recaler(planDepuisGenere(nettoyerProfond(valeur)), semaine), { statut: "brouillon", coutEur });
   return { ok: true, coutEur };
 }
 
@@ -76,7 +76,7 @@ export async function changerRepas(
     maxTokens: MAX_TOKENS_CHANGEMENT, rapide: true, userId, etape: "vie_perso_repas",
   });
   const v = nettoyerProfond(valeur);
-  const jours = plan.contenu.jours.map((j, k) => (k === i ? { ...j, [repas]: v.repas } : j));
+  const jours = plan.contenu.jours.map((j, k) => (k === i ? { ...j, [repas]: repasDepuisGenere(v.repas) } : j));
   // Re-valider le contenu entier : les courses rendues passent par les mêmes bornes que le plan.
   const contenu = SCHEMA_PLAN_REPAS.parse({ ...plan.contenu, jours, courses: v.courses });
   // La liste de courses change : les coches repartent de zéro. Un plan validé reste validé, mais

@@ -76,6 +76,17 @@ export const SCHEMA_REPAS = z.object({
   preparationMin: minutes(240),
 });
 
+const BATCH = z.object({
+    dureeMin: minutes(300),
+    etapes: liste(z.object({ appareil: texte(80), action: texte(600) }), 30),
+});
+export const SCHEMA_COURSES = liste(z.object({
+  article: texte(160), quantite: texte(60), magasin: texte(80), rayon: texte(80),
+  /** « tous » ou le prénom d'un membre */
+  pour: texte(80),
+}), 150);
+
+/** Plan enregistré (et relu) : un repas absent vaut null, une valeur inconnue aussi. */
 export const SCHEMA_PLAN_REPAS = z.object({
   jours: z.array(z.object({
     date: texte(10),
@@ -83,19 +94,49 @@ export const SCHEMA_PLAN_REPAS = z.object({
     diner: SCHEMA_REPAS.nullable(),
     dessert: SCHEMA_REPAS.nullable(),
   })).length(7),
-  batch: z.object({
-    dureeMin: minutes(300),
-    etapes: liste(z.object({ appareil: texte(80), action: texte(600) }), 30),
-  }),
-  courses: liste(z.object({
-    article: texte(160), quantite: texte(60), magasin: texte(80), rayon: texte(80),
-    /** « tous » ou le prénom d'un membre */
-    pour: texte(80),
-  }), 150),
+  batch: BATCH,
+  courses: SCHEMA_COURSES,
   regles: liste(texte(300), 8),
   snacks: liste(texte(300), 10),
 });
 export type PlanRepas = z.infer<typeof SCHEMA_PLAN_REPAS>;
+
+// Ce que le modèle remplit : aucune alternative « ou null » (chacune alourdit la grammaire des
+// sorties structurées, refusée au-delà d'une taille : constaté le 23 nov. 2026 sur 7 jours x 3
+// repas). Un repas absent a un titre vide, une valeur inconnue vaut 0 ; converti ensuite.
+export const SCHEMA_REPAS_GENERE = z.object({
+  titre: texte(200),
+  detail: texte(1000),
+  kcal: z.number(), proteines: z.number(), lipides: z.number(), glucides: z.number(),
+  variantes: liste(z.object({ membre: texte(80), texte: texte(400) }), 8),
+  preparationMin: minutes(240),
+});
+export const SCHEMA_PLAN_GENERE = z.object({
+  jours: liste(z.object({
+    date: texte(10), dejeuner: SCHEMA_REPAS_GENERE, diner: SCHEMA_REPAS_GENERE, dessert: SCHEMA_REPAS_GENERE,
+  }), 7),
+  batch: BATCH,
+  courses: SCHEMA_COURSES,
+  regles: liste(texte(300), 8),
+  snacks: liste(texte(300), 10),
+});
+export type PlanGenere = z.infer<typeof SCHEMA_PLAN_GENERE>;
+export type RepasGenere = z.infer<typeof SCHEMA_REPAS_GENERE>;
+
+const valeur = (n: number) => (Number.isFinite(n) && n > 0 ? Math.round(n) : null);
+export function repasDepuisGenere(r: RepasGenere): z.infer<typeof SCHEMA_REPAS> | null {
+  if (!r.titre.trim()) return null;
+  return { ...r, kcal: valeur(r.kcal), proteines: valeur(r.proteines), lipides: valeur(r.lipides), glucides: valeur(r.glucides) };
+}
+/** Sortie du modèle → plan enregistrable ; lève « structure_invalide » s'il n'a pas 7 jours. */
+export function planDepuisGenere(g: PlanGenere): PlanRepas {
+  const r = SCHEMA_PLAN_REPAS.safeParse({
+    ...g,
+    jours: g.jours.map((j) => ({ date: j.date, dejeuner: repasDepuisGenere(j.dejeuner), diner: repasDepuisGenere(j.diner), dessert: repasDepuisGenere(j.dessert) })),
+  });
+  if (!r.success) throw new Error(`structure_invalide: ${r.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ").slice(0, 300)}`);
+  return r.data;
+}
 export type RepasPlan = z.infer<typeof SCHEMA_REPAS>;
 
 /** Plan enregistré : la sortie générée + l'état des cases de la liste de courses. */

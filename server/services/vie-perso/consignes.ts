@@ -2,7 +2,7 @@
 // Modèle de référence : le plan de repas de Jeanne (2 semaines, foyer à deux, batch du dimanche).
 import { z } from "zod/v4";
 import {
-  joursDeSemaine, phaseDuCycle, SCHEMA_REPAS, type PlanRepas, type ProfilViePerso, type Repas,
+  joursDeSemaine, phaseDuCycle, SCHEMA_COURSES, SCHEMA_REPAS_GENERE, type PlanRepas, type ProfilViePerso, type Repas,
 } from "@shared/vie-perso";
 
 export interface MembrePrompt {
@@ -40,7 +40,7 @@ CE QUI FAIT TENIR UN BON PLAN :
 - Rien à décider en semaine : le gros du travail est fait pendant le batch (cuissons de base, sauces, marinades, légumes lavés) ; en semaine on assemble.
 - Préparation le jour même courte : au plus 20 minutes en semaine, davantage possible le week-end. Indique-la dans preparationMin (0 si tout vient du batch ou si rien n'est à préparer).
 - Un dessert du soir prévu chaque jour (simple, souvent 0 minute).
-- Valeurs nutritionnelles (kcal, protéines, lipides, glucides en grammes) approximatives pour la personne marquée « moi », null si tu ne peux pas estimer.
+- Valeurs nutritionnelles (kcal, protéines, lipides, glucides en grammes) approximatives pour la personne marquée « moi », 0 si tu ne peux pas estimer.
 - Si une phase du cycle est indiquée pour un jour, adapte : règles (fer, magnésium, oméga-3, un peu plus de bonnes graisses), folliculaire (glucides complexes, protéines), ovulation (plus léger, antioxydants, crucifères), lutéale (magnésium, glucides complexes le soir, envies de sucre anticipées par le dessert).
 - Respecte le jeûne indiqué (ex. 16:8 : rien avant l'heure du déjeuner, donc pas de petit-déjeuner).
 - Les inspirations « aime » reviennent dans la semaine, adaptées ; les « non » n'apparaissent jamais.
@@ -97,18 +97,13 @@ export function promptPlan(o: { profil: ProfilViePerso; membres: MembrePrompt[];
     `<reglages>\n${neutraliser(blocReglages(o.profil))}\n</reglages>`,
     ...(insp ? ["", `<inspirations>\n${neutraliser(insp)}\n</inspirations>`] : []),
     "",
-    "Un repas que personne ne prend à la maison ce jour-là vaut null.",
+    "Un repas que personne ne prend à la maison ce jour-là : titre vide (\"\"), le reste à vide ou 0.",
   ].join("\n");
 }
 
 // ─── Changer un repas ────────────────────────────────────────────────────────────────────
 
-export const SCHEMA_CHANGEMENT = z.object({
-  repas: SCHEMA_REPAS,
-  courses: z.array(z.object({
-    article: z.string(), quantite: z.string(), magasin: z.string(), rayon: z.string(), pour: z.string(),
-  })),
-});
+export const SCHEMA_CHANGEMENT = z.object({ repas: SCHEMA_REPAS_GENERE, courses: SCHEMA_COURSES });
 export type Changement = z.infer<typeof SCHEMA_CHANGEMENT>;
 
 export const SYSTEME_CHANGER_REPAS = `Tu es Naya. Dans un plan de repas déjà prêt, tu remplaces UN repas par un autre, puis tu redonnes la liste de courses COMPLÈTE de la semaine mise à jour (articles du repas retiré enlevés s'ils ne servent plus ailleurs, articles du nouveau repas ajoutés ; placard exclu).

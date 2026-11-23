@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   phaseDuCycle, lundiDe, joursDeSemaine, estTachePerso, SOURCE_VIE_PERSO,
-  SCHEMA_PLAN_REPAS, SCHEMA_ACTIVITE, ajouterJours,
+  SCHEMA_PLAN_REPAS, SCHEMA_ACTIVITE, ajouterJours, planDepuisGenere, SCHEMA_PLAN_GENERE,
 } from "./vie-perso";
+import { schemaJson } from "../server/services/ai/structure";
 
 describe("phaseDuCycle", () => {
   const regles = "2026-11-01";
@@ -101,5 +102,26 @@ describe("sortie trop longue : coupée, pas refusée", () => {
     expect(r.achats).toHaveLength(40);
     expect(r.achats[0].article.length).toBe(160);
     expect(r.etapes[0].dureeMin).toBe(10);
+  });
+});
+
+describe("planDepuisGenere", () => {
+  const r = (titre: string, kcal = 500) => ({ titre, detail: "", kcal, proteines: 30, lipides: 0, glucides: 40, variantes: [], preparationMin: 10 });
+  const g = (n: number) => SCHEMA_PLAN_GENERE.parse({
+    jours: Array.from({ length: n }, (_, i) => ({ date: `d${i}`, dejeuner: r("Bowl"), diner: r("", 0), dessert: r("Yaourt", 0) })),
+    batch: { dureeMin: 60, etapes: [] }, courses: [], regles: [], snacks: [],
+  });
+  it("titre vide → repas absent ; 0 → inconnu", () => {
+    const p = planDepuisGenere(g(7));
+    expect(p.jours[0].diner).toBeNull();
+    expect(p.jours[0].dessert!.kcal).toBeNull();
+    expect(p.jours[0].dejeuner!.lipides).toBeNull();
+    expect(p.jours[0].dejeuner!.kcal).toBe(500);
+  });
+  it("pas 7 jours : structure_invalide", () => {
+    expect(() => planDepuisGenere(g(6))).toThrow(/structure_invalide/);
+  });
+  it("le schéma envoyé au modèle n'a aucune alternative « ou null »", () => {
+    expect(JSON.stringify(schemaJson(SCHEMA_PLAN_GENERE))).not.toContain("anyOf");
   });
 });

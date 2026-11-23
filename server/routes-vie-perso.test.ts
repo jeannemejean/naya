@@ -13,9 +13,9 @@ describe("routes vie perso", () => {
   let server: http.Server;
   let base: string;
   let genererFin: (() => void) | null;
-  const repas = { titre: "R", detail: "", kcal: null, proteines: null, lipides: null, glucides: null, variantes: [], preparationMin: 0 };
+  const repas = { titre: "R", detail: "", kcal: 0, proteines: 0, lipides: 0, glucides: 0, variantes: [], preparationMin: 0 };
   const PLAN = {
-    jours: Array.from({ length: 7 }, (_, i) => ({ date: `d${i}`, dejeuner: repas, diner: repas, dessert: null })),
+    jours: Array.from({ length: 7 }, (_, i) => ({ date: `d${i}`, dejeuner: repas, diner: repas, dessert: { ...repas, titre: "" } })),
     batch: { dureeMin: 0, etapes: [] }, courses: [{ article: "Saumon", quantite: "1", magasin: "Picard", rayon: "", pour: "tous" }], regles: [], snacks: [],
   };
   let plan: any;
