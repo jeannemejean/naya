@@ -14,6 +14,7 @@
  * 5. Silently skips users on error — one failure must not block others
  */
 
+import { horsViePerso } from "@shared/vie-perso";
 import { passageAtelierMatin, preRedactionMatin } from './atelier/deps';
 import { storage } from '../storage';
 import { ajouterDependance } from './dependances';
@@ -235,7 +236,8 @@ async function generateForUser(userId: string, dateStr: string, fil?: { carte: C
   if (avail?.dayType === 'off') return;
 
   // 5. Check how many tasks already exist for this date (par scheduledDate, pas dueDate)
-  const existingForDate = await storage.getTasksInRange(userId, dateStr, dateStr);
+  // Vie perso hors capacité de travail (un dîner du soir ne prend pas la place d'une tâche).
+  const existingForDate = horsViePerso(await storage.getTasksInRange(userId, dateStr, dateStr));
   const scheduledForToday = (existingForDate as any[]).filter(
     (t: any) => !t.completed && (t as any).type !== 'milestone'
   );

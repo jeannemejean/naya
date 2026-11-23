@@ -8,6 +8,10 @@ const atelier = (id: number, jour: string | null, partie = 1) => ({ id, taskType
 const validation = (id: number, jour: string | null) => ({ id, taskType: "atelier_validation", scheduledDate: jour, actionData: { semaine: "2026-10-26" } });
 
 describe("classer", () => {
+  it("une tâche perso n'est jamais reprise", () => {
+    expect(classer({ id: 1, source: "vie_perso" })).toEqual({ genre: "ignorer" });
+  });
+
   it("chaque tâche suit son propriétaire", () => {
     expect(classer({ id: 1, ritualId: 4 })).toEqual({ genre: "rituel" });
     expect(classer({ id: 1, taskType: "prospection_validation" })).toEqual({ genre: "ignorer" });
@@ -93,5 +97,13 @@ describe("ordreAtelierDansLaJournee", () => {
       { id: 1, taskType: "atelier_contenu", scheduledTime: "10:00", estimatedDuration: 60, actionData: { partie: 1 } },
       { id: 2, taskType: "atelier_contenu", scheduledTime: "14:00", estimatedDuration: 60, actionData: { partie: 2 } },
     ])).toEqual([]);
+  });
+});
+
+describe("compte (plafond de la reprise)", () => {
+  it("la vie perso ne prend pas de place de travail", async () => {
+    const { compte } = await import("./index");
+    expect(compte({ id: 1, title: "x", taskType: "generic", scheduledDate: "2026-11-24", source: "vie_perso", completed: false } as any)).toBe(false);
+    expect(compte({ id: 2, title: "x", taskType: "generic", scheduledDate: "2026-11-24", source: "manual", completed: false } as any)).toBe(true);
   });
 });

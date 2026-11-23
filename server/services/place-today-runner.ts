@@ -18,7 +18,8 @@ export async function runPlaceToday(
     .filter((t: any) => t.type !== "milestone" && t.source !== "milestone");
   // Les tâches TERMINÉES restent affichées (barrées) à leur heure : elles occupent leur
   // créneau. Seules les autres sont à placer.
-  const todayTasks = duJour.filter((t: any) => !t.completed);
+  // Vie perso : jamais placée par le travail (elle a déjà son heure, et bloque son créneau).
+  const todayTasks = duJour.filter((t: any) => !t.completed && t.source !== "vie_perso");
 
   const nullTimeCount = (todayTasks as any[]).filter((t) => !t.scheduledTime).length;
   if (nullTimeCount === 0) return { placed: 0, unplaced: 0 };

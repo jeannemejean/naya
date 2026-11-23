@@ -35,6 +35,8 @@ import { rattacherCompte } from "./services/connexions/rattacher-compte";
 import { registerReponsesRoutes, STADES_ENGAGES } from "./routes-reponses";
 import { registerSalvesRoutes } from "./routes-salves";
 import { registerAppelsOffresRoutes } from "./routes-appels-offres";
+import { registerViePersoRoutes } from "./routes-vie-perso";
+import { horsViePerso } from "@shared/vie-perso";
 import { registerOrchestreRoutes } from "./routes-orchestre";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
@@ -6145,7 +6147,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const minToHHMM = (mins: number) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
 
       const tasks = await storage.getTasksInRange(userId, targetDate, targetDate);
-      const pending = (tasks as any[]).filter(t => !t.completed);
+      const pending = (tasks as any[]).filter(t => !t.completed && t.source !== 'vie_perso');
 
       if (!pending.length) return res.json({ rebalanced: 0 });
 
@@ -6226,7 +6228,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       })();
 
-      const allTasks = await storage.getTasksInRange(userId, weekStart, weekEnd);
+      // Vie perso exclue : le rééquilibrage amorce chaque jour par la DERNIÈRE fin de tâche ; un dîner
+      // à 19 h 30 fermerait la journée de travail et repousserait tout de plusieurs semaines.
+      const allTasks = horsViePerso(await storage.getTasksInRange(userId, weekStart, weekEnd));
       // Les tâches liées à un post restent en place (et comptent dans la charge du jour).
       const pending = tachesARebalancer(allTasks);
 
@@ -6551,7 +6555,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         storage.getBrandDna(userId),
       ]);
 
-      const pending = pendingTasks.filter((t: any) => !t.completed);
+      const pending = pendingTasks.filter((t: any) => !t.completed && t.source !== 'vie_perso');
       const completed = completedTasks.filter((t: any) => t.completed);
 
       // Build blocked task set from dependency chains
@@ -11344,6 +11348,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerReponsesRoutes(app);
   registerSalvesRoutes(app);
   registerAppelsOffresRoutes(app);
+  registerViePersoRoutes(app);
   registerOrchestreRoutes(app);
   registerRapportsRoutes(app);
   registerAgentRoutes(app);

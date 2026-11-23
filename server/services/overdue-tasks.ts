@@ -18,6 +18,8 @@ export function selectOverdueTasks<T extends OverdueCandidate>(tasks: T[], today
     t.type !== "milestone" &&
     t.source !== "milestone" &&
     t.source !== "gcal" &&
+    t.source !== "vie_perso" && // un dîner non coché n'est pas un retard de travail
+
     typeof t.scheduledDate === "string" &&
     t.scheduledDate.length > 0 &&
     t.scheduledDate < today, // strictement avant aujourd'hui (pas == aujourd'hui → pas de doublon avec Today)

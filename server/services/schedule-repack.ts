@@ -335,5 +335,6 @@ export function repackDayParRang(
 export function tachesARebalancer<T extends { completed?: boolean | null; contentId?: number | null; taskType?: string | null; actionData?: unknown; source?: string | null }>(taches: T[]): T[] {
   // Les tâches d'atelier de contenu ont aussi une échéance (la veille du premier post).
   // « Relancer X » est tenue par la date que le prospect a demandée : jamais avancée ni repoussée.
-  return taches.filter((t) => !t.completed && t.contentId == null && echeanceAtelier(t) == null && t.source !== "relance_prospect");
+  return taches.filter((t) => !t.completed && t.contentId == null && echeanceAtelier(t) == null && t.source !== "relance_prospect"
+    && t.source !== "vie_perso");
 }

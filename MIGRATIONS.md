@@ -756,3 +756,14 @@ select table_name from information_schema.tables
 select indexname from pg_indexes
  where indexname in ('mails_en_attente_user_thread_uq','indicateurs_releves_user_cle_jour_uq');  -- 2 lignes
 ```
+
+## 16. Vie perso — `0043` à appliquer en prod à la main
+
+Fichier : `migrations/0043_vengeful_devos.sql` (branche `feat/vie-perso`). Cinq `CREATE TABLE` (`vie_perso_profil`,
+`vie_perso_membres`, `vie_perso_recettes`, `vie_perso_plans`, `vie_perso_activites`), clés étrangères `user_id` →
+`users.id` en `ON DELETE cascade`, un index unique `vie_perso_plans_user_semaine_uq`. Aucun `DROP`, aucune table
+existante touchée. Migration AVANT le push de `main` (les routes `/api/vie-perso/*` lisent ces tables).
+
+```sql
+select table_name from information_schema.tables where table_name like 'vie_perso_%';  -- 5 lignes
+```

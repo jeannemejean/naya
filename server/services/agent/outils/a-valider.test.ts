@@ -50,7 +50,7 @@ describe("classement", () => {
     }
     // + les trois propositions du fil conducteur (étapes, rattachement, journée allégée).
     expect(REGISTRE.filter((o) => o.classe === "a_valider").map((o) => o.nom).sort()).toEqual(
-      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "proposer_etapes", "rattacher_chaine", "repenser_campagne", "retenir_rythme", "saisir_mesure", "supprimer_posts", "supprimer_taches"],
+      ["alleger_journee", "confirmer_jalon", "creer_jalons", "creer_projet", "decaler_journee", "deplacer_taches", "planifier_activite", "preparer_repas_semaine", "proposer_etapes", "rattacher_chaine", "repenser_campagne", "retenir_rythme", "saisir_mesure", "supprimer_posts", "supprimer_taches"],
     );
   });
 });

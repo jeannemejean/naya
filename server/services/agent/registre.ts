@@ -6,6 +6,7 @@ import type { ActionFaite, ClasseOutil, PropositionVue } from "@shared/agent";
 import { OUTILS_LECTURE } from "./outils/lecture";
 import { OUTILS_DIRECTS } from "./outils/directs";
 import { OUTILS_A_VALIDER } from "./outils/a-valider";
+import { consulterViePerso, planifierActiviteOutil, preparerRepasSemaine } from "./outils/vie-perso";
 import { OUTILS_FIL } from "../fil/etapes";
 import { OUTIL_ALLEGEMENT } from "../fil/allegement";
 
@@ -46,7 +47,10 @@ export const DIRECTS_AUTORISES: ReadonlySet<string> = new Set([
 // valables 7 jours ; journée allégée, valable jusqu'à la fin du jour), refusées hors interrupteur. Ils sont au registre pour que
 // validerProposition les retrouve, mais ne sont JAMAIS offerts au modèle de la conversation :
 // ce sont des propositions faites hors conversation (proposerHorsConversation).
-export const REGISTRE: Outil[] = [...OUTILS_LECTURE, ...OUTILS_DIRECTS, ...OUTILS_A_VALIDER, ...OUTILS_FIL, OUTIL_ALLEGEMENT];
+export const REGISTRE: Outil[] = [
+  ...OUTILS_LECTURE, ...OUTILS_DIRECTS, ...OUTILS_A_VALIDER, ...OUTILS_FIL, OUTIL_ALLEGEMENT,
+  consulterViePerso, preparerRepasSemaine, planifierActiviteOutil,
+];
 
 export const HORS_CONVERSATION: ReadonlySet<string> = new Set([...OUTILS_FIL, OUTIL_ALLEGEMENT].map((o) => o.nom));
 

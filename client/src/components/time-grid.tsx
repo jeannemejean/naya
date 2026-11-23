@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from "react";
 import { voiesPlanning } from "@/lib/voies-planning";
 import { useTranslation } from "react-i18next";
+import { estTachePerso } from "@shared/vie-perso";
 import { laneGeometry } from "./time-grid-geometry";
 import { taskPaletteFor } from "@/lib/task-palette";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
@@ -85,7 +86,8 @@ function getNayaTaskPalette(task: Task) {
 }
 
 const GRID_START_HOUR = 7;
-const GRID_END_HOUR   = 21;
+// 23 h : la vie perso (dîners, activités du soir) se place jusqu'à la fin de soirée.
+const GRID_END_HOUR   = 23;
 const TOTAL_HOURS     = GRID_END_HOUR - GRID_START_HOUR;
 const PX_PER_HOUR     = 80;
 const PX_PER_MINUTE   = PX_PER_HOUR / 60;
@@ -341,6 +343,7 @@ function TaskBlock({
               <span className="mr-0.5 text-[9px] opacity-60">{energySymbol} </span>
             )}
             {task.title}
+            {estTachePerso(task as any) && <span className="ml-1 text-[9px] opacity-70">· {t("viePerso.badge")}</span>}
           </p>
         </div>
         {verrouillee && (
