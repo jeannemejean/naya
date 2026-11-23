@@ -160,3 +160,13 @@ describe("ensureWebhooks", () => {
     await expect(ensureWebhooks("https://naya.test", "s")).resolves.toBeUndefined();
   });
 });
+
+describe("baseWebhooks", () => {
+  it("adresse dédiée aux webhooks d'abord (l'apex hellonaya.app refuse les POST), sinon APP_URL", async () => {
+    const { baseWebhooks } = await import("./unipile-mail");
+    expect(baseWebhooks({ UNIPILE_WEBHOOK_BASE_URL: "https://www.hellonaya.app", APP_URL: "https://hellonaya.app" })).toBe("https://www.hellonaya.app");
+    expect(baseWebhooks({ APP_URL: "https://hellonaya.app" })).toBe("https://hellonaya.app");
+    expect(baseWebhooks({ UNIPILE_WEBHOOK_BASE_URL: "  ", APP_URL: "https://x.test" })).toBe("https://x.test");
+    expect(baseWebhooks({})).toBeUndefined();
+  });
+});

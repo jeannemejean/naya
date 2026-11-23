@@ -11,7 +11,7 @@ import { scheduleProspectionSender } from "./services/prospection-sender";
 import { demarrerIndexeur } from "./services/agent/indexeur";
 import { scheduleLinkedInSync } from "./services/linkedin-sync";
 import { linkedinConfigured } from "./services/linkedin";
-import { ensureWebhooks } from "./services/unipile-mail";
+import { ensureWebhooks, baseWebhooks } from "./services/unipile-mail";
 import { computeDurationCalibration } from "./services/duration-calibration";
 import { analyzeBehaviorPatterns } from "./services/behavior-patterns";
 import { adjustBufferForUser } from "./services/rhythm-buffer";
@@ -274,8 +274,9 @@ function demarrerTachesDeFond() {
   scheduleLinkedInSync();
 
   // ─── Webhooks Unipile (réception des réponses) : créés s'ils manquent ──────────
-  if (linkedinConfigured() && process.env.UNIPILE_WEBHOOK_SECRET && process.env.APP_URL) {
-    ensureWebhooks(process.env.APP_URL, process.env.UNIPILE_WEBHOOK_SECRET)
+  const urlWebhooks = baseWebhooks(process.env);
+  if (linkedinConfigured() && process.env.UNIPILE_WEBHOOK_SECRET && urlWebhooks) {
+    ensureWebhooks(urlWebhooks, process.env.UNIPILE_WEBHOOK_SECRET)
       .catch((e: any) => console.warn(`[unipile] ensureWebhooks : ${String(e?.message || e).slice(0, 120)}`));
   } else if (linkedinConfigured()) {
     console.warn("[unipile] UNIPILE_WEBHOOK_SECRET ou APP_URL absent : les réponses des prospects ne seront pas reçues");

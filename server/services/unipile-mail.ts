@@ -276,3 +276,13 @@ export async function ensureWebhooks(baseUrl: string, secret: string): Promise<v
     console.warn(`[unipile] ensureWebhooks : ${String(e?.message || e).slice(0, 120)}`);
   }
 }
+
+/**
+ * Adresse publique où Unipile livre ses webhooks. UNIPILE_WEBHOOK_BASE_URL d'abord : en prod,
+ * APP_URL vaut l'apex https://hellonaya.app (gardé pour les redirections OAuth déjà déclarées),
+ * qui redirige les visites mais refuse les POST (405) ; l'API répond sur www.
+ */
+export function baseWebhooks(env: Record<string, string | undefined>): string | undefined {
+  const dediee = env.UNIPILE_WEBHOOK_BASE_URL?.trim();
+  return dediee || env.APP_URL;
+}
