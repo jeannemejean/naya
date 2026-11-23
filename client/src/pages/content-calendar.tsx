@@ -1766,7 +1766,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  onSelectSlot={handleSelectSlot as any}
  selectable
  resizable
- draggableAccessor={() => true}
+ draggableAccessor={(e: any) => !((e as ContentEvent).resource?.publishedAt || ['posted', 'posting', 'processing'].includes(((e as ContentEvent).resource as any)?.postStatus ?? ''))}
  resizableAccessor={() => true}
  eventPropGetter={(event: object) => {
  const ce = event as ContentEvent;

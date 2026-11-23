@@ -37,6 +37,7 @@ import { registerSalvesRoutes } from "./routes-salves";
 import { registerAppelsOffresRoutes } from "./routes-appels-offres";
 import { registerViePersoRoutes } from "./routes-vie-perso";
 import { horsViePerso } from "@shared/vie-perso";
+import { plateformeDe, problemesProgrammation, type GenreMedia } from "@shared/programmation";
 import { registerOrchestreRoutes } from "./routes-orchestre";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
@@ -6793,6 +6794,44 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const groupId = randomUUID();
       const when = scheduledFor ? new Date(scheduledFor) : null;
       const title = (caption || 'Publication').slice(0, 80);
+      // Publication automatique seulement si elle est DEMANDÉE (avant : active par défaut), et
+      // vérifiée ici comme une programmation (réseau publiable, compte vivant, visuels) :
+      // jamais un post qui part en échec à l'heure dite.
+      const auto = autoPost === true;
+      if (auto) {
+        if (!when || Number.isNaN(when.getTime())) return res.status(422).json({ message: 'programmation_impossible', problemes: [{ cible: null, problemes: ['date_manquante'] }] });
+        const genres: GenreMedia[] = [];
+        for (const mid of (Array.isArray(mediaIds) ? mediaIds : [])) {
+          const m = await storage.getMediaItemById(Number(mid), userId);
+          if (m) genres.push((m.mimeType || '').startsWith('video/') ? 'video' : 'image');
+        }
+        // « Publier maintenant » (mobile) envoie l'heure courante : seule une date passée de plus
+        // de 5 minutes est refusée. Sinon on vérifie l'état du compte à l'heure de publication.
+        const maintenant = new Date();
+        const reference = when.getTime() < maintenant.getTime() - 5 * 60_000 ? maintenant : new Date(when.getTime() - 3 * 60_000);
+        const problemes = [];
+        for (const tgt of targets) {
+          const plateforme = plateformeDe(tgt.basePlatform || tgt.platform);
+          const compte = tgt.socialAccountId != null
+            ? comptes.find((c: any) => c.id === Number(tgt.socialAccountId)) ?? null
+            : comptes.find((c: any) => plateformeDe(c.platform).startsWith(plateforme) && dansPortee(c as any, portee)) ?? null;
+          const p = problemesProgrammation({
+            post: { body: caption, platform: plateforme, scheduledFor: when }, medias: genres,
+            compte: compte as any, maintenant: reference,
+          });
+          if (p.length) problemes.push({ cible: plateforme, problemes: p });
+        }
+        if (problemes.length) {
+          const MOTS: Record<string, string> = {
+            texte_vide: 'texte vide', date_manquante: 'date manquante', date_passee: 'date passée',
+            plateforme_non_supportee: 'Naya ne publie pas encore seule sur ce réseau', compte_absent: 'aucun compte connecté',
+            compte_expire: 'connexion expirée, à reconnecter', visuel_requis: 'un visuel est requis', trop_de_visuels: 'trop de visuels (10 au plus)',
+            deja_publie: 'déjà publié',
+          };
+          const texte = problemes.map((p) => `${p.cible} : ${p.problemes.map((x: string) => MOTS[x] ?? x).join(', ')}`).join(' · ');
+          return res.status(422).json({ message: 'programmation_impossible', texte, problemes });
+        }
+      }
       const created = [];
       for (const tgt of targets) {
         const row = await storage.createContent({
@@ -6808,7 +6847,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           status: 'draft',
           contentStatus: when ? 'ready' : 'draft',
           scheduledFor: when,
-          autoPost: autoPost !== false,
+          autoPost: auto,
           postStatus: 'pending',
           mediaIds: Array.isArray(mediaIds) ? mediaIds : [],
           socialAccountId: tgt.socialAccountId || null,
@@ -6831,6 +6870,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       if (!existing) return res.status(404).json({ message: "Content not found" });
 
       const updates = req.body;
+      // Un post publié, ou en train de partir, ne se déplace plus (glisser-déposer du calendrier) :
+      // changer sa date ne le dépublierait pas, et l'écran mentirait.
+      const verrouille = !!existing.publishedAt || ['posted', 'posting', 'processing'].includes((existing as any).postStatus ?? '');
+      if (verrouille && ('scheduledFor' in (updates ?? {}) || 'autoPost' in (updates ?? {}))) {
+        return res.status(409).json({ message: 'post_deja_publie_ou_en_cours' });
+      }
       if (updates.scheduledFor && typeof updates.scheduledFor === 'string') {
         updates.scheduledFor = new Date(updates.scheduledFor);
       }
@@ -9902,58 +9947,20 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
         });
       }
       
-      const credentials = {
-        platform: socialAccount.platform,
-        accessToken: socialAccount.accessToken,
-        refreshToken: socialAccount.refreshToken,
-        accountId: socialAccount.accountId,
-        accountName: socialAccount.accountName
-      } as any;
-      
-      // Get media URLs if any
-      let imageUrl;
-      if (content.mediaIds && Array.isArray(content.mediaIds) && content.mediaIds.length > 0) {
-        const media = await storage.getMediaItemById(content.mediaIds[0], userId);
-        if (media) {
-          imageUrl = media.url;
-        }
+      // Même chemin que la publication programmée (tous formats, réessais, alerte).
+      const { publierMaintenant } = await import('./services/social-publisher');
+      const r = await publierMaintenant(contentId, userId);
+      const apres = await storage.getContentById(contentId, userId);
+      if (r === 'failed') {
+        return res.status(502).json({ error: 'publication_echouee', message: (apres as any)?.lastError || 'publication_echouee' });
       }
-      
-      // Post to platform
-      let platformPostId;
-      const postData = { 
-        platform: content.platform, 
-        content: content.body,
-        imageUrl 
-      };
-      
-      if (content.platform === 'instagram') {
-        platformPostId = await socialMediaService.postToInstagram(credentials, postData);
-      } else if (content.platform === 'linkedin') {
-        platformPostId = await socialMediaService.postToLinkedIn(credentials, postData);
-      } else if (content.platform === 'twitter') {
-        platformPostId = await socialMediaService.postToTwitter(credentials, postData);
-      } else if (content.platform === 'facebook') {
-        platformPostId = await socialMediaService.postToFacebook(credentials, postData);
-      } else {
-        return res.status(400).json({ message: "Unsupported platform" });
-      }
-      
-      // Update content status
-      const updatedContent = await storage.updateContent(contentId, {
-        status: 'published',
-        publishedAt: new Date(),
-        platformPostId,
-        postStatus: 'posted'
+      res.json({
+        success: true, platformPostId: (apres as any)?.platformPostId ?? null, content: apres,
+        // 'skipped' : vidéo en traitement côté réseau, ou réessai prévu dans quelques minutes.
+        enCours: r !== 'posted',
+        message: r === 'posted' ? `Successfully published to ${content.platform}` : 'publication_en_cours',
       });
-      
-      res.json({ 
-        success: true, 
-        platformPostId, 
-        content: updatedContent,
-        message: `Successfully published to ${content.platform}` 
-      });
-      
+
     } catch (error) {
       console.error("Content publishing error:", error);
       res.status(500).json({ message: `Failed to publish content: ${(error as any).message}` });

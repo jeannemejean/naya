@@ -120,7 +120,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           autoPost, projectId: projectId || null,
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.message || "cross_post_failed");
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.texte || e?.message || "cross_post_failed"); }
       return res.json();
     },
     onSuccess: (data: any) => {

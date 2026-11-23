@@ -150,6 +150,18 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
   }
 }
 
+/**
+ * « Publier maintenant » : même chemin que la publication programmée (formats, carrousels,
+ * vidéos, réessais), au lieu de l'ancien appel qui ne prenait que la première image.
+ */
+export async function publierMaintenant(contentId: number, userId: string): Promise<'posted' | 'failed' | 'skipped'> {
+  const avant = await storage.getContentById(contentId, userId);
+  if (!avant) return 'failed';
+  await storage.updateContent(contentId, { autoPost: true, postStatus: 'pending', lastError: null, scheduledFor: new Date() } as any);
+  const item = await storage.getContentById(contentId, userId);
+  return publishOne(item);
+}
+
 /** Reprend les vidéos en cours de traitement (conteneurs IG) et les publie quand prêtes. */
 async function finishProcessing(): Promise<number> {
   const rows = await storage.getProcessingContent().catch(() => [] as any[]);

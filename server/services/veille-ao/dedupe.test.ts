@@ -105,7 +105,7 @@ describe("classer", () => {
 });
 
 describe("même avis au BOAMP et au JOUE sous deux intitulés", () => {
-  const limite = new Date("2026-12-14T10:00:00Z");
+  const limite = new Date("2099-12-14T10:00:00Z");
 
   it("même acheteur (« C N S A » = « CNSA ») et même date limite, autre source : doublon", () => {
     const r = classer([
@@ -117,8 +117,8 @@ describe("même avis au BOAMP et au JOUE sous deux intitulés", () => {
   });
 
   it("déjà en base sous une autre source (accents et casse ignorés) : doublon", () => {
-    const r = classer([avis({ source: "ted", sourceId: "777309-2026", objet: "PRESTATIONS DE COMMUNICATION ET D’ORGANISATION", acheteur: "Haute Autorité de Santé", dateLimite: new Date("2026-11-23T10:00:00Z") })],
-      [existant({ source: "boamp", sourceId: "26-108076", acheteur: "HAUTE AUTORITE DE SANTE", dateLimite: "2026-11-23T10:00:00.000Z" })]);
+    const r = classer([avis({ source: "ted", sourceId: "777309-2026", objet: "PRESTATIONS DE COMMUNICATION ET D’ORGANISATION", acheteur: "Haute Autorité de Santé", dateLimite: new Date("2099-11-23T10:00:00Z") })],
+      [existant({ source: "boamp", sourceId: "26-108076", acheteur: "HAUTE AUTORITE DE SANTE", dateLimite: "2099-11-23T10:00:00.000Z" })]);
     expect(r.doublons).toHaveLength(1);
   });
 
