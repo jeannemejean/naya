@@ -25,7 +25,7 @@ Le moteur de placement de Naya (`fixOverlappingTasks`, `findFirstFreeSlot`, `cre
 - Option par utilisatrice : variable `VIE_PERSO_USERS` (liste d'ids), même modèle que `FIL_CONDUCTEUR_USERS`. Onglet visible seulement si actif. Facturation (add-on Stripe) : plus tard, comme `prospectionPlan`.
 
 ### 2. Domaine « perso » sur les tâches
-- Nouvelle colonne `tasks.domaine` (`travail` | `perso`, défaut `travail`).
+- Marqueur : `tasks.source = 'vie_perso'` (décision au plan : pas de colonne neuve sur `tasks`, la source suffit et le moteur sait déjà ignorer des sources).
 - Une tâche perso a toujours une date et une heure explicites, `schedulingMode = 'fixed'`, `projectId` nul.
 - `creerTache` ne refuse pas un jour non travaillé pour une tâche perso.
 - Le moteur de travail (`fixOverlappingTasks` / `retasserJours`, `findFirstFreeSlot`, `checkSlotAvailability`, placement du jour, report automatique des tâches non faites, auto-planner) ne déplace jamais une tâche perso ; si une tâche perso tombe dans la fenêtre de travail (Jeanne l'y a mise), elle compte comme plage bloquée, comme un événement d'agenda.
