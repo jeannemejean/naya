@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Copy, Loader2, Trash2, X } from "lucide-react";
+import { CalendarClock, Copy, Loader2, Send, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,22 @@ export default function ActionsGroupees({ ids, projets, onFini }: {
         description: r.ignores.length ? t("gestionPost.groupe.ignores", { count: r.ignores.length, raisons: raisons.join(", ") }) : undefined,
       });
       setCibles([]);
+      onFini();
+    },
+    onError: () => toast({ title: t("gestionPost.groupe.erreur"), variant: "destructive" }),
+  });
+
+  // Validation client (lot 8) : les posts des marques sans validation sont laissés (raison donnée).
+  const envoyerValidation = useMutation({
+    mutationFn: async () =>
+      (await apiRequest("POST", "/api/validation/envoyer", { ids })).json() as Promise<{ traites: number[]; ignores: Array<{ id: number; raison: string }> }>,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["/api/content"] });
+      const raisons = Array.from(new Set(r.ignores.map((i) => t(`validationClient.groupe.raison.${i.raison}`, { defaultValue: i.raison }))));
+      toast({
+        title: t("validationClient.groupe.resultat", { count: r.traites.length }),
+        description: r.ignores.length ? t("validationClient.groupe.ignores", { count: r.ignores.length, raisons: raisons.join(", ") }) : undefined,
+      });
       onFini();
     },
     onError: () => toast({ title: t("gestionPost.groupe.erreur"), variant: "destructive" }),
@@ -94,6 +110,10 @@ export default function ActionsGroupees({ ids, projets, onFini }: {
           </Button>
         </PopoverContent>
       </Popover>
+
+      <Button size="sm" variant="outline" disabled={agir.isPending || envoyerValidation.isPending} onClick={() => envoyerValidation.mutate()} data-testid="groupe-envoyer-validation">
+        <Send className="h-3.5 w-3.5 mr-1" />{t("validationClient.groupe.envoyer")}
+      </Button>
 
       <Button size="sm" variant="outline" disabled={agir.isPending} className="text-[#5c3d45] border-[rgba(158,126,135,0.35)]"
         onClick={() => { if (window.confirm(t("gestionPost.groupe.confirmerCorbeille", { count: ids.length }))) agir.mutate({ action: "supprimer" }); }}>

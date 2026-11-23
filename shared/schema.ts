@@ -709,6 +709,12 @@ export const content = pgTable("content", {
   autolisteId: integer("autoliste_id").references((): AnyPgColumn => autolistes.id, { onDelete: "set null" }),
   autolistePostId: integer("autoliste_post_id").references((): AnyPgColumn => autolistePosts.id, { onDelete: "set null" }),
   autolisteCreneau: timestamp("autoliste_creneau"),
+  // Validation client (lot 8) : "a_valider" | "validee" | "refusee" ; null = hors validation.
+  // Un post « à valider » ou « refusé » d'une marque dont la validation est active ne part
+  // jamais seul (worker). `validation_demandee_at` : la dernière demande (envoi ou relance après
+  // une modification) — seules les décisions postérieures comptent.
+  validationStatut: text("validation_statut"),
+  validationDemandeeAt: timestamp("validation_demandee_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => ({
@@ -840,6 +846,56 @@ export const smartlinks = pgTable("smartlinks", {
   parUtilisatrice: index("smartlinks_user_idx").on(t.userId),
 }));
 export type Smartlink = typeof smartlinks.$inferSelect;
+
+/**
+ * Validation client (lot 8, inspiré de Metricool) : réglages par marque. `regle` "un" (une
+ * validation suffit) ou "tous" (tous les relecteurs) ; un refus suffit toujours à refuser.
+ * `relecteurs` : [{ nom, email }] (10 au plus), sans compte Naya.
+ */
+export const validationProjet = pgTable("validation_projet", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  actif: boolean("actif").notNull().default(false),
+  regle: text("regle").notNull().default("un"),
+  relecteurs: jsonb("relecteurs").notNull().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  projetUnique: uniqueIndex("validation_projet_project_idx").on(t.projectId),
+}));
+export type ValidationProjet = typeof validationProjet.$inferSelect;
+
+/** Les décisions et commentaires des relecteurs sur un post (journal en ajout seul). */
+export const validationsPost = pgTable("validations_post", {
+  id: serial("id").primaryKey(),
+  contentId: integer("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  relecteurEmail: text("relecteur_email").notNull(),
+  decision: text("decision").notNull(), // validee | refusee | commentaire
+  commentaire: text("commentaire"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parPost: index("validations_post_content_idx").on(t.contentId, t.createdAt),
+}));
+export type ValidationPost = typeof validationsPost.$inferSelect;
+
+/**
+ * Portail de validation d'une marque : lien privé /v/<token>, sans compte. Régénérer coupe
+ * l'ancien lien ; `actif` false = lien coupé ; `expire_at` facultatif.
+ */
+export const portailsValidation = pgTable("portails_validation", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 64 }).notNull(),
+  actif: boolean("actif").notNull().default(true),
+  expireAt: timestamp("expire_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  tokenUnique: uniqueIndex("portails_validation_token_idx").on(t.token),
+  parProjet: index("portails_validation_project_idx").on(t.projectId),
+}));
+export type PortailValidation = typeof portailsValidation.$inferSelect;
 
 /**
  * Autolistes (lot 6, inspiré de Metricool) : une file de posts publiée seule à des créneaux

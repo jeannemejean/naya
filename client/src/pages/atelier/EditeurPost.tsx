@@ -19,6 +19,7 @@ import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/option
 import { Switch } from "@/components/ui/switch";
 import TextesEnregistres from "@/components/content/TextesEnregistres";
 import { MeilleursCreneaux } from "@/components/content/MeilleuresHeures";
+import ValidationPost, { confirmerMalgreValidation, useEtatValidation } from "@/components/validation/ValidationPost";
 import type { MotifNote, OptionsPostPatch, PostAtelier } from "./api";
 import { devalider, enregistrer, joindreVisuel, noterPost, refaire, retirerVisuel, supprimerPost, valider } from "./api";
 
@@ -121,9 +122,14 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
     ? manquesPourValider({ genre: genreDuPost({ postFormat: format }), body: texte, scheduledFor: date, medias: genresMedias, maintenant: new Date() })
     : [];
 
+  // Validation client (lot 8) : prévenir avant de valider un post que le client n'a pas validé.
+  const { refetch: relireValidation } = useEtatValidation(post.id);
+
   const lancerValidation = useCallback(async () => {
     // Jamais pendant que Naya rédige (le texte affiché est encore la consigne), ni s'il manque quelque chose.
     if (!modifiable || occupe || enRedaction || manques.length > 0) return;
+    const etatClient = (await relireValidation().catch(() => null))?.data;
+    if (!confirmerMalgreValidation(etatClient?.statut, t("validationClient.post.avertissement"))) return;
     setOccupe("valider");
     try {
       await vider();
@@ -526,6 +532,8 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
         </label>
         <p className="text-[11px] text-muted-foreground">{t("atelier.finirSurTelephoneAide")}</p>
       </section>
+
+      <ValidationPost postId={post.id} />
 
       {modifiable && (
         <footer className="space-y-2 border-t border-border pt-4">

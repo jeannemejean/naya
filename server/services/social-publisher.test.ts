@@ -71,6 +71,16 @@ describe("publishDueContent", () => {
     expect(storage.createTask).toHaveBeenCalledWith(expect.objectContaining({ description: expect.stringMatching(/peut-être parti/) }));
   });
 
+  it("claim refusé (post bloqué par la validation client) : ni publié ni alerte", async () => {
+    storage.getDueScheduledContent.mockResolvedValue([post()]);
+    storage.claimContentForPosting.mockResolvedValueOnce(false);
+    const r = await publishDueContent();
+    expect(storage.claimContentForPosting).toHaveBeenCalledWith(7);
+    expect(publishPost).not.toHaveBeenCalled();
+    expect(storage.createTask).not.toHaveBeenCalled();
+    expect(r.skipped).toBe(1);
+  });
+
   it("réussite : publié, pas d'alerte", async () => {
     storage.getDueScheduledContent.mockResolvedValue([post()]);
     publishPost.mockResolvedValue({ state: "posted", platformPostId: "p1" });

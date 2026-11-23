@@ -24,6 +24,7 @@ import PreuvesPanel from "./PreuvesPanel";
 import ConnexionsClientPanel from "./ConnexionsClientPanel";
 import ReseauxProjetPanel from "./ReseauxProjetPanel";
 import SmartLinkCard from "@/components/liens/SmartLinkCard";
+import ValidationClientCard from "@/components/validation/ValidationClientCard";
 import RapportsClientPanel from "./RapportsClientPanel";
 import { FondationsProjet } from "@/pages/fondations";
 import AIRecommendations from "@/components/accueil-retire/AIRecommendations";
@@ -168,6 +169,7 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                 <TabsContent value="reseaux" className="mt-0 space-y-6 max-w-5xl mx-auto">
                   <ReseauxProjetPanel key={id} projectId={id} nomProjet={project?.name ?? ""} />
                   <SmartLinkCard key={`smartlink-${id}`} projectId={id} nomProjet={project?.name ?? ""} />
+                  <ValidationClientCard key={`validation-${id}`} projectId={id} />
                 </TabsContent>
               )}
               {estClient && (
@@ -175,6 +177,7 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
                   <ConnexionsClientPanel projectId={id} />
                   <RapportsClientPanel projectId={id} />
                   <SmartLinkCard key={`smartlink-${id}`} projectId={id} nomProjet={project?.name ?? ""} />
+                  <ValidationClientCard key={`validation-${id}`} projectId={id} />
                 </TabsContent>
               )}
           </main>

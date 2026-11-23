@@ -870,3 +870,26 @@ et le claim du worker aussi — **appliquer `0050` avant de déployer le code**.
 select column_name, data_type, column_default from information_schema.columns
  where table_name = 'content' and column_name = 'finir_sur_telephone';  -- 1 ligne, boolean, false
 ```
+
+## 24. Validation client — `0051` à appliquer en prod à la main
+
+Fichier : `migrations/0051_long_edwin_jarvis.sql` (branche `feat/reseaux-par-projet`). Additive :
+trois tables nouvelles (`validation_projet` — réglages par marque, index unique sur `project_id` ;
+`validations_post` — décisions et commentaires des relecteurs, `content_id` en cascade ;
+`portails_validation` — liens privés `/v/<token>`, index unique sur `token`) et deux colonnes
+**nullables** sur `content` (`validation_statut`, `validation_demandee_at`). Aucun `DROP`, aucune
+donnée touchée : toutes les lignes existantes valent null (hors validation).
+
+Sans la migration : la lecture des posts échoue (le `select` de `content` nomme les nouvelles
+colonnes), et le worker de publication aussi (lecture des posts dus, claim et rattrapage
+interrogent `validation_projet`) — **appliquer `0051` avant de déployer le code**. Tant
+qu'aucune marque n'active la validation, rien ne change pour la publication.
+
+```sql
+select table_name from information_schema.tables
+ where table_name in ('validation_projet','validations_post','portails_validation');  -- 3 lignes
+select column_name from information_schema.columns
+ where table_name = 'content' and column_name like 'validation%';  -- 2 lignes
+select indexname from pg_indexes
+ where indexname in ('validation_projet_project_idx','portails_validation_token_idx');  -- 2 lignes
+```

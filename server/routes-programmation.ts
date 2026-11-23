@@ -8,6 +8,7 @@ import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { compteDePublication } from "./services/connexions/comptes";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
+import { relancerValidationSiEdite } from "./services/validation/relance";
 import {
   formatDePublication, plateformeDe, problemesProgrammation, type GenreMedia,
 } from "@shared/programmation";
@@ -84,6 +85,7 @@ export function registerProgrammationRoutes(app: Express): void {
         const avant = post;
         post = await storage.updateContent(post.id, maj as any);
         await journaliserChangement(req.userId, avant, maj);
+        await relancerValidationSiEdite(req.userId, avant, maj);
       }
 
       const etat = await etatProgrammation(req.userId, post);

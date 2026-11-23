@@ -5,6 +5,7 @@ import { db } from "../../db";
 import { storage } from "../../storage";
 import { content, historiquePost, notesPost, type Content, type HistoriquePost, type NotePost } from "@shared/schema";
 import { journaliser } from "./historique";
+import { relancerValidationSiEdite } from "../validation/relance";
 
 export interface DepsGestionPosts {
   /** Post vivant de l'utilisatrice (hors corbeille). */
@@ -26,6 +27,8 @@ export interface DepsGestionPosts {
   supprimerNote(userId: string, contentId: number, noteId: number): Promise<boolean>;
   historique(userId: string, contentId: number): Promise<HistoriquePost[]>;
   journaliser: typeof journaliser;
+  /** Validation client (lot 8) : une date déplacée remet le post « à valider ». */
+  relancerValidation?: typeof relancerValidationSiEdite;
 }
 
 export const depsGestionPosts: DepsGestionPosts = {
@@ -70,4 +73,5 @@ export const depsGestionPosts: DepsGestionPosts = {
     .orderBy(desc(historiquePost.createdAt), desc(historiquePost.id))
     .limit(200),
   journaliser,
+  relancerValidation: relancerValidationSiEdite,
 };

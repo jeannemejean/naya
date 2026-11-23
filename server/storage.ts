@@ -203,6 +203,7 @@ import {
 import { db, type DbExecutor } from "./db";
 import { memesChiffres } from "./services/mesure/calculs";
 import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, notInArray, ne, sql, type SQL } from "drizzle-orm";
+import { sqlBloqueParValidation, sqlValideDansLaGrace } from "./services/validation/garde-publication";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayParRang } from "./services/schedule-repack";
 import { aRamener, contrainteDe, comparerRang, jourDeRamenee } from "./services/orchestre/contrainte";
@@ -479,7 +480,7 @@ export interface IStorage {
   deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number>;
   getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
   getDueScheduledContent(now: Date): Promise<Content[]>;
-  claimContentForPosting(id: number): Promise<boolean>;
+  claimContentForPosting(id: number, opts?: { malgreValidation?: boolean }): Promise<boolean>;
 
   // Réception (Fil 3) — mesure de la réception d'un contenu, triangulée contre son intention.
   /**
@@ -1879,7 +1880,10 @@ export class DatabaseStorage implements IStorage {
         isNull(content.supprimeLe),
         isNotNull(content.scheduledFor),
         lte(content.scheduledFor, now),
-        gte(content.scheduledFor, earliest),
+        // Validé par le client pendant la grâce de validation (3 h) : il part quand même.
+        or(gte(content.scheduledFor, earliest), sqlValideDansLaGrace(now)),
+        // Validation client (lot 8) : « à valider » ou « refusé » ne part jamais seul.
+        sql`not ${sqlBloqueParValidation}`,
       ))
       .orderBy(content.scheduledFor)
       .limit(25);
@@ -1899,12 +1903,15 @@ export class DatabaseStorage implements IStorage {
   // un autre passage du worker a déjà pris ce contenu (anti double-publication).
   // autoPost=true est revérifié ici : si l'utilisatrice refuse un post après la lecture
   // des contenus échus mais avant le claim, le refus (autoPost=false) doit gagner la course.
-  async claimContentForPosting(id: number): Promise<boolean> {
+  // Validation client (lot 8) : un post « à valider » ou « refusé » n'est jamais réclamé, sauf
+  // `malgreValidation` (« Publier maintenant », geste explicite de l'utilisatrice).
+  async claimContentForPosting(id: number, opts?: { malgreValidation?: boolean }): Promise<boolean> {
     const claimed = await db.update(content)
       .set({ postStatus: 'posting', updatedAt: new Date() })
       .where(and(eq(content.id, id), eq(content.postStatus, 'pending'), eq(content.autoPost, true), isNull(content.supprimeLe),
         // « À finir sur le téléphone » (lot 10) : jamais publié par le worker.
-        sql`coalesce(${content.finirSurTelephone}, false) = false`))
+        sql`coalesce(${content.finirSurTelephone}, false) = false`,
+        opts?.malgreValidation ? undefined : sql`not ${sqlBloqueParValidation}`))
       .returning({ id: content.id });
     return claimed.length > 0;
   }

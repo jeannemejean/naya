@@ -124,6 +124,7 @@ export function registerGestionPostsRoutes(app: Express, deps: DepsGestionPosts 
             await deps.journaliser(userId, post.id, "date_modifiee", {
               avant: post.scheduledFor ? new Date(post.scheduledFor).toISOString() : null, apres: scheduledFor.toISOString(),
             });
+            await deps.relancerValidation?.(userId, post, { scheduledFor });
           } else ignores.push({ id: post.id, raison: "en_cours" });
         }
       }

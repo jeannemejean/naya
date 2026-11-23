@@ -22,6 +22,7 @@ import { estUrlMediaDe } from "./services/livrables/urls";
 import { oublierCreationDe } from "./services/fil/creation";
 import { oublierReconciliationDe } from "./services/fil/cloture";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
+import { relancerValidationSiEdite } from "./services/validation/relance";
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -168,6 +169,7 @@ export function registerAtelierRoutes(app: Express): void {
         // Jamais sous un post validé entre-temps (il part tel que validé).
         .where(and(eq(content.id, post.id), eq(content.userId, req.userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`, sql`coalesce(${content.autoPost}, false) = false`));
       await journaliserChangement(req.userId, post, patch);
+      await relancerValidationSiEdite(req.userId, post, patch);
       res.json({ ok: true });
     } catch (e: any) {
       console.error("[Atelier] enregistrement:", e?.message);

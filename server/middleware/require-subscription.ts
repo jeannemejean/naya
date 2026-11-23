@@ -30,6 +30,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/waitlist",
   "/api/health",
   "/api/public", // rapports client partagés par lien privé (lus sans compte)
+  "/api/portail-validation", // portail de validation client (lien privé, sans compte)
   "/api/admin",
   "/api/social/oauth",
   "/api/calendar/oauth",

@@ -77,6 +77,8 @@ const RAISONS: Record<string, string> = {
   publication_manquee: "Le post n'a pas pu partir à l'heure (Naya était indisponible). Publie-le toi-même ou reprogramme-le.",
   li_document_image_non_supportee: "Le carrousel PDF LinkedIn n'accepte que des images JPEG ou PNG : remplace les autres visuels, ou publie-le en images.",
   publication_a_verifier: "La publication a été interrompue : vérifie sur le réseau si le post est parti avant de le republier.",
+  validation_manquante: "Le client n'a pas validé le post à temps (3 h après l'heure prévue) : relance-le, ou retire-le de la validation puis reprogramme-le.",
+  validation_refusee: "Le client a refusé le post : modifie-le (il repart en validation) ou retire-le de la validation, puis reprogramme-le.",
 };
 
 /** Ce que voit l'utilisatrice : la raison en clair, sans préfixe technique. */

@@ -36,6 +36,9 @@ function DetailEvenement({ e, projets }: { e: Evenement; projets: ProjetMin[] })
     const nom = d.versProjetId == null ? t("gestionPost.dupliquer.sansProjet") : (projets.find((p) => p.id === d.versProjetId)?.name ?? `#${d.versProjetId}`);
     return <span>{t("gestionPost.historique.versProjet", { projet: nom })}</span>;
   }
+  if (e.evenement.startsWith("validation_") && d.relecteur) {
+    return <span>{t("gestionPost.historique.relecteur", { nom: String(d.relecteur) })}{d.commentaire ? ` · « ${String(d.commentaire)} »` : null}</span>;
+  }
   return null;
 }
 

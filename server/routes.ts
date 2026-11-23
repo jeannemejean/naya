@@ -20,8 +20,10 @@ import { registerGestionPostsRoutes } from "./routes-gestion-posts";
 import { registerBibliothequeRoutes } from "./routes-bibliotheque";
 import { registerAutolistesRoutes } from "./routes-autolistes";
 import { registerLiensPublics, registerLiensRoutes } from "./routes-liens";
+import { registerValidationPublique, registerValidationRoutes } from "./routes-validation";
 import { registerMeilleuresHeuresRoutes } from "./routes-meilleures-heures";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
+import { relancerValidationSiEdite } from "./services/validation/relance";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
 import { registerModeTestRoutes } from "./routes-mode-test";
@@ -616,6 +618,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Liens courts (/l/:code) et SmartLinks (/b/:slug) : publics, sans compte. Montés AVANT
   // l'authentification et le gate d'abonnement, et (index.ts) avant le fourre-tout du SPA.
   registerLiensPublics(app);
+  // Portail de validation client (lot 8) : lien privé, sans compte. Avant l'authentification.
+  registerValidationPublique(app);
 
   // Health check (Railway, monitoring)
   app.get('/api/health', async (_req, res) => {
@@ -6900,7 +6904,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       if (!existing) return res.status(404).json({ message: "Content not found" });
 
       // La corbeille a ses propres routes : jamais un `supprimeLe` posé par un PATCH.
-      const { supprimeLe: _corbeille, ...updates } = req.body ?? {};
+      // Ni la validation client (lot 8) : elle a ses routes, et le portail du client.
+      const { supprimeLe: _corbeille, validationStatut: _vs, validationDemandeeAt: _vd, ...updates } = req.body ?? {};
       // Un post publié, ou en train de partir, ne se déplace plus (glisser-déposer du calendrier) :
       // changer sa date ne le dépublierait pas, et l'écran mentirait.
       const verrouille = !!existing.publishedAt || ['posted', 'posting', 'processing', 'uploading'].includes((existing as any).postStatus ?? '');
@@ -6922,6 +6927,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       
       const content = await storage.updateContent(parseInt(id), updates);
       await journaliserChangement(userId, existing, content);
+      // Texte, médias ou date modifiés : le client revoit le post (repasse « à valider »).
+      if (await relancerValidationSiEdite(userId, existing, updates)) {
+        (content as any).validationStatut = 'a_valider';
+      }
 
       // Alerte de collision : informative, jamais bloquante — même garantie que sur
       // la création (voir POST /api/content). On relit l'état final (`content`,
@@ -11410,6 +11419,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerBibliothequeRoutes(app);
   registerAutolistesRoutes(app);
   registerLiensRoutes(app);
+  registerValidationRoutes(app);
   registerMeilleuresHeuresRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);

@@ -6,6 +6,7 @@ import { mediasDuPost, estVideo, type MediaDuPost } from "./content-calendar-med
 import VisuelsDuPost from "@/components/content/VisuelsDuPost";
 import ProgrammationPost from "@/components/content/ProgrammationPost";
 import GestionPost from "@/components/content/GestionPost";
+import ValidationPost, { BadgeValidation } from "@/components/validation/ValidationPost";
 import CorbeillePosts from "@/components/content/CorbeillePosts";
 import Bibliotheque from "@/components/content/Bibliotheque";
 import Autolistes from "@/components/content/Autolistes";
@@ -989,6 +990,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  <span className="text-xs text-naya-olive-35">{format(new Date(item.scheduledFor), 'MMM d')}</span>
  )}
  <PastillePublication item={item} />
+ <BadgeValidation statut={(item as any).validationStatut} />
  </div>
 
  {/* Inline regenerate form */}
@@ -1387,6 +1389,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  onComptes={() => { setShowCreateDialog(false); resetForm(); setView('accounts'); }}
  />
  )}
+
+ {selectedPost && <ValidationPost postId={selectedPost.id} />}
 
  {selectedPost && (
  <GestionPost
@@ -1908,7 +1912,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  return (
  <div className="text-xs p-1">
  <div className="font-medium truncate">{ce.title}</div>
- <div className="text-xs opacity-75">{ce.resource.platform}</div>
+ <div className="text-xs opacity-75 flex items-center gap-1">{ce.resource.platform}<BadgeValidation statut={(ce.resource as any).validationStatut} compact /></div>
  </div>
  );
  },

@@ -21,6 +21,7 @@ import { db } from '../db';
 import { content, tasks } from '@shared/schema';
 import { and, eq, gte, inArray, isNull, like, lt, notInArray, or, sql } from 'drizzle-orm';
 import { journaliser } from './gestion-posts/historique';
+import { depsAttenteDb, sqlBloqueParValidation, sqlValideDansLaGrace, traiterAttentesValidation } from './validation/garde-publication';
 import { apresEchec, DELAI_BLOQUE_MIN, erreurDuReessai, raisonLisible, reessaiDu } from './publication/fiabilite';
 
 /** États où un envoi est peut-être déjà parti : on n'y touche jamais. */
@@ -121,9 +122,12 @@ async function cocherTachePublier(contentId: number): Promise<void> {
 
 const SUPPORTED = new Set(['instagram', 'linkedin', 'twitter', 'facebook']);
 
-async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
-  // 1. Claim atomique — si un autre passage l'a déjà pris, on saute.
-  const claimed = await storage.claimContentForPosting(item.id);
+async function publishOne(item: any, opts?: { malgreValidation?: boolean }): Promise<'posted' | 'failed' | 'skipped'> {
+  // 1. Claim atomique — si un autre passage l'a déjà pris, on saute. Un post bloqué par la
+  // validation client (lot 8) n'est jamais réclamé par le worker.
+  const claimed = opts?.malgreValidation
+    ? await storage.claimContentForPosting(item.id, { malgreValidation: true })
+    : await storage.claimContentForPosting(item.id);
   if (!claimed) return 'skipped';
   // Relu APRÈS le claim : un autre passage a pu prévoir un réessai entre-temps.
   const frais = await storage.getContentById(item.id, item.userId).catch(() => undefined);
@@ -230,7 +234,8 @@ export async function publierMaintenant(contentId: number, userId: string):
     .returning({ id: content.id });
   if (!pris) return (await storage.getContentById(contentId, userId)) ? 'occupe' : 'introuvable';
   const item = await storage.getContentById(contentId, userId);
-  return publishOne(item);
+  // Geste explicite : publié même s'il attend la validation du client (l'écran l'a dit).
+  return publishOne(item, { malgreValidation: true });
 }
 
 /** Reprend les vidéos en cours de traitement (conteneurs IG) et les publie quand prêtes. */
@@ -277,6 +282,9 @@ export async function publishDueContent(): Promise<{ posted: number; failed: num
     return [] as any[];
   });
   await rattraperOublies(now).catch((e: any) => console.error('[SocialPublisher] rattrapage:', e?.message || e));
+  // Validation client : passé 3 h après l'heure prévue sans validation → échec et alerte.
+  await traiterAttentesValidation(now, { ...depsAttenteDb, journaliser, signalerEchec })
+    .catch((e: any) => console.error('[SocialPublisher] attentes de validation:', e?.message || e));
   let posted = 0, failed = 0, skipped = 0;
   for (const item of due) {
     if (!reessaiDu(item.lastError, now)) { skipped++; continue; } // réessai prévu plus tard
@@ -305,7 +313,9 @@ async function rattraperOublies(now: Date): Promise<void> {
   // réessai garde la vraie raison de son échec.
   const manques = await db.select(cols).from(content)
     .where(and(eq(content.autoPost, true), eq(content.postStatus, 'pending'), isNull(content.publishedAt),
-      isNull(content.supprimeLe), lt(content.scheduledFor, limite), gte(content.scheduledFor, debut)));
+      isNull(content.supprimeLe), lt(content.scheduledFor, limite), gte(content.scheduledFor, debut),
+      // Validation client : les posts en attente ont leur propre délai (3 h) et leur raison.
+      sql`not ${sqlBloqueParValidation}`, sql`not coalesce(${sqlValideDansLaGrace(now)}, false)`));
   let n = 0;
   for (const p of manques) {
     const raison = erreurDuReessai(p.lastError) ?? 'publication_manquee';
