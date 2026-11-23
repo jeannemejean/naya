@@ -79,7 +79,9 @@ export function igContainerParams(
   const type = igMediaType(format, item.kind);
   if (item.kind === "video") {
     params.video_url = item.url;
-    if (type !== "IMAGE") params.media_type = type; // REELS / STORIES
+    // Élément de carrousel : VIDEO (doc Instagram) ; sinon REELS / STORIES.
+    if (asChild) params.media_type = "VIDEO";
+    else if (type !== "IMAGE") params.media_type = type;
     // Couverture d'un Reel : une image (cover_url) prime sur l'instant choisi (thumb_offset, ms).
     if (type === "REELS" && !asChild) {
       if (couverture?.url) params.cover_url = couverture.url;

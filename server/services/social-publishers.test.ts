@@ -180,3 +180,12 @@ describe("publishPost LinkedIn : carrousel en document PDF", () => {
     expect(f.mock.calls.some(([u]) => String(u).includes("/rest/documents"))).toBe(false);
   });
 });
+
+
+describe("igContainerParams : vidéo dans un carrousel", () => {
+  it("media_type VIDEO (et non REELS) pour un élément de carrousel", () => {
+    const p = igContainerParams("carousel", { url: "https://x/v.mp4", kind: "video" }, "t", true);
+    expect(p.media_type).toBe("VIDEO");
+    expect(p.is_carousel_item).toBe(true);
+  });
+});
