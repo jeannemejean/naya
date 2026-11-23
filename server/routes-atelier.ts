@@ -64,6 +64,11 @@ async function vuePost(userId: string, p: any, noms: Map<number, string>, compte
     erreurPublication: p.postStatus === "failed" ? (p.lastError ?? null) : null,
     premierCommentaire: p.premierCommentaire ?? null,
     couvertureOffsetMs: p.couvertureOffsetMs ?? null,
+    texteAlternatif: p.texteAlternatif ?? null,
+    collaborateurs: Array.isArray(p.collaborateurs) ? p.collaborateurs : null,
+    reelDansLeFil: p.reelDansLeFil ?? null,
+    nomAudio: p.nomAudio ?? null,
+    linkedinDocument: p.linkedinDocument ?? null,
     medias: medias.map(({ id, url, mimeType, genre }) => ({ id, url, mimeType, genre })),
     manques: etat === "valide" || etat === "publie" ? [] : manquesPourValider({
       genre: genreDuPost(p), body: p.body, scheduledFor: p.scheduledFor, medias: medias.map((m) => m.genre), maintenant: new Date(),

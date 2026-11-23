@@ -38,6 +38,7 @@ import { registerAppelsOffresRoutes } from "./routes-appels-offres";
 import { registerViePersoRoutes } from "./routes-vie-perso";
 import { horsViePerso } from "@shared/vie-perso";
 import { plateformeDe, problemesProgrammation, type GenreMedia } from "@shared/programmation";
+import { lireOptionsPost, optionsPourReseau } from "@shared/options-post";
 import { registerOrchestreRoutes } from "./routes-orchestre";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeReseauxDuProjet } from "./services/connexions/comptes";
@@ -6780,6 +6781,10 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
     try {
       const userId = req.userId;
       const { targets, caption, mediaIds, scheduledFor, autoPost, projectId, pillar, goal, premierCommentaire, couvertureOffsetMs } = req.body || {};
+      // Options de publication (alt, collaborateurs, Reel, document LinkedIn) : validées, puis
+      // gardées sur chaque ligne selon son réseau et son format.
+      const options = lireOptionsPost(req.body?.options ?? {});
+      if (!options) return res.status(400).json({ message: 'options_invalides' });
       // Légende par réseau (facultative) : la cible la porte, sinon la légende commune.
       const legendeDe = (tgt: any): string => (typeof tgt?.caption === 'string' && tgt.caption.trim() ? tgt.caption : (caption || ''));
       const commentaire = typeof premierCommentaire === 'string' && premierCommentaire.trim() ? premierCommentaire.trim().slice(0, 2200) : null;
@@ -6851,6 +6856,8 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           platform: tgt.basePlatform || tgt.platform,        // instagram|facebook|linkedin|tiktok
           premierCommentaire: commentaire,
           couvertureOffsetMs: couverture,
+          ...optionsPourReseau(options, plateformeDe(tgt.basePlatform || tgt.platform),
+            Array.isArray(mediaIds) && mediaIds.length > 1 && !['story', 'reel', 'short'].includes(tgt.format) ? 'carousel' : (tgt.format || 'feed_image')),
           contentType: tgt.format || 'feed_image',
           postFormat: tgt.format || 'feed_image',
           pillar: pillar || 'general',

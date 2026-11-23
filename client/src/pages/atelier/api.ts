@@ -1,6 +1,10 @@
 // Atelier de contenu — types et appels au serveur (server/routes-atelier.ts).
 import type { EtatPost, GenreAtelier, Manque } from "@shared/atelier";
 import type { GenreMedia } from "@shared/programmation";
+import type { OptionsPost } from "@shared/options-post";
+
+/** Options de publication modifiables depuis l'éditeur. */
+export type OptionsPostPatch = Partial<OptionsPost>;
 
 export interface MediaAtelier { id: number; url: string; mimeType: string | null; genre: GenreMedia }
 
@@ -22,6 +26,11 @@ export interface PostAtelier {
   erreurPublication: string | null;
   premierCommentaire: string | null;
   couvertureOffsetMs: number | null;
+  texteAlternatif: string | null;
+  collaborateurs: string[] | null;
+  reelDansLeFil: boolean | null;
+  nomAudio: string | null;
+  linkedinDocument: boolean | null;
   medias: MediaAtelier[];
   manques: Manque[];
   compteConnecte: boolean;
@@ -62,7 +71,7 @@ export async function refaire(id: number, consigne: string): Promise<string> {
   return data.body as string;
 }
 
-export async function enregistrer(id: number, patch: { body?: string; scheduledFor?: string; postFormat?: string; premierCommentaire?: string | null; couvertureOffsetMs?: number | null }): Promise<void> {
+export async function enregistrer(id: number, patch: { body?: string; scheduledFor?: string; postFormat?: string; premierCommentaire?: string | null; couvertureOffsetMs?: number | null } & OptionsPostPatch): Promise<void> {
   const { status, data } = await envoyer("PATCH", `/api/atelier/posts/${id}`, patch);
   if (status >= 400) throw echec(status, data);
 }

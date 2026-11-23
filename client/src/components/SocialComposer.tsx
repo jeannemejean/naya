@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/options-post";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, X, AlertCircle, Image as ImageIcon, Video } from "lucide-react";
@@ -58,6 +59,12 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
   const [legendes, setLegendes] = useState<Record<number, string>>({});
   const [premierCommentaire, setPremierCommentaire] = useState("");
   const [couvertureSec, setCouvertureSec] = useState("");
+  // Options de publication : Instagram (alt, collaborateurs, Reel) et carrousel PDF LinkedIn.
+  const [texteAlternatif, setTexteAlternatif] = useState("");
+  const [collaborateurs, setCollaborateurs] = useState("");
+  const [reelDansLeFil, setReelDansLeFil] = useState<"defaut" | "oui" | "non">("defaut");
+  const [nomAudio, setNomAudio] = useState("");
+  const [linkedinDocument, setLinkedinDocument] = useState(false);
   const legendeDe = (accId: number) => (adapter && legendes[accId]?.trim() ? legendes[accId] : caption);
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [scheduledFor, setScheduledFor] = useState("");
@@ -122,6 +129,8 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
         return { basePlatform: acc.basePlatform, socialAccountId: acc.id, format, caption: legendeDe(acc.id) };
       });
       const sec = couvertureSec.trim() === "" ? null : Number(couvertureSec);
+      const collab = lireCollaborateurs(collaborateurs.split(/[\s,;]+/));
+      if (collab === undefined) throw new Error(t("atelier.collaborateursInvalides"));
       const res = await fetch("/api/content/cross-post", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,6 +139,11 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           autoPost, projectId: projectId || null,
           premierCommentaire: premierCommentaire.trim() || null,
           couvertureOffsetMs: sec != null && Number.isFinite(sec) && sec >= 0 ? Math.round(sec * 1000) : null,
+          options: {
+            texteAlternatif: texteAlternatif.trim() || null, collaborateurs: collab,
+            reelDansLeFil: reelDansLeFil === "defaut" ? null : reelDansLeFil === "oui",
+            nomAudio: nomAudio.trim() || null, linkedinDocument,
+          },
         }),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.texte || e?.message || "cross_post_failed"); }
@@ -140,6 +154,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
       toast({ title: `Programmé sur ${data.count} réseau(x) ✅` });
       setSelected({}); setCaption(""); setMedia([]); setScheduledFor("");
       setLegendes({}); setAdapter(false); setPremierCommentaire(""); setCouvertureSec("");
+      setTexteAlternatif(""); setCollaborateurs(""); setReelDansLeFil("defaut"); setNomAudio(""); setLinkedinDocument(false);
       onClose();
     },
     onError: (e: any) => toast({ title: "Échec", description: String(e?.message || e), variant: "destructive" }),
@@ -281,6 +296,49 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
               <input type="number" min={0} step={0.5} value={couvertureSec} onChange={(e) => setCouvertureSec(e.target.value)}
                 className="w-20 border border-naya-olive-18 rounded-md px-2 py-1 text-sm" />
               <span className="text-[11px] text-naya-olive-55">{t("atelier.couvertureAide")}</span>
+            </div>
+          )}
+
+          {/* Options Instagram : texte alternatif, collaborateurs (pas en story), Reel */}
+          {validations.some(({ acc, format }) => acc.basePlatform === "instagram" && format !== "story") && (
+            <div className="space-y-2">
+              {media.some((m) => m.kind === "image") && (
+                <div>
+                  <p className="text-xs text-naya-olive-35 mb-1 font-mono">{t("atelier.texteAlternatif")}</p>
+                  <Textarea rows={2} maxLength={ALT_TEXTE_MAX} value={texteAlternatif} onChange={(e) => setTexteAlternatif(e.target.value)}
+                    placeholder={t("atelier.texteAlternatifAide")} />
+                </div>
+              )}
+              <div>
+                <p className="text-xs text-naya-olive-35 mb-1 font-mono">{t("atelier.collaborateurs")}</p>
+                <input value={collaborateurs} onChange={(e) => setCollaborateurs(e.target.value)} placeholder={t("atelier.collaborateursAide")}
+                  className="w-full border border-naya-olive-18 rounded-md px-2 py-1 text-sm" />
+              </div>
+            </div>
+          )}
+          {validations.some(({ acc, format }) => acc.basePlatform === "instagram" && (format === "reel" || format === "feed_video")) && media.some((m) => m.kind === "video") && (
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-naya-olive-35 font-mono">
+                {t("atelier.reelDansLeFil")}
+                <select value={reelDansLeFil} onChange={(e) => setReelDansLeFil(e.target.value as "defaut" | "oui" | "non")}
+                  className="border border-naya-olive-18 rounded-md px-2 py-1 text-sm font-sans">
+                  <option value="defaut">{t("atelier.reelDansLeFilDefaut")}</option>
+                  <option value="oui">{t("atelier.reelDansLeFilOui")}</option>
+                  <option value="non">{t("atelier.reelDansLeFilNon")}</option>
+                </select>
+              </label>
+              <input value={nomAudio} maxLength={NOM_AUDIO_MAX} onChange={(e) => setNomAudio(e.target.value)}
+                placeholder={t("atelier.nomAudio")} title={t("atelier.nomAudioAide")}
+                className="flex-1 min-w-[10rem] border border-naya-olive-18 rounded-md px-2 py-1 text-sm" />
+            </div>
+          )}
+          {/* LinkedIn : carrousel publié en document PDF */}
+          {validations.some(({ acc, format }) => acc.basePlatform === "linkedin" && format === "carousel") && !media.some((m) => m.kind === "video") && (
+            <div>
+              <label className="flex items-center gap-2 text-xs text-naya-olive-70">
+                <Switch checked={linkedinDocument} onCheckedChange={setLinkedinDocument} /> {t("atelier.linkedinDocument")}
+              </label>
+              <p className="text-[11px] text-naya-olive-55 mt-1">{t("atelier.linkedinDocumentAide")}</p>
             </div>
           )}
 

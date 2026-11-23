@@ -14,7 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { televerser } from "@/lib/livrables-api";
 import { genreDuPost, manquesPourValider } from "@shared/atelier";
-import type { MotifNote, PostAtelier } from "./api";
+import { formatDePublication } from "@shared/programmation";
+import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/options-post";
+import { Switch } from "@/components/ui/switch";
+import type { MotifNote, OptionsPostPatch, PostAtelier } from "./api";
 import { devalider, enregistrer, joindreVisuel, noterPost, refaire, retirerVisuel, supprimerPost, valider } from "./api";
 
 const FORMATS = ["feed_image", "text", "carousel", "reel", "story"] as const;
@@ -89,7 +92,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
     setFormat(f);
     try { await enregistrer(post.id, { postFormat: f }); onChange(); } catch (e) { erreur(e); }
   };
-  const changerChamp = async (patch: { premierCommentaire?: string | null; couvertureOffsetMs?: number | null }) => {
+  const changerChamp = async (patch: { premierCommentaire?: string | null; couvertureOffsetMs?: number | null } & OptionsPostPatch) => {
     try { await enregistrer(post.id, patch); onChange(); } catch (e) { erreur(e); }
   };
   const changerDate = async (v: string) => {
@@ -100,6 +103,15 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
   };
 
   const genresMedias = post.medias.map((m) => m.genre);
+  // Format réellement publié (plusieurs visuels → carrousel), comme le worker.
+  const formatPublie = formatDePublication(format, genresMedias);
+  const reseau = post.platform.toLowerCase();
+  const estReel = formatPublie === "reel" || formatPublie === "feed_video";
+  const changerCollaborateurs = (v: string) => {
+    const noms = lireCollaborateurs(v.split(/[\s,;]+/));
+    if (noms === undefined) { toast({ title: t("atelier.collaborateursInvalides"), variant: "destructive" }); return; }
+    if ((noms ?? []).join(",") !== (post.collaborateurs ?? []).join(",")) void changerChamp({ collaborateurs: noms });
+  };
   const manques = modifiable
     ? manquesPourValider({ genre: genreDuPost({ postFormat: format }), body: texte, scheduledFor: date, medias: genresMedias, maintenant: new Date() })
     : [];
@@ -433,6 +445,59 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
               }} />
             <span className="text-[11px] text-muted-foreground">{t("atelier.couvertureAide")}</span>
           </div>
+        </section>
+      )}
+
+      {reseau === "instagram" && formatPublie !== "story" && (
+        <section className="space-y-3">
+          {genresMedias.includes("image") && (
+            <div className="space-y-1">
+              <Label htmlFor={`alt-${post.id}`} className="text-xs">{t("atelier.texteAlternatif")}</Label>
+              <Textarea id={`alt-${post.id}`} rows={2} className="text-sm" disabled={!modifiable} maxLength={ALT_TEXTE_MAX}
+                key={`a-${post.texteAlternatif ?? ""}`} defaultValue={post.texteAlternatif ?? ""}
+                placeholder={t("atelier.texteAlternatifAide")}
+                onBlur={(e) => { if (e.target.value.trim() !== (post.texteAlternatif ?? "")) void changerChamp({ texteAlternatif: e.target.value }); }} />
+            </div>
+          )}
+          <div className="space-y-1">
+            <Label htmlFor={`collab-${post.id}`} className="text-xs">{t("atelier.collaborateurs")}</Label>
+            <Input id={`collab-${post.id}`} className="h-8 text-sm" disabled={!modifiable}
+              key={`k-${(post.collaborateurs ?? []).join(",")}`} defaultValue={(post.collaborateurs ?? []).join(", ")}
+              placeholder={t("atelier.collaborateursAide")} onBlur={(e) => changerCollaborateurs(e.target.value)} />
+          </div>
+          {estReel && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-xs">{t("atelier.reelDansLeFil")}</Label>
+                <Select disabled={!modifiable} value={post.reelDansLeFil == null ? "defaut" : post.reelDansLeFil ? "oui" : "non"}
+                  onValueChange={(v) => void changerChamp({ reelDansLeFil: v === "defaut" ? null : v === "oui" })}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="defaut">{t("atelier.reelDansLeFilDefaut")}</SelectItem>
+                    <SelectItem value="oui">{t("atelier.reelDansLeFilOui")}</SelectItem>
+                    <SelectItem value="non">{t("atelier.reelDansLeFilNon")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`audio-${post.id}`} className="text-xs">{t("atelier.nomAudio")}</Label>
+                <Input id={`audio-${post.id}`} className="h-8 text-sm" disabled={!modifiable} maxLength={NOM_AUDIO_MAX}
+                  key={`n-${post.nomAudio ?? ""}`} defaultValue={post.nomAudio ?? ""} placeholder={t("atelier.nomAudioAide")}
+                  onBlur={(e) => { if (e.target.value.trim() !== (post.nomAudio ?? "")) void changerChamp({ nomAudio: e.target.value }); }} />
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {reseau === "linkedin" && (formatPublie === "carousel" || format === "carousel") && !genresMedias.includes("video") && (
+        <section className="space-y-1">
+          <label className="flex items-center gap-2 text-xs">
+            <Switch disabled={!modifiable} checked={post.linkedinDocument === true}
+              onCheckedChange={(v) => void changerChamp({ linkedinDocument: v })} />
+            {t("atelier.linkedinDocument")}
+          </label>
+          <p className="text-[11px] text-muted-foreground">{t("atelier.linkedinDocumentAide")}</p>
         </section>
       )}
 
