@@ -1,5 +1,5 @@
 // Vie perso (spec 2026-11-23) : ce qui est partagé entre serveur et client. Module pur.
-import { z } from "zod";
+import { z } from "zod/v4";
 
 /** Marqueur d'une tâche perso : le moteur de travail ne la déplace jamais et la compte comme occupée. */
 export const SOURCE_VIE_PERSO = "vie_perso";
@@ -59,16 +59,21 @@ export function phaseDuCycle(jour: string, dernieresRegles: string | null, duree
 
 // ─── Plan de repas (sortie de génération, validée) ──────────────────────────────────────
 
-const texte = (max: number) => z.string().max(max);
+// Sortie payée : un texte ou une liste trop longs sont coupés, jamais refusés (leçon du premier jet AO).
+const coupe = (n: number) => (s: string) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
+const texte = (max: number) => z.string().overwrite(coupe(max)).max(max);
+const liste = <T extends z.ZodType>(el: T, max: number) =>
+  z.array(el).overwrite((l) => l.slice(0, max)).max(max);
 const nombre = z.number().nullable();
+const minutes = (max: number) => z.number().overwrite((n) => Math.max(0, Math.min(max, Math.round(n)))).pipe(z.number().int().min(0).max(max));
 
 export const SCHEMA_REPAS = z.object({
   titre: texte(200),
   detail: texte(1000),
   kcal: nombre, proteines: nombre, lipides: nombre, glucides: nombre,
-  variantes: z.array(z.object({ membre: texte(80), texte: texte(400) })).max(8),
+  variantes: liste(z.object({ membre: texte(80), texte: texte(400) }), 8),
   /** Préparation le jour même, en minutes (0 : rien à faire, tout vient du batch). */
-  preparationMin: z.number().int().min(0).max(240),
+  preparationMin: minutes(240),
 });
 
 export const SCHEMA_PLAN_REPAS = z.object({
@@ -79,16 +84,16 @@ export const SCHEMA_PLAN_REPAS = z.object({
     dessert: SCHEMA_REPAS.nullable(),
   })).length(7),
   batch: z.object({
-    dureeMin: z.number().int().min(0).max(300),
-    etapes: z.array(z.object({ appareil: texte(80), action: texte(600) })).max(30),
+    dureeMin: minutes(300),
+    etapes: liste(z.object({ appareil: texte(80), action: texte(600) }), 30),
   }),
-  courses: z.array(z.object({
+  courses: liste(z.object({
     article: texte(160), quantite: texte(60), magasin: texte(80), rayon: texte(80),
     /** « tous » ou le prénom d'un membre */
     pour: texte(80),
-  })).max(150),
-  regles: z.array(texte(300)).max(8),
-  snacks: z.array(texte(300)).max(10),
+  }), 150),
+  regles: liste(texte(300), 8),
+  snacks: liste(texte(300), 10),
 });
 export type PlanRepas = z.infer<typeof SCHEMA_PLAN_REPAS>;
 export type RepasPlan = z.infer<typeof SCHEMA_REPAS>;
@@ -104,12 +109,12 @@ export interface PlanEnregistre {
 // ─── Activité perso ─────────────────────────────────────────────────────────────────────
 
 export const SCHEMA_ACTIVITE = z.object({
-  achats: z.array(z.object({ article: texte(160), quantite: texte(60), ou: texte(120) })).max(40),
+  achats: liste(z.object({ article: texte(160), quantite: texte(60), ou: texte(120) }), 40),
   etapes: z.array(z.object({
     titre: texte(160),
-    dureeMin: z.number().int().min(10).max(480),
+    dureeMin: z.number().overwrite((n) => Math.max(10, Math.min(480, Math.round(n)))).pipe(z.number().int().min(10).max(480)),
     /** À faire avec les personnes prévues (alors placée le week-end). */
     ensemble: z.boolean(),
-  })).min(1).max(15),
+  })).overwrite((l) => l.slice(0, 15)).min(1).max(15),
 });
 export type ContenuActivite = z.infer<typeof SCHEMA_ACTIVITE>;

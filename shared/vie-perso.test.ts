@@ -90,3 +90,16 @@ describe("SCHEMA_ACTIVITE", () => {
     }).success).toBe(true);
   });
 });
+
+describe("sortie trop longue : coupée, pas refusée", () => {
+  it("texte et listes", () => {
+    const long = "x".repeat(500);
+    const r = SCHEMA_ACTIVITE.parse({
+      achats: Array.from({ length: 50 }, () => ({ article: long, quantite: "1", ou: "" })),
+      etapes: [{ titre: long, dureeMin: 3, ensemble: false }],
+    });
+    expect(r.achats).toHaveLength(40);
+    expect(r.achats[0].article.length).toBe(160);
+    expect(r.etapes[0].dureeMin).toBe(10);
+  });
+});
