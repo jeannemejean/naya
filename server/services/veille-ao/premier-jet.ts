@@ -8,7 +8,7 @@ import { NAYA_SYSTEM_VOICE } from "../../naya-voice";
 import { lireStructure } from "../ai/structure";
 import { MARQUE_CAPACITES, MARQUE_HORS_PERIMETRE, joursAvant, estPasse } from "@shared/appels-offres";
 import type { AppelOffres } from "@shared/schema";
-import { DELAI_SERRE_JOURS, sansTiretsLongs } from "./qualification";
+import { DELAI_SERRE_JOURS } from "./qualification";
 
 export const RC_MAX = 60_000;
 export const AVIS_MAX = 12_000;
@@ -17,17 +17,21 @@ export const MAX_TOKENS_PREMIER_JET = 16_000;
 export const MARQUE_PROVISOIRE = "Structure provisoire : règlement de consultation non consulté, à recaler sur le RC.";
 const MARQUE_RC_A_LIRE = /vérifier dans le RC/i;
 
-const LIM = { titre: 200, critere: 200, contenu: 6000, rubriques: 14, item: 400, items: 25 } as const;
-const items = z.array(z.string().min(1).max(LIM.item)).max(LIM.items);
+// Bornes généreuses, appliquées en RACCOURCISSANT (le schéma envoyé au modèle ne porte pas les
+// longueurs) : rejeter toute la sortie ferait payer une génération pour rien.
+const LIM = { titre: 200, critere: 200, contenu: 15_000, rubriques: 30, item: 600, items: 40 } as const;
+const coupe = (n: number) => (s: string) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
+const texte = (n: number) => z.string().overwrite(coupe(n)).max(n);
+const items = z.array(texte(LIM.item).pipe(z.string().min(1))).overwrite((l) => l.slice(0, LIM.items)).max(LIM.items);
 
 export const SCHEMA_PREMIER_JET = z.object({
   rubriques: z.array(z.object({
-    titre: z.string().min(1).max(LIM.titre),
+    titre: texte(LIM.titre).pipe(z.string().min(1)),
     /** Critère d'attribution (et pondération) auquel la rubrique répond, s'il y en a un. */
-    critere: z.string().max(LIM.critere).nullable(),
+    critere: texte(LIM.critere).nullable(),
     /** Markdown simple : paragraphes, listes à puces, gras. Pas de titres de niveau 1 ou 2. */
-    contenu: z.string().min(1).max(LIM.contenu),
-  })).min(1).max(LIM.rubriques),
+    contenu: texte(LIM.contenu).pipe(z.string().min(1)),
+  })).min(1).overwrite((l) => l.slice(0, LIM.rubriques)).max(LIM.rubriques),
   checklist: z.object({
     candidature: items, offre: items, depot: items, aFournir: items,
   }),
@@ -37,7 +41,8 @@ export type SortiePremierJet = z.infer<typeof SCHEMA_PREMIER_JET>;
 export const lirePremierJet = (texte: string): SortiePremierJet => lireStructure(SCHEMA_PREMIER_JET, texte);
 
 /** Tirets longs retirés, « Jeanne Mejean » toujours sans accent (consignes de Jeanne, partout). */
-export const nettoyer = (s: string) => sansTiretsLongs(s.replace(/Méjean/g, "Mejean").replace(/MÉJEAN/g, "MEJEAN"));
+export const nettoyer = (s: string) => s.replace(/Méjean/g, "Mejean").replace(/MÉJEAN/g, "MEJEAN")
+  .replace(/^(\s*)[—–]\s*/, "$1").replace(/[ \t]*[—–][ \t]*/g, ", ").replace(/, ,/g, ",");
 
 const OUVERTS = new Set(["repere", "premier_jet_pret", "en_redaction"]);
 
@@ -87,6 +92,8 @@ INTERDITS :
 
 CHECKLIST DE DÉPÔT : candidature (pièces exigées : DC1, DC2 ou DUME, attestations, assurances…), offre (mémoire, pièces de prix, acte d'engagement…), depot (plateforme, date et heure limite, signature électronique éventuelle), aFournir (ce que Jeanne doit fournir elle-même). Ce qui n'est pas connu : « [À COMPLÉTER] ».
 POINTS À VÉRIFIER : ce que Jeanne doit contrôler dans le RC ou le DCE avant de déposer (capacités exigées, forme du mémoire, visite, questions).
+
+LONGUEUR : 15 000 à 30 000 caractères au total, au plus 30 rubriques de 15 000 caractères chacune, au plus 40 éléments par liste de 600 caractères chacun.
 
 FORME : rubriques en Markdown simple (paragraphes, listes à puces, gras), sans titre de niveau 1 ou 2 (le titre de la rubrique est posé par Naya). Français, professionnel et précis, dans la voix de l'Agence JMD : sobre, haut de gamme, concret, jamais de jargon creux. Distingue ce qui est établi par l'avis de ce qui est une hypothèse.
 
@@ -143,6 +150,7 @@ export function assemblerPremierJet(s: SortiePremierJet, ao: AppelOffres, o: { r
     `# AO ${ao.acheteur ?? "Acheteur [À COMPLÉTER]"} · ${court(ao.objet)} · JMD`,
     "",
     `Premier jet préparé par Naya le ${o.maintenant.toLocaleDateString("fr-FR", { timeZone: "Europe/Paris", day: "numeric", month: "long", year: "numeric" })}. Date limite : ${dl}.${ao.reference ? ` Référence : ${ao.reference}.` : ""}`,
+    ...(ao.premierJet && /^https?:\/\//.test(ao.premierJet.trim()) ? ["", `Ancien premier jet : ${ao.premierJet.trim()}`] : []),
     ...(o.rcFourni ? [] : ["", `> **${MARQUE_PROVISOIRE}**`]),
     ...s.rubriques.flatMap((r) => ["", `## ${r.titre}`, ...(r.critere ? ["", `*Critère : ${r.critere}*`] : []), "", r.contenu.trim()]),
     "", "## Checklist de dépôt",
@@ -152,8 +160,7 @@ export function assemblerPremierJet(s: SortiePremierJet, ao: AppelOffres, o: { r
     "", "### À fournir par Jeanne", cases(s.checklist.aFournir),
     ...(s.pointsAVerifier.length ? ["", "## Points à vérifier", s.pointsAVerifier.map((p) => `- ${p}`).join("\n")] : []),
   ];
-  // Nettoyage ligne par ligne : sansTiretsLongs rogne les espaces, ce qui casserait l'indentation des listes.
-  return parties.join("\n").split("\n").map((l) => (/[—–]|Méjean|MÉJEAN/.test(l) ? nettoyer(l) : l)).join("\n") + "\n";
+  return parties.join("\n").split("\n").map(nettoyer).join("\n") + "\n";
 }
 
 export interface DepsPremierJet {
@@ -163,7 +170,7 @@ export interface DepsPremierJet {
   relireAvis(source: string, sourceId: string): Promise<string | null>;
   contexte(userId: string): Promise<string>;
   generer(userId: string, prompt: string): Promise<{ valeur: SortiePremierJet; coutEur: number }>;
-  /** Écrit le document ; statut → premier_jet_pret seulement s'il était « repéré ». */
+  /** Écrit le document ; statut → premier_jet_pret seulement s'il était « repéré ». false : AO fermé ou disparu entre-temps. */
   enregistrer(id: number, userId: string, texte: string): Promise<boolean>;
   /** Jalons de l'AO resynchronisés (comme après un changement de statut). */
   apres(userId: string): Promise<void>;
@@ -191,7 +198,9 @@ export async function preparerPremierJet(
   const rc = o.rc?.trim() ? o.rc : null;
   const prompt = promptPremierJet({ ao, avis, rc, contexte: await deps.contexte(userId), maintenant });
   const { valeur, coutEur } = await deps.generer(userId, prompt);
-  await deps.enregistrer(id, userId, assemblerPremierJet(valeur, ao, { rcFourni: !!rc, maintenant }));
+  if (!(await deps.enregistrer(id, userId, assemblerPremierJet(valeur, ao, { rcFourni: !!rc, maintenant })))) {
+    return { ok: false, erreur: "ao_ferme" };
+  }
   await deps.apres(userId).catch((e: any) => console.error("[premier-jet] jalons :", e?.message ?? e));
   return { ok: true, coutEur };
 }

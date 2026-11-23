@@ -128,6 +128,20 @@ describe("lirePremierJet", () => {
   });
 });
 
+describe("lirePremierJet : bornes", () => {
+  it("une sortie trop longue est raccourcie, jamais rejetée (génération payée)", () => {
+    const long = sortie({
+      rubriques: Array.from({ length: 40 }, (_, i) => ({ titre: `R${i}`, critere: null, contenu: "mot ".repeat(5000) })),
+      pointsAVerifier: Array.from({ length: 80 }, () => "x".repeat(900)),
+    });
+    const r = lirePremierJet(JSON.stringify(long));
+    expect(r.rubriques).toHaveLength(30);
+    expect(r.rubriques[0].contenu.length).toBeLessThanOrEqual(15_000);
+    expect(r.pointsAVerifier).toHaveLength(40);
+    expect(r.pointsAVerifier[0].length).toBeLessThanOrEqual(600);
+  });
+});
+
 describe("assemblerPremierJet", () => {
   const doc = (rcFourni: boolean) => assemblerPremierJet(lirePremierJet(JSON.stringify(sortie())), ao(), { rcFourni, maintenant: MAINTENANT });
   it("titre, rubriques dans l'ordre, checklist en dernier avec des cases", () => {
@@ -144,8 +158,14 @@ describe("assemblerPremierJet", () => {
     expect(doc(false)).toContain(MARQUE_PROVISOIRE);
     expect(doc(true)).not.toContain(MARQUE_PROVISOIRE);
   });
-  it("aucun tiret long ni demi-cadratin", () => {
+  it("aucun tiret long ni demi-cadratin, et l'indentation des listes est gardée", () => {
     expect(doc(false)).not.toMatch(/[—–]/);
+    const s2 = lirePremierJet(JSON.stringify(sortie({ rubriques: [{ titre: "T", critere: null, contenu: "- a\n  - sous — point" }] })));
+    expect(assemblerPremierJet(s2, ao(), { rcFourni: true, maintenant: MAINTENANT })).toContain("\n  - sous, point");
+  });
+  it("un ancien premier jet en lien (Notion, Claude Design) est gardé en tête", () => {
+    const d = assemblerPremierJet(lirePremierJet(JSON.stringify(sortie())), ao({ premierJet: "https://claude.ai/design/x" }), { rcFourni: true, maintenant: MAINTENANT });
+    expect(d).toContain("Ancien premier jet : https://claude.ai/design/x");
   });
 });
 
@@ -195,6 +215,11 @@ describe("preparerPremierJet", () => {
     const d = deps({ estBloquee: vi.fn(async () => true) });
     expect(await preparerPremierJet("u1", 9, { rc: null, maintenant: MAINTENANT }, d)).toEqual({ ok: false, erreur: "ia_bloquee" });
     expect(d.enregistrer).not.toHaveBeenCalled();
+  });
+  it("AO fermé ou supprimé pendant la rédaction : rien d'enregistré, résultat en échec", async () => {
+    const d = deps({ enregistrer: vi.fn(async () => false) });
+    expect(await preparerPremierJet("u1", 132, { rc: null, maintenant: MAINTENANT }, d)).toEqual({ ok: false, erreur: "ao_ferme" });
+    expect(d.apres).not.toHaveBeenCalled();
   });
   it("les jalons qui échouent ne font pas échouer le premier jet", async () => {
     const d = deps({ apres: vi.fn(async () => { throw new Error("jalons"); }) });

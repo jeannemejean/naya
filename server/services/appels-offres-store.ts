@@ -1,6 +1,6 @@
 // Accès base des appels d'offres. Chaque lecture et écriture porte le userId : une ligne
 // d'une autre utilisatrice n'existe pas pour celle qui demande.
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { db as dbParDefaut } from "../db";
 import { appelsOffres, type AppelOffres, type InsertAppelOffres } from "@shared/schema";
@@ -34,7 +34,11 @@ export async function enregistrerPremierJet(
     premierJet: texte,
     statut: sql`case when ${appelsOffres.statut} = 'repere' then 'premier_jet_pret' else ${appelsOffres.statut} end`,
     updatedAt: new Date(),
-  }).where(and(eq(appelsOffres.id, id), eq(appelsOffres.userId, userId))).returning({ id: appelsOffres.id });
+  }).where(and(
+    eq(appelsOffres.id, id), eq(appelsOffres.userId, userId),
+    // Écarté (ou déposé…) pendant la rédaction : le jet n'est pas écrit.
+    inArray(appelsOffres.statut, ["repere", "premier_jet_pret", "en_redaction"]),
+  )).returning({ id: appelsOffres.id });
   return r.length > 0;
 }
 

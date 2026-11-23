@@ -123,6 +123,6 @@ describe("premier jet", () => {
     const statut = d.sqlToQuery(set.statut);
     expect(statut.sql).toMatch(/case when "appels_offres"."statut" = 'repere' then 'premier_jet_pret' else "appels_offres"."statut" end/);
     const w = d.sqlToQuery(where!);
-    expect(w.params).toEqual([5, "user-1"]);
+    expect(w.params).toEqual([5, "user-1", "repere", "premier_jet_pret", "en_redaction"]);
   });
 });

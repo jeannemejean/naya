@@ -3437,6 +3437,7 @@ const fr = {
     ia_bloquee: "Budget IA du mois atteint : pas de premier jet pour l'instant.",
     ao_ferme: "Cet appel d'offres est clos : pas de premier jet.",
     date_passee: "La date limite est passée.",
+    rc_invalide: "Le RC collé n'est pas lisible.",
     rc_trop_long: "Le RC collé est trop long (60 000 caractères au plus).",
     not_found: "Appel d'offres introuvable.",
     perdu: "Naya a redémarré pendant la rédaction. Relance le premier jet.",

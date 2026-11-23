@@ -29,9 +29,13 @@ export function PremierJet({ ao }: { ao: { id: number; objet: string; statut: st
   const cle = `/api/appels-offres/${ao.id}/premier-jet`;
 
   // État au montage (une préparation lancée avant de changer d'AO ou de recharger la page).
+  // Section secondaire : une erreur réseau (redémarrage, coupure) ne doit jamais faire tomber la
+  // page (throwOnError global) ; pendant un suivi, on continue d'interroger malgré les erreurs.
   const { data: etat } = useQuery<Etat>({
     queryKey: [cle],
-    refetchInterval: (q) => ((q.state.data as Etat | undefined)?.statut === "en_cours" ? 3000 : false),
+    throwOnError: false,
+    retry: 3,
+    refetchInterval: (q) => ((q.state.data as Etat | undefined)?.statut === "en_cours" || (suivi && q.state.status === "error") ? 3000 : false),
   });
   const enCours = etat?.statut === "en_cours";
   useEffect(() => { if (enCours) setSuivi(true); }, [enCours]);
@@ -61,6 +65,8 @@ export function PremierJet({ ao }: { ao: { id: number; objet: string; statut: st
     onError: (e: unknown) => {
       const m = e instanceof Error ? e.message : "";
       const code = /^409\b/.test(m) ? "premier_jet_en_cours" : (/"message":"(\w+)"/.exec(m)?.[1] ?? "premier_jet_echec");
+      // Déjà en cours (autre onglet) : relire l'état ; s'il s'agit de cet AO, le suivi démarre seul.
+      if (code === "premier_jet_en_cours") queryClient.invalidateQueries({ queryKey: [cle] });
       toast({ title: t(`appelsOffres.premierJet.erreurs.${code}`, { defaultValue: t("appelsOffres.premierJet.erreurs.premier_jet_echec") }), variant: "destructive" });
     },
   });

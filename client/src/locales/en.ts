@@ -3433,6 +3433,7 @@ const en = {
     ia_bloquee: "Monthly AI budget reached: no first draft for now.",
     ao_ferme: "This tender is closed: no first draft.",
     date_passee: "The deadline has passed.",
+    rc_invalide: "The pasted rules couldn't be read.",
     rc_trop_long: "The pasted rules are too long (60,000 characters max).",
     not_found: "Tender not found.",
     perdu: "Naya restarted while writing. Start the first draft again.",
