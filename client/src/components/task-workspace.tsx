@@ -13,6 +13,7 @@ import { lienInterneDeTache } from "@/lib/lien-tache";
 import { useTranslation } from "react-i18next";
 import LivrablesSection from "@/components/livrables/LivrablesSection";
 import { TacheAtelier, ValiderVideo, estTacheAtelier } from "@/components/atelier/TacheAtelier";
+import { FinirSurTelephone } from "@/components/atelier/FinirSurTelephone";
 import type { Task, Project, TaskWorkspaceEntry } from "@shared/schema";
 
 interface TaskWorkspaceProps {
@@ -295,6 +296,8 @@ export default function TaskWorkspace({ task, project, open, onClose, onDeleted,
  </div>
  </div>
  )}
+ {/* Tâche « Publier — … » à finir sur le téléphone (lot 10) : légende, hashtags, médias. */}
+ {task && <FinirSurTelephone actionData={(task as any).actionData} />}
  {task && <ValiderVideo task={task as any} />}
  {task && !estTacheAtelier(task as any) && (
  <div id="livrables-section" className="flex-1 min-h-0 overflow-y-auto px-5 py-3">

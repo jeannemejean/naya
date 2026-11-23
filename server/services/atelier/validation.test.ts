@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { validerPost, devaliderPost, publicationManuelle } from "./validation";
+import { validerPost, devaliderPost, publicationManuelle, lireModifications } from "./validation";
 
 const maintenant = new Date("2026-10-19T08:00:00Z");
 const post = (over: any = {}) => ({
@@ -161,6 +161,78 @@ describe("validerPost — jamais la consigne, jamais un post déjà programmé",
     const deps = fabrique(post({ contentStatus: "ready", autoPost: true }));
     expect(await validerPost(deps, "u", 5, { scheduledFor: "2026-10-19T07:00:00Z" })).toEqual({ statut: "deja_valide" });
     expect(deps.ecrits).toEqual([]);
+  });
+});
+
+describe("validerPost — à finir sur le téléphone (lot 10)", () => {
+  const fichiers = vi.fn(async () => [
+    { url: "https://cdn/x/visuel-1.jpg", nom: "Couverture.jpg", genre: "image" as const },
+    { url: "https://cdn/x/Vue%20du%20comptoir.jpg?v=2", nom: null, genre: "image" as const },
+  ]);
+  const ig = (over: any = {}) => post({
+    platform: "instagram", postFormat: "carousel", body: "Ouverture samedi #Lyon #café", premierCommentaire: "Plus d'infos #lyon #brunch",
+    mediaIds: [1, 2], ...over,
+  });
+  const avecCompteIg = (p: any) => fabrique(p, {
+    compteDuPost: vi.fn(async () => ({ ...compte, platform: "instagram" })),
+    mediasDuPost: vi.fn(async () => ["image", "image"]),
+    fichiersDuPost: fichiers,
+  });
+
+  it("drapeau posé : jamais programmé malgré le compte connecté ; tâche « Publier » qui porte tout", async () => {
+    const deps = avecCompteIg(ig({ finirSurTelephone: true }));
+    const r = await validerPost(deps, "u", 5, {});
+    expect(r).toEqual({ statut: "a_publier_soi_meme" });
+    expect(deps.ecrits.some((e) => e.autoPost === true)).toBe(false);
+    expect(deps.ecrits.at(-1)).toMatchObject({ contentStatus: "ready", autoPost: false });
+    const tache = deps.creerTache.mock.calls[0][0];
+    expect(tache).toMatchObject({ title: "Publier — Mon post", taskType: "post_publish", scheduledTime: "09:00" });
+    expect(tache.description).toMatch(/téléphone/);
+    expect(tache.actionData.telephone).toEqual({
+      version: 1, reseau: "instagram", format: "carousel",
+      legende: "Ouverture samedi #Lyon #café", premierCommentaire: "Plus d'infos #lyon #brunch",
+      hashtags: ["#Lyon", "#café", "#brunch"],
+      medias: [
+        { ordre: 1, url: "https://cdn/x/visuel-1.jpg", nom: "Couverture.jpg", genre: "image" },
+        { ordre: 2, url: "https://cdn/x/Vue%20du%20comptoir.jpg?v=2", nom: "Vue du comptoir.jpg", genre: "image" },
+      ],
+      raisons: ["demande"],
+    });
+  });
+
+  it("sans drapeau, même post et même compte : programmé, aucune tâche", async () => {
+    const deps = avecCompteIg(ig());
+    expect(await validerPost(deps, "u", 5, {})).toEqual({ statut: "programme" });
+    expect(deps.creerTache).not.toHaveBeenCalled();
+  });
+
+  it("TikTok (pas de publication automatique) : la tâche porte la raison et les médias", async () => {
+    const deps = fabrique(post({ platform: "tiktok", postFormat: "short", mediaIds: [2] }), {
+      compteDuPost: vi.fn(async () => null), mediasDuPost: vi.fn(async () => ["video"]), fichiersDuPost: fichiers,
+    });
+    expect(await validerPost(deps, "u", 5, {})).toEqual({ statut: "a_publier_soi_meme" });
+    const t = deps.creerTache.mock.calls[0][0];
+    expect(t.actionData.telephone.raisons).toEqual(["sans_publication_auto"]);
+    expect(t.actionData.telephone.medias).toHaveLength(2);
+  });
+
+  it("tâche « Publier » existante : mise à jour avec le contenu à copier, pas de doublon", async () => {
+    const existante = { id: 77, title: "Publier — Mon post", completed: false, archivedAt: null };
+    const deps = avecCompteIg(ig({ finirSurTelephone: true }));
+    deps.tachesDuPost = vi.fn(async () => [existante]);
+    await validerPost(deps, "u", 5, {});
+    expect(deps.creerTache).not.toHaveBeenCalled();
+    expect(deps.majTache).toHaveBeenCalledWith("u", 77, expect.objectContaining({
+      taskType: "post_publish", actionData: expect.objectContaining({ telephone: expect.objectContaining({ raisons: ["demande"] }) }),
+    }));
+  });
+
+  it("le drapeau s'enregistre avec la validation ; une valeur non booléenne est refusée", async () => {
+    const deps = avecCompteIg(ig());
+    expect(await validerPost(deps, "u", 5, { finirSurTelephone: true })).toEqual({ statut: "a_publier_soi_meme" });
+    expect(deps.ecrits[0]).toEqual({ finirSurTelephone: true });
+    expect(lireModifications({ finirSurTelephone: "oui" })).toBeNull();
+    expect(lireModifications({ finirSurTelephone: false })).toEqual({ finirSurTelephone: false });
   });
 });
 

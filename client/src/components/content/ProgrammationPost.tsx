@@ -67,7 +67,11 @@ export default function ProgrammationPost({
       apres(e);
       if (e.programme && e.problemes.length === 0) toast({ title: t("programmation.programmeToast"), description: quand(e.scheduledFor) ?? undefined });
     },
-    onError: () => toast({ title: t("common.error"), description: t("programmation.erreur"), variant: "destructive" }),
+    onError: (e: Error) => toast({
+      title: t("common.error"),
+      description: e.message === "a_finir_sur_telephone" ? t("programmation.aFinirSurTelephone") : t("programmation.erreur"),
+      variant: "destructive",
+    }),
   });
   const annuler = useMutation({
     mutationFn: async () => (await apiRequest("DELETE", `/api/content/${postId}/programmation`)).json(),

@@ -642,6 +642,11 @@ export const content = pgTable("content", {
   reelDansLeFil: boolean("reel_dans_le_fil"),
   nomAudio: text("nom_audio"),
   linkedinDocument: boolean("linkedin_document"),
+  // « À finir sur le téléphone » (lot 10) : ce que les API ne savent pas faire (stickers,
+  // mentions et musique de story, musique sous licence d'un Reel…). Le post n'est JAMAIS publié
+  // par le worker, même avec un compte connecté : une tâche « Publier » porte la légende, le
+  // premier commentaire, les hashtags et les médias à télécharger, à l'heure prévue.
+  finirSurTelephone: boolean("finir_sur_telephone").default(false),
   videoMeta: jsonb("video_meta"),                        // { durationSec, width, height, thumbnailUrl }
   providerContainerId: text("provider_container_id"),    // conteneur média IG/FB / publish_id TikTok (async)
   lastError: text("last_error"),                         // dernier message d'échec de publication

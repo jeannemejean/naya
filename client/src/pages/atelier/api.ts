@@ -31,6 +31,8 @@ export interface PostAtelier {
   reelDansLeFil: boolean | null;
   nomAudio: string | null;
   linkedinDocument: boolean | null;
+  /** « À finir sur le téléphone » (lot 10) : jamais publié par Naya, une tâche « Publier » le porte. */
+  finirSurTelephone: boolean;
   medias: MediaAtelier[];
   manques: Manque[];
   compteConnecte: boolean;
@@ -71,7 +73,7 @@ export async function refaire(id: number, consigne: string): Promise<string> {
   return data.body as string;
 }
 
-export async function enregistrer(id: number, patch: { body?: string; scheduledFor?: string; postFormat?: string; premierCommentaire?: string | null; couvertureOffsetMs?: number | null } & OptionsPostPatch): Promise<void> {
+export async function enregistrer(id: number, patch: { body?: string; scheduledFor?: string; postFormat?: string; premierCommentaire?: string | null; couvertureOffsetMs?: number | null; finirSurTelephone?: boolean } & OptionsPostPatch): Promise<void> {
   const { status, data } = await envoyer("PATCH", `/api/atelier/posts/${id}`, patch);
   if (status >= 400) throw echec(status, data);
 }

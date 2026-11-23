@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/options-post";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import TextesEnregistres from "@/components/content/TextesEnregistres";
+import { MeilleursCreneaux } from "@/components/content/MeilleuresHeures";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, X, AlertCircle, Image as ImageIcon, Video } from "lucide-react";
 import {
@@ -17,6 +18,12 @@ import {
 
 interface Account { id: number; platform: string; basePlatform: string; accountName: string; isPage: boolean }
 interface MediaAsset { id: number; url: string; kind: "image" | "video"; durationSec?: number; name: string }
+
+/** Un instant → valeur d'un champ datetime-local, à l'heure de l'appareil. */
+function versChampLocal(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 const PLATFORM_LABEL: Record<string, string> = { instagram: "Instagram", facebook: "Facebook", linkedin: "LinkedIn", tiktok: "TikTok" };
 
@@ -358,6 +365,10 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
               <Switch checked={autoPost} onCheckedChange={setAutoPost} /> Publication automatique
             </label>
           </div>
+          {/* Meilleures heures du premier réseau choisi (lot 7) : un clic fixe la date. */}
+          {validations.length > 0 && (
+            <MeilleursCreneaux projectId={projectId} reseau={validations[0].acc.basePlatform} onChoisir={(d) => setScheduledFor(versChampLocal(d))} />
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" onClick={onClose}>Annuler</Button>

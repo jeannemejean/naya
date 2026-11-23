@@ -61,7 +61,7 @@ async function vuePost(userId: string, p: any, noms: Map<number, string>, compte
     tendanceProjetId: p.tendanceProjetId ?? null,
     etat,
     // Naya publiera seule ce post (programmé) ; sinon, validé, il attend une publication à la main.
-    programme: p.autoPost === true && etat === "valide",
+    programme: p.autoPost === true && etat === "valide" && p.finirSurTelephone !== true,
     erreurPublication: p.postStatus === "failed" ? (p.lastError ?? null) : null,
     premierCommentaire: p.premierCommentaire ?? null,
     couvertureOffsetMs: p.couvertureOffsetMs ?? null,
@@ -70,6 +70,7 @@ async function vuePost(userId: string, p: any, noms: Map<number, string>, compte
     reelDansLeFil: p.reelDansLeFil ?? null,
     nomAudio: p.nomAudio ?? null,
     linkedinDocument: p.linkedinDocument ?? null,
+    finirSurTelephone: p.finirSurTelephone === true,
     medias: medias.map(({ id, url, mimeType, genre }) => ({ id, url, mimeType, genre })),
     manques: etat === "valide" || etat === "publie" ? [] : manquesPourValider({
       genre: genreDuPost(p), body: p.body, scheduledFor: p.scheduledFor, medias: medias.map((m) => m.genre), maintenant: new Date(),

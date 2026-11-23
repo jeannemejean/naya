@@ -19,7 +19,7 @@ import { formatDePublication, plateformeDe } from '@shared/programmation';
 import { compteDePublication } from './connexions/comptes';
 import { db } from '../db';
 import { content, tasks } from '@shared/schema';
-import { and, eq, gte, inArray, isNull, like, lt, notInArray, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, like, lt, notInArray, or, sql } from 'drizzle-orm';
 import { journaliser } from './gestion-posts/historique';
 import { apresEchec, DELAI_BLOQUE_MIN, erreurDuReessai, raisonLisible, reessaiDu } from './publication/fiabilite';
 
@@ -224,6 +224,8 @@ export async function publierMaintenant(contentId: number, userId: string):
   const [pris] = await db.update(content)
     .set({ autoPost: true, postStatus: 'pending', lastError: null, scheduledFor: new Date(), updatedAt: new Date() } as any)
     .where(and(eq(content.id, contentId), eq(content.userId, userId), isNull(content.publishedAt), isNull(content.supprimeLe),
+      // « À finir sur le téléphone » (lot 10) : Naya ne le publie pas, même sur demande.
+      sql`coalesce(${content.finirSurTelephone}, false) = false`,
       or(isNull(content.postStatus), notInArray(content.postStatus, EN_COURS_OU_PUBLIE))))
     .returning({ id: content.id });
   if (!pris) return (await storage.getContentById(contentId, userId)) ? 'occupe' : 'introuvable';

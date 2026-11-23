@@ -23,11 +23,13 @@ const campaign = {
   ],
 };
 const d = (s: string) => new Date(s + "T00:00:00");
-const pad = (n: number) => String(n).padStart(2, "0");
 // « Publier » est à l'heure du post EN HEURE DE PARIS (le serveur tourne en UTC) : le test
 // la calcule pareil, pour passer quel que soit le fuseau de la machine (CI en UTC).
 const heureParis = (x: Date) => new Intl.DateTimeFormat("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(x);
-const local = (x: Date) => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())} ${pad(x.getHours())}:${pad(x.getMinutes())}`;
+// L'heure d'un post est posée EN HEURE DE PARIS depuis le lot 7 (meilleures heures) : avant, elle
+// l'était dans le fuseau du process (UTC en prod, soit 10 h ou 11 h à Paris pour « 9 h »). Le test
+// la lit donc à Paris, pour passer quel que soit le fuseau de la machine.
+const local = (x: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(x);
 
 function fabrique(over: any = {}) {
   const deps = {
@@ -160,6 +162,50 @@ describe("placerPostsCampagne", () => {
     const deps = fabrique({ getUserPreferences: vi.fn(async () => ({ workDays: "" })) });
     await placerPostsCampagne(deps, { userId: "u", campaign: { ...campaign, contentPlan: [piece("Week 1", "x")] }, debut: d("2026-10-12") });
     expect(local((deps.createContent.mock.calls[0] as any[])[0].scheduledFor)).toBe("2026-10-14 09:00");
+  });
+});
+
+describe("placerPostsCampagne — meilleures heures (lot 7)", () => {
+  const plan = (platform: string, n: number) => ({ ...campaign, contentPlan: Array.from({ length: n }, (_, i) => ({ ...piece("Week 1", `x${i}`), platform })) });
+  const heures = (deps: any) => deps.createContent.mock.calls.map(([c]: any[]) => local(c.scheduledFor));
+  // Un seul jour travaillé (mardi 13 oct.) : tous les posts de la semaine y tombent.
+  const unJour = (over: any = {}) => fabrique({ getUserPreferences: vi.fn(async () => ({ workDays: "tue", ...over })), getDayAvailabilityRange: vi.fn(async () => []) });
+
+  it("LinkedIn : 9 h puis midi (meilleures heures génériques, espacées de 2 h)", async () => {
+    const deps = unJour();
+    await placerPostsCampagne(deps, { userId: "u", campaign: plan("linkedin", 2), debut: d("2026-10-12") });
+    expect(heures(deps)).toEqual(["2026-10-13 09:00", "2026-10-13 12:00"]);
+  });
+
+  it("Instagram : midi d'abord ; jamais hors des heures de travail", async () => {
+    const deps = unJour({ workDayStart: "10:00", workDayEnd: "17:00" });
+    await placerPostsCampagne(deps, { userId: "u", campaign: plan("Instagram", 3), debut: d("2026-10-12") });
+    const h = heures(deps);
+    expect(h[0]).toBe("2026-10-13 12:00");
+    for (const x of h) expect(Number(x.slice(11, 13))).toBeGreaterThanOrEqual(10);
+    for (const x of h) expect(Number(x.slice(11, 13))).toBeLessThan(17);
+  });
+
+  it("données de la marque (≥ 15 posts mesurés) : 9 h, où elle n'engage pas, cède sa place", async () => {
+    // Mardis (Paris, heure d'été) : 9 h n'engage personne, 16 h beaucoup.
+    const mesures = Array.from({ length: 60 }, (_, i) => i % 2
+      ? { publieLe: new Date("2026-09-15T07:00:00Z"), saves: 0, reach: 100 }
+      : { publieLe: new Date("2026-09-15T14:00:00Z"), saves: 60, reach: 100 });
+    const deps = unJour();
+    (deps as any).getMesuresPublication = vi.fn(async () => mesures);
+    await placerPostsCampagne(deps, { userId: "u", campaign: plan("linkedin", 3), debut: d("2026-10-12") });
+    const h = heures(deps).map((x: string) => x.slice(11));
+    expect(h).not.toContain("09:00");
+    expect(h).toContain("16:00");
+    expect((deps as any).getMesuresPublication).toHaveBeenCalledWith("u", 9, "linkedin", expect.any(Date));
+    expect((deps as any).getMesuresPublication).toHaveBeenCalledTimes(1);
+  });
+
+  it("lecture des mesures en échec : la grille générique", async () => {
+    const deps = unJour();
+    (deps as any).getMesuresPublication = vi.fn(async () => { throw new Error("db"); });
+    await placerPostsCampagne(deps, { userId: "u", campaign: plan("linkedin", 1), debut: d("2026-10-12") });
+    expect(heures(deps)).toEqual(["2026-10-13 09:00"]);
   });
 });
 

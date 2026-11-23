@@ -351,6 +351,13 @@
       "when": 1795455865461,
       "tag": "0049_hard_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1795456874468,
+      "tag": "0050_abnormal_vapor",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "content" ADD COLUMN "finir_sur_telephone" boolean DEFAULT false;

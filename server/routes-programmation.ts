@@ -67,6 +67,9 @@ export function registerProgrammationRoutes(app: Express): void {
       let post: any = id == null ? undefined : await storage.getContentById(id, req.userId);
       if (!post) return res.status(404).json({ message: "not_found" });
       if (EN_COURS.includes(post.postStatus)) return res.status(409).json({ message: "publication_en_cours" });
+      // « À finir sur le téléphone » (lot 10) : jamais programmé ; il se valide dans l'atelier,
+      // qui pose la tâche « Publier » avec la légende et les médias.
+      if (post.finirSurTelephone === true) return res.status(409).json({ message: "a_finir_sur_telephone" });
 
       const { body, title, scheduledFor } = req.body ?? {};
       const maj: Record<string, unknown> = {};

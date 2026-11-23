@@ -460,6 +460,11 @@ export interface IStorage {
   getTasksForContents(userId: string, contentIds: number[]): Promise<Task[]>;
   /** Posts dont la publication tombe dans [debut, fin[ (atelier de contenu). */
   getPostsEntre(userId: string, debut: Date, fin: Date): Promise<Content[]>;
+  /**
+   * Meilleures heures (lot 7) : les posts publiés de la marque (projet, ou null = marque des
+   * Réglages) sur ce réseau depuis `depuis`, avec leur DERNIÈRE mesure de réception.
+   */
+  getMesuresPublication(userId: string, projectId: number | null, reseau: string, depuis: Date): Promise<Array<{ contentId: number; publieLe: Date; saves: number | null; shares: number | null; comments: number | null; reach: number | null }>>;
   /** Tâches d'atelier non archivées de la semaine qui commence ce lundi (YYYY-MM-DD). */
   getTachesAtelier(userId: string, semaine: string): Promise<Task[]>;
   /** Journal de la reprise des tâches non faites. */
@@ -1794,6 +1799,30 @@ export class DatabaseStorage implements IStorage {
     )).orderBy(content.scheduledFor);
   }
 
+  async getMesuresPublication(userId: string, projectId: number | null, reseau: string, depuis: Date) {
+    const rows = await db.select({
+      contentId: content.id, publieLe: content.publishedAt, saves: contentReception.saves, shares: contentReception.shares,
+      comments: contentReception.comments, reach: contentReception.reach,
+    }).from(contentReception)
+      .innerJoin(content, eq(contentReception.contentId, content.id))
+      .where(and(
+        eq(content.userId, userId),
+        projectId == null ? isNull(content.projectId) : eq(content.projectId, projectId),
+        sql`lower(${content.platform}) = ${reseau.toLowerCase()}`,
+        isNotNull(content.publishedAt), gte(content.publishedAt, depuis), isNull(content.supprimeLe),
+      ))
+      .orderBy(desc(contentReception.measuredAt));
+    // Une mesure par post : la plus récente (les lignes arrivent de la plus récente à la plus ancienne).
+    const vus = new Set<number>();
+    const res: Array<{ contentId: number; publieLe: Date; saves: number | null; shares: number | null; comments: number | null; reach: number | null }> = [];
+    for (const r of rows) {
+      if (vus.has(r.contentId) || !r.publieLe) continue;
+      vus.add(r.contentId);
+      res.push({ ...r, publieLe: r.publieLe });
+    }
+    return res;
+  }
+
   async getTachesAtelier(userId: string, semaine: string): Promise<Task[]> {
     return await db.select().from(tasks).where(and(
       eq(tasks.userId, userId),
@@ -1873,7 +1902,9 @@ export class DatabaseStorage implements IStorage {
   async claimContentForPosting(id: number): Promise<boolean> {
     const claimed = await db.update(content)
       .set({ postStatus: 'posting', updatedAt: new Date() })
-      .where(and(eq(content.id, id), eq(content.postStatus, 'pending'), eq(content.autoPost, true), isNull(content.supprimeLe)))
+      .where(and(eq(content.id, id), eq(content.postStatus, 'pending'), eq(content.autoPost, true), isNull(content.supprimeLe),
+        // « À finir sur le téléphone » (lot 10) : jamais publié par le worker.
+        sql`coalesce(${content.finirSurTelephone}, false) = false`))
       .returning({ id: content.id });
     return claimed.length > 0;
   }

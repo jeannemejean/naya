@@ -8,6 +8,7 @@ import type { GenreMedia } from "@shared/programmation";
 import { problemesProgrammation, plateformeDe } from "@shared/programmation";
 import { etatPost, genreDuPost, lundiDe, manquesPourValider, plusJours, type Manque } from "@shared/atelier";
 import { lireOptionsPost } from "@shared/options-post";
+import { contenuTelephone, raisonsTelephone, type RaisonTelephone } from "@shared/finir-telephone";
 import { estEtapeEcran, estTachePublier, jourDuPost, postAProduire } from "../campagne/production";
 
 const EN_COURS = ["posting", "uploading", "processing"];
@@ -18,6 +19,11 @@ export interface DepsValidation {
   lirePost(id: number, userId: string): Promise<any | undefined>;
   majPost(id: number, userId: string, patch: Record<string, unknown>): Promise<any>;
   mediasDuPost(userId: string, post: any): Promise<GenreMedia[]>;
+  /**
+   * Les fichiers du post dans l'ordre (adresse dans la médiathèque, nom, nature) : ce que la
+   * tâche « Publier » propose de télécharger (lot 10). Absent : aucun lien de téléchargement.
+   */
+  fichiersDuPost?(userId: string, post: any): Promise<Array<{ url: string; nom?: string | null; genre: GenreMedia }>>;
   /** Le compte qui publierait ce post (périmètre du projet respecté), ou null. */
   compteDuPost(userId: string, post: any): Promise<{ id: number; platform: string; isActive?: boolean | null; expiresAt?: Date | string | null } | null>;
   tachesDuPost(userId: string, contentId: number): Promise<any[]>;
@@ -36,7 +42,9 @@ export type ResultatValidation =
   | { statut: "introuvable" | "en_cours" | "deja_publie" | "deja_valide" | "invalide" };
 
 export interface Modifications { body?: unknown; title?: unknown; scheduledFor?: unknown; postFormat?: unknown; premierCommentaire?: unknown; couvertureOffsetMs?: unknown;
-  texteAlternatif?: unknown; collaborateurs?: unknown; reelDansLeFil?: unknown; nomAudio?: unknown; linkedinDocument?: unknown }
+  texteAlternatif?: unknown; collaborateurs?: unknown; reelDansLeFil?: unknown; nomAudio?: unknown; linkedinDocument?: unknown;
+  /** « À finir sur le téléphone » (lot 10). */
+  finirSurTelephone?: unknown }
 
 /** Limite d'Instagram pour un commentaire. */
 export const COMMENTAIRE_MAX = 2200;
@@ -76,6 +84,10 @@ export function lireModifications(m: Modifications): Record<string, unknown> | n
   });
   if (!options) return null;
   Object.assign(patch, options);
+  if (m.finirSurTelephone !== undefined) {
+    if (typeof m.finirSurTelephone !== "boolean") return null;
+    patch.finirSurTelephone = m.finirSurTelephone;
+  }
   return patch;
 }
 
@@ -91,6 +103,18 @@ const plusMinutes = (hhmm: string, n: number) => {
   const t = Math.min(24 * 60 - 1, h * 60 + m + n);
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
 };
+
+/** Le brief de la tâche « Publier » : pourquoi elle existe, et ce qu'elle contient. */
+export function descriptionPublier(raisons: RaisonTelephone[]): string {
+  const pourquoi = raisons.includes("demande")
+    ? "À finir sur le téléphone : ce post utilise ce que les API ne permettent pas (stickers, mentions, musique…)."
+    : raisons.includes("sans_publication_auto")
+      ? "Naya ne publie pas encore seule sur ce réseau : publie ce post depuis l'application."
+      : raisons.includes("compte_expire")
+        ? "Le compte de ce réseau doit être reconnecté : publie ce post toi-même."
+        : "Publie ce post toi-même : aucun compte n'est connecté pour ce réseau.";
+  return `${pourquoi} La légende, le premier commentaire, les hashtags et les médias sont prêts à copier et à télécharger.`;
+}
 
 const nonFaites = (ts: any[]) => ts.filter((t) => !t.completed && !t.archivedAt);
 
@@ -145,7 +169,10 @@ export async function validerPost(deps: DepsValidation, userId: string, id: numb
   if (problemes.includes("trop_de_visuels")) manques.push("trop_de_visuels");
   if (manques.length) return { statut: "manques", manques };
 
-  const sansCompte = problemes.some((p) => ["compte_absent", "compte_expire", "plateforme_non_supportee"].includes(p));
+  // À finir sur le téléphone (lot 10) : demandé sur le post, ou Naya ne peut pas le publier seule
+  // (TikTok, compte absent ou expiré). Le post n'est alors jamais programmé, même avec un compte.
+  const raisons = raisonsTelephone(post, problemes);
+  const sansCompte = raisons.length > 0;
   const taches = await deps.tachesDuPost(userId, id);
   const publierExistante = nonFaites(taches).find((t) => estTachePublier(t.title));
 
@@ -157,16 +184,18 @@ export async function validerPost(deps: DepsValidation, userId: string, id: numb
   } else {
     await deps.majPost(id, userId, { contentStatus: "ready", autoPost: false });
     const { jour, heure } = jourHeureParis(new Date(post.scheduledFor));
+    const fichiers = deps.fichiersDuPost ? await deps.fichiersDuPost(userId, post) : [];
+    const telephone = contenuTelephone({ post, medias: fichiers, raisons });
     const champs = {
       scheduledDate: jour, scheduledTime: heure, scheduledEndTime: plusMinutes(heure, DUREE_PUBLIER),
-      estimatedDuration: DUREE_PUBLIER, actionData: { postContent: post.body, platform: plateformeDe(post.platform), contentId: id },
+      estimatedDuration: DUREE_PUBLIER, description: descriptionPublier(raisons),
+      actionData: { postContent: post.body, platform: plateformeDe(post.platform), contentId: id, telephone },
     };
     if (publierExistante) await deps.majTache(userId, publierExistante.id, { ...champs, taskType: "post_publish" });
     else {
       await deps.creerTache({
         userId, projectId: post.projectId ?? undefined, campaignId: post.campaignId ?? undefined, contentId: id,
         title: `Publier — ${(post.title || "post").slice(0, 120)}`,
-        description: "Publie ce post toi-même : aucun compte n'est connecté pour ce réseau. Le texte est prêt à copier.",
         type: "content", category: "engagement", priority: 2, taskEnergyType: "execution", source: "campaign",
         taskType: "post_publish", completed: false, ...champs,
       });

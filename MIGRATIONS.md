@@ -855,3 +855,18 @@ select table_name from information_schema.tables where table_name in ('autoliste
 select column_name from information_schema.columns where table_name = 'content' and column_name like 'autoliste%';  -- 3 lignes
 select indexname from pg_indexes where indexname = 'content_autoliste_creneau_idx';  -- 1 ligne
 ```
+
+## 23. « Finir sur le téléphone » — `0050` à appliquer en prod à la main
+
+Fichier : `migrations/0050_abnormal_vapor.sql` (branche `feat/reseaux-par-projet`). Une seule colonne
+nouvelle sur `content` : `finir_sur_telephone boolean DEFAULT false` (nullable). Aucun `DROP`, aucune
+donnée touchée ; les lignes existantes valent `false` (ou null, lu comme `false`).
+
+Sans la migration : la lecture des posts échoue (le `select` de `content` nomme la nouvelle colonne)
+et le claim du worker aussi — **appliquer `0050` avant de déployer le code**. Les meilleures heures
+(lot 7) n'ont besoin d'aucune migration (lecture de `content_reception`).
+
+```sql
+select column_name, data_type, column_default from information_schema.columns
+ where table_name = 'content' and column_name = 'finir_sur_telephone';  -- 1 ligne, boolean, false
+```

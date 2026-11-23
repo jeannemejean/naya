@@ -10,6 +10,7 @@ import CorbeillePosts from "@/components/content/CorbeillePosts";
 import Bibliotheque from "@/components/content/Bibliotheque";
 import Autolistes from "@/components/content/Autolistes";
 import ApercuInstagram from "@/components/content/ApercuInstagram";
+import { PanneauMeilleuresHeures } from "@/components/content/MeilleuresHeures";
 import ActionsGroupees from "@/components/content/ActionsGroupees";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +24,7 @@ import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { fr } from 'date-fns/locale/fr';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine, Library, LayoutGrid, Repeat } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine, Library, LayoutGrid, Repeat, Clock } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -217,6 +218,8 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const [showBibliotheque, setShowBibliotheque] = useState(false);
  const [showAutolistes, setShowAutolistes] = useState(false);
  const [showApercuInstagram, setShowApercuInstagram] = useState(false);
+ // Meilleures heures pour publier (lot 7) : grille jour × heure du réseau choisi.
+ const [showMeilleuresHeures, setShowMeilleuresHeures] = useState(false);
  const [showStrategyRecs, setShowStrategyRecs] = useState(false);
  const [formData, setFormData] = useState<PostFormData>({
  title: '',
@@ -1609,6 +1612,15 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  }}
  />
  )}
+ </Dialog>
+ <Dialog open={showMeilleuresHeures} onOpenChange={setShowMeilleuresHeures}>
+ <DialogTrigger asChild>
+ <Button variant="outline" className="flex items-center gap-2" data-testid="ouvrir-meilleures-heures">
+ <Clock className="h-4 w-4" />
+ {t('meilleuresHeures.ouvrir')}
+ </Button>
+ </DialogTrigger>
+ {showMeilleuresHeures && <PanneauMeilleuresHeures projectId={selectedProjectId} />}
  </Dialog>
  <Dialog open={showCorbeille} onOpenChange={setShowCorbeille}>
  <DialogTrigger asChild>

@@ -25,12 +25,19 @@ import { basculerVersAteliers, preRediger, rappelVeille, type DepsQuotidien } fr
 import { jourHeureParis } from "./validation";
 
 /** Les visuels d'un post (dans l'ordre de publication), avec leur nature. */
-export async function mediasDuPost(userId: string, post: any): Promise<Array<{ id: number; url: string; mimeType: string | null; genre: GenreMedia }>> {
+export async function mediasDuPost(userId: string, post: any): Promise<Array<{ id: number; url: string; mimeType: string | null; genre: GenreMedia; nom: string | null }>> {
   const ids = Array.isArray(post?.mediaIds) ? (post.mediaIds as unknown[]).map(Number).filter(Number.isInteger) : [];
   // En parallèle : chaque lecture est un aller-retour réseau vers la base (l'atelier en faisait
   // des dizaines à la suite). Promise.all garde l'ordre des visuels.
   const lus = await Promise.all(ids.map((id) => storage.getMediaItemById(id, userId)));
-  return lus.flatMap((m, i) => (m?.url ? [{ id: ids[i], url: m.url, mimeType: m.mimeType ?? null, genre: genreDuMedia(m) }] : []));
+  return lus.flatMap((m, i) => (m?.url ? [{ id: ids[i], url: m.url, mimeType: m.mimeType ?? null, genre: genreDuMedia(m), nom: m.originalName ?? null }] : []));
+}
+
+/** Les fichiers à télécharger d'un post (« Finir sur le téléphone », lot 10), dans l'ordre. */
+async function fichiersDuPost(userId: string, post: any): Promise<Array<{ url: string; nom: string | null; genre: GenreMedia }>> {
+  const f: Array<{ url: string; nom: string | null; genre: GenreMedia }> = (await mediasDuPost(userId, post)).map(({ url, nom, genre }) => ({ url, nom, genre }));
+  if (f.length === 0 && post?.mediaUrl) f.push({ url: post.mediaUrl, nom: post.mediaFileName ?? null, genre: "image" });
+  return f;
 }
 
 async function genresDuPost(userId: string, post: any): Promise<GenreMedia[]> {
@@ -95,6 +102,7 @@ export const depsValidation: DepsValidation = {
     return p;
   },
   mediasDuPost: genresDuPost,
+  fichiersDuPost,
   compteDuPost,
   tachesDuPost: (userId, contentId) => storage.getTasksForContents(userId, [contentId]),
   async archiverTaches(userId, ids) {

@@ -18,6 +18,7 @@ import { formatDePublication } from "@shared/programmation";
 import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/options-post";
 import { Switch } from "@/components/ui/switch";
 import TextesEnregistres from "@/components/content/TextesEnregistres";
+import { MeilleursCreneaux } from "@/components/content/MeilleuresHeures";
 import type { MotifNote, OptionsPostPatch, PostAtelier } from "./api";
 import { devalider, enregistrer, joindreVisuel, noterPost, refaire, retirerVisuel, supprimerPost, valider } from "./api";
 
@@ -96,10 +97,10 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
     setFormat(f);
     try { await enregistrer(post.id, { postFormat: f }); onChange(); } catch (e) { erreur(e); }
   };
-  const changerChamp = async (patch: { premierCommentaire?: string | null; couvertureOffsetMs?: number | null } & OptionsPostPatch) => {
+  const changerChamp = async (patch: { premierCommentaire?: string | null; couvertureOffsetMs?: number | null; finirSurTelephone?: boolean } & OptionsPostPatch) => {
     try { await enregistrer(post.id, patch); onChange(); } catch (e) { erreur(e); }
   };
-  const changerDate = async (v: string) => {
+  const changerDate = async (v: string | Date) => {
     const d = new Date(v);
     if (isNaN(d.getTime())) return;
     setDate(d.toISOString());
@@ -426,6 +427,11 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
           <Input id={`date-${post.id}`} type="datetime-local" className="h-8 text-sm" disabled={!modifiable}
             key={date} defaultValue={versChampLocal(date)} onBlur={(e) => { if (e.target.value !== versChampLocal(date)) void changerDate(e.target.value); }} />
         </div>
+        {modifiable && (
+          <div className="sm:col-span-2">
+            <MeilleursCreneaux projectId={post.projectId} reseau={post.platform} disabled={occupe !== null} onChoisir={(d) => { void changerDate(d); }} />
+          </div>
+        )}
       </section>
 
       {RESEAUX_COMMENTAIRE.has(post.platform.toLowerCase()) && (
@@ -512,6 +518,15 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
         </section>
       )}
 
+      <section className="space-y-1">
+        <label className="flex items-center gap-2 text-xs">
+          <Switch disabled={!modifiable} checked={post.finirSurTelephone === true} data-testid="finir-sur-telephone"
+            onCheckedChange={(v) => void changerChamp({ finirSurTelephone: v })} />
+          {t("atelier.finirSurTelephone")}
+        </label>
+        <p className="text-[11px] text-muted-foreground">{t("atelier.finirSurTelephoneAide")}</p>
+      </section>
+
       {modifiable && (
         <footer className="space-y-2 border-t border-border pt-4">
           {manques.length > 0 && !enRedaction && (
@@ -519,7 +534,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
               {manques.map((m) => <li key={m}>{t(`atelier.manques.${m}`)}</li>)}
             </ul>
           )}
-          {!post.compteConnecte && <p className="text-[11px] text-muted-foreground">{t("atelier.sansCompte", { reseau: post.platform })}</p>}
+          {!post.compteConnecte && !post.finirSurTelephone && <p className="text-[11px] text-muted-foreground">{t("atelier.sansCompte", { reseau: post.platform })}</p>}
           <div className="flex items-center gap-3">
             <Button onClick={() => { void lancerValidation(); }} disabled={occupe !== null || enRedaction || manques.length > 0}>
               {occupe === "valider" ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />}
