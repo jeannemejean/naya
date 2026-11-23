@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/options-post";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import TextesEnregistres from "@/components/content/TextesEnregistres";
 import { useToast } from "@/hooks/use-toast";
 import { Upload, X, AlertCircle, Image as ImageIcon, Video } from "lucide-react";
 import {
@@ -58,6 +59,8 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
   const [adapter, setAdapter] = useState(false);
   const [legendes, setLegendes] = useState<Record<number, string>>({});
   const [premierCommentaire, setPremierCommentaire] = useState("");
+  const zoneLegende = useRef<HTMLTextAreaElement>(null);
+  const zoneCommentaire = useRef<HTMLTextAreaElement>(null);
   const [couvertureSec, setCouvertureSec] = useState("");
   // Options de publication : Instagram (alt, collaborateurs, Reel) et carrousel PDF LinkedIn.
   const [texteAlternatif, setTexteAlternatif] = useState("");
@@ -267,7 +270,8 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           {/* Légende */}
           <div>
             <p className="text-xs text-naya-olive-35 mb-2 font-mono">Légende</p>
-            <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={5} placeholder="Écris ta légende…" />
+            <Textarea ref={zoneLegende} value={caption} onChange={(e) => setCaption(e.target.value)} rows={5} placeholder="Écris ta légende…" />
+            <TextesEnregistres zone={zoneLegende} valeur={caption} onChange={setCaption} projectId={projectId} testId="textes-legende" />
             {validations.length > 1 && (
               <label className="mt-2 flex items-center gap-2 text-xs text-naya-olive-70">
                 <Switch checked={adapter} onCheckedChange={setAdapter} /> {t("composer.adapterParReseau")}
@@ -286,8 +290,9 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           {validations.some(({ acc }) => ["instagram", "linkedin", "facebook"].includes(acc.basePlatform)) && (
             <div>
               <p className="text-xs text-naya-olive-35 mb-2 font-mono">{t("atelier.premierCommentaire")}</p>
-              <Textarea rows={2} maxLength={2200} value={premierCommentaire} onChange={(e) => setPremierCommentaire(e.target.value)}
+              <Textarea ref={zoneCommentaire} rows={2} maxLength={2200} value={premierCommentaire} onChange={(e) => setPremierCommentaire(e.target.value)}
                 placeholder={t("atelier.premierCommentaireAide")} />
+              <TextesEnregistres zone={zoneCommentaire} valeur={premierCommentaire} onChange={(v) => setPremierCommentaire(v.slice(0, 2200))} projectId={projectId} testId="textes-commentaire" />
             </div>
           )}
           {validations.some(({ acc, format }) => acc.basePlatform === "instagram" && (format === "reel" || format === "feed_video")) && media.some((m) => m.kind === "video") && (

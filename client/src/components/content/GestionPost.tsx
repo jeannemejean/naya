@@ -4,14 +4,16 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Copy, History, Loader2, StickyNote, Trash2 } from "lucide-react";
+import { Copy, History, LayoutTemplate, Loader2, StickyNote, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { TEXTE_NOTE_MAX } from "@shared/gestion-posts";
+import { NOM_MODELE_MAX } from "@shared/bibliotheque";
 
 interface Note { id: number; texte: string; createdAt: string }
 interface Evenement { id: number | null; evenement: string; details: Record<string, any> | null; createdAt: string }
@@ -28,6 +30,7 @@ function DetailEvenement({ e, projets }: { e: Evenement; projets: ProjetMin[] })
   }
   if (e.evenement === "echec" && d.raison) return <span>{t("gestionPost.historique.raison", { raison: String(d.raison) })}</span>;
   if (e.evenement === "cree" && d.depuis) return <span>{t("gestionPost.historique.depuis", { id: d.depuis })}</span>;
+  if (e.evenement === "cree" && d.modele) return <span>{t("gestionPost.historique.depuisModele", { nom: String(d.modele) })}</span>;
   if (e.evenement === "duplique") {
     const nom = d.versProjetId == null ? t("gestionPost.dupliquer.sansProjet") : (projets.find((p) => p.id === d.versProjetId)?.name ?? `#${d.versProjetId}`);
     return <span>{t("gestionPost.historique.versProjet", { projet: nom })}</span>;
@@ -41,6 +44,7 @@ export default function GestionPost({ postId, projets, projetCourantId }: { post
   const qc = useQueryClient();
   const [texte, setTexte] = useState("");
   const [cibles, setCibles] = useState<number[]>([]);
+  const [nomModele, setNomModele] = useState("");
 
   const cleNotes = ["/api/content", postId, "notes"];
   const cleHistorique = ["/api/content", postId, "historique"];
@@ -73,6 +77,16 @@ export default function GestionPost({ postId, projets, projetCourantId }: { post
     onError: () => toast({ title: t("gestionPost.dupliquer.erreur"), variant: "destructive" }),
   });
 
+  const enregistrerModele = useMutation({
+    mutationFn: async () => (await apiRequest("POST", `/api/content/${postId}/enregistrer-modele`, { nom: nomModele.trim() })).json(),
+    onSuccess: () => {
+      setNomModele("");
+      qc.invalidateQueries({ queryKey: ["/api/bibliotheque/modeles"] });
+      toast({ title: t("bibliotheque.modeles.enregistreToast") });
+    },
+    onError: () => toast({ title: t("bibliotheque.erreur"), variant: "destructive" }),
+  });
+
   const basculer = (id: number) => setCibles((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
   const trop = texte.trim().length > TEXTE_NOTE_MAX;
 
@@ -83,6 +97,7 @@ export default function GestionPost({ postId, projets, projetCourantId }: { post
           <TabsTrigger value="notes" className="flex items-center gap-1.5"><StickyNote className="h-3.5 w-3.5" />{t("gestionPost.onglets.notes")}</TabsTrigger>
           <TabsTrigger value="historique" className="flex items-center gap-1.5"><History className="h-3.5 w-3.5" />{t("gestionPost.onglets.historique")}</TabsTrigger>
           <TabsTrigger value="dupliquer" className="flex items-center gap-1.5"><Copy className="h-3.5 w-3.5" />{t("gestionPost.onglets.dupliquer")}</TabsTrigger>
+          <TabsTrigger value="modele" className="flex items-center gap-1.5"><LayoutTemplate className="h-3.5 w-3.5" />{t("gestionPost.onglets.modele")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="notes" className="space-y-2">
@@ -147,6 +162,18 @@ export default function GestionPost({ postId, projets, projetCourantId }: { post
             {dupliquer.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
             {t("gestionPost.dupliquer.bouton", { count: cibles.length })}
           </Button>
+        </TabsContent>
+
+        <TabsContent value="modele" className="space-y-2">
+          <p className="text-xs text-naya-olive-55">{t("bibliotheque.modeles.enregistrerAide")}</p>
+          <div className="flex gap-2">
+            <Input value={nomModele} maxLength={NOM_MODELE_MAX} onChange={(e) => setNomModele(e.target.value)}
+              placeholder={t("bibliotheque.modeles.nomPlaceholder")} className="h-8 text-sm" data-testid="nom-modele" />
+            <Button size="sm" type="button" disabled={!nomModele.trim() || enregistrerModele.isPending} onClick={() => enregistrerModele.mutate()}>
+              {enregistrerModele.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <LayoutTemplate className="h-3.5 w-3.5 mr-1" />}
+              {t("bibliotheque.modeles.enregistrer")}
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

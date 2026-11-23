@@ -7,6 +7,8 @@ import VisuelsDuPost from "@/components/content/VisuelsDuPost";
 import ProgrammationPost from "@/components/content/ProgrammationPost";
 import GestionPost from "@/components/content/GestionPost";
 import CorbeillePosts from "@/components/content/CorbeillePosts";
+import Bibliotheque from "@/components/content/Bibliotheque";
+import ApercuInstagram from "@/components/content/ApercuInstagram";
 import ActionsGroupees from "@/components/content/ActionsGroupees";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +22,7 @@ import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { fr } from 'date-fns/locale/fr';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine, Library, LayoutGrid } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -210,6 +212,9 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  // Actions groupées (vue pipeline) : les posts cochés, et la corbeille.
  const [selection, setSelection] = useState<number[]>([]);
  const [showCorbeille, setShowCorbeille] = useState(false);
+ // Bibliothèque (textes enregistrés, modèles) et aperçu de la grille Instagram de la marque.
+ const [showBibliotheque, setShowBibliotheque] = useState(false);
+ const [showApercuInstagram, setShowApercuInstagram] = useState(false);
  const [showStrategyRecs, setShowStrategyRecs] = useState(false);
  const [formData, setFormData] = useState<PostFormData>({
  title: '',
@@ -1566,6 +1571,34 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  {t('contentCalendar.reception.openImport')}
  </Button>
  <ImportCalendrier projectId={selectedProjectId} />
+ <Dialog open={showBibliotheque} onOpenChange={setShowBibliotheque}>
+ <DialogTrigger asChild>
+ <Button variant="outline" className="flex items-center gap-2" data-testid="ouvrir-bibliotheque">
+ <Library className="h-4 w-4" />
+ {t('bibliotheque.ouvrir')}
+ </Button>
+ </DialogTrigger>
+ {showBibliotheque && <Bibliotheque projets={projects.map(p => ({ id: p.id, name: p.name }))} projetCourantId={selectedProjectId} />}
+ </Dialog>
+ <Dialog open={showApercuInstagram} onOpenChange={setShowApercuInstagram}>
+ <DialogTrigger asChild>
+ <Button variant="outline" className="flex items-center gap-2" data-testid="ouvrir-apercu-instagram">
+ <LayoutGrid className="h-4 w-4" />
+ {t('apercuInstagram.ouvrir')}
+ </Button>
+ </DialogTrigger>
+ {showApercuInstagram && (
+ <ApercuInstagram
+ projectId={selectedProjectId}
+ onOuvrir={(id) => {
+ const post = content.find((c: Content) => c.id === id);
+ if (!post) { toast({ title: t('apercuInstagram.horsVue') }); return; }
+ setShowApercuInstagram(false);
+ setSelectedPost(post);
+ }}
+ />
+ )}
+ </Dialog>
  <Dialog open={showCorbeille} onOpenChange={setShowCorbeille}>
  <DialogTrigger asChild>
  <Button variant="outline" className="flex items-center gap-2" data-testid="ouvrir-corbeille">

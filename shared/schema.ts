@@ -735,6 +735,41 @@ export const historiquePost = pgTable("historique_post", {
 export type HistoriquePost = typeof historiquePost.$inferSelect;
 
 /**
+ * Bibliothèque (lot 3) : textes enregistrés — courts passages réutilisables (signature,
+ * hashtags, appel à l'action) à insérer dans une légende ou un premier commentaire. Propres à
+ * l'utilisatrice, rangés éventuellement sous un projet (null = pour toutes ses marques).
+ */
+export const textesEnregistres = pgTable("textes_enregistres", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  titre: text("titre").notNull(),
+  texte: text("texte").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("textes_enregistres_user_idx").on(t.userId),
+}));
+export type TexteEnregistre = typeof textesEnregistres.$inferSelect;
+
+/**
+ * Bibliothèque (lot 3) : posts modèles. `contenu` garde le texte de chaque réseau, les médias,
+ * le format et les options (shared/bibliotheque.ts, `contenuDeModele`) ; jamais la date ni le
+ * compte. Utiliser un modèle crée un brouillon, jamais programmé.
+ */
+export const modelesPost = pgTable("modeles_post", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  nom: text("nom").notNull(),
+  contenu: jsonb("contenu").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("modeles_post_user_idx").on(t.userId),
+}));
+export type ModelePost = typeof modelesPost.$inferSelect;
+
+/**
  * Réception par contenu — signaux RAPIDES (SCHEMA-TRIANGULATION.md §C.2).
  *
  * RGPD par construction : cette table ne porte QUE des compteurs agrégés et un score.

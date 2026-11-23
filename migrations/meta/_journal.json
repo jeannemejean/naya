@@ -330,6 +330,13 @@
       "when": 1795453881083,
       "tag": "0046_powerful_wither",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795454632170,
+      "tag": "0047_loose_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

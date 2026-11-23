@@ -804,3 +804,15 @@ sans sa table, les gestes passent quand même.
 select column_name from information_schema.columns where table_name='content' and column_name='supprime_le';  -- 1 ligne
 select table_name from information_schema.tables where table_name in ('notes_post','historique_post');       -- 2 lignes
 ```
+
+## 20. Bibliothèque (textes enregistrés, posts modèles) — `0047` à appliquer en prod à la main
+
+Fichier : `migrations/0047_loose_hellfire_club.sql` (branche `feat/reseaux-par-projet`). Deux tables
+nouvelles, `textes_enregistres` et `modeles_post` (clé étrangère en cascade vers `users`, `set null` vers
+`projects`, un index sur `user_id` chacune). Aucun `ALTER` de table existante, aucun `DROP`, aucune donnée
+touchée. Sans la migration, seules les routes `/api/bibliotheque/*` et « Enregistrer comme modèle »
+échouent (500) ; le calendrier, l'atelier, le composeur et l'aperçu Instagram (lot 4, sans table) marchent.
+
+```sql
+select table_name from information_schema.tables where table_name in ('textes_enregistres','modeles_post');  -- 2 lignes
+```

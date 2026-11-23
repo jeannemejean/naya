@@ -17,6 +17,7 @@ import { genreDuPost, manquesPourValider } from "@shared/atelier";
 import { formatDePublication } from "@shared/programmation";
 import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/options-post";
 import { Switch } from "@/components/ui/switch";
+import TextesEnregistres from "@/components/content/TextesEnregistres";
 import type { MotifNote, OptionsPostPatch, PostAtelier } from "./api";
 import { devalider, enregistrer, joindreVisuel, noterPost, refaire, retirerVisuel, supprimerPost, valider } from "./api";
 
@@ -56,6 +57,8 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
   const [motif, setMotif] = useState<MotifNote | null>(null);
   const [note, setNote] = useState("");
   const zoneTexte = useRef<HTMLTextAreaElement>(null);
+  const zoneCommentaire = useRef<HTMLTextAreaElement>(null);
+  const [commentaire, setCommentaire] = useState(post.premierCommentaire ?? "");
   const minuterie = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aEnvoyer = useRef<string | null>(null);
   const fichiers = useRef<HTMLInputElement>(null);
@@ -64,6 +67,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
   // Le texte arrive du serveur (rédaction de Naya, « Refaire ») : on le reprend s'il n'y a rien en attente.
   useEffect(() => { if (aEnvoyer.current === null) setTexte(post.body ?? ""); }, [post.body]);
   useEffect(() => { setFormat(post.postFormat ?? "feed_image"); }, [post.postFormat]);
+  useEffect(() => { setCommentaire(post.premierCommentaire ?? ""); }, [post.premierCommentaire]);
   useEffect(() => { setDate(post.scheduledFor); }, [post.scheduledFor]);
 
   const vider = useCallback(async () => {
@@ -344,6 +348,9 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
             className="text-sm leading-relaxed resize-y"
           />
         )}
+        {!enRedaction && modifiable && (
+          <TextesEnregistres zone={zoneTexte} valeur={texte} onChange={(v) => taper(v.slice(0, 5000))} projectId={post.projectId} testId="textes-atelier" />
+        )}
         {limite && !enRedaction && (
           <p className={`text-[11px] text-right ${texte.length > limite ? "text-destructive" : "text-muted-foreground"}`}>
             {t("atelier.caracteres", { n: texte.length, max: limite })}
@@ -424,10 +431,14 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
       {RESEAUX_COMMENTAIRE.has(post.platform.toLowerCase()) && (
         <section className="space-y-1">
           <Label htmlFor={`commentaire-${post.id}`} className="text-xs">{t("atelier.premierCommentaire")}</Label>
-          <Textarea id={`commentaire-${post.id}`} rows={2} className="text-sm" disabled={!modifiable} maxLength={2200}
-            key={`c-${post.premierCommentaire ?? ""}`} defaultValue={post.premierCommentaire ?? ""}
+          <Textarea ref={zoneCommentaire} id={`commentaire-${post.id}`} rows={2} className="text-sm" disabled={!modifiable} maxLength={2200}
+            value={commentaire} onChange={(e) => setCommentaire(e.target.value)}
             placeholder={t("atelier.premierCommentaireAide")}
             onBlur={(e) => { if (e.target.value.trim() !== (post.premierCommentaire ?? "")) void changerChamp({ premierCommentaire: e.target.value }); }} />
+          {modifiable && (
+            <TextesEnregistres zone={zoneCommentaire} valeur={commentaire} projectId={post.projectId} testId="textes-commentaire-atelier"
+              onChange={(v) => { const c = v.slice(0, 2200); setCommentaire(c); void changerChamp({ premierCommentaire: c }); }} />
+          )}
         </section>
       )}
 

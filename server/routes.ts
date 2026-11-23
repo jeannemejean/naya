@@ -17,6 +17,7 @@ import { registerLivrablesRoutes } from "./routes-livrables";
 import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerAtelierRoutes } from "./routes-atelier";
 import { registerGestionPostsRoutes } from "./routes-gestion-posts";
+import { registerBibliothequeRoutes } from "./routes-bibliotheque";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
@@ -11399,6 +11400,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerProgrammationRoutes(app);
   registerAtelierRoutes(app);
   registerGestionPostsRoutes(app);
+  registerBibliothequeRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
   registerModeTestRoutes(app);
