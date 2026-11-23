@@ -20,6 +20,7 @@ import { storage } from "./storage";
 import { scheduleRoutines } from "./services/routines/ordonnanceur";
 import { scheduleProfilsVeille } from "./services/profils-veille/planificateur";
 import { scheduleVeilleAO } from "./services/veille-ao/planificateur";
+import { scheduleAutolistes } from "./services/autolistes/planificateur";
 import { suivrePassage } from "./services/fil/etat-taches-fond";
 
 // Prevent unhandled rejections and exceptions from crashing the server
@@ -263,6 +264,10 @@ function demarrerTachesDeFond() {
 
   // ─── Worker d'auto-publication des posts programmés (chaque minute) ───────────
   scheduleSocialPublisher();
+
+  // ─── Autolistes : les 7 prochains jours de chaque liste posés en posts programmés (chaque heure) ──
+  // Les posts posés sont publiés par le worker ci-dessus, comme tout post programmé.
+  scheduleAutolistes();
 
   // ─── Worker d'envoi des séquences de prospection (inerte tant que non activé) ──
   scheduleProspectionSender();

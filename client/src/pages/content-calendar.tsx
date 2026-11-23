@@ -8,6 +8,7 @@ import ProgrammationPost from "@/components/content/ProgrammationPost";
 import GestionPost from "@/components/content/GestionPost";
 import CorbeillePosts from "@/components/content/CorbeillePosts";
 import Bibliotheque from "@/components/content/Bibliotheque";
+import Autolistes from "@/components/content/Autolistes";
 import ApercuInstagram from "@/components/content/ApercuInstagram";
 import ActionsGroupees from "@/components/content/ActionsGroupees";
 import { Checkbox } from '@/components/ui/checkbox';
@@ -22,7 +23,7 @@ import { getDay } from 'date-fns/getDay';
 import { enUS } from 'date-fns/locale/en-US';
 import { fr } from 'date-fns/locale/fr';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine, Library, LayoutGrid } from 'lucide-react';
+import { Plus, Calendar as CalendarIcon, List, Search, Settings, Check, X, ExternalLink, Image, Upload, Trash2, ChevronLeft, ChevronRight, ChevronDown, Sparkles, Lightbulb, RefreshCw, Target, ThumbsDown, PenLine, Library, LayoutGrid, Repeat } from 'lucide-react';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import 'react-big-calendar/lib/addons/dragAndDrop/styles.css';
 
@@ -214,6 +215,7 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  const [showCorbeille, setShowCorbeille] = useState(false);
  // Bibliothèque (textes enregistrés, modèles) et aperçu de la grille Instagram de la marque.
  const [showBibliotheque, setShowBibliotheque] = useState(false);
+ const [showAutolistes, setShowAutolistes] = useState(false);
  const [showApercuInstagram, setShowApercuInstagram] = useState(false);
  const [showStrategyRecs, setShowStrategyRecs] = useState(false);
  const [formData, setFormData] = useState<PostFormData>({
@@ -1579,6 +1581,15 @@ export default function ContentCalendar({ onSearchClick }: ContentCalendarProps)
  </Button>
  </DialogTrigger>
  {showBibliotheque && <Bibliotheque projets={projects.map(p => ({ id: p.id, name: p.name }))} projetCourantId={selectedProjectId} />}
+ </Dialog>
+ <Dialog open={showAutolistes} onOpenChange={setShowAutolistes}>
+ <DialogTrigger asChild>
+ <Button variant="outline" className="flex items-center gap-2" data-testid="ouvrir-autolistes">
+ <Repeat className="h-4 w-4" />
+ {t('autolistes.ouvrir')}
+ </Button>
+ </DialogTrigger>
+ {showAutolistes && <Autolistes projets={projects.map(p => ({ id: p.id, name: p.name }))} projetCourantId={selectedProjectId} />}
  </Dialog>
  <Dialog open={showApercuInstagram} onOpenChange={setShowApercuInstagram}>
  <DialogTrigger asChild>

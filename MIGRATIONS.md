@@ -833,3 +833,25 @@ pour que les liens courts copiés dans les légendes portent le bon domaine.
 ```sql
 select table_name from information_schema.tables where table_name in ('liens_courts','clics_liens','smartlinks');  -- 3 lignes
 ```
+
+## 22. Autolistes — `0049` à appliquer en prod à la main
+
+Fichier : `migrations/0049_hard_stingray.sql` (branche `feat/reseaux-par-projet`). Deux tables
+nouvelles : `autolistes` (nom, marque, créneaux et comptes en jsonb, boucle, activation, fuseau,
+problèmes du dernier passage ; cascade vers `users`, `set null` vers `projects`) et `autoliste_posts`
+(file ordonnée, modèle de post en jsonb, compteur de publications ; cascade vers `autolistes`). Sur
+`content`, trois colonnes nouvelles **nullables** (`autoliste_id`, `autoliste_post_id`,
+`autoliste_creneau`, clés étrangères `set null`) et un index unique
+`content_autoliste_creneau_idx (autoliste_id, autoliste_creneau, social_account_id)` : toutes les
+lignes existantes ont `autoliste_id` null, donc aucun conflit possible (les null sont distincts).
+Aucun `DROP`, aucune donnée touchée.
+
+Sans la migration : la lecture du calendrier échoue (le `select` de `content` nomme les nouvelles
+colonnes) — **appliquer `0049` avant de déployer le code**. Le passage des autolistes (chaque heure,
+dans `demarrerTachesDeFond`) ne fait rien tant qu'aucune liste n'existe.
+
+```sql
+select table_name from information_schema.tables where table_name in ('autolistes','autoliste_posts');  -- 2 lignes
+select column_name from information_schema.columns where table_name = 'content' and column_name like 'autoliste%';  -- 3 lignes
+select indexname from pg_indexes where indexname = 'content_autoliste_creneau_idx';  -- 1 ligne
+```

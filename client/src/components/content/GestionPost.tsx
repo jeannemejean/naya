@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Copy, History, LayoutTemplate, Loader2, StickyNote, Trash2 } from "lucide-react";
+import { Copy, History, LayoutTemplate, Loader2, Repeat, StickyNote, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { TEXTE_NOTE_MAX } from "@shared/gestion-posts";
 import { NOM_MODELE_MAX } from "@shared/bibliotheque";
+import { AjouterAAutoliste } from "./Autolistes";
 
 interface Note { id: number; texte: string; createdAt: string }
 interface Evenement { id: number | null; evenement: string; details: Record<string, any> | null; createdAt: string }
@@ -98,6 +99,7 @@ export default function GestionPost({ postId, projets, projetCourantId }: { post
           <TabsTrigger value="historique" className="flex items-center gap-1.5"><History className="h-3.5 w-3.5" />{t("gestionPost.onglets.historique")}</TabsTrigger>
           <TabsTrigger value="dupliquer" className="flex items-center gap-1.5"><Copy className="h-3.5 w-3.5" />{t("gestionPost.onglets.dupliquer")}</TabsTrigger>
           <TabsTrigger value="modele" className="flex items-center gap-1.5"><LayoutTemplate className="h-3.5 w-3.5" />{t("gestionPost.onglets.modele")}</TabsTrigger>
+          <TabsTrigger value="autoliste" className="flex items-center gap-1.5"><Repeat className="h-3.5 w-3.5" />{t("autolistes.onglet")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="notes" className="space-y-2">
@@ -174,6 +176,10 @@ export default function GestionPost({ postId, projets, projetCourantId }: { post
               {t("bibliotheque.modeles.enregistrer")}
             </Button>
           </div>
+        </TabsContent>
+
+        <TabsContent value="autoliste" className="space-y-2">
+          <AjouterAAutoliste source={{ contentId: postId }} />
         </TabsContent>
       </Tabs>
     </div>

@@ -698,9 +698,17 @@ export const content = pgTable("content", {
   // des vues, restaurable. null = vivant. Un post dans la corbeille ne part JAMAIS (le worker
   // l'exclut) et sort de toutes les listes (calendrier, atelier, présence).
   supprimeLe: timestamp("supprime_le"),
+  // Autolistes (lot 6) : le post a été posé par une autoliste, pour ce post de sa file et ce
+  // créneau (l'instant prévu par la liste, gardé même si le post est déplacé). Un créneau
+  // n'est jamais posé deux fois sur le même compte (index unique ci-dessous). null = autre post.
+  autolisteId: integer("autoliste_id").references((): AnyPgColumn => autolistes.id, { onDelete: "set null" }),
+  autolistePostId: integer("autoliste_post_id").references((): AnyPgColumn => autolistePosts.id, { onDelete: "set null" }),
+  autolisteCreneau: timestamp("autoliste_creneau"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  autolisteCreneauUnique: uniqueIndex("content_autoliste_creneau_idx").on(t.autolisteId, t.autolisteCreneau, t.socialAccountId),
+}));
 
 /**
  * Notes internes d'un post : un fil de notes courtes, visibles seulement dans Naya (jamais
@@ -827,6 +835,53 @@ export const smartlinks = pgTable("smartlinks", {
   parUtilisatrice: index("smartlinks_user_idx").on(t.userId),
 }));
 export type Smartlink = typeof smartlinks.$inferSelect;
+
+/**
+ * Autolistes (lot 6, inspiré de Metricool) : une file de posts publiée seule à des créneaux
+ * récurrents (heure + jours de la semaine, `jours` 0 = dimanche … 6 = samedi, heure de
+ * `fuseau`), sur les comptes choisis (ids de social_accounts du périmètre de la marque).
+ * `en_boucle` : un post publié repart en fin de file (evergreen) ; sinon il est consommé.
+ * Le planificateur pose les 7 prochains jours en posts ordinaires du calendrier (autoPost),
+ * publiés par le worker habituel. `problemes` : ce qui a empêché le dernier passage de poser
+ * un créneau ([{ creneau, postId, compteId, raisons }]).
+ */
+export const autolistes = pgTable("autolistes", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  nom: text("nom").notNull(),
+  actif: boolean("actif").notNull().default(true),
+  enBoucle: boolean("en_boucle").notNull().default(false),
+  creneaux: jsonb("creneaux").notNull().default([]),
+  comptes: jsonb("comptes").notNull().default([]),
+  fuseau: text("fuseau").notNull().default("Europe/Paris"),
+  problemes: jsonb("problemes").notNull().default([]),
+  derniereMaterialisationAt: timestamp("derniere_materialisation_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("autolistes_user_idx").on(t.userId),
+}));
+export type Autoliste = typeof autolistes.$inferSelect;
+
+/**
+ * Les posts d'une autoliste (200 au plus), dans l'ordre de la file. `contenu` : le modèle de
+ * post de la bibliothèque (texte par réseau, médias, format, options — shared/bibliotheque.ts).
+ * `actif` false : consommé (publié, liste sans boucle) ou mis de côté.
+ */
+export const autolistePosts = pgTable("autoliste_posts", {
+  id: serial("id").primaryKey(),
+  autolisteId: integer("autoliste_id").notNull().references(() => autolistes.id, { onDelete: "cascade" }),
+  ordre: integer("ordre").notNull().default(0),
+  contenu: jsonb("contenu").notNull(),
+  publieFois: integer("publie_fois").notNull().default(0),
+  dernierPassageAt: timestamp("dernier_passage_at"),
+  actif: boolean("actif").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parListe: index("autoliste_posts_liste_idx").on(t.autolisteId, t.ordre),
+}));
+export type AutolistePost = typeof autolistePosts.$inferSelect;
 
 /**
  * Réception par contenu — signaux RAPIDES (SCHEMA-TRIANGULATION.md §C.2).
@@ -1721,6 +1776,10 @@ export const insertContentSchema = createInsertSchema(content).omit({
   createdAt: true,
   updatedAt: true,
   supprimeLe: true,
+  // Posés par le planificateur des autolistes seulement, jamais par un formulaire.
+  autolisteId: true,
+  autolistePostId: true,
+  autolisteCreneau: true,
 });
 
 export const insertLeadSchema = createInsertSchema(leads).omit({

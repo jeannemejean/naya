@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Copy, FileText, LayoutTemplate, Loader2, Plus, Trash2 } from "lucide-react";
+import { Copy, FileText, LayoutTemplate, Loader2, Plus, Repeat, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { filtrerParNom, reseauxDuModele, TEXTE_ENREGISTRE_MAX, TITRE_TEXTE_MAX, type ContenuModele } from "@shared/bibliotheque";
 import { CLE_TEXTES, useTextesEnregistres } from "./TextesEnregistres";
+import { AjouterAAutoliste } from "./Autolistes";
 
 interface ProjetMin { id: number; name: string }
 interface ModeleClient { id: number; nom: string; projectId: number | null; contenu: ContenuModele; createdAt: string }
@@ -85,6 +86,7 @@ export default function Bibliotheque({ projets, projetCourantId }: { projets: Pr
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [enUsage, setEnUsage] = useState<number | null>(null);
+  const [versAutoliste, setVersAutoliste] = useState<number | null>(null);
   const [nouveau, setNouveau] = useState<{ titre: string; texte: string; marque: string } | null>(null);
   const { data: textes = [], isLoading: chargeTextes } = useTextesEnregistres();
   const { data: modeles = [], isLoading: chargeModeles } = useQuery<ModeleClient[]>({
@@ -156,12 +158,21 @@ export default function Bibliotheque({ projets, projetCourantId }: { projets: Pr
                       <Button size="sm" variant="outline" type="button" onClick={() => setEnUsage(enUsage === m.id ? null : m.id)}>
                         {t("bibliotheque.modeles.utiliser")}
                       </Button>
+                      <Button size="sm" variant="outline" type="button" onClick={() => setVersAutoliste(versAutoliste === m.id ? null : m.id)}
+                        aria-label={t("autolistes.ajouter.bouton")} title={t("autolistes.ajouter.bouton")} data-testid={`modele-autoliste-${m.id}`}>
+                        <Repeat className="h-3.5 w-3.5" />
+                      </Button>
                       <Button size="sm" variant="outline" type="button" disabled={supprimerModele.isPending}
                         aria-label={t("bibliotheque.supprimer")} title={t("bibliotheque.supprimer")}
                         onClick={() => { if (window.confirm(t("bibliotheque.modeles.confirmer"))) supprimerModele.mutate(m.id); }}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
+                    {versAutoliste === m.id && (
+                      <div className="mt-2 bg-naya-olive-06 rounded p-2">
+                        <AjouterAAutoliste source={{ modeleId: m.id }} onFini={() => setVersAutoliste(null)} />
+                      </div>
+                    )}
                     {enUsage === m.id && (
                       <UtiliserModele modele={m} projets={projets} projetCourantId={projetCourantId} onFini={() => setEnUsage(null)} />
                     )}
