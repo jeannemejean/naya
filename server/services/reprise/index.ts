@@ -79,7 +79,8 @@ export function plafondDeLaJournee(prefs: any): number {
   return maxTasksForDay({ availableMin: Math.max(60, total - dejeuner), energyFactor: energie, bufferMin: Math.min(30, Math.max(0, prefs?.bufferMin ?? 10)) });
 }
 
-const compte = (t: Tache) => !t.completed && t.type !== "milestone" && t.source !== "milestone";
+// Vie perso hors plafond de travail (elle occupe ses soirs et week-ends, pas une place de tâche).
+export const compte = (t: Tache) => !t.completed && t.type !== "milestone" && t.source !== "milestone" && t.source !== "vie_perso";
 
 export async function reprendreTaches(deps: DepsReprise, o: OptionsReprise): Promise<BilanReprise> {
   const bilan: BilanReprise = { replacees: 0, modifiees: 0, archivees: 0, creees: 0, postsReprogrammes: 0, postsRetires: 0 };

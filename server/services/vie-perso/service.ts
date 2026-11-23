@@ -34,6 +34,8 @@ export interface DepsViePerso {
   ecrirePlan(userId: string, semaine: string, contenu: PlanRepas, o: { statut: "brouillon" | "valide"; coutEur?: number; garderCoches?: boolean }): Promise<void>;
   lireActivite(userId: string, id: number): Promise<ActiviteLue | null>;
   ecrireActivite(userId: string, id: number, modif: { contenu?: ContenuActivite; statut?: string }): Promise<void>;
+  /** Clés (`actionData.vieperso.cle`) des tâches perso DÉJÀ FAITES de cette origine. */
+  clesFaites(userId: string, origine: OrigineTache): Promise<Set<string>>;
   /** Supprime les tâches perso NON FAITES de cette origine ; renvoie leur nombre. */
   supprimerTachesNonFaites(userId: string, origine: OrigineTache): Promise<number>;
   /** Plages occupées (toutes tâches horodatées non archivées + agenda) de `de` à `a` inclus. */
@@ -76,6 +78,7 @@ export async function changerRepas(
     maxTokens: MAX_TOKENS_CHANGEMENT, rapide: true, userId, etape: "vie_perso_repas",
   });
   const v = nettoyerProfond(valeur);
+  if (!v.repas.titre.trim()) return { ok: false, erreur: "generation_invalide" };
   const jours = plan.contenu.jours.map((j, k) => (k === i ? { ...j, [repas]: repasDepuisGenere(v.repas) } : j));
   // Re-valider le contenu entier : les courses rendues passent par les mêmes bornes que le plan.
   const contenu = SCHEMA_PLAN_REPAS.parse({ ...plan.contenu, jours, courses: v.courses });
@@ -90,7 +93,9 @@ export async function validerPlan(userId: string, semaine: string, deps: DepsVie
   if (!plan) return { ok: false, erreur: "plan_introuvable" };
   const profil = await deps.profil(userId);
   const origine: OrigineTache = { plan: semaine };
-  const demandes = tachesDuPlan(plan.contenu, profil, semaine);
+  // Ce qui est déjà fait (courses cochées vendredi, par exemple) n'est pas recréé.
+  const faites = await deps.clesFaites(userId, origine);
+  const demandes = tachesDuPlan(plan.contenu, profil, semaine).filter((d) => !faites.has(d.cle));
   // Les tâches non faites de ce plan sont remplacées ; les faites restent (et occupent leur créneau).
   await deps.supprimerTachesNonFaites(userId, origine);
   const jours = demandes.map((d) => d.jour).sort();
@@ -122,8 +127,9 @@ export async function planifierActivite(userId: string, id: number, deps: DepsVi
   if (!a.contenu) return { ok: false, erreur: "activite_non_decoupee" };
   const profil = await deps.profil(userId);
   const origine: OrigineTache = { activite: id };
-  await deps.supprimerTachesNonFaites(userId, origine);
   const depuis = deps.maintenant();
+  if (a.dateCible && a.dateCible <= depuis.jour) return { ok: false, erreur: "date_passee" };
+  await deps.supprimerTachesNonFaites(userId, origine);
   const fin = a.dateCible ?? new Date(Date.parse(`${depuis.jour}T12:00:00Z`) + HORIZON_ACTIVITE_JOURS * 86_400_000).toISOString().slice(0, 10);
   const occupes = await deps.occupes(userId, depuis.jour, fin);
   const r = placerActivite({ titre: a.titre, contenu: a.contenu, quand: a.quand, dateCible: a.dateCible }, occupes, profil, depuis);

@@ -42,3 +42,9 @@ describe("selectOverdueTasks — section « Non planifiées » (4 conditions)", 
     expect(selectOverdueTasks(tasks as any, TODAY).map((t: any) => t.id)).toEqual([6]);
   });
 });
+
+describe("selectOverdueTasks — vie perso", () => {
+  it("un dîner non coché n'est pas en retard", () => {
+    expect(selectOverdueTasks([{ completed: false, archivedAt: null, scheduledDate: "2026-11-01", source: "vie_perso" }], "2026-11-23")).toEqual([]);
+  });
+});

@@ -61,6 +61,8 @@ export const preparerRepasSemaine: OutilPropose = outilAValider<ArgsSemaine>({
     if (!x.active(ctx.userId)) return erreur("option Vie perso inactive");
     if (args.semaine != null && (typeof args.semaine !== "string" || !JOUR.test(args.semaine))) return erreur("semaine doit être AAAA-MM-JJ");
     const semaine = lundiDe(args.semaine ?? ajouterJours(aujourdhuiParis(ctx.maintenant), 7));
+    // Semaine figée dans les arguments : validée après minuit, la proposition vise toujours celle montrée.
+    args.semaine = semaine;
     const actuel = await x.deps.lirePlan(ctx.userId, semaine);
     return {
       resume: `Préparer les repas de la semaine du ${semaine}`,
@@ -71,9 +73,14 @@ export const preparerRepasSemaine: OutilPropose = outilAValider<ArgsSemaine>({
   async executer(ctx, args) {
     const bilan: BilanExecution = { reussis: [], echecs: [] };
     const x = await charger();
+    if (!x.active(ctx.userId)) { bilan.echecs.push("Option Vie perso inactive"); return bilan; }
     const semaine = lundiDe(args.semaine ?? ajouterJours(aujourdhuiParis(ctx.maintenant), 7));
-    // Une à deux minutes : lancée en arrière-plan, le plan apparaît dans Vie perso.
-    x.service.preparerPlan(ctx.userId, semaine, x.deps).catch((e: any) => console.error("[agent] repas de la semaine :", e?.message ?? e));
+    const { prendre, rendre } = await import("../../vie-perso/verrou");
+    if (!prendre(ctx.userId, semaine, "preparation")) { bilan.echecs.push("Une préparation des repas est déjà en cours"); return bilan; }
+    // Une à deux minutes : lancée en arrière-plan, le plan apparaît dans Vie perso (la page suit l'état).
+    x.service.preparerPlan(ctx.userId, semaine, x.deps)
+      .then((r) => rendre(ctx.userId, r.ok ? { statut: "fini" } : { statut: "erreur", erreur: r.erreur }))
+      .catch((e: any) => { console.error("[agent] repas de la semaine :", e?.message ?? e); rendre(ctx.userId, { statut: "erreur", erreur: "preparation_echec" }); });
     bilan.reussis.push(`Préparation des repas de la semaine du ${semaine} lancée : le brouillon sera dans Vie perso d'ici deux minutes`);
     return bilan;
   },
@@ -111,6 +118,7 @@ export const planifierActiviteOutil: OutilPropose = outilAValider<ArgsActivite>(
   async executer(ctx, args) {
     const bilan: BilanExecution = { reussis: [], echecs: [] };
     const x = await charger();
+    if (!x.active(ctx.userId)) { bilan.echecs.push("Option Vie perso inactive"); return bilan; }
     try {
       const a = await x.store.ajouterActivite(ctx.userId, {
         titre: args.titre.trim(), description: (args.description ?? "").slice(0, 2000), avecQui: (args.avecQui ?? "").slice(0, 200),

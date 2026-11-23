@@ -20,6 +20,7 @@ function deps(o: Partial<DepsViePerso> = {}) {
     ecrirePlan: vi.fn(async (_u, _s, contenu, x) => { plan = { statut: x.statut, contenu, coches: x.garderCoches ? plan?.coches ?? [] : [] }; }),
     lireActivite: vi.fn(async () => null),
     ecrireActivite: vi.fn(async () => {}),
+    clesFaites: vi.fn(async () => new Set<string>()),
     supprimerTachesNonFaites: vi.fn(async () => 0),
     occupes: vi.fn(async () => new Map()),
     creerTaches: vi.fn(async (_u, _o, t) => t.length),
@@ -59,6 +60,14 @@ describe("validerPlan", () => {
     // la suppression a lieu avant la lecture des plages occupées
     expect((d.supprimerTachesNonFaites as any).mock.invocationCallOrder[0]).toBeLessThan((d.occupes as any).mock.invocationCallOrder[0]);
   });
+  it("ne recrée pas ce qui est déjà fait (courses cochées en avance)", async () => {
+    const d = deps({ clesFaites: vi.fn(async () => new Set(["courses"])) });
+    await preparerPlan("u", "2026-11-30", d);
+    await validerPlan("u", "2026-11-30", d);
+    const cles = (d.creerTaches as any).mock.calls[0][2].map((t: any) => t.cle);
+    expect(cles).not.toContain("courses");
+    expect(cles).toContain("batch");
+  });
   it("sans plan : erreur", async () => {
     expect(await validerPlan("u", "2026-11-30", deps())).toEqual({ ok: false, erreur: "plan_introuvable" });
   });
@@ -76,6 +85,13 @@ describe("changerRepas", () => {
     expect(p.contenu.courses.map((c) => c.article)).toEqual(["Thon"]);
     expect(p.statut).toBe("brouillon");
   });
+  it("repas rendu sans titre : refusé, le plan ne change pas", async () => {
+    const d = deps();
+    await preparerPlan("u", "2026-11-30", d);
+    (d.generer as any).mockResolvedValueOnce({ valeur: { repas: repas(""), courses: [] }, coutEur: 0.01 });
+    expect(await changerRepas("u", "2026-11-30", "2026-12-01", "diner", null, d)).toEqual({ ok: false, erreur: "generation_invalide" });
+    expect((await d.lirePlan("u", "2026-11-30"))!.contenu.jours[1].diner!.titre).toBe("Dîner");
+  });
   it("jour hors plan ou repas inconnu : refus", async () => {
     const d = deps();
     await preparerPlan("u", "2026-11-30", d);
@@ -91,6 +107,11 @@ describe("activités", () => {
     const d = deps({ lireActivite: vi.fn(async () => act), generer: vi.fn(async () => ({ valeur: contenu as any, coutEur: 0 })) });
     expect(await decouperActivite("u", 3, d)).toEqual({ ok: true });
     expect(d.ecrireActivite).toHaveBeenCalledWith("u", 3, { contenu, statut: "a_planifier" });
+  });
+  it("date cible passée : refus, rien n'est supprimé", async () => {
+    const d = deps({ lireActivite: vi.fn(async () => ({ ...act, dateCible: "2026-11-20", contenu: { achats: [], etapes: [{ titre: "x", dureeMin: 30, ensemble: false }] } })) });
+    expect(await planifierActivite("u", 3, d)).toEqual({ ok: false, erreur: "date_passee" });
+    expect(d.supprimerTachesNonFaites).not.toHaveBeenCalled();
   });
   it("planifier sans découpage : refus ; avec : tâches créées", async () => {
     expect(await planifierActivite("u", 3, deps({ lireActivite: vi.fn(async () => act) }))).toEqual({ ok: false, erreur: "activite_non_decoupee" });

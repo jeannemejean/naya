@@ -27,6 +27,7 @@ describe("routes vie perso", () => {
     ecrirePlan: vi.fn(async (_u: string, _s: string, contenu: any, o: any) => { plan = { statut: o.statut, contenu, coches: [] }; }),
     lireActivite: vi.fn(async () => null),
     ecrireActivite: vi.fn(async () => {}),
+    clesFaites: vi.fn(async () => new Set()),
     supprimerTachesNonFaites: vi.fn(async () => 0),
     occupes: vi.fn(async () => new Map()),
     creerTaches: vi.fn(async (_u: string, _o: any, t: any[]) => t.length),
@@ -36,7 +37,8 @@ describe("routes vie perso", () => {
   const store: any = {
     ecrireProfil: vi.fn(async () => {}),
     ajouterMembre: vi.fn(async (_u: string, m: any) => ({ id: 1, ...m })),
-    ecrireCoches: vi.fn(async () => true),
+    basculerCoche: vi.fn(async (_u: string, _s: string, i: number, c: boolean) => (c ? [i] : [])),
+    modifierRecette: vi.fn(async (_u: string, id: number, r: any) => ({ id, ...r })),
     listerActivites: vi.fn(async () => []),
   };
   const iaBloquee = vi.fn(async () => false);
@@ -98,6 +100,20 @@ describe("routes vie perso", () => {
     plan = { statut: "brouillon", contenu: PLAN, coches: [] };
     expect(await (await appel("PATCH", "/api/vie-perso/plans/2026-11-30/courses", { index: 0, coche: true })).json()).toEqual({ coches: [0] });
     expect((await appel("PATCH", "/api/vie-perso/plans/2026-11-30/courses", { index: 3, coche: true })).status).toBe(400);
+  });
+
+  it("changer l'avis d'une recette n'envoie que l'avis (lien et notes gardés)", async () => {
+    expect((await appel("PATCH", "/api/vie-perso/recettes/4", { avis: "non" })).status).toBe(200);
+    expect(store.modifierRecette).toHaveBeenCalledWith("user-1", 4, { avis: "non" });
+  });
+
+  it("changer un repas pendant une préparation : 409, rien n'est lancé", async () => {
+    plan = { statut: "brouillon", contenu: PLAN, coches: [] };
+    expect((await appel("POST", "/api/vie-perso/plans/2026-11-30/preparer", {})).status).toBe(202);
+    expect((await appel("POST", "/api/vie-perso/plans/2026-11-30/repas", { jour: "2026-11-30", repas: "diner" })).status).toBe(409);
+    expect(deps.generer).toHaveBeenCalledTimes(1);
+    genererFin!();
+    await new Promise((r) => setTimeout(r, 10));
   });
 
   it("valider sans plan : 404", async () => {

@@ -4,6 +4,8 @@ import { z } from "zod/v4";
 /** Marqueur d'une tâche perso : le moteur de travail ne la déplace jamais et la compte comme occupée. */
 export const SOURCE_VIE_PERSO = "vie_perso";
 export const estTachePerso = (t: { source?: string | null }) => t.source === SOURCE_VIE_PERSO;
+/** Les tâches de travail seules : pour tout calcul de charge, de plafond ou de créneau de travail. */
+export const horsViePerso = <T extends { source?: string | null }>(ts: T[]): T[] => ts.filter((t) => !estTachePerso(t));
 
 export type Phase = "regles" | "folliculaire" | "ovulation" | "luteale";
 export type Fenetre = "soir" | "weekend" | "indifferent";

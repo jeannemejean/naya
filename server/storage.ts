@@ -207,7 +207,7 @@ import { encryptToken, encryptNullable, decryptToken } from "./services/token-cr
 import { repackDayParRang } from "./services/schedule-repack";
 import { aRamener, contrainteDe, comparerRang, jourDeRamenee } from "./services/orchestre/contrainte";
 import { TYPE_ATELIER, TYPE_VALIDATION, echeanceAtelier } from "@shared/atelier";
-import { estTachePerso } from "@shared/vie-perso";
+import { estTachePerso, SOURCE_VIE_PERSO } from "@shared/vie-perso";
 import { jourDuPost, echeanceTache, estTachePublier, joursEtapesEnOrdre, majEtape, postAProduire, rangEtape } from "./services/campagne/production";
 import { clesRetirees } from "./services/fondations/sections";
 import { agregerAvancement } from "./services/fil/avancement";
@@ -4833,6 +4833,8 @@ export class DatabaseStorage implements IStorage {
         eq(tasks.userId, userId),
         eq(tasks.completed, false),
         gte(tasks.scheduledDate, fromDate),
+        // La vie perso a sa propre logique : ni « repartir » ni « réinitialiser » le planning n'y touche.
+        or(isNull(tasks.source), ne(tasks.source, SOURCE_VIE_PERSO)),
       ));
     // Atomique : avant, la boucle supprimait tâche par tâche hors transaction — au
     // premier blocage FK (ex. un message du Companion lié), les tâches déjà traitées
@@ -4847,6 +4849,8 @@ export class DatabaseStorage implements IStorage {
         eq(tasks.userId, userId),
         eq(tasks.completed, false),
         gte(tasks.scheduledDate, fromDate),
+        // La vie perso a sa propre logique : ni « repartir » ni « réinitialiser » le planning n'y touche.
+        or(isNull(tasks.source), ne(tasks.source, SOURCE_VIE_PERSO)),
       ));
     for (const { id } of toArchive) {
       await db.update(tasks).set({

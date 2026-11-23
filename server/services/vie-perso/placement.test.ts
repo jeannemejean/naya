@@ -48,6 +48,9 @@ describe("placer", () => {
     expect(placer({ duree: 30, fenetre: "soir" }, vide(), P, { jour: "2026-11-24", min: 20 * 60 + 10 }))
       .toEqual({ jour: "2026-11-24", heure: "20:10" });
   });
+  it("la date limite elle-même est exclue", () => {
+    expect(placer({ duree: 30, fenetre: "soir", avant: "2026-11-24" }, vide(), P, { jour: "2026-11-24", min: 0 })).toBeNull();
+  });
   it("rien avant la date limite : null", () => {
     const occ = vide();
     for (const j of ["2026-11-24", "2026-11-25"]) occ.set(j, [{ start: 0, end: 24 * 60 }]);
@@ -124,7 +127,7 @@ describe("placerActivite", () => {
   });
   it("étape impossible avant la date cible : signalée, pas placée", () => {
     const occ = vide(); occ.set("2026-11-24", [{ start: 0, end: 24 * 60 }]);
-    const r = placerActivite({ titre: "X", contenu: { achats: [], etapes: [{ titre: "Y", dureeMin: 60, ensemble: false }] }, quand: "soir", dateCible: "2026-11-24" }, occ, P, { jour: "2026-11-24", min: 0 });
+    const r = placerActivite({ titre: "X", contenu: { achats: [], etapes: [{ titre: "Y", dureeMin: 60, ensemble: false }] }, quand: "soir", dateCible: "2026-11-25" }, occ, P, { jour: "2026-11-24", min: 0 });
     expect(r.taches).toEqual([]);
     expect(r.nonPlacees).toEqual(["Y"]);
   });

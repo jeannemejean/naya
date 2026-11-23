@@ -99,3 +99,11 @@ describe("ordreAtelierDansLaJournee", () => {
     ])).toEqual([]);
   });
 });
+
+describe("compte (plafond de la reprise)", () => {
+  it("la vie perso ne prend pas de place de travail", async () => {
+    const { compte } = await import("./index");
+    expect(compte({ id: 1, title: "x", taskType: "generic", scheduledDate: "2026-11-24", source: "vie_perso", completed: false } as any)).toBe(false);
+    expect(compte({ id: 2, title: "x", taskType: "generic", scheduledDate: "2026-11-24", source: "manual", completed: false } as any)).toBe(true);
+  });
+});

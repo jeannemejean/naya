@@ -125,3 +125,17 @@ describe("planDepuisGenere", () => {
     expect(JSON.stringify(schemaJson(SCHEMA_PLAN_GENERE))).not.toContain("anyOf");
   });
 });
+
+describe("horsViePerso", () => {
+  it("garde le travail seul", async () => {
+    const { horsViePerso } = await import("./vie-perso");
+    expect(horsViePerso([{ id: 1, source: "vie_perso" }, { id: 2, source: "manual" }, { id: 3 }]).map((t) => t.id)).toEqual([2, 3]);
+  });
+});
+
+describe("horsViePerso", () => {
+  it("garde le travail seul", async () => {
+    const { horsViePerso } = await import("./vie-perso");
+    expect(horsViePerso([{ id: 1, source: "vie_perso" }, { id: 2, source: "manual" }, { id: 3 }]).map((t) => t.id)).toEqual([2, 3]);
+  });
+});

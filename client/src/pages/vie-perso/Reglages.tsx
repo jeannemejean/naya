@@ -1,6 +1,6 @@
 // Réglages de la vie perso : créneaux, repas, batch, courses, équipement, magasins, placard,
 // cycle (facultatif) ; le foyer ; les inspirations recettes.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2, Plus, Trash2 } from "lucide-react";
@@ -43,7 +43,8 @@ function FormProfil({ initial }: { initial: ProfilViePerso }) {
   const erreur = useErreur();
   const [p, setP] = useState(initial);
   const [listes, setListes] = useState({ equipement: initial.equipement.join(", "), magasins: initial.magasins.join(", "), placard: initial.placard.join(", ") });
-  useEffect(() => { setP(initial); }, [initial]);
+  // Pas de resynchronisation sur `initial` : un autre enregistrement (foyer, inspirations) relit le
+  // profil et effacerait ce qui est en cours de saisie ici.
   // 4 janvier 2026 : un dimanche (0), comme batchJour et coursesJour.
   const jours = Array.from({ length: 7 }, (_, i) => new Date(2026, 0, 4 + i).toLocaleDateString(i18n.language, { weekday: "long" }));
   const maj = <K extends keyof ProfilViePerso>(k: K, v: ProfilViePerso[K]) => setP((x) => ({ ...x, [k]: v }));

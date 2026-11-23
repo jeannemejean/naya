@@ -70,7 +70,7 @@ export function placer(
   }
   for (let i = 0; i < HORIZON_JOURS; i++) {
     const jour = ajouterJours(depuis.jour, i);
-    if (d.avant && jour > d.avant) return null;
+    if (d.avant && jour >= d.avant) return null; // « à finir avant le » : la date elle-même est exclue
     if (!convient(jour, d.fenetre)) continue;
     const f = fenetreDuJour(jour, p);
     const debut = jour === depuis.jour ? Math.max(f.start, depuis.min) : f.start;

@@ -1,5 +1,5 @@
 // Dépendances réelles de la vie perso : base (tables vie_perso_*, tâches), IA, agenda Google.
-import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   tasks, viePersoActivites, viePersoMembres, viePersoPlans, viePersoProfil, viePersoRecettes,
@@ -55,11 +55,24 @@ export const depsViePerso: DepsViePerso = {
     await db.update(viePersoActivites).set({ ...modif, updatedAt: new Date() })
       .where(and(eq(viePersoActivites.id, id), eq(viePersoActivites.userId, userId)));
   },
+  async clesFaites(userId, origine) {
+    const r = await db.select({ a: tasks.actionData }).from(tasks).where(and(
+      eq(tasks.userId, userId), eq(tasks.source, SOURCE_VIE_PERSO), eq(tasks.completed, true), memeOrigine(origine),
+    ));
+    return new Set(r.map((x) => (x.a as any)?.vieperso?.cle).filter((c): c is string => typeof c === "string"));
+  },
   async supprimerTachesNonFaites(userId, origine) {
-    const r = await db.delete(tasks).where(and(
-      eq(tasks.userId, userId), eq(tasks.source, SOURCE_VIE_PERSO), eq(tasks.completed, false), memeOrigine(origine),
-    )).returning({ id: tasks.id });
-    return r.length;
+    // Une transaction, et les références d'abord (notes déposées, messages du compagnon…) :
+    // sans elles, la suppression échouerait sur une clé étrangère dès qu'on a ouvert la tâche.
+    return db.transaction(async (tx) => {
+      const ids = (await tx.select({ id: tasks.id }).from(tasks).where(and(
+        eq(tasks.userId, userId), eq(tasks.source, SOURCE_VIE_PERSO), eq(tasks.completed, false), memeOrigine(origine),
+      ))).map((t) => t.id);
+      if (ids.length === 0) return 0;
+      await storage.clearTaskReferences(tx as any, ids);
+      await tx.delete(tasks).where(and(eq(tasks.userId, userId), inArray(tasks.id, ids)));
+      return ids.length;
+    });
   },
   async occupes(userId, de, a) {
     const occ: Occupes = new Map();
@@ -147,10 +160,13 @@ export const storeViePerso = {
     const r = await db.delete(viePersoActivites).where(and(eq(viePersoActivites.id, id), eq(viePersoActivites.userId, userId))).returning({ id: viePersoActivites.id });
     return r.length > 0;
   },
-  async ecrireCoches(userId: string, semaine: string, coches: number[]) {
-    const r = await db.update(viePersoPlans).set({ coches, updatedAt: new Date() })
-      .where(and(eq(viePersoPlans.userId, userId), eq(viePersoPlans.semaine, semaine))).returning({ id: viePersoPlans.id });
-    return r.length > 0;
+  /** Coche ou décoche UNE case en une seule requête (jamais lire puis réécrire le tableau). */
+  async basculerCoche(userId: string, semaine: string, index: number, coche: boolean): Promise<number[] | null> {
+    const sans = sql`coalesce((select jsonb_agg(e order by e) from jsonb_array_elements(${viePersoPlans.coches}) e where e <> to_jsonb(${index}::int)), '[]'::jsonb)`;
+    const valeur = coche ? sql`(select jsonb_agg(e order by e) from jsonb_array_elements(${sans} || to_jsonb(${index}::int)) e)` : sans;
+    const [r] = await db.update(viePersoPlans).set({ coches: valeur as any, updatedAt: new Date() })
+      .where(and(eq(viePersoPlans.userId, userId), eq(viePersoPlans.semaine, semaine))).returning({ coches: viePersoPlans.coches });
+    return r ? (r.coches as number[]).map(Number) : null;
   },
 };
 export type StoreViePerso = typeof storeViePerso;

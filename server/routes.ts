@@ -36,6 +36,7 @@ import { registerReponsesRoutes, STADES_ENGAGES } from "./routes-reponses";
 import { registerSalvesRoutes } from "./routes-salves";
 import { registerAppelsOffresRoutes } from "./routes-appels-offres";
 import { registerViePersoRoutes } from "./routes-vie-perso";
+import { horsViePerso } from "@shared/vie-perso";
 import { registerOrchestreRoutes } from "./routes-orchestre";
 import { registerRapportsRoutes } from "./routes-rapports";
 import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
@@ -6227,7 +6228,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       })();
 
-      const allTasks = await storage.getTasksInRange(userId, weekStart, weekEnd);
+      // Vie perso exclue : le rééquilibrage amorce chaque jour par la DERNIÈRE fin de tâche ; un dîner
+      // à 19 h 30 fermerait la journée de travail et repousserait tout de plusieurs semaines.
+      const allTasks = horsViePerso(await storage.getTasksInRange(userId, weekStart, weekEnd));
       // Les tâches liées à un post restent en place (et comptent dans la charge du jour).
       const pending = tachesARebalancer(allTasks);
 

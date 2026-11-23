@@ -28,8 +28,13 @@ export function Activites() {
   const rafraichir = () => queryClient.invalidateQueries({ queryKey: [CLE] });
 
   const creer = useMutation({
-    mutationFn: () => apiRequest("POST", CLE, { titre: titre.trim(), description, avecQui, quand, dateCible: dateCible || null }),
-    onSuccess: () => { setTitre(""); setDescription(""); setAvecQui(""); setDateCible(""); rafraichir(); },
+    mutationFn: () => apiRequest("POST", CLE, { titre: titre.trim(), description, avecQui, quand, dateCible: dateCible || null })
+      .then((r) => r.json() as Promise<{ erreur: string | null }>),
+    onSuccess: (r) => {
+      setTitre(""); setDescription(""); setAvecQui(""); setDateCible(""); rafraichir();
+      // L'activité est créée même si le découpage a échoué : « Redécouper » la relance.
+      if (r.erreur) toast({ title: t(`viePerso.erreurs.${r.erreur}`, { defaultValue: t("viePerso.erreurs.erreur") }), variant: "destructive" });
+    },
     onError: erreur,
   });
 

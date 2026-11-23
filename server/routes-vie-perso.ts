@@ -7,8 +7,7 @@ import { lundiDe, REPAS, type ProfilViePerso, type Repas } from "@shared/vie-per
 import {
   changerRepas, decouperActivite, planifierActivite, preparerPlan, validerPlan, type DepsViePerso,
 } from "./services/vie-perso/service";
-
-type EtatPreparation = { semaine: string; statut: "en_cours" | "fini" | "erreur"; erreur?: string };
+import { etatRepas, prendre, rendre } from "./services/vie-perso/verrou";
 
 export interface OptionsRoutesViePerso {
   deps: DepsViePerso;
@@ -37,12 +36,18 @@ const SCHEMA_MEMBRE = z.object({
   regime: court(500).default(""), exclusions: court(500).default(""), aime: court(500).default(""), aimePas: court(500).default(""),
   repasMaison: z.enum(["dejeuner", "diner", "les_deux"]).default("les_deux"),
 });
-const SCHEMA_RECETTE = z.object({
+const CHAMPS_RECETTE = {
   titre: court(200).min(1),
-  lien: z.string().trim().max(1000).url().nullable().default(null),
-  notes: court(500).nullable().default(null),
-  avis: z.enum(["aime", "bof", "non"]).default("aime"),
+  lien: z.string().trim().max(1000).url().nullable(),
+  notes: court(500).nullable(),
+  avis: z.enum(["aime", "bof", "non"]),
+};
+const SCHEMA_RECETTE = z.object({
+  ...CHAMPS_RECETTE, lien: CHAMPS_RECETTE.lien.default(null), notes: CHAMPS_RECETTE.notes.default(null), avis: CHAMPS_RECETTE.avis.default("aime"),
 });
+// Modification : sans valeurs par défaut (en zod v4, .partial() les appliquerait et effacerait
+// le lien et les notes à chaque changement d'avis).
+const SCHEMA_RECETTE_MODIF = z.object(CHAMPS_RECETTE).partial();
 const SCHEMA_ACTIVITE_ENTREE = z.object({
   titre: court(160).min(1), description: court(2000).default(""), avecQui: court(200).default(""),
   quand: z.enum(["soir", "weekend", "indifferent"]).default("indifferent"),
@@ -117,7 +122,7 @@ export function registerViePersoRoutes(app: Express, opts?: OptionsRoutesViePers
   }));
   app.patch("/api/vie-perso/recettes/:id", isAuthenticated, sur(async (req, res, x) => {
     const id = idValide(req.params.id);
-    const p = SCHEMA_RECETTE.partial().safeParse(req.body);
+    const p = SCHEMA_RECETTE_MODIF.safeParse(req.body);
     if (!id) return res.status(400).json({ message: "invalid_id" });
     if (!p.success) return invalide(res, p.error);
     const l = await x.store.modifierRecette(req.userId, id, p.data);
@@ -130,32 +135,29 @@ export function registerViePersoRoutes(app: Express, opts?: OptionsRoutesViePers
   }));
 
   // ─── Plan de la semaine ────────────────────────────────────────────────────────
-  // 1 à 2 minutes de génération : 202 tout de suite, la page interroge l'état. Une préparation à
-  // la fois par utilisatrice ; un redémarrage oublie l'état (« aucun »).
-  const preparations = new Map<string, EtatPreparation>();
+  // 1 à 2 minutes de génération : 202 tout de suite, la page interroge l'état. Un travail d'IA
+  // sur les repas à la fois par utilisatrice (verrou.ts) ; un redémarrage oublie l'état.
 
   app.get("/api/vie-perso/plans/:semaine", isAuthenticated, sur(async (req, res, x) => {
     const semaine = semaineValide(req.params.semaine);
     if (!semaine) return res.status(400).json({ message: "semaine_invalide" });
-    const e = preparations.get(req.userId);
-    res.json({ plan: await x.deps.lirePlan(req.userId, semaine), preparation: e?.semaine === semaine ? e : null });
+    const e = etatRepas(req.userId);
+    res.json({ plan: await x.deps.lirePlan(req.userId, semaine), preparation: e?.semaine === semaine && e.travail === "preparation" ? e : null });
   }));
 
   app.post("/api/vie-perso/plans/:semaine/preparer", isAuthenticated, sur(async (req, res, x) => {
     const userId: string = req.userId;
     const semaine = semaineValide(req.params.semaine);
     if (!semaine) return res.status(400).json({ message: "semaine_invalide" });
-    if (preparations.get(userId)?.statut === "en_cours") return res.status(409).json({ message: "preparation_en_cours" });
     if (await x.iaBloquee(userId)) return res.status(402).json({ message: "ia_bloquee" });
-    const etat: EtatPreparation = { semaine, statut: "en_cours" };
-    preparations.set(userId, etat);
+    if (!prendre(userId, semaine, "preparation")) return res.status(409).json({ message: "preparation_en_cours" });
     preparerPlan(userId, semaine, x.deps)
-      .then((r) => preparations.set(userId, r.ok ? { semaine, statut: "fini" } : { semaine, statut: "erreur", erreur: r.erreur }))
+      .then((r) => rendre(userId, r.ok ? { statut: "fini" } : { statut: "erreur", erreur: r.erreur }))
       .catch((e: any) => {
         console.error("[vie-perso] préparation :", e?.message ?? e);
-        preparations.set(userId, { semaine, statut: "erreur", erreur: "preparation_echec" });
+        rendre(userId, { statut: "erreur", erreur: String(e?.message ?? "").startsWith("structure_invalide") ? "generation_invalide" : "preparation_echec" });
       });
-    res.status(202).json(etat);
+    res.status(202).json(etatRepas(userId));
   }));
 
   app.post("/api/vie-perso/plans/:semaine/repas", isAuthenticated, sur(async (req, res, x) => {
@@ -164,8 +166,10 @@ export function registerViePersoRoutes(app: Express, opts?: OptionsRoutesViePers
     if (!semaine) return res.status(400).json({ message: "semaine_invalide" });
     if (!p.success) return invalide(res, p.error);
     if (await x.iaBloquee(req.userId)) return res.status(402).json({ message: "ia_bloquee" });
-    const r = await changerRepas(req.userId, semaine, p.data.jour, p.data.repas as Repas, p.data.demande, x.deps);
-    if (!r.ok) return res.status(r.erreur === "plan_introuvable" ? 404 : 400).json({ message: r.erreur });
+    if (!prendre(req.userId, semaine, "repas")) return res.status(409).json({ message: "preparation_en_cours" });
+    const r = await changerRepas(req.userId, semaine, p.data.jour, p.data.repas as Repas, p.data.demande, x.deps)
+      .finally(() => rendre(req.userId, { statut: "fini" }));
+    if (!r.ok) return res.status(r.erreur === "plan_introuvable" ? 404 : r.erreur === "generation_invalide" ? 502 : 400).json({ message: r.erreur });
     res.json(await x.deps.lirePlan(req.userId, semaine));
   }));
 
@@ -185,11 +189,10 @@ export function registerViePersoRoutes(app: Express, opts?: OptionsRoutesViePers
     const plan = await x.deps.lirePlan(req.userId, semaine);
     if (!plan) return res.status(404).json({ message: "plan_introuvable" });
     if (p.data.index >= plan.contenu.courses.length) return res.status(400).json({ message: "index_invalide" });
-    const coches = new Set(plan.coches);
-    if (p.data.coche) coches.add(p.data.index); else coches.delete(p.data.index);
-    const liste = Array.from(coches).sort((a, b) => a - b);
-    await x.store.ecrireCoches(req.userId, semaine, liste);
-    res.json({ coches: liste });
+    // Écriture atomique (deux cases cochées vite, au magasin : aucune ne se perd).
+    const coches = await x.store.basculerCoche(req.userId, semaine, p.data.index, p.data.coche);
+    if (!coches) return res.status(404).json({ message: "plan_introuvable" });
+    res.json({ coches });
   }));
 
   // ─── Activités ─────────────────────────────────────────────────────────────────
