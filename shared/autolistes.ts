@@ -265,7 +265,11 @@ export function texteDuReseau(contenu: ContenuModele, platform: string): string 
  */
 export function lignePourCreneau(
   contenu: ContenuModele,
-  a: { userId: string; projectId: number | null; compte: { id: number; platform: string }; creneau: Date; autolisteId: number; autolistePostId: number },
+  a: {
+    userId: string; projectId: number | null; compte: { id: number; platform: string }; creneau: Date; autolisteId: number; autolistePostId: number;
+    /** Validation client active pour la marque : le post naît « à valider » (demande à cet instant). */
+    aValiderDepuis?: Date | null;
+  },
 ): Record<string, any> | null {
   const platform = plateformeDe(a.compte.platform);
   const texte = texteDuReseau(contenu, platform);
@@ -274,9 +278,14 @@ export function lignePourCreneau(
     projectId: a.projectId, scheduledFor: a.creneau, platform,
   });
   if (!row) return null;
+  // « À finir sur le téléphone » (lot 10) : jamais publié seul ; la tâche « Publier — … » porte
+  // la légende et les médias (posée par le passage, comme la validation de l'atelier).
+  const telephone = row.finirSurTelephone === true;
   return {
     ...row,
-    autoPost: true,
+    autoPost: !telephone,
+    finirSurTelephone: telephone,
+    ...(a.aValiderDepuis ? { validationStatut: "a_valider", validationDemandeeAt: a.aValiderDepuis } : {}),
     postStatus: "pending",
     contentStatus: "ready",
     socialAccountId: a.compte.id,

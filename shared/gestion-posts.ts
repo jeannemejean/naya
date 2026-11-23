@@ -95,6 +95,8 @@ export function copiePourDuplication(
     reelDansLeFil: post.reelDansLeFil ?? null,
     nomAudio: post.nomAudio ?? null,
     linkedinDocument: post.linkedinDocument ?? null,
+    // « À finir sur le téléphone » (lot 10) suit le post : la copie ne partira pas seule non plus.
+    finirSurTelephone: post.finirSurTelephone === true,
     scheduledFor: cible.scheduledFor !== undefined ? cible.scheduledFor : (post.scheduledFor ?? null),
     status: "draft",
     contentStatus: statut,

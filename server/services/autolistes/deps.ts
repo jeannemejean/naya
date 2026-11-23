@@ -4,7 +4,7 @@
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
-import { autolistePosts, autolistes, content, mediaLibrary, modelesPost, type Autoliste, type AutolistePost, type Content } from "@shared/schema";
+import { autolistePosts, autolistes, content, mediaLibrary, modelesPost, validationProjet, type Autoliste, type AutolistePost, type Content } from "@shared/schema";
 import { journaliser } from "../gestion-posts/historique";
 import type { DepsMaterialiser, ListeAutoliste, PostAutoliste } from "./materialiser";
 
@@ -59,6 +59,11 @@ export const depsMaterialiser: DepsMaterialiser = {
     return c ?? null;
   },
   journaliser: (userId, contentId, evenement, details) => journaliser(userId, contentId, evenement, details ?? null),
+  creerTache: (t) => storage.createTask(t as any),
+  async validationActive(projectId) {
+    const [v] = await db.select({ actif: validationProjet.actif }).from(validationProjet).where(eq(validationProjet.projectId, projectId)).limit(1);
+    return v?.actif === true;
+  },
   async noterPassage(userId, autolisteId, problemes, le) {
     await db.update(autolistes).set({ problemes: problemes as any, derniereMaterialisationAt: le })
       .where(and(eq(autolistes.id, autolisteId), eq(autolistes.userId, userId)));
@@ -74,6 +79,10 @@ export const depsMaterialiser: DepsMaterialiser = {
         isNull(content.supprimeLe), isNull(content.publishedAt),
         inArray(content.postStatus, ["pending", "failed"]),
         gt(content.scheduledFor, apres),
+        // Modifié dans le calendrier depuis sa pose (texte, date, médias…) : il appartient
+        // désormais à l'utilisatrice. Gardé, son créneau reste pris (jamais reposé en double).
+        // La pose écrit created_at = updated_at ; 2 s de marge.
+        sql`${content.updatedAt} <= ${content.createdAt} + interval '2 seconds'`,
       ))
       .returning({ id: content.id });
     return r.map((x) => x.id);

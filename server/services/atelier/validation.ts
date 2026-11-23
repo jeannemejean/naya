@@ -98,7 +98,7 @@ export function jourHeureParis(d: Date): { jour: string; heure: string } {
   }).formatToParts(d).map((x) => [x.type, x.value]));
   return { jour: `${p.year}-${p.month}-${p.day}`, heure: `${p.hour}:${p.minute}` };
 }
-const plusMinutes = (hhmm: string, n: number) => {
+export const plusMinutes = (hhmm: string, n: number) => {
   const [h, m] = hhmm.split(":").map(Number);
   const t = Math.min(24 * 60 - 1, h * 60 + m + n);
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;

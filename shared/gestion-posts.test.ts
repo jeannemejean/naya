@@ -143,3 +143,10 @@ describe("notes et verrou", () => {
     expect(dateCorbeilleLimite(new Date("2026-11-30T00:00:00Z")).toISOString()).toBe("2026-10-31T00:00:00.000Z");
   });
 });
+
+describe("copiePourDuplication — téléphone", () => {
+  it("« à finir sur le téléphone » suit la copie", () => {
+    expect(copiePourDuplication({ ...base, finirSurTelephone: true }, { projectId: 2 }).finirSurTelephone).toBe(true);
+    expect(copiePourDuplication(base, { projectId: 2 }).finirSurTelephone).toBe(false);
+  });
+});

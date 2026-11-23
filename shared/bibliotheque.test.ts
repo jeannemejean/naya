@@ -126,3 +126,11 @@ describe("insererAuCurseur", () => {
     expect(insererAuCurseur("", "x", 5, 2)).toEqual({ valeur: "x", curseur: 1 });
   });
 });
+
+describe("modèle — téléphone", () => {
+  it("le modèle garde « à finir sur le téléphone », et le post créé depuis lui aussi", () => {
+    const c = contenuDeModele({ ...POST, finirSurTelephone: true });
+    expect(c.finirSurTelephone).toBe(true);
+    expect(postDepuisModele(c, "u1", { projectId: null, scheduledFor: null, platform: null })!.finirSurTelephone).toBe(true);
+  });
+});

@@ -14,7 +14,7 @@ const contenu = (n: number, extra: Record<string, unknown> = {}) => ({
   postFormat: "feed_image", contentType: "post", pillar: "p", goal: "g", ...extra,
 });
 
-function fausseBase(opts: { liste?: Partial<ListeAutoliste>; posts?: Array<Partial<PostAutoliste> & { id: number }>; comptes?: any[]; projets?: any[] } = {}) {
+function fausseBase(opts: { liste?: Partial<ListeAutoliste>; posts?: Array<Partial<PostAutoliste> & { id: number }>; comptes?: any[]; projets?: any[]; validation?: number[] } = {}) {
   const liste: ListeAutoliste = {
     id: 4, userId: "u1", projectId: null, nom: "Evergreen", actif: true, enBoucle: false, fuseau: "Europe/Paris",
     creneaux: [{ heure: "09:00", jours: [1, 3, 5] }], comptes: [30, 31], ...opts.liste,
@@ -29,7 +29,7 @@ function fausseBase(opts: { liste?: Partial<ListeAutoliste>; posts?: Array<Parti
   const projets = opts.projets ?? [];
   const contenus: any[] = [];
   const journal: Array<[number, string]> = [];
-  const etat = { liste, posts, contenus, journal, problemes: [] as any[] };
+  const etat = { liste, posts, contenus, journal, problemes: [] as any[], taches: [] as any[] };
   let n = 100;
   const deps: DepsMaterialiser = {
     maintenant: () => MAINTENANT,
@@ -52,6 +52,8 @@ function fausseBase(opts: { liste?: Partial<ListeAutoliste>; posts?: Array<Parti
       return { id: c.id };
     },
     journaliser: async (_u, id, ev) => { journal.push([id, ev]); },
+    creerTache: async (t) => { etat.taches.push(t); return { id: etat.taches.length }; },
+    validationActive: async (projectId) => (opts.validation ?? []).includes(projectId),
     noterPassage: async (_u, _id, problemes) => { etat.problemes = problemes; },
     supprimerFuturs: async (userId, _id, apres, postId) => {
       const ids: number[] = [];
@@ -59,6 +61,8 @@ function fausseBase(opts: { liste?: Partial<ListeAutoliste>; posts?: Array<Parti
         if (c.userId !== userId || c.supprimeLe || c.publishedAt || !["pending", "failed"].includes(c.postStatus)) continue;
         if (postId != null && c.autolistePostId !== postId) continue;
         if (!(c.scheduledFor > apres)) continue;
+        // Modifié dans le calendrier depuis sa pose : gardé, son créneau reste pris.
+        if (c.modifie) continue;
         c.supprimeLe = MAINTENANT; c.autolisteCreneau = null; c.autoPost = false;
         ids.push(c.id);
       }
@@ -236,5 +240,61 @@ describe("modifications", () => {
   it("materialiserTout : chaque liste active", async () => {
     const base = fausseBase();
     expect(await materialiserTout(base.deps)).toEqual({ listes: 1, poses: 4, erreurs: 0 });
+  });
+});
+
+describe("revue de branche", () => {
+  it("créneau partiel : le compte refusé est posé plus tard, quand il redevient valide", async () => {
+    const base = fausseBase({ posts: [{ id: 1, contenu: contenu(1, { mediaIds: [] }) }, { id: 2 }] });
+    await materialiserAutoliste(base.deps, "u1", 4);
+    expect(base.etat.contenus.map((r) => [r.autolistePostId, r.socialAccountId])).toEqual([[1, 31], [2, 30], [2, 31]]);
+    // Le visuel est ajouté au post 1 : le compte Instagram du lundi est posé, avec le même post.
+    base.etat.posts[0].contenu = contenu(1);
+    await materialiserAutoliste(base.deps, "u1", 4);
+    const lundi = base.etat.contenus.filter((r) => r.scheduledFor.toISOString() === "2026-11-23T08:00:00.000Z");
+    expect(lundi.map((r) => [r.autolistePostId, r.socialAccountId]).sort()).toEqual([[1, 30], [1, 31]]);
+    expect(base.etat.contenus).toHaveLength(4);
+  });
+
+  it("créneau partiel retiré du calendrier (tous ses posts à la corbeille) : rien n'est reposé", async () => {
+    const base = fausseBase({ posts: [{ id: 1, contenu: contenu(1, { mediaIds: [] }) }, { id: 2 }] });
+    await materialiserAutoliste(base.deps, "u1", 4);
+    base.etat.contenus[0].supprimeLe = MAINTENANT;
+    base.etat.posts[0].contenu = contenu(1);
+    await materialiserAutoliste(base.deps, "u1", 4);
+    const lundi = base.etat.contenus.filter((r) => r.scheduledFor.toISOString() === "2026-11-23T08:00:00.000Z");
+    expect(lundi.map((r) => r.socialAccountId)).toEqual([31]);
+  });
+
+  it("« à finir sur le téléphone » : jamais programmé, une tâche « Publier » porte la légende et les médias", async () => {
+    const base = fausseBase({ posts: [{ id: 1, contenu: contenu(1, { finirSurTelephone: true }) }], liste: { comptes: [31] } });
+    await materialiserAutoliste(base.deps, "u1", 4);
+    const [row] = base.etat.contenus;
+    expect(row).toMatchObject({ autoPost: false, finirSurTelephone: true, socialAccountId: 31 });
+    expect(publiable(row)).toBe(false);
+    expect(base.etat.taches).toHaveLength(1);
+    expect(base.etat.taches[0]).toMatchObject({
+      userId: "u1", contentId: row.id, title: "Publier — Post 1", taskType: "post_publish", completed: false,
+      scheduledDate: "2026-11-23", scheduledTime: "09:00",
+    });
+    expect(base.etat.taches[0].actionData.telephone).toMatchObject({ reseau: "linkedin", legende: "LI 1", raisons: ["demande"] });
+    expect(base.etat.taches[0].actionData.telephone.medias).toEqual([{ ordre: 1, url: "m1.jpg", nom: "m1.jpg", genre: "image" }]);
+  });
+
+  it("validation client active pour la marque : les posts naissent « à valider »", async () => {
+    const base = fausseBase({ liste: { projectId: 7, comptes: [31] }, projets: [{ id: 7, projectKind: "personal" }], validation: [7] });
+    await materialiserAutoliste(base.deps, "u1", 4);
+    expect(base.etat.contenus.length).toBeGreaterThan(0);
+    expect(base.etat.contenus.every((r) => r.validationStatut === "a_valider" && r.validationDemandeeAt === MAINTENANT)).toBe(true);
+  });
+
+  it("reconstruire garde un post modifié dans le calendrier : ni corbeille, ni doublon sur son créneau", async () => {
+    const base = fausseBase({ liste: { comptes: [31] } });
+    await materialiserAutoliste(base.deps, "u1", 4);
+    Object.assign(base.etat.contenus[0], { modifie: true, body: "Retouché" });
+    await reconstruireAutoliste(base.deps, "u1", 4);
+    const lundi = vivants(base.etat.contenus).filter((r) => r.scheduledFor.toISOString() === "2026-11-23T08:00:00.000Z");
+    expect(lundi).toHaveLength(1);
+    expect(lundi[0].body).toBe("Retouché");
   });
 });

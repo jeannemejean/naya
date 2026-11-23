@@ -9,8 +9,10 @@ import {
   type Creneau, type Materialisation, type PostDeFile, type ProblemeAutoliste,
 } from "@shared/autolistes";
 import type { ContenuModele } from "@shared/bibliotheque";
-import type { GenreMedia } from "@shared/programmation";
+import { plateformeDe, type GenreMedia } from "@shared/programmation";
+import { contenuTelephone } from "@shared/finir-telephone";
 import { choisirCompteReseaux, porteeReseauxDe } from "../connexions/portee";
+import { descriptionPublier, jourHeureParis, plusMinutes } from "../atelier/validation";
 
 export type ListeAutoliste = {
   id: number; userId: string; projectId: number | null; nom: string; actif: boolean; enBoucle: boolean;
@@ -35,8 +37,15 @@ export interface DepsMaterialiser {
   /** Insère le post ; null si le créneau était déjà posé sur ce compte (index unique). */
   creerContenu(row: Record<string, any>): Promise<{ id: number } | null>;
   journaliser(userId: string, contentId: number, evenement: "cree" | "supprime", details?: Record<string, unknown> | null): Promise<void>;
+  /** Crée une tâche (la « Publier — … » d'un post à finir sur le téléphone). */
+  creerTache(t: Record<string, unknown>): Promise<{ id: number } | unknown>;
+  /** Validation client active pour cette marque (lot 8) : les posts posés naissent « à valider ». */
+  validationActive(projectId: number): Promise<boolean>;
   noterPassage(userId: string, autolisteId: number, problemes: ProblemeNote[], le: Date): Promise<void>;
-  /** Met à la corbeille les posts posés à venir, ni publiés ni en cours ; libère leur créneau. */
+  /**
+   * Met à la corbeille les posts posés à venir, ni publiés ni en cours, ni modifiés dans le
+   * calendrier depuis leur pose (ceux-là restent, avec leur créneau) ; libère leur créneau.
+   */
   supprimerFuturs(userId: string, autolisteId: number, apres: Date, postId?: number): Promise<number[]>;
 }
 
@@ -51,16 +60,36 @@ function enSerie<T>(id: number, fn: () => Promise<T>): Promise<T> {
 
 const tableau = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
 
-async function genresDesMedias(deps: DepsMaterialiser, userId: string, contenu: ContenuModele): Promise<GenreMedia[]> {
+type Fichier = { url: string; nom?: string | null; genre: GenreMedia };
+
+/** Les médias du modèle, dans l'ordre (adresse et nature). */
+async function fichiersDuContenu(deps: DepsMaterialiser, userId: string, contenu: ContenuModele): Promise<Fichier[]> {
   const ids = tableau<unknown>(contenu?.mediaIds).map(Number).filter((n) => Number.isInteger(n) && n > 0);
   const trouves = new Map((ids.length ? await deps.medias(userId, ids) : []).map((m) => [m.id, m]));
-  const genres: GenreMedia[] = [];
+  const fichiers: Fichier[] = [];
   for (const id of ids) {
     const m = trouves.get(id);
-    if (m?.url) genres.push((m.mimeType || "").startsWith("video/") ? "video" : "image");
+    if (m?.url) fichiers.push({ url: m.url, genre: (m.mimeType || "").startsWith("video/") ? "video" : "image" });
   }
-  if (genres.length === 0 && contenu?.mediaUrl) genres.push("image");
-  return genres;
+  if (fichiers.length === 0 && contenu?.mediaUrl) fichiers.push({ url: contenu.mediaUrl, nom: contenu.mediaFileName ?? null, genre: "image" });
+  return fichiers;
+}
+
+/** La tâche « Publier — … » d'un post à finir sur le téléphone (mêmes champs que l'atelier). */
+async function poserTachePublier(deps: DepsMaterialiser, ligne: Record<string, any>, contentId: number, fichiers: Fichier[]): Promise<void> {
+  const DUREE = 5;
+  const { jour, heure } = jourHeureParis(new Date(ligne.scheduledFor));
+  const raisons = ["demande" as const];
+  const telephone = contenuTelephone({ post: ligne as any, medias: fichiers, raisons });
+  await deps.creerTache({
+    userId: ligne.userId, projectId: ligne.projectId ?? undefined, contentId,
+    title: `Publier — ${String(ligne.title || "post").slice(0, 120)}`,
+    type: "content", category: "engagement", priority: 2, taskEnergyType: "execution", source: "campaign",
+    taskType: "post_publish", completed: false,
+    scheduledDate: jour, scheduledTime: heure, scheduledEndTime: plusMinutes(heure, DUREE), estimatedDuration: DUREE,
+    description: descriptionPublier(raisons),
+    actionData: { postContent: ligne.body, platform: plateformeDe(ligne.platform), contentId, telephone },
+  });
 }
 
 /** Met à jour les compteurs des posts publiés ; sans boucle, un post publié est consommé. */
@@ -97,33 +126,51 @@ async function poser(deps: DepsMaterialiser, liste: ListeAutoliste): Promise<Bil
   const { depuis, jusqua } = fenetreDePose(maintenant);
   const instants = prochainsCreneaux(tableau<Creneau>(liste.creneaux), depuis, jusqua, liste.fuseau);
   const mats = await deps.materialisations(liste.userId, liste.id, depuis);
-  const pris = new Set(mats.filter((m) => m.autolisteCreneau).map((m) => new Date(m.autolisteCreneau as any).getTime()));
+  // Les posts posés par créneau : un créneau est pris compte par compte (la clé anti-doublon est
+  // par compte). Un créneau où un compte manque (refusé à son passage) est complété plus tard.
+  const parCreneau = new Map<number, Materialisation[]>();
+  for (const m of mats) {
+    if (!m.autolisteCreneau) continue;
+    const t = new Date(m.autolisteCreneau as any).getTime();
+    parCreneau.set(t, [...(parCreneau.get(t) ?? []), m]);
+  }
   const reserves = new Set(mats.filter(estReservation).map((m) => m.autolistePostId as number));
   let file = fileDAttente(posts, liste.enBoucle, reserves);
-  const libres = instants.filter((i) => !pris.has(i.getTime()));
+  const libres = instants.filter((i) => !parCreneau.has(i.getTime()));
   const idsComptes = tableau<number>(liste.comptes);
+  const parId = new Map(posts.map((p) => [p.id, p]));
+  // Créneaux partiels : au moins un post vivant posé, des comptes de la liste sans post.
+  const partiels = instants.flatMap((i) => {
+    const poses = parCreneau.get(i.getTime());
+    if (!poses) return [];
+    const vivant = poses.find((m) => !m.supprimeLe && m.autolistePostId != null && parId.has(m.autolistePostId));
+    if (!vivant) return [];
+    const dejaComptes = new Set(poses.map((m) => m.socialAccountId));
+    const manquants = idsComptes.filter((c) => !dejaComptes.has(c));
+    return manquants.length ? [{ creneau: i, postId: vivant.autolistePostId as number, comptes: manquants }] : [];
+  });
 
   if (libres.length && file.length && idsComptes.length === 0) {
     problemes.push({ creneau: libres[0].toISOString(), postId: file[0], compteId: null, raisons: ["aucun_compte"] });
-  } else if (libres.length && file.length) {
+  } else if ((libres.length && file.length) || partiels.length) {
     const tous = await deps.comptes(liste.userId);
     const projet = liste.projectId != null ? await deps.projet(liste.projectId, liste.userId) : undefined;
     const portee = porteeReseauxDe(projet ?? null);
-    const parId = new Map(posts.map((p) => [p.id, p]));
-    for (const creneau of libres) {
-      const { postId } = avancer(file, liste.enBoucle);
-      if (postId == null) break;
-      const post = parId.get(postId)!;
-      const contenu = post.contenu as ContenuModele;
-      const medias = await genresDesMedias(deps, liste.userId, contenu);
+    const aValiderDepuis = liste.projectId != null && (await deps.validationActive(liste.projectId)) ? maintenant : null;
+
+    /** Pose le post sur ces comptes à ce créneau ; rend le nombre de posts créés. */
+    const poserCreneau = async (creneau: Date, postId: number, comptes: number[]): Promise<number> => {
+      const contenu = parId.get(postId)!.contenu as ContenuModele;
+      const fichiers = await fichiersDuContenu(deps, liste.userId, contenu);
+      const medias = fichiers.map((f) => f.genre);
       let crees = 0;
-      for (const compteId of idsComptes) {
+      for (const compteId of comptes) {
         const brut = tous.find((c) => c.id === compteId);
         const choix = brut ? choisirCompteReseaux(tous, { platform: brut.platform, socialAccountId: compteId }, portee) : null;
         const compte = choix && "compte" in choix ? choix.compte : null;
         const ligne = brut ? lignePourCreneau(contenu, {
           userId: liste.userId, projectId: liste.projectId, compte: { id: compteId, platform: brut.platform }, creneau,
-          autolisteId: liste.id, autolistePostId: postId,
+          autolisteId: liste.id, autolistePostId: postId, aValiderDepuis,
         }) : null;
         const raisons = !brut ? ["compte_absent" as const] : problemesDeLaLigne({
           ligne, medias, compte, horsProjet: !compte && choix != null && "erreur" in choix && choix.erreur === "compte_hors_projet", maintenant,
@@ -136,8 +183,23 @@ async function poser(deps: DepsMaterialiser, liste: ListeAutoliste): Promise<Bil
         if (cree) {
           crees++;
           await deps.journaliser(liste.userId, cree.id, "cree", { autoliste: liste.nom });
+          // Jamais publié seul : un rappel « Publier — … » avec la légende et les médias.
+          if (ligne!.finirSurTelephone === true) {
+            await poserTachePublier(deps, ligne!, cree.id, fichiers)
+              .catch((e: any) => console.error(`[autolistes] tâche Publier du post ${cree.id} :`, e?.message ?? e));
+          }
         }
       }
+      return crees;
+    };
+
+    // D'abord les créneaux partiels : leur post est déjà choisi, la file ne bouge pas.
+    for (const p of partiels) poses += await poserCreneau(p.creneau, p.postId, p.comptes);
+
+    for (const creneau of file.length ? libres : []) {
+      const { postId } = avancer(file, liste.enBoucle);
+      if (postId == null) break;
+      const crees = await poserCreneau(creneau, postId, idsComptes);
       // Aucune ligne posée pour ce créneau : le post garde sa place en tête de file (l'ordre de
       // l'utilisatrice est respecté) et le passage s'arrête là ; la raison reste sur la liste.
       if (crees === 0) break;

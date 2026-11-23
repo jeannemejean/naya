@@ -156,6 +156,16 @@ describe("la ligne posée", () => {
       crossPostGroupId: "autoliste-4-2026-11-24T08:00:00.000Z",
     });
   });
+  it("« à finir sur le téléphone » : jamais programmé (rappel, pas de publication seule)", () => {
+    const l = lignePourCreneau({ ...contenu, finirSurTelephone: true }, { ...base, compte: { id: 30, platform: "linkedin" } })!;
+    expect(l).toMatchObject({ autoPost: false, finirSurTelephone: true, socialAccountId: 30, autolisteCreneau: base.creneau });
+  });
+  it("validation client active : le post naît « à valider »", () => {
+    const quand = new Date("2026-11-23T07:00:00Z");
+    const l = lignePourCreneau(contenu, { ...base, compte: { id: 30, platform: "linkedin" }, aValiderDepuis: quand })!;
+    expect(l).toMatchObject({ autoPost: true, validationStatut: "a_valider", validationDemandeeAt: quand });
+    expect(lignePourCreneau(contenu, { ...base, compte: { id: 30, platform: "linkedin" } })).not.toHaveProperty("validationStatut");
+  });
   it("mêmes règles que « Programmer » : visuel requis sur Instagram, compte expiré, hors projet, sans texte", () => {
     const maintenant = new Date("2026-11-23T08:00:00Z");
     const l = lignePourCreneau({ ...contenu, mediaIds: [] }, { ...base, compte: { id: 30, platform: "instagram" } });

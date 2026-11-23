@@ -66,7 +66,7 @@ export const CHAMPS_MODELE = [
   "platform", "title", "contentType", "pillar", "goal", "intent", "angle", "formatCreatif",
   "mediaIds", "mediaUrl", "mediaFileName", "videoMeta", "postFormat",
   "premierCommentaire", "couvertureUrl", "couvertureOffsetMs", "texteAlternatif", "collaborateurs",
-  "reelDansLeFil", "nomAudio", "linkedinDocument",
+  "reelDansLeFil", "nomAudio", "linkedinDocument", "finirSurTelephone",
 ] as const;
 
 export type ContenuModele = { textes: Record<string, string> } & Record<string, any>;
