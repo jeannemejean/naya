@@ -1,6 +1,7 @@
 // Textes enregistrés (bibliothèque, lot 3) : sous une zone de texte (légende, premier
 // commentaire), « Insérer un texte enregistré » le pose au curseur (ou remplace la sélection,
 // ou l'ajoute à la fin), et « Enregistrer ce texte » range la sélection (ou tout le texte).
+// À côté, « Raccourcir le lien » (lot 5) remplace un lien du texte par un lien court avec UTM.
 import { useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import RaccourcirLien from "@/components/liens/RaccourcirLien";
 import { filtrerParNom, insererAuCurseur, TEXTE_ENREGISTRE_MAX, TITRE_TEXTE_MAX } from "@shared/bibliotheque";
 
 export interface TexteEnregistreClient { id: number; titre: string; texte: string; projectId: number | null; updatedAt?: string }
@@ -30,7 +32,7 @@ export function textesPourMarque(textes: TexteEnregistreClient[], projectId: num
 }
 
 export default function TextesEnregistres({
-  zone, valeur, onChange, projectId, disabled, testId,
+  zone, valeur, onChange, projectId, disabled, testId, reseau,
 }: {
   zone: RefObject<HTMLTextAreaElement>;
   valeur: string;
@@ -38,6 +40,8 @@ export default function TextesEnregistres({
   projectId?: number | null;
   disabled?: boolean;
   testId?: string;
+  /** Réseau du post : utm_source proposé par « Raccourcir le lien » (lot 5). */
+  reseau?: string | null;
 }) {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -133,6 +137,8 @@ export default function TextesEnregistres({
           </Button>
         </PopoverContent>
       </Popover>
+
+      <RaccourcirLien valeur={valeur} onChange={onChange} projectId={projectId} reseau={reseau} disabled={disabled} />
     </div>
   );
 }

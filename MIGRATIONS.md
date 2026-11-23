@@ -816,3 +816,20 @@ touchée. Sans la migration, seules les routes `/api/bibliotheque/*` et « Enreg
 ```sql
 select table_name from information_schema.tables where table_name in ('textes_enregistres','modeles_post');  -- 2 lignes
 ```
+
+## 21. Liens courts et SmartLinks — `0048` à appliquer en prod à la main
+
+Fichier : `migrations/0048_massive_grey_gargoyle.sql` (branche `feat/reseaux-par-projet`). Trois tables
+nouvelles : `liens_courts` (code unique de 7 caractères, URL cible, UTM, compteur de clics ; cascade vers
+`users`, `set null` vers `projects`), `clics_liens` (clics par jour de Paris, index unique `lien_id, jour`,
+cascade vers `liens_courts`) et `smartlinks` (slug unique, boutons et liens des tuiles en jsonb ; cascade
+vers `users` et `projects`). Aucun `ALTER` de table existante, aucun `DROP`, aucune donnée touchée. Aucune
+donnée personnelle des visiteurs (ni IP, ni user-agent). Sans la migration, seules `/l/<code>`, `/b/<slug>`,
+`/api/liens` et `/api/smartlinks` échouent (404 ou 500) ; le reste de Naya marche.
+
+Adresse des liens : `OAUTH_BASE_URL` (sinon `APP_URL`) — doit valoir `https://www.hellonaya.app` en prod
+pour que les liens courts copiés dans les légendes portent le bon domaine.
+
+```sql
+select table_name from information_schema.tables where table_name in ('liens_courts','clics_liens','smartlinks');  -- 3 lignes
+```

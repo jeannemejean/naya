@@ -23,6 +23,7 @@ import LivrablesPanel from "./LivrablesPanel";
 import PreuvesPanel from "./PreuvesPanel";
 import ConnexionsClientPanel from "./ConnexionsClientPanel";
 import ReseauxProjetPanel from "./ReseauxProjetPanel";
+import SmartLinkCard from "@/components/liens/SmartLinkCard";
 import RapportsClientPanel from "./RapportsClientPanel";
 import { FondationsProjet } from "@/pages/fondations";
 import AIRecommendations from "@/components/accueil-retire/AIRecommendations";
@@ -166,12 +167,14 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
               {!estClient && (
                 <TabsContent value="reseaux" className="mt-0 space-y-6 max-w-5xl mx-auto">
                   <ReseauxProjetPanel key={id} projectId={id} nomProjet={project?.name ?? ""} />
+                  <SmartLinkCard key={`smartlink-${id}`} projectId={id} nomProjet={project?.name ?? ""} />
                 </TabsContent>
               )}
               {estClient && (
                 <TabsContent value="client" className="mt-0 space-y-6 max-w-5xl mx-auto">
                   <ConnexionsClientPanel projectId={id} />
                   <RapportsClientPanel projectId={id} />
+                  <SmartLinkCard key={`smartlink-${id}`} projectId={id} nomProjet={project?.name ?? ""} />
                 </TabsContent>
               )}
           </main>

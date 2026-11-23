@@ -271,7 +271,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
           <div>
             <p className="text-xs text-naya-olive-35 mb-2 font-mono">Légende</p>
             <Textarea ref={zoneLegende} value={caption} onChange={(e) => setCaption(e.target.value)} rows={5} placeholder="Écris ta légende…" />
-            <TextesEnregistres zone={zoneLegende} valeur={caption} onChange={setCaption} projectId={projectId} testId="textes-legende" />
+            <TextesEnregistres zone={zoneLegende} valeur={caption} onChange={setCaption} projectId={projectId} reseau={validations[0]?.acc.basePlatform} testId="textes-legende" />
             {validations.length > 1 && (
               <label className="mt-2 flex items-center gap-2 text-xs text-naya-olive-70">
                 <Switch checked={adapter} onCheckedChange={setAdapter} /> {t("composer.adapterParReseau")}
@@ -292,7 +292,7 @@ export function SocialComposer({ open, onClose, projectId }: { open: boolean; on
               <p className="text-xs text-naya-olive-35 mb-2 font-mono">{t("atelier.premierCommentaire")}</p>
               <Textarea ref={zoneCommentaire} rows={2} maxLength={2200} value={premierCommentaire} onChange={(e) => setPremierCommentaire(e.target.value)}
                 placeholder={t("atelier.premierCommentaireAide")} />
-              <TextesEnregistres zone={zoneCommentaire} valeur={premierCommentaire} onChange={(v) => setPremierCommentaire(v.slice(0, 2200))} projectId={projectId} testId="textes-commentaire" />
+              <TextesEnregistres zone={zoneCommentaire} valeur={premierCommentaire} onChange={(v) => setPremierCommentaire(v.slice(0, 2200))} projectId={projectId} reseau={validations[0]?.acc.basePlatform} testId="textes-commentaire" />
             </div>
           )}
           {validations.some(({ acc, format }) => acc.basePlatform === "instagram" && (format === "reel" || format === "feed_video")) && media.some((m) => m.kind === "video") && (

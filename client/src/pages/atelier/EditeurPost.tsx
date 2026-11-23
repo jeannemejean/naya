@@ -349,7 +349,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
           />
         )}
         {!enRedaction && modifiable && (
-          <TextesEnregistres zone={zoneTexte} valeur={texte} onChange={(v) => taper(v.slice(0, 5000))} projectId={post.projectId} testId="textes-atelier" />
+          <TextesEnregistres zone={zoneTexte} valeur={texte} onChange={(v) => taper(v.slice(0, 5000))} projectId={post.projectId} reseau={post.platform} testId="textes-atelier" />
         )}
         {limite && !enRedaction && (
           <p className={`text-[11px] text-right ${texte.length > limite ? "text-destructive" : "text-muted-foreground"}`}>
@@ -436,7 +436,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
             placeholder={t("atelier.premierCommentaireAide")}
             onBlur={(e) => { if (e.target.value.trim() !== (post.premierCommentaire ?? "")) void changerChamp({ premierCommentaire: e.target.value }); }} />
           {modifiable && (
-            <TextesEnregistres zone={zoneCommentaire} valeur={commentaire} projectId={post.projectId} testId="textes-commentaire-atelier"
+            <TextesEnregistres zone={zoneCommentaire} valeur={commentaire} projectId={post.projectId} reseau={post.platform} testId="textes-commentaire-atelier"
               onChange={(v) => { const c = v.slice(0, 2200); setCommentaire(c); void changerChamp({ premierCommentaire: c }); }} />
           )}
         </section>

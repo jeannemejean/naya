@@ -8,6 +8,7 @@
  *   Twitter   : TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET
  */
 
+import { urlDeBase } from "./url-publique";
 import { storage } from '../storage';
 import { conflitIdentite, pagesLinkedinPourClient } from './connexions/oauth-garde';
 
@@ -22,11 +23,9 @@ async function garderIdentite(userId: string, platform: string, accountId: strin
 // Adresse de retour des connexions OAuth. L'apex hellonaya.app n'est qu'un transfert GoDaddy
 // vers www, qui répond 404 à tout chemin (23 nov. 2026 : « Not Found » au retour d'Instagram).
 // OAUTH_BASE_URL (https://www.hellonaya.app) prime ; APP_URL reste le repli.
+// Règle commune (liens courts, SmartLinks) : server/services/url-publique.ts.
 function getBaseUrl(): string {
-  return process.env.OAUTH_BASE_URL?.trim() || process.env.APP_URL ||
-    (process.env.NODE_ENV === 'production'
-      ? 'https://naya-production-64ac.up.railway.app'
-      : 'http://localhost:3000');
+  return urlDeBase();
 }
 
 // ─── Instagram (API « Instagram Login » — graph.instagram.com) ────────────────

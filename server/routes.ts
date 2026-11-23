@@ -18,6 +18,7 @@ import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerAtelierRoutes } from "./routes-atelier";
 import { registerGestionPostsRoutes } from "./routes-gestion-posts";
 import { registerBibliothequeRoutes } from "./routes-bibliotheque";
+import { registerLiensPublics, registerLiensRoutes } from "./routes-liens";
 import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
@@ -609,6 +610,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (req.method !== 'GET') res.on('finish', () => { if (req.userId) oublierCarteDe(req.userId); });
     next();
   });
+
+  // Liens courts (/l/:code) et SmartLinks (/b/:slug) : publics, sans compte. Montés AVANT
+  // l'authentification et le gate d'abonnement, et (index.ts) avant le fourre-tout du SPA.
+  registerLiensPublics(app);
 
   // Health check (Railway, monitoring)
   app.get('/api/health', async (_req, res) => {
@@ -11401,6 +11406,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerAtelierRoutes(app);
   registerGestionPostsRoutes(app);
   registerBibliothequeRoutes(app);
+  registerLiensRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
   registerModeTestRoutes(app);

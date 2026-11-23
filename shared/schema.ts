@@ -770,6 +770,65 @@ export const modelesPost = pgTable("modeles_post", {
 export type ModelePost = typeof modelesPost.$inferSelect;
 
 /**
+ * Liens courts (lot 5, inspiré de Metricool) : www.hellonaya.app/l/<code> redirige (302) vers
+ * `url_cible`, UTM ajoutés sans écraser ceux déjà présents (shared/liens.ts). Les clics sont des
+ * compteurs : aucune IP, aucun user-agent, aucune donnée personnelle n'est gardée.
+ * `origine` : « composeur » (raccourci depuis une légende) ou « smartlink » (bouton, tuile).
+ */
+export const liensCourts = pgTable("liens_courts", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  code: varchar("code", { length: 7 }).notNull(),
+  urlCible: text("url_cible").notNull(),
+  utm: jsonb("utm").notNull().default({}),
+  origine: text("origine").notNull().default("composeur"),
+  clics: integer("clics").notNull().default(0),
+  dernierClicAt: timestamp("dernier_clic_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  codeUnique: uniqueIndex("liens_courts_code_idx").on(t.code),
+  parUtilisatrice: index("liens_courts_user_idx").on(t.userId, t.createdAt),
+}));
+export type LienCourt = typeof liensCourts.$inferSelect;
+
+/** Clics par jour (Paris) d'un lien court, pour les courbes et « 30 derniers jours ». */
+export const clicsLiens = pgTable("clics_liens", {
+  lienId: integer("lien_id").notNull().references(() => liensCourts.id, { onDelete: "cascade" }),
+  jour: date("jour").notNull(),
+  clics: integer("clics").notNull().default(0),
+}, (t) => ({
+  pk: uniqueIndex("clics_liens_lien_jour_idx").on(t.lienId, t.jour),
+}));
+
+/**
+ * SmartLink (lot 5) : la page publique « lien en bio » d'une marque, www.hellonaya.app/b/<slug>.
+ * Une par marque (projectId null = la marque des Réglages). `boutons` : liste ordonnée
+ * [{ id, libelle, url, actif, lienId, code }] ; `liens_tuiles` : { contentId: { url, lienId, code } }
+ * pour la grille des dernières publications Instagram. Chaque clic passe par un lien court.
+ */
+export const smartlinks = pgTable("smartlinks", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  slug: varchar("slug", { length: 40 }).notNull(),
+  titre: text("titre").notNull().default(""),
+  bio: text("bio").notNull().default(""),
+  avatarUrl: text("avatar_url"),
+  theme: jsonb("theme").notNull().default({}),
+  boutons: jsonb("boutons").notNull().default([]),
+  tuilesActives: boolean("tuiles_actives").notNull().default(false),
+  liensTuiles: jsonb("liens_tuiles").notNull().default({}),
+  actif: boolean("actif").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  slugUnique: uniqueIndex("smartlinks_slug_idx").on(t.slug),
+  parUtilisatrice: index("smartlinks_user_idx").on(t.userId),
+}));
+export type Smartlink = typeof smartlinks.$inferSelect;
+
+/**
  * Réception par contenu — signaux RAPIDES (SCHEMA-TRIANGULATION.md §C.2).
  *
  * RGPD par construction : cette table ne porte QUE des compteurs agrégés et un score.
