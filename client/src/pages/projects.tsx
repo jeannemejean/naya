@@ -27,7 +27,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { BrandDnaEditor } from "@/components/brand-dna-editor";
 import MilestoneRoadmap from "@/pages/project/MilestoneRoadmap";
-import { ActiveProjectBand, AllProjectsBand, ProjectStatusNote } from "@/components/accueil-retire/ActiveProjectBand";
+import { ProjectStatusNote, StatusNotePopover, SUCCESS_MODE_COLORS } from "@/components/accueil-retire/ActiveProjectBand";
+import { useLocation } from "wouter";
+import { formatLocalDate } from "@/lib/dateUtils";
 import type { Project, ProjectGoal, Client, Task } from "@shared/schema";
 import { GestionGroupesMarques } from "@/components/groupes/GroupesMarques";
 
@@ -455,20 +457,37 @@ function ProjectTasksPanel({ project }: { project: Project }) {
 }
 
 // ─── Project Card Component ────────────────────────────────────────────────
-function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (project: Project, tab: string) => void }) {
+function ProjectCard({ project, overcommitted = false }: { project: Project; overcommitted?: boolean }) {
  const { t } = useTranslation();
+ const [, navigate] = useLocation();
 
  // Check if Brand DNA is configured for this project
  const { data: brandDna } = useQuery<any>({
  queryKey: ['/api/projects', project.id, 'brand-dna'],
  queryFn: () => fetchJson(`/api/projects/${project.id}/brand-dna`),
  });
+ // Objectif en cours (même source que l'ancien bandeau du haut, désormais fondu dans la carte).
+ const { data: detail } = useQuery<Project & { goals: ProjectGoal[] }>({ queryKey: [`/api/projects/${project.id}`] });
+ const topGoal = detail?.goals?.find((g) => g.status === "active");
+ const daysLeft = topGoal?.dueDate ? Math.ceil((new Date(topGoal.dueDate as any).getTime() - Date.now()) / 86400000) : null;
+ const progressPct = topGoal?.targetValue && topGoal?.currentValue
+ ? Math.min(100, (parseFloat(topGoal.currentValue) / parseFloat(topGoal.targetValue)) * 100)
+ : null;
 
  const hasProjectSpecificDna = brandDna?.projectId === project.id;
  const monetInfo = MONETIZATION_LABELS[project.monetizationIntent || 'exploratory'];
+ // Toute la carte ouvre la même chose : la page du projet.
+ const ouvrir = (onglet?: string) => navigate(onglet ? `/projects/${project.id}?onglet=${onglet}` : `/projects/${project.id}`);
 
  return (
- <Card className="hover:shadow-rest transition-shadow border-naya-olive-18 overflow-hidden">
+ <Card
+ role="button"
+ tabIndex={0}
+ onClick={() => ouvrir()}
+ onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); ouvrir(); } }}
+ className="hover:shadow-rest transition-shadow border-naya-olive-18 overflow-hidden cursor-pointer"
+ style={overcommitted && project.category === "revenue" ? { borderLeft: "3px solid rgba(212,201,122,0.75)" } : undefined}
+ >
  <CardContent className="p-5">
  <div className="flex items-start justify-between mb-3">
  <div className="flex items-center gap-2">
@@ -485,28 +504,34 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
  <Badge variant="outline" className="text-[10px] h-5">
  {project.type}
  </Badge>
- {!hasProjectSpecificDna && (
- <Badge
- className="text-[10px] h-5 bg-[hsl(150,20%,55%)]/10 text-[hsl(150,20%,45%)] ,20%,55%)]/20 ,20%,60%)] border-0 cursor-pointer hover:bg-[hsl(150,20%,55%)]/20"
- onClick={(e) => {
- e.stopPropagation();
- onOpenTab(project, "brand-dna");
- }}
- >
- <Dna className="h-2.5 w-2.5 mr-0.5" />
- {t('projectsPage.setup')}
+ {overcommitted && (
+ <Badge variant="outline" className="text-[10px] h-5 border-[rgba(212,201,122,0.55)] bg-[rgba(212,201,122,0.18)] text-[#6f6526]" title={t("projectsPage.planningChargeTitre")}>
+ {t("projectsPage.planningCharge")}
  </Badge>
  )}
+ <StatusNotePopover projectId={project.id} initialNote={(detail as any)?.statusNote ?? (project as any).statusNote ?? ""} />
  </div>
  </div>
 
- <div
- className="cursor-pointer"
- onClick={() => onOpenTab(project, "tasks")}
- >
  <h3 className="font-semibold text-foreground mb-1">{project.name}</h3>
  {project.description && (
  <p className="text-xs text-naya-olive-55 line-clamp-2 mb-3">{project.description}</p>
+ )}
+
+ {topGoal && (
+ <div className="mt-3 rounded-lg bg-naya-olive-06 px-3 py-2">
+ <div className="flex items-center gap-2">
+ <Target className="h-3 w-3 text-naya-olive-55 flex-shrink-0" />
+ <p className="text-xs text-foreground line-clamp-1 flex-1">{topGoal.title}</p>
+ {topGoal.successMode && (
+ <Badge className={`text-[9px] border ${SUCCESS_MODE_COLORS[topGoal.successMode] || "bg-naya-olive-06 text-naya-olive-55"}`}>
+ {SUCCESS_MODE_KEYS[topGoal.successMode] ? t(SUCCESS_MODE_KEYS[topGoal.successMode]) : topGoal.successMode}
+ </Badge>
+ )}
+ {daysLeft !== null && daysLeft >= 0 && <span className="text-[10px] text-naya-olive-55">{daysLeft} j</span>}
+ </div>
+ {progressPct !== null && <Progress value={progressPct} className="h-[2px] mt-2" />}
+ </div>
  )}
 
  <div className="flex items-center gap-2 mt-3">
@@ -521,16 +546,15 @@ function ProjectCard({ project, onOpenTab }: { project: Project; onOpenTab: (pro
  {project.projectStatus}
  </span>
  </div>
- </div>
 
  {!hasProjectSpecificDna && (
  <div className="mt-3 pt-3 border-t border-naya-olive-10 ">
  <button
  onClick={(e) => {
  e.stopPropagation();
- onOpenTab(project, "brand-dna");
+ ouvrir("fondations");
  }}
- className="w-full text-xs text-[hsl(150,20%,45%)] ,20%,60%)] hover:text-[hsl(150,20%,35%)] :text-[hsl(150,20%,70%)] transition-colors flex items-center justify-center gap-1.5 py-1.5 rounded-lg hover:bg-[hsl(150,20%,55%)]/5"
+ className="w-full text-xs text-[hsl(150,20%,45%)] hover:text-[hsl(150,20%,35%)] transition-colors flex items-center justify-center gap-1.5 py-1.5 rounded-lg hover:bg-[hsl(150,20%,55%)]/5"
  >
  <Dna className="h-3.5 w-3.5" />
  <span>{t('projectsPage.configureBrandDnaForTargetedPlanning')}</span>
@@ -589,6 +613,21 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  }
  return allResults;
  },
+ });
+
+ // Une seule liste de projets (l'ancien bandeau du haut la dupliquait) : filtre clients/perso
+ // et signal de surcharge sont portés ici.
+ const [kindFilter, setKindFilter] = useState<"all" | "client" | "personal">("all");
+ const today = formatLocalDate(new Date());
+ const { data: overcommit = [] } = useQuery<Array<{ projectId: number; overcommitted: boolean }>>({
+ queryKey: ["/api/projects/overcommit", today],
+ queryFn: async () => { const r = await apiRequest("GET", `/api/projects/overcommit?clientToday=${today}`); return r.json(); },
+ });
+ const overcommitById = new Map(overcommit.map((o) => [o.projectId, o.overcommitted]));
+ const hasClient = projects.some((p) => (p as any).projectKind === "client");
+ const projetsAffiches = projects.filter((p) => {
+ if (kindFilter === "all") return true;
+ return ((p as any).projectKind === "client" ? "client" : "personal") === kindFilter;
  });
 
  const { data: projectDetail } = useQuery<Project & { goals: ProjectGoal[] }>({
@@ -964,18 +1003,30 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </header>
  <main className="flex-1 overflow-y-auto">
  <div className="p-8">
- {/* En-tête de l'espace, venu de l'ancien accueil : bandeau du projet actif (ou de tous les
-     projets, avec l'alerte de surcharge) et « Dis à Naya où tu en es ». */}
- {isAllProjects
- ? <AllProjectsBand />
- : activeProjectId
- ? (
- <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
- <div className="lg:col-span-2"><ActiveProjectBand projectId={activeProjectId} /></div>
- <ProjectStatusNote projectId={activeProjectId} />
+ {/* « Dis à Naya où tu en es » du projet actif. Les projets eux-mêmes n'apparaissent qu'une
+     fois : dans la grille ci-dessous (objectif, note et surcharge y sont intégrés). */}
+ {!isAllProjects && activeProjectId ? (
+ <div className="mb-6 max-w-xl"><ProjectStatusNote projectId={activeProjectId} /></div>
+ ) : null}
+
+ {hasClient && (
+ <div className="flex items-center gap-1 mb-4">
+ {([["all", "projectsPage.filtreTous"], ["client", "projectsPage.filtreClients"], ["personal", "projectsPage.filtrePersonnels"]] as const).map(([val, label]) => (
+ <button
+ key={val}
+ type="button"
+ onClick={() => setKindFilter(val)}
+ className={`text-[11px] font-display px-2.5 py-1 rounded-full border transition-colors ${
+ kindFilter === val
+ ? "bg-primary text-primary-foreground border-transparent"
+ : "bg-naya-olive-06 text-naya-olive-55 border-naya-olive-18 hover:bg-naya-olive-10"
+ }`}
+ >
+ {t(label)}
+ </button>
+ ))}
  </div>
- )
- : null}
+ )}
 
  {isLoading ? (
  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -997,8 +1048,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </div>
  ) : (
  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
- {projects.map((project) => (
- <ProjectCard key={project.id} project={project} onOpenTab={openProjectTab} />
+ {projetsAffiches.map((project) => (
+ <ProjectCard key={project.id} project={project} overcommitted={overcommitById.get(project.id) ?? false} />
  ))}
  </div>
  )}

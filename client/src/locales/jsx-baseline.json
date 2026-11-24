@@ -1,6 +1,6 @@
 {
   "client/src/App.tsx": 1,
-  "client/src/components/accueil-retire/ActiveProjectBand.tsx": 47,
+  "client/src/components/accueil-retire/ActiveProjectBand.tsx": 44,
   "client/src/components/accueil-retire/OverdueTasks.tsx": 4,
   "client/src/components/accueil-retire/PersonaCard.tsx": 15,
   "client/src/components/accueil-retire/ProjectSetupBanner.tsx": 3,

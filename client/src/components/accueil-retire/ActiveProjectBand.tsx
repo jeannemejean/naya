@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "react-i18next";
-import { formatLocalDate } from "@/lib/dateUtils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -16,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import type { Project, ProjectGoal } from "@shared/schema";
 import { Link, useLocation } from "wouter";
 
-const SUCCESS_MODE_COLORS: Record<string, string> = {
+export const SUCCESS_MODE_COLORS: Record<string, string> = {
   revenue:     "bg-[rgba(212,201,122,0.18)] text-[#6f6526] border-[rgba(212,201,122,0.35)]",
   visibility:  "bg-[rgba(125,143,168,0.18)] text-[#46556d] border-[rgba(125,143,168,0.35)]",
   consistency: "bg-naya-olive-10 text-naya-olive border-naya-olive-18",
@@ -28,7 +27,7 @@ const SUCCESS_MODE_COLORS: Record<string, string> = {
 // Popover LÉGER « Dis à Naya où tu en es » accessible en 1 clic depuis chaque carte projet,
 // sans naviguer vers la vue projet. Édite le seul champ statusNote (contexte non tracké par
 // l'app) et sauvegarde via PATCH. L'icône est REMPLIE si une note existe déjà, VIDE sinon.
-function StatusNotePopover({ projectId, initialNote }: { projectId: number; initialNote: string }) {
+export function StatusNotePopover({ projectId, initialNote }: { projectId: number; initialNote: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -211,61 +210,6 @@ export function ActiveProjectBand({ projectId, compact = false, overcommitted = 
             Aucun objectif actif — en ajouter un
           </span>
         </Link>
-      )}
-    </div>
-  );
-}
-
-export function AllProjectsBand() {
-  const { data: projects = [] } = useQuery<Project[]>({ queryKey: ["/api/projects?limit=200"] });
-  const today = formatLocalDate(new Date());
-  // Statut de surcharge PAR PROJET (seuil dérivé du budget/jour du projet, multiplicateur 1.25).
-  const { data: overcommit = [] } = useQuery<Array<{ projectId: number; overcommitted: boolean }>>({
-    queryKey: ["/api/projects/overcommit", today],
-    queryFn: async () => { const r = await apiRequest("GET", `/api/projects/overcommit?clientToday=${today}`); return r.json(); },
-  });
-  const overcommitById = new Map(overcommit.map(o => [o.projectId, o.overcommitted]));
-  const [kindFilter, setKindFilter] = useState<"all" | "client" | "personal">("all");
-
-  const active = projects.filter(p => p.projectStatus === "active");
-  if (active.length === 0) return null;
-
-  // Le toggle n'apparaît que s'il y a au moins un projet client (sinon inutile → board plus propre).
-  const hasClient = active.some(p => (p as any).projectKind === "client");
-  const filtered = active.filter(p => {
-    if (kindFilter === "all") return true;
-    const kind = (p as any).projectKind === "client" ? "client" : "personal";
-    return kind === kindFilter;
-  });
-
-  return (
-    <div className="mb-6">
-      {hasClient && (
-        <div className="flex items-center gap-1 mb-3">
-          {([["all", "Tous"], ["client", "Clients"], ["personal", "Personnels"]] as const).map(([val, label]) => (
-            <button
-              key={val}
-              type="button"
-              onClick={() => setKindFilter(val)}
-              className={`text-[10px] font-display px-2.5 py-1 rounded-full border transition-colors ${
-                kindFilter === val
-                  ? "bg-primary text-primary-foreground border-transparent"
-                  : "bg-naya-olive-06 text-naya-olive-55 border-naya-olive-18 hover:bg-naya-olive-10"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      {filtered.length === 0 ? (
-        <p className="text-xs text-naya-olive-35 italic">Aucun projet {kindFilter === "client" ? "client" : "personnel"}.</p>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          {filtered.slice(0, 4).map(p => (
-            <ActiveProjectBand key={p.id} projectId={p.id} compact overcommitted={overcommitById.get(p.id) ?? false} />
-          ))}
-        </div>
       )}
     </div>
   );
