@@ -4,7 +4,8 @@
 //
 // Partagé par `/launch`, `/regenerate-content`, `/resume`, `/redeploy` et « repenser » ; ce
 // qui diffère entre eux est passé en paramètre (fenêtre [debut, fin], contrôle de créneaux).
-import { localWallClock } from '../../utils/timezone';
+import { localWallClock, parisWallClockToInstant } from '../../utils/timezone';
+import { heuresDuJour, matriceGenerique, meilleuresHeures, type Matrice, type MesurePost } from "@shared/meilleures-heures";
 import { formatDate as campaignDateToStr, addDays as campaignAddDays } from "../../utils/dateUtils";
 import {
   etapesProductionPourPost, jourDeProduction, jourDuPost, postAProduire,
@@ -78,6 +79,11 @@ export interface PlacementDeps {
   createContent?(content: any): Promise<any>;
   /** Posts d'une campagne (`storage.getContent(userId, limit, projectId, campaignId)`). */
   getContent?(userId: string, limit?: number, projectId?: number, campaignId?: number): Promise<any[]>;
+  /**
+   * Meilleures heures (lot 7) : posts publiés et mesurés de la marque sur un réseau. Absent ou
+   * en échec : la grille générique du réseau.
+   */
+  getMesuresPublication?(userId: string, projectId: number | null, reseau: string, depuis: Date): Promise<MesurePost[]>;
   /** Tâches reliées à ces posts (`tasks.content_id`), faites ou non. */
   getTasksForContents?(userId: string, contentIds: number[]): Promise<any[]>;
   /** Posts de l'utilisatrice dont la publication tombe dans [debut, fin[ (atelier de la semaine). */
@@ -408,7 +414,7 @@ export async function placerPostsCampagne(
   const borneStr = bornerA ? campaignDateToStr(bornerA) : null;
   const startDate = debut;
   const finFenetre = fin ?? campaignAddDays(startDate, 365);
-  const { isWorkDay } = await joursTravailles(deps, userId, campaignDateToStr(startDate), campaignDateToStr(finFenetre));
+  const { prefs, isWorkDay } = await joursTravailles(deps, userId, campaignDateToStr(startDate), campaignDateToStr(finFenetre));
 
   const contentPlan = (campaign.contentPlan || []) as Array<{
     phase: number; week: string; platform: string; format: string;
@@ -429,8 +435,27 @@ export async function placerPostsCampagne(
 
   let crees = 0;
   const postsCrees: PostPlacable[] = [];
-  // Les heures varient pour éviter les doublons exacts : 9h, 11h, 14h, 16h
-  const HOURS = [9, 11, 14, 16];
+  // Heure de chaque post : les meilleures heures du réseau ce jour-là (grille du lot 7 : celle de
+  // la marque si elle a assez de posts mesurés, sinon la générique), DANS les heures de travail
+  // (prefs, défaut 9 h – 18 h), espacées de 2 h ; le k-ième post du jour prend la k-ième heure.
+  // Jusqu'au lot 7 : 9 h, 11 h, 14 h, 16 h quel que soit le réseau.
+  const debutTravail = Math.ceil(hhmmToMin(prefs?.workDayStart || '09:00') / 60);
+  const finTravail = Math.floor(hhmmToMin(prefs?.workDayEnd || '18:00') / 60);
+  const matrices = new Map<string, Promise<Matrice>>();
+  const matriceDe = (platform: string): Promise<Matrice> => {
+    const reseau = (platform || '').trim().toLowerCase();
+    let m = matrices.get(reseau);
+    if (!m) {
+      const generique = matriceGenerique(reseau);
+      m = deps.getMesuresPublication
+        ? deps.getMesuresPublication(userId, campaign.projectId ?? null, reseau, new Date(Date.now() - 548 * 86400000))
+          .then((mesures) => meilleuresHeures(reseau, mesures).matrice)
+          .catch(() => generique)
+        : Promise.resolve(generique);
+      matrices.set(reseau, m);
+    }
+    return m;
+  };
   // Rythme de la marque (posts par semaine, peut être fractionnaire) : la semaine w reçoit
   // ceil(w·n) − ceil((w−1)·n) posts. Le total suit exactement le rythme (0,5 → 1 post toutes les
   // deux semaines, dès la première ; 2,5 → 3, 2, 3, 2…). Plafond par campagne.
@@ -463,10 +488,12 @@ export async function placerPostsCampagne(
       if (borneStr !== null && dayStr > borneStr) continue;
       const usageCount = dayUsageCounts.get(dayStr) || 0;
       dayUsageCounts.set(dayStr, usageCount + 1);
-      const hour = HOURS[usageCount % HOURS.length];
+      const jourIso = (new Date(dayStr + 'T12:00:00Z').getUTCDay() + 6) % 7;
+      const heures = heuresDuJour(await matriceDe(piece.platform), jourIso, { debut: debutTravail, fin: finTravail });
+      const hour = heures[usageCount % heures.length];
 
-      const pieceDate = new Date(dayStr + 'T00:00:00');
-      pieceDate.setHours(hour, 0, 0, 0);
+      // Heure murale de Paris (la grille l'est), quel que soit le fuseau du serveur (UTC en prod).
+      const pieceDate = parisWallClockToInstant(dayStr, minToHHMM(hour * 60));
 
       const ligne = {
         userId,

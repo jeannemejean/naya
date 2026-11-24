@@ -767,3 +767,160 @@ existante touchée. Migration AVANT le push de `main` (les routes `/api/vie-pers
 ```sql
 select table_name from information_schema.tables where table_name like 'vie_perso_%';  -- 5 lignes
 ```
+
+## 17. Premier commentaire et couverture — `0044` à appliquer en prod à la main
+
+Fichier : `migrations/0044_puzzling_maximus.sql` (branche `feat/commentaire-couverture`). Quatre `ADD COLUMN`
+nullables sur `content` (`premier_commentaire`, `premier_commentaire_at`, `couverture_url`, `couverture_offset_ms`).
+Aucun `DROP`, aucune donnée touchée. Migration AVANT le push (le worker et les routes lisent ces colonnes).
+
+```sql
+select column_name from information_schema.columns where table_name='content' and column_name in
+ ('premier_commentaire','premier_commentaire_at','couverture_url','couverture_offset_ms');  -- 4 lignes
+```
+
+## 18. Options de post (alt, collaborateurs, Reel, PDF LinkedIn) — `0045` à appliquer en prod à la main
+
+Fichier : `migrations/0045_fluffy_sasquatch.sql` (branche `feat/reseaux-par-projet`). Cinq `ADD COLUMN`
+nullables sur `content` (`texte_alternatif`, `collaborateurs` jsonb, `reel_dans_le_fil`, `nom_audio`,
+`linkedin_document`). Aucun `DROP`, aucune donnée touchée. Migration AVANT le push (le worker et les routes
+lisent ces colonnes).
+
+```sql
+select column_name from information_schema.columns where table_name='content' and column_name in
+ ('texte_alternatif','collaborateurs','reel_dans_le_fil','nom_audio','linkedin_document');  -- 5 lignes
+```
+
+## 19. Gestion des posts (notes, historique, corbeille) — `0046` à appliquer en prod à la main
+
+Fichier : `migrations/0046_powerful_wither.sql` (branche `feat/reseaux-par-projet`). Un `ADD COLUMN` nullable
+sur `content` (`supprime_le`, la corbeille) et deux tables nouvelles, `notes_post` et `historique_post`
+(clés étrangères en cascade vers `users` et `content`, un index sur `content_id` chacune). Aucun `DROP`,
+aucune donnée touchée. Migration AVANT le push : le worker de publication, le calendrier, l'atelier et la
+présence filtrent sur `supprime_le` (sans la colonne, ces lectures échouent). L'historique s'écrit au mieux :
+sans sa table, les gestes passent quand même.
+
+```sql
+select column_name from information_schema.columns where table_name='content' and column_name='supprime_le';  -- 1 ligne
+select table_name from information_schema.tables where table_name in ('notes_post','historique_post');       -- 2 lignes
+```
+
+## 20. Bibliothèque (textes enregistrés, posts modèles) — `0047` à appliquer en prod à la main
+
+Fichier : `migrations/0047_loose_hellfire_club.sql` (branche `feat/reseaux-par-projet`). Deux tables
+nouvelles, `textes_enregistres` et `modeles_post` (clé étrangère en cascade vers `users`, `set null` vers
+`projects`, un index sur `user_id` chacune). Aucun `ALTER` de table existante, aucun `DROP`, aucune donnée
+touchée. Sans la migration, seules les routes `/api/bibliotheque/*` et « Enregistrer comme modèle »
+échouent (500) ; le calendrier, l'atelier, le composeur et l'aperçu Instagram (lot 4, sans table) marchent.
+
+```sql
+select table_name from information_schema.tables where table_name in ('textes_enregistres','modeles_post');  -- 2 lignes
+```
+
+## 21. Liens courts et SmartLinks — `0048` à appliquer en prod à la main
+
+Fichier : `migrations/0048_massive_grey_gargoyle.sql` (branche `feat/reseaux-par-projet`). Trois tables
+nouvelles : `liens_courts` (code unique de 7 caractères, URL cible, UTM, compteur de clics ; cascade vers
+`users`, `set null` vers `projects`), `clics_liens` (clics par jour de Paris, index unique `lien_id, jour`,
+cascade vers `liens_courts`) et `smartlinks` (slug unique, boutons et liens des tuiles en jsonb ; cascade
+vers `users` et `projects`). Aucun `ALTER` de table existante, aucun `DROP`, aucune donnée touchée. Aucune
+donnée personnelle des visiteurs (ni IP, ni user-agent). Sans la migration, seules `/l/<code>`, `/b/<slug>`,
+`/api/liens` et `/api/smartlinks` échouent (404 ou 500) ; le reste de Naya marche.
+
+Adresse des liens : `OAUTH_BASE_URL` (sinon `APP_URL`) — doit valoir `https://www.hellonaya.app` en prod
+pour que les liens courts copiés dans les légendes portent le bon domaine.
+
+```sql
+select table_name from information_schema.tables where table_name in ('liens_courts','clics_liens','smartlinks');  -- 3 lignes
+```
+
+## 22. Autolistes — `0049` à appliquer en prod à la main
+
+Fichier : `migrations/0049_hard_stingray.sql` (branche `feat/reseaux-par-projet`). Deux tables
+nouvelles : `autolistes` (nom, marque, créneaux et comptes en jsonb, boucle, activation, fuseau,
+problèmes du dernier passage ; cascade vers `users`, `set null` vers `projects`) et `autoliste_posts`
+(file ordonnée, modèle de post en jsonb, compteur de publications ; cascade vers `autolistes`). Sur
+`content`, trois colonnes nouvelles **nullables** (`autoliste_id`, `autoliste_post_id`,
+`autoliste_creneau`, clés étrangères `set null`) et un index unique
+`content_autoliste_creneau_idx (autoliste_id, autoliste_creneau, social_account_id)` : toutes les
+lignes existantes ont `autoliste_id` null, donc aucun conflit possible (les null sont distincts).
+Aucun `DROP`, aucune donnée touchée.
+
+Sans la migration : la lecture du calendrier échoue (le `select` de `content` nomme les nouvelles
+colonnes) — **appliquer `0049` avant de déployer le code**. Le passage des autolistes (chaque heure,
+dans `demarrerTachesDeFond`) ne fait rien tant qu'aucune liste n'existe.
+
+```sql
+select table_name from information_schema.tables where table_name in ('autolistes','autoliste_posts');  -- 2 lignes
+select column_name from information_schema.columns where table_name = 'content' and column_name like 'autoliste%';  -- 3 lignes
+select indexname from pg_indexes where indexname = 'content_autoliste_creneau_idx';  -- 1 ligne
+```
+
+## 23. « Finir sur le téléphone » — `0050` à appliquer en prod à la main
+
+Fichier : `migrations/0050_abnormal_vapor.sql` (branche `feat/reseaux-par-projet`). Une seule colonne
+nouvelle sur `content` : `finir_sur_telephone boolean DEFAULT false` (nullable). Aucun `DROP`, aucune
+donnée touchée ; les lignes existantes valent `false` (ou null, lu comme `false`).
+
+Sans la migration : la lecture des posts échoue (le `select` de `content` nomme la nouvelle colonne)
+et le claim du worker aussi — **appliquer `0050` avant de déployer le code**. Les meilleures heures
+(lot 7) n'ont besoin d'aucune migration (lecture de `content_reception`).
+
+```sql
+select column_name, data_type, column_default from information_schema.columns
+ where table_name = 'content' and column_name = 'finir_sur_telephone';  -- 1 ligne, boolean, false
+```
+
+## 24. Validation client — `0051` à appliquer en prod à la main
+
+Fichier : `migrations/0051_long_edwin_jarvis.sql` (branche `feat/reseaux-par-projet`). Additive :
+trois tables nouvelles (`validation_projet` — réglages par marque, index unique sur `project_id` ;
+`validations_post` — décisions et commentaires des relecteurs, `content_id` en cascade ;
+`portails_validation` — liens privés `/v/<token>`, index unique sur `token`) et deux colonnes
+**nullables** sur `content` (`validation_statut`, `validation_demandee_at`). Aucun `DROP`, aucune
+donnée touchée : toutes les lignes existantes valent null (hors validation).
+
+Sans la migration : la lecture des posts échoue (le `select` de `content` nomme les nouvelles
+colonnes), et le worker de publication aussi (lecture des posts dus, claim et rattrapage
+interrogent `validation_projet`) — **appliquer `0051` avant de déployer le code**. Tant
+qu'aucune marque n'active la validation, rien ne change pour la publication.
+
+```sql
+select table_name from information_schema.tables
+ where table_name in ('validation_projet','validations_post','portails_validation');  -- 3 lignes
+select column_name from information_schema.columns
+ where table_name = 'content' and column_name like 'validation%';  -- 2 lignes
+select indexname from pg_indexes
+ where indexname in ('validation_projet_project_idx','portails_validation_token_idx');  -- 2 lignes
+```
+
+## 25. Groupes de marques — `0052` à appliquer en prod à la main
+
+Fichier : `migrations/0052_sturdy_hellfire_club.sql` (branche `feat/reseaux-par-projet`). Additive :
+deux tables nouvelles — `groupes_marques` (id, user_id en cascade, nom ≤ 80, couleur, dates ;
+index `groupes_marques_user_idx`) et `groupe_marques_projets` (groupe_id et project_id en
+cascade ; index unique `groupe_marques_projets_paire_idx` sur la paire, index sur project_id).
+Aucune colonne ajoutée ailleurs, aucun `DROP`, aucune donnée touchée.
+
+Sans la migration : seules les routes nouvelles échouent (`/api/groupes-marques`, et `groupeId`
+sur `/api/content`, `/api/meilleures-heures`, `/api/content/cross-post`) ; le calendrier d'une
+marque seule, le composeur et le worker ne lisent pas ces tables. Appliquer `0052` avant de
+déployer quand même (l'écran charge la liste des groupes).
+
+```sql
+select table_name from information_schema.tables
+ where table_name in ('groupes_marques','groupe_marques_projets');  -- 2 lignes
+select indexname from pg_indexes
+ where indexname in ('groupes_marques_user_idx','groupe_marques_projets_paire_idx','groupe_marques_projets_project_idx');  -- 3 lignes
+```
+
+## 26. Premier commentaire Instagram — variable `INSTAGRAM_COMMENTS_SCOPE` (aucune migration)
+
+Le premier commentaire automatique sur Instagram exige la portée
+`instagram_business_manage_comments`. Elle n'est demandée à la connexion Instagram **que si**
+`INSTAGRAM_COMMENTS_SCOPE=1` (une portée que l'app Meta n'a pas casserait toute connexion
+Instagram : vérifier d'abord dans la console Meta que l'app l'a). Sans la variable, le worker
+n'appelle jamais l'API des commentaires Instagram : après la publication, une tâche « Poster le
+premier commentaire » porte le texte à coller, et le post est marqué traité
+(`premier_commentaire_at`). Après avoir mis la variable, chaque compte Instagram doit être
+reconnecté pour que son jeton porte la portée ; d'ici là, l'échec de l'appel crée la même tâche.

@@ -16,6 +16,18 @@ import { setupAuth, isAuthenticated, hashPassword, verifyPassword, generateUserI
 import { registerLivrablesRoutes } from "./routes-livrables";
 import { registerProgrammationRoutes } from "./routes-programmation";
 import { registerAtelierRoutes } from "./routes-atelier";
+import { registerGestionPostsRoutes } from "./routes-gestion-posts";
+import { registerBibliothequeRoutes } from "./routes-bibliotheque";
+import { registerAutolistesRoutes } from "./routes-autolistes";
+import { registerLiensPublics, registerLiensRoutes } from "./routes-liens";
+import { registerValidationPublique, registerValidationRoutes } from "./routes-validation";
+import { registerMeilleuresHeuresRoutes } from "./routes-meilleures-heures";
+import { registerGroupesMarquesRoutes } from "./routes-groupes-marques";
+import { depsGroupesMarques } from "./services/groupes-marques/deps";
+import { attribuerMarques } from "./services/groupes-marques/attribution";
+import { filtreMarquesDeRequete } from "@shared/groupes-marques";
+import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
+import { champsRelanceValidation, journaliserRelanceSiEdite } from "./services/validation/relance";
 import { registerPreuvesRoutes } from "./routes-preuves";
 import { registerApprentissageRoutes } from "./routes-prospection-apprentissage";
 import { registerModeTestRoutes } from "./routes-mode-test";
@@ -38,10 +50,11 @@ import { registerAppelsOffresRoutes } from "./routes-appels-offres";
 import { registerViePersoRoutes } from "./routes-vie-perso";
 import { horsViePerso } from "@shared/vie-perso";
 import { plateformeDe, problemesProgrammation, type GenreMedia } from "@shared/programmation";
+import { lireOptionsPost, optionsPourReseau } from "@shared/options-post";
 import { registerOrchestreRoutes } from "./routes-orchestre";
 import { registerRapportsRoutes } from "./routes-rapports";
-import { compteDePublication, porteeDuProjet } from "./services/connexions/comptes";
-import { dansPortee } from "./services/connexions/portee";
+import { compteDePublication, porteeReseauxDuProjet } from "./services/connexions/comptes";
+import { comptesDuPerimetre } from "./services/connexions/portee";
 import { identiteCampagne, signatureCampagne, SignatureClientManquanteError } from "./services/connexions/resolution";
 import { controleProjetCampagne, controleChangementNature } from "./services/connexions/campagne";
 import { titresDejaPlanifies } from "./services/semaine-planifiee";
@@ -605,6 +618,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (req.method !== 'GET') res.on('finish', () => { if (req.userId) oublierCarteDe(req.userId); });
     next();
   });
+
+  // Liens courts (/l/:code) et SmartLinks (/b/:slug) : publics, sans compte. Montés AVANT
+  // l'authentification et le gate d'abonnement, et (index.ts) avant le fourre-tout du SPA.
+  registerLiensPublics(app);
+  // Portail de validation client (lot 8) : lien privé, sans compte. Avant l'authentification.
+  registerValidationPublique(app);
 
   // Health check (Railway, monitoring)
   app.get('/api/health', async (_req, res) => {
@@ -4261,9 +4280,12 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
               // creer un second. Sans cela, chaque clic sur Enregistrer ajouterait un
               // brouillon identique au calendrier.
               const existant = await storage.getContentBySourceTask(userId, taskId);
+              // Un post en validation dont la note réécrit le texte repasse « à valider », dans la
+              // même écriture.
               const enregistre = existant
-                ? await storage.updateContent(existant.id, ligne as any)
+                ? await storage.updateContent(existant.id, { ...(ligne as any), ...champsRelanceValidation(existant, ligne as any) })
                 : await storage.createContent({ ...ligne, userId, autoPost: false } as any); // brouillon issu d'une tâche : jamais publié seul
+              if (existant) await journaliserRelanceSiEdite(userId, existant, ligne as any);
               routage = { destination, contentId: enregistre.id };
             }
           }
@@ -6691,11 +6713,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const userId = req.userId;
       const { status, limit } = req.query;
 
-      let projectId: number | undefined;
-      if (req.query.projectId !== undefined) {
-        projectId = Number(req.query.projectId);
-        if (!Number.isFinite(projectId) || projectId <= 0) return res.status(400).json({ message: "Invalid projectId" });
-      }
+      // Une marque (`projectId`, inchangé) ou un groupe de marques (`groupeId`, lot 9 : les
+      // projets du groupe qui sont à l'utilisatrice ; groupe d'un autre compte → 404).
+      const filtre = await filtreMarquesDeRequete(req.query, (g) => depsGroupesMarques.projetsDuGroupe(userId, g));
+      if (!filtre.ok) return res.status(filtre.status).json({ message: filtre.message });
+      const projectId = filtre.projectIds;
 
       let campaignId: number | undefined;
       if (req.query.campaignId !== undefined) {
@@ -6747,6 +6769,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       requestBody.autoPost = requestBody.autoPost === true;
       const contentData = insertContentSchema.parse(requestBody);
       const content = await storage.createContent(contentData);
+      await journaliser(userId, content?.id, 'cree', null);
 
       // Alerte de collision : informative, jamais bloquante. Elle s'exécute APRÈS
       // l'écriture, pour qu'un échec de jugement ne puisse jamais empêcher la
@@ -6779,17 +6802,49 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   app.post('/api/content/cross-post', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const { targets, caption, mediaIds, scheduledFor, autoPost, projectId, pillar, goal } = req.body || {};
+      const { targets, caption, mediaIds, scheduledFor, autoPost, projectId, pillar, goal, premierCommentaire, couvertureOffsetMs } = req.body || {};
+      // Options de publication (alt, collaborateurs, Reel, document LinkedIn) : validées, puis
+      // gardées sur chaque ligne selon son réseau et son format.
+      const options = lireOptionsPost(req.body?.options ?? {});
+      if (!options) return res.status(400).json({ message: 'options_invalides' });
+      // Légende par réseau (facultative) : la cible la porte, sinon la légende commune.
+      const legendeDe = (tgt: any): string => (typeof tgt?.caption === 'string' && tgt.caption.trim() ? tgt.caption : (caption || ''));
+      const commentaire = typeof premierCommentaire === 'string' && premierCommentaire.trim() ? premierCommentaire.trim().slice(0, 2200) : null;
+      const couverture = Number.isInteger(couvertureOffsetMs) && couvertureOffsetMs >= 0 && couvertureOffsetMs <= 15 * 60_000 ? couvertureOffsetMs : null;
       if (!Array.isArray(targets) || targets.length === 0) return res.status(400).json({ message: 'no_targets' });
-      // Mode agence : chaque compte cible doit appartenir au périmètre du projet (client → ses
-      // comptes seulement ; perso ou aucun projet → ceux de l'utilisatrice).
-      if (projectId && !(await storage.getProject(Number(projectId), userId))) return res.status(404).json({ message: 'not_found' });
-      const portee = await porteeDuProjet(userId, projectId ? Number(projectId) : null);
+      const groupeId = req.body?.groupeId;
       const comptes = await storage.getSocialAccounts(userId);
-      for (const tgt of targets) {
-        if (tgt?.socialAccountId == null) continue;
-        const compte = comptes.find((c: any) => c.id === Number(tgt.socialAccountId));
-        if (!compte || !dansPortee(compte as any, portee)) return res.status(400).json({ message: 'compte_hors_projet' });
+      // La marque de chaque cible (index des cibles) et son périmètre réseaux.
+      let marqueDe: (i: number) => number | null;
+      let perimetreDe: (i: number) => Awaited<ReturnType<typeof porteeReseauxDuProjet>>;
+      if (groupeId != null && groupeId !== '') {
+        // Groupe de marques (lot 9) : chaque cible désigne sa marque ; la marque doit être du
+        // groupe (groupe et projets de l'utilisatrice), le compte dans le périmètre de la marque.
+        if (projectId) return res.status(400).json({ message: 'projectId_ou_groupeId' });
+        const gid = Number(groupeId);
+        const ids = Number.isInteger(gid) && gid > 0 ? await depsGroupesMarques.projetsDuGroupe(userId, gid) : null;
+        if (!ids) return res.status(404).json({ message: 'not_found' });
+        const marques = (await Promise.all(ids.map((id) => storage.getProject(id, userId)))).filter(Boolean) as any[];
+        const a = attribuerMarques(targets, marques, comptes as any[]);
+        if (!a.ok) return res.status(400).json({ message: a.message, index: a.index });
+        const perimetres = new Map<number, Awaited<ReturnType<typeof porteeReseauxDuProjet>>>();
+        for (const id of new Set(a.projectIds)) perimetres.set(id, await porteeReseauxDuProjet(userId, id));
+        marqueDe = (i) => a.projectIds[i];
+        perimetreDe = (i) => perimetres.get(a.projectIds[i])!;
+      } else {
+        // Mode agence : chaque compte cible doit appartenir au périmètre du projet (client → ses
+        // comptes seulement ; perso ou aucun projet → ceux de l'utilisatrice).
+        if (projectId && !(await storage.getProject(Number(projectId), userId))) return res.status(404).json({ message: 'not_found' });
+        // Comptes du projet (perso : les siens, puis ceux des Réglages ; client : les siens seulement).
+        const perimetre = await porteeReseauxDuProjet(userId, projectId ? Number(projectId) : null);
+        const permis = new Set(comptesDuPerimetre(comptes as any[], perimetre).map((c: any) => c.id));
+        for (const tgt of targets) {
+          if (tgt?.socialAccountId == null) continue;
+          const compte = comptes.find((c: any) => c.id === Number(tgt.socialAccountId));
+          if (!compte || !permis.has(compte.id)) return res.status(400).json({ message: 'compte_hors_projet' });
+        }
+        marqueDe = () => projectId || null;
+        perimetreDe = () => perimetre;
       }
       const groupId = randomUUID();
       const when = scheduledFor ? new Date(scheduledFor) : null;
@@ -6810,15 +6865,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         const maintenant = new Date();
         const reference = when.getTime() < maintenant.getTime() - 5 * 60_000 ? maintenant : new Date(when.getTime() - 3 * 60_000);
         const problemes = [];
-        for (const tgt of targets) {
+        for (const [i, tgt] of targets.entries()) {
           const plateforme = plateformeDe(tgt.basePlatform || tgt.platform);
           // Même choix de compte que le worker : plateforme exacte, actif, dans le périmètre.
           const compte = tgt.socialAccountId != null
             ? comptes.find((c: any) => c.id === Number(tgt.socialAccountId)) ?? null
-            : comptes.find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false && dansPortee(c as any, portee)) ?? null;
+            : comptesDuPerimetre(comptes as any[], perimetreDe(i)).find((c: any) => plateformeDe(c.platform) === plateforme && c.isActive !== false) ?? null;
           // La date est jugée à l'heure de publication ; le compte, MAINTENANT (il se renouvelle seul).
           const p = problemesProgrammation({
-            post: { body: caption, platform: plateforme, scheduledFor: when }, medias: genres,
+            post: { body: legendeDe(tgt), platform: plateforme, scheduledFor: when }, medias: genres,
             compte: compte as any, maintenant: reference,
           }).filter((x) => x !== 'compte_expire') as string[];
           if (compte && (compte as any).expiresAt && new Date((compte as any).expiresAt).getTime() <= Date.now()) p.push('compte_expire');
@@ -6836,13 +6891,17 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         }
       }
       const created = [];
-      for (const tgt of targets) {
+      for (const [i, tgt] of targets.entries()) {
         const row = await storage.createContent({
           userId,
-          projectId: projectId || null,
+          projectId: marqueDe(i),
           title,
-          body: caption || '',
+          body: legendeDe(tgt),
           platform: tgt.basePlatform || tgt.platform,        // instagram|facebook|linkedin|tiktok
+          premierCommentaire: commentaire,
+          couvertureOffsetMs: couverture,
+          ...optionsPourReseau(options, plateformeDe(tgt.basePlatform || tgt.platform),
+            Array.isArray(mediaIds) && mediaIds.length > 1 && !['story', 'reel', 'short'].includes(tgt.format) ? 'carousel' : (tgt.format || 'feed_image')),
           contentType: tgt.format || 'feed_image',
           postFormat: tgt.format || 'feed_image',
           pillar: pillar || 'general',
@@ -6857,6 +6916,7 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
           crossPostGroupId: groupId,
         } as any);
         created.push(row);
+        await journaliser(userId, row?.id, 'cree', { plateforme: plateformeDe(tgt.basePlatform || tgt.platform) });
       }
       res.json({ groupId, count: created.length, items: created });
     } catch (error: any) {
@@ -6872,7 +6932,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const existing = await storage.getContentById(parseInt(id), userId);
       if (!existing) return res.status(404).json({ message: "Content not found" });
 
-      const updates = req.body;
+      // La corbeille a ses propres routes : jamais un `supprimeLe` posé par un PATCH.
+      // Ni la validation client (lot 8) : elle a ses routes, et le portail du client.
+      const { supprimeLe: _corbeille, validationStatut: _vs, validationDemandeeAt: _vd, ...updates } = req.body ?? {};
       // Un post publié, ou en train de partir, ne se déplace plus (glisser-déposer du calendrier) :
       // changer sa date ne le dépublierait pas, et l'écran mentirait.
       const verrouille = !!existing.publishedAt || ['posted', 'posting', 'processing', 'uploading'].includes((existing as any).postStatus ?? '');
@@ -6892,7 +6954,11 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
         updates.publishedAt = new Date(updates.publishedAt);
       }
       
-      const content = await storage.updateContent(parseInt(id), updates);
+      // Texte, médias, date ou options modifiés : le client revoit le post (repasse « à valider »),
+      // dans la MÊME écriture que la modification.
+      const content = await storage.updateContent(parseInt(id), { ...updates, ...champsRelanceValidation(existing, updates) });
+      await journaliserChangement(userId, existing, content);
+      await journaliserRelanceSiEdite(userId, existing, updates);
 
       // Alerte de collision : informative, jamais bloquante — même garantie que sur
       // la création (voir POST /api/content). On relit l'état final (`content`,
@@ -6926,8 +6992,13 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       const existing = await storage.getContentById(parseInt(id), userId);
       if (!existing) return res.status(404).json({ message: "Content not found" });
 
-      await storage.deleteContent(parseInt(id));
-      res.json({ message: "Content deleted successfully" });
+      // Corbeille (30 jours, restaurable) : la suppression définitive passe par
+      // DELETE /api/content/:id/definitif. Jamais un post en train de partir.
+      if (!(await storage.mettreALaCorbeille(existing.id, userId))) {
+        return res.status(409).json({ message: 'publication_en_cours' });
+      }
+      await journaliser(userId, existing.id, 'supprime', { etaitProgramme: (existing as any).autoPost === true });
+      res.json({ message: "Content deleted successfully", corbeille: true });
     } catch (error) {
       console.error("Error deleting content:", error);
       res.status(500).json({ message: "Failed to delete content" });
@@ -10303,7 +10374,8 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
           contentStatus: content.contentStatus,
         })
         .from(content)
-        .where(and(eq(content.userId, userId), eq(content.campaignId, id)));
+        // La corbeille n'est pas annoncée : ces posts ont déjà disparu pour l'utilisatrice.
+        .where(and(eq(content.userId, userId), eq(content.campaignId, id), isNull(content.supprimeLe)));
 
       const tachesBrutes = await db
         .select({ id: tasks.id, completed: tasks.completed })
@@ -11372,6 +11444,13 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerLivrablesRoutes(app);
   registerProgrammationRoutes(app);
   registerAtelierRoutes(app);
+  registerGestionPostsRoutes(app);
+  registerBibliothequeRoutes(app);
+  registerAutolistesRoutes(app);
+  registerLiensRoutes(app);
+  registerValidationRoutes(app);
+  registerMeilleuresHeuresRoutes(app);
+  registerGroupesMarquesRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);
   registerModeTestRoutes(app);

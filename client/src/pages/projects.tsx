@@ -29,6 +29,7 @@ import { BrandDnaEditor } from "@/components/brand-dna-editor";
 import MilestoneRoadmap from "@/pages/project/MilestoneRoadmap";
 import { ActiveProjectBand, AllProjectsBand, ProjectStatusNote } from "@/components/accueil-retire/ActiveProjectBand";
 import type { Project, ProjectGoal, Client, Task } from "@shared/schema";
+import { GestionGroupesMarques } from "@/components/groupes/GroupesMarques";
 
 const createClientSchema = (t: (k: string) => string) => z.object({
  name: z.string().min(1, t('projectsPage.validation.clientNameRequired')),
@@ -729,6 +730,8 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  <h1 className="text-2xl font-bold tracking-tight text-foreground">{t('projects.title')}</h1>
  <p className="text-sm text-muted-foreground mt-1">{t('projects.subtitle')}</p>
  </div>
+ <div className="flex items-center gap-2">
+ <GestionGroupesMarques projets={projects.map(p => ({ id: p.id, name: p.name, color: p.color }))} />
  <Dialog open={createOpen} onOpenChange={setCreateOpen}>
  <DialogTrigger asChild>
  <Button className="gap-2">
@@ -956,6 +959,7 @@ export default function Projects({ onSearchClick }: ProjectsProps) {
  </Form>
  </DialogContent>
  </Dialog>
+ </div>
  </div>
  </header>
  <main className="flex-1 overflow-y-auto">

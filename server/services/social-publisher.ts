@@ -14,12 +14,15 @@
  */
 import { storage } from '../storage';
 import { socialMediaService } from './social-integrations';
-import { publishPost, igFinishAsync, tiktokFinishAsync } from './social-publishers';
+import { publishPost, igFinishAsync, tiktokFinishAsync, publierPremierCommentaire } from './social-publishers';
 import { formatDePublication, plateformeDe } from '@shared/programmation';
 import { compteDePublication } from './connexions/comptes';
+import { commentairesInstagramActifs } from './social-oauth';
 import { db } from '../db';
 import { content, tasks } from '@shared/schema';
-import { and, eq, gte, inArray, isNull, like, lt, notInArray, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, like, lt, notInArray, or, sql } from 'drizzle-orm';
+import { journaliser } from './gestion-posts/historique';
+import { depsAttenteDb, sqlBloqueParValidation, sqlValideDansLaGrace, traiterAttentesValidation } from './validation/garde-publication';
 import { apresEchec, DELAI_BLOQUE_MIN, erreurDuReessai, raisonLisible, reessaiDu } from './publication/fiabilite';
 
 /** États où un envoi est peut-être déjà parti : on n'y touche jamais. */
@@ -65,6 +68,41 @@ export async function signalerEchec(item: { id: number; userId: string; title?: 
   }
 }
 
+/**
+ * Après une publication réussie : le premier commentaire, une seule fois. Un raté ne touche pas
+ * au post (il est parti) : une tâche porte le texte à coller.
+ */
+export async function apresPublication(item: any, compte: { platform: string; accessToken: string; accountId: string }, platformPostId: string | null | undefined): Promise<void> {
+  const texte = (item.premierCommentaire ?? '').trim();
+  if (!texte || item.premierCommentaireAt || !platformPostId) return;
+  const plateforme = plateformeDe(item.platform);
+  // Instagram sans la portée des commentaires (INSTAGRAM_COMMENTS_SCOPE) : aucun appel voué à
+  // l'échec, la tâche porte directement le texte à coller.
+  const r = plateforme === 'instagram' && !commentairesInstagramActifs()
+    ? { ok: false as const, erreur: 'commentaires Instagram non autorisés' }
+    : await publierPremierCommentaire({
+      platform: plateforme, platformPostId, texte,
+      credentials: { accessToken: compte.accessToken, accountId: compte.accountId, accountPlatform: compte.platform },
+    });
+  if (r.ok) {
+    await storage.updateContent(item.id, { premierCommentaireAt: new Date() } as any).catch(() => {});
+    return;
+  }
+  console.error(`[SocialPublisher] premier commentaire du post ${item.id} non posté: ${r.erreur}`);
+  try {
+    await storage.createTask({
+      userId: item.userId, title: `Poster le premier commentaire : ${(item.title || 'post').slice(0, 70)}`,
+      description: `Le post est publié, mais Naya n'a pas pu poster le premier commentaire (${r.erreur.slice(0, 120)}). À coller sous le post :\n\n${texte}`,
+      type: 'content', category: 'planning', priority: 1, source: 'premier_commentaire', contentId: item.id,
+      scheduledDate: jourParis(new Date()), estimatedDuration: 5,
+    } as any);
+    // Marqué traité : jamais de deuxième tentative qui doublerait un commentaire passé malgré l'erreur.
+    await storage.updateContent(item.id, { premierCommentaireAt: new Date() } as any);
+  } catch (e: any) {
+    console.error(`[SocialPublisher] tâche du premier commentaire ${item.id}:`, e?.message || e);
+  }
+}
+
 /** Échec d'un essai : réessai plus tard si l'erreur est passagère, sinon échec et alerte. */
 async function echouer(item: any, erreur: string): Promise<'failed' | 'skipped'> {
   const r = apresEchec(erreur, item.lastError, new Date());
@@ -74,6 +112,7 @@ async function echouer(item: any, erreur: string): Promise<'failed' | 'skipped'>
     return 'skipped';
   }
   await storage.updateContent(item.id, { postStatus: 'failed', lastError: r.lastError } as any);
+  await journaliser(item.userId, item.id, 'echec', { raison: r.lastError });
   await signalerEchec(item, r.lastError);
   return 'failed';
 }
@@ -89,9 +128,12 @@ async function cocherTachePublier(contentId: number): Promise<void> {
 
 const SUPPORTED = new Set(['instagram', 'linkedin', 'twitter', 'facebook']);
 
-async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
-  // 1. Claim atomique — si un autre passage l'a déjà pris, on saute.
-  const claimed = await storage.claimContentForPosting(item.id);
+async function publishOne(item: any, opts?: { malgreValidation?: boolean }): Promise<'posted' | 'failed' | 'skipped'> {
+  // 1. Claim atomique — si un autre passage l'a déjà pris, on saute. Un post bloqué par la
+  // validation client (lot 8) n'est jamais réclamé par le worker.
+  const claimed = opts?.malgreValidation
+    ? await storage.claimContentForPosting(item.id, { malgreValidation: true })
+    : await storage.claimContentForPosting(item.id);
   if (!claimed) return 'skipped';
   // Relu APRÈS le claim : un autre passage a pu prévoir un réessai entre-temps.
   const frais = await storage.getContentById(item.id, item.userId).catch(() => undefined);
@@ -150,6 +192,12 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
     const result = await publishPost({
       platform, format, caption: item.body, media,
       credentials: { accessToken: credentials.accessToken, accountId: credentials.accountId, accountPlatform: account.platform },
+      couverture: { url: item.couvertureUrl ?? null, offsetMs: item.couvertureOffsetMs ?? null },
+      options: {
+        texteAlternatif: item.texteAlternatif ?? null, collaborateurs: item.collaborateurs ?? null,
+        reelDansLeFil: item.reelDansLeFil ?? null, nomAudio: item.nomAudio ?? null,
+        linkedinDocument: item.linkedinDocument ?? null, titre: item.title ?? null,
+      },
     });
 
     if (result.state === 'processing') {
@@ -166,7 +214,9 @@ async function publishOne(item: any): Promise<'posted' | 'failed' | 'skipped'> {
       contentStatus: 'published', lastError: null,
     } as any);
     await cocherTachePublier(item.id);
+    await journaliser(item.userId, item.id, 'publie', { plateforme: platform, platformPostId: result.platformPostId ?? null });
     console.log(`[SocialPublisher] ✅ publié id=${item.id} sur ${platform} (postId=${result.platformPostId})`);
+    await apresPublication(item, account as any, result.platformPostId).catch(() => {});
     return 'posted';
   } catch (err: any) {
     console.error(`[SocialPublisher] ❌ échec id=${item.id} sur ${platform}: ${err?.message || err}`);
@@ -183,12 +233,15 @@ export async function publierMaintenant(contentId: number, userId: string):
   // Atomique : jamais sur un post publié ou en train de partir (sinon double publication).
   const [pris] = await db.update(content)
     .set({ autoPost: true, postStatus: 'pending', lastError: null, scheduledFor: new Date(), updatedAt: new Date() } as any)
-    .where(and(eq(content.id, contentId), eq(content.userId, userId), isNull(content.publishedAt),
+    .where(and(eq(content.id, contentId), eq(content.userId, userId), isNull(content.publishedAt), isNull(content.supprimeLe),
+      // « À finir sur le téléphone » (lot 10) : Naya ne le publie pas, même sur demande.
+      sql`coalesce(${content.finirSurTelephone}, false) = false`,
       or(isNull(content.postStatus), notInArray(content.postStatus, EN_COURS_OU_PUBLIE))))
     .returning({ id: content.id });
   if (!pris) return (await storage.getContentById(contentId, userId)) ? 'occupe' : 'introuvable';
   const item = await storage.getContentById(contentId, userId);
-  return publishOne(item);
+  // Geste explicite : publié même s'il attend la validation du client (l'écran l'a dit).
+  return publishOne(item, { malgreValidation: true });
 }
 
 /** Reprend les vidéos en cours de traitement (conteneurs IG) et les publie quand prêtes. */
@@ -201,7 +254,7 @@ async function finishProcessing(): Promise<number> {
     if (!item.providerContainerId || (plateforme !== 'instagram' && plateforme !== 'tiktok')) continue;
     try {
       const choix = await compteDePublication(item);
-      if ('erreur' in choix) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: choix.erreur } as any); await signalerEchec(item, choix.erreur); continue; }
+      if ('erreur' in choix) { await storage.updateContent(item.id, { postStatus: 'failed', lastError: choix.erreur } as any); await journaliser(item.userId, item.id, 'echec', { raison: choix.erreur }); await signalerEchec(item, choix.erreur); continue; }
       const account = choix.compte;
       const creds = { accessToken: account.accessToken, accountId: account.accountId };
       const r = plateforme === 'tiktok'
@@ -210,9 +263,12 @@ async function finishProcessing(): Promise<number> {
       if (r.state === 'posted') {
         await storage.updateContent(item.id, { status: 'published', publishedAt: new Date(), platformPostId: r.platformPostId, postStatus: 'posted', contentStatus: 'published', lastError: null } as any);
         await cocherTachePublier(item.id);
+        await journaliser(item.userId, item.id, 'publie', { plateforme, platformPostId: r.platformPostId ?? null });
+        await apresPublication(item, account as any, r.platformPostId).catch(() => {});
         done++;
       } else if (r.state === 'failed') {
         await storage.updateContent(item.id, { postStatus: 'failed', lastError: (r.error || '').slice(0, 300) } as any);
+        await journaliser(item.userId, item.id, 'echec', { raison: (r.error || 'echec_inconnu').slice(0, 300) });
         await signalerEchec(item, r.error || 'echec_inconnu');
       }
       // 'processing' → on laisse, retry au prochain cycle
@@ -232,6 +288,9 @@ export async function publishDueContent(): Promise<{ posted: number; failed: num
     return [] as any[];
   });
   await rattraperOublies(now).catch((e: any) => console.error('[SocialPublisher] rattrapage:', e?.message || e));
+  // Validation client : passé 3 h après l'heure prévue sans validation → échec et alerte.
+  await traiterAttentesValidation(now, { ...depsAttenteDb, journaliser, signalerEchec })
+    .catch((e: any) => console.error('[SocialPublisher] attentes de validation:', e?.message || e));
   let posted = 0, failed = 0, skipped = 0;
   for (const item of due) {
     if (!reessaiDu(item.lastError, now)) { skipped++; continue; } // réessai prévu plus tard
@@ -260,13 +319,17 @@ async function rattraperOublies(now: Date): Promise<void> {
   // réessai garde la vraie raison de son échec.
   const manques = await db.select(cols).from(content)
     .where(and(eq(content.autoPost, true), eq(content.postStatus, 'pending'), isNull(content.publishedAt),
-      lt(content.scheduledFor, limite), gte(content.scheduledFor, debut)));
+      isNull(content.supprimeLe), lt(content.scheduledFor, limite), gte(content.scheduledFor, debut),
+      // « À finir sur le téléphone » : il attend la main de l'utilisatrice, jamais un échec du worker.
+      sql`coalesce(${content.finirSurTelephone}, false) = false`,
+      // Validation client : les posts en attente ont leur propre délai (3 h) et leur raison.
+      sql`not ${sqlBloqueParValidation}`, sql`not coalesce(${sqlValideDansLaGrace(now)}, false)`));
   let n = 0;
   for (const p of manques) {
     const raison = erreurDuReessai(p.lastError) ?? 'publication_manquee';
     const [fait] = await db.update(content).set({ postStatus: 'failed', lastError: raison, updatedAt: now } as any)
       .where(and(eq(content.id, p.id), eq(content.postStatus, 'pending'))).returning({ id: content.id });
-    if (fait) { n++; await signalerEchec(p as any, raison); }
+    if (fait) { n++; await journaliser(p.userId, p.id, 'echec', { raison }); await signalerEchec(p as any, raison); }
   }
   // Bloqués : en cours d'envoi depuis 15 min, ou vidéo en traitement depuis 2 h. Ils ont pu
   // partir : jamais republiés seuls.
@@ -276,7 +339,7 @@ async function rattraperOublies(now: Date): Promise<void> {
       and(eq(content.postStatus, 'processing'), lt(content.updatedAt, new Date(now.getTime() - DELAI_TRAITEMENT_MAX_MIN * 60_000))),
     ))
     .returning(cols);
-  for (const p of bloques) await signalerEchec(p as any, 'publication_a_verifier');
+  for (const p of bloques) { await journaliser(p.userId, p.id, 'echec', { raison: 'publication_a_verifier' }); await signalerEchec(p as any, 'publication_a_verifier'); }
   if (n || bloques.length) console.warn(`[SocialPublisher] rattrapage : ${n} manqué(s), ${bloques.length} bloqué(s)`);
 }
 

@@ -14,13 +14,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { televerser } from "@/lib/livrables-api";
 import { genreDuPost, manquesPourValider } from "@shared/atelier";
-import type { MotifNote, PostAtelier } from "./api";
+import { formatDePublication } from "@shared/programmation";
+import { ALT_TEXTE_MAX, NOM_AUDIO_MAX, lireCollaborateurs } from "@shared/options-post";
+import { Switch } from "@/components/ui/switch";
+import TextesEnregistres from "@/components/content/TextesEnregistres";
+import { MeilleursCreneaux } from "@/components/content/MeilleuresHeures";
+import ValidationPost, { confirmerMalgreValidation, useEtatValidation } from "@/components/validation/ValidationPost";
+import type { MotifNote, OptionsPostPatch, PostAtelier } from "./api";
 import { devalider, enregistrer, joindreVisuel, noterPost, refaire, retirerVisuel, supprimerPost, valider } from "./api";
 
 const FORMATS = ["feed_image", "text", "carousel", "reel", "story"] as const;
 const RETOUCHES = ["court", "percutant", "personnel", "angle"] as const;
 const MOTIFS: MotifNote[] = ["deja_programme", "plus_actuel"];
 const LIMITES: Record<string, number> = { linkedin: 3000, instagram: 2200, facebook: 5000 };
+/** Réseaux où Naya poste le premier commentaire juste après la publication. */
+const RESEAUX_COMMENTAIRE = new Set(["instagram", "linkedin", "facebook"]);
 
 /** « 2026-10-22T07:00:00.000Z » → valeur d'un champ datetime-local, à l'heure de l'appareil. */
 function versChampLocal(iso: string): string {
@@ -51,6 +59,8 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
   const [motif, setMotif] = useState<MotifNote | null>(null);
   const [note, setNote] = useState("");
   const zoneTexte = useRef<HTMLTextAreaElement>(null);
+  const zoneCommentaire = useRef<HTMLTextAreaElement>(null);
+  const [commentaire, setCommentaire] = useState(post.premierCommentaire ?? "");
   const minuterie = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aEnvoyer = useRef<string | null>(null);
   const fichiers = useRef<HTMLInputElement>(null);
@@ -59,6 +69,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
   // Le texte arrive du serveur (rédaction de Naya, « Refaire ») : on le reprend s'il n'y a rien en attente.
   useEffect(() => { if (aEnvoyer.current === null) setTexte(post.body ?? ""); }, [post.body]);
   useEffect(() => { setFormat(post.postFormat ?? "feed_image"); }, [post.postFormat]);
+  useEffect(() => { setCommentaire(post.premierCommentaire ?? ""); }, [post.premierCommentaire]);
   useEffect(() => { setDate(post.scheduledFor); }, [post.scheduledFor]);
 
   const vider = useCallback(async () => {
@@ -87,7 +98,10 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
     setFormat(f);
     try { await enregistrer(post.id, { postFormat: f }); onChange(); } catch (e) { erreur(e); }
   };
-  const changerDate = async (v: string) => {
+  const changerChamp = async (patch: { premierCommentaire?: string | null; couvertureOffsetMs?: number | null; finirSurTelephone?: boolean } & OptionsPostPatch) => {
+    try { await enregistrer(post.id, patch); onChange(); } catch (e) { erreur(e); }
+  };
+  const changerDate = async (v: string | Date) => {
     const d = new Date(v);
     if (isNaN(d.getTime())) return;
     setDate(d.toISOString());
@@ -95,13 +109,27 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
   };
 
   const genresMedias = post.medias.map((m) => m.genre);
+  // Format réellement publié (plusieurs visuels → carrousel), comme le worker.
+  const formatPublie = formatDePublication(format, genresMedias);
+  const reseau = post.platform.toLowerCase();
+  const estReel = formatPublie === "reel" || formatPublie === "feed_video";
+  const changerCollaborateurs = (v: string) => {
+    const noms = lireCollaborateurs(v.split(/[\s,;]+/));
+    if (noms === undefined) { toast({ title: t("atelier.collaborateursInvalides"), variant: "destructive" }); return; }
+    if ((noms ?? []).join(",") !== (post.collaborateurs ?? []).join(",")) void changerChamp({ collaborateurs: noms });
+  };
   const manques = modifiable
     ? manquesPourValider({ genre: genreDuPost({ postFormat: format }), body: texte, scheduledFor: date, medias: genresMedias, maintenant: new Date() })
     : [];
 
+  // Validation client (lot 8) : prévenir avant de valider un post que le client n'a pas validé.
+  const { refetch: relireValidation } = useEtatValidation(post.id);
+
   const lancerValidation = useCallback(async () => {
     // Jamais pendant que Naya rédige (le texte affiché est encore la consigne), ni s'il manque quelque chose.
     if (!modifiable || occupe || enRedaction || manques.length > 0) return;
+    const etatClient = (await relireValidation().catch(() => null))?.data;
+    if (!confirmerMalgreValidation(etatClient?.statut, t("validationClient.post.avertissement"))) return;
     setOccupe("valider");
     try {
       await vider();
@@ -327,6 +355,9 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
             className="text-sm leading-relaxed resize-y"
           />
         )}
+        {!enRedaction && modifiable && (
+          <TextesEnregistres zone={zoneTexte} valeur={texte} onChange={(v) => taper(v.slice(0, 5000))} projectId={post.projectId} reseau={post.platform} testId="textes-atelier" />
+        )}
         {limite && !enRedaction && (
           <p className={`text-[11px] text-right ${texte.length > limite ? "text-destructive" : "text-muted-foreground"}`}>
             {t("atelier.caracteres", { n: texte.length, max: limite })}
@@ -402,7 +433,107 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
           <Input id={`date-${post.id}`} type="datetime-local" className="h-8 text-sm" disabled={!modifiable}
             key={date} defaultValue={versChampLocal(date)} onBlur={(e) => { if (e.target.value !== versChampLocal(date)) void changerDate(e.target.value); }} />
         </div>
+        {modifiable && (
+          <div className="sm:col-span-2">
+            <MeilleursCreneaux projectId={post.projectId} reseau={post.platform} disabled={occupe !== null} onChoisir={(d) => { void changerDate(d); }} />
+          </div>
+        )}
       </section>
+
+      {RESEAUX_COMMENTAIRE.has(post.platform.toLowerCase()) && (
+        <section className="space-y-1">
+          <Label htmlFor={`commentaire-${post.id}`} className="text-xs">{t("atelier.premierCommentaire")}</Label>
+          <Textarea ref={zoneCommentaire} id={`commentaire-${post.id}`} rows={2} className="text-sm" disabled={!modifiable} maxLength={2200}
+            value={commentaire} onChange={(e) => setCommentaire(e.target.value)}
+            placeholder={t("atelier.premierCommentaireAide")}
+            onBlur={(e) => { if (e.target.value.trim() !== (post.premierCommentaire ?? "")) void changerChamp({ premierCommentaire: e.target.value }); }} />
+          {modifiable && (
+            <TextesEnregistres zone={zoneCommentaire} valeur={commentaire} projectId={post.projectId} reseau={post.platform} testId="textes-commentaire-atelier"
+              onChange={(v) => { const c = v.slice(0, 2200); setCommentaire(c); void changerChamp({ premierCommentaire: c }); }} />
+          )}
+        </section>
+      )}
+
+      {(format === "reel" || format === "feed_video") && genresMedias.includes("video") && post.platform.toLowerCase() === "instagram" && (
+        <section className="space-y-1">
+          <Label htmlFor={`couverture-${post.id}`} className="text-xs">{t("atelier.couverture")}</Label>
+          <div className="flex items-center gap-2">
+            <Input id={`couverture-${post.id}`} type="number" min={0} step={0.5} className="h-8 w-24 text-sm" disabled={!modifiable}
+              key={`v-${post.couvertureOffsetMs ?? ""}`} defaultValue={post.couvertureOffsetMs != null ? post.couvertureOffsetMs / 1000 : ""}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                const ms = v === "" ? null : Math.round(Number(v) * 1000);
+                if (ms !== null && (!Number.isFinite(ms) || ms < 0)) return;
+                if (ms !== (post.couvertureOffsetMs ?? null)) void changerChamp({ couvertureOffsetMs: ms });
+              }} />
+            <span className="text-[11px] text-muted-foreground">{t("atelier.couvertureAide")}</span>
+          </div>
+        </section>
+      )}
+
+      {reseau === "instagram" && formatPublie !== "story" && (
+        <section className="space-y-3">
+          {genresMedias.includes("image") && (
+            <div className="space-y-1">
+              <Label htmlFor={`alt-${post.id}`} className="text-xs">{t("atelier.texteAlternatif")}</Label>
+              <Textarea id={`alt-${post.id}`} rows={2} className="text-sm" disabled={!modifiable} maxLength={ALT_TEXTE_MAX}
+                key={`a-${post.texteAlternatif ?? ""}`} defaultValue={post.texteAlternatif ?? ""}
+                placeholder={t("atelier.texteAlternatifAide")}
+                onBlur={(e) => { if (e.target.value.trim() !== (post.texteAlternatif ?? "")) void changerChamp({ texteAlternatif: e.target.value }); }} />
+            </div>
+          )}
+          <div className="space-y-1">
+            <Label htmlFor={`collab-${post.id}`} className="text-xs">{t("atelier.collaborateurs")}</Label>
+            <Input id={`collab-${post.id}`} className="h-8 text-sm" disabled={!modifiable}
+              key={`k-${(post.collaborateurs ?? []).join(",")}`} defaultValue={(post.collaborateurs ?? []).join(", ")}
+              placeholder={t("atelier.collaborateursAide")} onBlur={(e) => changerCollaborateurs(e.target.value)} />
+          </div>
+          {estReel && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-xs">{t("atelier.reelDansLeFil")}</Label>
+                <Select disabled={!modifiable} value={post.reelDansLeFil == null ? "defaut" : post.reelDansLeFil ? "oui" : "non"}
+                  onValueChange={(v) => void changerChamp({ reelDansLeFil: v === "defaut" ? null : v === "oui" })}>
+                  <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="defaut">{t("atelier.reelDansLeFilDefaut")}</SelectItem>
+                    <SelectItem value="oui">{t("atelier.reelDansLeFilOui")}</SelectItem>
+                    <SelectItem value="non">{t("atelier.reelDansLeFilNon")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor={`audio-${post.id}`} className="text-xs">{t("atelier.nomAudio")}</Label>
+                <Input id={`audio-${post.id}`} className="h-8 text-sm" disabled={!modifiable} maxLength={NOM_AUDIO_MAX}
+                  key={`n-${post.nomAudio ?? ""}`} defaultValue={post.nomAudio ?? ""} placeholder={t("atelier.nomAudioAide")}
+                  onBlur={(e) => { if (e.target.value.trim() !== (post.nomAudio ?? "")) void changerChamp({ nomAudio: e.target.value }); }} />
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {reseau === "linkedin" && (formatPublie === "carousel" || format === "carousel") && !genresMedias.includes("video") && (
+        <section className="space-y-1">
+          <label className="flex items-center gap-2 text-xs">
+            <Switch disabled={!modifiable} checked={post.linkedinDocument === true}
+              onCheckedChange={(v) => void changerChamp({ linkedinDocument: v })} />
+            {t("atelier.linkedinDocument")}
+          </label>
+          <p className="text-[11px] text-muted-foreground">{t("atelier.linkedinDocumentAide")}</p>
+        </section>
+      )}
+
+      <section className="space-y-1">
+        <label className="flex items-center gap-2 text-xs">
+          <Switch disabled={!modifiable} checked={post.finirSurTelephone === true} data-testid="finir-sur-telephone"
+            onCheckedChange={(v) => void changerChamp({ finirSurTelephone: v })} />
+          {t("atelier.finirSurTelephone")}
+        </label>
+        <p className="text-[11px] text-muted-foreground">{t("atelier.finirSurTelephoneAide")}</p>
+      </section>
+
+      <ValidationPost postId={post.id} />
 
       {modifiable && (
         <footer className="space-y-2 border-t border-border pt-4">
@@ -411,7 +542,7 @@ export default function EditeurPost({ post, enRedaction, onChange, onValide, onR
               {manques.map((m) => <li key={m}>{t(`atelier.manques.${m}`)}</li>)}
             </ul>
           )}
-          {!post.compteConnecte && <p className="text-[11px] text-muted-foreground">{t("atelier.sansCompte", { reseau: post.platform })}</p>}
+          {!post.compteConnecte && !post.finirSurTelephone && <p className="text-[11px] text-muted-foreground">{t("atelier.sansCompte", { reseau: post.platform })}</p>}
           <div className="flex items-center gap-3">
             <Button onClick={() => { void lancerValidation(); }} disabled={occupe !== null || enRedaction || manques.length > 0}>
               {occupe === "valider" ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />}

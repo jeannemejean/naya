@@ -7,6 +7,8 @@ import type { Express } from "express";
 import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { compteDePublication } from "./services/connexions/comptes";
+import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
+import { champsRelanceValidation, journaliserRelanceSiEdite } from "./services/validation/relance";
 import {
   formatDePublication, plateformeDe, problemesProgrammation, type GenreMedia,
 } from "@shared/programmation";
@@ -66,6 +68,9 @@ export function registerProgrammationRoutes(app: Express): void {
       let post: any = id == null ? undefined : await storage.getContentById(id, req.userId);
       if (!post) return res.status(404).json({ message: "not_found" });
       if (EN_COURS.includes(post.postStatus)) return res.status(409).json({ message: "publication_en_cours" });
+      // « À finir sur le téléphone » (lot 10) : jamais programmé ; il se valide dans l'atelier,
+      // qui pose la tâche « Publier » avec la légende et les médias.
+      if (post.finirSurTelephone === true) return res.status(409).json({ message: "a_finir_sur_telephone" });
 
       const { body, title, scheduledFor } = req.body ?? {};
       const maj: Record<string, unknown> = {};
@@ -76,7 +81,13 @@ export function registerProgrammationRoutes(app: Express): void {
         if (d && isNaN(d.getTime())) return res.status(400).json({ message: "invalid_date" });
         maj.scheduledFor = d;
       }
-      if (Object.keys(maj).length) post = await storage.updateContent(post.id, maj as any);
+      if (Object.keys(maj).length) {
+        const avant = post;
+        // Relance de la validation client dans la même écriture que la modification.
+        post = await storage.updateContent(post.id, { ...maj, ...champsRelanceValidation(avant, maj) } as any);
+        await journaliserChangement(req.userId, avant, maj);
+        await journaliserRelanceSiEdite(req.userId, avant, maj);
+      }
 
       const etat = await etatProgrammation(req.userId, post);
       if (etat.problemes.length) return res.status(422).json({ message: "programmation_impossible", ...etat });
@@ -89,6 +100,7 @@ export function registerProgrammationRoutes(app: Express): void {
         platform: etat.plateforme,
         contentStatus: "ready",
       } as any);
+      await journaliser(req.userId, post.id, "programme", { compte: etat.compte!.id, plateforme: etat.plateforme });
       res.json(await etatProgrammation(req.userId, post));
     } catch (e: any) {
       console.error("[Programmation] programmer:", e?.message);
@@ -104,7 +116,9 @@ export function registerProgrammationRoutes(app: Express): void {
       if (!post) return res.status(404).json({ message: "not_found" });
       if (EN_COURS.includes(post.postStatus)) return res.status(409).json({ message: "publication_en_cours" });
       if (post.postStatus === "posted") return res.status(409).json({ message: "deja_publie" });
+      const etaitProgramme = post.autoPost === true;
       post = await storage.updateContent(post.id, { autoPost: false, postStatus: "pending" } as any);
+      if (etaitProgramme) await journaliser(req.userId, post.id, "deprogramme", null);
       res.json(await etatProgrammation(req.userId, post));
     } catch (e: any) {
       console.error("[Programmation] annuler:", e?.message);

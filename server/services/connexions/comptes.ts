@@ -3,7 +3,7 @@
 // publication manuelle, programmation) : un post de projet client ne part qu'avec un
 // compte du client.
 import { storage } from "../../storage";
-import { choisirCompte, porteeDe, type ChoixCompte, type Portee } from "./portee";
+import { choisirCompteReseaux, porteeDe, porteeReseauxDe, type ChoixCompte, type Portee, type PorteeReseaux } from "./portee";
 
 export interface DepsComptes {
   getProject(id: number, userId: string): Promise<any>;
@@ -40,6 +40,12 @@ export async function compteDePublication(
   post: { userId: string; projectId?: number | null; platform: string; socialAccountId?: number | null },
   deps: DepsComptes = depsReelles,
 ): Promise<ChoixCompte<any>> {
-  const portee = await porteeDuProjet(post.userId, post.projectId, deps);
-  return choisirCompte(await deps.getSocialAccounts(post.userId), post, portee);
+  const p = await porteeReseauxDuProjet(post.userId, post.projectId, deps);
+  return choisirCompteReseaux(await deps.getSocialAccounts(post.userId), post, p);
+}
+
+/** Le périmètre des réseaux d'un projet (ses comptes, avec repli sur les Réglages pour un projet perso). */
+export async function porteeReseauxDuProjet(userId: string, projectId: number | null | undefined, deps: DepsComptes = depsReelles): Promise<PorteeReseaux> {
+  if (projectId == null) return { portee: null, repli: false };
+  return porteeReseauxDe(await deps.getProject(projectId, userId));
 }

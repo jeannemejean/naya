@@ -9,7 +9,8 @@
 // toujours pas de tâches de contenu en vrac (filtre-taches-generees.ts) ; c'est un circuit dédié.
 import { z } from "zod";
 import { plusJours } from "@shared/atelier";
-import { parisTodayString } from "../../utils/timezone";
+import { parisTodayString, parisWallClockToInstant } from "../../utils/timezone";
+import { heuresDuJour, matriceGenerique } from "@shared/meilleures-heures";
 import { jsonDe } from "./json-ia";
 
 export const SEUIL_DEFAUT = 7;
@@ -290,7 +291,9 @@ async function proposerSeul(userId: string, maintenant: Date, deps: DepsPresence
       contentStatus: "idea", publishedAt: null,
       // Jamais de publication sans validation : un post proposé n'est pas programmé.
       autoPost: false,
-      scheduledFor: new Date(`${jours[i]}T08:00:00.000Z`),
+      // Meilleure heure générique du réseau ce jour-là, entre 9 h et 18 h de Paris (lot 7) ;
+      // avant : 08:00 UTC pour tous les réseaux.
+      scheduledFor: parisWallClockToInstant(jours[i], `${String(heuresDuJour(matriceGenerique(compte.platform), (new Date(`${jours[i]}T12:00:00Z`).getUTCDay() + 6) % 7)[0]).padStart(2, "0")}:00`),
     }));
   }
   if (crees.length === 0) return { crees: 0 };

@@ -628,6 +628,25 @@ export const content = pgTable("content", {
   // ── Refonte publication sociale (Metricool/Later) ──
   postFormat: text("post_format").default("feed_image"), // feed_image|feed_video|carousel|story|reel|short|text
   crossPostGroupId: text("cross_post_group_id"),         // regroupe les lignes d'un même post multi-réseaux
+  // Premier commentaire posté juste après la publication (Instagram, LinkedIn, Facebook), et
+  // quand il l'a été (jamais deux fois). Couverture d'un Reel : image, ou instant de la vidéo.
+  premierCommentaire: text("premier_commentaire"),
+  premierCommentaireAt: timestamp("premier_commentaire_at"),
+  couvertureUrl: text("couverture_url"),
+  couvertureOffsetMs: integer("couverture_offset_ms"),
+  // Options de publication (API officielles). Instagram : texte alternatif des images, comptes
+  // collaborateurs (≤ 3), Reel affiché dans le fil (null = choix d'Instagram), nom de l'audio
+  // original du Reel. LinkedIn : carrousel publié en document PDF (une image par page).
+  texteAlternatif: text("texte_alternatif"),
+  collaborateurs: jsonb("collaborateurs"),                  // string[] (noms Instagram, ≤ 3)
+  reelDansLeFil: boolean("reel_dans_le_fil"),
+  nomAudio: text("nom_audio"),
+  linkedinDocument: boolean("linkedin_document"),
+  // « À finir sur le téléphone » (lot 10) : ce que les API ne savent pas faire (stickers,
+  // mentions et musique de story, musique sous licence d'un Reel…). Le post n'est JAMAIS publié
+  // par le worker, même avec un compte connecté : une tâche « Publier » porte la légende, le
+  // premier commentaire, les hashtags et les médias à télécharger, à l'heure prévue.
+  finirSurTelephone: boolean("finir_sur_telephone").default(false),
   videoMeta: jsonb("video_meta"),                        // { durationSec, width, height, thumbnailUrl }
   providerContainerId: text("provider_container_id"),    // conteneur média IG/FB / publish_id TikTok (async)
   lastError: text("last_error"),                         // dernier message d'échec de publication
@@ -680,9 +699,276 @@ export const content = pgTable("content", {
   // Fil conducteur : le circuit qui a créé le post. `presence` = proposé par Naya pour garder
   // la cadence minimale de présence (fil/presence.ts) ; null = tout autre post.
   origine: text("origine"),
+  // Corbeille : un post supprimé depuis le calendrier y reste 30 jours avant de disparaître
+  // des vues, restaurable. null = vivant. Un post dans la corbeille ne part JAMAIS (le worker
+  // l'exclut) et sort de toutes les listes (calendrier, atelier, présence).
+  supprimeLe: timestamp("supprime_le"),
+  // Autolistes (lot 6) : le post a été posé par une autoliste, pour ce post de sa file et ce
+  // créneau (l'instant prévu par la liste, gardé même si le post est déplacé). Un créneau
+  // n'est jamais posé deux fois sur le même compte (index unique ci-dessous). null = autre post.
+  autolisteId: integer("autoliste_id").references((): AnyPgColumn => autolistes.id, { onDelete: "set null" }),
+  autolistePostId: integer("autoliste_post_id").references((): AnyPgColumn => autolistePosts.id, { onDelete: "set null" }),
+  autolisteCreneau: timestamp("autoliste_creneau"),
+  // Validation client (lot 8) : "a_valider" | "validee" | "refusee" ; null = hors validation.
+  // Un post « à valider » ou « refusé » d'une marque dont la validation est active ne part
+  // jamais seul (worker). `validation_demandee_at` : la dernière demande (envoi ou relance après
+  // une modification) — seules les décisions postérieures comptent.
+  validationStatut: text("validation_statut"),
+  validationDemandeeAt: timestamp("validation_demandee_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  autolisteCreneauUnique: uniqueIndex("content_autoliste_creneau_idx").on(t.autolisteId, t.autolisteCreneau, t.socialAccountId),
+}));
+
+/**
+ * Notes internes d'un post : un fil de notes courtes, visibles seulement dans Naya (jamais
+ * publiées). L'autrice est l'utilisatrice.
+ */
+export const notesPost = pgTable("notes_post", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contentId: integer("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  texte: text("texte").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parPost: index("notes_post_content_idx").on(t.contentId),
+}));
+export type NotePost = typeof notesPost.$inferSelect;
+
+/**
+ * Historique d'un post : journal en ajout seul des événements qui comptent (créé, texte
+ * modifié, date déplacée, programmé, publié, échec, dupliqué, corbeille…). Écrit au mieux :
+ * un journal qui échoue ne fait jamais échouer le geste.
+ */
+export const historiquePost = pgTable("historique_post", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  contentId: integer("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  evenement: text("evenement").notNull(),
+  details: jsonb("details"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parPost: index("historique_post_content_idx").on(t.contentId),
+}));
+export type HistoriquePost = typeof historiquePost.$inferSelect;
+
+/**
+ * Bibliothèque (lot 3) : textes enregistrés — courts passages réutilisables (signature,
+ * hashtags, appel à l'action) à insérer dans une légende ou un premier commentaire. Propres à
+ * l'utilisatrice, rangés éventuellement sous un projet (null = pour toutes ses marques).
+ */
+export const textesEnregistres = pgTable("textes_enregistres", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  titre: text("titre").notNull(),
+  texte: text("texte").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("textes_enregistres_user_idx").on(t.userId),
+}));
+export type TexteEnregistre = typeof textesEnregistres.$inferSelect;
+
+/**
+ * Bibliothèque (lot 3) : posts modèles. `contenu` garde le texte de chaque réseau, les médias,
+ * le format et les options (shared/bibliotheque.ts, `contenuDeModele`) ; jamais la date ni le
+ * compte. Utiliser un modèle crée un brouillon, jamais programmé.
+ */
+export const modelesPost = pgTable("modeles_post", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  nom: text("nom").notNull(),
+  contenu: jsonb("contenu").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("modeles_post_user_idx").on(t.userId),
+}));
+export type ModelePost = typeof modelesPost.$inferSelect;
+
+/**
+ * Liens courts (lot 5, inspiré de Metricool) : www.hellonaya.app/l/<code> redirige (302) vers
+ * `url_cible`, UTM ajoutés sans écraser ceux déjà présents (shared/liens.ts). Les clics sont des
+ * compteurs : aucune IP, aucun user-agent, aucune donnée personnelle n'est gardée.
+ * `origine` : « composeur » (raccourci depuis une légende) ou « smartlink » (bouton, tuile).
+ */
+export const liensCourts = pgTable("liens_courts", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  code: varchar("code", { length: 7 }).notNull(),
+  urlCible: text("url_cible").notNull(),
+  utm: jsonb("utm").notNull().default({}),
+  origine: text("origine").notNull().default("composeur"),
+  clics: integer("clics").notNull().default(0),
+  dernierClicAt: timestamp("dernier_clic_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  codeUnique: uniqueIndex("liens_courts_code_idx").on(t.code),
+  parUtilisatrice: index("liens_courts_user_idx").on(t.userId, t.createdAt),
+}));
+export type LienCourt = typeof liensCourts.$inferSelect;
+
+/** Clics par jour (Paris) d'un lien court, pour les courbes et « 30 derniers jours ». */
+export const clicsLiens = pgTable("clics_liens", {
+  lienId: integer("lien_id").notNull().references(() => liensCourts.id, { onDelete: "cascade" }),
+  jour: date("jour").notNull(),
+  clics: integer("clics").notNull().default(0),
+}, (t) => ({
+  pk: uniqueIndex("clics_liens_lien_jour_idx").on(t.lienId, t.jour),
+}));
+
+/**
+ * SmartLink (lot 5) : la page publique « lien en bio » d'une marque, www.hellonaya.app/b/<slug>.
+ * Une par marque (projectId null = la marque des Réglages). `boutons` : liste ordonnée
+ * [{ id, libelle, url, actif, lienId, code }] ; `liens_tuiles` : { contentId: { url, lienId, code } }
+ * pour la grille des dernières publications Instagram. Chaque clic passe par un lien court.
+ */
+export const smartlinks = pgTable("smartlinks", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  slug: varchar("slug", { length: 40 }).notNull(),
+  titre: text("titre").notNull().default(""),
+  bio: text("bio").notNull().default(""),
+  avatarUrl: text("avatar_url"),
+  theme: jsonb("theme").notNull().default({}),
+  boutons: jsonb("boutons").notNull().default([]),
+  tuilesActives: boolean("tuiles_actives").notNull().default(false),
+  liensTuiles: jsonb("liens_tuiles").notNull().default({}),
+  actif: boolean("actif").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  slugUnique: uniqueIndex("smartlinks_slug_idx").on(t.slug),
+  parUtilisatrice: index("smartlinks_user_idx").on(t.userId),
+}));
+export type Smartlink = typeof smartlinks.$inferSelect;
+
+/**
+ * Validation client (lot 8, inspiré de Metricool) : réglages par marque. `regle` "un" (une
+ * validation suffit) ou "tous" (tous les relecteurs) ; un refus suffit toujours à refuser.
+ * `relecteurs` : [{ nom, email }] (10 au plus), sans compte Naya.
+ */
+export const validationProjet = pgTable("validation_projet", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  actif: boolean("actif").notNull().default(false),
+  regle: text("regle").notNull().default("un"),
+  relecteurs: jsonb("relecteurs").notNull().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  projetUnique: uniqueIndex("validation_projet_project_idx").on(t.projectId),
+}));
+export type ValidationProjet = typeof validationProjet.$inferSelect;
+
+/** Les décisions et commentaires des relecteurs sur un post (journal en ajout seul). */
+export const validationsPost = pgTable("validations_post", {
+  id: serial("id").primaryKey(),
+  contentId: integer("content_id").notNull().references(() => content.id, { onDelete: "cascade" }),
+  relecteurEmail: text("relecteur_email").notNull(),
+  decision: text("decision").notNull(), // validee | refusee | commentaire
+  commentaire: text("commentaire"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parPost: index("validations_post_content_idx").on(t.contentId, t.createdAt),
+}));
+export type ValidationPost = typeof validationsPost.$inferSelect;
+
+/**
+ * Portail de validation d'une marque : lien privé /v/<token>, sans compte. Régénérer coupe
+ * l'ancien lien ; `actif` false = lien coupé ; `expire_at` facultatif.
+ */
+export const portailsValidation = pgTable("portails_validation", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  token: varchar("token", { length: 64 }).notNull(),
+  actif: boolean("actif").notNull().default(true),
+  expireAt: timestamp("expire_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  tokenUnique: uniqueIndex("portails_validation_token_idx").on(t.token),
+  parProjet: index("portails_validation_project_idx").on(t.projectId),
+}));
+export type PortailValidation = typeof portailsValidation.$inferSelect;
+
+/**
+ * Autolistes (lot 6, inspiré de Metricool) : une file de posts publiée seule à des créneaux
+ * récurrents (heure + jours de la semaine, `jours` 0 = dimanche … 6 = samedi, heure de
+ * `fuseau`), sur les comptes choisis (ids de social_accounts du périmètre de la marque).
+ * `en_boucle` : un post publié repart en fin de file (evergreen) ; sinon il est consommé.
+ * Le planificateur pose les 7 prochains jours en posts ordinaires du calendrier (autoPost),
+ * publiés par le worker habituel. `problemes` : ce qui a empêché le dernier passage de poser
+ * un créneau ([{ creneau, postId, compteId, raisons }]).
+ */
+export const autolistes = pgTable("autolistes", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  nom: text("nom").notNull(),
+  actif: boolean("actif").notNull().default(true),
+  enBoucle: boolean("en_boucle").notNull().default(false),
+  creneaux: jsonb("creneaux").notNull().default([]),
+  comptes: jsonb("comptes").notNull().default([]),
+  fuseau: text("fuseau").notNull().default("Europe/Paris"),
+  problemes: jsonb("problemes").notNull().default([]),
+  derniereMaterialisationAt: timestamp("derniere_materialisation_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("autolistes_user_idx").on(t.userId),
+}));
+export type Autoliste = typeof autolistes.$inferSelect;
+
+/**
+ * Les posts d'une autoliste (200 au plus), dans l'ordre de la file. `contenu` : le modèle de
+ * post de la bibliothèque (texte par réseau, médias, format, options — shared/bibliotheque.ts).
+ * `actif` false : consommé (publié, liste sans boucle) ou mis de côté.
+ */
+export const autolistePosts = pgTable("autoliste_posts", {
+  id: serial("id").primaryKey(),
+  autolisteId: integer("autoliste_id").notNull().references(() => autolistes.id, { onDelete: "cascade" }),
+  ordre: integer("ordre").notNull().default(0),
+  contenu: jsonb("contenu").notNull(),
+  publieFois: integer("publie_fois").notNull().default(0),
+  dernierPassageAt: timestamp("dernier_passage_at"),
+  actif: boolean("actif").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  parListe: index("autoliste_posts_liste_idx").on(t.autolisteId, t.ordre),
+}));
+export type AutolistePost = typeof autolistePosts.$inferSelect;
+
+/**
+ * Groupes de marques (lot 9, inspiré des « brand groups » de Metricool) : un paquet de projets
+ * pour piloter la communication de plusieurs marques ensemble (calendrier, composeur). Un projet
+ * peut appartenir à plusieurs groupes. Supprimer un groupe ne touche à aucun projet ni post.
+ */
+export const groupesMarques = pgTable("groupes_marques", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  nom: varchar("nom", { length: 80 }).notNull(),
+  couleur: varchar("couleur", { length: 7 }).notNull().default("#6366f1"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  parUtilisatrice: index("groupes_marques_user_idx").on(t.userId),
+}));
+export type GroupeMarques = typeof groupesMarques.$inferSelect;
+
+export const groupeMarquesProjets = pgTable("groupe_marques_projets", {
+  id: serial("id").primaryKey(),
+  groupeId: integer("groupe_id").notNull().references(() => groupesMarques.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+}, (t) => ({
+  paireUnique: uniqueIndex("groupe_marques_projets_paire_idx").on(t.groupeId, t.projectId),
+  parProjet: index("groupe_marques_projets_project_idx").on(t.projectId),
+}));
 
 /**
  * Réception par contenu — signaux RAPIDES (SCHEMA-TRIANGULATION.md §C.2).
@@ -1576,6 +1862,11 @@ export const insertContentSchema = createInsertSchema(content).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  supprimeLe: true,
+  // Posés par le planificateur des autolistes seulement, jamais par un formulaire.
+  autolisteId: true,
+  autolistePostId: true,
+  autolisteCreneau: true,
 });
 
 export const insertLeadSchema = createInsertSchema(leads).omit({

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { validerPost, devaliderPost, publicationManuelle } from "./validation";
+import { validerPost, devaliderPost, publicationManuelle, lireModifications } from "./validation";
 
 const maintenant = new Date("2026-10-19T08:00:00Z");
 const post = (over: any = {}) => ({
@@ -164,6 +164,78 @@ describe("validerPost — jamais la consigne, jamais un post déjà programmé",
   });
 });
 
+describe("validerPost — à finir sur le téléphone (lot 10)", () => {
+  const fichiers = vi.fn(async () => [
+    { url: "https://cdn/x/visuel-1.jpg", nom: "Couverture.jpg", genre: "image" as const },
+    { url: "https://cdn/x/Vue%20du%20comptoir.jpg?v=2", nom: null, genre: "image" as const },
+  ]);
+  const ig = (over: any = {}) => post({
+    platform: "instagram", postFormat: "carousel", body: "Ouverture samedi #Lyon #café", premierCommentaire: "Plus d'infos #lyon #brunch",
+    mediaIds: [1, 2], ...over,
+  });
+  const avecCompteIg = (p: any) => fabrique(p, {
+    compteDuPost: vi.fn(async () => ({ ...compte, platform: "instagram" })),
+    mediasDuPost: vi.fn(async () => ["image", "image"]),
+    fichiersDuPost: fichiers,
+  });
+
+  it("drapeau posé : jamais programmé malgré le compte connecté ; tâche « Publier » qui porte tout", async () => {
+    const deps = avecCompteIg(ig({ finirSurTelephone: true }));
+    const r = await validerPost(deps, "u", 5, {});
+    expect(r).toEqual({ statut: "a_publier_soi_meme" });
+    expect(deps.ecrits.some((e) => e.autoPost === true)).toBe(false);
+    expect(deps.ecrits.at(-1)).toMatchObject({ contentStatus: "ready", autoPost: false });
+    const tache = deps.creerTache.mock.calls[0][0];
+    expect(tache).toMatchObject({ title: "Publier — Mon post", taskType: "post_publish", scheduledTime: "09:00" });
+    expect(tache.description).toMatch(/téléphone/);
+    expect(tache.actionData.telephone).toEqual({
+      version: 1, reseau: "instagram", format: "carousel",
+      legende: "Ouverture samedi #Lyon #café", premierCommentaire: "Plus d'infos #lyon #brunch",
+      hashtags: ["#Lyon", "#café", "#brunch"],
+      medias: [
+        { ordre: 1, url: "https://cdn/x/visuel-1.jpg", nom: "Couverture.jpg", genre: "image" },
+        { ordre: 2, url: "https://cdn/x/Vue%20du%20comptoir.jpg?v=2", nom: "Vue du comptoir.jpg", genre: "image" },
+      ],
+      raisons: ["demande"],
+    });
+  });
+
+  it("sans drapeau, même post et même compte : programmé, aucune tâche", async () => {
+    const deps = avecCompteIg(ig());
+    expect(await validerPost(deps, "u", 5, {})).toEqual({ statut: "programme" });
+    expect(deps.creerTache).not.toHaveBeenCalled();
+  });
+
+  it("TikTok (pas de publication automatique) : la tâche porte la raison et les médias", async () => {
+    const deps = fabrique(post({ platform: "tiktok", postFormat: "short", mediaIds: [2] }), {
+      compteDuPost: vi.fn(async () => null), mediasDuPost: vi.fn(async () => ["video"]), fichiersDuPost: fichiers,
+    });
+    expect(await validerPost(deps, "u", 5, {})).toEqual({ statut: "a_publier_soi_meme" });
+    const t = deps.creerTache.mock.calls[0][0];
+    expect(t.actionData.telephone.raisons).toEqual(["sans_publication_auto"]);
+    expect(t.actionData.telephone.medias).toHaveLength(2);
+  });
+
+  it("tâche « Publier » existante : mise à jour avec le contenu à copier, pas de doublon", async () => {
+    const existante = { id: 77, title: "Publier — Mon post", completed: false, archivedAt: null };
+    const deps = avecCompteIg(ig({ finirSurTelephone: true }));
+    deps.tachesDuPost = vi.fn(async () => [existante]);
+    await validerPost(deps, "u", 5, {});
+    expect(deps.creerTache).not.toHaveBeenCalled();
+    expect(deps.majTache).toHaveBeenCalledWith("u", 77, expect.objectContaining({
+      taskType: "post_publish", actionData: expect.objectContaining({ telephone: expect.objectContaining({ raisons: ["demande"] }) }),
+    }));
+  });
+
+  it("le drapeau s'enregistre avec la validation ; une valeur non booléenne est refusée", async () => {
+    const deps = avecCompteIg(ig());
+    expect(await validerPost(deps, "u", 5, { finirSurTelephone: true })).toEqual({ statut: "a_publier_soi_meme" });
+    expect(deps.ecrits[0]).toEqual({ finirSurTelephone: true });
+    expect(lireModifications({ finirSurTelephone: "oui" })).toBeNull();
+    expect(lireModifications({ finirSurTelephone: false })).toEqual({ finirSurTelephone: false });
+  });
+});
+
 describe("devaliderPost", () => {
   it("remet le post en brouillon, annule la programmation et archive la tâche « Publier » de secours", async () => {
     const deps = fabrique(post({ contentStatus: "ready", autoPost: true }), {
@@ -200,5 +272,53 @@ describe("publicationManuelle — cocher « Publier », c'est publier", () => {
   it("ni pour une autre étape ni sans post", () => {
     expect(publicationManuelle({ ...publier, title: "Préparer le visuel — Mon post" }, { publishedAt: null }, m)).toBeNull();
     expect(publicationManuelle({ ...publier, contentId: null }, { publishedAt: null }, m)).toBeNull();
+  });
+});
+
+
+describe("lireModifications — premier commentaire et couverture", () => {
+  it("texte gardé (vide → null), trop long refusé ; instant de couverture en ms entier", async () => {
+    const { lireModifications, COMMENTAIRE_MAX } = await import("./validation");
+    expect(lireModifications({ premierCommentaire: "  Lien en bio  " })).toEqual({ premierCommentaire: "Lien en bio" });
+    expect(lireModifications({ premierCommentaire: "  " })).toEqual({ premierCommentaire: null });
+    expect(lireModifications({ premierCommentaire: "x".repeat(COMMENTAIRE_MAX + 1) })).toBeNull();
+    expect(lireModifications({ couvertureOffsetMs: 2500 })).toEqual({ couvertureOffsetMs: 2500 });
+    expect(lireModifications({ couvertureOffsetMs: null })).toEqual({ couvertureOffsetMs: null });
+    expect(lireModifications({ couvertureOffsetMs: -1 })).toBeNull();
+    expect(lireModifications({ couvertureOffsetMs: 1.5 })).toBeNull();
+  });
+});
+
+describe("lireModifications — options de post", () => {
+  it("texte alternatif : nettoyé, vide → null, > 1000 refusé", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ texteAlternatif: "  Une tasse  " })).toEqual({ texteAlternatif: "Une tasse" });
+    expect(lireModifications({ texteAlternatif: "" })).toEqual({ texteAlternatif: null });
+    expect(lireModifications({ texteAlternatif: null })).toEqual({ texteAlternatif: null });
+    expect(lireModifications({ texteAlternatif: "x".repeat(1001) })).toBeNull();
+    expect(lireModifications({ texteAlternatif: 3 })).toBeNull();
+  });
+  it("collaborateurs : ≤ 3 noms Instagram valides, @ retiré, doublons fusionnés, [] → null", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ collaborateurs: ["@Mouture.cafe", "jeanne_m", "mouture.cafe"] })).toEqual({ collaborateurs: ["mouture.cafe", "jeanne_m"] });
+    expect(lireModifications({ collaborateurs: [] })).toEqual({ collaborateurs: null });
+    expect(lireModifications({ collaborateurs: null })).toEqual({ collaborateurs: null });
+    expect(lireModifications({ collaborateurs: ["a", "b", "c", "d"] })).toBeNull();
+    expect(lireModifications({ collaborateurs: ["pas valide"] })).toBeNull();
+    expect(lireModifications({ collaborateurs: ["x".repeat(31)] })).toBeNull();
+    expect(lireModifications({ collaborateurs: "jeanne" })).toBeNull();
+  });
+  it("Reel dans le fil et LinkedIn document : booléen ou null", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ reelDansLeFil: false, linkedinDocument: true })).toEqual({ reelDansLeFil: false, linkedinDocument: true });
+    expect(lireModifications({ reelDansLeFil: null })).toEqual({ reelDansLeFil: null });
+    expect(lireModifications({ reelDansLeFil: "oui" })).toBeNull();
+    expect(lireModifications({ linkedinDocument: 1 })).toBeNull();
+  });
+  it("nom de l'audio : nettoyé, vide → null, trop long refusé", async () => {
+    const { lireModifications } = await import("./validation");
+    expect(lireModifications({ nomAudio: " Son original " })).toEqual({ nomAudio: "Son original" });
+    expect(lireModifications({ nomAudio: "" })).toEqual({ nomAudio: null });
+    expect(lireModifications({ nomAudio: "x".repeat(101) })).toBeNull();
   });
 });

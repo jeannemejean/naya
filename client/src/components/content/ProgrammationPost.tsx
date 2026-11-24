@@ -10,6 +10,7 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   problemesProgrammation, type CompteSocial, type GenreMedia, type ProblemeProgrammation,
 } from "@shared/programmation";
+import { confirmerMalgreValidation, useEtatValidation } from "@/components/validation/ValidationPost";
 
 interface EtatProgrammation {
   programme: boolean;
@@ -52,6 +53,8 @@ export default function ProgrammationPost({
     qc.setQueryData(cleProgrammation(postId), e);
     qc.invalidateQueries({ queryKey: ["/api/content"] });
   };
+  // Validation client (lot 8) : programmer un post pas encore validé prévient, sans bloquer.
+  const { data: etatClient } = useEtatValidation(postId);
   const programmer = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/content/${postId}/programmation`, {
@@ -67,7 +70,11 @@ export default function ProgrammationPost({
       apres(e);
       if (e.programme && e.problemes.length === 0) toast({ title: t("programmation.programmeToast"), description: quand(e.scheduledFor) ?? undefined });
     },
-    onError: () => toast({ title: t("common.error"), description: t("programmation.erreur"), variant: "destructive" }),
+    onError: (e: Error) => toast({
+      title: t("common.error"),
+      description: e.message === "a_finir_sur_telephone" ? t("programmation.aFinirSurTelephone") : t("programmation.erreur"),
+      variant: "destructive",
+    }),
   });
   const annuler = useMutation({
     mutationFn: async () => (await apiRequest("DELETE", `/api/content/${postId}/programmation`)).json(),
@@ -169,7 +176,7 @@ export default function ProgrammationPost({
         <Button
           size="sm"
           className="gap-1.5"
-          onClick={() => programmer.mutate()}
+          onClick={() => { if (confirmerMalgreValidation(etatClient?.statut, t("validationClient.post.avertissement"))) programmer.mutate(); }}
           disabled={problemes.length > 0 || programmer.isPending}
         >
           {programmer.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarCheck className="h-3.5 w-3.5" />}

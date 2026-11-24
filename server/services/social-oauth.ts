@@ -8,6 +8,7 @@
  *   Twitter   : TWITTER_CLIENT_ID, TWITTER_CLIENT_SECRET
  */
 
+import { urlDeBase } from "./url-publique";
 import { storage } from '../storage';
 import { conflitIdentite, pagesLinkedinPourClient } from './connexions/oauth-garde';
 
@@ -22,11 +23,9 @@ async function garderIdentite(userId: string, platform: string, accountId: strin
 // Adresse de retour des connexions OAuth. L'apex hellonaya.app n'est qu'un transfert GoDaddy
 // vers www, qui répond 404 à tout chemin (23 nov. 2026 : « Not Found » au retour d'Instagram).
 // OAUTH_BASE_URL (https://www.hellonaya.app) prime ; APP_URL reste le repli.
+// Règle commune (liens courts, SmartLinks) : server/services/url-publique.ts.
 function getBaseUrl(): string {
-  return process.env.OAUTH_BASE_URL?.trim() || process.env.APP_URL ||
-    (process.env.NODE_ENV === 'production'
-      ? 'https://naya-production-64ac.up.railway.app'
-      : 'http://localhost:3000');
+  return urlDeBase();
 }
 
 // ─── Instagram (API « Instagram Login » — graph.instagram.com) ────────────────
@@ -35,13 +34,23 @@ function getBaseUrl(): string {
 // consentement sur instagram.com, jeton échangé sur api.instagram.com puis long-lived sur
 // graph.instagram.com. Permet de PUBLIER sans Page Facebook ni vérification d'entreprise.
 // Réf : https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
-const INSTAGRAM_SCOPES = ['instagram_business_basic', 'instagram_business_content_publish'].join(',');
+//
+// Premier commentaire automatique : portée `instagram_business_manage_comments`, demandée
+// SEULEMENT quand INSTAGRAM_COMMENTS_SCOPE=1 (l'app Meta doit l'avoir ; une portée inconnue
+// casserait toute connexion Instagram). Sans elle, le worker n'appelle jamais l'API des
+// commentaires Instagram : le texte part directement dans une tâche « Poster le premier
+// commentaire » (server/services/social-publisher.ts, apresPublication). Voir MIGRATIONS.md.
+export const commentairesInstagramActifs = (): boolean => process.env.INSTAGRAM_COMMENTS_SCOPE === '1';
+const instagramScopes = (): string => [
+  'instagram_business_basic', 'instagram_business_content_publish',
+  ...(commentairesInstagramActifs() ? ['instagram_business_manage_comments'] : []),
+].join(',');
 
 export function getInstagramAuthUrl(state: string): string {
   const appId = process.env.IG_APP_ID;
   if (!appId) throw new Error('IG_APP_ID non configuré');
   const redirect = encodeURIComponent(`${getBaseUrl()}/api/social/oauth/instagram/callback`);
-  const scope = encodeURIComponent(INSTAGRAM_SCOPES);
+  const scope = encodeURIComponent(instagramScopes());
   return `https://www.instagram.com/oauth/authorize?client_id=${appId}&redirect_uri=${redirect}&response_type=code&scope=${scope}&state=${state}`;
 }
 
@@ -100,7 +109,7 @@ export async function exchangeInstagramCode(userId: string, code: string, projec
   } else {
     await storage.createSocialAccount({
       userId, projectId, platform: 'instagram', accountId, platformUserId: accountId, accountName,
-      accessToken: longToken, expiresAt, permissions: INSTAGRAM_SCOPES.split(','), isActive: true, lastSyncAt: new Date(),
+      accessToken: longToken, expiresAt, permissions: instagramScopes().split(','), isActive: true, lastSyncAt: new Date(),
     });
   }
 }
@@ -124,7 +133,10 @@ export function getLinkedInAuthUrl(state: string): string {
   return `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${redirect}&state=${state}&scope=${scope}`;
 }
 
-export async function exchangeLinkedInCode(userId: string, code: string, projectId: number | null = null): Promise<void> {
+// `opts.repli` : le projet est PERSO (« marque » de l'utilisatrice) — ses pages arrivent
+// utilisées tout de suite ; pour un client (défaut), une page nouvelle attend le choix.
+export async function exchangeLinkedInCode(userId: string, code: string, projectId: number | null = null, opts: { repli?: boolean } = {}): Promise<void> {
+  const pagesActives = projectId == null || opts.repli === true;
   const clientId = process.env.LINKEDIN_CLIENT_ID!;
   const clientSecret = process.env.LINKEDIN_CLIENT_SECRET!;
   const redirectUri = `${getBaseUrl()}/api/social/oauth/linkedin/callback`;
@@ -238,7 +250,7 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
         accountName: page.name,
         expiresAt,
         // Pour un client, l'état choisi (en attente ou utilisée) est gardé.
-        ...(projectId == null ? { isActive: true } : {}),
+        ...(pagesActives ? { isActive: true } : {}),
         lastSyncAt: new Date(),
       });
     } else {
@@ -251,7 +263,7 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
         accessToken: tokenData.access_token,
         expiresAt,
         permissions: ['w_organization_social', 'r_organization_social'],
-        isActive: projectId == null,
+        isActive: pagesActives,
         lastSyncAt: new Date(),
       });
     }

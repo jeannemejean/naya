@@ -30,6 +30,11 @@ const oauth = vi.hoisted(() => ({
   isPlatformConfigured: vi.fn(() => true),
 }));
 vi.mock("./services/social-oauth", () => oauth);
+const repointage = vi.hoisted(() => ({
+  depsRepointage: { marque: "deps" },
+  repointerApresConnexion: vi.fn(async () => []), repointerAvantDeconnexion: vi.fn(async () => []),
+}));
+vi.mock("./services/connexions/repointage", () => repointage);
 
 const { registerSocialRoutes } = await import("./routes-social");
 let session: any = {};
@@ -47,11 +52,12 @@ const appel = (method: string, path: string) =>
 beforeEach(() => { vi.clearAllMocks(); session = {}; });
 
 describe("routes des comptes sociaux", () => {
-  it("projet d'une autre ou inconnu → 404 ; projet perso → 409", async () => {
+  it("projet d'une autre ou inconnu → 404 ; projet perso : ses propres réseaux se connectent (marques)", async () => {
     expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=8")).status).toBe(404);
     expect((await appel("GET", "/api/social/accounts?projectId=abc")).status).toBe(404);
-    expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=5")).status).toBe(409);
-    expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=5")).status).toBe(409);
+    expect((await appel("GET", "/api/social/oauth/instagram/url?projectId=5")).status).toBe(200);
+    // Aucun compte PROPRE au projet perso : rien à déconnecter (jamais celui des Réglages).
+    expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=5")).status).toBe(404);
     expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=8")).status).toBe(404);
     expect(storageMock.deleteSocialAccount).not.toHaveBeenCalled();
   });
@@ -83,7 +89,7 @@ describe("routes des comptes sociaux", () => {
     expect(session.socialOAuthProjectId).toBe(7);
     const r = await appel("GET", `/api/social/oauth/instagram/callback?code=abc&state=${encodeURIComponent(state)}`);
     expect(r.status).toBe(302);
-    expect(r.headers.get("location")).toBe("/projects/7?social=instagram&status=connected");
+    expect(r.headers.get("location")).toBe("/projects/7?onglet=reseaux&social=instagram&status=connected");
     expect(oauth.exchangeInstagramCode).toHaveBeenCalledWith("user-1", "abc", 7);
     expect(session.socialOAuthProjectId).toBeUndefined();
   });
@@ -99,7 +105,7 @@ describe("routes des comptes sociaux", () => {
   it("state différent de celui de la session → refus, aucun échange", async () => {
     await appel("GET", "/api/social/oauth/instagram/url?projectId=7");
     const r = await appel("GET", "/api/social/oauth/instagram/callback?code=abc&state=user-2:1");
-    expect(r.headers.get("location")).toBe("/projects/7?social=instagram&status=error&reason=state_invalide");
+    expect(r.headers.get("location")).toBe("/projects/7?onglet=reseaux&social=instagram&status=error&reason=state_invalide");
     expect(oauth.exchangeInstagramCode).not.toHaveBeenCalled();
   });
 
@@ -114,5 +120,49 @@ describe("routes des comptes sociaux", () => {
     expect(storageMock.deleteSocialAccount).toHaveBeenCalledWith(2, "user-1");
     expect((await appel("DELETE", "/api/social/disconnect/instagram")).status).toBe(200);
     expect(storageMock.deleteSocialAccount).toHaveBeenLastCalledWith(1, "user-1");
+  });
+
+  it("connexion d'un compte propre à un projet : ses posts programmés suivent le nouveau compte", async () => {
+    const { url } = await (await appel("GET", "/api/social/oauth/instagram/url?projectId=5")).json();
+    const state = new URL(url).searchParams.get("state")!;
+    await appel("GET", `/api/social/oauth/instagram/callback?code=abc&state=${encodeURIComponent(state)}`);
+    expect(repointage.repointerApresConnexion).toHaveBeenCalledWith(repointage.depsRepointage, "user-1", { portee: 5, repli: true }, "instagram");
+  });
+
+  it("LinkedIn : l'échange sait si le projet est perso (pages activées) ou client (pages en attente)", async () => {
+    for (const [pid, repli] of [[5, true], [7, false]] as const) {
+      await appel("GET", `/api/social/oauth/linkedin/url?projectId=${pid}`);
+      const state = session.socialOAuthState;
+      await appel("GET", `/api/social/oauth/linkedin/callback?code=abc&state=${encodeURIComponent(state)}`);
+      expect(oauth.exchangeLinkedInCode).toHaveBeenLastCalledWith("user-1", "abc", pid, { repli });
+    }
+  });
+
+  it("déconnexion d'un compte propre à un projet perso : ses posts repartent sur le compte des Réglages, avant la suppression", async () => {
+    const igPerso = { id: 6, platform: "instagram", projectId: 5, isActive: true, accountName: "marque", accessToken: "t", expiresAt: null };
+    storageMock.getSocialAccountByPlatform.mockResolvedValueOnce(igPerso as any);
+    const ordre: string[] = [];
+    repointage.repointerAvantDeconnexion.mockImplementationOnce(async () => { ordre.push("repointe"); return []; });
+    storageMock.deleteSocialAccount.mockImplementationOnce(async () => { ordre.push("supprime"); return true; });
+    expect((await appel("DELETE", "/api/social/disconnect/instagram?projectId=5")).status).toBe(200);
+    expect(repointage.repointerAvantDeconnexion).toHaveBeenCalledWith(repointage.depsRepointage, "user-1", { portee: 5, repli: true }, igPerso);
+    expect(ordre).toEqual(["repointe", "supprime"]);
+  });
+
+  it("LinkedIn d'un projet perso : la déconnexion trouve ses pages", async () => {
+    const page = { id: 12, platform: "linkedin_page_300", projectId: 5, isActive: true, accountName: "Page", accessToken: "t", expiresAt: null };
+    storageMock.getSocialAccounts.mockResolvedValueOnce([igJeanne, page] as any);
+    expect((await appel("DELETE", "/api/social/disconnect/linkedin?projectId=5")).status).toBe(200);
+    expect(storageMock.deleteSocialAccount).toHaveBeenCalledWith(12, "user-1");
+  });
+
+  it("LinkedIn d'un projet perso : l'état montre la page du projet avant le profil des Réglages", async () => {
+    const { statutReseaux } = await import("./routes-social");
+    const profil = { id: 3, platform: "linkedin", projectId: null, isActive: true, accountName: "Jeanne", accessToken: "t", expiresAt: null };
+    const page = { id: 12, platform: "linkedin_page_300", projectId: 5, isActive: true, accountName: "Page marque", accessToken: "t", expiresAt: null };
+    const s = statutReseaux([profil, page], { portee: 5, repli: true }).linkedin;
+    expect(s).toMatchObject({ connected: true, accountName: "Page marque" });
+    expect(s.herite).toBeUndefined();
+    expect(statutReseaux([profil], { portee: 5, repli: true }).linkedin).toMatchObject({ accountName: "Jeanne", herite: true });
   });
 });

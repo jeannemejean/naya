@@ -255,7 +255,7 @@ export const sourcesParDefaut: SourcesMouvements = {
   async contenusPublies(userId, depuis) {
     const rows = await db.select({ projetId: content.projectId, at: content.publishedAt })
       .from(content)
-      .where(and(eq(content.userId, userId), gte(content.publishedAt, depuis)));
+      .where(and(eq(content.userId, userId), gte(content.publishedAt, depuis), isNull(content.supprimeLe)));
     return rows.flatMap(brut);
   },
   async prospectsContactes(userId, depuis) {

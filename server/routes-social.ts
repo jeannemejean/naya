@@ -12,7 +12,8 @@ import {
   getTikTokAuthUrl, exchangeTikTokCode,
   isPlatformConfigured,
 } from "./services/social-oauth";
-import { dansPortee, porteeDe, type Portee } from "./services/connexions/portee";
+import { comptesDuPerimetre, dansPortee, porteeDe, porteeReseauxDe, type Portee, type PorteeReseaux } from "./services/connexions/portee";
+import { depsRepointage, repointerApresConnexion, repointerAvantDeconnexion } from "./services/connexions/repointage";
 
 export type Perimetre = { ok: true; portee: Portee } | { ok: false; status: number; message: string };
 
@@ -32,10 +33,24 @@ export async function perimetreDemande(userId: string, brut: unknown, opts: { pe
   return { ok: true, portee };
 }
 
+/**
+ * Périmètre des RÉSEAUX demandé (connexion, état, comptes) : tout projet de l'utilisatrice, perso
+ * compris (chaque projet peut avoir ses comptes, comme les marques de Metricool). Sans projet : Réglages.
+ */
+export async function perimetreReseaux(userId: string, brut: unknown): Promise<{ ok: true; p: PorteeReseaux } | { ok: false; status: number; message: string }> {
+  if (brut === undefined || brut === null || brut === "") return { ok: true, p: { portee: null, repli: false } };
+  const id = Number(brut);
+  if (!Number.isInteger(id) || id <= 0) return { ok: false, status: 404, message: "not_found" };
+  const projet = await storage.getProject(id, userId);
+  if (!projet) return { ok: false, status: 404, message: "not_found" };
+  return { ok: true, p: porteeReseauxDe(projet as any) };
+}
+
 /** Comptes actifs du périmètre, sans jeton, pour le composeur. */
-export function listeComptes(comptes: any[], portee: Portee) {
-  return comptes
-    .filter((a) => a.isActive && dansPortee(a, portee))
+export function listeComptes(comptes: any[], portee: Portee | PorteeReseaux) {
+  const p: PorteeReseaux = typeof portee === "object" && portee !== null ? portee : { portee, repli: false };
+  return comptesDuPerimetre(comptes, p)
+    .filter((a) => a.isActive)
     .map((a) => ({
       id: a.id,
       platform: a.platform,                                   // instagram|facebook|linkedin|linkedin_page_<id>|tiktok
@@ -46,13 +61,17 @@ export function listeComptes(comptes: any[], portee: Portee) {
 }
 
 /** État RÉEL de chaque réseau dans le périmètre (un jeton expiré n'est pas « connecté »). */
-export function statutReseaux(comptes: any[], portee: Portee, maintenant = new Date()) {
-  const permis = comptes.filter((a) => dansPortee(a, portee));
-  const status: Record<string, { connected: boolean; etat: string; accountName?: string; expiresAt?: Date; configured: boolean; pagesCount?: number }> = {};
+export function statutReseaux(comptes: any[], perimetre: Portee | PorteeReseaux, maintenant = new Date()) {
+  const p: PorteeReseaux = typeof perimetre === "object" && perimetre !== null ? perimetre : { portee: perimetre, repli: false };
+  const portee = p.portee;
+  const permis = comptesDuPerimetre(comptes, p);
+  const status: Record<string, { connected: boolean; etat: string; accountName?: string; expiresAt?: Date; configured: boolean; pagesCount?: number; herite?: boolean }> = {};
   for (const platform of ["instagram", "linkedin", "tiktok"] as const) {
     const linkedinPages = platform === "linkedin" ? permis.filter((a) => a.platform.startsWith("linkedin_page_") && a.isActive) : [];
-    // Un client n'a jamais de profil LinkedIn personnel : sa page choisie fait la connexion.
-    const account = permis.find((a) => a.platform === platform && a.isActive) ?? (portee != null ? linkedinPages[0] : undefined);
+    // Un client n'a jamais de profil LinkedIn personnel : sa page choisie fait la connexion. Un
+    // projet perso qui a sa propre page la montre avant le profil des Réglages (repli).
+    const pagePropre = portee != null ? linkedinPages.find((a) => (a.projectId ?? null) === portee) : undefined;
+    const account = pagePropre ?? permis.find((a) => a.platform === platform && a.isActive) ?? (portee != null ? linkedinPages[0] : undefined);
     // `is_active` dit que la connexion n'a pas été révoquée, pas qu'elle marche (jetons morts
     // affichés « Connecté » le 18 septembre) : on qualifie le jeton.
     const etat = account
@@ -64,6 +83,8 @@ export function statutReseaux(comptes: any[], portee: Portee, maintenant = new D
       etat,
       accountName: account?.accountName,
       expiresAt: account?.expiresAt || undefined,
+      // Projet perso sans compte propre pour ce réseau : celui des Réglages est utilisé.
+      ...(account && portee != null && (account.projectId ?? null) === null ? { herite: true } : {}),
       ...(platform === "linkedin" && linkedinPages.length > 0 && { pagesCount: linkedinPages.length }),
     };
   }
@@ -72,7 +93,7 @@ export function statutReseaux(comptes: any[], portee: Portee, maintenant = new D
 
 /** Où revenir après la connexion : la page du projet client, sinon les Réglages. */
 const retour = (projectId: number | null, query: string) =>
-  projectId != null ? `/projects/${projectId}?${query}` : `/settings?${query}`;
+  projectId != null ? `/projects/${projectId}?onglet=reseaux&${query}` : `/settings?${query}`;
 
 export function registerSocialRoutes(app: Express) {
   // GET /api/social/oauth/:platform/url[?projectId=N] — URL de consentement
@@ -90,12 +111,12 @@ export function registerSocialRoutes(app: Express) {
       });
     }
     try {
-      const p = await perimetreDemande(req.userId, req.query.projectId);
+      const p = await perimetreReseaux(req.userId, req.query.projectId);
       if (!p.ok) return res.status(p.status).json({ message: p.message });
       const state = `${req.userId}:${Date.now()}`;
       (req.session as any).socialOAuthState = state;
       (req.session as any).socialOAuthUserId = req.userId;
-      (req.session as any).socialOAuthProjectId = p.portee;
+      (req.session as any).socialOAuthProjectId = p.p.portee;
 
       let url: string;
       if (platform === "instagram") url = getInstagramAuthUrl(state);
@@ -136,15 +157,18 @@ export function registerSocialRoutes(app: Express) {
     if (!userId) return res.redirect(retour(sessionProjectId, `social=${platform}&status=error&reason=missing_session`));
 
     try {
-      // Le projet est revérifié au retour : toujours à elle, toujours client.
+      // Le projet est revérifié au retour : toujours à elle.
       let projectId: number | null = null;
+      let perimetre: PorteeReseaux = { portee: null, repli: false };
       if (sessionProjectId != null) {
-        const p = await perimetreDemande(userId, sessionProjectId);
+        const p = await perimetreReseaux(userId, sessionProjectId);
         if (!p.ok) return res.redirect(`/settings?social=${platform}&status=error&reason=${p.message}`);
-        projectId = p.portee;
+        projectId = p.p.portee;
+        perimetre = p.p;
       }
       if (platform === "instagram") await exchangeInstagramCode(userId, code, projectId);
-      else if (platform === "linkedin") await exchangeLinkedInCode(userId, code, projectId);
+      // Projet perso : ses pages arrivent utilisées (pas de choix comme chez un client).
+      else if (platform === "linkedin") await exchangeLinkedInCode(userId, code, projectId, { repli: perimetre.repli });
       else if (platform === "tiktok") await exchangeTikTokCode(userId, code, projectId);
       else if (platform === "twitter") {
         await exchangeTwitterCode(userId, code, session.twitterCodeVerifier || "", projectId);
@@ -153,6 +177,12 @@ export function registerSocialRoutes(app: Express) {
       delete session.socialOAuthState;
       delete session.socialOAuthUserId;
       delete session.socialOAuthProjectId;
+      // Les posts programmés du projet qui visaient un compte sorti du périmètre (celui des
+      // Réglages, remplacé par le nouveau) suivent le nouveau compte. Au mieux.
+      if (projectId != null) {
+        await repointerApresConnexion(depsRepointage, userId, perimetre, platform)
+          .catch((e: any) => console.error(`[Social OAuth] ${platform} : posts non re-pointés :`, e?.message || e));
+      }
       res.redirect(retour(projectId, `social=${platform}&status=connected`));
     } catch (err: any) {
       console.error(`[Social OAuth] ${platform} callback error:`, err.message);
@@ -163,9 +193,9 @@ export function registerSocialRoutes(app: Express) {
   // Comptes connectés du périmètre (avec IDs) pour le composeur multi-réseaux.
   app.get("/api/social/accounts", isAuthenticated, async (req: any, res) => {
     try {
-      const p = await perimetreDemande(req.userId, req.query.projectId, { persoAccepte: true });
+      const p = await perimetreReseaux(req.userId, req.query.projectId);
       if (!p.ok) return res.status(p.status).json({ message: p.message });
-      res.json(listeComptes(await storage.getSocialAccounts(req.userId), p.portee));
+      res.json(listeComptes(await storage.getSocialAccounts(req.userId), p.p));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -174,9 +204,9 @@ export function registerSocialRoutes(app: Express) {
   // État de connexion de chaque réseau du périmètre.
   app.get("/api/social/status", isAuthenticated, async (req: any, res) => {
     try {
-      const p = await perimetreDemande(req.userId, req.query.projectId, { persoAccepte: true });
+      const p = await perimetreReseaux(req.userId, req.query.projectId);
       if (!p.ok) return res.status(p.status).json({ message: p.message });
-      res.json(statutReseaux(await storage.getSocialAccounts(req.userId), p.portee));
+      res.json(statutReseaux(await storage.getSocialAccounts(req.userId), p.p));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -185,11 +215,21 @@ export function registerSocialRoutes(app: Express) {
   // DELETE /api/social/disconnect/:platform[?projectId=N] — déconnecte un réseau du périmètre
   app.delete("/api/social/disconnect/:platform", isAuthenticated, async (req: any, res) => {
     try {
-      const p = await perimetreDemande(req.userId, req.query.projectId);
+      const p = await perimetreReseaux(req.userId, req.query.projectId);
       if (!p.ok) return res.status(p.status).json({ message: p.message });
-      const account = await storage.getSocialAccountByPlatform(req.userId, req.params.platform, p.portee);
-      if (!account) return res.status(404).json({ message: "Compte non trouvé" });
-      await storage.deleteSocialAccount(account.id, req.userId);
+      // Seul un compte PROPRE au périmètre se déconnecte ici (jamais celui des Réglages hérité).
+      // LinkedIn d'un projet perso : ce sont ses pages (jamais de profil dans un projet).
+      const comptes: any[] = req.params.platform === "linkedin" && p.p.portee != null && p.p.repli
+        ? (await storage.getSocialAccounts(req.userId)).filter((a: any) => a.platform.startsWith("linkedin_page_") && (a.projectId ?? null) === p.p.portee)
+        : [await storage.getSocialAccountByPlatform(req.userId, req.params.platform, p.p.portee)].filter(Boolean);
+      if (comptes.length === 0) return res.status(404).json({ message: "Compte non trouvé" });
+      for (const account of comptes) {
+        // Ses posts programmés repartent sur le compte des Réglages (projet perso), sinon la
+        // suppression les arrête avec l'alerte habituelle.
+        await repointerAvantDeconnexion(depsRepointage, req.userId, p.p, account)
+          .catch((e: any) => console.error(`[Social] posts du compte ${account.id} non re-pointés :`, e?.message || e));
+        await storage.deleteSocialAccount(account.id, req.userId);
+      }
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

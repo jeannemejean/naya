@@ -21,6 +21,8 @@ import { livrablesDeps } from "./services/livrables/deps";
 import { estUrlMediaDe } from "./services/livrables/urls";
 import { oublierCreationDe } from "./services/fil/creation";
 import { oublierReconciliationDe } from "./services/fil/cloture";
+import { journaliser, journaliserChangement } from "./services/gestion-posts/historique";
+import { champsRelanceValidation, journaliserRelanceSiEdite } from "./services/validation/relance";
 
 const JOUR = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -60,8 +62,16 @@ async function vuePost(userId: string, p: any, noms: Map<number, string>, compte
     tendanceProjetId: p.tendanceProjetId ?? null,
     etat,
     // Naya publiera seule ce post (programmé) ; sinon, validé, il attend une publication à la main.
-    programme: p.autoPost === true && etat === "valide",
+    programme: p.autoPost === true && etat === "valide" && p.finirSurTelephone !== true,
     erreurPublication: p.postStatus === "failed" ? (p.lastError ?? null) : null,
+    premierCommentaire: p.premierCommentaire ?? null,
+    couvertureOffsetMs: p.couvertureOffsetMs ?? null,
+    texteAlternatif: p.texteAlternatif ?? null,
+    collaborateurs: Array.isArray(p.collaborateurs) ? p.collaborateurs : null,
+    reelDansLeFil: p.reelDansLeFil ?? null,
+    nomAudio: p.nomAudio ?? null,
+    linkedinDocument: p.linkedinDocument ?? null,
+    finirSurTelephone: p.finirSurTelephone === true,
     medias: medias.map(({ id, url, mimeType, genre }) => ({ id, url, mimeType, genre })),
     manques: etat === "valide" || etat === "publie" ? [] : manquesPourValider({
       genre: genreDuPost(p), body: p.body, scheduledFor: p.scheduledFor, medias: medias.map((m) => m.genre), maintenant: new Date(),
@@ -155,9 +165,15 @@ export function registerAtelierRoutes(app: Express): void {
         // Jamais une consigne vide : elle sert de verrou (« déjà rédigé »).
         if (post.consigne == null) patch.consigne = (post.body ?? "").trim() || post.title || "—";
       }
-      await db.update(content).set({ ...(patch as any), updatedAt: new Date() })
+      // Relance de la validation client dans la même écriture que la modification.
+      const ecrit = await db.update(content).set({ ...(patch as any), ...champsRelanceValidation(post, patch), updatedAt: new Date() })
         // Jamais sous un post validé entre-temps (il part tel que validé).
-        .where(and(eq(content.id, post.id), eq(content.userId, req.userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`, sql`coalesce(${content.autoPost}, false) = false`));
+        .where(and(eq(content.id, post.id), eq(content.userId, req.userId), sql`coalesce(${content.contentStatus}, '') <> 'ready'`, sql`coalesce(${content.autoPost}, false) = false`))
+        .returning({ id: content.id });
+      // Rien d'écrit (validé entre la lecture et l'écriture) : ni historique ni relance.
+      if (ecrit.length === 0) return res.status(409).json({ message: "post_valide" });
+      await journaliserChangement(req.userId, post, patch);
+      await journaliserRelanceSiEdite(req.userId, post, patch);
       res.json({ ok: true });
     } catch (e: any) {
       console.error("[Atelier] enregistrement:", e?.message);
@@ -174,6 +190,7 @@ export function registerAtelierRoutes(app: Express): void {
       if (r.statut === "invalide") return res.status(400).json({ message: "invalide" });
       if (r.statut === "en_cours" || r.statut === "deja_publie" || r.statut === "deja_valide") return res.status(409).json({ message: r.statut });
       if (r.statut === "manques") return res.status(422).json(r);
+      await journaliser(req.userId, id, "valide", null);
       res.json(r);
     } catch (e: any) {
       console.error("[Atelier] validation:", e?.message);
@@ -188,6 +205,7 @@ export function registerAtelierRoutes(app: Express): void {
       const r = await devaliderPost(depsValidation, req.userId, id);
       if (r.statut === "introuvable") return res.status(404).json({ message: "not_found" });
       if (r.statut !== "brouillon") return res.status(409).json({ message: r.statut });
+      await journaliser(req.userId, id, "devalide", null);
       res.json(r);
     } catch (e: any) {
       console.error("[Atelier] dévalidation:", e?.message);

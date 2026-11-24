@@ -1,6 +1,6 @@
 // Accès base de « repenser la campagne » : lectures et transaction. Chaque requête porte
 // sur userId ET campaignId — jamais seulement sur un identifiant de ligne.
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { contenuSupprimable, tacheSupprimable } from "./gardes-sql";
 import { campaigns, content, tasks } from "@shared/schema";
 import { db, type DbExecutor } from "../../db";
@@ -28,7 +28,8 @@ function operations(x: DbExecutor): OperationsTransaction {
           contentStatus: content.contentStatus,
         })
         .from(content)
-        .where(and(eq(content.userId, userId), eq(content.campaignId, campaignId)));
+        // La corbeille n'est ni comptée ni remplacée : ces posts restent où l'utilisatrice les a mis.
+        .where(and(eq(content.userId, userId), eq(content.campaignId, campaignId), isNull(content.supprimeLe)));
     },
     async lireTaches(userId, campaignId): Promise<TacheLue[]> {
       const lignes = await x

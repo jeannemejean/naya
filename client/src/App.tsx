@@ -14,6 +14,7 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Privacy from "@/pages/privacy";
 import RapportPublic from "@/pages/rapport-public";
+import PortailValidation from "@/pages/validation-portail";
 import Terms from "@/pages/terms";
 import DataDeletion from "@/pages/data-deletion";
 import Paywall from "@/pages/paywall";
@@ -73,7 +74,7 @@ function Router() {
  // Bouton flottant Naya sur toutes les pages authentifiées, accueil « Aujourd'hui » compris
  // Rapport client (lien public) : page autonome, rien de Naya autour — ni à l'écran ni au PDF.
  const [location] = useLocation();
- const pagePublique = location.startsWith("/rapport/");
+ const pagePublique = location.startsWith("/rapport/") || location.startsWith("/v/");
  const showFloatingCompanion = isAuthenticated && hasAccess && !pagePublique;
 
  return (
@@ -82,6 +83,7 @@ function Router() {
  <Switch>
  <Route path="/privacy" component={Privacy} />
  <Route path="/rapport/:jeton" component={RapportPublic} />
+ <Route path="/v/:token" component={PortailValidation} />
  <Route path="/terms" component={Terms} />
  <Route path="/data-deletion" component={DataDeletion} />
  {isLoading ? (
@@ -182,7 +184,7 @@ function Router() {
 /** La bannière de nouvelle version, partout sauf sur la page publique d'un rapport client. */
 function BanniereHorsRapport() {
  const [location] = useLocation();
- return location.startsWith("/rapport/") ? null : <NouvelleVersionBanner />;
+ return location.startsWith("/rapport/") || location.startsWith("/v/") ? null : <NouvelleVersionBanner />;
 }
 
 function LanguageGate({ children }: { children: React.ReactNode }) {

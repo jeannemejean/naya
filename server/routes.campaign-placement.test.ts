@@ -97,8 +97,9 @@ const campagne = (over: any = {}) => ({
   ...over,
 });
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const local = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// Heure des posts lue EN HEURE DE PARIS : depuis le lot 7, le placement pose l'heure murale de
+// Paris (avant, celle du process : « 9 h » partait à 9 h UTC, soit 10 h ou 11 h à Paris).
+const local = (d: Date) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
 const tasksCreated = () => storageMock.createTask.mock.calls.map(([t]: any[]) => `${t.scheduledDate} ${t.scheduledTime}-${t.scheduledEndTime} ${t.title} [${t.source}/${t.campaignId}/${t.projectId}${t.contentId ? `/#${t.contentId}` : ""}]`);
 const tachesProduction = () => storageMock.createTask.mock.calls.map(([t]: any[]) => t).filter((t: any) => t.contentId);
 const jourDe = (d: Date) => local(d).slice(0, 10);

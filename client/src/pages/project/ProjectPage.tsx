@@ -5,7 +5,7 @@
 import { Link, useLocation, useSearch } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Briefcase, ChevronDown, Compass, Gauge, LayoutGrid, Radar, Users } from "lucide-react";
+import { ArrowLeft, Briefcase, ChevronDown, Compass, Gauge, LayoutGrid, Radar, Users, Share2 } from "lucide-react";
 import Sidebar from "@/components/sidebar";
 import OngletsEspace from "@/components/navigation/OngletsEspace";
 import { useProject } from "@/lib/project-context";
@@ -22,6 +22,9 @@ import BrandLinksPanel from "./BrandLinksPanel";
 import LivrablesPanel from "./LivrablesPanel";
 import PreuvesPanel from "./PreuvesPanel";
 import ConnexionsClientPanel from "./ConnexionsClientPanel";
+import ReseauxProjetPanel from "./ReseauxProjetPanel";
+import SmartLinkCard from "@/components/liens/SmartLinkCard";
+import ValidationClientCard from "@/components/validation/ValidationClientCard";
 import RapportsClientPanel from "./RapportsClientPanel";
 import { FondationsProjet } from "@/pages/fondations";
 import AIRecommendations from "@/components/accueil-retire/AIRecommendations";
@@ -37,7 +40,7 @@ interface ProjectPageProps {
 
 interface ProjetListe { id: number; name: string; color?: string | null; projectKind?: string | null }
 
-const ICONES: Record<Onglet, typeof Compass> = { ensemble: LayoutGrid, fondations: Compass, veille: Radar, mesure: Gauge, client: Users };
+const ICONES: Record<Onglet, typeof Compass> = { ensemble: LayoutGrid, fondations: Compass, veille: Radar, mesure: Gauge, reseaux: Share2, client: Users };
 
 export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
   const { t } = useTranslation();
@@ -50,7 +53,7 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
 
   const estClient = project?.projectKind === "client";
   const onglet = ongletDe(recherche, estClient);
-  const onglets: Onglet[] = estClient ? ["ensemble", "fondations", "veille", "mesure", "client"] : ["ensemble", "fondations", "veille", "mesure"];
+  const onglets: Onglet[] = estClient ? ["ensemble", "fondations", "veille", "mesure", "client"] : ["ensemble", "fondations", "veille", "mesure", "reseaux"];
   const changerOnglet = (o: string) => navigate(lienOnglet(id, o as Onglet), { replace: true });
   // Changer de projet ici en fait aussi le projet actif (comme la barre latérale).
   const changerProjet = (p: ProjetListe) => {
@@ -162,10 +165,19 @@ export default function ProjectPage({ id, onSearchClick }: ProjectPageProps) {
               </TabsContent>
               <TabsContent value="veille" className="mt-0"><VeilleProjet key={id} projectId={id} /></TabsContent>
               <TabsContent value="mesure" className="mt-0"><MesureProjet key={id} projectId={id} /></TabsContent>
+              {!estClient && (
+                <TabsContent value="reseaux" className="mt-0 space-y-6 max-w-5xl mx-auto">
+                  <ReseauxProjetPanel key={id} projectId={id} nomProjet={project?.name ?? ""} />
+                  <SmartLinkCard key={`smartlink-${id}`} projectId={id} nomProjet={project?.name ?? ""} />
+                  <ValidationClientCard key={`validation-${id}`} projectId={id} />
+                </TabsContent>
+              )}
               {estClient && (
                 <TabsContent value="client" className="mt-0 space-y-6 max-w-5xl mx-auto">
                   <ConnexionsClientPanel projectId={id} />
                   <RapportsClientPanel projectId={id} />
+                  <SmartLinkCard key={`smartlink-${id}`} projectId={id} nomProjet={project?.name ?? ""} />
+                  <ValidationClientCard key={`validation-${id}`} projectId={id} />
                 </TabsContent>
               )}
           </main>

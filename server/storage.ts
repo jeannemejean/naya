@@ -203,6 +203,7 @@ import {
 import { db, type DbExecutor } from "./db";
 import { memesChiffres } from "./services/mesure/calculs";
 import { eq, and, or, desc, gt, gte, lt, lte, isNull, isNotNull, inArray, notInArray, ne, sql, type SQL } from "drizzle-orm";
+import { sqlBloqueParValidation, sqlValideDansLaGrace } from "./services/validation/garde-publication";
 import { encryptToken, encryptNullable, decryptToken } from "./services/token-crypto";
 import { repackDayParRang } from "./services/schedule-repack";
 import { aRamener, contrainteDe, comparerRang, jourDeRamenee } from "./services/orchestre/contrainte";
@@ -440,16 +441,32 @@ export interface IStorage {
   getTomorrowPreviewData(userId: string, projectId?: number): Promise<{ carryover: Task[]; scheduledTomorrow: Task[]; approachingDeadlines: any[] }>;
   
   // Content operations
-  getContent(userId: string, limit?: number, projectId?: number): Promise<Content[]>;
+  /** `projectId` : une marque, ou les marques d'un groupe (liste ; vide → aucun post). */
+  getContent(userId: string, limit?: number, projectId?: number | number[], campaignId?: number): Promise<Content[]>;
   getContentById(id: number, userId: string): Promise<Content | undefined>;
   createContent(content: InsertContent): Promise<Content>;
   /** Contenu deja issu de cette tache, s'il existe. Evite de creer un doublon a chaque enregistrement. */
   getContentBySourceTask(userId: string, taskId: number): Promise<Content | undefined>;
   updateContent(id: number, updates: Partial<Content>): Promise<Content>;
   deleteContent(id: number): Promise<void>;
+  /** Le post, même s'il est dans la corbeille (restaurer, supprimer définitivement, historique). */
+  getContentByIdMemeSupprime(id: number, userId: string): Promise<Content | undefined>;
+  /** Ces posts vivants de l'utilisatrice (hors corbeille). */
+  getContentsByIds(userId: string, ids: number[]): Promise<Content[]>;
+  /** Met le post à la corbeille (jamais un post en train de partir). Rend false sinon. */
+  mettreALaCorbeille(id: number, userId: string): Promise<boolean>;
+  /** Sort le post de la corbeille (déprogrammé), avec les tâches archivées en même temps que lui. */
+  restaurerContenu(id: number, userId: string): Promise<boolean>;
+  /** Posts mis à la corbeille depuis `depuis`, les plus récents d'abord. */
+  getCorbeille(userId: string, depuis: Date): Promise<Content[]>;
   getTasksForContents(userId: string, contentIds: number[]): Promise<Task[]>;
   /** Posts dont la publication tombe dans [debut, fin[ (atelier de contenu). */
   getPostsEntre(userId: string, debut: Date, fin: Date): Promise<Content[]>;
+  /**
+   * Meilleures heures (lot 7) : les posts publiés de la marque (projet, ou null = marque des
+   * Réglages) sur ce réseau depuis `depuis`, avec leur DERNIÈRE mesure de réception.
+   */
+  getMesuresPublication(userId: string, projectId: number | null, reseau: string, depuis: Date): Promise<Array<{ contentId: number; publieLe: Date; saves: number | null; shares: number | null; comments: number | null; reach: number | null }>>;
   /** Tâches d'atelier non archivées de la semaine qui commence ce lundi (YYYY-MM-DD). */
   getTachesAtelier(userId: string, semaine: string): Promise<Task[]>;
   /** Journal de la reprise des tâches non faites. */
@@ -462,9 +479,9 @@ export interface IStorage {
   deleteCampaignFutureContent(campaignId: number, fromDate: string): Promise<number>;
   deleteAllCampaignContent(campaignId: number): Promise<number>;
   deleteCampaignContentItems(campaignId: number, ids: number[], userId?: string): Promise<number>;
-  getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]>;
+  getContentByStatus(userId: string, status: string, projectId?: number | number[]): Promise<Content[]>;
   getDueScheduledContent(now: Date): Promise<Content[]>;
-  claimContentForPosting(id: number): Promise<boolean>;
+  claimContentForPosting(id: number, opts?: { malgreValidation?: boolean }): Promise<boolean>;
 
   // Réception (Fil 3) — mesure de la réception d'un contenu, triangulée contre son intention.
   /**
@@ -1507,9 +1524,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Content operations
-  async getContent(userId: string, limit = 50, projectId?: number, campaignId?: number): Promise<Content[]> {
-    const conditions = [eq(content.userId, userId)];
-    if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
+  async getContent(userId: string, limit = 50, projectId?: number | number[], campaignId?: number): Promise<Content[]> {
+    const conditions = [eq(content.userId, userId), isNull(content.supprimeLe)];
+    if (Array.isArray(projectId)) {
+      if (projectId.length === 0) return [];
+      conditions.push(inArray(content.projectId, projectId));
+    } else if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
     if (campaignId !== undefined) conditions.push(eq((content as any).campaignId, campaignId));
     return await db.select().from(content)
       .where(and(...conditions))
@@ -1526,8 +1546,63 @@ export class DatabaseStorage implements IStorage {
 
   async getContentById(id: number, userId: string): Promise<Content | undefined> {
     const [item] = await db.select().from(content)
+      .where(and(eq(content.id, id), eq(content.userId, userId), isNull(content.supprimeLe)));
+    return item;
+  }
+
+  async getContentByIdMemeSupprime(id: number, userId: string): Promise<Content | undefined> {
+    const [item] = await db.select().from(content)
       .where(and(eq(content.id, id), eq(content.userId, userId)));
     return item;
+  }
+
+  async getContentsByIds(userId: string, ids: number[]): Promise<Content[]> {
+    if (ids.length === 0) return [];
+    return await db.select().from(content)
+      .where(and(eq(content.userId, userId), inArray(content.id, ids), isNull(content.supprimeLe)));
+  }
+
+  /**
+   * Corbeille : le post sort des vues et ne part plus (déprogrammé, et exclu du worker).
+   * Ses tâches de production non faites sont archivées AU MÊME INSTANT que lui : c'est ce
+   * qui permet de ne ramener qu'elles à la restauration. La garde « en cours d'envoi » est
+   * redite en SQL : entre la lecture et ici, le publieur a pu prendre le post.
+   */
+  async mettreALaCorbeille(id: number, userId: string): Promise<boolean> {
+    const maintenant = new Date();
+    return db.transaction(async (tx) => {
+      const [fait] = await tx.update(content)
+        .set({ supprimeLe: maintenant, autoPost: false, updatedAt: maintenant } as any)
+        .where(and(eq(content.id, id), eq(content.userId, userId), isNull(content.supprimeLe),
+          // Jamais un post en train de partir. Un post publié peut quitter le calendrier : il est
+          // déjà en ligne, la corbeille ne fait que le cacher.
+          sql`lower(trim(coalesce(${content.postStatus}, ''))) not in ('posting', 'processing', 'uploading')`))
+        .returning({ id: content.id });
+      if (!fait) return false;
+      await tx.update(tasks).set({ archivedAt: maintenant } as any)
+        .where(and(eq(tasks.userId, userId), eq(tasks.contentId, id), eq(tasks.completed, false), isNull(tasks.archivedAt)));
+      return true;
+    });
+  }
+
+  async restaurerContenu(id: number, userId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [post] = await tx.select({ supprimeLe: content.supprimeLe }).from(content)
+        .where(and(eq(content.id, id), eq(content.userId, userId), isNotNull(content.supprimeLe))).for("update");
+      if (!post?.supprimeLe) return false;
+      await tx.update(content).set({ supprimeLe: null, updatedAt: new Date() } as any)
+        .where(and(eq(content.id, id), eq(content.userId, userId)));
+      await tx.update(tasks).set({ archivedAt: null } as any)
+        .where(and(eq(tasks.userId, userId), eq(tasks.contentId, id), eq(tasks.completed, false), eq(tasks.archivedAt, post.supprimeLe)));
+      return true;
+    });
+  }
+
+  async getCorbeille(userId: string, depuis: Date): Promise<Content[]> {
+    return await db.select().from(content)
+      .where(and(eq(content.userId, userId), isNotNull(content.supprimeLe), gte(content.supprimeLe, depuis)))
+      .orderBy(desc(content.supprimeLe))
+      .limit(200);
   }
 
   async createContent(contentData: InsertContent): Promise<Content> {
@@ -1542,7 +1617,7 @@ export class DatabaseStorage implements IStorage {
    */
   async getContentBySourceTask(userId: string, taskId: number): Promise<Content | undefined> {
     const [row] = await db.select().from(content)
-      .where(and(eq(content.userId, userId), eq(content.sourceTaskId, taskId)))
+      .where(and(eq(content.userId, userId), eq(content.sourceTaskId, taskId), isNull(content.supprimeLe)))
       .limit(1);
     return row;
   }
@@ -1682,9 +1757,12 @@ export class DatabaseStorage implements IStorage {
     return creditSumFromAggregate(row?.sum);
   }
 
-  async getContentByStatus(userId: string, status: string, projectId?: number): Promise<Content[]> {
-    const conditions = [eq(content.userId, userId), eq(content.status, status)];
-    if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
+  async getContentByStatus(userId: string, status: string, projectId?: number | number[]): Promise<Content[]> {
+    const conditions = [eq(content.userId, userId), eq(content.status, status), isNull(content.supprimeLe)];
+    if (Array.isArray(projectId)) {
+      if (projectId.length === 0) return [];
+      conditions.push(inArray(content.projectId, projectId));
+    } else if (projectId !== undefined) conditions.push(eq(content.projectId, projectId));
     return await db.select().from(content)
       .where(and(...conditions))
       .orderBy(desc(content.createdAt));
@@ -1725,7 +1803,32 @@ export class DatabaseStorage implements IStorage {
   async getPostsEntre(userId: string, debut: Date, fin: Date): Promise<Content[]> {
     return await db.select().from(content).where(and(
       eq(content.userId, userId), gte(content.scheduledFor, debut), lt(content.scheduledFor, fin),
+      isNull(content.supprimeLe),
     )).orderBy(content.scheduledFor);
+  }
+
+  async getMesuresPublication(userId: string, projectId: number | null, reseau: string, depuis: Date) {
+    const rows = await db.select({
+      contentId: content.id, publieLe: content.publishedAt, saves: contentReception.saves, shares: contentReception.shares,
+      comments: contentReception.comments, reach: contentReception.reach,
+    }).from(contentReception)
+      .innerJoin(content, eq(contentReception.contentId, content.id))
+      .where(and(
+        eq(content.userId, userId),
+        projectId == null ? isNull(content.projectId) : eq(content.projectId, projectId),
+        sql`lower(${content.platform}) = ${reseau.toLowerCase()}`,
+        isNotNull(content.publishedAt), gte(content.publishedAt, depuis), isNull(content.supprimeLe),
+      ))
+      .orderBy(desc(contentReception.measuredAt));
+    // Une mesure par post : la plus récente (les lignes arrivent de la plus récente à la plus ancienne).
+    const vus = new Set<number>();
+    const res: Array<{ contentId: number; publieLe: Date; saves: number | null; shares: number | null; comments: number | null; reach: number | null }> = [];
+    for (const r of rows) {
+      if (vus.has(r.contentId) || !r.publieLe) continue;
+      vus.add(r.contentId);
+      res.push({ ...r, publieLe: r.publieLe });
+    }
+    return res;
   }
 
   async getTachesAtelier(userId: string, semaine: string): Promise<Task[]> {
@@ -1780,9 +1883,16 @@ export class DatabaseStorage implements IStorage {
         eq(content.autoPost, true),
         eq(content.postStatus, 'pending'),
         isNull(content.publishedAt),
+        // Un post dans la corbeille ne part JAMAIS, même programmé.
+        isNull(content.supprimeLe),
+        // « À finir sur le téléphone » (lot 10) : jamais lu comme dû par le worker.
+        sql`coalesce(${content.finirSurTelephone}, false) = false`,
         isNotNull(content.scheduledFor),
         lte(content.scheduledFor, now),
-        gte(content.scheduledFor, earliest),
+        // Validé par le client pendant la grâce de validation (3 h) : il part quand même.
+        or(gte(content.scheduledFor, earliest), sqlValideDansLaGrace(now)),
+        // Validation client (lot 8) : « à valider » ou « refusé » ne part jamais seul.
+        sql`not ${sqlBloqueParValidation}`,
       ))
       .orderBy(content.scheduledFor)
       .limit(25);
@@ -1802,10 +1912,15 @@ export class DatabaseStorage implements IStorage {
   // un autre passage du worker a déjà pris ce contenu (anti double-publication).
   // autoPost=true est revérifié ici : si l'utilisatrice refuse un post après la lecture
   // des contenus échus mais avant le claim, le refus (autoPost=false) doit gagner la course.
-  async claimContentForPosting(id: number): Promise<boolean> {
+  // Validation client (lot 8) : un post « à valider » ou « refusé » n'est jamais réclamé, sauf
+  // `malgreValidation` (« Publier maintenant », geste explicite de l'utilisatrice).
+  async claimContentForPosting(id: number, opts?: { malgreValidation?: boolean }): Promise<boolean> {
     const claimed = await db.update(content)
       .set({ postStatus: 'posting', updatedAt: new Date() })
-      .where(and(eq(content.id, id), eq(content.postStatus, 'pending'), eq(content.autoPost, true)))
+      .where(and(eq(content.id, id), eq(content.postStatus, 'pending'), eq(content.autoPost, true), isNull(content.supprimeLe),
+        // « À finir sur le téléphone » (lot 10) : jamais publié par le worker.
+        sql`coalesce(${content.finirSurTelephone}, false) = false`,
+        opts?.malgreValidation ? undefined : sql`not ${sqlBloqueParValidation}`))
       .returning({ id: content.id });
     return claimed.length > 0;
   }
@@ -2452,7 +2567,7 @@ export class DatabaseStorage implements IStorage {
 
   async getContenusAEtiqueter(userId: string, projectId: number, depuis: Date, limite: number): Promise<Array<{ id: number; title: string; body: string }>> {
     return db.select({ id: content.id, title: content.title, body: content.body }).from(content)
-      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), isNull(content.angle), isNull(content.etiquetage), gte(content.createdAt, depuis)))
+      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), isNull(content.angle), isNull(content.etiquetage), gte(content.createdAt, depuis), isNull(content.supprimeLe)))
       .orderBy(desc(content.id)).limit(limite);
   }
 
@@ -2473,7 +2588,7 @@ export class DatabaseStorage implements IStorage {
       id: content.id, title: content.title, status: content.status, publishedAt: content.publishedAt,
       angle: content.angle, formatCreatif: content.formatCreatif, etiquetage: content.etiquetage, createdAt: content.createdAt,
     }).from(content)
-      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), gte(content.createdAt, depuis)))
+      .where(and(eq(content.userId, userId), eq(content.projectId, projectId), gte(content.createdAt, depuis), isNull(content.supprimeLe)))
       .orderBy(desc(content.id)).limit(500);
   }
 
