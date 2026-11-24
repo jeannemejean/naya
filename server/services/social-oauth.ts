@@ -1,3 +1,4 @@
+import { LI_VERSION } from "./linkedin-version";
 /**
  * Social Media OAuth — Naya
  * Gère le flux OAuth pour Instagram (Meta), LinkedIn, Twitter/X
@@ -173,30 +174,20 @@ export async function exchangeLinkedInCode(userId: string, code: string, project
   // 3. Récupérer les pages LinkedIn gérées par l'utilisateur
   let orgPages: Array<{ id: string; name: string }> = [];
   try {
-    const aclRes = await fetch(
-      'https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=10',
-      {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-          'X-Restli-Protocol-Version': '2.0.0',
-        },
-      }
-    );
-    const aclData = await aclRes.json();
+    // API REST versionnée (l'ancienne /v2/organizationalEntityAcls n'est plus servie).
+    const enTetes = { Authorization: `Bearer ${tokenData.access_token}`, 'X-Restli-Protocol-Version': '2.0.0', 'LinkedIn-Version': LI_VERSION };
+    const aclRes = await fetch('https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&state=APPROVED&count=20', { headers: enTetes });
+    const aclData = await aclRes.json().catch(() => ({}));
+    if (!aclRes.ok) console.warn(`[LinkedIn] pages gérées illisibles (${aclRes.status}) : ${aclData?.message ?? ''}`);
     const elements = aclData.elements || [];
 
     for (const acl of elements) {
-      const orgUrn: string = acl.organizationalTarget || '';
+      const orgUrn: string = acl.organization || acl.organizationalTarget || '';
       const orgId = orgUrn.replace('urn:li:organization:', '');
       if (!orgId) continue;
 
-      const orgRes = await fetch(`https://api.linkedin.com/v2/organizations/${orgId}?projection=(id,localizedName)`, {
-        headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
-          'X-Restli-Protocol-Version': '2.0.0',
-        },
-      });
-      const orgData = await orgRes.json();
+      const orgRes = await fetch(`https://api.linkedin.com/rest/organizations/${orgId}`, { headers: enTetes });
+      const orgData = await orgRes.json().catch(() => ({}));
       if (orgData.id) orgPages.push({ id: String(orgData.id), name: orgData.localizedName || `Page ${orgId}` });
     }
   } catch (e) {

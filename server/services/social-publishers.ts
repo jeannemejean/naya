@@ -1,3 +1,4 @@
+import { LI_VERSION } from "./linkedin-version";
 /**
  * Couche de publication format-aware (refonte Metricool/Later).
  *
@@ -221,7 +222,6 @@ async function publishInstagram(input: PubInput): Promise<PubResult> {
 // ─────────────────────────── LinkedIn (profil + page entreprise) ───────────────────────────
 
 const LI_API = "https://api.linkedin.com/rest";
-const LI_VERSION = "202405";
 
 function liHeaders(token: string, json = true): Record<string, string> {
   return {

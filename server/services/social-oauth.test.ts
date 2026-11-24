@@ -32,11 +32,11 @@ describe("exchangeLinkedInCode — projet perso ou client", () => {
   const reponses = (url: string) => {
     if (url.includes("accessToken")) return { access_token: "tok", expires_in: 3600 };
     if (url.includes("/v2/me")) return { id: "me1", localizedFirstName: "Jeanne", localizedLastName: "M" };
-    if (url.includes("organizationalEntityAcls")) return { elements: [{ organizationalTarget: "urn:li:organization:300" }] };
+    if (url.includes("/rest/organizationAcls")) return { elements: [{ organization: "urn:li:organization:300", role: "ADMINISTRATOR", state: "APPROVED" }] };
     if (url.includes("/organizations/300")) return { id: 300, localizedName: "Marque" };
     return {};
   };
-  const brancher = () => vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ json: async () => reponses(String(url)) })));
+  const brancher = () => vi.stubGlobal("fetch", vi.fn(async (url: string) => ({ ok: true, status: 200, json: async () => reponses(String(url)) })));
 
   it("projet perso : la page arrive utilisée dans le projet, aucun profil personnel", async () => {
     brancher();
