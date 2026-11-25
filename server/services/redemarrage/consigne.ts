@@ -11,6 +11,7 @@ export function consigneSeance(s: SeanceRedemarrage): string {
   const p = bilan.projets.find((x) => x.projectId === s.projetCourant);
   if (!p) return "";
   const rang = projets.findIndex((x) => x.projectId === p.projectId) + 1;
+  const recit = !!(projets.find((x) => x.projectId === p.projectId) as { recit?: boolean } | undefined)?.recit;
   const lignes = [
     `## Séance de redémarrage en cours : projet ${rang} sur ${projets.length}, « ${p.nom} » (projectId ${p.projectId})`,
     `L'utilisatrice revient après une absence (depuis le ${dateFr(bilan.depuis)}). Vous faites le point ensemble, projet par projet, pour que Naya reflète où elle en est vraiment.`,
@@ -24,6 +25,9 @@ export function consigneSeance(s: SeanceRedemarrage): string {
       : "- Aucune tâche en retard.",
     p.creneaux.length ? `- Créneaux réguliers : ${p.creneaux.map((c) => `${c.id} « ${c.titre} » (${c.rythme})`).join(" ; ")}.` : "- Aucun créneau régulier.",
     p.envoisEnCours.length ? `- Envois en attente : ${p.envoisEnCours.map((e) => `${e.marque} (${e.objet})`).join(" ; ")}.` : "",
+    "",
+    rang > 1 ? "Le projet précédent est réglé : rien de ce qui a été dit pour lui (tâches, envois, créneaux) ne s'applique à ce projet-ci." : "",
+    recit ? "" : "Elle n'a pas encore parlé de ce projet : commence par l'étape 1, ne propose rien avant sa réponse.",
     "",
     "Comment mener ce projet :",
     "1. Si ce n'est pas déjà fait dans la conversation, résume en 2 ou 3 lignes ce que tu sais, puis demande où elle en est vraiment. Une seule question ouverte.",

@@ -195,6 +195,9 @@ export function registerAgentRoutes(app: Express): void {
         try {
           const { synchroniser } = await import("./services/redemarrage/seance");
           const consignes = await import("./services/redemarrage/consigne");
+          const seanceMod = await import("./services/redemarrage/seance");
+          // Un message à elle (pas un message automatique de la séance) : elle parle du projet courant.
+          if (!clientContext.seanceAuto) await seanceMod.noterRecit(userId);
           const sync = await synchroniser(userId, maintenant);
           if (sync.termineeMaintenant && sync.seance) consigneSeance = consignes.consigneFinSeance(sync.seance);
           else if (sync.seance?.statut === "en_cours") {

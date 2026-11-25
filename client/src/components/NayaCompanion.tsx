@@ -116,10 +116,10 @@ function useCompanionChat() {
  const consentementEnCours = useRef<number[]>([]);
  // Lus par validerProposition (déclarée avant la séance) : l'état de séance et l'envoi d'un texte.
  const etatSeanceRef = useRef<EtatSeance | null>(null);
- const envoyerTexteRef = useRef<((texte: string) => void) | null>(null);
+ const envoyerTexteRef = useRef<((texte: string, auto?: boolean) => void) | null>(null);
 
  const chatMutation = useMutation({
- mutationFn: async (message: string): Promise<ReponseAgent> => {
+ mutationFn: async ({ message, auto }: { message: string; auto?: boolean }): Promise<ReponseAgent> => {
  const now = new Date();
  const res = await apiRequest(
  "POST",
@@ -130,6 +130,7 @@ function useCompanionChat() {
  currentDate: now.toISOString().slice(0, 10),
  currentTime: now.toTimeString().slice(0, 5),
  platform: "web",
+ ...(auto ? { seanceAuto: true } : {}),
  activeProject: activeProject ? { id: activeProject.id, name: activeProject.name } : null,
  availableProjects: projects.slice(0, 10).map((p: any) => ({ id: p.id, name: p.name })),
  todayTasks: (todayTasks as any[]).slice(0, 10).map((t: any) => ({ id: t.id, title: t.title, completed: t.completed, scheduledTime: t.scheduledTime })),
@@ -140,6 +141,8 @@ function useCompanionChat() {
  return res.json();
  },
  onSuccess: (data) => {
+ // La séance de redémarrage a pu avancer ou finir pendant ce tour.
+ queryClient.invalidateQueries({ queryKey: ['/api/redemarrage'] });
  const faites = Array.isArray(data.faites) ? data.faites : [];
  // « oui » : le serveur a validé les propositions affichées (ou dit qu'elles ont expiré).
  const consenties = consentementEnCours.current;
@@ -194,7 +197,7 @@ function useCompanionChat() {
  // Séance de redémarrage : la proposition du projet validée, on passe au suivant.
  if (etatSeanceRef.current?.seance) {
  await queryClient.refetchQueries({ queryKey: ['/api/redemarrage'] }).catch(() => {});
- envoyerTexteRef.current?.(t('redemarrage.messageSuite'));
+ envoyerTexteRef.current?.(t('redemarrage.messageSuite'), true);
  }
  } catch (err) {
  const raison = raisonDeErreur(err, RAISONS_PROPOSITION);
@@ -214,7 +217,8 @@ function useCompanionChat() {
  };
 
  // Envoie un texte (saisi, ou envoyé par la séance de redémarrage).
- const envoyerTexte = (texte: string) => {
+ // `auto` : message envoyé par la séance de redémarrage, pas un récit de l'utilisatrice.
+ const envoyerTexte = (texte: string, auto = false) => {
  const msg = texte.trim();
  if (!msg || chatMutation.isPending) return;
  // « Ajuster » : un nouveau message met de côté les propositions encore en attente.
@@ -244,7 +248,7 @@ function useCompanionChat() {
  { role: "user", content: msg },
  { role: "assistant", content: "", isLoading: true },
  ]);
- chatMutation.mutate(msg);
+ chatMutation.mutate({ message: msg, auto });
  };
 
  const handleSend = () => {
@@ -270,7 +274,7 @@ function useCompanionChat() {
  try {
  await apiRequest("POST", "/api/redemarrage/demarrer");
  await relireSeance();
- envoyerTexte(t('redemarrage.messageDepart'));
+ envoyerTexte(t('redemarrage.messageDepart'), true);
  } catch {
  toast({ title: t('redemarrage.erreur'), variant: 'destructive' });
  }

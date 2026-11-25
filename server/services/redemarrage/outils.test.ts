@@ -14,12 +14,18 @@ const ctx = { userId: "u1", maintenant: new Date("2026-11-25T09:00:00Z"), fuseau
 beforeEach(() => vi.clearAllMocks());
 
 describe("outils de séance", () => {
+  it("proposer_bilan_projet : refusé tant qu'elle n'a pas parlé de ce projet", async () => {
+    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2, projets: [{ projectId: 2, etat: "en_cours" }] });
+    const r = await proposerBilanProjet.executer(ctx, { operations: [{ type: "note_projet", texte: "t" }] });
+    expect(r.pourModele).toMatchObject({ erreur: "attends_son_recit" });
+    expect(pr.proposerHorsConversation).not.toHaveBeenCalled();
+  });
   it("proposer_bilan_projet : pour le projet COURANT de la séance, rattachée, rendue à l'écran", async () => {
-    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2 });
+    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2, projets: [{ projectId: 2, etat: "en_cours", recit: true }] });
     pr.proposerHorsConversation.mockResolvedValue({ id: 31, resume: "Agence : 1 changement", changements: [], expireA: "x", selectionnable: true });
     const r = await proposerBilanProjet.executer(ctx, { operations: [{ type: "note_projet", texte: "t" }] });
     expect(pr.proposerHorsConversation).toHaveBeenCalledWith("u1", "appliquer_bilan_projet", { projectId: 2, operations: [{ type: "note_projet", texte: "t" }] }, ctx.maintenant, { fuseau: "Europe/Paris" });
-    expect(sc.rattacher).toHaveBeenCalledWith({ id: 1, userId: "u1", projetCourant: 2 }, 31);
+    expect(sc.rattacher).toHaveBeenCalledWith(expect.objectContaining({ id: 1, projetCourant: 2 }), 31);
     expect(r.proposition?.id).toBe(31);
   });
   it("sans séance en cours : refus", async () => {
@@ -28,7 +34,7 @@ describe("outils de séance", () => {
     expect(r.pourModele).toEqual({ erreur: "aucune_seance" });
   });
   it("aperçu refusé : l'erreur remonte au modèle, rien n'est rattaché", async () => {
-    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2 });
+    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2, projets: [{ projectId: 2, etat: "en_cours", recit: true }] });
     pr.proposerHorsConversation.mockResolvedValue({ erreur: "tache_introuvable" });
     const r = await proposerBilanProjet.executer(ctx, { operations: [{ type: "cocher_tache", taskId: 9 }] });
     expect(r.pourModele).toEqual({ erreur: "tache_introuvable" });

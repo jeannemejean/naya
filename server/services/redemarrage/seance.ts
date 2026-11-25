@@ -7,7 +7,8 @@ import { db } from "../../db";
 import { seancesRedemarrage, type SeanceRedemarrage } from "@shared/schema";
 import type { BilanSilencieux } from "./bilan";
 
-export type EtatProjet = { projectId: number; etat: "a_faire" | "en_cours" | "fait" | "saute"; propositionId?: number };
+// `recit` : elle a parlé de CE projet (un message à elle, pas un message automatique de la séance).
+export type EtatProjet = { projectId: number; etat: "a_faire" | "en_cours" | "fait" | "saute"; propositionId?: number; recit?: boolean };
 
 export interface DepsSeance {
   enCours(userId: string): Promise<SeanceRedemarrage | undefined>;
@@ -115,6 +116,15 @@ export async function synchroniser(userId: string, maintenant: Date, deps: DepsS
   const { propositionId: _retiree, ...sans } = courant;
   const maj = await deps.maj(s.id, userId, { projets: projets.map((x) => (x === courant ? sans : x)) as any });
   return { seance: maj, termineeMaintenant: false };
+}
+
+/** Elle vient de parler du projet courant : Naya peut proposer ses changements. */
+export async function noterRecit(userId: string, deps: DepsSeance = depsSeance): Promise<void> {
+  const s = await deps.enCours(userId);
+  if (!s || s.projetCourant == null) return;
+  const projets = projetsDe(s);
+  if (projets.find((p) => p.projectId === s.projetCourant)?.recit) return;
+  await deps.maj(s.id, userId, { projets: projets.map((p) => (p.projectId === s.projetCourant ? { ...p, recit: true } : p)) as any });
 }
 
 /** Passe le projet courant sans rien changer. */

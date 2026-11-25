@@ -31,8 +31,8 @@ vi.mock("./storage", () => ({ storage: storageMock }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
 vi.mock("./services/agent/depot", () => ({ depot: { actionsAnnulees: h.actionsAnnulees, annuleesDepuis: h.annuleesDepuis } }));
 vi.mock("./services/agent/boucle", () => ({ executerAgent: h.executerAgent }));
-const sr = vi.hoisted(() => ({ synchroniser: vi.fn() }));
-vi.mock("./services/redemarrage/seance", () => ({ synchroniser: sr.synchroniser }));
+const sr = vi.hoisted(() => ({ synchroniser: vi.fn(), noterRecit: vi.fn() }));
+vi.mock("./services/redemarrage/seance", () => ({ synchroniser: sr.synchroniser, noterRecit: sr.noterRecit }));
 vi.mock("./services/redemarrage/consigne", () => ({ consigneSeance: () => "CONSIGNE_SEANCE", consigneFinSeance: () => "CONSIGNE_FIN" }));
 vi.mock("./services/redemarrage/outils", () => ({ OUTILS_SEANCE: [{ nom: "proposer_bilan_projet" }] }));
 vi.mock("./services/naya-context", () => ({ buildNayaContext: vi.fn(async () => "") }));
@@ -294,6 +294,14 @@ describe("POST /api/companion/chat : séance de redémarrage", () => {
     const opts = h.executerAgent.mock.calls.at(-1)![0];
     expect(opts.contexteSession).toContain("CONSIGNE_SEANCE");
     expect(opts.outilsEnPlus.map((o: any) => o.nom)).toEqual(["proposer_bilan_projet"]);
+    expect(sr.noterRecit).toHaveBeenCalledWith("user-1");
+  });
+  it("message automatique de la séance (« on passe à la suite ») : ce n'est pas un récit", async () => {
+    process.env.SEANCE_REDEMARRAGE_USERS = "user-1";
+    sr.noterRecit.mockClear();
+    sr.synchroniser.mockResolvedValueOnce({ seance: { statut: "en_cours" }, termineeMaintenant: false });
+    await poster({ message: "C'est validé, on passe à la suite.", context: { seanceAuto: true } });
+    expect(sr.noterRecit).not.toHaveBeenCalled();
   });
   it("séance qui vient de finir : consigne du récap, sans outils de séance", async () => {
     process.env.SEANCE_REDEMARRAGE_USERS = "user-1";

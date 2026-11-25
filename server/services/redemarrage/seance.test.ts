@@ -2,7 +2,7 @@
 // Dépôt en mémoire, propositions simulées : aucune base.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../db", () => ({ db: {} }));
-const { demarrerSeance, synchroniser, passerProjet, rattacherProposition, seanceActivePour, vueSeance } = await import("./seance");
+const { demarrerSeance, synchroniser, passerProjet, rattacherProposition, seanceActivePour, vueSeance, noterRecit } = await import("./seance");
 
 const M = new Date("2026-11-25T09:00:00Z");
 const bilan = { depuis: "2026-11-10T00:00:00.000Z", projets: [
@@ -79,5 +79,17 @@ describe("séance de redémarrage", () => {
     const d = deps();
     const s = await demarrerSeance("u1", M, d);
     expect(vueSeance(s)).toMatchObject({ id: s.id, position: 1, total: 2, projetCourant: { projectId: 2, nom: "Agence" } });
+  });
+});
+
+describe("récit du projet courant", () => {
+  it("noterRecit marque le projet courant seulement ; le projet suivant repart sans récit", async () => {
+    const d = deps();
+    await demarrerSeance("u1", M, d);
+    await noterRecit("u1", d);
+    expect(lignes[0].projets[0]).toMatchObject({ projectId: 2, recit: true });
+    expect(lignes[0].projets[1].recit).toBeUndefined();
+    const r = await passerProjet("u1", M, d);
+    expect(r.seance!.projets[1]).toEqual({ projectId: 4, etat: "en_cours" });
   });
 });

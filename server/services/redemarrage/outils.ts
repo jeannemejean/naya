@@ -14,6 +14,12 @@ export const proposerBilanProjet: Outil = {
   async executer(ctx, args) {
     const s = await depsSeance.enCours(ctx.userId);
     if (!s || s.projetCourant == null) return { pourModele: { erreur: "aucune_seance" } };
+    // Jamais de proposition avant qu'elle ait parlé de CE projet (25 nov. : sur le projet 2, le
+    // modèle avait reproposé les changements du projet 1 sans rien demander).
+    const courant = ((s.projets ?? []) as Array<{ projectId: number; recit?: boolean }>).find((p) => p.projectId === s.projetCourant);
+    if (!courant?.recit) {
+      return { pourModele: { erreur: "attends_son_recit", consigne: "Elle n'a pas encore parlé de ce projet : résume ce que tu sais en 2 ou 3 lignes et demande-lui où elle en est. Rien du projet précédent ne s'applique ici." } };
+    }
     const r = await proposerHorsConversation(ctx.userId, "appliquer_bilan_projet", { projectId: s.projetCourant, operations: args.operations }, ctx.maintenant, { fuseau: ctx.fuseau });
     if ("erreur" in r) return { pourModele: { erreur: r.erreur } };
     await rattacherProposition(s, r.id);

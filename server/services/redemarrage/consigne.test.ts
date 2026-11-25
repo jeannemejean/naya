@@ -28,3 +28,17 @@ describe("consigneSeance", () => {
     expect(c).toMatch(/hors de Naya/);
   });
 });
+
+describe("consigneSeance : nouveau projet", () => {
+  it("sans récit : commencer par résumer et demander, ne rien reprendre du projet précédent", () => {
+    expect(consigneSeance(seance)).toMatch(/n'a pas encore parlé de ce projet/);
+    expect(consigneSeance(seance)).not.toMatch(/projet précédent/); // premier projet
+    const second = consigneSeance({ ...seance, projetCourant: 4, projets: [{ projectId: 2, etat: "fait" }, { projectId: 4, etat: "en_cours" }] });
+    expect(second).toMatch(/projet précédent/);
+    expect(second).toMatch(/n'a pas encore parlé de ce projet/);
+  });
+  it("avec récit : plus de rappel « pas encore parlé »", () => {
+    const c = consigneSeance({ ...seance, projets: [{ projectId: 2, etat: "en_cours", recit: true }, { projectId: 4, etat: "a_faire" }] });
+    expect(c).not.toMatch(/n'a pas encore parlé de ce projet/);
+  });
+});
