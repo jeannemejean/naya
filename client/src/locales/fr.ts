@@ -2376,6 +2376,7 @@ const fr = {
  chercheDans: "Cherché dans : {{sources}}",
  annuler: "Annuler",
  annule: "Annulé",
+ validerSelection: "Valider la sélection ({{n}})",
  valider: "Valider",
  aValider: "À valider",
  vide: "rien",

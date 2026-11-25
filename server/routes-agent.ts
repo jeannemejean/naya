@@ -60,8 +60,14 @@ export function registerAgentRoutes(app: Express): void {
       const id = Number(req.params.id);
       if (!Number.isInteger(id) || id <= 0) return res.status(409).json({ message: "introuvable" });
       const prefs = await storage.getUserPreferences(userId).catch(() => null);
-      const r = await validerProposition(userId, id, new Date(), { fuseau: fuseauUtilisatrice((prefs as any)?.timezone) });
-      if (!r.ok) return res.status(409).json({ message: r.raison });
+      const lignes = req.body?.lignes;
+      if (lignes !== undefined && !(Array.isArray(lignes) && lignes.every((i: unknown) => Number.isInteger(i) && (i as number) >= 0))) {
+        return res.status(400).json({ message: "lignes_invalides" });
+      }
+      const r = await validerProposition(userId, id, new Date(), {
+        fuseau: fuseauUtilisatrice((prefs as any)?.timezone), ...(lignes !== undefined ? { lignes } : {}),
+      });
+      if (!r.ok) return res.status(r.raison === "lignes_invalides" ? 400 : 409).json({ message: r.raison });
       // `actionId` : l'exécution s'annule 24 h par /api/agent/actions/:id/annuler (journée allégée).
       res.json({ reussis: r.reussis, echecs: r.echecs, ...(r.actionId != null ? { actionId: r.actionId } : {}) });
     } catch (error: any) {

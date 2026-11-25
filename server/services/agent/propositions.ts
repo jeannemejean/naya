@@ -69,6 +69,8 @@ export function outilAValider<A>(def: {
   schema: Outil["schema"];
   dureeMs?: number;
   expireA?: (ctx: ContexteOutil, args: A) => Date;
+  // Validable ligne par ligne : l'exécution reçoit `lignesRetenues` (indices des changements).
+  selectionnable?: boolean;
 } & OutilAValider<A>): OutilPropose {
   const aValider: OutilAValider<A> = { apercu: def.apercu, executer: def.executer };
   return {
@@ -87,6 +89,7 @@ export function outilAValider<A>(def: {
       const p = await depot.ajouterProposition(ctx.userId, def.nom, args, a.changements, a.empreinte, expireA);
       const proposition: PropositionVue = {
         id: p.id, resume: a.resume, changements: a.changements, expireA: expireA.toISOString(),
+        ...(def.selectionnable ? { selectionnable: true } : {}),
       };
       return {
         pourModele: {
@@ -245,13 +248,14 @@ export async function proposerHorsConversation(
 
 export type ResultatValidation =
   | { ok: true; reussis: string[]; echecs: string[]; actionId?: number }
-  | { ok: false; raison: "introuvable" | "deja_traitee" | "expiree" };
+  | { ok: false; raison: "introuvable" | "deja_traitee" | "expiree" | "lignes_invalides" };
 
 export async function validerProposition(
   userId: string,
   id: number,
   maintenant: Date,
-  options: { fuseau?: string; outils?: Outil[] } = {},
+  // `lignes` : indices des changements retenus (proposition sélectionnable). Absent = tout.
+  options: { fuseau?: string; outils?: Outil[]; lignes?: number[] } = {},
 ): Promise<ResultatValidation> {
   // Le dépôt filtre sur userId : la proposition d'une autre est « introuvable ».
   const p = await depot.getProposition(id, userId);
@@ -262,6 +266,12 @@ export async function validerProposition(
   const outils = options.outils ?? (await import("./registre")).REGISTRE;
   const o = outils.find((x) => x.nom === p.outil) as OutilPropose | undefined;
   if (!o?.aValider) return { ok: false, raison: "introuvable" };
+
+  // Sélection : chaque indice doit désigner un changement de l'aperçu.
+  if (options.lignes) {
+    const n = Array.isArray(p.changements) ? (p.changements as unknown[]).length : 0;
+    if (options.lignes.some((i) => !Number.isInteger(i) || i < 0 || i >= n)) return { ok: false, raison: "lignes_invalides" };
+  }
 
   // Expirée (pile 60 min comprise), ou ce qui était vrai à l'aperçu ne l'est plus : on la
   // marque expirée, sans rien exécuter.
@@ -278,7 +288,8 @@ export async function validerProposition(
   const ctx: ContexteOutil = { userId, maintenant, fuseau: options.fuseau ?? "Europe/Paris" };
   let bilan: BilanExecution;
   try {
-    bilan = await o.aValider.executer(ctx, p.arguments as any);
+    const args = options.lignes ? { ...(p.arguments as any), lignesRetenues: options.lignes } : p.arguments;
+    bilan = await o.aValider.executer(ctx, args as any);
   } catch (e: any) {
     // Les outils traitent chaque élément à part ; une erreur ici a tout interrompu.
     console.error(`[agent] exécution de la proposition ${id} (${p.outil}) :`, e?.message ?? e);

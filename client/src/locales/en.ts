@@ -2372,6 +2372,7 @@ const en = {
  chercheDans: "Searched in: {{sources}}",
  annuler: "Undo",
  annule: "Undone",
+ validerSelection: "Apply selection ({{n}})",
  valider: "Confirm",
  aValider: "To confirm",
  vide: "nothing",

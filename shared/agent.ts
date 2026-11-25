@@ -2,7 +2,7 @@
 export type ClasseOutil = "lecture" | "direct" | "a_valider";
 export interface ActionFaite { actionId: number; resume: string; annulableJusqua: string /* ISO */ }
 export interface Changement { libelle: string; avant: string | null; apres: string | null }
-export interface PropositionVue { id: number; resume: string; changements: Changement[]; expireA: string /* ISO */ }
+export interface PropositionVue { id: number; resume: string; changements: Changement[]; expireA: string /* ISO */; selectionnable?: boolean /* validable ligne par ligne */ }
 export interface ReponseAgent {
   message: string;
   faites: ActionFaite[];

@@ -177,10 +177,10 @@ function useCompanionChat() {
  },
  });
 
- const validerProposition = async (id: number) => {
+ const validerProposition = async (id: number, lignes?: number[]) => {
  setSuiviPropositions(s => ({ ...s, [id]: { statut: "envoi" } }));
  try {
- const res = await apiRequest("POST", `/api/agent/propositions/${id}/valider`);
+ const res = await apiRequest("POST", `/api/agent/propositions/${id}/valider`, lignes ? { lignes } : undefined);
  const r: { reussis?: string[]; echecs?: string[] } = await res.json();
  setSuiviPropositions(s => ({ ...s, [id]: { statut: "validee", reussis: r.reussis ?? [], echecs: r.echecs ?? [] } }));
  invaliderDonnees();
@@ -263,7 +263,7 @@ function MessagesPanel({ messages, messagesEndRef, suivi, onValider, onAnnuler }
  messages: Message[];
  messagesEndRef: React.RefObject<HTMLDivElement>;
  suivi: Record<number, SuiviProposition | undefined>;
- onValider: (id: number) => void;
+ onValider: (id: number, lignes?: number[]) => void;
  onAnnuler: (id: number) => void;
 }) {
  const { t } = useTranslation();

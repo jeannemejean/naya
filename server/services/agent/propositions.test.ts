@@ -198,3 +198,28 @@ describe("annulerProposition", () => {
     expect(t.modifierTache).not.toHaveBeenCalled();
   });
 });
+
+describe("validerProposition : lignes retenues", () => {
+  it("transmet lignesRetenues à l'exécution quand fournies, rien sinon", async () => {
+    const executer = vi.fn(async () => ({ reussis: [], echecs: [] }));
+    const outil: any = { nom: "essai_lignes", classe: "a_valider", description: "", schema: { type: "object", properties: {} },
+      aValider: { apercu: vi.fn(), executer }, executer: vi.fn() };
+    const p = await d.ajouterProposition("u1", "essai_lignes", { x: 1 }, [{ libelle: "a", avant: null, apres: null }, { libelle: "b", avant: null, apres: null }], [], new Date("2099-01-01"));
+    await validerProposition("u1", p.id, new Date("2026-11-25"), { outils: [outil], lignes: [1] });
+    expect(executer).toHaveBeenLastCalledWith(expect.anything(), { x: 1, lignesRetenues: [1] });
+    const q = await d.ajouterProposition("u1", "essai_lignes", { x: 2 }, [], [], new Date("2099-01-01"));
+    await validerProposition("u1", q.id, new Date("2026-11-25"), { outils: [outil] });
+    expect(executer).toHaveBeenLastCalledWith(expect.anything(), { x: 2 });
+  });
+});
+
+describe("validerProposition : sélection hors limites", () => {
+  it("un indice au-delà des changements : lignes_invalides, rien n'est exécuté", async () => {
+    const executer = vi.fn(async () => ({ reussis: [], echecs: [] }));
+    const outil: any = { nom: "essai_lignes2", classe: "a_valider", description: "", schema: { type: "object", properties: {} },
+      aValider: { apercu: vi.fn(), executer }, executer: vi.fn() };
+    const p = await d.ajouterProposition("u1", "essai_lignes2", {}, [{ libelle: "a", avant: null, apres: null }], [], new Date("2099-01-01"));
+    expect(await validerProposition("u1", p.id, new Date("2026-11-25"), { outils: [outil], lignes: [5] })).toEqual({ ok: false, raison: "lignes_invalides" });
+    expect(executer).not.toHaveBeenCalled();
+  });
+});

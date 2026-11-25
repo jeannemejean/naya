@@ -9,6 +9,7 @@ import { OUTILS_A_VALIDER } from "./outils/a-valider";
 import { consulterViePerso, planifierActiviteOutil, preparerRepasSemaine } from "./outils/vie-perso";
 import { OUTILS_FIL } from "../fil/etapes";
 import { OUTIL_ALLEGEMENT } from "../fil/allegement";
+import { appliquerBilanProjet } from "../redemarrage/bilan-projet";
 
 // Ce que l'outil reçoit du serveur. L'utilisatrice vient TOUJOURS de la session
 // (req.userId) : jamais d'un argument fourni par le modèle.
@@ -50,9 +51,12 @@ export const DIRECTS_AUTORISES: ReadonlySet<string> = new Set([
 export const REGISTRE: Outil[] = [
   ...OUTILS_LECTURE, ...OUTILS_DIRECTS, ...OUTILS_A_VALIDER, ...OUTILS_FIL, OUTIL_ALLEGEMENT,
   consulterViePerso, preparerRepasSemaine, planifierActiviteOutil,
+  appliquerBilanProjet,
 ];
 
-export const HORS_CONVERSATION: ReadonlySet<string> = new Set([...OUTILS_FIL, OUTIL_ALLEGEMENT].map((o) => o.nom));
+// La proposition groupée de la séance de redémarrage est faite par la séance (proposer_bilan_projet),
+// jamais appelée telle quelle par le modèle.
+export const HORS_CONVERSATION: ReadonlySet<string> = new Set([...OUTILS_FIL, OUTIL_ALLEGEMENT, appliquerBilanProjet].map((o) => o.nom));
 
 /** Les outils que la conversation peut offrir et appeler : le registre moins les outils hors conversation. */
 export function outilsDeConversation(registre: Outil[] = REGISTRE): Outil[] {

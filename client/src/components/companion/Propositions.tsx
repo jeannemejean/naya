@@ -1,6 +1,7 @@
 // Ce que l'agent propose sans le faire : la liste avant → après, puis « Valider » ou
 // « Annuler ». Le suivi vit dans le hook du panneau : un nouveau message met de côté
 // les propositions encore en attente (« Ajuster »).
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { PropositionVue } from "@shared/agent";
 import { etatProposition, type StatutPropositionUi } from "./companion-logique";
@@ -22,11 +23,18 @@ export function Propositions({
 }: {
   propositions: PropositionVue[];
   suivi: Record<number, SuiviProposition | undefined>;
-  onValider: (id: number) => void;
+  onValider: (id: number, lignes?: number[]) => void;
   onAnnuler: (id: number) => void;
 }) {
   const { t } = useTranslation();
+  // Propositions sélectionnables : les lignes DÉCOCHÉES, par proposition (tout est coché au départ).
+  const [decochees, setDecochees] = useState<Record<number, number[]>>({});
   if (propositions.length === 0) return null;
+  const basculer = (id: number, i: number) => setDecochees((d) => {
+    const l = d[id] ?? [];
+    return { ...d, [id]: l.includes(i) ? l.filter((x) => x !== i) : [...l, i] };
+  });
+  const retenues = (p: PropositionVue) => p.changements.map((_, i) => i).filter((i) => !(decochees[p.id] ?? []).includes(i));
   const maintenant = new Date();
   const val = (v: string | null) => (v === null || v === "" ? t('companion.vide') : v);
 
@@ -44,7 +52,15 @@ export function Propositions({
               <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {p.changements.map((c, i) => (
                   <li key={i} style={{ ...styleLigneAgent, color: 'var(--foreground)' }}>
-                    <span style={{ color: 'var(--accent)', opacity: 0.6 }}>◆ </span>
+                    {p.selectionnable && enAttente && !expiree ? (
+                      <input
+                        type="checkbox"
+                        aria-label={c.libelle}
+                        checked={!(decochees[p.id] ?? []).includes(i)}
+                        onChange={() => basculer(p.id, i)}
+                        style={{ marginRight: 6, verticalAlign: 'middle' }}
+                      />
+                    ) : <span style={{ color: 'var(--accent)', opacity: 0.6 }}>◆ </span>}
                     {c.libelle} : <span style={{ color: 'var(--muted-foreground)' }}>{val(c.avant)}</span> → {val(c.apres)}
                   </li>
                 ))}
@@ -56,10 +72,12 @@ export function Propositions({
                 <button
                   type="button"
                   style={{ ...styleBoutonAgent, fontWeight: 500, opacity: s?.statut === "envoi" ? 0.5 : 1 }}
-                  disabled={s?.statut === "envoi"}
-                  onClick={() => onValider(p.id)}
+                  disabled={s?.statut === "envoi" || (p.selectionnable && retenues(p).length === 0)}
+                  onClick={() => onValider(p.id, p.selectionnable && retenues(p).length < p.changements.length ? retenues(p) : undefined)}
                 >
-                  {t('companion.valider')}
+                  {p.selectionnable && retenues(p).length < p.changements.length
+                    ? t('companion.validerSelection', { n: retenues(p).length })
+                    : t('companion.valider')}
                 </button>
                 <button
                   type="button"

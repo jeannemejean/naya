@@ -249,6 +249,18 @@ describe("propositions à valider", () => {
     expect(await r.json()).toEqual({ message: "expiree" });
   });
 
+  it("valider avec une sélection : les lignes sont transmises ; une sélection mal formée → 400", async () => {
+    const avecCorps = (corps: unknown) => fetch(`http://127.0.0.1:${port}/api/agent/propositions/12/valider`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corps),
+    });
+    h.validerProposition.mockResolvedValueOnce({ ok: true, reussis: [], echecs: [] });
+    expect((await avecCorps({ lignes: [0, 2] })).status).toBe(200);
+    expect(h.validerProposition).toHaveBeenCalledWith("user-1", 12, expect.any(Date), { fuseau: "Europe/Paris", lignes: [0, 2] });
+    expect((await avecCorps({ lignes: ["a"] })).status).toBe(400);
+    h.validerProposition.mockResolvedValueOnce({ ok: false, raison: "lignes_invalides" });
+    expect((await avecCorps({ lignes: [5] })).status).toBe(400);
+  });
+
   it("valider : un id non numérique est introuvable, sans rien appeler", async () => {
     const r = await appel("/api/agent/propositions/abc/valider");
     expect(r.status).toBe(409);
