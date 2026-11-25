@@ -13,3 +13,9 @@ export function formatDays(days: string): string {
   if (list.length === 7) return "tous les jours";
   return list.map((d) => DAY_LABELS[d] ?? d).join(" · ");
 }
+
+/** Les jours, plus « toutes les N semaines » quand le créneau ne revient pas chaque semaine. */
+export function formatRythme(days: string, intervalWeeks: number | null | undefined): string {
+  const jours = formatDays(days);
+  return intervalWeeks && intervalWeeks > 1 ? `${jours}, toutes les ${intervalWeeks} semaines` : jours;
+}

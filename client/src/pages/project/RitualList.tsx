@@ -1,7 +1,7 @@
 // Liste des rituels d'un projet. Sans ce composant, un rituel créé par erreur
 // serait impossible à retirer.
 import { useRituals, useDeactivateRitual } from "./useProjectPage";
-import { formatDays } from "./ritual-format";
+import { formatRythme } from "./ritual-format";
 import { useToast } from "@/hooks/use-toast";
 import { Repeat, X } from "lucide-react";
 
@@ -22,7 +22,7 @@ export default function RitualList({ projectId }: { projectId: number }) {
             <Repeat className="w-3 h-3 text-naya-olive-55 flex-shrink-0" />
             <span className="flex-1 truncate">
               <strong className="font-medium text-foreground">{r.title}</strong>
-              {" — "}{formatDays(r.days)}, {r.startTime}, {r.durationMinutes} min
+              {" — "}{formatRythme(r.days, (r as any).intervalWeeks)}, {r.startTime}, {r.durationMinutes} min
             </span>
             <button
               onClick={() =>

@@ -85,3 +85,22 @@ describe("areValidDays", () => {
     expect(areValidDays("mon,xyz")).toBe(false);
   });
 });
+
+describe("ritualOccursOn — toutes les N semaines", () => {
+  const o = { intervalWeeks: 2, anchorDate: "2026-11-25" };
+  it("première occurrence : le premier jour prévu à partir de l'ancre", () => {
+    expect(ritualOccursOn("mon", "2026-11-30", o)).toBe(true);
+  });
+  it("une semaine sur deux", () => {
+    expect(ritualOccursOn("mon", "2026-12-07", o)).toBe(false);
+    expect(ritualOccursOn("mon", "2026-12-14", o)).toBe(true);
+  });
+  it("jamais avant l'ancre", () => {
+    expect(ritualOccursOn("mon", "2026-11-23", o)).toBe(false);
+  });
+  it("sans options : chaque semaine, comme avant", () => {
+    expect(ritualOccursOn("mon", "2026-12-07")).toBe(true);
+    expect(ritualOccursOn("mon", "2026-12-07", { intervalWeeks: 1, anchorDate: null })).toBe(true);
+    expect(ritualOccursOn("mon", "2026-12-07", { intervalWeeks: 2, anchorDate: null })).toBe(true);
+  });
+});

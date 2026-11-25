@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatDays } from "./ritual-format";
+import { formatDays, formatRythme } from "./ritual-format";
 
 describe("formatDays", () => {
   it("résume la semaine de travail", () => {
@@ -16,5 +16,15 @@ describe("formatDays", () => {
 
   it("tolère espaces et majuscules", () => {
     expect(formatDays("Mon, Wed")).toBe("lun · mer");
+  });
+});
+
+describe("formatRythme", () => {
+  it("chaque semaine : les jours seuls", () => {
+    expect(formatRythme("mon", 1)).toBe("lun");
+    expect(formatRythme("mon", null)).toBe("lun");
+  });
+  it("toutes les N semaines", () => {
+    expect(formatRythme("mon", 2)).toBe("lun, toutes les 2 semaines");
   });
 });

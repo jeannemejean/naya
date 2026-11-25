@@ -2969,52 +2969,15 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
   app.post('/api/rituals', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
-      const { projectId, title, days, startTime, durationMinutes } = req.body ?? {};
-
-      if (typeof title !== 'string' || !title.trim()) {
-        return res.status(400).json({ message: "title requis" });
-      }
-      if (typeof startTime !== 'string' || !isValidTimeOfDay(startTime)) {
-        return res.status(400).json({ message: "startTime requis (HH:MM)" });
-      }
-      const duration = Number(durationMinutes);
-      if (!Number.isFinite(duration) || duration <= 0 || duration > 480) {
-        return res.status(400).json({ message: "durationMinutes invalide" });
-      }
-      // "days" est optionnel : s'il est fourni, il doit être une liste de jours valide.
-      // S'il est absent, le défaut mon-ven s'applique plus bas (comportement inchangé).
-      if (typeof days === 'string' && days.trim() && !areValidDays(days)) {
-        return res.status(400).json({ message: "days invalide (jours attendus : mon..sun)" });
-      }
-      if (projectId != null) {
-        const project = await storage.getProject(Number(projectId), userId);
+      const { validerRituel, creerRituelEtMaterialiser, dateLocale } = await import("./services/ritual-create");
+      const aujourdhui = new Date();
+      const v = validerRituel(req.body, dateLocale(aujourdhui));
+      if (!v.ok) return res.status(400).json({ message: v.message });
+      if (v.donnees.projectId != null) {
+        const project = await storage.getProject(v.donnees.projectId, userId);
         if (!project) return res.status(404).json({ message: "Projet introuvable" });
       }
-
-      const ritual = await storage.createRitual({
-        userId,
-        projectId: projectId != null ? Number(projectId) : null,
-        title: title.trim(),
-        days: typeof days === 'string' && days.trim() ? days.trim() : 'mon,tue,wed,thu,fri',
-        startTime,
-        durationMinutes: duration,
-      });
-
-      // Matérialiser les 14 prochains jours pour que l'effet soit visible tout de suite.
-      const today = new Date();
-      let materialized = 0;
-      for (let i = 0; i < 14; i++) {
-        const d = new Date(today);
-        d.setDate(d.getDate() + i);
-        const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        materialized += await materializeRituals(userId, ds);
-      }
-
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      await storage.fixOverlappingTasks(userId, todayStr).catch((e: any) =>
-        console.error('[rituals] fixOverlappingTasks:', e?.message),
-      );
-
+      const { ritual, materialized } = await creerRituelEtMaterialiser(userId, v.donnees, aujourdhui);
       res.json({ ritual, materialized });
     } catch (error) {
       console.error("Error creating ritual:", error);

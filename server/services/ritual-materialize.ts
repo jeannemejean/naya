@@ -20,7 +20,7 @@ export async function materializeRituals(userId: string, date: string): Promise<
   const rattacher = rattacheurDuPassage(userId);
 
   for (const ritual of rituals) {
-    if (!ritualOccursOn(ritual.days, date)) continue;
+    if (!ritualOccursOn(ritual.days, date, { intervalWeeks: ritual.intervalWeeks, anchorDate: ritual.anchorDate })) continue;
 
     const existing = await storage.getRitualTaskForDate(ritual.id, date);
     if (existing) continue;

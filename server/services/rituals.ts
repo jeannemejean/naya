@@ -29,12 +29,38 @@ export function areValidDays(days: string): boolean {
     .every((d) => VALID_DAY_TOKENS.has(d));
 }
 
-/** Le rituel tombe-t-il ce jour-là ? `days` suit le format de `work_days` ("mon,tue,…"). */
-export function ritualOccursOn(days: string, date: string): boolean {
-  const set = new Set(days.toLowerCase().split(",").map((d) => d.trim()));
+const JOUR_MS = 86_400_000;
+const enUtc = (date: string): number => {
   const [y, m, d] = date.split("-").map(Number);
+  return Date.UTC(y, m - 1, d);
+};
+// Lundi (UTC) de la semaine ISO d'un instant.
+const lundiDe = (t: number): number => t - ((new Date(t).getUTCDay() + 6) % 7) * JOUR_MS;
+
+/**
+ * Le rituel tombe-t-il ce jour-là ? `days` suit le format de `work_days` ("mon,tue,…").
+ * `intervalWeeks` > 1 (avec `anchorDate`) : une semaine sur N, en comptant depuis la semaine du
+ * PREMIER jour prévu à partir de l'ancre (créé un mercredi pour le lundi : le lundi suivant, puis
+ * toutes les N semaines). Jamais avant l'ancre. Sans ancre : chaque semaine, comme avant.
+ */
+export function ritualOccursOn(
+  days: string,
+  date: string,
+  opts?: { intervalWeeks?: number | null; anchorDate?: string | null },
+): boolean {
+  const set = new Set(days.toLowerCase().split(",").map((d) => d.trim()));
   // UTC : évite tout décalage de fuseau sur le nom du jour.
-  return set.has(DAY_ABBRS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]);
+  const t = enUtc(date);
+  if (!set.has(DAY_ABBRS[new Date(t).getUTCDay()])) return false;
+  const n = opts?.intervalWeeks ?? 1;
+  const ancre = opts?.anchorDate ? String(opts.anchorDate).slice(0, 10) : null;
+  if (n <= 1 || !ancre) return true;
+  const a = enUtc(ancre);
+  if (t < a) return false;
+  let premier = a;
+  for (let i = 0; i < 7 && !set.has(DAY_ABBRS[new Date(premier).getUTCDay()]); i++) premier += JOUR_MS;
+  const semaines = Math.round((lundiDe(t) - lundiDe(premier)) / (7 * JOUR_MS));
+  return semaines % n === 0;
 }
 
 export interface RitualTaskDraft {
