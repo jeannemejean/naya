@@ -204,6 +204,14 @@ export const appliquerBilanProjet = outilAValider<ArgsBilanProjet>({
         bilan.echecs.push(`Changement ${i + 1} : erreur imprévue`);
       }
     }
+    // Un créneau ajouté dans le même lot répare les chevauchements et peut décaler une tâche créée
+    // juste avant : le journal garde sa place FINALE, sinon l'annulation la croirait « modifiée ».
+    for (const l of lignes) {
+      if (l.table !== "tasks" || l.avant !== null || !l.apres) continue;
+      const actuelle: any = await storage.getTask(Number(l.id)).catch(() => undefined);
+      if (!actuelle || actuelle.userId !== ctx.userId) continue;
+      for (const champ of Object.keys(l.apres)) l.apres[champ] = actuelle[champ] ?? null;
+    }
     if (lignes.length) {
       const a = await depot.ajouterAction(ctx.userId, "appliquer_bilan_projet", `${projet.name} : bilan appliqué`, lignes);
       bilan.actionId = a.id;

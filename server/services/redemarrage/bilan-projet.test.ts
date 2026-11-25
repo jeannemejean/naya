@@ -105,4 +105,12 @@ describe("appliquer_bilan_projet", () => {
     expect(es.creerEnvoi).toHaveBeenCalledWith("u1", expect.objectContaining({ projectId: 4, marque: "Sézane", prochaineRelance: "2026-11-27", statut: "envoye" }));
     expect(table.actions[0].lignes[0]).toMatchObject({ table: "envois", id: 3, avant: null });
   });
+  it("tâche créée puis décalée par le créneau du même lot : le journal garde sa place FINALE (annulable)", async () => {
+    t.creerTache.mockResolvedValue({ ok: true, tache: { id: 50, title: "Relire le brief", scheduledDate: "2026-11-26", scheduledTime: "09:00", completed: false } });
+    // Le créneau ajouté ensuite répare les chevauchements : la tâche a glissé à 09:15.
+    s.getTask.mockImplementation(async (id: number) => (id === 50 ? { id: 50, userId: "u1", title: "Relire le brief", scheduledDate: "2026-11-26", scheduledTime: "09:15", completed: false } : tache()));
+    const p: any = await proposer({ projectId: 4, operations: [{ type: "creer_tache", titre: "Relire le brief", date: "2026-11-26" }, ops[2]] });
+    await validerProposition("u1", p.id, MAINTENANT, { outils: [appliquerBilanProjet] });
+    expect(table.actions[0].lignes[0]).toMatchObject({ table: "tasks", id: 50, avant: null, apres: { scheduledTime: "09:15" } });
+  });
 });
