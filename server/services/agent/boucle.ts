@@ -57,6 +57,8 @@ export interface OptionsAgent {
   contexteSession: string;
   projetActifId?: number;
   fuseau?: string;
+  // Outils offerts en plus pour ce tour seulement (séance de redémarrage).
+  outilsEnPlus?: Outil[];
 }
 
 export interface DepsAgent {
@@ -102,7 +104,7 @@ export function corrigerAffirmation(texte: string, faites: ActionFaite[], propos
 export async function executerAgent(opts: OptionsAgent, deps: DepsAgent = {}): Promise<ResultatAgent> {
   const appeler = deps.appeler ?? appelerClaudeAvecOutils;
   // Les outils hors conversation (propositions du fil) ne sont ni offerts ni exécutables ici.
-  const registre = outilsDeConversation(deps.registre ?? REGISTRE);
+  const registre = [...outilsDeConversation(deps.registre ?? REGISTRE), ...(opts.outilsEnPlus ?? [])];
   const ctx: ContexteOutil = {
     userId: opts.userId,
     maintenant: deps.maintenant?.() ?? new Date(),

@@ -3831,6 +3831,19 @@ const en = {
   aujourdhui: "Today",
  },
 
+ redemarrage: {
+  proposition: "You're back after a few days: shall we catch up on your projects? I'll ask a few questions and update everything.",
+  commencer: "Start",
+  plusTardCourt: "Later",
+  plusTard: "Resume later",
+  abandonner: "Stop the session",
+  fairePoint: "Catch up",
+  enCours: "Catch-up session in progress",
+  progression: "Project {{position}}/{{total}}: {{projet}}",
+  messageDepart: "Let's catch up on my projects.",
+  messageSuite: "Done, let's move on.",
+  erreur: "The session could not start",
+ },
  envois: {
   titre: "Pitches to brands",
   vide: "No pitch tracked for this project.",

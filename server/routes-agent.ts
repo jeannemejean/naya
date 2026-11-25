@@ -3,6 +3,7 @@
 // POST /api/companion/chat. Le contexte de session est enrichi comme avant (projets,
 // tâches abandonnées, à venir, jalon actif, résumé business, énergie du jour).
 import type { Express } from "express";
+import { seanceActivePour } from "./services/redemarrage/seance-interrupteur";
 import { isAuthenticated } from "./auth";
 import { storage } from "./storage";
 import { isAiBlocked } from "./services/usage";
@@ -187,14 +188,33 @@ export function registerAgentRoutes(app: Express): void {
         gestesAnnules,
       });
 
+      // Séance de redémarrage en cours : la consigne du projet courant et ses outils, pour ce tour.
+      let consigneSeance = "";
+      let outilsEnPlus: import("./services/agent/registre").Outil[] | undefined;
+      if (seanceActivePour(userId)) {
+        try {
+          const { synchroniser } = await import("./services/redemarrage/seance");
+          const consignes = await import("./services/redemarrage/consigne");
+          const sync = await synchroniser(userId, maintenant);
+          if (sync.termineeMaintenant && sync.seance) consigneSeance = consignes.consigneFinSeance(sync.seance);
+          else if (sync.seance?.statut === "en_cours") {
+            consigneSeance = consignes.consigneSeance(sync.seance);
+            outilsEnPlus = (await import("./services/redemarrage/outils")).OUTILS_SEANCE;
+          }
+        } catch (e: any) {
+          console.error("[redemarrage] consigne du chat :", e?.message ?? e);
+        }
+      }
+
       // prospectLu est interne : retiré de ce qui part au client et en base.
       const { prospectLu, ...reponse } = await executerAgent({
         userId,
         message,
         historique,
-        contexteSession,
+        contexteSession: consigneSeance ? `${contexteSession}\n\n${consigneSeance}` : contexteSession,
         projetActifId: activeProjectId,
         fuseau,
+        ...(outilsEnPlus ? { outilsEnPlus } : {}),
       });
       const suggestions = buildSuggestions({
         staleTasks,

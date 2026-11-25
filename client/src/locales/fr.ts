@@ -3835,6 +3835,19 @@ const fr = {
   aujourdhui: "Aujourd'hui",
  },
 
+ redemarrage: {
+  proposition: "Tu reviens après quelques jours : on fait le point sur tes projets ? Je te pose quelques questions et je remets tout à jour.",
+  commencer: "Commencer",
+  plusTardCourt: "Plus tard",
+  plusTard: "Reprendre plus tard",
+  abandonner: "Arrêter la séance",
+  fairePoint: "Faire le point",
+  enCours: "Séance de redémarrage en cours",
+  progression: "Projet {{position}}/{{total}} : {{projet}}",
+  messageDepart: "On fait le point sur mes projets.",
+  messageSuite: "C'est validé, on passe à la suite.",
+  erreur: "La séance n'a pas pu démarrer",
+ },
  envois: {
   titre: "Envois aux marques",
   vide: "Aucun envoi suivi pour ce projet.",

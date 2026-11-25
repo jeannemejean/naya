@@ -205,6 +205,7 @@ import { analyzeStatusNote } from "./services/ritual-analyze";
 import { materializeRituals } from "./services/ritual-materialize";
 import { materializeRelances } from "./services/envois/relances";
 import { registerEnvoisRoutes } from "./routes-envois";
+import { registerRedemarrageRoutes } from "./routes-redemarrage";
 import { isValidTimeOfDay, areValidDays } from "./services/rituals";
 import { ingestSignals } from "./services/reception/ingest";
 import { parseReceptionCsv } from "./services/reception/sources/manual";
@@ -11422,6 +11423,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerValidationRoutes(app);
   registerMeilleuresHeuresRoutes(app);
   registerEnvoisRoutes(app);
+  registerRedemarrageRoutes(app);
   registerGroupesMarquesRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);

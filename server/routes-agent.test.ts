@@ -3,7 +3,7 @@
 // (consigne projet, voir l'en-tête de routes.reading.test.ts).
 import express from "express";
 import http from "node:http";
-import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll, afterEach } from "vitest";
 
 const h = vi.hoisted(() => ({
   isAiBlocked: vi.fn(async () => false),
@@ -31,6 +31,10 @@ vi.mock("./storage", () => ({ storage: storageMock }));
 vi.mock("./services/usage", () => ({ isAiBlocked: h.isAiBlocked }));
 vi.mock("./services/agent/depot", () => ({ depot: { actionsAnnulees: h.actionsAnnulees, annuleesDepuis: h.annuleesDepuis } }));
 vi.mock("./services/agent/boucle", () => ({ executerAgent: h.executerAgent }));
+const sr = vi.hoisted(() => ({ synchroniser: vi.fn() }));
+vi.mock("./services/redemarrage/seance", () => ({ synchroniser: sr.synchroniser }));
+vi.mock("./services/redemarrage/consigne", () => ({ consigneSeance: () => "CONSIGNE_SEANCE", consigneFinSeance: () => "CONSIGNE_FIN" }));
+vi.mock("./services/redemarrage/outils", () => ({ OUTILS_SEANCE: [{ nom: "proposer_bilan_projet" }] }));
 vi.mock("./services/naya-context", () => ({ buildNayaContext: vi.fn(async () => "") }));
 vi.mock("./services/memory/extract", () => ({ extractToMemory: h.extractToMemory }));
 vi.mock("./services/agent/propositions", () => ({ validerProposition: h.validerProposition, annulerProposition: h.annulerProposition }));
@@ -278,5 +282,31 @@ describe("propositions à valider", () => {
     const r2 = await appel("/api/agent/propositions/12/annuler");
     expect(r2.status).toBe(409);
     expect(await r2.json()).toEqual({ message: "deja_traitee" });
+  });
+});
+
+describe("POST /api/companion/chat : séance de redémarrage", () => {
+  afterEach(() => { delete process.env.SEANCE_REDEMARRAGE_USERS; });
+  it("séance en cours : consigne du projet et outils de séance ajoutés au tour", async () => {
+    process.env.SEANCE_REDEMARRAGE_USERS = "user-1";
+    sr.synchroniser.mockResolvedValueOnce({ seance: { statut: "en_cours" }, termineeMaintenant: false });
+    await poster({ message: "On fait le point" });
+    const opts = h.executerAgent.mock.calls.at(-1)![0];
+    expect(opts.contexteSession).toContain("CONSIGNE_SEANCE");
+    expect(opts.outilsEnPlus.map((o: any) => o.nom)).toEqual(["proposer_bilan_projet"]);
+  });
+  it("séance qui vient de finir : consigne du récap, sans outils de séance", async () => {
+    process.env.SEANCE_REDEMARRAGE_USERS = "user-1";
+    sr.synchroniser.mockResolvedValueOnce({ seance: { statut: "terminee" }, termineeMaintenant: true });
+    await poster({ message: "C'est validé, on continue." });
+    const opts = h.executerAgent.mock.calls.at(-1)![0];
+    expect(opts.contexteSession).toContain("CONSIGNE_FIN");
+    expect(opts.outilsEnPlus).toBeUndefined();
+  });
+  it("hors interrupteur : rien n'est ajouté, la séance n'est pas lue", async () => {
+    sr.synchroniser.mockClear();
+    await poster({ message: "Bonjour" });
+    expect(sr.synchroniser).not.toHaveBeenCalled();
+    expect(h.executerAgent.mock.calls.at(-1)![0].outilsEnPlus).toBeUndefined();
   });
 });
