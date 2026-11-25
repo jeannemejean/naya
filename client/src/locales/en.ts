@@ -3830,6 +3830,17 @@ const en = {
   aujourdhui: "Today",
  },
 
+ envois: {
+  titre: "Pitches to brands",
+  vide: "No pitch tracked for this project.",
+  envoyeLe: "Sent on {{date}}",
+  relanceLe: "Follow up on {{date}}",
+  sansRelance: "No follow-up planned",
+  changerRelance: "Follow-up date",
+  statuts: { envoye: "Sent", relance: "Followed up", reponse: "Reply received", accepte: "Accepted", refuse: "Declined", sans_suite: "No outcome" },
+  erreur: "Updating the pitch failed",
+ },
+
  reseauxProjet: {
   titre: "{{projet}} networks",
   regle: "Connect this project's own accounts here (its Instagram, its LinkedIn page…). Its posts go out from these accounts. A network not connected here uses the account from Settings.",

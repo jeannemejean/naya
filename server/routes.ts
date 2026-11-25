@@ -203,6 +203,8 @@ import { deriveMilestoneDate } from "./services/milestone-dates";
 import { r2Configured, createUploadUrl } from "./services/r2-storage";
 import { analyzeStatusNote } from "./services/ritual-analyze";
 import { materializeRituals } from "./services/ritual-materialize";
+import { materializeRelances } from "./services/envois/relances";
+import { registerEnvoisRoutes } from "./routes-envois";
 import { isValidTimeOfDay, areValidDays } from "./services/rituals";
 import { ingestSignals } from "./services/reception/ingest";
 import { parseReceptionCsv } from "./services/reception/sources/manual";
@@ -2476,6 +2478,9 @@ Write in clear, direct language. Be specific — reference actual offers, audien
       // Le rituel survit au redémarrage : on le re-matérialise immédiatement.
       await materializeRituals(userId, todayStr).catch((e: any) =>
         console.error('[planning/restart] materializeRituals:', e?.message),
+      );
+      await materializeRelances(userId, todayStr).catch((e: any) =>
+        console.error('[planning/restart] materializeRelances:', e?.message),
       );
 
       // 3. Reprogrammer TOUTES les tâches en retard. Le passage quotidien en
@@ -5194,6 +5199,9 @@ Réponds UNIQUEMENT avec du JSON valide. Aucun texte avant ou après.`,
       // Les rituels occupent leur créneau AVANT que l'IA ne place quoi que ce soit.
       await materializeRituals(userId, todayStr).catch((e: any) =>
         console.error('[generate-daily] materializeRituals:', e?.message),
+      );
+      await materializeRelances(userId, todayStr).catch((e: any) =>
+        console.error('[generate-daily] materializeRelances:', e?.message),
       );
 
       const projResults: ProjResult[] = await Promise.all(projectsToProcess.map(async (proj): Promise<ProjResult> => {
@@ -11413,6 +11421,7 @@ Le nouveau post doit avoir un angle COMPLÈTEMENT différent de l'original, tout
   registerLiensRoutes(app);
   registerValidationRoutes(app);
   registerMeilleuresHeuresRoutes(app);
+  registerEnvoisRoutes(app);
   registerGroupesMarquesRoutes(app);
   registerPreuvesRoutes(app);
   registerApprentissageRoutes(app);

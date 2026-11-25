@@ -3834,6 +3834,17 @@ const fr = {
   aujourdhui: "Aujourd'hui",
  },
 
+ envois: {
+  titre: "Envois aux marques",
+  vide: "Aucun envoi suivi pour ce projet.",
+  envoyeLe: "Envoyé le {{date}}",
+  relanceLe: "Relance le {{date}}",
+  sansRelance: "Pas de relance prévue",
+  changerRelance: "Date de relance",
+  statuts: { envoye: "Envoyé", relance: "Relancé", reponse: "Réponse reçue", accepte: "Accepté", refuse: "Refusé", sans_suite: "Sans suite" },
+  erreur: "La mise à jour de l'envoi a échoué",
+ },
+
  reseauxProjet: {
   titre: "Réseaux de {{projet}}",
   regle: "Connecte ici les comptes de ce projet (sa page Instagram, sa page LinkedIn…). Ses posts partent de ces comptes. Un réseau non connecté ici utilise le compte des Réglages.",

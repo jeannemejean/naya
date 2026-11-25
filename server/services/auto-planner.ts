@@ -28,6 +28,7 @@ import { computeDurationCalibration, applyCalibration, formatCalibrationForPromp
 import { orderGeneratedTasks, type DeclaredDependency } from './dependency-sort';
 import { summarizeMilestones } from './project-summary';
 import { materializeRituals } from './ritual-materialize';
+import { materializeRelances } from './envois/relances';
 import { maxTasksForDay } from './day-sizing';
 import { BUFFER_MIN_CEILING } from './rhythm-buffer';
 import { reprendreTaches } from './reprise';
@@ -221,6 +222,9 @@ async function generateForUser(userId: string, dateStr: string, fil?: { carte: C
   // Les rituels d'abord : leur créneau est pris avant que l'IA ne place ses tâches.
   await materializeRituals(userId, dateStr).catch(e =>
     console.error(`[AutoPlanner] materializeRituals ${userId} ${dateStr}:`, e.message)
+  );
+  await materializeRelances(userId, dateStr).catch(e =>
+    console.error(`[AutoPlanner] materializeRelances ${userId} ${dateStr}:`, e.message)
   );
 
   // 2. Load preferences

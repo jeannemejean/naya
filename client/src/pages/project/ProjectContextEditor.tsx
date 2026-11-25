@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useSaveStage, useAnalyzeNote, useCreateRitual, type ProjectDetail, type NoteAnalysis, type RitualProposal } from "./useProjectPage";
 import RitualList from "./RitualList";
+import EnvoisPanel from "./EnvoisPanel";
 import { formatDays } from "./ritual-format";
 import type { ProjectStrategyProfile } from "@shared/schema";
 
@@ -147,6 +148,7 @@ export default function ProjectContextEditor({ project, strategyProfile }: Proje
       </div>
 
       <RitualList projectId={project.id} />
+      <EnvoisPanel projectId={project.id} />
 
       <div className="flex items-center gap-3 pt-1 border-t border-border">
         <label htmlFor="project-stage" className="text-sm font-medium text-foreground flex-shrink-0 pt-3">
