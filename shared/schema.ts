@@ -269,6 +269,9 @@ export const recurringRituals = pgTable("recurring_rituals", {
   days: text("days").notNull().default("mon,tue,wed,thu,fri"), // même format que work_days
   startTime: text("start_time").notNull(),                     // "HH:MM"
   durationMinutes: integer("duration_minutes").notNull().default(30),
+  // Toutes les N semaines (1 = chaque semaine), comptées depuis la semaine de `anchorDate`.
+  intervalWeeks: integer("interval_weeks").notNull().default(1),
+  anchorDate: date("anchor_date"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
@@ -3088,3 +3091,55 @@ export const viePersoActivites = pgTable("vie_perso_activites", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 export type ViePersoActivite = typeof viePersoActivites.$inferSelect;
+
+
+// ─── Séance de redémarrage (25 nov. 2026) ─────────────────────────────────────
+// Envois : « j'ai présenté tel projet à telle marque », avec la relance à faire.
+export const envois = pgTable("envois", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  marque: text("marque").notNull(),
+  contact: text("contact"),
+  objet: text("objet").notNull(),
+  canal: text("canal"),
+  envoyeLe: date("envoye_le").notNull(),
+  statut: text("statut").notNull().default("envoye"),
+  prochaineRelance: date("prochaine_relance"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("idx_envois_user_relance").on(t.userId, t.prochaineRelance),
+]);
+export type Envoi = typeof envois.$inferSelect;
+export type InsertEnvoi = typeof envois.$inferInsert;
+
+// La séance elle-même : bilan silencieux, avancement projet par projet, évaluation finale.
+export const seancesRedemarrage = pgTable("seances_redemarrage", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  statut: text("statut").notNull().default("en_cours"), // en_cours | terminee | abandonnee
+  absenceDepuis: timestamp("absence_depuis"),
+  bilan: jsonb("bilan").notNull(),
+  projets: jsonb("projets").notNull(),
+  projetCourant: integer("projet_courant"),
+  evaluation: jsonb("evaluation"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  termineeAt: timestamp("terminee_at"),
+}, (t) => [
+  uniqueIndex("seance_redemarrage_en_cours_uq").on(t.userId).where(sql`statut = 'en_cours'`),
+]);
+export type SeanceRedemarrage = typeof seancesRedemarrage.$inferSelect;
+
+// Connexion Metricool par utilisatrice : jeton chiffré au repos (token-crypto), jamais renvoyé.
+export const connexionsMetricool = pgTable("connexions_metricool", {
+  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  jetonChiffre: text("jeton_chiffre").notNull(),
+  mcUserId: text("mc_user_id").notNull(),
+  blogId: text("blog_id").notNull(),
+  etat: text("etat").notNull().default("ok"), // ok | refuse
+  verifieLe: timestamp("verifie_le"),
+});
+export type ConnexionMetricool = typeof connexionsMetricool.$inferSelect;
