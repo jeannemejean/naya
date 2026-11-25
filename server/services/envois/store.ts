@@ -39,3 +39,7 @@ export async function envoisARelancer(userId: string, date: string): Promise<Env
 export async function tachesDeRelance(userId: string, source: string) {
   return db.select().from(tasks).where(and(eq(tasks.userId, userId), eq(tasks.source, source), isNull(tasks.archivedAt)));
 }
+
+export async function marquerRelanceCreee(userId: string, id: number, jour: string): Promise<void> {
+  await db.update(envois).set({ relanceCreeePour: jour }).where(and(eq(envois.id, id), eq(envois.userId, userId)));
+}

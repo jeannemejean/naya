@@ -3106,6 +3106,9 @@ export const envois = pgTable("envois", {
   envoyeLe: date("envoye_le").notNull(),
   statut: text("statut").notNull().default("envoye"),
   prochaineRelance: date("prochaine_relance"),
+  // La date de relance pour laquelle la tâche « Relancer … » a déjà été créée : supprimée à la main,
+  // elle ne revient pas. Une nouvelle date de relance en recrée une.
+  relanceCreeePour: date("relance_creee_pour"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

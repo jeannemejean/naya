@@ -14,6 +14,7 @@ function deps(envois: any[], taches: any[] = []) {
       envoisARelancer: vi.fn(async (userId: string, date: string) => envois.filter((e) => e.userId === userId && e.prochaineRelance <= date)),
       tachesDeRelance: vi.fn(async () => taches),
       creerTache: vi.fn(async (t: any) => { creees.push(t); taches.push({ ...t, id: 99 }); }),
+      marquerRelanceCreee: vi.fn(async (_u: string, id: number, jour: string) => { const e = envois.find((x) => x.id === id); if (e) e.relanceCreeePour = jour; }),
     },
   };
 }
@@ -49,6 +50,22 @@ describe("materializeRelances", () => {
   it("relance déjà faite (cochée) depuis la date prévue : pas recréée", async () => {
     const { d } = deps([envoi()], [{ id: 5, title: "Relancer Sézane : Campagne printemps", source: "relance_envoi", completed: true, scheduledDate: "2026-11-30" }]);
     expect(await materializeRelances("u1", "2026-12-02", d)).toBe(0);
+  });
+  it("tâche de relance supprimée à la main : ne revient pas", async () => {
+    const taches: any[] = [];
+    const { d } = deps([envoi()], taches);
+    expect(await materializeRelances("u1", "2026-11-30", d)).toBe(1);
+    taches.length = 0; // elle la supprime
+    expect(await materializeRelances("u1", "2026-12-01", d)).toBe(0);
+  });
+  it("nouvelle date de relance après une relance supprimée : recréée", async () => {
+    const taches: any[] = [];
+    const e = envoi();
+    const { d } = deps([e], taches);
+    await materializeRelances("u1", "2026-11-30", d);
+    taches.length = 0;
+    e.prochaineRelance = "2026-12-07";
+    expect(await materializeRelances("u1", "2026-12-07", d)).toBe(1);
   });
   it("titre", () => {
     expect(titreRelance({ marque: "Sézane", objet: "X" })).toBe("Relancer Sézane : X");
