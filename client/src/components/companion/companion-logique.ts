@@ -109,3 +109,20 @@ export function aValiderParBouton(
   const ids = [...new Set([...enAttenteDuDernierTour, ...(enAttenteSeance != null ? [enAttenteSeance] : [])])];
   return ids.filter((id) => selectionnables.has(id) && !suivi[id]);
 }
+
+/**
+ * Une action à la fois : tant que le premier appel n'est pas fini, les suivants sont ignorés
+ * (double clic sur « Commencer » : un seul message de départ). Le verrou tombe aussi sur erreur.
+ */
+export function uneFoisALaFois<A extends unknown[]>(fn: (...a: A) => Promise<void>): (...a: A) => Promise<void> {
+  let enCours = false;
+  return async (...a: A) => {
+    if (enCours) return;
+    enCours = true;
+    try {
+      await fn(...a);
+    } finally {
+      enCours = false;
+    }
+  };
+}

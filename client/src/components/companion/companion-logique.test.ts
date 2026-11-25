@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { ActionFaite, PropositionVue } from "@shared/agent";
 import {
   etatAnnulation,
@@ -8,6 +8,7 @@ import {
   propositionsAAjuster,
   messageDepuisHistorique,
   aValiderParBouton,
+  uneFoisALaFois,
 } from "./companion-logique";
 
 const H = 3600 * 1000;
@@ -130,5 +131,25 @@ describe("aValiderParBouton (« oui » écrit sur une proposition sélectionnabl
   });
   it("autre message : rien", () => {
     expect(aValiderParBouton("change la note", [7], undefined, new Set([7]), {})).toEqual([]);
+  });
+});
+
+describe("uneFoisALaFois (double clic sur « Commencer »)", () => {
+  it("un deuxième appel pendant le premier est ignoré ; après, on peut relancer", async () => {
+    let fin!: () => void;
+    const fn = vi.fn(() => new Promise<void>((r) => { fin = r; }));
+    const g = uneFoisALaFois(fn);
+    const a = g(); g(); g();
+    expect(fn).toHaveBeenCalledTimes(1);
+    fin(); await a;
+    g();
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+  it("une erreur libère aussi le verrou", async () => {
+    const fn = vi.fn(async () => { throw new Error("x"); });
+    const g = uneFoisALaFois(fn);
+    await g().catch(() => {});
+    await g().catch(() => {});
+    expect(fn).toHaveBeenCalledTimes(2);
   });
 });

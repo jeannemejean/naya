@@ -15,7 +15,7 @@ import { Propositions, type SuiviProposition } from "@/components/companion/Prop
 import { SeanceBandeau, type EtatSeance } from "@/components/companion/SeanceBandeau";
 import { useToast } from "@/hooks/use-toast";
 import { LigneRecherches } from "@/components/companion/LigneRecherches";
-import { aValiderParBouton, doitInvalider, messageDepuisHistorique, propositionsAAjuster, raisonDeErreur } from "@/components/companion/companion-logique";
+import { aValiderParBouton, doitInvalider, messageDepuisHistorique, propositionsAAjuster, raisonDeErreur, uneFoisALaFois } from "@/components/companion/companion-logique";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -283,15 +283,23 @@ function useCompanionChat() {
  throwOnError: false,
  });
  const seanceEnCours = !!etatSeance?.seance;
- const demarrerSeance = async () => {
+ const [demarrage, setDemarrage] = useState(false);
+ const corpsDemarrage = async () => {
+ setDemarrage(true);
  try {
  await apiRequest("POST", "/api/redemarrage/demarrer");
  await relireSeance();
  envoyerTexte(t('redemarrage.messageDepart'), true);
  } catch {
  toast({ title: t('redemarrage.erreur'), variant: 'destructive' });
+ } finally {
+ setDemarrage(false);
  }
  };
+ const corpsDemarrageRef = useRef(corpsDemarrage);
+ corpsDemarrageRef.current = corpsDemarrage;
+ const demarrerUneFois = useRef(uneFoisALaFois(() => corpsDemarrageRef.current()));
+ const demarrerSeance = () => { void demarrerUneFois.current(); };
  const abandonnerSeance = async () => {
  await apiRequest("POST", "/api/redemarrage/abandonner").catch(() => {});
  relireSeance();
@@ -310,7 +318,7 @@ function useCompanionChat() {
  return {
  open, setOpen,
  input, setInput,
- etatSeance: etatSeance ?? null, seanceEnCours, demarrerSeance, abandonnerSeance, noterSelection,
+ etatSeance: etatSeance ?? null, seanceEnCours, demarrerSeance, demarrage, abandonnerSeance, noterSelection,
  messages,
  activeProject,
  chatMutation,
@@ -456,7 +464,7 @@ function MessagesPanel({ messages, messagesEndRef, suivi, onValider, onAnnuler, 
 // ─── Mode "header" — barre inline dans le dashboard ──────────────────────────
 
 export function NayaCompanionBar() {
- const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, abandonnerSeance, noterSelection } = useCompanionChat();
+ const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, demarrage, abandonnerSeance, noterSelection } = useCompanionChat();
  const [seanceMiseDeCote, setSeanceMiseDeCote] = useState(false);
  const { t } = useTranslation();
  const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -639,7 +647,7 @@ export function NayaCompanionBar() {
 
  <SeanceBandeau
  etat={etatSeance && !(seanceMiseDeCote && !etatSeance.seance) ? etatSeance : etatSeance && { ...etatSeance, proposer: false }}
- envoiEnCours={chatMutation.isPending}
+ envoiEnCours={chatMutation.isPending || demarrage}
  propositionsAffichees={new Set(messages.flatMap((m: any) => (m.propositions ?? []).map((p: PropositionVue) => p.id)))}
  suivi={suiviPropositions}
  onCommencer={demarrerSeance}
@@ -683,7 +691,7 @@ export function NayaCompanionBar() {
 // ─── Mode "floating" — bouton flottant (toutes les autres pages) ──────────────
 
 export default function NayaCompanion() {
- const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, abandonnerSeance, noterSelection } = useCompanionChat();
+ const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, demarrage, abandonnerSeance, noterSelection } = useCompanionChat();
  const [seanceMiseDeCote, setSeanceMiseDeCote] = useState(false);
  const { t } = useTranslation();
  const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -825,7 +833,7 @@ export default function NayaCompanion() {
 
  <SeanceBandeau
  etat={etatSeance && !(seanceMiseDeCote && !etatSeance.seance) ? etatSeance : etatSeance && { ...etatSeance, proposer: false }}
- envoiEnCours={chatMutation.isPending}
+ envoiEnCours={chatMutation.isPending || demarrage}
  propositionsAffichees={new Set(messages.flatMap((m: any) => (m.propositions ?? []).map((p: PropositionVue) => p.id)))}
  suivi={suiviPropositions}
  onCommencer={demarrerSeance}
