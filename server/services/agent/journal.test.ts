@@ -16,6 +16,8 @@ const r = vi.hoisted(() => ({ lireRituel: vi.fn(), majRituel: vi.fn(), retirerRi
 const e = vi.hoisted(() => ({ getEnvoi: vi.fn(), majEnvoi: vi.fn(), supprimerEnvoi: vi.fn() }));
 vi.mock("../ritual-store", () => r);
 vi.mock("../envois/store", () => e);
+const rc = vi.hoisted(() => ({ materialiserQuinzaine: vi.fn(async () => 3), dateLocale: () => "2026-11-02" }));
+vi.mock("../ritual-create", () => rc);
 const d = vi.hoisted(() => ({ getAction: vi.fn(), marquerAnnulee: vi.fn() }));
 vi.mock("../../storage", () => ({ storage: s }));
 vi.mock("./depot", () => ({ depot: d }));
@@ -318,6 +320,8 @@ describe("annulation : projets, créneaux, envois (séance de redémarrage)", ()
     r.lireRituel.mockResolvedValue({ id: 8, userId: "u1", active: false });
     expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: true });
     expect(r.majRituel).toHaveBeenCalledWith("u1", 8, { active: true });
+    // Ses tâches des 14 prochains jours, retirées à l'arrêt, sont remises.
+    expect(rc.materialiserQuinzaine).toHaveBeenCalledWith("u1", "2026-11-02");
   });
   it("envoi créé : supprimé", async () => {
     d.getAction.mockResolvedValue(action([{ table: "envois", id: 3, avant: null, apres: { marque: "Sézane" } }]));

@@ -14,10 +14,8 @@ export async function majRituel(userId: string, id: number, champs: Partial<Pick
     .where(and(eq(recurringRituals.id, id), eq(recurringRituals.userId, userId)));
 }
 
-const aujourdhui = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+// Le jour à Paris : le serveur tourne en UTC, et les tâches du soir même ne doivent pas rester.
+const aujourdhui = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(new Date());
 
 /** Arrête le créneau : désactivé, et ses tâches à venir non faites retirées (les passées restent). */
 export async function retirerRituel(userId: string, id: number, depuis: string = aujourdhui()): Promise<void> {

@@ -42,25 +42,39 @@ export function validerRituel(body: any, aujourdhui: string): { ok: true; donnee
   };
 }
 
-const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** Le jour (AAAA-MM-JJ) dans le fuseau de l'utilisatrice, jamais celui du serveur (UTC en prod). */
+export function dateLocale(d: Date, fuseau = "Europe/Paris"): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: fuseau }).format(d);
+  } catch {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris" }).format(d);
+  }
+}
+
+/** AAAA-MM-JJ + n jours, en calendrier pur (aucun fuseau, aucun changement d'heure). */
+export function plusJours(jour: string, n: number): string {
+  const [a, m, j] = jour.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, j + n)).toISOString().slice(0, 10);
+}
+
+/** Matérialise les créneaux actifs sur les 14 jours à partir de `jour`, puis répare les chevauchements. */
+export async function materialiserQuinzaine(userId: string, jour: string): Promise<number> {
+  let materialized = 0;
+  for (let i = 0; i < 14; i++) materialized += await materializeRituals(userId, plusJours(jour, i));
+  await storage.fixOverlappingTasks(userId, jour).catch((e: any) =>
+    console.error("[rituals] fixOverlappingTasks:", e?.message),
+  );
+  return materialized;
+}
 
 /** Crée le rituel, matérialise les 14 prochains jours et répare les chevauchements. */
 export async function creerRituelEtMaterialiser(
   userId: string,
   donnees: DonneesRituel,
-  aujourdhui: Date = new Date(),
+  maintenant: Date = new Date(),
+  fuseau?: string,
 ): Promise<{ ritual: RecurringRitual; materialized: number }> {
   const ritual = await storage.createRitual({ userId, ...donnees });
-  let materialized = 0;
-  for (let i = 0; i < 14; i++) {
-    const d = new Date(aujourdhui);
-    d.setDate(d.getDate() + i);
-    materialized += await materializeRituals(userId, iso(d));
-  }
-  await storage.fixOverlappingTasks(userId, iso(aujourdhui)).catch((e: any) =>
-    console.error("[rituals] fixOverlappingTasks:", e?.message),
-  );
+  const materialized = await materialiserQuinzaine(userId, dateLocale(maintenant, fuseau));
   return { ritual, materialized };
 }
-
-export { iso as dateLocale };

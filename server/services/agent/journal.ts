@@ -163,6 +163,11 @@ const GESTIONS: Partial<Record<LigneJournal["table"], Gestion>> = {
     },
     async restaurer(userId, ligne) {
       await (await import("../ritual-store")).majRituel(userId, Number(ligne.id), ligne.avant as any);
+      // Réactivé : l'arrêt avait retiré ses tâches à venir, on les remet (idempotent).
+      if (ligne.avant.active === true) {
+        const { materialiserQuinzaine, dateLocale } = await import("../ritual-create");
+        await materialiserQuinzaine(userId, dateLocale(new Date()));
+      }
     },
     // Un créneau créé par l'action : arrêté, et ses tâches à venir non faites retirées.
     async supprimer(userId, id) {

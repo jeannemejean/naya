@@ -93,7 +93,7 @@ export const appliquerBilanProjet = outilAValider<ArgsBilanProjet>({
           break;
         }
         case "creer_creneau": {
-          const v = validerRituel({ title: op.titre, days: op.days, startTime: op.startTime, durationMinutes: op.durationMinutes, intervalWeeks: op.intervalWeeks, projectId: projet.id }, dateLocale(ctx.maintenant));
+          const v = validerRituel({ title: op.titre, days: op.days, startTime: op.startTime, durationMinutes: op.durationMinutes, intervalWeeks: op.intervalWeeks, projectId: projet.id }, dateLocale(ctx.maintenant, ctx.fuseau));
           if (!v.ok) return erreur(`creneau_invalide: ${v.message}`);
           changements.push({ libelle: `Créneau régulier « ${v.donnees.title} »`, avant: null, apres: `${formatRythmeServeur(v.donnees.days, v.donnees.intervalWeeks)}, ${v.donnees.startTime}, ${v.donnees.durationMinutes} min` });
           break;
@@ -165,9 +165,9 @@ export const appliquerBilanProjet = outilAValider<ArgsBilanProjet>({
             break;
           }
           case "creer_creneau": {
-            const v = validerRituel({ title: op.titre, days: op.days, startTime: op.startTime, durationMinutes: op.durationMinutes, intervalWeeks: op.intervalWeeks, projectId: projet.id }, dateLocale(ctx.maintenant));
+            const v = validerRituel({ title: op.titre, days: op.days, startTime: op.startTime, durationMinutes: op.durationMinutes, intervalWeeks: op.intervalWeeks, projectId: projet.id }, dateLocale(ctx.maintenant, ctx.fuseau));
             if (!v.ok) { bilan.echecs.push(`Créneau « ${op.titre} » : ${v.message}`); break; }
-            const { ritual } = await creerRituelEtMaterialiser(ctx.userId, v.donnees, ctx.maintenant);
+            const { ritual } = await creerRituelEtMaterialiser(ctx.userId, v.donnees, ctx.maintenant, ctx.fuseau);
             lignes.push({ table: "recurring_rituals", id: ritual.id, avant: null, apres: { active: true, title: ritual.title } });
             bilan.reussis.push(`Créneau « ${ritual.title} » ajouté`);
             break;
