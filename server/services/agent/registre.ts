@@ -42,6 +42,7 @@ export const DIRECTS_AUTORISES: ReadonlySet<string> = new Set([
   "creer_tache", "creer_rappel", "creer_note", "creer_liste",
   "cocher_tache", "decocher_tache", "deplacer_tache",
   "ranger_information", "regler_energie",
+  "noter_envoi",
 ]);
 
 // OUTILS_FIL : propositions du fil conducteur (étapes d'un objectif, rattachement d'une chaîne,

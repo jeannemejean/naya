@@ -461,6 +461,55 @@ const rangerInformationOutil: Outil = {
   },
 };
 
+
+// ── Envois aux marques (séance de redémarrage) ─────────────────────────────────────────
+// « J'ai envoyé le projet X à Sézane » : noté tout de suite (geste léger, annulable 24 h), avec
+// une relance par défaut 7 jours après l'envoi. Naya ne relance jamais la marque elle-même.
+
+const RELANCE_PAR_DEFAUT_JOURS = 7;
+const plusJours = (date: string, n: number) => {
+  const [y, m, j] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, j + n)).toISOString().slice(0, 10);
+};
+
+const noterEnvoiOutil: Outil = {
+  nom: "noter_envoi",
+  classe: "direct",
+  description:
+    "Note qu'elle a présenté quelque chose à une marque (ou à quelqu'un), pour suivre la relance. " +
+    "Par défaut : envoyé aujourd'hui, relance 7 jours plus tard.",
+  schema: {
+    type: "object",
+    properties: {
+      marque: { type: "string", description: "La marque ou la personne." },
+      objet: { type: "string", description: "Ce qui a été présenté (le projet, en quelques mots)." },
+      canal: { type: "string", description: "mail, linkedin, instagram, autre." },
+      envoyeLe: { type: "string", description: "AAAA-MM-JJ (défaut : aujourd'hui)." },
+      prochaineRelance: { type: "string", description: "AAAA-MM-JJ (défaut : 7 jours après l'envoi)." },
+      projetId: { type: "integer", description: "Projet de rattachement." },
+    },
+    required: ["marque", "objet"],
+  },
+  async executer(ctx, args) {
+    const marque = titrePropre(args.marque);
+    const objet = titrePropre(args.objet);
+    if (!marque || !objet) return erreur("marque et objet requis");
+    if (args.envoyeLe != null && !dateValide(args.envoyeLe)) return erreur("envoyeLe doit être AAAA-MM-JJ");
+    if (args.prochaineRelance != null && !dateValide(args.prochaineRelance)) return erreur("prochaineRelance doit être AAAA-MM-JJ");
+    if (args.projetId != null && !(await storage.getProject(args.projetId, ctx.userId))) return erreur("projet_introuvable");
+    const envoyeLe = args.envoyeLe ?? dateLocale(ctx);
+    const { creerEnvoi } = await import("../../envois/store");
+    const e = await creerEnvoi(ctx.userId, {
+      marque, objet, canal: typeof args.canal === "string" ? args.canal : null, projectId: args.projetId ?? null,
+      envoyeLe, prochaineRelance: args.prochaineRelance ?? plusJours(envoyeLe, RELANCE_PAR_DEFAUT_JOURS), statut: "envoye",
+    });
+    const resume = `Envoi à ${e.marque} noté (relance le ${jourCourt(String(e.prochaineRelance))})`;
+    return journaliser(ctx, "noter_envoi", resume,
+      [{ table: "envois", id: e.id, avant: null, apres: { marque: e.marque, objet: e.objet, statut: e.statut } }],
+      { envoiId: e.id, prochaineRelance: e.prochaineRelance });
+  },
+};
+
 export const OUTILS_DIRECTS: Outil[] = [
   creerTacheOutil,
   creerRappelOutil,
@@ -471,4 +520,5 @@ export const OUTILS_DIRECTS: Outil[] = [
   deplacerTacheOutil,
   rangerInformationOutil,
   reglerEnergieOutil,
+  noterEnvoiOutil,
 ];

@@ -15,6 +15,8 @@ const m = vi.hoisted(() => ({ rangerSouvenir: vi.fn(), lireSouvenir: vi.fn(), pe
 vi.mock("../depot", () => ({ depot: d }));
 vi.mock("../../memory/ranger", () => m);
 vi.mock("../../taches/ecrire-tache", () => t);
+const es = vi.hoisted(() => ({ creerEnvoi: vi.fn(), envoisDe: vi.fn() }));
+vi.mock("../../envois/store", () => es);
 vi.mock("../recherche", () => ({
   SOURCES: ["tache"], chercher: vi.fn(async () => []), lire: vi.fn(async () => null),
 }));
@@ -34,13 +36,13 @@ beforeEach(() => {
 });
 
 describe("classement", () => {
-  it("les neuf outils directs sont présents et autorisés", () => {
-    const noms = ["creer_tache", "creer_rappel", "creer_note", "ranger_information", "creer_liste", "cocher_tache", "decocher_tache", "deplacer_tache", "regler_energie"];
+  it("les dix outils directs sont présents et autorisés", () => {
+    const noms = ["creer_tache", "creer_rappel", "creer_note", "ranger_information", "creer_liste", "cocher_tache", "decocher_tache", "deplacer_tache", "regler_energie", "noter_envoi"];
     for (const n of noms) {
       expect(outil(n)?.classe).toBe("direct");
       expect(DIRECTS_AUTORISES.has(n)).toBe(true);
     }
-    expect(REGISTRE.filter((o) => o.classe === "direct")).toHaveLength(9);
+    expect(REGISTRE.filter((o) => o.classe === "direct")).toHaveLength(10);
   });
 });
 
@@ -362,5 +364,32 @@ describe("ranger_information", () => {
     expect(r.pourModele).toEqual({ erreur: "introuvable" });
     expect(m.rangerSouvenir).not.toHaveBeenCalled();
     expect(d.ajouterAction).not.toHaveBeenCalled();
+  });
+});
+
+describe("noter_envoi", () => {
+  it("sans dates : envoyé aujourd'hui (fuseau Paris), relance à J+7, journalisé et annulable", async () => {
+    es.creerEnvoi.mockResolvedValue({ id: 3, marque: "Sézane", objet: "Campagne printemps", statut: "envoye", envoyeLe: "2026-11-03", prochaineRelance: "2026-11-10" });
+    const r = await outil("noter_envoi")!.executer(ctx, { marque: "Sézane", objet: "Campagne printemps" });
+    // ctx.maintenant = 2 nov. 23 h 30 UTC = 3 nov. à Paris.
+    expect(es.creerEnvoi).toHaveBeenCalledWith("u1", expect.objectContaining({ marque: "Sézane", objet: "Campagne printemps", envoyeLe: "2026-11-03", prochaineRelance: "2026-11-10", statut: "envoye", projectId: null }));
+    expect(d.ajouterAction).toHaveBeenCalledWith("u1", "noter_envoi", expect.any(String), [expect.objectContaining({ table: "envois", id: 3, avant: null })]);
+    expect(r.faite).toBeTruthy();
+  });
+  it("marque ou objet manquant : refus", async () => {
+    expect((await outil("noter_envoi")!.executer(ctx, { marque: "", objet: "x" })).pourModele).toMatchObject({ erreur: expect.any(String) });
+  });
+  it("projet d'une autre : refus", async () => {
+    s.getProject.mockResolvedValueOnce(undefined);
+    expect((await outil("noter_envoi")!.executer(ctx, { marque: "A", objet: "B", projetId: 9 })).pourModele).toMatchObject({ erreur: "projet_introuvable" });
+  });
+});
+
+describe("consulter_envois", () => {
+  it("ne lit que ceux de l'utilisatrice", async () => {
+    es.envoisDe.mockResolvedValue([{ id: 1, userId: "u1", marque: "A", objet: "B", statut: "envoye", envoyeLe: "2026-11-01", prochaineRelance: null, projectId: null }]);
+    const r: any = await outil("consulter_envois")!.executer(ctx, {});
+    expect(es.envoisDe).toHaveBeenCalledWith("u1", {});
+    expect(r.pourModele.envois).toHaveLength(1);
   });
 });

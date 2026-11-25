@@ -396,7 +396,23 @@ const consulterReglages: Outil = {
   },
 };
 
+
+const consulterEnvois: Outil = {
+  nom: "consulter_envois",
+  classe: "lecture",
+  description: "Liste ce qu'elle a présenté aux marques (envois), leur statut et la date de relance. Filtre facultatif : un projet.",
+  schema: { type: "object", properties: { projetId: { type: "integer", description: "Projet." } } },
+  async executer(ctx, args) {
+    const { envoisDe } = await import("../../envois/store");
+    const envois = (await envoisDe(ctx.userId, args.projetId != null ? { projectId: args.projetId } : {}))
+      .filter((e: any) => e.userId === ctx.userId)
+      .map((e: any) => ({ id: e.id, marque: e.marque, objet: e.objet, statut: e.statut, envoyeLe: e.envoyeLe, prochaineRelance: e.prochaineRelance, projetId: e.projectId }));
+    return { pourModele: { envois } };
+  },
+};
+
 export const OUTILS_LECTURE: Outil[] = [
+  consulterEnvois,
   chercherOutil, lireOutil,
   consulterPlanning, consulterProjets, consulterContenus, consulterProspection, consulterMesures, consulterReglages,
 ];
