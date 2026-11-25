@@ -48,6 +48,22 @@ describe("séance de redémarrage", () => {
     expect(apres.seance!.projets).toEqual([{ projectId: 2, etat: "fait", propositionId: 31 }, { projectId: 4, etat: "en_cours" }]);
     expect(apres.termineeMaintenant).toBe(false);
   });
+  it("validée mais TOUS les changements ont échoué : le projet reste en cours, à refaire", async () => {
+    const d = deps();
+    const s = await demarrerSeance("u1", M, d);
+    await rattacherProposition(s, 31, d);
+    props.set(31, { id: 31, userId: "u1", statut: "validee", resultat: { reussis: [], echecs: ["Tâche n° 9 : introuvable"] } });
+    const r = await synchroniser("u1", M, d);
+    expect(r.seance!.projetCourant).toBe(2);
+    expect(r.seance!.projets[0]).toEqual({ projectId: 2, etat: "en_cours", aRefaire: true, echecs: ["Tâche n° 9 : introuvable"] });
+  });
+  it("validée avec une réussite partielle : on passe au projet suivant", async () => {
+    const d = deps();
+    const s = await demarrerSeance("u1", M, d);
+    await rattacherProposition(s, 31, d);
+    props.set(31, { id: 31, userId: "u1", statut: "validee", resultat: { reussis: ["Note du projet mise à jour"], echecs: ["Tâche n° 9 : introuvable"] } });
+    expect((await synchroniser("u1", M, d)).seance!.projetCourant).toBe(4);
+  });
   it("interrompue puis reprise : même projet, même proposition en attente", async () => {
     const d = deps();
     const s = await demarrerSeance("u1", M, d);

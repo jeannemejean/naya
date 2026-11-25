@@ -11,7 +11,7 @@ export function consigneSeance(s: SeanceRedemarrage): string {
   const p = bilan.projets.find((x) => x.projectId === s.projetCourant);
   if (!p) return "";
   const rang = projets.findIndex((x) => x.projectId === p.projectId) + 1;
-  const etat = projets.find((x) => x.projectId === p.projectId) as { recit?: boolean; propositionId?: number; aRefaire?: boolean } | undefined;
+  const etat = projets.find((x) => x.projectId === p.projectId) as { recit?: boolean; propositionId?: number; aRefaire?: boolean; echecs?: string[] } | undefined;
   const recit = !!etat?.recit;
   const lignes = [
     `## Séance de redémarrage en cours : projet ${rang} sur ${projets.length}, « ${p.nom} » (projectId ${p.projectId})`,
@@ -30,7 +30,9 @@ export function consigneSeance(s: SeanceRedemarrage): string {
     rang > 1 ? "Le projet précédent est réglé : rien de ce qui a été dit pour lui (tâches, envois, créneaux) ne s'applique à ce projet-ci." : "",
     recit ? "" : "Elle n'a pas encore parlé de ce projet : commence par l'étape 1, ne propose rien avant sa réponse.",
     etat?.propositionId != null ? `La proposition n° ${etat.propositionId} attend sa validation (carte en tête du chat) : n'en refais pas une, sauf si elle demande à changer quelque chose.` : "",
-    etat?.aRefaire ? "Sa proposition précédente a expiré ou a été annulée : elle est à refaire à partir de ce qu'elle a déjà dit (demande-lui seulement ce qui a changé)." : "",
+    etat?.echecs?.length
+      ? `Elle a validé ta proposition, mais AUCUN changement n'a pu s'appliquer :\n${etat.echecs.map((e) => `  - ${e}`).join("\n")}\nDis-le-lui simplement, puis refais une proposition corrigée (ou passer_projet si elle préfère).`
+      : etat?.aRefaire ? "Sa proposition précédente a expiré ou a été annulée : elle est à refaire à partir de ce qu'elle a déjà dit (demande-lui seulement ce qui a changé)." : "",
     "",
     "Comment mener ce projet :",
     "1. Si ce n'est pas déjà fait dans la conversation, résume en 2 ou 3 lignes ce que tu sais, puis demande où elle en est vraiment. Une seule question ouverte.",

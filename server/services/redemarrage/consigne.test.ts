@@ -62,3 +62,12 @@ describe("consigneFinSeance : codes traduits", () => {
     expect(c).toMatch(/LinkedIn/);
   });
 });
+
+describe("consigneSeance : proposition validée sans effet", () => {
+  it("dit ce qui a échoué et demande une proposition corrigée", () => {
+    const c = consigneSeance({ ...seance, projets: [{ projectId: 2, etat: "en_cours", recit: true, aRefaire: true, echecs: ["Tâche n° 9 : introuvable"] }, { projectId: 4, etat: "a_faire" }] });
+    expect(c).toContain("Tâche n° 9 : introuvable");
+    expect(c).toMatch(/AUCUN changement/);
+    expect(c).not.toMatch(/a expiré ou a été annulée/);
+  });
+});

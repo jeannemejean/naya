@@ -9,7 +9,8 @@ import type { BilanSilencieux } from "./bilan";
 
 // `recit` : elle a parlé de CE projet (un message à elle, pas un message automatique de la séance).
 // `aRefaire` : sa proposition a expiré ou a été annulée ; Naya doit la refaire.
-export type EtatProjet = { projectId: number; etat: "a_faire" | "en_cours" | "fait" | "saute"; propositionId?: number; recit?: boolean; aRefaire?: boolean };
+// `echecs` : sa proposition a été validée mais AUCUN changement n'a pu s'appliquer (raisons, pour Naya).
+export type EtatProjet = { projectId: number; etat: "a_faire" | "en_cours" | "fait" | "saute"; propositionId?: number; recit?: boolean; aRefaire?: boolean; echecs?: string[] };
 
 export interface DepsSeance {
   enCours(userId: string): Promise<SeanceRedemarrage | undefined>;
@@ -69,7 +70,7 @@ export async function demarrerSeance(userId: string, maintenant: Date, deps: Dep
 export async function rattacherProposition(s: SeanceRedemarrage, propositionId: number, deps: DepsSeance = depsSeance) {
   const projets = projetsDe(s).map((p) => {
     if (p.projectId !== s.projetCourant) return p;
-    const { aRefaire: _fait, ...reste } = p;
+    const { aRefaire: _fait, echecs: _vus, ...reste } = p;
     return { ...reste, propositionId };
   });
   return deps.maj(s.id, s.userId, { projets: projets as any });
@@ -113,6 +114,16 @@ export async function synchroniser(userId: string, maintenant: Date, deps: DepsS
       seance: s, termineeMaintenant: false,
       propositionEnAttente: { id: p.id, resume: p.resume ?? "", changements: p.changements ?? [], expireA: new Date(p.expireA).toISOString(), selectionnable: true },
     };
+  }
+  const resultat = p?.resultat as { reussis?: unknown[]; echecs?: unknown[] } | null | undefined;
+  const toutEchoue = p?.statut === "validee" && Array.isArray(resultat?.echecs) && resultat!.echecs!.length > 0
+    && (!Array.isArray(resultat?.reussis) || resultat!.reussis!.length === 0);
+  if (toutEchoue) {
+    // Rien n'a été appliqué : le projet n'est pas réglé, Naya refait sa proposition.
+    const { propositionId: _echouee, ...reste } = courant;
+    const sans = { ...reste, aRefaire: true, echecs: resultat!.echecs!.map(String).slice(0, 10) };
+    const maj = await deps.maj(s.id, userId, { projets: projets.map((x) => (x === courant ? sans : x)) as any });
+    return { seance: maj, termineeMaintenant: false };
   }
   if (p?.statut === "validee") {
     return avancer(s, projets.map((x) => (x === courant ? { ...x, etat: "fait" as const } : x)), maintenant, deps);
