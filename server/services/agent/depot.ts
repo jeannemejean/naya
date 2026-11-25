@@ -12,7 +12,8 @@ import type { Changement } from "@shared/agent";
 
 // Une ligne touchée par une action directe : de quoi la remettre en l'état (annulation).
 export interface LigneJournal {
-  table: "tasks" | "quick_capture_entries" | "task_lists" | "memory_entries" | "user_preferences";
+  table: "tasks" | "quick_capture_entries" | "task_lists" | "memory_entries" | "user_preferences"
+    | "projects" | "recurring_rituals" | "envois";
   id: number | string;
   avant: Record<string, unknown> | null; // null = créée par l'action
   apres: Record<string, unknown>;

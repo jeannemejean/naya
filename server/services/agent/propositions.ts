@@ -153,6 +153,12 @@ const LECTEURS: Record<string, Lecteur> = {
   async projects(userId, id) {
     return (await storage.getProject(id, userId)) as any;
   },
+  async recurring_rituals(userId, id) {
+    return (await (await import("../ritual-store")).lireRituel(userId, id)) as any;
+  },
+  async envois(userId, id) {
+    return (await (await import("../envois/store")).getEnvoi(id, userId)) as any;
+  },
   async project_milestones(userId, id) {
     const j = await storage.getMilestone(id);
     return j && j.userId === userId ? (j as any) : undefined;

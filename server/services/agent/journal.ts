@@ -143,6 +143,43 @@ const GESTIONS: Partial<Record<LigneJournal["table"], Gestion>> = {
       await perimerSouvenir(userId, Number(id));
     },
   },
+  // Séance de redémarrage : seuls la note et le statut d'un projet sont écrits (jamais créé ici).
+  projects: {
+    async lire(userId, id) {
+      return (await storage.getProject(Number(id), userId)) as any;
+    },
+    async restaurer(userId, ligne) {
+      const champs: Record<string, unknown> = {};
+      for (const k of ["statusNote", "projectStatus"]) if (k in ligne.avant) champs[k] = ligne.avant[k];
+      await storage.updateProject(Number(ligne.id), userId, champs as any);
+    },
+    async supprimer() {
+      throw new Error("projects : jamais créés par une action");
+    },
+  },
+  recurring_rituals: {
+    async lire(userId, id) {
+      return (await (await import("../ritual-store")).lireRituel(userId, Number(id))) as any;
+    },
+    async restaurer(userId, ligne) {
+      await (await import("../ritual-store")).majRituel(userId, Number(ligne.id), ligne.avant as any);
+    },
+    // Un créneau créé par l'action : arrêté, et ses tâches à venir non faites retirées.
+    async supprimer(userId, id) {
+      await (await import("../ritual-store")).retirerRituel(userId, Number(id));
+    },
+  },
+  envois: {
+    async lire(userId, id) {
+      return (await (await import("../envois/store")).getEnvoi(Number(id), userId)) as any;
+    },
+    async restaurer(userId, ligne) {
+      await (await import("../envois/store")).majEnvoi(userId, Number(ligne.id), ligne.avant as any);
+    },
+    async supprimer(userId, id) {
+      await (await import("../envois/store")).supprimerEnvoi(userId, Number(id));
+    },
+  },
   user_preferences: {
     async lire(userId, id) {
       if (id !== userId) return undefined;

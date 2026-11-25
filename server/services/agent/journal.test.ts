@@ -10,7 +10,12 @@ const s = vi.hoisted(() => ({
   getWorkspaceEntries: vi.fn(), tacheALivrables: vi.fn(),
   getUserPreferences: vi.fn(), upsertUserPreferences: vi.fn(),
   getCaptureEntry: vi.fn(), deleteCaptureEntry: vi.fn(),
+  getProject: vi.fn(), updateProject: vi.fn(),
 }));
+const r = vi.hoisted(() => ({ lireRituel: vi.fn(), majRituel: vi.fn(), retirerRituel: vi.fn() }));
+const e = vi.hoisted(() => ({ getEnvoi: vi.fn(), majEnvoi: vi.fn(), supprimerEnvoi: vi.fn() }));
+vi.mock("../ritual-store", () => r);
+vi.mock("../envois/store", () => e);
 const d = vi.hoisted(() => ({ getAction: vi.fn(), marquerAnnulee: vi.fn() }));
 vi.mock("../../storage", () => ({ storage: s }));
 vi.mock("./depot", () => ({ depot: d }));
@@ -285,5 +290,39 @@ describe("memeValeur (comparaison robuste)", () => {
     expect(memeValeur("2026-11-04", "2026-11-04")).toBe(true);
     expect(memeValeur("09:00", "09:00")).toBe(true);
     expect(memeValeur("09:00", "09:30")).toBe(false);
+  });
+});
+
+describe("annulation : projets, créneaux, envois (séance de redémarrage)", () => {
+  it("projet : remet la note d'avant", async () => {
+    d.getAction.mockResolvedValue(action([{ table: "projects", id: 4, avant: { statusNote: "A" }, apres: { statusNote: "B" } }]));
+    s.getProject.mockResolvedValue({ id: 4, userId: "u1", statusNote: "B" });
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: true });
+    expect(s.updateProject).toHaveBeenCalledWith(4, "u1", { statusNote: "A" });
+  });
+  it("projet modifié entre-temps : refus, rien d'écrit", async () => {
+    d.getAction.mockResolvedValue(action([{ table: "projects", id: 4, avant: { statusNote: "A" }, apres: { statusNote: "B" } }]));
+    s.getProject.mockResolvedValue({ id: 4, userId: "u1", statusNote: "C" });
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: false, raison: "modifiee" });
+    expect(s.updateProject).not.toHaveBeenCalled();
+    rienEcrit();
+  });
+  it("créneau créé : retiré (désactivé, tâches futures non faites supprimées)", async () => {
+    d.getAction.mockResolvedValue(action([{ table: "recurring_rituals", id: 8, avant: null, apres: { active: true, title: "Actus" } }]));
+    r.lireRituel.mockResolvedValue({ id: 8, userId: "u1", active: true, title: "Actus" });
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: true });
+    expect(r.retirerRituel).toHaveBeenCalledWith("u1", 8);
+  });
+  it("créneau arrêté : réactivé", async () => {
+    d.getAction.mockResolvedValue(action([{ table: "recurring_rituals", id: 8, avant: { active: true }, apres: { active: false } }]));
+    r.lireRituel.mockResolvedValue({ id: 8, userId: "u1", active: false });
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: true });
+    expect(r.majRituel).toHaveBeenCalledWith("u1", 8, { active: true });
+  });
+  it("envoi créé : supprimé", async () => {
+    d.getAction.mockResolvedValue(action([{ table: "envois", id: 3, avant: null, apres: { marque: "Sézane" } }]));
+    e.getEnvoi.mockResolvedValue({ id: 3, userId: "u1", marque: "Sézane" });
+    expect(await annulerAction("u1", 5, MAINTENANT)).toEqual({ ok: true });
+    expect(e.supprimerEnvoi).toHaveBeenCalledWith("u1", 3);
   });
 });
