@@ -47,7 +47,11 @@ describe("routes envois", () => {
   it("PATCH prochaineRelance : retire la relance non faite de l'ancienne date", async () => {
     const r = await req("PATCH", "/api/envois/1", { prochaineRelance: "2026-12-04" });
     expect(r.status).toBe(200);
-    expect(deps.retirerRelanceNonFaite).toHaveBeenCalledWith("u1", e1, "2026-11-27");
+    expect(deps.retirerRelanceNonFaite).toHaveBeenCalledWith("u1", e1);
+  });
+  it("PATCH statut « réponse » : la relance en attente est retirée", async () => {
+    await req("PATCH", "/api/envois/1", { statut: "reponse" });
+    expect(deps.retirerRelanceNonFaite).toHaveBeenCalledWith("u1", e1);
   });
   it("GET : la liste", async () => {
     const r = await req("GET", "/api/envois?projectId=4");

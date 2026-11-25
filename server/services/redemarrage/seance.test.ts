@@ -2,7 +2,7 @@
 // Dépôt en mémoire, propositions simulées : aucune base.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../db", () => ({ db: {} }));
-const { demarrerSeance, synchroniser, passerProjet, rattacherProposition, seanceActivePour, vueSeance, noterRecit } = await import("./seance");
+const { demarrerSeance, synchroniser, passerProjet, rattacherProposition, seanceActivePour, vueSeance, noterRecit, lireSeance } = await import("./seance");
 
 const M = new Date("2026-11-25T09:00:00Z");
 const bilan = { depuis: "2026-11-10T00:00:00.000Z", projets: [
@@ -63,7 +63,7 @@ describe("séance de redémarrage", () => {
     await rattacherProposition(s, 31, d);
     props.set(31, { id: 31, userId: "u1", statut: "expiree" });
     const r = await synchroniser("u1", M, d);
-    expect(r.seance!.projets[0]).toEqual({ projectId: 2, etat: "en_cours" });
+    expect(r.seance!.projets[0]).toEqual({ projectId: 2, etat: "en_cours", aRefaire: true });
     expect(r.propositionEnAttente).toBeUndefined();
   });
   it("tous les projets faits ou passés : terminée, évaluation stockée", async () => {
@@ -91,5 +91,26 @@ describe("récit du projet courant", () => {
     expect(lignes[0].projets[1].recit).toBeUndefined();
     const r = await passerProjet("u1", M, d);
     expect(r.seance!.projets[1]).toEqual({ projectId: 4, etat: "en_cours" });
+  });
+});
+
+describe("lecture seule et proposition à refaire", () => {
+  it("lireSeance : rend la proposition en attente, n'écrit rien même si elle est validée", async () => {
+    const d = deps();
+    const s0 = await demarrerSeance("u1", M, d);
+    await rattacherProposition(s0, 31, d);
+    props.set(31, { id: 31, userId: "u1", statut: "validee" });
+    d.maj.mockClear();
+    const r = await lireSeance("u1", M, d);
+    expect(d.maj).not.toHaveBeenCalled();
+    expect(r.seance!.projetCourant).toBe(2);
+  });
+  it("proposition expirée : le projet est marqué « à refaire »", async () => {
+    const d = deps();
+    const s0 = await demarrerSeance("u1", M, d);
+    await rattacherProposition(s0, 31, d);
+    props.set(31, { id: 31, userId: "u1", statut: "expiree" });
+    const r = await synchroniser("u1", M, d);
+    expect(r.seance!.projets[0]).toEqual({ projectId: 2, etat: "en_cours", aRefaire: true });
   });
 });

@@ -24,7 +24,9 @@ export const DUREE_PROPOSITION_MS = 60 * 60 * 1000;
 
 // Ce qu'on a lu à l'aperçu, pour chaque ligne que l'exécution touchera. Relu à la validation,
 // toujours borné à l'utilisatrice.
-export type Empreinte = { table: string; id: number; champs: Record<string, unknown> }[];
+// `lignes` (facultatif) : les changements que cette entrée concerne. Avec une sélection, seules les
+// entrées des lignes retenues sont revérifiées : une ligne décochée qui a bougé ne bloque rien.
+export type Empreinte = { table: string; id: number; champs: Record<string, unknown>; lignes?: number[] }[];
 
 export interface Apercu {
   resume: string;
@@ -204,9 +206,10 @@ const LECTEURS: Record<string, Lecteur> = {
   },
 };
 
-async function empreinteIntacte(userId: string, empreinte: unknown): Promise<boolean> {
+async function empreinteIntacte(userId: string, empreinte: unknown, retenues?: number[]): Promise<boolean> {
   if (!Array.isArray(empreinte)) return false;
   for (const e of empreinte as Empreinte) {
+    if (retenues && Array.isArray(e?.lignes) && !e.lignes.some((i) => retenues.includes(i))) continue;
     const lire = LECTEURS[e?.table];
     if (!lire) return false; // table inconnue : prudence, on ne valide pas
     const actuelle = await lire(userId, Number(e.id), e.champs ?? {});
@@ -276,7 +279,7 @@ export async function validerProposition(
   // Expirée (pile 60 min comprise), ou ce qui était vrai à l'aperçu ne l'est plus : on la
   // marque expirée, sans rien exécuter.
   const perimee = maintenant.getTime() >= new Date(p.expireA).getTime()
-    || !(await empreinteIntacte(userId, p.empreinte));
+    || !(await empreinteIntacte(userId, p.empreinte, options.lignes));
   if (perimee) {
     const marquee = await depot.reclamerProposition(id, userId, "expiree");
     return { ok: false, raison: marquee ? "expiree" : "deja_traitee" };

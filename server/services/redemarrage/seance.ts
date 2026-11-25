@@ -8,7 +8,8 @@ import { seancesRedemarrage, type SeanceRedemarrage } from "@shared/schema";
 import type { BilanSilencieux } from "./bilan";
 
 // `recit` : elle a parlé de CE projet (un message à elle, pas un message automatique de la séance).
-export type EtatProjet = { projectId: number; etat: "a_faire" | "en_cours" | "fait" | "saute"; propositionId?: number; recit?: boolean };
+// `aRefaire` : sa proposition a expiré ou a été annulée ; Naya doit la refaire.
+export type EtatProjet = { projectId: number; etat: "a_faire" | "en_cours" | "fait" | "saute"; propositionId?: number; recit?: boolean; aRefaire?: boolean };
 
 export interface DepsSeance {
   enCours(userId: string): Promise<SeanceRedemarrage | undefined>;
@@ -66,7 +67,11 @@ export async function demarrerSeance(userId: string, maintenant: Date, deps: Dep
 }
 
 export async function rattacherProposition(s: SeanceRedemarrage, propositionId: number, deps: DepsSeance = depsSeance) {
-  const projets = projetsDe(s).map((p) => (p.projectId === s.projetCourant ? { ...p, propositionId } : p));
+  const projets = projetsDe(s).map((p) => {
+    if (p.projectId !== s.projetCourant) return p;
+    const { aRefaire: _fait, ...reste } = p;
+    return { ...reste, propositionId };
+  });
   return deps.maj(s.id, s.userId, { projets: projets as any });
 }
 
@@ -113,9 +118,29 @@ export async function synchroniser(userId: string, maintenant: Date, deps: DepsS
     return avancer(s, projets.map((x) => (x === courant ? { ...x, etat: "fait" as const } : x)), maintenant, deps);
   }
   // Annulée, expirée ou disparue : le projet reste en cours, à reproposer.
-  const { propositionId: _retiree, ...sans } = courant;
+  const { propositionId: _retiree, ...reste } = courant;
+  const sans = { ...reste, aRefaire: true };
   const maj = await deps.maj(s.id, userId, { projets: projets.map((x) => (x === courant ? sans : x)) as any });
   return { seance: maj, termineeMaintenant: false };
+}
+
+/**
+ * Lecture SANS écriture (bandeau du chat) : seule la conversation fait avancer la séance, pour que
+ * le récap de fin soit écrit au message qui la termine.
+ */
+export async function lireSeance(userId: string, maintenant: Date, deps: DepsSeance = depsSeance): Promise<EtatSynchro> {
+  const s = await deps.enCours(userId);
+  if (!s) return { seance: undefined, termineeMaintenant: false };
+  const courant = projetsDe(s).find((p) => p.projectId === s.projetCourant);
+  if (courant?.propositionId == null) return { seance: s, termineeMaintenant: false };
+  const p = await deps.proposition(courant.propositionId, userId);
+  if (p?.statut === "en_attente" && new Date(p.expireA).getTime() > maintenant.getTime()) {
+    return {
+      seance: s, termineeMaintenant: false,
+      propositionEnAttente: { id: p.id, resume: p.resume ?? "", changements: p.changements ?? [], expireA: new Date(p.expireA).toISOString(), selectionnable: true },
+    };
+  }
+  return { seance: s, termineeMaintenant: false };
 }
 
 /** Elle vient de parler du projet courant : Naya peut proposer ses changements. */

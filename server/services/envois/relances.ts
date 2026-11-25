@@ -10,41 +10,44 @@ export const DUREE_RELANCE_MIN = 15;
 export const titreRelance = (e: Pick<Envoi, "marque" | "objet">) => `Relancer ${e.marque} : ${e.objet}`;
 
 export interface DepsRelances {
+  /** Envois dont la relance est due à cette date OU AVANT (rattrapage d'un jour non ouvert). */
   envoisARelancer(userId: string, date: string): Promise<Envoi[]>;
-  tachesDuJour(userId: string, date: string): Promise<Array<{ id: number; title: string; source?: string | null; completed?: boolean | null; scheduledDate?: unknown }>>;
+  /** Toutes ses tâches de relance (non archivées), quelle que soit leur date. */
+  tachesDeRelance(userId: string): Promise<Array<{ id: number; title: string; source?: string | null; completed?: boolean | null; scheduledDate?: unknown; userId?: string }>>;
   creerTache(t: Record<string, unknown>): Promise<unknown>;
 }
 
 export const depsRelances: DepsRelances = {
   envoisARelancer: async (userId, date) => (await import("./store")).envoisARelancer(userId, date),
-  tachesDuJour: async (userId, date) => {
-    const { storage } = await import("../../storage");
-    return (await storage.getTasksInRange(userId, date, date)) as any;
-  },
+  tachesDeRelance: async (userId) => (await import("./store")).tachesDeRelance(userId, SOURCE_RELANCE),
   creerTache: async (t) => (await import("../../storage")).storage.createTask(t as any),
 };
 
-/** Crée les tâches de relance du jour. Idempotente : (source, titre, date). Renvoie le nombre créé. */
+const jourDe = (v: unknown) => String(v ?? "").slice(0, 10);
+
+/**
+ * Crée les tâches de relance dues (aujourd'hui ou en retard), datées d'aujourd'hui. Une relance
+ * n'est pas recréée si une tâche de relance de cet envoi attend encore, ou a été faite depuis la
+ * date prévue. Renvoie le nombre créé.
+ */
 export async function materializeRelances(userId: string, date: string, deps: DepsRelances = depsRelances): Promise<number> {
   const dus = (await deps.envoisARelancer(userId, date))
-    .filter((e) => e.userId === userId && STATUTS_A_RELANCER.has(e.statut));
+    .filter((e) => e.userId === userId && STATUTS_A_RELANCER.has(e.statut) && !!e.prochaineRelance && e.prochaineRelance <= date);
   if (dus.length === 0) return 0;
-  const existantes = new Set(
-    (await deps.tachesDuJour(userId, date))
-      .filter((t) => t.source === SOURCE_RELANCE && String(t.scheduledDate ?? "").slice(0, 10) === date)
-      .map((t) => t.title),
-  );
+  const existantes = (await deps.tachesDeRelance(userId)).filter((t) => t.source === SOURCE_RELANCE && (t.userId === undefined || t.userId === userId));
   let creees = 0;
   for (const e of dus) {
     const titre = titreRelance(e);
-    if (existantes.has(titre)) continue;
+    const dejaLa = existantes.some((t) => t.title === titre && (!t.completed || jourDe(t.scheduledDate) >= String(e.prochaineRelance)));
+    if (dejaLa) continue;
     try {
-      await deps.creerTache({
+      const t = {
         userId, projectId: e.projectId ?? null, title: titre, scheduledDate: date,
         estimatedDuration: DUREE_RELANCE_MIN, source: SOURCE_RELANCE, schedulingMode: "flexible",
         type: "admin", category: "communication", taskEnergyType: "execution", priority: 2,
-      });
-      existantes.add(titre);
+      };
+      await deps.creerTache(t);
+      existantes.push({ id: -1, title: titre, source: SOURCE_RELANCE, completed: false, scheduledDate: date });
       creees++;
     } catch (err: any) {
       console.error(`[Relances] envoi ${e.id} le ${date} :`, err?.message);
@@ -53,12 +56,15 @@ export async function materializeRelances(userId: string, date: string, deps: De
   return creees;
 }
 
-/** Changement de date de relance : retire la tâche NON faite de l'ancienne date (une cochée reste). */
-export async function retirerRelanceNonFaite(userId: string, e: Pick<Envoi, "marque" | "objet">, ancienneDate: string): Promise<number> {
+/** Relance devenue inutile (date changée, réponse reçue…) : retire ses tâches NON faites, quelle que soit leur date. */
+export async function retirerRelanceNonFaite(
+  userId: string,
+  e: Pick<Envoi, "marque" | "objet">,
+  deps: Pick<DepsRelances, "tachesDeRelance"> = depsRelances,
+): Promise<number> {
   const { storage } = await import("../../storage");
-  const taches = (await storage.getTasksInRange(userId, ancienneDate, ancienneDate)) as any[];
   let n = 0;
-  for (const t of taches) {
+  for (const t of (await deps.tachesDeRelance(userId)) as any[]) {
     if (t.userId === userId && t.source === SOURCE_RELANCE && t.title === titreRelance(e) && !t.completed) {
       await storage.deleteTask(t.id);
       n++;

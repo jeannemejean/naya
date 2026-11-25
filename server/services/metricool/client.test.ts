@@ -14,15 +14,18 @@ describe("postsMetricool", () => {
     expect(String(url)).toContain("userId=11");
     expect(String(url)).toContain("blogId=22");
     expect(init.headers["X-Mc-Auth"]).toBe("tok");
+    // Bornes en heure de Paris (D = 10 nov. 0 h UTC = 1 h à Paris).
+    expect(String(url)).toContain("start=2026-11-10T01%3A00%3A00");
   });
   it("lit réseau, date prévue, publié ou non", async () => {
     const f = vi.fn(async () => rep(200, { data: [
       { text: "Actu 1", publicationDate: { dateTime: "2026-11-12T09:00:00", timezone: "Europe/Paris" }, providers: [{ network: "linkedin", status: "PUBLISHED" }, { network: "instagram", status: "ERROR" }] },
     ] }));
     const r = await postsMetricool(cx, D, F, f as any);
+    // 9 h à Paris le 12 nov. = 8 h UTC.
     expect(r).toEqual({ ok: true, posts: [
-      { reseau: "linkedin", prevuLe: "2026-11-12T09:00:00", publie: true, texte: "Actu 1" },
-      { reseau: "instagram", prevuLe: "2026-11-12T09:00:00", publie: false, texte: "Actu 1" },
+      { reseau: "linkedin", prevuLe: "2026-11-12T08:00:00.000Z", publie: true, texte: "Actu 1" },
+      { reseau: "instagram", prevuLe: "2026-11-12T08:00:00.000Z", publie: false, texte: "Actu 1" },
     ] });
   });
   it("401/403 : refuse ; autre erreur : erreur ; réponse illisible : indisponible", async () => {

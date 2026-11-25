@@ -15,7 +15,7 @@ import { Propositions, type SuiviProposition } from "@/components/companion/Prop
 import { SeanceBandeau, type EtatSeance } from "@/components/companion/SeanceBandeau";
 import { useToast } from "@/hooks/use-toast";
 import { LigneRecherches } from "@/components/companion/LigneRecherches";
-import { doitInvalider, messageDepuisHistorique, propositionsAAjuster, raisonDeErreur } from "@/components/companion/companion-logique";
+import { aValiderParBouton, doitInvalider, messageDepuisHistorique, propositionsAAjuster, raisonDeErreur } from "@/components/companion/companion-logique";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +116,9 @@ function useCompanionChat() {
  const consentementEnCours = useRef<number[]>([]);
  // Lus par validerProposition (déclarée avant la séance) : l'état de séance et l'envoi d'un texte.
  const etatSeanceRef = useRef<EtatSeance | null>(null);
+ // Lignes retenues des propositions sélectionnables (cases décochées) : un « oui » écrit les respecte.
+ const selectionsRef = useRef<Record<number, number[] | undefined>>({});
+ const noterSelection = (id: number, lignes: number[] | undefined) => { selectionsRef.current[id] = lignes; };
  const envoyerTexteRef = useRef<((texte: string, auto?: boolean) => void) | null>(null);
 
  const chatMutation = useMutation({
@@ -225,6 +228,16 @@ function useCompanionChat() {
  const aMettreDeCote = propositionsAAjuster(messages, Object.fromEntries(
  Object.entries(suiviPropositions).map(([k, v]) => [k, v?.statut]),
  ), new Date());
+ // « oui » à une proposition sélectionnable (séance de redémarrage) : même chemin que le bouton,
+ // avec les lignes cochées ; la séance avance ensuite d'elle-même.
+ const selectionnables = new Set(messages.flatMap((m: any) => (m.propositions ?? []).filter((p: PropositionVue) => p.selectionnable).map((p: PropositionVue) => p.id)));
+ for (const p of [etatSeanceRef.current?.seance?.propositionEnAttente].filter(Boolean) as PropositionVue[]) selectionnables.add(p.id);
+ const parBouton = aValiderParBouton(msg, aMettreDeCote, etatSeanceRef.current?.seance?.propositionEnAttente?.id, selectionnables, suiviPropositions);
+ if (parBouton.length > 0) {
+ setMessages(prev => [...prev, { role: "user", content: msg }]);
+ for (const id of parBouton) validerProposition(id, selectionsRef.current[id]);
+ return;
+ }
  if (aMettreDeCote.length > 0 && estConsentement(msg)) {
  // « oui » : on ne met rien de côté, le serveur valide la proposition en attente.
  consentementEnCours.current = aMettreDeCote;
@@ -297,7 +310,7 @@ function useCompanionChat() {
  return {
  open, setOpen,
  input, setInput,
- etatSeance: etatSeance ?? null, seanceEnCours, demarrerSeance, abandonnerSeance,
+ etatSeance: etatSeance ?? null, seanceEnCours, demarrerSeance, abandonnerSeance, noterSelection,
  messages,
  activeProject,
  chatMutation,
@@ -312,10 +325,11 @@ function useCompanionChat() {
 
 // ─── Messages panel (shared between modes) ───────────────────────────────────
 
-function MessagesPanel({ messages, messagesEndRef, suivi, onValider, onAnnuler }: {
+function MessagesPanel({ messages, messagesEndRef, suivi, onValider, onAnnuler, onSelection }: {
  messages: Message[];
  messagesEndRef: React.RefObject<HTMLDivElement>;
  suivi: Record<number, SuiviProposition | undefined>;
+ onSelection?: (id: number, lignes: number[] | undefined) => void;
  onValider: (id: number, lignes?: number[]) => void;
  onAnnuler: (id: number) => void;
 }) {
@@ -427,6 +441,7 @@ function MessagesPanel({ messages, messagesEndRef, suivi, onValider, onAnnuler }
  suivi={suivi}
  onValider={onValider}
  onAnnuler={onAnnuler}
+ onSelection={onSelection}
  />
  </>
  )}
@@ -441,7 +456,7 @@ function MessagesPanel({ messages, messagesEndRef, suivi, onValider, onAnnuler }
 // ─── Mode "header" — barre inline dans le dashboard ──────────────────────────
 
 export function NayaCompanionBar() {
- const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, abandonnerSeance } = useCompanionChat();
+ const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, abandonnerSeance, noterSelection } = useCompanionChat();
  const [seanceMiseDeCote, setSeanceMiseDeCote] = useState(false);
  const { t } = useTranslation();
  const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -632,9 +647,10 @@ export function NayaCompanionBar() {
  onAbandonner={abandonnerSeance}
  onValider={validerProposition}
  onAnnuler={annulerProposition}
+ onSelection={noterSelection}
  />
 
- <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} suivi={suiviPropositions} onValider={validerProposition} onAnnuler={annulerProposition} />
+ <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} suivi={suiviPropositions} onValider={validerProposition} onAnnuler={annulerProposition} onSelection={noterSelection} />
 
  {/* Input dans le panel */}
  <div style={{ borderTop: '1px solid var(--border)', padding: 10 }}>
@@ -667,7 +683,7 @@ export function NayaCompanionBar() {
 // ─── Mode "floating" — bouton flottant (toutes les autres pages) ──────────────
 
 export default function NayaCompanion() {
- const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, abandonnerSeance } = useCompanionChat();
+ const { open, setOpen, input, setInput, messages, activeProject, chatMutation, handleSend, handleKeyDown, unreadCount, suiviPropositions, validerProposition, annulerProposition, etatSeance, demarrerSeance, abandonnerSeance, noterSelection } = useCompanionChat();
  const [seanceMiseDeCote, setSeanceMiseDeCote] = useState(false);
  const { t } = useTranslation();
  const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -817,9 +833,10 @@ export default function NayaCompanion() {
  onAbandonner={abandonnerSeance}
  onValider={validerProposition}
  onAnnuler={annulerProposition}
+ onSelection={noterSelection}
  />
 
- <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} suivi={suiviPropositions} onValider={validerProposition} onAnnuler={annulerProposition} />
+ <MessagesPanel messages={messages} messagesEndRef={messagesEndRef} suivi={suiviPropositions} onValider={validerProposition} onAnnuler={annulerProposition} onSelection={noterSelection} />
 
  {/* Input */}
  <div style={{ borderTop: '1px solid var(--border)', padding: 12 }}>

@@ -134,9 +134,17 @@ export async function evaluationReseaux(deps: DepsEvaluation, userId: string, de
   }
 
   // 3. Instagram lu directement : ce qui est réellement sorti, et la portée si la permission est là.
-  const ig = await deps.compteInstagram(userId);
-  if (ig) {
-    const lu = await deps.lireInstagram(ig, depuis, maintenant);
+  let ig: { jeton: string } | null = null;
+  let lu: LectureInstagram | null = null;
+  try {
+    ig = await deps.compteInstagram(userId);
+    if (ig) lu = await deps.lireInstagram(ig, depuis, maintenant);
+  } catch (e: any) {
+    // Une coupure Instagram ne doit jamais effacer le reste de l'évaluation.
+    console.error("[redemarrage] lecture Instagram :", e?.message ?? e);
+    limites.add("instagram_erreur");
+  }
+  if (ig && lu) {
     if (lu.limite) limites.add(lu.limite);
     if (lu.limite !== "instagram_expire") {
       const l = ligne("instagram", "instagram");

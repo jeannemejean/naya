@@ -1,3 +1,4 @@
+import { estConsentement } from "@shared/consentement";
 // Logique pure du panneau companion : l'agent agit côté serveur, le panneau ne fait
 // qu'afficher ce qui a été fait (avec « Annuler ») et ce qui attend sa validation.
 import type { ActionFaite, PropositionVue } from "@shared/agent";
@@ -90,4 +91,21 @@ export function messageDepuisHistorique(row: { role: string; content: string; ac
     propositions: Array.isArray(a.propositions) ? a.propositions.filter(estProposition) : [],
     recherches: Array.isArray(a.recherches) ? a.recherches.filter((r: unknown): r is string => typeof r === "string") : [],
   };
+}
+
+/**
+ * « oui » écrit alors qu'une proposition SÉLECTIONNABLE attend (séance de redémarrage) : elle passe
+ * par le même chemin que le bouton, avec les lignes cochées, au lieu du consentement serveur qui
+ * validerait tout. Rend les ids concernés (dernier tour + proposition en attente de la séance).
+ */
+export function aValiderParBouton(
+  message: string,
+  enAttenteDuDernierTour: number[],
+  enAttenteSeance: number | undefined,
+  selectionnables: ReadonlySet<number>,
+  suivi: Record<number, { statut?: string } | undefined>,
+): number[] {
+  if (!estConsentement(message)) return [];
+  const ids = [...new Set([...enAttenteDuDernierTour, ...(enAttenteSeance != null ? [enAttenteSeance] : [])])];
+  return ids.filter((id) => selectionnables.has(id) && !suivi[id]);
 }

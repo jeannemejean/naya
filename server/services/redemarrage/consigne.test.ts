@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { consigneSeance } from "./consigne";
+import { consigneSeance, consigneFinSeance } from "./consigne";
 
 const seance: any = {
   id: 1, statut: "en_cours", projetCourant: 2,
@@ -40,5 +40,25 @@ describe("consigneSeance : nouveau projet", () => {
   it("avec récit : plus de rappel « pas encore parlé »", () => {
     const c = consigneSeance({ ...seance, projets: [{ projectId: 2, etat: "en_cours", recit: true }, { projectId: 4, etat: "a_faire" }] });
     expect(c).not.toMatch(/n'a pas encore parlé de ce projet/);
+  });
+});
+
+describe("consigneSeance : proposition en attente ou à refaire", () => {
+  it("en attente : le dire, ne pas en refaire une", () => {
+    const c = consigneSeance({ ...seance, projets: [{ projectId: 2, etat: "en_cours", recit: true, propositionId: 31 }, { projectId: 4, etat: "a_faire" }] });
+    expect(c).toMatch(/proposition n° 31 attend/);
+  });
+  it("à refaire : le dire", () => {
+    const c = consigneSeance({ ...seance, projets: [{ projectId: 2, etat: "en_cours", recit: true, aRefaire: true }, { projectId: 4, etat: "a_faire" }] });
+    expect(c).toMatch(/à refaire/);
+  });
+});
+
+describe("consigneFinSeance : codes traduits", () => {
+  it("chaque limite a sa phrase en clair", () => {
+    const c = consigneFinSeance({ evaluation: { depuis: "x", parReseau: [], limites: ["portee_manquante", "metricool_absent", "linkedin_profil_non_lisible"] } } as any);
+    expect(c).toMatch(/reconnecte Instagram/);
+    expect(c).toMatch(/Metricool n'est pas connecté/);
+    expect(c).toMatch(/LinkedIn/);
   });
 });

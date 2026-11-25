@@ -61,32 +61,34 @@ export const appliquerBilanProjet = outilAValider<ArgsBilanProjet>({
     if (ops.length > OPERATIONS_MAX) return erreur(`${OPERATIONS_MAX} changements au plus`);
     const changements: Changement[] = [];
     const empreinte: Empreinte = [];
-    let projetSurveille = false;
-    const surveillerProjet = () => {
-      if (projetSurveille) return;
-      projetSurveille = true;
-      empreinte.push({ table: "projects", id: projet.id, champs: { statusNote: projet.statusNote ?? null, projectStatus: projet.projectStatus ?? null } });
+    let entreeProjet: Empreinte[number] | null = null;
+    const surveillerProjet = (i: number) => {
+      if (!entreeProjet) {
+        entreeProjet = { table: "projects", id: projet.id, champs: { statusNote: projet.statusNote ?? null, projectStatus: projet.projectStatus ?? null }, lignes: [] };
+        empreinte.push(entreeProjet);
+      }
+      entreeProjet.lignes!.push(i);
     };
-    for (const op of ops) {
+    for (const [i, op] of ops.entries()) {
       switch (op.type) {
         case "cocher_tache":
         case "archiver_tache": {
           const t = await tacheDuProjet(ctx.userId, op.taskId, projet.id);
           if (!t) return erreur("tache_introuvable");
           changements.push({ libelle: `« ${t.title} »`, avant: "à faire", apres: op.type === "cocher_tache" ? "faite" : "abandonnée (archivée)" });
-          empreinte.push({ table: "tasks", id: t.id, champs: { completed: !!t.completed, archivedAt: t.archivedAt ?? null } });
+          empreinte.push({ table: "tasks", id: t.id, champs: { completed: !!t.completed, archivedAt: t.archivedAt ?? null }, lignes: [i] });
           break;
         }
         case "note_projet": {
           const texte = String(op.texte ?? "").trim();
           if (!texte) return erreur("note_vide");
-          surveillerProjet();
+          surveillerProjet(i);
           changements.push({ libelle: "Où en est ce projet", avant: projet.statusNote ? court(projet.statusNote) : null, apres: court(texte) });
           break;
         }
         case "statut_projet": {
           if (!STATUTS[op.statut]) return erreur("statut_invalide");
-          surveillerProjet();
+          surveillerProjet(i);
           changements.push({ libelle: "Statut du projet", avant: STATUTS[projet.projectStatus] ?? projet.projectStatus ?? null, apres: STATUTS[op.statut] });
           break;
         }
@@ -100,7 +102,7 @@ export const appliquerBilanProjet = outilAValider<ArgsBilanProjet>({
           const r = await lireRituel(ctx.userId, op.ritualId);
           if (!r || !r.active) return erreur("creneau_introuvable");
           changements.push({ libelle: `Créneau « ${r.title} »`, avant: "actif", apres: "arrêté" });
-          empreinte.push({ table: "recurring_rituals", id: r.id, champs: { active: true } });
+          empreinte.push({ table: "recurring_rituals", id: r.id, champs: { active: true }, lignes: [i] });
           break;
         }
         case "creer_envoi": {

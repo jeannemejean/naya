@@ -11,7 +11,8 @@ export function consigneSeance(s: SeanceRedemarrage): string {
   const p = bilan.projets.find((x) => x.projectId === s.projetCourant);
   if (!p) return "";
   const rang = projets.findIndex((x) => x.projectId === p.projectId) + 1;
-  const recit = !!(projets.find((x) => x.projectId === p.projectId) as { recit?: boolean } | undefined)?.recit;
+  const etat = projets.find((x) => x.projectId === p.projectId) as { recit?: boolean; propositionId?: number; aRefaire?: boolean } | undefined;
+  const recit = !!etat?.recit;
   const lignes = [
     `## Séance de redémarrage en cours : projet ${rang} sur ${projets.length}, « ${p.nom} » (projectId ${p.projectId})`,
     `L'utilisatrice revient après une absence (depuis le ${dateFr(bilan.depuis)}). Vous faites le point ensemble, projet par projet, pour que Naya reflète où elle en est vraiment.`,
@@ -28,6 +29,8 @@ export function consigneSeance(s: SeanceRedemarrage): string {
     "",
     rang > 1 ? "Le projet précédent est réglé : rien de ce qui a été dit pour lui (tâches, envois, créneaux) ne s'applique à ce projet-ci." : "",
     recit ? "" : "Elle n'a pas encore parlé de ce projet : commence par l'étape 1, ne propose rien avant sa réponse.",
+    etat?.propositionId != null ? `La proposition n° ${etat.propositionId} attend sa validation (carte en tête du chat) : n'en refais pas une, sauf si elle demande à changer quelque chose.` : "",
+    etat?.aRefaire ? "Sa proposition précédente a expiré ou a été annulée : elle est à refaire à partir de ce qu'elle a déjà dit (demande-lui seulement ce qui a changé)." : "",
     "",
     "Comment mener ce projet :",
     "1. Si ce n'est pas déjà fait dans la conversation, résume en 2 ou 3 lignes ce que tu sais, puis demande où elle en est vraiment. Une seule question ouverte.",
@@ -42,13 +45,26 @@ export function consigneSeance(s: SeanceRedemarrage): string {
 }
 
 /** Consigne du dernier message, quand la séance vient de se terminer. */
+const LIMITES_EN_CLAIR: Record<string, string> = {
+  metricool_absent: "Metricool n'est pas connecté : les posts programmés là-bas ne sont pas comptés (Réglages > Metricool).",
+  metricool_refuse: "Metricool refuse l'accès (jeton ou offre sans API) : à reconnecter dans Réglages.",
+  metricool_indisponible: "Metricool n'a pas répondu comme prévu : ses posts ne sont pas comptés cette fois.",
+  portee_manquante: "Les chiffres Instagram ne sont pas disponibles : reconnecte Instagram dans Réglages pour autoriser les statistiques.",
+  instagram_expire: "La connexion Instagram a expiré : reconnecte Instagram dans Réglages.",
+  instagram_erreur: "Instagram n'a pas répondu : ses posts ne sont pas comptés cette fois.",
+  linkedin_profil_non_lisible: "LinkedIn ne permet pas de lire ce que tu publies depuis ton profil : seuls les posts passés par Naya ou Metricool sont comptés.",
+  evaluation_indisponible: "L'évaluation des réseaux n'a pas pu être faite.",
+};
+
 export function consigneFinSeance(s: SeanceRedemarrage): string {
+  const limites = (((s.evaluation as any)?.limites ?? []) as string[]).map((c) => LIMITES_EN_CLAIR[c]).filter(Boolean);
   return [
     "## Séance de redémarrage terminée",
     "Écris le récap, court et concret :",
     "1. L'évaluation des réseaux ci-dessous : publié ou non par rapport à ce qui était prévu, puis les chiffres disponibles. Ne jamais inventer un chiffre absent ; dis clairement ce qui manque et pourquoi (codes dans « limites »).",
     "2. Ce que tu as compris de sa façon de travailler (le travail fait hors de Naya, les créneaux ajoutés, les envois suivis).",
     "3. Une phrase sur la semaine qui vient.",
+    limites.length ? `Ce qui manque, à dire tel quel (une phrase chacun) :\n${limites.map((l) => `- ${l}`).join("\n")}` : "",
     `Évaluation des réseaux (JSON) : ${JSON.stringify(s.evaluation ?? null)}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }

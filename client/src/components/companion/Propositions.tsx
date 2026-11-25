@@ -20,19 +20,25 @@ export function Propositions({
   suivi,
   onValider,
   onAnnuler,
+  onSelection,
 }: {
   propositions: PropositionVue[];
   suivi: Record<number, SuiviProposition | undefined>;
   onValider: (id: number, lignes?: number[]) => void;
   onAnnuler: (id: number) => void;
+  /** Lignes retenues d'une proposition sélectionnable (undefined = toutes), pour un « oui » écrit. */
+  onSelection?: (id: number, lignes: number[] | undefined) => void;
 }) {
   const { t } = useTranslation();
   // Propositions sélectionnables : les lignes DÉCOCHÉES, par proposition (tout est coché au départ).
   const [decochees, setDecochees] = useState<Record<number, number[]>>({});
   if (propositions.length === 0) return null;
-  const basculer = (id: number, i: number) => setDecochees((d) => {
-    const l = d[id] ?? [];
-    return { ...d, [id]: l.includes(i) ? l.filter((x) => x !== i) : [...l, i] };
+  const basculer = (p: PropositionVue, i: number) => setDecochees((d) => {
+    const l = d[p.id] ?? [];
+    const nouvelle = l.includes(i) ? l.filter((x) => x !== i) : [...l, i];
+    const retenuesApres = p.changements.map((_, k) => k).filter((k) => !nouvelle.includes(k));
+    onSelection?.(p.id, nouvelle.length ? retenuesApres : undefined);
+    return { ...d, [p.id]: nouvelle };
   });
   const retenues = (p: PropositionVue) => p.changements.map((_, i) => i).filter((i) => !(decochees[p.id] ?? []).includes(i));
   const maintenant = new Date();
@@ -57,7 +63,7 @@ export function Propositions({
                         type="checkbox"
                         aria-label={c.libelle}
                         checked={!(decochees[p.id] ?? []).includes(i)}
-                        onChange={() => basculer(p.id, i)}
+                        onChange={() => basculer(p, i)}
                         style={{ marginRight: 6, verticalAlign: 'middle' }}
                       />
                     ) : <span style={{ color: 'var(--accent)', opacity: 0.6 }}>◆ </span>}

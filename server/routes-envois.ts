@@ -2,7 +2,7 @@
 // Tout passe par req.userId : l'envoi ou le projet d'une autre est introuvable (404).
 import type { Express } from "express";
 import { isAuthenticated } from "./auth";
-import { STATUTS_ENVOI } from "@shared/envois";
+import { STATUTS_A_RELANCER, STATUTS_ENVOI } from "@shared/envois";
 import type { Envoi } from "@shared/schema";
 
 export interface DepsEnvois {
@@ -10,7 +10,7 @@ export interface DepsEnvois {
   creer(userId: string, e: any): Promise<Envoi>;
   lire(id: number, userId: string): Promise<Envoi | undefined>;
   maj(userId: string, id: number, champs: any): Promise<Envoi | undefined>;
-  retirerRelanceNonFaite(userId: string, e: Envoi, ancienneDate: string): Promise<number>;
+  retirerRelanceNonFaite(userId: string, e: Envoi): Promise<number>;
   projet(id: number, userId: string): Promise<{ id: number } | undefined>;
   aujourdhui(): string;
 }
@@ -27,7 +27,7 @@ export const depsEnvois: DepsEnvois = {
   creer: async (u, e) => (await import("./services/envois/store")).creerEnvoi(u, e),
   lire: async (id, u) => (await import("./services/envois/store")).getEnvoi(id, u),
   maj: async (u, id, c) => (await import("./services/envois/store")).majEnvoi(u, id, c),
-  retirerRelanceNonFaite: async (u, e, d) => (await import("./services/envois/relances")).retirerRelanceNonFaite(u, e, d),
+  retirerRelanceNonFaite: async (u, e) => (await import("./services/envois/relances")).retirerRelanceNonFaite(u, e),
   projet: async (id, u) => (await import("./storage")).storage.getProject(id, u),
   aujourdhui: () => {
     const d = new Date();
@@ -92,9 +92,10 @@ export function registerEnvoisRoutes(app: Express, deps: DepsEnvois = depsEnvois
       if (b.notes !== undefined) champs.notes = texte(b.notes);
       if (b.contact !== undefined) champs.contact = texte(b.contact);
       const apres = await deps.maj(req.userId, id, champs);
-      if (avant.prochaineRelance && "prochaineRelance" in champs && champs.prochaineRelance !== avant.prochaineRelance) {
-        await deps.retirerRelanceNonFaite(req.userId, avant, avant.prochaineRelance);
-      }
+      // Relance en attente devenue fausse : date changée, ou réponse reçue / refus / sans suite.
+      const dateChangee = "prochaineRelance" in champs && champs.prochaineRelance !== avant.prochaineRelance;
+      const plusARelancer = "statut" in champs && !STATUTS_A_RELANCER.has(String(champs.statut));
+      if (dateChangee || plusARelancer) await deps.retirerRelanceNonFaite(req.userId, avant);
       res.json(apres);
     } catch (e: any) {
       console.error("[envois] mise à jour :", e?.message);

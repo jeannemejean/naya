@@ -1,7 +1,7 @@
 // Envois aux marques : accès base, toujours borné à l'utilisatrice.
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte } from "drizzle-orm";
 import { db } from "../../db";
-import { envois, type Envoi, type InsertEnvoi } from "@shared/schema";
+import { envois, tasks, type Envoi, type InsertEnvoi } from "@shared/schema";
 
 export type NouvelEnvoi = Omit<InsertEnvoi, "id" | "userId" | "createdAt" | "updatedAt">;
 export type ChampsEnvoi = Partial<Pick<Envoi, "statut" | "prochaineRelance" | "notes" | "contact">>;
@@ -33,5 +33,9 @@ export async function envoisDe(userId: string, filtre: { projectId?: number } = 
 }
 
 export async function envoisARelancer(userId: string, date: string): Promise<Envoi[]> {
-  return db.select().from(envois).where(and(eq(envois.userId, userId), eq(envois.prochaineRelance, date)));
+  return db.select().from(envois).where(and(eq(envois.userId, userId), lte(envois.prochaineRelance, date)));
+}
+
+export async function tachesDeRelance(userId: string, source: string) {
+  return db.select().from(tasks).where(and(eq(tasks.userId, userId), eq(tasks.source, source), isNull(tasks.archivedAt)));
 }

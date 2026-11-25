@@ -18,7 +18,7 @@ export interface EtatSeance {
 }
 
 export function SeanceBandeau({
-  etat, envoiEnCours, propositionsAffichees, suivi, onCommencer, onPlusTard, onAbandonner, onValider, onAnnuler,
+  etat, envoiEnCours, propositionsAffichees, suivi, onCommencer, onPlusTard, onAbandonner, onValider, onAnnuler, onSelection,
 }: {
   etat: EtatSeance | null;
   envoiEnCours: boolean;
@@ -30,6 +30,7 @@ export function SeanceBandeau({
   onAbandonner: () => void;
   onValider: (id: number, lignes?: number[]) => void;
   onAnnuler: (id: number) => void;
+  onSelection?: (id: number, lignes: number[] | undefined) => void;
 }) {
   const { t } = useTranslation();
   if (!etat) return null; // séance non activée pour ce compte
@@ -52,7 +53,7 @@ export function SeanceBandeau({
           </span>
         </div>
         {enAttente.length > 0 && (
-          <Propositions propositions={enAttente} suivi={suivi} onValider={onValider} onAnnuler={onAnnuler} />
+          <Propositions propositions={enAttente} suivi={suivi} onValider={onValider} onAnnuler={onAnnuler} onSelection={onSelection} />
         )}
       </div>
     );

@@ -12,6 +12,7 @@ beforeEach(async () => {
   deps = {
     actif: vi.fn(() => true),
     synchroniser: vi.fn(async () => ({ seance: undefined, termineeMaintenant: false })),
+    lire: vi.fn(async () => ({ seance: undefined, termineeMaintenant: false })),
     demarrer: vi.fn(async () => seance),
     abandonner: vi.fn(async () => true),
     derniereActivite: vi.fn(async () => new Date("2026-11-10T00:00:00Z")),
@@ -39,8 +40,14 @@ describe("routes de la séance de redémarrage", () => {
     deps.derniereActivite.mockResolvedValue(new Date("2026-11-22T00:00:00Z"));
     expect(await (await req("GET", "/api/redemarrage")).json()).toEqual({ seance: null, proposer: false });
   });
+  it("GET ne fait jamais avancer la séance (sinon le récap de fin se perd)", async () => {
+    deps.lire.mockResolvedValue({ seance, termineeMaintenant: false });
+    await req("GET", "/api/redemarrage");
+    expect(deps.synchroniser).not.toHaveBeenCalled();
+    expect(deps.lire).toHaveBeenCalledWith("u1", expect.any(Date));
+  });
   it("GET avec séance en cours : la vue", async () => {
-    deps.synchroniser.mockResolvedValue({ seance, termineeMaintenant: false });
+    deps.lire.mockResolvedValue({ seance, termineeMaintenant: false });
     const j: any = await (await req("GET", "/api/redemarrage")).json();
     expect(j.seance).toMatchObject({ id: 1, position: 1, total: 1, projetCourant: { projectId: 2, nom: "Agence" } });
     expect(j.proposer).toBe(false);

@@ -51,6 +51,12 @@ describe("evaluationReseaux", () => {
     expect(ig).toMatchObject({ publies: 1, portee: null, abonnesGagnes: null, source: "instagram" });
     expect(e.limites).toContain("portee_manquante");
   });
+  it("Instagram qui plante : l'évaluation reste, avec instagram_erreur", async () => {
+    const d = base({ compteInstagram: vi.fn(async () => ({ jeton: "ig" })), lireInstagram: vi.fn(async () => { throw new Error("fetch failed"); }) });
+    const e = await evaluationReseaux(d, "u1", D, M);
+    expect(e.limites).toContain("instagram_erreur");
+    expect(e.parReseau[0]).toMatchObject({ reseau: "linkedin", publies: 1 });
+  });
   it("clé de doublon : réseau, minute, 40 premiers caractères", () => {
     expect(cleDoublon("LinkedIn", "2026-11-12T08:00:30Z", "Abc")).toBe(cleDoublon("linkedin", "2026-11-12T09:00:00+01:00", "Abc"));
   });

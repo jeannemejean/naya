@@ -7,6 +7,7 @@ import {
   raisonDeErreur,
   propositionsAAjuster,
   messageDepuisHistorique,
+  aValiderParBouton,
 } from "./companion-logique";
 
 const H = 3600 * 1000;
@@ -119,5 +120,15 @@ describe("messageDepuisHistorique", () => {
     expect(m.faites).toEqual([faite]);
     expect(m.propositions).toEqual([prop]);
     expect(m.recherches).toEqual(["ok"]);
+  });
+});
+
+describe("aValiderParBouton (« oui » écrit sur une proposition sélectionnable)", () => {
+  it("« oui » : les propositions sélectionnables en attente (dernier tour + séance), jamais une déjà traitée", () => {
+    expect(aValiderParBouton("oui", [7, 8], 9, new Set([7, 9]), { 8: undefined })).toEqual([7, 9]);
+    expect(aValiderParBouton("oui", [7], undefined, new Set([7]), { 7: { statut: "validee" } as any })).toEqual([]);
+  });
+  it("autre message : rien", () => {
+    expect(aValiderParBouton("change la note", [7], undefined, new Set([7]), {})).toEqual([]);
   });
 });

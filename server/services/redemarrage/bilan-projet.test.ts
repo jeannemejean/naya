@@ -79,6 +79,12 @@ describe("appliquer_bilan_projet", () => {
     expect(await validerProposition("u1", p.id, MAINTENANT, { outils: [appliquerBilanProjet] })).toEqual({ ok: false, raison: "expiree" });
     expect(t.modifierTache).not.toHaveBeenCalled();
   });
+  it("une ligne DÉCOCHÉE modifiée entre-temps n'empêche pas de valider les autres", async () => {
+    const p: any = await proposer({ projectId: 4, operations: ops });
+    s.getTask.mockImplementation(async () => tache({ completed: true })); // ligne 0 bougée
+    const r = await validerProposition("u1", p.id, MAINTENANT, { outils: [appliquerBilanProjet], lignes: [1, 2] });
+    expect(r).toMatchObject({ ok: true });
+  });
   it("projet d'une autre : refusé à l'aperçu", async () => {
     expect(await proposer({ projectId: 4, operations: ops }, "u2")).toEqual({ erreur: "projet_introuvable" });
   });

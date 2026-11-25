@@ -10,6 +10,8 @@ import { seanceActivePour } from "./services/redemarrage/seance-interrupteur";
 export interface DepsRoutesRedemarrage {
   actif(userId: string): boolean;
   synchroniser(userId: string, maintenant: Date): Promise<EtatSynchro>;
+  /** Lecture seule : le bandeau ne fait jamais avancer la séance. */
+  lire(userId: string, maintenant: Date): Promise<EtatSynchro>;
   demarrer(userId: string, maintenant: Date): Promise<SeanceRedemarrage>;
   abandonner(userId: string): Promise<boolean>;
   derniereActivite(userId: string): Promise<Date | null>;
@@ -20,6 +22,7 @@ const seance = () => import("./services/redemarrage/seance");
 export const depsRoutesRedemarrage: DepsRoutesRedemarrage = {
   actif: (u) => seanceActivePour(u),
   synchroniser: async (u, m) => (await seance()).synchroniser(u, m),
+  lire: async (u, m) => (await seance()).lireSeance(u, m),
   demarrer: async (u, m) => (await seance()).demarrerSeance(u, m),
   abandonner: async (u) => (await seance()).abandonnerSeance(u),
   derniereActivite: async (u) => (await import("./services/redemarrage/absence")).derniereActivite(u),
@@ -34,7 +37,7 @@ export function registerRedemarrageRoutes(app: Express, deps: DepsRoutesRedemarr
       const { vueSeance } = await seance();
       const { absenceDetectee } = await import("./services/redemarrage/absence");
       const m = deps.maintenant();
-      const sync = await deps.synchroniser(req.userId, m);
+      const sync = await deps.lire(req.userId, m);
       if (sync.seance && sync.seance.statut === "en_cours") {
         return res.json({ seance: vueSeance(sync.seance, sync.propositionEnAttente), proposer: false });
       }

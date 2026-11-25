@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../db", () => ({ db: {} }));
 const sc = vi.hoisted(() => ({ enCours: vi.fn(), rattacher: vi.fn(), passer: vi.fn() }));
-const pr = vi.hoisted(() => ({ proposerHorsConversation: vi.fn() }));
+const pr = vi.hoisted(() => ({ proposerHorsConversation: vi.fn(), annulerProposition: vi.fn() }));
 vi.mock("./seance", () => ({
   depsSeance: { enCours: sc.enCours },
   rattacherProposition: sc.rattacher,
   passerProjet: sc.passer,
 }));
-vi.mock("../agent/propositions", () => ({ proposerHorsConversation: pr.proposerHorsConversation }));
+vi.mock("../agent/propositions", () => ({ proposerHorsConversation: pr.proposerHorsConversation, annulerProposition: pr.annulerProposition }));
 const { proposerBilanProjet, passerProjetOutil } = await import("./outils");
 
 const ctx = { userId: "u1", maintenant: new Date("2026-11-25T09:00:00Z"), fuseau: "Europe/Paris" };
@@ -52,5 +52,14 @@ describe("consulter_evaluation_reseaux", () => {
     sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2, bilan: { depuis: "2026-11-10T00:00:00.000Z" } });
     const r = await consulterEvaluationReseaux.executer(ctx, {}, { evaluer: async (u: string, d: Date) => ({ u, depuis: d.toISOString() }) } as any);
     expect(r.pourModele).toEqual({ u: "u1", depuis: "2026-11-10T00:00:00.000Z" });
+  });
+});
+
+describe("proposer_bilan_projet : une seule proposition par projet", () => {
+  it("une proposition encore en attente est annulée avant d'attacher la nouvelle", async () => {
+    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2, projets: [{ projectId: 2, etat: "en_cours", recit: true, propositionId: 30 }] });
+    pr.proposerHorsConversation.mockResolvedValue({ id: 31, resume: "r", changements: [], expireA: "x", selectionnable: true });
+    await proposerBilanProjet.executer(ctx, { operations: [{ type: "note_projet", texte: "t" }] });
+    expect(pr.annulerProposition).toHaveBeenCalledWith("u1", 30);
   });
 });

@@ -11,8 +11,8 @@ function deps(envois: any[], taches: any[] = []) {
   return {
     creees,
     d: {
-      envoisARelancer: vi.fn(async (userId: string, date: string) => envois.filter((e) => e.userId === userId && e.prochaineRelance === date)),
-      tachesDuJour: vi.fn(async () => taches),
+      envoisARelancer: vi.fn(async (userId: string, date: string) => envois.filter((e) => e.userId === userId && e.prochaineRelance <= date)),
+      tachesDeRelance: vi.fn(async () => taches),
       creerTache: vi.fn(async (t: any) => { creees.push(t); taches.push({ ...t, id: 99 }); }),
     },
   };
@@ -40,20 +40,30 @@ describe("materializeRelances", () => {
     const { d } = deps([envoi({ userId: "u2" })]);
     expect(await materializeRelances("u1", "2026-11-30", d)).toBe(0);
   });
+  it("relance oubliée (jour non ouvert) : rattrapée le jour suivant, une seule fois", async () => {
+    const { d, creees } = deps([envoi({ prochaineRelance: "2026-11-27" })]);
+    expect(await materializeRelances("u1", "2026-11-30", d)).toBe(1);
+    expect(creees[0].scheduledDate).toBe("2026-11-30");
+    expect(await materializeRelances("u1", "2026-12-01", d)).toBe(0);
+  });
+  it("relance déjà faite (cochée) depuis la date prévue : pas recréée", async () => {
+    const { d } = deps([envoi()], [{ id: 5, title: "Relancer Sézane : Campagne printemps", source: "relance_envoi", completed: true, scheduledDate: "2026-11-30" }]);
+    expect(await materializeRelances("u1", "2026-12-02", d)).toBe(0);
+  });
   it("titre", () => {
     expect(titreRelance({ marque: "Sézane", objet: "X" })).toBe("Relancer Sézane : X");
   });
 });
 
 describe("retirerRelanceNonFaite", () => {
-  it("retire la tâche non faite de l'ancienne date, garde une cochée et celles des autres", async () => {
+  it("retire la tâche non faite (quelle que soit sa date), garde une cochée et celles des autres", async () => {
     storage.getTasksInRange.mockResolvedValue([
       { id: 1, userId: "u1", source: "relance_envoi", title: "Relancer Sézane : X", completed: false },
       { id: 2, userId: "u1", source: "relance_envoi", title: "Relancer Sézane : X", completed: true },
       { id: 3, userId: "u1", source: "manual", title: "Relancer Sézane : X", completed: false },
       { id: 4, userId: "u2", source: "relance_envoi", title: "Relancer Sézane : X", completed: false },
     ]);
-    expect(await retirerRelanceNonFaite("u1", { marque: "Sézane", objet: "X" }, "2026-11-27")).toBe(1);
+    expect(await retirerRelanceNonFaite("u1", { marque: "Sézane", objet: "X" }, { tachesDeRelance: async () => (await storage.getTasksInRange()) as any })).toBe(1);
     expect(storage.deleteTask).toHaveBeenCalledTimes(1);
     expect(storage.deleteTask).toHaveBeenCalledWith(1);
   });
