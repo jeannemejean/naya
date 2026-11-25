@@ -54,6 +54,7 @@ const LIMITES_EN_CLAIR: Record<string, string> = {
   portee_manquante: "Les chiffres Instagram ne sont pas disponibles : reconnecte Instagram dans Réglages pour autoriser les statistiques.",
   instagram_expire: "La connexion Instagram a expiré : reconnecte Instagram dans Réglages.",
   instagram_erreur: "Instagram n'a pas répondu : ses posts ne sont pas comptés cette fois.",
+  instagram_partiel: "Il y a eu plus de posts Instagram que Naya n'en lit d'un coup : les chiffres Instagram sont des minimums.",
   linkedin_profil_non_lisible: "LinkedIn ne permet pas de lire ce que tu publies depuis ton profil : seuls les posts passés par Naya ou Metricool sont comptés.",
   evaluation_indisponible: "L'évaluation des réseaux n'a pas pu être faite.",
 };

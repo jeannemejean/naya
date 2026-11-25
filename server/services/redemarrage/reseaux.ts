@@ -17,6 +17,8 @@ export interface LectureInstagram {
   posts: { texte: string; publieLe: string; portee: number | null }[];
   abonnesGagnes: number | null;
   limite?: "portee_manquante" | "instagram_expire";
+  /** Plus de posts sur la période que Naya n'en lit (PAGES_IG_MAX pages) : les comptes sont des minimums. */
+  partiel?: boolean;
 }
 
 export interface DepsEvaluation {
@@ -30,6 +32,7 @@ export interface DepsEvaluation {
 
 const GRAPH_IG = "https://graph.instagram.com";
 const MEILLEURS_MAX = 3;
+const PAGES_IG_MAX = 6; // 6 × 50 posts : bien au-delà de quelques semaines à 3 posts par jour
 
 const normReseau = (r: string) => r.toLowerCase().replace(/[^a-z]/g, "");
 /** Un même post vu dans Naya et Metricool : même réseau, même minute, mêmes 40 premiers caractères. */
@@ -43,12 +46,26 @@ const codeErreur = async (res: Response) => ((await res.json().catch(() => null)
 
 export async function lireInstagram(compte: { jeton: string }, debut: Date, fin: Date, f: typeof fetch = fetch): Promise<LectureInstagram> {
   const q = new URLSearchParams({ fields: "id,caption,timestamp", limit: "50", access_token: compte.jeton });
-  const res = await f(`${GRAPH_IG}/me/media?${q}`);
-  if (!res.ok) {
-    const code = await codeErreur(res);
-    return { posts: [], abonnesGagnes: null, limite: code === 190 ? "instagram_expire" : "portee_manquante" };
+  // Les médias arrivent du plus récent au plus ancien : on suit les pages jusqu'au début de la période.
+  let url: string | null = `${GRAPH_IG}/me/media?${q}`;
+  const medias: any[] = [];
+  let partiel = false;
+  for (let page = 0; url; page++) {
+    if (page === PAGES_IG_MAX) { partiel = true; break; }
+    const res = await f(url);
+    if (!res.ok) {
+      if (page > 0) { partiel = true; break; } // la suite manque, le début est bon
+      const code = await codeErreur(res);
+      return { posts: [], abonnesGagnes: null, limite: code === 190 ? "instagram_expire" : "portee_manquante" };
+    }
+    const corps = (await res.json()) as any;
+    const lot = (corps?.data ?? []) as any[];
+    medias.push(...lot);
+    const plusAncien = lot.length ? new Date(lot[lot.length - 1].timestamp).getTime() : NaN;
+    const suivante = typeof corps?.paging?.next === "string" ? corps.paging.next : null;
+    // Jamais d'autre hôte que l'API Instagram (le lien porte le jeton).
+    url = suivante && suivante.startsWith(`${GRAPH_IG}/`) && !(plusAncien < debut.getTime()) ? suivante : null;
   }
-  const medias = (((await res.json()) as any)?.data ?? []) as any[];
   const periode = medias.filter((m) => { const t = new Date(m.timestamp).getTime(); return t >= debut.getTime() && t <= fin.getTime(); });
   let limite: LectureInstagram["limite"];
   const posts: LectureInstagram["posts"] = [];
@@ -65,7 +82,7 @@ export async function lireInstagram(compte: { jeton: string }, debut: Date, fin:
     }
     posts.push({ texte: String(m.caption ?? "").slice(0, 120), publieLe: m.timestamp, portee });
   }
-  return { posts, abonnesGagnes: null, ...(limite ? { limite } : {}) };
+  return { posts, abonnesGagnes: null, ...(limite ? { limite } : {}), ...(partiel ? { partiel } : {}) };
 }
 
 export const depsEvaluation: DepsEvaluation = {
@@ -146,6 +163,7 @@ export async function evaluationReseaux(deps: DepsEvaluation, userId: string, de
   }
   if (ig && lu) {
     if (lu.limite) limites.add(lu.limite);
+    if (lu.partiel) limites.add("instagram_partiel");
     if (lu.limite !== "instagram_expire") {
       const l = ligne("instagram", "instagram");
       l.source = "instagram";

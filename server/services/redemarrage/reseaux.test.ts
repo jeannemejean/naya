@@ -85,4 +85,44 @@ describe("lireInstagram", () => {
     const f = vi.fn(async () => rep(400, { error: { code: 190 } }));
     expect(await lireInstagram({ jeton: "ig" }, D, M, f as any)).toEqual({ posts: [], abonnesGagnes: null, limite: "instagram_expire" });
   });
+  it("plus de 50 posts : suit les pages suivantes jusqu'au début de la période", async () => {
+    const page1 = Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, caption: "x", timestamp: "2026-11-20T10:00:00+0000" }));
+    const page2 = [{ id: "b1", caption: "y", timestamp: "2026-11-12T10:00:00+0000" }, { id: "b0", caption: "vieux", timestamp: "2026-10-01T10:00:00+0000" }];
+    const f = vi.fn(async (url: string) => {
+      if (url.includes("after=P2")) return rep(200, { data: page2, paging: { next: "https://graph.instagram.com/v1/me/media?after=P3" } });
+      if (url.includes("/me/media")) return rep(200, { data: page1, paging: { next: "https://graph.instagram.com/v1/me/media?after=P2" } });
+      return rep(200, { data: [{ name: "reach", values: [{ value: 1 }] }] });
+    });
+    const r = await lireInstagram({ jeton: "ig" }, D, M, f as any);
+    expect(r.posts).toHaveLength(51);
+    expect(r.partiel).toBeUndefined();
+    expect(f.mock.calls.some(([u]) => String(u).includes("after=P3"))).toBe(false); // page 2 atteint le début : on s'arrête
+  });
+  it("trop de posts pour tout lire : partiel", async () => {
+    let n = 0;
+    const f = vi.fn(async (url: string) => {
+      if (url.includes("media")) {
+        n++;
+        return rep(200, { data: Array.from({ length: 50 }, (_, i) => ({ id: `p${n}_${i}`, caption: "x", timestamp: "2026-11-20T10:00:00+0000" })), paging: { next: `https://graph.instagram.com/v1/me/media?after=P${n + 1}` } });
+      }
+      return rep(200, { data: [{ name: "reach", values: [{ value: 1 }] }] });
+    });
+    const r = await lireInstagram({ jeton: "ig" }, D, M, f as any);
+    expect(r.partiel).toBe(true);
+  });
+  it("page suivante hors de graph.instagram.com : jamais suivie", async () => {
+    const page1 = Array.from({ length: 50 }, (_, i) => ({ id: `a${i}`, caption: "x", timestamp: "2026-11-20T10:00:00+0000" }));
+    const f = vi.fn(async (url: string) => (url.includes("/me/media")
+      ? rep(200, { data: page1, paging: { next: "https://ailleurs.example/me/media?after=P2" } })
+      : rep(200, { data: [] })));
+    await lireInstagram({ jeton: "ig" }, D, M, f as any);
+    expect(f.mock.calls.some(([u]) => String(u).includes("ailleurs.example"))).toBe(false);
+  });
+});
+
+describe("évaluation : lecture Instagram partielle", () => {
+  it("le dit dans les limites", async () => {
+    const d = base({ compteInstagram: vi.fn(async () => ({ jeton: "ig" })), lireInstagram: vi.fn(async () => ({ posts: [], abonnesGagnes: null, partiel: true })) });
+    expect((await evaluationReseaux(d, "u1", D, M)).limites).toContain("instagram_partiel");
+  });
 });
