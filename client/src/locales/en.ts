@@ -3844,6 +3844,17 @@ const en = {
   messageSuite: "Done, let's move on.",
   erreur: "The session could not start",
  },
+ metricool: {
+  titre: "Metricool",
+  explication: "Naya reads the posts you schedule in Metricool, to know what went out when you catch up. Paste your API token (Metricool, Account settings, API: Advanced or Custom plan).",
+  champs: { jeton: "API token", mcUserId: "User id (userId)", blogId: "Brand id (blogId)" },
+  connecter: "Connect Metricool",
+  connecte: "Metricool connected",
+  etatConnecte: "Connected (brand {{blogId}})",
+  refuse: "Metricool refuses access: check your token or plan, then reconnect.",
+  echec: "Connecting to Metricool failed",
+  raisons: { refuse: "Token refused, or plan without API access.", indisponible: "Metricool did not answer as expected.", erreur: "Metricool is unreachable right now." },
+ },
  envois: {
   titre: "Pitches to brands",
   vide: "No pitch tracked for this project.",

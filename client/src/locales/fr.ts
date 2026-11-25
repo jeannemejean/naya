@@ -3848,6 +3848,17 @@ const fr = {
   messageSuite: "C'est validé, on passe à la suite.",
   erreur: "La séance n'a pas pu démarrer",
  },
+ metricool: {
+  titre: "Metricool",
+  explication: "Naya lit dans Metricool les posts que tu y programmes, pour savoir ce qui est sorti quand vous faites le point. Colle ton jeton API (Metricool, Réglages du compte, API : offre Advanced ou Custom).",
+  champs: { jeton: "Jeton API", mcUserId: "Identifiant utilisateur (userId)", blogId: "Identifiant de la marque (blogId)" },
+  connecter: "Connecter Metricool",
+  connecte: "Metricool connecté",
+  etatConnecte: "Connecté (marque {{blogId}})",
+  refuse: "Metricool refuse l'accès : vérifie ton jeton ou ton offre, puis reconnecte.",
+  echec: "La connexion à Metricool a échoué",
+  raisons: { refuse: "Jeton refusé, ou offre sans accès API.", indisponible: "Metricool n'a pas répondu comme prévu.", erreur: "Metricool est injoignable pour l'instant." },
+ },
  envois: {
   titre: "Envois aux marques",
   vide: "Aucun envoi suivi pour ce projet.",

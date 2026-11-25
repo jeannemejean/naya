@@ -42,9 +42,12 @@ function getBaseUrl(): string {
 // commentaires Instagram : le texte part directement dans une tâche « Poster le premier
 // commentaire » (server/services/social-publisher.ts, apresPublication). Voir MIGRATIONS.md.
 export const commentairesInstagramActifs = (): boolean => process.env.INSTAGRAM_COMMENTS_SCOPE === '1';
+// Statistiques Instagram (portée des posts, séance de redémarrage) : demande une reconnexion.
+export const statistiquesInstagramActives = (): boolean => process.env.INSTAGRAM_INSIGHTS_SCOPE === '1';
 const instagramScopes = (): string => [
   'instagram_business_basic', 'instagram_business_content_publish',
   ...(commentairesInstagramActifs() ? ['instagram_business_manage_comments'] : []),
+  ...(statistiquesInstagramActives() ? ['instagram_business_manage_insights'] : []),
 ].join(',');
 
 export function getInstagramAuthUrl(state: string): string {

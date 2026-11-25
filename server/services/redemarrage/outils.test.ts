@@ -39,3 +39,12 @@ describe("outils de séance", () => {
     expect((await passerProjetOutil.executer(ctx, {})).pourModele).toEqual({ ok: true, termineeMaintenant: false, projetSuivant: 4 });
   });
 });
+
+describe("consulter_evaluation_reseaux", () => {
+  it("lit l'évaluation depuis le début de l'absence de la séance", async () => {
+    const { consulterEvaluationReseaux } = await import("./outils");
+    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 2, bilan: { depuis: "2026-11-10T00:00:00.000Z" } });
+    const r = await consulterEvaluationReseaux.executer(ctx, {}, { evaluer: async (u: string, d: Date) => ({ u, depuis: d.toISOString() }) } as any);
+    expect(r.pourModele).toEqual({ u: "u1", depuis: "2026-11-10T00:00:00.000Z" });
+  });
+});

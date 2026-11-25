@@ -41,4 +41,20 @@ export const passerProjetOutil: Outil = {
   },
 };
 
-export const OUTILS_SEANCE: Outil[] = [proposerBilanProjet, passerProjetOutil];
+export const consulterEvaluationReseaux = {
+  nom: "consulter_evaluation_reseaux",
+  classe: "lecture" as const,
+  description: "Séance de redémarrage : ce qui était prévu et ce qui est sorti sur les réseaux depuis son absence, et les chiffres disponibles (null = indisponible, voir « limites »).",
+  schema: { type: "object" as const, properties: {} },
+  async executer(ctx: any, _args: any, deps: { evaluer?: (u: string, d: Date, m: Date) => Promise<unknown> } = {}) {
+    const s = await depsSeance.enCours(ctx.userId);
+    const depuis = new Date((s?.bilan as any)?.depuis ?? ctx.maintenant.getTime() - 30 * 86_400_000);
+    const evaluer = deps.evaluer ?? (async (u: string, d: Date, m: Date) => {
+      const { evaluationReseaux, depsEvaluation } = await import("./reseaux");
+      return evaluationReseaux(depsEvaluation, u, d, m);
+    });
+    return { pourModele: await evaluer(ctx.userId, depuis, ctx.maintenant) };
+  },
+} satisfies Outil & { executer: (...a: any[]) => any };
+
+export const OUTILS_SEANCE: Outil[] = [proposerBilanProjet, passerProjetOutil, consulterEvaluationReseaux];

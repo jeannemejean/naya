@@ -26,6 +26,13 @@ describe("getInstagramAuthUrl — portée des commentaires", () => {
     vi.stubEnv("INSTAGRAM_COMMENTS_SCOPE", "1");
     expect(portees()).toContain("instagram_business_manage_comments");
   });
+  it("INSTAGRAM_INSIGHTS_SCOPE=1 : portée des statistiques ajoutée ; absente sinon", () => {
+    vi.stubEnv("IG_APP_ID", "app");
+    vi.stubEnv("INSTAGRAM_INSIGHTS_SCOPE", "");
+    expect(portees()).not.toContain("instagram_business_manage_insights");
+    vi.stubEnv("INSTAGRAM_INSIGHTS_SCOPE", "1");
+    expect(portees()).toContain("instagram_business_manage_insights");
+  });
 });
 
 describe("exchangeLinkedInCode — projet perso ou client", () => {

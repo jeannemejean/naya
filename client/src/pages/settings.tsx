@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { throwApiError, translateError, ApiError } from "@/lib/api-error";
 import Sidebar from "@/components/sidebar";
 import ConnexionsProspectionCard from "@/components/connexions/ConnexionsProspectionCard";
+import MetricoolConnexion from "@/components/connexions/MetricoolConnexion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -630,6 +631,7 @@ export default function Settings({ onSearchClick }: SettingsProps) {
 
  {/* Connexions de prospection : LinkedIn + Gmail (Unipile) */}
  <ConnexionsProspectionCard />
+ <MetricoolConnexion />
 
  {/* Schedule */}
  <Card className=" ">
