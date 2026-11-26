@@ -7,10 +7,12 @@ const { isEncrypted } = await import("../token-crypto");
 
 describe("connexion Metricool", () => {
   it("le jeton est chiffré au repos, jamais écrit en clair", async () => {
-    await enregistrerConnexionMetricool("u1", { jeton: "secret-123", mcUserId: "1", blogId: "2" }, "ok", new Date());
+    await enregistrerConnexionMetricool("u1", { jeton: "secret-123", mcUserId: "1", marques: [{ blogId: "2", nom: "A" }] }, "ok", new Date());
     for (const v of ecrits) {
       expect(isEncrypted(v.jetonChiffre)).toBe(true);
       expect(JSON.stringify(v)).not.toContain("secret-123");
+      expect(v.marques).toEqual([{ blogId: "2", nom: "A" }]);
+      expect(v.blogId).toBe("2");
     }
   });
 });

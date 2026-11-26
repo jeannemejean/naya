@@ -64,7 +64,7 @@ export function consigneFinSeance(s: SeanceRedemarrage): string {
   return [
     "## Séance de redémarrage terminée",
     "Écris le récap, court et concret :",
-    "1. L'évaluation des réseaux ci-dessous : publié ou non par rapport à ce qui était prévu, puis les chiffres disponibles. Ne jamais inventer un chiffre absent ; dis clairement ce qui manque et pourquoi (codes dans « limites »).",
+    "1. L'évaluation des réseaux ci-dessous : publié ou non par rapport à ce qui était prévu, puis les chiffres disponibles. Présente-la marque par marque quand « marque » est renseignée (ex. Agence JMD, Encore Merci). Ne jamais inventer un chiffre absent ; dis clairement ce qui manque et pourquoi (codes dans « limites »).",
     "2. Ce que tu as compris de sa façon de travailler (le travail fait hors de Naya, les créneaux ajoutés, les envois suivis).",
     "3. Une phrase sur la semaine qui vient.",
     limites.length ? `Ce qui manque, à dire tel quel (une phrase chacun) :\n${limites.map((l) => `- ${l}`).join("\n")}` : "",

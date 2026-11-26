@@ -24,22 +24,54 @@ describe("evaluationReseaux", () => {
     expect(e.parReseau).toEqual([expect.objectContaining({ reseau: "linkedin", prevus: 1, publies: 1, source: "naya", portee: null })]);
   });
   it("Metricool refuse (403) : connexion marquée refusée, évaluation rendue quand même", async () => {
-    const d = base({ connexionMetricool: vi.fn(async () => ({ jeton: "t", mcUserId: "1", blogId: "2" })), postsMetricool: vi.fn(async () => ({ ok: false, raison: "refuse" })) });
+    const d = base({ connexionMetricool: vi.fn(async () => ({ jeton: "t", mcUserId: "1", marques: [{ blogId: "2", nom: "A" }] })), postsMetricool: vi.fn(async () => ({ ok: false, raison: "refuse" })) });
     const e = await evaluationReseaux(d, "u1", D, M);
     expect(e.limites).toContain("metricool_refuse");
     expect(d.marquerMetricoolRefuse).toHaveBeenCalledWith("u1");
     expect(e.parReseau[0].publies).toBe(1);
   });
-  it("même post dans Naya et Metricool : compté une fois ; les manqués listés", async () => {
+  it("même post dans Naya et Metricool : compté une fois ; les manqués listés, par marque", async () => {
     const d = base({
-      connexionMetricool: vi.fn(async () => ({ jeton: "t", mcUserId: "1", blogId: "2" })),
+      connexionMetricool: vi.fn(async () => ({ jeton: "t", mcUserId: "1", marques: [{ blogId: "2", nom: "Agence JMD" }] })),
       postsMetricool: vi.fn(async () => ({ ok: true, posts: [
         { reseau: "linkedin", prevuLe: "2026-11-12T09:00:00+01:00", publie: true, texte: "Actu du jour sur la mode durable" },
         { reseau: "linkedin", prevuLe: "2026-11-13T09:00:00+01:00", publie: false, texte: "Actu ratée" },
       ] })),
     });
-    const li = (await evaluationReseaux(d, "u1", D, M)).parReseau.find((r) => r.reseau === "linkedin")!;
-    expect(li).toMatchObject({ prevus: 2, publies: 1, source: "metricool", manques: [{ texte: "Actu ratée", prevuLe: "2026-11-13T09:00:00+01:00" }] });
+    const e = await evaluationReseaux(d, "u1", D, M);
+    expect(e.parReseau.find((r) => r.reseau === "linkedin" && !r.marque)).toMatchObject({ prevus: 1, publies: 1, source: "naya" });
+    expect(e.parReseau.find((r) => r.marque === "Agence JMD")).toMatchObject({
+      reseau: "linkedin", prevus: 1, publies: 0, source: "metricool", manques: [{ texte: "Actu ratée", prevuLe: "2026-11-13T09:00:00+01:00" }],
+    });
+  });
+  it("plusieurs marques Metricool : lues une à une, une ligne par réseau et par marque", async () => {
+    const postsMetricool = vi.fn(async (cx: any) => ({ ok: true, posts: cx.blogId === "10"
+      ? [{ reseau: "instagram", prevuLe: "2026-11-14T09:00:00Z", publie: true, texte: "Perso" }]
+      : [{ reseau: "instagram", prevuLe: "2026-11-14T09:00:00Z", publie: false, texte: "Actu agence" }] }));
+    const d = base({
+      postsNaya: vi.fn(async () => []),
+      connexionMetricool: vi.fn(async () => ({ jeton: "t", mcUserId: "1", marques: [{ blogId: "10", nom: "jeanne__md" }, { blogId: "20", nom: "Agence JMD" }] })),
+      postsMetricool,
+    });
+    const e = await evaluationReseaux(d, "u1", D, M);
+    expect(postsMetricool.mock.calls.map((c: any) => c[0])).toEqual([
+      { jeton: "t", mcUserId: "1", blogId: "10" }, { jeton: "t", mcUserId: "1", blogId: "20" },
+    ]);
+    expect(e.parReseau).toEqual([
+      expect.objectContaining({ reseau: "instagram", marque: "jeanne__md", prevus: 1, publies: 1 }),
+      expect.objectContaining({ reseau: "instagram", marque: "Agence JMD", prevus: 1, publies: 0 }),
+    ]);
+  });
+  it("une marque Metricool indisponible : les autres restent comptées", async () => {
+    const d = base({
+      postsNaya: vi.fn(async () => []),
+      connexionMetricool: vi.fn(async () => ({ jeton: "t", mcUserId: "1", marques: [{ blogId: "10", nom: "A" }, { blogId: "20", nom: "B" }] })),
+      postsMetricool: vi.fn(async (cx: any) => cx.blogId === "10" ? { ok: false, raison: "indisponible" }
+        : { ok: true, posts: [{ reseau: "linkedin", prevuLe: "2026-11-14T09:00:00Z", publie: true, texte: "x" }] }),
+    });
+    const e = await evaluationReseaux(d, "u1", D, M);
+    expect(e.limites).toContain("metricool_indisponible");
+    expect(e.parReseau).toEqual([expect.objectContaining({ marque: "B", publies: 1 })]);
   });
   it("Instagram sans la portée statistiques : chiffres null (jamais 0) et portee_manquante", async () => {
     const d = base({

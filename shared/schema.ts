@@ -3141,7 +3141,9 @@ export const connexionsMetricool = pgTable("connexions_metricool", {
   userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
   jetonChiffre: text("jeton_chiffre").notNull(),
   mcUserId: text("mc_user_id").notNull(),
-  blogId: text("blog_id").notNull(),
+  blogId: text("blog_id").notNull(), // première marque suivie (compatibilité)
+  // Marques Metricool suivies (une utilisatrice en a souvent plusieurs : perso, agence, projets).
+  marques: jsonb("marques").$type<{ blogId: string; nom: string }[]>().notNull().default([]),
   etat: text("etat").notNull().default("ok"), // ok | refuse
   verifieLe: timestamp("verifie_le"),
 });

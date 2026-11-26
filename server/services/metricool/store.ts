@@ -3,21 +3,25 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { connexionsMetricool } from "@shared/schema";
 import { decryptToken, encryptToken } from "../token-crypto";
-import type { ConnexionMc } from "./client";
+import type { ConnexionMarquesMc, MarqueMc } from "./client";
 
-export async function lireConnexionMetricool(userId: string): Promise<ConnexionMc | null> {
+// Une connexion d'avant les marques multiples n'a que blog_id : elle suit cette seule marque.
+const marquesDe = (l: { marques: MarqueMc[] | null; blogId: string }): MarqueMc[] =>
+  l.marques?.length ? l.marques : [{ blogId: l.blogId, nom: l.blogId }];
+
+export async function lireConnexionMetricool(userId: string): Promise<ConnexionMarquesMc | null> {
   const [l] = await db.select().from(connexionsMetricool).where(eq(connexionsMetricool.userId, userId)).limit(1);
   const jeton = l ? decryptToken(l.jetonChiffre) : null;
-  return l && jeton ? { jeton, mcUserId: l.mcUserId, blogId: l.blogId } : null;
+  return l && jeton ? { jeton, mcUserId: l.mcUserId, marques: marquesDe(l) } : null;
 }
 
-export async function etatConnexionMetricool(userId: string): Promise<{ connecte: boolean; etat?: string; blogId?: string; verifieLe?: Date | null }> {
+export async function etatConnexionMetricool(userId: string): Promise<{ connecte: boolean; etat?: string; marques?: MarqueMc[]; verifieLe?: Date | null }> {
   const [l] = await db.select().from(connexionsMetricool).where(eq(connexionsMetricool.userId, userId)).limit(1);
-  return l ? { connecte: true, etat: l.etat, blogId: l.blogId, verifieLe: l.verifieLe } : { connecte: false };
+  return l ? { connecte: true, etat: l.etat, marques: marquesDe(l), verifieLe: l.verifieLe } : { connecte: false };
 }
 
-export async function enregistrerConnexionMetricool(userId: string, cx: ConnexionMc, etat: "ok" | "refuse", maintenant: Date): Promise<void> {
-  const valeurs = { jetonChiffre: encryptToken(cx.jeton), mcUserId: cx.mcUserId, blogId: cx.blogId, etat, verifieLe: maintenant };
+export async function enregistrerConnexionMetricool(userId: string, cx: ConnexionMarquesMc, etat: "ok" | "refuse", maintenant: Date): Promise<void> {
+  const valeurs = { jetonChiffre: encryptToken(cx.jeton), mcUserId: cx.mcUserId, blogId: cx.marques[0]?.blogId ?? "", marques: cx.marques, etat, verifieLe: maintenant };
   await db.insert(connexionsMetricool).values({ userId, ...valeurs })
     .onConflictDoUpdate({ target: connexionsMetricool.userId, set: valeurs });
 }

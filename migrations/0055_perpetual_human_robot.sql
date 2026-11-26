@@ -1,0 +1,1 @@
+ALTER TABLE "connexions_metricool" ADD COLUMN "marques" jsonb DEFAULT '[]'::jsonb NOT NULL;

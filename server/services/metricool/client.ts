@@ -6,11 +6,16 @@
 //     publication par réseau : PENDING, PUBLISHING, PUBLISHED, ERROR, AWAITING_CONFIRMATION.
 // Les noms des paramètres de dates (start, end, timezone) viennent du Swagger lié depuis le compte,
 // non public : ils sont vérifiés à la connexion (un refus de forme rend « indisponible »).
+//   - GET /admin/simpleProfiles?userId= : liste les marques du compte (gérées ou partagées) ;
+//     chaque entrée porte son id (= blogId) et son nom (label).
 // Les statistiques ne sont PAS documentées publiquement : statsMetricool ne fait aucun appel.
 
 export const URL_API_METRICOOL = "https://app.metricool.com/api";
 export interface ConnexionMc { jeton: string; mcUserId: string; blogId: string }
 export type RefusMc = { ok: false; raison: "refuse" | "indisponible" | "erreur" };
+export interface MarqueMc { blogId: string; nom: string }
+/** Connexion enregistrée : un jeton, un compte, plusieurs marques suivies. */
+export interface ConnexionMarquesMc { jeton: string; mcUserId: string; marques: MarqueMc[] }
 export interface PostMc { reseau: string; prevuLe: string; publie: boolean; texte: string }
 
 import { wallClockToInstant } from "../../utils/timezone";
@@ -58,6 +63,29 @@ export async function postsMetricool(cx: ConnexionMc, debut: Date, fin: Date, f:
     }
   }
   return { ok: true, posts };
+}
+
+/** Les marques du compte : il suffit du jeton et du userId (les blogId en découlent). */
+export async function marquesMetricool(jeton: string, mcUserId: string, f: typeof fetch = fetch): Promise<{ ok: true; marques: MarqueMc[] } | RefusMc> {
+  let res: Response;
+  try {
+    res = await f(`${URL_API_METRICOOL}/admin/simpleProfiles?${new URLSearchParams({ userId: mcUserId })}`, { headers: { "X-Mc-Auth": jeton, Accept: "application/json" } });
+  } catch {
+    return { ok: false, raison: "erreur" };
+  }
+  if (res.status === 401 || res.status === 403) return { ok: false, raison: "refuse" };
+  if (res.status === 400 || res.status === 404) return { ok: false, raison: "indisponible" };
+  if (!res.ok) return { ok: false, raison: "erreur" };
+  const corps: any = await res.json().catch(() => null);
+  const liste = Array.isArray(corps) ? corps : Array.isArray(corps?.data) ? corps.data : null;
+  if (!liste) return { ok: false, raison: "indisponible" };
+  const marques: MarqueMc[] = [];
+  for (const m of liste) {
+    if (m?.id == null) continue;
+    const blogId = String(m.id);
+    marques.push({ blogId, nom: String(m.label ?? "").trim() || blogId });
+  }
+  return { ok: true, marques };
 }
 
 /** Statistiques Metricool : non documentées publiquement, donc jamais appelées. */

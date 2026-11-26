@@ -4,10 +4,10 @@
 import { and, eq, gte, isNull, lte } from "drizzle-orm";
 import { db } from "../../db";
 import { content } from "@shared/schema";
-import type { ConnexionMc, PostMc, RefusMc } from "../metricool/client";
+import type { ConnexionMarquesMc, ConnexionMc, PostMc, RefusMc } from "../metricool/client";
 
 export interface ReseauEvalue {
-  reseau: string; prevus: number; publies: number; manques: { texte: string; prevuLe: string }[];
+  reseau: string; /** Marque Metricool (absent pour Naya et Instagram lu directement). */ marque?: string; prevus: number; publies: number; manques: { texte: string; prevuLe: string }[];
   portee: number | null; abonnesGagnes: number | null; meilleurs: { texte: string; portee: number | null }[];
   source: "metricool" | "instagram" | "naya";
 }
@@ -23,7 +23,7 @@ export interface LectureInstagram {
 
 export interface DepsEvaluation {
   postsNaya(userId: string, depuis: Date, maintenant: Date): Promise<any[]>;
-  connexionMetricool(userId: string): Promise<ConnexionMc | null>;
+  connexionMetricool(userId: string): Promise<ConnexionMarquesMc | null>;
   postsMetricool(cx: ConnexionMc, debut: Date, fin: Date): Promise<{ ok: true; posts: PostMc[] } | RefusMc>;
   marquerMetricoolRefuse(userId: string): Promise<void>;
   compteInstagram(userId: string): Promise<{ jeton: string } | null>;
@@ -128,21 +128,25 @@ export async function evaluationReseaux(deps: DepsEvaluation, userId: string, de
     else l.manques.push({ texte: texte.slice(0, 120), prevuLe: new Date(c.scheduledFor).toISOString() });
   }
 
-  // 2. Posts programmés dans Metricool (l'agence y programme ses actus).
+  // 2. Posts programmés dans Metricool (l'agence y programme ses actus), marque par marque.
   const cx = await deps.connexionMetricool(userId);
   if (!cx) limites.add("metricool_absent");
   else {
-    const r = await deps.postsMetricool(cx, depuis, maintenant);
-    if (!r.ok) {
-      if (r.raison === "refuse") { limites.add("metricool_refuse"); await deps.marquerMetricoolRefuse(userId).catch(() => {}); }
-      else limites.add("metricool_indisponible");
-    } else {
+    for (const marque of cx.marques) {
+      const r = await deps.postsMetricool({ jeton: cx.jeton, mcUserId: cx.mcUserId, blogId: marque.blogId }, depuis, maintenant);
+      if (!r.ok) {
+        // Jeton refusé : inutile d'essayer les autres marques.
+        if (r.raison === "refuse") { limites.add("metricool_refuse"); await deps.marquerMetricoolRefuse(userId).catch(() => {}); break; }
+        limites.add("metricool_indisponible");
+        continue;
+      }
       for (const p of r.posts) {
         const cle = cleDoublon(p.reseau, p.prevuLe, p.texte);
-        if (vus.has(cle)) { ligne(p.reseau, "metricool").source = "metricool"; continue; }
+        if (vus.has(cle)) continue; // déjà compté côté Naya
         vus.add(cle);
-        const l = ligne(p.reseau, "metricool");
-        l.source = "metricool";
+        const k = `${normReseau(p.reseau)}|${marque.blogId}`;
+        if (!parReseau.has(k)) parReseau.set(k, { ...reseauVide(normReseau(p.reseau), "metricool"), marque: marque.nom });
+        const l = parReseau.get(k)!;
         l.prevus++;
         if (p.publie) l.publies++;
         else l.manques.push({ texte: p.texte.slice(0, 120), prevuLe: p.prevuLe });
