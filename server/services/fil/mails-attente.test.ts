@@ -12,7 +12,7 @@ vi.mock("../linkedin", () => ({
 
 import { listerEmailsRecus, versEmailUnipile, EMAILS_PAGES_MAX, type EmailUnipile } from "../unipile-mail";
 import {
-  filsEnAttente, synchroniserMailsEnAttente, correspondanceMail, estAdministratif, ligneLibre, tachesRepondues,
+  filsEnAttente, synchroniserMailsEnAttente, correspondanceMail, estAdministratif, ligneLibre, tachesRepondues, tachesHorsTri,
   type DepsMails, type CandidatsRattachement, type LigneMail,
 } from "./mails-attente";
 
@@ -426,5 +426,34 @@ describe("déjà répondu, même dans un autre fil", () => {
     expect(deps.cocherTache).toHaveBeenCalledWith("u1", 9);
     // Lecture élargie jusqu'au message de la tâche ouverte (plus vieux que 14 jours ? non ici : 14 jours).
     expect(deps.listerEmails).toHaveBeenCalledWith("acc", new Date(MAINTENANT.getTime() - 14 * JOUR));
+  });
+});
+
+describe("tâches ouvertes repassées au tri (créées avant les filtres)", () => {
+  // 27 nov. : des « Répondre à » Thinkific, KaffeK, invitations restaient ouvertes depuis le 13 nov.
+  const m = (o: Partial<EmailUnipile>): EmailUnipile => ({
+    id: Math.random().toString(36), threadId: "t", date: "2026-11-16T10:00:00.000Z", role: "inbox", folders: ["INBOX"],
+    from: { email: "x@y.fr", nom: "X" }, to: ["jeanne@agence-jmd.com"], cc: [], sujet: "s", headers: null, ...o,
+  });
+  const ouv = (taskId: number, threadId: string, expediteur: string) => ({ taskId, threadId, expediteur, dernierMessageAt: new Date("2026-11-16T10:00:00.000Z") });
+  it("envoi de masse ou robot → hors tri ; une personne → reste ; fil absent de la lecture → on ne juge pas", () => {
+    const pub = m({ threadId: "t-pub", from: { email: "hello@comms.thinkific.com", nom: "T" }, headers: { "list-unsubscribe": "<x>" } });
+    const robot = m({ threadId: "t-robot", from: { email: "no-reply@kaffek.fr", nom: "K" } });
+    const humain = m({ threadId: "t-humain", from: { email: "karima@scoping.fr", nom: "Karima" } });
+    const ouvertes = [ouv(1, "t-pub", "hello@comms.thinkific.com"), ouv(2, "t-robot", "no-reply@kaffek.fr"), ouv(3, "t-humain", "karima@scoping.fr"), ouv(4, "t-absent", "a@b.fr")];
+    expect(tachesHorsTri(ouvertes, [pub, robot, humain], PROPRES)).toEqual([1, 2]);
+  });
+  it("le passage archive les tâches hors tri (jamais supprimées)", async () => {
+    const pub = m({ threadId: "t-pub", from: { email: "hello@comms.thinkific.com", nom: "T" }, headers: { "list-unsubscribe": "<x>" } });
+    const deps: any = {
+      compteEmail: vi.fn(async () => "acc"), listerEmails: vi.fn(async () => [pub]),
+      adressesPropres: vi.fn(async () => new Set(PROPRES)), adressesProspects: vi.fn(async () => new Set()),
+      threadsProspects: vi.fn(async () => new Set()),
+      tachesOuvertes: vi.fn(async () => [ouv(5, "t-pub", "hello@comms.thinkific.com")]),
+      cocherTache: vi.fn(async () => {}), archiverTache: vi.fn(async () => {}),
+    };
+    await synchroniserMailsEnAttente("u1", MAINTENANT, deps);
+    expect(deps.archiverTache).toHaveBeenCalledWith("u1", 5);
+    expect(deps.cocherTache).not.toHaveBeenCalled();
   });
 });

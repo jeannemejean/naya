@@ -1439,6 +1439,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTask(task: InsertTask): Promise<Task> {
+    // Chaque tâche est liée à un projet, ou au perso (règle produit, 27 nov. 2026).
+    task = await (await import("./services/taches/projet-par-defaut")).avecProjetParDefaut(task as any) as InsertTask;
     // ── Auto-assignation d'horaire ─────────────────────────────────────────
     // Cœur produit : une tâche DATÉE doit avoir une HEURE de réalisation (Naya
     // place les tâches dans la semaine). Les générateurs (goal-tasks, pré-génération

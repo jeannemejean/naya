@@ -122,4 +122,8 @@ export const depsMails: DepsMails = {
     await db.update(tasks).set({ completed: true, completedAt: new Date() } as any)
       .where(and(eq(tasks.id, taskId), eq(tasks.userId, userId), eq(tasks.completed, false)));
   },
+  async archiverTache(userId, taskId) {
+    await db.update(tasks).set({ archivedAt: new Date() } as any)
+      .where(and(eq(tasks.id, taskId), eq(tasks.userId, userId), eq(tasks.completed, false), isNull(tasks.archivedAt)));
+  },
 };

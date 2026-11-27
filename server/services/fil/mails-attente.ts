@@ -238,6 +238,27 @@ export function tachesRepondues(ouvertes: TacheMailOuverte[], emails: EmailUnipi
   }).map((o) => o.taskId);
 }
 
+/**
+ * Les tâches « Répondre à » ouvertes dont le fil ne passerait plus le tri (PUR) : le dernier
+ * message reçu du fil vient d'un robot ou d'un envoi de masse. Utile pour les tâches créées
+ * avant un filtre (27 nov. 2026). Un fil absent de la lecture n'est pas jugé.
+ */
+export function tachesHorsTri(ouvertes: TacheMailOuverte[], emails: EmailUnipile[], adressesPropres: Set<string>): number[] {
+  const propres = new Set(Array.from(adressesPropres, (a) => a.toLowerCase()));
+  const dernierRecu = new Map<string, EmailUnipile>();
+  for (const m of emails) {
+    if (!m.threadId || m.role === "drafts" || estDeMoi(m, propres)) continue;
+    const avant = dernierRecu.get(m.threadId);
+    if (!avant || Date.parse(m.date) > Date.parse(avant.date)) dernierRecu.set(m.threadId, m);
+  }
+  return ouvertes.filter((o) => {
+    const m = dernierRecu.get(o.threadId);
+    if (!m) return false;
+    const email = m.from?.email ?? "";
+    return LOCAL_ROBOT.test(email.split("@")[0] ?? "") || enTetesDeMasse(m.headers);
+  }).map((o) => o.taskId);
+}
+
 /** Les tâches de mail ouvertes peuvent remonter plus loin que 14 jours : la lecture va jusqu'à 45. */
 export const FENETRE_MAX_JOURS = 45;
 
@@ -272,6 +293,8 @@ export interface DepsMails {
   tachesOuvertes(userId: string): Promise<TacheMailOuverte[]>;
   /** Coche une tâche : l'utilisatrice a répondu. */
   cocherTache(userId: string, taskId: number): Promise<void>;
+  /** Archive une tâche (jamais supprimée) : le mail n'attendait pas de réponse. */
+  archiverTache?(userId: string, taskId: number): Promise<void>;
 }
 
 const borner = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
@@ -296,8 +319,15 @@ export async function synchroniserMailsEnAttente(
   const emails = await d.listerEmails(compte, depuis);
   const propres = await d.adressesPropres(userId, compte);
   // Déjà répondu depuis : la tâche se coche seule (jamais « réponds » à quelqu'un à qui c'est fait).
-  for (const id of tachesRepondues(ouvertes, emails, propres)) {
+  const repondues = tachesRepondues(ouvertes, emails, propres);
+  for (const id of repondues) {
     await d.cocherTache(userId, id).catch((e: any) => console.error(`[fil] mail répondu : tâche ${id} non cochée user=${userId}:`, e?.message ?? e));
+  }
+  // Pub ou robot passé avant les filtres : la tâche est archivée.
+  if (d.archiverTache) {
+    for (const id of tachesHorsTri(ouvertes, emails, propres).filter((id) => !repondues.includes(id))) {
+      await d.archiverTache(userId, id).catch((e: any) => console.error(`[fil] mail hors tri : tâche ${id} non archivée user=${userId}:`, e?.message ?? e));
+    }
   }
   // Une réponse de prospect est déjà dans « Réponses » : exclue par son adresse, ou par son fil.
   const suivis = await d.threadsProspects(userId);
