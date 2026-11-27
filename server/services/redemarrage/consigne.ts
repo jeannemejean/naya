@@ -13,6 +13,9 @@ export function consigneSeance(s: SeanceRedemarrage): string {
   const rang = projets.findIndex((x) => x.projectId === p.projectId) + 1;
   const etat = projets.find((x) => x.projectId === p.projectId) as { recit?: boolean; propositionId?: number; aRefaire?: boolean; echecs?: string[] } | undefined;
   const recit = !!etat?.recit;
+  // Même règle que la séance pour avancer : le premier projet encore à faire.
+  const idSuivant = (s.projets as Array<{ projectId: number; etat?: string }> ?? []).find((x) => x.etat === "a_faire" && x.projectId !== p.projectId)?.projectId;
+  const suivant = idSuivant != null ? bilan.projets.find((x) => x.projectId === idSuivant) : undefined;
   const lignes = [
     `## Séance de redémarrage en cours : projet ${rang} sur ${projets.length}, « ${p.nom} » (projectId ${p.projectId})`,
     `L'utilisatrice revient après une absence (depuis le ${dateFr(bilan.depuis)}). Vous faites le point ensemble, projet par projet, pour que Naya reflète où elle en est vraiment.`,
@@ -41,6 +44,8 @@ export function consigneSeance(s: SeanceRedemarrage): string {
     "4. Si elle a présenté un projet à une marque, note l'envoi (creer_envoi) avec une date de relance (par défaut 7 jours après l'envoi).",
     "5. Appelle alors proposer_bilan_projet avec TOUS les changements de ce projet : tâches faites (cocher_tache) ou abandonnées (archiver_tache), note réécrite à partir de son récit (note_projet), statut si elle le dit, créneaux, envois, prochaines étapes (creer_tache). Elle validera tout ou ligne par ligne.",
     "6. Si elle veut passer ce projet sans rien changer, appelle passer_projet.",
+    `7. Appelle proposer_bilan_projet avec projectId ${p.projectId} (le projet dont elle parle). Après sa validation, ne dis fait que ce que le résultat dit réussi, et dis-lui ce qui a échoué.`,
+    suivant ? `Projet suivant : « ${suivant.nom} ». Après la validation, annonce exactement celui-là, pas un autre.` : "C'est le dernier projet : après la validation, la séance se termine.",
     "N'invente rien : ce qu'elle n'a pas dit ne devient pas un changement.",
   ];
   return lignes.filter((l) => l !== "").join("\n");

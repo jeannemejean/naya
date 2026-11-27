@@ -1,7 +1,7 @@
 // Outils de conversation offerts au modèle PENDANT une séance de redémarrage seulement.
 import type { Outil } from "../agent/registre";
 import { annulerProposition, proposerHorsConversation } from "../agent/propositions";
-import { depsSeance, passerProjet, rattacherProposition } from "./seance";
+import { basculerProjet, depsSeance, passerProjet, rattacherProposition } from "./seance";
 import { SCHEMA_OPERATION } from "./schema-operations";
 
 export const proposerBilanProjet: Outil = {
@@ -9,11 +9,24 @@ export const proposerBilanProjet: Outil = {
   classe: "a_valider",
   description:
     "Séance de redémarrage : propose en UNE fois tous les changements du projet en cours, tirés de ce que l'utilisatrice a raconté. " +
-    "Rien n'est fait avant qu'elle valide (tout ou ligne par ligne).",
-  schema: { type: "object", properties: { operations: { type: "array", items: SCHEMA_OPERATION as any } }, required: ["operations"] },
+    "Rien n'est fait avant qu'elle valide (tout ou ligne par ligne). " +
+    "projectId : le projet dont elle vient de parler (celui de la consigne, sauf si la conversation a pris un autre projet de la séance).",
+  schema: {
+    type: "object",
+    properties: { projectId: { type: "integer" }, operations: { type: "array", items: SCHEMA_OPERATION as any } },
+    required: ["projectId", "operations"],
+  },
   async executer(ctx, args) {
-    const s = await depsSeance.enCours(ctx.userId);
+    let s = await depsSeance.enCours(ctx.userId);
     if (!s || s.projetCourant == null) return { pourModele: { erreur: "aucune_seance" } };
+    // 27 nov. : changements de « Personal branding » rangés dans « Encore Merci » parce que la
+    // conversation avait pris un autre ordre que la séance. Le projet nommé fait foi.
+    const vise = Number(args.projectId);
+    if (Number.isInteger(vise) && vise !== s.projetCourant) {
+      const b = await basculerProjet(s, vise);
+      if (!b) return { pourModele: { erreur: "projet_hors_seance", consigne: `Le projet ${vise} n'est pas à traiter dans cette séance (déjà fait ou inconnu). Le projet en cours est ${s.projetCourant}.` } };
+      s = b;
+    }
     // Jamais de proposition avant qu'elle ait parlé de CE projet (25 nov. : sur le projet 2, le
     // modèle avait reproposé les changements du projet 1 sans rien demander).
     const courant = ((s.projets ?? []) as Array<{ projectId: number; recit?: boolean; propositionId?: number }>).find((p) => p.projectId === s.projetCourant);

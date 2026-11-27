@@ -2,7 +2,7 @@
 // Dépôt en mémoire, propositions simulées : aucune base.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../db", () => ({ db: {} }));
-const { demarrerSeance, synchroniser, passerProjet, rattacherProposition, seanceActivePour, vueSeance, noterRecit, lireSeance } = await import("./seance");
+const { demarrerSeance, synchroniser, passerProjet, rattacherProposition, seanceActivePour, vueSeance, noterRecit, lireSeance, basculerProjet } = await import("./seance");
 
 const M = new Date("2026-11-25T09:00:00Z");
 const bilan = { depuis: "2026-11-10T00:00:00.000Z", projets: [
@@ -128,5 +128,32 @@ describe("lecture seule et proposition à refaire", () => {
     props.set(31, { id: 31, userId: "u1", statut: "expiree" });
     const r = await synchroniser("u1", M, d);
     expect(r.seance!.projets[0]).toEqual({ projectId: 2, etat: "en_cours", aRefaire: true });
+  });
+});
+
+describe("basculer sur le projet dont elle parle", () => {
+  it("projet pas encore traité : il devient le projet courant (récit noté), l'ancien redevient à faire sans récit", async () => {
+    const d = deps();
+    const s = await demarrerSeance("u1", M, d);
+    await noterRecit("u1", d);
+    const b = await basculerProjet(lignes[0], 4, d);
+    expect(b?.projetCourant).toBe(4);
+    expect(b?.projets).toEqual([{ projectId: 2, etat: "a_faire", recit: false }, { projectId: 4, etat: "en_cours", recit: true }]);
+    expect(s.id).toBe(b?.id);
+  });
+  it("projet déjà traité ou hors séance : null, rien ne change", async () => {
+    const d = deps();
+    await demarrerSeance("u1", M, d);
+    lignes[0].projets = [{ projectId: 2, etat: "en_cours" }, { projectId: 4, etat: "fait", propositionId: 3 }];
+    expect(await basculerProjet(lignes[0], 4, d)).toBeNull();
+    expect(await basculerProjet(lignes[0], 99, d)).toBeNull();
+    expect(lignes[0].projetCourant).toBe(2);
+  });
+  it("l'ancien projet garde une proposition en attente (il n'est pas perdu)", async () => {
+    const d = deps();
+    await demarrerSeance("u1", M, d);
+    lignes[0].projets = [{ projectId: 2, etat: "en_cours", recit: true, propositionId: 7 }, { projectId: 4, etat: "a_faire" }];
+    const b = await basculerProjet(lignes[0], 4, d);
+    expect(b?.projets[0]).toEqual({ projectId: 2, etat: "a_faire", recit: true, propositionId: 7 });
   });
 });

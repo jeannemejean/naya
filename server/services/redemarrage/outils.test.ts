@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../db", () => ({ db: {} }));
-const sc = vi.hoisted(() => ({ enCours: vi.fn(), rattacher: vi.fn(), passer: vi.fn() }));
+const sc = vi.hoisted(() => ({ enCours: vi.fn(), rattacher: vi.fn(), passer: vi.fn(), basculer: vi.fn() }));
 const pr = vi.hoisted(() => ({ proposerHorsConversation: vi.fn(), annulerProposition: vi.fn() }));
 vi.mock("./seance", () => ({
   depsSeance: { enCours: sc.enCours },
   rattacherProposition: sc.rattacher,
   passerProjet: sc.passer,
+  basculerProjet: sc.basculer,
 }));
 vi.mock("../agent/propositions", () => ({ proposerHorsConversation: pr.proposerHorsConversation, annulerProposition: pr.annulerProposition }));
 const { proposerBilanProjet, passerProjetOutil } = await import("./outils");
@@ -43,6 +44,31 @@ describe("outils de séance", () => {
   it("passer_projet : avance", async () => {
     sc.passer.mockResolvedValue({ seance: { projetCourant: 4 }, termineeMaintenant: false });
     expect((await passerProjetOutil.executer(ctx, {})).pourModele).toEqual({ ok: true, termineeMaintenant: false, projetSuivant: 4 });
+  });
+});
+
+describe("proposer_bilan_projet : le projet dont elle parle vraiment", () => {
+  // 27 nov. : le modèle avait annoncé « Personal branding » alors que la séance attendait « Encore
+  // Merci » ; ses changements de Personal branding ont été rangés dans Encore Merci, et inversement.
+  it("projectId différent du projet courant, pas encore traité : la séance bascule, la proposition va au BON projet", async () => {
+    const s = { id: 1, userId: "u1", projetCourant: 18, projets: [{ projectId: 18, etat: "en_cours", recit: true }, { projectId: 16, etat: "a_faire" }] };
+    sc.enCours.mockResolvedValue(s);
+    sc.basculer.mockResolvedValue({ ...s, projetCourant: 16, projets: [{ projectId: 18, etat: "a_faire" }, { projectId: 16, etat: "en_cours", recit: true }] });
+    pr.proposerHorsConversation.mockResolvedValue({ id: 40, resume: "r", changements: [], expireA: "x", selectionnable: true });
+    await proposerBilanProjet.executer(ctx, { projectId: 16, operations: [{ type: "note_projet", texte: "Reels" }] });
+    expect(sc.basculer).toHaveBeenCalledWith(s, 16);
+    expect(pr.proposerHorsConversation).toHaveBeenCalledWith("u1", "appliquer_bilan_projet", { projectId: 16, operations: [{ type: "note_projet", texte: "Reels" }] }, ctx.maintenant, { fuseau: "Europe/Paris" });
+    expect(sc.rattacher).toHaveBeenCalledWith(expect.objectContaining({ projetCourant: 16 }), 40);
+  });
+  it("projectId hors séance ou déjà traité : refus, rien proposé", async () => {
+    sc.enCours.mockResolvedValue({ id: 1, userId: "u1", projetCourant: 18, projets: [{ projectId: 18, etat: "en_cours", recit: true }] });
+    sc.basculer.mockResolvedValue(null);
+    const r = await proposerBilanProjet.executer(ctx, { projectId: 15, operations: [{ type: "note_projet", texte: "t" }] });
+    expect(r.pourModele).toMatchObject({ erreur: "projet_hors_seance" });
+    expect(pr.proposerHorsConversation).not.toHaveBeenCalled();
+  });
+  it("le schéma exige le projectId", () => {
+    expect((proposerBilanProjet.schema as any).required).toEqual(expect.arrayContaining(["projectId", "operations"]));
   });
 });
 

@@ -100,6 +100,24 @@ async function avancer(s: SeanceRedemarrage, projets: EtatProjet[], maintenant: 
   return { seance: fin, termineeMaintenant: true };
 }
 
+/**
+ * Le modèle propose pour un autre projet que le courant (il a suivi la conversation) : la séance
+ * bascule sur ce projet, s'il n'est pas déjà traité. L'ancien redevient « à faire » ; sans
+ * proposition en attente, son récit est oublié (ce qu'elle a dit concernait l'autre projet).
+ * Null si le projet est hors séance ou déjà traité.
+ */
+export async function basculerProjet(s: SeanceRedemarrage, projectId: number, deps: DepsSeance = depsSeance): Promise<SeanceRedemarrage | null> {
+  const projets = projetsDe(s);
+  const cible = projets.find((p) => p.projectId === projectId);
+  if (!cible || cible.etat === "fait" || cible.etat === "saute") return null;
+  const maj = projets.map((p): EtatProjet => {
+    if (p === cible) return { ...p, etat: "en_cours", recit: true };
+    if (p.projectId === s.projetCourant) return { ...p, etat: "a_faire", ...(p.propositionId == null ? { recit: false } : {}) };
+    return p;
+  });
+  return (await deps.maj(s.id, s.userId, { projets: maj as any, projetCourant: projectId })) ?? null;
+}
+
 /** Met la séance à jour d'après la proposition du projet courant. */
 export async function synchroniser(userId: string, maintenant: Date, deps: DepsSeance = depsSeance): Promise<EtatSynchro> {
   const s = await deps.enCours(userId);

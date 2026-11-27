@@ -12,14 +12,27 @@ const seance: any = {
 
 describe("consigneSeance", () => {
   const c = consigneSeance(seance);
+  it("nomme le projet suivant (le seul que Naya annonce après la validation), sans rien en dire d'autre", () => {
+    expect(c).toMatch(/Projet suivant : « Boutique secrète »/);
+    expect(c).not.toContain("Ne pas montrer");
+  });
+  it("dernier projet : aucun projet suivant, la séance se termine", () => {
+    const dernier = consigneSeance({ ...seance, projetCourant: 4, projets: [{ projectId: 2, etat: "fait" }, { projectId: 4, etat: "en_cours" }] });
+    expect(dernier).toMatch(/dernier projet/);
+    expect(dernier).not.toMatch(/Projet suivant/);
+  });
+  it("proposer_bilan_projet avec le projectId du projet dont elle parle ; ne dire fait que ce que le résultat dit réussi", () => {
+    expect(c).toMatch(/projectId 2/);
+    expect(c).toMatch(/réussi/);
+  });
   it("parle du projet courant, avec ses tâches en retard et ses ids", () => {
     expect(c).toContain("Agence JMD");
     expect(c).toContain("Écrire le brief Sézane");
     expect(c).toContain("10");
     expect(c).toContain("projet 1 sur 2");
   });
-  it("rien d'un autre projet", () => {
-    expect(c).not.toContain("Boutique secrète");
+  it("rien d'un autre projet (seulement le nom du suivant)", () => {
+    expect(c).not.toContain("Ne pas montrer");
     expect(c).not.toContain("Tâche de l'autre projet");
   });
   it("les règles : ne pas demander ce qui est connu, 2 relances au plus, proposer un créneau pour le travail fait ailleurs", () => {
