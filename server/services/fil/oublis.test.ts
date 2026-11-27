@@ -17,7 +17,7 @@ vi.mock("../claude", () => ({
 }));
 vi.mock("./etapes", () => ({ objectifDe: h.objectifDe }));
 
-const { objectifsOublies, tacheDeReprise, chargerObjectifsOublies } = await import("./oublis");
+const { objectifsOublies, tacheDeReprise, chargerObjectifsOublies, avecPoints } = await import("./oublis");
 import type { CarteFil, ObjectifCarte } from "./carte";
 
 const DEPUIS = new Date("2026-11-02T08:00:00Z");
@@ -27,6 +27,25 @@ const objectif = (id: number, titre: string): ObjectifCarte => ({
 });
 const carte = (objectifs: ObjectifCarte[], depuis: Date | null = DEPUIS): CarteFil =>
   ({ objectifs, chainesSansObjectif: new Map(), depuis });
+
+describe("un point fait en séance compte comme un pas", () => {
+  // 27 nov. : après la séance de redémarrage, « Ce qui n'avance plus » restait affiché.
+  it("le point sur le projet remplace une dernière tâche plus ancienne (ou absente)", () => {
+    const c = carte([objectif(1, "A"), { ...objectif(2, "B"), projetId: 20 }]);
+    const r = avecPoints(c, new Map([[1, jour(1)], [2, null]]), new Map([[10, jour(9)]]));
+    expect([...r.entries()]).toEqual([[1, jour(9)], [2, null]]);
+    expect(objectifsOublies(c, r, jour(10)).map((o) => o.objectifId)).toEqual([2]);
+  });
+  it("une tâche faite après le point reste la référence", () => {
+    const r = avecPoints(carte([objectif(1, "A")]), new Map([[1, jour(12)]]), new Map([[10, jour(9)]]));
+    expect(r.get(1)).toEqual(jour(12));
+  });
+  it("chargerObjectifsOublies lit les points de séance", async () => {
+    h.getDerniereTacheFaiteParObjectif.mockResolvedValue(new Map([[1, null]]));
+    const r = await chargerObjectifsOublies("u1", carte([objectif(1, "A")]), jour(10), async () => new Map([[10, jour(9)]]));
+    expect(r).toEqual([]);
+  });
+});
 
 describe("objectifsOublies", () => {
   const c = carte([objectif(1, "3 clients IN SCENA")]);

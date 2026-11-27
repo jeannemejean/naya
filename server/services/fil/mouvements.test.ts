@@ -9,7 +9,7 @@ const agendaMock = vi.hoisted(() => ({ getCalendarEvents: vi.fn() }));
 vi.mock("../google-calendar", () => agendaMock);
 import type { CarteFil, EtapeCarte, ObjectifCarte } from "./carte";
 import {
-  chantiersDe, evenementCite, chantiersSansMouvement, collecterMouvements, chantiersBloquesEnCache, viderCacheChantiers, requeteTachesFaites, sourcesParDefaut,
+  chantiersDe, evenementCite, chantiersSansMouvement, mouvementsDesPoints, collecterMouvements, chantiersBloquesEnCache, viderCacheChantiers, requeteTachesFaites, sourcesParDefaut,
   type Chantier, type SourcesMouvements,
 } from "./mouvements";
 
@@ -85,6 +85,18 @@ describe("chantiersDe", () => {
     ]);
     expect(ch.find((c) => c.cle === "etape:101")!.prochainPas).toBe("Appeler Paul");
     expect(ch.find((c) => c.cle === "etape:300")!.prochainPas).toBe("Livrer le site");
+  });
+});
+
+describe("point fait en séance de redémarrage", () => {
+  it("compte comme un mouvement pour TOUS les chantiers du projet revu", () => {
+    const ch: Chantier[] = [
+      { cle: "etape:1", libelle: "a", projetId: 10, noms: [], prochainPas: "x" },
+      { cle: "objectif:2", libelle: "b", projetId: 10, noms: [], prochainPas: "y" },
+      { cle: "projet:20", libelle: "c", projetId: 20, noms: [], prochainPas: "z" },
+    ];
+    const quand = ilYA(1);
+    expect(mouvementsDesPoints(ch, new Map([[10, quand]]))).toEqual([{ cle: "etape:1", at: quand }, { cle: "objectif:2", at: quand }]);
   });
 });
 

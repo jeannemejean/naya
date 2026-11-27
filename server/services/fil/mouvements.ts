@@ -165,6 +165,14 @@ export function chantiersSansMouvement(
   return res.sort((a, b) => b.joursSansMouvement - a.joursSansMouvement);
 }
 
+/**
+ * Un point fait en séance de redémarrage sur un projet est un mouvement pour TOUS ses chantiers :
+ * elle a revu le projet entier (27 nov. 2026).
+ */
+export function mouvementsDesPoints(chantiers: Chantier[], points: Map<number, Date>): { cle: string; at: Date }[] {
+  return chantiers.flatMap((c) => { const at = points.get(c.projetId); return at ? [{ cle: c.cle, at }] : []; });
+}
+
 // ── Les mouvements ─────────────────────────────────────────────────────────────────────
 
 export interface MouvementBrut { projetId?: number | null; objectifId?: number | null; etapeId?: number | null; at: Date }
@@ -311,7 +319,11 @@ export async function chargerChantiersBloques(
 
   const chantiers = chantiersDe(carte, projetsActifs, clientsLies, leadsActifs, ouvertes);
   if (chantiers.length === 0) return [];
-  const mouvements = await collecterMouvements(userId, chantiers, fenetre, sourcesParDefaut, maintenant);
+  const [mouvements, points] = await Promise.all([
+    collecterMouvements(userId, chantiers, fenetre, sourcesParDefaut, maintenant),
+    import("../redemarrage/points").then((m) => m.pointsParProjetSurs(userId)),
+  ]);
+  mouvements.push(...mouvementsDesPoints(chantiers, points));
   const observeDepuis = carte.depuis.getTime() > fenetre.getTime() ? carte.depuis : fenetre;
   return chantiersSansMouvement(chantiers, mouvements, maintenant, SEUIL_JOURS, observeDepuis);
 }

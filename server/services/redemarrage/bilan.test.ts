@@ -21,8 +21,26 @@ const deps = () => ({
     { userId: "u1", projectId: 2, scheduledFor: new Date("2026-11-15T09:00:00Z"), postStatus: "posted", publishedAt: new Date("2026-11-15T09:00:00Z") },
     { userId: "u1", projectId: 2, scheduledFor: new Date("2026-11-16T09:00:00Z"), postStatus: "failed", publishedAt: null },
   ]),
+  tachesAnciennes: vi.fn(async () => [
+    { id: 20, userId: "u1", projectId: 2, title: "Rédiger la promesse", scheduledDate: "2026-12-02", createdAt: new Date("2026-10-14T00:00:00Z") },
+    { id: 10, userId: "u1", projectId: 1, title: "Relire", scheduledDate: "2026-11-12", createdAt: new Date("2026-10-01T00:00:00Z") },
+    { id: 21, userId: "u2", projectId: 2, title: "Pas à elle", scheduledDate: "2026-12-02", createdAt: new Date("2026-10-14T00:00:00Z") },
+  ]),
   rituels: vi.fn(async () => [{ id: 5, userId: "u1", projectId: 2, title: "Actus", days: "mon,tue,wed,thu,fri", intervalWeeks: 1, active: true }]),
   envois: vi.fn(async () => [{ id: 7, userId: "u1", projectId: 2, marque: "Sézane", objet: "X", statut: "envoye", prochaineRelance: "2026-11-27" }]),
+});
+
+describe("tâches anciennes (repoussées sans être faites)", () => {
+  // 27 nov. : des tâches d'octobre, repoussées de semaine en semaine, n'étaient jamais en retard,
+  // donc jamais revues pendant la séance : elles restaient sur le tableau.
+  it("ouvertes depuis plus de 14 jours, à elle, sans doublon avec les retards", async () => {
+    const d = deps();
+    const b = await bilanSilencieux(d, "u1", DEPUIS, M);
+    expect(d.tachesAnciennes).toHaveBeenCalledWith("u1", new Date("2026-11-11T09:00:00Z"));
+    expect(b.projets.find((p) => p.nom === "Agence")!.tachesAnciennes).toEqual([{ id: 20, titre: "Rédiger la promesse", creeeLe: "2026-10-14", date: "2026-12-02" }]);
+    // La 10 est déjà dans les retards : pas deux fois.
+    expect(b.projets.find((p) => p.nom === "Pause")!.tachesAnciennes).toEqual([]);
+  });
 });
 
 describe("bilanSilencieux", () => {

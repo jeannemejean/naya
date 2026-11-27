@@ -44,11 +44,33 @@ export function objectifsOublies(
   return res;
 }
 
-/** Lit la dernière tâche faite de chaque objectif de la carte, puis applique `objectifsOublies`. */
-export async function chargerObjectifsOublies(userId: string, carte: CarteFil, maintenant: Date): Promise<ObjectifOublieBrut[]> {
+/**
+ * Un point fait en séance de redémarrage sur le projet compte comme un pas pour ses objectifs :
+ * la référence devient la plus récente de la dernière tâche faite et du point.
+ */
+export function avecPoints(carte: CarteFil, dernieres: Map<number, Date | null>, points: Map<number, Date>): Map<number, Date | null> {
+  const res = new Map(dernieres);
+  for (const o of carte.objectifs) {
+    const point = points.get(o.projetId);
+    const derniere = res.get(o.id) ?? null;
+    if (point && (!derniere || derniere.getTime() < point.getTime())) res.set(o.id, point);
+  }
+  return res;
+}
+
+const pointsParDefaut = async (userId: string) => (await import("../redemarrage/points")).pointsParProjetSurs(userId);
+
+/** Lit la dernière tâche faite de chaque objectif de la carte (et les points de séance), puis applique `objectifsOublies`. */
+export async function chargerObjectifsOublies(
+  userId: string, carte: CarteFil, maintenant: Date,
+  points: (userId: string) => Promise<Map<number, Date>> = pointsParDefaut,
+): Promise<ObjectifOublieBrut[]> {
   if (!carte.depuis || carte.objectifs.length === 0) return [];
-  const dernieres = await storage.getDerniereTacheFaiteParObjectif(userId, carte.objectifs.map((o) => o.id));
-  return objectifsOublies(carte, dernieres, maintenant);
+  const [dernieres, pts] = await Promise.all([
+    storage.getDerniereTacheFaiteParObjectif(userId, carte.objectifs.map((o) => o.id)),
+    points(userId).catch(() => new Map<number, Date>()),
+  ]);
+  return objectifsOublies(carte, avecPoints(carte, dernieres, pts), maintenant);
 }
 
 // ── Tâche de reprise ───────────────────────────────────────────────────────────────────

@@ -27,6 +27,9 @@ export function consigneSeance(s: SeanceRedemarrage): string {
     p.tachesEnRetard.length
       ? `- Tâches en retard (id : titre, date) :\n${p.tachesEnRetard.map((t) => `  - ${t.id} : ${t.titre} (${t.date})`).join("\n")}`
       : "- Aucune tâche en retard.",
+    p.tachesAnciennes?.length
+      ? `- Tâches ouvertes depuis longtemps, repoussées sans être faites (id : titre, créée le) :\n${p.tachesAnciennes.map((t) => `  - ${t.id} : ${t.titre} (créée le ${t.creeeLe})`).join("\n")}\n  Demande-lui d'un mot lesquelles sont encore d'actualité (liste-les courtes) : archive les autres (archiver_tache), coche celles déjà faites (cocher_tache). Sans réponse claire sur une tâche, ne la touche pas.`
+      : "",
     p.creneaux.length ? `- Créneaux réguliers : ${p.creneaux.map((c) => `${c.id} « ${c.titre} » (${c.rythme})`).join(" ; ")}.` : "- Aucun créneau régulier.",
     p.envoisEnCours.length ? `- Envois en attente : ${p.envoisEnCours.map((e) => `${e.marque} (${e.objet})`).join(" ; ")}.` : "",
     "",

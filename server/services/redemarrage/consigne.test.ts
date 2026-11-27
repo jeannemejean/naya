@@ -5,13 +5,18 @@ const seance: any = {
   id: 1, statut: "en_cours", projetCourant: 2,
   projets: [{ projectId: 2, etat: "en_cours" }, { projectId: 4, etat: "a_faire" }],
   bilan: { depuis: "2026-11-10T00:00:00.000Z", projets: [
-    { projectId: 2, nom: "Agence JMD", statut: "active", priorite: 1, noteActuelle: "Trois actus par jour", tachesEnRetard: [{ id: 10, titre: "Écrire le brief Sézane", date: "2026-11-12" }], derniereTacheFaite: null, postsPrevus: 12, postsPublies: 9, creneaux: [], envoisEnCours: [] },
+    { projectId: 2, nom: "Agence JMD", statut: "active", priorite: 1, noteActuelle: "Trois actus par jour", tachesEnRetard: [{ id: 10, titre: "Écrire le brief Sézane", date: "2026-11-12" }], tachesAnciennes: [{ id: 30, titre: "Rédiger la promesse centrale", creeeLe: "2026-10-14", date: "2026-12-02" }], derniereTacheFaite: null, postsPrevus: 12, postsPublies: 9, creneaux: [], envoisEnCours: [] },
     { projectId: 4, nom: "Boutique secrète", statut: "active", priorite: 2, noteActuelle: "Ne pas montrer", tachesEnRetard: [{ id: 20, titre: "Tâche de l'autre projet", date: "2026-11-12" }], derniereTacheFaite: null, postsPrevus: 0, postsPublies: 0, creneaux: [], envoisEnCours: [] },
   ] },
 };
 
 describe("consigneSeance", () => {
   const c = consigneSeance(seance);
+  it("les tâches anciennes sont listées avec leur id, et Naya demande lesquelles garder (archiver les autres)", () => {
+    expect(c).toContain("30 : Rédiger la promesse centrale");
+    expect(c).toMatch(/encore d'actualité/);
+    expect(c).toMatch(/archiver_tache/);
+  });
   it("nomme le projet suivant (le seul que Naya annonce après la validation), sans rien en dire d'autre", () => {
     expect(c).toMatch(/Projet suivant : « Boutique secrète »/);
     expect(c).not.toContain("Ne pas montrer");
